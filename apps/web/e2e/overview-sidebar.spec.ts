@@ -1603,44 +1603,51 @@ test("an orchestrator folds its workers by its chevron or ← and →, keeps the
   await expect(other.getByTestId("overview-worker").first()).toBeVisible();
 });
 
-test("a solo thread at work trades its age for a pulsing dot, and can't be marked done until it rests", async ({
-  page,
-}) => {
-  await start(page);
-  // A thread no mock script plays: a script moves its thread's status under the test.
-  const id = "t-release";
-  const row = threadRow(page, id);
-  await expect(row).toBeVisible();
-  const dot = row.locator("[data-working]");
-  const age = row.locator("span.tabular-nums");
-  await page.evaluate((threadId) => {
-    window.gramMock!.simulateStatus(threadId as never, "idle");
-  }, id);
-  await expect(age).toBeVisible();
-  await expect(dot).toHaveCount(0);
+test.describe(() => {
+  // The pinned clock below is midday in this zone, whatever the machine's.
+  test.use({ timezoneId: "UTC" });
+  test("a solo thread at work trades its age for a pulsing dot, and can't be marked done until it rests", async ({
+    page,
+  }) => {
+    // t-release's seeded activity is four hours before the page loads: before 04:00 it falls on the
+    // day before, which `formatStamp` dates. At midday it is the same day, read as a bare clock.
+    await page.clock.setFixedTime(new Date("2026-11-07T12:00:00Z"));
+    await start(page);
+    // A thread no mock script plays: a script moves its thread's status under the test.
+    const id = "t-release";
+    const row = threadRow(page, id);
+    await expect(row).toBeVisible();
+    const dot = row.locator("[data-working]");
+    const age = row.locator("span.tabular-nums");
+    await page.evaluate((threadId) => {
+      window.gramMock!.simulateStatus(threadId as never, "idle");
+    }, id);
+    await expect(age).toBeVisible();
+    await expect(dot).toHaveCount(0);
 
-  await page.evaluate((threadId) => {
-    window.gramMock!.simulateStatus(threadId as never, "running", "Running bun test");
-  }, id);
-  await expect(dot).toHaveCount(1);
-  await expect(age).toHaveCount(0);
-  // Off the row, its last activity stays on its hover, under its whole title, and in its name.
-  await expect(row).toHaveAttribute("title", /^.+\nLast activity \d{2}:\d{2}$/);
-  await expect(row).toHaveAttribute("aria-label", /, Running, Last activity \d{2}:\d{2}$/);
+    await page.evaluate((threadId) => {
+      window.gramMock!.simulateStatus(threadId as never, "running", "Running bun test");
+    }, id);
+    await expect(dot).toHaveCount(1);
+    await expect(age).toHaveCount(0);
+    // Off the row, its last activity stays on its hover, under its whole title, and in its name.
+    await expect(row).toHaveAttribute("title", /^.+\nLast activity \d{2}:\d{2}$/);
+    await expect(row).toHaveAttribute("aria-label", /, Running, Last activity \d{2}:\d{2}$/);
 
-  await row.click({ button: "right" });
-  await expect(page.getByTestId("menu-done")).toHaveAttribute("data-disabled", /.*/);
-  await expect(page.getByTestId("menu-done")).toHaveText("Mark done after it stops");
-  await page.keyboard.press("Escape");
+    await row.click({ button: "right" });
+    await expect(page.getByTestId("menu-done")).toHaveAttribute("data-disabled", /.*/);
+    await expect(page.getByTestId("menu-done")).toHaveText("Mark done after it stops");
+    await page.keyboard.press("Escape");
 
-  await page.evaluate((threadId) => {
-    window.gramMock!.simulateStatus(threadId as never, "idle");
-  }, id);
-  await expect(age).toBeVisible();
-  await row.click({ button: "right" });
-  await expect(page.getByTestId("menu-done")).not.toHaveAttribute("data-disabled");
-  await expect(page.getByTestId("menu-done")).toHaveText("Mark done");
-  await page.keyboard.press("Escape");
+    await page.evaluate((threadId) => {
+      window.gramMock!.simulateStatus(threadId as never, "idle");
+    }, id);
+    await expect(age).toBeVisible();
+    await row.click({ button: "right" });
+    await expect(page.getByTestId("menu-done")).not.toHaveAttribute("data-disabled");
+    await expect(page.getByTestId("menu-done")).toHaveText("Mark done");
+    await page.keyboard.press("Escape");
+  });
 });
 
 test("a calm worker and its orchestrator say what they wait on, the whole list on hover, and never need you", async ({

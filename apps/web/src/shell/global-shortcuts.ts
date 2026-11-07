@@ -189,7 +189,7 @@ export function useGlobalShortcuts() {
   useShortcut({
     id: "split.toggle",
     keys: "mod+\\",
-    label: "Keep beside / split",
+    label: "Open beside / split",
     group: "Navigation",
     when: () => currentId !== undefined,
     run: () => {

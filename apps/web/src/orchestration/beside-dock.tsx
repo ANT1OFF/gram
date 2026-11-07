@@ -1,102 +1,111 @@
 import type { ThreadId } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
-import { AnimatePresence } from "motion/react";
-import * as m from "motion/react-m";
-import { Maximize2, X } from "lucide-react";
+import { ChevronRight, Maximize2, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { keyLabel } from "@/keyboard/registry";
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
-import { SegmentSlab, Swap, useMotionLevel, usePresetTransition } from "@/motion";
+import { SegmentSlab, Swap } from "@/motion";
 import { DiffPanel } from "@/panels/diff-panel";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { threadStatusOf } from "@/sidebar/status";
 import { useThreadFeed } from "@/stores/feeds";
 import { useThreadsStore } from "@/stores/threads";
-import { useSplitSubagents } from "@/thread/use-split-subagents";
 import { ReadOnlyTranscript } from "@/thread/read-only-transcript";
-import { activeStreamingIds } from "@/thread/streaming";
-import { Transcript } from "@/thread/transcript";
+import { ThreadView } from "@/thread/thread-view";
 
 import { checkRestored, closeBeside, useBesideStore, type BesideTab } from "./beside-store";
 import { lastCommandOf, type LastCommand } from "./last-command";
 import { WorkerNowChip } from "./worker-header";
 
-const BESIDE_DOCK_TEST_ID = "beside-dock";
+const BESIDE_TEST_ID = "beside-dock";
 
 const TABS: readonly { readonly id: BesideTab; readonly label: string }[] = [
-  { id: "log", label: "Log" },
+  { id: "thread", label: "Conversation" },
   { id: "terminal", label: "Terminal" },
   { id: "changes", label: "Changes" },
 ];
 
-const NO_TURN_ENDS = new Map();
-
 const ICON_BUTTON =
-  "grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  "grid size-7 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
- * The worker kept beside the orchestrator's chat (⌘\): its log, its terminal and its changes,
- * to watch while you talk. It only reads, has no composer and never takes focus, so docking a worker
- * leaves it the orchestrator's and the keyboard the orchestrator composer's. ⌘\ or Close undocks it.
+ * Keeps a worker restored from storage only while it is still a worker of the orchestrator in
+ * view, and closes it once the worker is gone. Mounted with the thread page, as the panel isn't
+ * while hidden.
  */
-export function BesideDock() {
+export function useBesideSync() {
   const worker = useBesideStore((s) => s.worker);
+  const restored = useBesideStore((s) => s.restored);
   const known = useThreadsStore((s) =>
     worker === undefined ? false : s.byId[worker] !== undefined,
   );
   const ready = useThreadsStore((s) => s.ready);
-  const restored = useBesideStore((s) => s.restored);
   const route = useParams({ strict: false }).threadId as ThreadId | undefined;
-  const level = useMotionLevel();
-  const preset = usePresetTransition("snappy");
-  // A dock brought back by a reload shows once its worker is still the orchestrator's in view.
   useEffect(() => {
     if (ready && restored) checkRestored(route);
   }, [ready, restored, route]);
-  // A worker closed while docked leaves the dock with it.
+  // A worker closed while open beside the chat goes with it, and so does one opened in full.
   useEffect(() => {
     if (worker !== undefined && ready && !known) closeBeside();
   }, [worker, ready, known]);
-  const width = "min(30rem, 42%)";
-  const closed = level === "full" ? { width: 0, opacity: 0 } : { width, opacity: 0 };
-  const transition =
-    level === "off" ? { duration: 0 } : level === "full" ? preset : { duration: 0.12 };
-  return (
-    <AnimatePresence initial={false}>
-      {worker !== undefined && known && !restored && (
-        <m.aside
-          key="beside"
-          data-testid={BESIDE_DOCK_TEST_ID}
-          data-thread-id={worker}
-          aria-label="Kept beside"
-          initial={closed}
-          animate={{ width, opacity: 1 }}
-          exit={closed}
-          transition={transition}
-          className="flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-border bg-thread"
-        >
-          <DockBody worker={worker} />
-        </m.aside>
-      )}
-    </AnimatePresence>
-  );
+  // Only on arriving there: ⌘\ opens the worker in view beside the chat before the route has left it.
+  const lastRoute = useRef(route);
+  useEffect(() => {
+    if (lastRoute.current === route) return;
+    lastRoute.current = route;
+    if (route !== undefined && useBesideStore.getState().worker === route) closeBeside();
+  }, [route]);
 }
 
-function DockBody({ worker }: { worker: ThreadId }) {
+/**
+ * The right panel's Thread tab: a worker beside its orchestrator's chat (⌘\, ⌘-click a worker, or
+ * a plain click on its link in the chat). Its Thread view is the worker's own transcript and
+ * composer, and what you send there is you typing into the worker, so the rules for that apply as
+ * they do in its own view; Terminal and Changes only read. Opening it leaves the keyboard the
+ * orchestrator composer's: the view takes keys once you click or tab into it.
+ */
+export function BesidePanel({ worker }: { worker: ThreadId }) {
   const summary = useThreadsStore((s) => s.byId[worker]);
   const detail = useThreadsStore((s) => s.statusDetail[worker]);
   const tab = useBesideStore((s) => s.tab);
   const setTab = useBesideStore((s) => s.setTab);
+  const focused = useBesideStore((s) => s.focused);
+  const setFocused = useBesideStore((s) => s.setFocused);
   const open = useOpenThread();
   const group = useId();
+  const root = useRef<HTMLDivElement>(null);
+  // Its keys while focus or the last press is in it; a press anywhere else gives them back.
+  useEffect(() => {
+    const away = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node | null)) setFocused(false);
+    };
+    document.addEventListener("pointerdown", away, true);
+    return () => {
+      document.removeEventListener("pointerdown", away, true);
+      setFocused(false);
+    };
+  }, [setFocused]);
   if (summary === undefined) return null;
   const { thread } = summary;
   const display = threadStatusOf(summary, detail);
   return (
-    <>
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-reading">
+    <div
+      ref={root}
+      data-testid={BESIDE_TEST_ID}
+      data-thread-id={worker}
+      data-focused={focused}
+      aria-label={`Beside the chat: ${thread.title}`}
+      role="region"
+      className="flex min-h-0 flex-1 flex-col bg-thread"
+      onPointerDownCapture={() => setFocused(true)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
+      }}
+    >
+      <header className="@container flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-3 text-reading">
         <Swap swapKey={display.label}>
           <display.icon
             aria-hidden
@@ -105,10 +114,19 @@ function DockBody({ worker }: { worker: ThreadId }) {
           />
         </Swap>
         <span className="sr-only">{display.label}: </span>
-        <span data-testid="beside-title" className="min-w-0 truncate font-heading font-medium">
+        <span className="shrink-0 text-muted-foreground">Thread</span>
+        <ChevronRight aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
+        <span
+          data-testid="beside-title"
+          title={thread.title}
+          className="min-w-0 truncate font-heading font-medium"
+        >
           {thread.title}
         </span>
-        <WorkerNowChip thread={thread} />
+        {/* The title first: what it is doing drops where both don't fit. */}
+        <span className="flex shrink-0 @max-md:hidden">
+          <WorkerNowChip thread={thread} />
+        </span>
         <span className="flex-1" />
         <Hint
           label="Open full view"
@@ -146,7 +164,7 @@ function DockBody({ worker }: { worker: ThreadId }) {
       </header>
       <div
         role="tablist"
-        aria-label="What to watch"
+        aria-label="What to show"
         className="isolate flex shrink-0 items-center gap-0.5 border-b border-border px-3 py-1.5 text-meta"
       >
         {TABS.map(({ id, label }) => (
@@ -156,7 +174,7 @@ function DockBody({ worker }: { worker: ThreadId }) {
             role="tab"
             aria-selected={tab === id}
             data-testid={`beside-tab-${id}`}
-            // Choosing what to watch leaves the keyboard the orchestrator composer's.
+            // Picking a view leaves the keyboard where it was.
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => setTab(id)}
             className={cn(
@@ -169,47 +187,18 @@ function DockBody({ worker }: { worker: ThreadId }) {
           </button>
         ))}
       </div>
-      <ReadOnlyTranscript.Provider value>
-        {tab === "log" && <WorkerLog key={worker} threadId={worker} />}
-        {tab === "terminal" && <LiveTerminal threadId={worker} />}
-        {tab === "changes" && (
+      {tab === "thread" && (
+        <ThreadView key={worker} threadId={worker} focused={focused} beside={{ header: null }} />
+      )}
+      {tab === "terminal" && <LiveTerminal threadId={worker} />}
+      {tab === "changes" && (
+        <ReadOnlyTranscript.Provider value>
           <div className="flex min-h-0 flex-1 flex-col">
             <DiffPanel key={worker} threadId={worker} />
           </div>
-        )}
-      </ReadOnlyTranscript.Provider>
-    </>
-  );
-}
-
-/** The worker's transcript, followed live, with nothing in it that acts on the worker. */
-function WorkerLog({ threadId }: { threadId: ThreadId }) {
-  const status = useThreadsStore((s) => s.byId[threadId]?.status);
-  const phase = useThreadFeed(threadId, (s) => s.phase);
-  const messages = useThreadFeed(threadId, (s) => s.messages);
-  const streamingIds = useThreadFeed(threadId, (s) => s.streamingMessageIds);
-  const { top, children, subagentUsage } = useSplitSubagents(messages);
-  const nested = useMemo(
-    () => new Set([...children.values()].flatMap((list) => list.map((message) => message.id))),
-    [children],
-  );
-  const streaming = useMemo(
-    () => activeStreamingIds(status, streamingIds, nested),
-    [status, streamingIds, nested],
-  );
-  return (
-    <Transcript
-      threadId={threadId}
-      loading={phase === "loading"}
-      messages={top}
-      subagents={children}
-      subagentUsage={subagentUsage}
-      streamingIds={streaming}
-      turnEnds={NO_TURN_ENDS}
-      animate={false}
-      jump={undefined}
-      live
-    />
+        </ReadOnlyTranscript.Provider>
+      )}
+    </div>
   );
 }
 

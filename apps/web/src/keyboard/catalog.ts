@@ -161,7 +161,7 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   { id: "history.back", keys: "mod+[", label: "Back", group: "Navigation" },
   { id: "history.forward", keys: "mod+]", label: "Forward", group: "Navigation" },
   ...workspaceSwitch,
-  { id: "split.toggle", keys: "mod+\\", label: "Keep beside / split", group: "Navigation" },
+  { id: "split.toggle", keys: "mod+\\", label: "Open beside / split", group: "Navigation" },
   {
     id: "pane.maximize",
     keys: "mod+shift+enter",

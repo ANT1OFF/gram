@@ -255,7 +255,7 @@ const HEADER_BUTTON =
   "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1.5 text-meta text-foreground/80 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
- * In the title bar a worker's actions keep its other controls' shape: Keep beside an icon button of
+ * In the title bar a worker's actions keep its other controls' shape: Open beside an icon button of
  * the chrome's size (28 px, its glyph 16 px), Take over a worded button as tall.
  */
 const TITLEBAR_ICON =
@@ -288,19 +288,19 @@ function useWorkerActions(thread: Thread) {
 }
 
 /**
- * A worker's own actions at the end of its header: Keep beside docks it next to its orchestrator's
- * chat (⌘\), and Take over holds it for you, by the same path a message you type into it takes,
- * until you hand it back. While you hold it, the hold chip and its Hand back stand in Take over's
- * place. Watching it, here or beside the chat, never holds it. In a title bar folded all the way,
- * Keep beside and Take over are the bar's "…" items (`WorkerMenuItems`) and the hold chip is a glyph
- * and its Hand back.
+ * A worker's own actions at the end of its header: Open beside shows it in the right panel next
+ * to its orchestrator's chat (⌘\), and Take over holds it for you, by the same path a message you
+ * type into it takes, until you hand it back. While you hold it, the hold chip and its Hand back
+ * stand in Take over's place. Watching it, here or beside the chat, never holds it; sending to it
+ * from beside the chat is typing into it. In a title bar folded all the way, Open beside and Take
+ * over are the bar's "…" items (`WorkerMenuItems`) and the hold chip is a glyph and its Hand back.
  */
 export function WorkerActions({
   thread,
   inTitlebar = false,
 }: {
   thread: Thread;
-  /** In the title bar, where Keep beside is its glyph, its words in the tooltip. */
+  /** In the title bar, where Open beside is its glyph, its words in the tooltip. */
   inTitlebar?: boolean;
 }) {
   const actions = useWorkerActions(thread);
@@ -310,7 +310,7 @@ export function WorkerActions({
     <>
       {actions.keepBeside !== undefined && (
         <Hint
-          label={keyLabel("Keep beside the chat (⌘\\)")}
+          label={keyLabel("Open beside the chat (⌘\\)")}
           side="bottom"
           render={
             <button
@@ -322,7 +322,7 @@ export function WorkerActions({
           }
         >
           <PanelRight aria-hidden className={inTitlebar ? "size-icon-bar" : "size-icon-row"} />
-          <span className={inTitlebar ? "sr-only" : "@max-md:sr-only"}>Keep beside</span>
+          <span className={inTitlebar ? "sr-only" : "@max-md:sr-only"}>Open beside</span>
         </Hint>
       )}
       {actions.held ? (
@@ -362,7 +362,7 @@ export function WorkerActions({
   );
 }
 
-/** Keep beside and Take over as the title bar's "…" items, while a narrow bar folds them. */
+/** Open beside and Take over as the title bar's "…" items, while a narrow bar folds them. */
 export function WorkerMenuItems({
   thread,
   itemClassName,
@@ -381,7 +381,7 @@ export function WorkerMenuItems({
           onClick={actions.keepBeside}
         >
           <PanelRight aria-hidden className="size-icon-row" />
-          Keep beside
+          Open beside
         </Menu.Item>
       )}
       {actions.takeOver !== undefined && (

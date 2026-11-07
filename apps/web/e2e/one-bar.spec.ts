@@ -225,7 +225,7 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await fitsTheBar(page);
   await page.keyboard.press("ControlOrMeta+Alt+1");
 
-  // A worker: its crumbs, Keep beside and Take over in the bar, and its branch in More… only.
+  // A worker: its crumbs, Open beside and Take over in the bar, and its branch in More… only.
   await routeTo(page, `/t/${made.inReview}`);
   await expect(bar.getByTestId("worker-crumbs")).toBeVisible();
   await expect(bar.getByTestId("worker-crumb-feature")).toBeVisible();
@@ -318,7 +318,7 @@ test("narrow, the title truncates, a worker's actions fold into the bar's \"…\
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("workers-list")).toBeHidden();
 
-  // A worker keeps its name, a few letters at least; Keep beside and Take over are in the "…".
+  // A worker keeps its name, a few letters at least; Open beside and Take over are in the "…".
   await routeTo(page, `/t/${made.inReview}`);
   const worker = bar.getByTestId("worker-crumb-worker");
   await expect(worker).toBeVisible();

@@ -36,6 +36,8 @@ import { orchestratorRowTitle } from "@/orchestration/tree-model";
 import { FinishedWorkerView } from "@/orchestration/finished-worker-view";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { OrchestratorBanner, OrchestratorChips, WorkerBanner } from "@/orchestration/worker-banner";
+import { besideShown, useBesideStore } from "@/orchestration/beside-store";
+import { BesideLinkScope } from "@/orchestration/beside-link";
 import { CatchUpCard } from "@/orchestration/catch-up-card";
 import { FailuresCard } from "@/orchestration/failures-card";
 import { StatusHeader } from "@/orchestration/status-header";
@@ -88,6 +90,7 @@ import { TableOfContents } from "./table-of-contents";
 import { ThreadMenu } from "./thread-menu";
 import { Transcript, type JumpRequest } from "./transcript";
 import { turnUndos } from "./turn-undo-marker";
+import { useUnseenFrom } from "./unread";
 import { HeaderWakeChip } from "./wake-chip";
 
 const FLASH_MS = 1600;
@@ -107,9 +110,15 @@ export function ThreadView({
   actions,
   onHeaderDoubleClick,
   onHeaderDragStart,
+  beside,
 }: {
   threadId: ThreadId;
   focused: boolean;
+  /**
+   * Shown in the right panel's Thread tab beside the chat: `header` in place of the thread's own,
+   * and a composer that says it steers the thread. What it sends is the same as typing in the view.
+   */
+  beside?: { header: ReactNode } | undefined;
   /** Pane controls at the end of the header. */
   actions?: ReactNode;
   /** Runs on a double-click on the header outside its controls; the grid maximizes or restores. */
@@ -119,8 +128,10 @@ export function ThreadView({
 }) {
   // An expanded right panel or a review in focus covers the chat, so nothing in it answers keys:
   // Enter would otherwise approve a request nobody can see, and ⌘Enter send a draft behind the panel.
+  // So does the Thread tab beside it while it holds the focus, whose keys are its thread's then.
   const covered = useLayoutStore((s) => s.panelExpanded || fitShell(s).reviewFocus);
-  const focused = paneFocused && !covered;
+  const besideFocused = useBesideStore((s) => s.focused && besideShown(s) !== undefined);
+  const focused = beside === undefined ? paneFocused && !covered && !besideFocused : paneFocused;
   const summary = useThreadsStore((s) => s.byId[threadId]);
   const titlebarThread = useTitlebarThread();
   const titlebarSlot = useTitlebarSlot((s) => s.slot);
@@ -143,6 +154,13 @@ export function ThreadView({
   // What the transcript renders, which every index handed to it counts in: an orchestrator's
   // stream has fewer rows than `top`.
   const shown = stream?.plan.messages ?? top;
+  // "New" over the first message since you last looked, decided as the view opens.
+  const unreadFrom = useUnseenFrom(
+    threadId,
+    shown,
+    summary?.thread.lastViewedAt,
+    summary !== undefined && phase !== "loading",
+  );
   // Rebuilt with every streamed frame, but the same chapters keep the rail from re-rendering.
   const chapters = useStable(
     useMemo(() => chaptersOf(shown), [shown]),
@@ -202,7 +220,10 @@ export function ThreadView({
   // Carried by the title bar, the header's Contents is a submenu of the bar's one "…": published
   // there, with stable callbacks that call this render's.
   const carriedByBar =
-    titlebarSlot !== null && titlebarThread === threadId && actions === undefined;
+    titlebarSlot !== null &&
+    titlebarThread === threadId &&
+    actions === undefined &&
+    beside === undefined;
   const latestOutline = useRef({ jump: jumpToChapter, loadEarlier: () => void pageEarlier(true) });
   useEffect(() => {
     latestOutline.current = { jump: jumpToChapter, loadEarlier: () => void pageEarlier(true) };
@@ -306,7 +327,8 @@ export function ThreadView({
     focused,
   );
 
-  useBackToOrchestrator(threadId, focused);
+  // Beside the chat, the orchestrator is already in view.
+  useBackToOrchestrator(threadId, focused && beside === undefined);
 
   useShortcut(
     {
@@ -347,6 +369,9 @@ export function ThreadView({
   }
 
   const { thread, status } = summary;
+  // A worker's link in its orchestrator's chat, or in a sibling's beside it, opens beside the chat.
+  const linkScope =
+    thread.role === "orchestrator" ? thread.id : beside ? thread.spawnedBy?.threadId : undefined;
   const pr = summary.git?.pr;
   // The badge's PR as the badge paints it: anchored when the thread is bound to that very PR.
   const shownPr = targetBadge(summary.git, thread.boundPr) ?? pr;
@@ -356,7 +381,7 @@ export function ThreadView({
   const display = threadStatusOf(summary, detail);
   // A thread alone in Chat puts its header in the window's title bar: one bar, not two. The
   // title and the empty room move the window; everything after the title is a control.
-  const inTitlebar = titlebarSlot !== null && titlebarThread === threadId && actions === undefined;
+  const inTitlebar = carriedByBar;
   // The chips drop by the pane's width, as they did in the pane, and the title bar is as wide as
   // the pane: the header itself is narrower there, sharing the bar with the window's controls.
   const hideSm = inTitlebar ? "@max-sm/titlebar:hidden" : "@max-sm:hidden";
@@ -367,7 +392,9 @@ export function ThreadView({
   // there, the header's chips say it again.
   const prOnStrip = ownPrOnStrip(thread.boundPr, summary.git, thread.hiddenPrs);
 
-  const header = (
+  const header = beside ? (
+    beside.header
+  ) : (
     <AttentionPulse
       // Alone in the window the approval card, the sidebar's dot and its count already say it; in
       // a grid the ring says which pane.
@@ -563,91 +590,98 @@ export function ThreadView({
   );
 
   return (
-    <div
-      ref={trackPaneHeight}
-      data-pane-root
-      className="flex min-h-0 flex-1 flex-col"
-      data-testid="thread-view"
-      data-focused={focused}
-    >
-      {inTitlebar ? createPortal(header, titlebarSlot) : header}
-      {status === "starting" && detail && (
-        <p
-          role="status"
-          aria-live="polite"
-          data-testid="thread-starting-detail"
-          className="shrink-0 px-4 py-2 text-meta wrap-anywhere text-muted-foreground"
-        >
-          {detail}
-        </p>
-      )}
-      <StatusHeader thread={thread} digests={stream?.plan.digests} />
-      <WaitingTray threadId={threadId} />
-      <PlanStrip threadId={threadId} />
-      <WorkerBanner thread={thread} />
-      <CatchUpCard thread={thread} />
-      <StuckCard thread={thread} />
-      <OrchestratorBanner thread={thread} loaded={phase !== "loading"} />
-      {thread.role === "orchestrator" && thread.workspaceId !== undefined && (
-        <FailuresCard
-          workspaceId={thread.workspaceId}
-          className="w-full thread-column shrink-0 px-6 pt-2 pb-2"
-        />
-      )}
-      {finding && (
-        <FindBar threadId={threadId} onReveal={reveal} onClose={() => setFinding(false)} />
-      )}
-      {/* The transcript's waiting rows hold the approval cards the requests below draw. */}
-      <ApprovalSlotsProvider threadId={threadId}>
-        <OrchestratorStreamProvider stream={stream}>
-          <Transcript
-            threadId={threadId}
-            loading={phase === "loading"}
-            messages={shown}
-            subagents={children}
-            subagentUsage={subagentUsage}
-            streamingIds={streamingSet}
-            turnEnds={turnEnds}
-            turnUndos={undos}
-            animate={focused}
-            jump={chapterJump}
-            chapters={chapters}
-            onChapterJump={jumpToChapter}
-            reveal={revealJump}
-            flashId={flashId}
-            earlier={earlier}
-            loadingEarlier={loadingEarlier}
-            earlierFailed={earlierFailed}
-            onLoadEarlier={(retry) => void pageEarlier(retry)}
-            live={thread.spawnedBy !== undefined}
+    <BesideLinkScope.Provider value={linkScope}>
+      <div
+        ref={trackPaneHeight}
+        data-pane-root
+        className="flex min-h-0 flex-1 flex-col"
+        data-testid="thread-view"
+        data-focused={focused}
+      >
+        {inTitlebar ? createPortal(header, titlebarSlot) : header}
+        {status === "starting" && detail && (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="thread-starting-detail"
+            className="shrink-0 px-4 py-2 text-meta wrap-anywhere text-muted-foreground"
+          >
+            {detail}
+          </p>
+        )}
+        <StatusHeader thread={thread} digests={stream?.plan.digests} />
+        <WaitingTray threadId={threadId} />
+        <PlanStrip threadId={threadId} />
+        <WorkerBanner thread={thread} />
+        <CatchUpCard thread={thread} />
+        <StuckCard thread={thread} />
+        <OrchestratorBanner thread={thread} loaded={phase !== "loading"} />
+        {thread.role === "orchestrator" && thread.workspaceId !== undefined && (
+          <FailuresCard
+            workspaceId={thread.workspaceId}
+            className="w-full thread-column shrink-0 px-6 pt-2 pb-2"
           />
-        </OrchestratorStreamProvider>
-        <div className="w-full thread-column shrink-0 px-6">
-          {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
-          {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
-          {thread.spawnedBy === undefined && <RecapCard threadId={threadId} focused={focused} />}
-          <RequestCards
+        )}
+        {finding && (
+          <FindBar threadId={threadId} onReveal={reveal} onClose={() => setFinding(false)} />
+        )}
+        {/* The transcript's waiting rows hold the approval cards the requests below draw. */}
+        <ApprovalSlotsProvider threadId={threadId}>
+          <OrchestratorStreamProvider stream={stream}>
+            <Transcript
+              threadId={threadId}
+              loading={phase === "loading"}
+              messages={shown}
+              subagents={children}
+              subagentUsage={subagentUsage}
+              streamingIds={streamingSet}
+              turnEnds={turnEnds}
+              turnUndos={undos}
+              animate={focused}
+              jump={chapterJump}
+              chapters={chapters}
+              onChapterJump={jumpToChapter}
+              reveal={revealJump}
+              flashId={flashId}
+              earlier={earlier}
+              loadingEarlier={loadingEarlier}
+              earlierFailed={earlierFailed}
+              onLoadEarlier={(retry) => void pageEarlier(retry)}
+              live={thread.spawnedBy !== undefined}
+              unreadFrom={unreadFrom}
+            />
+          </OrchestratorStreamProvider>
+          <div className="w-full thread-column shrink-0 px-6">
+            {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
+            {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
+            {thread.spawnedBy === undefined && <RecapCard threadId={threadId} focused={focused} />}
+            <RequestCards
+              threadId={threadId}
+              requests={summary.pendingRequests}
+              focused={focused}
+              thread={thread}
+            />
+            <LimitWaitLine thread={thread} />
+            <QueueList threadId={threadId} />
+          </div>
+        </ApprovalSlotsProvider>
+        <FolderMissingNotice threadId={threadId} />
+        <MergedCleanupNotice threadId={threadId} />
+        <LapsedConnectorsNotice threadId={threadId} />
+        <EditBanner threadId={threadId} />
+        <PinnedDocChip threadId={threadId} />
+        <PrStrip threadId={threadId} focused={focused} />
+        <SubagentStrip rows={stripLines} onJump={jumpToSubagent} onStop={stopTask} />
+        {thread.role === "orchestrator" && <UndoLine />}
+        <TurnCompleteSheen key={threadId} status={status}>
+          <Composer
             threadId={threadId}
-            requests={summary.pendingRequests}
             focused={focused}
-            thread={thread}
+            {...(beside === undefined ? {} : { placeholder: "Steer this thread…" })}
           />
-          <LimitWaitLine thread={thread} />
-          <QueueList threadId={threadId} />
-        </div>
-      </ApprovalSlotsProvider>
-      <FolderMissingNotice threadId={threadId} />
-      <MergedCleanupNotice threadId={threadId} />
-      <LapsedConnectorsNotice threadId={threadId} />
-      <EditBanner threadId={threadId} />
-      <PinnedDocChip threadId={threadId} />
-      <PrStrip threadId={threadId} focused={focused} />
-      <SubagentStrip rows={stripLines} onJump={jumpToSubagent} onStop={stopTask} />
-      {thread.role === "orchestrator" && <UndoLine />}
-      <TurnCompleteSheen key={threadId} status={status}>
-        <Composer threadId={threadId} focused={focused} />
-      </TurnCompleteSheen>
-    </div>
+        </TurnCompleteSheen>
+      </div>
+    </BesideLinkScope.Provider>
   );
 }
 

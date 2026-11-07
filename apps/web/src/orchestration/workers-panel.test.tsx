@@ -18,6 +18,7 @@ import type { Api } from "@/api/types";
 import { renderWithApi } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
+import { closeBeside, useBesideStore } from "./beside-store";
 import { useWorkersPanelStore, WorkersPanel } from "./workers-panel";
 
 const WORKSPACE = "ws-1" as WorkspaceId;
@@ -165,11 +166,33 @@ describe("the Workers tab", () => {
     expect(within(group("running")).queryByText("Title of run")?.closest("[hidden]")).toBeTruthy();
   });
 
-  it("opens a worker from its row", () => {
+  it("opens a worker from its row: in its own view while it is no orchestrator's", () => {
     seed([worker("run", "working", { status: "running" })], [summary("run", "running")]);
     renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
     fireEvent.click(screen.getByTestId("workers-panel-row"));
     expect(opened).toHaveBeenCalledWith("run");
+    expect(useBesideStore.getState().worker).toBeUndefined();
+  });
+
+  it("opens an orchestrator's live worker beside its chat, and with ⌘ in its own view", () => {
+    // Focus moves on the next frame, which a node test doesn't have.
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+    const run = summary("run", "running");
+    seed([worker("run", "working", { status: "running" })], [
+      { ...run, thread: { ...run.thread, spawnedBy: { threadId: "orch", feature: "refunds" } } },
+      summary("orch", "idle"),
+    ] as ThreadSummary[]);
+    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, {});
+    fireEvent.click(screen.getByTestId("workers-panel-row"));
+    // The orchestrator stays the chat; the worker is in the Thread tab beside it.
+    expect(opened).toHaveBeenCalledWith("orch");
+    expect(useBesideStore.getState()).toMatchObject({ worker: "run", shown: true });
+    closeBeside();
+    opened.mockClear();
+    fireEvent.click(screen.getByTestId("workers-panel-row"), { metaKey: true });
+    expect(opened).toHaveBeenCalledWith("run");
+    expect(useBesideStore.getState().worker).toBeUndefined();
+    vi.unstubAllGlobals();
   });
 
   it("searches from the header, listing only groups with a match", () => {

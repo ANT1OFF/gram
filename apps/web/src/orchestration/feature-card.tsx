@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { PulseOnce, Swap } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
 
+import { useBesideLink } from "./beside-link";
 import { openFeatureSheet } from "./feature-sheet-store";
 import { HeldBriefLine } from "./held-brief";
 import { peek } from "./peek-store";
@@ -52,6 +53,7 @@ export function WorkerLink({
   className?: string;
 }) {
   const open = useOpenThread();
+  const beside = useBesideLink(threadId);
   return (
     <Link
       to="/t/$threadId"
@@ -62,6 +64,9 @@ export function WorkerLink({
         className,
       )}
       onClick={(event) => {
+        // In its orchestrator's chat, beside it; elsewhere a peek.
+        beside(event);
+        if (event.defaultPrevented) return;
         event.preventDefault();
         if (throughKey(event)) open(threadId);
         else {

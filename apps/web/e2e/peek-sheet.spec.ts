@@ -3,9 +3,10 @@ import { expect, test, type Page } from "@playwright/test";
 import type { MockOneThreadSimulation } from "../src/api/mock-asks";
 import { pressFirstWorkspaceKey } from "./thread-row";
 
-// The peek sheet: a worker's name
-// or a PR chip on a live card opens a sheet over the orchestrator's pane, Esc closes it and gives
-// focus back, and the full view is one more step. Peeking sends nothing and never holds a worker.
+// The peek sheet: ⌥-click on a worker's name, or a click on a PR chip, on a live card opens a sheet
+// over the orchestrator's pane, Esc closes it and gives focus back, and the full view is one more
+// step. A plain click on the name opens the worker beside the chat instead. Neither sends anything
+// or holds a worker.
 // Mock state lives in memory, so every step after the seed stays inside the app.
 
 const start = async (page: Page): Promise<MockOneThreadSimulation> => {
@@ -38,7 +39,7 @@ const workerFacts = (page: Page, made: MockOneThreadSimulation, threadId: string
     { workspaceId: made.workspaceId, worker: threadId },
   );
 
-test("a worker's name peeks at it; Esc closes and ⏎ opens it, and peeking never holds it", async ({
+test("⌥-click on a worker's name peeks at it; Esc closes and ⏎ opens it, and peeking never holds it", async ({
   page,
 }) => {
   const made = await start(page);
@@ -46,7 +47,7 @@ test("a worker's name peeks at it; Esc closes and ⏎ opens it, and peeking neve
   expect(before.held).toBe(false);
 
   const name = workerName(page, made.live);
-  await name.click();
+  await name.click({ modifiers: ["Alt"] });
   await expect(sheet(page)).toBeVisible();
   await expect(sheet(page)).toHaveAttribute("data-kind", "worker");
   // Over the orchestrator, which stays where it was.
@@ -75,12 +76,28 @@ test("a worker's name peeks at it; Esc closes and ⏎ opens it, and peeking neve
   expect(await workerFacts(page, made, made.live)).toEqual(before);
 
   // ⏎ opens the full view, from Open, where the sheet puts focus.
-  await name.click();
+  await name.click({ modifiers: ["Alt"] });
   await expect(sheet(page).getByTestId("peek-open")).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(new RegExp(`/t/${made.live}$`));
   await expect(sheet(page)).toBeHidden();
   expect((await workerFacts(page, made, made.live)).held).toBe(false);
+});
+
+test("a click on a worker's name opens it beside the chat, holding nothing", async ({ page }) => {
+  const made = await start(page);
+  const before = await workerFacts(page, made, made.live);
+  await workerName(page, made.live).click();
+  const beside = page.getByTestId("beside-dock");
+  await expect(beside).toHaveAttribute("data-thread-id", made.live);
+  await expect(beside.getByTestId("beside-title")).toHaveText("Retry with backoff");
+  // The chat stays, and no sheet opens over it.
+  await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
+  await expect(sheet(page)).toHaveCount(0);
+  expect(await workerFacts(page, made, made.live)).toEqual(before);
+  // Another worker's name swaps it.
+  await workerName(page, made.asking).click();
+  await expect(beside).toHaveAttribute("data-thread-id", made.asking);
 });
 
 test("⌘-click and a middle click on a worker's name go straight to its full view", async ({

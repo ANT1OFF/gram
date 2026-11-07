@@ -2828,14 +2828,14 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "peek-worker",
-    title: "A worker's name on a live card, peeked at in a sheet over the orchestrator",
+    title: "A worker's name on a live card, peeked at (⌥-click) in a sheet over the orchestrator",
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateOneThread());
       await page
         .getByTestId("feature-card")
         .getByTestId("worker-link")
         .filter({ hasText: /^Retry with backoff$/ })
-        .click();
+        .click({ modifiers: ["Alt"] });
       await page.getByTestId("peek-sheet").waitFor();
       await page.waitForTimeout(600);
     },
@@ -3234,7 +3234,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "worker-header-actions",
-    title: "A worker's header: Keep beside and Take over beside its crumbs",
+    title: "A worker's header: Open beside and Take over beside its crumbs",
     open: async (page) => {
       const made = await openReachingScenario(page);
       await pressWorkersList(page);
@@ -3245,13 +3245,31 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "keep-beside",
-    title: "⌘\\ on a worker: kept beside the orchestrator's chat (before: the grid split)",
+    title:
+      "⌘\\ on a worker: open beside the orchestrator's chat in the right panel's Thread tab, its conversation and a composer to steer it (before: a read-only dock)",
     open: async (page) => {
       const made = await openReachingScenario(page);
       await pressWorkersList(page);
       await page.getByTestId("workers-list").locator(`[data-thread-id="${made.live}"]`).click();
       await page.getByTestId("worker-crumbs").waitFor();
       await page.keyboard.press("ControlOrMeta+Backslash");
+      await page.getByTestId("beside-dock").waitFor();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "worker-brief",
+    title:
+      "A worker's own view from its start: the orchestrator's brief folded to one line, and New where you last looked (before: the brief in full)",
+    open: async (page) => {
+      const made = await openReachingScenario(page);
+      await pressWorkersList(page);
+      await page.getByTestId("workers-list").locator(`[data-thread-id="${made.live}"]`).click();
+      await page.getByTestId("worker-crumbs").waitFor();
+      const transcript = page.getByTestId("transcript").first();
+      await transcript.waitFor();
+      await page.waitForTimeout(400);
+      await transcript.evaluate((el) => el.scrollTo({ top: 0 }));
       await page.waitForTimeout(600);
     },
   },

@@ -136,39 +136,46 @@ test("finding a folded reply shows all activity and lands on it", async ({ page 
   ).toBeInViewport();
 });
 
-test("one row above the chat: counts, Since you left on request, no second usage meter", async ({
-  page,
-}) => {
-  const made = await openRealistic(page);
-  const header = page.getByTestId("status-header");
-  // Since you left is a chip in the header's row, not a band of its own.
-  const since = header.getByTestId("since-you-left");
-  await expect(since).toBeVisible();
-  await expect(since.getByTestId("since-merged")).toHaveText("2 merged");
-  const box = await header.boundingBox();
-  expect(box?.height ?? 0).toBeLessThanOrEqual(40);
-  // The usage meter is the title bar's alone.
-  await expect(header.getByTestId("status-limit")).toHaveCount(0);
-  // The running workers' names are on hover, not in the row.
-  await expect(header.getByTestId("status-running")).toHaveText(/^\d+\s*running$/);
+test.describe(() => {
+  // The pinned clock below is midday in this zone, whatever the machine's.
+  test.use({ timezoneId: "UTC" });
+  test("one row above the chat: counts, Since you left on request, no second usage meter", async ({
+    page,
+  }) => {
+    // You left 12 minutes before the page loads: just after midnight that was the day before, which
+    // the range dates. At midday it is the same day, two bare clocks.
+    await page.clock.setFixedTime(new Date("2026-11-07T12:00:00Z"));
+    const made = await openRealistic(page);
+    const header = page.getByTestId("status-header");
+    // Since you left is a chip in the header's row, not a band of its own.
+    const since = header.getByTestId("since-you-left");
+    await expect(since).toBeVisible();
+    await expect(since.getByTestId("since-merged")).toHaveText("2 merged");
+    const box = await header.boundingBox();
+    expect(box?.height ?? 0).toBeLessThanOrEqual(40);
+    // The usage meter is the title bar's alone.
+    await expect(header.getByTestId("status-limit")).toHaveCount(0);
+    // The running workers' names are on hover, not in the row.
+    await expect(header.getByTestId("status-running")).toHaveText(/^\d+\s*running$/);
 
-  // The time range and each PR on request.
-  await since.getByTestId("since-you-left-open").click();
-  const detail = page.getByTestId("since-you-left-detail");
-  await expect(detail).toBeVisible();
-  await expect(detail).toContainText(/Since you left\s*\d{2}:\d{2} to \d{2}:\d{2}/);
-  await expect(detail.getByTestId("since-merged-detail")).toContainText("2 merged:");
-  await page.keyboard.press("Escape");
-  await expect(detail).toBeHidden();
+    // The time range and each PR on request.
+    await since.getByTestId("since-you-left-open").click();
+    const detail = page.getByTestId("since-you-left-detail");
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText(/Since you left\s*\d{2}:\d{2} to \d{2}:\d{2}/);
+    await expect(detail.getByTestId("since-merged-detail")).toContainText("2 merged:");
+    await page.keyboard.press("Escape");
+    await expect(detail).toBeHidden();
 
-  // Dismissed, it stays gone for that absence, even as the view opens again.
-  await since.getByRole("button", { name: "Dismiss Since you left" }).click();
-  await expect(header.getByTestId("since-you-left")).toHaveCount(0);
-  await page.getByTestId("overview-needs-you").click();
-  await page.keyboard.press("Escape");
-  await openOrchestrator(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("status-header")).toBeVisible();
-  await expect(page.getByTestId("since-you-left")).toHaveCount(0);
+    // Dismissed, it stays gone for that absence, even as the view opens again.
+    await since.getByRole("button", { name: "Dismiss Since you left" }).click();
+    await expect(header.getByTestId("since-you-left")).toHaveCount(0);
+    await page.getByTestId("overview-needs-you").click();
+    await page.keyboard.press("Escape");
+    await openOrchestrator(page, made.orchestratorThreadId);
+    await expect(page.getByTestId("status-header")).toBeVisible();
+    await expect(page.getByTestId("since-you-left")).toHaveCount(0);
+  });
 });
 
 test("short of room the strip drops whole items, never their words, and the switch follows the counts", async ({

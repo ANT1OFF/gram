@@ -135,10 +135,11 @@ test("a feature-card worker opens in two steps or fewer", async ({ page }) => {
   const made = await start(page);
   const link = page.getByTestId("feature-card").getByTestId("worker-link").first();
   const href = await link.getAttribute("href");
+  // One: beside the chat, to read and steer. Two: its own view.
   await link.click();
-  const peek = page.getByTestId("peek-sheet");
-  await expect(peek).toBeVisible();
-  await peek.getByTestId("peek-open").click();
+  const beside = page.getByTestId("beside-dock");
+  await expect(beside).toBeVisible();
+  await beside.getByTestId("beside-open").click();
   await expect(page).toHaveURL(new RegExp(`${href}$`));
   await page.keyboard.press("ControlOrMeta+1");
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));

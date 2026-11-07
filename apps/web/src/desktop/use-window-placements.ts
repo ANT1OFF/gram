@@ -5,20 +5,37 @@ import { useEffect } from "react";
 import { useApi } from "@/api/context";
 import { isNotImplemented } from "@/api/errors";
 import { useShortcut } from "@/keyboard/registry";
-import { useLayoutStore } from "@/stores/layout";
+import { besideShown, useBesideStore } from "@/orchestration/beside-store";
+import { fitShell, useLayoutStore } from "@/stores/layout";
 
 import { openInNewWindow } from "./open-in-new-window";
 import { currentWindow } from "./window-identity";
 import { useWindowPlacements } from "./window-placements";
 
+/** The worker the right panel's Thread tab shows, while the panel is on screen. */
+const besideOnScreen = (): ThreadId | undefined =>
+  fitShell(useLayoutStore.getState()).panel === "none"
+    ? undefined
+    : besideShown(useBesideStore.getState());
+
+/** The thread in front of the user: a worker beside the chat while it has the focus, else a pane's. */
 const focusedThreadId = (): ThreadId | undefined => {
+  const beside = besideOnScreen();
+  if (beside !== undefined && useBesideStore.getState().focused) return beside;
   const { grid } = useLayoutStore.getState();
   return grid.panes[grid.focused] ?? undefined;
 };
 
-const shownThreads = (): ThreadId[] => [
-  ...new Set(useLayoutStore.getState().grid.panes.filter((id): id is ThreadId => id !== null)),
-];
+/** The panes' threads, and a worker shown beside the chat. */
+const shownThreads = (): ThreadId[] => {
+  const beside = besideOnScreen();
+  return [
+    ...new Set([
+      ...useLayoutStore.getState().grid.panes.filter((id): id is ThreadId => id !== null),
+      ...(beside === undefined ? [] : [beside]),
+    ]),
+  ];
+};
 
 /**
  * Mount once per window: registers the window with the server, reports the threads its panes show,
@@ -54,6 +71,7 @@ export function useWindowPlacementsSync() {
         });
     };
     const unsubscribe = useLayoutStore.subscribe(() => report(false));
+    const unsubscribeBeside = useBesideStore.subscribe(() => report(false));
     // A minimised or backgrounded window is one the server needn't poll GitHub for.
     const onPresence = () => report(false);
     document.addEventListener("visibilitychange", onPresence);
@@ -76,6 +94,7 @@ export function useWindowPlacementsSync() {
     return () => {
       abort.abort();
       unsubscribe();
+      unsubscribeBeside();
       document.removeEventListener("visibilitychange", onPresence);
       window.removeEventListener("focus", onPresence);
       window.removeEventListener("blur", onPresence);

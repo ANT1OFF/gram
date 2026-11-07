@@ -1,7 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import { CheckIcon, ChevronDown, ListFilter, Search, X } from "lucide-react";
-import { useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { create } from "zustand";
 import { useParams } from "@tanstack/react-router";
 
@@ -13,6 +13,7 @@ import { useOpenThread } from "@/shell/thread-switcher";
 import { useThreadsStore } from "@/stores/threads";
 
 import { askKeysByThread } from "./ask-model";
+import { keepBeside } from "./beside-store";
 import { useWorkspaceAsks } from "./ask-stack";
 import { useAnsweredWorkers } from "./needs-you-store";
 import { ROW_MARK } from "./overview-section";
@@ -86,13 +87,17 @@ const folded = (toggled: ReadonlySet<StatusGroupId>, id: StatusGroupId): boolean
   FOLDED_BY_DEFAULT.includes(id) !== toggled.has(id);
 
 /**
- * Opens a worker from the panel. The main view for now; once the side panel's Thread tab lands
- * (cp-side-threads), a live worker opens there instead, beside the orchestrator's chat. The one
+ * Opens a worker from the panel: a live one in the Thread tab, beside its orchestrator's chat, and
+ * one that opens in the main view only (`mainOnly`), or any with ⌘/Ctrl, in the main view. The one
  * place that choice is made.
  */
-function useOpenWorker(): (row: PanelRow) => void {
+function useOpenWorker(): (row: PanelRow, event: MouseEvent) => void {
   const openThread = useOpenThread();
-  return (row) => openThread(row.threadId);
+  return (row, event) => {
+    const full = row.mainOnly || event.metaKey || event.ctrlKey;
+    if (!full && keepBeside(row.threadId, openThread)) return;
+    openThread(row.threadId);
+  };
 }
 
 /** The Workers tab for the workspace the open thread is in. */
@@ -391,7 +396,7 @@ function Row({ row }: { row: PanelRow }) {
       data-dot={row.dot}
       aria-current={current ? "page" : undefined}
       title={`${row.title}\n${row.status}`}
-      onClick={() => openWorker(row)}
+      onClick={(event) => openWorker(row, event)}
       className={cn(
         ROW_GRID,
         "items-start rounded-xs py-1.5 text-left text-body outline-none hover:bg-accent focus-visible:focus-ring aria-current:choice-selected",

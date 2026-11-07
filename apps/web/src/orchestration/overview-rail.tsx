@@ -382,7 +382,7 @@ const plain = (event: KeyboardEvent) => !event.altKey && !event.metaKey && !even
 /**
  * A tile and its flyout, open while the tile is hovered or focused and while the pointer or the
  * focus is in it. → goes in to its first row, ↑↓ Home End move between its rows, and ← or Esc
- * close it with the focus back on the tile. A pick in it (open, peek, keep beside, a solo
+ * close it with the focus back on the tile. A pick in it (open, peek, open beside, a solo
  * thread) closes it, the focus on its tile first, so whatever the pick opens comes back to the tile.
  */
 function Flyout({

@@ -16,6 +16,7 @@ interface StoredDock {
   readonly worker?: string;
   readonly last?: string;
   readonly tab?: string;
+  readonly shown?: boolean;
 }
 
 const open = async (page: Page): Promise<MockReachingSimulation> => {
@@ -61,7 +62,7 @@ const retainMockWorkersOnReload = (page: Page) =>
 const reloadDock = async (page: Page, dock: StoredDock, original: MockReachingSimulation) => {
   await page.evaluate((saved) => {
     const self = JSON.parse(sessionStorage.getItem("gram.window") ?? "{}") as { id?: string };
-    sessionStorage.setItem(`gram.beside.${self.id}`, JSON.stringify({ state: saved, version: 1 }));
+    sessionStorage.setItem(`gram.beside.${self.id}`, JSON.stringify({ state: saved, version: 2 }));
     sessionStorage.setItem("gram.test.restoreBesideWorkers", "1");
   }, dock);
   await page.goto(page.url());
@@ -75,7 +76,9 @@ const reloadDock = async (page: Page, dock: StoredDock, original: MockReachingSi
     .toEqual({ orchestratorThreadId: original.orchestratorThreadId, live: original.live });
 };
 
-test("a docked worker comes back on its tab beside the orchestrator in view", async ({ page }) => {
+test("a worker open beside the chat comes back on its view beside the orchestrator in view", async ({
+  page,
+}) => {
   await retainMockWorkersOnReload(page);
   const made = await open(page);
   await threadRow(page, made.live).click();
@@ -86,7 +89,7 @@ test("a docked worker comes back on its tab beside the orchestrator in view", as
   await expect(dock).toHaveAttribute("data-thread-id", made.live);
   await dock.getByTestId("beside-tab-changes").click();
   const saved = await storedDock(page);
-  expect(saved).toEqual({ worker: made.live, last: made.live, tab: "changes" });
+  expect(saved).toEqual({ worker: made.live, last: made.live, tab: "changes", shown: true });
 
   await reloadDock(page, { ...saved }, made);
   await expect(dock).toHaveAttribute("data-thread-id", made.live);
@@ -99,11 +102,26 @@ test("a docked worker comes back on its tab beside the orchestrator in view", as
   await expect(dock).toHaveCount(0);
   await expect.poll(async () => (await storedDock(page))?.worker).toBeUndefined();
 
-  // A thread that isn't a worker of the orchestrator is never docked from storage.
+  // A thread that isn't a worker of the orchestrator is never opened beside from storage.
   await openOrchestrator(page, made.orchestratorThreadId);
   await reloadDock(page, { worker: "t-flaky", tab: "log" }, made);
   await expect(dock).toHaveCount(0);
   await expect.poll(async () => (await storedDock(page))?.worker).toBeUndefined();
+});
+
+test("one the read-only dock saved on its Log comes back on the worker's conversation", async ({
+  page,
+}) => {
+  await retainMockWorkersOnReload(page);
+  const made = await open(page);
+  await reloadDock(page, { worker: made.live, last: made.live, tab: "log" }, made);
+  const dock = page.getByTestId("beside-dock");
+  await expect(dock).toHaveAttribute("data-thread-id", made.live);
+  await expect(dock.getByTestId("beside-tab-thread")).toHaveAttribute("aria-selected", "true");
+  await expect(dock.getByLabel("Message", { exact: true })).toHaveAttribute(
+    "placeholder",
+    "Steer this thread…",
+  );
 });
 
 test("a real reload reads the saved dock and drops it once its worker is gone", async ({
