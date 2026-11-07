@@ -26,19 +26,19 @@ also has a GitHub build attestation:
 `gh attestation verify <file> --repo ANT1OFF/gram --cert-identity https://github.com/ANT1OFF/gram/.github/workflows/release-linux.yml@refs/heads/main`.
 Then `chmod +x` the AppImage and run it, or `sudo apt install ./gram_<version>_amd64.deb`.
 
-Settings → Updates checks GitHub Releases anonymously; no sign-in or `gh` is needed. Automatic
+Settings → About checks GitHub Releases anonymously; no sign-in or `gh` is needed. Automatic
 checks are off until you turn them on; downloading and installing are each a click. Each release's notes are on its GitHub release page.
 
 ## Unsigned macOS installs
 
 Unsigned macOS builds, such as a local `dist:dir` package, have no in-app updater. Settings →
-Updates still shows the running build, and a check there reports updates as unavailable, with the
+About still shows the running build, and a check there reports updates as unavailable, with the
 reason: only Developer ID signed builds update themselves. To get updates, install a signed
 release.
 
 ## Running build and release status
 
-Settings → Updates shows the running desktop's version independently of release checks.
+Settings → About shows the running desktop's version independently of release checks.
 New desktop builds embed a source revision only when built from a clean Git checkout
 whose canonical worktree root is the build source root;
 development runs, dirty builds and source archives without Git explain unknown source
