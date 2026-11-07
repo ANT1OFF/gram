@@ -4,7 +4,9 @@ import * as Effect from "effect/Effect";
 import * as fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { anchoredRequest, withAnchoredFiles } from "./anchored-files.ts";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import { anchoredRequest, ANCHORED_FILE_PROGRAM, withAnchoredFiles } from "./anchored-files.ts";
 import type { SpawnOptions } from "node:child_process";
 
 const processCalls = vi.hoisted(() => ({
@@ -198,4 +200,72 @@ it("reopens paths for every batched request and refuses a substituted workspace 
   expect(result).toBe("replacement");
   expect(fs.readFileSync(join(outside, "a.md"), "utf8")).toBe("outside");
   expect(processCalls.calls).toHaveLength(1);
+});
+
+it("opens a fresh helper for a later request after the previous helper exits by signal", async () => {
+  const dir = root();
+  await Effect.runPromise(
+    withAnchoredFiles(
+      Effect.gen(function* () {
+        expect(yield* anchoredRequest(dir, request)).toBe(true);
+        const child = processCalls.children.at(-1)!;
+        const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
+        child.kill("SIGTERM");
+        yield* Effect.promise(() => closed);
+        expect(child.exitCode).toBeNull();
+        expect(child.signalCode).toBe("SIGTERM");
+        expect(yield* anchoredRequest(dir, request)).toBe(true);
+      }),
+    ),
+  );
+  expect(processCalls.calls).toHaveLength(2);
+});
+
+it("ends the helper after one oversized-line refusal without executing its remaining fragment", async () => {
+  const dir = root();
+  const child = spawn("/usr/bin/python3", ["-I", "-S", "-u", "-c", ANCHORED_FILE_PROGRAM], {
+    cwd: "/",
+    env: {},
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 20_000,
+    killSignal: "SIGKILL",
+  });
+  const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
+  child.stderr.resume();
+  child.stdin.on("error", () => undefined); // EOF may arrive while the oversized write drains.
+  const lines = createInterface({ input: child.stdout });
+  const responses: unknown[] = [];
+  const phases: string[] = [];
+  const tail = JSON.stringify({
+    ...request,
+    root: dir,
+    op: "write",
+    rel: "a.md",
+    content: "must not execute",
+  });
+  try {
+    // After the first capped read, this suffix is itself valid JSON. It is still part of the
+    // oversized request, never authority to start another operation.
+    child.stdin.write(`${" ".repeat(32 * 1024 * 1024 + 1)}${tail}\n`);
+    for await (const line of lines) {
+      const response = JSON.parse(line) as { phase?: string };
+      if (response.phase !== undefined) {
+        phases.push(response.phase);
+        child.stdin.write("continue\n");
+      } else {
+        responses.push(response);
+        if (responses.length > 1) child.stdin.end();
+      }
+    }
+    await closed;
+    expect(responses).toEqual([{ error: "refused", message: "Request exceeds helper cap" }]);
+    expect(phases).toEqual([]);
+    expect(child.exitCode).toBe(0);
+    expect(fs.readdirSync(dir)).toEqual([]);
+  } finally {
+    child.stdin.end();
+    child.kill("SIGKILL");
+    await closed;
+    lines.close();
+  }
 });

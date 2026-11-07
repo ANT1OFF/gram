@@ -228,9 +228,12 @@ while True:
     raw = sys.stdin.buffer.readline(8 * MAX + 1)
     if not raw:
         break
+    # The rest of an oversized line is not a new request, even if it happens to be valid JSON.
+    # End this helper rather than interpreting a later fragment as another operation.
+    if len(raw) > 8 * MAX:
+        send({"error": "refused", "message": "Request exceeds helper cap"})
+        break
     try:
-        if len(raw) > 8 * MAX:
-            raise ValueError("Request exceeds helper cap")
         result = run(json.loads(raw))
         send({"result": result})
     except Exception as e:
@@ -358,7 +361,11 @@ const launch = Effect.gen(function* () {
         ),
       );
     });
-  return { run, close, usable: () => closing === undefined && child.exitCode === null };
+  return {
+    run,
+    close,
+    usable: () => closing === undefined && child.exitCode === null && child.signalCode === null,
+  };
 });
 
 const makeSession = Effect.gen(function* () {
