@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -257,4 +259,35 @@ describe("releases", () => {
       "gram_1.0.0_darwin-arm64_signed.zip: GitHub has sha256:ff/10 bytes",
     ]);
   });
+});
+
+// Every version's What's New cards, assembled into public notes the way the release tool does
+// (`readPublicNotes` in stable.mjs): each card's default export, rendered for the version, then
+// checked by `publicNotesProblems` against the version and the minimum macOS.
+const WHATS_NEW = new URL("../../apps/web/src/whats-new/", import.meta.url);
+const MINIMUM_MACOS = "13.0";
+const versionFolders = readdirSync(WHATS_NEW, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && /^\d+\.\d+\.\d+$/.test(entry.name))
+  .map((entry) => entry.name);
+
+describe("What's New cards as public notes", () => {
+  it("finds version folders to check", () => {
+    expect(versionFolders.length).toBeGreaterThan(0);
+  });
+
+  for (const version of versionFolders) {
+    it(`passes the release guard for ${version}`, async () => {
+      const dir = new URL(`${version}/`, WHATS_NEW);
+      const cards = [];
+      for (const name of readdirSync(dir)
+        .filter((file) => file.endsWith(".ts"))
+        .toSorted())
+        cards.push((await import(new URL(name, dir).href)).default);
+      expect(cards.length).toBeGreaterThan(0);
+      for (const linux of [false, true]) {
+        const notes = renderPublicNotes({ version, cards, minimumMacOS: MINIMUM_MACOS, linux });
+        expect(publicNotesProblems(notes, { versions: [version, MINIMUM_MACOS] })).toEqual([]);
+      }
+    });
+  }
 });
