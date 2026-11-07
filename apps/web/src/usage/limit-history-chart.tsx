@@ -227,9 +227,10 @@ const SWATCH = "h-3 w-5 shrink-0 overflow-visible";
  * a `step`; a break in it is a stretch nobody read; a fall to the floor is a window resetting; the
  * dashed line is the 90% warning; and the mark on each card's bar is where an even pace would be
  * now. Swatches in the muted colour, the warning's in its own, so they read as keys, not data.
+ * One compact line of short keys; each one's hover and screen-reader text says it in full.
  */
 export function ChartLegend({ step, className }: { step: string; className?: string }) {
-  const items: readonly { key: string; swatch: ReactNode; text: string }[] = [
+  const items: readonly { key: string; swatch: ReactNode; text: string; detail: string }[] = [
     {
       key: "line",
       swatch: (
@@ -242,7 +243,8 @@ export function ChartLegend({ step, className }: { step: string; className?: str
           />
         </svg>
       ),
-      text: `Share used, the last reading each ${step}`,
+      text: `Share used, per ${step}`,
+      detail: `Share used, the last reading each ${step}`,
     },
     {
       key: "gap",
@@ -256,7 +258,8 @@ export function ChartLegend({ step, className }: { step: string; className?: str
           />
         </svg>
       ),
-      text: "Break: no reading (Gram closed, or the agent quiet)",
+      text: "Break: no reading",
+      detail: "Break: no reading (Gram closed, or the agent quiet)",
     },
     {
       key: "reset",
@@ -271,7 +274,8 @@ export function ChartLegend({ step, className }: { step: string; className?: str
           />
         </svg>
       ),
-      text: "Drop to the floor: the window reset",
+      text: "Drop: reset",
+      detail: "Drop to the floor: the window reset",
     },
     {
       key: "guide",
@@ -288,7 +292,8 @@ export function ChartLegend({ step, className }: { step: string; className?: str
           />
         </svg>
       ),
-      text: "90%: where the meter warns",
+      text: "90%: warns",
+      detail: "90%: where the meter warns",
     },
     {
       key: "pace",
@@ -298,19 +303,26 @@ export function ChartLegend({ step, className }: { step: string; className?: str
           <rect x={9} y={2} width={2} height={8} rx={1} className="fill-foreground/60" />
         </svg>
       ),
-      text: "Mark on a bar: an even pace through the window",
+      text: "Mark: even pace",
+      detail: "Mark on a bar: an even pace through the window",
     },
   ];
   return (
     <ul
       aria-label="How to read the charts"
       data-testid="usage-history-legend"
-      className={cn("flex flex-wrap gap-x-4 gap-y-1 text-meta text-muted-foreground", className)}
+      className={cn("flex flex-wrap gap-x-3 gap-y-1 text-meta text-muted-foreground", className)}
     >
       {items.map((item) => (
-        <li key={item.key} data-legend={item.key} className="flex items-center gap-1.5">
+        <li
+          key={item.key}
+          data-legend={item.key}
+          title={item.detail}
+          className="flex items-center gap-1 whitespace-nowrap"
+        >
           {item.swatch}
-          {item.text}
+          <span aria-hidden>{item.text}</span>
+          <span className="sr-only">{item.detail}</span>
         </li>
       ))}
     </ul>

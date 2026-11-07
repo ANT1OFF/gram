@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { InboxButton } from "@/inbox/inbox-button";
@@ -93,6 +93,39 @@ describe("the attention entry", () => {
       const entry = screen.getByTestId(id);
       expect(entry.textContent).toBe("1 question · 1 error");
       expect(entry.getAttribute("aria-label")).toBe("2 need you: 1 question, 1 error (⌘⇧I)");
+    }
+  });
+
+  it("tints only what asks: an error's words stay muted, and errors alone draw no amber", () => {
+    // Round 16: the title bar's "1 error · 1 question" was an amber-outlined pill, a second alarm
+    // for the error beside its card and red dot.
+    state.parts = ["1 question", "1 error"];
+    render(
+      <>
+        <NeedsYouEntry variant="row" data-testid="row" />
+        <InboxButton />
+      </>,
+    );
+    const chip = screen.getByTestId("inbox-button");
+    expect(chip.className).not.toMatch(/border-status-needs/);
+    for (const entry of [screen.getByTestId("row"), chip]) {
+      expect(entry.querySelector(".bg-status-needs-mark")).not.toBeNull();
+      expect(within(entry).getByText("1 question").className).toBe("text-status-needs");
+      expect(within(entry).getByText("1 error").className).toBe("text-muted-foreground");
+    }
+    cleanup();
+
+    state.count = 1;
+    state.parts = ["1 error"];
+    render(
+      <>
+        <NeedsYouEntry variant="row" data-testid="row" />
+        <InboxButton />
+      </>,
+    );
+    for (const entry of [screen.getByTestId("row"), screen.getByTestId("inbox-button")]) {
+      expect(entry.textContent).toBe("1 error");
+      expect(entry.innerHTML).not.toMatch(/status-needs/);
     }
   });
 

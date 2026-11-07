@@ -1,7 +1,7 @@
 import type { AgentKind, AgentSessionSummary, ModelRef, SessionPreview } from "@gram/contracts";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { GitBranch, History, StepForward, Trash2 } from "lucide-react";
+import { GitBranch, History, Trash2 } from "lucide-react";
 import { useId, useState } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
@@ -179,7 +179,6 @@ export function ContinueLatest({
         disabled={disabled || pending}
         onClick={() => void run()}
       >
-        <StepForward data-icon="inline-start" />
         Continue latest session
       </Button>
       {note && (

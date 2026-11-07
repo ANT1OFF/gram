@@ -1,6 +1,6 @@
 import type { GramUIMessage, ThreadError, ThreadId, ThreadStatus, TurnId } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, CircleX, Clock, Replace, RotateCw } from "lucide-react";
+import { ChevronRight, CircleX, Clock, RotateCw } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -413,7 +413,6 @@ function ErrorCard({
                   data-testid="agent-error-other-model"
                   onClick={() => askModelPicker(threadId)}
                 >
-                  <Replace aria-hidden />
                   Try another model
                 </Button>
               )}

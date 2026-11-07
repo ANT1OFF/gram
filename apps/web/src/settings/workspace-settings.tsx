@@ -11,7 +11,7 @@ import {
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { CirclePause, CirclePlay, Columns3, CopyPlus, Plus, Settings2, Trash2 } from "lucide-react";
+import { CirclePause, CirclePlay, Columns3, CopyPlus, Settings2, Trash2 } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 
 import { agentLabel } from "@/agents/agent-display";
@@ -89,7 +89,6 @@ function WorkspaceList() {
           data-testid="settings-new-workspace"
           onClick={() => void navigate({ to: "/new-workspace" })}
         >
-          <Plus data-icon="inline-start" />
           New workspace…
         </Button>
       }

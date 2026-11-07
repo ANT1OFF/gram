@@ -7,7 +7,6 @@ import {
   ExternalLink,
   GitCommitHorizontal,
   MessageSquare,
-  RotateCcw,
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
@@ -623,7 +622,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
         count={detail.files.length}
         reveal={filesRevealed}
       >
-        {detail.note && <p className="px-3 pb-1 text-meta text-warning">{detail.note}</p>}
+        {detail.note && <p className="px-3 pb-1 text-meta text-muted-foreground">{detail.note}</p>}
         <DiffFileList files={detail.files} wrap={wrapLines} {...actions} focus={fileFocus} />
       </Section>
     </div>
@@ -863,7 +862,6 @@ function RerunFailedChecks({ threadId, available }: { threadId: ThreadId; availa
             })
           }
         >
-          <RotateCcw aria-hidden />
           Rerun failed
         </Button>
       )}

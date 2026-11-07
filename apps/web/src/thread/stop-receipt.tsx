@@ -1,5 +1,5 @@
 import type { ThreadId } from "@gram/contracts";
-import { Play, Square } from "lucide-react";
+import { Square } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -78,7 +78,6 @@ export function StopReceiptLine({
         disabled={sending}
         onClick={() => void go()}
       >
-        <Play aria-hidden />
         Continue
       </Button>
       <span aria-hidden className="h-px flex-1 bg-border" />

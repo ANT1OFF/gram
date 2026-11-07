@@ -101,7 +101,9 @@ export function FilesSearchResults({
           {filesProblem(results.error)}
         </p>
       )}
-      {last?.limitedBy && <p className="px-2 pb-1.5 text-warning">{LIMIT_TEXT[last.limitedBy]}</p>}
+      {last?.limitedBy && (
+        <p className="px-2 pb-1.5 text-muted-foreground">{LIMIT_TEXT[last.limitedBy]}</p>
+      )}
       {enabled && matches.length > 0 && (
         <ResultList
           // A new search starts from its first result.

@@ -197,7 +197,6 @@ function ReadableStrip({ threadId }: { threadId: ThreadId }) {
           className="self-start"
           onClick={() => setReviewFocus(false)}
         >
-          <MessageSquare aria-hidden />
           Open conversation
         </Button>
       </div>

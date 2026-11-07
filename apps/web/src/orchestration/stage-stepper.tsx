@@ -213,10 +213,7 @@ export function StageStepper({
               ? "Set more than a day ago, so it may no longer be where things stand"
               : undefined
           }
-          className={cn(
-            "flex min-w-0 items-start gap-1 text-meta",
-            model.stale ? "text-warning" : "text-muted-foreground",
-          )}
+          className="flex min-w-0 items-start gap-1 text-meta text-muted-foreground"
         >
           {model.stale && <Clock aria-hidden className="mt-0.5 size-icon-row shrink-0" />}
           <span className="min-w-0 break-words">{model.attribution}</span>
@@ -265,7 +262,7 @@ export function StageChip({
       )}
     >
       {model.stale ? (
-        <Clock aria-hidden className="size-icon-row shrink-0 text-warning" />
+        <Clock aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
       ) : (
         <Milestone aria-hidden className="size-icon-row shrink-0" />
       )}

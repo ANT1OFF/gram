@@ -13,7 +13,7 @@ import {
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Check, Download, GitMerge, MoonStar, RotateCcw, TriangleAlert, X } from "lucide-react";
+import { Check, GitMerge, TriangleAlert, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { keyLabel } from "@/keyboard/registry";
@@ -424,7 +424,7 @@ function StartFlow({
                     <li key={note} className="flex items-start gap-1.5">
                       <TriangleAlert
                         aria-hidden
-                        className="mt-0.5 size-icon-chip shrink-0 text-warning"
+                        className="mt-0.5 size-icon-chip shrink-0 text-muted-foreground"
                       />
                       <span>{note}</span>
                     </li>
@@ -565,7 +565,6 @@ function MergeStatus({
         <TriangleAlert aria-hidden className="mt-0.5 size-icon-chip shrink-0" />
         <span className="min-w-0 flex-1">{error ?? merge?.error ?? "The merge failed."}</span>
         <Button size="xs" variant="ghost" data-testid="dream-merge-again" onClick={onMerge}>
-          <RotateCcw data-icon="inline-start" />
           Retry
         </Button>
       </p>
@@ -595,7 +594,6 @@ function MergeStatus({
       <Check aria-hidden className="size-icon-chip shrink-0 text-success" />
       <span className="min-w-0 flex-1">Merged on {on}: the diff is the merge.</span>
       <Button size="xs" variant="ghost" data-testid="dream-merge-again" onClick={onMerge}>
-        <RotateCcw data-icon="inline-start" />
         Merge again
       </Button>
     </p>
@@ -924,9 +922,12 @@ function Review({
           <p
             role="alert"
             data-testid="dream-review-refreshed"
-            className="flex items-start gap-1.5 rounded-(--radius-sm) border border-warning/50 px-2 py-1.5 text-meta"
+            className="flex items-start gap-1.5 rounded-(--radius-sm) border border-border-strong px-2 py-1.5 text-meta"
           >
-            <TriangleAlert aria-hidden className="mt-0.5 size-icon-row shrink-0 text-warning" />
+            <TriangleAlert
+              aria-hidden
+              className="mt-0.5 size-icon-row shrink-0 text-muted-foreground"
+            />
             <span>
               Nothing was adopted. {refreshed} What you see below is the review as it stands now:
               read it, choose again where it asks, then adopt.
@@ -991,7 +992,6 @@ function Review({
                   }
                   onClick={() => startMerges(toMerge)}
                 >
-                  <GitMerge data-icon="inline-start" />
                   Merge all conflicts
                 </Button>
               </li>
@@ -1458,7 +1458,6 @@ export function DreamsSection({
             aria-expanded={starting === "dream"}
             onClick={() => onStartingChange(starting === "dream" ? undefined : "dream")}
           >
-            <MoonStar data-icon="inline-start" />
             Draft memory update
           </Button>
           <Button
@@ -1470,7 +1469,6 @@ export function DreamsSection({
             aria-expanded={starting === "import"}
             onClick={() => onStartingChange(starting === "import" ? undefined : "import")}
           >
-            <Download data-icon="inline-start" />
             Draft from past sessions
           </Button>
         </div>
@@ -1492,7 +1490,6 @@ export function DreamsSection({
             data-testid="dream-again"
             onClick={() => onStartingChange("dream")}
           >
-            <MoonStar data-icon="inline-start" />
             Draft again
           </Button>
         </p>

@@ -1,5 +1,5 @@
 import type { FeatureStage, WorkspaceId } from "@gram/contracts";
-import { ChevronRight, CircleAlert, Layers, Pencil } from "lucide-react";
+import { ChevronRight, Hand, Layers, Pencil } from "lucide-react";
 import { useId, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
@@ -137,7 +137,7 @@ export function GroupBand({
         </button>
         {state !== undefined && <StatePill state={state} testId="rail-group-state" />}
         {needs && (
-          <CircleAlert
+          <Hand
             aria-label="Needs you"
             data-testid="rail-needs"
             className="size-icon-row shrink-0 text-status-needs-mark"

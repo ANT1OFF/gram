@@ -1,7 +1,7 @@
 import {
   Bell,
   Bot,
-  Gauge,
+  ChartNoAxesCombined,
   Info,
   Keyboard,
   Mic,
@@ -117,7 +117,7 @@ export const SETTINGS_GROUPS: readonly SettingsNavGroup[] = [
     sections: GENERAL_SECTIONS,
   },
   { id: "agents", label: "Agents & models", path: "/settings/agents", icon: Bot },
-  { id: "usage", label: "Usage", path: "/settings/usage", icon: Gauge },
+  { id: "usage", label: "Usage", path: "/settings/usage", icon: ChartNoAxesCombined },
   {
     id: "workspaces",
     label: "Workspaces & merging",

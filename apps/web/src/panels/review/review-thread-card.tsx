@@ -59,8 +59,8 @@ export function Notice({ notice }: { notice: NoticeState | undefined }) {
 
 const SEVERITY_TONE: Record<ReviewSeverity, string> = {
   blocker: "border-destructive/40 text-destructive",
-  suggestion: "border-warning/40 text-warning",
-  outstanding: "border-warning/40 text-warning",
+  suggestion: "border-border-strong text-foreground",
+  outstanding: "border-border-strong text-foreground",
   finding: "border-border text-muted-foreground",
 };
 

@@ -10,11 +10,11 @@ import { seedTheme } from "./seed-theme";
 // `playwright install chromium` already installs this pinned binary alongside the shell.
 test.use({ channel: "chromium" });
 
-// The overview's header row, left to right: its own two toggles, Hide sidebar and Compact overview,
+// The overview's header row, left to right: its own two toggles, Hide sidebar and Compact sidebar,
 // drawn apart, and New task at the far end, its words beside the `+` where the header has room.
 // Settings sits at the overview's foot, beside History. Usage has its one way in at the title
 // bar's meter.
-const names = ["Hide sidebar", "Compact overview", "New task"];
+const names = ["Hide sidebar", "Compact sidebar", "New task"];
 
 for (const mode of ["light", "dark"] as const) {
   for (const width of [180, 280, 380]) {
@@ -193,7 +193,7 @@ test("each top-left icon names itself and its key on hover", async ({ page }) =>
   const tooltip = page.locator('[data-slot="tooltip-content"]');
   const expected: readonly [string, RegExp][] = [
     ["Hide sidebar", /^Hide sidebar \((⌘|Ctrl\+)B\)$/],
-    ["Compact overview", /^Compact overview: workspaces as tiles$/],
+    ["Compact sidebar", /^Compact sidebar: workspaces as tiles$/],
     // Settings, at the foot beside History, says its key too.
     ["Settings", /^Settings \((⌘|Ctrl\+),\)/],
     // New opens a menu, whose Task, Team and Chat each show their own key.

@@ -9,7 +9,14 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
-import { CircleAlert, CircleCheck, CirclePause, CircleX, type LucideIcon } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  CirclePause,
+  CircleX,
+  Hand,
+  type LucideIcon,
+} from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
 
 import { useApi } from "@/api/context";
@@ -390,13 +397,13 @@ export function FeatureCardView({
       {(overlaps.length > 0 || foreign.length > 0) && (
         <ul data-testid="feature-card-overlap" className="flex flex-col gap-0.5 text-meta">
           {overlaps.map(({ key, a, b, files }) => (
-            <li key={key} className="flex min-w-0 items-center gap-1 text-status-needs">
+            <li key={key} className="flex min-w-0 items-center gap-1 text-muted-foreground">
               <CircleAlert aria-hidden className="size-icon-row shrink-0" />
-              <WorkerLink threadId={a.threadId} className="text-status-needs">
+              <WorkerLink threadId={a.threadId} className="text-foreground">
                 {a.title}
               </WorkerLink>
               and
-              <WorkerLink threadId={b.threadId} className="text-status-needs">
+              <WorkerLink threadId={b.threadId} className="text-foreground">
                 {b.title}
               </WorkerLink>
               <span className="truncate font-mono">· {filesText(files)}</span>
@@ -405,14 +412,14 @@ export function FeatureCardView({
           {foreign.map(({ worker, other, files }) => (
             <li
               key={`${worker.threadId} ${other}`}
-              className="flex min-w-0 items-center gap-1 text-status-needs"
+              className="flex min-w-0 items-center gap-1 text-muted-foreground"
             >
               <CircleAlert aria-hidden className="size-icon-row shrink-0" />
-              <WorkerLink threadId={worker.threadId} className="text-status-needs">
+              <WorkerLink threadId={worker.threadId} className="text-foreground">
                 {worker.title}
               </WorkerLink>
               and
-              <WorkerLink threadId={other} className="text-status-needs">
+              <WorkerLink threadId={other} className="text-foreground">
                 {workerTitle?.(other) ?? "another worker"}
               </WorkerLink>
               <span className="truncate font-mono">· {filesText(files)}</span>
@@ -428,7 +435,7 @@ const LINE_ICON: Record<StreamLine["kind"], { icon: LucideIcon; className: strin
   merged: { icon: PR_STATE_DISPLAY.merged.icon, className: PR_STATE_DISPLAY.merged.tone },
   delivered: { icon: CircleCheck, className: "text-success" },
   failed: { icon: CircleX, className: "text-destructive" },
-  ask: { icon: CircleAlert, className: "text-status-needs" },
+  ask: { icon: Hand, className: "text-status-needs" },
   paused: { icon: CirclePause, className: "text-muted-foreground" },
 };
 

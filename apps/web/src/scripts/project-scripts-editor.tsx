@@ -6,7 +6,7 @@ import {
   type ProjectScript,
   type ScriptSuggestion,
 } from "@gram/contracts";
-import { Pencil, Plus, Trash2, X } from "lucide-react";
+import { Pencil, Trash2, X } from "lucide-react";
 import { useId, useState, type KeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -175,7 +175,6 @@ export function ProjectScriptsEditor({ projectId }: { projectId: ProjectId }) {
           disabled={saving}
           onClick={() => setEditing("new")}
         >
-          <Plus data-icon="inline-start" />
           Add project script
         </Button>
       )}

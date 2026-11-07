@@ -1454,7 +1454,7 @@ function SendGlyph({ action }: { action: Exclude<SendAction, "stop"> }) {
     case "steer":
       return <Send aria-hidden className="size-icon-row" />;
     case "send":
-      return <ArrowUp aria-hidden className="size-icon-row" strokeWidth={2.25} />;
+      return <ArrowUp aria-hidden className="size-icon-row" />;
   }
 }
 

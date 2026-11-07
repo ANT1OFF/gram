@@ -64,6 +64,7 @@ import { ROW } from "./overview-section";
 import { peek } from "./peek-store";
 import { workingWorkerThreads } from "./tree-model";
 import { needsYouScope, needsYouSpoken } from "./needs-you-entry";
+import { asksAmong } from "./needs-you-items";
 import { useNeedsYouCounts, useNeedsYouPill } from "./use-needs-you";
 import { ledgerSlotsText } from "./overview-extras-model";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
@@ -78,7 +79,7 @@ import { useWorkspaces } from "./use-orchestration";
 const STOP = { [OVERVIEW_STOP]: "" };
 
 /**
- * The overview's compact rail: Hide sidebar in the toggle's spot, Usage and Settings, Expand overview,
+ * The overview's compact rail: Hide sidebar in the toggle's spot, Usage and Settings, Expand sidebar,
  * Needs you, a tile per workspace, then the solo threads'.
  */
 export function OverviewRail() {
@@ -125,14 +126,14 @@ export function OverviewRail() {
         {/* Settings follows the toggle, as it follows it in the open header. */}
         <TopLeftNav className="shrink-0 flex-col" />
         <Hint
-          label="Expand overview"
+          label="Expand sidebar: workspaces as rows"
           side="right"
           render={
             <Button
               variant="ghost"
               size="icon-sm"
               {...STOP}
-              aria-label="Expand overview"
+              aria-label="Expand sidebar"
               data-testid="overview-expand"
               className="shrink-0 text-muted-foreground"
               onClick={() => switchOverview("open")}
@@ -162,6 +163,7 @@ function RailNeedsYou() {
   // The sidebar's words, which a number alone stands for here: the rail has room for no more.
   const label = needsYouSpoken(count, parts);
   const scope = needsYouScope(count, where);
+  const asks = asksAmong(count, parts);
   // Nothing waiting, it stays as a quiet grey pill, so the tiles don't jump.
   return (
     <button
@@ -169,12 +171,14 @@ function RailNeedsYou() {
       {...STOP}
       data-testid="overview-rail-needs-you"
       data-count={count}
+      data-asks={asks || undefined}
       aria-label={label}
       title={`${withHint(action, hint)}\n${scope}`}
       onClick={openAsks}
       className={cn(
         "h-5 min-w-7 shrink-0 rounded-full px-1.5 text-caption leading-5 font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        count > 0
+        // Amber only while something asks: errors alone keep the quiet pill (one alarm each).
+        asks
           ? "bg-status-needs text-background hover:bg-status-needs/85"
           : "bg-sidebar-block text-muted-foreground hover:bg-sidebar-row-hover",
       )}

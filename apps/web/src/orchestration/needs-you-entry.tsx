@@ -3,6 +3,7 @@ import type { ComponentProps } from "react";
 import { withHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 
+import { asksAmong, isErrorPart } from "./needs-you-items";
 import { useNeedsYouPill } from "./use-needs-you";
 
 // What needs you has one way in and one wording, an amber dot before it, wherever it shows: its
@@ -59,6 +60,10 @@ export function NeedsYouEntry({
   const { count, parts, scope: where, label, hint, openAsks } = useNeedsYouPill();
   if (variant === "chip" && count === 0) return null;
   const words = needsYouPillWords(count, parts, KINDS_SHOWN[variant]);
+  // One alarm per failure: an error's is its card and its thread's red dot, so only what asks
+  // tints. Errors alone leave the entry neutral; beside an ask, their words stay muted.
+  const asks = asksAmong(count, parts);
+  const byKind = count > 0 && words === parts.join(" · ") && parts.length > 0;
   return (
     <button
       type="button"
@@ -72,16 +77,36 @@ export function NeedsYouEntry({
         variant === "row"
           ? "h-8 w-full rounded-(--radius-md) px-1.5"
           : "h-7 rounded-full px-2.5 text-meta",
-        count > 0
+        // The sidebar's pill outlines in amber while something asks; in a bar the dot and the
+        // asks' words are the one amber mark, the pill itself neutral like the bar around it.
+        variant === "row" && asks
           ? "border-status-needs-mark/60 font-medium text-status-needs hover:bg-status-needs-mark/10"
-          : "border-transparent text-muted-foreground hover:bg-sidebar-row-hover",
+          : variant === "chip"
+            ? cn(
+                "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground aria-pressed:bg-accent",
+                asks && "font-medium",
+              )
+            : "border-transparent text-muted-foreground hover:bg-sidebar-row-hover",
         className,
       )}
     >
-      {count > 0 && (
-        <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-needs-mark" />
-      )}
-      <span className="min-w-0 flex-1 truncate">{words}</span>
+      {asks && <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-needs-mark" />}
+      <span className="min-w-0 flex-1 truncate">
+        {byKind ? (
+          parts.map((part, index) => (
+            <span key={part}>
+              {index > 0 && <span className="text-muted-foreground"> · </span>}
+              <span className={isErrorPart(part) ? "text-muted-foreground" : "text-status-needs"}>
+                {part}
+              </span>
+            </span>
+          ))
+        ) : asks && variant === "chip" ? (
+          <span className="text-status-needs">{words}</span>
+        ) : (
+          words
+        )}
+      </span>
     </button>
   );
 }

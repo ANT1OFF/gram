@@ -556,7 +556,7 @@ test("message stepping and search own their scroll after a conversation jump", a
 test("the rail switches at actual 959 and 960 px pane widths", async ({ page }) => {
   await open(page, 8);
   // Fix the overview mode so its automatic breakpoint cannot change the pane-width calculation.
-  await page.getByRole("button", { name: "Compact overview", exact: true }).click();
+  await page.getByRole("button", { name: "Compact sidebar", exact: true }).click();
   const transcript = page.getByTestId("transcript");
   const rail = page.getByTestId("conversation-rail");
   const initial = (await transcript.boundingBox())!.width;

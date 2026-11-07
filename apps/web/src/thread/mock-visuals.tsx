@@ -194,7 +194,6 @@ export function OptionGallery({
                   className="-ml-1.5 self-start"
                   onClick={() => open(threadId, option.preview!)}
                 >
-                  <ExternalLink data-icon="inline-start" />
                   Open mock
                 </Button>
               )}
@@ -213,7 +212,6 @@ export function OptionGallery({
           title={pathName(mock)}
           onClick={() => page !== undefined && open(threadId, page)}
         >
-          <LayoutDashboard data-icon="inline-start" />
           Open mocks
         </Button>
       )}
@@ -316,7 +314,6 @@ export function MockCard({ threadId, mock }: { threadId: ThreadId; mock: MockCar
           data-testid="mock-open-preview"
           onClick={() => openAt(undefined)}
         >
-          <ExternalLink data-icon="inline-start" />
           Open in Preview
         </Button>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">

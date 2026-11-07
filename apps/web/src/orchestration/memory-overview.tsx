@@ -1,6 +1,6 @@
 import type { MemoryFileInfo, WorkspaceId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Pencil } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useRef, type ComponentProps } from "react";
 
 import { useApi } from "@/api/context";
@@ -151,7 +151,6 @@ function OverviewFile({
           aria-label={`Edit ${file.path}`}
           onClick={onOpen}
         >
-          <Pencil data-icon="inline-start" />
           Edit
         </Button>
       </header>
