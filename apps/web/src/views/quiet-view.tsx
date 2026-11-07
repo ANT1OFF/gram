@@ -12,8 +12,16 @@ import { showInboxAsk } from "@/inbox/inbox-store";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { DrawnCheck, Swap } from "@/motion";
-import { CHOICE, clock, plainKeysReach, SETTLE_MS, types } from "@/orchestration/ask-keys";
-import { AskChoices, Kbd, MoreText, plainHint, SendAnswer } from "@/orchestration/ask-choices";
+import {
+  CHOICE,
+  clock,
+  keyedByShortcut,
+  plainKeysReach,
+  SETTLE_MS,
+  shortcutOptionAt,
+  types,
+} from "@/orchestration/ask-keys";
+import { AskChoices, Kbd, MoreText, optionHint, SendAnswer } from "@/orchestration/ask-choices";
 import {
   answerRule,
   askKeysByThread,
@@ -226,7 +234,15 @@ export function QuietView({ workspaceId }: ViewProps) {
     const sending = mod && event.key === "Enter";
     if (mod && !sending) return;
     const key = event.key.toLowerCase();
-    const number = !mod && /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : undefined;
+    // An approval's verbs answer to their own keys, the thread card's, and act on the press.
+    const verb = mod ? -1 : shortcutOptionAt(card.ask.options, event);
+    const keyed = keyedByShortcut(card.ask.options);
+    const number =
+      verb >= 0
+        ? verb
+        : !mod && !keyed && /^[1-9]$/.test(event.key)
+          ? Number(event.key) - 1
+          : undefined;
     const toReply = !mod && event.key === "Enter" && card.ask.freeForm !== undefined;
     if (!sending && !toReply && number === undefined && key !== "o" && event.key !== "ArrowRight") {
       return;
@@ -256,7 +272,7 @@ export function QuietView({ workspaceId }: ViewProps) {
     const option = at === undefined ? undefined : card.ask.options[at];
     if (option === undefined || at === undefined) return;
     take();
-    if (sending) choose(card, option);
+    if (sending || verb >= 0) choose(card, option);
     else setPick({ key: card.ask.key, index: at });
   });
   useEffect(() => {
@@ -369,7 +385,9 @@ function QuietCard({
   const listed = rule === "pick" || choiceLayout(ask.options) === "list";
   const pickedOption = picked === undefined ? undefined : ask.options[picked];
   const hintOf = (index: number) =>
-    rule === "act" && index === picked ? formatKeys("mod+enter") : plainHint(index);
+    rule === "act" && index === picked
+      ? formatKeys("mod+enter")
+      : optionHint(ask.options[index], index);
   return (
     <section
       data-testid="quiet-card"

@@ -37,7 +37,7 @@ test("a call held at its approval waits, then runs and finishes once allowed", a
   await expect(done.last().locator('[title="Done"]')).toBeVisible();
 });
 
-test("the card sits under the row it decides, and Enter answers it there", async ({ page }) => {
+test("the card sits under the row it decides, and its key 1 answers it there", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const card = page.getByTestId("approval-card");
   await card.waitFor();
@@ -50,10 +50,21 @@ test("the card sits under the row it decides, and Enter answers it there", async
   const row = page.locator('[data-testid="tool-card"][data-tool="Bash"]').last();
   const [rowBox, cardBox] = [await row.boundingBox(), await card.boundingBox()];
   expect(cardBox!.y - (rowBox!.y + rowBox!.height)).toBeLessThan(16);
-  // On screen and selected, it takes Enter, measured when the key is pressed.
+  // On screen and selected, it takes its key, measured when the key is pressed.
   expect(await card.evaluate((element) => element.closest("[hidden], [inert]"))).toBeNull();
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("1");
   await expect(card).toHaveCount(0);
   await expect(page.getByTestId("approval-receipt")).toContainText("Allowed once");
+});
+
+test("answered with a click, focus goes on to the composer rather than the page", async ({
+  page,
+}) => {
+  await page.goto("/t/t-flaky");
+  const card = page.getByTestId("approval-card");
+  await card.waitFor();
+  await card.getByTestId("approval-allow").click();
+  await expect(card).toHaveCount(0);
+  await expect(page.getByLabel("Message", { exact: true })).toBeFocused();
 });

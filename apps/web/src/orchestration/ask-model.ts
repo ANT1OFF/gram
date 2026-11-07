@@ -61,7 +61,15 @@ export interface AskOption {
   readonly description?: string | undefined;
   /** The asker's own pick. */
   readonly recommended?: boolean | undefined;
+  /**
+   * An approval's verb: the shortcut that answers it, the thread card's own, so its key is the same
+   * wherever the approval is answered and acts on the press. Without one, a number picks it.
+   */
+  readonly shortcut?: ApprovalShortcut | undefined;
 }
+
+/** The shortcuts of an approval's verbs (`keyboard/catalog.ts`): 1, 2 and 3 unless rebound. */
+export type ApprovalShortcut = "approval.allow" | "approval.always" | "approval.deny";
 
 /** Past this, a label no longer sits in a row of buttons. */
 export const ROW_LABEL_MAX = 20;
@@ -279,6 +287,7 @@ export const askOf = (group: InboxGroup): Ask => {
               label: alwaysAllowOpenLabel(alwaysRules(request).length),
               done: "Opened",
               action: { kind: "open", threadId: first.threadId, always: true },
+              shortcut: "approval.always",
             },
           ]
         : [];
@@ -287,12 +296,14 @@ export const askOf = (group: InboxGroup): Ask => {
         label: allowOnceLabel(n),
         done: allowedOnceDone(n),
         action: { kind: "group", decision: "allow" },
+        shortcut: "approval.allow",
       },
       ...always,
       {
         label: DENY,
         done: deniedDone(n),
         action: { kind: "group", decision: "deny" },
+        shortcut: "approval.deny",
       },
     ];
     const summary = appToolSummary(request);

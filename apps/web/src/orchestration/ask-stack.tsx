@@ -19,7 +19,7 @@ import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 import { OptionGallery } from "@/thread/mock-visuals";
 
-import { AskChoices, MoreText, plainHint, SendAnswer } from "./ask-choices";
+import { AskChoices, MoreText, optionHint, SendAnswer } from "./ask-choices";
 import {
   answerRule,
   replyChips,
@@ -274,9 +274,10 @@ export function AskDetails({ ask, open = false }: { ask: Ask; open?: boolean }) 
 /** Which keys answer now: plain ones, the composer's modifiers, or none while focus types elsewhere. */
 type KeyHints = "plain" | "composer" | undefined;
 
-const hintOf = (hints: KeyHints, index: number): string | undefined => {
+const hintOf = (hints: KeyHints, options: readonly AskOption[], index: number) => {
   if (hints === undefined || index > 8) return undefined;
-  return hints === "plain" ? plainHint(index) : formatKeys(`alt+${index + 1}`);
+  // An approval's verbs show their own keys, the thread card's, which act on the press.
+  return hints === "plain" ? optionHint(options[index], index) : formatKeys(`alt+${index + 1}`);
 };
 
 /** What sends the picked choice: ⌘⏎, in the open and in an empty composer alike. */
@@ -404,7 +405,7 @@ export function AskItem({
               : // A verb picked by its key is sent by ⌘⏎: its hint says so.
                 !pick && index === picked && sendHint !== undefined
                 ? sendHint
-                : hintOf(hints, index)
+                : hintOf(hints, ask.options, index)
           }
           onChoose={onChoose}
           picked={picked}

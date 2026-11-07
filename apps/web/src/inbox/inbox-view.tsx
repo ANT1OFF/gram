@@ -51,6 +51,7 @@ import {
   INBOX_LIST_COMPACT,
   INBOX_LIST_COMPACT_BELOW,
   INBOX_LIST_WIDTH,
+  inboxListDefault,
   inboxListWidth,
   useInboxStore,
 } from "./inbox-store";
@@ -225,7 +226,7 @@ export function InboxDock() {
       data-surface="chrome"
       aria-labelledby={titleId}
       tabIndex={-1}
-      className="flex min-h-0 flex-1 flex-col overflow-hidden border-l border-border bg-panel outline-none"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden border-l border-shell-divider bg-panel outline-none"
     >
       <div className="h-(--titlebar-height) shrink-0 [-webkit-app-region:drag]" />
       <InboxBody docked={titleId} />
@@ -255,8 +256,8 @@ function InboxBody({
   const now = useNow(true, undefined, 60_000);
   const unread = useNotificationHistory(unreadNotifications);
   const listRef = useRef<HTMLDivElement>(null);
-  // The request list beside the detail: compact (a line a request) or full, by its width, which
-  // its divider drags and Compact list toggles.
+  // The request list beside the detail: full (two lines a request) or compact (one), by its width,
+  // which its divider drags and Compact list toggles.
   const listWidth = inboxListWidth(
     useInboxStore((s) => s.listWidth),
     docked,
@@ -346,9 +347,16 @@ function InboxBody({
     }
   };
 
+  // The strip, when it shows, sits right under the header: one line between the two, under it.
+  const strip = !showLater && sections.length > 1;
   return (
     <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+      <header
+        className={cn(
+          "flex shrink-0 items-center gap-2 px-3",
+          strip ? "pt-2" : "border-b border-shell-divider py-2",
+        )}
+      >
         <InboxIcon aria-hidden className="size-icon-row text-muted-foreground" />
         {docked ? (
           <h2 id={titleId} className="text-title">
@@ -397,7 +405,7 @@ function InboxBody({
                 aria-label="Compact list"
                 data-testid="inbox-compact"
                 onClick={() =>
-                  setListWidth(compact ? INBOX_LIST_WIDTH.default : INBOX_LIST_COMPACT)
+                  setListWidth(compact ? inboxListDefault(docked) : INBOX_LIST_COMPACT)
                 }
               />
             }
@@ -405,21 +413,27 @@ function InboxBody({
             {compact ? <PanelLeftOpen aria-hidden /> : <PanelLeftClose aria-hidden />}
           </Hint>
         )}
-        <Button
-          size="xs"
-          variant="ghost"
-          data-testid="inbox-notifications"
-          aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
-          title="Notification history, in the side panel"
-          onClick={() => {
-            useInboxStore.getState().close();
-            useLayoutStore.getState().revealPanel("notifications");
-          }}
+        {/* A way out to the history, not a peer of the Inbox's own controls: its glyph, named on
+            hover, with the unread count beside it while there is one. */}
+        <Hint
+          label="Notification history, in the side panel"
+          side="bottom"
+          render={
+            <Button
+              size={unread > 0 ? "xs" : "icon-xs"}
+              variant="ghost"
+              data-testid="inbox-notifications"
+              aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+              onClick={() => {
+                useInboxStore.getState().close();
+                useLayoutStore.getState().revealPanel("notifications");
+              }}
+            />
+          }
         >
-          <Bell aria-hidden data-icon="inline-start" />
-          Notifications
+          <Bell aria-hidden data-icon={unread > 0 ? "inline-start" : undefined} />
           {unread > 0 && <span className="tabular-nums">{unread}</span>}
-        </Button>
+        </Hint>
         {docked ? (
           <Button {...CLOSE} onClick={() => useInboxStore.getState().close()}>
             <X aria-hidden />
@@ -430,12 +444,12 @@ function InboxBody({
           </Dialog.Close>
         )}
       </header>
-      {!showLater && sections.length > 1 && (
+      {strip && (
         <NeedsYouStrip
           sections={sections}
           category={category}
           onPick={setCategory}
-          className="shrink-0 border-b border-border px-2 py-1"
+          className="shrink-0 border-b border-shell-divider px-2 pt-0.5 pb-1"
         />
       )}
       {showLater ? (
@@ -446,7 +460,7 @@ function InboxBody({
         <div className="relative flex min-h-0 flex-1">
           {/* The detail keeps room for an answer's choices however wide the list is dragged. */}
           <div
-            className="flex min-h-0 max-w-[calc(100%-18rem)] shrink-0 flex-col border-r border-border"
+            className="flex min-h-0 max-w-[calc(100%-18rem)] shrink-0 flex-col border-r border-shell-divider"
             style={{ width: listWidth }}
           >
             <div
@@ -483,7 +497,9 @@ function InboxBody({
               ))}
             </div>
           </div>
-          <div className="flex min-w-0 flex-1 flex-col">
+          {/* The request picked is the one thing here to act on: docked, it sits on the page's
+              surface, as the thread beside it does, and the list stays on the panel's chrome. */}
+          <div className={cn("flex min-w-0 flex-1 flex-col", docked && "bg-thread")}>
             {current !== undefined && (
               <InboxDetail item={current} now={now} docked={docked} onOpenThread={jump} />
             )}
@@ -507,10 +523,10 @@ function InboxBody({
           </div>
         </div>
       )}
-      <NeedsYouUndo className="shrink-0 border-t border-border py-1" />
+      <NeedsYouUndo className="shrink-0 border-t border-shell-divider py-1" />
       <div
         data-testid="inbox-keys"
-        className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 border-t border-border px-3 py-1.5 text-meta text-muted-foreground"
+        className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 border-t border-shell-divider px-3 py-1.5 text-caption text-muted-foreground"
       >
         <span>
           <kbd className="font-sans">j k</kbd> move
@@ -536,16 +552,16 @@ function InboxBody({
 }
 
 /**
- * What a row says of its kind, in words, where neither its section's heading nor the rest of the
- * row already does: not "Approval" under Approvals, nor "Plan to review" when its title says it. A
- * question's heading says it, and its thread says who asks; an error's heading says it.
+ * What a row says of its kind, in words, where its section's heading doesn't already say it: not
+ * "Approval" under Approvals, nor "Plan to review" when its title says it, but "Worker question"
+ * under Questions, which is more than the heading says. An error's heading says it.
  */
 const rowKind = (
   item: NeedsYouItem,
   section: NeedsYouSection,
   title: string,
 ): string | undefined => {
-  if (item.kind === "question" || item.kind === "failure") return undefined;
+  if (item.kind === "failure") return undefined;
   const label = kindOf(item).label;
   const heading = section.label.toLowerCase();
   const said = heading === label.toLowerCase() || heading === `${label.toLowerCase()}s`;
@@ -553,9 +569,11 @@ const rowKind = (
 };
 
 /**
- * One row of the list, two short lines: what it is about and how long ago, then its kind where the
- * heading doesn't say it, its workspace and its thread. The whole question, its choices and its
- * command's arguments are the detail pane's. A click shows it.
+ * One row of the list, two lines: what it is about, wrapping to a second line before it is cut,
+ * then where it is from (its workspace, its kind where the heading doesn't say it, its thread) with
+ * its age at the line's end. Its hover says the whole of it. The whole question, its choices and
+ * its command's arguments are the detail pane's. A click shows it. Compact, a row is its title
+ * alone, one line.
  */
 function InboxRow({
   item,
@@ -578,13 +596,21 @@ function InboxRow({
   const kind = kindOf(item);
   const title = briefTitle(item);
   const where = [
-    rowKind(item, section, title),
     item.workspace,
+    rowKind(item, section, title),
     item.where === "" ? undefined : item.where,
     item.owned || item.kind !== "failure" ? undefined : "no live worker",
   ]
-    .filter((part) => part !== undefined)
+    .filter((part) => part !== undefined && part !== "")
     .join(" · ");
+  const age = item.at === undefined ? undefined : formatRelative(item.at, now);
+  // The hover says the whole of it: the full request, not the list's short form, and where from.
+  const whole = [
+    [item.title, item.command].filter(Boolean).join(" "),
+    [where, age].filter(Boolean).join(" · "),
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
     <div
       id={`inbox-row-${index}`}
@@ -596,13 +622,11 @@ function InboxRow({
       data-thread-id={item.threadId}
       data-workspace={item.workspaceId}
       data-selected={selected || undefined}
-      title={compact ? [title, where].filter(Boolean).join("\n") : undefined}
+      title={whole}
       onClick={onSelect}
       className={cn(
-        "grid cursor-default items-start gap-x-2 rounded-(--radius-md) px-2",
-        compact
-          ? "min-h-7 grid-cols-[1rem_minmax(0,1fr)] py-1"
-          : "min-h-9 grid-cols-[1rem_minmax(0,1fr)_auto] py-1.5",
+        "grid cursor-default grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2 rounded-(--radius-md) px-2",
+        compact ? "min-h-7 py-1" : "py-1.5",
         selected ? "row-cursor" : "hover:bg-accent",
       )}
     >
@@ -619,7 +643,14 @@ function InboxRow({
         )}
       />
       <span className="flex min-w-0 flex-col">
-        <span data-testid="inbox-item-title" className="truncate text-body">
+        <span
+          data-testid="inbox-item-title"
+          className={cn(
+            "text-body break-words",
+            compact ? "truncate" : "line-clamp-2",
+            selected && "font-medium",
+          )}
+        >
           {title}
           {item.command !== undefined && (
             <>
@@ -629,20 +660,25 @@ function InboxRow({
           )}
         </span>
         <span
-          data-testid="inbox-item-where"
           className={cn(
-            compact ? "sr-only" : "truncate text-meta text-muted-foreground",
-            !item.owned && "italic",
+            compact
+              ? "sr-only"
+              : "flex min-w-0 items-baseline gap-2 text-meta text-muted-foreground",
           )}
         >
-          {where}
+          <span
+            data-testid="inbox-item-where"
+            className={cn("min-w-0 flex-1 truncate", !item.owned && "italic")}
+          >
+            {where}
+          </span>
+          {age !== undefined && (
+            <span data-testid="inbox-item-age" className="shrink-0 tabular-nums">
+              {age}
+            </span>
+          )}
         </span>
       </span>
-      {!compact && item.at !== undefined && (
-        <span className="text-meta leading-5 text-muted-foreground tabular-nums">
-          {formatRelative(item.at, now)}
-        </span>
-      )}
     </div>
   );
 }

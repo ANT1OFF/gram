@@ -1,4 +1,7 @@
+import { shortcutPressed } from "@/keyboard/bindings";
 import { ACTIVATABLE } from "@/keyboard/registry";
+
+import type { AskOption } from "./ask-model";
 
 // The safe-key rules the ask stack and Quiet share: a plain key answers only while focus is on
 // nothing that types or activates, and never in the wake of an answer or of a current ask that
@@ -67,3 +70,19 @@ export const answerKey = (
   choice.focus({ preventScroll: true });
   return true;
 };
+
+/**
+ * The approval verb among `options` that `event` presses, by its shortcut (1 Allow once, 2 Always
+ * allow this rule…, 3 Deny unless rebound), else -1. Its press acts, as on the thread's card.
+ */
+export const shortcutOptionAt = (
+  options: readonly Pick<AskOption, "shortcut">[],
+  event: KeyboardEvent,
+): number =>
+  options.findIndex(
+    (option) => option.shortcut !== undefined && shortcutPressed(option.shortcut, event),
+  );
+
+/** Whether `options` are an approval's verbs, which their shortcuts answer rather than 1–9. */
+export const keyedByShortcut = (options: readonly Pick<AskOption, "shortcut">[]): boolean =>
+  options.some((option) => option.shortcut !== undefined);

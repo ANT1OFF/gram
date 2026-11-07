@@ -195,9 +195,11 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   },
   { id: "thread.rename", keys: "f2", label: "Rename thread…", group: "Thread" },
   { id: "thread.close", keys: "mod+alt+w", label: "Close thread…", group: "Thread" },
-  { id: "approval.allow", keys: "enter", label: "Allow once", group: "Thread" },
-  { id: "approval.always", keys: "alt+enter", label: "Always allow this rule…", group: "Thread" },
-  { id: "approval.deny", keys: "escape", label: "Deny", group: "Thread" },
+  // An approval's verbs, by number, as Claude Code's own prompt numbers them: the same keys answer
+  // it in the thread, the Inbox and Quiet, and each verb's button shows its key.
+  { id: "approval.allow", keys: "1", label: "Allow once", group: "Thread" },
+  { id: "approval.always", keys: "2", label: "Always allow this rule…", group: "Thread" },
+  { id: "approval.deny", keys: "3", label: "Deny", group: "Thread" },
   {
     id: "composer.send",
     keys: "mod+enter",

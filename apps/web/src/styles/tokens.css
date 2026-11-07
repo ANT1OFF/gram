@@ -195,6 +195,9 @@
   --panel-bg: var(--chrome-bg);
   --panel-tab-indicator: var(--accent);
 
+  /* The lines that split the shell's columns and a docked surface's zones (the Inbox's header, list
+     and footer): a plain divider in dark, a step firmer in light (below), where a subtle border on
+     pale chrome blends with the faint edges inside it. */
   --shell-divider: var(--border-subtle);
   --titlebar-height: 2.5rem;
   /* What macOS's window buttons cover at the window's top left, in CSS pixels at the page's zoom;
@@ -238,6 +241,7 @@
   --selected-bg: color-mix(in oklab, var(--accent) 20%, var(--surface-3));
   --sidebar-row-active: color-mix(in oklab, var(--fg) 7%, var(--surface-3));
   --sidebar-divider: color-mix(in srgb, var(--border-strong) 40%, var(--border-subtle));
+  --shell-divider: color-mix(in srgb, var(--border-strong) 30%, var(--border-subtle));
 }
 
 [data-mode="light"][data-contrast="more"] {
@@ -249,6 +253,7 @@
 }
 
 [data-contrast="more"] {
+  --shell-divider: var(--border-strong);
   --edge-raised: var(--border-strong);
   --edge-group: var(--border-strong);
   --edge-action: var(--border-strong);
@@ -261,6 +266,7 @@
 @media (forced-colors: active) {
   :root {
     --elevation-modal: none;
+    --shell-divider: CanvasText;
     --edge-raised: CanvasText;
     --edge-action: CanvasText;
     --edge-group: CanvasText;
