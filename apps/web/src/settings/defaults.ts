@@ -19,6 +19,7 @@ import {
   overviewSidebarOf,
   reviewRequestsOn,
   sendKeyOf,
+  settleAfterDaysOf,
   transcriptTextSizeOf,
   transcriptWidthOf,
   type Settings,
@@ -119,6 +120,11 @@ export const GENERAL_DEFAULTS = defaults({
     label: "Send with",
     read: sendKeyOf,
     reset: { composer: { sendKey: sendKeyOf(DEFAULT_SETTINGS) } },
+  },
+  settleAfterDays: {
+    label: "Settle idle threads",
+    read: settleAfterDaysOf,
+    reset: { layout: { settleAfterDays: null } },
   },
   panelSide: {
     label: "Side panel",

@@ -159,6 +159,12 @@ export function useScopeCommands(
           run: actions.togglePin,
         },
         {
+          id: `scope:unread:${id}`,
+          label: thread.unread ? "Mark thread read" : "Mark thread unread",
+          keywords: "unread read later remind",
+          run: actions.toggleUnread,
+        },
+        {
           id: `scope:park:${id}`,
           label: thread.parked ? "Unarchive thread" : "Archive thread",
           run: actions.togglePark,

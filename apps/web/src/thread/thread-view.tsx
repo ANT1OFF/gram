@@ -764,9 +764,8 @@ function PaneHeading({
     <h1
       aria-label={role === undefined ? undefined : `${role.name}: ${title}`}
       className="flex min-w-0 items-center gap-1.5 font-heading font-medium"
-      title={
-        gestures ? `${title}. Double-click to maximize or restore; drag to swap panes` : undefined
-      }
+      // The whole title on hover, wherever the header cuts it.
+      title={gestures ? `${title}. Double-click to maximize or restore; drag to swap panes` : title}
     >
       <RoleGlyph thread={thread} testId="pane-role" />
       <span

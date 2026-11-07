@@ -27,6 +27,7 @@ import {
   reviewRequestsOn,
   sendKeyOf,
   SettingsPatch,
+  settleAfterDaysOf,
   usageHistoryEnabled,
   type Settings,
 } from "./settings.ts";
@@ -279,6 +280,7 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   pref("layout.openAtLaunch", "Open at launch", openAtLaunchOf),
   pref("layout.quietWhenIdle", "Quiet when idle", (s) => s.layout?.quietWhenIdle ?? false),
   pref("layout.overviewSidebar", "Overview sidebar", overviewSidebarOf, "automatic"),
+  pref("layout.settleAfterDays", "Settle idle threads after (days)", settleAfterDaysOf),
   pref("notifications.native", "Desktop notifications"),
   pref("notifications.sounds", "Sounds"),
   pref("notifications.chime", "Chime", (s) => chimeOf(s.notifications)),

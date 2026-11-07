@@ -49,11 +49,13 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   workspace, a worker, a solo thread, a PR, a Done item), is its mark and title (`ROW`,
   `ROW_TITLE`), then one muted status line (`ROW_STATUS`) with what trails it at the right edge: a
   time, or its badges (a worker's PR chips) only while they fit beside the words: the status wins,
-  and the row's hover names the PR. The title has the row's whole width and wraps to a second
-  line before it is cut at its end, so its words are never split in the middle; lines are 20 px
-  (48 px a one-line title's row with its padding). What needs you is listed first, and Done
-  shows five rows before the rest fold behind "N more". Marks centre on one column and titles
-  start on one edge, the pill, Search, section titles and Open History included.
+  and the row's hover names the PR. The title has the row's whole width on one line, cut at its
+  end (never its middle) with the whole of it on hover, so every row is the same 48 px (two 20 px
+  lines with its padding) and a list of them reads as even rows. What needs you is listed first.
+  Done shows the three chats that finished last, solo threads that settled on their own
+  included, then "N more in History", which opens History on its Done chip: History is old
+  work's one home, and the palette hands its matches there too. Marks centre on one column and
+  titles start on one edge, the pill, Search, section titles and Open History included.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings and between a reply's blocks, 16 px between sections and at a
   pane's edges. A settings row takes 12 px above and below, and a page's groups sit 24 px apart
@@ -76,7 +78,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   cap, a count badge, a footer's key legend. A third, quieter level (a hint, a step's evidence, a
   pending line) is `text-subtle` (`fg-subtle`), which holds the text floor like `fg-muted`; never
   fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A title wraps to two lines before it is cut short at
-  its end, the sidebar's included, and its hover says the whole of it. Metadata a heading or the whole list already says is left out: no repo on each
+  its end, and its hover says the whole of it; a sidebar row's title keeps to one line, so its
+  rows stay even. Metadata a heading or the whole list already says is left out: no repo on each
   row when every row has the same one, no workspace under its own heading.
 - **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,
   `ShortcutKbd cap`), never a faded one; elsewhere a hint goes in the tooltip.

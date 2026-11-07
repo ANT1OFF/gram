@@ -1,6 +1,6 @@
 import type { ThreadId } from "@gram/contracts";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { useApi } from "@/api/context";
 import { useBesideSync } from "@/orchestration/beside-dock";
@@ -22,9 +22,14 @@ function ThreadPage() {
   const routeShown = useLayoutStore((s) => s.grid.panes.includes(id));
   useBesideSync();
 
+  // Opening a thread reads it, once: marked unread while open, it stays so until opened again.
+  const loaded = useThreadsStore((s) => s.byId[id] !== undefined);
+  const read = useRef<ThreadId | undefined>(undefined);
   useEffect(() => {
+    if (!loaded || read.current === id) return;
+    read.current = id;
     if (unread) void api.markUnread(id, false);
-  }, [api, id, unread]);
+  }, [api, id, loaded, unread]);
 
   // The route names the focused pane's thread: navigating loads the thread into the grid…
   useEffect(() => {

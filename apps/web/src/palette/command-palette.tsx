@@ -63,6 +63,8 @@ import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { useThreadSearch, type ThreadSearchState } from "@/thread/use-thread-search";
 import { threadDisplayTitle } from "@/thread/thread-title";
 import { toggleOverviewSidebar } from "@/views/shell-layout";
+import { inHistory } from "@/views/solo-threads";
+import { useSettleRule } from "@/views/use-settle-rule";
 import { useViewStore } from "@/views/view-store";
 
 import { useReportIssueDialog } from "@/report-issue/report-issue-dialog";
@@ -75,6 +77,7 @@ import {
   flattenSections,
   matchItems,
   PALETTE_KINDS,
+  parsePaletteQuery,
   type PaletteItem,
   type PaletteKind,
   type PalettePicker,
@@ -247,6 +250,11 @@ function PaletteBody({
   const messageSearch = useThreadSearch(searchMode ? query : "", { limit: MESSAGE_LIMIT });
   const resumeQuery = useResumableSessions(resumeRoot);
   const now = useNow(reopenIn !== undefined, undefined, 60_000);
+  const settle = useSettleRule();
+  const searchText =
+    listing && (shownKind === "all" || shownKind === "threads")
+      ? parsePaletteQuery(query).text
+      : "";
   const resolvedQuery = useQuery({
     queryKey: ["thread.listWaits", reopenIn, "all"],
     queryFn: () => api.listWaits(reopenIn!, "all"),
@@ -331,24 +339,58 @@ function PaletteBody({
     if (focusOtherWindow(threadId)) return;
     void navigate({ to: "/t/$threadId", params: { threadId } });
   };
-  const threads: PaletteItem[] = recent
+  // What is over lives in History, not beside the live threads: the lists below leave it out, and
+  // one row hands a search that matches any of it to History, searching the same words there.
+  const live = recent.filter((summary) => !inHistory(summary, settle));
+  const pastMatches =
+    searchText === ""
+      ? 0
+      : matchItems(
+          recent
+            .filter((summary) => inHistory(summary, settle))
+            .map((summary) => ({
+              id: summary.thread.id,
+              label: summary.thread.title,
+              keywords: `${summary.thread.checkout.branch ?? ""} ${projectNameOf(projects, summary.thread.projectId)}`,
+              run: () => {},
+            })),
+          searchText,
+        ).length;
+  const history: PaletteItem[] =
+    pastMatches === 0
+      ? []
+      : [
+          {
+            id: "history:search",
+            label:
+              pastMatches === 1 ? "1 finished in History" : `${pastMatches} finished in History`,
+            hint: `Search History for “${searchText}”`,
+            ...shortcut("history.open"),
+            // It stands for what matched, so it matches whatever was typed.
+            keywords: searchText,
+            run: () => useHistoryStore.getState().show("all", searchText),
+          },
+        ];
+  const threadItem = (summary: ThreadSummary): PaletteItem => ({
+    id: `thread:${summary.thread.id}`,
+    ...describe(summary),
+    scope: threadScope(summary.thread),
+    run: () => goTo(summary.thread.id),
+  });
+  const workerItem = (summary: ThreadSummary): PaletteItem => ({
+    id: `worker:${summary.thread.id}`,
+    label: summary.thread.title,
+    hint: `${summary.thread.spawnedBy?.feature ?? ""} · ${statusWord(summary, statusWords)}`,
+    keywords: `${summary.thread.checkout.branch ?? ""} ${workspaceNames.get(summary.thread.workspaceId as WorkspaceId) ?? ""}`,
+    scope: threadScope(summary.thread),
+    run: () => goTo(summary.thread.id),
+  });
+  const threads: PaletteItem[] = live
     .filter(({ thread }) => thread.spawnedBy === undefined)
-    .map((summary) => ({
-      id: `thread:${summary.thread.id}`,
-      ...describe(summary),
-      scope: threadScope(summary.thread),
-      run: () => goTo(summary.thread.id),
-    }));
-  const workers: PaletteItem[] = recent
+    .map(threadItem);
+  const workers: PaletteItem[] = live
     .filter(({ thread }) => thread.spawnedBy !== undefined)
-    .map((summary) => ({
-      id: `worker:${summary.thread.id}`,
-      label: summary.thread.title,
-      hint: `${summary.thread.spawnedBy?.feature ?? ""} · ${statusWord(summary, statusWords)}`,
-      keywords: `${summary.thread.checkout.branch ?? ""} ${workspaceNames.get(summary.thread.workspaceId as WorkspaceId) ?? ""}`,
-      scope: threadScope(summary.thread),
-      run: () => goTo(summary.thread.id),
-    }));
+    .map(workerItem);
   // A feature is the workers spawned for it, in each workspace that is listed.
   const featureWorkers = new Map<
     string,
@@ -933,6 +975,7 @@ function PaletteBody({
                     {
                       destinations,
                       threads,
+                      history,
                       workers,
                       features,
                       prs,
@@ -957,12 +1000,9 @@ function PaletteBody({
     const filtered: PaletteItem[] = recent.flatMap((summary) => {
       const kind = summary.thread.spawnedBy === undefined ? "thread" : "worker";
       const candidates: { kind: string; item: PaletteItem; at?: number }[] = [
-        {
-          kind,
-          item: [...threads, ...workers].find(
-            (item) => item.id === `${kind}:${summary.thread.id}`,
-          )!,
-        },
+        // Words like "merged this week" ask after old work too, so a thread History holds is a
+        // match here, opening where it is.
+        { kind, item: kind === "thread" ? threadItem(summary) : workerItem(summary) },
         ...prs
           .filter((item) => item.id === `pr:${summary.thread.id}`)
           .map((item) => ({ kind: "pr", item })),

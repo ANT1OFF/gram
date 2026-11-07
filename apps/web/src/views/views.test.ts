@@ -1,7 +1,7 @@
 import type { ThreadSummary, WorkspaceState } from "@gram/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { doneSoloThreads, parkedSoloThreads, soloThreads } from "./solo-threads";
+import { doneSoloThreads, inHistory, parkedSoloThreads, soloThreads } from "./solo-threads";
 import { chatRoute, switcherChecked, useViewStore } from "./view-store";
 import { viewWorkspace } from "./view-workspace";
 
@@ -147,5 +147,37 @@ describe("soloThreads", () => {
     expect(ids(soloThreads(threads, new Set()))).toEqual(["asking", "pinned", "open", "resumed"]);
     expect(ids(doneSoloThreads(threads, new Set()))).toEqual(["done"]);
     expect(ids(parkedSoloThreads(threads, new Set()))).toEqual(["parked"]);
+  });
+
+  it("settles a thread idle past the rule's days into History, unless it is kept", () => {
+    // A pinned clock: the rule's `now`, never Date.now().
+    const DAY = 86_400_000;
+    const now = Date.UTC(2026, 10, 7, 12);
+    const rule = { now, days: 7 };
+    const threads = [
+      summary("fresh", {}, now - 6 * DAY),
+      summary("stale", {}, now - 8 * DAY),
+      summary("pinned", { pinned: true }, now - 30 * DAY),
+      summary("unread", { unread: true }, now - 30 * DAY),
+      summary("asking", {}, now - 30 * DAY, "needsInput"),
+      summary("running", {}, now - 30 * DAY, "running"),
+    ];
+    expect(ids(soloThreads(threads, new Set(), rule))).toEqual([
+      "asking",
+      "fresh",
+      "pinned",
+      "unread",
+      "running",
+    ]);
+    expect(threads.filter((each) => inHistory(each, rule)).map((each) => each.thread.id)).toEqual([
+      "stale",
+    ]);
+    // Turned off, nothing idle settles; without a rule, nothing does.
+    expect(ids(soloThreads(threads, new Set(), { now, days: 0 }))).toContain("stale");
+    expect(ids(soloThreads(threads, new Set()))).toContain("stale");
+    // New activity brings it back.
+    expect(ids(soloThreads(threads, new Set(), { now: now - 2 * DAY, days: 7 }))).toContain(
+      "stale",
+    );
   });
 });

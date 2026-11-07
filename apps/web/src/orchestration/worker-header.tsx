@@ -124,7 +124,7 @@ export function WorkerCrumbs({
       title={
         gestures
           ? `${thread.title}. Double-click to maximize or restore; drag to swap panes`
-          : undefined
+          : thread.title
       }
     >
       <RoleGlyph thread={thread} testId="pane-role" />
