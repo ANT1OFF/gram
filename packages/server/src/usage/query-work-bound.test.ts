@@ -14,7 +14,7 @@ const NOW = Date.parse("2026-10-12T12:00:00Z");
 // Execute the production statement with native JSON functions counted, as in the
 // independent review oracle. No elapsed-time threshold or transcript inference.
 const source = readFileSync(new URL("./query.ts", import.meta.url), "utf8");
-const statement = source.match(/const records = yield\* sql<[^`]+>`([\s\S]+?)`;/)?.[1];
+const statement = source.match(/const statement = sql<[^`]+>`([\s\S]+?)`;/)?.[1];
 if (statement === undefined) throw new Error("Usage statement not found");
 const bindings: Record<string, number> = {
   from: NOW - 86_400_000,

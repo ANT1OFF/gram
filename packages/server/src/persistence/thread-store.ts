@@ -75,6 +75,7 @@ import { MigrationsLayer } from "./migrations.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
+import { captureReadWorker, layer as readWorkerLayer, withReadWorker } from "./read-worker.ts";
 import { readUsageOverview } from "../usage/query.ts";
 import type { UsageHistoryInput } from "../usage/history-reader.ts";
 import {
@@ -950,6 +951,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
     ThreadStore,
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
+      const reads = withReadWorker(yield* captureReadWorker);
       const unreadable = makeUnreadableLog();
       const receiptScope = yield* Effect.scope;
       // The data methods below use one statement or one top-level transaction; nothing nests.
@@ -1858,7 +1860,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         usageOverview: (query, history) =>
           run(
-            readUsageOverview(query, history).pipe(Effect.provideService(SqlClient.SqlClient, sql)),
+            readUsageOverview(query, history).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              reads,
+            ),
           ),
         ensureProject,
         registerProject,
@@ -3289,6 +3294,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const initialize = (sql: SqlClient.SqlClient) =>
         configurePageCache(sql).pipe(Effect.andThen(policy.apply(sql)));
       return ThreadStore.layerNoDeps.pipe(
+        // Above the client: its worker's connection is closed before the client's, whose close
+        // then checkpoints the whole WAL with no other reader on the file.
+        Layer.provideMerge(
+          options.checkpointOffLoop === true ? readWorkerLayer(filename) : Layer.empty,
+        ),
         Layer.provideMerge(SearchCatchUp),
         Layer.provideMerge(MigrationsLayer),
         Layer.provideMerge(

@@ -28,6 +28,7 @@ import { redactText } from "../logging/redact.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient } from "../platform/unstable.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { captureReadWorker, withReadWorker } from "../persistence/read-worker.ts";
 import { searchThreads } from "../search/search.ts";
 import { defineAppTool } from "./definition.ts";
 import { AppToolRegistry } from "./registry.ts";
@@ -154,6 +155,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
     const checkpoints = yield* Checkpoints;
     const proc = yield* Proc;
     const sql = yield* SqlClient.SqlClient;
+    const reads = withReadWorker(yield* captureReadWorker);
     const provideGit = <A, E>(effect: Effect.Effect<A, E, Proc | Checkpoints>) =>
       effect.pipe(
         Effect.provideService(Proc, proc),
@@ -533,6 +535,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
       handle: (_threadId, { query, limit = 20 }) =>
         searchThreads({ query, limit: clamp(limit, 1, 50) }).pipe(
           Effect.provideService(SqlClient.SqlClient, sql),
+          reads,
           Effect.map((result) => ({
             hits: result.hits.map((hit) => ({
               threadId: hit.threadId,

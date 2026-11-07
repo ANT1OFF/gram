@@ -1,6 +1,7 @@
 import { InvalidState, type UsageOverviewQuery } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import { readOffLoop } from "../persistence/read-worker.ts";
 import { SqlClient } from "../platform/unstable.ts";
 import { aggregateUsage, type UsageRecord } from "./aggregate.ts";
 import { breakdownCollector, readBreakdownNames } from "./breakdown.ts";
@@ -25,7 +26,7 @@ export const readUsageOverview = (query: UsageOverviewQuery, historyInput?: Usag
         ? historyInput.to
         : yield* Clock.currentTimeMillis;
     const from = to - query.days * DAY_MS;
-    const records = yield* sql<
+    const statement = sql<
       UsageRecord & {
         readonly message_limit_exceeded: number;
         readonly payload_limit_exceeded: number;
@@ -111,6 +112,11 @@ export const readUsageOverview = (query: UsageOverviewQuery, historyInput?: Usag
       message_limit_exceeded, payload_limit_exceeded, model_limit_exceeded, selected_bytes
     FROM period p CROSS JOIN admission CROSS JOIN model_budget
       LEFT JOIN attribution a ON a.id = p.id AND a.closed = p.closed`;
+    // On the read worker when there is one: a day of turns takes hundreds of milliseconds to
+    // attribute on a large history, and the event loop would wait for it.
+    const records = yield* readOffLoop<Effect.Success<typeof statement>[number]>(
+      ...statement.compile(),
+    );
     if (records.length > USAGE_TURN_LIMIT)
       return yield* new InvalidState({
         message: "This period has more than 50,000 stored turns. Select a shorter period.",

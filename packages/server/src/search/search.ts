@@ -1,6 +1,7 @@
 import type { MessageId, ThreadId, ThreadSearchHit, ThreadSearchResult } from "@gram/contracts";
 import * as Effect from "effect/Effect";
-import { SqlClient } from "../platform/unstable.ts";
+import { readOffLoop } from "../persistence/read-worker.ts";
+import type { SqlClient } from "../platform/unstable.ts";
 
 const DEFAULT_SEARCH_LIMIT = 50;
 
@@ -80,14 +81,15 @@ export const searchThreads = ({
   Effect.gen(function* () {
     const match = toMatchQuery(query);
     if (match === undefined) return { hits: [], truncated: false };
-    const sql = yield* SqlClient.SqlClient;
     const scope = threadId === undefined ? [] : [threadId];
     const orderedRank = threadId === undefined;
 
+    // On the read worker when there is one: a global search over a long history takes hundreds of
+    // milliseconds, and the event loop would wait for it.
     // Global searches can consume FTS rank order and stop at LIMIT, using the same weights.
     // A small scope must filter first: thread_id is UNINDEXED, so global rank order does
     // unnecessary work before reaching that thread's matches. Keep its filter-then-sort plan.
-    const messageRows = yield* sql.unsafe<HitRow>(
+    const messageRows = yield* readOffLoop<HitRow>(
       `SELECT message_search.thread_id AS "threadId", message_search.message_id AS "messageId",
           CASE WHEN json_valid(threads.data) THEN json_extract(threads.data, '$.title') END
             AS "title",
@@ -100,7 +102,7 @@ export const searchThreads = ({
         LIMIT ?`,
       [match, ...scope, limit + 1],
     );
-    const titleRows = yield* sql.unsafe<HitRow>(
+    const titleRows = yield* readOffLoop<HitRow>(
       `SELECT thread_id AS "threadId", title AS "title",
           snippet(thread_title_search, 1, char(1), char(2), '…', ${SNIPPET_TOKENS}) AS "marked"
         FROM thread_title_search
