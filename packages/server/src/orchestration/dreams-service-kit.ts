@@ -15,6 +15,10 @@ import {
 import { canonicalizeOrOwned } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
+import { EventHub } from "../events/event-hub.ts";
 import type * as Scope from "effect/Scope";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
@@ -275,14 +279,28 @@ export const waitMergeSession = (count = 1) =>
 export const waitMerged = (dreamId: DreamId, path: string) =>
   Effect.gen(function* () {
     const dreams = yield* Dreams;
-    return yield* waitReal(
-      `merge of ${path}`,
-      dreams.review(dreamId).pipe(
-        Effect.map((review) => {
-          const merge = review.files.find((file) => file.path === path)?.merge;
-          return merge !== undefined && merge.status !== "running" && merge;
-        }),
+    const store = yield* ThreadStore;
+    const hub = yield* EventHub;
+    const { workspaceId } = yield* store.getDream(dreamId);
+    // The hub subscribes before replay: check once, then only on actual Dream changes. Repeated
+    // review polling revalidates and reads the whole confined tree while the merge tries to finish.
+    return yield* hub.serverEvents(Effect.succeed({ type: "dreams.changed", workspaceId })).pipe(
+      Stream.filter(
+        (event) => event.type === "dreams.changed" && event.workspaceId === workspaceId,
       ),
+      Stream.mapEffect(() => dreams.review(dreamId)),
+      Stream.map((review) => review.files.find((file) => file.path === path)?.merge),
+      Stream.filter(
+        (merge): merge is NonNullable<typeof merge> =>
+          merge !== undefined && merge.status !== "running",
+      ),
+      Stream.runHead,
+      Effect.map(Option.getOrThrow),
+      Effect.timeoutOrElse({
+        duration: 20_000,
+        orElse: () => Effect.die(new Error(`timed out waiting for merge of ${path}`)),
+      }),
+      TestClock.withLive,
     );
   });
 

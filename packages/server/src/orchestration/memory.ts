@@ -24,6 +24,7 @@
  * a dream started from: whoever needs that baseline later has to keep its own copy (`snapshot`
  * for the hashes, the dream's out-of-folder manifest for the text).
  */
+import { withAnchoredFiles } from "./anchored-files.ts";
 import { FsError, InvalidState, NotFound, type MemoryWrite } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -1310,7 +1311,9 @@ const make = (root: string): OrchestrationMemoryShape => {
           if (!checked.ok) return yield* refuse(checked.problem);
           return yield* locked(
             workspaceId,
-            adoptLocked(workspaceId, checked.files, options?.basedOn, options?.basedOnDigest),
+            withAnchoredFiles(
+              adoptLocked(workspaceId, checked.files, options?.basedOn, options?.basedOnDigest),
+            ),
           );
         }),
       ),

@@ -1,3 +1,4 @@
+import { withAnchoredFiles } from "./anchored-files.ts";
 import {
   AutomaticDreamDeferred,
   defaultDreamModel,
@@ -1338,7 +1339,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                 : { ...file, merge: merge.state };
             }),
           };
-        });
+        }).pipe(withAnchoredFiles);
 
       const review: DreamsShape["review"] = (dreamId) =>
         Effect.gen(function* () {
@@ -1364,7 +1365,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             files: found.files,
             ...(found.output.report === undefined ? {} : { report: found.output.report }),
           };
-        });
+        }).pipe(withAnchoredFiles);
 
       const cancel: DreamsShape["cancel"] = (dreamId) =>
         Effect.gen(function* () {

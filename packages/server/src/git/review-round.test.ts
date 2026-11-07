@@ -1,7 +1,9 @@
-import { afterAll, describe, expect, it } from "@effect/vitest";
-import type { PrReviewState, PrStatus, ServerEvent } from "@gram/contracts";
-import { Pr } from "@gram/git";
+import { beforeEach, describe, expect, it } from "@effect/vitest";
+import type { GitState, PrReviewState, PrStatus, ServerEvent } from "@gram/contracts";
+import { GitStateRuntime, Pr, Proc } from "@gram/git";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
+import * as TestClock from "effect/testing/TestClock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -11,7 +13,6 @@ import { makeRuntimeTestLayer } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { gitPlatformTest } from "./platform.ts";
 import { GitStatePublisher, GitStatePublisherLive } from "./publisher.ts";
-import { eventually, hasGit, makeRepo, removeDir, tempDir } from "./test-repo.ts";
 
 const counts = { unresolved: 2, blockers: 1, suggestions: 1, outdatedUnresolved: 0 };
 
@@ -58,102 +59,139 @@ const MockPr = Layer.succeed(Pr, {
   detail: () => Effect.succeed({ available: false }),
 });
 
+// Review scheduling consumes snapshots; spawning Git and subscribing to FSEvents here adds
+// unrelated work and lets real reads outlive the quiet window the test is trying to control.
+const local: GitState = {
+  repo: true,
+  worktree: false,
+  branch: "main",
+  head: "synthetic-head",
+  changesToken: "clean",
+  changedFiles: 0,
+  behindBase: 0,
+  aheadBase: 0,
+  conflicts: false,
+};
 const TestLayer = GitStatePublisherLive.pipe(
   Layer.provideMerge(makeRuntimeTestLayer()),
+  Layer.provide(
+    Layer.succeed(GitStateRuntime, {
+      local: () => Effect.succeed(local),
+      snapshot: (_cwd, options) =>
+        Effect.sync(() => {
+          const pr = options.remote ? current.badge : options.previous?.pr;
+          return pr === undefined ? local : { ...local, pr };
+        }),
+      watch: () => Stream.never,
+      present: () => Effect.succeed(true),
+    }),
+  ),
   Layer.provideMerge(
-    // Longer than a refresh takes under full-suite load, so later refreshes land inside the window.
-    gitPlatformTest({ pr: MockPr, config: { reviewRoundDebounce: Duration.seconds(3) } }),
+    gitPlatformTest({
+      pr: MockPr,
+      proc: Layer.succeed(Proc, { run: () => Effect.die("unexpected subprocess") }),
+      config: { reviewRoundDebounce: Duration.seconds(3) },
+    }),
   ),
 );
 
-describe.skipIf(!hasGit)("pr.reviewRound", () => {
-  const dirs: Array<string> = [];
-  afterAll(() => {
-    for (const dir of dirs) removeDir(dir);
+/** Await subscription before producing the states whose review rounds are observed. */
+const collectRounds = Effect.gen(function* () {
+  const hub = yield* EventHub;
+  const ready = yield* Deferred.make<void>();
+  const events = yield* Queue.unbounded<ServerEvent>();
+  yield* hub
+    .serverEvents(
+      Deferred.succeed(ready, undefined).pipe(
+        Effect.as({ type: "threads.snapshot" as const, threads: [] }),
+      ),
+    )
+    .pipe(
+      Stream.filter((event) => event.type === "pr.reviewRound"),
+      Stream.runForEach((event) => Queue.offer(events, event)),
+      Effect.forkScoped,
+    );
+  yield* Deferred.await(ready);
+  return events;
+});
+
+describe("pr.reviewRound", () => {
+  beforeEach(() => {
+    current.badge = undefined;
+    current.bound = undefined;
+    current.askedReviews = [];
   });
 
-  it.live("publishes once per completed round after the quiet window, never for the baseline", () =>
-    Effect.gen(function* () {
-      const dir = tempDir();
-      dirs.push(dir);
-      const repo = makeRepo(dir);
-      const hub = yield* EventHub;
-      const runtimes = yield* ThreadRuntimes;
-      const publisher = yield* GitStatePublisher;
-      const events = yield* Queue.unbounded<ServerEvent>();
-      yield* hub.serverEvents(Effect.succeed({ type: "threads.snapshot", threads: [] })).pipe(
-        Stream.filter((event) => event.type === "pr.reviewRound"),
-        Stream.runForEach((event) => Queue.offer(events, event)),
-        Effect.forkScoped,
-      );
-      const thread = yield* runtimes.create({
-        projectRoot: repo,
-        checkout: { kind: "main", path: repo },
-      });
+  it.effect(
+    "publishes once per completed round after the quiet window, never for the baseline",
+    () =>
+      Effect.gen(function* () {
+        const repo = "/synthetic/repo";
+        const runtimes = yield* ThreadRuntimes;
+        const publisher = yield* GitStatePublisher;
+        const events = yield* collectRounds;
+        const thread = yield* runtimes.create({
+          projectRoot: repo,
+          checkout: { kind: "main", path: repo },
+        });
 
-      current.badge = badgeWith(
-        reviewState({ latestReviewId: "PRR_1", latestVerdict: "commented" }),
-      );
-      yield* publisher.refresh(repo, { remote: true });
-      yield* Effect.sleep("150 millis");
-      expect(yield* Queue.clear(events)).toEqual([]);
+        current.badge = badgeWith(
+          reviewState({ latestReviewId: "PRR_1", latestVerdict: "commented" }),
+        );
+        yield* publisher.refresh(repo, { remote: true });
+        yield* TestClock.adjust(3000);
+        expect(yield* Queue.clear(events)).toEqual([]);
 
-      current.badge = badgeWith(reviewState({ latestReviewId: "PRR_1", roundInFlight: true }));
-      yield* publisher.refresh(repo, { remote: true });
-      current.badge = badgeWith(
-        reviewState({
-          latestReviewId: "PRR_2",
-          latestVerdict: "changesRequested",
-          verdictOnHead: "changesRequested",
-        }),
-      );
-      yield* publisher.refresh(repo, { remote: true });
-      current.badge = badgeWith(
-        reviewState({
-          latestReviewId: "PRR_2",
-          latestVerdict: "changesRequested",
-          verdictOnHead: "changesRequested",
-          threads: { ...counts, unresolved: 3 },
-        }),
-      );
-      yield* publisher.refresh(repo, { remote: true });
+        current.badge = badgeWith(reviewState({ latestReviewId: "PRR_1", roundInFlight: true }));
+        yield* publisher.refresh(repo, { remote: true });
+        current.badge = badgeWith(
+          reviewState({
+            latestReviewId: "PRR_2",
+            latestVerdict: "changesRequested",
+            verdictOnHead: "changesRequested",
+          }),
+        );
+        yield* publisher.refresh(repo, { remote: true });
+        yield* TestClock.adjust(2000);
+        expect(yield* Queue.clear(events)).toEqual([]);
+        current.badge = badgeWith(
+          reviewState({
+            latestReviewId: "PRR_2",
+            latestVerdict: "changesRequested",
+            verdictOnHead: "changesRequested",
+            threads: { ...counts, unresolved: 3 },
+          }),
+        );
+        yield* publisher.refresh(repo, { remote: true });
 
-      const round = yield* eventually(
-        "a review round",
-        Queue.clear(events).pipe(Effect.map((drained) => drained[0])),
-      );
-      expect(round).toEqual({
-        type: "pr.reviewRound",
-        threadId: thread.id,
-        round: {
-          number: 12,
-          reviewId: "PRR_2",
-          verdict: "changesRequested",
-          verdictOnHead: "changesRequested",
-          counts: { ...counts, unresolved: 3 },
-        },
-      });
-      yield* Effect.sleep("3500 millis");
-      expect(yield* Queue.clear(events)).toEqual([]);
-    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+        yield* TestClock.adjust(2999);
+        expect(yield* Queue.clear(events)).toEqual([]);
+        yield* TestClock.adjust(1);
+        const round = yield* Queue.take(events);
+        expect(round).toEqual({
+          type: "pr.reviewRound",
+          threadId: thread.id,
+          round: {
+            number: 12,
+            reviewId: "PRR_2",
+            verdict: "changesRequested",
+            verdictOnHead: "changesRequested",
+            counts: { ...counts, unresolved: 3 },
+          },
+        });
+        yield* TestClock.adjust(3500);
+        expect(yield* Queue.clear(events)).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
-  it.live(
+  it.effect(
     "detects rounds on a PR bound from another repo by its own badge, asking its reviews",
     () =>
       Effect.gen(function* () {
-        const dir = tempDir();
-        dirs.push(dir);
-        const repo = makeRepo(dir);
-        const hub = yield* EventHub;
+        const repo = "/synthetic/repo";
         const runtimes = yield* ThreadRuntimes;
         const publisher = yield* GitStatePublisher;
-        const events = yield* Queue.unbounded<ServerEvent>();
-        yield* hub.serverEvents(Effect.succeed({ type: "threads.snapshot", threads: [] })).pipe(
-          Stream.filter((event) => event.type === "pr.reviewRound"),
-          Stream.runForEach((event) => Queue.offer(events, event)),
-          Effect.forkScoped,
-        );
+        const events = yield* collectRounds;
         const thread = yield* runtimes.create({
           projectRoot: repo,
           checkout: { kind: "main", path: repo },
@@ -185,7 +223,7 @@ describe.skipIf(!hasGit)("pr.reviewRound", () => {
         );
         yield* publisher.refresh(repo, { remote: true });
         expect(current.askedReviews.at(-1)).toBe(true);
-        yield* Effect.sleep("3500 millis");
+        yield* TestClock.adjust(3500);
         expect(yield* Queue.clear(events)).toEqual([]);
 
         current.bound = badgeWith(
@@ -194,10 +232,8 @@ describe.skipIf(!hasGit)("pr.reviewRound", () => {
           13,
         );
         yield* publisher.refresh(repo, { remote: true });
-        const round = yield* eventually(
-          "a review round",
-          Queue.clear(events).pipe(Effect.map((drained) => drained[0])),
-        );
+        yield* TestClock.adjust(3000);
+        const round = yield* Queue.take(events);
         expect(round).toMatchObject({
           threadId: thread.id,
           round: { number: 13, reviewId: "PRR_2", verdictOnHead: "changesRequested" },
