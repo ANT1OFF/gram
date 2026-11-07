@@ -673,6 +673,45 @@ all. A worker offers a lasting fact for memory with `learned` on `report` (up to
 digest shows it to the orchestrator, which records it only when it holds for later work. Solo
 threads have no workspace memory.
 
+### Known limits of worker memory reads
+
+The worker read filter is defense in depth, not a guarantee. It lowers the chance that a
+credential copied into memory reaches a worker's provider through `memory_read`; it doesn't make
+memory a safe place for credentials.
+
+- **Workers can read the files directly.** A worker is a local agent CLI running as the user on
+  the same machine. Memory lives under Gram's data folder
+  (`<data>/orchestration/<workspace>/`), and the filter only governs the `memory_list` and
+  `memory_read` tools. A worker allowed to read files outside its checkout can open them there.
+- **Writes are scrubbed, more narrowly.** What Gram writes to memory (`memory_write`,
+  `memory_append`, `memory_edit` and a dream's adoption) passes through the same scrubber as
+  Gram's logs, which redacts the credential shapes it knows. That scrubber is narrower than the
+  read filter, and a file edited by hand outside Gram isn't scrubbed at all.
+- **What reviewers found, and what's left.** Independent reviews of #198, rounds 8 to 13,
+  found the classes below. Each is fixed and has a test in
+  `orchestration/memory-headers.test.ts`. Encodings and formats not yet covered may still get
+  through.
+  - Front matter that hides a private flag: a `...` close, comments, other fence styles, nested
+    or tagged YAML.
+  - Auth headers and cookies, including credential labels written with `_` as the separator or
+    inside camelCase and other compound names.
+  - Encoded credentials: escaped, percent-encoded, HTML-encoded and base64 forms, including
+    nested and mixed encodings, short or line-wrapped base64, and base64 or hex split up by
+    punctuation, list markers or quotes.
+  - Look-alike and invisible characters: full-width letters and zero-width separators.
+  - Credentials behind a delimiter left open, such as an unclosed key block or code fence.
+  - Token-shaped file and folder names.
+  - User and password pairs in URLs, including scheme-relative ones.
+  - Database connection strings, and password-file records like `.pgpass` lines.
+  - Redis, LDAP, SMTP and proxy configuration directives, and Redis `AUTH` in a prompt
+    transcript or a sentence.
+  - Passwords given as command-line options, as `curl`, `docker login`, database clients and
+    `ldapsearch` take them.
+  - A labelled credential that the commit-SHA exemption let through.
+- **Two accepted limits.** A token typed one character at a time between separators reads,
+  because no single piece looks like a token. An unlabelled hex value written as a cited commit
+  reads, because it can't be told apart from a commit SHA.
+
 Memory persists in a versioned filesystem tree, with `CURRENT` naming the adopted
 version; opening another session preserves existing files. Startup explains the
 sparse layout. It carries recorded standing decisions when
