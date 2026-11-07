@@ -1,5 +1,4 @@
 import { AutomaticDreamState, completionBaseline } from "./automatic-dream-state.ts";
-import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import {
   type PrWakeFired,
   type PrWatchSeen,
@@ -88,7 +87,7 @@ import {
   readableRow,
   readableRows,
 } from "./stored.ts";
-import { durableCommit } from "./durable-commit.ts";
+import { durableCommit, durableSqliteLayer } from "./durable-commit.ts";
 import { makeMessageReceipts } from "./message-receipts.ts";
 import { DAY_MS } from "../zone-time.ts";
 
@@ -884,16 +883,6 @@ const ENCODED_DEFAULT_SETTINGS = Schema.encodeSync(Settings)(DEFAULT_SETTINGS);
 const bool = (n: number | bigint | null | undefined) => Number(n ?? 0) !== 0;
 
 /**
- * The connection's commits stop waiting for the disk. Every query runs on the event loop, and in
- * WAL mode `FULL` syncs the log on each commit, which a streaming reply makes several times a
- * second; `NORMAL` syncs at checkpoints only. The database can't be corrupted either way: what
- * `NORMAL` can lose is the last commits before the OS itself crashes or loses power.
- */
-const NormalSync = Layer.effectDiscard(
-  Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) => sql`PRAGMA synchronous = NORMAL`),
-);
-
-/**
  * SQLite's page cache, per connection: 16 MiB, up from its 2 MB default (~500 pages). One 380 KB
  * reply is ~95 pages, and an open transcript's window of turns several hundred, so the default holds
  * barely one thread's; the rest is read back from the OS on every page and resume. It grows only as
@@ -910,13 +899,11 @@ const CACHE_SIZE_KIB = 16_384;
  */
 const MMAP_SIZE_BYTES = 64 * 1024 * 1024;
 
-const PageCache = Layer.effectDiscard(
+const configurePageCache = (sql: SqlClient.SqlClient) =>
   Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
     yield* sql.unsafe(`PRAGMA cache_size = -${CACHE_SIZE_KIB}`);
     yield* sql.unsafe(`PRAGMA mmap_size = ${MMAP_SIZE_BYTES}`);
-  }),
-);
+  });
 
 /** What rolls back a workspace change by chat whose workspace moved; never leaves the store. */
 const WORKSPACE_MOVED = { _tag: "WorkspaceMoved" } as const;
@@ -3182,6 +3169,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
   /**
    * A migrated SQLite database at `filename` (`:memory:` in tests). The server's database checkpoints its
    * WAL on a worker (`wal-checkpointer.ts`); the tests' leave that to SQLite, on the event loop.
+   * Ordinary commits use NORMAL (no sync per streamed update); safety reservations use FULL.
+   * The owned client replaces a connection whose durable-transaction cleanup failed.
    */
   static readonly layerSqlite = (
     filename: string,
@@ -3192,13 +3181,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
     return ThreadStore.layerNoDeps.pipe(
       Layer.provideMerge(SearchCatchUp),
       Layer.provideMerge(MigrationsLayer),
-      Layer.provideMerge(NormalSync),
-      Layer.provideMerge(PageCache),
       Layer.provideMerge(
         options.checkpointOffLoop === true ? WalCheckpointer.layer(filename) : Layer.empty,
       ),
       Layer.provideMerge(seal?.over ?? Layer.empty),
-      Layer.provideMerge(SqliteClient.layer({ filename })),
+      Layer.provideMerge(durableSqliteLayer({ filename }, configurePageCache)),
       Layer.provideMerge(seal?.under ?? Layer.empty),
     );
   };
