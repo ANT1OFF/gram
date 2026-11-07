@@ -46,6 +46,7 @@ import { OrchestratorStreamProvider, useOrchestratorStream } from "@/orchestrati
 import { StuckCard } from "@/orchestration/stuck-card";
 import {
   useBackToOrchestrator,
+  useSendTakesControl,
   WorkerActions,
   WorkerCrumbs,
   WorkerNowChip,
@@ -717,14 +718,38 @@ export function ThreadView({
         <SubagentStrip rows={stripLines} onJump={jumpToSubagent} onStop={stopTask} />
         {thread.role === "orchestrator" && <UndoLine />}
         <TurnCompleteSheen key={threadId} status={status}>
-          <Composer
-            threadId={threadId}
+          <ThreadComposer
+            thread={thread}
             focused={focused}
             {...(beside === undefined ? {} : { placeholder: "Steer this thread…" })}
           />
         </TurnCompleteSheen>
       </div>
     </BesideLinkScope.Provider>
+  );
+}
+
+/**
+ * The thread's composer. Into a worker the orchestrator still directs, a message takes it over, as
+ * Take over does: the composer says so where the message is written.
+ */
+function ThreadComposer({
+  thread,
+  focused,
+  placeholder,
+}: {
+  thread: Thread;
+  focused: boolean;
+  placeholder?: string;
+}) {
+  const takesControl = useSendTakesControl(thread);
+  return (
+    <Composer
+      threadId={thread.id}
+      focused={focused}
+      takesControl={takesControl}
+      {...(placeholder === undefined ? {} : { placeholder })}
+    />
   );
 }
 

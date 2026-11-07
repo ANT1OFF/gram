@@ -52,12 +52,12 @@ export const speedValueWord = (value: SpeedMode | undefined, state?: SpeedState)
         : "Fast";
 
 /**
- * The same, short of room: "Fast" keeps its word, as it is news ("Speed: Fast"); the default and
- * Standard give theirs up first, leaving the trigger's own name, "Speed", never the bolt alone, its
- * value on hover. The toolbar adds the dimension (`ValueWords`), so "" here reads "Speed".
+ * The same, short of room: "Speed: Std", "Speed: Fast", "Speed: Default", and tighter the word
+ * alone beside the bolt (`ValueWords`). The speed always shows, never "Speed" on its own; whose
+ * default it is, and a Fast still requested, are on its hover and in its name.
  */
 export const speedCompactWord = (value: SpeedMode | undefined): string =>
-  value === "fast" ? "Fast" : "";
+  value === "fast" ? "Fast" : value === "standard" ? "Std" : "Default";
 
 export const speedReport = (state?: SpeedState) =>
   state?.detail ??

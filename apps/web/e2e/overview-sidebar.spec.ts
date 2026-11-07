@@ -473,14 +473,19 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
     overview(page).getByTestId(`overview-section-${id}`).getByRole("button", { name });
   const orchestrators = head("orchestrators", /Orchestrators/);
   const soloHead = head("solo", /Solo threads/);
-  // Pull requests comes after Solo threads, folded by default, then Done's three rows, open, and
-  // its line into History; Open History is at the column's foot, out of the list.
+  // Pull requests comes after Solo threads, folded by default, then Done, folded to one row and
+  // its History; Open History is at the column's foot, out of the list.
   const prsHead = head("pullRequests", /Pull requests/);
   const doneHead = head("doneToday", /Done/);
   await expect(prsHead).toHaveAttribute("aria-expanded", "false");
-  await expect(doneHead).toHaveAttribute("aria-expanded", "true");
+  await expect(doneHead).toHaveAttribute("aria-expanded", "false");
   await expect(overview(page).getByTestId("overview-history")).toHaveText(/Open History/);
-  // End reaches Done's last stop while it is open, its line into History, its title once folded.
+  // End reaches Done's History while it is folded, and its line into History once open.
+  await doneHead.focus();
+  await page.keyboard.press("End");
+  await expect(overview(page).getByTestId("overview-done-history")).toBeFocused();
+  await doneHead.click();
+  await expect(doneHead).toHaveAttribute("aria-expanded", "true");
   await expect(overview(page).getByTestId("overview-done")).toHaveCount(3);
   await doneHead.focus();
   await page.keyboard.press("End");
@@ -550,6 +555,8 @@ test("Needs you counts the asks across every workspace, and lists them by worksp
 test("Needs you counts what the agents left waiting on you too, and goes to it", async ({
   page,
 }) => {
+  // Wide enough that the Inbox docks beside the chat at its reading width.
+  await page.setViewportSize({ width: 1728, height: 1000 });
   // No asks: the plain mock.
   await page.addInitScript((key) => {
     if (sessionStorage.getItem(key) === null) {

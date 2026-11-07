@@ -361,8 +361,10 @@ describe("AgentFields speed", () => {
     const speed = await screen.findByRole("combobox", { name: "Speed: Standard" });
     expect(speed.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
     expect(speed.querySelector("[data-toolbar-label]")?.textContent).toBe("Speed: Standard");
-    // Short of room, the dimension alone, never the bolt alone.
-    expect(speed.querySelector("[data-toolbar-compact]")?.textContent).toBe("Speed");
+    // Short of room its value stays, "Speed: Std", and tighter "Std" alone beside the bolt: never
+    // the dimension alone, and never the bolt alone.
+    expect(speed.querySelector("[data-toolbar-compact]")?.textContent).toBe("Speed: Std");
+    expect(speed.querySelector("[data-toolbar-value]")?.textContent).toBe("Std");
     await user.hover(speed);
     await waitFor(() =>
       expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toBe(

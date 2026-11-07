@@ -44,7 +44,7 @@ import {
 } from "@/components/ui/context-menu";
 import { shortcutPressed } from "@/keyboard/bindings";
 import { isMac, runShortcut, useShortcut } from "@/keyboard/registry";
-import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
+import { KEY_CAP, useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
 import { cn } from "@/lib/utils";
 import {
@@ -143,6 +143,10 @@ const HINT_MS = 2500;
  * second send of the same draft beside the first mount's.
  */
 const waitingThreads = new Set<string>();
+/** What a message into a worker the orchestrator directs also does, on Send and its placeholder. */
+const TAKES_CONTROL = "takes control";
+/** Beside Send while a draft waits for that worker: the consequence, where the message goes. */
+const TAKES_CONTROL_LINE = "Sending takes control from the orchestrator";
 /** Shown while a send waits for the connection to come back. */
 const RECONNECT_HINT = "Waiting for the connection — sends once it's back";
 
@@ -150,11 +154,17 @@ export function Composer({
   threadId,
   focused,
   placeholder,
+  takesControl = false,
 }: {
   threadId: ThreadId;
   focused: boolean;
   /** In place of "Message…", e.g. beside the chat, where it steers a worker. */
   placeholder?: string | undefined;
+  /**
+   * A message sent here takes the thread over from its orchestrator (a worker it still directs):
+   * the placeholder, Send's name and the line beside it say so before the message goes.
+   */
+  takesControl?: boolean;
 }) {
   const api = useApi();
   const typing = useTypingPresence();
@@ -881,9 +891,11 @@ export function Composer({
   const queueLabel = steerable
     ? `Queue: sends when the turn ends. ${steerModifier}-click to steer`
     : "Queue: sends when the turn ends";
+  // Into a worker the orchestrator directs, the send is also a take-over: its name says so.
+  const control = takesControl ? ` — ${TAKES_CONTROL}` : "";
   const actionLabels = {
-    send: { aria: "Send", hint: withHint("Send", sendKeyHint) },
-    queue: { aria: "Queue", hint: withHint(queueLabel, sendKeyHint) },
+    send: { aria: `Send${control}`, hint: withHint(`Send${control}`, sendKeyHint) },
+    queue: { aria: `Queue${control}`, hint: withHint(`${queueLabel}${control}`, sendKeyHint) },
     steer: { aria: "Steer now", hint: STEER_LABEL },
     // Stopping keeps what the turn wrote so far; only what it hadn't yet written is lost.
     stop: {
@@ -1133,9 +1145,11 @@ export function Composer({
               ghost !== undefined || dictation.active
                 ? ""
                 : (placeholder ??
-                  (running
-                    ? "Queue a message… (/ for commands, @ for files)"
-                    : "Message… (/ for commands, @ for files)"))
+                  (takesControl
+                    ? `${running ? "Queue a message" : "Message worker"} — ${TAKES_CONTROL}… (/ for commands, @ for files)`
+                    : running
+                      ? "Queue a message… (/ for commands, @ for files)"
+                      : "Message… (/ for commands, @ for files)"))
             }
             className={cn(SLAB_TEXTAREA, "relative")}
             onFocus={(event) => {
@@ -1312,7 +1326,12 @@ export function Composer({
             aria-live="polite"
             className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
           >
-            {hint ?? (dictation.active ? dictationStatus(dictation.state) : undefined)}
+            {hint ??
+              (dictation.active
+                ? dictationStatus(dictation.state)
+                : takesControl && hasDraft
+                  ? TAKES_CONTROL_LINE
+                  : undefined)}
           </span>
           <div data-toolbar-fixed className="flex shrink-0 items-center gap-1.5">
             {dictation.available && (
@@ -1325,22 +1344,6 @@ export function Composer({
             )}
             <PendingRestart threadId={threadId} />
             <ContextRing threadId={threadId} countUp={focused} />
-            {/* Stop's key, beside it while you're in the composer, as it is in its tooltip. Its
-                room is kept, so focusing the composer doesn't shift the row. In a composer under
-                18 rem it goes, by width alone (never the toolbar's own fold, which measures it), so
-                a wide key such as "Ctrl+." can't push Stop out of the box; the tooltip keeps it. */}
-            {action === "stop" && stopHint && (
-              <kbd
-                aria-hidden
-                data-testid="stop-key"
-                className={cn(
-                  KBD,
-                  "text-muted-foreground opacity-0 transition-opacity group-focus-within/composer:opacity-100 @max-[18rem]/composer:hidden",
-                )}
-              >
-                {stopHint}
-              </kbd>
-            )}
             {/* One button for what the composer can do now, its word on hover. Right-click for the
                 rest: Stop stays reachable there while a draft has the button. */}
             <ContextMenu>
@@ -1382,6 +1385,19 @@ export function Composer({
                           <Square className="size-2 fill-current" />
                         </span>
                         <span>Stop</span>
+                        {/* Its key, in the pill's own colour, wherever the key works: this pane's
+                            composer, focused. In a composer under 18 rem it goes, by width alone,
+                            so a wide key such as "Ctrl+." can't push Stop out of the box; the
+                            tooltip keeps it. */}
+                        {focused && stopHint && (
+                          <kbd
+                            aria-hidden
+                            data-testid="stop-key"
+                            className={cn(KEY_CAP, "@max-[18rem]/composer:hidden")}
+                          >
+                            {stopHint}
+                          </kbd>
+                        )}
                       </>
                     ) : (
                       <Swap swapKey={action}>

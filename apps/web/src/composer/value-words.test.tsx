@@ -20,6 +20,19 @@ const words = (props: Parameters<typeof ValueWords>[0]) => {
   };
 };
 
+/** The words a size shows: the one span that isn't screen-reader only. */
+const shown = (props: Parameters<typeof ValueWords>[0]) => {
+  const { container } = render(
+    <span>
+      <ValueWords {...props} />
+    </span>,
+  );
+  const visible = [...container.querySelectorAll("span > span")].filter(
+    (span) => !span.className.includes("sr-only") && span.parentElement === container.firstChild,
+  );
+  return visible.map((span) => span.textContent);
+};
+
 // "Model default" and "CLI default" beside the model picker read as the model's own; a chip names
 // what it picks before its value, short of room too, so its meaning never changes with context.
 describe("ValueWords with a dimension", () => {
@@ -29,18 +42,45 @@ describe("ValueWords with a dimension", () => {
     ).toEqual({ full: "Effort: Extra high", short: "Effort: X-high" });
   });
 
-  it("keeps the dimension alone, never a bare glyph, for a default short of room", () => {
+  // Round 12 (124): the narrow composer read "Effort" and "Speed", values gone. A default keeps
+  // its value short of room; a dimension never shows without one.
+  it("keeps a default's value short of room, never the dimension alone", () => {
     expect(
       words({
-        value: DEFAULT_EFFORT_OPTION.short,
+        value: DEFAULT_EFFORT_OPTION.word,
         compact: DEFAULT_EFFORT_OPTION.compact,
         labelled: "short",
         dimension: "Effort",
       }),
-    ).toEqual({ full: "Effort: Model default", short: "Effort" });
+    ).toEqual({ full: "Effort: Default", short: undefined });
+    expect(
+      shown({
+        value: DEFAULT_EFFORT_OPTION.word,
+        compact: DEFAULT_EFFORT_OPTION.compact,
+        labelled: "short",
+        dimension: "Effort",
+      }),
+    ).toEqual(["Effort: Default"]);
+    // A compact word that is empty or the dimension itself stands for the value.
     expect(
       words({ value: "Standard", compact: "", labelled: "short", dimension: "Speed" }),
-    ).toEqual({ full: "Speed: Standard", short: "Speed" });
+    ).toEqual({ full: "Speed: Standard", short: undefined });
+    expect(
+      shown({ value: "Standard", compact: "Std", labelled: "short", dimension: "Speed" }),
+    ).toEqual(["Speed: Std"]);
+  });
+
+  it("shows the value alone, tighter than compact words", () => {
+    expect(
+      shown({ value: "Extra high", compact: "X-high", labelled: "value", dimension: "Effort" }),
+    ).toEqual(["X-high"]);
+    expect(shown({ value: "High", labelled: "value", dimension: "Effort" })).toEqual(["High"]);
+    expect(
+      shown({ value: "Standard", compact: "Std", labelled: "value", dimension: "Speed" }),
+    ).toEqual(["Std"]);
+    // The model picker has no dimension: its compact name is its value alone.
+    expect(shown({ value: "Claude Opus", compact: "Opus", labelled: "value" })).toEqual(["Opus"]);
+    expect(shown({ value: "High", labelled: "icon", dimension: "Effort" })).toEqual([]);
   });
 
   it("has nothing compact to show when the compact words are the full ones", () => {

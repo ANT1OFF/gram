@@ -85,6 +85,47 @@ describe("toolbarLayout", () => {
     expect(at(260, 20, 400)).toEqual({ sizes: SHORT, folded: [], wrapped: false });
   });
 
+  // The narrow composer showed "Effort" and "Speed" with no value (round 12, 124): tighter than
+  // compact words, a picker keeps its value alone beside its glyph before it gives up its words.
+  describe("with values alone narrower than compact words", () => {
+    const VALUED: readonly ToolbarBlock[] = BLOCKS.map((block) =>
+      block.id === "effort"
+        ? { ...block, value: 54 }
+        : block.id === "mode"
+          ? { ...block, value: 50 }
+          : block,
+    );
+    const fit = (space: number, room = 0, row?: number) => {
+      const layout = toolbarLayout(space, VALUED, OVERFLOW, room, row);
+      return {
+        sizes: VALUED.map((block) => layout.sizes.get(block.id) ?? "full"),
+        wrapped: layout.wrapped,
+      };
+    };
+
+    it("keeps values alone on one row, from the right, before any glyph", () => {
+      // Compact words take 70 + 70 + 60 + 32 = 232; speed's one word is its value already, so
+      // mode's value alone is the first to free room, 10.
+      expect(fit(232).sizes).toEqual(SHORT);
+      expect(fit(231).sizes).toEqual(["short", "short", "value", "short"]);
+      // 70 + 54 + 50 + 32 = 206; the model's short name is its value, so it keeps it.
+      expect(fit(206).sizes).toEqual(["short", "value", "value", "short"]);
+      // Past that, glyphs from the right, the blocks before them keeping their values:
+      // 70 + 54 + 44 + 32 = 200.
+      expect(fit(205).sizes).toEqual(["short", "value", "icon", "icon"]);
+    });
+
+    it("keeps values alone on a row of their own before dropping to glyphs on one", () => {
+      expect(fit(200, 20, 232)).toEqual({ sizes: SHORT, wrapped: true });
+      expect(fit(200, 20, 231)).toEqual({
+        sizes: ["short", "short", "value", "short"],
+        wrapped: true,
+      });
+      // Short of even that, one row: words there keep 20 free beside them, so glyphs alone.
+      expect(fit(200, 20, 205)).toEqual({ sizes: ICONS, wrapped: false });
+    });
+  });
+
   it("treats layouts that render the same as the same", () => {
     const a = toolbarLayout(200, BLOCKS, OVERFLOW);
     expect(sameLayout(a, toolbarLayout(200, BLOCKS, OVERFLOW))).toBe(true);

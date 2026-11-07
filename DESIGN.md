@@ -54,13 +54,16 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   workspace, a worker, a solo thread, a PR, a Done item), is its mark (a Done item's is its
   state's dot, as a worker's is) and title (`ROW`, `ROW_TITLE`), then one muted status line (`ROW_STATUS`) with what trails it at the right edge: a
   time, or its badges (a worker's PR chips) only while they fit beside the words: the status wins,
-  and the row's hover names the PR. The title has the row's whole width on one line, cut at its
-  end (never its middle) with the whole of it on hover, so every row is the same 48 px (two 20 px
-  lines with its padding) and a list of them reads as even rows. What needs you is listed first.
-  Done shows the three chats that finished last, solo threads that settled on their own
-  included, then "N more in History", which opens History on its Done chip: History is old
-  work's one home, and the palette hands its matches there too. Marks centre on one column and
-  titles start on one edge, the pill, Search, section titles and Open History included.
+  and the row's hover names the PR. The title has the row's whole width and wraps to a second
+  line before it is cut at its end (never its middle), the whole of it on hover, so a long name
+  reads whole rather than stopping mid-word; most rows stay 48 px (two 20 px lines with its
+  padding). What needs you is listed first. Done starts folded to one row, "8 done · History",
+  whose History opens History on its Done chip: the Board and History already list finished work,
+  and History is old work's one home (the palette hands its matches there too). Unfolded, Done
+  shows the three chats that finished last, solo threads that settled on their own included, then
+  "N more in History". Each workspace folds its workers under its chevron. Marks centre on one
+  column and titles start on one edge, the pill, Search, section titles and Open History
+  included. The overview's sections sit a list's step (12 px) apart.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings and between a reply's blocks, 16 px between sections and at a
   pane's edges. A settings row takes 8 px above and below, and a page's groups sit 24 px apart
@@ -83,8 +86,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   cap, a count badge, a footer's key legend. A third, quieter level (a hint, a step's evidence, a
   pending line) is `text-subtle` (`fg-subtle`), which holds the text floor like `fg-muted`; never
   fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A title wraps to two lines before it is cut short at
-  its end, and its hover says the whole of it; a sidebar row's title keeps to one line, so its
-  rows stay even. Metadata a heading or the whole list already says is left out: no repo on each
+  its end, and its hover says the whole of it, a sidebar row's title included. Metadata a heading or the whole list already says is left out: no repo on each
   row when every row has the same one, no workspace under its own heading.
 - **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,
   `ShortcutKbd cap`), never a faded one; elsewhere a hint goes in the tooltip.
@@ -144,19 +146,31 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   doesn't apply keeps its slot, greyed, with why on hover, so the rest never move up. Each names
   what it picks before its value, in a lighter weight, so a value never reads as another
   control's: "Claude Opus", "Effort: Extra high", "Mode: Plan", "Speed: Standard". Short of room the
-  value takes three to six letters ("Opus", "Effort: X-high", "Mode: Edits"), a default keeps
-  the dimension alone ("Effort", "Speed"), and the words keep the room their glyph took; still short, the pickers take a row of their own above
-  Send and Stop, words kept. Only when even that row can't hold the short words do they
-  give way to glyphs, then fold into "…". Each trigger's tooltip and name say the value and its
+  value takes three to six letters ("Opus", "Effort: X-high", "Mode: Edits", "Speed: Std",
+  "Effort: Default"), and the words keep the room their glyph took; still short, the pickers take
+  a row of their own above Send and Stop, words kept, and tighter still each keeps its value alone
+  beside its glyph ("X-high", "Std"), the glyph standing in for the dimension's word. A picker
+  never shows its dimension without its value, running or not. Only when even values alone can't
+  fit do they give way to glyphs, then fold into "…". Each trigger's tooltip and name say the value and its
   shortcut ("Effort: Extra high (⌘⇧E)"), its open list checks the current value with a line on
   what each costs, and a pick is confirmed in words for a moment. Every target on the row is 32 px
   tall, and words keep 48 px clear of Send and Stop. Stop is a solid pill reading "Stop" beside
-  its square, the square inside the running ring, right-aligned where Send sits; its key shows
-  beside it while the composer has focus. A default says whose it is in its name and tooltip
+  its square, the square inside the running ring, right-aligned where Send sits, its key a key cap
+  inside it while its pane has focus. While the turn only waits on your answer, Stop steps back to
+  the danger tint (no ring), still distinct from Send and from a faint outline. Into a worker the
+  orchestrator still directs, a message takes it over: the placeholder says "Message worker —
+  takes control…", Send's name says it, and with a draft the line beside Send says "Sending takes
+  control from the orchestrator". A default says whose it is in its name and tooltip
   ("Effort: Model default", "Speed: CLI default"); the chip, after its dimension, says "Default"
   ("Effort: Default"), never a bare "Default" with nothing before it. Beside Send the context meter says "Context 36%"
   over its bar, the number alone in a composer under 36 rem, and its popover says what it
   measures. A picker's list opens above the whole composer, never over the draft.
+- **The Inbox docks beside the chat only where the chat keeps its reading column** (760 px) beside
+  it; in a narrower window (under about 1,600 px with the overview open) it opens over the work as
+  a dialog, the same list and keys, rather than squeeze the chat to a strip.
+- **An explanation shows once, then folds to a mark.** What Take over changes is a line under a
+  worker's header the first time it is offered; after, it is an ⓘ beside Take over that says it on
+  hover or focus, so the line never stacks over every worker view.
 - **Icon-only chrome names itself on hover:** the title bar's and the overview header's icons use
   the instant tooltip (`Hint`), never a native title, with the shortcut where there is one. A hint
   opens when the pointer moves onto its trigger, never for one that appears under a resting

@@ -1,15 +1,20 @@
 /**
  * How the composer's toolbar fits its width. Each control says its value in full ("Claude Opus",
- * "Extra high") while the row has room; short of it, each takes its compact form ("Opus",
- * "X-high"), from the right. Still short, the pickers move up to a row of their own above Send
- * and Stop, in full or compact words, rather than lose their values. Only when even a row of
- * their own can't hold the compact words do they drop to glyphs on one row, from the right, and
- * then fold into a "…" menu, also from the right. Pure, so the arithmetic is tested without a
- * browser; `use-toolbar-layout.ts` measures and `composer.tsx` renders it.
+ * "Effort: Extra high") while the row has room; short of it, each takes its compact form ("Opus",
+ * "Effort: X-high", "Speed: Std"), from the right. Still short, the pickers move up to a row of
+ * their own above Send and Stop, in full or compact words, rather than lose their values; tighter
+ * still, each keeps its value alone beside its glyph ("X-high", "Std"), which names the dimension
+ * the words gave up. Only when even that can't fit do they drop to glyphs on one row, from the
+ * right, and then fold into a "…" menu, also from the right. So a picker never shows its dimension
+ * without its value. Pure, so the arithmetic is tested without a browser;
+ * `use-toolbar-layout.ts` measures and `composer.tsx` renders it.
  */
 
-/** How a control shows its value: in full, in its compact form, or as its glyph alone. */
-export type LabelSize = "full" | "short" | "icon";
+/**
+ * How a control shows its value: in full, in its compact form, as its compact value alone beside
+ * its glyph, or as its glyph alone.
+ */
+export type LabelSize = "full" | "short" | "value" | "icon";
 
 /** A control that can shorten its label, give it up or fold away, in toolbar order. */
 export interface ToolbarBlock {
@@ -18,6 +23,8 @@ export interface ToolbarBlock {
   readonly full: number;
   /** Width with its compact label; the same as `full` when the two are one word. */
   readonly short: number;
+  /** Width as its glyph and compact value; `short` when the two read the same (the model's). */
+  readonly value?: number;
   /** Width as a glyph alone; the same as `full` for a control with no label. */
   readonly icon: number;
   /** Whether it may move into the "…" menu. The model picker stays, as a glyph at least. */
@@ -34,7 +41,13 @@ export interface ToolbarLayout {
 }
 
 const widthAt = (block: ToolbarBlock, size: LabelSize) =>
-  size === "full" ? block.full : size === "short" ? block.short : block.icon;
+  size === "full"
+    ? block.full
+    : size === "short"
+      ? block.short
+      : size === "value"
+        ? (block.value ?? block.short)
+        : block.icon;
 
 const fits = (
   space: number,
@@ -79,25 +92,30 @@ export function toolbarLayout(
   const oneRow = () => fits(space, blocks, sizes, folded, overflow, room);
   if (oneRow()) return result();
 
-  // Compact words, from the right, on the one row.
-  const shorten = (check: () => boolean) => {
+  // Each block, from the right, at `size`, until `check` passes. A value alone no narrower than
+  // the compact words (the model's name, a word that is its own value) keeps the words.
+  const step = (size: LabelSize, check: () => boolean) => {
     for (const block of blocks.toReversed()) {
-      sizes.set(block.id, "short");
+      if (size === "value" && (block.value ?? block.short) >= block.short) continue;
+      sizes.set(block.id, size);
       if (check()) return true;
     }
     return false;
   };
-  if (shorten(oneRow)) return result();
+  // Compact words, from the right, on the one row.
+  if (step("short", oneRow)) return result();
 
-  // A row of their own, in full words and then compact ones.
+  // A row of their own, in full words, then compact ones, then values alone.
   if (row !== undefined) {
     for (const block of blocks) sizes.set(block.id, "full");
     const ownRow = () => fits(row, blocks, sizes, folded, overflow, 0);
-    if (ownRow() || shorten(ownRow)) return result(true);
-    for (const block of blocks) sizes.set(block.id, "short");
+    if (ownRow() || step("short", ownRow) || step("value", ownRow)) return result(true);
+  } else if (step("value", oneRow)) {
+    // Values alone on the one row.
+    return result();
   }
 
-  // Glyphs, from the right, and then the "…" menu.
+  // Glyphs, from the right, the blocks left of them keeping their values alone; then the "…" menu.
   for (const block of blocks.toReversed()) {
     sizes.set(block.id, "icon");
     if (oneRow()) return result();

@@ -12,12 +12,13 @@ export const labelSize = (labelled: boolean | LabelSize): LabelSize =>
   labelled === true ? "full" : labelled === false ? "icon" : labelled;
 
 /**
- * The value's words on a toolbar trigger: in full, or in `compact` form when the row is short of
- * room. Both are always there to be measured (`useToolbarLayout`); the one not showing is hidden,
- * the full one still read by screen readers. With a `dimension` the words say what the value is of,
- * "Effort: Extra high", so a chip never reads as another's ("Model default" beside the model
- * picker); short of room, "Effort: X-high", or the dimension alone when `compact` is it or empty
- * (a default, whose value is on hover).
+ * The value's words on a toolbar trigger: in full, in `compact` form when the row is short of room,
+ * or the value alone when it is tighter still. All are there to be measured (`useToolbarLayout`);
+ * the ones not showing are hidden, the full one still read by screen readers. With a `dimension`
+ * the words say what the value is of, "Effort: Extra high", so a chip never reads as another's
+ * ("Model default" beside the model picker); short of room, "Effort: X-high" or "Speed: Std", and
+ * tighter, "X-high" or "Std" beside the picker's glyph, which then names the dimension. Never the
+ * dimension without its value.
  */
 export function ValueWords({
   value,
@@ -32,14 +33,18 @@ export function ValueWords({
 }) {
   const size = labelSize(labelled);
   const fullText = dimension === undefined ? value : `${dimension}: ${value}`;
+  // A compact word that is empty or the dimension itself says nothing: the value stands in for it.
+  const word = compact === undefined || compact === "" || compact === dimension ? value : compact;
   const shortText =
-    compact === undefined || dimension === undefined
-      ? compact
-      : compact === "" || compact === dimension
-        ? dimension
-        : `${dimension}: ${compact}`;
-  const distinct = shortText !== undefined && shortText !== fullText;
-  const full = size === "full" || (size === "short" && !distinct);
+    compact === undefined ? undefined : dimension === undefined ? compact : `${dimension}: ${word}`;
+  const valueText = dimension === undefined ? undefined : word;
+  const texts: Record<LabelSize, string> = {
+    full: fullText,
+    short: shortText ?? fullText,
+    value: valueText ?? shortText ?? fullText,
+    icon: "",
+  };
+  const showing = texts[size];
   // The dimension reads a step quieter than its value, so the eye lands on what is chosen.
   const prefix = dimension === undefined ? undefined : `${dimension}: `;
   const words = (text: string) =>
@@ -53,18 +58,32 @@ export function ValueWords({
         {text.slice(prefix.length)}
       </>
     );
+  const shortShown = shortText !== undefined && shortText !== fullText;
+  const valueShown = valueText !== undefined && valueText !== fullText && valueText !== shortText;
   return (
     <>
-      <span data-toolbar-label className={cn("min-w-0 truncate", !full && "sr-only")}>
+      <span
+        data-toolbar-label
+        className={cn("min-w-0 truncate", showing !== fullText && "sr-only")}
+      >
         {words(fullText)}
       </span>
-      {shortText !== undefined && distinct && (
+      {shortShown && (
         <span
           aria-hidden
           data-toolbar-compact
-          className={cn("min-w-0 truncate", size !== "short" && "sr-only")}
+          className={cn("min-w-0 truncate", showing !== shortText && "sr-only")}
         >
           {words(shortText)}
+        </span>
+      )}
+      {valueShown && (
+        <span
+          aria-hidden
+          data-toolbar-value
+          className={cn("min-w-0 truncate", showing !== valueText && "sr-only")}
+        >
+          {valueText}
         </span>
       )}
     </>
@@ -91,8 +110,9 @@ export function usePickConfirm(value: string | undefined) {
  * A select's trigger. On a toolbar (the thread's composer and the new-thread prompt box) it says
  * what it picks and the chosen value when `labelled`, without a glyph: "Effort: Extra high", "Mode:
  * Plan", so a value never reads as another control's. Short of room it says the value in `compact`
- * form ("Effort: X-high", or "Effort" alone for a default), and only at the narrowest gives way to
- * its glyph alone (`useToolbarLayout`); either way the trigger's name and its tooltip say both,
+ * form ("Effort: X-high", "Effort: Default"), tighter the value alone beside its glyph ("X-high"),
+ * and only at the narrowest gives way to its glyph alone (`useToolbarLayout`); either way the
+ * trigger's name and its tooltip say both,
  * "Effort: Extra high", with the shortcut. As a form's `field` it names what it picks and shows the
  * value in full.
  */
@@ -164,11 +184,15 @@ export function PickerTrigger({
         />
       }
     >
-      {/* The glyph stands in for the words, never beside them: "Effort: High" says what a gauge
-          only hints at, so it draws only once the words give way. `useToolbarLayout` counts it as
-          `GLYPH` while it isn't drawn. */}
+      {/* The glyph stands in for words, never beside the ones it repeats: "Effort: High" says
+          what a gauge only hints at, so it draws only once the dimension's word gives way, beside
+          the value alone ("High") or alone. `useToolbarLayout` counts it as `GLYPH` while it isn't
+          drawn. */}
       {glyph && (
-        <span data-toolbar-glyph className={size === "icon" ? "contents" : "hidden"}>
+        <span
+          data-toolbar-glyph
+          className={size === "icon" || size === "value" ? "contents" : "hidden"}
+        >
           {glyph}
         </span>
       )}
