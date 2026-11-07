@@ -7,7 +7,7 @@
 A desktop app for macOS and Linux where an orchestrator agent runs a team of Claude Code and Codex
 workers for you, each in its own git worktree, from task to merged pull request.
 
-![Gram on a workspace's orchestrator. The sidebar lists its workers and their state: one asks you, one is editing code, one has a pull request in review and one is waiting on checks, then a few solo threads. In the middle, the task given to the orchestrator, its reply that it started six workers, and a card per feature with each worker's state and pull request, two of them merged. At the bottom, the one question waiting on you, with the orchestrator's note and a recommended answer.](docs/assets/gram-orchestrator.png)
+![Gram on a workspace's orchestrator. The sidebar has a 1 question pill, then the workspace and its four workers: one asks you, one is editing code, one waits on review and one on checks, then a few solo threads. The title bar holds Chat and Board, the orchestrator's mark and its Memory, with the usage button on the right. Above the chat, 1 running, 2 in review and 2 merged today. In the chat, the task given to the orchestrator, its reply that it started six workers, and a card per feature with each worker's state and pull request, two of them merged.](docs/assets/gram-orchestrator.png)
 
 - **An orchestrator per workspace.** You give it tasks; it writes a brief for each, starts a
   worker on it and answers what it can, passing the rest to you.
@@ -92,7 +92,12 @@ its title opens that memory to read or edit.
   the last 7 or 30 days.
 - **The Board.** Each feature's workers and pull requests on one line, from briefed to merged.
 
-![Gram's Board view: three features as rows across the columns Briefed, Working, Checks, Review and Merged. Each worker is a card in its column: one asks you, one is working, one waits on checks, one is in review and two have merged. The one question waiting on you is docked below.](docs/assets/gram-board.png)
+![Gram's Board in its Lanes layout: three features as rows, each a lane through the stations Briefed, Working, Checks, Review and Merged. Each worker is a card at its station: one needs you, one is running, one waits on checks, one waits on review and two are done, merged. The title bar reads 1 waiting · Open Inbox and 1 question.](docs/assets/gram-board.png)
+
+The Inbox docks beside the chat when the window has room, so you can answer without leaving
+your place.
+
+![Gram's Inbox docked beside the orchestrator's chat, with the sidebar hidden. The Inbox lists one question under Questions, and its pane shows it in full: "Should the confirmation email show a delivery date?" from the Order email worker, its context, and two answers, Leave it out (Recommended) and Show the range, numbered 1 and 2, with Send answer and Write your own answer below. Its foot lists the keys: j k move, show thread, 1–9 pick, send, undo and close.](docs/assets/gram-inbox.png)
 
 Gram doesn't prescribe a way of working. The same pieces run as a swarm of workers in parallel
 that message each other, or with the orchestrator calling on one worker for one job.
@@ -107,7 +112,7 @@ asked. Open it from View in the title bar's … menu or with ⌘⌥4 (Ctrl+Alt+4
 with Esc; **Quiet when idle** in Settings → Notifications turns it on after five idle minutes with
 nothing asked.
 
-![Gram's Quiet view at rest: an otherwise empty window that reads "Nothing needs you. 5 workers are busy: 2 working, 3 waiting on checks." Along the bottom, the workspace's name with a dot per worker, filled for the two working and hollow for the three waiting, and the time; Leave quiet sits in the top corner.](docs/assets/gram-quiet.png)
+![Gram's Quiet view at rest: an otherwise empty window that reads "Nothing needs you. 5 workers are busy: 2 working, 3 waiting on checks." and, under it, "Quiet shows only what needs you, one card at a time. Esc leaves it." Along the bottom, the workspace's name with a dot per worker, filled for the two working and hollow for the three waiting, then usage, the time and a … menu; Leave quiet sits in the top corner.](docs/assets/gram-quiet.png)
 
 ## Docs
 
