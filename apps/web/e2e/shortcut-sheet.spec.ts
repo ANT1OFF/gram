@@ -47,30 +47,44 @@ test("next and previous thread follow the sidebar, and ⌘D shows and hides the 
 }) => {
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
-  const rows = page
-    .getByTestId("overview-sidebar")
-    .locator(
-      ':is([data-testid="overview-workspace-row"], [data-testid="overview-worker"], [data-testid="overview-solo"], [data-testid="overview-done"])',
-    );
-  // The sidebar's thread rows in order, read at each step: the mock's rows move as threads run.
-  const neighbour = async (of: string, delta: 1 | -1) => {
-    const ids = await rows.evaluateAll((all) =>
-      all.map((row) => (row as HTMLElement).dataset.threadId ?? ""),
-    );
-    const at = ids.indexOf(of);
-    expect(at, `${of} has a row`).toBeGreaterThanOrEqual(0);
-    const id = ids[at + delta];
-    expect(id, `the row ${delta === 1 ? "after" : "before"} ${of} opens a thread`).toBeTruthy();
-    return id!;
-  };
+  // The sidebar's thread rows in order, and the key pressed in the same tick: the mock's rows move
+  // as its threads run, so reading them first and pressing after could disagree.
+  const stepFrom = (delta: 1 | -1) =>
+    page.evaluate((step) => {
+      const rows = [
+        ...document.querySelectorAll<HTMLElement>(
+          '[data-testid="overview-sidebar"] :is([data-testid="overview-workspace-row"], [data-testid="overview-worker"], [data-testid="overview-solo"], [data-testid="overview-done"])',
+        ),
+      ].map((row) => row.dataset.threadId ?? "");
+      const current = location.pathname.split("/").at(-1)!;
+      const expected = rows[rows.indexOf(current) + step];
+      const mac = /Mac/.test(navigator.platform);
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: step === 1 ? "]" : "[",
+          code: step === 1 ? "BracketRight" : "BracketLeft",
+          metaKey: mac,
+          ctrlKey: !mac,
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      return expected;
+    }, delta);
 
   await page.getByLabel("Message", { exact: true }).click();
-  const next = await neighbour("t-flaky", 1);
+  // The keys as typed, from t-flaky and back.
   await page.keyboard.press("ControlOrMeta+Alt+BracketRight");
-  await expect(page).toHaveURL(new RegExp(`/t/${next}$`));
-  const previous = await neighbour(next, -1);
+  await expect(page).not.toHaveURL(/\/t\/t-flaky$/);
   await page.keyboard.press("ControlOrMeta+Alt+BracketLeft");
-  await expect(page).toHaveURL(new RegExp(`/t/${previous}$`));
+  await expect(page).toHaveURL(/\/t\/[^/]+$/);
+  // Exactly the neighbours the sidebar lists at the press.
+  for (const delta of [1, -1, 1] as const) {
+    const expected = await stepFrom(delta);
+    expect(expected, "a thread row on that side").toBeTruthy();
+    await expect(page).toHaveURL(new RegExp(`/t/${expected}$`));
+  }
 
   const diff = page.getByTestId("diff-panel");
   await page.keyboard.press("ControlOrMeta+Alt+KeyB");

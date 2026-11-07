@@ -78,7 +78,8 @@ export interface FindTarget {
  * Marks `query` in the transcript rows `scroller` has drawn, and the current match apart. Rows come
  * and go as the transcript scrolls, so it marks again whenever they change. The first time the
  * current match is drawn, its tool card is opened if it is in one, and it is scrolled into view.
- * `onUndrawn` asks for the current match's row when the transcript hasn't drawn it.
+ * `onUndrawn` asks for the current match's row when the transcript hasn't drawn it, or has drawn
+ * it folded away.
  */
 export function useFindHighlight(
   getScroller: () => HTMLElement | null | undefined,
@@ -126,6 +127,12 @@ export function useFindHighlight(
       // A match in a closed tool card: open it (and its group), then look again.
       if (target.toolCallId !== undefined && opening > 0 && !openToolCard(row, target.toolCallId)) {
         opening--;
+        return;
+      }
+      // Drawn, but its words aren't: folded into a closed turn. Revealing it opens the fold.
+      if (current === undefined && target.toolCallId === undefined && !asked) {
+        latest.current.onUndrawn(target.messageId);
+        asked = true;
         return;
       }
       const box = (current ?? row).getBoundingClientRect();

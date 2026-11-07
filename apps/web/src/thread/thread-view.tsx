@@ -651,7 +651,9 @@ export function ThreadView({
         {finding && (
           <FindBar
             threadId={threadId}
-            messages={shown}
+            // Every loaded message, a reply a quiet update folded away included: a step to one
+            // reveals it, which shows all activity.
+            messages={top}
             earlier={earlier}
             getScroller={() => transcriptScroller(threadId)}
             onReveal={reveal}
