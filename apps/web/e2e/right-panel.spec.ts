@@ -63,7 +63,7 @@ const everyNameShows = async (page: Page) => {
     .toBe(true);
 };
 
-/** The strip's content overruns its box. */
+/** The strip's content overruns its box. Polled: a fit settles over a frame or two. */
 const overflows = (page: Page) =>
   page
     .getByTestId("right-panel")
@@ -83,7 +83,7 @@ test("a wide panel names every tab, and the open one stands on a background and 
   const tabs = await panel.locator("[data-panel-tab]").count();
   await expect.poll(() => named(page).then((n) => n.length)).toBe(tabs);
   await expect(panel.getByRole("tab", { name: "Files", exact: true })).toContainText("Files");
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
 
   const files = panel.getByRole("tab", { name: "Files", exact: true });
   const diff = panel.getByRole("tab", { name: "Diff", exact: true });
@@ -108,7 +108,7 @@ test("a narrower panel names Diff, PR, Files and Terminal, the rest named in Mor
   await expect(list).toHaveAttribute("data-label-fit", "all");
   await expect.poll(() => named(page)).toEqual(["diff", "pr", "files", "terminal"]);
   await everyNameShows(page);
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
 
   // More holds the rest, each by its name; a pick opens it in the strip, named, and More keeps
   // the others.
@@ -130,7 +130,7 @@ test("a narrower panel names Diff, PR, Files and Terminal, the rest named in Mor
   await expect(menu.getByRole("menuitem", { name: "Connectors" })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(panel.getByRole("tab", { name: "Connectors", exact: true })).toHaveCount(1);
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
 });
 
 test("at the default width every tab in the strip keeps its name, Terminal and Files folding first", async ({
@@ -144,13 +144,13 @@ test("at the default width every tab in the strip keeps its name, Terminal and F
   const strip = await inStrip(page);
   expect(strip).toContain("files");
   expect(strip).toContain("diff");
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
   // What folded is in More, named: Terminal went before Diff did.
   expect(strip).not.toContain("terminal");
   await openPanelTab(panel, "Terminal");
   await expect.poll(() => inStrip(page)).toContain("terminal");
   await everyNameShows(page);
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
 });
 
 test("narrower still, the open tab keeps its name beside More, and it follows the open tab", async ({
@@ -161,11 +161,11 @@ test("narrower still, the open tab keeps its name beside More, and it follows th
   await expect(panel.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "all");
   await expect.poll(() => named(page)).toContain("files");
   await everyNameShows(page);
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
   await openPanelTab(panel, "Diff");
   await expect.poll(() => named(page)).toContain("diff");
   await everyNameShows(page);
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
 });
 
 test("a review at its ordinary width names Diff, PR, Files and Terminal, with Focus review in words beside them", async ({
@@ -186,7 +186,7 @@ test("a review at its ordinary width names Diff, PR, Files and Terminal, with Fo
   const focus = panel.getByRole("button", { name: "Focus review", exact: true });
   await expect(focus).toHaveAttribute("data-words", "true");
   await expect(focus).toContainText("Focus review");
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
   // Beside the strip and its More, not across the row from them.
   const before = panel.getByTestId("panel-more");
   await expect(before).toBeVisible();
@@ -203,7 +203,7 @@ test("a review at its ordinary width names Diff, PR, Files and Terminal, with Fo
   await everyNameShows(page);
   await expect(focus).toBeVisible();
   await expect(panel.getByTestId("panel-more")).toBeVisible();
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
 });
 
 test("the narrowest panel names its open tab beside More, and keeps every name on hover", async ({
@@ -213,7 +213,7 @@ test("the narrowest panel names its open tab beside More, and keeps every name o
   const narrow = await open(page, 240);
   await expect(narrow.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "all");
   await expect.poll(() => named(page)).toEqual(["files"]);
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
   // The name is the tab's accessible name and its tooltip in this state too.
   const files = narrow.getByRole("tab", { name: "Files", exact: true });
   await files.hover();
@@ -251,7 +251,7 @@ test("the Workers tab beside an orchestrator keeps the strip's names at the defa
   await expect.poll(() => named(page)).toContain("workers");
   await everyNameShows(page);
   expect((await inStrip(page)).length).toBeGreaterThan(1);
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
 });
 
 test("a tab that appears under a resting pointer opens no hint until the pointer moves", async ({
@@ -310,5 +310,5 @@ test("a tab with a count stays in a narrow strip, its count beside its icon", as
   await expect(reviews).toBeVisible();
   await expect(panel.getByTestId("reviews-tab-count")).toBeVisible();
   await expect(panel.getByTestId("reviews-tab-count")).toHaveText("2");
-  expect(await overflows(page)).toBe(false);
+  await expect.poll(() => overflows(page)).toBe(false);
 });

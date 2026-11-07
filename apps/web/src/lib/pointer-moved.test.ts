@@ -35,6 +35,20 @@ describe("pointerMovedFor", () => {
     expect(pointerMovedFor(at("mousemove", 142, 41, 5_400))).toBe(true);
   });
 
+  it("reads a pointer event's fractional spot and its mouse twin's rounded one as the same", () => {
+    trackPointerMoves();
+    at("pointermove", 885.0078125, 58, 1_000);
+    at("mousemove", 885, 58, 1_000);
+    // A tab appears under the resting pointer: the browser sends pointerover at the fractional
+    // spot and mouseover at the rounded one. Neither is a move.
+    at("pointerover", 885.0078125, 58, 4_000);
+    expect(pointerMovedFor(at("mouseover", 885, 58, 4_000))).toBe(false);
+    expect(pointerMovedFor(at("mouseover", 885.0078125, 58, 4_001))).toBe(false);
+    // A real move is one: two pixels here, as a move within a pixel of a fractional spot reads as
+    // staying put until the next.
+    expect(pointerMovedFor(at("mousemove", 887, 58, 4_400))).toBe(true);
+  });
+
   it("doesn't count a click's own move for what the click makes appear under the pointer", () => {
     trackPointerMoves();
     const button = document.createElement("button");

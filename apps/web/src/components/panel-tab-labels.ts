@@ -125,7 +125,14 @@ export function useTabLabelFit(list: RefObject<HTMLElement | null>, active: stri
           !el.hasAttribute("data-tab-measure") &&
           !el.hasAttribute("data-panel-more"),
       );
-    const measure = () => {
+    // A fit changes the strip, which can move what was measured (a scrollbar, a tab mounted
+    // mid-animation): a changed fit is measured again on the next frame, a few times at most, so a
+    // reading taken mid-change can't stand once the row has settled.
+    let last: LabelFit | undefined;
+    let frame = 0;
+    let settles = 0;
+    const measure = (settling = false) => {
+      if (!settling) settles = 0;
       const copy = row.querySelector<HTMLElement>("[data-tab-measure]");
       if (!copy) return;
       const rowStyle = getComputedStyle(row);
@@ -160,15 +167,22 @@ export function useTabLabelFit(list: RefObject<HTMLElement | null>, active: stri
         action?.scrollWidth ?? 0,
         more,
       );
-      setFit((prev) =>
-        prev.tabs === next.tabs && prev.action === next.action && prev.folds === next.folds
-          ? prev
-          : next,
-      );
+      const same = (a: LabelFit) =>
+        a.tabs === next.tabs && a.action === next.action && a.folds === next.folds;
+      const moved = last === undefined || !same(last);
+      last = next;
+      setFit((prev) => (same(prev) ? prev : next));
+      if (moved && settles < 3 && typeof requestAnimationFrame !== "undefined") {
+        settles += 1;
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => measure(true));
+      }
     };
     measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const resized = new ResizeObserver(measure);
+    if (typeof ResizeObserver === "undefined") {
+      return () => cancelAnimationFrame(frame);
+    }
+    const resized = new ResizeObserver(() => measure());
     resized.observe(row);
     // The copy's faces resize as fonts load and counts change, and what sits beside the strip comes
     // and goes with the open tab: follow them all.
@@ -187,6 +201,7 @@ export function useTabLabelFit(list: RefObject<HTMLElement | null>, active: stri
     });
     changed.observe(row, { childList: true, subtree: true, characterData: true });
     return () => {
+      cancelAnimationFrame(frame);
       resized.disconnect();
       changed.disconnect();
     };

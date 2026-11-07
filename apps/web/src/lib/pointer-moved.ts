@@ -19,9 +19,17 @@ let movedAt = Number.NEGATIVE_INFINITY;
 let movedOver: EventTarget | null = null;
 let listening = false;
 
+/**
+ * A pointer event's position is fractional and its mouse twin's is rounded to whole pixels, so the
+ * pair the browser sends for one layout change under a still pointer differ by under a pixel. Under
+ * a pixel apart is the same spot, or each pair would read as a move.
+ */
+const samePlace = (a: { x: number; y: number }, x: number, y: number) =>
+  Math.abs(a.x - x) < 1 && Math.abs(a.y - y) < 1;
+
 const record = (event: MouseEvent) => {
   const { clientX: x, clientY: y } = event;
-  if (last === undefined || last.x !== x || last.y !== y) {
+  if (last === undefined || !samePlace(last, x, y)) {
     movedAt = event.timeStamp;
     movedOver = event.target;
   }
