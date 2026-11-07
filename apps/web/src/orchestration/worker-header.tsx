@@ -5,6 +5,7 @@ import { ChevronRight, HandGrab, Info, SquareSplitHorizontal } from "lucide-reac
 
 import { Hint } from "@/components/hint";
 import { Term } from "@/components/term";
+import { buttonVariants } from "@/components/ui/button";
 import { focusOtherWindow } from "@/desktop/open-thread";
 import { normaliseKeys } from "@/keyboard/bindings";
 import { effectiveKeys } from "@/keyboard/bindings-store";
@@ -325,8 +326,8 @@ function HoldChip({
   );
 }
 
-const HEADER_BUTTON =
-  "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1.5 text-meta text-foreground/80 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+/** A worker's worded actions are the app's outline secondary button (DESIGN.md, Buttons). */
+const HEADER_BUTTON = buttonVariants({ variant: "outline", size: "xs" });
 
 /**
  * In the title bar a worker's controls keep its other controls' shape: Open beside an icon button
@@ -334,7 +335,7 @@ const HEADER_BUTTON =
  */
 const TITLEBAR_ICON =
   "inline-flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
-const TITLEBAR_WORDS = "h-7 px-2";
+const TITLEBAR_WORDS = buttonVariants({ variant: "outline", size: "sm" });
 
 /**
  * Whether a message sent into `thread` would take it over: a live worker the orchestrator still
@@ -461,7 +462,7 @@ export function WorkerActions({
               <button
                 type="button"
                 data-testid="worker-take-over"
-                className={cn(HEADER_BUTTON, inTitlebar && TITLEBAR_WORDS)}
+                className={inTitlebar ? TITLEBAR_WORDS : HEADER_BUTTON}
                 onClick={actions.takeOver}
               />
             }

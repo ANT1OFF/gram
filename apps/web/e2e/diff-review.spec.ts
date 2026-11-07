@@ -104,17 +104,17 @@ test("split view shows old and new side by side once the panel is wide enough", 
   const panel = page.getByTestId("diff-panel");
   await expect(panel.getByTestId("patch")).toBeVisible();
 
-  const split = panel.getByRole("radio", { name: "Split" });
+  // Unified or Split is the View menu's first choice.
+  const menu = page.getByTestId("diff-view-options");
+  await panel.getByRole("button", { name: "View options" }).click();
+  const split = menu.getByRole("menuitemradio", { name: /^Split/ });
   await split.click();
   await expect(split).toHaveAttribute("aria-checked", "true");
-  // The default panel is too narrow: unified it stays, and the choice says why on hover.
+  // The default panel is too narrow: unified it stays, and the choice says why under its name.
   await expect(panel).toHaveAttribute("data-layout", "unified");
-  // A hint opens as the pointer comes onto its trigger, not while it rests there after the click.
-  await page.mouse.move(0, 0);
-  await split.hover();
-  await expect(page.locator('[data-slot="tooltip-content"]').last()).toContainText(
-    "needs a wider panel",
-  );
+  await expect(split).toContainText("Needs a wider panel");
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
 
   await dragPanelEdge(page, -320);
   await expect(panel).toHaveAttribute("data-layout", "split");
@@ -132,7 +132,10 @@ test("split view shows old and new side by side once the panel is wide enough", 
   // Narrowed again, it drops back to unified, and returns to split when widened.
   await dragPanelEdge(page, 320);
   await expect(panel).toHaveAttribute("data-layout", "unified");
-  await panel.getByRole("radio", { name: "Unified" }).click();
+  await panel.getByRole("button", { name: "View options" }).click();
+  await menu.getByRole("menuitemradio", { name: "Unified", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
   await dragPanelEdge(page, -320);
   await expect(panel).toHaveAttribute("data-layout", "unified");
 });

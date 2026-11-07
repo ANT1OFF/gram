@@ -90,8 +90,10 @@ The theme stylesheet is the source of truth; this page explains it and the habit
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings and between a reply's blocks, 16 px between sections and at a
   pane's edges. A settings row takes 8 px above and below, and a page's groups sit 24 px apart
-  (`SETTINGS_STACK`) on every page. A table stops at its columns' width, so its rules don't run
-  on into empty space.
+  (`SETTINGS_STACK`) on every page. A table fills its pane (the Board's grid): a column of fixed
+  content (a stage bar, a date) keeps its width and the columns of words share the rest, so a wide
+  window leaves no dead gutter after the table. A table cell says a thing once: the Board's Stage
+  is its bar alone, the station's name on its hover, beside a Now cell that says the state.
 - **Separate by surface and space before lines.** A group of rows is a raised card whose fill is
   the step off the page; in dark it takes no outline (`border-edge-group` is transparent there),
   and light, whose raised step is faint, keeps a hairline. Inside it a hairline between rows is
@@ -160,6 +162,21 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     leading glyph stays: it lines a list of items up and is scanned before the words.
   - A chart's legend is one compact line of short keys ("Break: no reading"), each key's hover
     and screen-reader text saying it in full, never a block of sentences above the charts.
+- **Buttons have three styles** (`Button`, or `buttonVariants` on a link or a menu's trigger),
+  never a hand-rolled bordered button:
+  - **Filled primary** (`default`): the one action the view exists for, at most one per view
+    ("Draft memory update" in Dreams, "Allow once" on an approval). A destructive confirm takes the
+    danger tone (`destructive`) in that place.
+  - **Outline secondary** (`outline`): every other worded action that stands on its own: "Take
+    over", "View changes", "Review", "Watch it run", "Always allow…". A list row's one lead action
+    is outline, never filled, so a list of runs adds no primaries.
+  - **Ghost tertiary** (`ghost`, or `link` for words inside a sentence): what steps back beside
+    those ("Undo", "Cancel", "Discard"), icon buttons, and a toolbar's menus ("View").
+  - `secondary` (the raised fill) is not an action style: it is only a toggle's on state and a
+    control floating over content ("Jump to latest", a tile's corner icons).
+- **A toolbar keeps two or three controls in sight;** the rest go behind one menu. The review's
+  diff shows the file tree's toggle, one "View" menu (Unified or Split, Wrap lines, Hide
+  whitespace changes, each checked in it) and Refresh.
 - **A list row's trailing slot is its status, never an action:** History says what happened
   ("Merged", "Stopped", "Imported"), and what Enter does ("Open ⏎", "Resume ⏎") shows only on the
   cursor row, ahead of the status so the status column stays aligned.
