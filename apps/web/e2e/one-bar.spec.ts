@@ -137,9 +137,10 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await expect(bar.getByRole("button", { name: /^Quiet|^Layout|^Focus mode/ })).toHaveCount(0);
   await expect(bar.getByRole("button", { name: /^More/ })).toHaveCount(1);
   // Right of the title: usage (the sidebar's pill is the Inbox's one way in beside it), then the
-  // "…" and the panel, told apart by the room between them.
+  // "…", told apart by the room between them, and the panels' group at the end.
   await expect(bar.getByTestId("titlebar-attention").getByRole("button")).toHaveCount(1);
-  await expect(bar.getByTestId("titlebar-view").getByRole("button")).toHaveCount(2);
+  await expect(bar.getByTestId("titlebar-view").getByRole("button")).toHaveCount(1);
+  await expect(bar.getByTestId("titlebar-panels").getByRole("button")).toHaveCount(1);
   const box = async (testId: string) => (await bar.getByTestId(testId).boundingBox())!;
   const attention = await box("titlebar-attention");
   const view = await box("titlebar-view");
@@ -228,11 +229,17 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await fitsTheBar(page);
   await page.keyboard.press("ControlOrMeta+Alt+1");
 
-  // A worker: its crumbs, Open beside and Take over in the bar, and its branch in More… only.
+  // A worker: its crumbs and Take over in the bar, Open beside in the panels' group beside the
+  // panel's toggle, and its branch in More… only.
   await routeTo(page, `/t/${made.inReview}`);
   await expect(bar.getByTestId("worker-crumbs")).toBeVisible();
   await expect(bar.getByTestId("worker-crumb-feature")).toBeVisible();
   await expect(bar.getByTestId("worker-take-over")).toBeVisible();
+  const panels = bar.getByTestId("titlebar-panels");
+  await expect(panels.getByRole("button")).toHaveCount(2);
+  await expect(panels.getByTestId("worker-keep-beside")).toHaveAccessibleName(
+    "Open beside the chat",
+  );
   await expect(bar.getByTestId("view-switcher")).toBeVisible();
   await expect(bar.getByTestId("branch-chip")).toHaveCount(0);
   await bar.getByTestId("titlebar-overflow").click();
@@ -321,12 +328,14 @@ test("narrow, the title truncates, a worker's actions fold into the bar's \"…\
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("workers-list")).toBeHidden();
 
-  // A worker keeps its name, a few letters at least; Open beside and Take over are in the "…".
+  // A worker keeps its name, a few letters at least; Take over is in the "…", and Open beside
+  // stays in the panels' group, which never folds.
   await routeTo(page, `/t/${made.inReview}`);
   const worker = bar.getByTestId("worker-crumb-worker");
   await expect(worker).toBeVisible();
   expect((await worker.boundingBox())!.width).toBeGreaterThanOrEqual(40);
   await expect(bar.getByTestId("worker-take-over")).toBeHidden();
+  await expect(bar.getByTestId("titlebar-panels").getByTestId("worker-keep-beside")).toBeVisible();
   await fitsTheBar(page);
   await overflow.click();
   await expect(page.getByTestId("menu-take-over")).toBeVisible();

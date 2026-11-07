@@ -57,12 +57,32 @@ export const meterText = ({ provider, limit }: TightestLimit): string =>
 type MeterWhy = { readonly why?: "agent" | "highest" | undefined };
 
 /**
- * The meter's hover, saying what its number is: "This thread's agent: Claude Code weekly limit,
- * 61%", or off a thread "Highest usage: Codex 5-hour limit, 85%". Its popover has every provider's
- * windows.
+ * Whose number the meter shows, one rule wherever it is: "This thread" on a thread (its agent's
+ * closest window, unless another provider's has passed the warning), else "Highest".
  */
-export const meterHint = ({ provider, window, limit, why }: TightestLimit & MeterWhy): string =>
-  `${why === "agent" ? "This thread's agent" : "Highest usage"}: ${agentLabel(provider)} ${windowWord(window)} limit, ${limitPercent(limit.utilization)}%`;
+export const meterSourceWord = (why: MeterWhy["why"]): string =>
+  why === "agent" ? "This thread" : "Highest";
+
+/**
+ * What the meter's number is, as its hover and its popover's head say it: "This thread: Claude
+ * Code weekly 61%", or off a thread "Highest: Codex 5-hour 85%".
+ */
+export const meterSource = ({ provider, window, limit, why }: TightestLimit & MeterWhy): string =>
+  `${meterSourceWord(why)}: ${agentLabel(provider)} ${windowWord(window)} ${limitPercent(limit.utilization)}%`;
+
+/**
+ * The meter's hover: its source (`meterSource`), then what a click opens, since the title bar's
+ * number is one window of the several the popover lists.
+ */
+export const meterHint = (shown: TightestLimit & MeterWhy): string =>
+  `${meterSource(shown)}\nClick for every agent's limits`;
+
+/**
+ * The rule the meter follows, said once at its popover's foot so the number never seems to switch
+ * providers at random between screens.
+ */
+export const METER_RULE =
+  "On a thread, the title bar shows its agent's closest limit, or another agent's once it passes 90%; elsewhere, the highest.";
 
 /** The line under a window spent but carried on credits: a full window here is no stop. */
 export const CREDITS_TEXT = "Past the limit on credits; turns go on";

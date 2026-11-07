@@ -12,13 +12,25 @@ const NAV =
   "relative text-muted-foreground [-webkit-app-region:no-drag] data-[status=active]:bg-sidebar-row-active data-[status=active]:text-foreground";
 
 /**
- * Settings as an icon at the window's top left: in the overview's header while it is shown, in the
- * title bar while it is hidden. Usage has its one way in at the title bar's meter. Settings carries
+ * Settings as an icon, once in the window: at the open overview's foot beside History, at the top
+ * of the compact rail, and at the title bar's left while the overview is hidden (the test id keeps
+ * the name of where it began). Usage has its one way in at the title bar's meter. Settings carries
  * a neutral dot while a setup problem the user dismissed from the banner still stands (gh signed
  * out, say): its hint names the problem and it opens Diagnostics, where the problem is in full. A
- * signed install's update pill comes first while there's an update to tell about.
+ * signed install's update pill comes first while there's an update to tell about, unless the caller
+ * (the open overview, whose header keeps it at the top) shows it elsewhere.
  */
-export function TopLeftNav({ className }: { className?: string }) {
+export function TopLeftNav({
+  className,
+  update = true,
+  hintSide = "bottom",
+}: {
+  className?: string;
+  /** Where its hint opens: up from the overview's foot, so it stays on screen. */
+  hintSide?: "top" | "bottom";
+  /** The update pill before Settings; off where the caller shows it itself. */
+  update?: boolean;
+}) {
   const settingsHint = useShortcutHint("settings.open");
   const setup = useLaunchIssues().dismissed;
   const settingsLabel =
@@ -32,10 +44,10 @@ export function TopLeftNav({ className }: { className?: string }) {
       data-testid="top-left-nav"
       className={cn("flex items-center gap-1", className)}
     >
-      <UpdatePill size="xs" />
+      {update && <UpdatePill size="xs" />}
       <Hint
         label={settingsLabel}
-        side="bottom"
+        side={hintSide}
         render={
           <Button
             variant="ghost"

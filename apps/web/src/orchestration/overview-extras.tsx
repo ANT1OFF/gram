@@ -21,6 +21,7 @@ import { useOpenPrRows } from "@/reviews/open-prs";
 import { useReviewRequests } from "@/reviews/review-requests";
 import { LimitBar, useLimitsNow } from "@/shell/usage-meter";
 import { cn } from "@/lib/utils";
+import { TopLeftNav } from "@/shell/top-left-nav";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -288,29 +289,36 @@ function DoneRow({ row, now }: { row: RecentDone; now: number }) {
 }
 
 /**
- * The way into History: one line at the column's foot, under Done's few rows and out of the scroll
- * so it is always there, that opens every past chat in one searchable list.
+ * The column's foot, out of the scroll so it is always there: the way into History, one line under
+ * Done's few rows that opens every past chat in one searchable list, and Settings beside it. With
+ * Done turned off, History's line goes and Settings stays.
  */
-export function OverviewHistory() {
+export function OverviewHistory({ showHistory = true }: { showHistory?: boolean }) {
   const hint = useShortcutHint("history.open");
   const open = useHistoryStore((s) => s.open);
   return (
-    <div className="shrink-0 border-t border-border px-2 py-1.5">
-      <button
-        type="button"
-        data-testid="overview-history"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-keyshortcuts={hint === "" ? undefined : hint}
-        title={withHint("Finished workers, done and archived threads, past CLI sessions", hint)}
-        onClick={() => useHistoryStore.getState().show()}
-        className="flex h-8 w-full items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-body text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
-      >
-        {/* An inline glyph, on Search's and the rows' marks. */}
-        <History aria-hidden className="size-icon-row shrink-0" />
-        <span className="flex-1">Open History</span>
-        {hint !== "" && <kbd className="font-sans text-meta tabular-nums">{hint}</kbd>}
-      </button>
+    <div className="flex shrink-0 items-center gap-1 border-t border-border px-2 py-1.5">
+      {showHistory ? (
+        <button
+          type="button"
+          data-testid="overview-history"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-keyshortcuts={hint === "" ? undefined : hint}
+          title={withHint("Finished workers, done and archived threads, past CLI sessions", hint)}
+          onClick={() => useHistoryStore.getState().show()}
+          className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-body text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
+        >
+          {/* An inline glyph, on Search's and the rows' marks. */}
+          <History aria-hidden className="size-icon-row shrink-0" />
+          <span className="flex-1">Open History</span>
+          {hint !== "" && <kbd className="font-sans text-meta tabular-nums">{hint}</kbd>}
+        </button>
+      ) : (
+        <span className="flex-1" />
+      )}
+      {/* Settings beside History, the sidebar's places to go, clear of its header's toggles. */}
+      <TopLeftNav update={false} hintSide="top" className="shrink-0" />
     </div>
   );
 }

@@ -90,7 +90,8 @@ for (const mode of ["light", "dark"] as const) {
     }
     await page.mouse.move(1000, 1000);
     await expect(hint).toHaveCount(0);
-    await sidebar.getByRole("button", { name: "Hide sidebar", exact: true }).focus();
+    // Settings sits at the foot after History: Tab reaches it from there.
+    await sidebar.getByTestId("overview-history").focus();
     await page.keyboard.press("Tab");
     await expect(settings).toBeFocused();
     await expect(hint).toHaveText(/^Settings \(.+\)$/);

@@ -75,6 +75,40 @@ test("the meter shows the thread's agent's limit and opens onto both providers",
   await expect(popover).toBeHidden();
 });
 
+test("the popover drops clear of the approval card it would cover", async ({ page }) => {
+  // A real window's size, the right panel open beside the chat as a review has it.
+  await page.setViewportSize({ width: 1728, height: 1095 });
+  await page.goto("/t/t-flaky");
+  // The mock is imported lazily, so `window.gramMock` lands a moment after `goto`.
+  await page.waitForFunction(() => window.gramMock !== undefined);
+  await flakyAsked(page);
+  const card = page.getByTestId("approval-card").first();
+  await expect(card).toBeVisible();
+  const meter = page.getByTestId("usage-meter");
+  await meter.click();
+  const popover = page.getByRole("dialog", { name: "Subscription usage" });
+  await expect(popover).toBeVisible();
+  // Wide enough for a provider's name, its age and a dated reset on one line each.
+  const box = (await popover.boundingBox())!;
+  expect(box.width).toBeGreaterThanOrEqual(370);
+  const ask = (await card.boundingBox())!;
+  const overlaps =
+    box.x < ask.x + ask.width &&
+    ask.x < box.x + box.width &&
+    box.y < ask.y + ask.height &&
+    ask.y < box.y + box.height;
+  expect(overlaps).toBe(false);
+  // The card's buttons stay where a click lands on them, not on the popover.
+  const allow = card.getByRole("button", { name: /^Allow once/ });
+  const target = (await allow.boundingBox())!;
+  const hit = await page.evaluate(
+    ({ x, y }) =>
+      document.elementFromPoint(x, y)?.closest('[data-testid="approval-card"]') !== null,
+    { x: target.x + target.width / 2, y: target.y + target.height / 2 },
+  );
+  expect(hit).toBe(true);
+});
+
 test("the meter waits for a limit, warns from 90% once, and ignores gateways", async ({ page }) => {
   await seed(page, { "gram.mock.limits": "none" });
   await page.goto("/t/t-flaky");

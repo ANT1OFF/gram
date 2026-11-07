@@ -21,7 +21,13 @@ import { useServerSettings } from "@/settings-sync/store";
 
 import { useWelcome } from "@/welcome/welcome-state";
 
-import { LaunchChecksBanner, LaunchIssuesChip, useBannerFold, useLaunchIssues } from "./banner";
+import {
+  issuesChipText,
+  LaunchChecksBanner,
+  LaunchIssuesChip,
+  useBannerFold,
+  useLaunchIssues,
+} from "./banner";
 import { AgentChecks, ToolChecks } from "./tool-checks";
 
 /** The page the window shows, which the banner folds on leaving. */
@@ -190,9 +196,12 @@ describe("LaunchChecksBanner", () => {
     );
     const chip = await screen.findByTestId("launch-issues-chip");
     expect(screen.queryByTestId("launch-checks-banner")).toBeNull();
-    // Icon-only, like the rest of the title bar: its name and hover say how many.
-    expect(chip.textContent).toBe("");
-    expect(chip.getAttribute("aria-label")).toBe("2 setup problems. Show them");
+    // A glyph and its count, like the rest of the title bar's icons: its name and hover say how
+    // many and what they are.
+    expect(chip.textContent).toBe("2");
+    expect(chip.getAttribute("aria-label")).toBe(
+      "2 setup problems: Claude Code isn't signed in. Run claude in a terminal to sign in. gh isn't installed. PR badges and reviews are off. Show them",
+    );
     expect(useBannerFold.getState().folded).toEqual([
       "0.4.0:claude-signed-out",
       "0.4.0:gh-missing",
@@ -664,5 +673,23 @@ describe("AgentChecks", () => {
       "can't check: npm isn't installed",
     );
     expect(screen.queryByTestId("registry-sign-in")).toBeNull();
+  });
+});
+
+describe("issuesChipText", () => {
+  it("names one problem on the count's line, and says a click shows it", () => {
+    expect(
+      issuesChipText(["gh isn't signed in. Run `gh auth login` to turn on PR badges."]),
+    ).toEqual({
+      label:
+        "1 setup problem: gh isn't signed in. Run gh auth login to turn on PR badges.\nClick to show it",
+      name: "1 setup problem: gh isn't signed in. Run gh auth login to turn on PR badges. Show it",
+    });
+  });
+
+  it("lists several, one a line", () => {
+    expect(issuesChipText(["A is off.", "B is off."]).label).toBe(
+      "2 setup problems: A is off.\nB is off.\nClick to show them",
+    );
   });
 });

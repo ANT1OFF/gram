@@ -6,6 +6,7 @@ import type {
   UsageLimitHistory,
 } from "@gram/contracts";
 
+import { agoText, formatStamp } from "@/lib/time";
 import type { LimitProvider, LimitWindow } from "@/stores/usage-limits";
 
 const HOUR = 3_600_000;
@@ -167,4 +168,41 @@ export function nearestPoint<T extends { readonly at: number }>(
   for (const point of points)
     if (best === undefined || Math.abs(point.at - at) < Math.abs(best.at - at)) best = point;
   return best !== undefined && Math.abs(best.at - at) <= within ? best : undefined;
+}
+
+/**
+ * "quarter hour", "hour", "3 hours", "day": a period's step in words, for "the last reading each
+ * hour".
+ */
+export function stepWords(step: number): string {
+  if (step === 15 * 60_000) return "quarter hour";
+  const [size, unit] =
+    step >= DAY && step % DAY === 0
+      ? [step / DAY, "day"]
+      : step >= HOUR && step % HOUR === 0
+        ? [step / HOUR, "hour"]
+        : [Math.max(1, Math.round(step / 60_000)), "minute"];
+  return size === 1 ? unit : `${size} ${unit}s`;
+}
+
+/** A point's peak is worth naming beside its last reading from this far above it. */
+const PEAK_NOTE_FROM = 0.01;
+
+/**
+ * What a window chart's hover says under a point's time and share: how long ago it was read (its
+ * bucket's end, as near as the history keeps it), its higher peak within the bucket when there was
+ * one, and its window's reset, on a 24-hour clock ("Resets 18 Jun 10:00", "Reset 11 Jun 10:00").
+ */
+export function windowPointNotes(
+  point: Pick<LimitHistoryPoint, "at" | "utilization" | "peak" | "resetsAt">,
+  step: number,
+  now: number,
+  percent: (share: number) => number,
+): string[] {
+  const notes = [`Read ${agoText(Math.min(point.at + step, now), now)}`];
+  if (point.peak - point.utilization >= PEAK_NOTE_FROM)
+    notes.push(`Peak ${percent(point.peak)}% within the ${stepWords(step)}`);
+  if (point.resetsAt !== undefined)
+    notes.push(`${point.resetsAt > now ? "Resets" : "Reset"} ${formatStamp(point.resetsAt, now)}`);
+  return notes;
 }

@@ -36,6 +36,7 @@ import { parsePrRef } from "@/panels/review/pr-ref";
 import { Notice, useReviewAction } from "@/panels/review/review-thread-card";
 import { ToggleSwitch } from "@/panels/review/toggle-switch";
 import { usePrDetailPrewarm } from "@/panels/use-pr-detail-prewarm";
+import { useWorkerPrWait } from "@/orchestration/worker-header";
 import { useThreadsStore } from "@/stores/threads";
 
 import { useMergedCleanup, type MergedCleanup } from "./merged-cleanup-notice";
@@ -200,12 +201,24 @@ function OwnRow({
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   const badgePr = git?.pr;
   const repo = row.fullRepo;
+  // A worker whose turn is over says here what its PR waits on, which its header leaves to this row.
+  const wait = useWorkerPrWait(thread);
   // Right-click has the menu the header's PR badge had, which hides while this row shows.
   return (
     <ContextMenu disabled={badgePr === undefined}>
       <ContextMenuTrigger render={<div data-testid="pr-row" className={ROW} />}>
         <div className="flex min-w-0 flex-1 items-center gap-0.5">
           <StateIcon facts={row.facts} />
+          {wait !== undefined &&
+            (row.facts === undefined || prGlyphOf(row.facts).kind !== "failing") && (
+              <span
+                data-testid="pr-row-wait"
+                title={wait.hint}
+                className="mr-1.5 shrink-0 text-meta whitespace-nowrap text-muted-foreground @max-lg:hidden"
+              >
+                {wait.words.charAt(0).toUpperCase() + wait.words.slice(1)}
+              </span>
+            )}
           <PrNumberLink
             number={row.number}
             facts={row.facts}

@@ -3563,6 +3563,36 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "titlebar-setup-chip",
+    title:
+      "A setup problem folded into the title bar: its glyph and count, and the hover that names it",
+    open: async (page) => {
+      await page.addInitScript(() =>
+        sessionStorage.setItem(
+          "gram.mock.launchChecks",
+          JSON.stringify({
+            tools: [
+              { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.273" },
+              { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.159.2" },
+              { tool: "git", found: true, path: "/mock/bin/git", version: "2.47.1" },
+              { tool: "gh", found: false },
+            ],
+            ghSignedIn: false,
+          }),
+        ),
+      );
+      await openThread(page);
+      // Seen once in full, the banner folds to the chip at the next move.
+      await page.getByTestId("launch-checks-banner").waitFor();
+      await page.getByLabel("Message", { exact: true }).click();
+      const chip = page.getByTestId("launch-issues-chip");
+      await chip.waitFor();
+      await chip.hover();
+      await page.locator('[data-slot="tooltip-content"][data-open]').waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
     name: "titlebar-usage",
     title:
       "The usage meter open: 5-hour and weekly use with resets, a quiet reading's age and a forecast",

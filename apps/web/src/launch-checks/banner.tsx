@@ -269,31 +269,57 @@ function useFoldAfterShowing(expanded: boolean, keys: readonly string[]) {
 
 /**
  * The banner folded: one icon in the title bar, which is icon-only, while a problem stands that the
- * user has seen and not dismissed. Its hover says how many and names them; a click shows the banner
- * again. The banner and the chip never show at once: the chip is the banner's folded self.
+ * user has seen and not dismissed, with a count beside it so the glyph never stands unexplained.
+ * Its hover names it ("1 setup problem: gh isn't installed…") and says a click shows it; a click
+ * shows the banner again, with its Details. The banner and the chip never show at once: the chip is
+ * the banner's folded self. Neutral, never amber: a setup problem isn't something asking of you.
  */
 export function LaunchIssuesChip({ className }: { className?: string }) {
   const { shown, expanded } = useLaunchBanner();
   if (shown.length === 0 || expanded) return null;
-  const heading = shown.length === 1 ? "Setup problem" : `${shown.length} setup problems`;
-  const list = shown.map((issue) => issue.text.replaceAll("`", "")).join("\n");
+  const { label, name } = issuesChipText(shown.map((issue) => issue.text));
   return (
     <Hint
-      label={`${heading}\n${list}\nClick to show`}
+      label={label}
       side="bottom"
       render={
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="sm"
           data-testid="launch-issues-chip"
           data-count={shown.length}
-          aria-label={`${heading}. Show them`}
+          aria-label={name}
           onClick={() => useBannerFold.getState().setOpen(true)}
-          className={cn("shrink-0 text-muted-foreground", className)}
+          className={cn(
+            "shrink-0 gap-1 px-1.5 text-muted-foreground [&_svg:not([class*='size-'])]:size-icon-bar",
+            className,
+          )}
         />
       }
     >
       <TriangleAlert aria-hidden />
+      <span
+        aria-hidden
+        data-testid="launch-issues-count"
+        className="text-caption font-medium tabular-nums"
+      >
+        {shown.length}
+      </span>
     </Hint>
   );
+}
+
+/**
+ * The chip's hover and name: how many, then each problem in words, the first on the count's own
+ * line ("1 setup problem: gh isn't installed. PR badges and reviews are off."), and what a click
+ * does.
+ */
+export function issuesChipText(texts: readonly string[]): { label: string; name: string } {
+  const plain = texts.map((text) => text.replaceAll("`", ""));
+  const count = plain.length === 1 ? "1 setup problem" : `${plain.length} setup problems`;
+  const show = plain.length === 1 ? "Click to show it" : "Click to show them";
+  return {
+    label: [`${count}: ${plain[0] ?? ""}`, ...plain.slice(1), show].join("\n"),
+    name: `${count}: ${plain.join(" ")} ${plain.length === 1 ? "Show it" : "Show them"}`,
+  };
 }

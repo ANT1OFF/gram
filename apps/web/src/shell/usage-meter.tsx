@@ -1,7 +1,7 @@
 import { limitForecast } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
 import { ChartNoAxesCombined, TrendingUp } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { agentLabel } from "@/agents/agent-label";
 import { Hint } from "@/components/hint";
@@ -32,11 +32,14 @@ import {
   limitPercent,
   meterHint,
   meterLabel,
+  meterSource,
   meterText,
+  METER_RULE,
   resetAtText,
   WINDOW_LABEL,
 } from "@/usage/limit-format";
 
+import { clearRightEdge } from "./clear-of-cards";
 import { TitlebarPopover } from "./titlebar-popover";
 
 /**
@@ -66,14 +69,16 @@ export function useMinuteNow(): number {
 
 /**
  * The window's one way into usage: the title bar's subscription meter, as a thin bar and a share,
- * opening onto every provider's 5-hour and weekly windows and a link to Settings → Usage. On a thread
- * it is that thread's agent's closest window, so its name matches the composer's; elsewhere, or
- * once another provider's is about to stop work, the highest of all (`shownLimit`), as its hover and
- * name say. Neutral until 90%, so amber in the title bar means what needs you. Until an agent
- * reports a limit, an icon that opens the Usage page.
+ * opening onto every provider's 5-hour and weekly windows and a link to Settings → Usage. One rule
+ * wherever it is (`shownLimit`): on a thread, that thread's agent's closest window, so its name
+ * matches the composer's; elsewhere, or once another provider's is about to stop work, the highest
+ * of all. Its hover and its popover's head name which ("This thread: …", "Highest: …"), and the
+ * popover's foot says the rule. Neutral until 90%, so amber in the title bar means what needs you.
+ * Until an agent reports a limit, an icon that opens the Usage page.
  *
- * Open, it gives way to the conversation: it closes when focus moves outside it, onto an approval
- * card's buttons say, so it never stays over the card that asks.
+ * Open, it gives way to the conversation: it drops where it covers no card that asks (under the
+ * meter, else at the window's right edge, `clearRightEdge`), and closes when focus moves outside
+ * it, onto an approval card's buttons say.
  */
 export function UsageMeter({
   agent,
@@ -96,6 +101,8 @@ export function UsageMeter({
   const now = useLimitsNow(limits);
   const tightest = shownLimit(limits, now, agent);
   const [open, setOpen] = useState(false);
+  const [trigger, setTrigger] = useState<HTMLButtonElement | null>(null);
+  const anchor = useClearAnchor(trigger);
   useGiveWay(open, setOpen);
   if (tightest === undefined) return <UsageLink className={className} />;
   const warns = limitWarns(tightest.limit);
@@ -113,13 +120,16 @@ export function UsageMeter({
         hint={meterHint(tightest)}
         label="Subscription usage"
         testId="usage-limits"
-        // A dropdown under the meter, narrow enough to leave the conversation and its plan beside it.
-        className="w-[20rem] p-3"
+        // Wide enough that a provider's name, its reading's age and a date-and-time reset each keep
+        // one line, in columns that line up down it.
+        className={cn(POPOVER_WIDTH, "p-3")}
+        anchor={anchor}
         keepClearBelow={ACTION_AREA_CLEARANCE}
         open={open}
         onOpenChange={setOpen}
         trigger={
           <button
+            ref={setTrigger}
             type="button"
             data-testid="usage-meter"
             data-warn={warns || undefined}
@@ -144,7 +154,7 @@ export function UsageMeter({
           </button>
         }
       >
-        <LimitsPopover shown={tightest} onLeave={() => setOpen(false)} />
+        <LimitsPopover shown={tightest} agent={agent} onLeave={() => setOpen(false)} />
       </TitlebarPopover>
     </PulseOnce>
   );
@@ -170,6 +180,44 @@ function useGiveWay(open: boolean, setOpen: (open: boolean) => void) {
     document.addEventListener("focusin", away);
     return () => document.removeEventListener("focusin", away);
   }, [open, setOpen]);
+}
+
+/** The popover's width, in rem so it grows with the interface's text size. */
+const POPOVER_REM = 23.75;
+const POPOVER_WIDTH = "w-[23.75rem]";
+
+/** The cards in view that ask for a decision: approvals and questions, wherever they are drawn. */
+const DECISION_CARDS = "[data-request-id]";
+
+/**
+ * What the popover hangs from: the meter, or, while that would put it over a card that asks for a
+ * decision, a point at the window's edge clear of every such card (`clearRightEdge`). Weighed each
+ * time the popover is placed, so a card arriving while it is open moves it aside.
+ */
+function useClearAnchor(trigger: HTMLElement | null) {
+  return useMemo(() => {
+    if (trigger === null) return undefined;
+    return {
+      contextElement: trigger,
+      getBoundingClientRect: () => {
+        const own = trigger.getBoundingClientRect();
+        const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+        const cards = [...document.querySelectorAll(DECISION_CARDS)]
+          .map((card) => card.getBoundingClientRect())
+          .filter((box) => box.width > 0 && box.height > 0);
+        const right = clearRightEdge({
+          trigger: own,
+          cards,
+          width: POPOVER_REM * rem,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+        });
+        return right === undefined
+          ? own
+          : DOMRect.fromRect({ x: right, y: own.top, width: 0, height: own.height });
+      },
+    };
+  }, [trigger]);
 }
 
 /**
@@ -206,23 +254,29 @@ function UsageLink({ className }: { className?: string | undefined }) {
 }
 
 /**
- * The popover's body, ticking each minute while open so ages and forecasts stay true: the columns'
- * names once, then a block per provider, a row per window saying its period, how much is used and
- * when it resets. Each provider dates its reading beside its name, apart from a window's forecast
- * under its row. The window the title bar shows is marked, and named at the foot, with the way on
- * to the Usage page.
+ * The popover's body, ticking each minute while open so ages and forecasts stay true: whose number
+ * the title bar shows (`meterSource`), the columns' names once, then a block per provider, its name
+ * and its reading's age on one row, a row per window saying its period, how much is used and when
+ * it resets. The window the title bar shows is marked, the thread's agent named, and the foot says
+ * the meter's rule, with the way on to the Usage page.
  */
 function LimitsPopover({
   shown,
+  agent,
   onLeave,
 }: {
-  shown: Pick<ShownLimit, "provider" | "window" | "why">;
+  shown: ShownLimit;
+  /** The agent of the thread in view, whose block says so. */
+  agent: string | undefined;
   /** Closes the popover as its link leaves for the Usage page. */
   onLeave: () => void;
 }) {
   const now = useMinuteNow();
   return (
     <div className="grid gap-3 text-reading">
+      <p data-testid="usage-limits-source" className="text-meta text-muted-foreground">
+        In the title bar: <span className="text-foreground">{meterSource(shown)}</span>
+      </p>
       <div
         aria-hidden
         data-testid="usage-limits-columns"
@@ -237,15 +291,12 @@ function LimitsPopover({
           key={provider}
           provider={provider}
           now={now}
+          thisThread={agent === provider}
           shown={shown.provider === provider ? shown.window : undefined}
         />
       ))}
       <div className="grid gap-2 border-t border-border pt-2.5 text-meta text-muted-foreground">
-        <p data-testid="usage-limits-foot">
-          The title bar shows {shown.why === "agent" ? "this thread's agent" : "the highest"}:{" "}
-          {agentLabel(shown.provider)} {WINDOW_LABEL[shown.window].toLowerCase()}. Includes your own
-          use outside Gram.
-        </p>
+        <p data-testid="usage-limits-foot">{METER_RULE} Includes your own use outside Gram.</p>
         <Link
           to="/settings/usage"
           data-testid="usage-limits-page"
@@ -266,18 +317,22 @@ function LimitsPopover({
 const LIMIT_ROW = "grid grid-cols-[3.75rem_minmax(2rem,1fr)_2.75rem_6.75rem] items-center gap-x-2";
 
 /**
- * A provider's 5-hour and weekly rows under its name and when it was last updated, its credits
- * when the agent reports them, and under a row the forecast when there is pace enough to make one;
- * nothing for a provider with no current reading. Every provider says its age the same way, in
- * muted words beside its name; an old reading dims its rows as it dims the meter, never amber.
+ * A provider's 5-hour and weekly rows under its name and its reading's age, on one row in the
+ * columns' grid so the age lines up under Resets; its credits when the agent reports them, and
+ * under a row the forecast when there is pace enough to make one; nothing for a provider with no
+ * current reading. An old reading says so in the same muted words as its age ("Old reading · 40m
+ * ago"), never a mark that reads as a button, and never amber.
  */
 function ProviderLimits({
   provider,
   now,
+  thisThread,
   shown,
 }: {
   provider: LimitProvider;
   now: number;
+  /** The agent of the thread in view. */
+  thisThread: boolean;
   /** The window the title bar's meter shows, when it is this provider's. */
   shown: LimitWindow | undefined;
 }) {
@@ -290,31 +345,32 @@ function ProviderLimits({
   const newest = current.reduce((a, b) => ((b.at ?? now) > (a.at ?? now) ? b : a));
   const stale = current.every((limit) => limitStale(limit, now));
   const credits = creditsText(newest);
+  const age = agoText(newest.at ?? now, now);
   return (
     <section
       aria-label={agentLabel(provider)}
       data-provider={provider}
       className="grid gap-1.5 not-first-of-type:border-t not-first-of-type:border-border not-first-of-type:pt-3"
     >
-      <div className="flex items-baseline gap-2">
-        <h3 className="font-medium">{agentLabel(provider)}</h3>
+      <div className={cn(LIMIT_ROW, "items-baseline")}>
+        <div className="col-span-2 flex min-w-0 items-baseline gap-2">
+          <h3 className="truncate font-medium whitespace-nowrap">{agentLabel(provider)}</h3>
+          {thisThread && (
+            <span
+              data-testid="usage-limit-this-thread"
+              className="shrink-0 text-meta whitespace-nowrap text-muted-foreground"
+            >
+              This thread
+            </span>
+          )}
+        </div>
         <span
           data-testid="usage-limit-age"
           data-stale={stale || undefined}
-          className="text-meta text-muted-foreground tabular-nums"
+          className="col-span-2 text-right text-meta whitespace-nowrap text-muted-foreground tabular-nums"
         >
-          Updated {agoText(newest.at ?? now, now)}
+          {stale ? `Old reading · ${age}` : `Updated ${age}`}
         </span>
-        {/* An old reading keeps its figures readable and says its age instead: a neutral outlined
-            mark beside the time, not a dimmed block that looks disabled. */}
-        {stale && (
-          <span
-            data-testid="usage-limit-stale"
-            className="rounded-sm border border-border-strong px-1 text-meta text-muted-foreground"
-          >
-            Old reading
-          </span>
-        )}
       </div>
       {credits !== undefined && (
         <p data-testid="usage-provider-credits" className="-mt-1 text-meta text-muted-foreground">

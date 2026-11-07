@@ -486,7 +486,7 @@ export function ThreadView({
               inTitlebar && "before:-mr-2 before:h-6 before:w-0 before:content-['']",
             )}
           >
-            <WorkerNowChip thread={thread} />
+            <WorkerNowChip thread={thread} prOnStrip={prOnStrip} />
             <OrchestratorChips thread={thread} inTitlebar={inTitlebar} />
             {thread.forkedFrom && (
               <ForkedFrom from={thread.forkedFrom} title={sourceTitle} hideClass={hideMd} />

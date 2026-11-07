@@ -10,10 +10,11 @@ import { seedTheme } from "./seed-theme";
 // `playwright install chromium` already installs this pinned binary alongside the shell.
 test.use({ channel: "chromium" });
 
-// The overview's header row, left to right: Hide sidebar, Settings (the top-left nav), Compact
-// overview, and New task at the far end, its words beside the `+` where the header has room.
-// Usage has its one way in at the title bar's meter.
-const names = ["Hide sidebar", "Settings", "Compact overview", "New task"];
+// The overview's header row, left to right: its own two toggles, Hide sidebar and Compact overview,
+// drawn apart, and New task at the far end, its words beside the `+` where the header has room.
+// Settings sits at the overview's foot, beside History. Usage has its one way in at the title
+// bar's meter.
+const names = ["Hide sidebar", "Compact overview", "New task"];
 
 for (const mode of ["light", "dark"] as const) {
   for (const width of [180, 280, 380]) {
@@ -118,9 +119,13 @@ test("top navigation explains real keyboard focus and preserves routes and modif
     await expect(hint).toHaveText(new RegExp(`^${label}`));
     expect(await showsFocus(action)).toBe(true);
   }
-  for (let i = 0; i < 2; i++) await page.keyboard.press("Shift+Tab");
+  // Settings is the foot's, after History: Tab reaches it from there, saying itself at once.
+  await expect(settings).toHaveCount(1);
+  await sidebar.getByTestId("overview-history").focus();
+  await page.keyboard.press("Tab");
   await expect(settings).toBeFocused();
   await expect(hint).toContainText("Settings");
+  expect(await showsFocus(settings)).toBe(true);
   await page.keyboard.press("Escape");
   await expect(hint).toBeHidden();
   // The meter opens its popover, whose link goes on to the Usage page.
@@ -163,7 +168,7 @@ test("top navigation explains real keyboard focus and preserves routes and modif
   await expect(settings).toBeVisible();
 });
 
-test("empty sidebar keeps all four top actions reachable", async ({ page }) => {
+test("empty sidebar keeps the top actions and Settings reachable", async ({ page }) => {
   await seedTheme(page, { palette: "minimal-ocean", mode: "light", motion: "off" });
   await openOverviewDensity(page, 180);
   await page.evaluate(async () => {
@@ -188,8 +193,9 @@ test("each top-left icon names itself and its key on hover", async ({ page }) =>
   const tooltip = page.locator('[data-slot="tooltip-content"]');
   const expected: readonly [string, RegExp][] = [
     ["Hide sidebar", /^Hide sidebar \((⌘|Ctrl\+)B\)$/],
+    ["Compact overview", /^Compact overview: workspaces as tiles$/],
+    // Settings, at the foot beside History, says its key too.
     ["Settings", /^Settings \((⌘|Ctrl\+),\)/],
-    ["Compact overview", /^Compact overview$/],
     // New opens a menu, whose Task, Team and Chat each show their own key.
     ["New task", /^New task, team or chat$/],
   ];
