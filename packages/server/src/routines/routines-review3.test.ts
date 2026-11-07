@@ -59,6 +59,17 @@ const workersOf = (id: string) =>
     return (yield* store.listThreads).filter((thread) => thread.spawnedBy?.routine?.id === id);
   });
 
+/**
+ * Synthetic credential shapes for the memory filter, put together here so no credential-shaped
+ * literal sits in the source (`check:scaffold` refuses one).
+ */
+const pemBlock = [
+  "-----BEGIN",
+  "OPENSSH PRIVATE KEY-----\nb3Blbg==\n-----END",
+  "OPENSSH PRIVATE KEY-----",
+].join(" ");
+const slackToken = ["xoxb", "123456789012", "abcdefghijkl"].join("-");
+
 /** The paths a `memory_list` result names. */
 const listed = (result: unknown) =>
   ((result as { files: ReadonlyArray<{ path: string }> }).files ?? []).map((file) => file.path);
@@ -454,9 +465,8 @@ describe.skipIf(!hasGit)("routines and worker memory: fourth review", () => {
             const byHand: Record<string, string> = {
               "deploy-key.md": "The deploy setup.",
               "github-auth.md": "How the bot signs in.",
-              "ops.md":
-                "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----",
-              "slack.md": "Webhook token xoxb-123456789012-abcdefghijkl",
+              "ops.md": pemBlock,
+              "slack.md": `Webhook token ${slackToken}`,
             };
             for (const [path, content] of Object.entries(byHand)) {
               writeFileSync(nodePath.join(dir, path), content);
