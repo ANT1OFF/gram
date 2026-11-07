@@ -373,8 +373,11 @@ function place(element: HTMLElement, target: HTMLElement | null, inline: boolean
 /** The pager over approvals that wait above the composer. */
 const APPROVAL_NAV = 'nav[aria-label="Approval navigation"]';
 
-/** A pane of the thread grid: where a card's focus is handed on, never into another pane. */
-const PANE = "[data-pane-index]";
+/**
+ * The thread view a card is drawn in, a grid pane's or the one beside the chat (`ThreadView`):
+ * where its keys reach and its focus is handed on, never into another thread's view.
+ */
+const THREAD_VIEW = "[data-thread-view]";
 
 /**
  * The control in each card's element that last had focus. A focused element removed with its row
@@ -406,13 +409,15 @@ function focusedIn(element: HTMLElement): HTMLElement | undefined {
 
 /**
  * Focus left with a card that went (answered, the turn over) or hid (its row folded): it goes to
- * the next approval in the same pane that is on screen, the one the keys answer first, else to the
- * pane's composer. Never to the page, where the keys would answer for nothing; never away from
- * something the user has focused meanwhile.
+ * the next approval in the same thread view that is on screen, the one the keys answer first, else
+ * to that view's composer. Never to the page, where the keys would answer for nothing, nor into
+ * another thread's view (the one beside the chat, or the chat beside it); never away from
+ * something the user has focused meanwhile. Outside a thread view it is left where it fell.
  */
 function handFocusOn(near: Element, from: HTMLElement) {
   lastFocused.delete(from);
-  const scope = near.closest(PANE) ?? document;
+  const scope = near.closest(THREAD_VIEW);
+  if (scope === null) return;
   // After the commit that took the card away: the next card is selected by then.
   setTimeout(() => {
     if (!focusLost()) return;
@@ -495,17 +500,17 @@ function PlacedApproval({
   useLayoutEffect(() => {
     element.toggleAttribute("data-selected", selected);
   }, [element, selected]);
-  // The pane the card is in, for focus to be handed on in once it has gone with its row.
-  const pane = useRef<Element | null>(null);
+  // The thread view the card is in, for focus to be handed on in once it has gone with its row.
+  const view = useRef<Element | null>(null);
   useLayoutEffect(() => {
-    pane.current = element.closest(PANE) ?? target?.closest(PANE) ?? pane.current;
+    view.current = element.closest(THREAD_VIEW) ?? target?.closest(THREAD_VIEW) ?? view.current;
   });
   useLayoutEffect(() => {
     register(id, element);
     return () => {
       register(id, undefined);
       // Answered, or the turn ended: focus in it goes on to the next approval, else the composer.
-      if (focusedIn(element) !== undefined) handFocusOn(pane.current ?? element, element);
+      if (focusedIn(element) !== undefined) handFocusOn(view.current ?? element, element);
       element.remove();
     };
   }, [element, id, register]);
@@ -1074,19 +1079,19 @@ export function ApprovalCard({
   const always = () => (confirming ? allow("always") : setConfirming(true));
 
   // 1, 2 and 3 (unless rebound) answer the card the keys are on while focus is on nothing, or in
-  // this card, or in its pane on nothing that types, activates or sits over it: never a key pressed
-  // in the Inbox beside it, a menu or another pane.
+  // this card, or in its thread view on nothing that types, activates or sits over it: never a key
+  // pressed in the Inbox beside it, a menu, another pane or the thread beside the chat.
   const cardRef = useRef<HTMLElement>(null);
   const keysReach = () => {
     const card = cardRef.current;
     const focus = document.activeElement;
     if (focus === null || focus === document.body) return true;
     if (card === null) return false;
-    const pane = card.closest(PANE);
-    // In the card, or on the pager in its pane that just showed it.
-    const paging = focus.closest(APPROVAL_NAV) !== null && focus.closest(PANE) === pane;
+    const view = card.closest(THREAD_VIEW);
+    // In the card, or on the pager in its thread view that just showed it.
+    const paging = focus.closest(APPROVAL_NAV) !== null && focus.closest(THREAD_VIEW) === view;
     if (card.contains(focus) || paging) return !types(focus);
-    return pane !== null && plainKeysReach(focus, pane);
+    return view !== null && plainKeysReach(focus, view);
   };
   const mayAnswer = () => keysReach() && (canAnswer?.() ?? true);
 

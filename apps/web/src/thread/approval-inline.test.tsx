@@ -152,20 +152,22 @@ function View({
   requests,
   rows,
   focused = true,
+  threadId = T,
 }: {
   api: Api;
   requests: readonly PendingRequest[];
   rows: ReactNode;
   focused?: boolean;
+  threadId?: ThreadId;
 }) {
   return (
     <ApiProvider api={api}>
-      <ApprovalSlotsProvider threadId={T}>
+      <ApprovalSlotsProvider threadId={threadId}>
         <div data-testid="transcript">
-          <AwaitingToolsProvider threadId={T}>{rows}</AwaitingToolsProvider>
+          <AwaitingToolsProvider threadId={threadId}>{rows}</AwaitingToolsProvider>
         </div>
         <div data-testid="above-composer">
-          <RequestCards threadId={T} requests={requests} focused={focused} />
+          <RequestCards threadId={threadId} requests={requests} focused={focused} />
         </div>
       </ApprovalSlotsProvider>
     </ApiProvider>
@@ -181,9 +183,9 @@ const shown = () =>
     .filter((place) => !place.hidden)
     .map((place) => place.textContent);
 
-/** The view in a grid pane, with the pane's composer under it. */
+/** The view as a thread view draws it, with its composer under it. */
 const Pane = (props: Parameters<typeof View>[0]) => (
-  <div data-pane-index="0">
+  <div data-thread-view={props.threadId ?? T}>
     <View {...props} />
     <textarea aria-label="Message" />
   </div>
@@ -502,6 +504,43 @@ describe("an approval drawn under its tool row", () => {
       act(() => pending([]));
       rerender(<Pane api={api} requests={[]} rows={rowsOf(PUSH)} />);
       await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Message")));
+    });
+
+    it("hands focus on only within its own thread view, never into the one beside it", async () => {
+      const BESIDE = "t-beside" as ThreadId;
+      const asked = ask("r-beside", "call-beside", "git push origin beside");
+      useThreadsStore.setState({
+        byId: {
+          [T]: { status: "needsApproval", pendingRequests: [PUSH] },
+          [BESIDE]: { status: "needsApproval", pendingRequests: [asked] },
+        } as never,
+      });
+      const { api } = fakeApi();
+      // The chat, and a worker's thread beside it, each with an approval on screen.
+      const views = (beside: readonly PendingRequest[]) => (
+        <>
+          <Pane api={api} requests={[PUSH]} rows={rowsOf(PUSH)} focused={false} />
+          <Pane api={api} requests={beside} rows={rowsOf(asked)} threadId={BESIDE} />
+        </>
+      );
+      const { rerender, container } = render(views([asked]));
+      const besideView = container.querySelector<HTMLElement>(`[data-thread-view="${BESIDE}"]`)!;
+      besideView.querySelector<HTMLElement>('[data-testid="approval-deny"]')!.focus();
+      act(() =>
+        useThreadsStore.setState({
+          byId: {
+            [T]: { status: "needsApproval", pendingRequests: [PUSH] },
+            [BESIDE]: { status: "running", pendingRequests: [] },
+          } as never,
+        }),
+      );
+      rerender(views([]));
+      // Its own composer, beside; not the chat's approval, though that is on screen.
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          besideView.querySelector('textarea[aria-label="Message"]'),
+        ),
+      );
     });
 
     it("leaves focus the user moved elsewhere where it is", async () => {
