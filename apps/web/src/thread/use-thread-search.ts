@@ -25,13 +25,22 @@ function useDebounced<T>(value: T, ms: number): T {
   return debounced;
 }
 
-/** Debounced `thread.search`, across threads or within `threadId`. */
+/**
+ * Debounced `thread.search`, across threads or within `threadId`. With `pendingWhileTyping`, a
+ * query still waiting out its debounce is already `searching`: not idle, and not answered by the
+ * previous query's hits.
+ */
 export function useThreadSearch(
   query: string,
-  { threadId, limit }: { threadId?: ThreadId | undefined; limit: number },
+  {
+    threadId,
+    limit,
+    pendingWhileTyping = false,
+  }: { threadId?: ThreadId | undefined; limit: number; pendingWhileTyping?: boolean },
 ): ThreadSearchState {
   const api = useApi();
-  const debounced = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS);
+  const trimmed = query.trim();
+  const debounced = useDebounced(trimmed, SEARCH_DEBOUNCE_MS);
   const enabled = debounced.length >= MIN_QUERY_LENGTH;
   const result = useQuery({
     queryKey: ["thread.search", debounced, threadId ?? null, limit],
@@ -41,6 +50,9 @@ export function useThreadSearch(
     staleTime: 5_000,
   });
 
+  if (pendingWhileTyping && trimmed !== debounced) {
+    return trimmed.length >= MIN_QUERY_LENGTH ? { status: "searching" } : { status: "idle" };
+  }
   if (!enabled) return { status: "idle" };
   if (result.isPending) return { status: "searching" };
   if (result.isError) {

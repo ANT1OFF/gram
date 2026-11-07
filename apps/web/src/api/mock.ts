@@ -120,6 +120,7 @@ import { createDocsMock } from "./docs/mock";
 import { createLabelsMock } from "./labels/mock";
 import { createKeybindingsMock } from "./keybindings/mock";
 import { createTerminalMock } from "./terminal/mock";
+import { createRoutinesMock } from "./routines/mock";
 import { createThreadWakesMock } from "./thread-wakes/mock";
 import { createWaitsMock } from "./mock-waits";
 import { createLimitsMock } from "./mock-limits";
@@ -1301,6 +1302,17 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     return simulateQueued(this.#scenes, threadId, inputs);
   }
 
+  /** The worker as a routine's run starts one: its `spawnedBy` names the routine. */
+  simulateRoutineWorker(
+    threadId: ThreadId,
+    routine: { readonly id: string; readonly name: string },
+  ) {
+    const runtime = this.#runtime(threadId);
+    const spawnedBy = runtime.summary.thread.spawnedBy;
+    if (spawnedBy === undefined) throw new Error(`${threadId} is not a worker`);
+    this.#update(runtime, { spawnedBy: { ...spawnedBy, routine } });
+  }
+
   /** `simulateLastActivity` (`mock-thread-sims.ts`). */
   simulateLastActivity(threadId: ThreadId, at: number) {
     return simulateLastActivity(this.#scenes, threadId, at);
@@ -2418,8 +2430,9 @@ export function createMockApi(options: MockApiOptions = {}) {
   );
   // One spread object and a two-argument `Object.assign`: past three sources `Object.assign` falls
   // back to an overload returning `any`, which would pass `satisfies Api` unchecked.
+  const owned = core.ownedApis();
   const slices = {
-    ...core.ownedApis(),
+    ...owned,
     ...createAgentRuntimeMock(world),
     ...agentSupportMock(),
     ...createAppMock(world),
@@ -2440,6 +2453,7 @@ export function createMockApi(options: MockApiOptions = {}) {
     simulateBrowseApproval: agentBrowse.simulateBrowseApproval,
     ...createTerminalMock(world),
     ...createThreadWakesMock(world),
+    ...createRoutinesMock(world, () => owned.listWorkspaces()),
   };
   return Object.assign(core, slices) satisfies Api;
 }

@@ -464,7 +464,7 @@ test("Settings is focused: the overview gives way to Back, and General's section
   await expect(sections).toBeVisible();
 
   // Back leaves Settings, and the overview returns as it was.
-  await title.getByRole("button", { name: "Back" }).click();
+  await title.getByRole("button", { name: /^Back/ }).click();
   await expect(page).not.toHaveURL(/\/settings/);
   await expect(page.getByTestId("overview-sidebar")).toBeVisible();
   await expect(page.getByTestId("settings-title")).toHaveCount(0);

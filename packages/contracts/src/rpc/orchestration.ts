@@ -6,6 +6,7 @@ import { AgentUnavailable, InvalidState, NotFound, ThreadNotFound } from "../err
 import { ProjectId, ThreadId, WorkspaceId } from "../ids.ts";
 import { FeatureCards } from "../feature-cards.ts";
 import { OrchestratorLedger } from "../orchestration.ts";
+import { RoutineId, RoutineStatus } from "../routines.ts";
 import { FinishedWorker, FinishedWorkerDetail, FinishedWorkersPage } from "../reaching-workers.ts";
 import { TaskModelSelection } from "../task-preflight.ts";
 import {
@@ -372,5 +373,25 @@ export const OrchestrationRpcs = RpcGroup.make(
     payload: threadRef,
     success: Thread,
     error: errors(ThreadNotFound, InvalidState),
+  }),
+  /**
+   * The workspace's routines as its charter has them, each with how its runs stand: the next run,
+   * the last one, and whether one waits on a pause. Routines are changed through the charter
+   * (`orchestrator.setCharter`), whose write path gives each an id.
+   */
+  Rpc.make("routine.list", {
+    payload: { workspaceId: WorkspaceId },
+    success: Schema.Array(RoutineStatus),
+    error: errors(NotFound),
+  }),
+  /**
+   * The user's Run now, off the schedule, under the same rules as a due run: a paused workspace, or
+   * a worker or held brief of its last run still going, refuses it with `InvalidState`. The routine
+   * with the run recorded.
+   */
+  Rpc.make("routine.run", {
+    payload: { workspaceId: WorkspaceId, id: RoutineId },
+    success: RoutineStatus,
+    error: errors(NotFound, InvalidState),
   }),
 );

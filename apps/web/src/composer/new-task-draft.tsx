@@ -61,6 +61,7 @@ import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { ControlDetails } from "@/new-thread/control-details";
 import { NewFormHeader, WHO_ENTRY, WhereFact, WhereStop, type Who } from "@/new-thread/who-does-it";
 import { WorkspaceAutonomy } from "@/new-thread/workspace-autonomy";
+import { readCameFrom, type CameFrom } from "@/shell/came-from";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -111,11 +112,16 @@ export function NewTaskDraft({
     queryFn: () => api.listProjects(),
   });
   const { workspaces, settled } = useWorkspacesQuery();
-  // The thread in the focused pane when the draft opened, which ⌘N leaves there.
-  const [currentId] = useState(() => {
+  // Where the draft was opened from: the thread or workspace page the window was on, else, opened
+  // straight onto the form, the thread in the focused pane, which ⌘N leaves there.
+  const [from] = useState((): CameFrom => {
+    const place = readCameFrom();
+    if (place !== undefined) return place;
     const { grid } = useLayoutStore.getState();
-    return grid.panes[grid.focused] ?? undefined;
+    const threadId = grid.panes[grid.focused] ?? undefined;
+    return threadId === undefined ? { kind: "nowhere" } : { kind: "thread", threadId };
   });
+  const currentId = from.kind === "thread" ? from.threadId : undefined;
   const current = useThreadsStore((s) =>
     currentId === undefined ? undefined : s.byId[currentId]?.thread,
   );
@@ -135,9 +141,24 @@ export function NewTaskDraft({
       ? { kind: "workspace", workspaceId: initialWorkspace }
       : undefined;
   const target = settledTaskTarget(
-    picked ?? named ?? defaultTaskTarget({ current, workspaces, projects, last }),
+    picked ??
+      named ??
+      defaultTaskTarget({
+        current,
+        here: from.kind === "workspace" ? from.workspaceId : undefined,
+        workspaces,
+        projects,
+        last,
+      }),
     workspaces,
   );
+  // The window is on the workspace the task goes to while it is drafted, so the title bar and the
+  // overview name the one the form does.
+  const showing = target?.kind === "workspace" ? target.workspaceId : undefined;
+  useEffect(() => {
+    useTaskDraftStore.getState().show(showing);
+    return () => useTaskDraftStore.getState().show(undefined);
+  }, [showing]);
   const repos = target === undefined ? [] : taskRepos(target, workspaces, projects);
   const [repoId, setRepoId] = useState<ProjectId>();
   const repo = repos.find((each) => each.id === repoId) ?? repos[0];

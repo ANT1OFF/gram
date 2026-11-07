@@ -5,6 +5,7 @@ import { useForgoLandingAway, useRememberOrchestrator } from "@/orchestration/ho
 import { useRefreshReviewRequestsOnFocus, useSeedReviewBotRepos } from "@/reviews/review-requests";
 import { useRememberSettingsReturn } from "@/settings/leave-settings";
 import { useSettingsSync } from "@/settings-sync";
+import { useRememberCameFrom } from "@/shell/came-from";
 import { useGlobalShortcuts } from "@/shell/global-shortcuts";
 import { useNeedsYouTitle } from "@/shell/use-needs-you-title";
 import { useAcknowledgeAttention } from "@/sidebar/use-acknowledge-attention";
@@ -22,6 +23,7 @@ export function useAppLifecycle(): void {
   useServerEvents();
   useGlobalShortcuts();
   useRememberSettingsReturn();
+  useRememberCameFrom();
   useSettingsSync();
   useDesktopBridge();
   useAcknowledgeAttention();

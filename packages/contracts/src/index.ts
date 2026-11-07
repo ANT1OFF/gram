@@ -53,6 +53,7 @@ export * from "./link-trust.ts";
 export * from "./models.ts";
 export * from "./issues.ts";
 export * from "./orchestration.ts";
+export * from "./routines.ts";
 export * from "./rules/worker-state.ts";
 export * from "./reaching-workers.ts";
 export * from "./workspaces.ts";

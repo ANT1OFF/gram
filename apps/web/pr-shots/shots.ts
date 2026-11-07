@@ -1256,6 +1256,128 @@ const SNOOZE_SHOTS: readonly Shot[] = [
   },
 ];
 
+/**
+ * The realistic morning at the tour's window size, the panel closed, as a working window opens it;
+ * what it made, with its workspaces by name.
+ */
+const openMorning = async (page: Page, path = "/") => {
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.orchestration", "realistic"));
+  await seedMockSettings(page, { panel: { open: false } });
+  await page.setViewportSize({ width: 1728, height: 1095 });
+  await page.goto(path);
+  await page.getByTestId("app-shell").waitFor();
+  return page.evaluate(async () => {
+    const made = await window.gramMock!.startedRealistic();
+    if (made === undefined) throw new Error("the mock did not start with the realistic scenario");
+    const ids = Object.fromEntries(
+      (await window.gramMock!.listWorkspaces()).map((s) => [s.workspace.name, s.workspace.id]),
+    );
+    return { ...made, ids };
+  });
+};
+
+/** ⌥⌘N, a goal typed, the form settled. */
+const startTaskHere = async (page: Page) => {
+  await page.keyboard.press("ControlOrMeta+Alt+n");
+  await page.getByLabel("What needs doing").fill("Add retry coverage for the queue consumer.");
+  await page.getByTestId("task-target").waitFor();
+  await page.waitForTimeout(600);
+};
+
+/** The Gram orchestrator read some way up its transcript, as a reader leaves it for Settings. */
+const readGramHalfway = async (page: Page) => {
+  const made = await openMorning(page);
+  await openOrchestrator(page, made.orchestratorThreadId);
+  const transcript = page.getByTestId("transcript");
+  await transcript.locator("[data-message-id]").first().waitFor();
+  await page.waitForTimeout(600);
+  await transcript.hover();
+  for (let i = 0; i < 2; i++) await page.mouse.wheel(0, -330);
+  await page.waitForTimeout(500);
+  return made;
+};
+
+/** Where New task starts, how it is labelled, and where Settings returns to. */
+const NAVIGATION_SHOTS: readonly Shot[] = [
+  {
+    name: "new-task-from-solo-thread",
+    title:
+      "⌥⌘N from the solo thread Bump dependencies (repo api): the form and the title bar name the same workspace",
+    modes: ["dark"],
+    open: async (page) => {
+      await openMorning(page, "/t/t-deps");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await startTaskHere(page);
+    },
+  },
+  {
+    name: "new-task-from-workspace-page",
+    title: "⌥⌘N from billing-api's page in Settings, with a Gram worker left in the pane",
+    modes: ["dark"],
+    open: async (page) => {
+      const made = await openMorning(page);
+      await page
+        .locator(`[data-testid="overview-worker"][data-thread-id="${made.searchWorker}"]`)
+        .click();
+      await page.waitForURL(new RegExp(`/t/${made.searchWorker}$`));
+      await page.keyboard.press("ControlOrMeta+Comma");
+      await page
+        .getByRole("navigation", { name: "Settings sections" })
+        .getByRole("link", { name: "Workspaces" })
+        .click();
+      await page
+        .getByTestId("workspace-settings")
+        .getByText("billing-api", { exact: true })
+        .click();
+      await page.waitForURL(new RegExp(`/settings/workspaces/${made.ids["billing-api"]}$`));
+      await page.waitForTimeout(400);
+      await startTaskHere(page);
+    },
+  },
+  {
+    name: "sidebar-new-task",
+    title: "The overview's header at its default width: the + says New task",
+    open: async (page) => {
+      await openMorning(page);
+      await page.mouse.move(1000, 900);
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("overview-sidebar").locator(":scope > div").first(),
+  },
+  {
+    name: "settings-back-named",
+    title: "Settings opened from the Gram orchestrator, Back hovered",
+    modes: ["dark"],
+    open: async (page) => {
+      await readGramHalfway(page);
+      await page.keyboard.press("ControlOrMeta+Comma");
+      await page.getByTestId("settings-back").hover();
+      await page.locator('[data-slot="tooltip-content"]').waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
+  {
+    name: "settings-return-place",
+    title:
+      "The Gram orchestrator read some way up, then Settings → Agents and Back: where the transcript lands",
+    modes: ["dark"],
+    open: async (page) => {
+      await readGramHalfway(page);
+      await page.keyboard.press("ControlOrMeta+Comma");
+      await page.getByTestId("settings-title").waitFor();
+      await page
+        .getByRole("link", { name: /Agents/ })
+        .first()
+        .click();
+      await page.waitForURL(/\/settings\/agents/);
+      await page.getByTestId("settings-back").click();
+      await page.getByTestId("transcript").waitFor();
+      await page.mouse.move(1000, 1000);
+      await page.waitForTimeout(1500);
+    },
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
   ...SNOOZE_SHOTS,
   ...PANEL_TAB_SHOTS,
@@ -1569,6 +1691,110 @@ export const SHOTS: readonly Shot[] = [
         .getByRole("heading", { name: "Worker: Release notes for 0.9", exact: true })
         .waitFor();
       await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "workspace-routines",
+    title:
+      "Workspace settings: Routines under Models, with a weekday worker routine, an orchestrator one and one off",
+    open: async (page) => {
+      await openOrchestratorOf(page, async () => {
+        const made = await window.gramMock!.simulateOrchestration("board");
+        const mock = window.gramMock as unknown as {
+          simulateRoutineState?: (workspaceId: string, id: string, state: unknown) => void;
+          listWorkspaces: () => Promise<
+            ReadonlyArray<{ workspace: { id: string }; charter: Record<string, unknown> }>
+          >;
+          setOrchestratorCharter: (id: string, charter: unknown) => Promise<unknown>;
+        };
+        // The base has no routines in its charter or no run states; it shows the page as it was.
+        if (mock.simulateRoutineState !== undefined) {
+          const state = (await mock.listWorkspaces()).find(
+            (each) => each.workspace.id === made.workspaceId,
+          )!;
+          // The page's fixed clock, which each time below is a day and a clock time from.
+          const today = Date.now();
+          const at = (hm: string, days = 0) => {
+            const [h, m] = hm.split(":").map(Number);
+            const day = new Date(today);
+            day.setDate(day.getDate() + days);
+            day.setHours(h!, m!, 0, 0);
+            return day.getTime();
+          };
+          await mock.setOrchestratorCharter(made.workspaceId, {
+            ...state.charter,
+            routines: [
+              {
+                id: "routine-ci",
+                name: "Daily CI triage",
+                brief: "Look at main's failing jobs and open one PR per real failure.",
+                schedule: { every: "weekday", at: "09:00" },
+              },
+              {
+                id: "routine-deps",
+                name: "Weekly dependency check",
+                brief:
+                  "Check for outdated dependencies and brief a worker for each bump worth doing.",
+                schedule: { every: "week", day: 1, at: "08:00" },
+                target: "orchestrator",
+              },
+              {
+                id: "routine-flakes",
+                name: "Nightly flake sweep",
+                brief: "Rerun the flaky suites and report what still fails.",
+                schedule: { every: "hours", hours: 12 },
+                off: true,
+              },
+            ],
+          });
+          mock.simulateRoutineState(made.workspaceId, "routine-ci", {
+            nextRunAt: at("09:00", 1),
+            scheduleKey: JSON.stringify({ every: "weekday", at: "09:00" }),
+            lastRun: { at: at("09:00"), outcome: "started", threadId: made.working },
+            lastWorker: made.working,
+          });
+          mock.simulateRoutineState(made.workspaceId, "routine-deps", {
+            nextRunAt: at("08:00", 4),
+            scheduleKey: JSON.stringify({ every: "week", day: 1, at: "08:00" }),
+            lastRun: {
+              at: at("08:00", -3),
+              outcome: "skipped",
+              detail: 'The worker from its last run, "Bump effect", is still live.',
+            },
+          });
+        }
+        return made;
+      });
+      await openWorkspaceSettingsFromBar(page);
+      await page.getByTestId("workspace-page").waitFor();
+      // Where the section sits, under Models; the base has none, so its neighbour stands in.
+      const routines = page.getByTestId("workspace-routines");
+      await (
+        (await routines.count()) > 0
+          ? routines
+          : page.getByRole("region", { name: "Reviews & merging" })
+      ).scrollIntoViewIfNeeded();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "worker-routine-banner",
+    title: "A worker a routine started: From routine under its header, with a way to its Routines",
+    open: async (page) => {
+      await openOrchestratorOf(page, async () => {
+        const made = await window.gramMock!.simulateOrchestration("board");
+        const mock = window.gramMock as unknown as {
+          simulateRoutineWorker?: (threadId: string, routine: { id: string; name: string }) => void;
+        };
+        mock.simulateRoutineWorker?.(made.briefed, { id: "routine-ci", name: "Daily CI triage" });
+        sessionStorage.setItem("gram.shots.worker", made.briefed);
+        return made;
+      });
+      const worker = await page.evaluate(() => sessionStorage.getItem("gram.shots.worker")!);
+      await threadRow(page, worker).click();
+      await page.getByRole("heading", { name: /^Worker: / }).waitFor();
+      await page.mouse.move(900, 500);
+      await page.waitForTimeout(800);
     },
   },
   {
@@ -3738,6 +3964,7 @@ export const SHOTS: readonly Shot[] = [
       await page.waitForTimeout(600);
     },
   },
+  ...NAVIGATION_SHOTS,
 ];
 
 /**

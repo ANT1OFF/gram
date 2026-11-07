@@ -2218,6 +2218,40 @@ describe("New task's target", () => {
     ).toEqual({ kind: "repo", projectId: "fresh" });
   });
 
+  it("from a workspace's own page, starts on that workspace over the focused thread and the last", () => {
+    const last = { kind: "workspace", workspaceId: across.workspace.id } as const;
+    expect(
+      defaultTaskTarget({
+        here: docsOnly.workspace.id,
+        current: inThread({ projectId: web.id, workspaceId: across.workspace.id }),
+        workspaces: [across, docsOnly],
+        projects,
+        last,
+      }),
+    ).toEqual({ kind: "workspace", workspaceId: "w-docs" });
+    // A page of a workspace that is gone says nothing: the thread, else the last, decides.
+    expect(
+      defaultTaskTarget({
+        here: "w-gone" as WorkspaceId,
+        workspaces: [across, docsOnly],
+        projects,
+        last,
+      }),
+    ).toEqual(last);
+  });
+
+  it("from a solo thread, starts on its repo's workspace, not the last one used", () => {
+    const last = { kind: "workspace", workspaceId: across.workspace.id } as const;
+    expect(
+      defaultTaskTarget({
+        current: inThread({ projectId: docs.id }),
+        workspaces: [across, docsOnly],
+        projects,
+        last,
+      }),
+    ).toEqual({ kind: "workspace", workspaceId: "w-docs" });
+  });
+
   it("without a thread, starts on the last target, then the only workspace", () => {
     const last = { kind: "workspace", workspaceId: across.workspace.id } as const;
     expect(defaultTaskTarget({ workspaces: [across, docsOnly], projects, last })).toEqual(last);

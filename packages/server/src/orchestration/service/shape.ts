@@ -12,6 +12,7 @@ import {
   type Handoff,
   type ModelRef,
   type ReopenedMembership,
+  type RoutineState,
   type OrchestratorCharter,
   type OrchestratorLedger,
   type JoinTarget,
@@ -51,6 +52,30 @@ export interface Authority {
   readonly state: WorkspaceState;
 }
 
+/**
+ * Which routine a spawn is a run of, as the run decided it: by id and its name then, whether it is
+ * the user's Run now, and the generation and schedule a scheduled run was decided on. Kept on a
+ * held brief, so its release is admitted against the routine as it is then.
+ */
+export interface RoutineRef {
+  readonly id: string;
+  readonly name: string;
+  readonly manual?: true | undefined;
+  readonly generation?: number | undefined;
+  readonly scheduleKey?: string | undefined;
+}
+
+/**
+ * The routines engine's admission of a run's spawn (`routines/routines.ts`), called by `spawnFor`
+ * with the spawn lock held, for every launch of a routine's worker: a scheduled run, Run now, a
+ * held brief's release, a half-made worker's recovery. The routine as the charter has it now: the
+ * spawn input rewritten with exactly its values, or why it doesn't launch.
+ */
+export type RoutineAdmission = (
+  state: WorkspaceState,
+  input: SpawnWorkerInput,
+) => Effect.Effect<SpawnWorkerInput | { readonly refuse: string }>;
+
 /** `spawn_worker`'s input once the tool has decoded it. */
 export interface SpawnWorkerInput {
   readonly project: string;
@@ -82,6 +107,20 @@ export interface SpawnWorkerInput {
   readonly atLimit?: "stay" | undefined;
   /** The brief's checklist, seeded as the worker's first plan; kept with a held brief. */
   readonly plan?: ReadonlyArray<string> | undefined;
+  /**
+   * The routine whose due run this is (`routines/routines.ts`), kept on the worker's `spawnedBy`;
+   * set by the routines engine alone, never by the agent's tool.
+   */
+  readonly routine?: RoutineRef | undefined;
+  /**
+   * Nobody is there to answer a card: a routine's run. Whatever would ask the user (one worker past
+   * the charter's cap, a repo outside the workspace, the limit threshold's question) refuses
+   * instead, with `unattended:` and why; the cap and the workspace's repos are checked under the
+   * spawn's own lock, so no other spawn lands between the check and the worker. Kept on a brief it
+   * held, so the brief's release is admitted the same way. Set by the routines engine alone, never
+   * by an agent's tool.
+   */
+  readonly unattended?: true | undefined;
 }
 
 /** What `spawn_worker` tells the orchestrator about a low-priority brief it held instead. */
@@ -495,8 +534,34 @@ export interface OrchestrationShape {
     E
   >;
 
+  // -- Routines' seam (`routines/routines.ts`) ----------------------------------------------
+  /** Installs the routines engine's admission (`RoutineAdmission`); a routine spawn refuses without it. */
+  setRoutineAdmission(admit: RoutineAdmission): Effect.Effect<void>;
+  /** How each of the workspace's routines' runs stand, by routine id, as its outbox keeps them. */
+  routineStates(workspaceId: WorkspaceId): Effect.Effect<Readonly<Record<string, RoutineState>>>;
+  /** Changes one routine's run state in the outbox, `undefined` dropping it; what was stored. */
+  updateRoutineState(
+    workspaceId: WorkspaceId,
+    id: string,
+    change: (state: RoutineState | undefined) => RoutineState | undefined,
+  ): Effect.Effect<RoutineState | undefined>;
+  /**
+   * Stores the charter `compute` makes of the one standing, through the charter's one write path
+   * (ids for routines, their run states pruned, the orchestrator told); `undefined` from `compute`
+   * is a charter that moved under it.
+   */
+  editCharter(
+    workspaceId: WorkspaceId,
+    compute: (standing: OrchestratorCharter) => OrchestratorCharter | undefined,
+  ): Effect.Effect<WorkspaceState, NotFound | InvalidState>;
+  // -- end of Routines' seam -----------------------------------------------------------------
   /** `undefined` unless the thread is its workspace's orchestrator right now. */
   authorityOf(threadId: ThreadId): Effect.Effect<Authority | undefined>;
+  /**
+   * The workspace whose memory the thread may read: the one it orchestrates, or, for a worker, the
+   * one it reports into while its orchestrator still holds the slot. `undefined` for anyone else.
+   */
+  memoryReaderOf(threadId: ThreadId): Effect.Effect<WorkspaceId | undefined>;
   /** The delegation rule for one call; reads only, since a gate may ask twice. */
   isDelegated(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
   /**
@@ -575,6 +640,8 @@ export interface OrchestrationShape {
       readonly model?: ModelRef;
       /** "Start under my control": held as the user's from its first input. */
       readonly hold?: boolean;
+      /** What its feature and title are named from, in place of the input's text. */
+      readonly name?: string;
     },
   ): Effect.Effect<Thread, NotFound | InvalidState | ThreadNotFound>;
   /** Whether `add_worker_repo` needs a card: only for a project outside the workspace. Reads only. */
@@ -701,6 +768,7 @@ export interface OrchestrationShape {
       readonly evidence?: WorkerReport["evidence"] | undefined;
       readonly prUrl?: string | undefined;
       readonly interface?: string | undefined;
+      readonly learned?: string | undefined;
     },
   ): Effect.Effect<WorkerReport | undefined>;
   /** The orchestrator → worker loop guard, in place of `checkSend` for a delegated send. */
@@ -728,7 +796,23 @@ export interface OrchestrationShape {
    * how an adopted dream tells the orchestrator to re-read its memory. Kept with the other
    * notes, so only the newest ten survive until a digest goes.
    */
-  addNote(workspaceId: WorkspaceId, note: string): Effect.Effect<void>;
+  addNote(
+    workspaceId: WorkspaceId,
+    note: string,
+    reason?: string,
+    /** Adds it once: a later call with the same key (the same routine run, after a restart) does nothing. */
+    key?: string,
+  ): Effect.Effect<void>;
+  /**
+   * Runs `effect` while no held brief of the workspace is being released or cancelled: every release
+   * takes the brief out of the outbox and spawns it under this same lock, so inside it a brief is
+   * either still held or its worker exists, never between. The routines engine reads a run's state
+   * under it.
+   */
+  withHeldReleases<A, E, R>(
+    workspaceId: WorkspaceId,
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, R>;
   /**
    * Puts one line in the workspace's next digest without waking anyone: it goes whenever the next
    * digest does. How worktree cleanups are told, one line per pass rather than a notice a thread.

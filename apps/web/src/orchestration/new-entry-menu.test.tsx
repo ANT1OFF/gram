@@ -46,11 +46,12 @@ describe("newEntryRoute", () => {
 });
 
 describe("NewEntryMenu", () => {
-  it("is an icon that opens a menu of Task, Team and Chat, each with its shortcut", async () => {
+  it("is New task, a menu of Task, Team and Chat, each with its shortcut", async () => {
     renderWithApi(<NewEntryMenu />, {});
-    const add = screen.getByRole("button", { name: "New" });
+    const add = screen.getByRole("button", { name: "New task" });
     expect(add.getAttribute("aria-haspopup")).toBe("menu");
-    expect(add.textContent).toBe("");
+    // Its words, which the header shows where it has room for them beside its icons.
+    expect(add.textContent).toBe("New task");
     fireEvent.click(add);
     const menu = await screen.findByRole("menu", { name: "New" });
     const items = within(menu).getAllByRole("menuitem");
@@ -75,7 +76,7 @@ describe("NewEntryMenu", () => {
     ] as const) {
       navigate.mockReset();
       renderWithApi(<NewEntryMenu />, {});
-      fireEvent.click(screen.getByRole("button", { name: "New" }));
+      fireEvent.click(screen.getByRole("button", { name: "New task" }));
       const menu = await screen.findByRole("menu", { name: "New" });
       fireEvent.click(within(menu).getByRole("menuitem", { name: new RegExp(`^${who}`) }));
       expect(navigate).toHaveBeenCalledWith(route);

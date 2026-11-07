@@ -24,6 +24,7 @@ import {
   ReasoningVariant,
   WORKER_ANSWER_MAX,
   WORKER_REPORT_INTERFACE_MAX,
+  WORKER_REPORT_LEARNED_MAX,
   WORKER_REPORT_SUMMARY_MAX,
   DEFAULT_PR_WAKE_EVENTS,
   MAX_PR_DEPENDENCIES,
@@ -97,6 +98,9 @@ const hasVisuals = (option: QuestionChoice): boolean =>
 
 const NOT_AN_ORCHESTRATOR =
   "This thread is not its workspace's orchestrator, so its memory isn't open here.";
+
+const NO_MEMORY_TO_READ =
+  "This thread is neither a workspace's orchestrator nor a worker reporting to one, so there is no memory to read here.";
 
 /** `schedule_wake` lists its condition flat (`WakeConditionInput`); this decodes it as the union. */
 const decodeWakeCondition = Schema.decodeUnknownEffect(WakeCondition);
@@ -329,7 +333,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "report",
         class: "self",
         description:
-          "Tell the orchestrator that started you how the work stands: `done` when it is finished and verified (give prUrl when there is a pull request), `blocked` when you can't continue, `question` when you need a decision, `progress` for a milestone. Keep `summary` short and factual. Optional `evidence` carries headSha, gate result, pr and nextStep in full before the prose excerpt; these are your claims, not verified gates. If you built or changed something other repos consume, state the contract in `interface`. Then end your turn; don't wait for a reply.",
+          "Tell the orchestrator that started you how the work stands: `done` when it is finished and verified (give prUrl when there is a pull request), `blocked` when you can't continue, `question` when you need a decision, `progress` for a milestone. Keep `summary` short and factual. Optional `evidence` carries headSha, gate result, pr and nextStep in full before the prose excerpt; these are your claims, not verified gates. If you built or changed something other repos consume, state the contract in `interface`. Optional `learned` is a lasting fact a later worker would otherwise have to ask or rediscover (a repo convention, a trap, how the user wants something); your orchestrator decides whether it goes into memory. Then end your turn; don't wait for a reply.",
       },
       audience: ["worker"],
       input: Schema.Struct({
@@ -339,6 +343,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         prUrl: Schema.optionalKey(Schema.String),
         interface: Schema.optionalKey(
           Schema.String.check(Schema.isMaxLength(WORKER_REPORT_INTERFACE_MAX)),
+        ),
+        learned: Schema.optionalKey(
+          Schema.NonEmptyString.check(Schema.isMaxLength(WORKER_REPORT_LEARNED_MAX)),
         ),
       }),
       handle: (worker, input) =>
@@ -716,6 +723,23 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           ),
         );
 
+    /**
+     * The memory the caller may read: its own as an orchestrator, its orchestrator's as a worker.
+     * Writes stay with `memoryOf`, so the orchestrator is memory's one curator.
+     */
+    const readableMemoryOf = (tool: string, caller: ThreadId) =>
+      orchestration
+        .memoryReaderOf(caller)
+        .pipe(
+          Effect.flatMap((workspaceId) =>
+            workspaceId === undefined
+              ? Effect.fail(
+                  new AppToolError({ tool, message: refusal("no_authority", NO_MEMORY_TO_READ) }),
+                )
+              : Effect.succeed(workspaceId),
+          ),
+        );
+
     /** A write as a diff in the caller's transcript, and `memory.changed` to every window. */
     const showWrite = (caller: ThreadId, workspaceId: WorkspaceId, write: MemoryWrite) =>
       runtimes
@@ -726,14 +750,18 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       descriptor: {
         name: "memory_list",
         class: "self",
-        description: "The files in your memory, with their sizes. MEMORY.md is the index.",
+        description:
+          "The files in your workspace's memory, with their sizes. MEMORY.md is the index. A worker reads its orchestrator's memory and can't change it.",
       },
-      audience: ["orchestrator"],
+      audience: ["orchestrator", "worker"],
       input: Schema.Struct({ prefix: Schema.optionalKey(Schema.String) }),
       handle: (caller, { prefix }) =>
         Effect.gen(function* () {
-          const workspaceId = yield* memoryOf("memory_list", caller);
-          const files = yield* memory.list(workspaceId);
+          const workspaceId = yield* readableMemoryOf("memory_list", caller);
+          // A worker reads through the anchored tree, without what is private or credential-shaped.
+          const files = (yield* orchestration.authorityOf(caller))
+            ? yield* memory.list(workspaceId)
+            : yield* memory.listForWorker(workspaceId);
           return {
             files: files.filter((file) => prefix === undefined || file.path.startsWith(prefix)),
           };
@@ -747,12 +775,15 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         description:
           "Use `file` (`path` is an alias), relative to the memory root. Read one memory file's text.",
       },
-      audience: ["orchestrator"],
+      audience: ["orchestrator", "worker"],
       input: inputAliases(Schema.Struct({ path: Schema.NonEmptyString }), { path: ["file"] }),
       handle: (caller, { path }) =>
         Effect.gen(function* () {
-          const workspaceId = yield* memoryOf("memory_read", caller);
-          return { path, content: yield* memory.read(workspaceId, path) };
+          const workspaceId = yield* readableMemoryOf("memory_read", caller);
+          const content = (yield* orchestration.authorityOf(caller))
+            ? yield* memory.read(workspaceId, path)
+            : yield* memory.readForWorker(workspaceId, path);
+          return { path, content };
         }).pipe(Effect.mapError(failed("memory_read"))),
     });
 

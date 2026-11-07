@@ -4,6 +4,7 @@
 import {
   autonomyOf,
   briefFooterOf,
+  routineScheduleText,
   serializeDigest,
   prioritizeDigestReports,
   DIGEST_REPORTS_MAX,
@@ -34,6 +35,7 @@ import { DECISIONS_FILE } from "../memory.ts";
 import {
   readOutbox as readStoredOutbox,
   notesEnd,
+  NOTE_KEYS_KEPT,
   storedSnapshot,
   withNotes,
   withNotesAcked,
@@ -82,6 +84,21 @@ export const DELIVERY_RETRY_DELAYS: ReadonlyArray<Duration.Duration> = [
 ];
 /** Consecutive failed deliveries after which orchestration pauses instead of trying again. */
 export const DELIVERY_FAILURES_BEFORE_PAUSE = 3;
+/** The user's routines by name and time; their briefs reach the workers, not this charter. */
+const routineLines = (charter: OrchestratorCharter): ReadonlyArray<string> => {
+  const on = (charter.routines ?? []).filter((routine) => routine.off !== true);
+  return on.length === 0
+    ? []
+    : [
+        `routines, each starting a fresh worker of yours (or, marked so, putting its brief in your digest) on its schedule; a digest notes each run, and routine_create and routine_update change them: ${on
+          .map(
+            (routine) =>
+              `"${routine.name}" ${routineScheduleText(routine.schedule)}${routine.target === "orchestrator" ? " (to you)" : ""}`,
+          )
+          .join("; ")}`,
+      ];
+};
+
 const charterLines = (
   charter: OrchestratorCharter,
   mode: Thread["mode"],
@@ -100,6 +117,7 @@ const charterLines = (
   ),
   ...(charter.routeAtLimit === true ? [ROUTE_AT_LIMIT_LINE] : []),
   ...(briefFooterOf(charter) === undefined ? [] : [footerLine(briefFooterOf(charter)!)]),
+  ...routineLines(charter),
   charter.workerModels === undefined
     ? `workers start in ${mode} mode on your own model`
     : rosterText(
@@ -628,10 +646,20 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
     });
 
   // Dreams' seam (`dreams.ts`).
-  const addNote: OrchestrationShape["addNote"] = (workspaceId, note) =>
+  const addNote: OrchestrationShape["addNote"] = (workspaceId, note, reason, key) =>
     Effect.gen(function* () {
-      yield* updateOutbox(workspaceId, (outbox) => [withNotes(outbox, [note]), undefined]);
-      yield* wake(workspaceId, "memory consolidated", true);
+      // With a key, the note and its key go in one write: one already there is the same occurrence.
+      const added = yield* updateOutbox(workspaceId, (outbox) => {
+        if (key === undefined) return [withNotes(outbox, [note]), true];
+        const keys = outbox.noteKeys ?? [];
+        if (keys.includes(key)) return [outbox, false];
+        return [
+          { ...withNotes(outbox, [note]), noteKeys: [...keys, key].slice(-NOTE_KEYS_KEPT) },
+          true,
+        ];
+      });
+      if (!added) return;
+      yield* wake(workspaceId, reason ?? "memory consolidated", true);
     });
 
   const noteQuietly: OrchestrationShape["noteQuietly"] = (workspaceId, note) =>

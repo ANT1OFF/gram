@@ -92,7 +92,7 @@ const steps: readonly Shot[] = [
     title: "Start: the sidebar's New menu: Task, Team or Chat, each with its shortcut",
     open: async (page) => {
       await openApproval(page);
-      await page.getByRole("button", { name: "New", exact: true }).click();
+      await page.getByRole("button", { name: "New task", exact: true }).click();
       await expect(
         page.getByRole("menu").or(page.getByRole("radiogroup", { name: "Who does it" })),
       ).toBeVisible();

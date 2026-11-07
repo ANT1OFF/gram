@@ -685,6 +685,51 @@ describe("settings by chat: the worker brief footer and routing at a limit", () 
     );
   });
 
+  it("sets the routines as a whole list, showing each brief on the card", () => {
+    const routine = {
+      name: "Dependency check",
+      brief: "List outdated dependencies, oldest first.",
+      schedule: { every: "week", at: "08:00", day: 1 },
+    };
+    const set = plan([{ op: "set", key: "workspace.routines", value: [routine] }]);
+    expect(set.ok && set.plan.rows).toEqual([
+      {
+        key: "workspace.routines",
+        label: "Routines",
+        before: "none",
+        after: '"Dependency check", Mondays at 08:00: List outdated dependencies, oldest first.',
+      },
+    ]);
+    const kept = { ...world, workspace: { ...workspace, charter: charterAfter(set)! } };
+    expect(kept.workspace.charter.routines).toEqual([routine]);
+    expect(
+      charterAfter(plan([{ op: "set", key: "workspace.routines", value: null }], kept), kept),
+    ).not.toHaveProperty("routines");
+    expect(
+      errorsOf([
+        {
+          op: "set",
+          key: "workspace.routines",
+          value: [routine, { ...routine, name: "dependency CHECK" }],
+        },
+      ]),
+    ).toContain("whole list");
+    expect(
+      errorsOf([
+        {
+          op: "set",
+          key: "workspace.routines",
+          value: [{ ...routine, schedule: { every: "day", at: "25:00" } }],
+        },
+      ]),
+    ).toContain("whole list");
+    expect(
+      errorsOf([
+        { op: "set", key: "workspace.routines", value: [{ ...routine, project: "elsewhere" }] },
+      ]),
+    ).toContain("isn't one of this workspace's");
+  });
+
   it("turns routing at a limit on and off, stored only while on", () => {
     expect(readSettingsRows(world, "workspace")).toContainEqual(
       expect.objectContaining({ key: "workspace.routeAtLimit", value: false }),

@@ -230,10 +230,14 @@ function ReportItem({ report }: { report: DigestReport }) {
         text={preview.length > 140 ? `${preview.slice(0, 140)}…` : preview}
         className="line-clamp-2"
       />
-      {(preview.length > 140 || preview !== report.summary || report.interface !== undefined) && (
+      {(preview.length > 140 ||
+        preview !== report.summary ||
+        report.interface !== undefined ||
+        report.learned !== undefined) && (
         <Disclosure label="Report evidence">
           <WorkerText text={report.summary} />
           {report.interface !== undefined && <WorkerText text={report.interface} />}
+          {report.learned !== undefined && <WorkerText text={`Learned: ${report.learned}`} />}
         </Disclosure>
       )}
       {report.prUrl !== undefined && <PrLink url={report.prUrl}>{report.prUrl}</PrLink>}
@@ -544,6 +548,11 @@ export function WorkerReportCard({ report }: { report: WorkerReport }) {
           <pre data-testid="worker-report-interface" className={PRE}>
             {report.interface}
           </pre>
+        </Disclosure>
+      )}
+      {report.learned !== undefined && (
+        <Disclosure label="Offered for memory">
+          <WorkerText text={report.learned} />
         </Disclosure>
       )}
     </article>
