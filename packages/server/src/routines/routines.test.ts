@@ -24,6 +24,7 @@ import {
 } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
+import { waitFor } from "../runtime/test-harness.ts";
 import { HOUR_MS, nextRunAfter } from "./schedule.ts";
 import { addRoutine, ranAfter, routineNow, runNow, workerRoutine } from "./test-kit.ts";
 import { localZone } from "../zone-time.ts";
@@ -74,8 +75,13 @@ describe.skipIf(!hasGit)("routines", () => {
             expect(ran.lastWorker).toBe(worker?.id);
             expect(worker?.checkout.branch).toMatch(/^routine\/ci-triage-\d{8}-\d{4}$/);
             const fake = yield* FakeAgentControl;
-            const brief = fake.sessions.find((s) => s.options.threadId === worker?.id)?.sent[0]
-              ?.text;
+            // The brief goes out once the worker's session starts, which a loaded runner can delay.
+            const brief = yield* waitFor(
+              "the routine worker's brief",
+              Effect.sync(
+                () => fake.sessions.find((s) => s.options.threadId === worker?.id)?.sent[0]?.text,
+              ),
+            );
             expect(brief).toContain('started by the scheduled routine "CI triage" (every 6 hours)');
             expect(brief).toContain("It is not a message the user just sent.");
             expect(brief).toContain("Look at main's failing jobs");
