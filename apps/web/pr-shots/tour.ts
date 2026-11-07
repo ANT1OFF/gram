@@ -307,6 +307,15 @@ const scenes: readonly Shot[] = [
     },
   },
   {
+    name: "settings-usage",
+    title: "Settings: Usage, each limit's pace, Codex credits and a week of history",
+    open: async (page) => {
+      await stageRealistic(page);
+      await page.goto("/settings/usage");
+      await expect(page.getByTestId("usage-window-history").first()).toBeVisible();
+    },
+  },
+  {
     name: "dreams",
     title:
       "Memory → Draft memory update: the Dreams action, when the update is saved, and seeded running, completed and failed runs",

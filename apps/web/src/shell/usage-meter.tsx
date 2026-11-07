@@ -66,7 +66,7 @@ export function useMinuteNow(): number {
 
 /**
  * The window's one way into usage: the title bar's subscription meter, as a thin bar and a share,
- * opening onto every provider's 5-hour and weekly windows and a link to the Usage page. On a thread
+ * opening onto every provider's 5-hour and weekly windows and a link to Settings → Usage. On a thread
  * it is that thread's agent's closest window, so its name matches the composer's; elsewhere, or
  * once another provider's is about to stop work, the highest of all (`shownLimit`), as its hover and
  * name say. Neutral until 90%, so amber in the title bar means what needs you. Until an agent
@@ -195,7 +195,7 @@ function UsageLink({ className }: { className?: string | undefined }) {
             "text-muted-foreground data-[status=active]:bg-muted data-[status=active]:text-foreground",
             className,
           )}
-          render={<Link to="/usage" />}
+          render={<Link to="/settings/usage" />}
           nativeButton={false}
         />
       }
@@ -247,7 +247,7 @@ function LimitsPopover({
           use outside Gram.
         </p>
         <Link
-          to="/usage"
+          to="/settings/usage"
           data-testid="usage-limits-page"
           onClick={onLeave}
           className="justify-self-start rounded-(--radius-sm) text-body text-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"

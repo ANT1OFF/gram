@@ -87,7 +87,7 @@ test("usage has one way in: an icon before any reading, then the meter, which wa
   expect(box.width).toBeGreaterThanOrEqual(28);
   expect(box.height).toBeGreaterThanOrEqual(28);
   await link.click();
-  await expect(page).toHaveURL(/\/usage$/);
+  await expect(page).toHaveURL(/\/settings\/usage$/);
   await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
   await page.goBack();
   await page.mouse.move(1000, 800);

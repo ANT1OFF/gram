@@ -35,6 +35,7 @@ describe("SettingsNav", () => {
     ).toEqual([
       "General",
       "Agents & models",
+      "Usage",
       "Workspaces & merging",
       "Appearance",
       "Notifications",
@@ -69,6 +70,7 @@ describe("SettingsNav", () => {
     ).toEqual({
       general: [],
       agents: ["ai-helpers", "connectors", "gateways"],
+      usage: [],
       workspaces: ["review-bots", "storage"],
       appearance: ["terminal"],
       notifications: [],

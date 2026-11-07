@@ -6,6 +6,7 @@ import { MockWindows } from "../mock-windows";
 import type { MockWorld } from "../mock-world";
 import type { AppApi } from "./types";
 import { mockUsageOverview } from "../mock-usage";
+import { mockLimitHistory } from "../mock-limit-history";
 
 /** What the e2e specs read back, or set, through `window.gramMock`. */
 export interface AppMockControls {
@@ -43,6 +44,7 @@ export function createAppMock(world: MockWorld): AppApi & AppMockControls {
 
   return {
     usageOverview: mockUsageOverview,
+    usageLimitHistory: async ({ days }) => mockLimitHistory(days, Date.now()),
     opened,
     filedIssues,
     issueFailure,

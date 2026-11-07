@@ -2,6 +2,7 @@ export * from "./agent-failure.ts";
 export * from "./agent.ts";
 export * from "./usage-overview.ts";
 export * from "./usage-limits.ts";
+export * from "./usage-limit-history.ts";
 export * from "./agent-support.ts";
 export * from "./task-preflight.ts";
 export * from "./assist.ts";

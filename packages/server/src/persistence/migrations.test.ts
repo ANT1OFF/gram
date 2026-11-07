@@ -49,6 +49,7 @@ describe("migration ordering gate", () => {
         [2, "merge_freezes"],
         [3, "message_receipts"],
         [4, "merge_fences"],
+        [5, "usage_limit_history"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -140,6 +141,8 @@ describe("the baseline", () => {
         "index turns_started",
         "index turns_thread",
         "index turns_thread_usage",
+        "index usage_credit_history_bucket",
+        "index usage_limit_history_bucket",
         "index wait_items_open",
         "index worker_reports_interface",
         "index worker_reports_thread",
@@ -181,6 +184,8 @@ describe("the baseline", () => {
         "table threads",
         "table threads_version",
         "table turns",
+        "table usage_credit_history",
+        "table usage_limit_history",
         "table usage_limits",
         "table wait_items",
         "table worker_reports",
@@ -205,6 +210,7 @@ describe("the baseline", () => {
         [2, "merge_freezes"],
         [3, "message_receipts"],
         [4, "merge_fences"],
+        [5, "usage_limit_history"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -229,6 +235,7 @@ describe("the baseline", () => {
           "merge_freezes",
           "message_receipts",
           "merge_fences",
+          "usage_limit_history",
         ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
@@ -264,6 +271,7 @@ describe("the baseline", () => {
             [2, "merge_freezes"],
             [3, "message_receipts"],
             [4, "merge_fences"],
+            [5, "usage_limit_history"],
           ]);
           // A closed thread has no live row, but must retain its permanent safety identity.
           if (reopen === 0) {
@@ -310,10 +318,11 @@ describe("the baseline", () => {
           },
         };
         const entries = Object.entries(migrations);
-        const last = entries.at(-1)!;
-        expect(last[0]).toMatch(/_merge_fences$/);
-        const previous = Object.fromEntries(entries.slice(0, -1));
-        const previousId = Number(last[0].split("_")[0]) - 1;
+        // By name, not position: later migrations append after it.
+        const index = entries.findIndex(([key]) => /^\d+_merge_fences$/.test(key));
+        expect(index).toBeGreaterThan(0);
+        const previous = Object.fromEntries(entries.slice(0, index));
+        const previousId = Number(entries[index]![0].split("_")[0]) - 1;
         const open = (record: Parameters<typeof migratorOptions>[0]) =>
           SqliteMigrator.layer(migratorOptions(record)).pipe(
             Layer.provideMerge(SqliteClient.layer({ filename: file })),
@@ -399,6 +408,61 @@ describe("the baseline", () => {
       }),
   );
 
+  it.effect("upgrades the previous 0004 database to limit history, keeping kept readings", () =>
+    Effect.gen(function* () {
+      const file = join(yield* tempDir, "previous-to-limit-history.db");
+      const entries = Object.entries(migrations);
+      const index = entries.findIndex(([key]) => /^\d+_usage_limit_history$/.test(key));
+      expect(index).toBeGreaterThan(0);
+      const previous = Object.fromEntries(entries.slice(0, index));
+      const open = (record: Parameters<typeof migratorOptions>[0]) =>
+        SqliteMigrator.layer(migratorOptions(record)).pipe(
+          Layer.provideMerge(SqliteClient.layer({ filename: file })),
+        );
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        expect((yield* applied).at(-1)?.name).toBe("merge_fences");
+        expect((yield* tableNames).has("usage_limit_history")).toBe(false);
+        yield* sql`INSERT INTO usage_limits (key, data) VALUES ('codex//five_hour', '{"synthetic":true}')`;
+      }).pipe(Effect.provide(open(previous)));
+      for (let reopen = 0; reopen < 2; reopen++) {
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect((yield* applied).map((row) => row.name).slice(-2)).toEqual([
+            "merge_fences",
+            "usage_limit_history",
+          ]);
+          expect(yield* sql`SELECT key, data FROM usage_limits`).toEqual([
+            { key: "codex//five_hour", data: '{"synthetic":true}' },
+          ]);
+          if (reopen === 0) {
+            yield* sql`INSERT INTO usage_limit_history
+              (agent, limit_window, bucket, utilization, peak, resets_at)
+              VALUES ('codex', 'five_hour', 900000, 0.4, 0.5, NULL)`;
+            yield* sql`INSERT INTO usage_credit_history (agent, bucket, balance)
+              VALUES ('codex', 900000, 1250)`;
+          }
+          expect(
+            yield* sql`SELECT agent, limit_window, bucket, utilization, peak, resets_at
+            FROM usage_limit_history`,
+          ).toEqual([
+            {
+              agent: "codex",
+              limit_window: "five_hour",
+              bucket: 900000,
+              utilization: 0.4,
+              peak: 0.5,
+              resets_at: null,
+            },
+          ]);
+          expect(yield* sql`SELECT agent, bucket, balance FROM usage_credit_history`).toEqual([
+            { agent: "codex", bucket: 900000, balance: 1250 },
+          ]);
+        }).pipe(Effect.provide(open(migrations)));
+      }
+    }),
+  );
+
   it.effect("takes a 1.x migration appended after it, once, on a database it made", () =>
     Effect.gen(function* () {
       const file = join(yield* tempDir, "gram.db");
@@ -409,7 +473,7 @@ describe("the baseline", () => {
       yield* Effect.void.pipe(Effect.provide(open(migrations)));
       const next = {
         ...migrations,
-        "0005_example": Effect.gen(function* () {
+        "0006_example": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`ALTER TABLE projects ADD COLUMN example TEXT`;
         }),
@@ -426,7 +490,8 @@ describe("the baseline", () => {
             [2, "merge_freezes"],
             [3, "message_receipts"],
             [4, "merge_fences"],
-            [5, "example"],
+            [5, "usage_limit_history"],
+            [6, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
       }

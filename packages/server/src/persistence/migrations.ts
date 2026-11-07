@@ -411,11 +411,38 @@ const mergeFences = Effect.gen(function* () {
   yield* sql`CREATE TABLE merge_fences (key TEXT PRIMARY KEY, data TEXT NOT NULL)`;
 });
 
+/**
+ * Subscription limit history (`usage/limit-history.ts`): each window's share and reset, and each
+ * account's credit balance, one row per quarter hour, pruned past 35 days. Only the numbers the
+ * meter already shows; never a token, a login or an account identifier.
+ */
+const usageLimitHistory = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE usage_limit_history (
+    agent TEXT NOT NULL,
+    limit_window TEXT NOT NULL,
+    bucket INTEGER NOT NULL,
+    utilization REAL NOT NULL,
+    peak REAL NOT NULL,
+    resets_at INTEGER,
+    PRIMARY KEY (agent, limit_window, bucket)
+  ) WITHOUT ROWID`;
+  yield* sql`CREATE INDEX usage_limit_history_bucket ON usage_limit_history(bucket)`;
+  yield* sql`CREATE TABLE usage_credit_history (
+    agent TEXT NOT NULL,
+    bucket INTEGER NOT NULL,
+    balance REAL NOT NULL,
+    PRIMARY KEY (agent, bucket)
+  ) WITHOUT ROWID`;
+  yield* sql`CREATE INDEX usage_credit_history_bucket ON usage_credit_history(bucket)`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
   "0003_message_receipts": messageReceipts,
   "0004_merge_fences": mergeFences,
+  "0005_usage_limit_history": usageLimitHistory,
 };
 
 /**
