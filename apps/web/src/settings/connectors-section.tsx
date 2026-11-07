@@ -14,7 +14,6 @@ import {
   CircleCheck,
   CircleOff,
   KeyRound,
-  Plus,
   RefreshCw,
   Trash2,
 } from "lucide-react";
@@ -459,7 +458,6 @@ export function ConnectorsSettings() {
             setNotice(undefined);
           }}
         >
-          <Plus data-icon="inline-start" />
           Add server…
         </Button>
         <Button
@@ -672,7 +670,6 @@ function Cell({
           aria-label={`Add ${row.name} to ${label}`}
           onClick={onAdd}
         >
-          <Plus data-icon="inline-start" />
           Add
         </Button>
       </div>

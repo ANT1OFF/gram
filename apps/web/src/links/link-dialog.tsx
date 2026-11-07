@@ -1,5 +1,4 @@
 import { ALWAYS_ASKS_BECAUSE, isTrustedLink, linkHost } from "@gram/contracts";
-import { Copy, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { create } from "zustand";
 import type { LinkSafetyConfig, LinkSafetyModalProps } from "streamdown";
@@ -70,7 +69,6 @@ function OpenLinkDialog({ onClose, onConfirm, url }: Omit<LinkSafetyModalProps, 
             onClose();
           }}
         >
-          <Copy data-icon="inline-start" />
           Copy link
         </Button>
         <Button type="button" variant="ghost" onClick={onClose}>
@@ -85,7 +83,6 @@ function OpenLinkDialog({ onClose, onConfirm, url }: Omit<LinkSafetyModalProps, 
             onClose();
           }}
         >
-          <ExternalLink data-icon="inline-start" />
           Open link
         </Button>
       </div>

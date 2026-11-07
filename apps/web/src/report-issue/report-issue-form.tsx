@@ -11,7 +11,6 @@ import {
   ChevronRight,
   CircleCheck,
   CircleHelp,
-  ExternalLink,
   Lightbulb,
   type LucideIcon,
 } from "lucide-react";
@@ -37,12 +36,12 @@ const KINDS: readonly {
   readonly value: IssueKind;
   readonly label: string;
   readonly icon: LucideIcon;
-  /** The icon's colour while the kind is picked. */
+  /** The icon's colour while the kind is picked: the text colour, never a status one. */
   readonly tone: string;
 }[] = [
-  { value: "bug", label: "Bug", icon: Bug, tone: "text-destructive" },
-  { value: "feature", label: "Feature", icon: Lightbulb, tone: "text-warning" },
-  { value: "question", label: "Question", icon: CircleHelp, tone: "text-info" },
+  { value: "bug", label: "Bug", icon: Bug, tone: "text-foreground" },
+  { value: "feature", label: "Feature", icon: Lightbulb, tone: "text-foreground" },
+  { value: "question", label: "Question", icon: CircleHelp, tone: "text-foreground" },
 ];
 
 const NO_AREA = "none";
@@ -279,7 +278,6 @@ export function ReportIssueForm({
               data-testid="report-issue-open-github"
               onClick={() => void openOnGitHub()}
             >
-              <ExternalLink data-icon="inline-start" />
               Open on GitHub
             </Button>
           </div>

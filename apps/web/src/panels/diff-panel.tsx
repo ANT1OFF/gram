@@ -691,7 +691,7 @@ function DiffBody({
     // Changes too large to list are not "no changes".
     if (diff.note === DIFF_TOO_LARGE_NOTE) {
       return (
-        <p data-testid="diff-empty" className="px-3 py-2 text-meta text-warning">
+        <p data-testid="diff-empty" className="px-3 py-2 text-meta text-muted-foreground">
           These changes are too large to list here. Read them in your editor or a terminal with git
           diff.
         </p>
@@ -728,7 +728,9 @@ function DiffBody({
           {(diff.base ?? "its base").replace(/^origin\//, "")}
         </p>
       )}
-      {diff.note && <p className="shrink-0 px-3 pb-2 text-meta text-warning">{diff.note}</p>}
+      {diff.note && (
+        <p className="shrink-0 px-3 pb-2 text-meta text-muted-foreground">{diff.note}</p>
+      )}
       <div
         className={cn(
           "flex min-h-0 flex-1 border-t border-border",
@@ -783,7 +785,7 @@ function EmptyDiff({
       <p data-testid="diff-empty" className="text-meta text-muted-foreground">
         {children}
       </p>
-      {note && <p className="pt-1 text-meta text-warning">{note}</p>}
+      {note && <p className="pt-1 text-meta text-muted-foreground">{note}</p>}
       {action && (
         <Button
           type="button"

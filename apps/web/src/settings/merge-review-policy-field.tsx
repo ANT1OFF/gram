@@ -6,7 +6,7 @@ import {
   type OrchestratorCharter,
 } from "@gram/contracts";
 import * as Schema from "effect/Schema";
-import { Plus, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -236,7 +236,6 @@ function AddOverride({
           ))}
         </select>
         <Button type="submit" size="sm" variant="outline" disabled={disabled || repo.trim() === ""}>
-          <Plus data-icon="inline-start" />
           Add override
         </Button>
       </form>

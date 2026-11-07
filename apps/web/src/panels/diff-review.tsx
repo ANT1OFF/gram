@@ -1,5 +1,5 @@
 import type { ThreadId } from "@gram/contracts";
-import { MessageSquare, MessageSquarePlus, X } from "lucide-react";
+import { MessageSquare, X } from "lucide-react";
 import { createContext, useContext, useMemo, useState, type KeyboardEvent } from "react";
 
 import { keyLabel } from "@/keyboard/registry";
@@ -111,7 +111,6 @@ export function CommentActionRow({
       <td colSpan={span} className={ROW_CELL}>
         <div className="flex items-center gap-1">
           <Button size="xs" variant="ghost" onClick={onCompose}>
-            <MessageSquarePlus data-icon="inline-start" />
             Comment on {label}
           </Button>
           <button

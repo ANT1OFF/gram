@@ -1,5 +1,5 @@
 import { chimeOf, type ChimeSound, type SettingsPatch } from "@gram/contracts";
-import { Check, Play } from "lucide-react";
+import { Check } from "lucide-react";
 import { useRef, useState, type KeyboardEvent } from "react";
 
 import { errorMessage } from "@/api/errors";
@@ -149,7 +149,6 @@ export function NotificationsSection() {
                   className="-ms-2"
                   onClick={() => playChime(current)}
                 >
-                  <Play aria-hidden data-icon="inline-start" />
                   Preview {CHIME_SOUNDS[current].label}
                 </Button>
               )}

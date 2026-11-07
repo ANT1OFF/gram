@@ -5,7 +5,6 @@ import {
   CircleCheck,
   Info,
   MessageCircleQuestion,
-  Undo2,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -219,7 +218,6 @@ function UndoItem({ toast }: { toast: UndoToast }) {
           );
         }}
       >
-        <Undo2 aria-hidden className="size-icon-row" />
         Undo
       </button>
       <button

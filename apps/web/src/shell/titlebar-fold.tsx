@@ -21,7 +21,7 @@ import {
   Rows3,
   Settings2,
   Telescope,
-  Users,
+  Workflow,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -357,7 +357,7 @@ function WorkersItem() {
       className={MENU_ITEM}
       onClick={() => useWorkersListStore.getState().toggle()}
     >
-      <Users aria-hidden />
+      <Workflow aria-hidden />
       Workers
       {count > 0 && (
         <span className="text-meta text-muted-foreground tabular-nums">{count} now</span>

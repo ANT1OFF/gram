@@ -18,13 +18,13 @@ import {
 import { Link } from "@tanstack/react-router";
 import {
   ChevronRight,
-  CircleAlert,
   CircleCheck,
   CircleDashed,
   CircleDot,
   CirclePause,
   CircleX,
   ExternalLink,
+  Hand,
   Layers,
   Megaphone,
   MessageCircleQuestion,
@@ -84,7 +84,7 @@ import { ThreadLinkedText } from "./thread-ref-link";
 const TONE: Record<StateTone, { icon: LucideIcon; className: string }> = {
   muted: { icon: CircleDashed, className: "text-muted-foreground" },
   working: { icon: CircleDot, className: "text-status-working" },
-  needs: { icon: CircleAlert, className: "text-status-needs" },
+  needs: { icon: Hand, className: "text-status-needs" },
   success: { icon: CircleCheck, className: "text-success" },
   delivered: { icon: PackageCheck, className: "text-success" },
   danger: { icon: CircleX, className: "text-destructive" },

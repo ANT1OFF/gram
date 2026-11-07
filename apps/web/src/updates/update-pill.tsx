@@ -134,7 +134,7 @@ export function UpdatePill({ size = "sm" }: { size?: "xs" | "sm" }) {
             labelled && "px-1.5 tabular-nums",
             view.kind === "ready" && "text-primary hover:text-primary",
             (view.kind === "error" || view.kind === "notApplied") &&
-              "text-warning hover:text-warning",
+              "text-foreground hover:text-foreground",
             view.action === "none" && "cursor-default hover:bg-transparent",
           )}
           onClick={run}

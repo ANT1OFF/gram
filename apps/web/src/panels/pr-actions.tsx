@@ -9,7 +9,6 @@ import {
   GitPullRequestClosed,
   GitPullRequestDraft,
   Link2,
-  RefreshCcw,
 } from "lucide-react";
 import { useId, useState } from "react";
 
@@ -297,7 +296,6 @@ export function PrActions({
                 disabled={action.pending}
                 onClick={() => setConfirming("merge")}
               >
-                <GitMerge aria-hidden />
                 Merge…
               </Button>
             )}
@@ -385,7 +383,6 @@ export function UpdateBranch({
             })
           }
         >
-          <RefreshCcw aria-hidden />
           Update branch
         </Button>
       )}

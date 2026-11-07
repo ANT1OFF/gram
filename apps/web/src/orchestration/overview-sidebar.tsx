@@ -331,13 +331,13 @@ export function OverviewSidebar() {
         {/* The sidebar's own two, side by side and drawn apart: Hide folds it away, Compact
             narrows it to tiles. Settings is at the foot, beside History. */}
         <Hint
-          label="Compact overview: workspaces as tiles"
+          label="Compact sidebar: workspaces as tiles"
           side="bottom"
           render={
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Compact overview"
+              aria-label="Compact sidebar"
               data-testid="overview-compact"
               className="text-muted-foreground [-webkit-app-region:no-drag]"
               onClick={() => switchOverview("compact")}

@@ -1,5 +1,5 @@
 import { Popover } from "@base-ui/react/popover";
-import { AlertTriangle, Copy, FileJson, Info, RotateCcw, Search, X } from "lucide-react";
+import { AlertTriangle, Info, Search, X } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
@@ -80,14 +80,12 @@ export function KeyboardSection() {
               />
             }
           >
-            <FileJson data-icon="inline-start" />
             Edit keybindings.json
           </Hint>
         )}
         {path && <BindingsFileHelp path={path} />}
         {Object.keys(overrides).length > 0 && (
           <Button size="sm" variant="ghost" onClick={() => void save({})}>
-            <RotateCcw data-icon="inline-start" />
             Reset all
           </Button>
         )}
@@ -383,7 +381,6 @@ function BindingsFileHelp({ path }: { path: string }) {
                   )
                 }
               >
-                <Copy data-icon="inline-start" />
                 Copy path
               </Button>
               <span role="status" className="text-meta text-muted-foreground">

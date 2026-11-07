@@ -77,7 +77,7 @@ import { useWorkspaces } from "./use-orchestration";
 const STOP = { [OVERVIEW_STOP]: "" };
 
 /**
- * The overview's compact rail: Hide sidebar in the toggle's spot, Usage and Settings, Expand overview,
+ * The overview's compact rail: Hide sidebar in the toggle's spot, Usage and Settings, Expand sidebar,
  * Needs you, a tile per workspace, then the solo threads'.
  */
 export function OverviewRail() {
@@ -124,14 +124,14 @@ export function OverviewRail() {
         {/* Settings follows the toggle, as it follows it in the open header. */}
         <TopLeftNav className="shrink-0 flex-col" />
         <Hint
-          label="Expand overview"
+          label="Expand sidebar: workspaces as rows"
           side="right"
           render={
             <Button
               variant="ghost"
               size="icon-sm"
               {...STOP}
-              aria-label="Expand overview"
+              aria-label="Expand sidebar"
               data-testid="overview-expand"
               className="shrink-0 text-muted-foreground"
               onClick={() => switchOverview("open")}

@@ -24,7 +24,14 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   - Working and running take `status-working` (the accent), failing `danger`, done `success` or
     muted, and merged `merged`.
   - Informational marks (a PR waiting on review, a paused workspace, a held brief) stay neutral
-    or outlined.
+    or outlined. A file's type, a pending check, a stale stage and a caution that isn't one of
+    `warning`'s cases below are neutral too: the glyph's shape says it, not a status colour.
+  - **Progress is grey.** A stage or progress bar draws the steps behind in grey and the step it
+    stands on in the accent (the current place), never in the worker's status colour: the status
+    is the dot and words beside it.
+  - **A pull request stays quiet:** its chip or link is muted words in a neutral or outlined box,
+    and the colour is on its glyphs only (merged on the state glyph, red on a failing check's), so a
+    failing or merged PR adds one coloured mark, not a tinted pill or a second red line.
   - An orchestrator's sidebar line carries at most one amber marker, its count; a worker that
     needs you takes the amber dot like everywhere else, and its row says "asks you".
   - **One dot per state, and few states**, the same in the sidebar, on the Board and in Workers
@@ -38,7 +45,10 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     different colour); the light palettes of the Neutral family seed a true amber, not an orange.
   - **One alarm per failure:** the error's card in the transcript and the thread's one red dot.
     Everything else stays neutral: the plan strip, the title bar, a label's chip (named, never
-    tinted). A retry that ran through says what was done and how it went ("Retried at 14:11 ·
+    tinted). The needs-you entry counts errors among what needs you but never tints them: its
+    amber dot and words are for what asks ("1 question" amber, "· 1 error" muted), errors alone
+    leave it neutral, and in the title bar the chip itself is neutral, its dot and the asks' words
+    the bar's one amber mark. A retry that ran through says what was done and how it went ("Retried at 14:11 ·
     succeeded"), its failure folded under Details.
   - `warning` is for a caution on a setting the user chose: Bypass (amber with its lock, on
     purpose), Full autonomy, a key clash, and the usage meter from 90% of a limit (red once
@@ -130,6 +140,12 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     its chevron and time).
   - A control that acts on a choice names it: a sound's preview is one "Preview Chime" button
     beside the choice, never a row of bare play glyphs.
+  - A button with words takes no glyph that says the same: no `Plus` beside "Add …" or "New …", no
+    arrow or `ExternalLink` beside "Open …", no `Copy` beside "Copy …", no `RotateCw` beside
+    "Retry", no `Play` beside "Run now" or "Continue", no `Undo2` beside "Undo". A menu item's
+    leading glyph stays: it lines a list of items up and is scanned before the words.
+  - A chart's legend is one compact line of short keys ("Break: no reading"), each key's hover
+    and screen-reader text saying it in full, never a block of sentences above the charts.
 - **A list row's trailing slot is its status, never an action:** History says what happened
   ("Merged", "Stopped", "Imported"), and what Enter does ("Open ⏎", "Resume ⏎") shows only on the
   cursor row, ahead of the status so the status column stays aligned.

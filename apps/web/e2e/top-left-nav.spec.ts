@@ -47,7 +47,7 @@ test("Settings sits beside History in the overview, or at the title bar's left",
   expect(compact.x).toBeGreaterThan(hide.x);
   await overview(page).getByTestId("overview-compact").hover();
   await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText(
-    "Compact overview: workspaces as tiles",
+    "Compact sidebar: workspaces as tiles",
   );
   const hint = page.locator('[data-slot="tooltip-content"][data-open]');
   await expect(nav.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);

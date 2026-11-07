@@ -1,6 +1,6 @@
 import { GRID_SHAPES, type ThreadId } from "@gram/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { Maximize2, Minimize2, Plus, SquareDashed, X } from "lucide-react";
+import { Maximize2, Minimize2, SquareDashed, X } from "lucide-react";
 import {
   useState,
   type DragEvent,
@@ -263,7 +263,6 @@ function EmptyPane({ index }: { index: number }) {
         <SquareDashed aria-hidden ref={drawOn} className="size-icon-empty" />
         <p>Empty pane</p>
         <Button variant="outline" size="sm" onClick={newThread}>
-          <Plus data-icon="inline-start" />
           New thread here
         </Button>
         {recent.length > 0 && (

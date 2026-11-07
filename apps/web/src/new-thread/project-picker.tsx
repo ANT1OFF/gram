@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { CircleAlert, FolderCheck, FolderSearch } from "lucide-react";
+import { CircleAlert, FolderCheck } from "lucide-react";
 import { useId } from "react";
 
 import { FolderAccessRecovery } from "@/components/folder-access-recovery";
@@ -68,7 +68,6 @@ export function ProjectPicker({ value, onChange, status, debounceMs }: ProjectPi
             else setBrowserOpen(true);
           }}
         >
-          <FolderSearch data-icon="inline-start" />
           Browse
         </Button>
         <ChooseFolderButton defaultPath={chosen} onChoose={onChange} />

@@ -1,6 +1,6 @@
 import type { PrDetail, PrLabel, ThreadId } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Tag, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -109,7 +109,6 @@ export function PrLabels({ threadId, detail }: { threadId: ThreadId; detail: PrD
             disabled={action.pending}
             onClick={() => setAdding(true)}
           >
-            <Tag aria-hidden />
             Add label…
           </Button>
         )}

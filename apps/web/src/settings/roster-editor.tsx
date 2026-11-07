@@ -10,7 +10,7 @@ import {
 import { Popover } from "@base-ui/react/popover";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { CircleHelp, Plus, Star, TriangleAlert, X } from "lucide-react";
+import { CircleHelp, Star, TriangleAlert, X } from "lucide-react";
 import { useId, useState } from "react";
 import { flushSync } from "react-dom";
 
@@ -650,7 +650,6 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
               disabled={disabled}
               onClick={() => setAdding(true)}
             >
-              <Plus data-icon="inline-start" />
               Add a model
             </Button>
           )}

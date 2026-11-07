@@ -1,6 +1,5 @@
 import { canCreatePr, effectiveCheckout, type ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { GitPullRequestCreate } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { useApi } from "@/api/context";
@@ -49,7 +48,6 @@ export function CreatePrButton({
         className={className}
         onClick={() => setOpen(true)}
       >
-        <GitPullRequestCreate data-icon="inline-start" />
         Create PR
       </Button>
       {open && <CreatePrDialog threadId={threadId} onClose={() => setOpen(false)} />}

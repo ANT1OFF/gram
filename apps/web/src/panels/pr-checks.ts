@@ -9,7 +9,7 @@ import { RingGlyph, RingSpinner } from "@/motion";
 const CHECK_STATUS: Record<CheckStatus, { icon: LucideIcon; label: string; tone: string }> = {
   passing: { icon: CircleCheck, label: "Passing", tone: "text-success" },
   failing: { icon: CircleX, label: "Failing", tone: "text-destructive" },
-  pending: { icon: RingGlyph, label: "Pending", tone: "text-warning" },
+  pending: { icon: RingGlyph, label: "Pending", tone: "text-muted-foreground" },
   neutral: { icon: CircleMinus, label: "Neutral", tone: "text-muted-foreground" },
 };
 

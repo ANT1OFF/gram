@@ -1,12 +1,5 @@
 import type { FinishedWorkerDetail, ThreadId } from "@gram/contracts";
-import {
-  Archive,
-  ChevronRight,
-  FileDiff,
-  GitMerge,
-  GitPullRequest,
-  MessageSquare,
-} from "lucide-react";
+import { Archive, ChevronRight, FileDiff, GitMerge, GitPullRequest } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -113,7 +106,6 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
               startOrchestratorMessage(target, aboutFinishedWorker(worker), open);
           }}
         >
-          <MessageSquare data-icon="inline-start" />
           Ask about it
         </Button>
       </div>

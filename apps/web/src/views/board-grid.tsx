@@ -6,7 +6,7 @@ import {
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
-import { CircleAlert, Layers } from "lucide-react";
+import { Hand, Layers } from "lucide-react";
 import { useMemo, type MouseEvent, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
@@ -22,7 +22,6 @@ import {
   nowBesidePrs,
   overlapHint,
   type RailRow,
-  type RailTone,
   type RailWorker,
 } from "@/orchestration/rail-model";
 import { StageChip } from "@/orchestration/stage-stepper";
@@ -70,31 +69,15 @@ export function GridHeads() {
   );
 }
 
-/** A tone as the step its worker stands on, in the status colours (DESIGN.md). */
-const STEP_TONE: Readonly<Record<RailTone, string>> = {
-  needs: "bg-status-needs-mark",
-  attention: "bg-foreground",
-  error: "bg-destructive",
-  working: "bg-status-working",
-  waiting: "bg-status-working",
-  idle: "bg-muted-foreground",
-  merged: "bg-merged",
-};
-
 /**
  * The stage bar: the station's name and where it stands ("Checks 3/5"), over five joined segments,
- * one per station, filled up to where the work stands. The segment it stands on takes its tone's
- * colour and stands taller than the rest; the lanes' track in the width of a cell. Steps ahead take
- * border-strong in full, so each segment holds the 3:1 a graphic needs on a light page.
+ * one per station, filled up to where the work stands. It says progress, not state: steps behind are
+ * grey, the one it stands on is the accent (the current place) and stands taller than the rest, and
+ * the worker's state stays with its dot and words in the Now cell, so the bar never adds a second
+ * amber or red (DESIGN.md: one meaning per status colour). Steps ahead take border-strong in full,
+ * so each segment holds the 3:1 a graphic needs on a light page.
  */
-export function StationSteps({
-  station,
-  tone,
-}: {
-  station: FeatureStation;
-  /** The worker's tone; a feature over several workers draws its furthest step plain. */
-  tone?: RailTone | undefined;
-}) {
+export function StationSteps({ station }: { station: FeatureStation }) {
   const at = FEATURE_STATIONS.indexOf(station);
   const label = STATION_LABELS[station];
   return (
@@ -125,7 +108,7 @@ export function StationSteps({
               index < at
                 ? "bg-muted-foreground"
                 : index === at
-                  ? cn("h-2.5 rounded-full", tone === undefined ? "bg-foreground" : STEP_TONE[tone])
+                  ? "h-2.5 rounded-full bg-status-working"
                   : "bg-border-strong",
             )}
           />
@@ -172,11 +155,9 @@ function PrCell({ worker }: { worker: RailWorker }) {
           data-testid="grid-pr-state"
           className="line-clamp-2 min-w-0 text-meta break-words text-muted-foreground"
         >
+          {/* Muted words: the chip's failing-checks glyph and the worker's dot are the alarm. */}
           {words.map((mark, index) => (
-            <span
-              key={mark.word}
-              className={cn(checks?.kind === "failing" && mark === checks && "text-destructive")}
-            >
+            <span key={mark.word}>
               {index > 0 && " · "}
               {mark.word}
             </span>
@@ -349,7 +330,7 @@ function WorkerCells({
   const chips = useWorkerPrChips(worker.threadId, worker.prs);
   return (
     <>
-      <StationSteps station={station} tone={worker.tone} />
+      <StationSteps station={station} />
       <NowCell
         workspaceId={workspaceId}
         worker={worker}
@@ -459,7 +440,7 @@ export function GridLine({
             </button>
             {row.card.paused === true && <PausedBadge testId="rail-paused" />}
             {needsMark && row.needs && (
-              <CircleAlert
+              <Hand
                 aria-label="Needs you"
                 data-testid="rail-needs"
                 className="mt-1 size-icon-row shrink-0 text-status-needs-mark"

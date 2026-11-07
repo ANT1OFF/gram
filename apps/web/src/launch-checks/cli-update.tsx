@@ -295,7 +295,6 @@ export function BannerCliUpdate({ agent }: { agent: GatewayAgentTool }) {
         />
       }
     >
-      <Download aria-hidden />
       Update
     </Hint>
   );

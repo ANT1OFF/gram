@@ -18,7 +18,6 @@ import {
   Globe,
   MessageSquare,
   Network,
-  Plus,
   Search,
   type LucideIcon,
 } from "lucide-react";
@@ -244,7 +243,6 @@ function FirstRun() {
                 disabled={pending !== undefined}
                 onClick={() => void chooseFolder()}
               >
-                <FolderOpen data-icon="inline-start" />
                 Open a folder…
               </Button>
               <Button
@@ -254,7 +252,6 @@ function FirstRun() {
                 disabled={pending !== undefined}
                 onClick={() => setAdding((open) => !open)}
               >
-                <Globe data-icon="inline-start" />
                 Clone from GitHub
               </Button>
             </>
@@ -401,7 +398,6 @@ function AddRepositoryMenu({
           />
         }
       >
-        <Plus data-icon="inline-start" />
         Add repository
         <ChevronDown data-icon="inline-end" />
       </Menu.Trigger>
@@ -622,7 +618,7 @@ function RecentRepos({
 /** How each state reads beside its icon: never by colour alone. */
 const STATE: Readonly<Record<ToolState, { icon: LucideIcon; words: string; className: string }>> = {
   ready: { icon: CircleCheck, words: "Ready", className: "text-success" },
-  attention: { icon: CircleAlert, words: "Needs sign-in", className: "text-warning" },
+  attention: { icon: CircleAlert, words: "Needs sign-in", className: "text-foreground" },
   missing: { icon: CircleX, words: "Not installed", className: "text-destructive" },
   optional: { icon: Circle, words: "Not installed", className: "text-muted-foreground" },
 };
@@ -677,10 +673,7 @@ function Readiness({ lead = false }: { lead?: boolean }) {
         <span
           data-testid="welcome-runs-with"
           data-ready={ready}
-          className={cn(
-            "flex min-w-0 items-center gap-1.5 font-medium",
-            ready ? "text-foreground" : "text-warning",
-          )}
+          className={cn("flex min-w-0 items-center gap-1.5 font-medium", "text-foreground")}
         >
           {ready ? (
             agents.map((agent) => <AgentIcon key={agent} agent={agent} className="size-icon-row" />)

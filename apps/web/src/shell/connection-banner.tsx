@@ -1,4 +1,4 @@
-import { CloudCog, RefreshCw, WifiOff } from "lucide-react";
+import { CloudCog, WifiOff } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { useApi } from "@/api/context";
@@ -51,7 +51,6 @@ export function ConnectionBanner() {
         </>
       )}
       <Button size="xs" variant="ghost" className="ml-auto" onClick={() => connection.retryNow()}>
-        <RefreshCw data-icon="inline-start" />
         Retry now
       </Button>
     </div>

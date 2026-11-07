@@ -486,6 +486,13 @@ export const kindParts = (items: readonly NeedsYouItem[]): string[] =>
     return n === 0 ? [] : [`${n} ${n === 1 ? one : many}`];
   });
 
+/**
+ * Whether a `kindParts` entry counts errors ("1 error", "3 errors"): an error's alarm is its card and
+ * its thread's red dot, so the pills leave its words untinted and amber only what asks.
+ */
+export const isErrorPart = (part: string): boolean =>
+  KIND_WORDS.errors.some((word) => part.endsWith(` ${word}`));
+
 /** "1 question, 1 error": `kindParts` in a line. */
 export const kindsText = (items: readonly NeedsYouItem[]): string => kindParts(items).join(", ");
 

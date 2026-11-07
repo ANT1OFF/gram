@@ -12,8 +12,7 @@ import {
   ArrowLeft,
   ChevronRight,
   BookOpenText,
-  CircleHelp,
-  FilePlus2,
+  MessageCircleQuestion,
   Network,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -94,7 +93,7 @@ function Questions({ state }: { state: WorkspaceState }) {
           </>
         ) : (
           <>
-            <CircleHelp
+            <MessageCircleQuestion
               aria-hidden
               className="me-1 inline size-icon-row align-[-2px] text-status-needs-mark"
             />
@@ -232,7 +231,7 @@ function FileEditor({
         onChange={(event) => setDraft(event.target.value)}
       />
       {movedUnder && (
-        <p role="status" className="text-meta text-warning">
+        <p role="status" className="text-meta text-muted-foreground">
           This file changed in memory since you started editing. Saving overwrites what is there
           now; Revert shows it.
         </p>
@@ -411,7 +410,6 @@ function Files({
           aria-expanded={creating}
           onClick={() => setCreating(!creating)}
         >
-          <FilePlus2 data-icon="inline-start" />
           New file
         </Button>
       </div>

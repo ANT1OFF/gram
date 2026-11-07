@@ -8,7 +8,7 @@ import {
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { Plus, X } from "lucide-react";
+import { X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -465,7 +465,6 @@ function ReposField({
           aria-expanded={adding}
           onClick={() => onAdding(!adding)}
         >
-          <Plus data-icon="inline-start" />
           Add
         </Button>
       </div>

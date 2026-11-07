@@ -309,7 +309,7 @@ export function PrBadgeMarks({
         <TriangleAlert
           role="img"
           aria-label={`uncommitted work on ${git.workElsewhere.branch} in another worktree`}
-          className="size-icon-row text-warning"
+          className="size-icon-row text-muted-foreground"
         />
       )}
       <BabysitGlyph threadId={threadId} />
