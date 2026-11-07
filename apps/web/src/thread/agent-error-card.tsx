@@ -77,11 +77,13 @@ function useAttempt(threadId: ThreadId, error: ThreadError): AttemptFacts | unde
   return attempts.get(errorKey(error));
 }
 
-/** "Retried · 14:05": when the message went again. */
-/** "Recovered · 14:05" once the retry ran through, else "Retried · 14:05". */
-const retriedLabel = (retried: RetryReceipt): string => {
-  const word = retried.recovered ? "Recovered" : "Retried";
-  return retried.at === undefined ? word : `${word} · ${formatStamp(retried.at)}`;
+/**
+ * "Retried at 14:05 · succeeded" once the retry ran through, else "Retried at 14:05" while it
+ * runs: what was done and how it went, in that order, with no word of the failure it got past.
+ */
+export const retriedLabel = (retried: Pick<RetryReceipt, "at" | "recovered">): string => {
+  const when = retried.at === undefined ? "Retried" : `Retried at ${formatStamp(retried.at)}`;
+  return retried.recovered ? `${when} · succeeded` : when;
 };
 
 /**
@@ -125,8 +127,9 @@ function EarlierAttempts({ earlier }: { earlier: readonly EarlierAttempt[] }) {
  *
  * The attempts at one message are one card: the newest failure's, "attempt 2 of 2 · needs action",
  * with the attempts before it behind a disclosure; their own cards draw nothing. Once a retry went
- * through, that card is a quiet receipt led by where it stands, "Recovered · 14:05", with the
- * failure under it, no longer red and with no Retry of its own, above the reply that came of it.
+ * through, that card is a quiet receipt that says what was done and how it went, "Retried at 14:05
+ * · succeeded", with the failure folded under Details, no longer red and with no Retry of its own,
+ * above the reply that came of it.
  */
 export function AgentErrorCard({ threadId, error }: { threadId: ThreadId; error: ThreadError }) {
   // A thread the server no longer has, a finished worker's, has no feed to read attempts from.
@@ -212,17 +215,30 @@ function ErrorCard({
       >
         <RotateCw aria-hidden className="mt-0.5 size-icon-row shrink-0" />
         <div className="min-w-0 flex-1">
-          {/* What it is now leads; the failure it got past is the line under it. */}
+          {/* What was done and how it went leads; the failure it got past folds under Details. */}
           <p data-testid="agent-error-retried" className="text-meta font-medium text-foreground">
             {retriedLabel(retried)}
           </p>
-          <p data-testid="agent-error-history" className="text-meta break-words">
-            {failureLabel(error.kind, error.retryable)}
-            {attempt !== undefined && attempt.attempt > 1 && ` · attempt ${attempt.attempt}`}
-            {": "}
-            {error.text}
-          </p>
-          <EarlierAttempts earlier={attempt?.earlier ?? []} />
+          <Collapsible data-testid="agent-error-details" className="mt-0.5">
+            <CollapsibleTrigger className="group inline-flex items-center gap-1 rounded-sm text-meta text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-9">
+              <ChevronRight
+                aria-hidden
+                className="size-icon-chip shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+              />
+              Details
+            </CollapsibleTrigger>
+            <CollapsibleContent className="gram-collapse">
+              <div className="mt-1 border-l border-border pl-3">
+                <p data-testid="agent-error-history" className="text-meta break-words">
+                  {failureLabel(error.kind, error.retryable)}
+                  {attempt !== undefined && attempt.attempt > 1 && ` · attempt ${attempt.attempt}`}
+                  {` · ${formatStamp(error.at)}: `}
+                  {error.text}
+                </p>
+                <EarlierAttempts earlier={attempt?.earlier ?? []} />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
       </div>
     );
@@ -264,7 +280,7 @@ function ErrorCard({
     <Link
       to="/usage"
       data-testid="agent-error-usage"
-      className={buttonVariants({ variant: "ghost", size: "sm" })}
+      className={buttonVariants({ variant: "outline", size: "sm" })}
     >
       Usage
     </Link>
@@ -357,7 +373,7 @@ function ErrorCard({
             {canRetryNow && (
               <Button
                 size="sm"
-                variant="ghost"
+                variant="outline"
                 data-testid="agent-error-retry"
                 onClick={() => void retry(text)}
                 disabled={pending}
@@ -393,7 +409,7 @@ function ErrorCard({
               {throttledAgain && (
                 <Button
                   size="sm"
-                  variant="ghost"
+                  variant="outline"
                   data-testid="agent-error-other-model"
                   onClick={() => askModelPicker(threadId)}
                 >

@@ -15,7 +15,13 @@ import type { ComponentType } from "react";
 import { AgentChecks } from "@/launch-checks/tool-checks";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { AiHelpersSummary, GatewaysSummary, ReviewBotsSummary, TerminalSummary } from "./subpages";
+import {
+  AiHelpersSummary,
+  GatewaysSummary,
+  ReviewBotsSummary,
+  RoutinesSummary,
+  TerminalSummary,
+} from "./subpages";
 import { AiHelpersSection } from "./ai-helpers-section";
 import { AgentsSection } from "./agents-section";
 import { AppearanceSearch } from "./appearance-section";
@@ -148,6 +154,7 @@ export type SettingsPath =
   | "/settings/ai-helpers"
   | "/settings/connectors"
   | "/settings/review-bots"
+  | "/settings/routines"
   | "/settings/usage"
   | "/settings/workspaces"
   | "/settings/appearance"
@@ -415,6 +422,28 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       "repositories",
     ],
     search: WorkspacesSettings,
+  },
+  {
+    id: "routines",
+    label: "Routines",
+    path: "/settings/routines",
+    group: "workspaces",
+    description:
+      "Every workspace's briefs that start a worker or wake the orchestrator on a schedule.",
+    keywords: [
+      "routine",
+      "schedule",
+      "scheduled",
+      "recurring",
+      "cron",
+      "daily",
+      "weekly",
+      "nightly",
+      "every few hours",
+      "run now",
+    ],
+    search: null,
+    summary: RoutinesSummary,
   },
   {
     id: "review-bots",

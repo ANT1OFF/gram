@@ -195,8 +195,10 @@ one, so its runs follow it through a rename.
 
 Three ways change them, all through the charter's one write path:
 
-- Settings → Workspaces → a workspace → Routines adds, edits, turns off, removes and runs one now,
-  and shows each one's last and next run; each change saves with Undo.
+- Settings → Routines (also in the palette's Go to, and under Workspaces & merging) lists every
+  workspace's routines, as a workspace's own settings do under Routines. Either adds, edits, turns
+  off, removes and runs one now, and shows each one's last and next run; a routine is edited in a
+  dialog that names its workspace, and each change saves with Undo.
 - The orchestrator keeps them with `routine_create` and `routine_update` (`remove: true` deletes
   one). Their schedule is a few words: `daily 09:00`, `weekdays 09:00`, `weekly mon 09:00` or
   `every 6 hours`. A routine is a standing change to the charter that starts work with nobody

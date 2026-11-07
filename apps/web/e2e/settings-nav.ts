@@ -9,6 +9,7 @@ const GROUP_OF: Readonly<Record<string, string>> = {
   "AI helpers": "Agents & models",
   Connectors: "Agents & models",
   Gateways: "Agents & models",
+  Routines: "Workspaces & merging",
   "Review bots": "Workspaces & merging",
   Storage: "Workspaces & merging",
   Terminal: "Appearance",

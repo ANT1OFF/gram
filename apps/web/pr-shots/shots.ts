@@ -1444,7 +1444,173 @@ const STATE_TRUTH_SHOTS: readonly Shot[] = [
   },
 ];
 
+/** Wave 15: routines' own page and editor, the snooze step, the palette's keys and recovery. */
+const ROUTINES_POLISH_SHOTS: readonly Shot[] = [
+  {
+    name: "routine-editor",
+    title:
+      "Add routine from a workspace's settings: a dialog naming the workspace, the app's own pickers, Save and Cancel pinned (before: native selects inline, far down the drawer)",
+    open: async (page) => {
+      await openOrchestratorOf(page, () => window.gramMock!.simulateOrchestration("board"));
+      await openWorkspaceSettingsFromBar(page);
+      await page.getByTestId("workspace-page").waitFor();
+      await page.getByTestId("routine-add").click();
+      const editor = page.getByTestId("routine-editor");
+      await editor.getByLabel("Name").fill("Daily queue triage");
+      await editor
+        .getByLabel("Brief")
+        .fill(
+          "Review synthetic queue failures, summarise patterns and suggest the next regression test.",
+        );
+      await editor.getByRole("radio", { name: "Weekly" }).click();
+      await editor.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "routines-page",
+    title: "Settings → Routines: every workspace's routines on a page of its own (new)",
+    open: async (page) => {
+      await seedMockSettings(page, { appearance: { mode: "system" } });
+      await page.goto("/t/t-flaky");
+      await page.waitForFunction(() => window.gramMock !== undefined);
+      await page.evaluate(async () => {
+        const api = window.gramMock!;
+        const made = await api.simulateOrchestration("board");
+        const state = (await api.listWorkspaces()).find(
+          (each) => each.workspace.id === made.workspaceId,
+        )!;
+        await api.setOrchestratorCharter(
+          made.workspaceId as never,
+          {
+            ...state.charter,
+            routines: [
+              {
+                id: "routine-ci",
+                name: "Daily CI triage",
+                brief: "Look at main's failing jobs and open one PR per real failure.",
+                schedule: { every: "weekday", at: "09:00" },
+              },
+              {
+                id: "routine-deps",
+                name: "Weekly dependency check",
+                brief: "Check for outdated dependencies and brief a worker for each bump.",
+                schedule: { every: "week", day: 1, at: "08:00" },
+                target: "orchestrator",
+              },
+            ],
+          } as never,
+        );
+      });
+      await page.goto("/settings/routines");
+      await page.getByTestId("routines-page").waitFor();
+      await page.getByTestId("routine-row").first().waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "palette-snooze-step",
+    title:
+      "The palette's snooze step: Snooze thread, the thread it snoozes, and a typed time (before: the Go to placeholder)",
+    open: async (page) => {
+      await seedMockSettings(page, { appearance: { mode: "system" } });
+      await openThread(page);
+      await page.keyboard.press("ControlOrMeta+k");
+      const palette = page.getByTestId("command-palette");
+      await palette.getByRole("combobox").fill(">Snooze");
+      await palette.getByRole("option", { name: /Snooze thread/ }).click();
+      await palette.getByRole("option", { name: /Tomorrow/ }).waitFor();
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByTestId("command-palette"),
+  },
+  {
+    name: "palette-key-legend",
+    title:
+      "The palette's key legend: ↑↓ move and ⇥ actions on a thread row, in the catalog's words",
+    open: async (page) => {
+      await seedMockSettings(page, { appearance: { mode: "system" } });
+      await openThread(page);
+      await page.keyboard.press("ControlOrMeta+k");
+      const palette = page.getByTestId("command-palette");
+      await palette.getByRole("combobox").fill("flaky");
+      await palette.getByRole("option").first().waitFor();
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByTestId("command-palette"),
+  },
+  {
+    name: "retry-receipt",
+    title:
+      "A retry that went through: Retried at … · succeeded, its error folded under Details (before: Recovered with the error under it)",
+    open: async (page) => {
+      await seedMockSettings(page, { appearance: { mode: "system" } });
+      await page.goto("/t/t-docs");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page.evaluate(() => window.gramMock!.turnEnded?.("t-docs" as never));
+      await page.evaluate(() =>
+        window.gramMock!.simulateTurnError(
+          "t-docs" as never,
+          { kind: "rateLimit", retryable: true, text: "Synthetic rate limit. Try again." },
+          "Run the e2e suite",
+        ),
+      );
+      const card = page.getByTestId("agent-error").last();
+      await card.getByRole("button", { name: "Retry" }).click();
+      await expect(card).toHaveAttribute("data-state", "retried");
+      await elapse(page, 5_000);
+      await card.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "error-recovery-actions",
+    title:
+      "A repeated rate limit's recovery actions, each a bordered button (before: Try another model as a text link)",
+    open: async (page) => {
+      await seedMockSettings(page, { appearance: { mode: "system" } });
+      await page.goto("/t/t-docs");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page.evaluate(() => window.gramMock!.turnEnded?.("t-docs" as never));
+      for (let i = 0; i < 2; i++) {
+        await page.evaluate(() =>
+          window.gramMock!.simulateTurnError(
+            "t-docs" as never,
+            {
+              kind: "rateLimit",
+              httpStatus: 429,
+              retryable: true,
+              text: "The provider is rate limiting requests (HTTP 429).",
+            },
+            "Run the e2e suite",
+          ),
+        );
+      }
+      const card = page.getByTestId("agent-error").last();
+      await card.getByRole("button", { name: "Try another model" }).waitFor();
+      await card.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("agent-error").last(),
+  },
+  {
+    name: "pr-merge-blocked",
+    title:
+      "The PR panel blocked: the reasons once, then the next step alone, Merge… in its … (before: a Merge blocked button repeating the line)",
+    open: async (page) => {
+      await seedMockSettings(page, { appearance: { mode: "system" } });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto("/t/t-flaky");
+      await openPanelTab(page.getByTestId("right-panel"), "PR");
+      await page.getByTestId("pr-blockers").waitFor();
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("pr-panel"),
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
+  ...ROUTINES_POLISH_SHOTS,
   ...STATE_TRUTH_SHOTS,
   ...SNOOZE_SHOTS,
   ...PANEL_TAB_SHOTS,

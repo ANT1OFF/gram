@@ -41,11 +41,16 @@ test("the PR overview leads with what blocks the merge and one next step", async
   await expect(reasons.first()).toHaveText("test (windows) failing");
   await expect(reasons.nth(1)).toHaveText("Changes requested by reviewer");
   const actions = panel.getByTestId("pr-actions").getByRole("button");
-  await expect(actions).toHaveText(["Inspect test (windows) job", "Merge blocked · 3 reasons…"]);
-  await expect(panel.getByTestId("pr-merge")).toHaveAttribute(
+  // The row is the next step alone: the reasons above already say the merge is blocked, and
+  // Merge… waits in "…", described by them.
+  await expect(actions).toHaveText(["Inspect test (windows) job"]);
+  await expect(panel.getByTestId("pr-merge")).toHaveCount(0);
+  await panel.getByRole("button", { name: "More PR actions" }).click();
+  await expect(page.getByTestId("pr-merge-menu")).toHaveAttribute(
     "aria-describedby",
     (await blocked.getAttribute("id"))!,
   );
+  await page.keyboard.press("Escape");
 
   // The summary and its step sit above the reviewers, the labels and what the agent watches,
   // which wait folded while something blocks the merge.
@@ -89,7 +94,9 @@ test("rerun failed checks, then squash-merge the PR from the panel", async ({ pa
   );
   await expect(checks.getByRole("button", { name: "Rerun failed" })).toHaveCount(0);
 
-  await panel.getByTestId("pr-merge").click();
+  // Still blocked on the requested changes: the row is their next step, and Merge… is in "…".
+  await panel.getByRole("button", { name: "More PR actions" }).click();
+  await page.getByTestId("pr-merge-menu").click();
   const dialog = page.getByTestId("pr-merge-dialog");
   await expect(dialog).toContainText("Merge #412 into main?");
   await expect(dialog.getByRole("radio", { name: "Squash and merge" })).toBeChecked();

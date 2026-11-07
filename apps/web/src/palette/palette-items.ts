@@ -42,8 +42,17 @@ export interface PaletteItem {
 
 /** The second step of a command that needs a choice: its title and the choices. */
 export interface PalettePicker {
+  /** The step's list heading. */
   title: string;
   items: PaletteItem[];
+  /** What the step does, said above the list in place of the search it replaces: "Snooze thread". */
+  heading?: string;
+  /** What the step acts on, beside its heading: the thread's title. */
+  subject?: string;
+  /** The field's words while the step is open, for a step that reads what is typed. */
+  placeholder?: string;
+  /** A row made of what is typed, listed first while it reads as one: "Snooze until Fri 14:00". */
+  typed?: (text: string) => PaletteItem | undefined;
 }
 
 export type PaletteSectionId =

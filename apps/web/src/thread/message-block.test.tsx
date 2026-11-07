@@ -974,11 +974,13 @@ describe("MessageBlock agent errors", () => {
     const card = screen.getByTestId("agent-error");
     expect(card.dataset["state"]).toBe("retried");
     expect(card.getAttribute("role")).toBe("status");
-    // Where it stands leads; the failure it got past is the line under it.
+    // What was done and how it went leads; the failure it got past folds under Details.
     expect(screen.getByTestId("agent-error-retried").textContent).toMatch(
-      /^Recovered · \d\d:\d\d$/,
+      /^Retried at \d\d:\d\d · succeeded$/,
     );
     expect(card.dataset["recovered"]).toBe("true");
+    expect(screen.queryByTestId("agent-error-history")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(screen.getByTestId("agent-error-history").textContent).toContain(error.text);
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     expect(card.querySelector(".text-destructive")).toBeNull();

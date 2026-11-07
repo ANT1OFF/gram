@@ -29,6 +29,7 @@ import { Route as SettingsHelpRouteImport } from './routes/settings.help'
 import { Route as SettingsKeyboardRouteImport } from './routes/settings.keyboard'
 import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
 import { Route as SettingsReviewBotsRouteImport } from './routes/settings.review-bots'
+import { Route as SettingsRoutinesRouteImport } from './routes/settings.routines'
 import { Route as SettingsStorageRouteImport } from './routes/settings.storage'
 import { Route as SettingsTerminalRouteImport } from './routes/settings.terminal'
 import { Route as SettingsUpdatesRouteImport } from './routes/settings.updates'
@@ -141,6 +142,11 @@ const SettingsReviewBotsRoute = SettingsReviewBotsRouteImport.update({
   path: '/review-bots',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsRoutinesRoute = SettingsRoutinesRouteImport.update({
+  id: '/routines',
+  path: '/routines',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsStorageRoute = SettingsStorageRouteImport.update({
   id: '/storage',
   path: '/storage',
@@ -218,6 +224,7 @@ export interface FileRoutesByFullPath {
   '/settings/keyboard': typeof SettingsKeyboardRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/review-bots': typeof SettingsReviewBotsRoute
+  '/settings/routines': typeof SettingsRoutinesRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/terminal': typeof SettingsTerminalRoute
   '/settings/updates': typeof SettingsUpdatesRoute
@@ -250,6 +257,7 @@ export interface FileRoutesByTo {
   '/settings/keyboard': typeof SettingsKeyboardRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/review-bots': typeof SettingsReviewBotsRoute
+  '/settings/routines': typeof SettingsRoutinesRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/terminal': typeof SettingsTerminalRoute
   '/settings/updates': typeof SettingsUpdatesRoute
@@ -284,6 +292,7 @@ export interface FileRoutesById {
   '/settings/keyboard': typeof SettingsKeyboardRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/review-bots': typeof SettingsReviewBotsRoute
+  '/settings/routines': typeof SettingsRoutinesRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/terminal': typeof SettingsTerminalRoute
   '/settings/updates': typeof SettingsUpdatesRoute
@@ -319,6 +328,7 @@ export interface FileRouteTypes {
     | '/settings/keyboard'
     | '/settings/notifications'
     | '/settings/review-bots'
+    | '/settings/routines'
     | '/settings/storage'
     | '/settings/terminal'
     | '/settings/updates'
@@ -351,6 +361,7 @@ export interface FileRouteTypes {
     | '/settings/keyboard'
     | '/settings/notifications'
     | '/settings/review-bots'
+    | '/settings/routines'
     | '/settings/storage'
     | '/settings/terminal'
     | '/settings/updates'
@@ -384,6 +395,7 @@ export interface FileRouteTypes {
     | '/settings/keyboard'
     | '/settings/notifications'
     | '/settings/review-bots'
+    | '/settings/routines'
     | '/settings/storage'
     | '/settings/terminal'
     | '/settings/updates'
@@ -552,6 +564,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsReviewBotsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/routines': {
+      id: '/settings/routines'
+      path: '/routines'
+      fullPath: '/settings/routines'
+      preLoaderRoute: typeof SettingsRoutinesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/storage': {
       id: '/settings/storage'
       path: '/storage'
@@ -657,6 +676,7 @@ interface SettingsRouteChildren {
   SettingsKeyboardRoute: typeof SettingsKeyboardRoute
   SettingsNotificationsRoute: typeof SettingsNotificationsRoute
   SettingsReviewBotsRoute: typeof SettingsReviewBotsRoute
+  SettingsRoutinesRoute: typeof SettingsRoutinesRoute
   SettingsStorageRoute: typeof SettingsStorageRoute
   SettingsTerminalRoute: typeof SettingsTerminalRoute
   SettingsUpdatesRoute: typeof SettingsUpdatesRoute
@@ -681,6 +701,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsKeyboardRoute: SettingsKeyboardRoute,
   SettingsNotificationsRoute: SettingsNotificationsRoute,
   SettingsReviewBotsRoute: SettingsReviewBotsRoute,
+  SettingsRoutinesRoute: SettingsRoutinesRoute,
   SettingsStorageRoute: SettingsStorageRoute,
   SettingsTerminalRoute: SettingsTerminalRoute,
   SettingsUpdatesRoute: SettingsUpdatesRoute,

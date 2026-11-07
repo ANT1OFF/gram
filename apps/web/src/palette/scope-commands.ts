@@ -28,7 +28,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { branchDeleteLooksSafe, mergedPrRef } from "@/thread/merged-cleanup";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { copyMarkdown } from "@/thread/message-actions";
-import { snoozePresets, snoozeTime } from "@/thread/snooze-model";
+import { snoozePresets, snoozeTime, typedSnooze } from "@/thread/snooze-model";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { JOIN_NEEDS_WORKTREE, useThreadActions } from "@/thread/use-thread-actions";
 import {
@@ -192,6 +192,19 @@ export function useScopeCommands(
                     const now = Date.now();
                     return {
                       title: "Snooze until",
+                      heading: "Snooze thread",
+                      subject: thread.title,
+                      placeholder: "Snooze until… (e.g. fri 14:00)",
+                      typed: (text: string) => {
+                        const at = typedSnooze(text, Date.now());
+                        return at === undefined
+                          ? undefined
+                          : {
+                              id: "snooze:typed",
+                              label: `Snooze until ${snoozeTime(at, Date.now())}`,
+                              run: () => snooze(at),
+                            };
+                      },
                       items: [
                         ...snoozePresets(now).map((preset) => ({
                           id: `snooze:${preset.id}`,

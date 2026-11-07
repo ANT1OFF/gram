@@ -86,3 +86,28 @@ test("snoozed from the palette to a time of your own, it comes back unread at th
   await expect(snoozedLine(page)).toHaveCount(0);
   await expect(soloRow(page, "t-flaky")).toHaveAttribute("data-unread", "true");
 });
+
+test("the palette's snooze step names itself and its thread, and takes a typed time", async ({
+  page,
+}) => {
+  await start(page);
+  await page.keyboard.press("ControlOrMeta+k");
+  const palette = page.getByTestId("command-palette");
+  const field = palette.getByRole("combobox");
+  await field.fill(">Snooze");
+  await palette.getByRole("option", { name: /Snooze thread/ }).click();
+
+  // Not the search it replaced: the step says what it does, to which thread, and what to type.
+  await expect(palette.getByTestId("palette-step")).toContainText("Snooze thread");
+  await expect(palette.getByTestId("palette-step-subject")).toHaveText("Fix flaky retry test");
+  await expect(field).toHaveAttribute("placeholder", "Snooze until… (e.g. fri 14:00)");
+  await expect(field).toHaveAccessibleName("Snooze thread");
+
+  // Late on Friday, "mon 14:00" is the coming Monday.
+  await field.fill("mon 14:00");
+  const typed = palette.getByRole("option", { name: "Snooze until Mon 14:00" });
+  await expect(typed).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(palette).toHaveCount(0);
+  await expect(page.getByTestId("pane-snoozed")).toContainText("Snoozed until Mon 14:00");
+});

@@ -71,7 +71,7 @@ describe("SettingsNav", () => {
       general: [],
       agents: ["ai-helpers", "connectors", "gateways"],
       usage: [],
-      workspaces: ["review-bots", "storage"],
+      workspaces: ["routines", "review-bots", "storage"],
       appearance: ["terminal"],
       notifications: [],
       keyboard: [],

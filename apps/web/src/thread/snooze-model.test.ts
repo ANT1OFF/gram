@@ -6,6 +6,7 @@ import {
   snoozedUntilText,
   snoozePresets,
   snoozeTime,
+  typedSnooze,
 } from "./snooze-model";
 
 const oslo = { timeZone: "Europe/Oslo" };
@@ -77,5 +78,49 @@ describe("customSnooze", () => {
   it("shows a snooze more than a week out by its date", () => {
     expect(snoozeTime(osloNov(20, 21, 5), now, oslo)).not.toMatch(/^Fri /);
     expect(snoozeTime(osloNov(20, 21, 5), now, oslo)).toContain("21:05");
+  });
+});
+
+describe("typedSnooze", () => {
+  // Thursday 5 November, 14:20.
+  const now = osloNov(5, 14, 20);
+  const typed = (text: string) => typedSnooze(text, now, oslo);
+
+  it("reads a weekday and a 24-hour time, the weekday's next one ahead", () => {
+    expect(typed("fri 14:00")).toBe(osloNov(6, 14));
+    expect(typed("Friday 9")).toBe(osloNov(6, 9));
+    expect(typed("14:00 fri")).toBe(osloNov(6, 14));
+    // Today's weekday is today while its time is ahead, else a week on.
+    expect(typed("thu 16:30")).toBe(osloNov(5, 16, 30));
+    expect(typed("thu 08:00")).toBe(osloNov(12, 8));
+  });
+
+  it("takes a day alone as 09:00, and a time alone as the next time the clock reads it", () => {
+    expect(typed("mon")).toBe(osloNov(9, 9));
+    expect(typed("tomorrow")).toBe(osloNov(6, 9));
+    expect(typed("17:45")).toBe(osloNov(5, 17, 45));
+    expect(typed("08:00")).toBe(osloNov(6, 8));
+    expect(typed("today 18:00")).toBe(osloNov(5, 18));
+  });
+
+  it("reads a span in minutes or hours", () => {
+    expect(typed("30m")).toBe(now + 30 * 60_000);
+    expect(typed("2h")).toBe(now + 2 * 3_600_000);
+  });
+
+  it("reads nothing it can't be sure of, or a time already past", () => {
+    for (const text of [
+      "",
+      "fr",
+      "friyay",
+      "9pm",
+      "25:00",
+      "fri sat",
+      "today 09:00",
+      "0h",
+      "a b c",
+    ]) {
+      expect(typed(text), text).toBeUndefined();
+    }
   });
 });
