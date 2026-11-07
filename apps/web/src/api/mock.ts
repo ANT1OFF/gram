@@ -128,6 +128,9 @@ import {
   stopBusyThreads,
   seedLongThreads,
   seedInFlightTurn,
+  seedScale,
+  streamThread,
+  type MockScale,
   seedPrStates,
   seedSidebarLoad,
   seedClaudeAccountModels,
@@ -200,6 +203,7 @@ import {
   mockStartsFresh,
   mockStartsWithBoard,
   mockStartsRealistic,
+  mockStartsAtScale,
 } from "./mock-overrides";
 import { mockDiff, mockGitState, mockPrDetail } from "./mock-git";
 import { searchMessages } from "./mock-search";
@@ -794,6 +798,34 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   /** `seedLongThreads` (`mock-seeds.ts`). */
   seedLongThreads(options: { count: number; turns: number }): ThreadId[] {
     return seedLongThreads(this.#scenes, options);
+  }
+
+  /**
+   * `seedScale` (`mock-seeds.ts`), between the `gram-mock-seed` marks: the mock's own generation
+   * time, which a spec takes out of what it measures of the app.
+   */
+  async seedScale(options?: {
+    threads?: number;
+    messages?: number;
+    diffLines?: number;
+  }): Promise<MockScale> {
+    performance.mark("gram-mock-seed-start");
+    try {
+      return await seedScale(this.#scenes, options);
+    } finally {
+      performance.measure("gram-mock-seed", "gram-mock-seed-start");
+    }
+  }
+
+  /** The scale scenario the mock started with (`gram.mock.orchestration` is `scale`). */
+  async startedScale(): Promise<MockScale | undefined> {
+    const made = await this.#starting;
+    return mockStartsAtScale() ? (made as MockScale) : undefined;
+  }
+
+  /** `streamThread` (`mock-seeds.ts`). */
+  streamThread(threadId: ThreadId, speed?: number): void {
+    streamThread(this.#scenes, threadId, speed);
   }
 
   /** `seedInFlightTurn` (`mock-seeds.ts`). */
@@ -1644,7 +1676,9 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     ? Promise.resolve().then(() => this.simulateOrchestration("board"))
     : mockStartsRealistic()
       ? Promise.resolve().then(() => this.simulateRealistic())
-      : Promise.resolve();
+      : mockStartsAtScale()
+        ? Promise.resolve().then(() => this.seedScale())
+        : Promise.resolve();
 
   readonly #dreams = createMockDreams({
     workspace: (workspaceId) =>

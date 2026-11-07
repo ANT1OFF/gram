@@ -243,7 +243,11 @@ const OUTCOME_DOT: Readonly<Record<HistoryOutcome, DotState>> = {
 /** A finished chat: its outcome's dot, its title and when, its outcome and place; muted until hovered. */
 function DoneRow({ row, now }: { row: RecentDone; now: number }) {
   const openThread = useOpenThread();
-  const viewed = useParams({ strict: false }).threadId === row.threadId;
+  // Only this row's answer: a move to another thread re-renders the two rows it changes, not all.
+  const viewed = useParams({
+    strict: false,
+    select: (params) => params.threadId === row.threadId,
+  });
   const word = row.outcome === undefined ? "finished" : OUTCOME_LABEL[row.outcome];
   const when = recentWhen(row.finishedAt, now);
   return (

@@ -765,7 +765,11 @@ export function WorkerRow({
   card?: boolean;
 }) {
   const openThread = useOpenThread();
-  const viewed = useParams({ strict: false }).threadId === row.threadId;
+  // Only this row's answer: a move to another thread re-renders the two rows it changes, not all.
+  const viewed = useParams({
+    strict: false,
+    select: (params) => params.threadId === row.threadId,
+  });
   const lastActivity = useThreadsStore((s) => s.byId[row.threadId]?.thread.lastActivityAt);
   const agent = useThreadsStore((s) => s.byId[row.threadId]?.thread.model?.agent);
   const status = useThreadsStore((s) => s.byId[row.threadId]?.status);
@@ -1467,7 +1471,11 @@ export function SoloRow({
   settled?: boolean;
 }) {
   const openThread = useOpenThread();
-  const viewed = useParams({ strict: false }).threadId === summary.thread.id;
+  // Only this row's answer: a move to another thread re-renders the two rows it changes, not all.
+  const viewed = useParams({
+    strict: false,
+    select: (params) => params.threadId === summary.thread.id,
+  });
   // Ages to the minute.
   const now = useNow(true, undefined, 60_000);
   const { thread } = summary;

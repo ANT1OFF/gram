@@ -398,8 +398,18 @@ export function registerMockTurnFiles(
   scenarioTurnFiles.set(`${threadId}:${turnId}`, files);
 }
 
+/** Uncommitted files a perf seed gave a thread (`registerMockThreadDiff`). */
+const scenarioDiffs = new Map<ThreadId, readonly DiffFile[]>();
+
+/** A seeded thread's uncommitted changes are `files`, for the Diff panel. */
+export function registerMockThreadDiff(threadId: ThreadId, files: readonly DiffFile[]): void {
+  scenarioDiffs.set(threadId, files);
+}
+
 function mockDiffOf(threadId: ThreadId, scope: DiffScope): Diff {
   if (threadId === "t-grpc") return { repo: false };
+  const seeded = scope.kind === "turn" ? undefined : scenarioDiffs.get(threadId);
+  if (seeded !== undefined) return { repo: true, branch: "perf/scale", files: [...seeded] };
   if (scope.kind === "turn") {
     const files =
       threadId === "t-deps" && scope.turnId === MOCK_DEPS_TURN
