@@ -404,8 +404,12 @@ const scenes: readonly Shot[] = [
     title: "The same chat with Show all activity on: every digest and reply, as it was sent",
     open: async (page) => {
       await openLongDay(page);
-      await page.getByTestId("status-all-activity").click();
-      await expect(page.getByTestId("status-all-activity")).toHaveAttribute("aria-checked", "true");
+      // A view option: the title bar's "…", View, then Show all activity.
+      await page.getByTestId("titlebar-overflow").click();
+      await page.getByTestId("menu-view").click();
+      await page.getByTestId("menu-all-activity").click();
+      await expect(page.getByTestId("titlebar-overflow-menu")).toHaveCount(0);
+      await expect(page.locator('[data-testid="update-block"][data-quiet="true"]')).toHaveCount(0);
       await page.waitForTimeout(600);
     },
   },

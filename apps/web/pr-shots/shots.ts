@@ -1426,7 +1426,7 @@ const openRealisticPanel = async (page: Page) => {
     return started;
   });
   await openOrchestrator(page, made.orchestratorThreadId);
-  await page.getByTestId("status-header").waitFor();
+  await page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`).waitFor();
   return made;
 };
 

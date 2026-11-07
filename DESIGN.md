@@ -126,7 +126,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   (2) is the stroke at 16 px; each size token takes the stroke that draws the same line
   (about 1.33 px, as heavy as Inter's stems beside it) at its size (globals.css), so a 14 px chip
   glyph is no thinner than an 18 px toolbar one. A glyph stands in for a word, never beside the
-  word it repeats: a button that says "Edit" or "Restore defaults", the status strip's counts and
+  word it repeats: a button that says "Edit" or "Restore defaults", a status line's counts and
   a picker that shows its words take no glyph, and a picker's glyph draws only once its words
   give way. A mark that says something its words don't (the model picker's agent, a row's state
   dot) stays. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
@@ -151,7 +151,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
     Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`, History `History`, a wait
     `Hourglass`. A row a chevron already folds needs no second glyph (an orchestrator's update is
-    its chevron and time, and no rule: a reply's 12 px block step sets it apart).
+    its chevron and time, and no rule: the transcript's 12 px block step sets it apart).
   - A control that acts on a choice names it: a sound's preview is one "Preview Chime" button
     beside the choice, never a row of bare play glyphs.
   - A button with words takes no glyph that says the same: no `Plus` beside "Add …" or "New …", no
@@ -188,9 +188,10 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   its square, the square inside the running ring, right-aligned where Send sits, its key a key cap
   inside it while its pane has focus. While the turn only waits on your answer, Stop steps back to
   the danger tint (no ring), still distinct from Send and from a faint outline. Into a worker the
-  orchestrator still directs, a message takes it over: the placeholder says "Message worker —
-  takes control…", Send's name says it, and with a draft the line beside Send says "Sending takes
-  control from the orchestrator". A default says whose it is in its name and tooltip
+  orchestrator still directs, a message takes it over, said once in plain words where it happens:
+  the placeholder only names where the message goes ("Message this worker…"), Send's name and
+  tooltip say "Send and take over from the orchestrator", and with a draft the line beside Send
+  says "Sending takes over from the orchestrator". A default says whose it is in its name and tooltip
   ("Effort: Model default", "Speed: CLI default"); the chip, after its dimension, says "Default"
   ("Effort: Default"), never a bare "Default" with nothing before it. Beside Send the context meter says "Context 36%"
   over its bar, the number alone in a composer under 36 rem, and its popover says what it
@@ -222,11 +223,21 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   of the workspace and its views, and no overview beside it.
 - **A status strip keeps its words:** short of room it drops whole items from its end, never their
   words, so a count never stands alone and no two read the same.
-- **One band above the transcript, one below.** The orchestrator's chat has one quiet muted line
-  over it, with no rule under it: the counts, then "Since you left" as a fold (its Dismiss inside,
-  no ×), then Show all activity at its end; "New" is the transcript's own line, over the first
-  message you haven't seen. A worker's PR and CI are the strip above its composer, and Take over
-  stays the title bar's (the strip adds no second one).
+- **One band above the transcript, one below, and only what nothing else says.** Over the
+  orchestrator's chat is "Since you left" as a fold (its Dismiss inside, no ×), one quiet muted
+  line with no rule under it, and nothing else: running, review and merged counts are the
+  sidebar's and the Board's, and Show all activity is a view option (the title bar's "…" under
+  View, a pane's "…"). With no absence to sum up the line is gone, with no empty band. "New" is
+  the transcript's own line, over the first message you haven't seen. A worker's PR and CI are
+  the strip above its composer, and Take over stays the title bar's (the strip adds no second one).
+- **The orchestrator's reply is the strongest thing in its chat.** An update ("09:52 Update · 2
+  merged · More") and an event Gram's own tools report there ("Started a worker", "Queued to merge
+  when ready") are quiet meta, a line of `text-meta` in `fg-muted` at regular weight behind its
+  chevron, never a card; only an ask (amber) or a failure (red) colours one, and a call still
+  running, waiting on you or failed keeps its card. One 12 px step separates every block of the
+  stream, a reply from an update the same as an update from the next reply: a message's Copy,
+  rewind and time float over its corner on hover (beside a bubble, at a reply's end) instead of
+  reserving a row under it.
 - **Motion is short and springy:** 220 to 320 ms with the theme's ease-out, springs for presses
   and arrivals, and none under reduced motion.
 

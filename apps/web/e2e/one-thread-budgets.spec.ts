@@ -21,7 +21,7 @@ const start = async (page: Page) => {
   // The way home: the workspace's ⌘1.
   await pressFirstWorkspaceKey(page);
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  await expect(page.getByTestId("status-header")).toBeVisible();
+  await expect(page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`)).toBeVisible();
   await expect(page.getByTestId("feature-card").first()).toBeVisible();
   return made;
 };

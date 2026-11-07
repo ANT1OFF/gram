@@ -107,6 +107,9 @@ const words = (name: string): string => {
 const settled = (phase: ToolPhase) =>
   phase === "done" || phase === "error" || phase === "denied" || phase === "cancelled";
 
+/** One of Gram's own app tools (`mcp__gram__spawn_worker`), which the orchestrator's chat reads as events. */
+export const isGramTool = (tool: string): boolean => MCP.exec(tool)?.[1] === "gram";
+
 /** The words for a call, and, when they differ from it, the raw tool id that the details show. */
 export interface ToolLabel {
   readonly label: string;

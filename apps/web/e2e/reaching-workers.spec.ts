@@ -205,14 +205,17 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   );
   // Shown as the line, it isn't a mark beside Take over too.
   await expect(page.getByTestId("worker-take-over-info")).toHaveCount(0);
-  // Where the message is written, the composer says a message takes it over.
+  // Where the message is written, the composer names the worker, and with a draft Send and the
+  // line beside it say that sending takes it over.
   await expect(composerOf(page, made.asking)).toHaveAttribute(
     "placeholder",
-    /^(Message worker|Queue a message) — takes control…/,
+    /^(Message this worker|Queue a message for this worker)… /,
   );
   await composerOf(page, made.asking).fill("Draft only");
-  await expect(page.getByRole("button", { name: /^(Send|Queue) — takes control$/ })).toBeVisible();
-  await expect(page.getByText("Sending takes control from the orchestrator")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^(Send|Queue) and take over from the orchestrator$/ }),
+  ).toBeVisible();
+  await expect(page.getByText("Sending takes over from the orchestrator")).toBeVisible();
   await composerOf(page, made.asking).fill("");
 
   await page.getByTestId("worker-take-over").click();

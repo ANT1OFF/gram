@@ -25,7 +25,7 @@ const openRealistic = async (page: Page) => {
     return { ...started, billingOrchestrator: billing.workspace.orchestratorThreadId! };
   });
   await openOrchestrator(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("status-header")).toBeVisible();
+  await expect(page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`)).toBeVisible();
   return made;
 };
 

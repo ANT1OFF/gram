@@ -48,10 +48,10 @@ function Named({ lines }: { lines: readonly StreamLine[] }) {
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 /**
- * "Since you left · 2 merged", one chip in the orchestrator's status row when you come back to
+ * "Since you left · 2 merged", the one line over the orchestrator's chat when you come back to
  * it: what merged and what failed (and came back) while you were away, with the time range and
- * each PR on request. The live state (running, waiting on you) is the row's own; this keeps only
- * the summary of the absence. Folded from the digests the orchestrator was given while you were
+ * each PR on request. The live state (running, in review, waiting on you) is the sidebar's and the
+ * Board's; this keeps only the summary of the absence, and without one there is no line at all. Folded from the digests the orchestrator was given while you were
  * away, the same facts as its own `away` digest, decided once as the view opens. It is one fold
  * on the line, no × beside it: its Dismiss is in what it opens, and dismissed, it stays gone for
  * that absence. Reading it changes nothing.
@@ -91,85 +91,95 @@ export function SinceYouLeft({
     setGone(true);
   };
   return (
-    <section
-      aria-label="Since you left"
-      data-testid="since-you-left"
-      // Whole or not at all: the status strip drops it from its end rather than cut its words.
-      className="flex shrink-0 items-center"
+    // The one line over the chat: this fold alone, muted, with no rule under it, and gone with it.
+    <div
+      role="region"
+      aria-label="Workspace status"
+      data-testid="status-header"
+      className="flex min-w-0 shrink-0 items-center px-2 py-0.5"
     >
-      <Popover.Root>
-        <Popover.Trigger
-          data-testid="since-you-left-open"
-          aria-label={`Since you left: ${words}. Show what happened`}
-          className="flex h-7 items-center gap-1 rounded-sm px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {/* Always said: without it, "2 merged" would read like the strip's "merged today". */}
-          <span className="shrink-0">Since you left</span>
-          {merged > 0 && (
-            <span data-testid="since-merged" className="shrink-0">
-              <span className="font-medium text-foreground tabular-nums">{merged}</span> merged
-            </span>
-          )}
-          {failed > 0 && (
-            <span data-testid="since-failed-count" className="shrink-0 text-destructive">
-              <span className="font-medium tabular-nums">{failed}</span>{" "}
-              {plural(failed, "failure", "failures")}
-            </span>
-          )}
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Positioner side="bottom" align="start" sideOffset={6} className="isolate z-50">
-            <Popover.Popup
-              data-testid="since-you-left-detail"
-              className="flex w-96 max-w-[90vw] origin-(--transform-origin) flex-col gap-1.5 rounded-md border border-edge bg-popover p-3 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
-            >
-              <Popover.Title className="flex items-baseline gap-1.5 font-medium">
-                Since you left
-                {since !== undefined && (
-                  <span className="font-normal text-muted-foreground tabular-nums">
-                    {formatStamp(since, now)} to {formatClockTime(now)}
-                  </span>
-                )}
-              </Popover.Title>
-              {merged > 0 && (
-                <p data-testid="since-merged-detail" className="flex flex-wrap items-center gap-1">
-                  <span>{merged} merged:</span>
-                  <Named lines={summary.merged} />
-                </p>
-              )}
-              {summary.failed.map((line) => (
-                <p
-                  key={line.key}
-                  data-testid="since-failed"
-                  className="flex flex-wrap items-center gap-1"
-                >
-                  {line.threadId !== undefined ? (
-                    <WorkerLink threadId={line.threadId}>
-                      {line.title ?? (line.feature || "worker")}
-                    </WorkerLink>
-                  ) : (
-                    line.feature !== "" && <span>{line.feature}</span>
-                  )}
-                  <span className="text-destructive">{line.words}</span>
-                  {line.threadId !== undefined && recovered.has(line.threadId) && (
-                    <span className="text-muted-foreground">, then fixed</span>
-                  )}
-                </p>
-              ))}
-              {/* Read, it can go: Dismiss lives with the summary, not as a × on the strip. */}
-              <button
-                type="button"
-                aria-label="Dismiss Since you left"
-                data-testid="since-you-left-dismiss"
-                className="mt-1 self-end rounded-sm px-1.5 py-0.5 font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={dismiss}
+      <section
+        aria-label="Since you left"
+        data-testid="since-you-left"
+        className="flex shrink-0 items-center"
+      >
+        <Popover.Root>
+          <Popover.Trigger
+            data-testid="since-you-left-open"
+            aria-label={`Since you left: ${words}. Show what happened`}
+            className="flex h-7 items-center gap-1 rounded-sm px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {/* Always said: without it, "2 merged" would read like a count of the day's merges. */}
+            <span className="shrink-0">Since you left</span>
+            {merged > 0 && (
+              <span data-testid="since-merged" className="shrink-0">
+                <span className="font-medium text-foreground tabular-nums">{merged}</span> merged
+              </span>
+            )}
+            {failed > 0 && (
+              <span data-testid="since-failed-count" className="shrink-0 text-destructive">
+                <span className="font-medium tabular-nums">{failed}</span>{" "}
+                {plural(failed, "failure", "failures")}
+              </span>
+            )}
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Positioner side="bottom" align="start" sideOffset={6} className="isolate z-50">
+              <Popover.Popup
+                data-testid="since-you-left-detail"
+                className="flex w-96 max-w-[90vw] origin-(--transform-origin) flex-col gap-1.5 rounded-md border border-edge bg-popover p-3 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
               >
-                Dismiss
-              </button>
-            </Popover.Popup>
-          </Popover.Positioner>
-        </Popover.Portal>
-      </Popover.Root>
-    </section>
+                <Popover.Title className="flex items-baseline gap-1.5 font-medium">
+                  Since you left
+                  {since !== undefined && (
+                    <span className="font-normal text-muted-foreground tabular-nums">
+                      {formatStamp(since, now)} to {formatClockTime(now)}
+                    </span>
+                  )}
+                </Popover.Title>
+                {merged > 0 && (
+                  <p
+                    data-testid="since-merged-detail"
+                    className="flex flex-wrap items-center gap-1"
+                  >
+                    <span>{merged} merged:</span>
+                    <Named lines={summary.merged} />
+                  </p>
+                )}
+                {summary.failed.map((line) => (
+                  <p
+                    key={line.key}
+                    data-testid="since-failed"
+                    className="flex flex-wrap items-center gap-1"
+                  >
+                    {line.threadId !== undefined ? (
+                      <WorkerLink threadId={line.threadId}>
+                        {line.title ?? (line.feature || "worker")}
+                      </WorkerLink>
+                    ) : (
+                      line.feature !== "" && <span>{line.feature}</span>
+                    )}
+                    <span className="text-destructive">{line.words}</span>
+                    {line.threadId !== undefined && recovered.has(line.threadId) && (
+                      <span className="text-muted-foreground">, then fixed</span>
+                    )}
+                  </p>
+                ))}
+                {/* Read, it can go: Dismiss lives with the summary, not as a × on the strip. */}
+                <button
+                  type="button"
+                  aria-label="Dismiss Since you left"
+                  data-testid="since-you-left-dismiss"
+                  className="mt-1 self-end rounded-sm px-1.5 py-0.5 font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={dismiss}
+                >
+                  Dismiss
+                </button>
+              </Popover.Popup>
+            </Popover.Positioner>
+          </Popover.Portal>
+        </Popover.Root>
+      </section>
+    </div>
   );
 }

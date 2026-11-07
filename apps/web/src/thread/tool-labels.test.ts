@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { toolLabel } from "./tool-labels";
+import { isGramTool, toolLabel } from "./tool-labels";
+
+describe("isGramTool", () => {
+  it("is Gram's own app tools only, which the orchestrator's chat reads as events", () => {
+    expect(isGramTool("mcp__gram__spawn_worker")).toBe(true);
+    expect(isGramTool("mcp__gram__merge_when_ready")).toBe(true);
+    expect(isGramTool("mcp__claude_ai_Linear__list_issues")).toBe(false);
+    expect(isGramTool("Bash")).toBe(false);
+  });
+});
 
 describe("toolLabel", () => {
   it("says what Gram's own tools did, with the raw id kept for the details", () => {

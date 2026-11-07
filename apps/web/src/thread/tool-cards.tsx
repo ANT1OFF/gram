@@ -4,7 +4,7 @@ import {
   type SubagentUsageData,
   type GramUIMessage,
 } from "@gram/contracts";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 import { Tool } from "@/components/ai-elements/tool";
@@ -14,6 +14,7 @@ import { CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatCount } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Expand, isMarkPhase, StatusMark, Swap } from "@/motion";
+import { useOrchestratorStreamContext } from "@/orchestration/stream-context";
 
 import { ApprovalSlot, ApprovalSlotsOpen } from "./approval-slots";
 import { useAwaitingTools, withApproval } from "./awaiting-tools";
@@ -26,7 +27,7 @@ import {
   type ToolPartOf,
   type ToolPhase,
 } from "./parts";
-import { toolLabel, type ToolLabel } from "./tool-labels";
+import { isGramTool, toolLabel, type ToolLabel } from "./tool-labels";
 import { FileEditCard } from "./file-edit-card";
 import { ToolImages } from "./tool-images";
 import { toolDetail } from "./tool-group-model";
@@ -140,6 +141,14 @@ function ToolShell({
   );
   const display = PHASE_DISPLAY[phase];
   const words = labelOf?.(phase) ?? { label: name, raw: undefined };
+  // In the orchestrator's chat, one of Gram's own calls that went through ("Started a worker",
+  // "Queued to merge when ready") is an event, not work to inspect: a line of muted meta like an
+  // update's, its chevron first, so the reply around it stays the strongest thing in the pane. A
+  // call still running, waiting on you or failed keeps its card.
+  const quiet =
+    useOrchestratorStreamContext() !== undefined &&
+    phase === "done" &&
+    isGramTool(toolNameOf(part));
   const [open, setOpen] = useState(defaultOpen);
   // A closed body is inert and zero-height, so it isn't rendered until first opened: a long
   // transcript would otherwise lay out every tool's full output. It stays mounted once opened, so
@@ -153,43 +162,66 @@ function ToolShell({
         setOpen(next);
         if (next) setOpened(true);
       }}
-      className="group/tool mb-0 rounded-(--radius-md) border-edge-action bg-card/40"
+      className={
+        quiet
+          ? "group/tool mb-0 rounded-none border-0 bg-transparent"
+          : "group/tool mb-0 rounded-(--radius-md) border-edge-action bg-card/40"
+      }
       data-testid="tool-card"
       data-tool={name}
       data-tool-call-id={part.toolCallId}
+      data-quiet={quiet ? "true" : undefined}
     >
-      <div className="flex items-center">
+      {quiet ? (
         <CollapsibleTrigger
           aria-controls={bodyId}
-          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-reading"
+          className="flex w-full min-w-0 items-center gap-1.5 rounded-sm py-0.5 text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {/* The mark stays mounted from pending to done, so its arc can close into the check. */}
-          {/* A native title: a tooltip trigger inside the row's toggle would take its click. */}
-          <span title={display.label} className="flex shrink-0">
-            <Swap swapKey={isMarkPhase(phase) ? "mark" : phase}>
-              {isMarkPhase(phase) ? (
-                <StatusMark phase={phase} className={cn("size-icon-row", display.tone)} />
-              ) : (
-                <display.icon aria-hidden className={cn("size-icon-row", display.tone)} />
-              )}
-            </Swap>
-          </span>
-          <span className="shrink-0 font-medium">{words.label}</span>
-          <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground">
-            {summary}
-          </span>
-          {meta}
-          {/* A finished row is the common case: its check says so, and the word is for a reader.
-            A waiting row's card is right under it. */}
-          <span className={cn("shrink-0 text-meta", phase === "done" ? "sr-only" : display.tone)}>
-            {display.label}
-          </span>
-          <ChevronDown
+          <ChevronRight
             aria-hidden
-            className="size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-fast) in-data-panel-open:rotate-180"
+            className="size-icon-chip shrink-0 transition-transform duration-(--dur-fast) in-data-panel-open:rotate-90"
           />
+          <span className="shrink-0">{words.label}</span>
+          {summary !== undefined && summary !== null && summary !== "" && (
+            <span className="min-w-0 flex-1 truncate">· {summary}</span>
+          )}
+          {meta}
+          <span className="sr-only">{display.label}</span>
         </CollapsibleTrigger>
-      </div>
+      ) : (
+        <div className="flex items-center">
+          <CollapsibleTrigger
+            aria-controls={bodyId}
+            className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-reading"
+          >
+            {/* The mark stays mounted from pending to done, so its arc can close into the check. */}
+            {/* A native title: a tooltip trigger inside the row's toggle would take its click. */}
+            <span title={display.label} className="flex shrink-0">
+              <Swap swapKey={isMarkPhase(phase) ? "mark" : phase}>
+                {isMarkPhase(phase) ? (
+                  <StatusMark phase={phase} className={cn("size-icon-row", display.tone)} />
+                ) : (
+                  <display.icon aria-hidden className={cn("size-icon-row", display.tone)} />
+                )}
+              </Swap>
+            </span>
+            <span className="shrink-0 font-medium">{words.label}</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground">
+              {summary}
+            </span>
+            {meta}
+            {/* A finished row is the common case: its check says so, and the word is for a reader.
+            A waiting row's card is right under it. */}
+            <span className={cn("shrink-0 text-meta", phase === "done" ? "sr-only" : display.tone)}>
+              {display.label}
+            </span>
+            <ChevronDown
+              aria-hidden
+              className="size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-fast) in-data-panel-open:rotate-180"
+            />
+          </CollapsibleTrigger>
+        </div>
+      )}
       {!open && (
         <ToolImages
           part={part}
@@ -199,7 +231,12 @@ function ToolShell({
       )}
       <Expand open={open} id={bodyId}>
         {opened && (
-          <div className="space-y-2 border-t border-border p-3 text-reading">
+          <div
+            className={cn(
+              "space-y-2 text-reading",
+              quiet ? "pt-1 pb-1 pl-5" : "border-t border-border p-3",
+            )}
+          >
             {words.raw !== undefined && (
               <p data-testid="tool-raw-name" className="text-meta text-muted-foreground">
                 Tool <code className="font-mono text-foreground">{words.raw}</code>

@@ -2,7 +2,6 @@ import type { GramUIMessage } from "@gram/contracts";
 import { ChevronRight } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
-import { PR_STATE_DISPLAY } from "@/components/pr-marks-model";
 import { formatStamp } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Expand } from "@/motion";
@@ -12,20 +11,21 @@ import { StreamLineView } from "./feature-card";
 import { replyPreview, updateWords, type StreamDigest, type TimedLine } from "./stream-model";
 
 /**
- * A count's tone, as its lines are toned: amber only for what needs the user (#121), red for a
- * failure, the merged colour for merges.
+ * A count's tone, only where it is an alarm or an ask: amber for what needs the user (#121), red
+ * for a failure. Everything else on the line (merges, reports, digests) stays muted meta, so the
+ * orchestrator's reply around it is the strongest thing in the pane.
  */
 const COUNT_TONE: Record<string, string> = {
   ask: "text-status-needs",
   failed: "text-destructive",
-  merged: PR_STATE_DISPLAY.merged.tone,
 };
 
 /**
  * The background events a run of digests brought, as one update in the orchestrator's stream: a
- * single light line, "09:19 · Update · 2 merged · 1 report · More", its time first, muted and with
- * no box, no rule and no glyph but its fold's chevron (History's clock means History): the space
- * round it, a reply's 12 px block step, sets it apart, so it reads as a marker between the
+ * single line of muted meta (`text-meta`, `fg-muted`, regular weight), "09:19 Update · 2 merged ·
+ * 1 report · More", its time first, with no box, no rule and no glyph but its fold's chevron
+ * (History's clock means History). It takes no padding of its own: the transcript's one 12 px step
+ * between blocks sets it apart, the same above it and below, so it reads as a marker between the
  * orchestrator's answers rather than one of them. It opens in place on every line it gathered and on the digests behind
  * them, so nothing is hidden, only folded; an update with a line that needs the user or failed
  * starts open. A run that spoke no line is its digest line alone, in the same box.
@@ -53,8 +53,8 @@ export function UpdateBlock({
   const [everOpened, setOpened] = useState(false);
   const opened = everOpened || open;
   const bodyId = useId();
-  // A line, not a card: the answers around it carry the weight.
-  const box = "w-full py-1";
+  // A line, not a card: the answers around it carry the weight, and the row step its space.
+  const box = "w-full";
   if (quiet) {
     return (
       <QuietUpdate lines={lines} digests={digests} replies={replies} renderReply={renderReply} />
@@ -92,7 +92,7 @@ export function UpdateBlock({
         />
         <UpdateTime time={words.time} />
         <span className="min-w-0 truncate text-muted-foreground">
-          <span className="font-medium">Update</span>
+          <span>Update</span>
           {words.counts.map((count) => (
             <span key={count.kind}>
               {" · "}
@@ -153,7 +153,7 @@ function QuietUpdate({
       data-digests={digests.length}
       data-replies={replies.length}
       data-open={open}
-      className="w-full py-1"
+      className="w-full"
     >
       <button
         type="button"
@@ -176,7 +176,7 @@ function QuietUpdate({
         />
         <UpdateTime time={time} />
         <span className="min-w-0 truncate text-muted-foreground">
-          <span className="font-medium">Update</span>
+          <span>Update</span>
           {words.counts.map((count) => (
             <span key={count.kind}>
               {" · "}
@@ -232,7 +232,7 @@ function FoldWord({ open }: { open: boolean }) {
     <span
       aria-hidden
       data-testid="update-block-fold"
-      className="shrink-0 font-medium text-muted-foreground group-hover:text-foreground"
+      className="shrink-0 text-muted-foreground group-hover:text-foreground"
     >
       {open ? "Less" : "More"}
     </span>

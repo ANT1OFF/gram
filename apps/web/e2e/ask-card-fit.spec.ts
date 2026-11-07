@@ -55,7 +55,7 @@ const start = async (page: Page) => {
     [QUESTION, CONTEXT, OPTIONS, RECOMMENDED] as const,
   );
   await openOrchestratorTile(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("status-header")).toBeVisible();
+  await expect(page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`)).toBeVisible();
   return made;
 };
 
