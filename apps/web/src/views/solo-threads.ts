@@ -22,7 +22,13 @@ export interface SettleRule {
 export const autoSettled = (summary: ThreadSummary, rule: SettleRule | undefined): boolean => {
   if (rule === undefined) return false;
   const { thread } = summary;
-  if (thread.pinned || thread.parked || thread.unread || thread.completedAt !== undefined) {
+  if (
+    thread.pinned ||
+    thread.parked ||
+    thread.unread ||
+    thread.snoozedUntil !== undefined ||
+    thread.completedAt !== undefined
+  ) {
     return false;
   }
   if (summary.status !== "idle" && summary.status !== "cold" && summary.status !== "ended") {
@@ -59,10 +65,14 @@ const asks = (summary: ThreadSummary): boolean =>
 const needsYouFirst = (a: ThreadSummary, b: ThreadSummary) =>
   Number(asks(b)) - Number(asks(a)) || latestFirst(a, b);
 
+/** Snoozed and not archived: out of the list until its snooze ends. */
+const snoozedOnly = (summary: ThreadSummary): boolean =>
+  summary.thread.snoozedUntil !== undefined && !summary.thread.parked;
+
 /**
  * The threads outside any workspace, as the overview lists them: the listed threads beside the
- * workspaces' own, less parked, done and settled ones (`soloOver` under `rule`), those that ask you
- * something first, then latest first.
+ * workspaces' own, less parked, snoozed, done and settled ones (`soloOver` under `rule`), those that
+ * ask you something first, then latest first.
  */
 export const soloThreads = (
   summaries: Iterable<ThreadSummary>,
@@ -70,8 +80,19 @@ export const soloThreads = (
   rule?: SettleRule,
 ): ThreadSummary[] =>
   splitForTree(summaries, workspaceIds)
-    .listed.filter((summary) => !summary.thread.parked && !soloOver(summary, rule))
+    .listed.filter(
+      (summary) => !summary.thread.parked && !snoozedOnly(summary) && !soloOver(summary, rule),
+    )
     .toSorted(needsYouFirst);
+
+/** The snoozed threads outside any workspace, soonest back first: the overview's folded line. */
+export const snoozedSoloThreads = (
+  summaries: Iterable<ThreadSummary>,
+  workspaceIds: ReadonlySet<string>,
+): ThreadSummary[] =>
+  splitForTree(summaries, workspaceIds)
+    .listed.filter(snoozedOnly)
+    .toSorted((a, b) => (a.thread.snoozedUntil ?? 0) - (b.thread.snoozedUntil ?? 0));
 
 /** The parked threads outside any workspace, latest first: the overview's folded Parked line. */
 export const parkedSoloThreads = (
@@ -88,7 +109,9 @@ export const doneSoloThreads = (
   workspaceIds: ReadonlySet<string>,
 ): ThreadSummary[] =>
   splitForTree(summaries, workspaceIds)
-    .listed.filter((summary) => !summary.thread.parked && soloDone(summary))
+    .listed.filter(
+      (summary) => !summary.thread.parked && !snoozedOnly(summary) && soloDone(summary),
+    )
     .toSorted(latestFirst);
 
 /**

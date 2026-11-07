@@ -214,6 +214,15 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   await page.getByTestId("worker-hand-back").click();
   await expect(page.getByTestId("worker-take-over")).toBeVisible();
   expect(await isHeld(page, made, made.asking)).toBe(false);
+
+  // Read once, the line folds away for good: the next worker offers Take over with no line under
+  // its header, the button's hint saying what it changes.
+  await openWorker(page, made.live);
+  await expect(page.getByTestId("worker-take-over")).toBeVisible();
+  await expect(page.getByTestId("worker-banner-take-over")).toHaveCount(0);
+  expect(await page.evaluate(() => window.gramMock!.getSettings())).toMatchObject({
+    onboarding: { takeOverHintSeen: true },
+  });
 });
 
 test("a worker whose worktree was cleaned up stays readable, and Ask about it only fills the composer", async ({

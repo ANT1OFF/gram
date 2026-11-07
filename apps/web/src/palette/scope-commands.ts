@@ -28,6 +28,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { branchDeleteLooksSafe, mergedPrRef } from "@/thread/merged-cleanup";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { copyMarkdown } from "@/thread/message-actions";
+import { snoozePresets, snoozeTime } from "@/thread/snooze-model";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { JOIN_NEEDS_WORKTREE, useThreadActions } from "@/thread/use-thread-actions";
 import {
@@ -133,6 +134,7 @@ export function useScopeCommands(
     const current = thread.labels[0];
     const source = thread.forkedFrom?.threadId;
     const worker = thread.role !== "orchestrator";
+    const snooze = actions.snooze;
     const lastReply = feedLoaded(id)
       ? feedMessages(id).findLast(
           (m) => m.role === "assistant" && m.parts.some((p) => p.type === "text" && p.text.trim()),
@@ -169,6 +171,40 @@ export function useScopeCommands(
           label: thread.parked ? "Unarchive thread" : "Archive thread",
           run: actions.togglePark,
         },
+        ...(snooze === undefined
+          ? []
+          : thread.snoozedUntil !== undefined
+            ? [
+                {
+                  id: `scope:unsnooze:${id}`,
+                  label: "Unsnooze thread",
+                  keywords: "snoozed back wake",
+                  run: () => snooze(undefined),
+                },
+              ]
+            : [
+                {
+                  id: `scope:snooze:${id}`,
+                  label: "Snooze thread…",
+                  keywords: "later remind defer until tomorrow evening",
+                  run: () => {},
+                  opens: () => {
+                    const now = Date.now();
+                    return {
+                      title: "Snooze until",
+                      items: [
+                        ...snoozePresets(now).map((preset) => ({
+                          id: `snooze:${preset.id}`,
+                          label: preset.label,
+                          hint: snoozeTime(preset.at, now),
+                          run: () => snooze(preset.at),
+                        })),
+                        { id: "snooze:custom", label: "Pick a time…", run: actions.snoozeCustom },
+                      ],
+                    };
+                  },
+                },
+              ]),
         ...(actions.toggleDone === undefined || actions.doneHeld
           ? []
           : [

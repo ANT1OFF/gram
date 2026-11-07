@@ -96,13 +96,21 @@ export interface ThreadWakesShape {
 }
 
 /** The statuses that bring a snoozed thread back before its time: it asks something, or failed. */
-const SNOOZE_BREAKERS: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput", "error"]);
+const SNOOZE_BREAKERS: ReadonlySet<ThreadStatus> = new Set([
+  "needsApproval",
+  "needsInput",
+  "error",
+]);
 
 /** A snooze's alarm, beside the wakes' own in one map; a wake's id is a UUID, so never this. */
 const snoozeKey = (threadId: ThreadId) => `snooze:${threadId}`;
 
 /** `thread` with no snooze. */
-const unsnoozed = ({ snoozedUntil: _, ...thread }: Thread): Thread => thread;
+const unsnoozed = (thread: Thread): Thread => {
+  const { snoozedUntil, ...rest } = thread;
+  void snoozedUntil;
+  return rest;
+};
 
 /** What `schedule_wake` asks for, its PR already resolved and looked up by the tool. */
 export interface WakeInput {

@@ -21,6 +21,7 @@ import { threadScope } from "@/palette/palette-items";
 import { useLayoutStore, type PaletteScope } from "@/stores/layout";
 
 import { PrContextMenuItems } from "./pr-menu-items";
+import { LaterContextMenuItems, SnoozeMenuItems } from "./snooze-menu-items";
 import { useThreadActions } from "./use-thread-actions";
 
 export const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
@@ -93,8 +94,12 @@ export function ThreadContextMenuItems({
           {thread.pinned ? "Unpin" : "Pin"}
         </ContextMenuItem>
       )}
-      {/* A worker's row is at the cap with its own group; More… marks it unread. */}
-      {thread.spawnedBy === undefined && (
+      {/* A worker's row is at the cap with its own group; More… marks it unread or snoozes it. A
+          solo row's Mark unread shares a submenu with Snooze, which keeps the row at the cap. */}
+      {thread.spawnedBy === undefined && !orchestrator && (
+        <LaterContextMenuItems threadId={threadId} />
+      )}
+      {orchestrator && (
         <ContextMenuItem data-testid="menu-unread" onClick={actions.toggleUnread}>
           {thread.unread ? (
             <MailOpen aria-hidden className="size-icon-row" />
@@ -187,6 +192,7 @@ export function ThreadMenuItems({
         )}
         {thread.parked ? "Unarchive" : "Archive"}
       </Menu.Item>
+      <SnoozeMenuItems threadId={threadId} itemClassName={itemClassName} />
       {actions.toggleDone !== undefined && (
         <Menu.Item
           className={itemClassName}

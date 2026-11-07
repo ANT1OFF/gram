@@ -1,7 +1,13 @@
 import type { ThreadSummary, WorkspaceState } from "@gram/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { doneSoloThreads, inHistory, parkedSoloThreads, soloThreads } from "./solo-threads";
+import {
+  doneSoloThreads,
+  inHistory,
+  parkedSoloThreads,
+  snoozedSoloThreads,
+  soloThreads,
+} from "./solo-threads";
 import { chatRoute, switcherChecked, useViewStore } from "./view-store";
 import { viewWorkspace } from "./view-workspace";
 
@@ -147,6 +153,25 @@ describe("soloThreads", () => {
     expect(ids(soloThreads(threads, new Set()))).toEqual(["asking", "pinned", "open", "resumed"]);
     expect(ids(doneSoloThreads(threads, new Set()))).toEqual(["done"]);
     expect(ids(parkedSoloThreads(threads, new Set()))).toEqual(["parked"]);
+  });
+
+  it("folds snoozed threads under Snoozed, soonest back first, and never settles them", () => {
+    const DAY = 86_400_000;
+    const now = Date.UTC(2026, 10, 7, 12);
+    const threads = [
+      summary("open", {}, now),
+      summary("tomorrow", { snoozedUntil: now + DAY }, now - 30 * DAY),
+      summary("tonight", { snoozedUntil: now + 6 * 3_600_000 }, now),
+      summary("done", { snoozedUntil: now + DAY, completedAt: 1, completedReason: "user" }, now),
+      // Archived wins: it stays under Archived.
+      summary("parked", { snoozedUntil: now + DAY, parked: true }, now),
+    ];
+    expect(ids(soloThreads(threads, new Set(), { now, days: 7 }))).toEqual(["open"]);
+    expect(ids(snoozedSoloThreads(threads, new Set()))).toEqual(["tonight", "tomorrow", "done"]);
+    expect(ids(doneSoloThreads(threads, new Set()))).toEqual([]);
+    expect(ids(parkedSoloThreads(threads, new Set()))).toEqual(["parked"]);
+    // Snoozed past the settle rule's days, it isn't History's yet: it comes back.
+    expect(inHistory(threads[1]!, { now, days: 7 })).toBe(false);
   });
 
   it("settles a thread idle past the rule's days into History, unless it is kept", () => {
