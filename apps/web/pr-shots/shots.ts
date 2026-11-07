@@ -992,6 +992,20 @@ export const SHOTS: readonly Shot[] = [
   ...PANEL_TAB_SHOTS,
   ...COMPOSER_TOOLBAR_SHOTS,
   {
+    name: "composer-model-open",
+    title:
+      "A solo thread at 1440 px, a draft typed, the model list open: it should not cover the draft",
+    open: async (page) => {
+      await openSoloComposer(1440)(page);
+      await page
+        .getByTestId("composer-toolbar")
+        .getByRole("combobox", { name: /^Model/ })
+        .click();
+      await page.getByTestId("model-picker").waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
+  {
     name: "composer-diff-1024",
     title: "A solo thread at 1024 px beside a wide diff: the narrow composer keeps short values",
     open: openSoloComposer(1024, true),
