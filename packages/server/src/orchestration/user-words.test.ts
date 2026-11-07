@@ -101,7 +101,7 @@ describe("attachUserWords", () => {
       id === caller
         ? Effect.succeed({ id, role } as unknown as Thread)
         : Effect.fail(new ThreadNotFound({ threadId: id })),
-    listMessages: () => Effect.succeed(messages),
+    listUserMessages: () => Effect.succeed(messages.filter((each) => each.role === "user")),
   });
 
   it.effect("attaches the latest ones the orchestrator asked for", () =>

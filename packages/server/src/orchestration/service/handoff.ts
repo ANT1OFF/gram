@@ -255,7 +255,7 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
     previous: string | undefined,
   ) =>
     Effect.gen(function* () {
-      const marked = (yield* store.listMessages(threadId)).some((message) =>
+      const marked = (yield* store.messagesWithParts(threadId, ["data-handoff"])).some((message) =>
         message.parts.some((part) => part.type === "data-handoff" && part.data.at === marker.at),
       );
       if (!marked) {

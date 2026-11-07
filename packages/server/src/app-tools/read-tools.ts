@@ -478,14 +478,14 @@ export const ReadAppToolsLive = Layer.effectDiscard(
           if (summary === undefined) {
             return yield* new AppToolError({ tool, message: `unknown thread ${threadId}` });
           }
-          const stored = yield* store.listMessages(summary.thread.id);
+          const stored = yield* store.lastMessages(summary.thread.id, clamp(messages, 1, 50));
           let budget = THREAD_TEXT_CAP;
           const transcript: Array<{
             role: string;
             text: string;
             from?: ReturnType<typeof senderOf>;
           }> = [];
-          for (const message of stored.slice(-clamp(messages, 1, 50)).toReversed()) {
+          for (const message of stored.toReversed()) {
             if (budget <= 0) break;
             const cut = truncate(
               redactText(messageText(message)),
@@ -513,7 +513,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
             thread: yield* compactThread(summary, yield* projectsById, caller),
             queued: summary.queue.length,
             pendingRequests: summary.pendingRequests.length,
-            messageCount: stored.length,
+            messageCount: yield* store.messageCount(summary.thread.id),
             messages: transcript,
           };
         }).pipe(Effect.mapError(toolError("get_thread"))),

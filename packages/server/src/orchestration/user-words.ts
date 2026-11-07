@@ -98,7 +98,7 @@ export const withBriefFooter = (brief: string, footer: string | undefined): stri
  * longer together than `USER_WORDS_MAX`.
  */
 export const attachUserWords = (
-  store: Pick<ThreadStoreShape, "getThread" | "listMessages">,
+  store: Pick<ThreadStoreShape, "getThread" | "listUserMessages">,
   tool: string,
   caller: ThreadId,
   text: string,
@@ -116,7 +116,7 @@ export const attachUserWords = (
           "`userMessages` attaches the user's messages from an orchestrator's conversation; this thread isn't one. Quote what the recipient needs in `text`.",
       });
     }
-    const words = userMessagesOf(yield* store.listMessages(caller)).slice(-count);
+    const words = userMessagesOf(yield* store.listUserMessages(caller)).slice(-count);
     if (words.length === 0) {
       return yield* new AppToolError({
         tool,

@@ -406,7 +406,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 yield* joinGroup(workspaceId, existing.spawnedBy.feature, group);
               }
               const briefed =
-                (yield* store.listMessages(existing.id)).some((m) => m.role === "user") ||
+                (yield* store.hasMessages(existing.id, "user")) ||
                 (yield* store.listQueue(existing.id)).length > 0;
               if (!briefed) {
                 yield* runtimes
