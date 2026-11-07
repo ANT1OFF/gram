@@ -13,8 +13,8 @@ const WARM_UP_TIMEOUT_MS = 180_000;
 
 /**
  * Starts Vite on the mock API for the `apps/web` in `GRAM_PR_SHOTS_WEB_DIR` (this one unless
- * set), proves it with a token as the e2e setup does, and loads the shell once so the first shot
- * doesn't pay for the cold bundle. Workers read the port from the env.
+ * set), proves it with a token as the e2e setup does, and loads the shell and a thread once so the
+ * first shot doesn't pay for the cold bundle. Workers read the port from the env.
  */
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const dir = process.env["GRAM_PR_SHOTS_WEB_DIR"] || undefined;
@@ -43,6 +43,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       const page = await browser.newPage();
       await page.goto(server.origin, { timeout: WARM_UP_TIMEOUT_MS });
       await page.getByTestId("app-shell").waitFor({ timeout: WARM_UP_TIMEOUT_MS });
+      // A thread too: its route is a split chunk Vite only builds on first visit, which under
+      // load took longer than a shot's wait, so the first shot to open a thread found none.
+      await page.goto(`${server.origin}/t/t-deps`, { timeout: WARM_UP_TIMEOUT_MS });
+      await page.getByTestId("thread-view").waitFor({ timeout: WARM_UP_TIMEOUT_MS });
     } finally {
       await browser.close();
     }
