@@ -1182,7 +1182,82 @@ const EMPTY_STATE_SHOTS: readonly Shot[] = [
   },
 ];
 
+/** The realistic morning (`mock-realistic.ts`) on `/`, the right panel closed; what it made. */
+const openRealisticMorning = async (page: Page) => {
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.orchestration", "realistic"));
+  await seedMockSettings(page, { panel: { open: false } });
+  await page.setViewportSize({ width: 1728, height: 1095 });
+  await page.goto("/");
+  await page.getByTestId("app-shell").waitFor();
+  return page.evaluate(async () => {
+    const made = await window.gramMock!.startedRealistic();
+    if (made === undefined) throw new Error("the mock did not start with the realistic scenario");
+    return made;
+  });
+};
+
+/** The solo threads section opened, and `threadId`'s row in it. */
+const soloRowOf = async (page: Page, threadId: string) => {
+  const section = page.getByTestId("overview-section-solo");
+  const toggle = section.getByRole("button", { expanded: false }).first();
+  if (await toggle.isVisible()) await toggle.click();
+  const row = section.locator(`[data-testid="overview-solo"][data-thread-id="${threadId}"]`);
+  await row.waitFor();
+  return row;
+};
+
+const SNOOZE_SHOTS: readonly Shot[] = [
+  {
+    name: "worker-header-returning",
+    title:
+      "A worker's header for a user who has read what Take over does: no help line over the work (before: the line on every worker)",
+    open: async (page) => {
+      await seedMockSettings(page, { onboarding: { takeOverHintSeen: true } });
+      const made = await openRealisticMorning(page);
+      await openOrchestrator(page, made.orchestratorThreadId);
+      await threadRow(page, made.searchWorker).click();
+      await page.waitForURL(new RegExp(`/t/${made.searchWorker}$`));
+      await expect(page.getByTestId("turn-files-card")).toContainText("3 files changed");
+      await page.mouse.move(900, 500);
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "snooze-row-menu",
+    title: "A solo row's Come back later: Mark unread and the snooze times, in 24-hour time",
+    open: async (page) => {
+      await openRealisticMorning(page);
+      const row = await soloRowOf(page, "t-flaky");
+      await row.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Come back later" }).hover();
+      await page.getByTestId("menu-snooze-tomorrow").waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "snoozed-thread",
+    title:
+      "A snoozed thread: Snoozed until in its header with Unsnooze, and the folded Snoozed line",
+    open: async (page) => {
+      await openRealisticMorning(page);
+      // An idle thread: one that asks something comes back from its snooze at once.
+      const row = await soloRowOf(page, "t-deps");
+      await row.click();
+      await page.waitForURL(/\/t\/t-deps$/);
+      await page.evaluate(() =>
+        window.gramMock!.snooze("t-deps" as never, Date.parse("2026-06-19T09:00:00+02:00")),
+      );
+      await page.getByTestId("pane-snoozed").waitFor();
+      await page.getByTestId("overview-snoozed").getByRole("button").click();
+      await page.getByTestId("overview-snoozed").scrollIntoViewIfNeeded();
+      await page.mouse.move(900, 500);
+      await page.waitForTimeout(600);
+    },
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
+  ...SNOOZE_SHOTS,
   ...PANEL_TAB_SHOTS,
   ...COMPOSER_TOOLBAR_SHOTS,
   {
