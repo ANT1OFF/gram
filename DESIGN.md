@@ -180,8 +180,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   orchestrator's with its Memory glyph), then
   what wants you (a setup problem folded from its banner, its glyph with a count, a paused workspace, usage, the bell), one "…" with everything else in words and
   shortcuts, and the panels' group at the end (a worker's Open beside, then the panel's toggle). The usage meter
-  is a button like the bar's others: usage's glyph, its bar and its share ("85%"), the bar giving way on a narrow
-  bar, and the provider and window in its hover and name; with no reading yet it is the glyph alone. It
+  is an icon button like the bar's others, usage's glyph alone, its reading in its hover and name. A dot on
+  its corner is the one hint of a limit: a warning ring from 90%, filled amber once past the window on
+  credits, red once spent; no words, and nothing moves. It
   follows one rule (on a thread its agent's closest limit, unless another's passes 90%; elsewhere the highest),
   and its hover and popover name which ("This thread: …", "Highest: …"). A popover from the bar drops clear of a
   card that asks for a decision. The overview's header holds its own two toggles; Settings sits beside History at

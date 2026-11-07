@@ -169,7 +169,7 @@ test("a full window carried on credits reads as credits in the meter, not a stop
     });
   });
   const meter = page.getByTestId("usage-meter");
-  await expect(meter).toContainText("Claude 100% used · credits");
+  await expect(meter).toHaveAccessibleName(/Claude Code 5-hour 100% · on credits$/);
   await meter.click();
   await expect(page.getByTestId("usage-limit-credits")).toHaveText(
     "Past the limit on credits; turns go on",
