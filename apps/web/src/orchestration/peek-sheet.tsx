@@ -12,7 +12,7 @@ import { useNow } from "@/lib/use-now";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/motion";
-import { checkDuration, checkState } from "@/panels/pr-panel";
+import { checkDuration, checkState } from "@/panels/pr-checks";
 import { prDetailQuery, prDetailStamp } from "@/panels/pr-detail-query";
 import { useCloseOnNavigate } from "@/settings/workspace-sheet";
 import { useOpenThread } from "@/shell/thread-switcher";

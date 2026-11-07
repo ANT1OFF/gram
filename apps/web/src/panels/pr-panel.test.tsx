@@ -10,14 +10,8 @@ import type * as Motion from "@/motion";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
-import {
-  checkDuration,
-  checkState,
-  commitUrl,
-  descriptionPreview,
-  newlyFailing,
-  PrPanel,
-} from "./pr-panel";
+import { checkDuration, checkState } from "./pr-checks";
+import { commitUrl, descriptionPreview, newlyFailing, PrPanel } from "./pr-panel";
 import { Remount, renderWithApi } from "./test-utils";
 
 vi.mock("@/motion", async (original) => ({

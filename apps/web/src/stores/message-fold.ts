@@ -7,7 +7,21 @@
 // Parts are never mutated once created: a chunk replaces the part it touches, so a snapshot shares
 // every other part with the previous one and memoized rows can skip them.
 import type { GramUIMessage, GramUIMessageChunk } from "@gram/contracts";
-import { parsePartialJson } from "ai";
+import type { parsePartialJson } from "ai";
+
+/**
+ * The AI SDK's partial-JSON parser, loaded the first time a tool's input streams: the SDK brings zod
+ * and its provider utilities, which the first screen doesn't need.
+ */
+let partialJson: Promise<typeof parsePartialJson> | undefined;
+const loadPartialJson = () =>
+  (partialJson ??= import("ai").then(
+    (ai) => ai.parsePartialJson,
+    (error: unknown) => {
+      partialJson = undefined;
+      throw error;
+    },
+  ));
 
 type Part = Record<string, unknown> & { type: string };
 type LooseChunk = Record<string, unknown> & { type: string };
@@ -450,7 +464,8 @@ export function createMessageFold(
         if (partial.parsed === partial.text.length) continue;
         const text = partial.text;
         const length = text.length;
-        const { value } = await parsePartialJson(text);
+        const parse = await loadPartialJson();
+        const { value } = await parse(text);
         const index = toolIndex.get(toolCallId);
         // The input may have arrived in full, or the step been reset, while this one was parsed.
         if (partialToolCalls.get(toolCallId) !== partial || index === undefined) continue;

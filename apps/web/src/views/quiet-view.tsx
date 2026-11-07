@@ -24,31 +24,20 @@ import {
 import { AskChoices, Kbd, MoreText, optionHint, SendAnswer } from "@/orchestration/ask-choices";
 import {
   answerRule,
-  askKeysByThread,
   choiceLayout,
   replyAnswer,
   type Ask,
   type AskOption,
 } from "@/orchestration/ask-model";
-import {
-  AskDetails,
-  askTotals,
-  ReplyField,
-  useOpenThread,
-  useWorkspaceAsks,
-  type WorkspaceAsks,
-} from "@/orchestration/ask-stack";
+import { AskDetails, ReplyField, useOpenThread, useWorkspaceAsks } from "@/orchestration/ask-stack";
 import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import { NeedsYouEntry } from "@/orchestration/needs-you-entry";
 import { useDerivedAsks } from "@/orchestration/needs-you-store";
 import { allWorkspacesPaused, setAllWorkspacesPaused } from "@/orchestration/pause-workspace";
-import { useOrchestratorLedgers, useWorkspaces } from "@/orchestration/use-orchestration";
-import { startOfDay, workersByTab, type WorkerRow } from "@/orchestration/workers-model";
-import { useServerSettings } from "@/settings-sync/store";
+import { useWorkspaces } from "@/orchestration/use-orchestration";
+import type { WorkerRow } from "@/orchestration/workers-model";
 import { UsageMeter } from "@/shell/usage-meter";
-import { useThreadsStore } from "@/stores/threads";
-import { useSame } from "@/stores/use-same";
 
 import type { ViewProps } from "./board-view";
 import {
@@ -56,12 +45,12 @@ import {
   quietDeck,
   quietSummary,
   sendLater,
-  shouldEnterQuiet,
   type DeckCard,
   type DeckSource,
   type DotTone,
   type StripWorkspace,
 } from "./quiet-model";
+import { useQuietStrip } from "./quiet-mode";
 import { useViewStore } from "./view-store";
 
 const ICON = { approval: ShieldQuestion, question: MessageCircleQuestion, plan: ListChecks };
@@ -89,42 +78,6 @@ function useLeaveTo() {
     useViewStore.getState().setQuiet(false);
     open(threadId);
   };
-}
-
-/**
- * The strip's workspaces: each one's Now workers, its asks, and what merged today. The menu bar's
- * workspace lines count from it too.
- */
-export function useQuietStrip(all: readonly WorkspaceAsks[]): StripWorkspace[] {
-  const ids = useMemo(() => all.map((w) => w.workspaceId), [all]);
-  const ledgers = useOrchestratorLedgers(ids);
-  // Minute resolution is enough for "today".
-  const now = useNow(true, undefined, 60_000);
-  // Only the strip: a thread's change that leaves it reading the same leaves its readers still.
-  return useThreadsStore(
-    useSame(({ byId, statusDetail }) =>
-      all.map((w) => {
-        const asking = new Set(askKeysByThread(w.asks).keys());
-        const tabs = workersByTab(ledgers.get(w.workspaceId), {
-          byId,
-          statusDetail,
-          now,
-          asking,
-        });
-        return {
-          workspaceId: w.workspaceId,
-          name: w.name,
-          orchestratorThreadId: w.orchestratorThreadId,
-          workers: tabs.now.flatMap((feature) => feature.rows),
-          asks: w.asks.length,
-          mergedToday: tabs.done
-            .flatMap((feature) => feature.rows)
-            .filter((row) => row.glyph === "merged" && (row.finishedAt ?? 0) >= startOfDay(now))
-            .length,
-        };
-      }),
-    ),
-  );
 }
 
 /** The solo threads' asks as one more source of cards, after every workspace's. */
@@ -689,52 +642,4 @@ function QuietMenu() {
       </Menu.Portal>
     </Menu.Root>
   );
-}
-
-/** What counts as the user being at the window. */
-const ACTIVITY = ["pointerdown", "pointermove", "keydown", "wheel", "focus"] as const;
-
-/**
- * Called once per window by the shell, in and out of Quiet. With Quiet when idle on, the window
- * drops into Quiet by itself after `QUIET_IDLE_MS` without a key, click or move while nothing is
- * asked. Leaving is the user's: Esc, Leave quiet, or any view's key.
- */
-export function useQuietMode(): void {
-  const enabled = useServerSettings((s) => s.settings?.layout?.quietWhenIdle === true);
-  // Not before the settings have loaded, which say whether Quiet when idle is on.
-  const available = useServerSettings((s) => s.settings !== undefined);
-  const asks = askTotals(useWorkspaceAsks()).count;
-  // Set when the watch starts, below.
-  const lastActive = useRef(0);
-  const check = useEffectEvent(() => {
-    const { quiet, setQuiet } = useViewStore.getState();
-    if (
-      shouldEnterQuiet({
-        enabled,
-        available,
-        quiet,
-        asks,
-        idleFor: Date.now() - lastActive.current,
-      })
-    ) {
-      setQuiet(true);
-    }
-  });
-  useEffect(() => {
-    if (!enabled || !available) return;
-    lastActive.current = Date.now();
-    const touched = () => {
-      lastActive.current = Date.now();
-    };
-    for (const type of ACTIVITY) window.addEventListener(type, touched, true);
-    const timer = setInterval(() => check(), 15_000);
-    return () => {
-      for (const type of ACTIVITY) window.removeEventListener(type, touched, true);
-      clearInterval(timer);
-    };
-  }, [enabled, available]);
-  // An ask arriving restarts the wait: the window shouldn't go quiet right after one is answered.
-  useEffect(() => {
-    if (asks > 0) lastActive.current = Date.now();
-  }, [asks]);
 }

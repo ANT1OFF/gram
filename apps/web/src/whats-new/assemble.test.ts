@@ -7,11 +7,11 @@ import {
   assembleReleases,
   compareVersionBase,
   highlightsFor,
-  WHATS_NEW,
   whatsNewAudience,
   type WhatsNewItem,
   type WhatsNewShell,
 } from "./index";
+import { WHATS_NEW } from "./notes";
 
 const item = (title: string, platform?: WhatsNewItem["platform"]): { default: WhatsNewItem } => ({
   default: { title, body: `${title} body`, ...(platform ? { platform } : {}) },

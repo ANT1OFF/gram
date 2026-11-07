@@ -19,7 +19,7 @@ import { SettingsTitle } from "@/shell/settings-title";
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { UsageMeter } from "@/shell/usage-meter";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
-import { useBeforeSetup } from "@/welcome/welcome";
+import { useBeforeSetup } from "@/welcome/welcome-state";
 import { useLayoutStore } from "@/stores/layout";
 import { toggleOverviewSidebar } from "@/views/shell-layout";
 import { ViewSwitcher } from "@/views/view-frame";

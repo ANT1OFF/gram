@@ -287,14 +287,35 @@ scenario("time to interactive", async ({ browser }) => {
       if (last <= quietFrom) break;
       quietFrom = last;
     }
-    const marks = await page.evaluate(() => ({
-      fcp: performance.getEntriesByName("first-contentful-paint")[0]?.startTime ?? 0,
-      seed: performance.getEntriesByName("gram-mock-seed")[0]?.duration ?? 0,
-    }));
+    const interactive = Math.max(shown, quietFrom);
+    const marks = await page.evaluate((until) => {
+      const fcp = performance.getEntriesByName("first-contentful-paint")[0]?.startTime ?? 0;
+      const scripts = performance
+        .getEntriesByType("resource")
+        .filter((entry) => /\.m?js(\?|$)/.test(entry.name)) as PerformanceResourceTiming[];
+      // What had arrived by then: a script fetched before a moment is parsed and run before it too.
+      const by = (at: number) => {
+        const arrived = scripts.filter((entry) => entry.responseEnd <= at);
+        return {
+          files: arrived.length,
+          kB: arrived.reduce((sum, entry) => sum + entry.decodedBodySize, 0) / 1000,
+        };
+      };
+      return {
+        fcp,
+        seed: performance.getEntriesByName("gram-mock-seed")[0]?.duration ?? 0,
+        beforePaint: by(fcp),
+        beforeInteractive: by(until),
+      };
+    }, interactive);
     record("load: first contentful paint", marks.fcp);
     record("load: sidebar shows 300 threads", shown);
-    record("load: interactive (no long task for 1 s)", Math.max(shown, quietFrom));
+    record("load: interactive (no long task for 1 s)", interactive);
     record("load: of which the mock's own seeding", marks.seed);
+    record("load: JS before first contentful paint: files", marks.beforePaint.files, "files");
+    record("load: JS before first contentful paint: uncompressed", marks.beforePaint.kB, "kB");
+    record("load: JS before interactive: files", marks.beforeInteractive.files, "files");
+    record("load: JS before interactive: uncompressed", marks.beforeInteractive.kB, "kB");
     await context.close();
   }
 });

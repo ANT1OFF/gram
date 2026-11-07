@@ -49,20 +49,51 @@ const e2eTokenEndpoint = (token: string): Plugin => {
 };
 
 /**
- * Entry chunks load before the first paint, so they keep a budget of their own (the main entry is
- * about 580 kB minified). Lazily loaded chunks get Vite's general limit below.
+ * What an entry imports statically loads before the first paint, so it keeps a budget of its own:
+ * the entry and every chunk it pulls in, about 1,930 kB minified for the main entry, which
+ * `build.rolldownOptions` keeps in one file. Dialogs, sheets and views the first screen doesn't
+ * show load after it (`lazyPart`), each chunk of those within `LAZY_CHUNK_BUDGET_KB`: above Shiki's
+ * largest language grammars (emacs-lisp and cpp, about 790 kB each) and the ghostty-web terminal
+ * (about 640 kB), each loaded only when a code block or terminal needs it.
  */
-const ENTRY_BUDGET_KB = 700;
+const INITIAL_BUDGET_KB = 2050;
+const LAZY_CHUNK_BUDGET_KB = 1000;
 const entryBudget: Plugin = {
   name: "gram-entry-budget",
   apply: "build",
   generateBundle(_options, bundle) {
-    for (const chunk of Object.values(bundle)) {
-      if (chunk.type !== "chunk" || !chunk.isEntry) continue;
-      const kb = Buffer.byteLength(chunk.code) / 1000;
-      if (kb > ENTRY_BUDGET_KB)
+    const chunks = new Map(
+      Object.values(bundle).flatMap((each) =>
+        each.type === "chunk" ? [[each.fileName, each]] : [],
+      ),
+    );
+    const initial = new Set<string>();
+    for (const entry of chunks.values()) {
+      if (!entry.isEntry) continue;
+      const start = initial.size;
+      const visit = (fileName: string) => {
+        if (initial.has(fileName)) return;
+        initial.add(fileName);
+        for (const imported of chunks.get(fileName)?.imports ?? []) visit(imported);
+      };
+      visit(entry.fileName);
+      const files = [...initial].slice(start);
+      const kb =
+        files.reduce((sum, fileName) => {
+          const chunk = chunks.get(fileName);
+          return sum + (chunk === undefined ? 0 : Buffer.byteLength(chunk.code));
+        }, 0) / 1000;
+      if (kb > INITIAL_BUDGET_KB)
         this.warn(
-          `entry chunk ${chunk.fileName} is ${kb.toFixed(0)} kB, over its ${ENTRY_BUDGET_KB} kB budget`,
+          `entry ${entry.fileName} loads ${kb.toFixed(0)} kB before first paint (${files.length} files), over its ${INITIAL_BUDGET_KB} kB budget`,
+        );
+    }
+    for (const chunk of chunks.values()) {
+      if (initial.has(chunk.fileName)) continue;
+      const kb = Buffer.byteLength(chunk.code) / 1000;
+      if (kb > LAZY_CHUNK_BUDGET_KB)
+        this.warn(
+          `lazily loaded chunk ${chunk.fileName} is ${kb.toFixed(0)} kB, over its ${LAZY_CHUNK_BUDGET_KB} kB budget`,
         );
     }
   },
@@ -86,13 +117,25 @@ export default defineConfig({
     ...(e2eToken ? [e2eTokenEndpoint(e2eToken)] : []),
   ],
   build: {
-    // Above Shiki's largest language grammars (emacs-lisp and cpp, about 790 kB each) and the
-    // ghostty-web terminal (about 640 kB): each loads lazily, only when a code block or terminal
-    // needs it, and the app reads them from disk. `entryBudget` above keeps the entry in check.
-    chunkSizeWarningLimit: 1000,
+    // Vite's one limit for every chunk, set to the first paint's: `entryBudget` above holds that
+    // load and each lazily loaded chunk to budgets of their own.
+    chunkSizeWarningLimit: INITIAL_BUDGET_KB,
     // The React Compiler's Babel pass is most of every build by design; the timing notice it
     // triggers on each build says nothing new.
-    rolldownOptions: { checks: { pluginTimings: false } },
+    rolldownOptions: {
+      checks: { pluginTimings: false },
+      output: {
+        codeSplitting: {
+          // Everything the entry imports statically, in one file. Left to itself the bundler cut
+          // it into some 230 chunks shared with the parts loaded later, and the first paint
+          // waited on every request: over HTTP/1.1, which the app's own server speaks, a few
+          // hundred small files took longer than the bytes in them. What loads later stays in
+          // chunks of its own, reusing this one's modules. `main.tsx` is bundled in it too, so it
+          // starts without a top-level `await` (see there).
+          groups: [{ name: "initial", tags: ["$initial"] }],
+        },
+      },
+    },
   },
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },

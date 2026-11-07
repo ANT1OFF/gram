@@ -7,7 +7,7 @@ export interface ClosePreset {
   deleteBranch: boolean;
 }
 
-type ThreadDialog =
+export type ThreadDialog =
   | { kind: "rename"; threadId: ThreadId }
   /** A custom time to snooze the thread until. */
   | { kind: "snooze"; threadId: ThreadId }

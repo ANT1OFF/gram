@@ -26,7 +26,7 @@ import {
 } from "@/settings/search-scope";
 import { SettingsNav } from "@/settings/settings-nav";
 import { NeedsYouEntry } from "@/orchestration/needs-you-entry";
-import { useBeforeSetup } from "@/welcome/welcome";
+import { useBeforeSetup } from "@/welcome/welcome-state";
 import { SubpageList, SubpageRow, UpdateDot, useUpdateAvailable } from "@/settings/subpages";
 import { useSettingsScroll } from "@/settings/use-settings-scroll";
 

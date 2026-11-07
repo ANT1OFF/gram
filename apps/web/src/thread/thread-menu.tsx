@@ -6,12 +6,16 @@ import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { useOpenInEditor, useOpensLocally } from "@/editor/use-open-in-editor";
 import { MENU_ITEM, MENU_POPUP } from "@/lib/selection";
-import { SwitchOrchestratorDialog, switchOpenLabel } from "@/orchestration/switch-orchestrator";
+import { lazyPart } from "@/lib/lazy-part";
+import { switchOpenLabel } from "@/orchestration/switch-label";
 import { useThreadsStore } from "@/stores/threads";
 
-import { ForkDialog } from "./fork-dialog";
 import { ThreadMenuItems } from "./thread-action-items";
 import { useForkAvailability, useForkThread, WORKTREE_NOTICE } from "./use-fork";
+
+/** The dialogs the menu opens, each loaded the first time it's asked for or once the shell is idle. */
+const switchDialog = lazyPart(() => import("@/orchestration/switch-orchestrator"));
+const forkDialog = lazyPart(() => import("./fork-dialog"));
 
 /**
  * What the pane header's "…" offers on a thread, for any menu to hold: its items, and the dialogs
@@ -35,6 +39,8 @@ export function useThreadMenu(threadId: ThreadId): {
   const { available, reason } = useForkAvailability(threadId);
   const { fork, error, clearError } = useForkThread(threadId);
   const [dialog, setDialog] = useState<{ notice?: string }>();
+  const switcher = switchDialog.useModule(switching);
+  const forker = forkDialog.useModule(dialog !== undefined);
 
   const forkThread = async () => {
     if ((await fork()) === "needsWorktree") setDialog({ notice: WORKTREE_NOTICE });
@@ -89,15 +95,15 @@ export function useThreadMenu(threadId: ThreadId): {
           {error}
         </button>
       )}
-      {switching && switchable && (
-        <SwitchOrchestratorDialog
+      {switching && switchable && switcher && (
+        <switcher.SwitchOrchestratorDialog
           thread={switchable}
           workspaceId={switchable.workspaceId!}
           onClose={() => setSwitching(false)}
         />
       )}
-      {dialog && (
-        <ForkDialog
+      {dialog && forker && (
+        <forker.ForkDialog
           threadId={threadId}
           notice={dialog.notice}
           open

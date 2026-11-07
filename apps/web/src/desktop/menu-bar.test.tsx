@@ -33,7 +33,7 @@ vi.mock("@/orchestration/use-orchestration", () => ({
   useWorkspaces: () => states((s) => s.all),
 }));
 const NO_STRIP: never[] = [];
-vi.mock("@/views/quiet-view", () => ({ useQuietStrip: () => NO_STRIP }));
+vi.mock("@/views/quiet-mode", () => ({ useQuietStrip: () => NO_STRIP }));
 
 const approval = (id: string, command: string): ApprovalRequest => ({
   kind: "approval",

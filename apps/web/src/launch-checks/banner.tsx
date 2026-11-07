@@ -7,12 +7,12 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { Hint } from "@/components/hint";
 
 import { Button } from "@/components/ui/button";
+import { lazyPart } from "@/lib/lazy-part";
 import { cn } from "@/lib/utils";
 import { useDiagnostics, useFeature } from "@/settings/use-diagnostics";
 import { useSaveSettings } from "@/settings/use-save-settings";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { BannerCliUpdate } from "./cli-update";
 import { CommandText } from "./command-text";
 import { launchIssues, type LaunchIssue } from "./issues";
 import { useLaunchChecks } from "./use-launch-checks";
@@ -129,6 +129,9 @@ export function useLaunchIssues(): {
  * (`useBannerFold`). Dismissed, a problem that still stands leaves both for a dot on Settings (the
  * window's top left), whose hover names it and whose Diagnostics page has it in full.
  */
+/** The CLI update control and its progress, for a banner that offers an update. */
+const cliUpdate = lazyPart(() => import("./cli-update"));
+
 export function LaunchChecksBanner() {
   const { recheck } = useLaunchChecks();
   const { shown: issues, shownKeys, dismiss, expanded, cleared, dropCleared } = useLaunchBanner();
@@ -141,7 +144,10 @@ export function LaunchChecksBanner() {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [cleared]);
 
-  if (!expanded) return null;
+  // A banner that offers an update shows once the control is in hand, rather than gaining it late.
+  const offersUpdate = expanded && cliUpdates && issues.some((issue) => issue.update !== undefined);
+  const update = cliUpdate.useModule(offersUpdate);
+  if (!expanded || (offersUpdate && update === undefined)) return null;
 
   const runRecheck = async () => {
     setChecking(true);
@@ -167,7 +173,9 @@ export function LaunchChecksBanner() {
             <span className="min-w-0">
               <CommandText text={issue.text} />
             </span>
-            {cliUpdates && issue.update !== undefined && <BannerCliUpdate agent={issue.update} />}
+            {cliUpdates && issue.update !== undefined && update !== undefined && (
+              <update.BannerCliUpdate agent={issue.update} />
+            )}
           </li>
         ))}
       </ul>

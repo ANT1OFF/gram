@@ -1,7 +1,8 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { compareVersionBase, WHATS_NEW, whatsNewAudience } from "@/whats-new";
+import { compareVersionBase, whatsNewAudience } from "@/whats-new";
+import { WHATS_NEW } from "@/whats-new/notes";
 import { ReleaseNotes } from "@/whats-new/release-notes";
 import { useWhatsNewDialog } from "@/whats-new/whats-new-dialog";
 

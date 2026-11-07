@@ -2,7 +2,7 @@ import { AwayNotifications } from "@/desktop/away-notifications";
 import { HistoryView } from "@/history/history-view";
 import { InboxView } from "@/inbox/inbox-view";
 import { LinkQuestion } from "@/links/link-dialog";
-import { FeatureSheet } from "@/orchestration/feature-sheet";
+import { FeatureSheet } from "@/orchestration/feature-sheet-dialog";
 import { FreshSessionDialog } from "@/orchestration/fresh-session";
 import { PeekSheet } from "@/orchestration/peek-sheet";
 import { WorkersList } from "@/orchestration/workers-list";

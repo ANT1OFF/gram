@@ -34,10 +34,10 @@ import { FailuresCard } from "@/orchestration/failures-card";
 import {
   FeatureMenu,
   PausedBadge,
-  RAIL_TONES,
   useOpenWorker,
   useRailFacts,
 } from "@/orchestration/feature-sheet";
+import { RAIL_TONES } from "@/orchestration/rail-tones";
 import { openFeatureSheet } from "@/orchestration/feature-sheet-store";
 import { HeldBriefChip } from "@/orchestration/held-brief";
 import {

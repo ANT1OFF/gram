@@ -16,6 +16,8 @@ import { useModelsSettled } from "@/composer/models";
 import { useThreadsStore } from "@/stores/threads";
 import { DialogShell } from "@/thread/dialog-shell";
 
+import { switchOpenLabel } from "./switch-label";
+
 const name = (model: ModelRef) =>
   `${agentLabel(model.agent)} · ${model.model}${model.variant ? ` · ${model.variant}` : ""}`;
 
@@ -56,10 +58,6 @@ export const switchCurrentText = (
     reportedModel === undefined ? thread.model : { ...thread.model, model: reportedModel },
   );
 };
-
-/** What opens the switch: "View orchestrator switch…" while one is under way. */
-export const switchOpenLabel = (thread: Pick<Thread, "sessionSwitch">): string =>
-  thread.sessionSwitch === undefined ? "Switch orchestrator…" : "View orchestrator switch…";
 
 /** The workspace settings' Models row: the current orchestrator, and the way to switch it. */
 export function SwitchOrchestratorAction({

@@ -6,26 +6,14 @@ import {
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
-import { useLocation } from "@tanstack/react-router";
-import {
-  ChevronRight,
-  CircleAlert,
-  CircleDot,
-  Ellipsis,
-  GitMerge,
-  Hourglass,
-  Pencil,
-  X,
-  type LucideIcon,
-} from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from "react";
+import { ChevronRight, Ellipsis, Pencil, X } from "lucide-react";
+import { useMemo, useState, type MouseEvent } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
-import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
-import { ExpandPresence, Spinner } from "@/motion";
+import { ExpandPresence } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -50,7 +38,8 @@ import {
 import { askKeysByThread } from "./ask-model";
 import { featureQuestions } from "./question-card-model";
 import { WorkerQuestionHistory, WorkerQuestionList } from "./question-entry";
-import { groupNames, type RailFacts, type RailRow, type RailTone } from "./rail-model";
+import { groupNames, type RailFacts, type RailRow } from "./rail-model";
+import { RAIL_TONES } from "./rail-tones";
 import { StageEditor } from "./stage-editor";
 import { groupSlug } from "./stage-model";
 import { StageStepper } from "./stage-stepper";
@@ -58,7 +47,6 @@ import { useSetGroup, useSetStage } from "./use-board-actions";
 import { useFeatureCards, useFeatureSummary } from "./use-feature-cards";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { StatusDot } from "./status-dot";
-import { STATUS_WORDS } from "./status-words";
 import { useWorkerWaitings } from "./use-waiting-on";
 import { useWorkersListStore } from "./workers-list";
 import { workingWorkerThreads } from "./tree-model";
@@ -67,19 +55,6 @@ import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-mode
 // A feature you can open and act on:
 // a sheet from the right with its stations, PRs and workers, opened from its Board line or its card
 // in the stream, and the feature's menu: Open, Ask about it, Pause (Resume), Rename, Archive.
-
-/** A chip's tone as an icon, on the Board and in the sheet. */
-export const RAIL_TONES: Readonly<
-  Record<RailTone, { icon: LucideIcon; tone: string; label: string }>
-> = {
-  needs: { icon: CircleAlert, tone: "text-status-needs-mark", label: STATUS_WORDS.needs },
-  attention: { icon: CircleDot, tone: "text-status-idle", label: STATUS_WORDS.attention },
-  error: { icon: CircleAlert, tone: "text-destructive", label: STATUS_WORDS.error },
-  working: { icon: Spinner, tone: "text-status-working", label: STATUS_WORDS.working },
-  waiting: { icon: Hourglass, tone: "text-status-working", label: STATUS_WORDS.waiting },
-  idle: { icon: CircleDot, tone: "text-status-idle", label: STATUS_WORDS.idle },
-  merged: { icon: GitMerge, tone: "text-merged", label: STATUS_WORDS.merged },
-};
 
 /** Who has an open ask in the workspace's stack, and each thread's live status. */
 export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
@@ -546,7 +521,8 @@ function FeatureMenuList({
   );
 }
 
-function SheetBody({
+/** The sheet's content, loaded apart from the shell: `FeatureSheet` opens it. */
+export function SheetBody({
   workspaceId,
   feature,
   titleId,
@@ -782,61 +758,4 @@ function SheetContent({
       </section>
     </div>
   );
-}
-
-const FEATURE_SHEET_TEST_ID = "feature-sheet";
-
-/** The feature sheet, mounted once. Esc, the close button or going anywhere else closes it. */
-export function FeatureSheet() {
-  const open = useFeatureSheet((s) => s.open);
-  const target = useFeatureSheet((s) => s.target);
-  const close = useFeatureSheet((s) => s.close);
-  const opener = useOpener(open);
-  const titleId = useId();
-  useCloseOnNavigate(open, close);
-  return (
-    <Dialog.Root
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) close();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
-        <Dialog.Popup
-          data-testid={FEATURE_SHEET_TEST_ID}
-          data-surface="overlay"
-          data-feature={target?.feature}
-          aria-labelledby={titleId}
-          // Asking about it or opening a worker moves focus on purpose.
-          finalFocus={() =>
-            useFeatureSheet.getState().returnFocus ? returnFocusTo(opener)() : false
-          }
-          className="fixed inset-y-2 end-2 z-50 flex w-[min(28rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0"
-        >
-          {target !== undefined && (
-            <SheetBody
-              workspaceId={target.workspaceId}
-              feature={target.feature}
-              titleId={titleId}
-            />
-          )}
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
-  );
-}
-
-/** Closes the sheet when the route changes under it. */
-function useCloseOnNavigate(open: boolean, close: () => void) {
-  const pathname = useLocation({ select: (location) => location.pathname });
-  const openedAt = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (!open) {
-      openedAt.current = undefined;
-      return;
-    }
-    if (openedAt.current === undefined) openedAt.current = pathname;
-    else if (openedAt.current !== pathname) close();
-  }, [open, pathname, close]);
 }

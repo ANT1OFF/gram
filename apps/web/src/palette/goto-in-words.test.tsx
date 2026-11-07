@@ -1,13 +1,16 @@
 // @vitest-environment happy-dom
 import { DEFAULT_SETTINGS, type ThreadId, type PaletteFilter } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createMockApi, type MockApi } from "@/api/mock";
 import { renderWithApi } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
-import { CommandPalette } from "./command-palette";
+import { CommandPalette, paletteBody } from "./command-palette";
+
+// The shell preloads the palette's body after first paint; these open it straight away.
+beforeAll(() => paletteBody.preload());
 
 const navigate = vi.fn();
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate, useParams: () => ({}) }));
