@@ -37,6 +37,8 @@ const MESSAGES = [
 
 afterEach(cleanup);
 
+const status = () => screen.getByTestId("find-status");
+
 /** The transcript's scroller, which has drawn none of the rows. */
 const emptyScroller = () => document.createElement("div");
 
@@ -99,6 +101,30 @@ describe("FindBar", () => {
     fireEvent.change(input, { target: { value: "flaky" } });
     expect(await screen.findByText("5 of 5")).toBeTruthy();
     expect(searchThreads).toHaveBeenCalledWith("flaky", { limit: 200, threadId: T });
+  });
+
+  it("stays busy from the first keystroke until the server has answered that query", async () => {
+    const searchThreads = vi.fn(async (query: string) => ({
+      hits: query === "flaky" ? [hit("old1")] : [],
+      truncated: false,
+    }));
+    renderWithApi(bar({ earlier: true }), { searchThreads });
+    const input = screen.getByLabelText("Find in thread");
+
+    fireEvent.change(input, { target: { value: "flaky" } });
+    // Still waiting out the debounce: the loaded matches, and the count may grow.
+    expect(status().textContent).toBe("4 of 4");
+    expect(status().getAttribute("aria-busy")).toBe("true");
+    expect(await screen.findByText("5 of 5")).toBeTruthy();
+    expect(status().getAttribute("aria-busy")).toBeNull();
+
+    fireEvent.change(input, { target: { value: "flaky test" } });
+    // The previous query's older hit doesn't count for this one.
+    expect(status().textContent).toBe("1 of 1");
+    expect(status().getAttribute("aria-busy")).toBe("true");
+    await waitFor(() => expect(status().getAttribute("aria-busy")).toBeNull());
+    expect(status().textContent).toBe("1 of 1");
+    expect(searchThreads).toHaveBeenLastCalledWith("flaky test", { limit: 200, threadId: T });
   });
 
   it("says when nothing matches", async () => {

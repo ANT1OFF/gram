@@ -73,7 +73,12 @@ export function FindBar({
   const [anchor] = useState(() => scrollAnchor(getScroller()));
 
   const local = useMemo(() => findMatches(messages, query), [messages, query]);
-  const older = useThreadSearch(earlier ? query : "", { threadId, limit: OLDER_LIMIT });
+  // Busy from the first keystroke: until the server has answered this query, its count may grow.
+  const older = useThreadSearch(earlier ? query : "", {
+    threadId,
+    limit: OLDER_LIMIT,
+    pendingWhileTyping: true,
+  });
   const matches = useMemo(() => {
     if (older.status !== "done") return local.matches;
     const loaded = new Set(messages.map((m) => m.id));
