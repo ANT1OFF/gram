@@ -32,7 +32,7 @@ import { makeTtlCache, PR_POLL_TTL_MS, trackBadgeCache } from "./pr-cache.ts";
 import { Proc } from "./proc.ts";
 import { detectRateLimit, type RateLimitSignal } from "./rate-limit.ts";
 import { originTips } from "./refs.ts";
-import { cachedOriginUrl } from "./repo-facts.ts";
+import { cachedCheckoutHead, cachedOriginUrl, type CheckoutHead } from "./repo-facts.ts";
 import {
   BADGE_COMMENTS_READ,
   BADGE_REVIEWS_READ,
@@ -1169,9 +1169,10 @@ const resolveRepoNwo = (workTree: string) =>
   });
 
 /**
- * The checkout's toplevel, HEAD, upstream tip and branch, as one `rev-parse` prints them, line by line.
- * A missing upstream (never pushed, or its ref deleted) or a detached HEAD stops it at `@{upstream}`
- * with the lines before printed; an unborn HEAD stops it at `HEAD`, and outside a repo it prints none.
+ * The checkout's toplevel, HEAD, upstream tip, branch and upstream name, as one `rev-parse` prints
+ * them, line by line. A missing upstream (never pushed, or its ref deleted) or a detached HEAD stops
+ * it at the first `@{upstream}` with the lines before printed; an unborn HEAD stops it at `HEAD`, and
+ * outside a repo it prints none.
  */
 export const PR_INPUTS_REV_PARSE = [
   "rev-parse",
@@ -1180,7 +1181,30 @@ export const PR_INPUTS_REV_PARSE = [
   "@{upstream}",
   "--abbrev-ref",
   "HEAD",
+  "@{upstream}",
 ] as const;
+
+/** `cwd`'s HEAD as the PR lookup needs it: `PR_INPUTS_REV_PARSE`, and its branch when untracked. */
+const readCheckoutHead = (cwd: string) =>
+  Effect.gen(function* () {
+    const out = yield* git(cwd, PR_INPUTS_REV_PARSE);
+    const [top = "", localTip = "", upstreamLine = "", branchLine = "", upstreamName = ""] =
+      out.stdout.split("\n").map((line) => line.trim());
+    if (top === "" || localTip === "") {
+      return { top, localTip, upstreamTip: "", upstream: "", branch: "" } satisfies CheckoutHead;
+    }
+    const tracked = out.status === 0 && upstreamLine !== "" && branchLine !== "";
+    const branch = tracked
+      ? branchLine
+      : (yield* git(fromGitPath(top), ["rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim();
+    return {
+      top,
+      localTip,
+      upstreamTip: tracked ? upstreamLine : "",
+      upstream: tracked ? upstreamName : "",
+      branch,
+    } satisfies CheckoutHead;
+  });
 
 /**
  * The lookup inputs for `cwd`, or `undefined` for a terminal "no PR possible" (not a repo, detached or
@@ -1192,22 +1216,19 @@ export const resolvePrInputs = (
   cwd: string,
 ): Effect.Effect<PrInputs | undefined, PrLookupError, Proc> =>
   Effect.gen(function* () {
-    const out = yield* git(cwd, PR_INPUTS_REV_PARSE);
-    const [top = "", localTip = "", upstreamLine = "", branchLine = ""] = out.stdout
-      .split("\n")
-      .map((line) => line.trim());
+    const { top, localTip, upstreamTip, branch } = yield* cachedCheckoutHead(
+      cwd,
+      readCheckoutHead(cwd),
+    );
     if (top === "" || localTip === "") return undefined;
     const workTree = fromGitPath(top);
-    const tracked = out.status === 0 && upstreamLine !== "" && branchLine !== "";
-    const branch = tracked
-      ? branchLine
-      : (yield* git(workTree, ["rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim();
     if (branch === "" || branch === "HEAD") return undefined;
-    const tip = tracked
-      ? upstreamLine
-      : ((yield* originTips(workTree, [branch]).pipe(
-          Effect.orElseSucceed(() => new Map<string, string>()),
-        )).get(branch) ?? "");
+    const tip =
+      upstreamTip !== ""
+        ? upstreamTip
+        : ((yield* originTips(workTree, [branch]).pipe(
+            Effect.orElseSucceed(() => new Map<string, string>()),
+          )).get(branch) ?? "");
     const repo = yield* resolveRepoNwo(workTree);
     if (repo === undefined) return undefined;
     return { workTree, branch, localTip, remoteTip: tip, repo } satisfies PrInputs;

@@ -37,6 +37,10 @@ interface Facts {
   readonly originTips: Map<string, Kept<ReadonlyMap<string, string>> & { readonly stamp: string }>;
   /** `origin/HEAD`'s target, with the stamp of the ref file it was read under. */
   readonly originHeads: Map<string, Kept<string | undefined> & { readonly stamp: string }>;
+  /** Each checkout's HEAD as the PR lookup reads it, with the stamp of the files behind it. */
+  readonly heads: Map<string, Kept<CheckoutHead> & { readonly stamp: string }>;
+  /** The upstream each checkout's last HEAD read named, kept or not: whose ref the next stamp covers. */
+  readonly upstreams: Map<string, string>;
 }
 
 const byProc = new WeakMap<Proc["Service"], Facts>();
@@ -49,6 +53,8 @@ const factsOf = (proc: Proc["Service"]): Facts => {
     origins: new Map(),
     originTips: new Map(),
     originHeads: new Map(),
+    heads: new Map(),
+    upstreams: new Map(),
   };
   byProc.set(proc, created);
   return created;
@@ -251,4 +257,90 @@ export const cachedOriginTips = <E>(
     const tips = yield* read;
     if (stamp !== undefined) facts.originTips.set(key, { value: new Map(tips), stamp, at });
     return tips;
+  });
+
+/** What the PR lookup reads of a checkout's HEAD: one `rev-parse`, two off a tracked branch. */
+export interface CheckoutHead {
+  /** `--show-toplevel`; `""` outside a repo. */
+  readonly top: string;
+  /** HEAD's commit; `""` when unborn. */
+  readonly localTip: string;
+  /** `@{upstream}`'s commit; `""` without an upstream. */
+  readonly upstreamTip: string;
+  /** `@{upstream}` by its short name, such as `origin/feat`; `""` without one. */
+  readonly upstream: string;
+  /** The branch checked out; `"HEAD"` or `""` when detached. */
+  readonly branch: string;
+}
+
+/**
+ * Where everything `CheckoutHead` comes from stands on disk: the checkout's `HEAD`, the ref it names,
+ * the config that says its upstream, and that upstream's ref, guessed from the last read (a remote's
+ * or, for a local upstream, a branch's). Git rewrites each of these by renaming a new file over it,
+ * so a commit, checkout, reset, fetch, push or `--set-upstream-to` changes it. `undefined` for a ref
+ * store no stat follows (reftable) or a stamp that can't be read.
+ */
+const headStamp = (roots: RepoRoots, upstream: string | undefined): string | undefined => {
+  if (fileStamp(nodePath.join(roots.common, "reftable")) !== "-") return undefined;
+  const headFile = nodePath.join(roots.gitDir, "HEAD");
+  let head: string;
+  try {
+    head = fs.readFileSync(headFile, "utf8").trim();
+  } catch {
+    return undefined;
+  }
+  const config = configStamp(roots);
+  if (config === undefined) return undefined;
+  const named = /^ref: (refs\/.+)$/.exec(head)?.[1];
+  const files = [
+    headFile,
+    nodePath.join(roots.common, "packed-refs"),
+    ...(named === undefined ? [] : [nodePath.join(roots.common, named)]),
+    ...(upstream === undefined || upstream === ""
+      ? []
+      : [
+          nodePath.join(roots.common, "refs", "remotes", upstream),
+          nodePath.join(roots.common, "refs", "heads", upstream),
+        ]),
+  ];
+  const stamps = files.map(fileStamp);
+  return stamps.includes(undefined)
+    ? undefined
+    : `${roots.top}|${head}|${config}|${upstream ?? ""}|${stamps.join("|")}`;
+};
+
+/**
+ * `read`'s HEAD of `cwd`, kept per checkout while the files behind it are unchanged: the sweep asks
+ * it of every checkout on every pass, and it moves only on a commit, a checkout, a fetch or a push.
+ * An answer naming another upstream than its stamp guessed isn't kept, so the next read guesses
+ * right. Fails as `read` does, and a failure is never kept.
+ */
+export const cachedCheckoutHead = <E>(
+  cwd: string,
+  read: Effect.Effect<CheckoutHead, E, Proc>,
+): Effect.Effect<CheckoutHead, E, Proc> =>
+  Effect.gen(function* () {
+    if (!present(cwd)) return yield* read;
+    const facts = factsOf(yield* Proc);
+    const roots = yield* cachedRepoRoots(cwd).pipe(Effect.orElseSucceed(() => undefined));
+    const guess = facts.upstreams.get(cwd);
+    // Stamped before the read, so a change landing during it is seen by the next one.
+    const stamp = roots === undefined ? undefined : headStamp(roots, guess);
+    const kept = facts.heads.get(cwd);
+    if (
+      kept !== undefined &&
+      stamp !== undefined &&
+      kept.stamp === stamp &&
+      Date.now() - kept.at < REPO_FACTS_TTL_MS
+    ) {
+      return kept.value;
+    }
+    facts.heads.delete(cwd);
+    const at = Date.now();
+    const head = yield* read;
+    facts.upstreams.set(cwd, head.upstream);
+    if (stamp !== undefined && head.upstream === (guess ?? "")) {
+      facts.heads.set(cwd, { value: head, stamp, at });
+    }
+    return head;
   });
