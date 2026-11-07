@@ -12,6 +12,7 @@ import { DatabaseSync } from "node:sqlite";
 import { MigrationsLayer } from "../persistence/migrations.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient } from "../platform/unstable.ts";
+import { sqliteProbe } from "../perf/sqlite-probe.ts";
 import { CATCH_UP_BATCH, catchUpSearch } from "./catch-up.ts";
 import { searchHandlers } from "./handler.ts";
 import { parseSnippet, searchThreads, toMatchQuery } from "./search.ts";
@@ -141,6 +142,78 @@ describe("parseSnippet", () => {
 });
 
 describe("searchThreads", () => {
+  it.effect("streams global ranks and preserves scoped weighted results, snippets and limits", () =>
+    withDb(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const one = yield* addThread("rank-one", "one");
+          const two = yield* addThread("rank-two", "two");
+          yield* say(one, "repeated", "user", [text("deploy deploy quickly")]);
+          yield* say(one, "longer", "assistant", [
+            text("deploy the service after checking all the tests"),
+          ]);
+          yield* say(one, "tool", "assistant", [
+            text("routine notes"),
+            {
+              type: "tool-Bash",
+              toolCallId: "rank-tool",
+              state: "input-available",
+              input: { command: "deploy service" },
+            },
+          ]);
+          yield* say(one, "tie-one", "user", [text("deploy")]);
+          yield* say(two, "tie-two", "user", [text("deploy")]);
+          yield* say(two, "prefix", "user", [text("deployment checklist")]);
+          const probe = yield* Effect.acquireRelease(Effect.sync(sqliteProbe), (p) =>
+            Effect.sync(p.restore),
+          );
+          for (const threadId of [undefined, one, two]) {
+            for (const limit of [1, 3, 50]) {
+              // The old weighted query is the behavioral oracle, including equal-score rows.
+              const rows = yield* sql.unsafe<{
+                threadId: string;
+                messageId: string;
+                title: string;
+                marked: string;
+              }>(
+                `SELECT message_search.thread_id AS threadId, message_search.message_id AS messageId,
+              json_extract(threads.data, '$.title') AS title,
+              snippet(message_search, -1, char(1), char(2), '…', 16) AS marked
+            FROM message_search JOIN threads ON threads.id = message_search.thread_id
+            WHERE message_search MATCH ? ${threadId === undefined ? "" : "AND message_search.thread_id = ?"}
+            ORDER BY bm25(message_search, 0, 0, 1.0, 0.4) LIMIT ?`,
+                [toMatchQuery("deploy")!, ...(threadId === undefined ? [] : [threadId]), limit + 1],
+              );
+              probe.start();
+              const result = yield* searchThreads({ query: "deploy", threadId, limit });
+              const { calls } = probe.stop();
+              expect(result).toEqual({
+                hits: rows
+                  .slice(0, limit)
+                  .map(({ marked, ...row }) => ({ ...row, ...parseSnippet(marked) })),
+                truncated: rows.length > limit,
+              });
+              // Check the actual executed queries, rather than a copy of the proposed SQL.
+              const queries = calls.filter((call) => call.sql.includes("snippet("));
+              expect(queries).toHaveLength(2);
+              for (const query of queries) {
+                const plan = yield* sql.unsafe<{ detail: string }>(
+                  `EXPLAIN QUERY PLAN ${query.sql}`,
+                  query.bindings,
+                );
+                const sorts = plan.some((row) => row.detail === "USE TEMP B-TREE FOR ORDER BY");
+                // A scope filters the unindexed thread id before ranking its few matches;
+                // globally ordered rank regressed small-thread searches in the large fixture.
+                expect(sorts).toBe(threadId !== undefined);
+              }
+            }
+          }
+        }),
+      ),
+    ),
+  );
+
   it.effect("indexes text, reasoning and tool input on persist, and re-indexes on upsert", () =>
     withDb(
       Effect.gen(function* () {

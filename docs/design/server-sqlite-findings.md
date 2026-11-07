@@ -2,15 +2,18 @@
 
 Five serial repeats ran on 2026-11-07 after the 1.10.0 release freeze lifted. The earlier
 release-overlapping run is excluded. These are a baseline, not before/after improvement claims.
-No production code has changed.
+This baseline was captured before production query changes.
+
+The follow-up [contained query changes](server-sqlite-query-wins.md) records the implementation,
+reviewed implementation and final interleaved main/PR measurements.
 
 The [methodology and threading model](server-sqlite-benchmark.md) describe the synthetic fixture,
 command and exclusions. This run used Node v26.12.0, 18 CPUs and main through `2ba625aa`, with
 the benchmark harness and native-call forwarding type fix. The database was 299.3 MiB;
 generation took 26.5 s. One-minute host load at repeat starts ranged from 13.88 to 14.68.
 Raw output remains in `/tmp/gram-perf-sqlite-quiet.json` on the benchmark machine.
-The branch subsequently rebased onto `fcd9eb11` (PR #202); its types pass, but that revision
-needs a fresh timing baseline before an improvement comparison. The hot query SQL is unchanged.
+The figures below describe that revision. The follow-up records a refreshed baseline that
+includes PRs #202 and #214 before comparing query changes.
 
 ## Five-repeat service timings
 
