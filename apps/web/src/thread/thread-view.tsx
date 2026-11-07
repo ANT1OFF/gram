@@ -673,7 +673,8 @@ export function ThreadView({
               focused={focused}
               thread={thread}
             />
-            <LimitWaitLine thread={thread} />
+            {/* With turns to follow, the transcript's last line says it, under the last turn. */}
+            {shown.length === 0 && <LimitWaitLine thread={thread} />}
             <QueueList threadId={threadId} />
           </div>
         </ApprovalSlotsProvider>

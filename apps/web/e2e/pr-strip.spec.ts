@@ -74,7 +74,7 @@ test("the row's number opens the PR panel, and shows the PR on hover", async ({ 
 test("the row says where the review bot stands, and opens its findings", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const chip = page.getByTestId("pr-row").getByTestId("pr-row-review");
-  await expect(chip).toHaveText("2 blockers");
+  await expect(chip).toHaveText("2 blocking");
   await expect(chip).toHaveAttribute("data-state", "blockers");
   await chip.click();
   await expect(

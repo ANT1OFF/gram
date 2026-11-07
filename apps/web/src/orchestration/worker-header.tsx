@@ -23,6 +23,7 @@ import { keepBeside, useBesideStore } from "./beside-store";
 import { openFeatureSheet } from "./feature-sheet-store";
 import { orchestratorRowTitle } from "./tree-model";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
+import { prWaitWords } from "./waiting-on";
 import { FINISHED_WORKER, goToThread } from "./worker-banner";
 import { workerGlideId, useWorkersListStore } from "./workers-list";
 import { workerEntryOf, workerRow } from "./workers-model";
@@ -182,10 +183,40 @@ export function WorkerCrumbs({
   );
 }
 
-/** The worker's now line beside its crumbs, the compact status ⌘J's rows show too. */
+/**
+ * The worker's now line beside its crumbs, the compact status ⌘J's rows show too. A worker whose
+ * turn ended while its PR still waits says the two apart, "Turn: finished · PR: waiting on checks",
+ * so a reply that says "Done." never reads against a header that says it is still waiting.
+ */
 export function WorkerNowChip({ thread }: { thread: Thread }) {
   const { row } = useWorkerFacts(thread);
   if (thread.spawnedBy === undefined || row === undefined) return null;
+  const turnOver = row.status !== "running" && row.status !== "starting";
+  const pr = turnOver && row.waiting !== undefined ? prWaitWords(row.waiting.kind) : undefined;
+  if (pr !== undefined) {
+    return (
+      <span
+        data-testid="worker-now-status"
+        data-split=""
+        title={row.waiting?.hint}
+        className="inline-flex shrink-0 items-center gap-1.5 text-meta text-muted-foreground"
+      >
+        {/* Short of room, the PR's wait stays: the turn's end is the transcript's last line too. */}
+        <span data-testid="worker-turn-state" className="@max-md:hidden">
+          Turn: <span className="text-foreground">finished</span>
+          <span aria-hidden className="ml-1.5">
+            ·
+          </span>
+        </span>
+        <span data-testid="worker-pr-state">
+          PR:{" "}
+          <Swap swapKey={pr}>
+            <span className="text-foreground">{pr}</span>
+          </Swap>
+        </span>
+      </span>
+    );
+  }
   return (
     <span data-testid="worker-now-status" className="shrink-0 text-meta text-muted-foreground">
       <Swap swapKey={row.now}>{row.now}</Swap>

@@ -29,6 +29,7 @@ import {
 import { errorSentence, unknownResetText } from "./agent-error-card";
 import { filePath, MessageBlock } from "./message-block";
 import { useRetrySchedule } from "./retry-time";
+import { useModelPickerRequests } from "@/composer/model-picker-request";
 import { sessionRestartLabel } from "./session-restart-marker";
 import { PrRefsContext } from "./pr-ref-link";
 import { EMPTY_PR_REF_INDEX, prRefIndexOf, type PrRefIndex } from "./pr-refs";
@@ -1038,6 +1039,79 @@ describe("MessageBlock agent errors", () => {
     );
   });
 
+  it("offers an automatic retry in 30 s and another model once throttling repeats", async () => {
+    // Only timeouts and Date are faked, pinned to a fixed clock; the card's tick and the router keep
+    // their real timers.
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"], now: 1_800_000_000_000 });
+    onTestFinished(() => {
+      vi.useRealTimers();
+      useRetrySchedule.setState({ due: {} });
+      useModelPickerRequests.setState({ asked: {} });
+    });
+    const second = { ...error, turnId: "turn-2", at: 9 } as const;
+    const again: GramUIMessage = {
+      id: "u2",
+      role: "user",
+      metadata: { turnId: "turn-2" as never },
+      parts: [{ type: "text", text: "Fix the build" }],
+    };
+    const failedAgain: GramUIMessage = {
+      id: "error-turn-2",
+      role: "assistant",
+      parts: [{ type: "data-agent-error", id: "error-turn-2", data: second as never }],
+    };
+    feed.set(E, [sent, failed, again, failedAgain]);
+    useThreadsStore.setState({
+      byId: {
+        [E]: {
+          status: "error",
+          thread: { id: E, lastError: second, checkout: { kind: "main", path: "/r" } },
+        },
+      },
+    } as never);
+    const send = vi.fn(async () => ({ queued: false }));
+    renderWithApi(
+      <MessageBlock
+        threadId={E}
+        message={failedAgain}
+        streamingIds={new Set()}
+        subagents={new Map()}
+        subagentUsage={new Map()}
+      />,
+      { send } as never,
+    );
+    // Try another model asks this thread's picker to open, not whichever pane has focus.
+    fireEvent.click(screen.getByTestId("agent-error-other-model"));
+    expect(screen.getByTestId("agent-error-other-model").textContent).toBe("Try another model");
+    expect(useModelPickerRequests.getState().asked).toEqual({ [E]: 1 });
+
+    const auto = screen.getByTestId("agent-error-auto-retry");
+    expect(auto.textContent).toBe("Retry automatically in 30 s");
+    fireEvent.click(auto);
+    expect(screen.getByTestId("agent-error-auto-retry-armed").textContent).toContain(
+      "Retrying in 30 s",
+    );
+    // Retry stays, as Retry now, while the automatic one counts down.
+    expect(screen.getByTestId("agent-error-retry").textContent).toBe("Retry now");
+    // Cancelled, nothing goes.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(useRetrySchedule.getState().due).toEqual({});
+    vi.advanceTimersByTime(60_000);
+    expect(send).not.toHaveBeenCalled();
+    // Armed again, it sends the turn's message once the 30 s pass, by Retry's own path.
+    fireEvent.click(screen.getByTestId("agent-error-auto-retry"));
+    vi.advanceTimersByTime(29_000);
+    expect(send).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1_000);
+    expect(send).toHaveBeenCalledWith(E, { text: "Fix the build" });
+  });
+
+  it("offers no automatic retry or other model on a first rate limit", () => {
+    show(vi.fn(), error);
+    expect(screen.queryByTestId("agent-error-auto-retry")).toBeNull();
+    expect(screen.queryByTestId("agent-error-other-model")).toBeNull();
+  });
+
   it("says plainly when the provider gave no reset time, with Retry now and Usage beside it", () => {
     show(vi.fn(), error);
     // Throttled requests, which a retry may get past, stay "Rate limited", with Retry a full
@@ -1088,7 +1162,11 @@ describe("MessageBlock agent errors", () => {
           },
         },
       });
-      const limit = { ...error, retryable: false, text: "The usage limit is reached (HTTP 429)." };
+      const limit = {
+        ...error,
+        retryable: false,
+        text: "The usage limit is reached (HTTP 429). It resets on the provider's schedule.",
+      };
       const send = vi.fn(async () => ({ queued: false }));
       feed.set(E, [sent, { ...failed, parts: [{ ...failed.parts[0], data: limit } as never] }]);
       useThreadsStore.setState({
@@ -1116,12 +1194,22 @@ describe("MessageBlock agent errors", () => {
       );
       const time = screen.getByTestId("agent-error-retry-time");
       expect(time.dataset["known"]).toBe("true");
-      expect(screen.getByText(`Try again at ${stamp}`, { exact: true })).toBeTruthy();
-      // A spent usage limit is named for what it is, with its reset, never "Rate limited".
+      // A spent usage limit is named for what it is, with its reset, never "Rate limited". The
+      // reset is said once in words, in the title; the button carries it as its action.
       expect(screen.getByTestId("agent-error-title").textContent).toBe(
-        `Usage limit reached · resets ${stamp}`,
+        `Usage limit · resets ${stamp}`,
       );
-      // Sending now would only repeat the refusal: no Retry, only Retry then.
+      const card = screen.getByTestId("agent-error").textContent ?? "";
+      expect(card).not.toContain("Try again at");
+      expect(card).not.toContain("Retry then");
+      expect(card).not.toContain("provider's schedule");
+      expect(screen.getByTestId("agent-error-retry-then").textContent).toBe(`Retry at ${stamp}`);
+      expect(screen.getByTestId("agent-error-usage").textContent).toBe("Usage");
+      // The body is one sentence: the reset it also named is in the title.
+      expect(
+        screen.getByText("The usage limit is reached (HTTP 429).", { exact: true }),
+      ).toBeTruthy();
+      // Sending now would only repeat the refusal: no Retry, only Retry at.
       expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
       fireEvent.click(screen.getByTestId("agent-error-retry-then"));
       expect(screen.getByTestId("agent-error-retry-scheduled").textContent).toContain(

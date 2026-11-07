@@ -35,7 +35,10 @@ export const retryKey = (threadId: string, error: Pick<ThreadError, "at">): stri
   `${threadId}:${error.at}`;
 
 /** Past the reset by this much, so the retry doesn't land a moment before the window opens. */
-const AFTER_RESET_MS = 30_000;
+export const AFTER_RESET_MS = 30_000;
+
+/** How long "Retry automatically" waits before it sends a rate-limited turn again. */
+export const AUTO_RETRY_MS = 30_000;
 
 /** The longest `setTimeout` takes; a later time is waited for in steps. */
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
@@ -46,22 +49,24 @@ interface RetrySchedule {
   /** By `retryKey`, when the retry is due, epoch ms. */
   readonly due: Readonly<Record<string, number>>;
   /**
-   * Runs `run` once `at` has passed, while Gram stays open: an app that quits forgets it, and the
-   * card says so. Replaces an earlier schedule for the same key.
+   * Runs `run` once `at` and `margin` after it have passed (by default `AFTER_RESET_MS`, as `at` is
+   * a provider's reset), while Gram stays open: an app that quits forgets it, and the card says so.
+   * Replaces an earlier schedule for the same key.
    */
-  schedule(key: string, at: number, run: () => void): void;
+  schedule(key: string, at: number, run: () => void, margin?: number): void;
   cancel(key: string): void;
 }
 
 /**
- * Retries the user set for a provider's reset time ("Retry then"). Kept outside the card, so a
- * transcript row scrolled out of view, which unmounts, doesn't drop it.
+ * Retries the user set on a failed turn's card: at a provider's reset ("Retry at 11:15"), or
+ * `AUTO_RETRY_MS` from now ("Retry automatically in 30 s"). Kept outside the card, so a transcript
+ * row scrolled out of view, which unmounts, doesn't drop it.
  */
 export const useRetrySchedule = create<RetrySchedule>()((set, get) => ({
   due: {},
-  schedule: (key, at, run) => {
+  schedule: (key, at, run, margin = AFTER_RESET_MS) => {
     get().cancel(key);
-    const due = at + AFTER_RESET_MS;
+    const due = at + margin;
     const wait = () => {
       const left = due - Date.now();
       if (left > 0) {

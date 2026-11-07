@@ -10,7 +10,9 @@ test("shows the review glyph, resolves a bot thread and asks the agent to addres
   const row = page.getByTestId("pr-row");
   const badge = row.getByTestId("pr-row-number");
   await expect(badge).toContainText("#412");
-  await expect(row.getByTestId("pr-row-review")).toHaveAccessibleName(/^Review bot: 2 blockers/);
+  await expect(row.getByTestId("pr-row-review")).toHaveAccessibleName(
+    /^Review bot: 2 blocking findings/,
+  );
   await expect(row.getByRole("img").first()).toHaveAttribute("data-kind", "failing");
   // The header doesn't say it again.
   await expect(page.getByTestId("pane-pr-badge")).toHaveCount(0);
@@ -31,7 +33,9 @@ test("shows the review glyph, resolves a bot thread and asks the agent to addres
   await restoreTimers.getByRole("button", { name: "Resolve" }).click();
   await expect(restoreTimers).toBeHidden();
   await expect(review.getByRole("button", { name: "Resolved (2)" })).toBeVisible();
-  await expect(row.getByTestId("pr-row-review")).toHaveAccessibleName(/^Review bot: 1 blocker/);
+  await expect(row.getByTestId("pr-row-review")).toHaveAccessibleName(
+    /^Review bot: 1 blocking finding/,
+  );
 
   const lastError = review.getByRole("article", { name: "Blocker: src/retry.ts:38-42" });
   await lastError.getByRole("button", { name: "Ask agent to address" }).click();

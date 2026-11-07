@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { useShortcut } from "@/keyboard/registry";
@@ -64,6 +64,11 @@ interface PickerProps<V extends string> {
   onFoldedOpen?: (() => void) | undefined;
   /** Called as the list opens, by click or shortcut. */
   onOpen?: (() => void) | undefined;
+  /**
+   * Subscribes to asks to open the list from outside the toolbar, such as a failed turn's "Try
+   * another model" (`onModelPickerAsked`); returns the unsubscribe.
+   */
+  onAsked?: ((open: () => void) => () => void) | undefined;
   /** A searchable list with favourites, grouped by agent or gateway, instead of a select. */
   search?:
     | {
@@ -91,6 +96,7 @@ export function Picker<V extends string>({
   folded = false,
   onFoldedOpen,
   onOpen,
+  onAsked,
   search,
 }: PickerProps<V>) {
   const [open, setOpenState] = useState(false);
@@ -98,6 +104,13 @@ export function Picker<V extends string>({
     if (next) onOpen?.();
     setOpenState(next);
   };
+  // An ask from outside opens it as its shortcut does. Kept in a ref, so a re-render with new
+  // callbacks doesn't subscribe again.
+  const asked = useRef(() => {});
+  useEffect(() => {
+    asked.current = () => (folded ? onFoldedOpen?.() : setOpen(true));
+  });
+  useEffect(() => onAsked?.(() => asked.current()), [onAsked]);
   const hint = useShortcutHint(shortcutId);
   const confirm = usePickConfirm(value);
   useShortcut(

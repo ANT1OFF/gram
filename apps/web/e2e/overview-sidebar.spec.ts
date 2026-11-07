@@ -1480,7 +1480,7 @@ test("a worker's PRs show as chips under its row, with checks and the review bot
   await expect(chips.nth(0).locator("[data-checks]")).toHaveAttribute("data-checks", "fixing");
   await expect(chips.nth(0).locator("[data-review]")).toHaveAttribute("data-review", "blockers");
   await expect(chips.nth(0)).toHaveAccessibleName(
-    /PR #214 checks failing; its worker is fixing them.*2 blockers/,
+    /PR #214 checks failing; its worker is fixing them.*2 blocking findings/,
   );
   await expect(chips.nth(1)).toHaveAttribute("data-pr", "48");
   await expect(chips.nth(1)).toHaveAttribute("data-state", "draft");

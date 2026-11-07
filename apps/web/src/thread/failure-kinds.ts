@@ -22,3 +22,6 @@ export const failureLabel = (kind: AgentFailureKind, retryable?: boolean): strin
 
 /** A spent usage limit's title. */
 export const USAGE_LIMIT = "Usage limit reached";
+
+/** A spent usage limit's title before its reset: "Usage limit · resets 11:15". */
+export const USAGE_LIMIT_SHORT = "Usage limit";

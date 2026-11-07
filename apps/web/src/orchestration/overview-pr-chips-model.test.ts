@@ -74,7 +74,7 @@ describe("prChipsOf", () => {
         entry(
           214,
           { state: "OPEN", checks: "failing" },
-          { kind: "blockers", label: "Review bot: 2 blockers" },
+          { kind: "blockers", label: "Review bot: 2 blocking findings" },
         ),
         entry(
           48,
@@ -99,7 +99,7 @@ describe("prChipsOf", () => {
       // Merged, its checks and review no longer matter.
       [229, "merged", undefined, undefined, "merged"],
     ]);
-    expect(chips[0]!.label).toBe("PR #214 checks failing, Review bot: 2 blockers");
+    expect(chips[0]!.label).toBe("PR #214 checks failing, Review bot: 2 blocking findings");
     expect(chips[2]!.label).toBe("PR #229 merged");
   });
 

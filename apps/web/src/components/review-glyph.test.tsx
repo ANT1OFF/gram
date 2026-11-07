@@ -34,7 +34,7 @@ describe("reviewGlyphOf", () => {
   it("counts blockers, even with an approval on head", () => {
     expect(
       reviewGlyphOf(state({ verdictOnHead: "approved" }, { blockers: 2, unresolved: 3 })),
-    ).toEqual({ kind: "blockers", label: "Review bot: 2 blockers", count: 2 });
+    ).toEqual({ kind: "blockers", label: "Review bot: 2 blocking findings", count: 2 });
   });
 
   it("is green when approved on head, despite open suggestions", () => {
@@ -73,7 +73,7 @@ describe("reviewGlyphOf", () => {
 describe("reviewStatusOf", () => {
   it("puts the glyph's state in words", () => {
     expect(reviewStatusOf(state({ roundInFlight: true }))?.text).toBe("reviewing");
-    expect(reviewStatusOf(state({}, { blockers: 2, unresolved: 2 }))?.text).toBe("2 blockers");
+    expect(reviewStatusOf(state({}, { blockers: 2, unresolved: 2 }))?.text).toBe("2 blocking");
     expect(reviewStatusOf(state({ verdictOnHead: "approved" }))?.text).toBe("approved");
     expect(reviewStatusOf(state({ verdictOnHead: "changesRequested" }))?.text).toBe(
       "changes requested",
@@ -100,9 +100,9 @@ describe("reviewStatusOf", () => {
 describe("ReviewGlyph", () => {
   it("renders an accessible label and the count", () => {
     render(<ReviewGlyph review={state({}, { blockers: 1, unresolved: 1 })} />);
-    const glyph = screen.getByRole("img", { name: "Review bot: 1 blocker" });
+    const glyph = screen.getByRole("img", { name: "Review bot: 1 blocking finding" });
     expect(glyph.getAttribute("data-state")).toBe("blockers");
-    expect(glyph.getAttribute("title")).toBe("Review bot: 1 blocker");
+    expect(glyph.getAttribute("title")).toBe("Review bot: 1 blocking finding");
     expect(glyph.textContent).toBe("1");
   });
 
