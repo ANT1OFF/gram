@@ -4,8 +4,9 @@ import { openPanelTab } from "./panel-tab";
 import { reviewsInPanel } from "./reviews-panel";
 import { openOrchestrator, threadRow } from "./thread-row";
 
-// The panel's tabs show their names. Short of room for every one, tabs fold into More, named there:
-// the rarer ones first, then Terminal, Files, PR and Diff from the strip's end, never the open tab
+// The panel's tabs show their names. The rarer ones are always in More, named there, however wide
+// the panel, so Focus review shows the same tabs as the panel beside the chat. Short of room, Terminal,
+// Files, PR and Diff fold there too, from the strip's end, never the open tab
 // or one with a count, so every tab left in the strip keeps its name. Only a panel too narrow for
 // the open tab's name beside More falls back to icons. All of it is measured from the row rather
 // than guessed from a breakpoint. Every state keeps each tab's accessible name and tooltip, and its
@@ -79,10 +80,10 @@ test("a wide panel names every tab, and the open one stands on a background and 
   await panel.getByRole("button", { name: "Expand panel" }).click();
   const list = panel.locator("[data-label-fit]");
   await expect(list).toHaveAttribute("data-label-fit", "all");
-  // Nothing folded: every tab is in the strip.
-  await expect(panel.getByTestId("panel-more")).toHaveCount(0);
-  const tabs = await panel.locator("[data-panel-tab]").count();
-  await expect.poll(() => named(page).then((n) => n.length)).toBe(tabs);
+  // However wide, the strip holds the primary tabs, every one named, and More the rarer ones.
+  await expect.poll(() => inStrip(page)).toEqual(["diff", "pr", "files", "terminal"]);
+  await everyNameShows(page);
+  await expect(panel.getByTestId("panel-more")).toBeVisible();
   await expect(panel.getByRole("tab", { name: "Files", exact: true })).toContainText("Files");
   await expect.poll(() => overflows(page)).toBe(false);
 
@@ -287,16 +288,21 @@ test("a tab that appears under a resting pointer opens no hint until the pointer
   await expect(hint).toBeVisible();
 });
 
-test("the strip unfolds every tab when the panel widens again", async ({ page }) => {
+test("the strip unfolds its primary tabs when the panel widens again, the rarer ones staying in More", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1920, height: 1000 });
   const panel = await open(page, 240);
   const more = panel.getByTestId("panel-more");
   await expect(more).toBeVisible();
+  const narrow = await inStrip(page);
+  expect(narrow).not.toEqual(["diff", "pr", "files", "terminal"]);
   await panel.getByRole("button", { name: "Expand panel" }).click();
-  await expect(more).toHaveCount(0);
+  await expect.poll(() => inStrip(page)).toEqual(["diff", "pr", "files", "terminal"]);
+  await expect(more).toBeVisible();
   await everyNameShows(page);
   await panel.getByRole("button", { name: "Restore panel width" }).click();
-  await expect(more).toBeVisible();
+  await expect.poll(() => inStrip(page)).toEqual(narrow);
 });
 
 test("a tab with a count stays in a narrow strip, its count beside its icon", async ({ page }) => {

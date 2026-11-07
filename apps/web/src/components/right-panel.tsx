@@ -57,8 +57,9 @@ interface PanelTab {
 }
 
 /**
- * The tabs in strip order. Short of room the rest fold into More first, then the primary ones from
- * the strip's end, so the tabs left in the strip keep their names (`panel-tab-labels.ts`).
+ * The tabs in strip order. The rest are always in More, however wide the panel, so a review in
+ * focus shows the same tabs as one beside the chat; short of room the primary ones fold there too,
+ * from the strip's end, so the tabs left in the strip keep their names (`panel-tab-labels.ts`).
  */
 const TABS: PanelTab[] = [
   // A workspace's workers by where they stand: only beside a thread of a workspace.
@@ -236,8 +237,8 @@ export function RightPanel() {
             data-label-fit={labelFit.tabs}
             className={cn("min-w-0 overflow-x-auto border-b-0", !reviewAction && "flex-1")}
           >
-            {/* An icon and a name each, with the rarer tabs and then Terminal, Files, PR and Diff
-                folding into More, named there, as room runs out; only a panel too narrow for the
+            {/* An icon and a name each, the rarer tabs always in More and Terminal, Files, PR and
+                Diff folding there, named, as room runs out; only a panel too narrow for the
                 open tab's name beside More drops to icons. Each is named on hover in every case. */}
             {inStrip.map((face) => (
               // Above the strip, which has the panel's empty top beside the title bar: below, a

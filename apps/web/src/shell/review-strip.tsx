@@ -1,6 +1,8 @@
-import type { ThreadId } from "@gram/contracts";
+import type { ApprovalRequest, ThreadId } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
 import { ArrowLeft, MessageSquare } from "lucide-react";
+import { Fragment, type ReactNode } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
@@ -10,10 +12,14 @@ import { cn } from "@/lib/utils";
 import { briefTitle, type NeedsYouItem } from "@/orchestration/needs-you-items";
 import { kindOf } from "@/orchestration/needs-you-row";
 import { useNeedsYouJump, useNeedsYouList } from "@/orchestration/use-needs-you";
+import { OutboundLink } from "@/panels/outbound-link";
 import { useThreadFeed } from "@/stores/feeds";
 import { REVIEW_STRIP_WIDTH, reviewStripWidth, useLayoutStore } from "@/stores/layout";
 import type { ThreadFeedState } from "@/stores/thread-feed";
 import { useThreadsStore } from "@/stores/threads";
+import { RequestCards } from "@/thread/request-cards";
+
+import { stripLines, type StripMark } from "./strip-text";
 
 const BACK = "Back to the conversation";
 
@@ -38,9 +44,10 @@ export const latestSaid = (
 /**
  * What a review in focus leaves of the chat: a strip over it that keeps the conversation readable,
  * its title, any decision waiting on the user and the latest message, with the way back one click
- * (or Esc) away. A decision is answered in the conversation, on its own card: the strip says what
- * waits and takes the user there. A window too narrow for that keeps a rail: the way back and the
- * title down its length.
+ * (or Esc) away. An approval is answered here, on the card its thread shows, with the same verbs,
+ * keys (1, 2, 3) and rules: the chat under the strip is covered and answers no key meanwhile. Any
+ * other decision is answered in the conversation: the strip says what waits and takes the user
+ * there. A window too narrow for that keeps a rail: the way back and the title down its length.
  */
 export function ReviewStrip({ side }: { side: "left" | "right" }) {
   const windowWidth = useLayoutStore((s) => s.windowWidth);
@@ -110,14 +117,31 @@ function ReadableStrip({ threadId }: { threadId: ThreadId }) {
       (a, b) => a?.role === b?.role && a?.text === b?.text,
     ),
   );
-  const waiting = useNeedsYouList().items.filter((item) => item.threadId === threadId);
+  const approvals = useThreadsStore(
+    useShallow((s) =>
+      (s.byId[threadId]?.pendingRequests ?? []).filter(
+        (request): request is ApprovalRequest => request.kind === "approval",
+      ),
+    ),
+  );
+  // The approvals' own cards answer them here; what else waits says so and leads to its card.
+  const answeredHere = new Set<string>(approvals.map((request) => request.id));
+  const waiting = useNeedsYouList().items.filter(
+    (item) =>
+      item.threadId === threadId &&
+      !(item.ids.length > 0 && item.ids.every((id) => answeredHere.has(id))),
+  );
   const jump = useNeedsYouJump();
   const answer = (item: NeedsYouItem) => {
     setReviewFocus(false);
     jump(item);
   };
   return (
-    <div className="flex min-h-0 flex-1 flex-col border-t border-border">
+    <div
+      // The strip is where the thread's approval keys reach while its view is covered.
+      data-approval-keys
+      className="flex min-h-0 flex-1 flex-col border-t border-border"
+    >
       <div className="flex shrink-0 items-start gap-2 px-3 pt-3 pb-2">
         <Hint
           label={withHint(BACK, hint)}
@@ -145,6 +169,10 @@ function ReadableStrip({ threadId }: { threadId: ThreadId }) {
         )}
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-4">
+        {/* Mounted with none left, so the receipt of an answer shows where its card was. */}
+        <div data-testid="review-strip-approvals" className="-my-2 empty:hidden">
+          <RequestCards threadId={threadId} requests={approvals} focused />
+        </div>
         {waiting.length > 0 && (
           <ul aria-label="Waiting on you" className="flex flex-col gap-2">
             {waiting.map((item) => (
@@ -157,15 +185,73 @@ function ReadableStrip({ threadId }: { threadId: ThreadId }) {
             <h3 className="text-meta text-muted-foreground">
               {latest.role === "user" ? "You said" : "Latest message"}
             </h3>
-            <p className="line-clamp-[14] text-body break-words whitespace-pre-line">
-              {latest.text}
+            <p className="line-clamp-[14] text-body break-words">
+              <StripText text={latest.text} />
             </p>
           </section>
         )}
+        <Button
+          size="xs"
+          variant="outline"
+          data-testid="review-strip-open"
+          className="self-start"
+          onClick={() => setReviewFocus(false)}
+        >
+          <MessageSquare aria-hidden />
+          Open conversation
+        </Button>
       </div>
     </div>
   );
 }
+
+/**
+ * A message's Markdown as the strip reads it: links as their (shortened) text that opens them,
+ * code, bold and italics as marks, and line breaks kept; never the syntax itself.
+ */
+function StripText({ text }: { text: string }) {
+  return stripLines(text).map((line, at) => (
+    // Lines don't move: the message is rendered whole each time.
+    // oxlint-disable-next-line react/no-array-index-key
+    <Fragment key={at}>
+      {at > 0 && <br />}
+      {line.map(renderMark)}
+    </Fragment>
+  ));
+}
+
+const renderMark = (mark: StripMark, at: number): ReactNode => {
+  switch (mark.kind) {
+    case "text":
+      return mark.text;
+    case "code":
+      return (
+        <code key={at} className="rounded-(--radius-sm) bg-muted/50 px-1 font-mono text-meta">
+          {mark.text}
+        </code>
+      );
+    case "strong":
+      return (
+        <strong key={at} className="font-medium">
+          {mark.marks.map(renderMark)}
+        </strong>
+      );
+    case "em":
+      return <em key={at}>{mark.marks.map(renderMark)}</em>;
+    case "link":
+      return (
+        <OutboundLink
+          key={at}
+          href={mark.href}
+          title={mark.href}
+          untrusted
+          className="rounded-sm text-link underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {mark.text}
+        </OutboundLink>
+      );
+  }
+};
 
 /** A decision waiting in the thread: what it is, and the way to its card in the conversation. */
 function WaitingDecision({ item, onAnswer }: { item: NeedsYouItem; onAnswer: () => void }) {

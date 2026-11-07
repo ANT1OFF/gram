@@ -210,8 +210,11 @@ export function DiffPanel({
   const autoBranch = chosen === undefined && scope === "branch";
   const treeFits = width >= TREE_BESIDE_MIN_WIDTH;
   const fileCount = query.data?.files?.length ?? 0;
-  // How much the scope holds, beside it: shown once there is a diff with something in it.
-  const diffFiles = diffScope === undefined ? undefined : query.data?.files;
+  // How much the selected scope holds, beside it: shown once there is a diff with something in it.
+  // Uncommitted on a clean tree comes back as the branch, which the body says is nothing
+  // uncommitted: the branch's totals beside that would contradict it, so it shows none.
+  const diffFiles =
+    diffScope === undefined || branchInstead(scope, query.data) ? undefined : query.data?.files;
   const summary =
     diffFiles === undefined || diffFiles.length === 0
       ? undefined
@@ -667,7 +670,7 @@ function DiffBody({
   if (!diff.repo) return <PanelMessage>Not a git repository</PanelMessage>;
   // Uncommitted, picked on a clean tree: the server answers with the branch, which is Branch's to
   // show. Here it is nothing uncommitted, and the branch one click away.
-  const branchBase = scope === "uncommitted" ? diff.base?.replace(/^origin\//, "") : undefined;
+  const branchBase = branchInstead(scope, diff) ? diff.base?.replace(/^origin\//, "") : undefined;
   if (branchBase !== undefined) {
     return (
       <EmptyDiff action={{ label: `Show branch vs ${branchBase}`, run: () => onScope("branch") }}>
@@ -757,6 +760,13 @@ function DiffBody({
     </>
   );
 }
+
+/**
+ * Whether the diff is the branch the server answered Uncommitted with, the tree being clean: it
+ * holds nothing of the selected scope, so neither the body nor the totals show its files.
+ */
+const branchInstead = (scope: ScopeKind, diff: Pick<Diff, "base"> | undefined): boolean =>
+  scope === "uncommitted" && diff?.base !== undefined;
 
 /** An empty scope in one line, with any note, and at most one way on to something to read. */
 function EmptyDiff({
