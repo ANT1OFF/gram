@@ -82,6 +82,10 @@ for (const clock of [
         `Limit reached · resumes ${clock.requested}`,
       );
       await expect(page.getByTestId("agent-error")).toHaveCount(0);
+      // The line follows the turn it holds, not the composer far below it.
+      const asked = await page.getByTestId("message-user").last().boundingBox();
+      const lineBox = await line.boundingBox();
+      expect(lineBox!.y - (asked!.y + asked!.height)).toBeLessThan(120);
       if (SHOTS !== undefined) await page.screenshot({ path: `${SHOTS}/after.png` });
 
       await line.getByRole("button", { name: "Resume now" }).click();

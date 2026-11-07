@@ -110,6 +110,55 @@ test("⌘\\ opens a worker beside the chat without holding it or taking typing",
   expect(await isHeld(page, made, made.asking)).toBe(false);
 });
 
+/** A plain approval for a Bash command, as a test raises one. */
+const approval = (id: string, command: string) => ({
+  kind: "approval" as const,
+  id,
+  toolName: "Bash",
+  displayName: "Bash",
+  input: { command },
+  suggestions: [],
+});
+
+test("an approval answered beside the chat hands focus on in its own thread, and one in the chat in the chat's", async ({
+  page,
+}) => {
+  const made = await open(page);
+  await openWorker(page, made.live);
+  await page.keyboard.press("ControlOrMeta+Backslash");
+  const dock = page.getByTestId("beside-dock");
+  await expect(dock).toHaveAttribute("data-thread-id", made.live);
+  // Two approvals wait in the chat (the orchestrator's) and one in the worker beside it.
+  const asks = [
+    [made.orchestratorThreadId, approval("chat-1", "echo chat one")],
+    [made.orchestratorThreadId, approval("chat-2", "echo chat two")],
+    [made.live, approval("beside-1", "echo beside")],
+  ] as const;
+  await page.evaluate((each) => {
+    for (const [threadId, request] of each) {
+      window.gramMock!.simulateRequest(threadId as never, request as never);
+    }
+  }, asks);
+  const chat = page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`).first();
+  const beside = dock.locator(`[data-thread-view="${made.live}"]`);
+  const card = (id: string) =>
+    page.locator(`[data-testid="approval-card"][data-request-id="${id}"]`);
+  await expect(card("chat-1")).toBeVisible();
+  await expect(card("beside-1")).toBeVisible();
+
+  // Answered in the chat: the chat's next approval has focus, never the one beside it.
+  await card("chat-1").getByTestId("approval-deny").click();
+  await expect(card("chat-1")).toHaveCount(0);
+  await expect(card("chat-2")).toBeFocused();
+  await expect(chat.locator(":focus")).toHaveCount(1);
+
+  // Answered beside the chat: focus goes to the worker's composer there, never to the chat's card.
+  await card("beside-1").getByTestId("approval-deny").click();
+  await expect(card("beside-1")).toHaveCount(0);
+  await expect(beside.getByLabel("Message", { exact: true })).toBeFocused();
+  await expect(card("chat-2")).not.toBeFocused();
+});
+
 test("what you send beside the chat is you typing into the worker", async ({ page }) => {
   const made = await open(page);
   await openWorker(page, made.live);
@@ -165,6 +214,15 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   await page.getByTestId("worker-hand-back").click();
   await expect(page.getByTestId("worker-take-over")).toBeVisible();
   expect(await isHeld(page, made, made.asking)).toBe(false);
+
+  // Read once, the line folds away for good: the next worker offers Take over with no line under
+  // its header, the button's hint saying what it changes.
+  await openWorker(page, made.live);
+  await expect(page.getByTestId("worker-take-over")).toBeVisible();
+  await expect(page.getByTestId("worker-banner-take-over")).toHaveCount(0);
+  expect(await page.evaluate(() => window.gramMock!.getSettings())).toMatchObject({
+    onboarding: { takeOverHintSeen: true },
+  });
 });
 
 test("a worker whose worktree was cleaned up stays readable, and Ask about it only fills the composer", async ({

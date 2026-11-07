@@ -5,6 +5,7 @@ import type { AppApi } from "./types";
 /** `AppApi` over the RPC client. */
 export const appRpc = ({ client, connection }: RpcContext): AppApi => ({
   usageOverview: (query) => run(client["app.usageOverview"](query)),
+  usageLimitHistory: (query) => run(client["app.usageLimitHistory"](query)),
   watchWindows: (window, signal) =>
     resubscribing((s) => iterate(client["windows.watch"](window), s), connection, signal),
   reportWindow: (windowId, threadIds, state = {}) =>

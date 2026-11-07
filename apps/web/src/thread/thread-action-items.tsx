@@ -6,6 +6,8 @@ import {
   CircleCheck,
   Ellipsis,
   Hand,
+  Mail,
+  MailOpen,
   Pencil,
   Pin,
   PinOff,
@@ -19,6 +21,7 @@ import { threadScope } from "@/palette/palette-items";
 import { useLayoutStore, type PaletteScope } from "@/stores/layout";
 
 import { PrContextMenuItems } from "./pr-menu-items";
+import { LaterContextMenuItems } from "./snooze-menu-items";
 import { useThreadActions } from "./use-thread-actions";
 
 export const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
@@ -89,6 +92,21 @@ export function ThreadContextMenuItems({
             <Pin aria-hidden className="size-icon-row" />
           )}
           {thread.pinned ? "Unpin" : "Pin"}
+        </ContextMenuItem>
+      )}
+      {/* A worker's row is at the cap with its own group; More… marks it unread or snoozes it. A
+          solo row's Mark unread shares a submenu with Snooze, which keeps the row at the cap. */}
+      {thread.spawnedBy === undefined && !orchestrator && (
+        <LaterContextMenuItems threadId={threadId} />
+      )}
+      {orchestrator && (
+        <ContextMenuItem data-testid="menu-unread" onClick={actions.toggleUnread}>
+          {thread.unread ? (
+            <MailOpen aria-hidden className="size-icon-row" />
+          ) : (
+            <Mail aria-hidden className="size-icon-row" />
+          )}
+          {thread.unread ? "Mark read" : "Mark unread"}
         </ContextMenuItem>
       )}
       <ContextMenuItem onClick={actions.togglePark}>

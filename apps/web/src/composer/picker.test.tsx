@@ -57,7 +57,7 @@ it("with its label shows the value beside the glyph, named and tooltipped with i
   const trigger = screen.getByRole("combobox", { name: "Mode: Plan" });
   const text = trigger.querySelector("[data-toolbar-label]");
   expect(text?.className).not.toContain("sr-only");
-  expect(text?.textContent).toBe("Plan");
+  expect(text?.textContent).toBe("Mode: Plan");
   expect(trigger.getAttribute("title")).toBeNull();
   await user.hover(trigger);
   expect((await screen.findByText(/^Mode: Plan/)).textContent).toMatch(/^Mode: Plan \(.+\)$/);
@@ -102,7 +102,7 @@ it("says the effort in short, and checks the current one in a list that says wha
   const user = userEvent.setup();
   render(efforts("xhigh", true));
   const trigger = screen.getByRole("combobox", { name: "Effort: Extra high" });
-  expect(trigger.querySelector("[data-toolbar-label]")?.textContent).toBe("Extra high");
+  expect(trigger.querySelector("[data-toolbar-label]")?.textContent).toBe("Effort: Extra high");
   await user.click(trigger);
   for (const option of [DEFAULT_EFFORT_OPTION, ...EFFORT_OPTIONS]) {
     const row = screen.getByRole("option", { name: option.label });

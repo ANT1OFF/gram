@@ -1,11 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { ChevronDown, History, Search } from "lucide-react";
-import { Fragment, useMemo, useState } from "react";
+import { History, Search } from "lucide-react";
+import { Fragment, useMemo } from "react";
 
 import { useApi } from "@/api/context";
-import { recentDone, recentWhen, OUTCOME_LABEL, type RecentDone } from "@/history/history-model";
-import { OUTCOME_GLYPH, useHistoryStore } from "@/history/history-view";
+import {
+  OUTCOME_LABEL,
+  RECENT_DONE,
+  recentDone,
+  recentWhen,
+  type HistoryOutcome,
+  type RecentDone,
+} from "@/history/history-model";
+import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { openExternalUrl } from "@/api/open-external";
 import { PrMarkIcon } from "@/components/pr-marks";
@@ -14,13 +21,13 @@ import { useOpenPrRows } from "@/reviews/open-prs";
 import { useReviewRequests } from "@/reviews/review-requests";
 import { LimitBar, useLimitsNow } from "@/shell/usage-meter";
 import { cn } from "@/lib/utils";
-import { useNow } from "@/lib/use-now";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useSame } from "@/stores/use-same";
 import { RowMenuItems, rowMenuKeys, threadDragProps } from "@/thread/row-menu";
 import { limitSpent, useUsageLimits } from "@/stores/usage-limits";
+import { useSettleRule } from "@/views/use-settle-rule";
 import { useViewWorkspace } from "@/views/view-workspace";
 
 import {
@@ -41,6 +48,7 @@ import {
   Section,
   STOP,
 } from "./overview-section";
+import { StatusDot, type DotState } from "./status-dot";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 
@@ -152,8 +160,11 @@ export function OverviewSearch() {
 }
 
 /**
- * Done: the few chats that finished last, each in the rows' two lines (its title and when, then
- * its outcome and where), muted until hovered, so they never compete with the live rows above. History, at the column's foot, has the rest.
+ * Done: the three chats that finished last, each in the rows' two lines (its title and when, then
+ * its outcome and where), muted until hovered, so they never compete with the live rows above. It
+ * is the head of History's Done chip, solo threads that settled on their own included: the rest
+ * are one line away there, never unfolded here, so a busy day's Done can't push the live rows off
+ * screen. The open thread's row stays in sight.
  */
 export function OverviewDone() {
   const api = useApi();
@@ -165,8 +176,9 @@ export function OverviewDone() {
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
   });
-  // Minute resolution is enough for the times rows show.
-  const now = useNow(true, undefined, 60_000);
+  // Minute resolution is enough for the times rows show, and for what has settled.
+  const settle = useSettleRule();
+  const { now } = settle;
   const rows = useThreadsStore(
     useSame((s) =>
       recentDone({
@@ -179,60 +191,61 @@ export function OverviewDone() {
         summaries: Object.values(s.byId).flatMap((each) => (each ? [each] : [])),
         projects: projects ?? NO_PROJECTS,
         facts: { byId: s.byId, statusDetail: s.statusDetail, now },
+        settle,
       }),
     ),
   );
   const viewed = useParams({ strict: false }).threadId;
-  const [all, setAll] = useState(false);
   if (rows.length === 0) return null;
-  // Past `DONE_SHOWN` the rest fold behind one line, so a busy day's Done never pushes what needs
-  // you off screen; the open thread's row stays in sight.
-  const folded = !all && rows.length > DONE_SHOWN;
-  const shown = folded
-    ? rows.filter((row, index) => index < DONE_SHOWN || row.threadId === viewed)
-    : rows;
+  const shown = rows.filter((row, index) => index < RECENT_DONE || row.threadId === viewed);
   const more = rows.length - shown.length;
   return (
-    <Section id="doneToday" title="Done" count={rows.length}>
+    <Section
+      id="doneToday"
+      title="Done"
+      count={rows.length}
+      hint="Finished and settled chats, latest first. History has them all."
+    >
       {shown.map((row) => (
         <DoneRow key={row.threadId} row={row} now={now} />
       ))}
-      {rows.length > DONE_SHOWN && (more > 0 || all) && (
+      {more > 0 && (
         <button
           type="button"
           {...{ [STOP]: "" }}
           data-testid="overview-done-more"
-          aria-expanded={all}
-          onClick={() => setAll(!all)}
-          className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-meta text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          aria-haspopup="dialog"
+          title="Open History on Done"
+          onClick={() => useHistoryStore.getState().show("done")}
+          className="flex h-6 w-full items-center gap-2 rounded-(--radius-sm) px-1.5 text-left text-meta text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <ChevronDown
-            aria-hidden
-            className={cn(
-              "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
-              !all && "-rotate-90",
-            )}
-          />
-          {all ? "Show fewer" : `${more} more`}
+          {/* An empty mark column, so the words start where the rows' titles do. */}
+          <span aria-hidden className="w-2.5 shrink-0" />
+          {more} more in History
         </button>
       )}
     </Section>
   );
 }
 
-/** How many Done rows show before the rest fold behind "N more". */
-export const DONE_SHOWN = 5;
-
 const NO_PROJECTS: readonly never[] = [];
 
-/** A finished chat: its outcome's glyph, its title and when, its outcome and place; muted until hovered. */
+/** Each outcome's dot: the merged colour for work that landed, red for a failure, grey for a stop. */
+const OUTCOME_DOT: Readonly<Record<HistoryOutcome, DotState>> = {
+  merged: "merged",
+  delivered: "done",
+  stopped: "idle",
+  failed: "error",
+  archived: "archived",
+  idle: "idle",
+};
+
+/** A finished chat: its outcome's dot, its title and when, its outcome and place; muted until hovered. */
 function DoneRow({ row, now }: { row: RecentDone; now: number }) {
   const openThread = useOpenThread();
   const viewed = useParams({ strict: false }).threadId === row.threadId;
-  const glyph = row.outcome === undefined ? undefined : OUTCOME_GLYPH[row.outcome];
   const word = row.outcome === undefined ? "finished" : OUTCOME_LABEL[row.outcome];
   const when = recentWhen(row.finishedAt, now);
-  const Icon = glyph?.icon;
   return (
     <RowMenu menu={<RowMenuItems threadId={row.threadId} />}>
       <button
@@ -254,8 +267,9 @@ function DoneRow({ row, now }: { row: RecentDone; now: number }) {
           CURRENT_ROW,
         )}
       >
+        {/* Its state's dot, as a worker's row has: one mark family down the column. */}
         <span aria-hidden className={ROW_MARK}>
-          {Icon !== undefined && <Icon className="size-icon-row" />}
+          <StatusDot state={row.outcome === undefined ? "done" : OUTCOME_DOT[row.outcome]} />
         </span>
         <span className={ROW_TITLE}>{row.title}</span>
         <span data-testid="overview-done-status" className={ROW_STATUS}>

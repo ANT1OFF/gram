@@ -325,15 +325,15 @@ export const prRow = (
     ...(changesBy.length === 0 ? {} : { changesRequestedBy: changesBy }),
     ...(bot === undefined ? {} : { botOnHead: bot }),
     ...(badge.reviewUnread === true ? { reviewUnread: true as const } : {}),
-    ...(intent === undefined
+    ...(intent === undefined && waiting === undefined
       ? {}
       : {
           mergeWhenReady: {
-            ...(intent.hold === undefined ? {} : { hold: redactText(intent.hold) }),
-            ...(intent.holdWaitsOn === undefined ? {} : { holdWaitsOn: intent.holdWaitsOn }),
-            ...(intent.heldBy === undefined ? {} : { heldBy: intent.heldBy }),
-            ...(intent.after?.length ? { after: intent.after } : {}),
-            ...(intent.failedOn !== undefined && intent.failedOn === badge.headRefOid
+            ...(intent?.hold === undefined ? {} : { hold: redactText(intent?.hold) }),
+            ...(intent?.holdWaitsOn === undefined ? {} : { holdWaitsOn: intent?.holdWaitsOn }),
+            ...(intent?.heldBy === undefined ? {} : { heldBy: intent?.heldBy }),
+            ...(intent?.after?.length ? { after: intent?.after } : {}),
+            ...(intent?.failedOn !== undefined && intent?.failedOn === badge.headRefOid
               ? { refused: true as const }
               : {}),
             ...(waiting === undefined ? {} : { waiting: redactText(waiting.why) }),
@@ -348,7 +348,16 @@ const prOf = (
   workspacePrs: WorkspacePrs,
 ): WorkerPr | undefined => {
   const { thread } = facts;
-  if (badge === undefined) return undefined;
+  if (badge === undefined) {
+    const bound = thread.boundPr;
+    return bound?.mergeWaiting === undefined
+      ? undefined
+      : {
+          repo: bound.repo,
+          number: bound.number,
+          mergeWhenReady: { waiting: redactText(bound.mergeWaiting.why) },
+        };
+  }
   const repo = thread.boundPr?.repo ?? repoFromPrUrl(badge.url);
   if (repo === undefined) return undefined;
   const row = prRow(

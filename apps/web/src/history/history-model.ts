@@ -1,12 +1,14 @@
-import type {
-  AgentKind,
-  AgentSessionSummary,
-  FinishedWorker,
-  OrchestratorLedger,
-  Project,
-  ThreadId,
-  ThreadSummary,
-  WorkspaceId,
+import {
+  mergedAndDone,
+  threadPrBadges,
+  type AgentKind,
+  type AgentSessionSummary,
+  type FinishedWorker,
+  type OrchestratorLedger,
+  type Project,
+  type ThreadId,
+  type ThreadSummary,
+  type WorkspaceId,
 } from "@gram/contracts";
 
 import { formatStamp } from "@/lib/time";
@@ -23,7 +25,7 @@ import {
   type WorkerRow,
 } from "@/orchestration/workers-model";
 import { threadDisplayTitle } from "@/thread/thread-title";
-import { soloDone } from "@/views/solo-threads";
+import { autoSettled, soloDone, type SettleRule } from "@/views/solo-threads";
 
 // History: every past chat in one list. Finished workers (live ledgers and those closed with their
 // worktree), orchestrators and one-off threads marked done or archived, and the agents' own past
@@ -33,14 +35,18 @@ import { soloDone } from "@/views/solo-threads";
 /** What a row is: a workspace's worker, an orchestrator, a one-off thread or a CLI session. */
 export type HistoryKind = "worker" | "orchestrator" | "thread" | "imported";
 
-/** How a past chat ended. An imported session has none: Gram never saw it end. */
-export type HistoryOutcome = "merged" | "delivered" | "stopped" | "failed" | "archived";
+/**
+ * How a past chat ended. An imported session has none: Gram never saw it end. `idle` is a solo
+ * thread that settled on its own after sitting idle (`autoSettled`).
+ */
+export type HistoryOutcome = "merged" | "delivered" | "stopped" | "failed" | "archived" | "idle";
 
 /** The chips over the list, in their order. */
-export type HistoryFilter = "all" | "workers" | "threads" | "archived" | "imported";
+export type HistoryFilter = "all" | "done" | "workers" | "threads" | "archived" | "imported";
 
 export const HISTORY_FILTERS: readonly { readonly id: HistoryFilter; readonly label: string }[] = [
   { id: "all", label: "All" },
+  { id: "done", label: "Done" },
   { id: "workers", label: "Workers" },
   { id: "threads", label: "Threads" },
   { id: "archived", label: "Archived" },
@@ -54,6 +60,7 @@ export const OUTCOME_LABEL: Readonly<Record<HistoryOutcome, string>> = {
   stopped: "stopped",
   failed: "failed",
   archived: "archived",
+  idle: "went idle",
 };
 
 /** Where an imported session's group goes by orchestrator: apart from Gram's own chats. */
@@ -102,6 +109,8 @@ export interface HistorySources {
   /** Past sessions no Gram thread shows, from every listed folder. */
   readonly sessions: readonly HistorySession[];
   readonly facts: WorkerLiveFacts;
+  /** When a solo thread at rest settles into History on its own; absent, none does. */
+  readonly settle?: SettleRule | undefined;
 }
 
 const lastSegment = (path: string): string => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
@@ -157,12 +166,15 @@ const workerEntries = (source: HistoryWorkspace, facts: WorkerLiveFacts): Histor
  * How a thread outside the ledgers ended: merged, marked done, or stopped on an error; one archived
  * with none of those is just archived. Archived or not, the Archived chip goes by its flag.
  */
-const threadOutcome = (summary: ThreadSummary): HistoryOutcome => {
+const threadOutcome = (summary: ThreadSummary, settled: boolean): HistoryOutcome => {
   const { thread } = summary;
   if (thread.completedReason === "prMerged") return "merged";
   if (thread.completedAt !== undefined) return "delivered";
   if (summary.status === "error" || thread.lastError !== undefined) return "failed";
-  return thread.parked ? "archived" : "stopped";
+  if (thread.parked) return "archived";
+  if (settled)
+    return mergedAndDone(thread, threadPrBadges(thread, summary.git)) ? "merged" : "idle";
+  return "stopped";
 };
 
 /**
@@ -178,13 +190,15 @@ const threadEntries = (
   return sources.summaries.flatMap((summary): HistoryEntry[] => {
     const { thread } = summary;
     if (covered.has(thread.id) || thread.role === "dream") return [];
-    if (!thread.parked && !soloDone(summary)) return [];
     const kind: HistoryKind =
       thread.role === "orchestrator"
         ? "orchestrator"
         : thread.spawnedBy !== undefined && thread.workspaceId !== undefined
           ? "worker"
           : "thread";
+    // Only a one-off thread settles on its own: a workspace's are its orchestrator's to finish.
+    const settled = kind === "thread" && autoSettled(summary, sources.settle);
+    if (!thread.parked && !soloDone(summary) && !settled) return [];
     const workspace = thread.workspaceId === undefined ? undefined : names.get(thread.workspaceId);
     const owner: DoneOwner =
       kind !== "thread" && workspace !== undefined && thread.workspaceId !== undefined
@@ -202,7 +216,7 @@ const threadEntries = (
         repo:
           projects.get(thread.projectId) ??
           lastSegment(thread.checkout.repoRoot ?? thread.checkout.path),
-        outcome: threadOutcome(summary),
+        outcome: threadOutcome(summary, settled),
         agent: thread.model.agent,
         archived: thread.parked,
         finishedAt: at,
@@ -259,6 +273,8 @@ export const inFilter = (entry: HistoryEntry, filter: HistoryFilter): boolean =>
   switch (filter) {
     case "all":
       return true;
+    case "done":
+      return entry.kind !== "imported" && !entry.archived;
     case "workers":
       return entry.kind === "worker";
     case "threads":
@@ -276,6 +292,7 @@ export const filterCounts = (
 ): Readonly<Record<HistoryFilter, number>> => {
   const counts: Record<HistoryFilter, number> = {
     all: 0,
+    done: 0,
     workers: 0,
     threads: 0,
     archived: 0,
@@ -325,8 +342,8 @@ export const sessionRoots = (
 export const historyThreadId = (entry: HistoryEntry): ThreadId | undefined =>
   entry.kind === "imported" ? undefined : (entry.threadId as ThreadId);
 
-/** How many finished chats the sidebar's Done lists before Open History takes over. */
-export const RECENT_DONE = 5;
+/** How many finished chats the sidebar's Done lists before the rest are History's. */
+export const RECENT_DONE = 3;
 
 /** A finished chat as the sidebar's Done has it: one muted line. */
 export interface RecentDone {
@@ -338,29 +355,25 @@ export interface RecentDone {
 }
 
 /**
- * The `max` most recently finished Gram chats, latest first: History's rows without the CLI
- * sessions, which only History reads, and none a click couldn't open.
+ * The most recently finished Gram chats, latest first: History's Done chip without the CLI
+ * sessions, which only History reads, and none a click couldn't open. The sidebar shows the first
+ * `RECENT_DONE` of them and hands the rest to History, so the two never disagree.
  */
-export const recentDone = (
-  sources: Omit<HistorySources, "sessions">,
-  max: number = RECENT_DONE,
-): RecentDone[] =>
-  historyEntries({ ...sources, sessions: [] })
-    .flatMap((entry): RecentDone[] => {
-      const threadId = historyThreadId(entry);
-      return threadId === undefined
-        ? []
-        : [
-            {
-              threadId,
-              title: entry.title,
-              outcome: entry.outcome,
-              place: entry.place,
-              finishedAt: entry.finishedAt,
-            },
-          ];
-    })
-    .slice(0, max);
+export const recentDone = (sources: Omit<HistorySources, "sessions">): RecentDone[] =>
+  historyEntries({ ...sources, sessions: [] }).flatMap((entry): RecentDone[] => {
+    const threadId = historyThreadId(entry);
+    return threadId === undefined || !inFilter(entry, "done")
+      ? []
+      : [
+          {
+            threadId,
+            title: entry.title,
+            outcome: entry.outcome,
+            place: entry.place,
+            finishedAt: entry.finishedAt,
+          },
+        ];
+  });
 
 /** A Done row's time, as History's rows have it (`historyWhen`). */
 export const recentWhen = historyWhen;

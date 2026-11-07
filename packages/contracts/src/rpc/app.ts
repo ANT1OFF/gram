@@ -13,6 +13,7 @@ import { ThreadId } from "../ids.ts";
 import { OpenExternalPayload } from "../ports.ts";
 import { PositiveInt, errors } from "./shared.ts";
 import { UsageOverview, UsageOverviewQuery } from "../usage-overview.ts";
+import { LimitHistoryQuery, UsageLimitHistory } from "../usage-limit-history.ts";
 
 /**
  * The app itself: its event feed, windows, usage, diagnostics and launch checks, and filing issues.
@@ -22,6 +23,15 @@ export const AppRpcs = RpcGroup.make(
     payload: UsageOverviewQuery,
     success: UsageOverview,
     error: errors(InvalidState),
+  }),
+  /**
+   * The subscription windows' kept history and the credit balances, downsampled for the period.
+   * Reads Gram's own database only: no CLI query, session or account call.
+   */
+  Rpc.make("app.usageLimitHistory", {
+    payload: LimitHistoryQuery,
+    success: UsageLimitHistory,
+    error: errors(),
   }),
   /** Read-only selected-harness observations; never discovers models or refreshes account tokens. */
   Rpc.make("agents.support", {

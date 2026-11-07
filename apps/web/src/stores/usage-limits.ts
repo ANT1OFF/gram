@@ -150,10 +150,17 @@ export interface TightestLimit {
   readonly limit: UsageLimit;
 }
 
-/** The current reading closest to its limit; on a tie, the one that resets first. */
-export function tightestLimit(limits: UsageLimits, now: number): TightestLimit | undefined {
+/**
+ * The current reading closest to its limit, of `providers` (every one by default); on a tie, the
+ * one that resets first.
+ */
+export function tightestLimit(
+  limits: UsageLimits,
+  now: number,
+  providers: readonly LimitProvider[] = LIMIT_PROVIDERS,
+): TightestLimit | undefined {
   let best: TightestLimit | undefined;
-  for (const provider of LIMIT_PROVIDERS)
+  for (const provider of providers)
     for (const window of LIMIT_WINDOWS) {
       const limit = currentLimit(limits[provider]?.[window], now);
       if (limit === undefined) continue;
@@ -166,6 +173,32 @@ export function tightestLimit(limits: UsageLimits, now: number): TightestLimit |
         best = { provider, window, limit };
     }
   return best;
+}
+
+/** What the title bar's meter shows, and why: the thread's own agent's, or the highest of all. */
+export interface ShownLimit extends TightestLimit {
+  readonly why: "agent" | "highest";
+}
+
+/**
+ * The meter's reading: on a thread, its own agent's closest window, so a Claude thread never shows
+ * Codex's number; another provider's only once that one warns (`limitWarns`) and is higher, since a
+ * limit about to stop work matters wherever it is. Off a thread, or for an agent with no reading
+ * (or none the meter knows), the highest of all.
+ */
+export function shownLimit(
+  limits: UsageLimits,
+  now: number,
+  agent: string | undefined,
+): ShownLimit | undefined {
+  const highest = tightestLimit(limits, now);
+  if (highest === undefined) return undefined;
+  const own =
+    agent !== undefined && isProvider(agent) ? tightestLimit(limits, now, [agent]) : undefined;
+  if (own === undefined) return { ...highest, why: "highest" };
+  if (highest.provider !== own.provider && limitWarns(highest.limit) && !limitWarns(own.limit))
+    return { ...highest, why: "highest" };
+  return { ...own, why: "agent" };
 }
 
 /** The soonest expiry after `now` among the readings, when the meter next has to look again. */

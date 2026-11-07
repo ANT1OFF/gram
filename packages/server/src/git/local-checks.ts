@@ -1337,8 +1337,9 @@ export interface LocalChecksShape {
     projectId?: ProjectId,
   ) => Effect.Effect<LocalCheck | undefined>;
   /**
-   * Starts that check unless it passed, is running, or failed at or after `since`; `onDone` hears
-   * how it ended. Undefined when the pair can't be checked (unknown commits).
+   * Starts that check unless it passed after the optional reconciliation cutoff, is running, or
+   * failed at or after `since`; `onDone` hears how it ended. A running older check finishes in
+   * the same managed queue; its pass cannot satisfy the cutoff. Undefined for unknown commits.
    */
   readonly ensure: (
     repoDir: string,
@@ -1347,6 +1348,8 @@ export interface LocalChecksShape {
     options: {
       readonly projectId?: ProjectId;
       readonly since: number;
+      /** An explicit merge-fence reconciliation retires every older pass. */
+      readonly after?: number;
       readonly onDone: (check: LocalCheck) => Effect.Effect<void>;
     },
   ) => Effect.Effect<LocalCheck | undefined>;
@@ -2260,7 +2263,7 @@ export const LocalChecksLive = Layer.effect(
       repoDir,
       head,
       base,
-      { since, onDone, projectId },
+      { since, onDone, projectId, after },
     ) =>
       Effect.gen(function* () {
         if (!SHA.test(head) || !SHA.test(base)) return undefined;
@@ -2311,7 +2314,8 @@ export const LocalChecksLive = Layer.effect(
         }
         const key = keyOf(head, base, tree, wanted);
         const known = records.get(key);
-        if (known?.status === "passed") return known;
+        if (known?.status === "passed" && (after === undefined || known.startedAt > after))
+          return known;
         if (known?.status === "running") {
           waiters.set(key, [...(waiters.get(key) ?? []), onDone]);
           return known;

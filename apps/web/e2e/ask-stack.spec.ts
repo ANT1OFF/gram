@@ -109,7 +109,7 @@ const pending = (page: Page, threadId: string) =>
     threadId,
   );
 
-test("each ask shows once with what its Allow covers, and 1 then ⌘⏎ allows all three after the undo window", async ({
+test("each ask shows once with what its Allow covers, and 1 allows all three after the undo window", async ({
   page,
 }) => {
   const made = await start(page);
@@ -136,14 +136,11 @@ test("each ask shows once with what its Allow covers, and 1 then ⌘⏎ allows a
 
   await settle(page);
   const before = Number(await count(page).getAttribute("data-asks"));
-  // A number picks, and ⌘⏎ sends what is picked.
-  await page.keyboard.press("1");
-  await expect(top.getByTestId("ask-option").first()).toHaveAttribute("data-picked", "true");
-  await expect(top.getByTestId("ask-option").first().getByTestId("ask-kbd")).toHaveText(
-    /^(⌘|Ctrl)/,
-  );
+  // An approval's verbs carry the thread card's keys, and act on the press: 1 is Allow, 3 Deny.
+  await expect(top.getByTestId("ask-option").first().getByTestId("ask-kbd")).toHaveText("1");
+  await expect(top.getByTestId("ask-option").last().getByTestId("ask-kbd")).toHaveText("3");
   await expect(undoLine(page)).toHaveCount(0);
-  await page.keyboard.press("ControlOrMeta+Enter");
+  await page.keyboard.press("1");
   await expect(undoLine(page)).toContainText("Allowed 3");
   await expect(count(page)).toHaveAttribute("data-asks", String(before - 1));
   // Held for the undo window, then sent to all three at once, as Allow, once.
@@ -256,7 +253,6 @@ test("an answer can be taken back with ⌘Z or Undo, and nothing is sent", async
   const before = await count(page).getAttribute("data-asks");
   await settle(page);
   await page.keyboard.press("1");
-  await page.keyboard.press("ControlOrMeta+Enter");
   await expect(undoLine(page)).toContainText("Allowed 3");
   await page.keyboard.press("ControlOrMeta+z");
   await expect(count(page)).toHaveAttribute("data-asks", before!);
@@ -312,9 +308,8 @@ test("a second key right after an answer, or after the shown ask changed by itse
   await goTo(page, "git push");
   const before = Number(await count(page).getAttribute("data-asks"));
   await settle(page);
-  // The second key would pick on the next ask: on the first answer's heels, it doesn't.
+  // The second key would answer the next ask: on the first answer's heels, it doesn't.
   await page.keyboard.press("1");
-  await page.keyboard.press("ControlOrMeta+Enter");
   await page.keyboard.press("1");
   await expect(undoLine(page)).toContainText("Allowed 3");
   await expect(count(page)).toHaveAttribute("data-asks", String(before - 1));
@@ -447,7 +442,7 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   await expect(page.getByTestId("status-waiting")).toHaveCount(0);
   const needsYou = page.getByTestId("overview-needs-you");
   const all = Number(await needsYou.getAttribute("data-count"));
-  await expect(needsYou).toContainText(`${all} need you`);
+  await expect(needsYou).toHaveAccessibleName(new RegExp(`^${all} need you: `));
   // The pill is the one way in: the title bar has no Inbox button beside it.
   await expect(page.getByTestId("inbox-button")).toHaveCount(0);
 
@@ -530,7 +525,7 @@ test("Send answer turns the worker's row, card and chip to answered with the cou
   await expect(row.getByTestId("overview-worker-now")).toHaveText("asks you");
   await expect(card.getByTestId("feature-card-now")).toHaveText("asks you");
   const pill = page.getByTestId("overview-needs-you");
-  const before = Number((await pill.textContent())?.match(/\d+/)?.[0]);
+  const before = Number(await pill.getAttribute("data-count"));
 
   await page.getByTestId("overview-needs-you").click();
   await goTo(page, "A refund webhook");
@@ -539,7 +534,7 @@ test("Send answer turns the worker's row, card and chip to answered with the cou
   await page.keyboard.press("Escape");
 
   // Inside Undo's window, before the answer has even gone out: every view says so with the count.
-  await expect(pill).toContainText(String(before - 1));
+  await expect(pill).toHaveAttribute("data-count", String(before - 1));
   await expect(row.getByTestId("overview-worker-now")).toHaveText("answered · resuming");
   await expect(row).not.toHaveAttribute("data-asking");
   await expect(row.getByTestId("overview-worker-dot")).not.toHaveAttribute("data-tone", "needs");

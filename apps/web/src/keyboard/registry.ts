@@ -190,6 +190,8 @@ const GLYPHS: Record<string, string> = {
   arrowright: "→",
   backspace: "⌫",
   tab: "⇥",
+  pageup: "⇞",
+  pagedown: "⇟",
 };
 
 /**
@@ -219,6 +221,8 @@ const WORDS: Record<string, string> = {
   escape: "Esc",
   backspace: "Backspace",
   tab: "Tab",
+  pageup: "PgUp",
+  pagedown: "PgDn",
 };
 
 export function formatKeys(keys: string, mac = isMac()): string {

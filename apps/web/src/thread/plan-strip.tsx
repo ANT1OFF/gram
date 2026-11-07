@@ -195,7 +195,7 @@ function TurnTodos({ items }: { items: readonly PlanItem[] }) {
           </li>
         );
       })}
-      <li className="flex items-center gap-1 text-meta text-muted-foreground/70">
+      <li className="flex items-center gap-1 text-meta text-subtle">
         <Bot aria-hidden className="size-icon-row" /> the agent's todo list for this turn
       </li>
     </ul>
@@ -282,7 +282,7 @@ function StepRow({
           >
             {step.text}
             {step.evidence !== undefined && step.status === "done" && (
-              <span className="text-muted-foreground/70"> · {step.evidence}</span>
+              <span className="text-subtle"> · {step.evidence}</span>
             )}
           </span>
         )}
@@ -335,12 +335,12 @@ function StepRow({
             onClick={() =>
               onEdit((edit) => withStep(edit, step.id, (s) => ({ ...s, locked: false })))
             }
-            className="mt-0.5 flex shrink-0 items-center gap-0.5 text-muted-foreground/70 hover:text-foreground"
+            className="mt-0.5 flex shrink-0 items-center gap-0.5 text-subtle hover:text-foreground"
           >
             <source.icon aria-hidden className="size-icon-row" />
           </button>
         ) : (
-          <span title={source.label} className="mt-0.5 shrink-0 text-muted-foreground/70">
+          <span title={source.label} className="mt-0.5 shrink-0 text-subtle">
             <source.icon aria-hidden className="size-icon-row" />
             <span className="sr-only">{source.label}</span>
           </span>

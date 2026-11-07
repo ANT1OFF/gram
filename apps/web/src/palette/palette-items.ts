@@ -1,6 +1,9 @@
 import type { Thread } from "@gram/contracts";
 
+import type { DotState } from "@/orchestration/status-words";
 import type { PaletteScope } from "@/stores/layout";
+
+import type { PaletteIcon } from "./palette-icons";
 
 export interface PaletteItem {
   id: string;
@@ -26,6 +29,14 @@ export interface PaletteItem {
   stay?: boolean;
   /** A capped group's last row, which lists the rest of the group in place. */
   more?: boolean;
+  /** Its glyph's kind, where its id doesn't say it (`paletteIconKind`). */
+  icon?: PaletteIcon;
+  /** A thread's state, as the dot the sidebar draws for it. */
+  dot?: DotState;
+  /** ⌘⏎ or ⌘-click: opens it beside the chat in view, as a ⌘-click on its sidebar row does. */
+  beside?: () => void;
+  /** ⌥⏎ or ⌥-click: a read-only look at it in a sheet, as an ⌥-click on its sidebar row. */
+  peek?: () => void;
   run: () => void;
 }
 
@@ -39,10 +50,12 @@ export type PaletteSectionId =
   | "destinations"
   | "filtered"
   | "threads"
+  | "history"
   | "workers"
   | "features"
   | "prs"
   | "projects"
+  | "docs"
   | "messages"
   | "actions"
   | "scoped"
@@ -63,6 +76,11 @@ export interface PaletteSources {
   /** The places the window goes: the Inbox, Workers, Memory, Quiet, History, Usage, Settings… */
   destinations?: readonly PaletteItem[];
   threads: readonly PaletteItem[];
+  /**
+   * The row that hands a search to History when it matches threads that are over (archived, done
+   * or settled), which the thread and worker lists leave out: History is their one home.
+   */
+  history?: readonly PaletteItem[];
   /** Threads an orchestrator spawned. */
   workers?: readonly PaletteItem[];
   /** Each workspace's features, by name. */
@@ -70,6 +88,8 @@ export interface PaletteSources {
   /** Pull requests threads follow. */
   prs?: readonly PaletteItem[];
   projects: readonly PaletteItem[];
+  /** The docs of the workspace in view. */
+  docs?: readonly PaletteItem[];
   actions: readonly PaletteItem[];
   /** The commands of the thread and workspace in view, matched once something is typed after `>`. */
   scoped?: readonly PaletteItem[];
@@ -137,7 +157,7 @@ const ALL_VIEW: PaletteView = { kind: "all", recent: [], expanded: new Set(), ex
  */
 export const PALETTE_CAPS = {
   idle: { destinations: 4, threads: 3, workers: 3, commands: 8 },
-  typed: { destinations: 4, threads: 6, workers: 5, features: 4, prs: 4, projects: 4 },
+  typed: { destinations: 4, threads: 6, workers: 5, features: 4, prs: 4, projects: 4, docs: 4 },
   kind: 12,
 } as const;
 
@@ -206,7 +226,10 @@ export function buildSections(
       { id: "scoped", label: "In view", items: text ? found(sources.scoped) : [] },
     ];
   } else if (kind === "threads") {
-    sections = [capped("threads", "Threads", found(sources.threads), PALETTE_CAPS.kind)];
+    sections = [
+      capped("threads", "Threads", found(sources.threads), PALETTE_CAPS.kind),
+      { id: "history", label: "History", items: found(sources.history) },
+    ];
   } else if (kind === "workers") {
     sections = [capped("workers", "Workers", found(sources.workers), PALETTE_CAPS.kind)];
   } else if (!text) {
@@ -221,10 +244,12 @@ export function buildSections(
     sections = [
       capped("destinations", "Go to", found(destinations), typed.destinations),
       capped("threads", "Threads", found(sources.threads), typed.threads),
+      { id: "history", label: "History", items: found(sources.history) },
       capped("workers", "Workers", found(sources.workers), typed.workers),
       capped("features", "Features", found(sources.features), typed.features),
       capped("prs", "Pull requests", found(sources.prs), typed.prs),
       capped("projects", "Projects", found(sources.projects), typed.projects),
+      capped("docs", "Docs", found(sources.docs), typed.docs),
     ];
   }
   return sections.filter((s) => s.items.length > 0);

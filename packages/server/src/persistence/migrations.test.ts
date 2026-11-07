@@ -1,8 +1,10 @@
+import { Thread, type ThreadId } from "@gram/contracts";
 import { SqliteMigrator } from "@effect/sql-sqlite-node";
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,6 +47,9 @@ describe("migration ordering gate", () => {
       expect(resolved.map(([id, name]) => [id, name])).toEqual([
         [1, "baseline"],
         [2, "merge_freezes"],
+        [3, "message_receipts"],
+        [4, "merge_fences"],
+        [5, "usage_limit_history"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -124,6 +129,8 @@ describe("the baseline", () => {
         "index closed_turns_thread",
         "index draft_stashes_thread",
         "index dreams_workspace",
+        "index message_receipts_pending",
+        "index message_receipts_responses",
         "index messages_search_pending",
         "index messages_thread_rev",
         "index messages_thread_seq",
@@ -134,6 +141,8 @@ describe("the baseline", () => {
         "index turns_started",
         "index turns_thread",
         "index turns_thread_usage",
+        "index usage_credit_history_bucket",
+        "index usage_limit_history_bucket",
         "index wait_items_open",
         "index worker_reports_interface",
         "index worker_reports_thread",
@@ -152,7 +161,9 @@ describe("the baseline", () => {
         "table helper_usage",
         "table labels",
         "table local_checks",
+        "table merge_fences",
         "table merge_freezes",
+        "table message_receipts",
         "table message_search",
         "table messages",
         "table orchestration_events",
@@ -173,6 +184,8 @@ describe("the baseline", () => {
         "table threads",
         "table threads_version",
         "table turns",
+        "table usage_credit_history",
+        "table usage_limit_history",
         "table usage_limits",
         "table wait_items",
         "table worker_reports",
@@ -195,6 +208,9 @@ describe("the baseline", () => {
       expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
         [1, "baseline"],
         [2, "merge_freezes"],
+        [3, "message_receipts"],
+        [4, "merge_fences"],
+        [5, "usage_limit_history"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -214,8 +230,253 @@ describe("the baseline", () => {
       yield* Effect.gen(function* () {
         const store = yield* ThreadStore;
         expect((yield* store.listProjects).map((p) => p.root)).toEqual(["/invented/baseline"]);
-        expect((yield* applied).map((row) => row.name)).toEqual(["baseline", "merge_freezes"]);
+        expect((yield* applied).map((row) => row.name)).toEqual([
+          "baseline",
+          "merge_freezes",
+          "message_receipts",
+          "merge_fences",
+          "usage_limit_history",
+        ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+    }),
+  );
+
+  it.effect("upgrades the previous 0002 database to receipts without replacing existing data", () =>
+    Effect.gen(function* () {
+      const file = join(yield* tempDir, "upgrade-receipts.db");
+      const open = (record: Parameters<typeof migratorOptions>[0]) =>
+        SqliteMigrator.layer(migratorOptions(record)).pipe(
+          Layer.provideMerge(SqliteClient.layer({ filename: file })),
+        );
+      const previous = {
+        "0001_baseline": migrations["0001_baseline"],
+        "0002_merge_freezes": migrations["0002_merge_freezes"],
+      };
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`INSERT INTO projects(id, root, name) VALUES ('prior-project', '/synthetic/upgrade', 'before receipts')`;
+        expect((yield* applied).map((row) => row.migration_id)).toEqual([1, 2]);
+        expect(yield* sql`SELECT name FROM sqlite_master WHERE name = 'message_receipts'`).toEqual(
+          [],
+        );
+      }).pipe(Effect.provide(open(previous)));
+      for (let reopen = 0; reopen < 2; reopen++) {
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect(yield* sql`SELECT id, name FROM projects`).toEqual([
+            { id: "prior-project", name: "before receipts" },
+          ]);
+          expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
+            [1, "baseline"],
+            [2, "merge_freezes"],
+            [3, "message_receipts"],
+            [4, "merge_fences"],
+            [5, "usage_limit_history"],
+          ]);
+          // A closed thread has no live row, but must retain its permanent safety identity.
+          if (reopen === 0) {
+            yield* sql`INSERT INTO message_receipts(thread_id, client_message_id, fingerprint, retired)
+              VALUES ('closed-thread', 'old-client-id', 'synthetic', 1)`;
+          }
+          expect(yield* sql`SELECT client_message_id, retired FROM message_receipts`).toEqual([
+            { client_message_id: "old-client-id", retired: 1 },
+          ]);
+        }).pipe(Effect.provide(open(migrations)));
+      }
+    }),
+  );
+
+  it.effect(
+    "upgrades the previous 0003 database to merge fences and preserves its data on reopen",
+    () =>
+      Effect.gen(function* () {
+        const file = join(yield* tempDir, "previous-to-fences.db");
+        const closed = Schema.decodeUnknownSync(Thread)({
+          id: "closed-worker",
+          projectId: "upgrade-project",
+          title: "prior closed worker",
+          userNamed: false,
+          model: { agent: "claude", model: "synthetic" },
+          mode: "default",
+          checkout: { kind: "main", path: "/invented/previous-schema" },
+          labels: [],
+          pinned: false,
+          parked: false,
+          unread: false,
+          createdAt: 1,
+          lastActivityAt: 1,
+        });
+        const fence = {
+          key: "synthetic-base",
+          moved: [],
+          pending: {
+            pr: { repo: "example/project", number: 5 },
+            threadId: "upgrade-worker" as ThreadId,
+            head: "expected-head",
+            tip: "checked-tip",
+            at: 1,
+          },
+        };
+        const entries = Object.entries(migrations);
+        // By name, not position: later migrations append after it.
+        const index = entries.findIndex(([key]) => /^\d+_merge_fences$/.test(key));
+        expect(index).toBeGreaterThan(0);
+        const previous = Object.fromEntries(entries.slice(0, index));
+        const previousId = Number(entries[index]![0].split("_")[0]) - 1;
+        const open = (record: Parameters<typeof migratorOptions>[0]) =>
+          SqliteMigrator.layer(migratorOptions(record)).pipe(
+            Layer.provideMerge(SqliteClient.layer({ filename: file })),
+          );
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect((yield* applied).at(-1)?.migration_id).toBe(previousId);
+          expect((yield* tableNames).has("merge_fences")).toBe(false);
+          yield* sql`INSERT INTO projects (id, root, name) VALUES ('upgrade-project', '/invented/previous-schema', 'preserved')`;
+          yield* sql`INSERT INTO local_checks (key, data) VALUES ('older-pass', '{"synthetic":"retained"}')`;
+          yield* sql`INSERT INTO closed_threads(thread_id, closed_at, data)
+            VALUES (${closed.id}, 1, ${JSON.stringify(closed)})`;
+          yield* sql`INSERT INTO message_receipts(thread_id, client_message_id, fingerprint, retired)
+            VALUES ('closed-worker', 'prior-retry', 'synthetic-prior-receipt', 1)`;
+        }).pipe(Effect.provide(open(previous)));
+        for (let reopen = 0; reopen < 2; reopen++) {
+          yield* Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            expect((yield* applied).map((r) => [r.migration_id, r.name])).toEqual(
+              entries.map(([key]) => {
+                const [id, ...name] = key.split("_");
+                return [Number(id), name.join("_")];
+              }),
+            );
+            expect(
+              yield* sql`SELECT root, name FROM projects WHERE id = 'upgrade-project'`,
+            ).toEqual([{ root: "/invented/previous-schema", name: "preserved" }]);
+            expect(yield* sql`SELECT data FROM local_checks WHERE key = 'older-pass'`).toEqual([
+              { data: '{"synthetic":"retained"}' },
+            ]);
+            expect(
+              yield* sql`SELECT client_message_id, fingerprint, retired FROM message_receipts`,
+            ).toEqual([
+              {
+                client_message_id: "prior-retry",
+                fingerprint: "synthetic-prior-receipt",
+                retired: 1,
+              },
+            ]);
+            expect((yield* tableNames).has("merge_fences")).toBe(true);
+            const store = yield* ThreadStore;
+            if (reopen === 0) yield* store.putMergeFence(fence);
+            expect(yield* store.listMergeFences).toEqual([fence]);
+          }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+        }
+      }),
+  );
+
+  it.effect(
+    "a reopened database keeps unresolved fences and moved tips independently of threads",
+    () =>
+      Effect.gen(function* () {
+        const file = join(yield* tempDir, "fences.db");
+        const record = {
+          key: "example/project\u0000main",
+          moved: ["old-tip"],
+          pending: {
+            pr: { repo: "example/project", number: 5 },
+            head: "expected-head",
+            threadId: "invented-worker" as ThreadId,
+            tip: "checked-tip",
+            at: 1,
+          },
+        };
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          yield* store.putMergeFence(record);
+        }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          expect(yield* store.listMergeFences).toEqual([record]);
+          yield* store.putMergeFence({
+            key: record.key,
+            moved: [...record.moved, record.pending.tip],
+          });
+        }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          expect(yield* store.listMergeFences).toEqual([
+            { key: record.key, moved: ["old-tip", "checked-tip"] },
+          ]);
+        }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+      }),
+  );
+
+  it.effect("upgrades the previous 0004 database to limit history, keeping kept readings", () =>
+    Effect.gen(function* () {
+      const file = join(yield* tempDir, "previous-to-limit-history.db");
+      const entries = Object.entries(migrations);
+      const index = entries.findIndex(([key]) => /^\d+_usage_limit_history$/.test(key));
+      expect(index).toBeGreaterThan(0);
+      const previous = Object.fromEntries(entries.slice(0, index));
+      const open = (record: Parameters<typeof migratorOptions>[0]) =>
+        SqliteMigrator.layer(migratorOptions(record)).pipe(
+          Layer.provideMerge(SqliteClient.layer({ filename: file })),
+        );
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        expect((yield* applied).at(-1)?.name).toBe("merge_fences");
+        expect((yield* tableNames).has("usage_limit_history")).toBe(false);
+        yield* sql`INSERT INTO usage_limits (key, data) VALUES ('codex//five_hour', '{"synthetic":true}')`;
+        // What 0003 and 0004 keep, so an edit to 0005 that touched their tables would fail here.
+        yield* sql`INSERT INTO message_receipts(thread_id, client_message_id, fingerprint, retired)
+          VALUES ('synthetic-thread', 'synthetic-client-id', 'synthetic-print', 1)`;
+        yield* sql`INSERT INTO merge_fences (key, data) VALUES ('synthetic-base', '{"synthetic":true}')`;
+      }).pipe(Effect.provide(open(previous)));
+      for (let reopen = 0; reopen < 2; reopen++) {
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect((yield* applied).map((row) => row.name).slice(-2)).toEqual([
+            "merge_fences",
+            "usage_limit_history",
+          ]);
+          expect(yield* sql`SELECT key, data FROM usage_limits`).toEqual([
+            { key: "codex//five_hour", data: '{"synthetic":true}' },
+          ]);
+          expect(
+            yield* sql`SELECT thread_id, client_message_id, fingerprint, retired FROM message_receipts`,
+          ).toEqual([
+            {
+              thread_id: "synthetic-thread",
+              client_message_id: "synthetic-client-id",
+              fingerprint: "synthetic-print",
+              retired: 1,
+            },
+          ]);
+          expect(yield* sql`SELECT key, data FROM merge_fences`).toEqual([
+            { key: "synthetic-base", data: '{"synthetic":true}' },
+          ]);
+          if (reopen === 0) {
+            yield* sql`INSERT INTO usage_limit_history
+              (agent, limit_window, bucket, window_id, utilization, peak, resets_at)
+              VALUES ('codex', 'five_hour', 900000, 1, 0.4, 0.5, NULL)`;
+            yield* sql`INSERT INTO usage_credit_history (agent, bucket, balance, spent, added)
+              VALUES ('codex', 900000, 1250, 0, 0)`;
+          }
+          expect(
+            yield* sql`SELECT agent, limit_window, bucket, utilization, peak, resets_at
+            FROM usage_limit_history`,
+          ).toEqual([
+            {
+              agent: "codex",
+              limit_window: "five_hour",
+              bucket: 900000,
+              utilization: 0.4,
+              peak: 0.5,
+              resets_at: null,
+            },
+          ]);
+          expect(yield* sql`SELECT agent, bucket, balance FROM usage_credit_history`).toEqual([
+            { agent: "codex", bucket: 900000, balance: 1250 },
+          ]);
+        }).pipe(Effect.provide(open(migrations)));
+      }
     }),
   );
 
@@ -229,7 +490,7 @@ describe("the baseline", () => {
       yield* Effect.void.pipe(Effect.provide(open(migrations)));
       const next = {
         ...migrations,
-        "0003_example": Effect.gen(function* () {
+        "0006_example": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`ALTER TABLE projects ADD COLUMN example TEXT`;
         }),
@@ -244,7 +505,10 @@ describe("the baseline", () => {
           expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
             [1, "baseline"],
             [2, "merge_freezes"],
-            [3, "example"],
+            [3, "message_receipts"],
+            [4, "merge_fences"],
+            [5, "usage_limit_history"],
+            [6, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
       }

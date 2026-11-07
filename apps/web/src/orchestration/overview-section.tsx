@@ -16,17 +16,14 @@ export const STOP = OVERVIEW_STOP;
 /**
  * Every row's shape, whatever it lists: a 10 px mark column, then its title (`ROW_TITLE`), and under
  * it one compact status line (`ROW_STATUS`) with what trails it (a time, its badges) at the right
- * edge. A title takes the row's whole width and wraps to a second line before it is cut at its end;
- * its hover says the whole of it.
+ * edge. Every row is the same two lines high, so a list of them reads as even rows: a title too long
+ * for its line is cut at its end, never its middle, and its hover says the whole of it.
  */
 export const ROW =
   "grid w-full cursor-default grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-2 rounded-(--radius-sm) px-1.5 py-1 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring";
 
-/**
- * A row's title: the row's full width, two lines at most, cut at the end. A word too long for the
- * line breaks rather than pushing the row wide.
- */
-export const ROW_TITLE = "col-span-2 line-clamp-2 [overflow-wrap:anywhere]";
+/** A row's title: the row's full width, one line, cut at its end with an ellipsis. */
+export const ROW_TITLE = "col-span-2 min-w-0 truncate";
 
 /** A row's status line, under its title: muted words, and its time or badges at the right edge. */
 export const ROW_STATUS =

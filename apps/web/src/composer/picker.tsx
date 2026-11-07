@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { useShortcut } from "@/keyboard/registry";
@@ -6,6 +6,7 @@ import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 
+import { aboveComposer } from "./above-composer";
 import { ModelCombobox } from "./model-picker";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { GHOST_TRIGGER } from "./styles";
@@ -16,6 +17,11 @@ export interface PickerOption<V extends string> {
   label: string;
   /** The value on the toolbar's trigger and in its tooltip, when shorter than `label`. */
   short?: string | undefined;
+  /**
+   * The value's words on the trigger, when even shorter than `short`, which its name and tooltip
+   * keep: "Effort: Default" on the chip, "Effort: Model default" on hover.
+   */
+  word?: string | undefined;
   /**
    * The value in three to six letters, for a toolbar short of room for `short`: "High", "Ask",
    * "Opus". The tooltip and name still say `short`.
@@ -64,6 +70,11 @@ interface PickerProps<V extends string> {
   onFoldedOpen?: (() => void) | undefined;
   /** Called as the list opens, by click or shortcut. */
   onOpen?: (() => void) | undefined;
+  /**
+   * Subscribes to asks to open the list from outside the toolbar, such as a failed turn's "Try
+   * another model" (`onModelPickerAsked`); returns the unsubscribe.
+   */
+  onAsked?: ((open: () => void) => () => void) | undefined;
   /** A searchable list with favourites, grouped by agent or gateway, instead of a select. */
   search?:
     | {
@@ -91,13 +102,22 @@ export function Picker<V extends string>({
   folded = false,
   onFoldedOpen,
   onOpen,
+  onAsked,
   search,
 }: PickerProps<V>) {
   const [open, setOpenState] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   const setOpen = (next: boolean) => {
     if (next) onOpen?.();
     setOpenState(next);
   };
+  // An ask from outside opens it as its shortcut does. Kept in a ref, so a re-render with new
+  // callbacks doesn't subscribe again.
+  const asked = useRef(() => {});
+  useEffect(() => {
+    asked.current = () => (folded ? onFoldedOpen?.() : setOpen(true));
+  });
+  useEffect(() => onAsked?.(() => asked.current()), [onAsked]);
   const hint = useShortcutHint(shortcutId);
   const confirm = usePickConfirm(value);
   useShortcut(
@@ -157,9 +177,11 @@ export function Picker<V extends string>({
       }}
     >
       <PickerTrigger
+        ref={trigger}
         size="sm"
         label={label}
         value={shown}
+        words={chosen?.word}
         compact={chosen?.compact}
         labelled={labelled}
         field={field}
@@ -171,7 +193,8 @@ export function Picker<V extends string>({
         data-warning={warning ? "true" : undefined}
         className={cn(GHOST_TRIGGER, warning && "text-warning hover:text-warning")}
       />
-      <SelectContent side="top">
+      {/* Above the whole composer, so the list never covers the draft. */}
+      <SelectContent side="top" anchor={() => aboveComposer(trigger.current)}>
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value} description={option.description}>
             {option.label}

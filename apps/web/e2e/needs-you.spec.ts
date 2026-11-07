@@ -152,7 +152,7 @@ test("the pill opens every workspace's items by kind, and Open thread lands on t
   await expect(page.getByTestId("right-panel")).toBeVisible();
 });
 
-test("list rows are short: what it is about, kind, workspace, thread and age; the detail has the question", async ({
+test("list rows are two lines: what it is about, then workspace, kind, thread and age; the detail has the question", async ({
   page,
 }) => {
   await start(page);
@@ -169,12 +169,17 @@ test("list rows are short: what it is about, kind, workspace, thread and age; th
   const plan = inbox(page).locator('[data-testid="inbox-item"][data-kind="plan"]');
   await expect(plan.getByTestId("inbox-item-title")).toHaveText("Plan to review");
   await expect(plan.getByTestId("inbox-item-where")).not.toContainText("Plan to review");
+  // Its title wraps to a second line before it is cut, never a third; its hover says all of it.
   const lines = await question
     .getByTestId("inbox-item-title")
     .evaluate((el) =>
       Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)),
     );
-  expect(lines).toBe(1);
+  expect(lines).toBeGreaterThanOrEqual(1);
+  expect(lines).toBeLessThanOrEqual(2);
+  expect(await question.getAttribute("title")).toContain(
+    "The setup guide covers both pip and uv. Keep both, or uv only?",
+  );
   // The whole question and its choices are the detail's alone.
   await expect(detail(page)).toContainText(
     "The setup guide covers both pip and uv. Keep both, or uv only?",
@@ -182,14 +187,20 @@ test("list rows are short: what it is about, kind, workspace, thread and age; th
   await expect(detail(page).getByTestId("ask-option")).toHaveCount(2);
 });
 
-test("docked, Esc and Enter stay with the Inbox: the thread's approval beside it isn't answered", async ({
+test("docked, Esc, Enter and the approval keys stay with the Inbox: the thread's approval beside it isn't answered", async ({
   page,
 }) => {
   await start(page);
   await expect(page.getByTestId("approval-card")).toBeVisible();
   await openInbox(page);
-  // On the dock itself, where nothing of the Inbox takes Enter either.
+  // A question with two choices shown: 3 is no key of its, nor of the thread's card beside it.
+  await show(page, UV);
   await inbox(page).focus();
+  await page.keyboard.press("3");
+  await page.keyboard.press("1");
+  await expect(page.getByTestId("approval-card")).toBeVisible();
+  await expect(page.getByTestId("needs-you-undo-line")).toHaveCount(0);
+  // On the dock itself, where nothing of the Inbox takes Enter either.
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("approval-card")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -226,7 +237,7 @@ test("a window too narrow to dock it, and Quiet, open the Inbox as a dialog", as
   await expect(page.getByTestId("quiet-layer")).toBeVisible();
 });
 
-test("docked, its list starts compact beside a readable chat, and its divider and toggle size it", async ({
+test("docked, its list starts full beside a readable chat, and its divider and toggle size it", async ({
   page,
 }) => {
   await start(page);
@@ -234,23 +245,33 @@ test("docked, its list starts compact beside a readable chat, and its divider an
   await page.keyboard.press("ControlOrMeta+Shift+I");
   await expect(inbox(page)).toHaveAttribute("data-docked", "");
   const list = inbox(page).getByTestId("inbox-list");
-  // Compact: a line a request, its where in its tooltip and the detail's.
-  await expect(list).toHaveAttribute("data-compact", "");
-  const compact = (await list.boundingBox())!.width;
-  expect(compact).toBeLessThan(260);
+  // Full: two lines a request, its title, then where it is from and its age, so it is known
+  // before it is opened; its hover says the whole of it.
+  await expect(list).not.toHaveAttribute("data-compact");
+  const full = (await list.boundingBox())!.width;
+  expect(full).toBeGreaterThanOrEqual(260);
+  const first = inbox(page).getByTestId("inbox-item").first();
+  await expect(first.getByTestId("inbox-item-where")).toBeVisible();
+  expect(await first.getAttribute("title")).toContain(
+    (await first.getByTestId("inbox-item-where").textContent())!,
+  );
   // The chat beside it keeps a readable width.
   const chat = (await page.getByLabel("Message", { exact: true }).boundingBox())!.width;
   expect(chat).toBeGreaterThan(480);
   // The keys stay in the footer.
   await expect(inbox(page).getByTestId("inbox-keys")).toContainText("j k move");
 
-  // Compact list toggles the full list, two lines a request.
+  // Compact list toggles one line a request, its where in its tooltip and the detail's.
   const toggle = inbox(page).getByTestId("inbox-compact");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await toggle.click();
+  await expect(list).toHaveAttribute("data-compact", "");
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  const compact = (await list.boundingBox())!.width;
+  expect(compact).toBeLessThan(260);
   await toggle.click();
   await expect(list).not.toHaveAttribute("data-compact");
-  await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  expect((await list.boundingBox())!.width).toBeGreaterThan(compact + 80);
+  expect((await list.boundingBox())!.width).toBeGreaterThan(compact + 60);
 
   // The divider drags it; double-click puts it back.
   const divider = inbox(page).getByTestId("inbox-list-resize");
@@ -265,8 +286,8 @@ test("docked, its list starts compact beside a readable chat, and its divider an
   await page.keyboard.press("ArrowRight");
   await expect(divider).toHaveAttribute("aria-valuenow", /\d+/);
   await divider.dblclick();
-  await expect(list).toHaveAttribute("data-compact", "");
-  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(list).not.toHaveAttribute("data-compact");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
 });
 
 test("answers in the detail go out through the one path, with Undo, and nothing twice", async ({
@@ -363,6 +384,29 @@ test("keys: j and k move, 2 picks, ⌘⏎ sends, ⌘Z takes it back, ⏎ opens t
   await page.keyboard.press("ControlOrMeta+l");
   await expect(page.getByLabel("Message", { exact: true })).toBeFocused();
   await expect(inbox(page)).toBeVisible();
+});
+
+test("an approval's keys are the thread card's: 3 denies it at once, held for Undo", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await start(page);
+  await openInbox(page);
+  const merge = await show(page, "gh pr merge 91 --squash");
+  await expect(merge).toHaveAttribute("data-kind", "approval");
+  // Each verb shows its key: 1 Allow once, 3 Deny, as on the card in the thread.
+  const options = detail(page).getByTestId("ask-option");
+  await expect(options.filter({ hasText: "Allow" }).first().getByTestId("ask-kbd")).toHaveText("1");
+  await expect(options.filter({ hasText: "Deny" }).getByTestId("ask-kbd")).toHaveText("3");
+  await inbox(page).getByTestId("inbox-list").focus();
+  await page.clock.runFor(1_000);
+  // One press answers it: no pick and send, as on the thread's card.
+  await page.keyboard.press("3");
+  await expect(page.getByTestId("needs-you-undo-line")).toContainText("Denied");
+  await expect(merge).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(merge).toHaveCount(1);
+  expect(await sent(page)).toEqual([]);
 });
 
 test("a wait's Done resolves it, and Open thread lands on the message that added it", async ({
@@ -544,7 +588,7 @@ test("narrow: the rail's pill opens an Inbox that fits, and with no pill ⌘⌥3
   await page.setViewportSize({ width: 520, height: 800 });
   await expect(page.getByTestId("overview-rail-needs-you")).toBeHidden();
   // With no pill on screen, the title bar's entry is the way in, in the pill's own words.
-  await expect(page.getByTestId("inbox-button")).toHaveText(/^\d+ needs? you$/);
+  await expect(page.getByTestId("inbox-button")).toHaveAccessibleName(/^\d+ needs? you: \d+ /);
   await page.keyboard.press("ControlOrMeta+Alt+3");
   await expect(inbox(page)).toBeVisible();
   await fits(520);

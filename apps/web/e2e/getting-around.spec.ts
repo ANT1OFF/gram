@@ -79,7 +79,9 @@ test("Esc on a worker never takes a menu's, a field's or an approval's Esc", asy
   await expect(page).toHaveURL(url(made.asking));
 });
 
-test("a worker with an approval waiting keeps Esc for Deny", async ({ page }) => {
+test("a worker with an approval waiting: Esc goes back and leaves it waiting, 3 denies it", async ({
+  page,
+}) => {
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const made = await page.evaluate(() => window.gramMock!.simulateAsks());
@@ -88,10 +90,24 @@ test("a worker with an approval waiting keeps Esc for Deny", async ({ page }) =>
   await openOrchestrator(page, made.orchestratorThreadId);
   await threadRow(page, pusher).click();
   await expect(page).toHaveURL(url(pusher));
-  await expect(page.getByTestId("approval-card")).toBeVisible();
+  const card = page.getByTestId("approval-card");
+  await expect(card).toBeVisible();
+  const request = await card.getAttribute("data-request-id");
+  // Esc is the worker's way back, never an answer: the approval still waits on it.
   await blur(page);
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("approval-card")).toBeHidden();
+  await expect(page).toHaveURL(url(made.orchestratorThreadId));
+  await threadRow(page, pusher).click();
+  await expect(page).toHaveURL(url(pusher));
+  await expect(
+    page.locator(`[data-testid="approval-card"][data-request-id="${request}"]`),
+  ).toBeVisible();
+  // Its own key, 3, denies it.
+  await blur(page);
+  await page.keyboard.press("3");
+  await expect(
+    page.locator(`[data-testid="approval-card"][data-request-id="${request}"]`),
+  ).toBeHidden();
   await expect(page).toHaveURL(url(pusher));
 });
 

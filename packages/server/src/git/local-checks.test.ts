@@ -245,6 +245,43 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
       }),
   );
 
+  it.live(
+    "an explicit fence reconciliation retires an older pass without bypassing the managed runner",
+    () =>
+      Effect.gen(function* () {
+        const { dir, repo, head, base } = fixture();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+        let runs = 0;
+        const runner: LocalCheckRunnerShape["run"] = () =>
+          Effect.sync(() => {
+            runs++;
+            return { ok: true };
+          });
+        yield* Effect.gen(function* () {
+          const checks = yield* LocalChecks;
+          const first = yield* checked(repo, head, base);
+          expect(first?.status).toBe("passed");
+          const done = yield* Deferred.make<LocalCheck>();
+          const fresh = yield* checks.ensure(repo, head, base, {
+            since: 0,
+            after: first!.startedAt,
+            onDone: (check) => Deferred.succeed(done, check).pipe(Effect.asVoid),
+          });
+          expect(fresh?.status).toBe("running");
+          expect((yield* Deferred.await(done)).status).toBe("passed");
+          expect(runs).toBe(2);
+          expect(
+            yield* checks.ensure(repo, head, base, {
+              since: 0,
+              after: first!.startedAt,
+              onDone: () => Effect.void,
+            }),
+          ).toMatchObject({ status: "passed" });
+          expect(runs).toBe(2);
+        }).pipe(Effect.provide(layer(nodePath.join(dir, "gram.db"), dir, runner)));
+      }).pipe(Effect.scoped),
+  );
+
   // Selected-source preparation runs only on Linux; the test after these checks it refuses elsewhere.
   it.live.skipIf(process.platform !== "linux")(
     "prepares only an approved merged-tree selection and refuses substitutions",

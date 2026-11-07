@@ -88,9 +88,10 @@ import {
 } from "./subagent-strip-model";
 import { TableOfContents } from "./table-of-contents";
 import { ThreadMenu } from "./thread-menu";
-import { Transcript, type JumpRequest } from "./transcript";
+import { Transcript, transcriptScroller, type JumpRequest, type ScrollRestore } from "./transcript";
 import { turnUndos } from "./turn-undo-marker";
 import { useUnseenFrom } from "./unread";
+import { SnoozeChip } from "./snooze-chip";
 import { HeaderWakeChip } from "./wake-chip";
 
 const FLASH_MS = 1600;
@@ -246,6 +247,8 @@ export function ThreadView({
   }, [carriedByBar, threadId, chapters, earlier, loadingEarlier, earlierFailed]);
   const lastSubagentJump = useRef<string>(undefined);
   const [finding, setFinding] = useState(false);
+  /** Where Esc in find puts the transcript back to. */
+  const [restore, setRestore] = useState<ScrollRestore>();
   const revealRequest = useRevealStore((s) => s.request);
   const sourceTitle = useThreadsStore((s) => {
     const from = s.byId[threadId]?.thread.forkedFrom?.threadId;
@@ -336,7 +339,16 @@ export function ThreadView({
       keys: "mod+f",
       label: "Find in thread",
       group: "Thread",
-      run: () => setFinding(true),
+      run: () => {
+        setFinding(true);
+        // Again while it is open: its field, with what it holds selected to type over.
+        requestAnimationFrame(() =>
+          transcriptScroller(threadId)
+            ?.closest("[data-thread-view]")
+            ?.querySelector<HTMLInputElement>('[data-testid="find-bar"] input')
+            ?.select(),
+        );
+      },
     },
     focused,
   );
@@ -379,6 +391,8 @@ export function ThreadView({
   const needs = needsYou(summary) || summary.pendingRequests.length > 0;
   const activity = activityLine(status, detail, summary.activity);
   const display = threadStatusOf(summary, detail);
+  // The glyph says work is under way: the turn's spinner, or what runs under the thread.
+  const glyphWorks = display.working || display.running !== undefined || status === "starting";
   // A thread alone in Chat puts its header in the window's title bar: one bar, not two. The
   // title and the empty room move the window; everything after the title is a control.
   const inTitlebar = carriedByBar;
@@ -544,12 +558,24 @@ export function ThreadView({
             <FakeAgentBadge className={hideSm} />
           </div>
         </div>
-        {/* Outside the chips that drop when short of room: Hand back must always be there. */}
+        {/* Outside the chips that drop when short of room: Hand back must always be there, and so
+            must a snooze's Unsnooze, the one sign of why the lists leave the thread out. */}
+        <SnoozeChip threadId={threadId} />
         <WorkerActions thread={thread} inTitlebar={inTitlebar} />
+        {/* In the title bar the glyph shows only while the thread works: at rest it is the bar's
+            default, and what needs you (an approval, a question, an error) is the needs-you pill's
+            and the card's to say, so the bar never carries a second, unlabelled warning beside it.
+            Its words stay for screen readers. */}
         <Hint
           label={statusHint(display, activity)}
           side="bottom"
-          render={<span data-testid="pane-status" className="relative flex shrink-0" />}
+          render={
+            <span
+              data-testid="pane-status"
+              data-quiet={(inTitlebar && !glyphWorks) || undefined}
+              className={cn("relative flex shrink-0", inTitlebar && !glyphWorks && "hidden")}
+            />
+          }
         >
           <Swap swapKey={display.label}>
             <display.icon
@@ -594,6 +620,9 @@ export function ThreadView({
       <div
         ref={trackPaneHeight}
         data-pane-root
+        // The one thread this view draws, in a grid pane or beside the chat: what an approval's
+        // keys and focus stay within (request-cards.tsx).
+        data-thread-view={threadId}
         className="flex min-h-0 flex-1 flex-col"
         data-testid="thread-view"
         data-focused={focused}
@@ -612,7 +641,7 @@ export function ThreadView({
         <StatusHeader thread={thread} digests={stream?.plan.digests} />
         <WaitingTray threadId={threadId} />
         <PlanStrip threadId={threadId} />
-        <WorkerBanner thread={thread} />
+        <WorkerBanner thread={thread} inTitlebar={inTitlebar} />
         <CatchUpCard thread={thread} />
         <StuckCard thread={thread} />
         <OrchestratorBanner thread={thread} loaded={phase !== "loading"} />
@@ -623,7 +652,19 @@ export function ThreadView({
           />
         )}
         {finding && (
-          <FindBar threadId={threadId} onReveal={reveal} onClose={() => setFinding(false)} />
+          <FindBar
+            threadId={threadId}
+            // Every loaded message, a reply a quiet update folded away included: a step to one
+            // reveals it, which shows all activity.
+            messages={top}
+            earlier={earlier}
+            getScroller={() => transcriptScroller(threadId)}
+            onReveal={reveal}
+            onClose={(anchor) => {
+              setFinding(false);
+              if (anchor !== undefined) setRestore({ anchor, nonce: Date.now() });
+            }}
+          />
         )}
         {/* The transcript's waiting rows hold the approval cards the requests below draw. */}
         <ApprovalSlotsProvider threadId={threadId}>
@@ -642,6 +683,7 @@ export function ThreadView({
               chapters={chapters}
               onChapterJump={jumpToChapter}
               reveal={revealJump}
+              restore={restore}
               flashId={flashId}
               earlier={earlier}
               loadingEarlier={loadingEarlier}
@@ -661,7 +703,8 @@ export function ThreadView({
               focused={focused}
               thread={thread}
             />
-            <LimitWaitLine thread={thread} />
+            {/* With turns to follow, the transcript's last line says it, under the last turn. */}
+            {shown.length === 0 && <LimitWaitLine thread={thread} />}
             <QueueList threadId={threadId} />
           </div>
         </ApprovalSlotsProvider>
@@ -764,9 +807,8 @@ function PaneHeading({
     <h1
       aria-label={role === undefined ? undefined : `${role.name}: ${title}`}
       className="flex min-w-0 items-center gap-1.5 font-heading font-medium"
-      title={
-        gestures ? `${title}. Double-click to maximize or restore; drag to swap panes` : undefined
-      }
+      // The whole title on hover, wherever the header cuts it.
+      title={gestures ? `${title}. Double-click to maximize or restore; drag to swap panes` : title}
     >
       <RoleGlyph thread={thread} testId="pane-role" />
       <span

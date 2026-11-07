@@ -126,19 +126,22 @@ test("top navigation explains real keyboard focus and preserves routes and modif
   await usagePage.click({ button: "middle" });
   const popup = await popupPromise;
   await popup.waitForLoadState();
-  await expect(popup).toHaveURL(/\/usage$/);
+  await expect(popup).toHaveURL(/\/settings\/usage$/);
   await popup.close();
   await usagePage.click();
-  await expect(page).toHaveURL(/\/usage$/);
+  await expect(page).toHaveURL(/\/settings\/usage$/);
   await expect(page.getByRole("dialog", { name: "Subscription usage" })).toBeHidden();
   await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
+  // Back to the overview; Settings then reopens on the page it was last on, Usage.
+  await page.getByTestId("settings-back").click();
+  await expect(sidebar).toBeVisible();
   await settings.click();
-  await expect(page).toHaveURL(/\/settings\/general$/);
+  await expect(page).toHaveURL(/\/settings\/usage$/);
   // Settings is a place of its own: the overview, its header with it, steps aside, and the title
   // bar has Back and the page's name.
   await expect(page.getByTestId("settings-title")).toHaveText("Settings");
   await expect(sidebar).toHaveCount(0);
-  await expect(page.getByTestId("general-settings")).toBeVisible();
+  await expect(page.getByTestId("usage-settings")).toBeVisible();
   const after = await page.evaluate(async () => ({
     settings: await window.gramMock!.getSettings(),
     threads: window.gramMock!.world.threads().length,
@@ -181,7 +184,8 @@ test("each top-left icon names itself and its key on hover", async ({ page }) =>
     ["Hide sidebar", /^Hide sidebar \((⌘|Ctrl\+)B\)$/],
     ["Settings", /^Settings \((⌘|Ctrl\+),\)/],
     ["Compact overview", /^Compact overview$/],
-    ["New", /^New: agent team, one worker or single agent chat \(/],
+    // New opens a menu, whose Task, Team and Chat each show their own key.
+    ["New", /^New task, team or chat$/],
   ];
   for (const [name, label] of expected) {
     await sidebar.locator(`[aria-label="${name}"]`).first().hover();

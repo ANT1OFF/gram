@@ -175,6 +175,7 @@ describe.skipIf(!hasGit)("fs RPCs", () => {
           .href.replaceAll("&", "%26")
           .replace(/\.md$/, "%2Emd");
         yield* client["thread.send"]({
+          clientMessageId: crypto.randomUUID(),
           threadId: thread.id,
           input: { text: `Wrote \`${report}\`, [notes](${encoded}) and ${env}.` },
         });

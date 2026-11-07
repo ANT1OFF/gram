@@ -86,8 +86,9 @@ test("a thread on a model its Claude account no longer lists says so", async ({ 
   const picker = page.getByRole("combobox", { name: "Model", exact: true });
   await expect(picker).toHaveText(/claude-mythos-5-1/);
   await expect(picker).toHaveAttribute("data-warning", "true");
-  await expect(picker).toHaveAttribute(
-    "title",
+  // Said the moment it's hovered, as every toolbar picker says its warning.
+  await picker.hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
     "Not offered by your Claude account; it may not work",
   );
 });

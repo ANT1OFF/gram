@@ -71,7 +71,7 @@ const pending = (page: Page, threadId: string) =>
     threadId,
   );
 
-test("one card at a time: 1 then ⌘⏎ answers it everywhere, and undo brings it back", async ({
+test("one card at a time: 1, the thread card's key, answers it everywhere, and undo brings it back", async ({
   page,
 }) => {
   // The undo window runs on the installed clock, so waiting past it takes no real time.
@@ -85,16 +85,12 @@ test("one card at a time: 1 then ⌘⏎ answers it everywhere, and undo brings i
 
   await goTo(page, PUSH);
   await expect(card(page).getByTestId("quiet-command")).toHaveText(PUSH);
-  // Enter no longer answers; a number picks and ⌘⏎ sends.
+  // Enter doesn't answer; an approval's verbs answer to the thread card's keys, on the press.
   await page.keyboard.press("Enter");
   await settle(page);
   await expect(quiet(page).getByTestId("quiet-undo-line")).toHaveCount(0);
+  await expect(card(page).getByTestId("quiet-option").first()).toContainText("1");
   await page.keyboard.press("1");
-  await expect(card(page).getByTestId("quiet-option").first()).toHaveAttribute(
-    "data-picked",
-    "true",
-  );
-  await page.keyboard.press("ControlOrMeta+Enter");
   await expect(quiet(page).getByTestId("quiet-undo-line")).toContainText("Allowed 3");
   await expect(position(page)).toHaveText(`1 of ${before - 1}`);
 
@@ -105,8 +101,8 @@ test("one card at a time: 1 then ⌘⏎ answers it everywhere, and undo brings i
 
   // Answered again, it goes out, and the orchestrator's stack doesn't show it either.
   await goTo(page, PUSH);
+  await settle(page);
   await page.keyboard.press("1");
-  await page.keyboard.press("ControlOrMeta+Enter");
   await page.clock.runFor(SENT_MS);
   for (const worker of made.pushers) {
     await expect.poll(() => pending(page, worker)).toEqual([]);
@@ -116,6 +112,28 @@ test("one card at a time: 1 then ⌘⏎ answers it everywhere, and undo brings i
   await inboxEntry(page).click();
   await expect(page.getByTestId("inbox")).toBeVisible();
   await expect(page.getByTestId("inbox-item").filter({ hasText: PUSH })).toHaveCount(0);
+});
+
+test("an approval's rebound chord answers it in Quiet, modifiers and all, and its old key doesn't", async ({
+  page,
+}) => {
+  await page.clock.install();
+  // Deny rebound from 3 to ⌥3, as Settings → Keyboard would keep it in keybindings.json.
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem("gram.mock.keybindings")) {
+      sessionStorage.setItem("gram.mock.keybindings", JSON.stringify({ "approval.deny": "alt+3" }));
+    }
+  });
+  await start(page);
+  await goTo(page, PUSH);
+  const deny = card(page).getByTestId("quiet-option").filter({ hasText: "Deny" });
+  await expect(deny).toContainText(/(⌥|Alt\+)3/);
+  await page.clock.runFor(1_000);
+  // The old key is no key of its: nothing answered.
+  await page.keyboard.press("3");
+  await expect(quiet(page).getByTestId("quiet-undo-line")).toHaveCount(0);
+  await page.keyboard.press("Alt+Digit3");
+  await expect(quiet(page).getByTestId("quiet-undo-line")).toContainText("Denied 3");
 });
 
 test("Later sends a card to the back, and O opens its thread out of Quiet", async ({ page }) => {
@@ -147,7 +165,7 @@ test("the strip shows a dot per worker, and a workspace opens onto its workers",
   const home = strip.locator(`[data-workspace="${made.workspaceId}"]`);
   await expect(home.getByTestId("quiet-dot").first()).toBeVisible();
   // What needs you, in the sidebar pill's words and count.
-  await expect(strip.getByTestId("quiet-asks")).toHaveText(/^\d+ needs? you$/);
+  await expect(strip.getByTestId("quiet-asks")).toHaveAccessibleName(/^\d+ needs? you: \d+ /);
 
   await home.click();
   const peek = quiet(page).getByTestId("quiet-peek");

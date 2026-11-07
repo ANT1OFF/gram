@@ -39,9 +39,7 @@ const reviewRoundTitle = (round: ReviewRound) =>
   `Review round ${round.number}${round.verdict ? `: ${VERDICT_TITLE[round.verdict]}` : " finished"}`;
 
 const reviewRoundBody = ({ blockers, unresolved }: ReviewRound["counts"]) =>
-  unresolved === 0
-    ? "No unresolved findings"
-    : `${blockers} blocker${blockers === 1 ? "" : "s"}, ${unresolved} unresolved`;
+  unresolved === 0 ? "No unresolved findings" : `${blockers} blocking, ${unresolved} unresolved`;
 
 /**
  * The toast for a rate limit, in the limits' own words: the window by its one name (`windowWord`),

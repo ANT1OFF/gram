@@ -11,7 +11,7 @@ import {
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { ChevronDown, Search, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { createElement, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage, isNotImplemented } from "@/api/errors";
@@ -21,6 +21,12 @@ import { boardWorkspaceFor } from "@/orchestration/board-model";
 import { useOpenBoard } from "@/orchestration/open-board";
 import { useWorkersListStore } from "@/orchestration/workers-list";
 import { openFeatureSheet } from "@/orchestration/feature-sheet-store";
+import { keepBeside } from "@/orchestration/beside-store";
+import { peek } from "@/orchestration/peek-store";
+import { StatusDot } from "@/orchestration/status-dot";
+import { useOpenThread } from "@/shell/thread-switcher";
+import { showDoc } from "@/docs/doc-pane-store";
+import { useDocs } from "@/docs/doc-queries";
 import { hiddenIds, useAskStackStore } from "@/orchestration/ask-stack-store";
 import { useOrchestratorLedgers, useWorkspaces } from "@/orchestration/use-orchestration";
 import { agentLabel } from "@/agents/agent-display";
@@ -29,7 +35,7 @@ import { focusOtherWindow } from "@/desktop/open-thread";
 import { prefillDraftProject, prefillTaskTarget } from "@/composer/draft-prefill";
 import { useStashMenuStore } from "@/composer/stash-store";
 import { shortcutHint } from "@/keyboard/bindings";
-import { formatKeys } from "@/keyboard/registry";
+import { formatKeys, keyLabel } from "@/keyboard/registry";
 import { listIndexForKey } from "@/lib/list-keys";
 import { formatRelative } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -63,6 +69,8 @@ import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { useThreadSearch, type ThreadSearchState } from "@/thread/use-thread-search";
 import { threadDisplayTitle } from "@/thread/thread-title";
 import { toggleOverviewSidebar } from "@/views/shell-layout";
+import { inHistory } from "@/views/solo-threads";
+import { useSettleRule } from "@/views/use-settle-rule";
 import { useViewStore } from "@/views/view-store";
 
 import { useReportIssueDialog } from "@/report-issue/report-issue-dialog";
@@ -75,6 +83,7 @@ import {
   flattenSections,
   matchItems,
   PALETTE_KINDS,
+  parsePaletteQuery,
   type PaletteItem,
   type PaletteKind,
   type PalettePicker,
@@ -87,7 +96,9 @@ import { useScopeCommands, type ScopeSteps } from "./scope-commands";
 import { matchesWordFilters } from "./word-filters";
 import { useWordFilters, WordFilterControls } from "./word-filter-controls";
 import { Snippet } from "./snippet";
-import { paletteStatusWords, statusWord } from "./status-words";
+import { openThreadBeside } from "./open-beside";
+import { paletteIcon, paletteIconKind } from "./palette-icons";
+import { paletteDot, paletteStatusWords, statusWord } from "./status-words";
 
 /** Steps of "Open in pane…" that keep the palette open for the next pick. */
 const KEEPS_OPEN = /^(pick:|action:openInPane$|action:resume$)/;
@@ -212,6 +223,8 @@ function PaletteBody({
     currentThread ?? (shownWorkspace === undefined ? undefined : { workspaceId: shownWorkspace }),
     workspaces,
   );
+  const openThread = useOpenThread();
+  const { data: docList } = useDocs(boardWorkspace);
   const [query, setQuery] = useState(initialQuery);
   const [active, setActive] = useState(0);
   /** The filter under the field: everything, or only threads, workers or actions. */
@@ -247,6 +260,11 @@ function PaletteBody({
   const messageSearch = useThreadSearch(searchMode ? query : "", { limit: MESSAGE_LIMIT });
   const resumeQuery = useResumableSessions(resumeRoot);
   const now = useNow(reopenIn !== undefined, undefined, 60_000);
+  const settle = useSettleRule();
+  const searchText =
+    listing && (shownKind === "all" || shownKind === "threads")
+      ? parsePaletteQuery(query).text
+      : "";
   const resolvedQuery = useQuery({
     queryKey: ["thread.listWaits", reopenIn, "all"],
     queryFn: () => api.listWaits(reopenIn!, "all"),
@@ -331,24 +349,67 @@ function PaletteBody({
     if (focusOtherWindow(threadId)) return;
     void navigate({ to: "/t/$threadId", params: { threadId } });
   };
-  const threads: PaletteItem[] = recent
+  // What is over lives in History, not beside the live threads: the lists below leave it out, and
+  // one row hands a search that matches any of it to History, searching the same words there.
+  const live = recent.filter((summary) => !inHistory(summary, settle));
+  const pastMatches =
+    searchText === ""
+      ? 0
+      : matchItems(
+          recent
+            .filter((summary) => inHistory(summary, settle))
+            .map((summary) => ({
+              id: summary.thread.id,
+              label: summary.thread.title,
+              keywords: `${summary.thread.checkout.branch ?? ""} ${projectNameOf(projects, summary.thread.projectId)}`,
+              run: () => {},
+            })),
+          searchText,
+        ).length;
+  const history: PaletteItem[] =
+    pastMatches === 0
+      ? []
+      : [
+          {
+            id: "history:search",
+            label:
+              pastMatches === 1 ? "1 finished in History" : `${pastMatches} finished in History`,
+            hint: `Search History for “${searchText}”`,
+            ...shortcut("history.open"),
+            // It stands for what matched, so it matches whatever was typed.
+            keywords: searchText,
+            run: () => useHistoryStore.getState().show("all", searchText),
+          },
+        ];
+  const threadItem = (summary: ThreadSummary): PaletteItem => ({
+    id: `thread:${summary.thread.id}`,
+    ...describe(summary),
+    ...(summary.thread.role === "orchestrator" ? { icon: "orchestrator" as const } : {}),
+    dot: paletteDot(statusWord(summary, statusWords)),
+    scope: threadScope(summary.thread),
+    beside: () => openThreadBeside(summary.thread.id),
+    run: () => goTo(summary.thread.id),
+  });
+  const workerItem = (summary: ThreadSummary): PaletteItem => ({
+    id: `worker:${summary.thread.id}`,
+    label: summary.thread.title,
+    hint: `${summary.thread.spawnedBy?.feature ?? ""} · ${statusWord(summary, statusWords)}`,
+    keywords: `${summary.thread.checkout.branch ?? ""} ${workspaceNames.get(summary.thread.workspaceId as WorkspaceId) ?? ""}`,
+    dot: paletteDot(statusWord(summary, statusWords)),
+    scope: threadScope(summary.thread),
+    // As a ⌘- or ⌥-click on its sidebar row: beside its orchestrator, or a look in a sheet.
+    beside: () => {
+      if (!keepBeside(summary.thread.id, openThread)) openThreadBeside(summary.thread.id);
+    },
+    peek: () => peek({ kind: "worker", threadId: summary.thread.id, title: summary.thread.title }),
+    run: () => goTo(summary.thread.id),
+  });
+  const threads: PaletteItem[] = live
     .filter(({ thread }) => thread.spawnedBy === undefined)
-    .map((summary) => ({
-      id: `thread:${summary.thread.id}`,
-      ...describe(summary),
-      scope: threadScope(summary.thread),
-      run: () => goTo(summary.thread.id),
-    }));
-  const workers: PaletteItem[] = recent
+    .map(threadItem);
+  const workers: PaletteItem[] = live
     .filter(({ thread }) => thread.spawnedBy !== undefined)
-    .map((summary) => ({
-      id: `worker:${summary.thread.id}`,
-      label: summary.thread.title,
-      hint: `${summary.thread.spawnedBy?.feature ?? ""} · ${statusWord(summary, statusWords)}`,
-      keywords: `${summary.thread.checkout.branch ?? ""} ${workspaceNames.get(summary.thread.workspaceId as WorkspaceId) ?? ""}`,
-      scope: threadScope(summary.thread),
-      run: () => goTo(summary.thread.id),
-    }));
+    .map(workerItem);
   // A feature is the workers spawned for it, in each workspace that is listed.
   const featureWorkers = new Map<
     string,
@@ -404,6 +465,17 @@ function PaletteBody({
           run: () => openHit(hit),
         }))
       : [];
+
+  const docItems: PaletteItem[] =
+    boardWorkspace === undefined
+      ? []
+      : (docList?.docs ?? []).map((doc) => ({
+          id: `doc:${doc.id}`,
+          label: doc.title,
+          hint: `Doc · ${doc.authorTitle}`,
+          keywords: "doc document notes",
+          run: () => showDoc(boardWorkspace, doc.id),
+        }));
 
   const projectItems: PaletteItem[] = projects.map((project) => ({
     id: `project:${project.id}`,
@@ -933,10 +1005,12 @@ function PaletteBody({
                     {
                       destinations,
                       threads,
+                      history,
                       workers,
                       features,
                       prs,
                       projects: projectItems,
+                      docs: docItems,
                       actions,
                       scoped: inView,
                     },
@@ -957,12 +1031,9 @@ function PaletteBody({
     const filtered: PaletteItem[] = recent.flatMap((summary) => {
       const kind = summary.thread.spawnedBy === undefined ? "thread" : "worker";
       const candidates: { kind: string; item: PaletteItem; at?: number }[] = [
-        {
-          kind,
-          item: [...threads, ...workers].find(
-            (item) => item.id === `${kind}:${summary.thread.id}`,
-          )!,
-        },
+        // Words like "merged this week" ask after old work too, so a thread History holds is a
+        // match here, opening where it is.
+        { kind, item: kind === "thread" ? threadItem(summary) : workerItem(summary) },
         ...prs
           .filter((item) => item.id === `pr:${summary.thread.id}`)
           .map((item) => ({ kind: "pr", item })),
@@ -1034,6 +1105,17 @@ function PaletteBody({
     if (!item.stay && !KEEPS_OPEN.test(item.id)) onDone();
     item.run();
   };
+  /**
+   * ⌘⏎ / ⌘-click opens a thread beside the chat and ⌥⏎ / ⌥-click peeks at a worker, as the same
+   * clicks on its sidebar row do; a row with no such gesture just opens. True when one ran.
+   */
+  const runGesture = (item: PaletteItem | undefined, mods: { beside: boolean; peek: boolean }) => {
+    const gesture = mods.beside ? item?.beside : mods.peek ? item?.peek : undefined;
+    if (item === undefined || gesture === undefined || item.unavailable !== undefined) return false;
+    onDone();
+    gesture();
+    return true;
+  };
   /** One step back: out of a second step, then out of the scope. */
   const back = () => {
     if (picker !== undefined) setPicker(undefined);
@@ -1055,6 +1137,14 @@ function PaletteBody({
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing) return;
+    if (
+      event.key === "Enter" &&
+      (event.metaKey || event.ctrlKey || event.altKey) &&
+      runGesture(activeItem, { beside: event.metaKey || event.ctrlKey, peek: event.altKey })
+    ) {
+      event.preventDefault();
+      return;
+    }
     if (
       searchMode &&
       (event.key === "Home" ||
@@ -1200,8 +1290,17 @@ function PaletteBody({
             <p className="px-3 py-6 text-center text-reading text-muted-foreground">No matches</p>
           )}
           {sections.map((section) => (
-            <div key={section.id} role="group" aria-label={section.label} className="mb-1">
-              <div className="px-2 pt-1 text-meta font-medium text-muted-foreground">
+            <div
+              key={section.id}
+              role="group"
+              aria-label={section.label}
+              data-section={section.id}
+              className="mb-1 not-first:mt-1"
+            >
+              <div
+                data-testid="palette-section-label"
+                className="flex items-baseline gap-2 px-2 pt-1 text-meta font-medium text-muted-foreground"
+              >
                 {section.label}
               </div>
               {section.id === "filtered" && section.items.length === 0 && (
@@ -1219,7 +1318,13 @@ function PaletteBody({
                     aria-disabled={item.unavailable !== undefined || undefined}
                     title={item.unavailable}
                     onMouseMove={() => setActive(itemIndex)}
-                    onClick={() => run(item)}
+                    onClick={(event) => {
+                      const mods = {
+                        beside: event.metaKey || event.ctrlKey,
+                        peek: event.altKey,
+                      };
+                      if (!runGesture(item, mods)) run(item);
+                    }}
                     data-more={item.more || undefined}
                     className={cn(
                       "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-body",
@@ -1227,21 +1332,38 @@ function PaletteBody({
                       (item.unavailable !== undefined || item.more) && "text-muted-foreground",
                     )}
                   >
-                    {item.more && <ChevronDown aria-hidden className="size-icon-chip shrink-0" />}
+                    {item.more ? (
+                      <ChevronDown
+                        aria-hidden
+                        className="size-icon-row shrink-0 text-muted-foreground"
+                      />
+                    ) : (
+                      <PaletteRowIcon item={item} />
+                    )}
                     {item.snippet ? (
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate">{item.label}</span>
+                        <span className="truncate font-medium">{item.label}</span>
                         <Snippet text={item.snippet.text} highlights={item.snippet.highlights} />
                       </span>
                     ) : (
-                      <span className="truncate">{item.label}</span>
-                    )}
-                    {item.hint && (
                       <span
-                        data-palette-hint
-                        className="ml-auto shrink-0 truncate text-meta text-muted-foreground"
+                        className={cn("truncate", item.dot !== undefined && "font-medium")}
+                        title={item.label}
                       >
-                        {item.hint}
+                        {item.label}
+                      </span>
+                    )}
+                    {(item.hint || item.dot) && (
+                      <span className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 pl-3">
+                        {item.hint && (
+                          <span
+                            data-palette-hint
+                            className="truncate text-meta text-muted-foreground"
+                          >
+                            {item.hint}
+                          </span>
+                        )}
+                        {item.dot && <StatusDot state={item.dot} still data-testid="palette-dot" />}
                       </span>
                     )}
                     {item.shortcut && (
@@ -1270,6 +1392,16 @@ function PaletteBody({
         <span>
           <kbd className="font-mono">⏎</kbd> open
         </span>
+        {activeItem?.beside !== undefined && (
+          <span>
+            <kbd className="font-mono">{keyLabel("⌘⏎")}</kbd> open beside
+          </span>
+        )}
+        {activeItem?.peek !== undefined && (
+          <span>
+            <kbd className="font-mono">{keyLabel("⌥⏎")}</kbd> peek
+          </span>
+        )}
         {activeItem?.scope !== undefined && !hasWordControls && (
           <span>
             <kbd className="font-mono">⇥</kbd> its commands
@@ -1291,8 +1423,22 @@ function PaletteBody({
             </span>
           )
         )}
+        <span className="ml-auto">
+          <kbd className="font-mono">esc</kbd> close
+        </span>
       </div>
     </>
+  );
+}
+
+/** A row's kind as its glyph, muted, in a column of its own so the labels start on one edge. */
+function PaletteRowIcon({ item }: { item: PaletteItem }) {
+  const kind = paletteIconKind(item);
+  return (
+    <span aria-hidden data-icon={kind} className="flex size-icon-row shrink-0 items-center">
+      {kind !== undefined &&
+        createElement(paletteIcon(kind), { className: "size-icon-row text-muted-foreground" })}
+    </span>
   );
 }
 

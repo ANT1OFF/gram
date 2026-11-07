@@ -7,15 +7,15 @@ import { SearchScope } from "./search-scope";
 
 /**
  * The card `SettingRow`s sit in, which pads them, with a hairline between rows. Between visible ones: a search hides
- * rows, and the first one it leaves shouldn't carry a line above it. A row takes 12 px above and
- * below, a list's rhythm (DESIGN.md, Spacing): the hairline already parts one row from the next,
- * and 16 px made every row of a page a line taller than it reads, pushing ordinary settings below
- * the fold. 16 px stays at the card's sides, its pane edge.
+ * rows, and the first one it leaves shouldn't carry a line above it. A row takes 8 px above and
+ * below (DESIGN.md, Spacing): the hairline already parts one row from the next, and a 32 px control
+ * with its name and one line beside it needs no more; 12 px still left a page of ordinary
+ * settings scrolling. 16 px stays at the card's sides, its pane edge.
  * The card is the raised surface, its fill the step off the page; only light, where that step is
  * faint, outlines it (`border-edge-group`).
  */
 export const SETTINGS_CARD =
-  "flex flex-col rounded-lg border border-edge-group bg-card [&>:not([hidden])~:not([hidden])]:border-t [&>*]:border-border/60 [&>*]:px-4 [&>*]:py-3";
+  "flex flex-col rounded-lg border border-edge-group bg-card [&>:not([hidden])~:not([hidden])]:border-t [&>*]:border-border/60 [&>*]:px-4 [&>*]:py-2";
 
 /**
  * A page's groups, one above the next: 24 px apart on every page, so General, Appearance, Voice
@@ -27,8 +27,9 @@ export const SETTINGS_STACK = "flex flex-col gap-6";
 export const GROUP_TITLE = "font-heading text-title text-foreground";
 
 /**
- * A named group of settings within a page: its title and one plain sentence on what it is for, an
- * ⓘ for anything more, over a card of rows. Settings search finds the whole group by its name or keywords, and otherwise shows it
+ * A named group of settings within a page: its title with one plain sentence on what it is for on
+ * the same line (wrapping under it only when the two don't fit), an ⓘ for anything more, over a
+ * card of rows. On one line, the sentence costs the group no height of its own. Settings search finds the whole group by its name or keywords, and otherwise shows it
  * while something inside matches.
  */
 export function SettingsGroup({
@@ -70,7 +71,7 @@ export function SettingsGroup({
     >
       {/* Flush with the page's title and the card's edge: one left edge for every heading. */}
       <div className="flex items-start gap-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
           <div className="flex min-h-6 items-center gap-1">
             <h3 id={titleId} className={GROUP_TITLE}>
               {label}

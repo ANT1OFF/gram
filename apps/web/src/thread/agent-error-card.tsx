@@ -1,11 +1,12 @@
 import type { GramUIMessage, ThreadError, ThreadId, ThreadStatus, TurnId } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, CircleX, Clock, RotateCw } from "lucide-react";
+import { ChevronRight, CircleX, Clock, Replace, RotateCw } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { askModelPicker } from "@/composer/model-picker-request";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatStamp } from "@/lib/time";
 import { feedMessages, useThreadFeed } from "@/stores/feeds";
@@ -21,9 +22,9 @@ import {
   type EarlierAttempt,
   type RetryReceipt,
 } from "./attempt-model";
-import { failureLabel, USAGE_LIMIT } from "./failure-kinds";
+import { failureLabel, USAGE_LIMIT, USAGE_LIMIT_SHORT } from "./failure-kinds";
 import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
-import { retryKey, retryTimeOf, useRetrySchedule } from "./retry-time";
+import { AUTO_RETRY_MS, retryKey, retryTimeOf, useRetrySchedule } from "./retry-time";
 
 /** Failures a gateway profile's settings can fix: its key, its models, or its spending limit. */
 const GATEWAY_FIXES: ReadonlySet<ThreadError["kind"]> = new Set([
@@ -161,13 +162,19 @@ function ErrorCard({
   });
   const model = useThreadsStore((s) => s.byId[threadId]?.thread.model);
   const onGateway = model?.profileId !== undefined;
+  // The server waiting the limit out (`Thread.limitWait`) retries on its own; the card offers none.
+  const waiting = useThreadsStore((s) => s.byId[threadId]?.thread.limitWait !== undefined);
   const limited = error.kind === "rateLimit";
-  // A minute's tick is enough: the time is shown to the minute, and only matters once it passes.
-  const now = useNow(limited && current && retried === undefined, undefined, 60_000);
-  const limits = useUsageLimits((s) => s.limits);
-  const retryAt = limited ? retryTimeOf(error, model, limits, now) : undefined;
   const key = retryKey(threadId, error);
   const due = useRetrySchedule((s) => s.due[key]);
+  const live = limited && current && retried === undefined;
+  // A minute's tick is enough for a reset shown to the minute, and only matters once it passes.
+  const minute = useNow(live, undefined, 60_000);
+  const limits = useUsageLimits((s) => s.limits);
+  const retryAt = limited ? retryTimeOf(error, model, limits, minute) : undefined;
+  // An automatic retry, set with no reset to wait for, counts down each second.
+  const second = useNow(live && due !== undefined && retryAt === undefined, undefined, 1000);
+  const now = Math.max(minute, second);
 
   // Read, not subscribed: the turn's own message is in the feed before its error is. A limit the
   // provider gave a reset for is worth sending again then, even where sending now would only repeat.
@@ -222,29 +229,46 @@ function ErrorCard({
   }
 
   const repeat = attempt !== undefined && attempt.attempt > 1;
-  // A spent usage limit says so, and when it resets once that is known: "Usage limit reached ·
-  // resets 11:15". The provider throttling requests stays "Rate limited".
+  // A known reset still ahead: the title says when, once, and the card's step is to retry then.
+  const early = retryAt !== undefined && retryAt > now;
+  // A spent usage limit says so, and when it resets once that is known: "Usage limit · resets
+  // 11:15". The provider throttling requests stays "Rate limited".
   const spent = limited && (!error.retryable || retryAt !== undefined);
   const title = spent
-    ? retryAt !== undefined && retryAt > now
-      ? `${USAGE_LIMIT} · resets ${resetText(retryAt, now)}`
+    ? early
+      ? `${USAGE_LIMIT_SHORT} · resets ${resetText(retryAt, now)}`
       : USAGE_LIMIT
     : failureLabel(error.kind, error.retryable);
-  // Retry is the card's own step, a full button under what failed: the primary one when trying
-  // again now may go through, an outline "Retry now" while a known reset is still ahead.
-  const early = retryAt !== undefined && retryAt > now;
   const canRetryNow = text !== undefined && (error.retryable || !early);
+  // Repeated throttling, with no reset to wait for: the card can try again on its own in a moment,
+  // or the user can move the thread to another model. Never while the server waits the limit out.
+  const throttledAgain =
+    limited && repeat && error.retryable && !early && current && retried === undefined && !waiting;
   /**
-   * "Retry then": sends the turn's message again once the reset passes, if it is still the thread's
-   * last error with nothing running by then. Read when it fires, not now: the user may have sent
-   * something else in the meantime.
+   * Sends the turn's message again at `at` (plus `margin`), if it is still the thread's last error
+   * with nothing running by then: "Retry at 11:15" and "Retry automatically in 30 s". Read when it
+   * fires, not now: the user may have sent something else in the meantime.
    */
-  const retryThen = (again: string, at: number) =>
-    useRetrySchedule.getState().schedule(key, at, () => {
-      const summary = useThreadsStore.getState().byId[threadId];
-      if (summary?.thread.lastError?.at !== error.at || !SETTLED.has(summary.status)) return;
-      void retry(again);
-    });
+  const retryLater = (again: string, at: number, margin?: number) =>
+    useRetrySchedule.getState().schedule(
+      key,
+      at,
+      () => {
+        const summary = useThreadsStore.getState().byId[threadId];
+        if (summary?.thread.lastError?.at !== error.at || !SETTLED.has(summary.status)) return;
+        void retry(again);
+      },
+      margin,
+    );
+  const usage = (
+    <Link
+      to="/usage"
+      data-testid="agent-error-usage"
+      className={buttonVariants({ variant: "ghost", size: "sm" })}
+    >
+      Usage
+    </Link>
+  );
   return (
     <div
       role="alert"
@@ -264,20 +288,26 @@ function ErrorCard({
             </span>
           )}
         </p>
-        <p className="break-words">{errorSentence(error.kind, error.text)}</p>
+        <p className="break-words">{errorSentence(error.kind, error.text, early)}</p>
         {repeat && <EarlierAttempts earlier={attempt.earlier} />}
-        {limited && current && retried === undefined && (
-          <RetryTime
-            at={retryAt}
-            now={now}
-            due={due}
-            canRetry={text !== undefined && !pending}
-            where={onGateway ? "gateway" : "provider"}
-            onRetryThen={() =>
-              text !== undefined && retryAt !== undefined && retryThen(text, retryAt)
-            }
-            onCancel={() => useRetrySchedule.getState().cancel(key)}
-          />
+        {limited && current && retried === undefined && !early && (
+          <p
+            data-testid="agent-error-retry-time"
+            data-known="false"
+            className="mt-1 text-meta text-muted-foreground"
+          >
+            {retryAt === undefined
+              ? unknownResetText(onGateway ? "gateway" : "provider", text !== undefined)
+              : resetPassedText(onGateway ? "gateway" : "provider", text !== undefined)}{" "}
+            <Link
+              to="/usage"
+              data-testid="agent-error-usage"
+              className="text-link underline-offset-2 hover:underline"
+            >
+              Usage
+            </Link>
+            .
+          </p>
         )}
         {onGateway && GATEWAY_FIXES.has(error.kind) && (
           <Link
@@ -288,19 +318,91 @@ function ErrorCard({
             Gateway settings
           </Link>
         )}
-        {canRetryNow && text !== undefined && (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant={early ? "outline" : "default"}
-              data-testid="agent-error-retry"
-              onClick={() => void retry(text)}
-              disabled={pending}
-            >
-              <RotateCw aria-hidden />
-              {early ? "Retry now" : "Retry"}
-            </Button>
+        {limited && early && current && retried === undefined ? (
+          <div
+            data-testid="agent-error-retry-time"
+            data-known="true"
+            className="mt-2 flex flex-wrap items-center gap-2"
+          >
+            {due === undefined ? (
+              text !== undefined && (
+                <Button
+                  size="sm"
+                  data-testid="agent-error-retry-then"
+                  disabled={pending}
+                  onClick={() => retryLater(text, retryAt)}
+                >
+                  <RotateCw aria-hidden />
+                  {`Retry at ${resetText(retryAt, now)}`}
+                </Button>
+              )
+            ) : (
+              <span
+                data-testid="agent-error-retry-scheduled"
+                className="inline-flex items-center gap-1.5 text-meta"
+              >
+                <Clock aria-hidden className="size-icon-row text-muted-foreground" />
+                <span className="text-foreground">
+                  {`Retrying at ${resetText(retryAt, now)} while Gram is open`}
+                </span>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => useRetrySchedule.getState().cancel(key)}
+                >
+                  Cancel
+                </Button>
+              </span>
+            )}
+            {canRetryNow && (
+              <Button
+                size="sm"
+                variant="ghost"
+                data-testid="agent-error-retry"
+                onClick={() => void retry(text)}
+                disabled={pending}
+              >
+                Retry now
+              </Button>
+            )}
+            {usage}
           </div>
+        ) : (
+          (canRetryNow || throttledAgain) && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {canRetryNow && (
+                <Button
+                  size="sm"
+                  data-testid="agent-error-retry"
+                  onClick={() => void retry(text)}
+                  disabled={pending}
+                >
+                  <RotateCw aria-hidden />
+                  {throttledAgain && due !== undefined ? "Retry now" : "Retry"}
+                </Button>
+              )}
+              {throttledAgain && text !== undefined && (
+                <AutoRetry
+                  due={due}
+                  now={now}
+                  disabled={pending}
+                  onArm={() => retryLater(text, Date.now(), AUTO_RETRY_MS)}
+                  onCancel={() => useRetrySchedule.getState().cancel(key)}
+                />
+              )}
+              {throttledAgain && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  data-testid="agent-error-other-model"
+                  onClick={() => askModelPicker(threadId)}
+                >
+                  <Replace aria-hidden />
+                  Try another model
+                </Button>
+              )}
+            </div>
+          )
         )}
         {unsent !== undefined && text !== undefined && (
           <p data-testid="retry-unsent" className="mt-1 text-meta break-words text-foreground">
@@ -309,6 +411,55 @@ function ErrorCard({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * "Retry automatically in 30 s" on a repeated rate limit; once chosen, the seconds left counting
+ * down, "Retrying in 24 s", with Cancel. It sends the turn's message again the way Retry does.
+ */
+function AutoRetry({
+  due,
+  now,
+  disabled,
+  onArm,
+  onCancel,
+}: {
+  /** When the automatic retry goes, epoch ms; undefined until it is chosen. */
+  due: number | undefined;
+  now: number;
+  disabled: boolean;
+  onArm: () => void;
+  onCancel: () => void;
+}) {
+  if (due === undefined) {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        data-testid="agent-error-auto-retry"
+        disabled={disabled}
+        onClick={onArm}
+      >
+        <Clock aria-hidden />
+        {`Retry automatically in ${AUTO_RETRY_MS / 1000} s`}
+      </Button>
+    );
+  }
+  // `now` can be a tick older than the click that set it: never more than the wait it was set for.
+  const left = Math.min(AUTO_RETRY_MS / 1000, Math.max(0, Math.ceil((due - now) / 1000)));
+  return (
+    <span
+      role="status"
+      data-testid="agent-error-auto-retry-armed"
+      className="inline-flex items-center gap-1.5 text-meta"
+    >
+      <Clock aria-hidden className="size-icon-row text-muted-foreground" />
+      <span className="text-foreground tabular-nums">{`Retrying in ${left} s`}</span>
+      <Button size="xs" variant="ghost" onClick={onCancel}>
+        Cancel
+      </Button>
+    </span>
   );
 }
 
@@ -324,93 +475,12 @@ export const resetPassedText = (where: "provider" | "gateway", canRetry: boolean
   `The ${where}'s reset time has passed. ${canRetry ? "Retry now, or check" : "Check"}`;
 
 /**
- * A rate-limit sentence stored before its guess was dropped ("Try again in a moment."), without
- * it: the card's retry-time line says what is known about when.
+ * A rate-limit sentence as the card's one line of body: without a guess stored before it was dropped
+ * ("Try again in a moment."), and, once the title names the reset (`resetNamed`), without "It resets
+ * on the provider's schedule.", which only said it again.
  */
-export const errorSentence = (kind: string, text: string): string =>
-  kind === "rateLimit" ? text.replace(/\s*Try again in a moment\.\s*$/u, "") : text;
-
-/**
- * Under a rate limit, when to try again: "Try again at 11:15" with "Retry then" when the provider
- * reported the reset, and when it didn't, that plainly, with Retry now and Usage, never a guess.
- * Usage has the readings behind it either way.
- */
-function RetryTime({
-  at,
-  now,
-  due,
-  canRetry,
-  where,
-  onRetryThen,
-  onCancel,
-}: {
-  at: number | undefined;
-  now: number;
-  /** When a retry set with "Retry then" goes, epoch ms. */
-  due: number | undefined;
-  canRetry: boolean;
-  /** Who limits it: a gateway, or the provider. */
-  where: "provider" | "gateway";
-  onRetryThen: () => void;
-  onCancel: () => void;
-}) {
-  const usage = (
-    <Link
-      to="/usage"
-      data-testid="agent-error-usage"
-      className="text-link underline-offset-2 hover:underline"
-    >
-      Usage
-    </Link>
-  );
-  if (at === undefined || at <= now) {
-    return (
-      <p
-        data-testid="agent-error-retry-time"
-        data-known="false"
-        className="mt-1 text-meta text-muted-foreground"
-      >
-        {at === undefined ? unknownResetText(where, canRetry) : resetPassedText(where, canRetry)}{" "}
-        {usage}.
-      </p>
-    );
-  }
-  const time = resetText(at, now);
-  return (
-    <div
-      data-testid="agent-error-retry-time"
-      data-known="true"
-      className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-meta"
-    >
-      <span className="inline-flex items-center gap-1 font-medium text-foreground">
-        <Clock aria-hidden className="size-icon-row text-muted-foreground" />
-        Try again at {time}
-      </span>
-      <span className="text-muted-foreground">when the provider's limit resets</span>
-      {due === undefined ? (
-        canRetry && (
-          <Button
-            size="xs"
-            variant="outline"
-            data-testid="agent-error-retry-then"
-            onClick={onRetryThen}
-          >
-            <RotateCw aria-hidden />
-            Retry then
-          </Button>
-        )
-      ) : (
-        <span
-          data-testid="agent-error-retry-scheduled"
-          className="inline-flex items-center gap-1.5"
-        >
-          <span className="text-muted-foreground">Retrying at {time} while Gram is open</span>
-          <Button size="xs" variant="ghost" onClick={onCancel}>
-            Cancel
-          </Button>
-        </span>
-      )}
-      {usage}
-    </div>
-  );
-}
+export const errorSentence = (kind: string, text: string, resetNamed = false): string => {
+  if (kind !== "rateLimit") return text;
+  const bare = text.replace(/\s*Try again in a moment\.\s*$/u, "");
+  return resetNamed ? bare.replace(/\s*It resets on the provider's schedule\.\s*$/u, "") : bare;
+};

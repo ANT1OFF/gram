@@ -9,6 +9,8 @@ export interface ClosePreset {
 
 type ThreadDialog =
   | { kind: "rename"; threadId: ThreadId }
+  /** A custom time to snooze the thread until. */
+  | { kind: "snooze"; threadId: ThreadId }
   | { kind: "close"; threadId: ThreadId; preset?: ClosePreset }
   | { kind: "closeAll" }
   | { kind: "labels" }

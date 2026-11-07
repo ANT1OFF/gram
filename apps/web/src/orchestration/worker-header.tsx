@@ -6,6 +6,9 @@ import { ChevronRight, HandGrab, PanelRight } from "lucide-react";
 import { Hint } from "@/components/hint";
 import { Term } from "@/components/term";
 import { focusOtherWindow } from "@/desktop/open-thread";
+import { normaliseKeys } from "@/keyboard/bindings";
+import { effectiveKeys } from "@/keyboard/bindings-store";
+import { catalogKeys } from "@/keyboard/catalog";
 import { keyLabel, useShortcut } from "@/keyboard/registry";
 import { useNow } from "@/lib/use-now";
 import { EXPLAIN } from "@/lib/explain";
@@ -23,6 +26,7 @@ import { keepBeside, useBesideStore } from "./beside-store";
 import { openFeatureSheet } from "./feature-sheet-store";
 import { orchestratorRowTitle } from "./tree-model";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
+import { prWaitWords } from "./waiting-on";
 import { FINISHED_WORKER, goToThread } from "./worker-banner";
 import { workerGlideId, useWorkersListStore } from "./workers-list";
 import { workerEntryOf, workerRow } from "./workers-model";
@@ -30,9 +34,16 @@ import { workerEntryOf, workerRow } from "./workers-model";
 /**
  * Esc on a worker goes back to its orchestrator, one level up, as the workspace crumb does. Only
  * while nothing else has Esc: the registry already keeps a plain key from a field being typed in
- * (an empty composer too) and from a dialog, an open menu closes on its own Esc first, and an
- * approval card's Esc denies it, so a worker with one waiting keeps that.
+ * (an empty composer too) and from a dialog, and an open menu closes on its own Esc first. An
+ * approval's Deny is 3, not Esc, so a waiting approval stays waiting; only where Deny is rebound
+ * to Esc does a worker with one waiting keep Esc for it.
  */
+/** Whether Deny is bound to Esc, however the binding spells it ("esc", "Escape", "escape"). */
+const denyTakesEsc = (): boolean => {
+  const keys = effectiveKeys("approval.deny", catalogKeys("approval.deny") ?? "");
+  return keys !== undefined && keys !== "" && normaliseKeys(keys) === normaliseKeys("escape");
+};
+
 export function useBackToOrchestrator(threadId: ThreadId, focused: boolean): void {
   const navigate = useNavigate();
   const orchestrator = useThreadsStore((s) => s.byId[threadId]?.thread.spawnedBy?.threadId);
@@ -43,9 +54,12 @@ export function useBackToOrchestrator(threadId: ThreadId, focused: boolean): voi
       label: "Back to the orchestrator",
       group: "Navigation",
       when: () =>
-        !useThreadsStore
-          .getState()
-          .byId[threadId]?.pendingRequests.some((request) => request.kind === "approval"),
+        !(
+          denyTakesEsc() &&
+          useThreadsStore
+            .getState()
+            .byId[threadId]?.pendingRequests.some((request) => request.kind === "approval")
+        ),
       run: () => {
         if (orchestrator === undefined || focusOtherWindow(orchestrator)) return;
         void navigate({ to: "/t/$threadId", params: { threadId: orchestrator } });
@@ -76,10 +90,7 @@ function useWorkerFacts(thread: Thread) {
 
 /** The › between crumbs, dropped with the crumb before it. */
 const crumbSeparator = (drop?: string) => (
-  <ChevronRight
-    aria-hidden
-    className={cn("size-icon-chip shrink-0 text-muted-foreground/60", drop)}
-  />
+  <ChevronRight aria-hidden className={cn("size-icon-chip shrink-0 text-subtle", drop)} />
 );
 
 /**
@@ -127,7 +138,7 @@ export function WorkerCrumbs({
       title={
         gestures
           ? `${thread.title}. Double-click to maximize or restore; drag to swap panes`
-          : undefined
+          : thread.title
       }
     >
       <RoleGlyph thread={thread} testId="pane-role" />
@@ -185,10 +196,40 @@ export function WorkerCrumbs({
   );
 }
 
-/** The worker's now line beside its crumbs, the compact status ⌘J's rows show too. */
+/**
+ * The worker's now line beside its crumbs, the compact status ⌘J's rows show too. A worker whose
+ * turn ended while its PR still waits says the two apart, "Turn: finished · PR: waiting on checks",
+ * so a reply that says "Done." never reads against a header that says it is still waiting.
+ */
 export function WorkerNowChip({ thread }: { thread: Thread }) {
   const { row } = useWorkerFacts(thread);
   if (thread.spawnedBy === undefined || row === undefined) return null;
+  const turnOver = row.status !== "running" && row.status !== "starting";
+  const pr = turnOver && row.waiting !== undefined ? prWaitWords(row.waiting.kind) : undefined;
+  if (pr !== undefined) {
+    return (
+      <span
+        data-testid="worker-now-status"
+        data-split=""
+        title={row.waiting?.hint}
+        className="inline-flex shrink-0 items-center gap-1.5 text-meta text-muted-foreground"
+      >
+        {/* Short of room, the PR's wait stays: the turn's end is the transcript's last line too. */}
+        <span data-testid="worker-turn-state" className="@max-md:hidden">
+          Turn: <span className="text-foreground">finished</span>
+          <span aria-hidden className="ml-1.5">
+            ·
+          </span>
+        </span>
+        <span data-testid="worker-pr-state">
+          PR:{" "}
+          <Swap swapKey={pr}>
+            <span className="text-foreground">{pr}</span>
+          </Swap>
+        </span>
+      </span>
+    );
+  }
   return (
     <span data-testid="worker-now-status" className="shrink-0 text-meta text-muted-foreground">
       <Swap swapKey={row.now}>{row.now}</Swap>

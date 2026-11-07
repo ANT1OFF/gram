@@ -12,8 +12,16 @@ import { showInboxAsk } from "@/inbox/inbox-store";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { DrawnCheck, Swap } from "@/motion";
-import { CHOICE, clock, plainKeysReach, SETTLE_MS, types } from "@/orchestration/ask-keys";
-import { AskChoices, Kbd, MoreText, plainHint, SendAnswer } from "@/orchestration/ask-choices";
+import {
+  CHOICE,
+  clock,
+  keyedByShortcut,
+  plainKeysReach,
+  SETTLE_MS,
+  shortcutOptionAt,
+  types,
+} from "@/orchestration/ask-keys";
+import { AskChoices, Kbd, MoreText, optionHint, SendAnswer } from "@/orchestration/ask-choices";
 import {
   answerRule,
   askKeysByThread,
@@ -222,11 +230,29 @@ export function QuietView({ workspaceId }: ViewProps) {
       if (undo()) take();
       return;
     }
-    if (event.altKey || event.shiftKey || event.repeat || card === undefined) return;
+    if (card === undefined) return;
+    // An approval's verbs answer to their own keys, the thread card's, chord and all (a binding
+    // rebound to ⌥1 or ⌘⇧D included), and act on the press: matched before the modifiers below,
+    // which only Quiet's own keys go without.
+    const verb = shortcutOptionAt(card.ask.options, event);
+    if (verb >= 0) {
+      take();
+      const now = clock();
+      if (
+        event.repeat ||
+        now - answeredAt.current < SETTLE_MS ||
+        now - topSince.current < SETTLE_MS
+      )
+        return;
+      choose(card, card.ask.options[verb]!);
+      return;
+    }
+    if (event.altKey || event.shiftKey || event.repeat) return;
     const sending = mod && event.key === "Enter";
     if (mod && !sending) return;
     const key = event.key.toLowerCase();
-    const number = !mod && /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : undefined;
+    const keyed = keyedByShortcut(card.ask.options);
+    const number = !mod && !keyed && /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : undefined;
     const toReply = !mod && event.key === "Enter" && card.ask.freeForm !== undefined;
     if (!sending && !toReply && number === undefined && key !== "o" && event.key !== "ArrowRight") {
       return;
@@ -369,7 +395,9 @@ function QuietCard({
   const listed = rule === "pick" || choiceLayout(ask.options) === "list";
   const pickedOption = picked === undefined ? undefined : ask.options[picked];
   const hintOf = (index: number) =>
-    rule === "act" && index === picked ? formatKeys("mod+enter") : plainHint(index);
+    rule === "act" && index === picked
+      ? formatKeys("mod+enter")
+      : optionHint(ask.options[index], index);
   return (
     <section
       data-testid="quiet-card"
@@ -430,7 +458,7 @@ function QuietCard({
           </pre>
         )}
         {ask.extras.length > 0 && (
-          <p className="font-mono text-caption break-all text-muted-foreground">
+          <p className="font-mono text-meta break-all text-muted-foreground">
             {ask.extras.map((field, at) => (
               <span key={field.label}>
                 {at > 0 && " · "}

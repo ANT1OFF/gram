@@ -3,10 +3,10 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import type * as RpcClient from "effect/rpc/RpcClient";
-import type { RpcClientError } from "effect/rpc/RpcClientError";
+import { RpcClientError } from "effect/rpc/RpcClientError";
 import * as Stream from "effect/Stream";
 
-import { resubscribing, type ConnectionControl } from "./connection";
+import { RECONNECT_WAIT_MS, resubscribing, type ConnectionControl } from "./connection";
 
 /** The Effect RPC client over the whole `GramRpcs` surface. */
 type GramClient = RpcClient.FromGroup<typeof GramRpcs, RpcClientError>;
@@ -24,6 +24,30 @@ export async function run<A, E>(effect: Effect.Effect<A, E>, signal?: AbortSigna
   const exit = await Effect.runPromiseExit(effect, signal === undefined ? undefined : { signal });
   if (Exit.isSuccess(exit)) return exit.value;
   throw Cause.squash(exit.cause);
+}
+
+/** Only message RPCs have durable receipts and may be replayed after a lost socket reply.
+ * The Effect (and its client message id) is constructed once, outside this retry loop. */
+export async function runMessage<A, E>(
+  effect: Effect.Effect<A, E>,
+  connection: ConnectionControl,
+): Promise<A> {
+  const abort = AbortSignal.timeout(RECONNECT_WAIT_MS);
+  for (;;) {
+    try {
+      return await run(effect);
+    } catch (error) {
+      if (
+        !(error instanceof RpcClientError) ||
+        !error.reason._tag.startsWith("Socket") ||
+        abort.aborted ||
+        connection.get().status === "expired"
+      )
+        throw error;
+      await connection.wait(500, abort);
+      if (abort.aborted || connection.get().status === "expired") throw error;
+    }
+  }
 }
 
 /** Adapts a Stream to an AsyncIterable that interrupts the stream (and the server fiber) on abort. */

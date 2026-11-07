@@ -47,10 +47,7 @@ export function StartingProgress({
         {steps.map((step, index) => (
           <Fragment key={step.key}>
             {index > 0 && (
-              <ChevronRight
-                aria-hidden
-                className="size-icon-chip shrink-0 text-muted-foreground/70"
-              />
+              <ChevronRight aria-hidden className="size-icon-chip shrink-0 text-subtle" />
             )}
             <li
               data-step={step.key}
@@ -65,7 +62,7 @@ export function StartingProgress({
               }
               className={cn(
                 "flex min-w-0 items-center gap-1",
-                step.state === "pending" ? "text-muted-foreground/70" : "text-muted-foreground",
+                step.state === "pending" ? "text-subtle" : "text-muted-foreground",
                 step.state === "active" && "text-foreground",
               )}
             >

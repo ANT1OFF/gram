@@ -4,6 +4,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
   CircleCheck,
+  CircleDashed,
   CircleMinus,
   CircleX,
   GitMerge,
@@ -15,19 +16,20 @@ import { Fragment, useEffect, useMemo, useState, type KeyboardEvent } from "reac
 import { create } from "zustand";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
+import { EmptyState } from "@/components/empty-state";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { useAvailableAgents } from "@/composer/agent-fields";
 import { keyLabel } from "@/keyboard/registry";
 import { KEY_CAP } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
-import { useNow } from "@/lib/use-now";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { DoneGroupingMenu } from "@/orchestration/done-grouping-menu";
 import { DONE_PAGE, doneWhenLong, doneWindow } from "@/orchestration/done-model";
 import { useFinishedWorkerPages } from "@/orchestration/use-finished-workers";
 import { useOrchestratorLedgers, useWorkspaces } from "@/orchestration/use-orchestration";
+import { PanelMessage } from "@/panels/panel-message";
 import {
   listResumableSessions,
   resumeSession,
@@ -38,6 +40,7 @@ import {
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
+import { useSettleRule } from "@/views/use-settle-rule";
 
 import {
   HISTORY_FILTERS,
@@ -91,15 +94,33 @@ export const OUTCOME_GLYPH: Readonly<Record<HistoryOutcome, { icon: LucideIcon; 
   stopped: { icon: CircleMinus, tone: "text-muted-foreground" },
   failed: { icon: CircleX, tone: "text-destructive" },
   archived: { icon: Archive, tone: "text-muted-foreground" },
+  idle: { icon: CircleDashed, tone: "text-muted-foreground" },
 };
 const IMPORTED_GLYPH = { icon: History, tone: "text-muted-foreground" };
 
-const EMPTY: Readonly<Record<HistoryFilter, string>> = {
-  all: "Nothing finished yet",
-  workers: "No finished workers yet",
-  threads: "No finished or archived threads yet",
-  archived: "Nothing archived",
-  imported: "No past CLI sessions to resume",
+/** What each filter says while it lists nothing: a title, and what goes there. */
+const EMPTY: Readonly<Record<HistoryFilter, { title: string; line: string }>> = {
+  all: {
+    title: "Nothing finished yet",
+    line: "Finished workers, done and archived threads and past CLI sessions land here.",
+  },
+  done: {
+    title: "Nothing done yet",
+    line: "Finished workers and threads land here until you archive them.",
+  },
+  workers: {
+    title: "No finished workers yet",
+    line: "A worker lands here once its work is merged or it stops.",
+  },
+  threads: {
+    title: "No finished or archived threads yet",
+    line: "Solo threads land here once they are done or archived.",
+  },
+  archived: { title: "Nothing archived", line: "Threads you archive land here." },
+  imported: {
+    title: "No past CLI sessions to resume",
+    line: "Sessions you started with Claude Code or Codex in a terminal show here.",
+  },
 };
 
 /**
@@ -180,8 +201,9 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
     [projects, summaries],
   );
   const past = usePastSessions(roots);
-  // Minute resolution is enough for the days and the times rows show.
-  const now = useNow(true, undefined, 60_000);
+  // Minute resolution is enough for the days and the times rows show, and for what has settled.
+  const settle = useSettleRule();
+  const { now } = settle;
   const by = useLayoutStore((s) => s.doneGrouping);
   const filter = useHistoryStore((s) => s.filter);
   const setFilter = useHistoryStore((s) => s.setFilter);
@@ -212,12 +234,24 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
         projects,
         sessions: past.sessions,
         facts: { byId, statusDetail, now },
+        settle,
       }),
-    [workspaces, ledgers, finished, summaries, projects, past.sessions, byId, statusDetail, now],
+    [
+      workspaces,
+      ledgers,
+      finished,
+      summaries,
+      projects,
+      past.sessions,
+      byId,
+      statusDetail,
+      now,
+      settle,
+    ],
   );
   const found = useMemo(() => searchHistory(entries, filter, query), [entries, filter, query]);
   // Only workers come in pages: the other chips wait on none of them.
-  const paged = filter === "all" || filter === "workers";
+  const paged = filter === "all" || filter === "done" || filter === "workers";
   const shown = useMemo(
     () => doneWindow(found, by, now, paged ? horizons : new Map<WorkspaceId, number>(), limit),
     [found, by, now, paged, horizons, limit],
@@ -323,18 +357,30 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
           aria-activedescendant={activeIndex < 0 ? undefined : `history-row-${activeIndex}`}
           className="min-h-0 min-w-0 flex-1 overflow-y-auto p-1 outline-none"
         >
-          {rows.length === 0 && (
-            <p
-              data-testid="history-empty"
-              className="px-3 py-8 text-center text-reading text-muted-foreground"
-            >
-              {query.trim() !== ""
-                ? "No matches"
-                : filter === "imported" && past.loading
-                  ? "Looking for past sessions…"
-                  : EMPTY[filter]}
-            </p>
-          )}
+          {rows.length === 0 &&
+            (query.trim() !== "" ? (
+              <EmptyState
+                testId="history-empty"
+                icon={Search}
+                title="No matches"
+                action={{ label: "Clear search", onClick: () => setQuery("") }}
+              />
+            ) : filter === "imported" && past.loading ? (
+              <PanelMessage loading>Looking for past sessions…</PanelMessage>
+            ) : (
+              <EmptyState
+                testId="history-empty"
+                icon={History}
+                title={EMPTY[filter].title}
+                line={EMPTY[filter].line}
+                action={
+                  filter === "all"
+                    ? // On a fresh account, what was done before Gram is the one thing to find here.
+                      { label: "Find past CLI sessions", onClick: () => changeFilter("imported") }
+                    : { label: "Show everything", onClick: () => changeFilter("all") }
+                }
+              />
+            ))}
           {shown.groups.map((group) => (
             <Fragment key={group.key}>
               <h3

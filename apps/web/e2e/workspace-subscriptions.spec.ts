@@ -68,9 +68,12 @@ for (const agent of ["claude", "codex"] as const) {
       .locator("[data-pane-root]")
       .getByTestId("composer-toolbar")
       .getByRole("combobox", { name: "Model", exact: true });
-    await expect(picker).toHaveAttribute(
-      "title",
-      new RegExp(`^${agent === "claude" ? "Claude Code" : "Codex"} · `),
+    const name = agent === "claude" ? "Claude Code" : "Codex";
+    await expect(picker).toHaveAttribute("aria-description", name);
+    // Said the moment it is hovered, in the instant tooltip every toolbar picker has.
+    await picker.hover();
+    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
+      new RegExp(`^${name} · Model`),
     );
   });
 }

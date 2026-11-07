@@ -6,8 +6,11 @@ import {
   type SpeedState,
 } from "@gram/contracts";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
+import { useRef } from "react";
+
 import { Swap } from "@/motion";
 
+import { aboveComposer } from "./above-composer";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { SpeedGlyph } from "./picker-glyphs";
 import { GHOST_TRIGGER } from "./styles";
@@ -49,9 +52,9 @@ export const speedValueWord = (value: SpeedMode | undefined, state?: SpeedState)
         : "Fast";
 
 /**
- * The same, short of room: "Fast" keeps its word, as it is news; the default and Standard give
- * theirs up first, leaving the bolt, still named "Speed: Standard" and saying so on hover. A word
- * here too ("Speed") cost the row enough that the model gave up its name at 540 px instead.
+ * The same, short of room: "Fast" keeps its word, as it is news ("Speed: Fast"); the default and
+ * Standard give theirs up first, leaving the trigger's own name, "Speed", never the bolt alone, its
+ * value on hover. The toolbar adds the dimension (`ValueWords`), so "" here reads "Speed".
  */
 export const speedCompactWord = (value: SpeedMode | undefined): string =>
   value === "fast" ? "Fast" : "";
@@ -99,13 +102,14 @@ export function SpeedField({
   size?: "sm" | "default";
 }) {
   const confirm = usePickConfirm(value);
+  const trigger = useRef<HTMLButtonElement>(null);
   if (agent !== "claude" && agent !== "codex") return null;
   const fast = modelSpeeds(models, model).includes("fast");
   const items = speedOptions(models, model, value, state);
   const usage = speedUsage(agent);
   const report = speedReport(state);
   const shown = items.find((item) => item.value === (value ?? "default"))?.label ?? "CLI default";
-  // On a toolbar a short value, as model, effort and mode show theirs; "Speed" is in its tooltip.
+  // On a toolbar a short value after its dimension, "Speed: Standard", as effort and mode say theirs.
   const toolbarValue = ghost ? speedValueWord(value, state) : shown;
   return (
     <div className="flex flex-col gap-1" data-testid="speed-field">
@@ -120,8 +124,11 @@ export function SpeedField({
         }}
       >
         <PickerTrigger
+          ref={trigger}
           label="Speed"
           value={toolbarValue}
+          // "Speed: Default" on the chip; its name and tooltip say whose, "Speed: CLI default".
+          words={ghost && value === undefined ? "Default" : undefined}
           compact={ghost ? speedCompactWord(value) : undefined}
           labelled={labelled}
           field={!ghost}
@@ -137,7 +144,8 @@ export function SpeedField({
           size={ghost ? "sm" : size}
           {...(ghost ? { className: GHOST_TRIGGER } : {})}
         />
-        <SelectContent>
+        {/* On a toolbar, never over the draft: flipped up, it clears the whole composer. */}
+        <SelectContent {...(ghost ? { anchor: () => aboveComposer(trigger.current) } : {})}>
           {items.map((item) => (
             <SelectItem
               key={item.value}

@@ -15,7 +15,7 @@ import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 
 import { useDerivedAsks } from "./needs-you-store";
 import {
-  kindsText,
+  kindParts,
   needsYouCounts,
   scopeLines,
   stepItem,
@@ -174,9 +174,16 @@ export function useNeedsYouCounts(): NeedsYouCounts {
 export function useNeedsYou() {
   const { total } = useNeedsYouCounts();
   const { items } = useNeedsYouList();
-  const kinds = useMemo(() => kindsText(items), [items]);
+  const parts = useMemo(() => kindParts(items), [items]);
   const hint = useShortcutHint("inbox.open");
-  return { count: total, kinds, open: toggleInbox, label: "Inbox", hint };
+  return {
+    count: total,
+    kinds: parts.join(", "),
+    parts,
+    open: toggleInbox,
+    label: "Inbox",
+    hint,
+  };
 }
 
 /**

@@ -402,6 +402,7 @@ describe.skipIf(!hasGit)("git RPCs", () => {
         yield* client["thread.park"]({ threadId: thread.id, parked: true });
         removeDirStrict(path);
         const refused = yield* client["thread.send"]({
+          clientMessageId: crypto.randomUUID(),
           threadId: thread.id,
           input: { text: "hi" },
         }).pipe(Effect.flip);

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { expect, it } from "vitest";
 
-import { CHEVRON } from "./use-toolbar-layout";
+import { CHEVRON, GLYPH } from "./use-toolbar-layout";
 
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
@@ -15,5 +15,22 @@ it("draws the toolbar triggers' chevrons at the size the layout counts", () => {
     const drawn = source(file).match(/<ChevronDownIcon[^>]*className="[^"]*"/g) ?? [];
     expect(drawn.length, file).toBeGreaterThan(0);
     for (const each of drawn) expect(each, file).toContain("size-icon-chip");
+  }
+});
+
+// The same for a picker's glyph, which goes in short: every glyph a toolbar picker draws beside
+// its words is the size `GLYPH` counts.
+it("draws the toolbar pickers' glyphs at the size the layout counts", () => {
+  expect(GLYPH).toBe(18 + 6);
+  const glyphs: Record<string, RegExp> = {
+    "./composer.tsx": /const (?:mode|effort)Icon = <[^>]*className="([^"]*)"/g,
+    "./agent-fields.tsx": /<(?:EffortGauge|SpeedGlyph)[^>]*className="([^"]*)"/g,
+    "./speed-field.tsx": /<SpeedGlyph[^>]*className="([^"]*)"/g,
+    "./new-thread-draft.tsx": /<ModeIcon[^>]*className="([^"]*)"/g,
+  };
+  for (const [file, pattern] of Object.entries(glyphs)) {
+    const drawn = [...source(file).matchAll(pattern)].map((match) => match[1]);
+    expect(drawn.length, file).toBeGreaterThan(0);
+    for (const each of drawn) expect(each, file).toBe("size-icon-bar");
   }
 });

@@ -53,3 +53,34 @@ export function groupShortcuts(bindings: readonly BindingRow[]): ShortcutSection
     return rows ? [{ group, rows }] : [];
   });
 }
+
+/** Words a chord answers to beyond its glyphs: `cmd k`, `option ]`, `ctrl shift tab`. */
+const keyWords = (keys: string): string =>
+  keys
+    .toLowerCase()
+    .replace(/\bmod\b/g, "mod cmd command ctrl control")
+    .replace(/\balt\b/g, "alt opt option")
+    .replace(/\barrow(up|down|left|right)\b/g, "arrow $1")
+    .replaceAll("+", " ");
+
+/**
+ * The sections whose rows match every word of `query` in their label, their group's name or their
+ * keys, as written (`⌘K`, `Ctrl+K`) or in words (`cmd k`). Empty sections drop out.
+ */
+export function filterShortcuts(
+  sections: readonly ShortcutSection[],
+  query: string,
+  format: (keys: string) => string,
+): ShortcutSection[] {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [...sections];
+  return sections.flatMap((section) => {
+    const rows = section.rows.filter((row) => {
+      const text = [row.label, section.group, ...row.keys.map(format), ...row.keys.map(keyWords)]
+        .join(" ")
+        .toLowerCase();
+      return terms.every((term) => text.includes(term));
+    });
+    return rows.length === 0 ? [] : [{ ...section, rows }];
+  });
+}

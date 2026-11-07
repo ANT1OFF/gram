@@ -465,17 +465,18 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
     overview(page).getByTestId(`overview-section-${id}`).getByRole("button", { name });
   const orchestrators = head("orchestrators", /Orchestrators/);
   const soloHead = head("solo", /Solo threads/);
-  // Pull requests comes after Solo threads, folded by default, then Done's few rows, open; Open
-  // History is at the column's foot, out of the list.
+  // Pull requests comes after Solo threads, folded by default, then Done's three rows, open, and
+  // its line into History; Open History is at the column's foot, out of the list.
   const prsHead = head("pullRequests", /Pull requests/);
   const doneHead = head("doneToday", /Done/);
   await expect(prsHead).toHaveAttribute("aria-expanded", "false");
   await expect(doneHead).toHaveAttribute("aria-expanded", "true");
   await expect(overview(page).getByTestId("overview-history")).toHaveText(/Open History/);
-  // End reaches Done's last row while it is open, its title once folded.
+  // End reaches Done's last stop while it is open, its line into History, its title once folded.
+  await expect(overview(page).getByTestId("overview-done")).toHaveCount(3);
   await doneHead.focus();
   await page.keyboard.press("End");
-  await expect(overview(page).getByTestId("overview-done").last()).toBeFocused();
+  await expect(overview(page).getByTestId("overview-done-more")).toBeFocused();
   await doneHead.click();
   await expect(doneHead).toHaveAttribute("aria-expanded", "false");
   await orchestrators.click();
@@ -517,7 +518,8 @@ test("Needs you counts the asks across every workspace, and lists them by worksp
   await expect(needs).not.toHaveAttribute("data-count", "0");
   const count = Number(await needs.getAttribute("data-count"));
   expect(count).toBeGreaterThan(1);
-  await expect(needs).toContainText(`${count} need you`);
+  // Its words name the kinds, or past two the count; its name always says the count, then kinds.
+  await expect(needs).toHaveAccessibleName(new RegExp(`^${count} need you: \\d+ \\w+`));
   // Its hover says its scope, every workspace, and how much of it is where by kind: here first,
   // then each other place, so the header needn't repeat it.
   await expect(needs).toHaveAttribute(
@@ -559,7 +561,8 @@ test("Needs you counts what the agents left waiting on you too, and goes to it",
     }),
   );
   await expect(needs).toHaveAttribute("data-count", "1");
-  await expect(needs).toContainText("1 needs you");
+  await expect(needs).toHaveText("1 step to take");
+  await expect(needs).toHaveAccessibleName(/^1 needs you: 1 step to take/);
 
   // Its Open thread goes to the thread it lives in, at the message that added it.
   await needs.click();
@@ -915,11 +918,13 @@ test("Settings → General's Overview sidebar row picks the mode the window lays
   // Hidden with the focus inside it on a page without a pane, the focus goes to Show sidebar.
   await page.getByTestId("usage-meter").click();
   await page.getByTestId("usage-limits-page").click();
-  await expect(page).toHaveURL(/\/usage$/);
-  // The Usage page is up, in the thread's place, and the popover gone with its focus handed back,
-  // before the focus goes into the overview.
-  await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/settings\/usage$/);
   await expect(page.getByRole("dialog", { name: "Subscription usage" })).toBeHidden();
+  // On from Settings → Usage to the token Usage page, which has no pane.
+  await page.getByTestId("usage-settings-tokens").click();
+  await expect(page).toHaveURL(/\/usage$/);
+  // The Usage page is up, in the thread's place, before the focus goes into the overview.
+  await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
   await overview(page).getByTestId("overview-needs-you").focus();
   await page.keyboard.press("ControlOrMeta+b");
   await expect(overview(page)).toHaveCount(0);
@@ -1477,7 +1482,7 @@ test("a worker's PRs show as chips under its row, with checks and the review bot
   await expect(chips.nth(0).locator("[data-checks]")).toHaveAttribute("data-checks", "fixing");
   await expect(chips.nth(0).locator("[data-review]")).toHaveAttribute("data-review", "blockers");
   await expect(chips.nth(0)).toHaveAccessibleName(
-    /PR #214 checks failing; its worker is fixing them.*2 blockers/,
+    /PR #214 checks failing; its worker is fixing them.*2 blocking findings/,
   );
   await expect(chips.nth(1)).toHaveAttribute("data-pr", "48");
   await expect(chips.nth(1)).toHaveAttribute("data-state", "draft");

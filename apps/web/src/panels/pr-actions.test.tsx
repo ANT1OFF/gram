@@ -202,7 +202,7 @@ describe("PrActions when blocked", () => {
         threadId={T}
         detail={detail()}
         merge="blocked"
-        bot={{ kind: "blockers", label: "Review bot: 2 blockers", text: "2 blockers" }}
+        bot={{ kind: "blockers", label: "Review bot: 2 blocking findings", text: "2 blockers" }}
         onBlocker={onBlocker}
       />,
       { prMergeOptions: options() },
@@ -216,7 +216,7 @@ describe("PrActions when blocked", () => {
     expect(lines).toEqual([
       "test (windows) failing",
       "Changes requested by reviewer",
-      "Review bot: 2 blockers",
+      "Review bot: 2 blocking findings",
     ]);
     const row = within(screen.getByTestId("pr-actions")).getAllByRole("button");
     expect(row.map((button) => button.textContent)).toEqual([

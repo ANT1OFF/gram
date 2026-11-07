@@ -53,12 +53,16 @@ export const limitPercent = (utilization: number): number =>
 export const meterText = ({ provider, limit }: TightestLimit): string =>
   `${PROVIDER_SHORT[provider]} ${limitPercent(limit.utilization)}% used${limit.credits === true ? " · credits" : ""}`;
 
+/** Why the meter shows the reading it does: the thread's agent's, or the highest of all. */
+type MeterWhy = { readonly why?: "agent" | "highest" | undefined };
+
 /**
- * The meter's hover, saying what its number is: "Highest usage: Codex 5-hour limit, 85%". Its
- * popover has every provider's windows.
+ * The meter's hover, saying what its number is: "This thread's agent: Claude Code weekly limit,
+ * 61%", or off a thread "Highest usage: Codex 5-hour limit, 85%". Its popover has every provider's
+ * windows.
  */
-export const meterHint = ({ provider, window, limit }: TightestLimit): string =>
-  `Highest usage: ${agentLabel(provider)} ${windowWord(window)} limit, ${limitPercent(limit.utilization)}%`;
+export const meterHint = ({ provider, window, limit, why }: TightestLimit & MeterWhy): string =>
+  `${why === "agent" ? "This thread's agent" : "Highest usage"}: ${agentLabel(provider)} ${windowWord(window)} limit, ${limitPercent(limit.utilization)}%`;
 
 /** The line under a window spent but carried on credits: a full window here is no stop. */
 export const CREDITS_TEXT = "Past the limit on credits; turns go on";
@@ -93,14 +97,14 @@ export const creditsText = (
 };
 
 /**
- * What the meter's name says to a screen reader: that its number is the highest usage of any
- * provider's window, and which one it is.
+ * What the meter's name says to a screen reader: whose usage its number is (the thread's agent's,
+ * or the highest of any provider's window), and which window.
  */
-export const meterLabel = (tightest: TightestLimit): string =>
-  `Highest subscription usage: ${agentLabel(tightest.provider)} ${windowWord(
-    tightest.window,
-  )} limit ${limitPercent(tightest.limit.utilization)}% used${
-    tightest.limit.credits === true ? ", continuing on credits" : ""
+export const meterLabel = (shown: TightestLimit & MeterWhy): string =>
+  `${shown.why === "agent" ? "This thread's agent's subscription usage" : "Highest subscription usage"}: ${agentLabel(shown.provider)} ${windowWord(
+    shown.window,
+  )} limit ${limitPercent(shown.limit.utilization)}% used${
+    shown.limit.credits === true ? ", continuing on credits" : ""
   }`;
 
 const FORECAST_ROUND_MS = 5 * 60 * 1000;

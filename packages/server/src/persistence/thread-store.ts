@@ -1,5 +1,4 @@
 import { AutomaticDreamState, completionBaseline } from "./automatic-dream-state.ts";
-import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import {
   type PrWakeFired,
   type PrWatchSeen,
@@ -67,6 +66,7 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { createHash, randomUUID } from "node:crypto";
@@ -88,6 +88,9 @@ import {
   readableRow,
   readableRows,
 } from "./stored.ts";
+import { durableCommit, durableSqliteLayer } from "./durable-commit.ts";
+import { makeMessageReceipts } from "./message-receipts.ts";
+import { MergeFence, type PendingMerge } from "./merge-fence.ts";
 import { DAY_MS } from "../zone-time.ts";
 
 /**
@@ -306,6 +309,7 @@ export interface HistoryRewind {
 }
 
 export interface ThreadStoreShape {
+  readonly messageReceipt: ReturnType<typeof makeMessageReceipts>;
   usageOverview(
     query: UsageOverviewQuery,
     history?: UsageHistoryInput,
@@ -339,6 +343,15 @@ export interface ThreadStoreShape {
     { readonly thread: Thread; readonly context: ThreadUpdateContext },
     ThreadNotFound
   >;
+  listMergeFences: Effect.Effect<ReadonlyArray<MergeFence>>;
+  putMergeFence(fence: MergeFence): Effect.Effect<void>;
+  /** Re-check authority and exact pending attempt atomically with its FULL commit. */
+  reconcileMergeFence(
+    fence: MergeFence,
+    expected: PendingMerge,
+    caller: ThreadId,
+    authorized: (thread: Thread | undefined, context: ThreadUpdateContext | undefined) => boolean,
+  ): Effect.Effect<boolean>;
   listThreads: Effect.Effect<ReadonlyArray<Thread>>;
   updateThread(
     id: ThreadId,
@@ -881,16 +894,6 @@ const ENCODED_DEFAULT_SETTINGS = Schema.encodeSync(Settings)(DEFAULT_SETTINGS);
 const bool = (n: number | bigint | null | undefined) => Number(n ?? 0) !== 0;
 
 /**
- * The connection's commits stop waiting for the disk. Every query runs on the event loop, and in
- * WAL mode `FULL` syncs the log on each commit, which a streaming reply makes several times a
- * second; `NORMAL` syncs at checkpoints only. The database can't be corrupted either way: what
- * `NORMAL` can lose is the last commits before the OS itself crashes or loses power.
- */
-const NormalSync = Layer.effectDiscard(
-  Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) => sql`PRAGMA synchronous = NORMAL`),
-);
-
-/**
  * SQLite's page cache, per connection: 16 MiB, up from its 2 MB default (~500 pages). One 380 KB
  * reply is ~95 pages, and an open transcript's window of turns several hundred, so the default holds
  * barely one thread's; the rest is read back from the OS on every page and resume. It grows only as
@@ -907,13 +910,11 @@ const CACHE_SIZE_KIB = 16_384;
  */
 const MMAP_SIZE_BYTES = 64 * 1024 * 1024;
 
-const PageCache = Layer.effectDiscard(
+const configurePageCache = (sql: SqlClient.SqlClient) =>
   Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
     yield* sql.unsafe(`PRAGMA cache_size = -${CACHE_SIZE_KIB}`);
     yield* sql.unsafe(`PRAGMA mmap_size = ${MMAP_SIZE_BYTES}`);
-  }),
-);
+  });
 
 /** What rolls back a workspace change by chat whose workspace moved; never leaves the store. */
 const WORKSPACE_MOVED = { _tag: "WorkspaceMoved" } as const;
@@ -936,8 +937,19 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const unreadable = makeUnreadableLog();
-      // Every public method is one statement or one top-level transaction; nothing nests.
+      const receiptScope = yield* Effect.scope;
+      // The data methods below use one statement or one top-level transaction; nothing nests.
+      // Message receipts own separate reservation/outcome transactions around the runtime action.
       const tx = <A, E, R>(effect: Effect.Effect<A, E, R>) => run(sql.withTransaction(effect));
+      const commitReservation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        durableCommit(sql, effect);
+
+      const durableFence = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        run(durableCommit(sql, effect));
+      const writeMergeFence = (fence: MergeFence) =>
+        sql`INSERT INTO merge_fences (key, data)
+        VALUES (${fence.key}, ${toJson(MergeFence, fence)})
+        ON CONFLICT (key) DO UPDATE SET data = excluded.data`.pipe(Effect.asVoid);
 
       /** A settings-by-chat audit row, and a workspace's own `settings` event; inside a `tx`. */
       const insertSettingsAudit = (entry: SettingsAuditEntry) =>
@@ -970,6 +982,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         Effect.gen(function* () {
           yield* sql`DELETE FROM closed_messages WHERE thread_id = ${id}`;
           yield* sql`DELETE FROM closed_turns WHERE thread_id = ${id}`;
+          yield* sql`DELETE FROM message_receipts WHERE thread_id = ${id}
+            AND thread_id NOT IN (SELECT id FROM threads)
+            AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
           yield* sql`DELETE FROM worker_reports WHERE thread_id = ${id}
             AND thread_id NOT IN (SELECT id FROM threads)`;
           yield* sql`DELETE FROM thread_plans WHERE thread_id = ${id}
@@ -1009,6 +1024,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             WHERE thread_id NOT IN (SELECT id FROM threads)
               AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
           yield* sql`DELETE FROM thread_plans
+            WHERE thread_id NOT IN (SELECT id FROM threads)
+              AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
+          yield* sql`DELETE FROM message_receipts
             WHERE thread_id NOT IN (SELECT id FROM threads)
               AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
           yield* sql`DELETE FROM wait_items
@@ -1647,6 +1665,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         );
 
       return ThreadStore.of({
+        messageReceipt: makeMessageReceipts(sql, receiptScope, commitReservation),
         setCompletion,
         updateCompletion,
         listQueue: (threadId) =>
@@ -1855,6 +1874,35 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               return { thread, context: yield* readThreadAuthority(thread, callerId) };
             }),
           ),
+        // Safety records must fail closed if corrupt; silently skipping one permits a duplicate.
+        listMergeFences: run(
+          sql<{ data: string }>`SELECT data FROM merge_fences`.pipe(
+            Effect.map((rows) =>
+              rows.map((row) => Schema.decodeUnknownSync(MergeFence)(JSON.parse(row.data))),
+            ),
+          ),
+        ),
+        putMergeFence: (fence) => durableFence(writeMergeFence(fence)),
+        reconcileMergeFence: (fence, expected, caller, authorized) =>
+          durableFence(
+            Effect.gen(function* () {
+              const rows = yield* sql<{
+                data: string;
+              }>`SELECT data FROM merge_fences WHERE key = ${fence.key}`;
+              const current =
+                rows[0] === undefined
+                  ? undefined
+                  : Schema.decodeUnknownSync(MergeFence)(JSON.parse(rows[0].data));
+              if (JSON.stringify(current?.pending) !== JSON.stringify(expected)) return false;
+              const owner = yield* readThread(expected.threadId).pipe(Effect.option);
+              const thread = Option.getOrUndefined(owner);
+              const context =
+                thread === undefined ? undefined : yield* readThreadAuthority(thread, caller);
+              if (!authorized(thread, context)) return false;
+              yield* writeMergeFence(fence);
+              return true;
+            }),
+          ),
         listThreads: run(
           Effect.gen(function* () {
             // The token first: a write landing between the two reads leaves the list under the
@@ -1901,6 +1949,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 yield* sql`DELETE FROM ${sql(table)} WHERE thread_id = ${id}`;
               }
               yield* sql`DELETE FROM threads WHERE id = ${id}`;
+              yield* sql`DELETE FROM message_receipts WHERE thread_id = ${id}
+                AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
               yield* unlinkOrchestration(id);
             }),
           ),
@@ -2025,7 +2075,13 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }),
         ),
         forgetClosed: (threadId) =>
-          run(sql`DELETE FROM closed_threads WHERE thread_id = ${threadId}`.pipe(Effect.asVoid)),
+          tx(
+            Effect.gen(function* () {
+              yield* sql`DELETE FROM closed_threads WHERE thread_id = ${threadId}`;
+              yield* sql`DELETE FROM message_receipts WHERE thread_id = ${threadId}
+                AND thread_id NOT IN (SELECT id FROM threads)`;
+            }),
+          ),
 
         listMessages: (threadId) =>
           run(
@@ -3160,24 +3216,36 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
   /**
    * A migrated SQLite database at `filename` (`:memory:` in tests). The server's database checkpoints its
    * WAL on a worker (`wal-checkpointer.ts`); the tests' leave that to SQLite, on the event loop.
+   * Ordinary commits use NORMAL (no sync per streamed update); safety reservations use FULL.
+   * The owned client replaces a connection whose durable-transaction cleanup failed.
    */
   static readonly layerSqlite = (
     filename: string,
-    options: { readonly checkpointOffLoop?: boolean | undefined } = {},
+    options: {
+      readonly checkpointOffLoop?: boolean | undefined;
+      readonly checkpointer?:
+        | Omit<WalCheckpointer.CheckpointerOptions, "connectionPolicy">
+        | undefined;
+    } = {},
   ): Layer.Layer<ThreadStore | SqlClient.SqlClient, unknown> => {
     // The server's own file only: an update seals it before main kills the rest (`update-seal.ts`).
     const seal = options.checkpointOffLoop === true ? UpdateSeal.layers(filename) : undefined;
-    return ThreadStore.layerNoDeps.pipe(
-      Layer.provideMerge(SearchCatchUp),
-      Layer.provideMerge(MigrationsLayer),
-      Layer.provideMerge(NormalSync),
-      Layer.provideMerge(PageCache),
-      Layer.provideMerge(
-        options.checkpointOffLoop === true ? WalCheckpointer.layer(filename) : Layer.empty,
-      ),
-      Layer.provideMerge(seal?.over ?? Layer.empty),
-      Layer.provideMerge(SqliteClient.layer({ filename })),
-      Layer.provideMerge(seal?.under ?? Layer.empty),
-    );
+    return Layer.suspend(() => {
+      const policy = WalCheckpointer.makeConnectionPolicy();
+      const initialize = (sql: SqlClient.SqlClient) =>
+        configurePageCache(sql).pipe(Effect.andThen(policy.apply(sql)));
+      return ThreadStore.layerNoDeps.pipe(
+        Layer.provideMerge(SearchCatchUp),
+        Layer.provideMerge(MigrationsLayer),
+        Layer.provideMerge(
+          options.checkpointOffLoop === true
+            ? WalCheckpointer.layer(filename, { ...options.checkpointer, connectionPolicy: policy })
+            : Layer.empty,
+        ),
+        Layer.provideMerge(seal?.over ?? Layer.empty),
+        Layer.provideMerge(durableSqliteLayer({ filename }, initialize)),
+        Layer.provideMerge(seal?.under ?? Layer.empty),
+      );
+    });
   };
 }

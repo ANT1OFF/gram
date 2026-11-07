@@ -21,6 +21,12 @@ const LABEL_GAP = 6;
  */
 export const CHEVRON = 20;
 const SEPARATOR = 9;
+/**
+ * What a picker's glyph takes (18 px, `size-icon-bar`, and the gap after it), drawn only alone,
+ * once its words give way: in full and short the words stand in its place (`PickerTrigger`).
+ * Constant for the same reason as `CHEVRON`: the measure can't see it while it isn't drawn.
+ */
+export const GLYPH = 24;
 /** Slack for rounding and the gaps between groups, so a fit is never a pixel short. */
 const SLACK = 6;
 /**
@@ -88,8 +94,16 @@ export function useToolbarLayout<T extends HTMLElement = HTMLDivElement>(
       const full = words("[data-toolbar-label]") ?? 0;
       const short = words("[data-toolbar-compact]") ?? full;
       const decor = rule + (node.querySelector('[role="combobox"]') === null ? 0 : CHEVRON);
-      const bare = shown - (size === "full" ? full + decor : size === "short" ? short : 0);
-      widths.current.set(id, { full: bare + full + decor, short: bare + short, icon: bare });
+      // A picker whose glyph draws only alone is that much narrower with its words.
+      const glyphless = node.querySelector("[data-toolbar-glyph]") === null ? 0 : GLYPH;
+      const bare =
+        shown -
+        (size === "full" ? full + decor - glyphless : size === "short" ? short - glyphless : 0);
+      widths.current.set(id, {
+        full: bare + full + decor - glyphless,
+        short: bare + short - glyphless,
+        icon: bare,
+      });
     }
     const sum = (selector: string) => {
       let total = 0;

@@ -32,6 +32,7 @@ import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { threadDisplayTitle } from "@/thread/thread-title";
 import { soloThreads } from "@/views/solo-threads";
+import { useSettleRule } from "@/views/use-settle-rule";
 import { useViewStore } from "@/views/view-store";
 import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 
@@ -127,13 +128,15 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
 
   // Each workspace's share of Needs you, as its line in the overview counts it.
   const counts = useNeedsYouCounts().byWorkspace;
+  const settle = useSettleRule();
   const solo = useMemo(
     () =>
       soloThreads(
         Object.values(byId),
         new Set(workspaces.map((state) => state.workspace.id as string)),
+        settle,
       ),
-    [byId, workspaces],
+    [byId, workspaces, settle],
   );
   const projectNames = useMemo(
     () => new Map(projects.map((project) => [project.id as string, project.name])),

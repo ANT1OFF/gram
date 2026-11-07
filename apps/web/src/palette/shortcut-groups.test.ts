@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { bindingRows, type BindingRow } from "@/keyboard/bindings";
 import { SHORTCUT_CATALOG } from "@/keyboard/catalog";
+import { formatKeys } from "@/keyboard/registry";
 
-import { groupShortcuts } from "./shortcut-groups";
+import { filterShortcuts, groupShortcuts } from "./shortcut-groups";
 
 const row = (
   id: string,
@@ -75,5 +76,43 @@ describe("groupShortcuts", () => {
     const ids = sections.flatMap((s) => s.rows.map((x) => x.id));
     expect(ids).toContain("terminal.find");
     expect(ids).toContain("approval.deny");
+  });
+});
+
+describe("filterShortcuts", () => {
+  const sections = groupShortcuts(bindingRows(SHORTCUT_CATALOG, {}));
+  const ids = (query: string) =>
+    filterShortcuts(sections, query, (keys) => formatKeys(keys, true)).flatMap((s) =>
+      s.rows.map((r) => r.id),
+    );
+
+  it("keeps everything for an empty query", () => {
+    expect(filterShortcuts(sections, "  ", (k) => k)).toEqual(sections);
+  });
+
+  it("matches labels word by word, whatever their case", () => {
+    expect(ids("find THREAD")).toEqual(["thread.find"]);
+  });
+
+  it("matches a group's name", () => {
+    expect(ids("terminal zoom")).toEqual([
+      "terminal.zoomIn",
+      "terminal.zoomOut",
+      "terminal.zoomReset",
+    ]);
+  });
+
+  it("matches keys as written and in words", () => {
+    expect(ids("⌘K")).toContain("palette.open");
+    expect(ids("cmd k")).toContain("palette.open");
+    // Next thread is ⌘⌥] on macOS and Ctrl+PgDn elsewhere: either way, found by its keys in words.
+    expect([...ids("option ]"), ...ids("ctrl pagedown")]).toContain("thread.next");
+  });
+
+  it("drops sections left empty", () => {
+    expect(filterShortcuts(sections, "diff", (k) => k).map((section) => section.group)).toEqual([
+      "App",
+      "Navigation",
+    ]);
   });
 });

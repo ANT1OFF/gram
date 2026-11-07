@@ -52,11 +52,12 @@ function SelectContent({
   alignOffset = 0,
   // Below the trigger, not over it: a list laid over a pill in a row of pills covers its neighbours.
   alignItemWithTrigger = false,
+  anchor,
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<
     SelectPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger"
+    "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger" | "anchor"
   >) {
   return (
     <SelectPrimitive.Portal>
@@ -66,6 +67,7 @@ function SelectContent({
         align={align}
         alignOffset={alignOffset}
         alignItemWithTrigger={alignItemWithTrigger}
+        {...(anchor === undefined ? {} : { anchor })}
         className="isolate z-50"
       >
         <SelectPrimitive.Popup

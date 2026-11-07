@@ -89,6 +89,7 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
     .getByTestId("overview-sidebar")
     .getByRole("button", { name: "New", exact: true });
   await add.click();
+  await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Team/ }).click();
   await expect(page).toHaveURL(/\/new-task$/);
   await expect(page.getByTestId("task-target")).toHaveText("api");
   await expect(page.getByTestId("task-autonomy")).toHaveCount(0);
@@ -96,10 +97,14 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await page.getByRole("radio", { name: "Task", exact: true }).click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
   await expect(page.getByTestId("task-target")).toHaveText("api");
-  // Beside Start, one summary: where it runs, which orchestrator supervises it, whether it merges.
+  // Beside Start: where it runs and whom it reports to, then, on a line of its own, whether its
+  // merge waits for you.
   const authority = page.getByTestId("task-authority");
-  await expect(authority).toHaveText(
-    "Runs in api · Supervised by the api orchestrator · Merges its pull request without asking you.",
+  await expect(authority.getByTestId("task-owner")).toHaveText(
+    "Runs in api · Reports to the api orchestrator",
+  );
+  await expect(authority.getByTestId("task-merge-approval")).toHaveText(
+    "Merge approval Automatic · Merges its pull request without asking you.",
   );
   // Where it runs is named before submit: the workspace, the repository and a new worktree.
   const where = page.getByRole("group", { name: "Where it runs" });
@@ -109,7 +114,7 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   // The workspace's autonomy, in words, with what it allows and a way to change it, under
   // Control and approvals.
   await expect(page.getByTestId("workspace-autonomy")).toHaveCount(0);
-  // The summary's merge part opens them, at the control that changes it.
+  // The merge approval's value opens them, at the control that changes it.
   await authority.getByTestId("task-authority-change").click();
   const autonomy = page.getByTestId("workspace-autonomy");
   await expect(autonomy.getByTestId("workspace-autonomy-trigger")).toBeFocused();
@@ -126,7 +131,9 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(autonomy.getByTestId("workspace-autonomy-trigger")).toHaveText(
     "Workspace: publish autonomy",
   );
-  await expect(authority).toContainText("Opens its pull request; merging waits for you.");
+  await expect(authority.getByTestId("task-merge-approval")).toHaveText(
+    "Merge approval Asks you · Opens its pull request; merging waits for you.",
+  );
   // Back up to Full asks first, since nothing asks after it.
   await levels.getByRole("radio", { name: "Full" }).click();
   await levels.getByRole("button", { name: "Turn on Full" }).click();
@@ -137,7 +144,7 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(levels).toBeHidden();
 
   // Started from here, the worker is the orchestrator's and running, not held as yours.
-  await expect(authority).toContainText("Supervised by the api orchestrator");
+  await expect(authority).toContainText("Reports to the api orchestrator");
   const hold = page.getByRole("switch", { name: "Start under my control" });
   await expect(hold).not.toBeChecked();
   await page.getByLabel("What needs doing").fill("Fix the retry test on Windows. It times out.");
@@ -163,6 +170,7 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
     .getByTestId("overview-sidebar")
     .getByRole("button", { name: "New", exact: true })
     .click();
+  await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Task/ }).click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
   // A repeat start to the same workspace folds who and where to one line; typing starts in the
   // brief, and who the worker answers to is said beside Start.
@@ -171,9 +179,7 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(page.getByTestId("new-summary-where")).toContainText("New worktree, new branch");
   await expect(page.getByRole("radiogroup", { name: "Who does it" })).toHaveCount(0);
   await expect(page.getByLabel("What needs doing")).toBeFocused();
-  await expect(page.getByTestId("task-authority")).toContainText(
-    "Supervised by the api orchestrator",
-  );
+  await expect(page.getByTestId("task-authority")).toContainText("Reports to the api orchestrator");
   await page.getByRole("button", { name: "Control and approvals" }).click();
   await page.getByRole("switch", { name: "Start under my control" }).click();
   await expect(page.getByTestId("task-authority")).toContainText(
@@ -190,8 +196,9 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(page.getByTestId("worker-banner-held")).not.toContainText("Paused");
   await expect(page.getByTestId("worker-hold")).toBeVisible();
 
-  // New opens on the choice used last, folded to its line, which unfolds on it.
+  // New's Task opens a repeat start folded to its line, which unfolds on it.
   await add.click();
+  await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Task/ }).click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
   await page
     .getByRole("group", { name: "Who does it and where it runs" })

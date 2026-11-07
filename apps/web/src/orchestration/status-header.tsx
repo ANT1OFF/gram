@@ -1,5 +1,4 @@
 import type { DeliveredDigest, Thread, WorkspaceId } from "@gram/contracts";
-import { Eye, GitMerge, Workflow } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
@@ -20,7 +19,7 @@ import { workersByTab } from "./workers-model";
 
 /** Every item's shape: a quiet button that opens the view behind its count. */
 const ITEM =
-  "flex h-7 min-w-7 shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-meta text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  "flex h-7 min-w-7 shrink-0 items-center gap-1 rounded-sm px-1.5 text-meta text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * A count in the foreground, its word muted. The word is always there, in full: short of room the
@@ -158,7 +157,7 @@ function StatusStrip({
       <div
         ref={trackItems}
         data-testid="status-items"
-        className="flex h-7 min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-4 overflow-hidden"
+        className="flex h-7 min-w-0 flex-1 flex-wrap items-center gap-x-inset gap-y-4 overflow-hidden"
       >
         <Item
           testId="status-running"
@@ -166,10 +165,6 @@ function StatusStrip({
           hint={<WorkersHint title="Running" workers={counts.running} />}
           onClick={() => useWorkersListStore.getState().show("now")}
         >
-          <Workflow
-            aria-hidden
-            className={cn("size-icon-row shrink-0", running > 0 && "text-status-working")}
-          />
           <Count n={running} word="running" />
         </Item>
         <Item
@@ -178,7 +173,6 @@ function StatusStrip({
           hint={<WorkersHint title="In review" workers={counts.inReview} />}
           onClick={() => openBoard(workspaceId)}
         >
-          <Eye aria-hidden className="size-icon-row shrink-0" />
           <Count n={review} word="in review" />
         </Item>
         <Item
@@ -187,10 +181,6 @@ function StatusStrip({
           hint={<WorkersHint title="Merged today" workers={counts.mergedToday} />}
           onClick={() => useHistoryStore.getState().show("workers")}
         >
-          <GitMerge
-            aria-hidden
-            className={cn("size-icon-row shrink-0", merged > 0 && "text-merged")}
-          />
           <Count n={merged} word="merged today" />
         </Item>
         {digests !== undefined && (

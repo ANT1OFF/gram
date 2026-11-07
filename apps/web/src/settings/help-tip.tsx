@@ -24,7 +24,7 @@ export function HelpTip({ label, help }: { label: string; help: ReactNode }) {
               aria-describedby={id}
               data-help-for={label}
               data-testid="setting-help"
-              className="inline-flex size-4 shrink-0 cursor-help items-center justify-center rounded-full text-muted-foreground/70 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="inline-flex size-4 shrink-0 cursor-help items-center justify-center rounded-full text-subtle outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           }
         >
@@ -48,15 +48,16 @@ export function HelpTip({ label, help }: { label: string; help: ReactNode }) {
 }
 
 /**
- * A setting's or a group's one line of description, shown under its name: at the body size in the
- * description colour, a step nearer the text than metadata, and no wider than a line of prose.
+ * A setting's or a group's one line of description, shown under its name: a row's second line
+ * (`text-meta`) in the description colour, so the name leads and what it does reads as secondary,
+ * no wider than a line of prose.
  */
 export function SettingDescription({ id, children }: { id?: string; children: ReactNode }) {
   return (
     <p
       id={id}
       data-setting-description=""
-      className="max-w-(--description-measure) text-body text-pretty text-description"
+      className="max-w-(--description-measure) text-meta text-pretty text-description"
     >
       {children}
     </p>

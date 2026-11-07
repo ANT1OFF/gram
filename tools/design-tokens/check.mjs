@@ -4,7 +4,8 @@
 // Flags, in apps/web/src: text sizes outside the type scale (Tailwind's own `text-xs` … `text-9xl`
 // and arbitrary `text-[13px]`), raw arbitrary spacing (`p-[7px]`, `gap-[2px]`), raw radii
 // (`rounded-[6px]`, Tailwind's literal `rounded`, `rounded-2xl` and up), Tailwind's own shadows
-// (`shadow-md`), and colours that skip the palette (`#hex`, `bg-[rgb(…)]`, `bg-black/75`).
+// (`shadow-md`), secondary text faded with opacity (`text-muted-foreground/70`), and colours that
+// skip the palette (`#hex`, `bg-[rgb(…)]`, `bg-black/75`).
 // Arbitrary values built from tokens (`p-[max(--spacing(2),var(--x))]`) pass.
 //
 // Existing violations are counted per file and token in `allowlist.json`; only what goes beyond
@@ -72,6 +73,13 @@ export const RULES = [
       "g",
     ),
     hint: () => "an elevation: shadow-raised, shadow-overlay or shadow-composer",
+  },
+  {
+    // Secondary text faded with opacity (`text-muted-foreground/70`) drops below the 4.5:1 text
+    // floor on a light page; the third text level is its own text-grade token.
+    id: "faded-text",
+    pattern: new RegExp(String.raw`${B}text-(?:muted-foreground|subtle)/\d+${E}`, "g"),
+    hint: () => "text-subtle (fg-subtle, text-grade) instead of fading text-muted-foreground",
   },
   {
     id: "color",

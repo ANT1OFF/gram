@@ -207,9 +207,10 @@ const CATEGORY: Record<MergeBlockerKind, string> = {
 /**
  * The blockers counted and named by category, worst first, for the summary's one heading:
  * `{ count: "3 reasons", categories: "checks, changes requested, review bot" }`. One failing check
- * is a "check"; `undefined` for none. Counted as reasons, never as blockers: "blockers" is the
- * review bot's word for its findings ("Review bot: 2 blockers", and the PR strip's "2 blockers"),
- * and the same word with another number beside it read as two counts of one thing.
+ * is a "check"; `undefined` for none. The one count of what blocks the merge, which the heading and
+ * the merge button both say: the review bot's tagged findings are "blocking findings" ("Review bot:
+ * 2 blocking findings", the PR strip's "2 blocking"), one reason among these, so no second number
+ * reads as a count of the same thing.
  */
 export const blockerSummaryOf = (
   blockers: readonly MergeBlocker[],

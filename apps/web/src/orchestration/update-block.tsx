@@ -84,7 +84,7 @@ export function UpdateBlock({
         <ChevronRight
           aria-hidden
           className={cn(
-            "size-icon-chip shrink-0 text-muted-foreground opacity-60 transition-transform duration-(--dur-fast) group-hover:opacity-100",
+            "size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-fast) group-hover:text-foreground",
             open && "rotate-90",
           )}
         />
@@ -99,6 +99,7 @@ export function UpdateBlock({
           ))}
           {words.digest.count !== undefined && <span> · {words.digest.count}</span>}
         </span>
+        <FoldWord open={open} />
         <Rule />
       </button>
       <Expand open={open} id={bodyId}>
@@ -168,7 +169,7 @@ function QuietUpdate({
         <ChevronRight
           aria-hidden
           className={cn(
-            "size-icon-chip shrink-0 text-muted-foreground opacity-60 transition-transform duration-(--dur-fast) group-hover:opacity-100",
+            "size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-fast) group-hover:text-foreground",
             open && "rotate-90",
           )}
         />
@@ -189,6 +190,7 @@ function QuietUpdate({
             </span>
           )}
         </span>
+        <FoldWord open={open} />
         <Rule />
       </button>
       <Expand open={open} id={bodyId}>
@@ -217,6 +219,22 @@ function UpdateTime({ time }: { time: string | undefined }) {
   return (
     <span data-testid="update-block-time" className="shrink-0 text-muted-foreground tabular-nums">
       {time}
+    </span>
+  );
+}
+
+/**
+ * What the line does, in words, after what it says: a cut preview ends in "…", so the fold says
+ * "More" rather than leaving the chevron alone to tell it opens. The toggle's name already says it.
+ */
+function FoldWord({ open }: { open: boolean }) {
+  return (
+    <span
+      aria-hidden
+      data-testid="update-block-fold"
+      className="shrink-0 font-medium text-muted-foreground group-hover:text-foreground"
+    >
+      {open ? "Less" : "More"}
     </span>
   );
 }

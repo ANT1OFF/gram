@@ -1,10 +1,7 @@
-import { Focus, X } from "lucide-react";
 import { useEffect, type RefObject } from "react";
 import { create } from "zustand";
 
-import { Button } from "@/components/ui/button";
 import { inboxDocked } from "@/inbox/inbox-store";
-import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { fitShell, useLayoutStore, type LayoutState } from "@/stores/layout";
 
 /** How long the reading place is held while the panel's width animates into focus and back. */
@@ -80,13 +77,11 @@ export function useKeepReadingPlace(root: RefObject<HTMLElement | null>) {
 
 /**
  * How a review held too narrow is answered, for this run of the window: Focus review is entered for
- * it until the user leaves focus or keeps it side by side (`declined`), and the offer under the tabs
- * stays away once dismissed (`dismissed`); both last until the review has room again. Not
+ * it until the user leaves focus (`declined`), which lasts until the review has room again. Not
  * remembered across launches.
  */
-export const useReviewRoom = create<{ declined: boolean; dismissed: boolean }>()(() => ({
+export const useReviewRoom = create<{ declined: boolean }>()(() => ({
   declined: false,
-  dismissed: false,
 }));
 
 /** How long the layout holds still before a cramped review takes focus: a drag or resize ends first. */
@@ -97,8 +92,8 @@ const SETTLE_MS = 400;
  * wide, the window narrowed, a review opened in a narrow window) goes into Focus review on its own,
  * which gives it the window and leaves the conversation a strip (Esc or Restore gives it back). It
  * waits for the layout to settle, so a drag of the panel's edge or the window's ends first. A window
- * that opens that way is left as it was, with the offer under the tabs: the conversation is what a
- * launch shows. Left while still short of room, focus is not taken again until the review has had
+ * that opens that way is left as it was, with Focus review offered beside the tabs: the
+ * conversation is what a launch shows. Left while still short of room, focus is not taken again until the review has had
  * room. Mounted once, by the shell.
  */
 export function useAutoReviewFocus() {
@@ -143,8 +138,7 @@ export function useAutoReviewFocus() {
       }
       if (!fit.reviewCramped) {
         armed = false;
-        if (room.declined || room.dismissed)
-          useReviewRoom.setState({ declined: false, dismissed: false });
+        if (room.declined) useReviewRoom.setState({ declined: false });
       } else if (!before.reviewCramped) armed = true;
       schedule();
     };
@@ -167,50 +161,4 @@ export function useAutoReviewFocus() {
       window.removeEventListener("pointercancel", up, true);
     };
   }, []);
-}
-
-/**
- * Under a review's tabs while it is held too narrow to read beside the conversation and the user
- * chose to keep it there: says so, and offers Focus review, which gives the review the window and
- * leaves the conversation a strip. Dismissed, it stays away until the review has room again and runs
- * short once more.
- */
-export function ReviewRoomOffer() {
-  const cramped = useLayoutStore((s) => fitShell(s).reviewCramped);
-  const toggle = useLayoutStore((s) => s.toggleReviewFocus);
-  const hint = useShortcutHint("review.focus");
-  const dismissed = useReviewRoom((s) => s.dismissed);
-  if (!cramped || dismissed) return null;
-  return (
-    <div
-      role="status"
-      data-testid="review-room-offer"
-      className="gram-fade flex min-w-0 items-center gap-2 border-b border-border bg-muted/40 py-1 ps-3 pe-1 text-meta text-muted-foreground"
-    >
-      <span className="min-w-0 flex-1 text-pretty">
-        Too narrow to read beside the conversation.
-      </span>
-      <Button
-        size="xs"
-        variant="outline"
-        className="shrink-0"
-        data-testid="review-room-focus"
-        onClick={toggle}
-      >
-        <Focus aria-hidden />
-        Focus review
-        {hint && <kbd className="font-sans text-caption text-muted-foreground">{hint}</kbd>}
-      </Button>
-      <Button
-        size="icon-xs"
-        variant="ghost"
-        className="shrink-0"
-        aria-label="Keep side by side"
-        title="Keep side by side"
-        onClick={() => useReviewRoom.setState({ declined: true, dismissed: true })}
-      >
-        <X aria-hidden />
-      </Button>
-    </div>
-  );
 }

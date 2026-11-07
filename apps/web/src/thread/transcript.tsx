@@ -28,6 +28,7 @@ import { AwaitingToolsProvider } from "./awaiting-tools";
 import { CompactingLine } from "./compaction-marker";
 import { StartingProgress } from "./starting-progress";
 import { StopReceiptLine, useStopReceipt } from "./stop-receipt";
+import { LimitWaitLine } from "./limit-wait-line";
 import { startingSteps } from "./starting-progress-model";
 import { EmptyThread } from "./empty-thread";
 import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
@@ -35,6 +36,7 @@ import { retryHiddenOf } from "./attempt-model";
 import { MessageBlock } from "./message-block";
 import { isToolPart, type Chapter } from "./parts";
 import { runningSubagents } from "./subagent-strip-model";
+import type { ScrollAnchor } from "./find-bar";
 import { ConversationRail } from "./table-of-contents";
 import { reuseFolds, turnFolds, type MessageFold } from "./tool-group-model";
 import { FileRefsProvider } from "./file-ref-link";
@@ -146,6 +148,22 @@ export function revealCard(root: ParentNode, chain: readonly string[]): boolean 
   return false;
 }
 
+/** Where to put the transcript back to: Esc in find, to where it stood when find opened. */
+export interface ScrollRestore {
+  readonly anchor: ScrollAnchor;
+  /** Changes on every request. */
+  readonly nonce: number;
+}
+
+/** The scroller of `threadId`'s transcript, in the focused pane if it is in two. */
+export function transcriptScroller(threadId: string): HTMLElement | undefined {
+  const views = [
+    ...document.querySelectorAll<HTMLElement>(`[data-thread-view=${JSON.stringify(threadId)}]`),
+  ];
+  const view = views.find((each) => each.dataset.focused === "true") ?? views[0];
+  return view?.querySelector<HTMLElement>("[data-transcript]") ?? undefined;
+}
+
 const NO_MESSAGES: readonly GramUIMessage[] = [];
 
 export function Transcript({
@@ -162,6 +180,7 @@ export function Transcript({
   chapters = [],
   onChapterJump,
   reveal,
+  restore,
   flashId,
   earlier = false,
   loadingEarlier = false,
@@ -188,6 +207,8 @@ export function Transcript({
   onChapterJump?: (messageId: string) => void;
   /** A search hit to scroll to the middle of the view. */
   reveal?: JumpRequest | undefined;
+  /** Where to scroll back to, e.g. as find closes with Esc. */
+  restore?: ScrollRestore | undefined;
   /** A message to highlight briefly, e.g. the search hit just scrolled to. */
   flashId?: string | undefined;
   /** The thread has older history than `messages`, which `onLoadEarlier` pages in. */
@@ -266,10 +287,14 @@ export function Transcript({
   }, []);
   // A stopped turn's receipt follows the last thing it said, not the composer far below it.
   const stopReceipt = useStopReceipt(threadId);
+  // So does a wait on a provider limit, and the line that says one ended early.
+  const limitWait = useThreadsStore((s) => s.byId[threadId]?.thread.limitWait);
+  const limitCleared = useThreadsStore((s) => s.byId[threadId]?.thread.limitCleared);
+  const limitLine = limitWait !== undefined || limitCleared !== undefined;
   // One line under the last row at a time: a compaction under way, else a fresh thread's start,
-  // else where a stopped turn ended.
+  // else where a stopped turn ended, else a limit's wait.
   const tailLine =
-    compaction !== undefined || startSteps !== undefined || stopReceipt !== undefined;
+    compaction !== undefined || startSteps !== undefined || stopReceipt !== undefined || limitLine;
   const endRoom = FADE_PX + (tailLine ? compactingRow : 0);
   // An orchestrator's stream is its own digest of the thread, with no turns to fold.
   const orchestrated = useOrchestratorStreamContext() !== undefined;
@@ -562,6 +587,44 @@ export function Transcript({
     frame = requestAnimationFrame(settle);
     return () => cancelAnimationFrame(frame);
   }, [reveal, virtualizer, setFollowing, revealFold]);
+
+  // Back to where find opened: the bottom, following again, or the row that was first in view at
+  // the same height, which a few frames keep there while rows above settle at their measured size.
+  useEffect(() => {
+    if (!restore) return;
+    const { anchor } = restore;
+    pendingJump.current = undefined;
+    virtualizer.cancelScroll();
+    manualGesture.current = undefined;
+    const index =
+      anchor.messageId === undefined
+        ? -1
+        : previousMessages.current.findIndex((m) => m.id === anchor.messageId);
+    if (anchor.atEnd || index === -1) {
+      if (!anchor.atEnd) return;
+      setFollowing(true);
+      virtualizer.scrollToEnd();
+      return;
+    }
+    setFollowing(false);
+    virtualizer.scrollToIndex(index, { align: "start" });
+    let frames = REVEAL_SETTLE_FRAMES;
+    let frame = 0;
+    const settle = () => {
+      const scroller = scrollRef.current;
+      const row = scroller?.querySelector<HTMLElement>(
+        `[data-message-id=${JSON.stringify(anchor.messageId)}]`,
+      );
+      if (scroller && row) {
+        const off =
+          row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.top;
+        if (Math.abs(off) > 1) scroller.scrollTop += off;
+      } else virtualizer.scrollToIndex(index, { align: "start" });
+      if (--frames > 0) frame = requestAnimationFrame(settle);
+    };
+    frame = requestAnimationFrame(settle);
+    return () => cancelAnimationFrame(frame);
+  }, [restore, virtualizer, setFollowing]);
 
   // This pane's transcript answers ⌥↑ / ⌥↓ while focus is in the pane, or nowhere in the focused one.
   const inPane = () => {
@@ -921,9 +984,17 @@ export function Transcript({
                         <CompactingLine compaction={compaction} />
                       ) : startSteps !== undefined ? (
                         <StartingProgress threadId={threadId} steps={startSteps} />
+                      ) : stopReceipt !== undefined ? (
+                        <StopReceiptLine threadId={threadId} receipt={stopReceipt} />
                       ) : (
-                        stopReceipt !== undefined && (
-                          <StopReceiptLine threadId={threadId} receipt={stopReceipt} />
+                        limitLine && (
+                          <LimitWaitLine
+                            thread={{
+                              id: threadId,
+                              ...(limitWait === undefined ? {} : { limitWait }),
+                              ...(limitCleared === undefined ? {} : { limitCleared }),
+                            }}
+                          />
                         )
                       )}
                     </div>

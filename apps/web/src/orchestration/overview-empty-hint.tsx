@@ -4,7 +4,8 @@ import { useWorkspacesQuery } from "./use-orchestration";
 
 /**
  * A ghost line in the overview while it has nothing to list, no workspace and no thread, so the
- * empty column says what will fill it. Words only: the way in is the welcome or New.
+ * empty column says what will fill it. Words only: the way in is beside it, the first run's Open or
+ * the home page's Open a repository.
  */
 export function OverviewEmptyHint() {
   const { workspaces, settled } = useWorkspacesQuery();
@@ -15,8 +16,8 @@ export function OverviewEmptyHint() {
       data-testid="overview-empty-hint"
       className="flex flex-col gap-0.5 px-2.5 py-1 text-meta text-muted-foreground"
     >
-      <span>Your workspaces appear here.</span>
-      <span>Open a repository to make the first one.</span>
+      <span>No workspaces yet</span>
+      <span>A repository you open becomes one, listed here.</span>
     </p>
   );
 }

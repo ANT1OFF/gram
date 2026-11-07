@@ -956,8 +956,8 @@ const openNewPrompt = (width: number) => async (page: Page) => {
   await page.waitForTimeout(400);
 };
 
-/** Each composer toolbar at a real window's width and at 1024 px. */
-const COMPOSER_TOOLBAR_SHOTS: readonly Shot[] = [1728, 1024].flatMap((width): Shot[] => [
+/** Each composer toolbar at a real window's width, at 1440 px and at 1024 px. */
+const COMPOSER_TOOLBAR_SHOTS: readonly Shot[] = [1728, 1440, 1024].flatMap((width): Shot[] => [
   {
     name: `composer-orchestrator-${width}`,
     title: `The orchestrator's composer at ${width} px: model · effort · mode · speed`,
@@ -988,9 +988,292 @@ const COMPOSER_TOOLBAR_SHOTS: readonly Shot[] = [1728, 1024].flatMap((width): Sh
   },
 ]);
 
+/**
+ * The first run in each readiness case a fresh account can be in, every one set here and never read
+ * from the machine's own CLIs: Codex alone, Claude Code alone, neither agent, and both with no GitHub
+ * CLI. `first-run` keeps its name, Codex alone, as the tour's first frame.
+ */
+const FIRST_RUN_CASES: readonly {
+  name: string;
+  title: string;
+  checks: Record<string, unknown>;
+}[] = [
+  {
+    name: "first-run",
+    title: "First run: pick a repository, Codex ready and Claude Code not installed",
+    checks: {
+      tools: [
+        { tool: "codex", found: true, version: "0.160.0" },
+        { tool: "git", found: true, version: "2.47.1" },
+        { tool: "gh", found: true, version: "2.63.0" },
+      ],
+      claudeSignIn: "notSignedIn",
+      codexSignIn: "signedIn",
+      ghSignedIn: true,
+      localAgentsInUse: ["codex"],
+    },
+  },
+  {
+    name: "first-run-claude-only",
+    title: "First run: Claude Code ready, Codex not installed",
+    checks: {
+      tools: [
+        { tool: "claude", found: true, version: "2.1.273" },
+        { tool: "git", found: true, version: "2.47.1" },
+        { tool: "gh", found: true, version: "2.63.0" },
+      ],
+      claudeSignIn: "signedIn",
+      codexSignIn: "notSignedIn",
+      ghSignedIn: true,
+    },
+  },
+  {
+    name: "first-run-no-cli",
+    title: "First run: neither Claude Code nor Codex installed yet",
+    checks: {
+      tools: [
+        { tool: "git", found: true, version: "2.47.1" },
+        { tool: "gh", found: true, version: "2.63.0" },
+      ],
+      claudeSignIn: "notSignedIn",
+      codexSignIn: "notSignedIn",
+      ghSignedIn: true,
+    },
+  },
+  {
+    name: "first-run-no-gh",
+    title: "First run: both agents ready, no GitHub CLI",
+    checks: {
+      tools: [
+        { tool: "claude", found: true, version: "2.1.273" },
+        { tool: "codex", found: true, version: "0.160.0" },
+        { tool: "git", found: true, version: "2.47.1" },
+      ],
+      claudeSignIn: "signedIn",
+      codexSignIn: "signedIn",
+      ghSignedIn: false,
+    },
+  },
+];
+
+const FIRST_RUN_SHOTS: readonly Shot[] = FIRST_RUN_CASES.map(({ name, title, checks }) => ({
+  name,
+  title,
+  open: async (page) => {
+    await seedMockSettings(page, {
+      appearance: { mode: "system" },
+      onboarding: { welcomeSeen: false },
+    });
+    await page.addInitScript(
+      (value) => sessionStorage.setItem("gram.mock.launchChecks", value),
+      JSON.stringify(checks),
+    );
+    // A true first run: no threads yet, so nothing in the sidebar can need anyone.
+    await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+    await page.getByTestId("welcome").waitFor();
+    await page.waitForTimeout(600);
+  },
+}));
+
+/**
+ * A fresh account past the first run with one new workspace and nothing in it yet: no workers,
+ * docs, files or history. Opens its orchestrator, with the panel open when `panel` is set.
+ */
+const openEmptyWorkspace = async (page: Page, panel: boolean) => {
+  await seedMockSettings(page, {
+    appearance: { mode: "system" },
+    onboarding: { welcomeSeen: true },
+    panel: { open: panel },
+  });
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.getByTestId("overview-sidebar").waitFor();
+  const orchestrator = await page.evaluate(async () => {
+    const mock = window.gramMock!;
+    const home = mock.world.projects()[0]!;
+    const state = await mock.saveWorkspace({
+      name: home.name,
+      projectIds: [home.id],
+      homeProjectId: home.id,
+    });
+    return (await mock.openOrchestrator({ workspaceId: state.workspace.id })).id;
+  });
+  // From the sidebar, not a reload: the mock keeps what it made in this page only.
+  await openOrchestrator(page, orchestrator);
+  await page.getByLabel("Message", { exact: true }).waitFor();
+};
+
+/** Every empty state a fresh account meets, each saying what goes there. */
+const EMPTY_STATE_SHOTS: readonly Shot[] = [
+  {
+    name: "empty-home",
+    title: "Home with no workspace, after Skip on the first run",
+    open: async (page) => {
+      await seedMockSettings(page, {
+        appearance: { mode: "system" },
+        onboarding: { welcomeSeen: true },
+      });
+      await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto("/");
+      await page.getByTestId("overview-sidebar").waitFor();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "empty-board",
+    title: "A new workspace's Board, with no features yet",
+    open: async (page) => {
+      await openEmptyWorkspace(page, false);
+      await page
+        .getByRole("radiogroup", { name: "View" })
+        .getByRole("radio", { name: /^Board\b/ })
+        .click();
+      await page.getByTestId("rail-board").waitFor();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "empty-workers-panel",
+    title: "A new workspace's Workers tab, with no workers yet",
+    open: async (page) => {
+      await openEmptyWorkspace(page, true);
+      await openPanelTab(page.getByTestId("right-panel"), "Workers");
+      await page.getByTestId("workers-panel").waitFor();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "empty-docs",
+    title: "A new workspace's Docs tab, with no docs yet",
+    open: async (page) => {
+      await openEmptyWorkspace(page, true);
+      await openPanelTab(page.getByTestId("right-panel"), "Docs");
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "empty-history",
+    title: "History's Workers on a fresh account, with no worker finished yet",
+    open: async (page) => {
+      await openEmptyWorkspace(page, false);
+      await page.getByTestId("overview-history").click();
+      // All lists the mock's past CLI sessions; no worker has finished yet.
+      await page.locator('[data-testid="history-filter"][data-history-filter="workers"]').click();
+      await page.getByTestId("history-empty").waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "empty-inbox",
+    title: "The Inbox on a fresh account, with nothing waiting",
+    open: async (page) => {
+      await openEmptyWorkspace(page, false);
+      await page
+        .locator('[data-testid="inbox-button"], [data-testid="overview-needs-you"]')
+        .first()
+        .click();
+      await page.getByTestId("inbox-empty").waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+];
+
+/** The realistic morning (`mock-realistic.ts`) on `/`, the right panel closed; what it made. */
+const openRealisticMorning = async (page: Page) => {
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.orchestration", "realistic"));
+  await seedMockSettings(page, { panel: { open: false } });
+  await page.setViewportSize({ width: 1728, height: 1095 });
+  await page.goto("/");
+  await page.getByTestId("app-shell").waitFor();
+  return page.evaluate(async () => {
+    const made = await window.gramMock!.startedRealistic();
+    if (made === undefined) throw new Error("the mock did not start with the realistic scenario");
+    return made;
+  });
+};
+
+/** The solo threads section opened, and `threadId`'s row in it. */
+const soloRowOf = async (page: Page, threadId: string) => {
+  const section = page.getByTestId("overview-section-solo");
+  const toggle = section.getByRole("button", { expanded: false }).first();
+  if (await toggle.isVisible()) await toggle.click();
+  const row = section.locator(`[data-testid="overview-solo"][data-thread-id="${threadId}"]`);
+  await row.waitFor();
+  return row;
+};
+
+const SNOOZE_SHOTS: readonly Shot[] = [
+  {
+    name: "worker-header-returning",
+    title:
+      "A worker's header for a user who has read what Take over does: no help line over the work (before: the line on every worker)",
+    open: async (page) => {
+      await seedMockSettings(page, { onboarding: { takeOverHintSeen: true } });
+      const made = await openRealisticMorning(page);
+      await openOrchestrator(page, made.orchestratorThreadId);
+      await threadRow(page, made.searchWorker).click();
+      await page.waitForURL(new RegExp(`/t/${made.searchWorker}$`));
+      await expect(page.getByTestId("turn-files-card")).toContainText("3 files changed");
+      await page.mouse.move(900, 500);
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "snooze-row-menu",
+    title: "A solo row's Come back later: Mark unread and the snooze times, in 24-hour time",
+    open: async (page) => {
+      await openRealisticMorning(page);
+      const row = await soloRowOf(page, "t-flaky");
+      await row.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Come back later" }).hover();
+      await page.getByTestId("menu-snooze-tomorrow").waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "snoozed-thread",
+    title:
+      "A snoozed thread: Snoozed until in its header with Unsnooze, and the folded Snoozed line",
+    open: async (page) => {
+      await openRealisticMorning(page);
+      // An idle thread: one that asks something comes back from its snooze at once.
+      const row = await soloRowOf(page, "t-deps");
+      await row.click();
+      await page.waitForURL(/\/t\/t-deps$/);
+      await page.evaluate(() =>
+        window.gramMock!.snooze("t-deps" as never, Date.parse("2026-06-19T09:00:00+02:00")),
+      );
+      await page.getByTestId("pane-snoozed").waitFor();
+      await page.getByTestId("overview-snoozed").getByRole("button").click();
+      await page.getByTestId("overview-snoozed").scrollIntoViewIfNeeded();
+      await page.mouse.move(900, 500);
+      await page.waitForTimeout(600);
+    },
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
+  ...SNOOZE_SHOTS,
   ...PANEL_TAB_SHOTS,
   ...COMPOSER_TOOLBAR_SHOTS,
+  {
+    name: "composer-model-open",
+    title:
+      "A solo thread at 1440 px, a draft typed, the model list open: it should not cover the draft",
+    open: async (page) => {
+      await openSoloComposer(1440)(page);
+      await page
+        .getByTestId("composer-toolbar")
+        .getByRole("combobox", { name: /^Model/ })
+        .click();
+      await page.getByTestId("model-picker").waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
   {
     name: "composer-diff-1024",
     title: "A solo thread at 1024 px beside a wide diff: the narrow composer keeps short values",
@@ -2512,6 +2795,43 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "command-palette-typed",
+    title: "The command palette, typed: each row's kind and a thread's status dot",
+    open: async (page) => {
+      await openThread(page);
+      await page.keyboard.press("ControlOrMeta+k");
+      const palette = page.getByTestId("command-palette");
+      await palette.getByRole("combobox").fill("e");
+      await palette.getByRole("option").first().waitFor();
+    },
+    element: (page) => page.getByTestId("command-palette"),
+  },
+  {
+    name: "find-in-thread",
+    title: "Find in thread (⌘F): the matches marked, the current one stronger, and its count",
+    open: async (page) => {
+      await openThread(page);
+      await page.keyboard.press("ControlOrMeta+f");
+      await page.getByLabel("Find in thread").fill("test");
+      await expect(page.getByTestId("find-status")).toHaveText(/ of |No matches/);
+    },
+  },
+  {
+    name: "shortcut-sheet",
+    title: "The keyboard shortcut sheet (⌘/), filtered",
+    open: async (page) => {
+      await openThread(page);
+      await page.getByLabel("Message", { exact: true }).click();
+      await page.keyboard.press("ControlOrMeta+Slash");
+      const sheet = page.getByTestId("shortcut-overlay");
+      await sheet.waitFor();
+      // Before this change the sheet had no filter field: it shows unfiltered there.
+      const filter = sheet.getByLabel("Filter shortcuts");
+      if ((await filter.count()) > 0) await filter.fill("thread");
+    },
+    element: (page) => page.getByTestId("shortcut-overlay"),
+  },
+  {
     name: "new-thread",
     title: "The new-thread form",
     open: async (page) => {
@@ -2783,6 +3103,25 @@ export const SHOTS: readonly Shot[] = [
       await openThread(page);
       await page.getByTestId("usage-meter").click();
       await page.getByRole("dialog", { name: "Subscription usage" }).waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "usage-from-meter",
+    title:
+      "The usage meter's Open Usage link followed: the limits page it opens, with pace, credits and history",
+    open: async (page) => {
+      await page.setViewportSize({ width: 1440, height: 1500 });
+      await openThread(page);
+      await page.getByTestId("usage-meter").click();
+      await page.getByTestId("usage-limits-page").click();
+      await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
+      // The page's history (after) or its token totals (before) have loaded.
+      await page
+        .getByTestId("usage-window-history")
+        .or(page.getByTestId("usage-tokens"))
+        .first()
+        .waitFor();
       await page.waitForTimeout(400);
     },
   },
@@ -3128,6 +3467,63 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("worker-report"),
   },
   {
+    name: "doc-reader",
+    title: "A published report read in the Docs tab: its title once, and a table at full height",
+    open: async (page) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto("/t/t-flaky");
+      await threadRow(page, "t-flaky").waitFor();
+      const made = await page.evaluate(async () => {
+        const scenario = await window.gramMock?.simulateOrchestration("report");
+        if (!scenario) throw new Error("the mock API isn't on this page");
+        return scenario;
+      });
+      // In the app rather than by URL: a reload would drop the mock's simulated workspace.
+      await openOrchestrator(page, made.orchestratorThreadId);
+      // The worker's name on its feature card opens its own view with the modifier.
+      await page
+        .getByRole("link", { name: "Return rate-limit headers" })
+        .first()
+        .click({ modifiers: ["ControlOrMeta"] });
+      await page.waitForURL(new RegExp(`/t/${made.workerThreadId}$`));
+      const title = "Rate-limit headers: implementation report";
+      await page.evaluate(
+        ({ thread, doc }) => window.gramMock!.simulatePublishDoc(thread as never, doc as never),
+        {
+          thread: made.workerThreadId,
+          doc: {
+            title,
+            content: [
+              `# ${title}`,
+              "",
+              "Every limited route now returns its limit, what is left and when it resets.",
+              "",
+              "## Findings",
+              "",
+              "| Area | Result | Next step |",
+              "| --- | --- | --- |",
+              "| Headers | Sent on every limited route | Document them |",
+              "| Retries | Clients wait for the reset | Check the CLI's backoff |",
+              "| Errors | 429 says when to retry | Add a regression test |",
+              "| Metrics | Hits counted per route | Chart them on the dashboard |",
+              "",
+              "## Verification",
+              "",
+              "Synthetic checks passed for each route. Live provider behaviour was not exercised.",
+            ].join("\n"),
+          },
+        },
+      );
+      await page
+        .getByTestId("doc-card")
+        .getByRole("button", { name: `Open ${title}` })
+        .click();
+      await page.getByTestId("doc-view").getByRole("table").waitFor();
+      await page.mouse.move(700, 120);
+      await page.waitForTimeout(400);
+    },
+  },
+  {
     name: "worker-view-held",
     title: "A worker you hold: its header, and how it says so",
     open: async (page) => {
@@ -3188,39 +3584,8 @@ export const SHOTS: readonly Shot[] = [
       await page.getByTestId("following-live").waitFor();
     },
   },
-  {
-    name: "first-run",
-    title: "First run: pick a repository, with the tools beside it",
-    open: async (page) => {
-      await seedMockSettings(page, {
-        appearance: { mode: "system" },
-        onboarding: { welcomeSeen: false },
-      });
-      // Codex alone, signed in: set here, never the machine's own CLIs.
-      await page.addInitScript(() =>
-        sessionStorage.setItem(
-          "gram.mock.launchChecks",
-          JSON.stringify({
-            tools: [
-              { tool: "codex", found: true, version: "0.160.0" },
-              { tool: "git", found: true, version: "2.47.1" },
-              { tool: "gh", found: true, version: "2.63.0" },
-            ],
-            claudeSignIn: "notSignedIn",
-            codexSignIn: "signedIn",
-            ghSignedIn: true,
-            localAgentsInUse: ["codex"],
-          }),
-        ),
-      );
-      // A true first run: no threads yet, so nothing in the sidebar can need anyone.
-      await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
-      await page.setViewportSize({ width: 1280, height: 800 });
-      await page.goto("/");
-      await page.getByTestId("welcome").waitFor();
-      await page.waitForTimeout(600);
-    },
-  },
+  ...FIRST_RUN_SHOTS,
+  ...EMPTY_STATE_SHOTS,
   {
     name: "new-workspace",
     title: "New workspace: repos, what it should work on, and autonomy",

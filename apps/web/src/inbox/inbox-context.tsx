@@ -55,7 +55,9 @@ export function InboxContext({ threadId }: { threadId: ThreadId }) {
               <span className="text-meta text-muted-foreground">
                 {turn.role === "user" ? "You" : speaker}
               </span>
-              <p className="line-clamp-3 text-body break-words">{turn.text}</p>
+              <p className="line-clamp-3 text-body break-words text-muted-foreground">
+                {turn.text}
+              </p>
             </li>
           ))}
         </ol>

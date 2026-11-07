@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowUp, ListPlus, Send, Square, SquarePen } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -67,6 +68,7 @@ import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
 import { AttachmentChips } from "./attachment-chips";
 import { ContextRing } from "./context-ring";
+import { onModelPickerAsked } from "./model-picker-request";
 import { PendingRestart } from "./pending-restart";
 import { DiffCommentChips } from "./diff-comment-chips";
 import { ghostOf, nextWord, stepped, typeIntoField, type Ghost } from "./ghost";
@@ -833,6 +835,11 @@ export function Composer({
   const models = useModels(model?.agent ?? "claude", model?.profileId);
   // Claude's built-in list is no fallback for a gateway agent's models.
   const refreshModels = useRefreshModels(model?.agent ?? "claude", model?.profileId);
+  // A rate-limited turn's "Try another model" opens this thread's picker, whichever pane has focus.
+  const onModelAsked = useCallback(
+    (open: () => void) => onModelPickerAsked(threadId, open),
+    [threadId],
+  );
   const provider = useProviderLabel(model?.agent ?? "claude", model?.profileId);
   const modelChoices = modelOptions(
     models,
@@ -1092,7 +1099,7 @@ export function Composer({
             <div ref={mirrorRef} aria-hidden data-composer-mirror className={GHOST_MIRROR}>
               <span data-testid="composer-ghost">
                 <span className="text-transparent">{text}</span>
-                <span className="text-muted-foreground/70">{ghost.rest}</span>
+                <span className="text-subtle">{ghost.rest}</span>
               </span>
               {/* Right after the reply rather than in the toolbar, which a narrow pane leaves no
                   room in: there the keys were cut to a sliver, and the reply read as a draft. */}
@@ -1198,6 +1205,7 @@ export function Composer({
               iconLabel={model && agentLabel(model.agent)}
               warning={modelWarning}
               onOpen={refreshModels}
+              onAsked={onModelAsked}
               labelled={labelOf("model")}
               search={
                 model && {

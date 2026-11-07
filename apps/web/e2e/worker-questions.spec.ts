@@ -217,7 +217,7 @@ for (const mode of ["dark", "light"] as const) {
     await page.setViewportSize({ width: 1440, height: 900 });
     const made = await start(page);
     await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
-    await expect(needsYou(page)).toContainText(/need(s)? you/);
+    await expect(needsYou(page)).toHaveAccessibleName(/need(s)? you: /);
     await openInbox(page);
     await row(page, made.workspaceId, "WQ1").click();
     await expect(

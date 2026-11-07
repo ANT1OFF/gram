@@ -89,7 +89,7 @@ const jumpSearch = async (page: Page) => {
 const steps: readonly Shot[] = [
   {
     name: "new-menu",
-    title: "Start: the sidebar's New opens the one New form",
+    title: "Start: the sidebar's New menu: Task, Team or Chat, each with its shortcut",
     open: async (page) => {
       await openApproval(page);
       await page.getByRole("button", { name: "New", exact: true }).click();
@@ -499,7 +499,8 @@ const steps: readonly Shot[] = [
   },
   {
     name: "limit-reset",
-    title: "Recover: a spent limit names its reset, Try again at HH:MM with Retry then and Usage",
+    title:
+      "Recover: a spent limit names its reset once, Usage limit · resets HH:MM, with Retry at HH:MM and Usage",
     open: async (page) => {
       await page.goto("/t/t-docs");
       await page.getByLabel("Message", { exact: true }).waitFor();
@@ -522,7 +523,7 @@ const steps: readonly Shot[] = [
           "Run the e2e suite",
         );
       });
-      await expect(page.getByTestId("agent-error-retry-time")).toContainText(/Try again at/);
+      await expect(page.getByTestId("agent-error-retry-then")).toHaveText(/^Retry at \d\d:\d\d$/);
     },
   },
   {

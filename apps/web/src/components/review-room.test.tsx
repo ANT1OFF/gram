@@ -2,9 +2,9 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PANEL_WIDTH, useLayoutStore } from "@/stores/layout";
+import { fitShell, PANEL_WIDTH, useLayoutStore } from "@/stores/layout";
 
-import { placeShift, ReviewRoomOffer, useAutoReviewFocus, useReviewRoom } from "./review-room";
+import { placeShift, useAutoReviewFocus, useReviewRoom } from "./review-room";
 
 const cramped = {
   windowWidth: 1024,
@@ -25,34 +25,40 @@ const cramped = {
 
 beforeEach(() => {
   useLayoutStore.setState(cramped);
-  useReviewRoom.setState({ declined: false, dismissed: false });
+  useReviewRoom.setState({ declined: false });
 });
 afterEach(cleanup);
 
-/** The panel's part: the hook that takes focus on its own, and the offer under the tabs. */
+/**
+ * The panel's part: the hook that takes focus on its own, and the offer the action beside the tabs
+ * makes while the review is too narrow beside the chat.
+ */
 function Room() {
   useAutoReviewFocus();
-  return useLayoutStore((s) => s.reviewFocus) ? null : <ReviewRoomOffer />;
+  const offered = useLayoutStore((s) => !s.reviewFocus && fitShell(s).reviewNarrow);
+  return offered ? <span data-testid="review-room-offer" /> : null;
 }
 
 /** The review with room: Diff beside the chat in a wide window. */
 const roomy = { windowWidth: 1728 };
 
-describe("ReviewRoomOffer", () => {
-  it("offers Focus review while the review is held too narrow, and takes it", () => {
+describe("the Focus review offer", () => {
+  it("is made while the review is held too narrow", () => {
     render(<Room />);
-    expect(screen.getByTestId("review-room-offer").textContent).toContain(
-      "Too narrow to read beside the conversation.",
-    );
-    fireEvent.click(screen.getByTestId("review-room-focus"));
-    expect(useLayoutStore.getState().reviewFocus).toBe(true);
+    expect(screen.getByTestId("review-room-offer")).toBeTruthy();
   });
 
-  it("says nothing while the review has room", () => {
+  it("is made for a narrow review that could be dragged wider, without taking focus", () => {
     useLayoutStore.setState({ reviewWidth: 300 });
     render(<Room />);
-    expect(screen.queryByTestId("review-room-offer")).toBeNull();
+    expect(screen.getByTestId("review-room-offer")).toBeTruthy();
     expect(useLayoutStore.getState().reviewFocus).toBe(false);
+  });
+
+  it("is not made while the review has room", () => {
+    useLayoutStore.setState(roomy);
+    render(<Room />);
+    expect(screen.queryByTestId("review-room-offer")).toBeNull();
   });
 });
 
@@ -102,12 +108,6 @@ describe("useAutoReviewFocus", () => {
     settle();
     expect(useLayoutStore.getState().reviewFocus).toBe(false);
     expect(screen.getByTestId("review-room-offer")).toBeTruthy();
-
-    // Kept side by side, the offer goes too.
-    fireEvent.click(screen.getByRole("button", { name: "Keep side by side" }));
-    expect(screen.queryByTestId("review-room-offer")).toBeNull();
-    settle();
-    expect(useLayoutStore.getState().reviewFocus).toBe(false);
 
     // Room again (the window widened), then short once more: focus is taken again.
     act(() => useLayoutStore.setState({ windowWidth: 1728 }));

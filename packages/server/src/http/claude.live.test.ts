@@ -220,6 +220,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
 
         const mark = events.length;
         yield* client["thread.send"]({
+          clientMessageId: crypto.randomUUID(),
           threadId: thread.id,
           input: {
             text: "Use the Task tool with subagent_type Explore and run_in_background true to list the files in this repo. When it reports back, reply DONE.",
@@ -471,6 +472,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
 
         mark = events.length;
         yield* client["thread.send"]({
+          clientMessageId: crypto.randomUUID(),
           threadId: thread.id,
           input: { text: "The codeword is now BLUE. Reply OK." },
         });
@@ -514,6 +516,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
 
         mark = events.length;
         yield* client["thread.send"]({
+          clientMessageId: crypto.randomUUID(),
           threadId: thread.id,
           input: { text: "What is the codeword? One word." },
         });
@@ -545,6 +548,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
 
         mark = events.length;
         yield* client["thread.send"]({
+          clientMessageId: crypto.randomUUID(),
           threadId: thread.id,
           input: { text: "The codeword is now BLUE. Reply OK." },
         });
@@ -565,6 +569,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
 
         mark = events.length;
         yield* client["thread.send"]({
+          clientMessageId: crypto.randomUUID(),
           threadId: fork.id,
           input: { text: "What is the codeword? One word." },
         });
@@ -612,7 +617,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
 
         // No allow rule for Read on purpose: before the grant, reading outside the checkout asks.
         mark = events.length;
-        yield* client["thread.send"](readCodeword);
+        yield* client["thread.send"]({ ...readCodeword, clientMessageId: crypto.randomUUID() });
         const card = yield* until(
           "the Read approval card before the grant",
           () => {
@@ -636,7 +641,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
         const granted = yield* runtimes.addDirectories(thread.id, [outside]);
         expect(granted.additionalDirectories).toEqual([outside]);
 
-        yield* client["thread.send"](readCodeword);
+        yield* client["thread.send"]({ ...readCodeword, clientMessageId: crypto.randomUUID() });
         // After the grant the same Read runs without a card, in the same session.
         const outcome = yield* until(
           "the Read to finish or ask for approval",
@@ -718,6 +723,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
         // The same command later in the session runs without asking again.
         mark = events.length;
         yield* client["thread.send"]({
+          clientMessageId: crypto.randomUUID(),
           threadId: thread.id,
           input: {
             text: `Use the Bash tool to run \`${command}\` once more, then reply with the single word: done`,
@@ -790,7 +796,11 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
 
         yield* client["thread.setModel"]({ threadId: thread.id, model: sonnetAt("high") });
         mark = events.length;
-        yield* client["thread.send"]({ threadId: thread.id, input: { text: probe } });
+        yield* client["thread.send"]({
+          clientMessageId: crypto.randomUUID(),
+          threadId: thread.id,
+          input: { text: probe },
+        });
         yield* settle(thread.id, mark);
         expect(replyText((yield* store.listMessages(thread.id)).at(-1))).toContain("effort=high");
       }).pipe(Effect.scoped, Effect.provide(LiveServer)),

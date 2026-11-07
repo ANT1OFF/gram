@@ -59,17 +59,34 @@ test("the popover forecasts a window that is filling, and dates a reading gone q
   const claude = popover.getByRole("region", { name: "Claude Code" });
   await expect(claude.getByTestId("usage-limit-age")).toHaveText("Updated 40m ago");
   await expect(claude.getByTestId("usage-limit-age")).toHaveAttribute("data-stale", "true");
+  // An old reading says so beside its age and keeps its figures at full strength, not dimmed.
+  await expect(claude.getByTestId("usage-limit-stale")).toHaveText("Old reading");
+  await expect(codex.getByTestId("usage-limit-stale")).toHaveCount(0);
+  const rowOpacity = await claude
+    .getByTestId("usage-limit-row")
+    .first()
+    .evaluate((el) => getComputedStyle(el).opacity);
+  expect(rowOpacity).toBe("1");
   await expect(claude.getByTestId("usage-limit-forecast")).toHaveCount(0);
 
   // Each provider dates its reading the same way, in muted words: an old one is no amber alarm.
   const ages = popover.getByTestId("usage-limit-age");
   const colours = await ages.evaluateAll((all) => all.map((el) => getComputedStyle(el).color));
   expect(new Set(colours).size).toBe(1);
-  // The window the title bar shows is marked, and named at the foot.
-  await expect(codex.locator('[data-testid="usage-limit-row"][data-shown]')).toHaveAttribute(
+  // The window the title bar shows is marked, and named at the foot: on this Claude thread,
+  // Claude's closest, though Codex's is higher.
+  await expect(claude.locator('[data-testid="usage-limit-row"][data-shown]')).toHaveAttribute(
     "data-window",
-    "fiveHour",
+    "weekly",
   );
+  await expect(codex.locator('[data-testid="usage-limit-row"][data-shown]')).toHaveCount(0);
+  await expect(popover.getByTestId("usage-limits-foot")).toContainText(
+    "The title bar shows this thread's agent: Claude Code weekly.",
+  );
+  // Off a thread, it is the highest of all, and says so.
+  await page.keyboard.press("Escape");
+  await page.goto("/usage");
+  await page.getByTestId("usage-meter").click();
   await expect(popover.getByTestId("usage-limits-foot")).toContainText(
     "The title bar shows the highest: Codex 5-hour.",
   );

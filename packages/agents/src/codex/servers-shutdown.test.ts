@@ -1,15 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { AgentUnavailable } from "@gram/contracts";
-import {
-  chmodSync,
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  watch,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import * as Effect from "effect/Effect";
@@ -23,7 +15,28 @@ import { CodexServers, CodexServersLive } from "./servers.ts";
 // Its second ordinary RPC completes then ends the child; no account/provider is consulted.
 const fixture = (exitCode: number, hangInitialize = false) => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "gram-codex-shutdown-")));
-  const pidFile = join(root, "initialize.pid");
+  const initializeSocket = join(root, "initialize.sock");
+  const initialized = Promise.withResolvers<number>();
+  // Filesystem notifications can be lost under load. A stream handshake also buffers readiness
+  // if initialize arrives before the test awaits it, and never exposes a partially written pid.
+  const listener = hangInitialize
+    ? createServer((socket) => {
+        let pid = "";
+        socket.setEncoding("utf8");
+        socket.on("data", (data: string) => (pid += data));
+        socket.on("end", () => initialized.resolve(Number(pid)));
+      })
+    : undefined;
+  const listening =
+    listener === undefined
+      ? Promise.resolve()
+      : new Promise<void>((resolve, reject) => {
+          listener.once("error", reject);
+          listener.listen(initializeSocket, () => {
+            listener.removeListener("error", reject);
+            resolve();
+          });
+        });
   const binary = join(root, "codex"),
     shell = join(root, "shell");
   writeFileSync(
@@ -33,10 +46,9 @@ if (process.argv.includes("--version")) { console.log("codex-cli 0.160.0"); proc
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
   const message = JSON.parse(line);
   if (message.method === "initialize" && ${hangInitialize}) {
-    // Renamed into place: a watcher woken by the file's creation would read it empty, as pid 0.
-    const fs = require("node:fs");
-    fs.writeFileSync(${JSON.stringify(`${pidFile}.tmp`)}, String(process.pid));
-    fs.renameSync(${JSON.stringify(`${pidFile}.tmp`)}, ${JSON.stringify(pidFile)});
+    const socket = require("node:net").createConnection(${JSON.stringify(initializeSocket)}, () => {
+      socket.end(String(process.pid));
+    });
     return;
   }
   if (message.id === undefined) return;
@@ -58,7 +70,14 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
   );
   chmodSync(binary, 0o755);
   chmodSync(shell, 0o755);
-  return { root, binary, shell, pidFile };
+  const close = async () => {
+    if (listener !== undefined)
+      await new Promise<void>((resolve, reject) =>
+        listener.close((error) => (error ? reject(error) : resolve())),
+      );
+    rmSync(root, { recursive: true, force: true });
+  };
+  return { binary, shell, listening, initialized: initialized.promise, close };
 };
 
 const keys = Layer.succeed(GatewayKeyProvider)({
@@ -77,19 +96,12 @@ describe.skipIf(process.platform === "win32")("owned CodexServers exit observati
       (f) =>
         Effect.gen(function* () {
           const servers = yield* CodexServers;
-          const initialized = Effect.callback<number>((resume) => {
-            const read = () => {
-              if (existsSync(f.pidFile))
-                resume(Effect.sync(() => Number(readFileSync(f.pidFile, "utf8"))));
-            };
-            const watcher = watch(f.root, read);
-            read();
-            return Effect.sync(() => watcher.close());
-          });
+          yield* Effect.promise(() => f.listening);
           const opening = yield* Effect.forkScoped(servers.acquire(undefined, "user"));
-          const pid = yield* initialized.pipe(Effect.timeout("5 seconds"));
+          const pid = yield* Effect.promise(() => f.initialized).pipe(Effect.timeout("5 seconds"));
           // `process.kill(0, 0)` signals this process's own group, so it never throws.
           expect(pid).toBeGreaterThan(0);
+          expect(() => process.kill(pid, 0)).not.toThrow();
           yield* Fiber.interrupt(opening);
           expect(yield* servers.running).toEqual([]);
           yield* servers.retireAll;
@@ -103,7 +115,7 @@ describe.skipIf(process.platform === "win32")("owned CodexServers exit observati
             }).pipe(Layer.provide(keys)),
           ),
         ),
-      (f) => Effect.sync(() => rmSync(f.root, { recursive: true, force: true })),
+      (f) => Effect.promise(f.close),
     ),
   );
 
@@ -147,7 +159,7 @@ describe.skipIf(process.platform === "win32")("owned CodexServers exit observati
               ),
             );
           },
-          (f) => Effect.sync(() => rmSync(f.root, { recursive: true, force: true })),
+          (f) => Effect.promise(f.close),
         ),
     );
   }

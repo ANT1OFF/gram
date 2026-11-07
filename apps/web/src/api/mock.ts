@@ -633,6 +633,10 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     const { compaction: _was, ...rest } = runtime.summary;
     runtime.summary = { ...rest, status, ...(compaction === undefined ? {} : { compaction }) };
     const threadId = runtime.summary.thread.id;
+    // A snoozed thread that asks something or fails is back then, as the server brings it.
+    if (status === "needsApproval" || status === "needsInput" || status === "error") {
+      this.#endSnooze(threadId);
+    }
     this.#emit({
       type: "thread.status",
       threadId,
@@ -1530,6 +1534,40 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
 
   async markUnread(threadId: ThreadId, unread: boolean) {
     this.#update(this.#runtime(threadId), { unread });
+  }
+
+  /** Per thread, the timer that ends its snooze, as the server's wakes do. */
+  readonly #snoozes = new Map<ThreadId, ReturnType<typeof setTimeout>>();
+
+  async snooze(threadId: ThreadId, until: number | null) {
+    const runtime = this.#runtime(threadId);
+    clearTimeout(this.#snoozes.get(threadId));
+    this.#snoozes.delete(threadId);
+    const { snoozedUntil: _was, ...rest } = runtime.summary.thread;
+    if (until === null) {
+      runtime.summary = { ...runtime.summary, thread: rest };
+      this.#emit({ type: "thread.upsert", thread: rest });
+      return rest;
+    }
+    if (until <= Date.now()) throw new Error("That time has already passed");
+    this.#update(runtime, { snoozedUntil: until });
+    this.#snoozes.set(
+      threadId,
+      setTimeout(() => this.#endSnooze(threadId), until - Date.now()),
+    );
+    return runtime.summary.thread;
+  }
+
+  /** A snooze due, or its thread asking something first: back, and unread. */
+  #endSnooze(threadId: ThreadId) {
+    const runtime = this.#threads.get(threadId);
+    clearTimeout(this.#snoozes.get(threadId));
+    this.#snoozes.delete(threadId);
+    if (runtime?.summary.thread.snoozedUntil === undefined) return;
+    const { snoozedUntil: _was, ...rest } = runtime.summary.thread;
+    const thread = { ...rest, unread: true };
+    runtime.summary = { ...runtime.summary, thread };
+    this.#emit({ type: "thread.upsert", thread });
   }
 
   readonly #babysit = createMockBabysit({

@@ -18,7 +18,7 @@ import type { WidthBounds } from "@/stores/layout";
 
 /**
  * The docked Inbox's column. `min` holds its list and a detail pane wide enough for an answer's
- * choices; it opens there, its list compact, until it is dragged wider.
+ * choices; it opens there until it is dragged wider.
  */
 export const INBOX_DOCK_WIDTH: WidthBounds = { min: 600, max: 4096, default: 600 };
 
@@ -39,10 +39,16 @@ export const INBOX_CHAT_COMFORT_WIDTH = 760;
 export const INBOX_DOCK_AUTO_MAX = 880;
 
 /**
- * The Inbox's request list, beside the detail. Its `default` is the full list's, which the dialog
- * opens at; docked, it opens compact (`INBOX_LIST_COMPACT`), leaving the detail and the chat room.
+ * The Inbox's request list, beside the detail. Its `default` is the dialog's; docked, it opens at
+ * `INBOX_LIST_DOCKED`, which still leaves the detail its 18rem at the dock's minimum.
  */
 export const INBOX_LIST_WIDTH: WidthBounds = { min: 160, max: 480, default: 352 };
+
+/**
+ * The docked list's width: the full list, two lines a request (its title, then where it is from,
+ * its kind and its age), wide enough that a request is known before it is opened.
+ */
+export const INBOX_LIST_DOCKED = 288;
 
 /** The compact list's width: one line a request, its kind and title. */
 export const INBOX_LIST_COMPACT = 208;
@@ -50,12 +56,14 @@ export const INBOX_LIST_COMPACT = 208;
 /** Below this the list is compact, however it got there: a click on Compact list or a drag. */
 export const INBOX_LIST_COMPACT_BELOW = 260;
 
+/** The list's width undragged: the docked or the dialog default. */
+export const inboxListDefault = (docked: boolean): number =>
+  docked ? INBOX_LIST_DOCKED : INBOX_LIST_WIDTH.default;
+
 /** The list's width: the dragged one, else the docked or dialog default. */
 export const inboxListWidth = (dragged: number | undefined, docked: boolean): number =>
   dragged === undefined
-    ? docked
-      ? INBOX_LIST_COMPACT
-      : INBOX_LIST_WIDTH.default
+    ? inboxListDefault(docked)
     : Math.round(Math.min(INBOX_LIST_WIDTH.max, Math.max(INBOX_LIST_WIDTH.min, dragged)));
 
 /** The docked Inbox, by the attribute only it carries; the dialog has none. */

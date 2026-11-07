@@ -13,7 +13,9 @@ import {
   REVIEW_CHAT_MIN_WIDTH,
   REVIEW_CHAT_WIDTH,
   REVIEW_READ_WIDTH,
+  REVIEW_STRIP_RAIL,
   REVIEW_STRIP_WIDTH,
+  reviewStripWidth,
   REVIEW_WIDTH_SHARE,
   sanitizeBoardFilters,
   OVERVIEW_FOLDED_BY_DEFAULT,
@@ -159,8 +161,14 @@ describe("review width", () => {
     expect(held.panelWidth).toBe(1024 - OVERVIEW_RAIL_WIDTH - REVIEW_CHAT_MIN_WIDTH);
     expect(held.panelWidth).toBeLessThan(REVIEW_READ_WIDTH);
     expect(held.reviewCramped).toBe(true);
-    // Narrowed by choice, below its bound, it isn't held there.
-    expect(fit({ ...rail, panelTab: "diff", reviewWidth: 300 }).reviewCramped).toBe(false);
+    // Narrowed by choice, below its bound, it isn't held there, but it is narrow: Focus review is
+    // offered in words beside its tabs.
+    expect(fit({ ...rail, panelTab: "diff", reviewWidth: 300 })).toMatchObject({
+      reviewCramped: false,
+      reviewNarrow: true,
+    });
+    expect(held.reviewNarrow).toBe(true);
+    expect(fit({ panelTab: "diff", windowWidth: 1728 }).reviewNarrow).toBe(false);
     // The usual width at that window fits beside the chat.
     expect(fit({ ...rail, panelTab: "diff" }).reviewCramped).toBe(false);
     // Wide enough for both, no offer however wide the drag.
@@ -210,6 +218,18 @@ describe("review width", () => {
     });
     s().toggleReviewFocus();
     expect(fit()).toMatchObject({ sidebar: "full", reviewFocus: false });
+  });
+
+  it("leaves a readable strip of the chat in focus, and a rail in a window too narrow for it", () => {
+    expect(reviewStripWidth(1440)).toBe(REVIEW_STRIP_WIDTH);
+    expect(reviewStripWidth(1024)).toBe(REVIEW_STRIP_WIDTH);
+    expect(reviewStripWidth(800)).toBe(REVIEW_STRIP_RAIL);
+    s().setPanelTab("diff");
+    s().setReviewFocus(true);
+    expect(fit({ windowWidth: 800 })).toMatchObject({
+      panelWidth: 800 - REVIEW_STRIP_RAIL,
+      reviewFocus: true,
+    });
   });
 
   it("leaves focus for another tab, a hidden panel, focus mode or another page", () => {
@@ -355,7 +375,9 @@ describe("panel requests", () => {
     s().toggleFocusMode();
     s().requestPanel({ threadId: A, panel: "pr", target: "checks" }, A);
     expect(s()).toMatchObject({ panelTab: "pr", panelOpen: true, focusMode: false });
-    expect(s().panelTargets).not.toHaveProperty("pr");
+    // Kept for the PR panel, which opens its Overview and finds the file it names, if any.
+    expect(s()).toMatchObject({ prPanelTab: "overview" });
+    expect(s().panelTargets.pr).toMatchObject({ threadId: A, target: "checks" });
   });
 
   it("drops a stale target on a bare request and consumes only the matching request", () => {

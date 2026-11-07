@@ -7,6 +7,8 @@ import {
   type AgentKind,
   type LimitReport,
   type SubscriptionLimitReport,
+  type LimitHistoryDays,
+  type UsageLimitHistory,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -18,6 +20,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { EventHub } from "../events/event-hub.ts";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
+import { makeLimitHistory } from "./limit-history.ts";
 
 type UsageLimitEvent = Extract<ServerEvent, { type: "usageLimit" }>;
 
@@ -63,6 +66,11 @@ export interface UsageLimitReadingsShape {
     login: Pick<LimitRecord, "agent" | "profileId">,
     since: number,
   ) => Effect.Effect<void>;
+  /**
+   * The subscription windows' and credit balances' kept history over the last `days`
+   * (`limit-history.ts`): every reading `current` took in, downsampled into quarter hours.
+   */
+  readonly history: (days: LimitHistoryDays) => Effect.Effect<UsageLimitHistory>;
 }
 
 /**
@@ -89,6 +97,8 @@ export class UsageLimitReadings extends Context.Service<
         const written = new Map<string, { readonly at: number; readonly rest: string }>();
 
         const now = yield* Clock.currentTimeMillis;
+        const history = makeLimitHistory(sql);
+        yield* history.prune(now);
         const rows = yield* run(
           sql<{ key: string; data: string }>`SELECT key, data FROM usage_limits`,
         );
@@ -120,6 +130,7 @@ export class UsageLimitReadings extends Context.Service<
               ...reading,
             };
             records.set(key, next);
+            yield* history.sample(next, at);
             const last = written.get(key);
             const rest = restOf(next);
             if (last !== undefined && last.rest === rest && at - last.at < LIMIT_WRITE_EVERY_MS) {
@@ -193,6 +204,10 @@ export class UsageLimitReadings extends Context.Service<
           record: (event) => lock.withPermits(1)(record(event)),
           replaceSubscription,
           changes: Stream.fromPubSub(changed),
+          history: (days) =>
+            lock.withPermits(1)(
+              Clock.currentTimeMillis.pipe(Effect.flatMap((at) => history.read(days, at))),
+            ),
           admitted: (login, since) =>
             lock
               .withPermits(1)(

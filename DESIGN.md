@@ -46,17 +46,19 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   small marks (a key cap, a bar, a swatch) take 4 px (`radius-2xs`).
 - **Rows:** 36 px by default (`--row-comfortable`), 30 px in compact density (`--row-compact`).
   Lists, menus and the sidebar share one row shape. Every sidebar row, whatever it lists (a
-  workspace, a worker, a solo thread, a PR, a Done item), is its mark and title (`ROW`,
-  `ROW_TITLE`), then one muted status line (`ROW_STATUS`) with what trails it at the right edge: a
+  workspace, a worker, a solo thread, a PR, a Done item), is its mark (a Done item's is its
+  state's dot, as a worker's is) and title (`ROW`, `ROW_TITLE`), then one muted status line (`ROW_STATUS`) with what trails it at the right edge: a
   time, or its badges (a worker's PR chips) only while they fit beside the words: the status wins,
-  and the row's hover names the PR. The title has the row's whole width and wraps to a second
-  line before it is cut at its end, so its words are never split in the middle; lines are 20 px
-  (48 px a one-line title's row with its padding). What needs you is listed first, and Done
-  shows five rows before the rest fold behind "N more". Marks centre on one column and titles
-  start on one edge, the pill, Search, section titles and Open History included.
+  and the row's hover names the PR. The title has the row's whole width on one line, cut at its
+  end (never its middle) with the whole of it on hover, so every row is the same 48 px (two 20 px
+  lines with its padding) and a list of them reads as even rows. What needs you is listed first.
+  Done shows the three chats that finished last, solo threads that settled on their own
+  included, then "N more in History", which opens History on its Done chip: History is old
+  work's one home, and the palette hands its matches there too. Marks centre on one column and
+  titles start on one edge, the pill, Search, section titles and Open History included.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings and between a reply's blocks, 16 px between sections and at a
-  pane's edges. A settings row takes 12 px above and below, and a page's groups sit 24 px apart
+  pane's edges. A settings row takes 8 px above and below, and a page's groups sit 24 px apart
   (`SETTINGS_STACK`) on every page. A table stops at its columns' width, so its rules don't run
   on into empty space.
 - **Separate by surface and space before lines.** A group of rows is a raised card whose fill is
@@ -64,17 +66,20 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   and light, whose raised step is faint, keeps a hairline. Inside it a hairline between rows is
   the only line. Don't add a rule, a card edge or a glyph where space or the surface step already
   says it.
-- **Settings descriptions** (a setting's or a group's line under its name) are `text-body` in
-  `text-description` (`--fg-description`, the secondary `fg-muted`, so the name and what it does
-  read as two levels), no wider than
-  `--description-measure`; a settings segment is a full 32 px target (`SEGMENT_ROOMY`). A row takes
-  16 px above and below. Its main control (a segment, a field, a switch) leads; a row of small
+- **Settings descriptions** (a setting's line under its name, and a group's line beside its
+  title) are one short line of `text-meta` in `text-description` (`--fg-description`, the
+  secondary `fg-muted`, so the name and what it does read as two levels), no wider than
+  `--description-measure`; a settings segment is a full 32 px target (`SEGMENT_ROOMY`). A row's
+  "Saved" and Undo show just before its control, where the change was made. Its main control (a segment, a field, a switch) leads; a row of small
   secondary toggles beside it (Sidebar sections' checkboxes) is `text-body`, muted until checked.
 - **Titles and metadata:** a title at 14 to 15 px in `fg` (`text-body-strong` or `text-reading`),
   its metadata (where it is from, its state, a time, a chip's word) at 13 px in `fg-muted`
   (`text-meta`), never smaller. `text-caption` is only for what is never read for meaning: a key
-  cap, a count badge, a footer's key legend. A title wraps to two lines before it is cut short at
-  its end, the sidebar's included, and its hover says the whole of it. Metadata a heading or the whole list already says is left out: no repo on each
+  cap, a count badge, a footer's key legend. A third, quieter level (a hint, a step's evidence, a
+  pending line) is `text-subtle` (`fg-subtle`), which holds the text floor like `fg-muted`; never
+  fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A title wraps to two lines before it is cut short at
+  its end, and its hover says the whole of it; a sidebar row's title keeps to one line, so its
+  rows stay even. Metadata a heading or the whole list already says is left out: no repo on each
   row when every row has the same one, no workspace under its own heading.
 - **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,
   `ShortcutKbd cap`), never a faded one; elsewhere a hint goes in the tooltip.
@@ -87,9 +92,13 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   The sidebar keeps the width the user gives it, and its edge shows a grip while the pointer is
   over the column.
 - **Icons: Lucide** at one optical stroke, never as decoration and never emoji. `--icon-stroke`
-  (1.75) is the stroke at 16 px; each size token takes the stroke that draws the same line
-  (about 1.2 px) at its size (globals.css), so a 14 px chip glyph is no thinner than an 18 px
-  toolbar one. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
+  (2) is the stroke at 16 px; each size token takes the stroke that draws the same line
+  (about 1.33 px, as heavy as Inter's stems beside it) at its size (globals.css), so a 14 px chip
+  glyph is no thinner than an 18 px toolbar one. A glyph stands in for a word, never beside the
+  word it repeats: a button that says "Edit" or "Restore defaults", the status strip's counts and
+  a picker that shows its words take no glyph, and a picker's glyph draws only once its words
+  give way. A mark that says something its words don't (the model picker's agent, a row's state
+  dot) stays. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
   sidebar's header and the composer's toolbar), `size-icon-row` 16 px beside UI text (rows, cards,
   menus, docks, buttons, the panel's tabs and its action, which give way to glyphs by width), and `size-icon-chip` 14 px beside meta text (a chip,
   a badge, a status line). An empty state's or a panel message's lead glyph is `size-icon-empty`
@@ -126,17 +135,22 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     dialog never rings as a whole.
 - **The composer's toolbar says its values:** one order in every composer (the orchestrator's
   chat, a solo thread's and `/new`): model · effort · mode · speed, then "…". A control that
-  doesn't apply keeps its slot, greyed, with why on hover, so the rest never move up. Each says
-  its value in full while the row has room ("Claude Opus", "Extra high", "Plan"); short of it, in
-  three to six letters ("Opus", "X-high", "Edits"); still short, the pickers take a row of their
-  own above Send and Stop, words kept. Only when even that row can't hold the short words do they
+  doesn't apply keeps its slot, greyed, with why on hover, so the rest never move up. Each names
+  what it picks before its value, in a lighter weight, so a value never reads as another
+  control's: "Claude Opus", "Effort: Extra high", "Mode: Plan", "Speed: Standard". Short of room the
+  value takes three to six letters ("Opus", "Effort: X-high", "Mode: Edits"), a default keeps
+  the dimension alone ("Effort", "Speed"), and the words keep the room their glyph took; still short, the pickers take a row of their own above
+  Send and Stop, words kept. Only when even that row can't hold the short words do they
   give way to glyphs, then fold into "…". Each trigger's tooltip and name say the value and its
   shortcut ("Effort: Extra high (⌘⇧E)"), its open list checks the current value with a line on
   what each costs, and a pick is confirmed in words for a moment. Every target on the row is 32 px
   tall, and words keep 48 px clear of Send and Stop. Stop is a solid pill reading "Stop" beside
   its square, the square inside the running ring, right-aligned where Send sits; its key shows
-  beside it while the composer has focus. A default says whose it is ("Model default" for effort,
-  "CLI default" for speed), never a bare "Default".
+  beside it while the composer has focus. A default says whose it is in its name and tooltip
+  ("Effort: Model default", "Speed: CLI default"); the chip, after its dimension, says "Default"
+  ("Effort: Default"), never a bare "Default" with nothing before it. Beside Send the context meter says "Context 36%"
+  over its bar, the number alone in a composer under 36 rem, and its popover says what it
+  measures. A picker's list opens above the whole composer, never over the draft.
 - **Icon-only chrome names itself on hover:** the title bar's and the overview header's icons use
   the instant tooltip (`Hint`), never a native title, with the shortcut where there is one. A hint
   opens when the pointer moves onto its trigger, never for one that appears under a resting
@@ -237,6 +251,10 @@ the check fails `bun run lint` on any new use; an allowlist entry is for a delib
   ("Always allow this rule…", "More…"), and a placeholder ("Message…").
 - A short empty state is a fragment without a full stop ("No files yet", "Nothing needs you"); one
   that goes on to say what to do is sentences, with full stops.
+- An empty view is `EmptyState` (`components/empty-state.tsx`) on every surface: its glyph, that
+  fragment as its title, one sentence on what goes there, and at most one action, an outline
+  button ("Message the orchestrator", "Open a repository"). Never a row of empty groups where one
+  line would say it.
 - Say what happened and what the user can do; no blame, no exclamation marks.
 - Times are 24-hour only, from `formatStamp` in `apps/web/src/lib/time.ts`: `HH:MM` today
   (`09:42`, `00:00`), else `D Mon HH:MM` (`14 Jun 08:00`), with the year only when it isn't this

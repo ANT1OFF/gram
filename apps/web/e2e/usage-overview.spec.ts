@@ -58,6 +58,10 @@ test("Usage navigation, server period/provider filters, chart/table agreement an
   await page.getByTestId("usage-meter").click();
   await page.getByTestId("usage-limits-page").focus();
   await page.keyboard.press("Enter");
+  // Settings → Usage, the limits, links on to the tokens.
+  await expect(page).toHaveURL(/\/settings\/usage$/);
+  await page.getByTestId("usage-settings-tokens").click();
+  await expect(page).toHaveURL(/\/usage$/);
   await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
   // Thirty days to begin with; the flow below starts from seven.
   await expectTokens(page, 2_340_000);

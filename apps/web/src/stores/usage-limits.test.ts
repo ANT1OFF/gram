@@ -13,6 +13,7 @@ import {
   limitWindowOf,
   nextExpiry,
   NO_RESET_TTL_MS,
+  shownLimit,
   tightestLimit,
   useUsageLimits,
   withReading,
@@ -177,6 +178,32 @@ describe("the tightest limit", () => {
       window: "weekly",
       limit: { utilization: 0.61 },
     });
+  });
+
+  it("on a thread, is that thread's agent's, unless another provider's is about to stop work", () => {
+    // A Codex thread shows Codex's tightest window, not Claude's higher one.
+    expect(shownLimit(limits, NOW, "codex")).toMatchObject({
+      provider: "codex",
+      window: "weekly",
+      why: "agent",
+    });
+    expect(shownLimit(limits, NOW, "claude")).toMatchObject({ provider: "claude", why: "agent" });
+    // Off a thread, or for an agent the meter has no reading for, the highest of all.
+    expect(shownLimit(limits, NOW, undefined)).toMatchObject({
+      provider: "claude",
+      why: "highest",
+    });
+    expect(shownLimit(limits, NOW, "opencode")).toMatchObject({
+      provider: "claude",
+      why: "highest",
+    });
+    // Claude at 95% warns: a Codex thread shows it, as it would stop Claude's work anywhere.
+    const warning = withReading(limits, reading({ utilization: 0.95 }), NOW + 60_000);
+    expect(shownLimit(warning, NOW + 60_000, "codex")).toMatchObject({
+      provider: "claude",
+      why: "highest",
+    });
+    expect(shownLimit({}, NOW, "claude")).toBeUndefined();
   });
 
   it("drops a reading once its window has reset, at the reset itself too", () => {

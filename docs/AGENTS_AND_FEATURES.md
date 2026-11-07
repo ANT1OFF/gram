@@ -59,8 +59,10 @@ configured pass.
   request's checks, reviews and merge readiness, read through the GitHub CLI.
 - **Inbox.** Questions, approvals, plans, review requests, drafts, errors and steps from every
   workspace and solo thread collect in one list by kind, each answered in a pane beside it. Each
-  row is short: what the item is about, its kind where the heading doesn't say it, its workspace,
-  thread and age; the whole question and its choices are in the pane. The Inbox docks in the side
+  row is two lines: what the item is about, wrapping before it is cut, then its workspace, its kind
+  where the heading doesn't say it, its thread and age; its hover says the whole of it, and the
+  whole question and its choices are in the pane. An approval's verbs take the keys its card in the
+  thread does: <kbd>1</kbd> Allow once, <kbd>2</kbd> Always allow this rule…, <kbd>3</kbd> Deny. The Inbox docks in the side
   panel's column, beside the work, and <kbd>⏎</kbd> or Show thread puts the item's thread in the
   main area next to it. In Quiet, or a window too narrow for it beside the chat, it opens as a
   dialog instead. The title bar's Inbox button, the sidebar's pill and <kbd>⌘⇧I</kbd> open it;
@@ -71,11 +73,28 @@ configured pass.
   one receipt: the Inbox's foot while it is open, above the orchestrator's composer after. The
   thread that asks keeps its own card too.
 - **Usage limits.** The title bar's meter shows the highest usage of any provider's window
-  (its hover names which), neutral until 90% so amber stays for what needs you. The Usage page
-  shows Claude and Codex five-hour and weekly limits (see
-  [accounts, models and speed](#accounts-models-and-speed)). A workspace can pause new workers
+  (its hover names which), neutral until 90% so amber stays for what needs you. Its popover's
+  Open Usage goes to Settings → Usage: Claude and Codex five-hour and weekly limits with their
+  pace against an even spread, Codex credits and what they burn, and 7- or 30-day history (see
+  [accounts, models and speed](#accounts-models-and-speed)). Tokens by day, model, workspace and
+  thread stay on the Usage page. A workspace can pause new workers
   near a limit, hold low-priority briefs until it resets and, if you turn it on,
   [offer another model](#offering-another-worker-model-at-a-limit).
+- **History.** Finished workers, done and archived threads and past CLI sessions in one
+  searchable list (<kbd>⌘⇧H</kbd>). It is old work's one home: the sidebar's Done shows the three
+  latest and hands the rest to History's Done chip, and a palette search that matches finished
+  threads offers them there rather than beside the live ones. A solo thread settles into History
+  on its own once its pull request merged, or after it has sat idle for the days set in Settings
+  → General → Settle idle threads (7 by default; Never keeps it). Pinned, unread and waiting
+  threads stay, and new activity brings a thread back. Mark unread on a row keeps a thread in
+  view to come back to.
+- **Snooze.** A solo row's Come back later and the palette (from anywhere, or a header's "…" →
+  More…) snooze a thread for
+  an hour, until 18:00, until 09:00 tomorrow, until Monday 09:00 or until a time you pick. It
+  leaves the lists (a solo thread under a folded Snoozed line) and its header says "Snoozed until
+  Fri 09:00" beside Unsnooze. It comes back unread at that time, or sooner when it asks you
+  something, needs an approval or fails. The server keeps the snooze on the thread and times it
+  with the wakes, so it survives a restart and one due while the app was closed ends at start.
 - **Everything else.** Solo threads outside any workspace, a terminal, a diff view, a browser
   preview agents can drive with your approval, local dictation and optional AI helpers, each off
   until you turn it on.
@@ -279,6 +298,10 @@ kept readings between polls. Usage cards, the title bar and overview sidebar use
 the same five-hour and weekly windows, with 24-hour reset times. A successful
 sign-out or unavailable response removes that provider's readings; temporary query
 failures retain the last observation and its age. Gateway limits stay separate.
+Gram keeps each window's share, peak and reset, and Codex's credit balance, in quarter-hour
+buckets for 35 days (served by the hour for a month), pruned as they age. It keeps only those
+numbers, never tokens, logins or account identifiers, and only for the CLI's own login.
+Limits are per account, so they are not split by workspace or thread.
 
 Standard/Fast speed is separate from reasoning effort. New choices default to
 Standard; Fast is offered only with CLI/model support. Claude Fast is separately
@@ -564,11 +587,28 @@ pass on the old tip: N of them cost N checks in a row, not N side by side. A mer
 check, ends a turn at once; a pass that doesn't merge ends it after two minutes, so one pull
 request can't hold up the rest. `local_check` asks for its own check and doesn't queue.
 
-A merge Gram didn't hear the end of fences its base as a confirmed one does. If `gh` times out,
-exits non-zero or is cut off, GitHub may still have applied it, so nothing launches onto that base
-until the pull request is read: merged counts as a move of the base, and open or closed counts as
-not merged only two minutes after the launch, since GitHub's reads can lag a merge. A plain refusal
-takes the same path, so the next merge onto that base can wait up to two minutes.
+Before invoking `gh pr merge`, Gram records a durable fence for the base, the expected PR head
+and the checked tip. Only fence commits reserve the SQLite connection and temporarily use
+`synchronous=FULL`; each returns after its WAL sync, then restores `NORMAL` before ordinary
+writes continue. A timeout, crash, interruption or ambiguous non-zero exit keeps that fence
+across restarts and changes to the intent. Time alone never clears it. A fresh GitHub read must
+show the PR merged at the expected head, or still open at that head after an explicit provider
+rejection of the merge mutation. A generic process error, an unreadable response, a different
+head or a closed PR leaves it fenced. Confirmed moved tips are retained across restarts too.
+
+The owning worker is told immediately when the outcome is uncertain, and its ledger/status
+waiting reason names the fenced PR and head. Inspect that PR on GitHub if it stays stuck; Gram
+continues observing it but does not retry an ambiguous external write. A manual merge at the
+expected head can resolve it. For a PR merged at another head, or closed without merging,
+`resolve_merge_fence` is the explicit action named in its ledger waiting reason. The owning
+orchestrator may call it for its worker; any other caller requires the user's approval card,
+including a worker under full autonomy. Gram pins the approval to the pending attempt, reads
+terminal MERGED or CLOSED state and the original base branch directly from GitHub, and rechecks
+ownership atomically with the durable resolution. It never lifts a merge hold. It durably retires
+older local passes, so later merges read the base fresh and use a check started after resolution.
+An OPEN or unreadable PR, an unreadable base or a changed owner leaves the fence in place.
+An unapplied timeout without terminal evidence stays fenced for human investigation rather
+than guessing from an open read.
 
 An armed merge that can't go yet says why on the pull request's status (`pr_status` under
 `bound.mergeWaiting`, the ledger and the PR context): its turn, the pull requests in `after`, a

@@ -10,35 +10,47 @@ import { presentAutonomy } from "@/settings/workspace-settings-model";
 import { modeWarning } from "@/thread/mode-warning";
 import { known } from "@/thread/orchestration-model";
 
-/** Whether a workspace's orchestrator merges unasked at each level, said of several workers. */
+/** Whether a merge waits for the user at each level: the merge approval line's value. */
+const MERGE_APPROVAL: Readonly<Record<Autonomy, string>> = {
+  supervised: "Asks you",
+  publish: "Asks you",
+  full: "Automatic",
+};
+
+/** What that means for several workers' pull requests, after the value. */
 const PLAN_MERGE: Readonly<Record<Autonomy, string>> = {
-  supervised: "Asks you before a push, a pull request or a merge",
+  supervised: "Asks before a push, a pull request or a merge",
   publish: "Opens pull requests; merging waits for you",
   full: "Merges pull requests without asking you",
 };
 
 /** The same, said of the one worker a direct start makes. */
 const WORKER_MERGE: Readonly<Record<Autonomy, string>> = {
-  supervised: "Asks you before a push, a pull request or a merge",
+  supervised: "Asks before a push, a pull request or a merge",
   publish: "Opens its pull request; merging waits for you",
   full: "Merges its pull request without asking you",
 };
 
-/** The New form's summary beside Start, in its three parts. */
+/** The New form's summary beside Start: who owns the task, then, apart, who approves a merge. */
 export interface TaskSummary {
   /** Where it runs: the workspace, or the one this start makes. */
   readonly where: string;
-  /** Which orchestrator supervises it, or the user while a direct worker is held. */
+  /**
+   * Whom it reports to: the orchestrator that plans it or that the worker reports to, or the user
+   * while a direct worker is held. Ownership only; it says nothing of merging.
+   */
   readonly who: string;
-  /** Whether that orchestrator may merge without asking: the workspace's autonomy in words. */
+  /** Whether a merge waits for the user: "Automatic" or "Asks you", the workspace's autonomy. */
+  readonly approval: string;
+  /** What that approval means for this start, in a few words. */
   readonly merge: string;
 }
 
 /**
- * Where a task runs, who supervises it and whether that orchestrator may merge, as three short
- * parts: the workspace by name (or the one a start makes), its orchestrator (the user while a
- * direct worker is held), then what the workspace's autonomy lets it merge unasked. A level this
- * build doesn't know says so rather than guessing.
+ * Where a task runs and whom it reports to, and, as a separate labelled part, whether its merge
+ * waits for the user. Reporting is ownership: a worker reports to its orchestrator whatever that
+ * orchestrator may merge, so the two are never said in one breath. A level this build doesn't know
+ * says so rather than guessing.
  */
 export function taskSummary({
   way,
@@ -55,6 +67,7 @@ export function taskSummary({
   hold: boolean;
 }): TaskSummary {
   const orchestrator = `the ${workspace} orchestrator`;
+  const level = presentAutonomy(autonomy);
   return {
     where: makesOne ? `Runs in a new ${workspace} workspace` : `Runs in ${workspace}`,
     who:
@@ -62,17 +75,19 @@ export function taskSummary({
         ? `Planned by ${orchestrator}`
         : hold
           ? `You direct it until you hand it to ${orchestrator}`
-          : `Supervised by ${orchestrator}`,
+          : `Reports to ${orchestrator}`,
+    approval: known(MERGE_APPROVAL, autonomy as Autonomy) ?? level.label,
     merge:
       known(way === "plan" ? PLAN_MERGE : WORKER_MERGE, autonomy as Autonomy) ??
-      presentAutonomy(autonomy).description.replace(/\.$/, ""),
+      level.description.replace(/\.$/, ""),
   };
 }
 
 /**
- * The New form's one summary beside Start: where the task runs, which orchestrator supervises it
- * and whether that orchestrator may merge (amber at Full, as everywhere the level shows). The merge
- * part opens the controls that change it (`onChange`); this line is never folded away.
+ * The New form's summary beside Start, on two lines: where the task runs and whom it reports to,
+ * then "Merge approval", labelled on its own line, with whether a merge waits for the user (amber
+ * when it doesn't, as everywhere Full shows). The value opens the controls that change it
+ * (`onChange`); neither line is ever folded away.
  */
 export function TaskAuthorityLine({
   way,
@@ -87,39 +102,44 @@ export function TaskAuthorityLine({
   makesOne?: boolean | undefined;
   autonomy: string;
   hold: boolean;
-  /** Opens the autonomy and hold controls; the merge part is then a button. */
+  /** Opens the autonomy and hold controls; the merge approval's value is then a button. */
   onChange?: (() => void) | undefined;
 }) {
   const level = presentAutonomy(autonomy);
   const icon = known(AUTONOMY_ICON, autonomy as Autonomy) ?? Shield;
   const summary = taskSummary({ way, workspace, makesOne, autonomy, hold });
-  const merge = (
+  const value = (
     <span className={cn("font-medium", level.warn ? "text-warning" : "text-foreground")}>
-      {summary.merge}
+      {summary.approval}
     </span>
   );
+  // Two rows on one text edge: the merge line's mark sits in a column of its own, so the owner
+  // line above starts where the merge line's words do.
   return (
-    <p
+    <span
       data-testid="task-authority"
       data-autonomy={autonomy}
       data-hold={hold ? "true" : undefined}
-      className="flex min-w-0 items-start gap-1.5 text-reading text-muted-foreground"
+      className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-1.5 gap-y-0.5 text-reading text-muted-foreground"
     >
-      {createElement(icon, {
-        "aria-hidden": true,
-        className: cn("mt-1 size-icon-row shrink-0", level.warn && "text-warning"),
-      })}
-      <span className="min-w-0">
+      <span data-testid="task-owner" className="col-start-2">
         <span className="text-foreground">{summary.where}</span>
         {" · "}
         {summary.who}
-        {" · "}
+      </span>
+      {createElement(icon, {
+        "aria-hidden": true,
+        className: cn("col-start-1 mt-1 size-icon-row shrink-0", level.warn && "text-warning"),
+      })}
+      <span data-testid="task-merge-approval">
+        Merge approval{" "}
         {onChange === undefined ? (
-          merge
+          value
         ) : (
           <button
             type="button"
             data-testid="task-authority-change"
+            aria-label={`Merge approval: ${summary.approval}. Change`}
             title={`${level.label} autonomy. Change it under Control and approvals`}
             onClick={onChange}
             className={cn(
@@ -127,12 +147,13 @@ export function TaskAuthorityLine({
               FOCUS_RING,
             )}
           >
-            {merge}
+            {value}
           </button>
         )}
-        .
+        {" · "}
+        {summary.merge}.
       </span>
-    </p>
+    </span>
   );
 }
 

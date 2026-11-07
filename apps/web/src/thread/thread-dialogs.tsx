@@ -20,6 +20,7 @@ import { ForkDialog } from "./fork-dialog";
 import { LabelsDialog } from "./labels-dialog";
 import { RenameThreadDialog } from "./rename-dialog";
 import { RestartSessionDialog } from "./restart-session-dialog";
+import { SnoozeDialog } from "./snooze-dialog";
 import { useThreadDialogs } from "./thread-dialogs-store";
 
 const focusedThread = (): ThreadId | undefined => {
@@ -87,6 +88,7 @@ export function ThreadDialogs() {
       {dialog?.kind === "rename" && (
         <RenameThreadDialog threadId={dialog.threadId} onClose={dismiss} />
       )}
+      {dialog?.kind === "snooze" && <SnoozeDialog threadId={dialog.threadId} onClose={dismiss} />}
       {dialog?.kind === "close" && (
         <CloseThreadDialog
           threadId={dialog.threadId}

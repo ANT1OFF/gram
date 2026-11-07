@@ -16,6 +16,7 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 
+import { seedMergedPr } from "./mock-git";
 import type { MockScenes } from "./mock-orchestration";
 
 // The realistic scenario: Gram on an ordinary working morning, modelled on a real window rather
@@ -29,6 +30,60 @@ import type { MockScenes } from "./mock-orchestration";
 const MINUTE = 60_000;
 
 /** What the realistic scenario made, for a shot or a spec to navigate by. */
+/** The release-notes worker's merged PR: a new page, the changelog, and the shortcuts list. */
+const RELEASE_NOTES_FILES: readonly DiffFile[] = [
+  {
+    path: "docs/releases/0.9.md",
+    status: "added",
+    additions: 4,
+    deletions: 0,
+    patch: [
+      "@@ -0,0 +1,4 @@",
+      "+# Gram 0.9",
+      "+",
+      "+- **Undo a turn:** restores the files a turn edited, unless a later turn touched them.",
+      "+- **Empty states:** the Board, History and Search say what to do next.",
+    ].join("\n"),
+    binary: false,
+    tooLarge: false,
+  },
+  {
+    path: "CHANGELOG.md",
+    status: "modified",
+    additions: 4,
+    deletions: 1,
+    patch: [
+      "@@ -1,4 +1,7 @@",
+      " # Changelog",
+      " ",
+      "-## Unreleased",
+      "+## 0.9",
+      "+",
+      "+See [the release notes](docs/releases/0.9.md).",
+      "+",
+      " ## 0.8",
+    ].join("\n"),
+    binary: false,
+    tooLarge: false,
+  },
+  {
+    path: "docs/shortcuts.md",
+    status: "modified",
+    additions: 2,
+    deletions: 0,
+    patch: [
+      "@@ -12,3 +12,5 @@",
+      " | Open History | ⌘⇧H |",
+      " | Search | ⌘K |",
+      "+| Focus review | ⌘⌥F |",
+      "+| Next change in the diff | n |",
+      " | Settings | ⌘, |",
+    ].join("\n"),
+    binary: false,
+    tooLarge: false,
+  },
+];
+
 export interface MockRealisticSimulation {
   /** The "Gram" workspace, whose orchestrator has the long transcript. */
   readonly workspaceId: WorkspaceId;
@@ -241,6 +296,14 @@ export async function simulateRealistic(
   merged(empty, gramRepo, 137, 119);
   merged(hitAreas, gramRepo, 138, 41);
   merged(notes, "example/docs", 61, 40);
+  // Its worktree is gone, so its outcome lists the PR's files.
+  seedMergedPr(notes.id, {
+    number: 61,
+    repo: "example/docs",
+    title: "Release notes for 0.9",
+    branch: notes.checkout.branch!,
+    files: RELEASE_NOTES_FILES,
+  });
   merged(uploads, gramRepo, 140, 9);
   merged(sort, gramRepo, 141, 8);
   report(

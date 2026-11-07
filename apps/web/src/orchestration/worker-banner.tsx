@@ -2,11 +2,15 @@ import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Brain, Columns3, FolderGit2, HandGrab, Pause, Repeat, Settings2 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { Hint } from "@/components/hint";
 import { focusOtherWindow } from "@/desktop/open-thread";
+import { useSaveSettings } from "@/settings/use-save-settings";
+import { useServerSettings } from "@/settings-sync/store";
+import { FOLD_ALL, useTitlebarSlot } from "@/shell/titlebar-slot";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import {
@@ -49,12 +53,53 @@ const BANNER =
   "flex min-w-0 items-center gap-2 border-b border-border px-3 py-1 text-meta text-foreground";
 
 /**
- * What a worker's crumbs can't say, under the header and only while it applies: the repos a
- * multi-repo worker works in; that it is under the user's control, what that means and what the header's
- * Hand back does, or while it isn't, what Take over would change; and its workspace's pause, which reads apart from a hold: a filled band that
- * names the workspace and resumes all of it.
+ * What Take over would change, in a quiet line of its own the first time a worker offers it. Once
+ * shown it is remembered for the user (`onboarding.takeOverHintSeen`) and stays for this view only;
+ * after, the header's Take over carries it on its hint, and the line no longer stacks over the work.
  */
-export function WorkerBanner({ thread }: { thread: Thread }) {
+function TakeOverLine() {
+  const save = useSaveSettings();
+  // Decided as the view opens, so saving it as seen doesn't take it away while it is read. The
+  // settings arrive before any thread opens; without them it stays folded rather than flash.
+  const [shown] = useState(() => {
+    const settings = useServerSettings.getState().settings;
+    return settings !== undefined && settings.onboarding.takeOverHintSeen !== true;
+  });
+  useEffect(() => {
+    if (!shown) return;
+    save({ onboarding: { takeOverHintSeen: true } }).catch((error: unknown) =>
+      console.error("save takeOverHintSeen", error),
+    );
+  }, [shown, save]);
+  if (!shown) return null;
+  return (
+    <p
+      data-testid="worker-banner-take-over"
+      className="flex min-w-0 items-center gap-2 border-b border-edge px-3 py-1 text-meta text-muted-foreground"
+    >
+      <HandGrab aria-hidden className="size-icon-row shrink-0" />
+      <span className="min-w-0 truncate" title={WORKER_TAKE_OVER_LINE}>
+        {WORKER_TAKE_OVER_LINE}
+      </span>
+    </p>
+  );
+}
+
+/**
+ * What a worker's crumbs can't say, under the header and only while it applies: the repos a
+ * multi-repo worker works in; that it is under the user's control while a narrow title bar has
+ * folded the header's hold chip to its glyph (wider, the chip says it in the same words); what Take
+ * over would change, the first time only (`TakeOverLine`); and its workspace's pause, which reads
+ * apart from a hold: a filled band that names the workspace and resumes all of it.
+ */
+export function WorkerBanner({
+  thread,
+  inTitlebar = false,
+}: {
+  thread: Thread;
+  /** The header is in the title bar, which may fold its hold chip down to a glyph. */
+  inTitlebar?: boolean;
+}) {
   const workspace = useWorkspaces().find((state) => state.workspace.id === thread.workspaceId);
   const { data: ledger } = useOrchestratorLedger(workspace?.workspace.id);
   const status = useThreadsStore((s) => s.byId[thread.id]?.status);
@@ -64,6 +109,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
   const held = entry?.userIntervened === true;
   const pause = useWorkerPause(thread.id, status, held);
   const resume = useResume(workspace?.workspace.id);
+  const chipFolded = useTitlebarSlot((s) => inTitlebar && s.fold >= FOLD_ALL);
   if (thread.spawnedBy === undefined) return null;
   const repos = workerRepoNames(thread, entry);
   const routine = thread.spawnedBy.routine;
@@ -95,7 +141,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
           </button>
         </div>
       )}
-      {held && (
+      {held && chipFolded && (
         // Hand back itself is the header's, beside the worker's name, where it always stays.
         <div data-testid="worker-banner-held" role="status" className={BANNER}>
           <HandGrab aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
@@ -108,18 +154,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
           </span>
         </div>
       )}
-      {!held && entry !== undefined && !FINISHED_WORKER.has(entry.state) && (
-        // While Take over is offered, what it would change, in a quiet line of its own.
-        <p
-          data-testid="worker-banner-take-over"
-          className="flex min-w-0 items-center gap-2 border-b border-edge px-3 py-1 text-meta text-muted-foreground"
-        >
-          <HandGrab aria-hidden className="size-icon-row shrink-0" />
-          <span className="min-w-0 truncate" title={WORKER_TAKE_OVER_LINE}>
-            {WORKER_TAKE_OVER_LINE}
-          </span>
-        </p>
-      )}
+      {!held && entry !== undefined && !FINISHED_WORKER.has(entry.state) && <TakeOverLine />}
       {routine !== undefined && (
         // Where it came from, quietly: a routine's run started it, not a message from anyone.
         <p

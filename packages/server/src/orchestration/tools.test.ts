@@ -2229,7 +2229,11 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             request: { kind: "question", id: "req-q2" as RequestId, questions: [question] },
           });
           const handlers = yield* threadHandlers;
-          yield* handlers["thread.send"]({ threadId: worker.thread.id, input: { text: "Wait." } });
+          yield* handlers["thread.send"]({
+            clientMessageId: crypto.randomUUID(),
+            threadId: worker.thread.id,
+            input: { text: "Wait." },
+          });
           yield* settle;
           const theirs = yield* session
             .callTool("answer_worker", { ...answer, requestId: "req-q2" })

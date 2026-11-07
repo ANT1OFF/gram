@@ -905,7 +905,11 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           yield* completeTurn(worker.session);
 
           // A message the user types is what takes it over.
-          yield* threads["thread.send"]({ threadId: id, input: { text: "Use the other queue." } });
+          yield* threads["thread.send"]({
+            clientMessageId: crypto.randomUUID(),
+            threadId: id,
+            input: { text: "Use the other queue." },
+          });
           yield* waitReal("the hold", held);
         }),
       ),

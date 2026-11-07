@@ -41,13 +41,19 @@ test("Settings sits at the top left, in the overview or the title bar", async ({
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/general$/);
   // Settings is a place of its own: the overview steps aside, the nav with it, and the title bar
-  // has Back and the page's name in place of the workspace and its views. With the pill gone too,
-  // the title bar's Inbox button is the way in; beside the pill there is none.
+  // has Back and the page's name in place of the workspace and its views. The needs-you pill keeps
+  // its place, top left, over Settings' sections: the title bar has no Inbox beside it.
   await expect(titlebar(page).getByTestId("settings-title")).toHaveText("Settings");
   await expect(titlebar(page).getByTestId("workspace-switcher-button")).toHaveCount(0);
   await expect(titlebar(page).getByTestId("view-switcher")).toHaveCount(0);
   await expect(page.getByTestId("top-left-nav")).toHaveCount(0);
-  await expect(titlebar(page).getByTestId("inbox-button")).toBeVisible();
+  const pill = page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByTestId("settings-needs-you");
+  await expect(pill).toBeVisible();
+  const pillBox = (await pill.boundingBox())!;
+  expect(pillBox.x).toBeLessThan(40);
+  await expect(titlebar(page).getByTestId("inbox-button")).toHaveCount(0);
   await page.getByTestId("settings-back").click();
   await expect(page).not.toHaveURL(/\/settings/);
 
@@ -81,7 +87,7 @@ test("usage has one way in: an icon before any reading, then the meter, which wa
   expect(box.width).toBeGreaterThanOrEqual(28);
   expect(box.height).toBeGreaterThanOrEqual(28);
   await link.click();
-  await expect(page).toHaveURL(/\/usage$/);
+  await expect(page).toHaveURL(/\/settings\/usage$/);
   await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
   await page.goBack();
   await page.mouse.move(1000, 800);

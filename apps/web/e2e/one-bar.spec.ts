@@ -195,7 +195,10 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   // Beside the sidebar, its pill is the one way into the Inbox: the bar has none.
   await expect(bar.getByRole("button", { name: /^Inbox/ })).toHaveCount(0);
   await expect(bar.getByRole("button", { name: /right panel$/ })).toBeVisible();
-  await expect(header.getByTestId("pane-status")).toBeVisible();
+  // At rest, the thread's glyph keeps out of the bar: the pill and the card say what needs you, so
+  // no second, unlabelled warning sits beside them. Its words stay for screen readers.
+  await expect(header.getByTestId("pane-status")).toHaveAttribute("data-quiet", "true");
+  await expect(header.getByTestId("pane-status")).toBeHidden();
   // Chat · Board are right there, so the header has no board button of its own.
   await expect(header.getByRole("button", { name: "Open board" })).toHaveCount(0);
   // The waiting strip is the thread's content, under the bar.

@@ -20,14 +20,18 @@ test("New is one form: Who does it, an in chip with New workspace, and the short
   }));
   const sidebar = page.getByTestId("overview-sidebar");
   const add = sidebar.getByRole("button", { name: "New", exact: true });
-  await expect(add).not.toHaveAttribute("aria-haspopup");
+  await expect(add).toHaveAttribute("aria-haspopup", "menu");
   await sidebar.getByRole("button", { name: "Compact overview", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect(add).toBeFocused();
   expect(await showsFocus(add)).toBe(true);
 
-  // Enter opens the form on the orchestrator, aimed at the workspace on screen.
+  // Enter opens New's menu: Task, Team and Chat, each with its shortcut, in Who does it's order.
   await page.keyboard.press("Enter");
+  const newMenu = page.getByTestId("new-entry-menu");
+  await expect(newMenu.getByRole("menuitem")).toHaveText([/^Task.+N$/, /^Team.+N$/, /^Chat.+T$/]);
+  // Team opens the form on the orchestrator, aimed at the workspace on screen.
+  await newMenu.getByRole("menuitem", { name: /^Team/ }).click();
   await expect(page).toHaveURL(/\/new-task$/);
   const draft = page.getByRole("form", { name: "New task" });
   await expect(draft.getByRole("heading", { name: "New", exact: true })).toBeVisible();
@@ -120,6 +124,7 @@ test("worker draft keeps the selected unavailable provider blocked without creat
     .getByTestId("overview-sidebar")
     .getByRole("button", { name: "New", exact: true })
     .click();
+  await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Task/ }).click();
   const draft = page.getByRole("form", { name: "New task" });
   await draft.getByRole("radio", { name: "Task", exact: true }).click();
   await expect(draft.getByRole("radio", { name: "Task", exact: true })).toBeChecked();

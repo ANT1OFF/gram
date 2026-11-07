@@ -531,9 +531,26 @@ test("message stepping and search own their scroll after a conversation jump", a
   await page.keyboard.press("ControlOrMeta+f");
   await page.getByLabel("Find in thread").fill("Synthetic decision 1");
   await expect(page.getByTestId("find-status")).toContainText("of");
-  await expect(
-    page.getByTestId("transcript").locator('[data-message-id="nav-u0"]'),
-  ).toBeInViewport();
+  // The older history's hits are in once the count stops being busy.
+  await expect(page.getByTestId("find-status")).not.toHaveAttribute("aria-busy", "true");
+  // Find starts at the newest match; one step down wraps round to the first, in history not
+  // loaded yet, which it pages in, scrolls to and marks.
+  await page.getByLabel("Find in thread").press("Shift+Enter");
+  await expect(page.getByTestId("find-status")).toHaveText(/^1 of /);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const highlight = CSS.highlights.get("gram-find-current");
+        // The highlight holds the live ranges find added, so they measure.
+        const [range] = highlight ? ([...highlight] as Range[]) : [];
+        const view = document.querySelector('[data-testid="transcript"]')?.getBoundingClientRect();
+        if (!range || !view) return "none";
+        const box = range.getBoundingClientRect();
+        const inView = box.top >= view.top && box.bottom <= view.bottom;
+        return `${range.toString().toLowerCase()}${inView ? "" : " (out of view)"}`;
+      }),
+    )
+    .toBe("synthetic decision 1");
 });
 
 test("the rail switches at actual 959 and 960 px pane widths", async ({ page }) => {

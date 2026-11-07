@@ -5,18 +5,43 @@ import { cn } from "@/lib/utils";
 
 import { useNeedsYouPill } from "./use-needs-you";
 
-// What needs you has one way in and one wording: "2 need you", an amber dot before it, wherever it
-// shows. The open sidebar draws it as its pill; the title bar draws it while no pill is on screen,
-// and Quiet's strip draws it at its foot. The compact rail, with room for a number only, shows the
-// count and says these words to a screen reader and on hover.
+// What needs you has one way in and one wording, an amber dot before it, wherever it shows: its
+// kinds, "1 question · 1 error", so a count never stands for more than the cards that show it. It
+// sits at the top of the column left of the chat: the open sidebar's pill, the same pill over
+// Settings' sections, the compact rail's count; with no column there, the title bar's first chip.
+// Quiet's strip draws it at its foot. The rail, with room for a number only, says the words to a
+// screen reader and on hover.
 
 /** "1 needs you", "2 need you", or "Nothing needs you". */
 export const needsYouWords = (count: number): string =>
   count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
 
-/** The entry's hover: the words with their scope ("across all workspaces"), then where they are. */
+/**
+ * How many kinds each form names before it says the count alone, its hover the kinds: the
+ * sidebar's row, a column wide, two; a chip in a bar, with the bar's width, three.
+ */
+const KINDS_SHOWN = { row: 2, chip: 3 } as const;
+
+/**
+ * The pill's words: what needs you by kind, "1 question · 1 error", or with more kinds than fit
+ * (`max`), "4 need you" (`needsYouWords`), as with nothing at all.
+ */
+export const needsYouPillWords = (
+  count: number,
+  kinds: readonly string[],
+  max: number = KINDS_SHOWN.row,
+): string =>
+  count > 0 && kinds.length > 0 && kinds.length <= max ? kinds.join(" · ") : needsYouWords(count);
+
+/** The entry's hover: the count with its scope ("across all workspaces"), then where they are. */
 export const needsYouScope = (count: number, where: string): string =>
   count > 0 ? `${needsYouWords(count)} across all workspaces\n${where}` : needsYouWords(count);
+
+/** What a screen reader hears: the count, then its kinds, "2 need you: 1 question, 1 error". */
+export const needsYouSpoken = (count: number, kinds: readonly string[]): string =>
+  count > 0 && kinds.length > 0
+    ? `${needsYouWords(count)}: ${kinds.join(", ")}`
+    : needsYouWords(count);
 
 /**
  * The entry: its dot and words, opening the Inbox at the newest ask in view. `row` is the sidebar's
@@ -31,14 +56,14 @@ export function NeedsYouEntry({
   variant: "row" | "chip";
   className?: string;
 } & Omit<ComponentProps<"button">, "children" | "className">) {
-  const { count, scope: where, label, hint, openAsks } = useNeedsYouPill();
+  const { count, parts, scope: where, label, hint, openAsks } = useNeedsYouPill();
   if (variant === "chip" && count === 0) return null;
-  const words = needsYouWords(count);
+  const words = needsYouPillWords(count, parts, KINDS_SHOWN[variant]);
   return (
     <button
       type="button"
       data-count={count}
-      aria-label={withHint(words, hint)}
+      aria-label={withHint(needsYouSpoken(count, parts), hint)}
       title={`${withHint(label, hint)}\n${needsYouScope(count, where)}`}
       onClick={openAsks}
       {...rest}
@@ -46,7 +71,7 @@ export function NeedsYouEntry({
         "flex shrink-0 items-center gap-2 border text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
         variant === "row"
           ? "h-8 w-full rounded-(--radius-md) px-1.5"
-          : "h-6 rounded-full px-2 text-meta",
+          : "h-7 rounded-full px-2.5 text-meta",
         count > 0
           ? "border-status-needs-mark/60 font-medium text-status-needs hover:bg-status-needs-mark/10"
           : "border-transparent text-muted-foreground hover:bg-sidebar-row-hover",

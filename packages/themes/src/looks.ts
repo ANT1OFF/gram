@@ -141,7 +141,7 @@ const glass: Look = {
     wash: 0.14,
     scanline: 0,
   },
-  iconStroke: 1.75,
+  iconStroke: 2,
   motion: {
     durations: { fast: 220, base: 260, slow: 320 },
     easing: {

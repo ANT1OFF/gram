@@ -83,7 +83,8 @@ const STEP_TONE: Readonly<Record<RailTone, string>> = {
 /**
  * The stage bar: the station's name and where it stands ("Checks 3/5"), over five joined segments,
  * one per station, filled up to where the work stands. The segment it stands on takes its tone's
- * colour; the lanes' track in the width of a cell.
+ * colour and stands taller than the rest; the lanes' track in the width of a cell. Steps ahead take
+ * border-strong in full, so each segment holds the 3:1 a graphic needs on a light page.
  */
 export function StationSteps({
   station,
@@ -109,7 +110,11 @@ export function StationSteps({
           {at + 1}/{FEATURE_STATIONS.length}
         </span>
       </span>
-      <span aria-hidden data-testid="grid-stage-bar" className="flex w-full max-w-36 gap-0.5">
+      <span
+        aria-hidden
+        data-testid="grid-stage-bar"
+        className="flex h-2.5 w-full max-w-36 items-center gap-0.5"
+      >
         {FEATURE_STATIONS.map((each, index) => (
           <i
             key={each}
@@ -119,10 +124,8 @@ export function StationSteps({
               index < at
                 ? "bg-muted-foreground"
                 : index === at
-                  ? tone === undefined
-                    ? "bg-foreground"
-                    : STEP_TONE[tone]
-                  : "bg-border-strong/50",
+                  ? cn("h-2.5 rounded-full", tone === undefined ? "bg-foreground" : STEP_TONE[tone])
+                  : "bg-border-strong",
             )}
           />
         ))}

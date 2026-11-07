@@ -25,6 +25,8 @@ import {
   SettingsSearchProvider,
 } from "@/settings/search-scope";
 import { SettingsNav } from "@/settings/settings-nav";
+import { NeedsYouEntry } from "@/orchestration/needs-you-entry";
+import { useBeforeSetup } from "@/welcome/welcome";
 import { SubpageList, SubpageRow, UpdateDot, useUpdateAvailable } from "@/settings/subpages";
 import { useSettingsScroll } from "@/settings/use-settings-scroll";
 
@@ -85,6 +87,7 @@ function SettingsLayout() {
     searching,
   });
   const updateAvailable = useUpdateAvailable();
+  const beforeSetup = useBeforeSetup();
   const navigate = useNavigate();
   const resultsRef = useRef<HTMLDivElement>(null);
   /** Opens the page of the first setting the search finds, with that setting marked. */
@@ -111,6 +114,17 @@ function SettingsLayout() {
           subpages={current === undefined ? undefined : subpagesOf(current.group)}
           currentPage={current?.id}
           headingRef={headingRef}
+          needsYou={
+            // The overview's pill, in its place: what needs you sits at the top of the column left
+            // of the page in every view, Settings too. Before setup the title bar's Inbox has it.
+            beforeSetup ? undefined : (
+              <NeedsYouEntry
+                variant="row"
+                data-testid="settings-needs-you"
+                className="mb-2 @max-2xl/settings:mb-0 @max-2xl/settings:w-auto"
+              />
+            )
+          }
           search={
             <SettingsSearchBox
               query={query}

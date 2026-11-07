@@ -317,9 +317,9 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
   await page.goto("/");
   const welcome = page.getByTestId("welcome");
-  // It leads with the repository and one line on what a workspace is; the steps are optional.
-  await expect(welcome.getByRole("heading", { name: "Pick a repository to start" })).toBeVisible();
-  await expect(welcome.getByTestId("welcome-line")).toContainText("A workspace groups");
+  // It leads with the repository and one sentence on what a workspace is; the steps are folded.
+  await expect(welcome.getByRole("heading", { name: "Open a repository" })).toBeVisible();
+  await expect(welcome.getByTestId("welcome-line")).toContainText("Gram makes it a workspace");
   await welcome.getByRole("button", { name: "How it works" }).click();
   await expect(
     welcome.getByRole("list", { name: "How Gram works" }).getByRole("listitem"),
@@ -327,23 +327,21 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   // Open says what it runs with; before any workspace there is no Board to switch to.
   await expect(welcome.getByTestId("welcome-runs-with")).toHaveText("Runs with Codex");
   await expect(page.getByTestId("view-switcher")).toHaveCount(0);
-  await expect(page.getByTestId("overview-empty-hint")).toContainText(
-    "Your workspaces appear here.",
-  );
+  await expect(page.getByTestId("overview-empty-hint")).toContainText("No workspaces yet");
   // Codex alone is enough: Claude Code missing is shown, but is nothing to fix.
   await expect(welcome.getByRole("radio", { name: /^web/ })).toBeVisible();
   // Before any setup there are no pull requests or usage beside the welcome.
   await expect(page.getByTestId("usage-meter")).toHaveCount(0);
   await expect(page.getByTestId("overview-sidebar")).not.toContainText(/Pull requests/i);
-  const agents = welcome.getByRole("list", { name: "Agents" }).getByRole("listitem");
-  await expect(agents).toHaveCount(2);
+  // Readiness sits under Open and Skip: the ready agent named, the missing one a quiet row.
+  await expect(welcome.getByTestId("welcome-skip")).toBeVisible();
+  const agents = welcome.getByRole("list", { name: "Tools to set up" }).getByRole("listitem");
+  await expect(agents).toHaveCount(1);
+  await expect(agents.nth(0)).toHaveAttribute("data-tool", "claude");
   await expect(agents.nth(0)).toHaveAttribute("data-state", "optional");
   await expect(agents.nth(0)).toContainText("Not installed");
-  await expect(agents.nth(1)).toHaveAttribute("data-state", "ready");
   await expect(agents.nth(0).getByRole("link", { name: /^Install Claude Code/ })).toBeVisible();
-  await expect(agents.nth(0).getByRole("button", { name: "Check again" })).toBeVisible();
-  await expect(agents.nth(1)).toContainText("Ready");
-  await expect(agents.nth(1).getByRole("button", { name: "Check again" })).toHaveCount(0);
+  await expect(welcome.getByRole("button", { name: "Check again" })).toBeVisible();
   // A true first run: nothing in the sidebar can need anyone yet. The Inbox is still a quiet icon
   // in the title bar, the way to what arrives meanwhile (a startup notice, say).
   await expect(page.getByTestId("overview-needs-you")).toHaveCount(0);
@@ -352,7 +350,7 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   await welcome.getByRole("button", { name: "Import past CLI sessions" }).click();
   await expect(welcome.getByTestId("resume-sessions")).toBeVisible();
   await expect(page.getByTestId("launch-checks-banner")).toBeHidden();
-  await expect(page.getByText("Select a thread, or start a new one.")).toHaveCount(0);
+  await expect(page.getByTestId("home-empty")).toHaveCount(0);
   await expect(welcome.getByRole("form", { name: "Connect the AI gateway" })).toHaveCount(0);
 
   // Looking at it isn't finishing it: it is back after a reload, and after leaving the sheet.
@@ -392,7 +390,7 @@ test("first run can be skipped for good", async ({ page }) => {
   const welcome = page.getByTestId("welcome");
   await welcome.getByRole("button", { name: "Skip" }).click();
   await expect(welcome).toBeHidden();
-  await expect(page.getByText("Select a thread, or start a new one.")).toBeVisible();
+  await expect(page.getByTestId("home-empty")).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(
@@ -402,7 +400,7 @@ test("first run can be skipped for good", async ({ page }) => {
     )
     .toBe(true);
   await page.reload();
-  await expect(page.getByText("Select a thread, or start a new one.")).toBeVisible();
+  await expect(page.getByTestId("home-empty")).toBeVisible();
   await expect(welcome).toBeHidden();
 });
 

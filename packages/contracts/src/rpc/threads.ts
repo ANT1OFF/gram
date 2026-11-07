@@ -45,6 +45,9 @@ import {
 import { RestoreWorktreeResult, WorktreeRemoval } from "../worktrees.ts";
 import { PositiveInt, errors, threadRef } from "./shared.ts";
 
+/** Stable per logical message, reused on every transport retry. */
+const clientMessageId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/));
+
 /** Threads: their lifecycle, turns, queue, feed and history, and what the sidebar asks of them. */
 export const ThreadRpcs = RpcGroup.make(
   Rpc.make("thread.create", {
@@ -67,12 +70,12 @@ export const ThreadRpcs = RpcGroup.make(
     error: errors(NotFound, AgentUnavailable, GitError, InvalidState, CheckoutInUse),
   }),
   Rpc.make("thread.send", {
-    payload: { ...threadRef, input: UserInput },
+    payload: { ...threadRef, input: UserInput, clientMessageId },
     success: SendResult,
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),
   Rpc.make("thread.steer", {
-    payload: { ...threadRef, input: UserInput },
+    payload: { ...threadRef, input: UserInput, clientMessageId },
     error: errors(ThreadNotFound, InvalidState),
   }),
   Rpc.make("thread.interrupt", {
@@ -252,12 +255,22 @@ export const ThreadRpcs = RpcGroup.make(
    * With no turn running, the item is sent now.
    */
   Rpc.make("thread.queue.steer", {
-    payload: { ...threadRef, itemId: QueueItemId },
+    payload: { ...threadRef, itemId: QueueItemId, clientMessageId },
     error: errors(ThreadNotFound, NotFound, InvalidState),
   }),
   Rpc.make("thread.markUnread", {
     payload: { ...threadRef, unread: Schema.Boolean },
     error: errors(ThreadNotFound),
+  }),
+  /**
+   * Snoozes the thread until `until` (epoch ms), out of the active lists until then, or with `null`
+   * brings it back now. It comes back unread at that time, or sooner when it asks something or
+   * fails. Refused for a time already past or more than `SNOOZE_AHEAD_MAX_DAYS` ahead.
+   */
+  Rpc.make("thread.snooze", {
+    payload: { ...threadRef, until: Schema.NullOr(Schema.Number) },
+    success: Thread,
+    error: errors(ThreadNotFound, InvalidState),
   }),
   /**
    * The user's edit of the thread's plan: every step it lists, in order. A step whose text, status

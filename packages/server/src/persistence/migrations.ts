@@ -387,9 +387,68 @@ const mergeFreezes = Effect.gen(function* () {
   yield* sql`CREATE TABLE merge_freezes (key TEXT PRIMARY KEY, data TEXT NOT NULL)`;
 });
 
+const messageReceipts = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE message_receipts (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id TEXT NOT NULL,
+    client_message_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    outcome TEXT,
+    retired INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (thread_id, client_message_id)
+  )`;
+  // Identity tombstones outlive the live thread row. These partial indexes keep new admission
+  // work proportional to the bounded recent responses/unfinished work, not all past identities.
+  yield* sql`CREATE INDEX message_receipts_pending ON message_receipts(thread_id)
+    WHERE outcome IS NULL AND retired = 0`;
+  yield* sql`CREATE INDEX message_receipts_responses ON message_receipts(thread_id, seq DESC)
+    WHERE outcome IS NOT NULL`;
+});
+
+const mergeFences = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE merge_fences (key TEXT PRIMARY KEY, data TEXT NOT NULL)`;
+});
+
+/**
+ * Subscription limit history (`usage/limit-history.ts`): each window's share and reset, and each
+ * account's credit balance, one row per quarter hour, pruned past 35 days. `window_id` keeps a
+ * window that reset inside a quarter hour apart from the next, each with its own peak; `spent` and
+ * `added` keep every move of a balance within its quarter hour, so a spend and a top-up there
+ * don't cancel out. Only the numbers the
+ * meter already shows; never a token, a login or an account identifier.
+ */
+const usageLimitHistory = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE usage_limit_history (
+    agent TEXT NOT NULL,
+    limit_window TEXT NOT NULL,
+    bucket INTEGER NOT NULL,
+    window_id INTEGER NOT NULL,
+    utilization REAL NOT NULL,
+    peak REAL NOT NULL,
+    resets_at INTEGER,
+    PRIMARY KEY (agent, limit_window, bucket, window_id)
+  ) WITHOUT ROWID`;
+  yield* sql`CREATE INDEX usage_limit_history_bucket ON usage_limit_history(bucket)`;
+  yield* sql`CREATE TABLE usage_credit_history (
+    agent TEXT NOT NULL,
+    bucket INTEGER NOT NULL,
+    balance REAL NOT NULL,
+    spent REAL NOT NULL,
+    added REAL NOT NULL,
+    PRIMARY KEY (agent, bucket)
+  ) WITHOUT ROWID`;
+  yield* sql`CREATE INDEX usage_credit_history_bucket ON usage_credit_history(bucket)`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
+  "0003_message_receipts": messageReceipts,
+  "0004_merge_fences": mergeFences,
+  "0005_usage_limit_history": usageLimitHistory,
 };
 
 /**

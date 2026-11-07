@@ -80,6 +80,7 @@ function failures(vars: CssVariables, mode: Mode, contrast: Contrast): string[] 
   for (const fg of [
     "fg",
     "fg-muted",
+    "fg-subtle",
     "accent-text",
     "danger-text",
     "success-text",
@@ -141,7 +142,6 @@ function failures(vars: CssVariables, mode: Mode, contrast: Contrast): string[] 
     "focus-ring",
     "accent",
     "border-strong",
-    "fg-subtle",
     "highlight",
     "danger",
     "success",

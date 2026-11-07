@@ -23,6 +23,7 @@ import {
   historyEntries,
   historyWhen,
   IMPORTED_OWNER,
+  RECENT_DONE,
   recentDone,
   recentWhen,
   searchHistory,
@@ -308,6 +309,7 @@ describe("History's chips and search", () => {
   it("counts each chip's rows", () => {
     expect(filterCounts(rows)).toEqual({
       all: 12,
+      done: 8,
       workers: 8,
       threads: 3,
       archived: 3,
@@ -369,17 +371,58 @@ describe("the folders whose sessions History reads", () => {
   });
 });
 
+describe("threads that settle on their own", () => {
+  // The clock is pinned: NOW, and the rule reads it, not Date.now().
+  const week = { now: NOW, days: 7 };
+  const idle = summary("s-idle", { lastActivityAt: NOW - 8 * DAY });
+  const recent = summary("s-recent", { lastActivityAt: NOW - 6 * DAY });
+  const pinned = summary("s-pinned", { lastActivityAt: NOW - 30 * DAY, pinned: true });
+  const unread = summary("s-unread", { lastActivityAt: NOW - 30 * DAY, unread: true });
+  const asking = summary(
+    "s-asking",
+    { lastActivityAt: NOW - 30 * DAY },
+    { status: "needsApproval" },
+  );
+  const merged = summary(
+    "s-merged",
+    { lastActivityAt: NOW - DAY, boundPr: { repo: "acme/api", number: 7, monitor: false } },
+    {
+      git: {
+        pr: { number: 7, url: "https://github.com/acme/api/pull/7", state: "MERGED" },
+      } as NonNullable<ThreadSummary["git"]>,
+    },
+  );
+  const ids = (settle: { now: number; days: number } | undefined) =>
+    historyEntries(sources({ summaries: [idle, recent, pinned, unread, asking, merged], settle }))
+      .filter((entry) => entry.threadId.startsWith("s-"))
+      .map((entry) => [entry.threadId, entry.outcome]);
+
+  it("moves a solo thread idle past the setting's days, or merged, into History", () => {
+    expect(ids(week)).toEqual([
+      ["s-merged", "merged"],
+      ["s-idle", "idle"],
+    ]);
+  });
+
+  it("keeps pinned, unread and waiting threads, and settles only merges when turned off", () => {
+    expect(ids({ now: NOW, days: 0 })).toEqual([["s-merged", "merged"]]);
+    expect(ids(undefined)).toEqual([]);
+  });
+
+  it("counts a settled thread under Done", () => {
+    const { sessions: _, ...rest } = sources({ summaries: [idle], settle: week });
+    expect(recentDone(rest).map((row) => row.threadId)).toContain("s-idle");
+  });
+});
+
 describe("the sidebar's Done", () => {
-  it("lists the five latest finished chats, never a past CLI session", () => {
+  it("lists History's Done chip, latest first: never a past CLI session or an archived chat", () => {
     const { sessions: _, ...rest } = sources({ sessions: [session("late", at(14, 30))] });
     const rows = recentDone(rest);
-    expect(rows.map((row) => row.threadId)).toEqual([
-      "t-merged",
-      "t-closed",
-      "t-done",
-      "t-swept",
-      "t-old",
-    ]);
+    const done = searchHistory(historyEntries(sources()), "done", "").filter(
+      (entry) => entry.kind !== "imported",
+    );
+    expect(rows.map((row) => row.threadId)).toEqual(done.map((entry) => entry.threadId));
     expect(rows[0]).toEqual({
       threadId: "t-merged",
       title: "Title of t-merged",
@@ -387,7 +430,8 @@ describe("the sidebar's Done", () => {
       place: "agent-platform",
       finishedAt: at(13, 5),
     });
-    expect(recentDone(rest, 2)).toHaveLength(2);
+    expect(rows.some((row) => row.outcome === "archived")).toBe(false);
+    expect(RECENT_DONE).toBe(3);
   });
 
   it("times a row by its clock today and by its date and clock before", () => {

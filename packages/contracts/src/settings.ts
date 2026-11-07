@@ -323,6 +323,11 @@ export const OnboardingSettings = Schema.Struct({
   gatewayOfferDismissed: Schema.optionalKey(Schema.Boolean),
   /** The new-workspace guide (what an orchestrator, workers and the board are) was read or skipped. */
   workspaceGuideSeen: Schema.optionalKey(Schema.Boolean),
+  /**
+   * A worker's header has shown what Take over changes once, so later it sits behind the header's
+   * Take over hint instead of a line of its own.
+   */
+  takeOverHintSeen: Schema.optionalKey(Schema.Boolean),
 });
 
 export const GridPreset = Schema.Literals(["1", "2c", "3c", "2x2", "2x3", "3c2r"]);
@@ -399,6 +404,9 @@ export const OverviewSections = Schema.Struct({
 });
 export type OverviewSections = typeof OverviewSections.Type;
 
+/** Whole days, 0 to a year: how long an idle solo thread waits before it settles into History. */
+export const SettleAfterDays = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 365 }));
+
 export const LayoutSettings = Schema.Struct({
   grid: Schema.optionalKey(GridLayout),
   /** Only the chat is shown, with the sidebar and right panel hidden. Absent means false. */
@@ -411,6 +419,11 @@ export const LayoutSettings = Schema.Struct({
   overviewSidebar: Schema.optionalKey(OverviewSidebar),
   /** The overview's optional sections unlike their default; read through `overviewHiddenOf`. */
   overviewSections: Schema.optionalKey(OverviewSections),
+  /**
+   * Days a solo thread sits idle before it settles into History on its own, 0 for never; read
+   * through `settleAfterDaysOf`.
+   */
+  settleAfterDays: Schema.optionalKey(SettleAfterDays),
 });
 export type LayoutSettings = typeof LayoutSettings.Type;
 
@@ -806,6 +819,13 @@ export const openAtLaunchOf = (settings: Settings): OpenAtLaunch =>
 export const overviewSidebarOf = (settings: Settings): OverviewSidebar | undefined =>
   settings.layout?.overviewSidebar;
 
+/** The days an idle solo thread waits before it settles into History, absent its own setting. */
+export const SETTLE_AFTER_DAYS_DEFAULT = 7;
+
+/** Days an idle solo thread waits before it settles into History; 0 keeps it in the list. */
+export const settleAfterDaysOf = (settings: Settings): number =>
+  settings.layout?.settleAfterDays ?? SETTLE_AFTER_DAYS_DEFAULT;
+
 /** The overview sidebar's optional sections that are turned off, in their order on screen. */
 export const overviewHiddenOf = (settings: Settings): OverviewOptionalSection[] =>
   OVERVIEW_OPTIONAL_SECTIONS.filter(
@@ -946,6 +966,7 @@ export const SettingsPatch = Schema.Struct({
       dismissedLaunchIssues: clearable(Schema.Array(Schema.String)),
       gatewayOfferDismissed: Schema.optionalKey(Schema.Boolean),
       workspaceGuideSeen: Schema.optionalKey(Schema.Boolean),
+      takeOverHintSeen: Schema.optionalKey(Schema.Boolean),
     }),
   ),
   layout: Schema.optionalKey(
@@ -957,6 +978,7 @@ export const SettingsPatch = Schema.Struct({
       overviewSidebar: clearable(OverviewSidebar),
       /** Replaces the whole set; `null` shows every section again. */
       overviewSections: clearable(OverviewSections),
+      settleAfterDays: clearable(SettleAfterDays),
     }),
   ),
   logLevel: Schema.optionalKey(LogLevel),

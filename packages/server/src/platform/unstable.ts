@@ -19,4 +19,6 @@ export * as RpcSerialization from "effect/rpc/RpcSerialization";
 export * as RpcServer from "effect/rpc/RpcServer";
 export * as Socket from "effect/socket/Socket";
 export * as SqlClient from "effect/sql/SqlClient";
-export { SqlError } from "effect/sql/SqlError";
+export { SqlError, ConnectionError } from "effect/sql/SqlError";
+export type { Connection as SqlConnection } from "effect/sql/SqlConnection";
+export * as SqlStatement from "effect/sql/Statement";

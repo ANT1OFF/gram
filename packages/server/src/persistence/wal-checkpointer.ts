@@ -24,7 +24,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import { Worker } from "node:worker_threads";
-import { SqlClient } from "../platform/unstable.ts";
+import { SqlClient, type SqlError } from "../platform/unstable.ts";
 
 /** How often the worker checkpoints. An idle WAL's checkpoint copies nothing and syncs nothing. */
 const CHECKPOINT_INTERVAL_MS = 1_000;
@@ -118,8 +118,41 @@ export type CheckpointEvent =
   | { readonly kind: "error" | "failed"; readonly message: string }
   | { readonly kind: "exit"; readonly code: number };
 
-/** Overrides for tests. */
+/** The controller's mode, replayed before each replacement connection is published. */
+export interface ConnectionPolicy {
+  apply(sql: SqlClient.SqlClient): Effect.Effect<void, SqlError>;
+  update(sql: SqlClient.SqlClient, frames: 0 | 1000): Effect.Effect<void, SqlError>;
+}
+
+/** One target per store scope; applying it is serialized with the same borrower gate. */
+export const makeConnectionPolicy = (): ConnectionPolicy => {
+  let frames: 0 | 1000 = 1000;
+  return {
+    apply: (sql) =>
+      Effect.suspend(() => sql.unsafe(`PRAGMA wal_autocheckpoint = ${frames}`).pipe(Effect.asVoid)),
+    update: (sql, next) =>
+      Effect.scoped(
+        Effect.uninterruptible(
+          Effect.gen(function* () {
+            // Complete the controller's state transition before the first fallible operation.
+            // Opening a replacement can fail too; the next successful generation must still
+            // replay this target even when the controller already considers it selected.
+            frames = next;
+            const connection = yield* sql.reserve;
+            yield* connection.executeUnprepared(
+              `PRAGMA wal_autocheckpoint = ${frames}`,
+              [],
+              undefined,
+            );
+          }),
+        ),
+      ),
+  };
+};
+
+/** Controller wiring and overrides for tests. */
 export interface CheckpointerOptions {
+  readonly connectionPolicy?: ConnectionPolicy | undefined;
   readonly intervalMs?: number | undefined;
   /** The longest wait while idle; at or below `intervalMs`, the worker never backs off. */
   readonly maxIntervalMs?: number | undefined;
@@ -145,6 +178,7 @@ export const layer = (
   Layer.effectDiscard(
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
+      const policy = options.connectionPolicy ?? makeConnectionPolicy();
       const capFrames = options.capFrames ?? WAL_CAP_FRAMES;
       const events = yield* Queue.unbounded<CheckpointEvent>();
       const emit = (event: CheckpointEvent) => {
@@ -191,10 +225,11 @@ export const layer = (
 
       if (Option.isNone(started)) {
         // The worker is an optimisation: without one, SQLite's autocheckpoint stays on, as before.
+        yield* Effect.orDie(policy.update(sql, 1000));
         yield* Effect.logWarning("wal checkpointer didn't start; the server checkpoints itself");
         return;
       }
-      yield* Effect.orDie(sql`PRAGMA wal_autocheckpoint = 0`);
+      yield* Effect.orDie(policy.update(sql, 0));
       // Whether the main connection is checkpointing too, and whether it is for good.
       let fallback = false;
       let lost = false;
@@ -204,7 +239,7 @@ export const layer = (
           : Effect.gen(function* () {
               fallback = true;
               // SQLite's own default: the main connection checkpoints as it did before this module.
-              yield* sql`PRAGMA wal_autocheckpoint = 1000`;
+              yield* policy.update(sql, 1000);
               yield* Effect.logWarning(
                 `wal checkpointer ${why}; the server checkpoints itself`,
               ).pipe(Effect.annotateLogs(detail));
@@ -214,7 +249,7 @@ export const layer = (
           ? Effect.void
           : Effect.gen(function* () {
               fallback = false;
-              yield* sql`PRAGMA wal_autocheckpoint = 0`;
+              yield* policy.update(sql, 0);
               yield* Effect.logInfo("wal checkpointer caught up").pipe(
                 Effect.annotateLogs({ log }),
               );

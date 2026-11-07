@@ -32,6 +32,7 @@ import { Route as SettingsReviewBotsRouteImport } from './routes/settings.review
 import { Route as SettingsStorageRouteImport } from './routes/settings.storage'
 import { Route as SettingsTerminalRouteImport } from './routes/settings.terminal'
 import { Route as SettingsUpdatesRouteImport } from './routes/settings.updates'
+import { Route as SettingsUsageRouteImport } from './routes/settings.usage'
 import { Route as SettingsVoiceInputRouteImport } from './routes/settings.voice-input'
 import { Route as SettingsWorkspacesRouteImport } from './routes/settings.workspaces'
 import { Route as TThreadIdRouteImport } from './routes/t/$threadId'
@@ -155,6 +156,11 @@ const SettingsUpdatesRoute = SettingsUpdatesRouteImport.update({
   path: '/updates',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsUsageRoute = SettingsUsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsVoiceInputRoute = SettingsVoiceInputRouteImport.update({
   id: '/voice-input',
   path: '/voice-input',
@@ -215,6 +221,7 @@ export interface FileRoutesByFullPath {
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/terminal': typeof SettingsTerminalRoute
   '/settings/updates': typeof SettingsUpdatesRoute
+  '/settings/usage': typeof SettingsUsageRoute
   '/settings/voice-input': typeof SettingsVoiceInputRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/t/$threadId': typeof TThreadIdRoute
@@ -246,6 +253,7 @@ export interface FileRoutesByTo {
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/terminal': typeof SettingsTerminalRoute
   '/settings/updates': typeof SettingsUpdatesRoute
+  '/settings/usage': typeof SettingsUsageRoute
   '/settings/voice-input': typeof SettingsVoiceInputRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/t/$threadId': typeof TThreadIdRoute
@@ -279,6 +287,7 @@ export interface FileRoutesById {
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/terminal': typeof SettingsTerminalRoute
   '/settings/updates': typeof SettingsUpdatesRoute
+  '/settings/usage': typeof SettingsUsageRoute
   '/settings/voice-input': typeof SettingsVoiceInputRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/t/$threadId': typeof TThreadIdRoute
@@ -313,6 +322,7 @@ export interface FileRouteTypes {
     | '/settings/storage'
     | '/settings/terminal'
     | '/settings/updates'
+    | '/settings/usage'
     | '/settings/voice-input'
     | '/settings/workspaces'
     | '/t/$threadId'
@@ -344,6 +354,7 @@ export interface FileRouteTypes {
     | '/settings/storage'
     | '/settings/terminal'
     | '/settings/updates'
+    | '/settings/usage'
     | '/settings/voice-input'
     | '/settings/workspaces'
     | '/t/$threadId'
@@ -376,6 +387,7 @@ export interface FileRouteTypes {
     | '/settings/storage'
     | '/settings/terminal'
     | '/settings/updates'
+    | '/settings/usage'
     | '/settings/voice-input'
     | '/settings/workspaces'
     | '/t/$threadId'
@@ -561,6 +573,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsUpdatesRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/usage': {
+      id: '/settings/usage'
+      path: '/usage'
+      fullPath: '/settings/usage'
+      preLoaderRoute: typeof SettingsUsageRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/voice-input': {
       id: '/settings/voice-input'
       path: '/voice-input'
@@ -641,6 +660,7 @@ interface SettingsRouteChildren {
   SettingsStorageRoute: typeof SettingsStorageRoute
   SettingsTerminalRoute: typeof SettingsTerminalRoute
   SettingsUpdatesRoute: typeof SettingsUpdatesRoute
+  SettingsUsageRoute: typeof SettingsUsageRoute
   SettingsVoiceInputRoute: typeof SettingsVoiceInputRoute
   SettingsWorkspacesRoute: typeof SettingsWorkspacesRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
@@ -664,6 +684,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsStorageRoute: SettingsStorageRoute,
   SettingsTerminalRoute: SettingsTerminalRoute,
   SettingsUpdatesRoute: SettingsUpdatesRoute,
+  SettingsUsageRoute: SettingsUsageRoute,
   SettingsVoiceInputRoute: SettingsVoiceInputRoute,
   SettingsWorkspacesRoute: SettingsWorkspacesRoute,
   SettingsIndexRoute: SettingsIndexRoute,

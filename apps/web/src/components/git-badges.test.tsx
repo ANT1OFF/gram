@@ -361,7 +361,7 @@ describe("PrBadge", () => {
       threads: { unresolved: 2, blockers: 2, suggestions: 0, outdatedUnresolved: 0 },
     };
     render(<PrBadge threadId={T} git={git({ pr: pr({ review }) })} testId="pr-badge" />);
-    expect(screen.getByRole("img", { name: "Review bot: 2 blockers" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Review bot: 2 blocking findings" })).toBeTruthy();
     cleanup();
     const { container } = render(<PrBadge threadId={T} git={git()} testId="pr-badge" />);
     expect(container.textContent).toBe("");

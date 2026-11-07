@@ -74,6 +74,26 @@ describe("ThreadMenu thread actions", () => {
     expect(useThreadDialogs.getState().dialog).toEqual({ kind: "close", threadId: FLAKY });
   });
 
+  it("snoozes the thread from the header through More…, to a preset", async () => {
+    const snooze = vi.spyOn(api, "snooze");
+    renderWithApi(
+      <>
+        <ThreadMenu threadId={FLAKY} />
+        <CommandPalette />
+      </>,
+      api,
+    );
+    await openMore();
+    fireEvent.click(await screen.findByRole("option", { name: /^Snooze thread…/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /^Tomorrow/ }));
+    await waitFor(() => expect(snooze).toHaveBeenCalledWith(FLAKY, expect.any(Number)));
+    const until = snooze.mock.calls[0]![1]!;
+    expect(new Date(until).getHours()).toBe(9);
+    expect(new Date(until).getMinutes()).toBe(0);
+    expect(until).toBeGreaterThan(Date.now());
+    act(() => useLayoutStore.getState().closePalette());
+  });
+
   it("detaches a worker from its orchestrator through More…, and offers it to no other thread", async () => {
     const made = await api.simulateOrchestration();
     const abort = new AbortController();

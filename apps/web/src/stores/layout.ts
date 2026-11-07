@@ -44,8 +44,19 @@ export const REVIEW_WIDTH_SHARE = 0.55;
  * `CHAT_MIN_WIDTH`.
  */
 export const REVIEW_CHAT_WIDTH = 800;
-/** What's left of the chat beside a review in focus: a strip that brings the conversation back. */
-export const REVIEW_STRIP_WIDTH = 48;
+/**
+ * What's left of the chat beside a review in focus: a strip that keeps the conversation readable,
+ * its latest message and any decision waiting on the user, with the way back.
+ */
+export const REVIEW_STRIP_WIDTH = 300;
+/** The strip in a window too narrow for it beside a readable review: its way back and title only. */
+export const REVIEW_STRIP_RAIL = 48;
+/** The narrowest a review in focus is left beside the readable strip; narrower, the strip is a rail. */
+const REVIEW_FOCUS_MIN = 640;
+
+/** The strip a review in focus leaves the chat in a window this wide. */
+export const reviewStripWidth = (windowWidth: number): number =>
+  windowWidth - REVIEW_STRIP_WIDTH >= REVIEW_FOCUS_MIN ? REVIEW_STRIP_WIDTH : REVIEW_STRIP_RAIL;
 /** The narrowest the chat (or grid) gets while the panel beside it is dragged wider. */
 export const CHAT_MIN_WIDTH = 360;
 /**
@@ -209,7 +220,7 @@ export interface ShellFit {
   /** The expanded sidebar fits beside the chat at its narrowest. */
   sidebarRoom: boolean;
   /**
-   * A review in focus: the panel takes the window but for a `REVIEW_STRIP_WIDTH` strip of the chat,
+   * A review in focus: the panel takes the window but for a `reviewStripWidth` strip of the chat,
    * the overview hidden.
    */
   reviewFocus: boolean;
@@ -218,6 +229,11 @@ export interface ShellFit {
    * read it and the conversation side by side, so the panel offers Focus review.
    */
   reviewCramped: boolean;
+  /**
+   * A review beside the chat narrower than `REVIEW_READ_WIDTH`, held at its bound or not: the
+   * action beside its tabs offers Focus review in words.
+   */
+  reviewNarrow: boolean;
 }
 
 /**
@@ -273,17 +289,18 @@ export function fitShell(input: ShellFitInput): ShellFit {
     input.reviewFocus &&
     panel !== "none" &&
     isReviewTab(input.panelTab) &&
-    input.windowWidth - REVIEW_STRIP_WIDTH >= PANEL_WIDTH.min
+    input.windowWidth - reviewStripWidth(input.windowWidth) >= PANEL_WIDTH.min
   ) {
     return {
       sidebar: "none",
       sidebarWidth: 0,
       panel: "side",
-      panelWidth: input.windowWidth - REVIEW_STRIP_WIDTH,
+      panelWidth: input.windowWidth - reviewStripWidth(input.windowWidth),
       panelRoom,
       sidebarRoom,
       reviewFocus: true,
       reviewCramped: false,
+      reviewNarrow: false,
     };
   }
   const bounds = panelBoundsFor(input, sidebarWidth);
@@ -293,11 +310,8 @@ export function fitShell(input: ShellFitInput): ShellFit {
       : panel === "over"
         ? beside
         : 0;
-  const reviewCramped =
-    panel === "side" &&
-    reviewSized(input) &&
-    panelWidth >= bounds.max &&
-    panelWidth < REVIEW_READ_WIDTH;
+  const reviewNarrow = panel === "side" && reviewSized(input) && panelWidth < REVIEW_READ_WIDTH;
+  const reviewCramped = reviewNarrow && panelWidth >= bounds.max;
   return {
     sidebar,
     sidebarWidth,
@@ -307,6 +321,7 @@ export function fitShell(input: ShellFitInput): ShellFit {
     sidebarRoom,
     reviewFocus: false,
     reviewCramped,
+    reviewNarrow,
   };
 }
 
@@ -786,7 +801,7 @@ interface PanelRequest {
 }
 
 /** The tabs whose panel acts on a request's `target`. */
-type TargetedTab = "diff" | "files";
+type TargetedTab = "diff" | "files" | "pr";
 
 /** The PR panel's own two tabs, inside the right panel's `pr` tab. */
 type PrPanelTab = "overview" | "review";
@@ -1006,7 +1021,9 @@ export const useLayoutStore = create<LayoutState>()(
         boardLayout: "grid",
         diffLayout: "unified",
         diffTreeShown: true,
-        diffWrap: false,
+        // Lines wrap until the user says otherwise: a review beside the chat is rarely as wide as
+        // its longest line, and a clipped line hides the change at its end.
+        diffWrap: true,
         diffIgnoreWhitespace: false,
         reviewWidth: undefined,
         reviewFocus: false,
@@ -1318,7 +1335,9 @@ export const useLayoutStore = create<LayoutState>()(
             set({ previewSuggestion: { id, threadId, url } });
           } else {
             get().setPanelTab(panel);
-            if (panel === "diff" || panel === "files") {
+            // A file of the PR is in its Overview's Files.
+            if (panel === "pr" && target !== undefined) set({ prPanelTab: "overview" });
+            if (panel === "diff" || panel === "files" || panel === "pr") {
               set((s) => {
                 const { [panel]: _previous, ...rest } = s.panelTargets;
                 return {

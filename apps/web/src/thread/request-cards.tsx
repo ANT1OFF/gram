@@ -31,6 +31,7 @@ import {
   useState,
   type KeyboardEvent,
   type ReactNode,
+  type Ref,
 } from "react";
 import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
@@ -42,10 +43,11 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatKeys, useShortcut } from "@/keyboard/registry";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
+import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { AttentionPulse, PresenceItem, PresenceList, PressScale } from "@/motion";
 import { Kbd, SendAnswer } from "@/orchestration/ask-choices";
-import { answerKey } from "@/orchestration/ask-keys";
+import { answerKey, plainKeysReach, types } from "@/orchestration/ask-keys";
 import { answeredAmong, useAskStackStore } from "@/orchestration/ask-stack-store";
 import { useRequestRevealStore } from "@/stores/reveal";
 
@@ -94,7 +96,7 @@ const CompactContext = createContext(false);
 /**
  * Cards inside render small, without the pulse, the role chip and the shortcut hints: the approvals
  * inbox answers requests of threads that aren't open, and passes every card `active={false}` so
- * Enter and Escape stay with the focused thread's own card.
+ * an approval's keys (1, 2 and 3) stay with the focused thread's own card.
  */
 export function CompactRequestCards({ children }: { children: ReactNode }) {
   return <CompactContext value={true}>{children}</CompactContext>;
@@ -227,7 +229,7 @@ function Receipt({
  * slot draws it, so moving never resets it: its preview stays open and an answer in flight stays
  * in flight.
  *
- * Enter, ⌥Enter and Escape answer one card only: the selected one (the first, or the one a Needs
+ * An approval's keys (1, 2 and 3 unless rebound) answer one card only: the selected one (the first, or the one a Needs
  * you jump, a focus or the pager chose), which alone shows their hints, and only while it is on
  * screen when the key is pressed. That is measured at the press (`onScreen`), never from an
  * earlier report, so a card scrolled away, paged out or folded into a collapsed row answers no key.
@@ -352,15 +354,84 @@ function PlacedApprovals({
  * edge; above the composer, as the other cards there sit. A card shown in neither is hidden.
  */
 function place(element: HTMLElement, target: HTMLElement | null, inline: boolean, hidden: boolean) {
+  // What had focus in the card: still there, or lost with the row it sat in (folded away).
+  const had = focusedIn(element);
   element.dataset["inline"] = String(inline);
   element.className = inline ? "pt-1 pb-1" : "my-2";
   element.hidden = hidden;
-  if (target === null || element.parentNode === target) return;
-  // Moving an element drops the focus inside it; the control that had it keeps it.
-  const focused = document.activeElement;
-  const had = focused instanceof HTMLElement && element.contains(focused);
-  target.append(element);
-  if (had && !hidden) focused.focus({ preventScroll: true });
+  if (target !== null && element.parentNode !== target) target.append(element);
+  if (had === undefined) return;
+  // Moving an element drops the focus inside it; the control that had it keeps it. A card hidden
+  // (its row folded, or paged out) hands focus on, as an answered one does.
+  if (!hidden && element.contains(had) && had.isConnected) {
+    if (document.activeElement !== had) had.focus({ preventScroll: true });
+  } else if (hidden) {
+    handFocusOn(target ?? element, element);
+  }
+}
+
+/** The pager over approvals that wait above the composer. */
+const APPROVAL_NAV = 'nav[aria-label="Approval navigation"]';
+
+/**
+ * The thread view a card is drawn in, a grid pane's or the one beside the chat (`ThreadView`):
+ * where its keys reach and its focus is handed on, never into another thread's view.
+ */
+const THREAD_VIEW = "[data-thread-view]";
+
+/**
+ * The control in each card's element that last had focus. A focused element removed with its row
+ * leaves focus on the page and says nothing, so this is what tells that the card had it.
+ */
+const lastFocused = new WeakMap<HTMLElement, HTMLElement>();
+
+/** Notes the control in `element` that has focus, and forgets it once focus moves on elsewhere. */
+function watchFocus(element: HTMLElement) {
+  element.addEventListener("focusin", (event) => {
+    if (event.target instanceof HTMLElement) lastFocused.set(element, event.target);
+  });
+  element.addEventListener("focusout", (event) => {
+    // Focus moved to something else: the card no longer has it. A removal moves it nowhere.
+    if (event.relatedTarget instanceof Node && !element.contains(event.relatedTarget)) {
+      lastFocused.delete(element);
+    }
+  });
+}
+
+/** What in `element` has focus now, or had it when focus was lost to the page. */
+function focusedIn(element: HTMLElement): HTMLElement | undefined {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== document.body) {
+    return element.contains(active) ? active : undefined;
+  }
+  return lastFocused.get(element);
+}
+
+/**
+ * Focus left with a card that went (answered, the turn over) or hid (its row folded): it goes to
+ * the next approval in the same thread view that is on screen, the one the keys answer first, else
+ * to that view's composer. Never to the page, where the keys would answer for nothing, nor into
+ * another thread's view (the one beside the chat, or the chat beside it); never away from
+ * something the user has focused meanwhile. Outside a thread view it is left where it fell.
+ */
+function handFocusOn(near: Element, from: HTMLElement) {
+  lastFocused.delete(from);
+  const scope = near.closest(THREAD_VIEW);
+  if (scope === null) return;
+  // After the commit that took the card away: the next card is selected by then.
+  setTimeout(() => {
+    if (!focusLost()) return;
+    const shown = [...scope.querySelectorAll<HTMLElement>('[data-testid="approval-place"]')].filter(
+      (each) => each !== from && !each.hidden && onScreen(each),
+    );
+    const next = shown.find((each) => each.hasAttribute("data-selected")) ?? shown[0];
+    const card = next?.querySelector<HTMLElement>('[data-testid="approval-card"]');
+    if (card !== undefined && card !== null) {
+      card.focus({ preventScroll: true });
+      if (document.activeElement === card) return;
+    }
+    focusIfConnected(scope.querySelector('textarea[aria-label="Message"]'));
+  }, 0);
 }
 
 /**
@@ -420,14 +491,26 @@ function PlacedApproval({
   const [element] = useState(() => {
     const div = document.createElement("div");
     div.setAttribute("data-testid", "approval-place");
+    watchFocus(div);
     return div;
   });
   const id = request.id;
   useLayoutEffect(() => place(element, target, inline, hidden), [element, target, inline, hidden]);
+  // The card the keys answer: where focus goes first when another card hands it on.
+  useLayoutEffect(() => {
+    element.toggleAttribute("data-selected", selected);
+  }, [element, selected]);
+  // The thread view the card is in, for focus to be handed on in once it has gone with its row.
+  const view = useRef<Element | null>(null);
+  useLayoutEffect(() => {
+    view.current = element.closest(THREAD_VIEW) ?? target?.closest(THREAD_VIEW) ?? view.current;
+  });
   useLayoutEffect(() => {
     register(id, element);
     return () => {
       register(id, undefined);
+      // Answered, or the turn ended: focus in it goes on to the next approval, else the composer.
+      if (focusedIn(element) !== undefined) handFocusOn(view.current ?? element, element);
       element.remove();
     };
   }, [element, id, register]);
@@ -547,6 +630,7 @@ function CardShell({
   children,
   footer,
   answerKeys = false,
+  ref,
 }: {
   testId: string;
   /** What a Needs you jump finds the card by. */
@@ -557,6 +641,8 @@ function CardShell({
   footer?: ReactNode;
   /** Whether the answer rule's keys work in it: a number picks, ⌘⏎ sends (`answerKey`). */
   answerKeys?: boolean;
+  /** The card's own element, for the keys to tell where focus is. */
+  ref?: Ref<HTMLElement> | undefined;
 }) {
   const onKeyDown = answerKeys
     ? (event: KeyboardEvent<HTMLElement>) => {
@@ -572,6 +658,7 @@ function CardShell({
   if (sheet) {
     return (
       <section
+        ref={ref}
         data-testid={testId}
         data-request-id={requestId}
         data-sheet
@@ -597,14 +684,17 @@ function CardShell({
   }
   const card = (
     <section
+      ref={ref}
       data-testid={testId}
       data-request-id={requestId}
       data-surface="card"
       data-compact={compact}
       aria-label={typeof title === "string" ? title : undefined}
+      // Where focus lands when the card before it is answered (`handFocusOn`); not a Tab stop.
+      tabIndex={compact ? undefined : -1}
       onKeyDown={onKeyDown}
       className={cn(
-        "border border-status-needs-mark/70 bg-card text-reading",
+        "border border-status-needs-mark/70 bg-card text-reading outline-none focus-visible:focus-ring",
         compact
           ? "rounded-(--radius-md) p-2"
           : // Above the composer, the card keeps to a share of the pane: its body scrolls and its
@@ -949,7 +1039,7 @@ export function ApprovalCard({
   request: ApprovalRequest;
   active: boolean;
   /**
-   * Asked at each press of Enter, ⌥Enter or Escape: whether this card may take it now. A card
+   * Asked at each press of the card's keys (1, 2, 3): whether this card may take it now. A card
    * drawn under its row passes whether it is the selected card and on screen; without it, `active`
    * alone decides, as above the composer.
    */
@@ -988,14 +1078,31 @@ export function ApprovalCard({
     );
   const always = () => (confirming ? allow("always") : setConfirming(true));
 
+  // 1, 2 and 3 (unless rebound) answer the card the keys are on while focus is on nothing, or in
+  // this card, or in its thread view on nothing that types, activates or sits over it: never a key
+  // pressed in the Inbox beside it, a menu, another pane or the thread beside the chat.
+  const cardRef = useRef<HTMLElement>(null);
+  const keysReach = () => {
+    const card = cardRef.current;
+    const focus = document.activeElement;
+    if (focus === null || focus === document.body) return true;
+    if (card === null) return false;
+    const view = card.closest(THREAD_VIEW);
+    // In the card, or on the pager in its thread view that just showed it.
+    const paging = focus.closest(APPROVAL_NAV) !== null && focus.closest(THREAD_VIEW) === view;
+    if (card.contains(focus) || paging) return !types(focus);
+    return view !== null && plainKeysReach(focus, view);
+  };
+  const mayAnswer = () => keysReach() && (canAnswer?.() ?? true);
+
   useShortcut(
     {
       id: "approval.allow",
-      keys: "enter",
+      keys: "1",
       label: ALLOW_ONCE,
       group: "Thread",
       once: true,
-      when: () => canAnswer?.() ?? true,
+      when: mayAnswer,
       run: () => allow("once"),
     },
     active && pause === undefined,
@@ -1003,11 +1110,11 @@ export function ApprovalCard({
   useShortcut(
     {
       id: "approval.always",
-      keys: "alt+enter",
+      keys: "2",
       label: alwaysAllowOpenLabel(1),
       group: "Thread",
-      when: () => canAlways && (canAnswer?.() ?? true),
-      // Once per press, for both steps: a held ⌥⏎ opens the preview and nothing more, so saving
+      when: () => canAlways && mayAnswer(),
+      // Once per press, for both steps: a held 2 opens the preview and nothing more, so saving
       // takes a second, separate press, and a held key never reaches the next card in the queue.
       once: true,
       run: always,
@@ -1017,11 +1124,11 @@ export function ApprovalCard({
   useShortcut(
     {
       id: "approval.deny",
-      keys: "escape",
+      keys: "3",
       label: DENY,
       group: "Thread",
       once: true,
-      when: () => canAnswer?.() ?? true,
+      when: mayAnswer,
       run: deny,
     },
     active && pause === undefined,
@@ -1029,6 +1136,7 @@ export function ApprovalCard({
 
   return (
     <CardShell
+      ref={cardRef}
       testId="approval-card"
       requestId={request.id}
       icon={<ShieldQuestion aria-hidden className="size-icon-row text-status-needs-mark" />}
@@ -1281,7 +1389,7 @@ export function QuestionCard({
               aria-current={i === page ? "step" : undefined}
               onClick={() => setIndex(i)}
               className={cn(
-                "flex items-center gap-1 rounded-sm border border-transparent bg-muted px-1.5 py-0.5 text-caption text-muted-foreground",
+                "flex items-center gap-1 rounded-sm border border-transparent bg-muted px-1.5 py-0.5 text-meta text-muted-foreground",
                 i === page && "border-primary bg-primary/10 text-foreground",
               )}
             >
@@ -1300,7 +1408,7 @@ export function QuestionCard({
         <fieldset key={q.question} className="space-y-1.5">
           <legend className="mb-1">
             {count === 1 && (
-              <span className="mr-2 rounded-sm bg-muted px-1 text-caption text-muted-foreground">
+              <span className="mr-2 rounded-sm bg-muted px-1 text-meta text-muted-foreground">
                 {q.header}
               </span>
             )}

@@ -34,6 +34,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { threadDisplayTitle } from "@/thread/thread-title";
 import { OVERVIEW_FLYOUT, OVERVIEW_ROOT, toggleOverviewSidebar } from "@/views/shell-layout";
 import { soloThreads } from "@/views/solo-threads";
+import { useSettleRule } from "@/views/use-settle-rule";
 import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 
 import { useWorkspaceAsks } from "./ask-stack";
@@ -62,7 +63,7 @@ import {
 import { ROW } from "./overview-section";
 import { peek } from "./peek-store";
 import { workingWorkerThreads } from "./tree-model";
-import { needsYouScope, needsYouWords } from "./needs-you-entry";
+import { needsYouScope, needsYouSpoken } from "./needs-you-entry";
 import { useNeedsYouCounts, useNeedsYouPill } from "./use-needs-you";
 import { ledgerSlotsText } from "./overview-extras-model";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
@@ -157,9 +158,9 @@ const Separator = () => <span aria-hidden className="h-px w-6 shrink-0 bg-sideba
  * the open overview's opens.
  */
 function RailNeedsYou() {
-  const { count, scope: where, label: action, hint, openAsks } = useNeedsYouPill();
+  const { count, parts, scope: where, label: action, hint, openAsks } = useNeedsYouPill();
   // The sidebar's words, which a number alone stands for here: the rail has room for no more.
-  const label = needsYouWords(count);
+  const label = needsYouSpoken(count, parts);
   const scope = needsYouScope(count, where);
   // Nothing waiting, it stays as a quiet grey pill, so the tiles don't jump.
   return (
@@ -340,7 +341,8 @@ function SoloTile() {
     () => new Set(workspaces.map((state) => state.workspace.id as string)),
     [workspaces],
   );
-  const solo = useThreadsStore(useShallow((s) => soloThreads(Object.values(s.byId), ids)));
+  const settle = useSettleRule();
+  const solo = useThreadsStore(useShallow((s) => soloThreads(Object.values(s.byId), ids, settle)));
   const here = useViewSolo();
   return (
     <Flyout
