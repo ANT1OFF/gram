@@ -1,5 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
-import { InvalidState, SendResult, type Thread, type ThreadId } from "@gram/contracts";
+import {
+  CLOSED_THREADS_LIMIT,
+  InvalidState,
+  SendResult,
+  type Thread,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -165,7 +171,210 @@ describe("durable message receipts", () => {
     }),
   );
 
-  it.effect("bounds the table without evicting uncertain reservations", () =>
+  it.effect("refuses a late retry after response eviction and SQLite restart", () =>
+    Effect.gen(function* () {
+      const dir = mkdtempSync(join(tmpdir(), "gram-expired-receipts-"));
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => rmSync(dir, { recursive: true, force: true })),
+      );
+      const file = join(dir, "expired.db");
+      let deliveries = 0;
+      const action = (id: string) =>
+        Effect.sync(() => {
+          if (id === "very-old") deliveries++;
+          return { queued: false };
+        });
+      yield* Effect.gen(function* () {
+        yield* seed;
+        const store = yield* ThreadStore;
+        const sql = yield* SqlClient.SqlClient;
+        yield* store.messageReceipt(
+          T,
+          "very-old",
+          ["send"],
+          SendResult,
+          InvalidState,
+          action("very-old"),
+        );
+        yield* sql`WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x < ${MESSAGE_RECEIPT_LIMIT - 1})
+          INSERT INTO message_receipts(thread_id, client_message_id, fingerprint, outcome)
+          SELECT ${T}, 'filler-' || x, 'synthetic', '{"ok":true,"value":{"queued":false}}' FROM n`;
+        yield* store.messageReceipt(
+          T,
+          "newest",
+          ["send"],
+          SendResult,
+          InvalidState,
+          action("newest"),
+        );
+      }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+      yield* Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const retry = yield* store
+          .messageReceipt(T, "very-old", ["send"], SendResult, InvalidState, action("very-old"))
+          .pipe(Effect.exit);
+        expect(deliveries).toBe(1);
+        expect(retry._tag).toBe("Failure");
+      }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+    }),
+  );
+
+  for (const uncertain of [false, true]) {
+    it.effect(
+      `keeps ${uncertain ? "uncertain" : "completed"} identities through close, restart and reopen`,
+      () =>
+        Effect.gen(function* () {
+          const dir = mkdtempSync(join(tmpdir(), "gram-closed-receipts-"));
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => rmSync(dir, { recursive: true, force: true })),
+          );
+          const file = join(dir, "closed.db");
+          let deliveries = 0;
+          const action = Effect.gen(function* () {
+            deliveries++;
+            if (uncertain && deliveries === 1) return yield* Effect.die("synthetic process loss");
+            return { queued: false };
+          });
+          yield* Effect.gen(function* () {
+            yield* seed;
+            const store = yield* ThreadStore;
+            yield* store
+              .messageReceipt(T, "before-close", ["send"], SendResult, InvalidState, action)
+              .pipe(Effect.exit);
+            yield* store.closeThread(T, 100);
+          }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+          yield* Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const closed = yield* store.takeNewestClosed;
+            expect(closed?.closed.thread.id).toBe(T);
+            yield* store.insertThread(closed!.closed.thread);
+            yield* store.restoreClosedHistory(T);
+            const retry = yield* store
+              .messageReceipt(T, "before-close", ["send"], SendResult, InvalidState, action)
+              .pipe(Effect.exit);
+            expect(deliveries).toBe(1);
+            expect(retry._tag).toBe(uncertain ? "Failure" : "Success");
+          }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+        }),
+    );
+  }
+
+  it.effect(
+    "drops safety records only when a closed thread is forgotten or evicted permanently",
+    () =>
+      Effect.gen(function* () {
+        yield* seed;
+        const store = yield* ThreadStore;
+        const sql = yield* SqlClient.SqlClient;
+        const thread = yield* store.getThread(T);
+        for (const [id, at] of [
+          [T, 1],
+          ["t2" as ThreadId, 2],
+        ] as const) {
+          yield* store.messageReceipt(
+            id,
+            "identity",
+            ["send"],
+            SendResult,
+            InvalidState,
+            Effect.succeed({ queued: false }),
+          );
+          yield* store.closeThread(id, at);
+        }
+        yield* store.forgetClosed("t2" as ThreadId);
+        expect(
+          yield* sql`SELECT client_message_id FROM message_receipts WHERE thread_id = 't2'`,
+        ).toEqual([]);
+        expect(
+          yield* sql`SELECT client_message_id FROM message_receipts WHERE thread_id = ${T}`,
+        ).toEqual([{ client_message_id: "identity" }]);
+        for (let i = 0; i < CLOSED_THREADS_LIMIT; i++) {
+          yield* store.rememberClosed(
+            { ...thread, id: `closed-filler-${i}` as ThreadId },
+            i + 3,
+            [],
+          );
+        }
+        expect((yield* store.listClosed).map((closed) => closed.thread.id)).not.toContain(T);
+        expect(
+          yield* sql`SELECT client_message_id FROM message_receipts WHERE thread_id = ${T}`,
+        ).toEqual([]);
+      }).pipe(Effect.provide(memory), Effect.scoped),
+  );
+
+  it.effect(
+    "syncs the reservation at FULL before dispatch, then returns ordinary writes to NORMAL",
+    () =>
+      Effect.gen(function* () {
+        const dir = mkdtempSync(join(tmpdir(), "gram-receipt-sync-"));
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => rmSync(dir, { recursive: true, force: true })),
+        );
+        yield* Effect.gen(function* () {
+          yield* seed;
+          const store = yield* ThreadStore;
+          const sql = yield* SqlClient.SqlClient;
+          // SQLite cannot change synchronous inside this transaction. Seeing FULL at INSERT,
+          // then entering the action, proves that reservation committed at FULL before delivery.
+          yield* sql`CREATE TABLE receipt_sync_probe (level INTEGER NOT NULL)`;
+          yield* sql`CREATE TRIGGER receipt_sync_probe BEFORE INSERT ON message_receipts BEGIN
+          INSERT INTO receipt_sync_probe SELECT synchronous FROM pragma_synchronous;
+        END`;
+          yield* store.messageReceipt(
+            T,
+            "sync-before-delivery",
+            ["send"],
+            SendResult,
+            InvalidState,
+            Effect.gen(function* () {
+              const [normal] = yield* sql<{ synchronous: number }>`PRAGMA synchronous`;
+              expect(Number(normal!.synchronous)).toBe(1);
+              const [committed] = yield* sql<{
+                level: number;
+              }>`SELECT level FROM receipt_sync_probe`;
+              expect(Number(committed!.level)).toBe(2);
+              return { queued: false };
+            }),
+          );
+        }).pipe(Effect.provide(ThreadStore.layerSqlite(join(dir, "sync.db"))));
+      }),
+  );
+
+  it.effect("never dispatches a failed reservation and restores NORMAL after rollback", () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const store = yield* ThreadStore;
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`CREATE TRIGGER fail_reservation BEFORE INSERT ON message_receipts BEGIN
+        SELECT RAISE(ABORT, 'synthetic reservation failure');
+      END`;
+      let deliveries = 0;
+      const action = Effect.sync(() => {
+        deliveries++;
+        return { queued: false };
+      });
+      const send = store.messageReceipt(
+        T,
+        "retry-after-rollback",
+        ["send"],
+        SendResult,
+        InvalidState,
+        action,
+      );
+      expect((yield* send.pipe(Effect.exit))._tag).toBe("Failure");
+      expect(deliveries).toBe(0);
+      expect(
+        yield* sql`SELECT client_message_id FROM message_receipts WHERE thread_id = ${T}`,
+      ).toEqual([]);
+      const [normal] = yield* sql<{ synchronous: number }>`PRAGMA synchronous`;
+      expect(Number(normal!.synchronous)).toBe(1);
+      yield* sql`DROP TRIGGER fail_reservation`;
+      expect(yield* send).toEqual({ queued: false });
+      expect(deliveries).toBe(1);
+    }).pipe(Effect.provide(memory), Effect.scoped),
+  );
+
+  it.effect("bounds recent responses and unfinished work without evicting safety identities", () =>
     Effect.gen(function* () {
       yield* seed;
       const store = yield* ThreadStore;
@@ -197,10 +406,12 @@ describe("durable message receipts", () => {
       INSERT INTO message_receipts(thread_id, client_message_id, fingerprint, outcome)
       SELECT ${T}, 'old-' || x, 'synthetic', '{"ok":true,"value":{"queued":false}}' FROM n`;
       yield* store.messageReceipt(T, "new", ["send"], SendResult, InvalidState, action);
-      const [count] = yield* sql<{
-        n: number;
-      }>`SELECT COUNT(*) AS n FROM message_receipts WHERE thread_id = ${T}`;
-      expect(Number(count!.n)).toBe(MESSAGE_RECEIPT_LIMIT);
+      const [count] = yield* sql<{ total: number; recent: number; responses: number }>`SELECT
+        COUNT(*) AS total, SUM(retired = 0) AS recent, SUM(outcome IS NOT NULL) AS responses
+        FROM message_receipts WHERE thread_id = ${T}`;
+      expect(Number(count!.total)).toBe(MESSAGE_RECEIPT_LIMIT + 2);
+      expect(Number(count!.recent)).toBe(MESSAGE_RECEIPT_LIMIT);
+      expect(Number(count!.responses)).toBe(MESSAGE_RECEIPT_LIMIT - 1);
       const [pending] =
         yield* sql`SELECT outcome FROM message_receipts WHERE thread_id = ${T} AND client_message_id = 'uncertain'`;
       expect(pending).toEqual({ outcome: null });
@@ -211,6 +422,8 @@ describe("durable message receipts", () => {
         .pipe(Effect.flip);
       expect(full).toMatchObject({ _tag: "InvalidState" });
       expect(dispatched).toBe(false);
+      yield* store.removeThread(T);
+      expect(yield* sql`SELECT * FROM message_receipts WHERE thread_id = ${T}`).toEqual([]);
     }).pipe(Effect.provide(memory), Effect.scoped),
   );
 });

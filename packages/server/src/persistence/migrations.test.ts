@@ -125,6 +125,8 @@ describe("the baseline", () => {
         "index closed_turns_thread",
         "index draft_stashes_thread",
         "index dreams_workspace",
+        "index message_receipts_pending",
+        "index message_receipts_responses",
         "index messages_search_pending",
         "index messages_thread_rev",
         "index messages_thread_seq",

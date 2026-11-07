@@ -391,12 +391,19 @@ const messageReceipts = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`CREATE TABLE message_receipts (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
-    thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    thread_id TEXT NOT NULL,
     client_message_id TEXT NOT NULL,
     fingerprint TEXT NOT NULL,
     outcome TEXT,
+    retired INTEGER NOT NULL DEFAULT 0,
     UNIQUE (thread_id, client_message_id)
   )`;
+  // Identity tombstones outlive the live thread row. These partial indexes keep new admission
+  // work proportional to the bounded recent responses/unfinished work, not all past identities.
+  yield* sql`CREATE INDEX message_receipts_pending ON message_receipts(thread_id)
+    WHERE outcome IS NULL AND retired = 0`;
+  yield* sql`CREATE INDEX message_receipts_responses ON message_receipts(thread_id, seq DESC)
+    WHERE outcome IS NOT NULL`;
 });
 
 export const migrations = {

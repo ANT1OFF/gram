@@ -88,6 +88,7 @@ import {
   readableRow,
   readableRows,
 } from "./stored.ts";
+import { durableCommit } from "./durable-commit.ts";
 import { makeMessageReceipts } from "./message-receipts.ts";
 import { DAY_MS } from "../zone-time.ts";
 
@@ -942,6 +943,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       // The data methods below use one statement or one top-level transaction; nothing nests.
       // Message receipts own separate reservation/outcome transactions around the runtime action.
       const tx = <A, E, R>(effect: Effect.Effect<A, E, R>) => run(sql.withTransaction(effect));
+      const commitReservation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        durableCommit(sql, effect);
 
       /** A settings-by-chat audit row, and a workspace's own `settings` event; inside a `tx`. */
       const insertSettingsAudit = (entry: SettingsAuditEntry) =>
@@ -974,6 +977,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         Effect.gen(function* () {
           yield* sql`DELETE FROM closed_messages WHERE thread_id = ${id}`;
           yield* sql`DELETE FROM closed_turns WHERE thread_id = ${id}`;
+          yield* sql`DELETE FROM message_receipts WHERE thread_id = ${id}
+            AND thread_id NOT IN (SELECT id FROM threads)
+            AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
           yield* sql`DELETE FROM worker_reports WHERE thread_id = ${id}
             AND thread_id NOT IN (SELECT id FROM threads)`;
           yield* sql`DELETE FROM thread_plans WHERE thread_id = ${id}
@@ -1013,6 +1019,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             WHERE thread_id NOT IN (SELECT id FROM threads)
               AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
           yield* sql`DELETE FROM thread_plans
+            WHERE thread_id NOT IN (SELECT id FROM threads)
+              AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
+          yield* sql`DELETE FROM message_receipts
             WHERE thread_id NOT IN (SELECT id FROM threads)
               AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
           yield* sql`DELETE FROM wait_items
@@ -1651,7 +1660,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         );
 
       return ThreadStore.of({
-        messageReceipt: makeMessageReceipts(sql, receiptScope),
+        messageReceipt: makeMessageReceipts(sql, receiptScope, commitReservation),
         setCompletion,
         updateCompletion,
         listQueue: (threadId) =>
@@ -1906,6 +1915,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 yield* sql`DELETE FROM ${sql(table)} WHERE thread_id = ${id}`;
               }
               yield* sql`DELETE FROM threads WHERE id = ${id}`;
+              yield* sql`DELETE FROM message_receipts WHERE thread_id = ${id}
+                AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
               yield* unlinkOrchestration(id);
             }),
           ),
@@ -2030,7 +2041,13 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }),
         ),
         forgetClosed: (threadId) =>
-          run(sql`DELETE FROM closed_threads WHERE thread_id = ${threadId}`.pipe(Effect.asVoid)),
+          tx(
+            Effect.gen(function* () {
+              yield* sql`DELETE FROM closed_threads WHERE thread_id = ${threadId}`;
+              yield* sql`DELETE FROM message_receipts WHERE thread_id = ${threadId}
+                AND thread_id NOT IN (SELECT id FROM threads)`;
+            }),
+          ),
 
         listMessages: (threadId) =>
           run(
