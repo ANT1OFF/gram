@@ -13,6 +13,7 @@ import {
   ExternalLink,
   FolderGit2,
   FolderOpen,
+  GitBranch,
   GitPullRequest,
   Globe,
   MessageSquare,
@@ -733,10 +734,13 @@ function ToolLine({ row }: { row: ToolRow }) {
           />
         }
       >
+        {/* An agent by its own mark; the GitHub CLI by what it is for, git by its branches. */}
         {row.tool === "claude" || row.tool === "codex" ? (
           <AgentIcon agent={row.tool} className="size-icon-row" />
+        ) : row.tool === "gh" ? (
+          <GitPullRequest aria-hidden className="size-icon-row" />
         ) : (
-          <FolderGit2 aria-hidden className="size-icon-row" />
+          <GitBranch aria-hidden className="size-icon-row" />
         )}
         <span className={needed ? "font-medium text-foreground" : undefined}>{row.name}</span>
         <Icon aria-hidden className={cn("ml-1 size-icon-chip", state.className)} />
