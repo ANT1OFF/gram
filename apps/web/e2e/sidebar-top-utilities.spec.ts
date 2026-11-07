@@ -178,8 +178,9 @@ test("empty sidebar keeps all four top actions reachable", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings/);
 });
 
-// The header stays icons alone, so each says what it does the moment it's hovered, and its key where
-// it has one: a native title would wait a second before saying anything.
+// The header's icons each say what they do the moment they're hovered, and their key where they have
+// one: a native title would wait a second before saying anything. New task also says its words where
+// the header has room.
 test("each top-left icon names itself and its key on hover", async ({ page }) => {
   await page.goto("/");
   const sidebar = page.getByTestId("overview-sidebar");
@@ -190,7 +191,7 @@ test("each top-left icon names itself and its key on hover", async ({ page }) =>
     ["Settings", /^Settings \((⌘|Ctrl\+),\)/],
     ["Compact overview", /^Compact overview$/],
     // New opens a menu, whose Task, Team and Chat each show their own key.
-    ["New", /^New task, team or chat$/],
+    ["New task", /^New task, team or chat$/],
   ];
   for (const [name, label] of expected) {
     await sidebar.locator(`[aria-label="${name}"]`).first().hover();
