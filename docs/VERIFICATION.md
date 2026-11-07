@@ -66,8 +66,8 @@ To populate an orchestrator workspace in the mock browser, run
 `sessionStorage.setItem("gram.mock.orchestration", "realistic")` and reload for the realistic
 scenario, or run `await window.gramMock.simulateOneThread()` in its developer console, then click the new
 `agent-platform` workspace in the sidebar. For Quiet's busy workspace, run
-`await window.gramMock.simulateQuietBusy()` and click `casefiles`, then Quiet. Memory in an
-orchestrator's header opens the seeded memory files and Dreams. Navigate by clicking after
+`await window.gramMock.simulateQuietBusy()`, click `casefiles`, then Quiet under View in the title
+bar's … menu. Memory in an orchestrator's header opens the seeded memory files and Dreams. Navigate by clicking after
 seeding: mock workspaces live in memory and a page reload drops them. Start a fresh preview to
 reset the scenarios; close its browser or press Ctrl-C to clean up its owned resources.
 
