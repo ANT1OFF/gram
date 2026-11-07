@@ -10,7 +10,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { KeyRound } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { aboveComposer } from "./above-composer";
 import { SpeedField } from "./speed-field";
 import { ModelSelect, type ModelPick } from "./model-select";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
@@ -169,6 +170,7 @@ export function AgentFields({
   const effortItems = [DEFAULT_EFFORT_OPTION, ...efforts];
   const effortShown = effortItems.find((o) => o.value === (value.variant ?? DEFAULT_EFFORT));
   const effortConfirm = usePickConfirm(value.variant ?? DEFAULT_EFFORT);
+  const effortTrigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (initializeDefault && value.model === "" && listedDefault && !needsKey) {
       onChange({ ...value, model: listedDefault });
@@ -326,6 +328,7 @@ export function AgentFields({
                   }}
                 >
                   <PickerTrigger
+                    ref={effortTrigger}
                     label="Effort"
                     value={effortShown?.short ?? effortShown?.label ?? DEFAULT_EFFORT_OPTION.short}
                     compact={effortShown?.compact}
@@ -341,7 +344,7 @@ export function AgentFields({
                     confirm={ghost ? effortConfirm.landed : undefined}
                     {...trigger}
                   />
-                  <SelectContent>
+                  <SelectContent anchor={() => aboveComposer(effortTrigger.current)}>
                     {effortItems.map((o) => (
                       <SelectItem key={o.value} value={o.value} description={o.description}>
                         {o.label}

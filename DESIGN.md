@@ -131,17 +131,21 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     dialog never rings as a whole.
 - **The composer's toolbar says its values:** one order in every composer (the orchestrator's
   chat, a solo thread's and `/new`): model · effort · mode · speed, then "…". A control that
-  doesn't apply keeps its slot, greyed, with why on hover, so the rest never move up. Each says
-  its value in full while the row has room ("Claude Opus", "Extra high", "Plan"); short of it, in
-  three to six letters ("Opus", "X-high", "Edits"); still short, the pickers take a row of their
-  own above Send and Stop, words kept. Only when even that row can't hold the short words do they
+  doesn't apply keeps its slot, greyed, with why on hover, so the rest never move up. Each names
+  what it picks before its value, in a lighter weight, so a value never reads as another
+  control's: "Claude Opus", "Effort: Extra high", "Mode: Plan", "Speed: Standard". Short of room the
+  value takes three to six letters ("Opus", "Effort: X-high", "Mode: Edits"), and a default keeps
+  the dimension alone ("Effort", "Speed"); still short, the pickers take a row of their own above
+  Send and Stop, words kept. Only when even that row can't hold the short words do they
   give way to glyphs, then fold into "…". Each trigger's tooltip and name say the value and its
   shortcut ("Effort: Extra high (⌘⇧E)"), its open list checks the current value with a line on
   what each costs, and a pick is confirmed in words for a moment. Every target on the row is 32 px
   tall, and words keep 48 px clear of Send and Stop. Stop is a solid pill reading "Stop" beside
   its square, the square inside the running ring, right-aligned where Send sits; its key shows
-  beside it while the composer has focus. A default says whose it is ("Model default" for effort,
-  "CLI default" for speed), never a bare "Default".
+  beside it while the composer has focus. A default says whose it is ("Effort: Model default",
+  "Speed: CLI default"), never a bare "Default". Beside Send the context meter says "Context 36%"
+  over its bar, the number alone in a composer under 36 rem, and its popover says what it
+  measures. A picker's list opens above the whole composer, never over the draft.
 - **Icon-only chrome names itself on hover:** the title bar's and the overview header's icons use
   the instant tooltip (`Hint`), never a native title, with the shortcut where there is one. A hint
   opens when the pointer moves onto its trigger, never for one that appears under a resting

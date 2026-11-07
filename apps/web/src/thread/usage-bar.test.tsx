@@ -242,7 +242,7 @@ describe("ContextRing", () => {
   });
 
   it("names the context filled, or just usage without a window", () => {
-    expect(ringLabel(31)).toBe("Usage: 31% of the context window");
+    expect(ringLabel(31)).toBe("Context: 31% of the window used");
     expect(ringLabel(undefined)).toBe("Usage");
   });
 
@@ -253,11 +253,15 @@ describe("ContextRing", () => {
 
   it("fills a bar to the context used, says the number, and colours it by level", () => {
     const ring = renderRing(usage({ contextTokens: 186_000 }));
-    expect(ring.getAttribute("aria-label")).toBe("Usage: 93% of the context window");
+    expect(ring.getAttribute("aria-label")).toBe("Context: 93% of the window used");
     expect(ring.dataset["level"]).toBe("warning");
-    expect(ring.textContent).toBe("93%");
-    // In the ring's 32 px, which the toolbar's layout measures.
-    expect(ring.className).toMatch(/\bsize-8\b/);
+    // Named on its face, "Context 93%"; under 36 rem the word goes and the number keeps 32 px.
+    expect(ring.textContent).toBe("Context 93%");
+    expect(screen.getByTestId("usage-ring-word").className).toContain(
+      "@max-[36rem]/composer:hidden",
+    );
+    expect(ring.className).toMatch(/\bh-8\b/);
+    expect(ring.className).toMatch(/\bmin-w-8\b/);
     expect(screen.getByTestId("usage-ring-bar").firstElementChild?.getAttribute("style")).toContain(
       "width: 93%",
     );

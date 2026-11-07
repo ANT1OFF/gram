@@ -6,6 +6,7 @@ import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 
+import { aboveComposer } from "./above-composer";
 import { ModelCombobox } from "./model-picker";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { GHOST_TRIGGER } from "./styles";
@@ -100,6 +101,7 @@ export function Picker<V extends string>({
   search,
 }: PickerProps<V>) {
   const [open, setOpenState] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   const setOpen = (next: boolean) => {
     if (next) onOpen?.();
     setOpenState(next);
@@ -170,6 +172,7 @@ export function Picker<V extends string>({
       }}
     >
       <PickerTrigger
+        ref={trigger}
         size="sm"
         label={label}
         value={shown}
@@ -184,7 +187,8 @@ export function Picker<V extends string>({
         data-warning={warning ? "true" : undefined}
         className={cn(GHOST_TRIGGER, warning && "text-warning hover:text-warning")}
       />
-      <SelectContent side="top">
+      {/* Above the whole composer, so the list never covers the draft. */}
+      <SelectContent side="top" anchor={() => aboveComposer(trigger.current)}>
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value} description={option.description}>
             {option.label}

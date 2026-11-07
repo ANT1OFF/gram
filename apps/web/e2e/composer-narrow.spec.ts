@@ -49,7 +49,8 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   const mode = toolbar.getByRole("combobox", { name: /^Mode: / });
   await expect(mode).toHaveAccessibleName("Mode: Ask");
   await expect(mode.locator("[data-toolbar-label]")).not.toHaveClass(/\bsr-only\b/);
-  await expect(mode).toHaveText(/^Ask/);
+  // Its words name what it picks, so a value never reads as another control's.
+  await expect(mode).toHaveText(/^Mode: Ask/);
   await mode.hover();
   const tooltip = page.locator('[data-slot="tooltip-content"]');
   await expect(tooltip).toHaveText(/^Mode: Ask/);
@@ -67,10 +68,9 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   await expect(speed).toHaveAccessibleName("Speed: CLI default");
   await expect(more).toHaveCount(0);
 
-  // The context gauge beside Send keeps the ring's 32 px: the steps below are measured against
-  // what that slot leaves, and a wider gauge folded the pickers a step early.
-  const gauge = await page.getByTestId("usage-ring").boundingBox();
-  expect(gauge!.width).toBeLessThanOrEqual(32);
+  // With room the context gauge beside Send says what it measures, "Context 31%".
+  const gauge = page.getByTestId("usage-ring");
+  await expect(gauge).toHaveText(/^Context \d+%$/);
 
   // Short of room, the model's name goes compact first; the others keep their words. Measured at
   // 540 px: Linux names Stop's key "Ctrl+.", some 26 px wider than "⌘.", so at 520 px there the
@@ -82,21 +82,25 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   await expect(compact).toHaveText("Opus");
   await expect(model.locator("[data-toolbar-label]")).toHaveClass(/\bsr-only\b/);
   await expect(model).toHaveAccessibleName("Model: Claude Opus");
-  await expect(mode).toHaveText(/^Ask/);
+  await expect(mode).toHaveText(/^Mode: Ask/);
   expect(await rowSpread(page)).toBeLessThanOrEqual(1);
+  // Under 36 rem the gauge keeps the ring's 32 px, its number alone: the steps below are measured
+  // against what that slot leaves, and a wider gauge folded the pickers a step early.
+  await expect(gauge).toHaveText(/^\d+%$/);
+  expect((await gauge.boundingBox())!.width).toBeLessThanOrEqual(32);
 
   // At 520 px, on one row in short words or on their own row in full ones, effort and mode still
   // say their values: never a glyph alone.
   await squeeze(page, 520);
   const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
-  await expect.poll(() => shownWords(effort)).toMatch(/^(Effort|Model default)$/);
-  await expect.poll(() => shownWords(mode)).toBe("Ask");
+  await expect.poll(() => shownWords(effort)).toMatch(/^(Effort|Effort: Model default)$/);
+  await expect.poll(() => shownWords(mode)).toBe("Mode: Ask");
 
   // Narrower, the pickers take a row of their own, words and all, above Send and Stop: still so
   // at 300 px, a narrow pane beside a wide diff in a 1024 px window.
   await squeeze(page, 300);
   await expect(toolbar).toHaveAttribute("data-wrapped", "true");
-  await expect(mode).toHaveText(/^Ask/);
+  await expect(mode).toHaveText(/^Mode: Ask/);
   const modeBox = await mode.boundingBox();
   const stopBox = await stop.boundingBox();
   expect(stopBox!.y).toBeGreaterThanOrEqual(modeBox!.y + modeBox!.height);
@@ -193,10 +197,14 @@ test("beside a review in a 1024 px window, effort keeps a short word", async ({ 
   const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
   await expect(effort).toHaveAccessibleName("Effort: Model default");
   const mode = toolbar.getByRole("combobox", { name: /^Mode: / });
-  await expect(mode).toHaveText(/^Ask/);
+  await expect(mode).toHaveText(/^Mode: Ask/);
   // A readable value of three letters or more, the compact one or the whole: never the gauge alone.
   // Short, it says its own name, "Effort", not "Model", which beside the model picker read as a second.
-  await expect.poll(() => shownWords(effort)).toMatch(/^(Effort|Model default)$/);
+  await expect.poll(() => shownWords(effort)).toMatch(/^(Effort|Effort: Model default)$/);
+  // Speed too keeps its name, never the bolt alone.
+  await expect
+    .poll(() => shownWords(toolbar.getByRole("combobox", { name: /^Speed: / })))
+    .toMatch(/^Speed(: CLI default)?$/);
   await expect
     .poll(() => shownWords(toolbar.getByRole("combobox", { name: /^Model/ })))
     .toMatch(/^(Opus|Claude Opus)$/);

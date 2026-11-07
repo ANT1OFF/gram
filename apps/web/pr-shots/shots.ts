@@ -956,8 +956,8 @@ const openNewPrompt = (width: number) => async (page: Page) => {
   await page.waitForTimeout(400);
 };
 
-/** Each composer toolbar at a real window's width and at 1024 px. */
-const COMPOSER_TOOLBAR_SHOTS: readonly Shot[] = [1728, 1024].flatMap((width): Shot[] => [
+/** Each composer toolbar at a real window's width, at 1440 px and at 1024 px. */
+const COMPOSER_TOOLBAR_SHOTS: readonly Shot[] = [1728, 1440, 1024].flatMap((width): Shot[] => [
   {
     name: `composer-orchestrator-${width}`,
     title: `The orchestrator's composer at ${width} px: model · effort · mode · speed`,

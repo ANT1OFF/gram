@@ -356,12 +356,18 @@ describe("AgentFields speed", () => {
   it("says Speed's value in the prompt box as effort and mode do, and in full outside it", async () => {
     const user = userEvent.setup();
     renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard", "fast"], true);
-    // A short value with room, as the model, effort and mode show theirs; the category on hover.
+    // A short value after its dimension with room, as effort and mode say theirs, and on hover.
     const speed = await screen.findByRole("combobox", { name: "Speed: Standard" });
     expect(speed.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
-    expect(speed.querySelector("[data-toolbar-label]")?.textContent).toBe("Standard");
+    expect(speed.querySelector("[data-toolbar-label]")?.textContent).toBe("Speed: Standard");
+    // Short of room, the dimension alone, never the bolt alone.
+    expect(speed.querySelector("[data-toolbar-compact]")?.textContent).toBe("Speed");
     await user.hover(speed);
-    expect(await screen.findByText("Speed: Standard")).toBeTruthy();
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toBe(
+        "Speed: Standard",
+      ),
+    );
     cleanup();
     renderSpeed({ agent: "claude", model: "m" }, ["standard"], false);
     expect((await screen.findByLabelText("Speed")).textContent).toContain("CLI default");

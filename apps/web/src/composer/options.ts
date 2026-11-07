@@ -104,10 +104,10 @@ export const DEFAULT_EFFORT = "default";
 export const DEFAULT_EFFORT_OPTION = {
   value: DEFAULT_EFFORT,
   label: "Default effort",
-  // Says what the default is, not just that it is one: the model picks its own level. Short of
-  // room it keeps a word, as every other effort keeps one, and gives it up for the gauge only where
-  // every picker does: the control's own name, "Effort" (not "Model", which beside the model picker
-  // read as a second one; not "Auto", which is a mode), its value on hover.
+  // Says whose default it is, not just that it is one: the model picks its own level. The toolbar
+  // puts the dimension first, "Effort: Model default"; short of room it keeps the dimension alone,
+  // "Effort" (never "Model", which beside the model picker read as a second one), its value on
+  // hover.
   short: "Model default",
   compact: "Effort",
   description: "Whatever level the model uses on its own.",

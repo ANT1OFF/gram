@@ -69,7 +69,7 @@ test("a /compact runs live, then leaves a marker where it happened, which opens 
   await expect(toggle).toHaveText(/^Context compacted · \d{2}:\d{2} · 182K → 24K tokens$/);
   await expect(page.getByTestId("usage-ring")).toHaveAttribute(
     "aria-label",
-    "Usage: 12% of the context window",
+    "Context: 12% of the window used",
   );
   await expect(page.getByTestId("compaction-summary")).toHaveCount(0);
   await toggle.click();

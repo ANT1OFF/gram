@@ -7,6 +7,7 @@ import { keyLabel } from "@/keyboard/registry";
 import { cn } from "@/lib/utils";
 import { PulseOnce, Swap } from "@/motion";
 
+import { aboveComposer } from "./above-composer";
 import { matchesModel, modelGroups, type ModelGroup } from "./models";
 import type { PickerOption } from "./picker";
 import { labelSize, usePickConfirm, ValueWords } from "./picker-trigger";
@@ -69,6 +70,7 @@ export function ModelCombobox({
   field?: boolean;
 }) {
   const highlighted = useRef<Option | undefined>(undefined);
+  const trigger = useRef<HTMLButtonElement>(null);
   const groups = modelGroups(options, favourite);
   // A single unnamed section needs no heading; an agent's or a gateway's name always says whose.
   const headed = groups.length > 1 || options.some((option) => option.group !== undefined);
@@ -79,6 +81,7 @@ export function ModelCombobox({
   const whole = labelSize(labelled) === "full";
 
   const triggerProps = {
+    ref: trigger,
     "aria-label": whole ? label : `${label}: ${shown}`,
     "aria-description": description,
     title: whole ? title : undefined,
@@ -141,8 +144,10 @@ export function ModelCombobox({
         </Hint>
       )}
       <Combobox.Portal>
+        {/* On a toolbar, above the whole composer: over it, the list hid the draft being written. */}
         <Combobox.Positioner
           side={field ? "bottom" : "top"}
+          {...(field ? {} : { anchor: () => aboveComposer(trigger.current) })}
           align="start"
           sideOffset={4}
           className="isolate z-50"

@@ -23,7 +23,8 @@ test("effort says its value, checks it in the list, and confirms a pick in words
   const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
   // No effort chosen: the model's own default, said as such.
   await expect(effort).toHaveAccessibleName("Effort: Model default");
-  await expect(effort).toHaveText(/^Model default/);
+  // Its words name what it picks, so "Model default" never reads as the model picker's.
+  await expect(effort).toHaveText(/^Effort: Model default/);
 
   await effort.hover();
   await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
@@ -40,7 +41,7 @@ test("effort says its value, checks it in the list, and confirms a pick in words
   await xhigh.click();
 
   await expect(effort).toHaveAccessibleName("Effort: Extra high");
-  await expect(effort).toHaveText(/^Extra high/);
+  await expect(effort).toHaveText(/^Effort: Extra high/);
   await expect(toolbar.getByText("Effort set to Extra high")).toBeVisible();
   await effort.click();
   await expect(page.getByRole("option", { name: "Extra high effort" })).toHaveAttribute(
@@ -120,4 +121,29 @@ test("Stop says Stop beside its square, says its key while you're in the compose
   await expect(page.getByTestId("stop-receipt")).toContainText(/Continue/);
   expect(await send.evaluate((el) => el.getBoundingClientRect().right)).toBeCloseTo(stopRight, 0);
   await expect(said).toBeVisible();
+});
+
+// The model picker opened over the draft, hiding what was being written; every toolbar list now
+// opens above the whole composer.
+test("the toolbar's lists open above the composer, never over the draft", async ({ page }) => {
+  await page.goto("/t/t-deps");
+  const message = page.getByLabel("Message", { exact: true });
+  await message.fill("Add retry coverage for the queue consumer.");
+  const composer = await box(page.locator('[data-surface="composer"]'));
+  const toolbar = page.getByTestId("composer-toolbar");
+
+  await toolbar.getByRole("combobox", { name: "Model", exact: true }).click();
+  const models = page.getByTestId("model-picker");
+  await expect(models).toBeVisible();
+  const list = await box(models);
+  expect(list.y + list.height).toBeLessThanOrEqual(composer.y);
+  await page.keyboard.press("Escape");
+
+  await toolbar.getByRole("combobox", { name: /^Effort: / }).click();
+  const efforts = page.locator('[data-slot="select-content"]');
+  await expect(efforts).toBeVisible();
+  const effortList = await box(efforts);
+  expect(effortList.y + effortList.height).toBeLessThanOrEqual(composer.y);
+  await page.keyboard.press("Escape");
+  await expect(message).toHaveValue("Add retry coverage for the queue consumer.");
 });
