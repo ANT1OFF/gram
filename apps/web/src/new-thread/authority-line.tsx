@@ -192,7 +192,26 @@ export function TaskAuthorityLine({
         data-testid="task-merge-approval"
         className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
       >
-        <span>Merge approval</span>
+        {approval === undefined ? (
+          <span>Merge approval</span>
+        ) : (
+          // Its scope in words beside the choice: the workspace, whose every task it governs.
+          <Hint
+            label={`A workspace setting: every task in ${workspace} follows it, and Settings → Workspaces shows it too.`}
+            render={
+              <span
+                tabIndex={0}
+                data-testid="task-merge-approval-scope"
+                className={cn(
+                  "rounded-xs underline decoration-muted-foreground/60 decoration-dotted underline-offset-2",
+                  FOCUS_RING,
+                )}
+              />
+            }
+          >
+            Merge approval for {workspace}
+          </Hint>
+        )}
         {approval === undefined ? (
           <span className={cn("font-medium", level.warn ? "text-warning" : "text-foreground")}>
             {summary.approval}

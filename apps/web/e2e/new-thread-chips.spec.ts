@@ -106,8 +106,12 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   // Opened from the orchestrator's own thread: where it runs is read off it, not remembered.
   await expect(authority.getByTestId("task-destination-remembered")).toHaveCount(0);
   await expect(authority.getByTestId("task-owner")).toHaveText("Reports to the api orchestrator");
+  // The choice is the workspace's, and says so beside it, not only on hover.
+  await expect(authority.getByTestId("task-merge-approval-scope")).toHaveText(
+    "Merge approval for api",
+  );
   const approval = authority.getByRole("radiogroup", {
-    name: "Merge approval for every task in api",
+    name: "Merge approval for api, a workspace setting",
   });
   await expect(approval.getByRole("radio", { name: "Automatic" })).toBeChecked();
   await expect(authority.getByTestId("task-merge-approval")).toContainText(
@@ -145,6 +149,10 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(authority.getByTestId("task-merge-approval")).toContainText(
     "Opens its pull request; merging waits for you.",
   );
+  // Its Undo names the workspace and what it now does.
+  await expect(
+    page.getByTestId("undo-toast").filter({ hasText: "Workspace api now asks before merging" }),
+  ).toBeVisible();
   // Back to Automatic asks first, since nothing asks after it.
   await approval.getByRole("radio", { name: "Automatic" }).click();
   const confirm = page.getByTestId("merge-approval-confirm");
@@ -155,6 +163,9 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(autonomy.getByTestId("workspace-autonomy-trigger")).toHaveText(
     "Workspace: full autonomy",
   );
+  await expect(
+    page.getByTestId("undo-toast").filter({ hasText: "Workspace api now merges without asking" }),
+  ).toBeVisible();
 
   // Started from here, the worker is the orchestrator's and running, not held as yours.
   await expect(authority).toContainText("Reports to the api orchestrator");

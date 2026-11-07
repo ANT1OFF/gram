@@ -122,18 +122,26 @@ describe("TaskAuthorityLine", () => {
     expect(onChangeWhere).toHaveBeenCalledOnce();
   });
 
-  it("offers merge approval as Ask or Automatic, the current one checked", () => {
+  it("offers merge approval as Ask or Automatic, named as the workspace's setting", () => {
     const onPick = vi.fn();
     render(
-      <TaskAuthorityLine
-        way="direct"
-        workspace="api"
-        autonomy="full"
-        hold={false}
-        approval={{ label: "Merge approval for every task in api", onPick }}
-      />,
+      <TooltipProvider>
+        <TaskAuthorityLine
+          way="direct"
+          workspace="api"
+          autonomy="full"
+          hold={false}
+          approval={{ label: "Merge approval for api, a workspace setting", onPick }}
+        />
+      </TooltipProvider>,
     );
-    const group = screen.getByRole("radiogroup", { name: "Merge approval for every task in api" });
+    // The scope is in words beside the choice, not only on hover.
+    expect(screen.getByTestId("task-merge-approval-scope").textContent).toBe(
+      "Merge approval for api",
+    );
+    const group = screen.getByRole("radiogroup", {
+      name: "Merge approval for api, a workspace setting",
+    });
     const automatic = within(group).getByRole("radio", { name: "Automatic" });
     expect(automatic.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(automatic);

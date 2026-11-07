@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion";
 import { SEGMENT, SEGMENT_SLAB, SEGMENT_TRACK } from "@/settings/fields";
 import { useWorkspaceChanges } from "@/settings/workspace-actions";
-import { autonomyLevel, autonomyNeedsConfirm } from "@/settings/workspace-settings-model";
+import { autonomyNeedsConfirm } from "@/settings/workspace-settings-model";
 
 /** Whether a merge waits for the user: Ask below Full, Automatic at Full. */
 export type MergeApproval = "ask" | "automatic";
@@ -82,10 +82,17 @@ export function MergeApprovalSegments({
   );
 }
 
+/** What the Undo toast says a pick did: to the workspace, never only to this task. */
+export const mergeApprovalSaved = (workspace: string, next: Autonomy): string =>
+  next === "full"
+    ? `Workspace ${workspace} now merges without asking`
+    : `Workspace ${workspace} now asks before merging`;
+
 /**
- * A workspace's merge approval, changed where a task starts: the pick saves the workspace's
- * autonomy as Settings does, with Undo, and Automatic (Full) is confirmed first, since nothing asks
- * after it. The confirmation and any error show on a line of their own under it (`below`).
+ * A workspace's merge approval, changed where a task starts. It is the workspace's setting, not
+ * this task's: the line names the workspace and says so on hover, the pick saves the workspace's
+ * autonomy as Settings does, with an Undo that names the workspace, and Automatic (Full) is
+ * confirmed first, since nothing asks after it. The confirmation and any error show on a line of their own under it (`below`).
  */
 export function useWorkspaceMergeApproval(state: WorkspaceState | undefined, fallback: Autonomy) {
   const changes = useWorkspaceChanges(state);
@@ -101,7 +108,7 @@ export function useWorkspaceMergeApproval(state: WorkspaceState | undefined, fal
     setError(undefined);
     void changes.saveCharter(
       { ...charter, autonomy: next },
-      `Autonomy set to ${autonomyLevel(next).label}`,
+      mergeApprovalSaved(name, next),
       setError,
     );
   };
@@ -150,6 +157,6 @@ export function useWorkspaceMergeApproval(state: WorkspaceState | undefined, fal
     busy: changes.busy,
     ready: charter !== undefined,
     below,
-    label: `Merge approval for every task in ${name}`,
+    label: `Merge approval for ${name}, a workspace setting`,
   };
 }
