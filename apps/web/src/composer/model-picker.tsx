@@ -57,7 +57,7 @@ export function ModelCombobox({
   /** The mark beside each row: the agent the model runs on, unless the option has its own. */
   rowIcon?: ReactNode;
   title: string;
-  /** The glyph's tooltip while it stands alone (`labelled` false), as the toolbar's other pickers. */
+  /** The toolbar trigger's tooltip, as the toolbar's other pickers have; else `title`. */
   tip?: string | undefined;
   description: string | undefined;
   /** Tints the trigger amber, as the compact picker does; `title` carries the reason. */
@@ -84,7 +84,8 @@ export function ModelCombobox({
     ref: trigger,
     "aria-label": whole ? label : `${label}: ${shown}`,
     "aria-description": description,
-    title: whole ? title : undefined,
+    // A form's field says it natively; on a toolbar the instant tooltip says it, whatever the size.
+    title: field ? title : undefined,
     "data-warning": warning ? "true" : undefined,
     className: cn(
       field
@@ -135,11 +136,15 @@ export function ModelCombobox({
         highlighted.current = option;
       }}
     >
-      {whole ? (
+      {field ? (
         <Combobox.Trigger {...triggerProps}>{triggerContent}</Combobox.Trigger>
       ) : (
-        // A native title would wait a second before saying what the glyph means.
-        <Hint label={tip ?? `${label}: ${shown}`} render={<Combobox.Trigger {...triggerProps} />}>
+        // One element whatever its size: a trigger that changed shape between its full and short
+        // forms remounted as the row re-laid itself out, and closed the list it had just opened.
+        <Hint
+          label={tip ?? (whole ? title : `${label}: ${shown}`)}
+          render={<Combobox.Trigger {...triggerProps} />}
+        >
           {triggerContent}
         </Hint>
       )}
