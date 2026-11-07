@@ -323,6 +323,11 @@ export const OnboardingSettings = Schema.Struct({
   gatewayOfferDismissed: Schema.optionalKey(Schema.Boolean),
   /** The new-workspace guide (what an orchestrator, workers and the board are) was read or skipped. */
   workspaceGuideSeen: Schema.optionalKey(Schema.Boolean),
+  /**
+   * A worker's header has shown what Take over changes once, so later it sits behind the header's
+   * Take over hint instead of a line of its own.
+   */
+  takeOverHintSeen: Schema.optionalKey(Schema.Boolean),
 });
 
 export const GridPreset = Schema.Literals(["1", "2c", "3c", "2x2", "2x3", "3c2r"]);
@@ -961,6 +966,7 @@ export const SettingsPatch = Schema.Struct({
       dismissedLaunchIssues: clearable(Schema.Array(Schema.String)),
       gatewayOfferDismissed: Schema.optionalKey(Schema.Boolean),
       workspaceGuideSeen: Schema.optionalKey(Schema.Boolean),
+      takeOverHintSeen: Schema.optionalKey(Schema.Boolean),
     }),
   ),
   layout: Schema.optionalKey(
