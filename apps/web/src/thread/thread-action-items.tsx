@@ -6,6 +6,8 @@ import {
   CircleCheck,
   Ellipsis,
   Hand,
+  Mail,
+  MailOpen,
   Pencil,
   Pin,
   PinOff,
@@ -89,6 +91,17 @@ export function ThreadContextMenuItems({
             <Pin aria-hidden className="size-icon-row" />
           )}
           {thread.pinned ? "Unpin" : "Pin"}
+        </ContextMenuItem>
+      )}
+      {/* A worker's row is at the cap with its own group; More… marks it unread. */}
+      {thread.spawnedBy === undefined && (
+        <ContextMenuItem data-testid="menu-unread" onClick={actions.toggleUnread}>
+          {thread.unread ? (
+            <MailOpen aria-hidden className="size-icon-row" />
+          ) : (
+            <Mail aria-hidden className="size-icon-row" />
+          )}
+          {thread.unread ? "Mark read" : "Mark unread"}
         </ContextMenuItem>
       )}
       <ContextMenuItem onClick={actions.togglePark}>

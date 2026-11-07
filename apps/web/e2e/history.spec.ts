@@ -273,3 +273,60 @@ test("History groups by orchestrator on request, a choice kept across a reload",
   await expect(groups.filter({ hasText: /^Solo threads$/ })).toHaveCount(1);
   await expect(groups.filter({ hasText: /^agent-platform$/ })).toHaveCount(0);
 });
+
+test("the sidebar's Done shows the latest three and hands the rest to History's Done chip", async ({
+  page,
+}) => {
+  await start(page);
+  const done = page.getByTestId("overview-section-doneToday");
+  const shown = done.getByTestId("overview-done");
+  await expect(shown).toHaveCount(3);
+  // One line each: every row is the same height, its title cut at the end.
+  const heights = await shown.evaluateAll((els) =>
+    els.map((el) => el.getBoundingClientRect().height),
+  );
+  expect(new Set(heights).size).toBe(1);
+  const sidebarIds = await shown.evaluateAll((els) =>
+    els.map((el) => el.getAttribute("data-thread-id")!),
+  );
+  const more = done.getByTestId("overview-done-more");
+  await expect(more).toHaveText(/^\d+ more in History$/);
+  await more.click();
+  await expect(history(page)).toBeVisible();
+  await expect(chip(page, "Done")).toHaveAttribute("aria-checked", "true");
+  // The same list: the sidebar's three lead History's Done, which holds no archived chat.
+  expect((await ids(page)).slice(0, 3)).toEqual(sidebarIds);
+  expect(await attrs(page, "data-outcome")).not.toContain("archived");
+});
+
+test("the palette hands a search that matches finished threads to History", async ({ page }) => {
+  await start(page);
+  await page.keyboard.press("ControlOrMeta+k");
+  const palette = page.getByTestId("command-palette");
+  await palette.getByRole("combobox").fill("dark mode");
+  // The solo thread marked done is History's, not listed beside the live threads.
+  await expect(palette.getByRole("option", { name: /Add dark mode toggle/ })).toHaveCount(0);
+  const handoff = palette.getByRole("option", { name: /1 finished in History/ });
+  await expect(handoff).toBeVisible();
+  await handoff.click();
+  await expect(history(page)).toBeVisible();
+  await expect(page.getByTestId("history-search")).toHaveValue("dark mode");
+  await expect(row(page, "t-dark")).toBeVisible();
+});
+
+test("Mark unread on a solo thread's row keeps it unread until it is opened", async ({ page }) => {
+  await start(page);
+  const solo = page
+    .getByTestId("overview-sidebar")
+    .locator('[data-testid="overview-solo"][data-thread-id="t-flaky"]');
+  await solo.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Mark unread" }).click();
+  await expect(solo).toHaveAttribute("data-unread", "true");
+  await expect(solo).toHaveAccessibleName(/, unread,/);
+  await solo.click({ button: "right" });
+  await expect(page.getByRole("menuitem", { name: "Mark read" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await solo.click();
+  await expect(page).toHaveURL(/\/t\/t-flaky$/);
+  await expect(solo).not.toHaveAttribute("data-unread");
+});

@@ -39,6 +39,7 @@ export type PaletteSectionId =
   | "destinations"
   | "filtered"
   | "threads"
+  | "history"
   | "workers"
   | "features"
   | "prs"
@@ -63,6 +64,11 @@ export interface PaletteSources {
   /** The places the window goes: the Inbox, Workers, Memory, Quiet, History, Usage, Settings… */
   destinations?: readonly PaletteItem[];
   threads: readonly PaletteItem[];
+  /**
+   * The row that hands a search to History when it matches threads that are over (archived, done
+   * or settled), which the thread and worker lists leave out: History is their one home.
+   */
+  history?: readonly PaletteItem[];
   /** Threads an orchestrator spawned. */
   workers?: readonly PaletteItem[];
   /** Each workspace's features, by name. */
@@ -206,7 +212,10 @@ export function buildSections(
       { id: "scoped", label: "In view", items: text ? found(sources.scoped) : [] },
     ];
   } else if (kind === "threads") {
-    sections = [capped("threads", "Threads", found(sources.threads), PALETTE_CAPS.kind)];
+    sections = [
+      capped("threads", "Threads", found(sources.threads), PALETTE_CAPS.kind),
+      { id: "history", label: "History", items: found(sources.history) },
+    ];
   } else if (kind === "workers") {
     sections = [capped("workers", "Workers", found(sources.workers), PALETTE_CAPS.kind)];
   } else if (!text) {
@@ -221,6 +230,7 @@ export function buildSections(
     sections = [
       capped("destinations", "Go to", found(destinations), typed.destinations),
       capped("threads", "Threads", found(sources.threads), typed.threads),
+      { id: "history", label: "History", items: found(sources.history) },
       capped("workers", "Workers", found(sources.workers), typed.workers),
       capped("features", "Features", found(sources.features), typed.features),
       capped("prs", "Pull requests", found(sources.prs), typed.prs),

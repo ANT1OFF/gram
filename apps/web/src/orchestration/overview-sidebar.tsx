@@ -56,6 +56,7 @@ import {
   toggleOverviewSidebar,
 } from "@/views/shell-layout";
 import { parkedSoloThreads, soloThreads } from "@/views/solo-threads";
+import { useSettleRule } from "@/views/use-settle-rule";
 import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 import { useBeforeSetup } from "@/welcome/welcome";
 
@@ -755,6 +756,7 @@ export function WorkerRow({
   const lastActivity = useThreadsStore((s) => s.byId[row.threadId]?.thread.lastActivityAt);
   const agent = useThreadsStore((s) => s.byId[row.threadId]?.thread.model?.agent);
   const status = useThreadsStore((s) => s.byId[row.threadId]?.status);
+  const unread = useThreadsStore((s) => s.byId[row.threadId]?.thread.unread === true);
   const busy = useThreadsStore((s) => busyThread(s, row.threadId));
   const pause = useWorkerPause(row.threadId, status, row.held);
   const asking = row.askKey !== undefined;
@@ -774,6 +776,7 @@ export function WorkerRow({
   const starting = status === "starting" && !asking && !row.failed;
   const facts = [
     row.title,
+    ...(unread ? ["unread"] : []),
     ...(pause === undefined ? [] : [PAUSE_WORD[pause.state]]),
     starting ? STARTING : (waiting?.label ?? row.now),
     ...(agent === undefined ? [] : [agentLabel(agent)]),
@@ -793,6 +796,7 @@ export function WorkerRow({
     "data-testid": "overview-worker",
     "data-thread-id": row.threadId,
     "data-asking": asking || undefined,
+    "data-unread": unread || undefined,
     "aria-current": viewed || undefined,
     "aria-label": facts.join(", "),
     // The compact rail's flyout has no card to say them.
@@ -820,10 +824,11 @@ export function WorkerRow({
         data-tone={tone}
         className={DOT_ON_FIRST_LINE}
       />
-      {/* Its title wraps beside the trailing marks, which are rare (a pause, another agent). */}
+      {/* Its title on one line beside the trailing marks, which are rare (a pause, another
+          agent), cut at its end; the hover card, or the flyout's tooltip, says the whole. */}
       <span
         data-testid="overview-worker-title"
-        className={cn(ROW_TITLE, "col-span-1 text-foreground")}
+        className={cn(ROW_TITLE, "col-span-1 text-foreground", unread && UNREAD_TITLE)}
       >
         {row.title}
       </span>
@@ -965,6 +970,9 @@ function usePickedPreview() {
 }
 
 const NO_PRS: readonly { readonly number: number }[] = [];
+
+/** A title marked unread (Mark unread, or an agent's `set_unread`): heavier, until it is opened. */
+const UNREAD_TITLE = "font-semibold text-foreground";
 
 /** A worker's line while its agent session opens, before its first turn runs. */
 const STARTING = "Starting…";
@@ -1214,7 +1222,8 @@ function SoloThreads() {
     [workspaces],
   );
   // The solo threads, by identity and order: a worker's update re-renders none of them.
-  const solo = useThreadsStore(useShallow((s) => soloThreads(Object.values(s.byId), ids)));
+  const settle = useSettleRule();
+  const solo = useThreadsStore(useShallow((s) => soloThreads(Object.values(s.byId), ids, settle)));
   const parked = useThreadsStore(useShallow((s) => parkedSoloThreads(Object.values(s.byId), ids)));
   const viewed = useParams({ strict: false }).threadId;
   if (solo.length + parked.length === 0) return null;
@@ -1456,7 +1465,8 @@ export function SoloRow({
         data-thread-id={thread.id}
         aria-current={viewed || undefined}
         data-settled={faded || undefined}
-        aria-label={`${title}, ${display.label}${lastActive === "" ? "" : `, ${lastActive}`}`}
+        data-unread={thread.unread || undefined}
+        aria-label={`${title}${thread.unread ? ", unread" : ""}, ${display.label}${lastActive === "" ? "" : `, ${lastActive}`}`}
         title={lastActive === "" ? title : `${title}\n${lastActive}`}
         aria-keyshortcuts="Shift+F10"
         onClick={() => openThread(thread.id)}
@@ -1474,10 +1484,10 @@ export function SoloRow({
             display.working && "gram-working",
           )}
         />
-        {/* Like every row: its title over the row's width, wrapping to a second line before it is
-            cut, and its status under it with its last activity at the edge. The virtual list
-            measures each row, so a two-line title keeps the rows under it anchored. */}
-        <span className={ROW_TITLE}>{title}</span>
+        {/* Like every row: its title on one line, cut at its end with the whole on hover, and
+            its status under it with its last activity at the edge. Every row is the same height,
+            so the virtual list's measured rows keep the rows under them anchored. */}
+        <span className={cn(ROW_TITLE, thread.unread && UNREAD_TITLE)}>{title}</span>
         <span data-testid="overview-solo-status" className={ROW_STATUS}>
           <span
             className={cn(

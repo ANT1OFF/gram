@@ -89,6 +89,7 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
     .getByTestId("overview-sidebar")
     .getByRole("button", { name: "New", exact: true });
   await add.click();
+  await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Team/ }).click();
   await expect(page).toHaveURL(/\/new-task$/);
   await expect(page.getByTestId("task-target")).toHaveText("api");
   await expect(page.getByTestId("task-autonomy")).toHaveCount(0);
@@ -163,6 +164,7 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
     .getByTestId("overview-sidebar")
     .getByRole("button", { name: "New", exact: true })
     .click();
+  await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Task/ }).click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
   // A repeat start to the same workspace folds who and where to one line; typing starts in the
   // brief, and who the worker answers to is said beside Start.
@@ -190,8 +192,9 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(page.getByTestId("worker-banner-held")).not.toContainText("Paused");
   await expect(page.getByTestId("worker-hold")).toBeVisible();
 
-  // New opens on the choice used last, folded to its line, which unfolds on it.
+  // New's Task opens a repeat start folded to its line, which unfolds on it.
   await add.click();
+  await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Task/ }).click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
   await page
     .getByRole("group", { name: "Who does it and where it runs" })

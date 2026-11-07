@@ -1,6 +1,42 @@
-import type { ThreadSummary } from "@gram/contracts";
+import { mergedAndDone, threadPrBadges, type ThreadSummary } from "@gram/contracts";
 
 import { sectionOf, splitForTree } from "@/sidebar/grouping";
+
+const DAY_MS = 86_400_000;
+
+/**
+ * When a solo thread at rest settles into History on its own: a merged PR with nothing left open,
+ * or `days` without activity (Settings → General, `settleAfterDaysOf`; 0 never settles an idle
+ * one). `now` is the reader's clock, so a test pins it.
+ */
+export interface SettleRule {
+  readonly now: number;
+  readonly days: number;
+}
+
+/**
+ * Settled on its own (`SettleRule`): at rest with nothing waiting on the user, and neither pinned,
+ * parked, unread nor already marked done, which have their own places. Its PR merged with nothing
+ * left open, or it has sat idle the rule's days. New activity brings it back.
+ */
+export const autoSettled = (summary: ThreadSummary, rule: SettleRule | undefined): boolean => {
+  if (rule === undefined) return false;
+  const { thread } = summary;
+  if (thread.pinned || thread.parked || thread.unread || thread.completedAt !== undefined) {
+    return false;
+  }
+  if (summary.status !== "idle" && summary.status !== "cold" && summary.status !== "ended") {
+    return false;
+  }
+  const section = sectionOf(summary);
+  if (section !== "idle" && section !== "settled") return false;
+  if (mergedAndDone(thread, threadPrBadges(thread, summary.git))) return true;
+  return rule.days > 0 && rule.now - thread.lastActivityAt >= rule.days * DAY_MS;
+};
+
+/** Over, either way: marked done (`soloDone`) or settled on its own (`autoSettled`). */
+export const soloOver = (summary: ThreadSummary, rule: SettleRule | undefined): boolean =>
+  soloDone(summary) || autoSettled(summary, rule);
 
 const latestFirst = (a: ThreadSummary, b: ThreadSummary) =>
   b.thread.lastActivityAt - a.thread.lastActivityAt;
@@ -25,15 +61,16 @@ const needsYouFirst = (a: ThreadSummary, b: ThreadSummary) =>
 
 /**
  * The threads outside any workspace, as the overview lists them: the listed threads beside the
- * workspaces' own, less parked and done ones, those that ask you something first, then latest
- * first.
+ * workspaces' own, less parked, done and settled ones (`soloOver` under `rule`), those that ask you
+ * something first, then latest first.
  */
 export const soloThreads = (
   summaries: Iterable<ThreadSummary>,
   workspaceIds: ReadonlySet<string>,
+  rule?: SettleRule,
 ): ThreadSummary[] =>
   splitForTree(summaries, workspaceIds)
-    .listed.filter((summary) => !summary.thread.parked && !soloDone(summary))
+    .listed.filter((summary) => !summary.thread.parked && !soloOver(summary, rule))
     .toSorted(needsYouFirst);
 
 /** The parked threads outside any workspace, latest first: the overview's folded Parked line. */
@@ -53,3 +90,15 @@ export const doneSoloThreads = (
   splitForTree(summaries, workspaceIds)
     .listed.filter((summary) => !summary.thread.parked && soloDone(summary))
     .toSorted(latestFirst);
+
+/**
+ * Whether History is a thread's home now, not the live lists: archived, marked done, or, for a
+ * one-off thread, settled on its own (`autoSettled`). The palette hands such threads to History
+ * rather than list them beside the live ones.
+ */
+export const inHistory = (summary: ThreadSummary, rule: SettleRule | undefined): boolean =>
+  summary.thread.parked ||
+  soloDone(summary) ||
+  (summary.thread.role === undefined &&
+    summary.thread.spawnedBy === undefined &&
+    autoSettled(summary, rule));

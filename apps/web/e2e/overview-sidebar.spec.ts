@@ -465,17 +465,18 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
     overview(page).getByTestId(`overview-section-${id}`).getByRole("button", { name });
   const orchestrators = head("orchestrators", /Orchestrators/);
   const soloHead = head("solo", /Solo threads/);
-  // Pull requests comes after Solo threads, folded by default, then Done's few rows, open; Open
-  // History is at the column's foot, out of the list.
+  // Pull requests comes after Solo threads, folded by default, then Done's three rows, open, and
+  // its line into History; Open History is at the column's foot, out of the list.
   const prsHead = head("pullRequests", /Pull requests/);
   const doneHead = head("doneToday", /Done/);
   await expect(prsHead).toHaveAttribute("aria-expanded", "false");
   await expect(doneHead).toHaveAttribute("aria-expanded", "true");
   await expect(overview(page).getByTestId("overview-history")).toHaveText(/Open History/);
-  // End reaches Done's last row while it is open, its title once folded.
+  // End reaches Done's last stop while it is open, its line into History, its title once folded.
+  await expect(overview(page).getByTestId("overview-done")).toHaveCount(3);
   await doneHead.focus();
   await page.keyboard.press("End");
-  await expect(overview(page).getByTestId("overview-done").last()).toBeFocused();
+  await expect(overview(page).getByTestId("overview-done-more")).toBeFocused();
   await doneHead.click();
   await expect(doneHead).toHaveAttribute("aria-expanded", "false");
   await orchestrators.click();

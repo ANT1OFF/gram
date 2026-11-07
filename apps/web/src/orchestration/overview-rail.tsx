@@ -34,6 +34,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { threadDisplayTitle } from "@/thread/thread-title";
 import { OVERVIEW_FLYOUT, OVERVIEW_ROOT, toggleOverviewSidebar } from "@/views/shell-layout";
 import { soloThreads } from "@/views/solo-threads";
+import { useSettleRule } from "@/views/use-settle-rule";
 import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 
 import { useWorkspaceAsks } from "./ask-stack";
@@ -340,7 +341,8 @@ function SoloTile() {
     () => new Set(workspaces.map((state) => state.workspace.id as string)),
     [workspaces],
   );
-  const solo = useThreadsStore(useShallow((s) => soloThreads(Object.values(s.byId), ids)));
+  const settle = useSettleRule();
+  const solo = useThreadsStore(useShallow((s) => soloThreads(Object.values(s.byId), ids, settle)));
   const here = useViewSolo();
   return (
     <Flyout

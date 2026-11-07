@@ -89,7 +89,7 @@ const jumpSearch = async (page: Page) => {
 const steps: readonly Shot[] = [
   {
     name: "new-menu",
-    title: "Start: the sidebar's New opens the one New form",
+    title: "Start: the sidebar's New menu: Task, Team or Chat, each with its shortcut",
     open: async (page) => {
       await openApproval(page);
       await page.getByRole("button", { name: "New", exact: true }).click();

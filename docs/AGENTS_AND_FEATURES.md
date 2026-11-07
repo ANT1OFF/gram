@@ -76,6 +76,14 @@ configured pass.
   [accounts, models and speed](#accounts-models-and-speed)). A workspace can pause new workers
   near a limit, hold low-priority briefs until it resets and, if you turn it on,
   [offer another model](#offering-another-worker-model-at-a-limit).
+- **History.** Finished workers, done and archived threads and past CLI sessions in one
+  searchable list (<kbd>⌘⇧H</kbd>). It is old work's one home: the sidebar's Done shows the three
+  latest and hands the rest to History's Done chip, and a palette search that matches finished
+  threads offers them there rather than beside the live ones. A solo thread settles into History
+  on its own once its pull request merged, or after it has sat idle for the days set in Settings
+  → General → Settle idle threads (7 by default; Never keeps it). Pinned, unread and waiting
+  threads stay, and new activity brings a thread back. Mark unread on a row keeps a thread in
+  view to come back to.
 - **Everything else.** Solo threads outside any workspace, a terminal, a diff view, a browser
   preview agents can drive with your approval, local dictation and optional AI helpers, each off
   until you turn it on.

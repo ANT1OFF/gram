@@ -60,6 +60,25 @@ describe("buildSections", () => {
     expect(flattenSections(buildSections("fix/flaky", sources)).map((i) => i.id)).toEqual(["t1"]);
   });
 
+  it("hands finished threads to History in one row under the live ones", () => {
+    const history = [item("history:search", "2 finished in History", { keywords: "docs" })];
+    expect(shape(buildSections("docs", { ...sources, history }))).toEqual([
+      ["threads", ["t2"]],
+      ["history", ["history:search"]],
+      ["projects", ["p2"]],
+    ]);
+    expect(
+      shape(buildSections("docs", { ...sources, history }, view({ kind: "threads" }))),
+    ).toEqual([
+      ["threads", ["t2"]],
+      ["history", ["history:search"]],
+    ]);
+    // Untyped, History is a destination of its own; the row is for a search.
+    expect(shape(buildSections("", { ...sources, history }))).not.toContainEqual(
+      expect.arrayContaining(["history"]),
+    );
+  });
+
   it("shows only actions after >", () => {
     expect(buildSections(">sett", sources).map((s) => [s.id, s.items.map((i) => i.id)])).toEqual([
       ["actions", ["a2"]],

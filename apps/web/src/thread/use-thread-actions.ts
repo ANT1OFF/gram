@@ -58,6 +58,13 @@ export function useThreadActions(threadId: ThreadId) {
         api.pin(threadId, !thread.pinned),
       );
     },
+    /** Marks it unread to come back to, or read again; opening it reads it. */
+    toggleUnread: () => {
+      if (!thread) return;
+      attempt(thread.unread ? "mark the thread read" : "mark the thread unread", () =>
+        api.markUnread(threadId, !thread.unread),
+      );
+    },
     togglePark: () => {
       if (!thread) return;
       attempt(thread.parked ? "unpark the thread" : "park the thread", () =>

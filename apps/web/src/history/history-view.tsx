@@ -4,6 +4,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
   CircleCheck,
+  CircleDashed,
   CircleMinus,
   CircleX,
   GitMerge,
@@ -21,7 +22,6 @@ import { useAvailableAgents } from "@/composer/agent-fields";
 import { keyLabel } from "@/keyboard/registry";
 import { KEY_CAP } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
-import { useNow } from "@/lib/use-now";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { DoneGroupingMenu } from "@/orchestration/done-grouping-menu";
@@ -38,6 +38,7 @@ import {
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
+import { useSettleRule } from "@/views/use-settle-rule";
 
 import {
   HISTORY_FILTERS,
@@ -91,11 +92,13 @@ export const OUTCOME_GLYPH: Readonly<Record<HistoryOutcome, { icon: LucideIcon; 
   stopped: { icon: CircleMinus, tone: "text-muted-foreground" },
   failed: { icon: CircleX, tone: "text-destructive" },
   archived: { icon: Archive, tone: "text-muted-foreground" },
+  idle: { icon: CircleDashed, tone: "text-muted-foreground" },
 };
 const IMPORTED_GLYPH = { icon: History, tone: "text-muted-foreground" };
 
 const EMPTY: Readonly<Record<HistoryFilter, string>> = {
   all: "Nothing finished yet",
+  done: "Nothing done yet",
   workers: "No finished workers yet",
   threads: "No finished or archived threads yet",
   archived: "Nothing archived",
@@ -180,8 +183,9 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
     [projects, summaries],
   );
   const past = usePastSessions(roots);
-  // Minute resolution is enough for the days and the times rows show.
-  const now = useNow(true, undefined, 60_000);
+  // Minute resolution is enough for the days and the times rows show, and for what has settled.
+  const settle = useSettleRule();
+  const { now } = settle;
   const by = useLayoutStore((s) => s.doneGrouping);
   const filter = useHistoryStore((s) => s.filter);
   const setFilter = useHistoryStore((s) => s.setFilter);
@@ -212,12 +216,24 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
         projects,
         sessions: past.sessions,
         facts: { byId, statusDetail, now },
+        settle,
       }),
-    [workspaces, ledgers, finished, summaries, projects, past.sessions, byId, statusDetail, now],
+    [
+      workspaces,
+      ledgers,
+      finished,
+      summaries,
+      projects,
+      past.sessions,
+      byId,
+      statusDetail,
+      now,
+      settle,
+    ],
   );
   const found = useMemo(() => searchHistory(entries, filter, query), [entries, filter, query]);
   // Only workers come in pages: the other chips wait on none of them.
-  const paged = filter === "all" || filter === "workers";
+  const paged = filter === "all" || filter === "done" || filter === "workers";
   const shown = useMemo(
     () => doneWindow(found, by, now, paged ? horizons : new Map<WorkspaceId, number>(), limit),
     [found, by, now, paged, horizons, limit],

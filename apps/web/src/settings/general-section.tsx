@@ -6,6 +6,7 @@ import {
   OVERVIEW_HIDDEN_BY_DEFAULT,
   OVERVIEW_OPTIONAL_SECTIONS,
   sendKeyOf,
+  settleAfterDaysOf,
   type OverviewOptionalSection,
   type SettingsPatch,
 } from "@gram/contracts";
@@ -68,6 +69,15 @@ const OVERVIEW_SIDEBAR = [
   { value: "open", label: "Open" },
   { value: "compact", label: "Compact" },
   { value: "hidden", label: "Hidden" },
+] as const;
+
+/** How long an idle solo thread stays in the sidebar before it settles into History. */
+const SETTLE_AFTER = [
+  { value: "0", label: "Never" },
+  { value: "3", label: "3 days" },
+  { value: "7", label: "7 days" },
+  { value: "14", label: "14 days" },
+  { value: "30", label: "30 days" },
 ] as const;
 
 const PANEL_SIDES = [
@@ -199,6 +209,28 @@ export function GeneralSection() {
               setOverviewHidden(hidden);
               markTouchedSaved();
             }}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Settle idle threads"
+          description="Solo threads idle this long move from the sidebar to History, as merged ones do."
+          learnMore={
+            <p>
+              A solo thread whose pull request merged settles at once. Pinned, unread and waiting
+              threads stay, and any new activity brings a thread back.
+            </p>
+          }
+          keywords={["settle", "idle", "history", "done", "auto", "archive", "solo", "old"]}
+          onReset={resetOf("settleAfterDays")}
+          error={errorOf("settleAfterDays")}
+        >
+          <OptionGroup
+            label="Settle idle threads"
+            options={SETTLE_AFTER}
+            value={String(settleAfterDaysOf(settings))}
+            onChange={(days) =>
+              applyTo("settleAfterDays")({ layout: { settleAfterDays: Number(days) } })
+            }
           />
         </SettingRow>
         <SettingRow

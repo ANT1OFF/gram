@@ -181,7 +181,8 @@ test("each top-left icon names itself and its key on hover", async ({ page }) =>
     ["Hide sidebar", /^Hide sidebar \((⌘|Ctrl\+)B\)$/],
     ["Settings", /^Settings \((⌘|Ctrl\+),\)/],
     ["Compact overview", /^Compact overview$/],
-    ["New", /^New: agent team, one worker or single agent chat \(/],
+    // New opens a menu, whose Task, Team and Chat each show their own key.
+    ["New", /^New task, team or chat$/],
   ];
   for (const [name, label] of expected) {
     await sidebar.locator(`[aria-label="${name}"]`).first().hover();
