@@ -2616,6 +2616,43 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "command-palette-typed",
+    title: "The command palette, typed: each row's kind and a thread's status dot",
+    open: async (page) => {
+      await openThread(page);
+      await page.keyboard.press("ControlOrMeta+k");
+      const palette = page.getByTestId("command-palette");
+      await palette.getByRole("combobox").fill("e");
+      await palette.getByRole("option").first().waitFor();
+    },
+    element: (page) => page.getByTestId("command-palette"),
+  },
+  {
+    name: "find-in-thread",
+    title: "Find in thread (⌘F): the matches marked, the current one stronger, and its count",
+    open: async (page) => {
+      await openThread(page);
+      await page.keyboard.press("ControlOrMeta+f");
+      await page.getByLabel("Find in thread").fill("test");
+      await expect(page.getByTestId("find-status")).toHaveText(/ of |No matches/);
+    },
+  },
+  {
+    name: "shortcut-sheet",
+    title: "The keyboard shortcut sheet (⌘/), filtered",
+    open: async (page) => {
+      await openThread(page);
+      await page.getByLabel("Message", { exact: true }).click();
+      await page.keyboard.press("ControlOrMeta+Slash");
+      const sheet = page.getByTestId("shortcut-overlay");
+      await sheet.waitFor();
+      // Before this change the sheet had no filter field: it shows unfiltered there.
+      const filter = sheet.getByLabel("Filter shortcuts");
+      if ((await filter.count()) > 0) await filter.fill("thread");
+    },
+    element: (page) => page.getByTestId("shortcut-overlay"),
+  },
+  {
     name: "new-thread",
     title: "The new-thread form",
     open: async (page) => {

@@ -88,7 +88,7 @@ import {
 } from "./subagent-strip-model";
 import { TableOfContents } from "./table-of-contents";
 import { ThreadMenu } from "./thread-menu";
-import { Transcript, type JumpRequest } from "./transcript";
+import { Transcript, transcriptScroller, type JumpRequest, type ScrollRestore } from "./transcript";
 import { turnUndos } from "./turn-undo-marker";
 import { useUnseenFrom } from "./unread";
 import { HeaderWakeChip } from "./wake-chip";
@@ -246,6 +246,8 @@ export function ThreadView({
   }, [carriedByBar, threadId, chapters, earlier, loadingEarlier, earlierFailed]);
   const lastSubagentJump = useRef<string>(undefined);
   const [finding, setFinding] = useState(false);
+  /** Where Esc in find puts the transcript back to. */
+  const [restore, setRestore] = useState<ScrollRestore>();
   const revealRequest = useRevealStore((s) => s.request);
   const sourceTitle = useThreadsStore((s) => {
     const from = s.byId[threadId]?.thread.forkedFrom?.threadId;
@@ -336,7 +338,16 @@ export function ThreadView({
       keys: "mod+f",
       label: "Find in thread",
       group: "Thread",
-      run: () => setFinding(true),
+      run: () => {
+        setFinding(true);
+        // Again while it is open: its field, with what it holds selected to type over.
+        requestAnimationFrame(() =>
+          transcriptScroller(threadId)
+            ?.closest("[data-thread-view]")
+            ?.querySelector<HTMLInputElement>('[data-testid="find-bar"] input')
+            ?.select(),
+        );
+      },
     },
     focused,
   );
@@ -638,7 +649,17 @@ export function ThreadView({
           />
         )}
         {finding && (
-          <FindBar threadId={threadId} onReveal={reveal} onClose={() => setFinding(false)} />
+          <FindBar
+            threadId={threadId}
+            messages={shown}
+            earlier={earlier}
+            getScroller={() => transcriptScroller(threadId)}
+            onReveal={reveal}
+            onClose={(anchor) => {
+              setFinding(false);
+              if (anchor !== undefined) setRestore({ anchor, nonce: Date.now() });
+            }}
+          />
         )}
         {/* The transcript's waiting rows hold the approval cards the requests below draw. */}
         <ApprovalSlotsProvider threadId={threadId}>
@@ -657,6 +678,7 @@ export function ThreadView({
               chapters={chapters}
               onChapterJump={jumpToChapter}
               reveal={revealJump}
+              restore={restore}
               flashId={flashId}
               earlier={earlier}
               loadingEarlier={loadingEarlier}

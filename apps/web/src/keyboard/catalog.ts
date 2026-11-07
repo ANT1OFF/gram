@@ -88,6 +88,7 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   { id: "review.focus", keys: "mod+alt+f", label: "Focus review", group: "App" },
   { id: "focus.toggle", keys: "mod+shift+.", label: "Focus mode", group: "App" },
   { id: "panel.refresh", keys: "mod+alt+r", label: "Refresh Diff / PR panel", group: "App" },
+  { id: "diff.toggle", keys: "mod+d", label: "Show / hide the diff", group: "App" },
   { id: "diff.nextHunk", keys: "n", label: "Next change in the diff", group: "Navigation" },
   {
     id: "diff.previousHunk",
@@ -122,6 +123,18 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
     id: "thread.cyclePrev",
     keys: "ctrl+shift+tab",
     label: "Switch threads backwards",
+    group: "Navigation",
+  },
+  {
+    id: "thread.next",
+    keys: "mod+alt+]",
+    label: "Next thread in the sidebar",
+    group: "Navigation",
+  },
+  {
+    id: "thread.previous",
+    keys: "mod+alt+[",
+    label: "Previous thread in the sidebar",
     group: "Navigation",
   },
   {

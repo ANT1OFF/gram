@@ -41,7 +41,12 @@ export function ToolGroup({
   const hidden = open ? undefined : run.find((part) => needsSlot(part.toolCallId));
 
   return (
-    <div data-testid="tool-group" data-open={open}>
+    <div
+      data-testid="tool-group"
+      data-open={open}
+      // Find in thread opens the group a match is in (find-highlight.ts).
+      data-tool-call-ids={run.map((part) => part.toolCallId).join(" ")}
+    >
       <button
         type="button"
         aria-expanded={open}

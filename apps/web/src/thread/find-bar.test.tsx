@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { NotImplemented, type ThreadId, type ThreadSearchHit } from "@gram/contracts";
+import type { GramUIMessage, ThreadId, ThreadSearchHit } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +12,45 @@ const T = "t1" as ThreadId;
 const hit = (messageId: string) =>
   ({ threadId: T, messageId, title: "t", snippet: messageId }) as ThreadSearchHit;
 
+const said = (id: string, text: string) =>
+  ({ id, role: "assistant", parts: [{ type: "text", text }] }) as unknown as GramUIMessage;
+const ran = (id: string, output: string) =>
+  ({
+    id,
+    role: "assistant",
+    parts: [
+      {
+        type: "tool-Bash",
+        toolCallId: `call-${id}`,
+        state: "output-available",
+        input: { command: "bun test" },
+        output,
+      },
+    ],
+  }) as unknown as GramUIMessage;
+
+const MESSAGES = [
+  said("m1", "The flaky test again"),
+  said("m2", "Flaky once, FLAKY twice"),
+  ran("m3", "1 failed: flaky.test.ts"),
+];
+
 afterEach(cleanup);
+
+/** The transcript's scroller, which has drawn none of the rows. */
+const emptyScroller = () => document.createElement("div");
+
+const bar = (props: Partial<Parameters<typeof FindBar>[0]> = {}) => (
+  <FindBar
+    threadId={T}
+    messages={MESSAGES}
+    earlier={false}
+    getScroller={emptyScroller}
+    onReveal={() => {}}
+    onClose={() => {}}
+    {...props}
+  />
+);
 
 /** A Find button that opens a `FindBar`, which unmounts once it closes. */
 function Harness() {
@@ -22,65 +60,65 @@ function Harness() {
       <button type="button" onClick={() => setFinding(true)}>
         Find
       </button>
-      {finding && <FindBar threadId={T} onReveal={() => {}} onClose={() => setFinding(false)} />}
+      {finding && bar({ onClose: () => setFinding(false) })}
     </>
   );
 }
 
 describe("FindBar", () => {
-  it("searches within the thread and steps through the matches", async () => {
-    const searchThreads = vi.fn(async () => ({ hits: [hit("m1"), hit("m2")], truncated: false }));
+  it("counts every match in loaded messages, tool output included, newest first", async () => {
     const onReveal = vi.fn();
-    renderWithApi(<FindBar threadId={T} onReveal={onReveal} onClose={() => {}} />, {
-      searchThreads,
-    });
+    renderWithApi(bar({ onReveal }), {});
     const input = screen.getByLabelText("Find in thread");
 
     fireEvent.change(input, { target: { value: "flaky" } });
-    expect(await screen.findByText("1 of 2")).toBeTruthy();
-    expect(searchThreads).toHaveBeenCalledWith("flaky", { limit: 200, threadId: T });
-    expect(onReveal).toHaveBeenLastCalledWith("m1");
+    expect(await screen.findByText("4 of 4")).toBeTruthy();
+    expect(screen.getByTestId("find-in-tool")).toBeTruthy();
+    // The transcript hasn't drawn its row, so it is asked for.
+    expect(onReveal).toHaveBeenLastCalledWith("m3");
 
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(await screen.findByText("2 of 2")).toBeTruthy();
+    expect(await screen.findByText("3 of 4")).toBeTruthy();
+    expect(screen.queryByTestId("find-in-tool")).toBeNull();
     expect(onReveal).toHaveBeenLastCalledWith("m2");
 
     fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
-    expect(await screen.findByText("1 of 2")).toBeTruthy();
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    // Past the newest, round to the oldest.
+    expect(await screen.findByText("1 of 4")).toBeTruthy();
     expect(onReveal).toHaveBeenLastCalledWith("m1");
   });
 
-  it("marks a truncated result and says when nothing matches", async () => {
-    const searchThreads = vi
-      .fn()
-      .mockResolvedValueOnce({ hits: [hit("m1")], truncated: true })
-      .mockResolvedValueOnce({ hits: [], truncated: false });
-    renderWithApi(<FindBar threadId={T} onReveal={() => {}} onClose={() => {}} />, {
-      searchThreads,
-    });
+  it("puts the server's hits in history not loaded yet before the loaded ones", async () => {
+    const searchThreads = vi.fn(async () => ({
+      hits: [hit("old1"), hit("m1")],
+      truncated: false,
+    }));
+    renderWithApi(bar({ earlier: true }), { searchThreads });
     const input = screen.getByLabelText("Find in thread");
     fireEvent.change(input, { target: { value: "flaky" } });
-    expect(await screen.findByText("1 of 1+")).toBeTruthy();
-    fireEvent.change(input, { target: { value: "zzz" } });
+    expect(await screen.findByText("5 of 5")).toBeTruthy();
+    expect(searchThreads).toHaveBeenCalledWith("flaky", { limit: 200, threadId: T });
+  });
+
+  it("says when nothing matches", async () => {
+    renderWithApi(bar(), {});
+    fireEvent.change(screen.getByLabelText("Find in thread"), { target: { value: "zzz" } });
     expect(await screen.findByText("No matches")).toBeTruthy();
   });
 
-  it("says when search isn't available, and closes on Escape", async () => {
+  it("goes back to where the transcript stood on Escape, and stays on close", () => {
+    const scroller = document.createElement("div");
     const onClose = vi.fn();
-    renderWithApi(<FindBar threadId={T} onReveal={() => {}} onClose={onClose} />, {
-      searchThreads: async () => {
-        throw new NotImplemented({ rpc: "thread.search" });
-      },
-    });
-    const input = screen.getByLabelText("Find in thread");
-    fireEvent.change(input, { target: { value: "flaky" } });
-    expect(await screen.findByText("Search isn't available yet")).toBeTruthy();
-    fireEvent.keyDown(input, { key: "Escape" });
-    expect(onClose).toHaveBeenCalled();
+    renderWithApi(bar({ getScroller: () => scroller, onClose }), {});
+    fireEvent.keyDown(screen.getByLabelText("Find in thread"), { key: "Escape" });
+    expect(onClose).toHaveBeenLastCalledWith(expect.objectContaining({ atEnd: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Close find, staying here" }));
+    expect(onClose).toHaveBeenLastCalledWith(undefined);
   });
 
   it("gives focus back to what had it once it closes", async () => {
-    renderWithApi(<Harness />, { searchThreads: async () => ({ hits: [], truncated: false }) });
+    renderWithApi(<Harness />, {});
     const opener = screen.getByRole("button", { name: "Find" });
     opener.focus();
     fireEvent.click(opener);

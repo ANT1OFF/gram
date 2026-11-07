@@ -1,7 +1,7 @@
 import type { OrchestratorLedger, ThreadSummary, WorkspaceId } from "@gram/contracts";
 
 import { foldedSummaryText, stateWord } from "@/orchestration/overview-model";
-import { glyphState, workerStatusWord } from "@/orchestration/status-words";
+import { glyphState, workerStatusWord, type DotState } from "@/orchestration/status-words";
 import { workingWorkerThreads } from "@/orchestration/tree-model";
 import { workersByTab, workerTones, type WorkerLiveFacts } from "@/orchestration/workers-model";
 import { threadStatusOf } from "@/sidebar/status";
@@ -65,3 +65,19 @@ export const paletteStatusWords = (
 /** A thread's status in the palette: its workspace's words for it, else its own. */
 export const statusWord = (summary: ThreadSummary, words: ReadonlyMap<string, string>): string =>
   words.get(summary.thread.id) ?? threadStatusOf(summary).label;
+
+/**
+ * The dot beside a palette row, read from the words it says (`statusWord`), so the two never
+ * disagree. An orchestrator's line leads with its workers' count and takes no amber: its count
+ * says what needs you there, as in the sidebar.
+ */
+export const paletteDot = (word: string): DotState => {
+  const lower = word.toLowerCase();
+  if (/^(needs|asks you)/.test(lower)) return "needs";
+  if (/^(running|starting|compacting)/.test(lower) || /\bworking\b/.test(lower)) return "working";
+  if (lower.startsWith("paused")) return "held";
+  if (lower.startsWith("waiting")) return "waiting";
+  if (lower.startsWith("failed")) return "error";
+  if (/^(done|merged)/.test(lower)) return "done";
+  return "idle";
+};
