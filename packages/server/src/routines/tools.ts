@@ -226,7 +226,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         name: "routine_create",
         class: "self",
         description:
-          'Save a routine: a brief run on a schedule. `schedule`: "daily HH:MM", "weekdays HH:MM", "weekly mon HH:MM" or "every N hours" (local, 24-hour). `target` "worker" starts your worker in `project` on `model` (defaults apply) with `brief`, written to stand alone; "orchestrator" puts it in your digest. A missed run runs once at start; a run is skipped while the last one\'s worker is live. Always asks the user, who sees it in full.',
+          'Save a routine: a brief on a schedule ("daily HH:MM", "weekdays HH:MM", "weekly mon HH:MM", "every N hours"; local). `target` "worker" starts a worker in `project` on `model` with `brief`, which must stand alone; "orchestrator" puts it in your digest. Missed runs run once; a run is skipped while the last worker is live. Always asks the user.',
       },
       audience: ["orchestrator", "worker"],
       input: Schema.Struct({
@@ -279,7 +279,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         name: "routine_update",
         class: "self",
         description:
-          "Change a routine, named by `routine`: only the fields given change, as routine_create takes them, and the user approves any change but `off: true` alone or `remove: true` (its workers carry on). Turning it on or a new schedule counts from now.",
+          "Change a routine named by `routine`; only given fields change, as in routine_create. The user approves all but `off: true` alone or `remove: true` (its workers carry on). Turning on or rescheduling counts from now.",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
