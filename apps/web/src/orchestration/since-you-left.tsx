@@ -5,7 +5,6 @@ import {
   type StreamLine,
   type Thread,
 } from "@gram/contracts";
-import { X } from "lucide-react";
 import { Fragment, useState } from "react";
 
 import { formatClockTime, formatStamp } from "@/lib/time";
@@ -53,8 +52,9 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
  * it: what merged and what failed (and came back) while you were away, with the time range and
  * each PR on request. The live state (running, waiting on you) is the row's own; this keeps only
  * the summary of the absence. Folded from the digests the orchestrator was given while you were
- * away, the same facts as its own `away` digest, decided once as the view opens. Dismissed, it
- * stays gone for that absence. Reading it changes nothing.
+ * away, the same facts as its own `away` digest, decided once as the view opens. It is one fold
+ * on the line, no × beside it: its Dismiss is in what it opens, and dismissed, it stays gone for
+ * that absence. Reading it changes nothing.
  */
 export function SinceYouLeft({
   thread,
@@ -156,19 +156,20 @@ export function SinceYouLeft({
                   )}
                 </p>
               ))}
+              {/* Read, it can go: Dismiss lives with the summary, not as a × on the strip. */}
+              <button
+                type="button"
+                aria-label="Dismiss Since you left"
+                data-testid="since-you-left-dismiss"
+                className="mt-1 self-end rounded-sm px-1.5 py-0.5 font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={dismiss}
+              >
+                Dismiss
+              </button>
             </Popover.Popup>
           </Popover.Positioner>
         </Popover.Portal>
       </Popover.Root>
-      <button
-        type="button"
-        aria-label="Dismiss Since you left"
-        data-testid="since-you-left-dismiss"
-        className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={dismiss}
-      >
-        <X aria-hidden className="size-icon-chip" />
-      </button>
     </section>
   );
 }

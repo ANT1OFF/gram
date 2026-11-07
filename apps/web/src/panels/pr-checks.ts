@@ -1,7 +1,7 @@
 import type { CheckStatus, PrDetail } from "@gram/contracts";
 import { CircleCheck, CircleMinus, CircleX, type LucideIcon } from "lucide-react";
 
-import { RingGlyph, RingSpinner } from "@/motion";
+import { PendingRing } from "@/motion";
 
 // A PR's checks in words and glyphs, apart from the PR panel so a peek or a card can show them
 // without loading the panel, its diff and its review threads.
@@ -9,7 +9,7 @@ import { RingGlyph, RingSpinner } from "@/motion";
 const CHECK_STATUS: Record<CheckStatus, { icon: LucideIcon; label: string; tone: string }> = {
   passing: { icon: CircleCheck, label: "Passing", tone: "text-success" },
   failing: { icon: CircleX, label: "Failing", tone: "text-destructive" },
-  pending: { icon: RingGlyph, label: "Pending", tone: "text-warning" },
+  pending: { icon: PendingRing, label: "Pending", tone: "text-status-working" },
   neutral: { icon: CircleMinus, label: "Neutral", tone: "text-muted-foreground" },
 };
 
@@ -18,18 +18,19 @@ export type CheckRun = PrDetail["checkRuns"][number];
 export const isCancelled = (run: CheckRun) => run.conclusion?.toUpperCase() === "CANCELLED";
 
 /**
- * A check's icon and word, telling queued, running and cancelled checks apart. `spin` is set on
- * the one that is in motion.
+ * A check's icon and word, telling queued, running and cancelled checks apart by their words: every
+ * pending one draws the one still hollow ring. `running` is set on the one under way, whose
+ * duration ticks.
  */
 export const checkState = (
   run: CheckRun,
-): { icon: LucideIcon; label: string; tone: string; spin?: boolean } => {
+): { icon: LucideIcon; label: string; tone: string; running?: boolean } => {
   if (isCancelled(run)) return { ...CHECK_STATUS.neutral, label: "Cancelled" };
   if (run.status === "pending" && run.phase === "queued") {
     return { ...CHECK_STATUS.pending, label: "Queued" };
   }
   if (run.status === "pending" && run.phase === "running") {
-    return { ...CHECK_STATUS.pending, icon: RingSpinner, label: "Running", spin: true };
+    return { ...CHECK_STATUS.pending, label: "Running", running: true };
   }
   return CHECK_STATUS[run.status];
 };

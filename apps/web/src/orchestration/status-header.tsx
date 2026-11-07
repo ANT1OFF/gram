@@ -100,8 +100,10 @@ function Item({
 /**
  * The orchestrator's status header: one compact row at the top of its chat that is always current
  * and never a message. Running, In review and Merged today, each opening the view it counts (⌘J's
- * Now, the Board, History), then "Since you left" while there is an absence to sum up, and the
- * switch that shows every digest and reply in the chat. Names are on hover. What needs you is not
+ * Now, the Board, History), then "Since you left" while there is an absence to sum up (one fold,
+ * its Dismiss inside), and at the line's end the switch that shows every digest and reply in the
+ * chat. Nothing else stacks above the chat: the "New" line is the transcript's own, over the first
+ * message you haven't seen. Names are on hover. What needs you is not
  * repeated here: the sidebar's pill counts it across every workspace (here and elsewhere on its
  * hover) and the workspace's line its own share. The subscription limit is the title bar's.
  * Background events change these counts rather than adding to the transcript.
@@ -150,7 +152,8 @@ function StatusStrip({
       role="region"
       aria-label="Workspace status"
       data-testid="status-header"
-      className="@container relative flex min-w-0 shrink-0 items-center border-b border-border px-2 py-0.5"
+      // One quiet muted line, no rule under it: the transcript's own space sets it apart.
+      className="@container relative flex min-w-0 shrink-0 items-center px-2 py-0.5"
     >
       {/* The items wrap, the fixed height hides every line after the first, and what wraps is
           inert: short of room, whole items go from the end, never their words. */}

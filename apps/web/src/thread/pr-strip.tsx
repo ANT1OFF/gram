@@ -31,7 +31,7 @@ import { ReviewStatusLabel, reviewStatusOf } from "@/components/review-glyph";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { formatCount } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { RingSpinner } from "@/motion";
+import { PendingRing } from "@/motion";
 import { parsePrRef } from "@/panels/review/pr-ref";
 import { Notice, useReviewAction } from "@/panels/review/review-thread-card";
 import { ToggleSwitch } from "@/panels/review/toggle-switch";
@@ -75,7 +75,7 @@ const CHECKS_TONE: Record<ChecksRollup, string> = {
 
 const BUCKET_DISPLAY: Record<CheckBucketKind, { icon: LucideIcon; tone: string }> = {
   failed: { icon: CircleX, tone: "text-destructive" },
-  running: { icon: RingSpinner, tone: "text-status-working" },
+  running: { icon: PendingRing, tone: "text-status-working" },
   passed: { icon: CircleCheck, tone: "text-success" },
   skipped: { icon: Circle, tone: "text-muted-foreground" },
 };

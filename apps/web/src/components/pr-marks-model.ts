@@ -26,7 +26,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { RingSpinner } from "@/motion/spinner";
+import { PendingRing } from "@/motion/spinner";
 
 // Gram's one visual vocabulary for pull requests: what a PR's state, its checks, its review and its
 // merge look like, wherever a PR is drawn. A mark is an icon and a tone, so shape carries the state
@@ -97,11 +97,12 @@ export const prStateMarkOf = (pr: PrLifecycleSource): PrMark<PrLifecycle> => {
 export type ChecksMarkKind = ChecksRollup | "fixing" | "unknown";
 
 /**
- * Pending turns on the shared clock, so it holds still under Reduced or Off motion; the rest are
- * still. Fixing is informational, in the working tone, never red.
+ * Every mark is still: pending is the hollow ring (`PendingRing`), the waiting dot's twin, so a PR
+ * waiting on CI never keeps the renderer drawing. Fixing is informational, in the working tone,
+ * never red.
  */
 export const CHECKS_DISPLAY: Record<ChecksMarkKind, PrMarkDisplay> = {
-  pending: { icon: RingSpinner, tone: "text-status-working" },
+  pending: { icon: PendingRing, tone: "text-status-working" },
   passing: { icon: CircleCheck, tone: "text-success" },
   failing: { icon: CircleX, tone: "text-destructive" },
   fixing: { icon: Wrench, tone: "text-status-working" },
@@ -223,7 +224,7 @@ export const botAsksChanges = (bot: { readonly kind: string } | undefined): bool
 
 export const BOT_DISPLAY: Record<BotMarkKind, PrMarkDisplay> = {
   quiet: { icon: Bot, tone: "text-muted-foreground" },
-  inFlight: { icon: RingSpinner, tone: "text-muted-foreground" },
+  inFlight: { icon: PendingRing, tone: "text-muted-foreground" },
   blockers: { icon: Bot, tone: "text-destructive" },
   approved: { icon: BotMessageSquare, tone: "text-success" },
   changesRequested: { icon: Bot, tone: "text-destructive" },

@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { describe, expect, it } from "vitest";
 
-import { RingSpinner } from "@/motion/spinner";
+import { PendingRing } from "@/motion/spinner";
 
 import {
   BOT_DISPLAY,
@@ -88,7 +88,7 @@ describe("PR state marks", () => {
 
 describe("checks marks", () => {
   it.each([
-    ["pending", RingSpinner, "text-status-working", "Checks running"],
+    ["pending", PendingRing, "text-status-working", "Checks running"],
     ["passing", CircleCheck, "text-success", "Checks passing"],
     ["failing", CircleX, "text-destructive", "Checks failing"],
     ["fixing", Wrench, "text-status-working", "Checks failing; its worker is fixing them"],
@@ -151,7 +151,7 @@ describe("review marks", () => {
 
   it.each([
     ["quiet", Bot, "text-muted-foreground"],
-    ["inFlight", RingSpinner, "text-muted-foreground"],
+    ["inFlight", PendingRing, "text-muted-foreground"],
     ["blockers", Bot, "text-destructive"],
     ["approved", BotMessageSquare, "text-success"],
     ["changesRequested", Bot, "text-destructive"],
