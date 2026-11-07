@@ -105,7 +105,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   dot) stays. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
   sidebar's header and the composer's toolbar), `size-icon-row` 16 px beside UI text (rows, cards,
   menus, docks, buttons, the panel's tabs, which keep their names and fold into More by width
-  rather than turn into bare glyphs, and its action, whose words give way to its glyph), and `size-icon-chip` 14 px beside meta text (a chip,
+  rather than turn into bare glyphs, the rarer ones always under More so Focus review keeps the same tabs, and its action, whose words give way to its glyph), and `size-icon-chip` 14 px beside meta text (a chip,
   a badge, a status line). An empty state's or a panel message's lead glyph is `size-icon-empty`
   24 px, at the same stroke, in the muted colour. A disclosure chevron is 14 px (`size-icon-chip`) wherever it sits:
   the composer's toolbar counts it at that width while it isn't drawn. A glyph beside a line of

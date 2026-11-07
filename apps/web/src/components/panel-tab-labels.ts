@@ -56,9 +56,10 @@ export const tabNamed = (fit: TabLabelFit, active: boolean): boolean =>
 /**
  * The most names that fit `available` px, with `gap` px between tabs, `action` px for the words of
  * an action beside them (0 for none), `more` px for a More menu tabs fold into (0 for none) and at
- * most `held` tabs in that menu. Every tab in the strip keeps its name for as long as folding tabs
- * into More makes room: the rarer tabs first, then the primary ones from the strip's end, never the
- * open or a pinned one. The action keeps its words while only the rarer tabs fold; before a primary
+ * most `held` tabs in that menu. With a More, the rarer tabs are always in it, however wide the
+ * panel: a review in focus and one beside the chat show the same tabs, in the same order. Every tab
+ * in the strip keeps its name for as long as folding tabs into More makes room: the primary ones
+ * from the strip's end, never the open or a pinned one. The action keeps its words while only the rarer tabs fold; before a primary
  * tab folds they give way to its glyph. Only once the open tab and More don't fit named, or More
  * would hold more than `held`, do the names go: all but the open one's, then that too. The strip
  * scrolls only once even the bare icons don't fit.
@@ -80,6 +81,8 @@ export function tabLabelFit(
   }
   // The rarer tabs, folded together, are the first step when there are any.
   const rare = order.length > 0 && order[0]!.some((i) => !tabs[i]!.primary) ? 1 : 0;
+  // What always folds: the rarer tabs, when More may hold them.
+  const least = Math.min(rare, steps);
   const width = (fit: TabLabelFit, words: boolean, folds: number) => {
     const folded = foldedTabs(tabs, folds);
     const shown = tabs.filter((_, i) => !folded[i]);
@@ -93,14 +96,14 @@ export function tabLabelFit(
     );
   };
   const tiers: readonly { tabs: TabLabelFit; action: boolean; folds: number }[] = [
-    { tabs: "all", action: true, folds: Math.min(rare, steps) },
+    { tabs: "all", action: true, folds: least },
     { tabs: "all", action: false, folds: steps },
     { tabs: "active", action: false, folds: steps },
     { tabs: "none", action: false, folds: steps },
   ];
   for (const tier of tiers) {
     if (tier.action && action === 0) continue;
-    for (let folds = 0; folds <= tier.folds; folds++) {
+    for (let folds = least; folds <= tier.folds; folds++) {
       // A pixel spare absorbs rounding, so a strip that just fits never scrolls.
       if (width(tier.tabs, tier.action, folds) + 1 <= available) {
         return { tabs: tier.tabs, action: tier.action, folds };

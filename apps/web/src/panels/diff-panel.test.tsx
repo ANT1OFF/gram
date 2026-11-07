@@ -94,8 +94,10 @@ describe("DiffPanel", () => {
     expect(within(files[2]!).getByText("src/timers.ts → src/clock.ts")).toBeTruthy();
     expect(gitDiff).toHaveBeenCalledWith(T, { kind: "uncommitted" });
 
-    // More than three files start collapsed, and render nothing until opened.
-    expect(within(list).queryAllByTestId("patch")).toHaveLength(0);
+    // More than three files start collapsed but the first readable one, past the binary image, and
+    // render nothing until opened.
+    expect(within(list).queryAllByTestId("patch")).toHaveLength(1);
+    expect(within(files[1]!).getAllByRole("button")[0]!.getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(within(files[3]!).getAllByRole("button")[0]!);
     expect(within(files[3]!).getAllByRole("button")[0]!.getAttribute("aria-expanded")).toBe("true");
     expect(within(files[3]!).getByText("await clock.tickAsync(100);")).toBeTruthy();
@@ -176,7 +178,8 @@ describe("DiffPanel", () => {
     await screen.findAllByTestId("diff-file");
     const tree = screen.getByRole("tree", { name: "Changed files" });
     fireEvent.click(within(tree).getByRole("treeitem", { name: "retry.test.ts" }));
-    expect(expandedPaths()).toEqual(["src/retry.test.ts"]);
+    // The first readable file opened with the list; the jump opens the one picked beside it.
+    expect(expandedPaths()).toEqual(["docs/testing.md", "src/retry.test.ts"]);
     expect(
       within(tree).getByRole("treeitem", { name: "retry.test.ts" }).getAttribute("aria-selected"),
     ).toBe("true");
@@ -197,7 +200,7 @@ describe("DiffPanel", () => {
     expect(current()).toEqual([["src/retry.test.ts", "0"]]);
     press("n");
     expect(current()).toEqual([["pnpm-lock.yaml", "0"]]);
-    expect(expandedPaths()).toEqual(["src/retry.test.ts", "pnpm-lock.yaml"]);
+    expect(expandedPaths()).toEqual(["docs/testing.md", "src/retry.test.ts", "pnpm-lock.yaml"]);
     press("p");
     expect(current()).toEqual([["src/retry.test.ts", "0"]]);
   });
@@ -465,7 +468,8 @@ describe("DiffPanel", () => {
       gitDiff: vi.fn(async (threadId: ThreadId) => mockDiff(threadId, { kind: "uncommitted" })),
     });
     await screen.findAllByTestId("diff-file");
-    expect(expandedPaths()).toEqual([]);
+    // As without a target: the first readable file open.
+    expect(expandedPaths()).toEqual(["docs/testing.md"]);
     expect(useLayoutStore.getState().panelTargets.diff).toBe(other);
 
     act(() =>
@@ -474,7 +478,7 @@ describe("DiffPanel", () => {
       }),
     );
     await waitFor(() => expect(useLayoutStore.getState().panelTargets.diff).toBeUndefined());
-    expect(expandedPaths()).toEqual([]);
+    expect(expandedPaths()).toEqual(["docs/testing.md"]);
     expect(scroll).not.toHaveBeenCalled();
   });
 
@@ -514,6 +518,7 @@ describe("DiffPanel", () => {
     expect(radio("Uncommitted").getAttribute("aria-checked")).toBe("false");
     expect(screen.getAllByTestId("diff-file")).toHaveLength(1);
     expect(screen.getByTestId("diff-branch").textContent).toMatch(/vs main$/);
+    expect(screen.getByTestId("diff-summary").dataset["files"]).toBe("1");
     await waitFor(() => expect(gitDiff).toHaveBeenLastCalledWith("t-docs", { kind: "branch" }));
 
     // Uncommitted, picked, says there is nothing there and leads back with one action.
@@ -523,9 +528,13 @@ describe("DiffPanel", () => {
     );
     expect(screen.queryByTestId("diff-file")).toBeNull();
     expect(screen.queryByTestId("diff-fallback")).toBeNull();
+    // Its totals are the selected scope's, which holds nothing: never the branch's beside "No
+    // uncommitted changes".
+    expect(screen.queryByTestId("diff-summary")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show branch vs main" }));
     await screen.findAllByTestId("diff-file");
     expect(radio("Branch").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("diff-summary").dataset["files"]).toBe("1");
     // A pick, so no note on why.
     expect(screen.queryByTestId("diff-fallback")).toBeNull();
   });

@@ -39,8 +39,18 @@ describe("tabLabelFit without More", () => {
 const fit = (available: number, action = 0) => tabLabelFit(available, 4, tabs, action, 40);
 
 describe("tabLabelFit with More", () => {
-  it("never folds while every name fits", () => {
-    expect(fit(327)).toEqual({ tabs: "all", action: false, folds: 0 });
+  it("keeps the rarer tabs in More even while every name would fit", () => {
+    expect(fit(327)).toEqual({ tabs: "all", action: false, folds: 1 });
+    expect(fit(2000)).toEqual({ tabs: "all", action: false, folds: 1 });
+  });
+
+  it("folds nothing that isn't rare while there's room", () => {
+    const primary = tabs.map((t) => ({ ...t, primary: true }));
+    expect(tabLabelFit(2000, 4, primary, 0, 40)).toEqual({
+      tabs: "all",
+      action: false,
+      folds: 0,
+    });
   });
 
   it("folds tabs into More before any tab in the strip loses its name", () => {
@@ -62,9 +72,8 @@ describe("tabLabelFit with More", () => {
   });
 
   it("keeps an action's words while only the rarer tabs fold, then gives them up before a primary tab folds", () => {
-    // 50 px of words beside every name: 377 px.
-    expect(fit(377, 50)).toEqual({ tabs: "all", action: true, folds: 0 });
-    // The rare two folded, the words kept: 234 + 50 px.
+    // The rare two always folded, the words kept: 234 + 50 px.
+    expect(fit(377, 50)).toEqual({ tabs: "all", action: true, folds: 1 });
     expect(fit(376, 50)).toEqual({ tabs: "all", action: true, folds: 1 });
     expect(fit(285, 50)).toEqual({ tabs: "all", action: true, folds: 1 });
     // Short of that, the words go before a primary tab folds.
@@ -79,7 +88,7 @@ describe("tabLabelFit with More", () => {
     expect(tabLabelFit(234, 4, tabs, 0, 40, 2)).toEqual({
       tabs: "active",
       action: false,
-      folds: 0,
+      folds: 1,
     });
     // A cap of one can't take the pair: nothing folds.
     expect(tabLabelFit(326, 4, tabs, 0, 40, 1)).toEqual({
