@@ -117,6 +117,12 @@ const shortcut = (id: string) => {
 
 const nonEmpty = (section: PaletteSection) => section.items.length > 0;
 
+/** A step's rows for what is typed: the row the words make, when they make one, then its matches. */
+const pickerItems = (picker: PalettePicker, query: string): PaletteItem[] => {
+  const typed = query.trim() === "" ? undefined : picker.typed?.(query);
+  return [...(typed === undefined ? [] : [typed]), ...matchItems(picker.items, query)];
+};
+
 /** A destination's run, remembered so the unfiltered palette leads with it next time. */
 const go = (id: string, open: () => void) => () => {
   useRecentDestinations.getState().visit(id);
@@ -498,6 +504,12 @@ export function PaletteBody({
             run: go("go:board", () => openBoard(boardWorkspace)),
           },
         ]),
+    {
+      id: "go:routines",
+      label: "Routines",
+      keywords: "routines schedule scheduled recurring cron daily weekly nightly run now",
+      run: go("go:routines", () => void navigate({ to: "/settings/routines" })),
+    },
     {
       id: "go:usage",
       label: "Usage",
@@ -941,9 +953,9 @@ export function PaletteBody({
 
   const sections: PaletteSection[] =
     picker !== undefined
-      ? [
-          { id: "pick" as const, label: picker.title, items: matchItems(picker.items, query) },
-        ].filter(nonEmpty)
+      ? [{ id: "pick" as const, label: picker.title, items: pickerItems(picker, query) }].filter(
+          nonEmpty,
+        )
       : resumeRoot !== undefined
         ? [resumeSection].filter(nonEmpty)
         : reopenIn !== undefined
@@ -1158,7 +1170,11 @@ export function PaletteBody({
           autoFocus
           ref={input}
           aria-label={
-            scope === undefined ? "Go to, or > for commands" : `Commands for ${scopeTitle}`
+            picker?.heading !== undefined
+              ? picker.heading
+              : scope === undefined
+                ? "Go to, or > for commands"
+                : `Commands for ${scopeTitle}`
           }
           role="combobox"
           aria-expanded
@@ -1166,11 +1182,13 @@ export function PaletteBody({
           aria-activedescendant={activeIndex === -1 ? undefined : `palette-item-${activeIndex}`}
           className="h-11 min-w-0 flex-1 bg-transparent text-reading outline-none placeholder:text-muted-foreground"
           placeholder={
-            scope === undefined
-              ? "Go to a thread, worker or PR… (> for commands)"
-              : scope.kind === "thread"
-                ? "Thread commands…"
-                : "Workspace commands…"
+            picker?.placeholder !== undefined
+              ? picker.placeholder
+              : scope === undefined
+                ? "Go to a thread, worker or PR… (> for commands)"
+                : scope.kind === "thread"
+                  ? "Thread commands…"
+                  : "Workspace commands…"
           }
           value={query}
           onChange={(event) => {
@@ -1180,6 +1198,23 @@ export function PaletteBody({
           onKeyDown={onKeyDown}
         />
       </div>
+      {picker?.heading !== undefined && (
+        <div
+          data-testid="palette-step"
+          className="flex min-w-0 items-baseline gap-2 border-b border-border px-3 py-2"
+        >
+          <span className="shrink-0 text-body-strong">{picker.heading}</span>
+          {picker.subject !== undefined && (
+            <span
+              data-testid="palette-step-subject"
+              className="min-w-0 truncate text-meta text-muted-foreground"
+              title={picker.subject}
+            >
+              {picker.subject}
+            </span>
+          )}
+        </div>
+      )}
       {searchMode && (
         <WordFilterControls
           query={query}
@@ -1342,6 +1377,12 @@ export function PaletteBody({
         data-testid="palette-keys"
         className="flex gap-3 border-t border-border px-3 py-1.5 text-caption text-muted-foreground"
       >
+        {/* The catalog's words: History's "↑↓ move", and "Actions" for a row's own commands. */}
+        {items.length > 1 && (
+          <span>
+            <kbd className="font-mono">↑↓</kbd> move
+          </span>
+        )}
         <span>
           <kbd className="font-mono">⏎</kbd> open
         </span>
@@ -1357,7 +1398,7 @@ export function PaletteBody({
         )}
         {activeItem?.scope !== undefined && !hasWordControls && (
           <span>
-            <kbd className="font-mono">⇥</kbd> its commands
+            <kbd className="font-mono">⇥</kbd> actions
           </span>
         )}
         {hasWordControls && (

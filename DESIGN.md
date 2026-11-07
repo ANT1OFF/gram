@@ -38,7 +38,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     different colour); the light palettes of the Neutral family seed a true amber, not an orange.
   - **One alarm per failure:** the error's card in the transcript and the thread's one red dot.
     Everything else stays neutral: the plan strip, the title bar, a label's chip (named, never
-    tinted). A retry that ran through leads with "Recovered", its failure the line under it.
+    tinted). A retry that ran through says what was done and how it went ("Retried at 14:11 ·
+    succeeded"), its failure folded under Details.
   - `warning` is for a caution on a setting the user chose: Bypass (amber with its lock, on
     purpose), Full autonomy, a key clash, and the usage meter from 90% of a limit (red once
     spent with no credits).

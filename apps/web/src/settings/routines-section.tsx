@@ -13,16 +13,24 @@ import {
   type WorkspaceState,
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Play, Plus, Trash2 } from "lucide-react";
-import { useId, useState } from "react";
+import { Network, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { useId, useState, type ReactNode } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { goToThread } from "@/orchestration/worker-banner";
+import { DialogShell } from "@/thread/dialog-shell";
 
 import { inputCls, OptionGroup } from "./fields";
 import { RowMenuButton, type RowAction } from "./row-menu";
@@ -57,10 +65,15 @@ export function RoutinesSection({
   state,
   projects,
   changes,
+  label = "Routines",
+  description = "Briefs that start a worker or wake the orchestrator on a schedule.",
 }: {
   state: WorkspaceState;
   projects: readonly Project[];
   changes: Changes;
+  /** The group's title: "Routines" in a workspace's settings, the workspace's name on Routines. */
+  label?: string;
+  description?: ReactNode;
 }) {
   const api = useApi();
   const workspaceId = state.workspace.id;
@@ -77,14 +90,15 @@ export function RoutinesSection({
     });
   return (
     <SettingsGroup
-      label="Routines"
-      description="Briefs that start a worker or wake the orchestrator on a schedule."
+      label={label}
+      description={description}
       learnMore="A run missed while Gram was closed runs once on the next start. While the worker from a routine's last run is still live, its next run is skipped. Pausing the workspace pauses its routines; a run that came due meanwhile runs once on the resume. Their workers are the orchestrator's, under the same autonomy, worker cap and approvals. The orchestrator can add and change routines too; a worker can only ask you to approve one."
       keywords={["routine", "schedule", "recurring", "cron", "daily", "weekly", "nightly"]}
       testId="workspace-routines"
       action={
         !adding && (
           <Button
+            aria-label={label === "Routines" ? undefined : `Add routine to ${label}`}
             size="sm"
             variant="outline"
             data-testid="routine-add"
@@ -203,21 +217,19 @@ function RoutineRow({
     },
   ];
   const run = runs.lastRun;
-  if (editing) {
-    return (
-      <RoutineEditor
-        state={state}
-        charter={charter}
-        projects={projects}
-        routine={routine}
-        others={others}
-        save={(next, title) => save(next, title)}
-        onDone={() => setEditing(false)}
-      />
-    );
-  }
   return (
     <div data-testid="routine-row" data-routine={routine.name} className="flex flex-col gap-1">
+      {editing && (
+        <RoutineEditor
+          state={state}
+          charter={charter}
+          projects={projects}
+          routine={routine}
+          others={others}
+          save={(next, title) => save(next, title)}
+          onDone={() => setEditing(false)}
+        />
+      )}
       <div className="flex min-w-0 items-start gap-3">
         <Switch
           className="mt-0.5"
@@ -324,7 +336,21 @@ function RoutineRow({
   );
 }
 
-/** A routine's form: a new one's, or a saved one's to edit. Save stores it in the charter. */
+/** The weekdays the Day picker lists, Monday first, as the week reads. */
+const DAY_ITEMS = [1, 2, 3, 4, 5, 6, 0].map((day) => ({
+  value: String(day),
+  label: ROUTINE_DAYS[day]!,
+}));
+
+/** The form keeps "" for the home repository and the workspace's default model; a pick needs a name. */
+const HOME = "home";
+const DEFAULT_MODEL = "default";
+
+/**
+ * A routine's form, a new one's or a saved one's to edit, in a dialog of its own: its header says
+ * which workspace it runs in and stays put while the body scrolls, and Save and Cancel stay in view
+ * below it. Save stores it in the charter.
+ */
 function RoutineEditor({
   state,
   charter,
@@ -351,6 +377,22 @@ function RoutineEditor({
   const set = (patch: Partial<RoutineForm>) => setForm((current) => ({ ...current, ...patch }));
   const repos = state.workspace.projectIds;
   const roster = charter.workerModels ?? [];
+  const repoItems = [
+    {
+      value: HOME,
+      label: `${projectNameOf(projects, state.workspace.homeProjectId)} (home)`,
+    },
+    ...repos
+      .filter((id) => id !== state.workspace.homeProjectId)
+      .map((id) => ({ value: id as string, label: projectNameOf(projects, id) })),
+  ];
+  // One row per model, the routine's own kept while the roster no longer lists it, so it shows.
+  const modelNames = [...new Set(roster.map(modelLabel))];
+  if (form.model !== "" && !modelNames.includes(form.model)) modelNames.push(form.model);
+  const modelItems = [
+    { value: DEFAULT_MODEL, label: "Workspace default model" },
+    ...modelNames.map((name) => ({ value: name, label: name })),
+  ];
 
   const submit = () => {
     const made = routineOfForm(form, {
@@ -381,168 +423,197 @@ function RoutineEditor({
   };
 
   return (
-    <form
-      data-testid="routine-editor"
-      aria-label={routine === undefined ? "New routine" : `Edit ${routine.name}`}
-      className="flex flex-col gap-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
+    <DialogShell
+      testId="routine-editor"
+      title={routine === undefined ? "New routine" : "Edit routine"}
+      description={
+        <span data-testid="routine-editor-workspace" className="inline-flex items-center gap-1.5">
+          <Network aria-hidden className="size-icon-chip shrink-0" />
+          <span className="min-w-0 truncate">{state.workspace.name}</span>
+        </span>
+      }
+      className="w-[min(40rem,90vw)]"
+      onClose={() => {
+        if (!busy) onDone();
       }}
     >
-      <div className="flex flex-col gap-1">
-        <label htmlFor={ids.name} className={LABEL}>
-          Name
-        </label>
-        <input
-          id={ids.name}
-          className={inputCls}
-          value={form.name}
-          maxLength={ROUTINE_NAME_MAX}
-          placeholder="Daily CI triage"
-          autoComplete="off"
-          onChange={(event) => set({ name: event.target.value })}
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor={ids.brief} className={LABEL}>
-          Brief
-        </label>
-        <textarea
-          id={ids.brief}
-          className={cn(inputCls, "h-auto min-h-20 max-w-none resize-y py-1.5 leading-snug")}
-          rows={4}
-          maxLength={ROUTINE_BRIEF_MAX}
-          placeholder="What the worker does each time, written to stand alone."
-          value={form.brief}
-          onChange={(event) => set({ brief: event.target.value })}
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className={LABEL}>Runs</span>
-        <div className="flex flex-wrap items-center gap-2">
-          <OptionGroup
-            label="Runs"
-            options={EVERY_OPTIONS}
-            value={form.every}
-            onChange={(every) => set({ every })}
-          />
-          {form.every === "week" && (
-            <select
-              aria-label="Day"
-              className={cn(inputCls, "w-36")}
-              value={form.day}
-              onChange={(event) => set({ day: Number(event.target.value) })}
-            >
-              {/* Monday first, as the week reads. */}
-              {[1, 2, 3, 4, 5, 6, 0].map((day) => (
-                <option key={day} value={day}>
-                  {ROUTINE_DAYS[day]}
-                </option>
-              ))}
-            </select>
-          )}
-          {form.every !== "hours" ? (
-            <span className="flex items-center gap-1.5">
-              <label htmlFor={ids.time} className="text-meta text-muted-foreground">
-                at
-              </label>
-              <input
-                id={ids.time}
-                aria-label="Time"
-                className={cn(inputCls, "w-20 font-mono")}
-                value={form.at}
-                placeholder="09:00"
-                inputMode="numeric"
-                autoComplete="off"
-                onChange={(event) => set({ at: event.target.value })}
-              />
-              <span className="text-meta text-muted-foreground">local time</span>
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5">
-              <label htmlFor={ids.hours} className="text-meta text-muted-foreground">
-                every
-              </label>
-              <input
-                id={ids.hours}
-                aria-label="Hours"
-                type="number"
-                min={ROUTINE_MIN_INTERVAL_HOURS}
-                max={ROUTINE_MAX_INTERVAL_HOURS}
-                className={cn(inputCls, "w-20")}
-                value={form.hours}
-                onChange={(event) => set({ hours: event.target.value })}
-              />
-              <span className="text-meta text-muted-foreground">hours</span>
-            </span>
-          )}
+      <form
+        aria-label={routine === undefined ? "New routine" : `Edit ${routine.name}`}
+        className="flex min-h-0 flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        {/* The body scrolls; the header above and the actions below stay in view. */}
+        <div className="-m-1 flex min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain p-1">
+          <div className="flex flex-col gap-1">
+            <label htmlFor={ids.name} className={LABEL}>
+              Name
+            </label>
+            <input
+              id={ids.name}
+              className={cn(inputCls, "max-w-none")}
+              value={form.name}
+              maxLength={ROUTINE_NAME_MAX}
+              placeholder="Daily CI triage"
+              autoComplete="off"
+              onChange={(event) => set({ name: event.target.value })}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor={ids.brief} className={LABEL}>
+              Brief
+            </label>
+            <textarea
+              id={ids.brief}
+              className={cn(inputCls, "h-auto min-h-20 max-w-none resize-y py-1.5 leading-snug")}
+              rows={4}
+              maxLength={ROUTINE_BRIEF_MAX}
+              placeholder="What the worker does each time, written to stand alone."
+              value={form.brief}
+              onChange={(event) => set({ brief: event.target.value })}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className={LABEL}>Runs</span>
+            <OptionGroup
+              label="Runs"
+              options={EVERY_OPTIONS}
+              value={form.every}
+              onChange={(every) => set({ every })}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              {form.every === "week" && (
+                <Select
+                  value={String(form.day)}
+                  items={DAY_ITEMS}
+                  onValueChange={(day) => {
+                    if (day !== null) set({ day: Number(day) });
+                  }}
+                >
+                  <SelectTrigger aria-label="Day" className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DAY_ITEMS.map((day) => (
+                      <SelectItem key={day.value} value={day.value}>
+                        {day.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {form.every !== "hours" ? (
+                <span className="flex items-center gap-1.5">
+                  <label htmlFor={ids.time} className="text-meta text-muted-foreground">
+                    at
+                  </label>
+                  <input
+                    id={ids.time}
+                    aria-label="Time"
+                    className={cn(inputCls, "w-20 font-mono")}
+                    value={form.at}
+                    placeholder="09:00"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    onChange={(event) => set({ at: event.target.value })}
+                  />
+                  <span className="text-meta text-muted-foreground">local time, 24-hour</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <label htmlFor={ids.hours} className="text-meta text-muted-foreground">
+                    every
+                  </label>
+                  <input
+                    id={ids.hours}
+                    aria-label="Hours"
+                    type="number"
+                    min={ROUTINE_MIN_INTERVAL_HOURS}
+                    max={ROUTINE_MAX_INTERVAL_HOURS}
+                    className={cn(inputCls, "w-20")}
+                    value={form.hours}
+                    onChange={(event) => set({ hours: event.target.value })}
+                  />
+                  <span className="text-meta text-muted-foreground">hours</span>
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className={LABEL}>Each run</span>
+            <OptionGroup
+              label="Each run"
+              options={[
+                { value: "worker", label: "Starts a worker" },
+                { value: "orchestrator", label: "Wakes the orchestrator" },
+              ]}
+              value={form.target}
+              onChange={(target) => set({ target })}
+            />
+            {form.target === "worker" && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="text-meta text-muted-foreground">Repository</span>
+                  <Select
+                    value={form.project === "" ? HOME : form.project}
+                    items={repoItems}
+                    onValueChange={(project) => {
+                      if (project !== null) set({ project: project === HOME ? "" : project });
+                    }}
+                  >
+                    <SelectTrigger aria-label="Repository" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {repoItems.map((repo) => (
+                        <SelectItem key={repo.value} value={repo.value}>
+                          {repo.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="text-meta text-muted-foreground">Model</span>
+                  <Select
+                    value={form.model === "" ? DEFAULT_MODEL : form.model}
+                    items={modelItems}
+                    onValueChange={(model) => {
+                      if (model !== null) set({ model: model === DEFAULT_MODEL ? "" : model });
+                    }}
+                  >
+                    <SelectTrigger aria-label="Model" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {modelItems.map((model) => (
+                        <SelectItem key={model.value} value={model.value}>
+                          {model.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className={LABEL}>Each run</span>
-        <div className="flex flex-wrap items-center gap-2">
-          <OptionGroup
-            label="Each run"
-            options={[
-              { value: "worker", label: "Starts a worker" },
-              { value: "orchestrator", label: "Wakes the orchestrator" },
-            ]}
-            value={form.target}
-            onChange={(target) => set({ target })}
-          />
-          {form.target === "worker" && (
-            <>
-              <select
-                aria-label="Repository"
-                className={cn(inputCls, "w-44")}
-                value={form.project}
-                onChange={(event) => set({ project: event.target.value })}
-              >
-                <option value="">
-                  {projectNameOf(projects, state.workspace.homeProjectId)} (home)
-                </option>
-                {repos
-                  .filter((id) => id !== state.workspace.homeProjectId)
-                  .map((id) => (
-                    <option key={id} value={id}>
-                      {projectNameOf(projects, id)}
-                    </option>
-                  ))}
-              </select>
-              <select
-                aria-label="Model"
-                className={cn(inputCls, "w-56")}
-                value={form.model}
-                onChange={(event) => set({ model: event.target.value })}
-              >
-                <option value="">Workspace default model</option>
-                {roster.map((model) => {
-                  const value = modelLabel(model);
-                  return (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  );
-                })}
-              </select>
-            </>
-          )}
+        {error !== undefined && (
+          <p role="alert" className="text-meta text-destructive">
+            {error}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button size="sm" type="button" variant="ghost" disabled={busy} onClick={onDone}>
+            Cancel
+          </Button>
+          <Button size="sm" type="submit" data-testid="routine-save" disabled={busy}>
+            {routine === undefined ? "Add routine" : "Save routine"}
+          </Button>
         </div>
-      </div>
-      {error !== undefined && (
-        <p role="alert" className="text-meta text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="flex items-center gap-2">
-        <Button size="sm" type="submit" data-testid="routine-save" disabled={busy}>
-          {routine === undefined ? "Add routine" : "Save routine"}
-        </Button>
-        <Button size="sm" type="button" variant="ghost" disabled={busy} onClick={onDone}>
-          Cancel
-        </Button>
-      </div>
-    </form>
+      </form>
+    </DialogShell>
   );
 }

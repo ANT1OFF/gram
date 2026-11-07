@@ -150,3 +150,60 @@ export const customSnooze = (
   if (at <= now) return { error: "That time has already passed" };
   return { at };
 };
+
+/** The weekdays a typed snooze takes, Sunday first: the whole name, or any start of it from three letters. */
+const DAY_WORDS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+/**
+ * A snooze typed in words, as the palette's Snooze thread step takes it: a day (`today`,
+ * `tomorrow`, a weekday such as `fri` or `friday`), a 24-hour time (`14:00`, `9`), or both
+ * (`fri 14:00`); or a span (`30m`, `2h`). A day alone is 09:00 that day; a time alone is the next
+ * time the clock reads it; a weekday is the next one ahead, today's while its time is still ahead.
+ * `undefined` for words it can't read, or a time already past.
+ */
+export const typedSnooze = (
+  text: string,
+  now: number,
+  zone: SnoozeZone = {},
+): number | undefined => {
+  const words = text.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 2) return undefined;
+  const span =
+    words.length === 1 ? /^(\d{1,3})\s*(m|min|mins|h|hr|hrs|hours?)$/.exec(words[0]!) : null;
+  if (span !== null) {
+    const amount = Number(span[1]);
+    if (amount === 0) return undefined;
+    return now + amount * (span[2]!.startsWith("m") ? 60_000 : 3_600_000);
+  }
+  let day: "today" | "tomorrow" | number | undefined;
+  let time: { hour: number; minute: number } | undefined;
+  for (const word of words) {
+    const clock = /^([01]?\d|2[0-3])(?::([0-5]\d))?$/.exec(word);
+    if (clock !== null && time === undefined) {
+      time = { hour: Number(clock[1]), minute: Number(clock[2] ?? 0) };
+      continue;
+    }
+    if (day !== undefined) return undefined;
+    if (word === "today") day = "today";
+    else if (word === "tomorrow" || word === "tmr" || word === "tom") day = "tomorrow";
+    else {
+      const weekday = word.length >= 3 ? DAY_WORDS.findIndex((name) => name.startsWith(word)) : -1;
+      if (weekday === -1) return undefined;
+      day = weekday;
+    }
+  }
+  const today = dateOf(now, zone);
+  const { hour, minute } = time ?? { hour: MORNING, minute: 0 };
+  if (day === undefined) {
+    const at = wallTime(today, hour, minute, zone);
+    return at > now ? at : wallTime(plusDays(today, 1), hour, minute, zone);
+  }
+  if (day === "today" || day === "tomorrow") {
+    const at = wallTime(plusDays(today, day === "today" ? 0 : 1), hour, minute, zone);
+    return at > now ? at : undefined;
+  }
+  const { weekday } = wallOf(now, zone);
+  const ahead = (day - weekday + 7) % 7;
+  const at = wallTime(plusDays(today, ahead), hour, minute, zone);
+  return at > now ? at : wallTime(plusDays(today, ahead + 7), hour, minute, zone);
+};

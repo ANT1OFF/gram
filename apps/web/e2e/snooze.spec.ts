@@ -16,6 +16,18 @@ const start = async (page: Page) => {
   await page.getByLabel("Message", { exact: true }).waitFor();
 };
 
+/**
+ * Opens `t-deps`, a thread with nothing to play: a thread that asks something comes back from its
+ * snooze at once, and t-flaky's turn asks for an approval as it plays, so a snooze of it from the
+ * palette, which takes longer than the row menu's, could end before it is checked.
+ */
+const startQuiet = async (page: Page) => {
+  await page.clock.install({ time: FRIDAY_LATE });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/t/t-deps");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+};
+
 const sidebar = (page: Page) => page.getByTestId("overview-sidebar");
 const soloRow = (page: Page, threadId: string) =>
   sidebar(page).locator(`[data-testid="overview-solo"][data-thread-id="${threadId}"]`);
@@ -54,12 +66,13 @@ test("snoozed from the row menu, a thread leaves the list until Unsnooze brings 
 test("snoozed from the palette to a time of your own, it comes back unread at that time", async ({
   page,
 }) => {
-  await start(page);
+  await startQuiet(page);
+  await expect(soloRow(page, "t-deps")).not.toHaveAttribute("data-unread");
   // Opened elsewhere, so coming back marks it unread rather than read where it is shown.
   const other = sidebar(page)
     .locator('[data-testid="overview-solo"]')
     .filter({
-      hasNot: page.locator('[data-thread-id="t-flaky"]'),
+      hasNot: page.locator('[data-thread-id="t-deps"]'),
     });
   await page.keyboard.press("ControlOrMeta+k");
   const palette = page.getByTestId("command-palette");
@@ -81,8 +94,33 @@ test("snoozed from the palette to a time of your own, it comes back unread at th
 
   // Look at another thread while it sleeps, then let the clock run past its time.
   await other.first().click();
-  await expect(page).not.toHaveURL(/\/t\/t-flaky$/);
+  await expect(page).not.toHaveURL(/\/t\/t-deps$/);
   await page.clock.runFor("01:20:00");
   await expect(snoozedLine(page)).toHaveCount(0);
-  await expect(soloRow(page, "t-flaky")).toHaveAttribute("data-unread", "true");
+  await expect(soloRow(page, "t-deps")).toHaveAttribute("data-unread", "true");
+});
+
+test("the palette's snooze step names itself and its thread, and takes a typed time", async ({
+  page,
+}) => {
+  await startQuiet(page);
+  await page.keyboard.press("ControlOrMeta+k");
+  const palette = page.getByTestId("command-palette");
+  const field = palette.getByRole("combobox");
+  await field.fill(">Snooze");
+  await palette.getByRole("option", { name: /Snooze thread/ }).click();
+
+  // Not the search it replaced: the step says what it does, to which thread, and what to type.
+  await expect(palette.getByTestId("palette-step")).toContainText("Snooze thread");
+  await expect(palette.getByTestId("palette-step-subject")).toHaveText("Bump dependencies");
+  await expect(field).toHaveAttribute("placeholder", "Snooze until… (e.g. fri 14:00)");
+  await expect(field).toHaveAccessibleName("Snooze thread");
+
+  // Late on Friday, "mon 14:00" is the coming Monday.
+  await field.fill("mon 14:00");
+  const typed = palette.getByRole("option", { name: "Snooze until Mon 14:00" });
+  await expect(typed).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(palette).toHaveCount(0);
+  await expect(page.getByTestId("pane-snoozed")).toContainText("Snoozed until Mon 14:00");
 });

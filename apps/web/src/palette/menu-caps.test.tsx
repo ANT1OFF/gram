@@ -287,6 +287,20 @@ describe("palette commands", () => {
     expect(screen.getAllByRole("option")).toHaveLength(6);
   });
 
+  it("teaches its keys in the catalog's words: ↑↓ move, and ⇥ actions on a row that has them", async () => {
+    await openPalette("");
+    const keys = screen.getByTestId("palette-keys");
+    expect(keys.textContent).toContain("↑↓ move");
+    expect(keys.textContent).toContain("⏎ open");
+    // Down to the first thread, whose own commands Tab lists.
+    const field = screen.getByRole("combobox");
+    for (let step = 0; step < 20 && !keys.textContent!.includes("⇥"); step++) {
+      fireEvent.keyDown(field, { key: "ArrowDown" });
+    }
+    expect(keys.textContent).toContain("⇥ actions");
+    expect(keys.textContent).not.toContain("its commands");
+  });
+
   it("opens short on places to go, threads and workers, with commands behind >", async () => {
     await openPalette("");
     const sections = paletteSections();

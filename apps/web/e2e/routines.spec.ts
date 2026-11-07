@@ -61,7 +61,13 @@ test("adds a routine, refuses a 12-hour time, and saves its schedule and target"
   await expect(section.getByTestId("routines-empty")).toHaveText("No routines yet");
 
   await page.getByTestId("routine-add").click();
-  const editor = section.getByTestId("routine-editor");
+  // A dialog of its own, its header naming the workspace, Save and Cancel in view below the form.
+  const editor = page.getByTestId("routine-editor");
+  await expect(editor.getByRole("heading", { name: "New routine" })).toBeVisible();
+  await expect(editor.getByTestId("routine-editor-workspace")).toHaveText("Routines fixture");
+  await expect(editor.locator("select")).toHaveCount(0);
+  await expect(editor.getByRole("combobox", { name: "Repository" })).toBeVisible();
+  await expect(editor.getByTestId("routine-save")).toBeInViewport();
   await editor.getByLabel("Name").fill("Daily CI triage");
   await editor.getByLabel("Brief").fill("Look at main's failing jobs and open one PR per failure.");
   await editor.getByLabel("Time").fill("9:30 PM");
@@ -90,7 +96,9 @@ test("adds a routine, refuses a 12-hour time, and saves its schedule and target"
   await row.getByRole("button", { name: "Routine Daily CI triage actions" }).click();
   await page.getByRole("menuitem", { name: "Edit…" }).click();
   await editor.getByRole("radio", { name: "Weekly" }).click();
-  await editor.getByLabel("Day").selectOption({ label: "Friday" });
+  await expect(editor.getByRole("heading", { name: "Edit routine" })).toBeVisible();
+  await editor.getByRole("combobox", { name: "Day" }).click();
+  await page.getByRole("option", { name: "Friday" }).click();
   await editor.getByLabel("Time").fill("16:00");
   await editor.getByRole("radio", { name: "Wakes the orchestrator" }).click();
   await editor.getByTestId("routine-save").click();
@@ -179,5 +187,49 @@ test("a worker a routine started says so under its header", async ({ page }) => 
   await expect(page.getByTestId("worker-banner-routine")).toHaveCount(0);
   await threadRow(page, made.briefed).click();
   await line.getByTestId("worker-banner-routines").click();
-  await expect(page.getByTestId("workspace-routines")).toBeVisible();
+  await expect(page).toHaveURL(/\/settings\/routines/);
+  await expect(page.getByTestId("workspace-routines").first()).toBeVisible();
+});
+
+test("Routines is a place of its own, reached from the palette and from Settings search", async ({
+  page,
+}) => {
+  const workspaceId = await openWorkspace(page);
+  await setRoutines(page, workspaceId, [
+    {
+      name: "Weekly dependency check",
+      brief: "Check for outdated dependencies.",
+      target: "orchestrator",
+      schedule: { every: "week", day: 1, at: "08:00" },
+    },
+  ]);
+
+  // From the palette's Go to.
+  await page.keyboard.press("ControlOrMeta+k");
+  const palette = page.getByTestId("command-palette");
+  await palette.getByRole("combobox").fill("routines");
+  await palette.getByRole("option", { name: "Routines", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/routines$/);
+  // Each workspace is a group of its own, under its name.
+  const group = page.getByRole("region", { name: "Routines fixture" });
+  await expect(group.getByTestId("routine-row")).toHaveText(/Weekly dependency check/);
+  await expect(group).toContainText("1 routine");
+
+  // From Settings search, which finds the page by what it is for.
+  await page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("link", { name: "General", exact: true })
+    .click();
+  await page.getByRole("textbox", { name: "Search settings" }).fill("cron");
+  const found = page.locator('[data-settings-page="/settings/routines"]');
+  await found.getByRole("link", { name: /Routines/ }).click();
+  await expect(page).toHaveURL(/\/settings\/routines/);
+
+  // Its editor is the same dialog, named for the workspace it runs in.
+  await group.getByRole("button", { name: "Routine Weekly dependency check actions" }).click();
+  await page.getByRole("menuitem", { name: "Edit…" }).click();
+  const editor = page.getByTestId("routine-editor");
+  await expect(editor.getByTestId("routine-editor-workspace")).toHaveText("Routines fixture");
+  await editor.getByRole("button", { name: "Cancel" }).click();
+  await expect(editor).toHaveCount(0);
 });

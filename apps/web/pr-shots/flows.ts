@@ -419,7 +419,7 @@ const steps: readonly Shot[] = [
       await expect(page.getByTestId("message-user").last()).toContainText("Run the e2e suite");
       await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeHidden();
       await expect(page.getByTestId("agent-error-retried")).toContainText(
-        /(Retried|Recovered) · \d\d:\d\d/,
+        /(Retried|Recovered) · \d\d:\d\d|Retried at \d\d:\d\d/,
       );
     },
   },

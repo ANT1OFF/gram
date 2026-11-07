@@ -166,14 +166,15 @@ export function WorkerBanner({
             From routine <span className="text-foreground/80">{routine.name}</span>
           </span>
           {workspace !== undefined && (
-            <button
-              type="button"
+            // Routines' own page, opened on this workspace's group.
+            <Link
+              to="/settings/routines"
+              search={{ highlight: workspace.workspace.name }}
               data-testid="worker-banner-routines"
               className={ACTION}
-              onClick={() => openWorkspaceSettings(workspace.workspace.id)}
             >
               Routines
-            </button>
+            </Link>
           )}
         </p>
       )}

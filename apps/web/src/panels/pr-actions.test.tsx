@@ -181,8 +181,8 @@ describe("PrActions when blocked", () => {
     renderWithApi(<PrActions threadId={T} detail={detail()} merge="blocked" />, {
       prMergeOptions: options(),
     });
-    // The button says the merge is blocked, and by how much, not only "Merge".
-    const merge = screen.getByRole("button", { name: "Merge blocked · 2 reasons…" });
+    // The reasons say the merge is blocked once; the button is only the action, not a second summary.
+    const merge = screen.getByRole("button", { name: "Merge…" });
     expect(merge.dataset["blocked"]).toBe("true");
     const reason = screen.getByTestId("pr-merge-blocked");
     expect(reason.textContent).toBe("Merge blocked · 2 reasons: check, changes requested");
@@ -195,7 +195,7 @@ describe("PrActions when blocked", () => {
     );
   });
 
-  it("names each blocker, then leads the action row with the worst one's next step", () => {
+  it("names each blocker, then gives the action row to the worst one's next step alone", async () => {
     const onBlocker = vi.fn();
     renderWithApi(
       <PrActions
@@ -219,16 +219,20 @@ describe("PrActions when blocked", () => {
       "Review bot: 2 blocking findings",
     ]);
     const row = within(screen.getByTestId("pr-actions")).getAllByRole("button");
-    expect(row.map((button) => button.textContent)).toEqual([
-      "Inspect test (windows) job",
-      "Merge blocked · 3 reasons…",
-    ]);
+    expect(row.map((button) => button.textContent)).toEqual(["Inspect test (windows) job"]);
+    expect(screen.queryByTestId("pr-merge")).toBeNull();
     fireEvent.click(row[0]!);
     expect(onBlocker).toHaveBeenCalledWith({
       kind: "inspectCheck",
       label: "Inspect test (windows) job",
       check: "test (windows)",
     });
+    // Merge… still opens, from "…", for auto-merge or a merge GitHub may yet allow.
+    fireEvent.click(screen.getByRole("button", { name: "More PR actions" }));
+    fireEvent.click(await screen.findByTestId("pr-merge-menu"));
+    expect((await screen.findByTestId("pr-merge-dialog-blocked")).textContent).toBe(
+      "Merge blocked · 3 reasons: check, changes requested, review bot",
+    );
   });
 
   it("asks the agent to fix conflicts when they are the worst blocker", async () => {
@@ -255,7 +259,7 @@ describe("PrActions when blocked", () => {
       prMergeOptions: options(),
     });
     expect(screen.queryByTestId("pr-next-action")).toBeNull();
-    expect(screen.getByRole("button", { name: "Merge blocked · 2 reasons…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Merge…" }).dataset["blocked"]).toBe("true");
   });
 
   it("keeps Merge primary for a PR nothing blocks", () => {

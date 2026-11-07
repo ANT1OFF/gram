@@ -76,6 +76,15 @@ export function GatewaysSummary() {
   return data.length === 0 ? "None" : String(data.length);
 }
 
+/** Workspaces & merging → Routines: how many there are across the workspaces. */
+export function RoutinesSummary() {
+  const api = useApi();
+  const { data } = useQuery({ queryKey: ["workspaces"], queryFn: () => api.listWorkspaces() });
+  if (data === undefined) return null;
+  const count = data.reduce((sum, state) => sum + (state.charter.routines?.length ?? 0), 0);
+  return count === 0 ? "None" : String(count);
+}
+
 /** Workspaces & merging → Review bots: how many are followed. */
 export function ReviewBotsSummary() {
   const count = useServerSettings((s) => (s.settings ? reviewBotsOf(s.settings).length : 0));

@@ -76,8 +76,10 @@ const BLOCKER_DISPLAY: Record<MergeBlockerKind, PrMarkDisplay> = {
 
 /**
  * What blocks an open PR's merge, worst first, then the PR's one main action and a "…" menu with
- * the rest: draft, binding another PR, copying the link and closing. Blocked, the main action is the
- * next step for the worst blocker and Merge steps back beside it. Merging and closing confirm first.
+ * the rest: draft, binding another PR, copying the link and closing. Blocked, the reasons above say
+ * so once and the row holds only the next step for the worst blocker; Merge… waits in the "…" menu,
+ * for auto-merge or a merge the panel can't foresee GitHub allowing. With no step to offer, Merge…
+ * stays in the row, secondary. Merging and closing confirm first.
  */
 export function PrActions({
   threadId,
@@ -141,6 +143,8 @@ export function PrActions({
       });
     } else onBlocker?.(step);
   };
+  /** Blocked with a step to take: the row is that step alone, and Merge… moves into "…". */
+  const mergeInMenu = blocked !== undefined && next !== undefined;
   const more = (
     <Menu.Root>
       <Menu.Trigger
@@ -159,6 +163,17 @@ export function PrActions({
       <Menu.Portal>
         <Menu.Positioner align="start" sideOffset={4} className="isolate z-50">
           <Menu.Popup data-surface="overlay" data-testid="pr-actions-menu" className={POPUP}>
+            {open && !detail.isDraft && mergeInMenu && (
+              <Menu.Item
+                className={ITEM}
+                data-testid="pr-merge-menu"
+                aria-describedby={reasonId}
+                onClick={() => setConfirming("merge")}
+              >
+                <GitMerge aria-hidden />
+                Merge…
+              </Menu.Item>
+            )}
             {open && !detail.isDraft && (
               <Menu.Item
                 className={ITEM}
@@ -269,9 +284,9 @@ export function PrActions({
               >
                 Ready for review
               </Button>
-            ) : (
-              // Blocked, Merge steps back to a secondary button that says so, "Merge blocked · 3
-              // reasons…", described by the blockers above; it still opens, for auto-merge or a
+            ) : mergeInMenu ? null : (
+              // Blocked with no step to offer, Merge steps back to a secondary button, described by
+              // the reasons above rather than repeating them; it still opens, for auto-merge or a
               // merge the panel can't foresee GitHub allowing.
               <Button
                 size="xs"
@@ -283,7 +298,7 @@ export function PrActions({
                 onClick={() => setConfirming("merge")}
               >
                 <GitMerge aria-hidden />
-                {summary === undefined ? "Merge…" : `Merge blocked · ${summary.count}…`}
+                Merge…
               </Button>
             )}
           </div>
