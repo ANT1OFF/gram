@@ -15,8 +15,8 @@ The server has one application database connection. WAL checkpoints use a separa
 in a worker thread, with a bounded fallback to SQLite's automatic checkpoints on the application
 thread. The existing page cache, mmap and NORMAL-sync settings already apply. The in-flight
 durable-commit implementation remains outside this investigation's edits. The reported baseline
-includes the connection owner landed in PR #204. The branch also includes PR #202 after a
-subsequent rebase; an improvement comparison must refresh its baseline on that revision.
+includes the connection owner landed in PR #204. The follow-up
+[query comparisons](server-sqlite-query-wins.md) also include PRs #202 and #214.
 
 See [storage](../../packages/server/src/persistence/thread-store.ts),
 [checkpointing](../../packages/server/src/persistence/wal-checkpointer.ts), and
@@ -35,6 +35,10 @@ GRAM_PERF_SQLITE=1 GRAM_PERF_SQLITE_OUT=/tmp/gram-perf-sqlite.json \
 `GRAM_PERF_SQLITE_SMOKE=1` reduces history to 2,000 messages and 100 reports for functional
 validation. Its output explicitly records `smoke: true`; it is not performance evidence for
 the large dataset. The suite is skipped by default.
+
+`GRAM_PERF_SQLITE_SCOPES=1` adds a small-worker scoped search to detect ranking regressions
+hidden by the long orchestrator scope. The output records `scopeProbe: true`; keep this option
+the same on both sides of a comparison.
 
 The [fixture](../../packages/server/src/perf/sqlite-fixture.ts) generates 10 workspaces, 300
 threads, 200,000 messages, 100,000 reports, 100,000 orchestration events, 290 bound PR references

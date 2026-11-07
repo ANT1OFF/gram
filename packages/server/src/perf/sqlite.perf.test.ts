@@ -30,6 +30,7 @@ import {
 import { sqliteProbe } from "./sqlite-probe.ts";
 
 const PERF = process.env["GRAM_PERF_SQLITE"] === "1";
+const SCOPES = process.env["GRAM_PERF_SQLITE_SCOPES"] === "1";
 const OUT = process.env["GRAM_PERF_SQLITE_OUT"] ?? join(tmpdir(), "gram-perf-sqlite.json");
 const walBytes = (file: string) => (existsSync(`${file}-wal`) ? statSync(`${file}-wal`).size : 0);
 
@@ -192,6 +193,12 @@ describe.skipIf(!PERF)("synthetic large SQLite workload", () => {
                   "searchScoped",
                   searchThreads({ query: "needle", threadId: threadId(0), limit: 50 }),
                 );
+                if (SCOPES) {
+                  yield* measure(
+                    "searchWorkerScoped",
+                    searchThreads({ query: "needle", threadId: threadId(1), limit: 50 }),
+                  );
+                }
                 yield* measure(
                   "usageOneDay",
                   store.usageOverview(
@@ -263,6 +270,7 @@ describe.skipIf(!PERF)("synthetic large SQLite workload", () => {
             {
               fixture: FIXTURE,
               smoke: SMOKE,
+              scopeProbe: SCOPES,
               fixtureMs,
               databaseBytes,
               node: process.version,

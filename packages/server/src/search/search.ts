@@ -82,7 +82,11 @@ export const searchThreads = ({
     if (match === undefined) return { hits: [], truncated: false };
     const sql = yield* SqlClient.SqlClient;
     const scope = threadId === undefined ? [] : [threadId];
+    const orderedRank = threadId === undefined;
 
+    // Global searches can consume FTS rank order and stop at LIMIT, using the same weights.
+    // A small scope must filter first: thread_id is UNINDEXED, so global rank order does
+    // unnecessary work before reaching that thread's matches. Keep its filter-then-sort plan.
     const messageRows = yield* sql.unsafe<HitRow>(
       `SELECT message_search.thread_id AS "threadId", message_search.message_id AS "messageId",
           CASE WHEN json_valid(threads.data) THEN json_extract(threads.data, '$.title') END
@@ -90,8 +94,9 @@ export const searchThreads = ({
           snippet(message_search, -1, char(1), char(2), '…', ${SNIPPET_TOKENS}) AS "marked"
         FROM message_search JOIN threads ON threads.id = message_search.thread_id
         WHERE message_search MATCH ?
+          ${orderedRank ? "AND message_search.rank MATCH 'bm25(0, 0, 1.0, 0.4)'" : ""}
           ${threadId === undefined ? "" : "AND message_search.thread_id = ?"}
-        ORDER BY bm25(message_search, 0, 0, 1.0, 0.4)
+        ORDER BY ${orderedRank ? "message_search.rank" : "bm25(message_search, 0, 0, 1.0, 0.4)"}
         LIMIT ?`,
       [match, ...scope, limit + 1],
     );
@@ -100,8 +105,9 @@ export const searchThreads = ({
           snippet(thread_title_search, 1, char(1), char(2), '…', ${SNIPPET_TOKENS}) AS "marked"
         FROM thread_title_search
         WHERE thread_title_search MATCH ?
+          ${orderedRank ? "AND thread_title_search.rank MATCH 'bm25()'" : ""}
           ${threadId === undefined ? "" : "AND thread_id = ?"}
-        ORDER BY bm25(thread_title_search)
+        ORDER BY ${orderedRank ? "thread_title_search.rank" : "bm25(thread_title_search)"}
         LIMIT ?`,
       [match, ...scope, limit + 1],
     );

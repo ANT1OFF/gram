@@ -3,6 +3,7 @@ import type { Thread, ThreadId, TurnId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { SqlClient } from "../platform/unstable.ts";
+import { sqliteProbe } from "../perf/sqlite-probe.ts";
 import { ThreadStore } from "./thread-store.ts";
 
 const withStore = <A, E>(effect: Effect.Effect<A, E, ThreadStore | SqlClient.SqlClient>) =>
@@ -31,6 +32,56 @@ const addThread = (id: string, title: string) =>
   });
 
 const titles = (threads: ReadonlyArray<Thread>) => threads.map((t) => t.title);
+
+describe("messagesSince", () => {
+  it.effect("seeks the small changed set before ordering a long thread's resume", () =>
+    withStore(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const sql = yield* SqlClient.SqlClient;
+          const id = yield* addThread("resume", "long history");
+          yield* sql`WITH RECURSIVE n(x) AS (
+        SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 1000
+      ) INSERT INTO messages (thread_id, id, seq, role, message, rev)
+        SELECT ${id}, 'm-' || x, x, 'user',
+          json_object('id', 'm-' || x, 'role', 'user', 'parts', json('[]')), x FROM n`;
+          // Changed revisions need not be in transcript order: old messages can be updated.
+          yield* sql`UPDATE messages SET rev = 1002 WHERE thread_id = ${id} AND seq = 995`;
+          yield* sql`ANALYZE`;
+          const probe = yield* Effect.acquireRelease(Effect.sync(sqliteProbe), (p) =>
+            Effect.sync(p.restore),
+          );
+          probe.start();
+          const resumed = yield* store.messagesSince(id, 990, 10);
+          const { calls } = probe.stop();
+          expect(resumed?.map((message) => message.id)).toEqual(
+            Array.from({ length: 10 }, (_, i) => `m-${991 + i}`),
+          );
+          const body = calls.find(
+            (call) => call.sql.includes("SELECT id, message") && call.sql.includes("rev >"),
+          );
+          expect(body).toBeDefined();
+          const plan = yield* sql.unsafe<{ detail: string }>(
+            `EXPLAIN QUERY PLAN ${body!.sql}`,
+            body!.bindings,
+          );
+          expect(plan.map((row) => row.detail)).toEqual([
+            "SEARCH messages USING INDEX messages_thread_rev (thread_id=? AND rev>?)",
+            "USE TEMP B-TREE FOR ORDER BY",
+          ]);
+          expect((yield* store.messagesSince(id, 990, 10, "m-998"))?.map((m) => m.id)).toEqual([
+            "m-998",
+            "m-999",
+            "m-1000",
+          ]);
+          expect(yield* store.messagesSince(id, 990, 9)).toBeUndefined();
+          expect(yield* store.messagesSince(id, 990, 10, "missing")).toBeUndefined();
+        }),
+      ),
+    ),
+  );
+});
 
 describe("listThreads", () => {
   it.effect("decodes the threads once until one of them is written", () =>

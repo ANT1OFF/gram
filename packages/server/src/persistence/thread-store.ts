@@ -2205,8 +2205,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               const [count] = yield* sql<{ n: number }>`SELECT COUNT(*) AS n FROM messages
                 WHERE thread_id = ${threadId} AND rev > ${afterRev} AND seq >= ${from}`;
               if (Number(count?.n ?? 0) > limit) return undefined;
+              // The count bounded this set. Seek changed revisions, then sort those few rows;
+              // satisfying ORDER BY with messages_thread_seq scans the thread's entire history.
               const rows = yield* sql<{ id: string; message: string }>`SELECT id, message
-                FROM messages WHERE thread_id = ${threadId} AND rev > ${afterRev} AND seq >= ${from}
+                FROM messages INDEXED BY messages_thread_rev
+                WHERE thread_id = ${threadId} AND rev > ${afterRev} AND seq >= ${from}
                 ORDER BY seq`;
               return yield* messageRows("messages", threadId, rows);
             }),
