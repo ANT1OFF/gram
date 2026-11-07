@@ -87,7 +87,7 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   // From the orchestrator the overview's New opens the form on its workspace; a worker starts at once.
   const add = page
     .getByTestId("overview-sidebar")
-    .getByRole("button", { name: "New", exact: true });
+    .getByRole("button", { name: "New task", exact: true });
   await add.click();
   await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Team/ }).click();
   await expect(page).toHaveURL(/\/new-task$/);
@@ -168,7 +168,7 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   // Asked for before submitting, it starts under your control, and says so in those words.
   await page
     .getByTestId("overview-sidebar")
-    .getByRole("button", { name: "New", exact: true })
+    .getByRole("button", { name: "New task", exact: true })
     .click();
   await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Task/ }).click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);

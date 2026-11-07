@@ -1,4 +1,4 @@
-import type { Autonomy } from "@gram/contracts";
+import type { Autonomy, WorkspaceId } from "@gram/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -18,10 +18,13 @@ interface TaskDraftState {
    * until somebody picks one, so the default stays the server's.
    */
   readonly autonomy?: Autonomy | undefined;
+  /** The workspace an open New task draft is aimed at, which the window shows while it is open. */
+  readonly showing?: WorkspaceId | undefined;
   /** `worker` is the picked model's `workerChoiceKey`, for a task that went to a worker. */
   remember: (target: TaskTarget, worker?: string) => void;
   rememberAutonomy: (autonomy: Autonomy) => void;
   rememberEntry: (entry: NewEntry) => void;
+  show: (workspaceId: WorkspaceId | undefined) => void;
 }
 
 /** What New task remembers between drafts, kept on this machine. */
@@ -38,6 +41,7 @@ export const useTaskDraftStore = create<TaskDraftState>()(
         })),
       rememberAutonomy: (autonomy) => set({ autonomy }),
       rememberEntry: (entry) => set({ entry }),
+      show: (showing) => set({ showing }),
     }),
     {
       name: "gram.task-draft",

@@ -18,6 +18,7 @@ import { agentLabel } from "@/agents/agent-label";
 import { Button } from "@/components/ui/button";
 import { useShortcut } from "@/keyboard/registry";
 import { useStable } from "@/lib/use-stable";
+import { heldReadingPlace, holdReadingPlace, releaseReadingPlace } from "@/settings/leave-settings";
 import { cn } from "@/lib/utils";
 import { StreamExtrasView, useOrchestratorStreamContext } from "@/orchestration/stream-context";
 import { digestOf } from "@/orchestration/stream-model";
@@ -64,6 +65,8 @@ const EARLIER_ROW = 40;
 const FADE_PX = 24;
 /** How long a search hit in a fold keeps its place while the opened row settles. */
 const REVEAL_SETTLE_FRAMES = 12;
+/** How long a transcript back from Settings keeps putting its view back while its rows settle. */
+const RETURN_SETTLE_MS = 2000;
 /** The live compaction line's room under the last row until it is measured: one line and `my-3`. */
 const COMPACTING_ROW = 40;
 
@@ -625,6 +628,69 @@ export function Transcript({
     frame = requestAnimationFrame(settle);
     return () => cancelAnimationFrame(frame);
   }, [restore, virtualizer, setFollowing]);
+
+  // Settings takes the window's place, so a transcript left for it holds where it was being read
+  // and comes back there, rather than at its end. One read at the bottom just follows again. Read
+  // off the rows on screen as they leave, since the virtualizer has let go of its measures by then.
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    return () => {
+      if (following.current || scroller === null) return;
+      const top = scroller.getBoundingClientRect().top;
+      const row = [...scroller.querySelectorAll<HTMLElement>("[data-message-id]")].find(
+        (each) => each.getBoundingClientRect().bottom > top,
+      );
+      const key = row?.dataset["messageId"];
+      if (row !== undefined && key !== undefined)
+        holdReadingPlace(threadId, { key, offset: top - row.getBoundingClientRect().top });
+    };
+  }, [threadId]);
+  const [comingBack] = useState(() => heldReadingPlace(threadId));
+  useEffect(() => {
+    if (comingBack !== undefined) releaseReadingPlace(threadId);
+  }, [comingBack, threadId]);
+  const hasMessages = messages.length > 0;
+  useLayoutEffect(() => {
+    if (comingBack === undefined || !hasMessages) return;
+    const rowOf = () =>
+      previousMessages.current.findIndex((message) => message.id === comingBack.key);
+    const index = rowOf();
+    if (index < 0) return;
+    // Held like a jump, so reading on (a wheel, a key, a jump) lets it go.
+    const request: JumpRequest = { index, messageId: comingBack.key, nonce: -1 };
+    pendingJump.current = request;
+    manualGesture.current = undefined;
+    setFollowing(false);
+    virtualizer.scrollToIndex(index, { align: "start" });
+    // Rows settle at their measured heights over a few frames; each puts the view back on the row.
+    const started = performance.now();
+    let stableFrames = 0;
+    let frame = 0;
+    const settle = () => {
+      if (pendingJump.current !== request) return;
+      const start = virtualizer.measurementsCache[rowOf()]?.start;
+      const scroller = scrollRef.current;
+      if (start === undefined || scroller === null) {
+        pendingJump.current = undefined;
+        return;
+      }
+      const target = start + comingBack.offset;
+      if (Math.abs(scroller.scrollTop - target) >= 1.5) {
+        virtualizer.scrollToOffset(target);
+        stableFrames = 0;
+      } else stableFrames++;
+      if (stableFrames >= 4 || performance.now() - started > RETURN_SETTLE_MS) {
+        pendingJump.current = undefined;
+        return;
+      }
+      frame = requestAnimationFrame(settle);
+    };
+    frame = requestAnimationFrame(settle);
+    return () => {
+      cancelAnimationFrame(frame);
+      if (pendingJump.current === request) pendingJump.current = undefined;
+    };
+  }, [comingBack, hasMessages, virtualizer, setFollowing]);
 
   // This pane's transcript answers ⌥↑ / ⌥↓ while focus is in the pane, or nowhere in the focused one.
   const inPane = () => {

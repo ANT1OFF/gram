@@ -25,9 +25,10 @@ const ENTRY_OF: Readonly<Record<(typeof WHO_CHOICES)[number]["value"], NewEntry>
 };
 
 /**
- * The overview header's `+`, an icon as every title-bar control is: a menu of what New starts, Task,
- * Team and Chat, each with its shortcut, in Who does it's words and order. A pick opens the one New
- * form on that choice; where it runs, a new workspace included, is the form's own row.
+ * The overview header's `+` and, where the header has room for them beside its icons, the words
+ * "New task", so the way to start work is read rather than recognised: a menu of what New starts,
+ * Task, Team and Chat, each with its shortcut, in Who does it's words and order. A pick opens the
+ * one New form on that choice; where it runs, a new workspace included, is the form's own row.
  */
 export function NewEntryMenu() {
   const navigate = useNavigate();
@@ -43,14 +44,20 @@ export function NewEntryMenu() {
         side="bottom"
         render={
           <Menu.Trigger
-            render={<Button variant="ghost" size="icon-sm" aria-label="New" />}
+            render={<Button variant="ghost" size="icon-sm" aria-label="New task" />}
             data-testid="new-entry"
             data-entry={last}
-            className="ml-auto text-muted-foreground [-webkit-app-region:no-drag]"
+            className="ml-auto gap-1 text-muted-foreground [-webkit-app-region:no-drag] @min-[12.5rem]/overview-head:w-auto @min-[12.5rem]/overview-head:pr-2.5 @min-[12.5rem]/overview-head:pl-1.5"
           />
         }
       >
         <Plus />
+        <span
+          data-testid="new-entry-words"
+          className="hidden text-body @min-[12.5rem]/overview-head:inline"
+        >
+          New task
+        </span>
       </Hint>
       <Menu.Portal>
         <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">

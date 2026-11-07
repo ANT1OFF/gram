@@ -11,8 +11,9 @@ import { seedTheme } from "./seed-theme";
 test.use({ channel: "chromium" });
 
 // The overview's header row, left to right: Hide sidebar, Settings (the top-left nav), Compact
-// overview, and New at the far end. Usage has its one way in at the title bar's meter.
-const names = ["Hide sidebar", "Settings", "Compact overview", "New"];
+// overview, and New task at the far end, its words beside the `+` where the header has room.
+// Usage has its one way in at the title bar's meter.
+const names = ["Hide sidebar", "Settings", "Compact overview", "New task"];
 
 for (const mode of ["light", "dark"] as const) {
   for (const width of [180, 280, 380]) {
@@ -79,6 +80,10 @@ for (const mode of ["light", "dark"] as const) {
           4,
         );
       }
+      // New task says its words once the header has room for them beside its icons.
+      const words = sidebar.getByTestId("new-entry-words");
+      if (width < 280) await expect(words).toBeHidden();
+      else await expect(words).toHaveText("New task");
       expect(errors).toEqual([]);
     });
   }

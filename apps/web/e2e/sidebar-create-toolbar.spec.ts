@@ -19,7 +19,7 @@ test("New is one form: Who does it, an in chip with New workspace, and the short
     workspaces: (await window.gramMock!.listWorkspaces()).length,
   }));
   const sidebar = page.getByTestId("overview-sidebar");
-  const add = sidebar.getByRole("button", { name: "New", exact: true });
+  const add = sidebar.getByRole("button", { name: "New task", exact: true });
   await expect(add).toHaveAttribute("aria-haspopup", "menu");
   await sidebar.getByRole("button", { name: "Compact overview", exact: true }).focus();
   await page.keyboard.press("Tab");
@@ -122,7 +122,7 @@ test("worker draft keeps the selected unavailable provider blocked without creat
   const before = await page.evaluate(() => window.gramMock!.world.threads().length);
   await page
     .getByTestId("overview-sidebar")
-    .getByRole("button", { name: "New", exact: true })
+    .getByRole("button", { name: "New task", exact: true })
     .click();
   await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Task/ }).click();
   const draft = page.getByRole("form", { name: "New task" });
