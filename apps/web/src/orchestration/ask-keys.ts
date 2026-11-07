@@ -1,4 +1,7 @@
+import { shortcutPressed } from "@/keyboard/bindings";
 import { ACTIVATABLE } from "@/keyboard/registry";
+
+import type { AskOption } from "./ask-model";
 
 // The safe-key rules the ask stack and Quiet share: a plain key answers only while focus is on
 // nothing that types or activates, and never in the wake of an answer or of a current ask that
@@ -9,8 +12,8 @@ export const SETTLE_MS = 300;
 /** The clock those are measured on; read in handlers and effects only. */
 export const clock = () => performance.now();
 
-/** What types: its keys are its own. */
-const TYPES = "input, textarea, select, [contenteditable=''], [contenteditable='true']";
+/** Fields and the ARIA roles of what types, whatever draws them. */
+const FIELDS = "input, textarea, select, [role='textbox'], [role='searchbox']";
 /** What sits over the page and keeps its keys. */
 const OVERLAYS = '[role="dialog"], [role="menu"], [role="listbox"]';
 
@@ -21,13 +24,27 @@ const OVERLAYS = '[role="dialog"], [role="menu"], [role="listbox"]';
 export const plainKeysReach = (target: Element | null, area: Element): boolean => {
   if (target === null || target === document.body) return true;
   if (!area.contains(target)) return false;
-  return (
-    target.closest(OVERLAYS) === null && !target.closest(TYPES) && !target.closest(ACTIVATABLE)
-  );
+  return target.closest(OVERLAYS) === null && !types(target) && !target.closest(ACTIVATABLE);
 };
 
-/** Whether `target` types: its keys are its own. */
-export const types = (target: Element): boolean => target.closest(TYPES) !== null;
+/**
+ * Whether `target` is editable by the attribute the nearest editing host carries: any value but
+ * "false" ("", "true", "plaintext-only" and whatever a browser adds) makes it one, as the platform
+ * does, for where `isContentEditable` isn't reported.
+ */
+const editableByAttribute = (target: Element): boolean => {
+  const host = target.closest("[contenteditable]");
+  return host !== null && host.getAttribute("contenteditable")?.toLowerCase() !== "false";
+};
+
+/**
+ * Whether `target` types, so its keys are its own: a field, an element with an ARIA textbox role,
+ * or anything editable (`isContentEditable`, plaintext-only included), or inside one.
+ */
+export const types = (target: Element): boolean =>
+  (target instanceof HTMLElement && target.isContentEditable) ||
+  editableByAttribute(target) ||
+  target.closest(FIELDS) !== null;
 
 /** Whether `target` sits in an overlay (a dialog, menu or listbox), which keeps every key. */
 export const inOverlay = (target: Element): boolean => target.closest(OVERLAYS) !== null;
@@ -67,3 +84,19 @@ export const answerKey = (
   choice.focus({ preventScroll: true });
   return true;
 };
+
+/**
+ * The approval verb among `options` that `event` presses, by its shortcut (1 Allow once, 2 Always
+ * allow this rule…, 3 Deny unless rebound), else -1. Its press acts, as on the thread's card.
+ */
+export const shortcutOptionAt = (
+  options: readonly Pick<AskOption, "shortcut">[],
+  event: KeyboardEvent,
+): number =>
+  options.findIndex(
+    (option) => option.shortcut !== undefined && shortcutPressed(option.shortcut, event),
+  );
+
+/** Whether `options` are an approval's verbs, which their shortcuts answer rather than 1–9. */
+export const keyedByShortcut = (options: readonly Pick<AskOption, "shortcut">[]): boolean =>
+  options.some((option) => option.shortcut !== undefined);

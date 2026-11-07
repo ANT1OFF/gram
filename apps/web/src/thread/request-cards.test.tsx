@@ -209,7 +209,7 @@ describe("RequestCards", () => {
     fireEvent.click(next);
     expect((next as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(previous);
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
     await waitFor(() =>
       expect(respond).toHaveBeenCalledWith(T, second.id, {
         kind: "approval",
@@ -221,7 +221,7 @@ describe("RequestCards", () => {
     // Revisiting an answer still in flight cannot send it twice.
     fireEvent.click(previous);
     fireEvent.click(next);
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
     expect(respond).toHaveBeenCalledTimes(1);
   });
 
@@ -261,7 +261,7 @@ describe("RequestCards", () => {
       );
       const { rerender } = render(cards([preceding, approval, second]));
       fireEvent.click(screen.getByRole("button", { name: "Next approval" }));
-      fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+      fireEvent.keyDown(window, { key: "1", code: "Digit1" });
       await waitFor(() =>
         expect(respond).toHaveBeenCalledWith(T, second.id, {
           kind: "approval",
@@ -270,7 +270,7 @@ describe("RequestCards", () => {
         }),
       );
       rerender(cards([preceding, approval]));
-      fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+      fireEvent.keyDown(window, { key: "3", code: "Digit3" });
       await waitFor(() =>
         expect(respond).toHaveBeenCalledWith(T, approval.id, {
           kind: "approval",
@@ -302,7 +302,7 @@ describe("RequestCards", () => {
     expect(screen.getByTestId("plan-card")).toBeTruthy();
     expect(screen.getByTestId("question-card")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Next approval" }));
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
     expect(respond).not.toHaveBeenCalled();
   });
 
@@ -344,16 +344,16 @@ describe("ApprovalCard", () => {
   });
 
   it.each([
-    [[{ key: "Enter", code: "Enter" }], { decision: "allow", scope: "once" }],
-    // ⌥⏎ shows what "always" would save; only a second ⌥⏎ saves it.
+    [[{ key: "1", code: "Digit1" }], { decision: "allow", scope: "once" }],
+    // 2 shows what "always" would save; only a second 2 saves it.
     [
       [
-        { key: "Enter", code: "Enter", altKey: true },
-        { key: "Enter", code: "Enter", altKey: true },
+        { key: "2", code: "Digit2" },
+        { key: "2", code: "Digit2" },
       ],
       { decision: "allow", scope: "always" },
     ],
-    [[{ key: "Escape", code: "Escape" }], { decision: "deny", scope: "once" }],
+    [[{ key: "3", code: "Digit3" }], { decision: "deny", scope: "once" }],
   ])("answers from the keyboard (%o)", async (presses, expected) => {
     const { api, respond } = fakeApi();
     render(
@@ -367,21 +367,21 @@ describe("ApprovalCard", () => {
     );
   });
 
-  it("takes one ⌥⏎ press as one step: a held key opens the preview and never saves it", () => {
+  it("takes one press of 2 as one step: a held key opens the preview and never saves it", () => {
     const { api, respond } = fakeApi();
     render(
       <ApiProvider api={api}>
         <ApprovalCard threadId={T} request={approval} active />
       </ApiProvider>,
     );
-    const altEnter = { key: "Enter", code: "Enter", altKey: true };
-    fireEvent.keyDown(window, altEnter);
-    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { ...altEnter, repeat: true });
+    const always = { key: "2", code: "Digit2" };
+    fireEvent.keyDown(window, always);
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { ...always, repeat: true });
     expect(screen.getByTestId("approval-always-rules")).toBeTruthy();
     expect(respond).not.toHaveBeenCalled();
   });
 
-  it("never lets a held ⌥⏎ answer the approval queued after the one it saved", async () => {
+  it("never lets a held 2 answer the approval queued after the one it saved", async () => {
     const { api, respond } = fakeApi();
     const next = { ...approval, id: "r-next" as RequestId, input: { command: "rm -rf build" } };
     const cards = (requests: readonly PendingRequest[]) => (
@@ -390,10 +390,10 @@ describe("ApprovalCard", () => {
       </ApiProvider>
     );
     const view = render(cards([approval, next]));
-    const altEnter = { key: "Enter", code: "Enter", altKey: true };
+    const always = { key: "2", code: "Digit2" };
     // Two separate presses save the first card's rule...
-    fireEvent.keyDown(window, altEnter);
-    fireEvent.keyDown(window, altEnter);
+    fireEvent.keyDown(window, always);
+    fireEvent.keyDown(window, always);
     await waitFor(() =>
       expect(respond).toHaveBeenCalledWith(T, "r1", {
         kind: "approval",
@@ -403,7 +403,7 @@ describe("ApprovalCard", () => {
     );
     // ...and the key, still held as the answered card leaves, touches nothing after it.
     view.rerender(cards([next]));
-    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { ...altEnter, repeat: true });
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { ...always, repeat: true });
     expect(screen.queryByTestId("approval-always-rules")).toBeNull();
     expect(respond).toHaveBeenCalledTimes(1);
   });
@@ -526,7 +526,7 @@ describe("ApprovalCard", () => {
         <ApprovalCard threadId={T} request={{ ...approval, suggestions: [] }} active={false} />
       </ApiProvider>,
     );
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
     expect(respond).not.toHaveBeenCalled();
     expect(screen.queryByTestId("approval-always")).toBeNull();
   });
@@ -696,7 +696,7 @@ describe("an app tool's approval", () => {
     expect(body).toContain("src/pricing/discount.ts");
     expect(body).not.toContain("c-1");
 
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
     await waitFor(() =>
       expect(respond).toHaveBeenCalledWith(T, "r-spawn", {
         kind: "approval",

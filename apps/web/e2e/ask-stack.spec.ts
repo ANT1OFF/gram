@@ -109,7 +109,7 @@ const pending = (page: Page, threadId: string) =>
     threadId,
   );
 
-test("each ask shows once with what its Allow covers, and 1 then ⌘⏎ allows all three after the undo window", async ({
+test("each ask shows once with what its Allow covers, and 1 allows all three after the undo window", async ({
   page,
 }) => {
   const made = await start(page);
@@ -136,14 +136,11 @@ test("each ask shows once with what its Allow covers, and 1 then ⌘⏎ allows a
 
   await settle(page);
   const before = Number(await count(page).getAttribute("data-asks"));
-  // A number picks, and ⌘⏎ sends what is picked.
-  await page.keyboard.press("1");
-  await expect(top.getByTestId("ask-option").first()).toHaveAttribute("data-picked", "true");
-  await expect(top.getByTestId("ask-option").first().getByTestId("ask-kbd")).toHaveText(
-    /^(⌘|Ctrl)/,
-  );
+  // An approval's verbs carry the thread card's keys, and act on the press: 1 is Allow, 3 Deny.
+  await expect(top.getByTestId("ask-option").first().getByTestId("ask-kbd")).toHaveText("1");
+  await expect(top.getByTestId("ask-option").last().getByTestId("ask-kbd")).toHaveText("3");
   await expect(undoLine(page)).toHaveCount(0);
-  await page.keyboard.press("ControlOrMeta+Enter");
+  await page.keyboard.press("1");
   await expect(undoLine(page)).toContainText("Allowed 3");
   await expect(count(page)).toHaveAttribute("data-asks", String(before - 1));
   // Held for the undo window, then sent to all three at once, as Allow, once.
@@ -256,7 +253,6 @@ test("an answer can be taken back with ⌘Z or Undo, and nothing is sent", async
   const before = await count(page).getAttribute("data-asks");
   await settle(page);
   await page.keyboard.press("1");
-  await page.keyboard.press("ControlOrMeta+Enter");
   await expect(undoLine(page)).toContainText("Allowed 3");
   await page.keyboard.press("ControlOrMeta+z");
   await expect(count(page)).toHaveAttribute("data-asks", before!);
@@ -312,9 +308,8 @@ test("a second key right after an answer, or after the shown ask changed by itse
   await goTo(page, "git push");
   const before = Number(await count(page).getAttribute("data-asks"));
   await settle(page);
-  // The second key would pick on the next ask: on the first answer's heels, it doesn't.
+  // The second key would answer the next ask: on the first answer's heels, it doesn't.
   await page.keyboard.press("1");
-  await page.keyboard.press("ControlOrMeta+Enter");
   await page.keyboard.press("1");
   await expect(undoLine(page)).toContainText("Allowed 3");
   await expect(count(page)).toHaveAttribute("data-asks", String(before - 1));

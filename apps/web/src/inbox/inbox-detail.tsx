@@ -9,8 +9,20 @@ import { Button } from "@/components/ui/button";
 import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
-import { answerKey, clock, SETTLE_MS, types } from "@/orchestration/ask-keys";
-import { replyAnswer, type Ask, type AskOption } from "@/orchestration/ask-model";
+import {
+  answerKey,
+  clock,
+  keyedByShortcut,
+  SETTLE_MS,
+  shortcutOptionAt,
+  types,
+} from "@/orchestration/ask-keys";
+import {
+  replyAnswer,
+  type ApprovalShortcut,
+  type Ask,
+  type AskOption,
+} from "@/orchestration/ask-model";
 import { AskItem } from "@/orchestration/ask-stack";
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import { FailureRowView } from "@/orchestration/failures-card";
@@ -59,6 +71,33 @@ function useInboxKeys(take: (event: KeyboardEvent) => boolean) {
     return () => window.removeEventListener("keydown", listener, true);
   }, []);
 }
+
+/** The buttons of an approval card's verbs, by the shortcut that presses them. */
+const APPROVAL_VERBS: Readonly<Record<ApprovalShortcut, string>> = {
+  "approval.allow": "approval-allow",
+  "approval.always": "approval-always",
+  "approval.deny": "approval-deny",
+};
+
+/**
+ * The enabled verb button of the approval card in `root` that `event` presses by its shortcut, as
+ * the thread's card is answered; none while focus types.
+ */
+const approvalVerbPressed = (
+  event: KeyboardEvent,
+  root: Element,
+): HTMLButtonElement | undefined => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (target !== null && types(target)) return undefined;
+  for (const [shortcut, testId] of Object.entries(APPROVAL_VERBS)) {
+    if (shortcutOptionAt([{ shortcut: shortcut as ApprovalShortcut }], event) < 0) continue;
+    const button = root.querySelector<HTMLButtonElement>(
+      `[data-testid="approval-card"] [data-testid="${testId}"]`,
+    );
+    return button === null || button.disabled ? undefined : button;
+  }
+  return undefined;
+};
 
 /**
  * Whether an ask is read in full before it is answered: every option it offers opens it. Any other
@@ -132,7 +171,9 @@ function AskInFull({
 
 /**
  * An ask answered in place, under the one answer rule. Its keys answer it wherever focus is in the
- * Inbox, except in a field that types: 1–9 pick, ⌘⏎ sends the pick.
+ * Inbox, except in a field that types: 1–9 pick, ⌘⏎ sends the pick. An approval's verbs are keyed
+ * as on the thread's card instead (1 Allow once, 2 Always allow this rule…, 3 Deny), and act on the
+ * press, held for Undo as a click is.
  */
 function AskInPlace({
   ask,
@@ -179,6 +220,15 @@ function AskInPlace({
     const mod = event.metaKey || event.ctrlKey;
     let pick: number | undefined;
     let sending = false;
+    const verb = shortcutOptionAt(ask.options, event);
+    if (verb >= 0) {
+      if (target !== null && types(target)) return false;
+      const option = ask.options[verb]!;
+      if (clock() - since.current < SETTLE_MS) return true;
+      choose(option);
+      return true;
+    }
+    if (keyedByShortcut(ask.options) && !mod) return false;
     if (!mod && !event.altKey && !event.shiftKey && /^[1-9]$/.test(event.key)) {
       if (target !== null && types(target)) return false;
       pick = Number(event.key) - 1;
@@ -221,8 +271,22 @@ function AskDetail({ item }: { item: NeedsYouItem }) {
   const orchestratorId = useDerivedAsks(
     (s) => s.asks.find((w) => w.workspaceId === item.workspaceId)?.orchestratorThreadId,
   );
-  // Read in full, the card's own answer rule: a number picks its choice, ⌘⏎ its Send answer.
-  useInboxKeys((event) => full && root.current !== null && answerKey(event, root.current));
+  // Read in full, the card's own answer rule: a number picks its choice, ⌘⏎ its Send answer; an
+  // approval's verbs, its card's keys, as in the thread. A key within a moment of the card opening
+  // is a slip: the press that opened "Always allow this rule…" never also saves it.
+  const fullSince = useRef(0);
+  useEffect(() => {
+    if (full) fullSince.current = clock();
+  }, [full]);
+  useInboxKeys((event) => {
+    if (!full || root.current === null) return false;
+    const verb = approvalVerbPressed(event, root.current);
+    if (verb !== undefined) {
+      if (clock() - fullSince.current >= SETTLE_MS) verb.click();
+      return true;
+    }
+    return answerKey(event, root.current);
+  });
   return (
     <div ref={root} data-testid="inbox-ask" data-full={full || undefined}>
       {full ? (
@@ -315,16 +379,11 @@ export function InboxDetail({
       data-kind={item.kind}
       className="flex min-h-0 flex-1 flex-col"
     >
-      <header className="flex shrink-0 items-start gap-2 border-b border-border px-4 py-3">
-        <kind.icon
-          aria-hidden
-          className={cn(
-            "mt-0.5 size-icon-row shrink-0",
-            item.kind === "failure" ? "text-destructive" : "text-status-needs-mark",
-          )}
-        />
+      {/* A quiet line over the request: its kind, where it is from and when, and what else can be
+          done with it. The request itself, under it, is what the pane leads with. */}
+      <header className="flex shrink-0 items-start gap-2 px-4 pt-3 pb-1">
         <div className="min-w-0 flex-1">
-          <h2 className="text-body-strong">{kind.label}</h2>
+          <h2 className="text-meta font-medium text-foreground">{kind.label}</h2>
           <p
             data-testid="inbox-detail-where"
             className={cn("text-meta break-words text-muted-foreground", !item.owned && "italic")}
@@ -384,7 +443,10 @@ export function InboxDetail({
           </Hint>
         )}
       </header>
-      <div data-testid="inbox-detail-body" className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+      <div
+        data-testid="inbox-detail-body"
+        className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3"
+      >
         {item.ask !== undefined ? (
           // A new ask starts afresh: nothing picked, read in place unless it must be read in full.
           <AskDetail key={item.key} item={item} />

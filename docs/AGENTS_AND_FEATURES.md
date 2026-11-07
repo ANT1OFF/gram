@@ -59,8 +59,10 @@ configured pass.
   request's checks, reviews and merge readiness, read through the GitHub CLI.
 - **Inbox.** Questions, approvals, plans, review requests, drafts, errors and steps from every
   workspace and solo thread collect in one list by kind, each answered in a pane beside it. Each
-  row is short: what the item is about, its kind where the heading doesn't say it, its workspace,
-  thread and age; the whole question and its choices are in the pane. The Inbox docks in the side
+  row is two lines: what the item is about, wrapping before it is cut, then its workspace, its kind
+  where the heading doesn't say it, its thread and age; its hover says the whole of it, and the
+  whole question and its choices are in the pane. An approval's verbs take the keys its card in the
+  thread does: <kbd>1</kbd> Allow once, <kbd>2</kbd> Always allow this rule…, <kbd>3</kbd> Deny. The Inbox docks in the side
   panel's column, beside the work, and <kbd>⏎</kbd> or Show thread puts the item's thread in the
   main area next to it. In Quiet, or a window too narrow for it beside the chat, it opens as a
   dialog instead. The title bar's Inbox button, the sidebar's pill and <kbd>⌘⇧I</kbd> open it;

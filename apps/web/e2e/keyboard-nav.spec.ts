@@ -147,16 +147,20 @@ test("keyboard only: actions palette, ? overlay, rename, pickers, refresh, send 
   await expect(page.getByLabel("What needs doing")).toBeFocused();
 });
 
-test("keyboard only: ⌥⏎ shows the rule, and a second ⌥⏎ allows it always", async ({ page }) => {
+test("keyboard only: 2 shows the rule, and a second 2 allows it always", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const card = page.getByTestId("approval-card");
   await expect(card).toBeVisible();
+  // Each verb shows its key on the card: the same keys answer it in the Inbox and Quiet.
+  await expect(card.getByTestId("approval-allow")).toContainText("1");
+  await expect(card.getByTestId("approval-always")).toContainText("2");
+  await expect(card.getByTestId("approval-deny")).toContainText("3");
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   // The first press only shows what would be saved, and where.
-  await page.keyboard.press("Alt+Enter");
+  await page.keyboard.press("2");
   await expect(card.getByTestId("approval-always-rule")).toBeVisible();
   await expect(card).toBeVisible();
-  await page.keyboard.press("Alt+Enter");
+  await page.keyboard.press("2");
   await expect(card).toBeHidden();
 });
 
@@ -192,14 +196,15 @@ test("approval counter buttons keep keyboard focus and shortcuts answer the sele
   await previous.focus();
   await page.keyboard.press("Enter");
   await expect(nav).toContainText("2/3");
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.keyboard.press("Enter");
+  // From the pager that showed it, its keys answer the card shown.
+  await page.keyboard.press("1");
   await expect(nav).toContainText("2/2");
   await expect(page.getByRole("region", { name: "Allow Command 3?" })).toBeVisible();
-  await page.keyboard.press("Escape");
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("3");
   await expect(nav).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Allow Command 1?" })).toBeVisible();
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("1");
   await expect(page.getByTestId("approval-card")).toHaveCount(0);
   await expect(page.getByTestId("pane-status")).toHaveText("Stopped");
 });

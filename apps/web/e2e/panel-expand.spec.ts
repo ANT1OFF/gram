@@ -140,9 +140,10 @@ test("keys reach the expanded panel, not the approval hidden behind it", async (
   await filesTab(page);
   await page.getByRole("button", { name: "Expand panel" }).click();
   await expect(page.getByTestId("app-shell")).toHaveAttribute("data-panel-expanded", "true");
-  // Enter on the edge, which isn't a button, mustn't reach the hidden card's Allow either.
+  // Enter or 1 on the edge, which isn't a button, mustn't reach the hidden card's Allow either.
   await page.getByRole("separator", { name: "Resize right panel" }).focus();
   await page.keyboard.press("Enter");
+  await page.keyboard.press("1");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("app-shell")).toHaveAttribute("data-panel-expanded", "false");
   // An answered card folds away once the answer lands; give it the time to.

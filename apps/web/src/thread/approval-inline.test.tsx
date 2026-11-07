@@ -152,20 +152,22 @@ function View({
   requests,
   rows,
   focused = true,
+  threadId = T,
 }: {
   api: Api;
   requests: readonly PendingRequest[];
   rows: ReactNode;
   focused?: boolean;
+  threadId?: ThreadId;
 }) {
   return (
     <ApiProvider api={api}>
-      <ApprovalSlotsProvider threadId={T}>
+      <ApprovalSlotsProvider threadId={threadId}>
         <div data-testid="transcript">
-          <AwaitingToolsProvider threadId={T}>{rows}</AwaitingToolsProvider>
+          <AwaitingToolsProvider threadId={threadId}>{rows}</AwaitingToolsProvider>
         </div>
         <div data-testid="above-composer">
-          <RequestCards threadId={T} requests={requests} focused={focused} />
+          <RequestCards threadId={threadId} requests={requests} focused={focused} />
         </div>
       </ApprovalSlotsProvider>
     </ApiProvider>
@@ -180,6 +182,21 @@ const shown = () =>
     .getAllByTestId("approval-place")
     .filter((place) => !place.hidden)
     .map((place) => place.textContent);
+
+/** The view as a thread view draws it, with its composer under it. */
+const Pane = (props: Parameters<typeof View>[0]) => (
+  <div data-thread-view={props.threadId ?? T}>
+    <View {...props} />
+    <textarea aria-label="Message" />
+  </div>
+);
+const rowsOf = (...requests: Approval[]) => (
+  <>
+    {requests.map((request) => (
+      <ToolCard key={request.id} part={part(request)} {...rowProps} />
+    ))}
+  </>
+);
 
 describe("an approval drawn under its tool row", () => {
   it("sits right under the waiting row, in the transcript, with no link down to it", () => {
@@ -239,21 +256,21 @@ describe("an approval drawn under its tool row", () => {
       sent: [[T, PUSH.id, { kind: "approval", decision: "deny", scope: "once" }]],
     },
     {
-      name: "Enter",
-      answer: () => fireEvent.keyDown(window, { key: "Enter", code: "Enter" }),
+      name: "1",
+      answer: () => fireEvent.keyDown(window, { key: "1", code: "Digit1" }),
       sent: [[T, PUSH.id, { kind: "approval", decision: "allow", scope: "once" }]],
     },
     {
-      name: "Escape",
-      answer: () => fireEvent.keyDown(window, { key: "Escape", code: "Escape" }),
+      name: "3",
+      answer: () => fireEvent.keyDown(window, { key: "3", code: "Digit3" }),
       sent: [[T, PUSH.id, { kind: "approval", decision: "deny", scope: "once" }]],
     },
     {
-      name: "⌥Enter twice, as two presses",
+      name: "2 twice, as two presses",
       answer: () => {
-        fireEvent.keyDown(window, { key: "Enter", code: "Enter", altKey: true });
-        fireEvent.keyUp(window, { key: "Enter", code: "Enter", altKey: true });
-        fireEvent.keyDown(window, { key: "Enter", code: "Enter", altKey: true });
+        fireEvent.keyDown(window, { key: "2", code: "Digit2" });
+        fireEvent.keyUp(window, { key: "2", code: "Digit2" });
+        fireEvent.keyDown(window, { key: "2", code: "Digit2" });
       },
       sent: [[T, PUSH.id, { kind: "approval", decision: "allow", scope: "always" }]],
     },
@@ -311,7 +328,7 @@ describe("an approval drawn under its tool row", () => {
     // Only the card the keys answer shows their hints.
     expect(first!.querySelectorAll("kbd").length).toBeGreaterThan(0);
     expect(second!.querySelectorAll("kbd").length).toBe(0);
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
     await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
     expect(respond).toHaveBeenCalledWith(T, PUSH.id, {
       kind: "approval",
@@ -338,7 +355,7 @@ describe("an approval drawn under its tool row", () => {
     const [, second] = screen.getAllByTestId("approval-slot");
     fireEvent.focus(second!.querySelector('[data-testid="approval-details"], button')!);
     await waitFor(() => expect(second!.querySelectorAll("kbd").length).toBeGreaterThan(0));
-    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    fireEvent.keyDown(window, { key: "3", code: "Digit3" });
     await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
     expect(respond).toHaveBeenCalledWith(T, TAG.id, {
       kind: "approval",
@@ -354,13 +371,13 @@ describe("an approval drawn under its tool row", () => {
     render(
       <View api={api} requests={[PUSH]} rows={<ToolCard part={part(PUSH)} {...rowProps} />} />,
     );
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
-    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
+    fireEvent.keyDown(window, { key: "3", code: "Digit3" });
     expect(respond).not.toHaveBeenCalled();
     // Scrolled into view, it answers again.
     onScreen = () => true;
     flushObservers();
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
     await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
   });
 
@@ -374,14 +391,14 @@ describe("an approval drawn under its tool row", () => {
     flushObservers();
     // Scrolled away: the observer's report of it hasn't landed yet.
     onScreen = () => false;
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
-    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter", altKey: true });
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
+    fireEvent.keyDown(window, { key: "3", code: "Digit3" });
+    fireEvent.keyDown(window, { key: "2", code: "Digit2" });
     expect(respond).not.toHaveBeenCalled();
     expect(screen.queryByTestId("approval-always-rule")).toBeNull();
     // Back on screen, it answers at once, report or not.
     onScreen = () => true;
-    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    fireEvent.keyDown(window, { key: "3", code: "Digit3" });
     await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
     expect(respond).toHaveBeenCalledWith(T, PUSH.id, {
       kind: "approval",
@@ -397,7 +414,7 @@ describe("an approval drawn under its tool row", () => {
     flushObservers();
     // Paged to the second card; the first is hidden, and only the shown one answers.
     fireEvent.click(screen.getByRole("button", { name: "Next approval" }));
-    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    fireEvent.keyDown(window, { key: "3", code: "Digit3" });
     await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
     expect(respond).toHaveBeenCalledWith(T, TAG.id, {
       kind: "approval",
@@ -441,7 +458,7 @@ describe("an approval drawn under its tool row", () => {
     expect(fallback.contains(card())).toBe(true);
     expect(card().closest("[hidden], [inert]")).toBeNull();
     // And it answers there.
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
     await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
     expect(respond).toHaveBeenCalledWith(T, child.id, {
       kind: "approval",
@@ -464,6 +481,95 @@ describe("an approval drawn under its tool row", () => {
     expect(document.activeElement).toBe(deny);
   });
 
+  describe("when the card that had focus goes", () => {
+    it("hands focus to the next approval on screen, not to the page", async () => {
+      pending([PUSH, TAG]);
+      const { api } = fakeApi();
+      const { rerender } = render(
+        <Pane api={api} requests={[PUSH, TAG]} rows={rowsOf(PUSH, TAG)} />,
+      );
+      screen.getAllByTestId("approval-allow")[0]!.focus();
+      // Answered: its card goes, its row stays.
+      act(() => pending([TAG]));
+      rerender(<Pane api={api} requests={[TAG]} rows={rowsOf(PUSH, TAG)} />);
+      await waitFor(() => expect(document.activeElement).toBe(card()));
+      expect(card().textContent).toContain("git tag v1.2.0");
+    });
+
+    it("hands focus to the composer once no approval is left, as when the turn ends", async () => {
+      pending([PUSH]);
+      const { api } = fakeApi();
+      const { rerender } = render(<Pane api={api} requests={[PUSH]} rows={rowsOf(PUSH)} />);
+      screen.getByTestId("approval-deny").focus();
+      act(() => pending([]));
+      rerender(<Pane api={api} requests={[]} rows={rowsOf(PUSH)} />);
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Message")));
+    });
+
+    it("hands focus on only within its own thread view, never into the one beside it", async () => {
+      const BESIDE = "t-beside" as ThreadId;
+      const asked = ask("r-beside", "call-beside", "git push origin beside");
+      useThreadsStore.setState({
+        byId: {
+          [T]: { status: "needsApproval", pendingRequests: [PUSH] },
+          [BESIDE]: { status: "needsApproval", pendingRequests: [asked] },
+        } as never,
+      });
+      const { api } = fakeApi();
+      // The chat, and a worker's thread beside it, each with an approval on screen.
+      const views = (beside: readonly PendingRequest[]) => (
+        <>
+          <Pane api={api} requests={[PUSH]} rows={rowsOf(PUSH)} focused={false} />
+          <Pane api={api} requests={beside} rows={rowsOf(asked)} threadId={BESIDE} />
+        </>
+      );
+      const { rerender, container } = render(views([asked]));
+      const besideView = container.querySelector<HTMLElement>(`[data-thread-view="${BESIDE}"]`)!;
+      besideView.querySelector<HTMLElement>('[data-testid="approval-deny"]')!.focus();
+      act(() =>
+        useThreadsStore.setState({
+          byId: {
+            [T]: { status: "needsApproval", pendingRequests: [PUSH] },
+            [BESIDE]: { status: "running", pendingRequests: [] },
+          } as never,
+        }),
+      );
+      rerender(views([]));
+      // Its own composer, beside; not the chat's approval, though that is on screen.
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          besideView.querySelector('textarea[aria-label="Message"]'),
+        ),
+      );
+    });
+
+    it("leaves focus the user moved elsewhere where it is", async () => {
+      pending([PUSH]);
+      const { api } = fakeApi();
+      const { rerender } = render(<Pane api={api} requests={[PUSH]} rows={rowsOf(PUSH)} />);
+      screen.getByTestId("approval-deny").focus();
+      const elsewhere = document.createElement("button");
+      document.body.append(elsewhere);
+      elsewhere.focus();
+      act(() => pending([]));
+      rerender(<Pane api={api} requests={[]} rows={rowsOf(PUSH)} />);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(document.activeElement).toBe(elsewhere);
+      elsewhere.remove();
+    });
+
+    it("keeps focus on its control when its row folds away and it waits above the composer", async () => {
+      pending([PUSH]);
+      const { api } = fakeApi();
+      const { rerender } = render(<Pane api={api} requests={[PUSH]} rows={rowsOf(PUSH)} />);
+      const deny = screen.getByTestId("approval-deny");
+      deny.focus();
+      rerender(<Pane api={api} requests={[PUSH]} rows={null} />);
+      expect(screen.getByTestId("approval-fallback").contains(deny)).toBe(true);
+      await waitFor(() => expect(document.activeElement).toBe(deny));
+    });
+  });
+
   it("ignores the keys in an unfocused pane, as above the composer", () => {
     pending([PUSH]);
     const { api, respond } = fakeApi();
@@ -475,7 +581,7 @@ describe("an approval drawn under its tool row", () => {
         rows={<ToolCard part={part(PUSH)} {...rowProps} />}
       />,
     );
-    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(window, { key: "1", code: "Digit1" });
     expect(respond).not.toHaveBeenCalled();
   });
 

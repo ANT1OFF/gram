@@ -153,6 +153,7 @@
   --color-sidebar-row-hover: var(--sidebar-row-hover);
   --color-sidebar-row-active: var(--sidebar-row-active);
   --color-sidebar-divider: var(--sidebar-divider);
+  --color-shell-divider: var(--shell-divider);
   --color-sidebar-block: var(--sidebar-block-bg);
   --color-sidebar-block-border: var(--sidebar-block-border);
   --color-thread: var(--thread-bg);

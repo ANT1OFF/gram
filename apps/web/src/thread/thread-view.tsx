@@ -606,6 +606,9 @@ export function ThreadView({
       <div
         ref={trackPaneHeight}
         data-pane-root
+        // The one thread this view draws, in a grid pane or beside the chat: what an approval's
+        // keys and focus stay within (request-cards.tsx).
+        data-thread-view={threadId}
         className="flex min-h-0 flex-1 flex-col"
         data-testid="thread-view"
         data-focused={focused}

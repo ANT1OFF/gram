@@ -3,6 +3,7 @@ import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 
 import { RecommendedTag } from "@/components/recommended-tag";
 import { Button } from "@/components/ui/button";
+import { shortcutHint } from "@/keyboard/bindings";
 import { cn } from "@/lib/utils";
 
 import { answerRule, choiceLayout, type AskOption } from "./ask-model";
@@ -38,6 +39,16 @@ export function Kbd({
 /** The plain key that picks the option at `index`: its number. */
 export const plainHint = (index: number): string | undefined =>
   index > 8 ? undefined : String(index + 1);
+
+/**
+ * The key an option shows, focus being on nothing that types: an approval's verb its shortcut's (the
+ * thread card's, 1, 2 or 3 unless rebound; none once it is turned off), any other its number.
+ */
+export const optionHint = (
+  option: Pick<AskOption, "shortcut"> | undefined,
+  index: number,
+): string | undefined =>
+  option?.shortcut === undefined ? plainHint(index) : shortcutHint(option.shortcut) || undefined;
 
 const CLAMP = { 2: "line-clamp-2", 3: "line-clamp-3" } as const;
 
@@ -253,7 +264,7 @@ export function AskChoices({
                   "flex min-w-0 items-start gap-2 rounded-(--radius-md) border text-left outline-none transition-colors duration-(--dur-fast) focus-visible:ring-2 focus-visible:ring-ring",
                   layout === "row" ? "px-2" : "w-full px-2.5",
                   size === "sm" ? "py-1" : "py-1.5",
-                  checked ? "border-primary bg-primary/8" : "border-border/70 hover:bg-muted",
+                  checked ? "border-primary bg-primary/8" : "border-edge-action hover:bg-muted",
                 )}
               >
                 <RadioMark checked={checked} />
@@ -347,7 +358,7 @@ export function AskChoices({
               aria-pressed={picked === undefined ? undefined : picked === index}
               onClick={() => onChoose(option)}
               className={cn(
-                "flex w-full min-w-0 items-start gap-2 rounded-(--radius-md) border border-border/70 px-2.5 text-left outline-none transition-colors duration-(--dur-fast) hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+                "flex w-full min-w-0 items-start gap-2 rounded-(--radius-md) border border-edge-action px-2.5 text-left outline-none transition-colors duration-(--dur-fast) hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
                 size === "sm" ? "py-1" : "py-1.5",
                 picked === index && "ring-2 ring-ring",
               )}
