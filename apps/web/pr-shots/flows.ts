@@ -3,6 +3,7 @@ import { expect, type Page } from "@playwright/test";
 import { openOrchestrator, threadRow } from "../e2e/thread-row";
 import { elapse, FLAKY_DONE_MS, SHOTS, seedMockSettings, type Shot } from "./shots";
 import { openRealistic, openRealisticOrchestrator, SET_SIZE, TOUR, stageRealistic } from "./tour";
+import { openPanelTab } from "../e2e/panel-tab";
 
 const from = (shots: readonly Shot[], name: string): Shot["open"] => {
   const shot = shots.find((candidate) => candidate.name === name);
@@ -300,7 +301,7 @@ const steps: readonly Shot[] = [
     title: "Review: PR details, checks and review controls",
     open: async (page) => {
       await openApproval(page);
-      await page.getByTestId("right-panel").getByRole("tab", { name: "PR", exact: true }).click();
+      await openPanelTab(page.getByTestId("right-panel"), "PR");
       await expect(page.getByTestId("right-panel")).toContainText("Checks");
     },
   },

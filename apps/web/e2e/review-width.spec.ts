@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { openPanelTab } from "./panel-tab";
+
 const widthOf = async (locator: Locator) => Math.round((await locator.boundingBox())?.width ?? 0);
 
 const tab = (page: Page, name: string) =>
@@ -33,17 +35,17 @@ test("the Diff and PR tabs open wide, keep their own width, and give it back for
   await expect.poll(() => widthOf(panel)).toBe(1600 - 248 - 800);
   await page.setViewportSize({ width: 2400, height: 900 });
 
-  await tab(page, "Files").click();
+  await openPanelTab(page.getByTestId("right-panel"), "Files");
   await expect.poll(() => widthOf(panel)).toBe(352);
-  await tab(page, "PR").click();
+  await openPanelTab(page.getByTestId("right-panel"), "PR");
   await expect.poll(() => widthOf(panel)).toBe(1320);
 
   // A drag on a review is the review's; the other tabs keep theirs.
   await dragHandle(page, 100);
   await expect.poll(() => widthOf(panel)).toBe(1220);
-  await tab(page, "Terminal").click();
+  await openPanelTab(page.getByTestId("right-panel"), "Terminal");
   await expect.poll(() => widthOf(panel)).toBe(352);
-  await tab(page, "Diff").click();
+  await openPanelTab(page.getByTestId("right-panel"), "Diff");
   await expect.poll(() => widthOf(panel)).toBe(1220);
 
   // Remembered across a reload.
@@ -85,7 +87,7 @@ test("Focus review takes the window but for a strip of the chat, and Esc gives i
   await expect(page.getByTestId("overview-sidebar")).toBeVisible();
 
   // The shortcut does both, from another tab too, and the strip's button comes back.
-  await tab(page, "Files").click();
+  await openPanelTab(page.getByTestId("right-panel"), "Files");
   await page.locator("body").click({ position: { x: 700, y: 300 } });
   await page.keyboard.press("ControlOrMeta+Alt+KeyF");
   await expect(shell).toHaveAttribute("data-review-focus", "true");
@@ -99,12 +101,12 @@ test("Focus review takes the window but for a strip of the chat, and Esc gives i
   // Another tab leaves focus: only a review takes the window.
   await panel.getByRole("button", { name: "Focus review" }).click();
   await expect(shell).toHaveAttribute("data-review-focus", "true");
-  await tab(page, "Terminal").click();
+  await openPanelTab(page.getByTestId("right-panel"), "Terminal");
   await expect(shell).toHaveAttribute("data-review-focus", "false");
   await expect.poll(() => widthOf(panel)).toBe(352);
 
   // In focus, the action beside the tabs says Restore, and gives the chat back too.
-  await tab(page, "Diff").click();
+  await openPanelTab(page.getByTestId("right-panel"), "Diff");
   await panel.getByRole("button", { name: "Focus review" }).click();
   await expect(shell).toHaveAttribute("data-review-focus", "true");
   const restore = panel.getByRole("button", { name: "Restore", exact: true });

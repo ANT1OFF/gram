@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { openHeaderMore } from "./more-menu";
+import { openPanelTab } from "./panel-tab";
 
 test("a branch with a PR pushes follow-up commits from the PR panel and More…", async ({
   page,
 }) => {
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "PR", exact: true }).click();
+  await openPanelTab(panel, "PR");
   await expect(panel.getByTestId("pr-panel")).toBeVisible();
   await expect(panel.getByTestId("pr-panel-push")).toBeHidden();
 

@@ -16,11 +16,12 @@ import {
   WrapText,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage, folderProblem } from "@/api/errors";
 import { Hint } from "@/components/hint";
+import { Button } from "@/components/ui/button";
 import { QueryError } from "@/components/not-available";
 import {
   Select,
@@ -100,12 +101,21 @@ let jumpSeq = 0;
 
 /**
  * The thread's working-tree, branch or per-turn diff; refetches whenever `git.state` reports new
- * changes, or on Refresh. A clean working tree on a branch ahead of its base shows the branch instead,
- * with a note. An agent's diff target is focused once the diff has loaded; a `turn:<id>` target
+ * changes, or on Refresh. Until the user picks a scope it follows the tree: Uncommitted while there
+ * are uncommitted changes, Branch, selected and noted, once a clean tree's branch is ahead of its
+ * base (a commit that empties the tree included). Uncommitted picked on a clean tree says so and
+ * offers the branch. An agent's diff target is focused once the diff has loaded; a `turn:<id>` target
  * selects that turn instead. Unified or split and the file tree are the user's choice, remembered;
  * split falls back to unified while the panel is too narrow for it.
  */
-export function DiffPanel({ threadId }: { threadId: ThreadId }) {
+export function DiffPanel({
+  threadId,
+  prLink = false,
+}: {
+  threadId: ThreadId;
+  /** The PR tab sits beside this diff, so an empty diff can offer the thread's PR. */
+  prLink?: boolean;
+}) {
   const api = useApi();
   const rootRef = useRef<HTMLDivElement>(null);
   const width = useWidth(rootRef);
@@ -131,7 +141,20 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
     threadId,
     useStableSelector((s) => turnOptions(s.messages), sameTurnOptions),
   );
-  const [scope, setScope] = useState<ScopeKind>("uncommitted");
+  // The user's pick of scope; until there is one, the scope follows the tree (`autoScope`).
+  const [chosen, setScope] = useState<ScopeKind>();
+  const branchAhead = useThreadsStore((s) => {
+    const git = s.byId[threadId]?.git;
+    return git !== undefined && git.changedFiles === 0 && git.aheadBase > 0;
+  });
+  // The stamp at which an Uncommitted diff came back as the clean tree's branch fallback: the
+  // server's base can say so where the published state hasn't yet.
+  const [fellBackAt, setFellBackAt] = useState<string | null>();
+  const autoScope: ScopeKind =
+    branchAhead || (fellBackAt !== undefined && fellBackAt === diffStamp)
+      ? "branch"
+      : "uncommitted";
+  const scope = chosen ?? autoScope;
   const [picked, setPicked] = useState<TurnId>();
   const turnId = picked ?? turns[0]?.turnId;
   const diffScope: DiffScope | undefined =
@@ -150,9 +173,18 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
   const query = useQuery({
     queryKey: [...diffKey, ignoreWhitespace],
     // Whitespace switched on or off, the diff it was stays until the new one comes, so the files
-    // opened in it stay open.
+    // opened in it stay open; so does a clean tree's fallback to the branch while Branch loads.
     placeholderData: (previous, previousQuery) =>
-      diffKey.every((part, at) => previousQuery?.queryKey[at] === part) ? previous : undefined,
+      diffKey.every(
+        (part, at) =>
+          previousQuery?.queryKey[at] === part ||
+          (at === 2 &&
+            part === "branch" &&
+            previousQuery?.queryKey[at] === "uncommitted" &&
+            previous?.base !== undefined),
+      )
+        ? previous
+        : undefined,
     queryFn: () =>
       ignoreWhitespace
         ? api.gitDiff(threadId, diffScope!, { ignoreWhitespace })
@@ -164,6 +196,18 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
     staleTime: diffStamp === null ? 0 : SWITCH_BACK_FRESH_MS,
     retry: false,
   });
+  // Uncommitted, unpicked, came back as the branch: select Branch rather than leave Uncommitted
+  // selected over the branch's files.
+  if (
+    chosen === undefined &&
+    scope === "uncommitted" &&
+    query.data?.base !== undefined &&
+    !query.isPlaceholderData &&
+    fellBackAt !== diffStamp
+  ) {
+    setFellBackAt(diffStamp);
+  }
+  const autoBranch = chosen === undefined && scope === "branch";
   const treeFits = width >= TREE_BESIDE_MIN_WIDTH;
   const fileCount = query.data?.files?.length ?? 0;
   // How much the scope holds, beside it: shown once there is a diff with something in it.
@@ -340,6 +384,9 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
           <DiffBody
             threadId={threadId}
             scope={scope}
+            autoBranch={autoBranch}
+            onScope={setScope}
+            prLink={prLink}
             diffScope={diffScope}
             query={query}
             layout={layout === "split" && splitFits ? "split" : "unified"}
@@ -500,6 +547,9 @@ function ViewToggle({
 function DiffBody({
   threadId,
   scope,
+  autoBranch,
+  onScope,
+  prLink,
   diffScope,
   query,
   layout,
@@ -511,6 +561,10 @@ function DiffBody({
 }: {
   threadId: ThreadId;
   scope: ScopeKind;
+  /** Branch is selected because the tree is clean, not by the user's pick. */
+  autoBranch: boolean;
+  onScope: (scope: ScopeKind) => void;
+  prLink: boolean;
   /** What `query` asked for, and what a file too large for it is asked for again in chunks. */
   diffScope: DiffScope | undefined;
   query: UseQueryResult<Diff>;
@@ -526,6 +580,9 @@ function DiffBody({
   // Its agent's session is still opening: no change could have been made yet.
   const starting = useThreadsStore((s) => s.byId[threadId]?.status === "starting");
   const focusPath = request && checkoutRelative(request.target, root);
+  // An empty diff of a thread with a PR offers the PR's files, where the PR tab is beside it.
+  const prNumber = useThreadsStore((s) => s.byId[threadId]?.git?.pr?.number);
+  const requestPanel = useLayoutStore((s) => s.requestPanel);
   // Its consumers re-render with the list anyway: the query keys, not this object, decide reuse.
   const chunkSource =
     diffScope === undefined ? undefined : { threadId, scope: diffScope, ignoreWhitespace };
@@ -608,10 +665,19 @@ function DiffBody({
   }
   const diff = query.data;
   if (!diff.repo) return <PanelMessage>Not a git repository</PanelMessage>;
-  const fallbackBase = scope === "uncommitted" ? diff.base : undefined;
+  // Uncommitted, picked on a clean tree: the server answers with the branch, which is Branch's to
+  // show. Here it is nothing uncommitted, and the branch one click away.
+  const branchBase = scope === "uncommitted" ? diff.base?.replace(/^origin\//, "") : undefined;
+  if (branchBase !== undefined) {
+    return (
+      <EmptyDiff action={{ label: `Show branch vs ${branchBase}`, run: () => onScope("branch") }}>
+        No uncommitted changes{diff.branch ? ` on ${diff.branch}` : ""}
+      </EmptyDiff>
+    );
+  }
   // Nothing to show is one line, not a heading, a notice and an empty state.
   if (files.length === 0) {
-    const base = (fallbackBase ?? diff.base)?.replace(/^origin\//, "");
+    const base = diff.base?.replace(/^origin\//, "");
     if (starting) {
       return (
         <p data-testid="diff-empty" className="px-3 py-2 text-meta text-muted-foreground">
@@ -628,15 +694,20 @@ function DiffBody({
         </p>
       );
     }
+    const prFiles =
+      prNumber !== undefined && prLink && scope !== "turn"
+        ? {
+            label: `Open PR #${prNumber}`,
+            run: () => requestPanel({ threadId, panel: "pr" }, threadId),
+          }
+        : undefined;
     return (
-      <>
-        <p data-testid="diff-empty" className="px-3 py-2 text-meta text-muted-foreground">
-          No changes{diff.branch ? ` on ${diff.branch}` : ""}
-          {base && (scope !== "uncommitted" || fallbackBase) ? ` against ${base}` : ""}
-          {ignoreWhitespace ? ", ignoring whitespace" : ""}
-        </p>
-        {diff.note && <p className="px-3 pb-2 text-meta text-warning">{diff.note}</p>}
-      </>
+      <EmptyDiff note={diff.note} action={prFiles}>
+        No {scope === "uncommitted" ? "uncommitted " : ""}changes
+        {diff.branch ? ` on ${diff.branch}` : ""}
+        {base && scope !== "uncommitted" ? ` against ${base}` : ""}
+        {ignoreWhitespace ? ", ignoring whitespace" : ""}
+      </EmptyDiff>
     );
   }
   const focus: DiffFocus | undefined =
@@ -645,12 +716,13 @@ function DiffBody({
 
   return (
     <>
-      {fallbackBase && (
+      {autoBranch && (
         <p
           data-testid="diff-fallback"
           className="shrink-0 px-3 pb-2 text-meta text-muted-foreground"
         >
-          No uncommitted changes. Showing branch vs {fallbackBase.replace(/^origin\//, "")}
+          No uncommitted changes. Showing branch vs{" "}
+          {(diff.base ?? "its base").replace(/^origin\//, "")}
         </p>
       )}
       {diff.note && <p className="shrink-0 px-3 pb-2 text-meta text-warning">{diff.note}</p>}
@@ -683,5 +755,37 @@ function DiffBody({
         </div>
       </div>
     </>
+  );
+}
+
+/** An empty scope in one line, with any note, and at most one way on to something to read. */
+function EmptyDiff({
+  note,
+  action,
+  children,
+}: {
+  note?: string | undefined;
+  action?: { label: string; run: () => void } | undefined;
+  children: ReactNode;
+}) {
+  return (
+    <div className="px-3 py-2">
+      <p data-testid="diff-empty" className="text-meta text-muted-foreground">
+        {children}
+      </p>
+      {note && <p className="pt-1 text-meta text-warning">{note}</p>}
+      {action && (
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          data-testid="diff-empty-action"
+          className="mt-2"
+          onClick={action.run}
+        >
+          {action.label}
+        </Button>
+      )}
+    </div>
   );
 }

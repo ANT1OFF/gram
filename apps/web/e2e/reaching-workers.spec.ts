@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { MOCK_STUCK_TEXT, type MockReachingSimulation } from "../src/api/mock-reaching";
 import { openOrchestrator, threadRow } from "./thread-row";
+import { openPanelTab } from "./panel-tab";
 
 // Reaching workers beyond ⌘J: opening one beside the chat (⌘\), Take over, a worker whose worktree
 // was cleaned up, and "Why is it stuck?". None of the ways to look at a worker holds it, and nothing
@@ -22,7 +23,7 @@ const open = async (page: Page, helpers: object = {}): Promise<MockReachingSimul
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   // Beside the Files tab: a review opens wider and leaves the chat, and its title bar, 800 px.
-  await page.getByTestId("right-panel").getByRole("tab", { name: "Files", exact: true }).click();
+  await openPanelTab(page.getByTestId("right-panel"), "Files");
   const made = await page.evaluate(() => window.gramMock!.simulateReachingWorkers());
   await openOrchestrator(page, made.orchestratorThreadId);
   return made;

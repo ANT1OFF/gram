@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { cellCenter, terminalText } from "./terminal";
+import { openPanelTab } from "./panel-tab";
 
 test("opens a path:line from terminal output in the editor, and zooms the terminal", async ({
   page,
 }) => {
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+  await openPanelTab(panel, "Terminal");
 
   const terminal = panel.getByTestId("terminal").first();
   const rows = terminalText(terminal);
@@ -55,7 +56,7 @@ test("copies the selection on the platform's chord, and leaves the clipboard alo
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+  await openPanelTab(panel, "Terminal");
   const terminal = panel.getByTestId("terminal").first();
   await expect(terminalText(terminal)).toContainText("$", { timeout: 15_000 });
   await terminal.getByTestId("terminal-surface").click();

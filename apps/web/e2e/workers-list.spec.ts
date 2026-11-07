@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { MockWorkersSimulation } from "../src/api/mock-workers";
 import { MOCK_LIVE_CATCH_UP } from "../src/api/mock-workers";
 import { openOrchestrator, threadRow, upToOrchestrator } from "./thread-row";
+import { openPanelTab } from "./panel-tab";
 
 // ⌘J's Workers list and the worker view it opens, on the mock's workers scenario. Mock state lives
 // in the page, so every step navigates inside the app rather than reloading.
@@ -129,7 +130,7 @@ test("a worker's crumbs lead to its feature and its siblings, and the switcher u
   await row(page, made.asking).click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.asking}$`));
   // Beside the Files tab: a review opens wider and leaves the chat, and its title bar, 800 px.
-  await page.getByTestId("right-panel").getByRole("tab", { name: "Files", exact: true }).click();
+  await openPanelTab(page.getByTestId("right-panel"), "Files");
 
   await page.getByTestId("worker-crumb-worker").click();
   await expect(list(page)).toBeVisible();

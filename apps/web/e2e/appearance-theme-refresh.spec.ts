@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { seedTheme } from "./seed-theme";
+import { openPanelTab } from "./panel-tab";
 
 // The behaviour doesn't depend on the family: one non-default family runs it end to end. Every
 // family's tokens, pairing and contrast are unit-tested in packages/themes, and every palette's
@@ -129,7 +130,7 @@ for (const name of terminalFamilies) {
       await page.setViewportSize({ width: 1440, height: 1000 });
       await page.goto("/t/t-flaky");
       const panel = page.getByTestId("right-panel");
-      await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+      await openPanelTab(panel, "Terminal");
       const terminal = panel.getByTestId("terminal").first();
       await expect(terminal.locator("[data-terminal-text]")).toContainText("$", {
         timeout: 15_000,

@@ -5,6 +5,7 @@ import { closeMenus } from "./titlebar-menu";
 import { openHeaderMore, openMore, openThreadMenu as openThreadMenuOf } from "./more-menu";
 import { slowdown } from "./slowdown";
 import { openOrchestrator, threadRow, upToOrchestrator } from "./thread-row";
+import { openPanelTab } from "./panel-tab";
 
 test("a message another thread sent names its sender and links back to it", async ({ page }) => {
   await page.goto("/t/t-dark");
@@ -780,7 +781,7 @@ test("an orchestrator shows no PR of its own, and its PR tab points at the Board
   await expect(palette.getByText("Bind PR…", { exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  await page.getByRole("tab", { name: "PR", exact: true }).click();
+  await openPanelTab(page.getByTestId("right-panel"), "PR");
   const panel = page.getByTestId("pr-panel-orchestrator");
   await expect(panel).toContainText("An orchestrator has no pull request of its own");
   await panel.getByRole("button", { name: "Open board" }).click();

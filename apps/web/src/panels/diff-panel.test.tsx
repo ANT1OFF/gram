@@ -23,6 +23,8 @@ const copyText = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("@/settings/copy-text", () => ({ copyText }));
 
 const T = "t-flaky" as ThreadId;
+const radio = (name: string) => screen.getByRole("radio", { name });
+const checked = (name: string) => radio(name).getAttribute("aria-checked");
 
 afterEach(() => {
   cleanup();
@@ -297,6 +299,12 @@ describe("DiffPanel", () => {
       refreshGit: vi.fn(async () => {}),
     });
     await screen.findByTestId("patch");
+    // The clean tree's diff is the branch's: Branch settles before the refresh below.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh diff" }).hasAttribute("disabled")).toBe(
+        false,
+      ),
+    );
     const gutter = (line: string) =>
       container.querySelector<HTMLElement>(`[data-gutter="0:${line}"]`)!;
     fireEvent.pointerDown(gutter("1"), { button: 0 });
@@ -492,21 +500,109 @@ describe("DiffPanel", () => {
     expect(screen.queryByTestId("diff-tree-toggle")).toBeNull();
   });
 
-  it("says when a clean tree falls back to the branch", async () => {
-    renderWithApi(<DiffPanel threadId={"t-docs" as ThreadId} />, {
-      gitDiff: vi.fn(async (threadId: ThreadId, scope: DiffScope) => mockDiff(threadId, scope)),
-    });
+  it("selects Branch when a clean tree falls back to it, and offers it from Uncommitted", async () => {
+    const gitDiff = vi.fn(async (threadId: ThreadId, scope: DiffScope) =>
+      mockDiff(threadId, scope),
+    );
+    renderWithApi(<DiffPanel threadId={"t-docs" as ThreadId} />, { gitDiff });
 
     expect((await screen.findByTestId("diff-fallback")).textContent).toBe(
       "No uncommitted changes. Showing branch vs main",
     );
+    // Branch is the selected scope, not Uncommitted over the branch's files.
+    expect(radio("Branch").getAttribute("aria-checked")).toBe("true");
+    expect(radio("Uncommitted").getAttribute("aria-checked")).toBe("false");
     expect(screen.getAllByTestId("diff-file")).toHaveLength(1);
-    expect(screen.queryByTestId("diff-branch")?.textContent ?? "").not.toMatch(/vs /);
-    expect(screen.queryByText("No changes")).toBeNull();
+    expect(screen.getByTestId("diff-branch").textContent).toMatch(/vs main$/);
+    await waitFor(() => expect(gitDiff).toHaveBeenLastCalledWith("t-docs", { kind: "branch" }));
 
-    fireEvent.click(screen.getByRole("radio", { name: "Branch" }));
-    await waitFor(() => expect(screen.getByTestId("diff-branch").textContent).toMatch(/vs main$/));
+    // Uncommitted, picked, says there is nothing there and leads back with one action.
+    fireEvent.click(radio("Uncommitted"));
+    expect((await screen.findByTestId("diff-empty")).textContent).toBe(
+      "No uncommitted changes on docs/readme",
+    );
+    expect(screen.queryByTestId("diff-file")).toBeNull();
     expect(screen.queryByTestId("diff-fallback")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show branch vs main" }));
+    await screen.findAllByTestId("diff-file");
+    expect(radio("Branch").getAttribute("aria-checked")).toBe("true");
+    // A pick, so no note on why.
+    expect(screen.queryByTestId("diff-fallback")).toBeNull();
+  });
+
+  it("offers the thread's PR from an empty diff beside the PR tab", async () => {
+    act(() =>
+      useThreadsStore.setState({
+        byId: {
+          [T]: {
+            thread: { checkout: { path: "/repo" } },
+            git: {
+              changesToken: "merged",
+              changedFiles: 0,
+              behindBase: 0,
+              aheadBase: 0,
+              base: "origin/main",
+              pr: { number: 412 },
+            },
+          } as never,
+        },
+      }),
+    );
+    const gitDiff = vi.fn(async (): Promise<Diff> => ({ repo: true, branch: "main", files: [] }));
+    renderWithApi(<DiffPanel threadId={T} prLink />, { gitDiff });
+    expect((await screen.findByTestId("diff-empty")).textContent).toBe(
+      "No uncommitted changes on main",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open PR #412" }));
+    expect(useLayoutStore.getState().panelTab).toBe("pr");
+
+    // Away from the PR tab, such as a worker's diff docked beside the chat, there's no such action.
+    cleanup();
+    renderWithApi(<DiffPanel threadId={T} />, { gitDiff });
+    await screen.findByTestId("diff-empty");
+    expect(screen.queryByTestId("diff-empty-action")).toBeNull();
+  });
+
+  it("follows the tree until a scope is picked: Branch once a commit empties it", async () => {
+    const publish = (changedFiles: number, changesToken: string) =>
+      act(() =>
+        useThreadsStore.setState({
+          byId: {
+            [T]: {
+              thread: { checkout: { path: "/repo" } },
+              git: { changesToken, changedFiles, behindBase: 0, aheadBase: 2, base: "origin/main" },
+            } as never,
+          },
+        }),
+      );
+    publish(1, "editing");
+    const gitDiff = vi.fn(async (threadId: ThreadId, scope: DiffScope) =>
+      mockDiff(threadId, scope),
+    );
+    renderWithApi(<DiffPanel threadId={T} />, { gitDiff });
+    await screen.findAllByTestId("diff-file");
+    expect(gitDiff).toHaveBeenLastCalledWith(T, { kind: "uncommitted" });
+    expect(checked("Uncommitted")).toBe("true");
+
+    // The agent commits: the tree is clean and the branch ahead, so Branch is selected and noted.
+    publish(0, "committed");
+    await waitFor(() => expect(gitDiff).toHaveBeenLastCalledWith(T, { kind: "branch" }));
+    expect(checked("Branch")).toBe("true");
+    expect((await screen.findByTestId("diff-fallback")).textContent).toBe(
+      "No uncommitted changes. Showing branch vs main",
+    );
+
+    // New uncommitted work brings Uncommitted back.
+    publish(1, "edited");
+    await waitFor(() => expect(gitDiff).toHaveBeenLastCalledWith(T, { kind: "uncommitted" }));
+    expect(checked("Uncommitted")).toBe("true");
+
+    // A picked scope stays put through the tree's changes.
+    fireEvent.click(screen.getByRole("radio", { name: "Uncommitted" }));
+    publish(0, "committed-again");
+    await waitFor(() => expect(gitDiff).toHaveBeenCalledTimes(4));
+    expect(gitDiff).toHaveBeenLastCalledWith(T, { kind: "uncommitted" });
+    expect(checked("Uncommitted")).toBe("true");
   });
 
   it("refreshes git state and refetches from the button and the shortcut", async () => {
@@ -598,6 +694,8 @@ describe("DiffPanel", () => {
     renderWithApi(<DiffPanel threadId={T} />, {
       gitDiff: vi.fn(async (): Promise<Diff> => ({ repo: true, branch: "main", files: [] })),
     });
-    expect((await screen.findByTestId("diff-empty")).textContent).toBe("No changes on main");
+    expect((await screen.findByTestId("diff-empty")).textContent).toBe(
+      "No uncommitted changes on main",
+    );
   });
 });

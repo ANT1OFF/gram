@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { openPanelTab } from "./panel-tab";
 
 test("publishes a branch, opens its PR and shows the badge", async ({ page }) => {
   await page.goto("/t/t-dark");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "PR", exact: true }).click();
+  await openPanelTab(panel, "PR");
   await expect(panel.getByText("No PR for this branch")).toBeVisible();
 
   await panel.getByTestId("push-button").click();

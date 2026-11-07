@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openPanelTab } from "./panel-tab";
 
 // With the overview's 60 px rail (the overview under 1280 px) and the right panel open, an 880 px
 // window leaves the pane about 470 px. The header used to run past the pane, and the right panel
@@ -12,7 +13,7 @@ for (const width of [880, 1440]) {
     await page.setViewportSize({ width, height: 720 });
     await page.goto("/t/t-flaky");
     const panel = page.getByTestId("right-panel");
-    await panel.getByRole("tab", { name: "PR", exact: true }).click();
+    await openPanelTab(panel, "PR");
     await expect(panel.getByTestId("pr-panel")).toBeVisible();
     await page.evaluate(() => window.gramMock?.simulateUnpushed("t-flaky" as never, 2));
     await expect(panel.getByTestId("pr-panel-push").getByRole("button")).toBeVisible();
@@ -24,7 +25,7 @@ for (const width of [880, 1440]) {
     await expect(page.getByTestId("pr-row")).toHaveCount(0);
     // Measured beside the Files tab's 352 px: a review opens wider, leaving the chat 800 px, and
     // the title bar then folds chips out of sight sooner (review-width.spec.ts).
-    await panel.getByRole("tab", { name: "Files", exact: true }).click();
+    await openPanelTab(panel, "Files");
     // The shell's columns ease to the new width: measure once they've settled.
     await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(352);
 

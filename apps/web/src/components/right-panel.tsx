@@ -42,7 +42,7 @@ import {
 import { useThreadsStore } from "@/stores/threads";
 import { besideShown, useBesideStore } from "@/orchestration/beside-store";
 
-import { tabFolds, tabNamed, useTabLabelFit } from "./panel-tab-labels";
+import { foldedTabs, tabNamed, useTabLabelFit } from "./panel-tab-labels";
 import { useKeepReadingPlace } from "./review-room";
 import type * as PanelTabs from "./right-panel-tabs";
 
@@ -57,8 +57,8 @@ interface PanelTab {
 }
 
 /**
- * The tabs in strip order. The primary ones keep their names longest after the open one and never
- * fold; the rest fold into More once not every name fits.
+ * The tabs in strip order. Short of room the rest fold into More first, then the primary ones from
+ * the strip's end, so the tabs left in the strip keep their names (`panel-tab-labels.ts`).
  */
 const TABS: PanelTab[] = [
   // A workspace's workers by where they stand: only beside a thread of a workspace.
@@ -204,17 +204,17 @@ export function RightPanel() {
           : t.label;
     return { tab: t, count, busy, name };
   });
-  // A tab with something waiting stays out of More, so its count does too.
-  const folded = labelFit.fold
-    ? faces.filter((f) =>
-        tabFolds({
-          primary: f.tab.primary === true,
-          active: f.tab.value === tab,
-          pinned: f.count > 0,
-        }),
-      )
-    : [];
-  const inStrip = faces.filter((f) => !folded.includes(f));
+  // A tab with something waiting or running stays out of More, so its count or dot does too.
+  const foldFlags = foldedTabs(
+    faces.map((f) => ({
+      primary: f.tab.primary === true,
+      active: f.tab.value === tab,
+      pinned: f.count > 0 || f.busy,
+    })),
+    labelFit.folds,
+  );
+  const folded = faces.filter((_, i) => foldFlags[i]);
+  const inStrip = faces.filter((_, i) => !foldFlags[i]);
 
   return (
     <aside
@@ -236,9 +236,9 @@ export function RightPanel() {
             data-label-fit={labelFit.tabs}
             className={cn("min-w-0 overflow-x-auto border-b-0", !reviewAction && "flex-1")}
           >
-            {/* An icon and a name each while the strip has room for every name; then Diff, PR,
-                Files, Terminal and the open one's, the rest folded into More; then the open one's
-                alone; then icons only. Each is named on hover in every case. */}
+            {/* An icon and a name each, with the rarer tabs and then Terminal, Files, PR and Diff
+                folding into More, named there, as room runs out; only a panel too narrow for the
+                open tab's name beside More drops to icons. Each is named on hover in every case. */}
             {inStrip.map((face) => (
               // Above the strip, which has the panel's empty top beside the title bar: below, a
               // tab's name would cover the notice or the toolbar under the tabs.
@@ -263,7 +263,7 @@ export function RightPanel() {
               >
                 <TabFace
                   {...face}
-                  named={tabNamed(labelFit.tabs, face.tab.value === tab, face.tab.primary === true)}
+                  named={tabNamed(labelFit.tabs, face.tab.value === tab)}
                   testIds
                 />
               </Hint>
@@ -282,7 +282,7 @@ export function RightPanel() {
                 key={face.tab.value}
                 data-measure-tab={face.tab.value}
                 data-primary={face.tab.primary}
-                data-pinned={face.count > 0 ? "" : undefined}
+                data-pinned={face.count > 0 || face.busy ? "" : undefined}
                 className={TAB_BOX}
               >
                 <TabFace {...face} named />
@@ -388,8 +388,8 @@ const MENU_ITEM =
   "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor";
 
 /**
- * The rarer tabs, folded out of a short strip, each named with its icon. None has a count: a tab with
- * something waiting stays in the strip.
+ * The tabs folded out of a short strip, in strip order, each named with its icon. None has a count:
+ * a tab with something waiting stays in the strip.
  */
 function MoreTabs({
   faces,

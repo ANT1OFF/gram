@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openPanelTab } from "./panel-tab";
 
 const HOST = "docs.example.com";
 
@@ -80,7 +81,7 @@ test("an http link or one with a user name asks every time, with no way to trust
 test("a link in a previewed file asks too", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Files", exact: true }).click();
+  await openPanelTab(panel, "Files");
   const tree = panel
     .getByTestId("files-tree-pane")
     .getByRole("tree", { name: "Files", exact: true });

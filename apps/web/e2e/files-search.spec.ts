@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { clipboardText } from "./clipboard";
+import { openPanelTab } from "./panel-tab";
 
 test("searches file contents and previews a result at its line", async ({ page }) => {
   await page.goto("/t/t-flaky");
@@ -8,7 +9,7 @@ test("searches file contents and previews a result at its line", async ({ page }
   const approval = page.getByTestId("approval-card");
   await expect(approval).toBeVisible();
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Files", exact: true }).click();
+  await openPanelTab(panel, "Files");
   const files = page.getByTestId("files-panel");
 
   // A leading `?` turns the filter into a contents search.

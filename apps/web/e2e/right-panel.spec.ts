@@ -1,26 +1,31 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { openPanelTab } from "./panel-tab";
 import { reviewsInPanel } from "./reviews-panel";
+import { openOrchestrator, threadRow } from "./thread-row";
 
-// The panel's tabs show their names while the strip has room for every one. Short of that the rarer
-// tabs fold into More, named there, and Diff, PR, Files, Terminal and the open tab keep their
-// names; then only the open tab's; then icons alone. All of it is measured from the row rather
+// The panel's tabs show their names. Short of room for every one, tabs fold into More, named there:
+// the rarer ones first, then Terminal, Files, PR and Diff from the strip's end, never the open tab
+// or one with a count, so every tab left in the strip keeps its name. Only a panel too narrow for
+// the open tab's name beside More falls back to icons. All of it is measured from the row rather
 // than guessed from a breakpoint. Every state keeps each tab's accessible name and tooltip, and its
-// count. On a review, Focus review sits beside the tabs in words that fold to its icon last, after
-// even the open tab's name.
+// count. On a review, Focus review sits beside the tabs in words, which go before any name does.
 
-const open = async (page: Page, width: number) => {
-  await page.addInitScript((panelWidth) => {
-    const key = "gram.mock.settings";
-    const saved = JSON.parse(sessionStorage.getItem(key) ?? "{}") as Record<string, unknown>;
-    saved.panel = {
-      side: "right",
-      open: true,
-      width: panelWidth,
-      tab: "files",
-    };
-    sessionStorage.setItem(key, JSON.stringify(saved));
-  }, width);
+const open = async (page: Page, width: number, tab = "files") => {
+  await page.addInitScript(
+    ({ panelWidth, panelTab }) => {
+      const key = "gram.mock.settings";
+      const saved = JSON.parse(sessionStorage.getItem(key) ?? "{}") as Record<string, unknown>;
+      saved.panel = {
+        side: "right",
+        open: true,
+        width: panelWidth,
+        tab: panelTab,
+      };
+      sessionStorage.setItem(key, JSON.stringify(saved));
+    },
+    { panelWidth: width, panelTab: tab },
+  );
   await page.goto("/t/t-deps");
   const panel = page.getByTestId("right-panel");
   await expect(panel.getByRole("tab", { name: "Files", exact: true })).toHaveAttribute(
@@ -29,6 +34,13 @@ const open = async (page: Page, width: number) => {
   );
   return panel;
 };
+
+/** The tabs in the strip, by their `data-panel-tab`. */
+const inStrip = (page: Page) =>
+  page
+    .getByTestId("right-panel")
+    .locator("[data-panel-tab]")
+    .evaluateAll((tabs) => tabs.map((tab) => (tab as HTMLElement).dataset.panelTab));
 
 /** The tabs whose names show, by their `data-panel-tab`. */
 const named = (page: Page) =>
@@ -40,6 +52,16 @@ const named = (page: Page) =>
         .filter((tab) => (tab.querySelector("[data-tab-label]")?.clientWidth ?? 0) > 0)
         .map((tab) => (tab as HTMLElement).dataset.panelTab),
     );
+
+/** Every tab in the strip shows its name: none is a bare icon. */
+const everyNameShows = async (page: Page) => {
+  await expect
+    .poll(async () => {
+      const [shown, strip] = await Promise.all([named(page), inStrip(page)]);
+      return shown.length > 0 && JSON.stringify(shown) === JSON.stringify(strip);
+    })
+    .toBe(true);
+};
 
 /** The strip's content overruns its box. */
 const overflows = (page: Page) =>
@@ -56,6 +78,8 @@ test("a wide panel names every tab, and the open one stands on a background and 
   await panel.getByRole("button", { name: "Expand panel" }).click();
   const list = panel.locator("[data-label-fit]");
   await expect(list).toHaveAttribute("data-label-fit", "all");
+  // Nothing folded: every tab is in the strip.
+  await expect(panel.getByTestId("panel-more")).toHaveCount(0);
   const tabs = await panel.locator("[data-panel-tab]").count();
   await expect.poll(() => named(page).then((n) => n.length)).toBe(tabs);
   await expect(panel.getByRole("tab", { name: "Files", exact: true })).toContainText("Files");
@@ -81,8 +105,9 @@ test("a narrower panel names Diff, PR, Files and Terminal, the rest named in Mor
   await page.setViewportSize({ width: 1440, height: 900 });
   const panel = await open(page, 520);
   const list = panel.locator("[data-label-fit]");
-  await expect(list).toHaveAttribute("data-label-fit", "primary");
+  await expect(list).toHaveAttribute("data-label-fit", "all");
   await expect.poll(() => named(page)).toEqual(["diff", "pr", "files", "terminal"]);
+  await everyNameShows(page);
   expect(await overflows(page)).toBe(false);
 
   // More holds the rest, each by its name; a pick opens it in the strip, named, and More keeps
@@ -96,8 +121,7 @@ test("a narrower panel names Diff, PR, Files and Terminal, the rest named in Mor
   const connectors = panel.getByRole("tab", { name: "Connectors", exact: true });
   await expect(connectors).toHaveAttribute("aria-selected", "true");
   await expect.poll(() => named(page)).toContain("connectors");
-  // Three rare tabs are left (Preview, Docs, Notifications): as 28 px glyphs they take more room
-  // than More with its word, so More stays and holds them (the fold rule in panel-tab-labels.ts).
+  await everyNameShows(page);
   await expect(more).toBeVisible();
   await more.click();
   for (const name of ["Preview", "Docs", "Notifications"]) {
@@ -109,17 +133,38 @@ test("a narrower panel names Diff, PR, Files and Terminal, the rest named in Mor
   expect(await overflows(page)).toBe(false);
 });
 
-test("narrower still, only the open tab keeps its name, and it follows the open tab", async ({
+test("at the default width every tab in the strip keeps its name, Terminal and Files folding first", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const panel = await open(page, 340);
-  const list = panel.locator("[data-label-fit]");
-  await expect(list).toHaveAttribute("data-label-fit", "active");
-  await expect.poll(() => named(page)).toEqual(["files"]);
+  // The panel's default width.
+  const panel = await open(page, 352);
+  await expect(panel.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "all");
+  await everyNameShows(page);
+  const strip = await inStrip(page);
+  expect(strip).toContain("files");
+  expect(strip).toContain("diff");
   expect(await overflows(page)).toBe(false);
-  await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
-  await expect.poll(() => named(page)).toEqual(["terminal"]);
+  // What folded is in More, named: Terminal went before Diff did.
+  expect(strip).not.toContain("terminal");
+  await openPanelTab(panel, "Terminal");
+  await expect.poll(() => inStrip(page)).toContain("terminal");
+  await everyNameShows(page);
+  expect(await overflows(page)).toBe(false);
+});
+
+test("narrower still, the open tab keeps its name beside More, and it follows the open tab", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const panel = await open(page, 260);
+  await expect(panel.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "all");
+  await expect.poll(() => named(page)).toContain("files");
+  await everyNameShows(page);
+  expect(await overflows(page)).toBe(false);
+  await openPanelTab(panel, "Diff");
+  await expect.poll(() => named(page)).toContain("diff");
+  await everyNameShows(page);
   expect(await overflows(page)).toBe(false);
 });
 
@@ -151,31 +196,71 @@ test("a review at its ordinary width names Diff, PR, Files and Terminal, with Fo
   );
   expect(gap).toBeLessThan(24);
 
-  // Narrower, the tabs give up their names, the open one's too, before Focus review its words.
+  // Narrower, tabs fold into More and those left keep their names, Diff's included, while Focus
+  // review keeps its words.
   await page.setViewportSize({ width: 1180, height: 1000 });
-  await expect.poll(() => named(page)).toEqual([]);
-  await expect(focus).toHaveAttribute("data-words", "true");
+  await expect.poll(() => named(page)).toContain("diff");
+  await everyNameShows(page);
   await expect(focus).toBeVisible();
+  await expect(panel.getByTestId("panel-more")).toBeVisible();
   expect(await overflows(page)).toBe(false);
 });
 
-test("a narrow panel names no tab, and keeps every name on hover", async ({ page }) => {
+test("the narrowest panel names its open tab beside More, and keeps every name on hover", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 900, height: 900 });
   const narrow = await open(page, 240);
-  await expect(narrow.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "none");
-  await expect.poll(() => named(page)).toEqual([]);
+  await expect(narrow.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "all");
+  await expect.poll(() => named(page)).toEqual(["files"]);
+  expect(await overflows(page)).toBe(false);
   // The name is the tab's accessible name and its tooltip in this state too.
-  const diff = narrow.getByRole("tab", { name: "Diff", exact: true });
-  await expect(diff).toBeVisible();
-  await diff.hover();
-  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText("Diff");
+  const files = narrow.getByRole("tab", { name: "Files", exact: true });
+  await files.hover();
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText("Files");
+  // The rest are in More, each by its name.
+  await narrow.getByTestId("panel-more").click();
+  const menu = page.getByTestId("panel-more-menu");
+  for (const name of ["Diff", "PR", "Terminal"]) {
+    await expect(menu.getByRole("menuitem", { name, exact: true })).toBeVisible();
+  }
+  await page.keyboard.press("Escape");
+});
+
+test("the Workers tab beside an orchestrator keeps the strip's names at the default width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1728, height: 1000 });
+  await page.addInitScript(() => {
+    const key = "gram.mock.settings";
+    const saved = JSON.parse(sessionStorage.getItem(key) ?? "{}") as Record<string, unknown>;
+    saved.panel = { side: "right", open: true, width: 352, tab: "workers" };
+    sessionStorage.setItem(key, JSON.stringify(saved));
+  });
+  await page.goto("/t/t-flaky");
+  await threadRow(page, "t-flaky").waitFor();
+  const made = await page.evaluate(() => window.gramMock!.simulateOrchestration("board"));
+  await openOrchestrator(page, made.orchestratorThreadId);
+  const panel = page.getByTestId("right-panel");
+  await openPanelTab(panel, "Workers");
+  await expect(panel.getByRole("tab", { name: "Workers", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(panel.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "all");
+  await expect.poll(() => named(page)).toContain("workers");
+  await everyNameShows(page);
+  expect((await inStrip(page)).length).toBeGreaterThan(1);
+  expect(await overflows(page)).toBe(false);
 });
 
 test("a tab that appears under a resting pointer opens no hint until the pointer moves", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 900, height: 900 });
-  const panel = await open(page, 240);
+  await page.setViewportSize({ width: 1200, height: 900 });
+  // Diff, first in the strip and not the open tab: reopening the panel focuses the open tab, and
+  // focus opens a hint of its own.
+  const panel = await open(page, 352);
   const diff = panel.getByRole("tab", { name: "Diff", exact: true });
   const box = (await diff.boundingBox())!;
   const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -201,23 +286,23 @@ test("a tab that appears under a resting pointer opens no hint until the pointer
   await expect(hint).toBeVisible();
 });
 
-test("the strip goes back to every name when the panel widens again", async ({ page }) => {
+test("the strip unfolds every tab when the panel widens again", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1000 });
   const panel = await open(page, 240);
-  const list = panel.locator("[data-label-fit]");
-  await expect(list).not.toHaveAttribute("data-label-fit", "all");
+  const more = panel.getByTestId("panel-more");
+  await expect(more).toBeVisible();
   await panel.getByRole("button", { name: "Expand panel" }).click();
-  await expect(list).toHaveAttribute("data-label-fit", "all");
+  await expect(more).toHaveCount(0);
+  await everyNameShows(page);
   await panel.getByRole("button", { name: "Restore panel width" }).click();
-  await expect(list).not.toHaveAttribute("data-label-fit", "all");
+  await expect(more).toBeVisible();
 });
 
-test("a count stays beside its icon when no tab is named", async ({ page }) => {
+test("a tab with a count stays in a narrow strip, its count beside its icon", async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 900 });
   await reviewsInPanel(page, { requests: true, panelWidth: 240 });
   await page.goto("/t/t-question");
   const panel = page.getByTestId("right-panel");
-  await expect(panel.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "none");
   const reviews = panel.getByRole("tab", {
     name: "Reviews, 2 waiting",
     exact: true,
@@ -225,4 +310,5 @@ test("a count stays beside its icon when no tab is named", async ({ page }) => {
   await expect(reviews).toBeVisible();
   await expect(panel.getByTestId("reviews-tab-count")).toBeVisible();
   await expect(panel.getByTestId("reviews-tab-count")).toHaveText("2");
+  expect(await overflows(page)).toBe(false);
 });

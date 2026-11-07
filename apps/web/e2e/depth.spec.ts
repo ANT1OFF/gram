@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { openHeaderMore, openThreadMenu } from "./more-menu";
 
 import { openSettingsPage } from "./settings-nav";
+import { openPanelTab } from "./panel-tab";
 
 test("resumes a past session from /new, then marks it open", async ({ page }) => {
   await page.goto("/new");
@@ -65,7 +66,7 @@ test("opens a previewed file, a diff row and the thread folder in the editor", a
   // Toasts expire, so what was opened is read from the mock's calls, not from what's on screen.
   const opened = () => page.evaluate(() => window.gramMock?.editorOpens.map((open) => open.path));
 
-  await panel.getByRole("tab", { name: "Files", exact: true }).click();
+  await openPanelTab(panel, "Files");
   const tree = panel
     .getByTestId("files-tree-pane")
     .getByRole("tree", { name: "Files", exact: true });
@@ -75,7 +76,7 @@ test("opens a previewed file, a diff row and the thread folder in the editor", a
   await expect(toasts.filter({ hasText: "retry.ts" })).toBeVisible();
   await expect.poll(opened).toEqual([RETRY]);
 
-  await panel.getByRole("tab", { name: "Diff", exact: true }).click();
+  await openPanelTab(panel, "Diff");
   await panel
     .getByRole("button", { name: /^Open .* in editor$/ })
     .first()
@@ -99,7 +100,7 @@ test("reveals a previewed file, a diff row and the thread folder in the file man
   const reveal = /^(Reveal|Show) (.+ )?in (Finder|Explorer|file manager)$/;
   const revealed = () => page.evaluate(() => window.gramMock?.reveals.map((shown) => shown.path));
 
-  await panel.getByRole("tab", { name: "Files", exact: true }).click();
+  await openPanelTab(panel, "Files");
   const tree = panel
     .getByTestId("files-tree-pane")
     .getByRole("tree", { name: "Files", exact: true });
@@ -109,7 +110,7 @@ test("reveals a previewed file, a diff row and the thread folder in the file man
   await expect(toasts.filter({ hasText: "retry.ts" })).toBeVisible();
   await expect.poll(revealed).toEqual([RETRY]);
 
-  await panel.getByRole("tab", { name: "Diff", exact: true }).click();
+  await openPanelTab(panel, "Diff");
   await panel.getByRole("button", { name: reveal }).first().click();
   await expect.poll(revealed).toEqual([RETRY, DIFF_ROW]);
 

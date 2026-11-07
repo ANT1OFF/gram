@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test";
+import { openPanelTab } from "./panel-tab";
 
 test("PR job diagnostics show exact provenance and annotations before a bounded excerpt", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1080 });
   await page.goto("/t/t-flaky");
-  await page.getByRole("tab", { name: "PR", exact: true }).click();
+  await openPanelTab(page.getByTestId("right-panel"), "PR");
   const checks = page.getByTestId("pr-panel").getByRole("region", { name: "Checks" });
   await expect(page.getByTestId("ci-job-detail")).toHaveCount(0);
   await checks.getByRole("button", { name: "Inspect test (windows) job", exact: true }).click();

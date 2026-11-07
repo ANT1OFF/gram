@@ -1854,7 +1854,7 @@ export const SHOTS: readonly Shot[] = [
       });
       await page.goto("/t/t-flaky");
       const panel = page.getByTestId("right-panel");
-      await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+      await openPanelTab(panel, "Terminal");
       await panel
         .getByTestId("terminal")
         .getByRole("alert")
@@ -1882,7 +1882,7 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await page.goto("/t/t-flaky");
       const panel = page.getByTestId("right-panel");
-      await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+      await openPanelTab(panel, "Terminal");
       // The shell's canvas mounts as it starts; opened before, the menu loses the click to it.
       await panel.locator("[data-terminal-text]").filter({ hasText: "$" }).waitFor();
       await panel.getByRole("button", { name: "Run script" }).click();
@@ -2710,6 +2710,18 @@ export const SHOTS: readonly Shot[] = [
     name: "diff-panel",
     title: "The scripted thread's Diff panel at its default width",
     open: openThread,
+    element: (page) => page.getByTestId("right-panel"),
+  },
+  {
+    name: "diff-clean-tree",
+    title: "A clean tree's Diff panel: the branch it shows is the scope selected",
+    open: async (page) => {
+      await followColorScheme(page);
+      await page.goto("/t/t-docs");
+      await page.getByTestId("diff-panel").getByTestId("diff-file").first().waitFor();
+      await page.waitForLoadState("networkidle");
+      await page.mouse.move(10, 890);
+    },
     element: (page) => page.getByTestId("right-panel"),
   },
   {
