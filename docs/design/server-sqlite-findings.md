@@ -5,7 +5,7 @@ release-overlapping run is excluded. These are a baseline, not before/after impr
 This baseline was captured before production query changes.
 
 The follow-up [contained query changes](server-sqlite-query-wins.md) records the implementation,
-isolated feed improvement and the remaining final timing qualification.
+reviewed implementation and final interleaved main/PR measurements.
 
 The [methodology and threading model](server-sqlite-benchmark.md) describe the synthetic fixture,
 command and exclusions. This run used Node v26.12.0, 18 CPUs and main through `2ba625aa`, with
