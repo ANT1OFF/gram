@@ -1,4 +1,5 @@
 import {
+  ThreadRpcs,
   effectiveCheckout,
   GitError,
   InvalidState,
@@ -49,6 +50,13 @@ import { CheckoutService } from "../../runtime/hooks.ts";
 import { ThreadRuntimes, type ForkPlan } from "../../runtime/thread-runtimes.ts";
 import type { Handlers } from "./common.ts";
 import { taskCheckoutRequest } from "./task-checkout.ts";
+
+// Narrow the union before handing codecs to the receipt store, so each handler keeps its
+// own declared success and error types.
+const messageRpcs = [...ThreadRpcs.requests.values()];
+const sendRpc = messageRpcs.find((rpc) => rpc._tag === "thread.send")!;
+const steerRpc = messageRpcs.find((rpc) => rpc._tag === "thread.steer")!;
+const queueSteerRpc = messageRpcs.find((rpc) => rpc._tag === "thread.queue.steer")!;
 
 /**
  * The checkouts a close holds while it removes a worktree: the worktree `checkouts.release` deletes,
@@ -247,8 +255,24 @@ export const threadHandlers = Effect.gen(function* () {
           ? create(input)
           : withDraftAttachments(attachmentsDir(config.dataDir), draftId, id, input, create);
       }),
-    "thread.send": ({ threadId, input }) => runtimes.send(threadId, input),
-    "thread.steer": ({ threadId, input }) => runtimes.steer(threadId, input),
+    "thread.send": ({ threadId, input, clientMessageId }) =>
+      store.messageReceipt(
+        threadId,
+        clientMessageId,
+        ["send", input],
+        sendRpc.successSchema,
+        sendRpc.errorSchema,
+        runtimes.send(threadId, input),
+      ),
+    "thread.steer": ({ threadId, input, clientMessageId }) =>
+      store.messageReceipt(
+        threadId,
+        clientMessageId,
+        ["steer", input],
+        steerRpc.successSchema,
+        steerRpc.errorSchema,
+        runtimes.steer(threadId, input),
+      ),
     "thread.interrupt": ({ threadId }) => runtimes.interrupt(threadId),
     "thread.resumeLimitWait": ({ threadId }) => runtimes.resumeLimitWait(threadId),
     "thread.cancelLimitWait": ({ threadId }) => runtimes.cancelLimitWait(threadId),
@@ -352,7 +376,15 @@ export const threadHandlers = Effect.gen(function* () {
       runtimes.editQueued(threadId, itemId, input),
     "thread.queue.reorder": ({ threadId, itemIds }) => runtimes.reorderQueue(threadId, itemIds),
     "thread.queue.remove": ({ threadId, itemId }) => runtimes.removeQueued(threadId, itemId),
-    "thread.queue.steer": ({ threadId, itemId }) => runtimes.steerQueued(threadId, itemId),
+    "thread.queue.steer": ({ threadId, itemId, clientMessageId }) =>
+      store.messageReceipt(
+        threadId,
+        clientMessageId,
+        ["queue.steer", itemId],
+        queueSteerRpc.successSchema,
+        queueSteerRpc.errorSchema,
+        runtimes.steerQueued(threadId, itemId),
+      ),
     "thread.setPlan": ({ threadId, plan }) =>
       store.getThread(threadId).pipe(
         Effect.andThen(plans.edit(threadId, plan)),

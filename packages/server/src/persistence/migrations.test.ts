@@ -45,6 +45,7 @@ describe("migration ordering gate", () => {
       expect(resolved.map(([id, name]) => [id, name])).toEqual([
         [1, "baseline"],
         [2, "merge_freezes"],
+        [3, "message_receipts"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -124,6 +125,8 @@ describe("the baseline", () => {
         "index closed_turns_thread",
         "index draft_stashes_thread",
         "index dreams_workspace",
+        "index message_receipts_pending",
+        "index message_receipts_responses",
         "index messages_search_pending",
         "index messages_thread_rev",
         "index messages_thread_seq",
@@ -153,6 +156,7 @@ describe("the baseline", () => {
         "table labels",
         "table local_checks",
         "table merge_freezes",
+        "table message_receipts",
         "table message_search",
         "table messages",
         "table orchestration_events",
@@ -195,6 +199,7 @@ describe("the baseline", () => {
       expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
         [1, "baseline"],
         [2, "merge_freezes"],
+        [3, "message_receipts"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -214,8 +219,55 @@ describe("the baseline", () => {
       yield* Effect.gen(function* () {
         const store = yield* ThreadStore;
         expect((yield* store.listProjects).map((p) => p.root)).toEqual(["/invented/baseline"]);
-        expect((yield* applied).map((row) => row.name)).toEqual(["baseline", "merge_freezes"]);
+        expect((yield* applied).map((row) => row.name)).toEqual([
+          "baseline",
+          "merge_freezes",
+          "message_receipts",
+        ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+    }),
+  );
+
+  it.effect("upgrades the previous 0002 database to receipts without replacing existing data", () =>
+    Effect.gen(function* () {
+      const file = join(yield* tempDir, "upgrade-receipts.db");
+      const open = (record: Parameters<typeof migratorOptions>[0]) =>
+        SqliteMigrator.layer(migratorOptions(record)).pipe(
+          Layer.provideMerge(SqliteClient.layer({ filename: file })),
+        );
+      const previous = {
+        "0001_baseline": migrations["0001_baseline"],
+        "0002_merge_freezes": migrations["0002_merge_freezes"],
+      };
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`INSERT INTO projects(id, root, name) VALUES ('prior-project', '/synthetic/upgrade', 'before receipts')`;
+        expect((yield* applied).map((row) => row.migration_id)).toEqual([1, 2]);
+        expect(yield* sql`SELECT name FROM sqlite_master WHERE name = 'message_receipts'`).toEqual(
+          [],
+        );
+      }).pipe(Effect.provide(open(previous)));
+      for (let reopen = 0; reopen < 2; reopen++) {
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect(yield* sql`SELECT id, name FROM projects`).toEqual([
+            { id: "prior-project", name: "before receipts" },
+          ]);
+          expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
+            [1, "baseline"],
+            [2, "merge_freezes"],
+            [3, "message_receipts"],
+          ]);
+          // A closed thread has no live row, but must retain its permanent safety identity.
+          if (reopen === 0) {
+            yield* sql`INSERT INTO message_receipts(thread_id, client_message_id, fingerprint, retired)
+              VALUES ('closed-thread', 'old-client-id', 'synthetic', 1)`;
+          }
+          expect(yield* sql`SELECT client_message_id, retired FROM message_receipts`).toEqual([
+            { client_message_id: "old-client-id", retired: 1 },
+          ]);
+        }).pipe(Effect.provide(open(migrations)));
+      }
     }),
   );
 
@@ -229,7 +281,7 @@ describe("the baseline", () => {
       yield* Effect.void.pipe(Effect.provide(open(migrations)));
       const next = {
         ...migrations,
-        "0003_example": Effect.gen(function* () {
+        "0004_example": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`ALTER TABLE projects ADD COLUMN example TEXT`;
         }),
@@ -244,7 +296,8 @@ describe("the baseline", () => {
           expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
             [1, "baseline"],
             [2, "merge_freezes"],
-            [3, "example"],
+            [3, "message_receipts"],
+            [4, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
       }

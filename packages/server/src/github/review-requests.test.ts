@@ -163,6 +163,13 @@ const layer = (sweeps = true, interval = Duration.minutes(5)) =>
     Layer.orDie,
   );
 
+/** Seed before building the layer: its startup fiber may poll before the test body runs. */
+const seededLayer = (results: SearchedReviewRequest[], interval = Duration.minutes(5)) =>
+  Layer.suspend(() => {
+    reset(results);
+    return layer(true, interval);
+  });
+
 /** Everything the hub publishes from now on. */
 const collect = Effect.gen(function* () {
   const hub = yield* EventHub;
@@ -182,7 +189,6 @@ const collect = Effect.gen(function* () {
 describe("ReviewRequestsPoller", () => {
   it.effect("seeds the first result silently, then notifies once per newly requested PR", () =>
     Effect.gen(function* () {
-      reset([pr("acme/web", 1)]);
       const poller = yield* ReviewRequestsPoller;
       const events = yield* collect;
       // The poll at launch seeds the list without a notice.
@@ -210,14 +216,13 @@ describe("ReviewRequestsPoller", () => {
         "Review requested: acme/api#7 PR 7",
         "Review requested: acme/api#7 PR 7",
       ]);
-    }).pipe(Effect.scoped, Effect.provide(layer())),
+    }).pipe(Effect.scoped, Effect.provide(seededLayer([pr("acme/web", 1)]))),
   );
 
   it.effect(
     "lists each PR's age, checks and bot review, and keeps them over a refused lookup",
     () =>
       Effect.gen(function* () {
-        reset([pr("acme/web", 1)]);
         fake.details.set("acme/web#1", {
           checks: "failing",
           reviewDecision: "REVIEW_REQUIRED",
@@ -247,7 +252,7 @@ describe("ReviewRequestsPoller", () => {
         expect((yield* poller.current).requests[0]?.bot).toBeUndefined();
         expect(events.changes()).toBe(before + 1);
         expect(events.notices()).toEqual([]);
-      }).pipe(Effect.scoped, Effect.provide(layer())),
+      }).pipe(Effect.scoped, Effect.provide(seededLayer([pr("acme/web", 1)]))),
   );
 
   it.effect("runs nothing without gh or signed out, and keeps quiet when the search fails", () =>
@@ -275,7 +280,6 @@ describe("ReviewRequestsPoller", () => {
     "throttles focus refreshes to one a minute, and polls at once after turning back on",
     () =>
       Effect.gen(function* () {
-        reset([pr("acme/web", 1)]);
         const poller = yield* ReviewRequestsPoller;
         const events = yield* collect;
         for (let i = 0; i < 200 && fake.searches === 0; i++) yield* Effect.yieldNow;
@@ -299,7 +303,7 @@ describe("ReviewRequestsPoller", () => {
         expect(fake.searches).toBe(3);
         expect((yield* poller.current).requests.map((r) => r.number)).toEqual([1, 2]);
         expect(events.notices()).toEqual([]);
-      }).pipe(Effect.scoped, Effect.provide(layer())),
+      }).pipe(Effect.scoped, Effect.provide(seededLayer([pr("acme/web", 1)]))),
   );
 
   it.effect("clears the list while signed out, and notifies only really new PRs after", () =>
@@ -573,7 +577,6 @@ describe("ReviewRequestsPoller", () => {
     "backs the search poll off when GitHub refuses it, and recovers after a clean one",
     () =>
       Effect.gen(function* () {
-        reset([pr("acme/web", 1)]);
         yield* ReviewRequestsPoller;
         for (let i = 0; i < 200 && fake.searches === 0; i++) yield* Effect.yieldNow;
         expect(yield* secondsUntilSearch).toBe(30);
@@ -589,12 +592,14 @@ describe("ReviewRequestsPoller", () => {
         expect(backedOff).toBeLessThanOrEqual(75);
 
         expect(yield* secondsUntilSearch).toBe(30);
-      }).pipe(Effect.scoped, Effect.provide(layer(true, Duration.seconds(30)))),
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(seededLayer([pr("acme/web", 1)], Duration.seconds(30))),
+      ),
   );
 
   it.effect("skips a focus refresh while GitHub is still refusing the search", () =>
     Effect.gen(function* () {
-      reset([pr("acme/web", 1)]);
       const poller = yield* ReviewRequestsPoller;
       for (let i = 0; i < 200 && fake.searches === 0; i++) yield* Effect.yieldNow;
       fake.fail = true;
@@ -608,7 +613,7 @@ describe("ReviewRequestsPoller", () => {
       // A settings change still gets its answer.
       yield* poller.refresh({ force: true });
       expect(fake.searches).toBe(3);
-    }).pipe(Effect.scoped, Effect.provide(layer())),
+    }).pipe(Effect.scoped, Effect.provide(seededLayer([pr("acme/web", 1)]))),
   );
 
   it.effect("names the known project whose origin is the PR's repo", () =>
@@ -627,7 +632,6 @@ describe("ReviewRequestsPoller", () => {
 
   it.effect("lists the cached requests to an agent through list_review_requests", () =>
     Effect.gen(function* () {
-      reset([pr("acme/web", 1, "2026-09-17T09:00:00Z"), pr("acme/api", 7)]);
       const store = yield* ThreadStore;
       const poller = yield* ReviewRequestsPoller;
       for (let i = 0; i < 200 && fake.searches === 0; i++) yield* Effect.yieldNow;
@@ -659,7 +663,10 @@ describe("ReviewRequestsPoller", () => {
       yield* store.putSettings(withSetting(false));
       yield* poller.poll;
       expect(yield* tool!.run({})).toMatchObject({ enabled: false, requests: [] });
-    }).pipe(Effect.scoped, Effect.provide(layer())),
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(seededLayer([pr("acme/web", 1, "2026-09-17T09:00:00Z"), pr("acme/api", 7)])),
+    ),
   );
 });
 
