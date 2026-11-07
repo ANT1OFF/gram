@@ -505,10 +505,12 @@ describe.skipIf(process.platform === "win32")("Codex provider thread ownership",
     withHost((f) =>
       Effect.gen(function* () {
         const host = yield* CodexHost;
-        const { first, old, servers } = yield* heldPair;
+        const { first, old } = yield* heldPair;
         f.mode("delayed");
-        yield* servers.retire(undefined);
+        // Closing this scope retires its child; the held sibling keeps its writer alive.
+        // Explicit retirement would also reset discovery and repeat the shell/version probes.
         yield* closeScope(first.scope);
+        expect(yield* old.configCurrent).toBe(false);
         yield* control(old, "await-unsubscribe", first.id);
         const other = yield* host.open({ ...options, resumeId: first.id, codexHome: "gateway" });
         expect(yield* identity(other)).toBe(first.id);
