@@ -386,6 +386,7 @@ export const createThreadsSlice = (
       case "orchestration.changed":
       case "memory.changed":
       case "dreams.changed":
+      case "routines.changed":
       case "outputs.changed":
       case "docs.changed":
         // Only query caches hold these, and `useServerEvents` invalidates them; it also pulls the

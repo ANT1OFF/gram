@@ -47,6 +47,7 @@ import { IdleCompactField } from "./idle-compact-field";
 import { PauseAtLimitField } from "./pause-at-limit-field";
 import { RosterEditor } from "./roster-editor";
 import { RowMenuButton, type RowAction } from "./row-menu";
+import { RoutinesSection } from "./routines-section";
 import { SETTINGS_CARD, SETTINGS_STACK, SettingsGroup } from "./settings-group";
 import { WorkerBriefFooterField } from "./worker-brief-footer-field";
 import { WorkerModeField } from "./worker-mode-field";
@@ -171,6 +172,7 @@ export function WorkspaceSettingsPage({
           onChange={(next, title) => void changes.saveCharter(next, title)}
         />
       </SettingsGroup>
+      <RoutinesSection state={state} projects={projects} changes={changes} />
       <SettingsGroup
         label="Reviews & merging"
         description="What has to happen before a worker's pull request may merge."

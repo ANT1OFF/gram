@@ -54,6 +54,7 @@ import {
   underKeysOf,
 } from "./kit.ts";
 import {
+  type RoutineAdmission,
   type SpawnWorkerInput,
   type HeldSpawn,
   type WorkerWorktree,
@@ -111,6 +112,10 @@ export interface SpawningDeps {
 }
 
 /** Spawning workers. */
+/** A model's every field, effort (`variant`) and speed included, for telling two apart. */
+const modelFields = (model: ModelRef) =>
+  JSON.stringify([model.agent, model.model, model.profileId, model.variant, model.speed]);
+
 export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   const {
     authorityOf,
@@ -231,9 +236,16 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
    * the runtime titles it from its first line. A pause or a rate limit is the orchestrator's to
    * wait out, not the user's.
    */
+  /** The routines engine's admission, once it has started (`setRoutineAdmission`). */
+  let routineAdmission: RoutineAdmission | undefined;
+  const setRoutineAdmission = (admit: RoutineAdmission) =>
+    Effect.sync(() => {
+      routineAdmission = admit;
+    });
+
   const spawnFor = (
     callerId: ThreadId,
-    input: SpawnWorkerInput,
+    given: SpawnWorkerInput,
     byUser?: {
       readonly id: ThreadId;
       readonly input: UserInput;
@@ -243,6 +255,8 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     },
   ): Effect.Effect<SpawnedWorker, AppToolError> => {
     let recorded: { key: string; id: ThreadId; workspaceId: WorkspaceId } | undefined;
+    // A routine's run is admitted below, under the spawn lock, and spawned as admitted.
+    let input = given;
     return underKeysOf(
       spawnLock,
       authorityKeys(callerId),
@@ -259,6 +273,21 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 `Orchestration is paused (${state.paused.reason}), so no worker is spawned. Only the user can resume it; end your turn.`,
               ),
             );
+          }
+          // Every launch of a routine's worker, whichever way it came, is admitted here with the spawn
+          // lock held: the routine as it is now, its values exactly, or no launch.
+          if (input.routine !== undefined) {
+            if (routineAdmission === undefined) {
+              return yield* toolError(
+                tool,
+                refusal("routine_changed", "Routines haven't started yet, so no worker started."),
+              );
+            }
+            const admitted = yield* routineAdmission(state, input);
+            if ("refuse" in admitted) {
+              return yield* toolError(tool, refusal("routine_changed", admitted.refuse));
+            }
+            input = admitted;
           }
           const projects = new Map((yield* store.listProjects).map((p) => [p.id, p]));
           // A retry, or a call the last run crashed in, finds the worker by the id its request
@@ -294,6 +323,55 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 event.kind === "spawn" &&
                 (event.data as { readonly threadId?: unknown } | null)?.threadId === existing.id,
             );
+            // A routine's half-made worker is finished only as it was made: in the project it was made
+            // in. One whose routine moved since is closed instead, and the next run admits a fresh one.
+            if (!finished && input.routine !== undefined && existing.projectId !== input.project) {
+              yield* runtimes.close(existing.id).pipe(Effect.ignore);
+              return yield* toolError(
+                tool,
+                refusal(
+                  "routine_changed",
+                  `The routine "${input.routine.name}" moved to another project since its half-made worker “${existing.title}” was made, so that worker was closed and none started; the next run starts a fresh one.`,
+                ),
+              );
+            }
+            // Finished as admitted: the routine's model and name now, as a fresh run would have. A
+            // model it can't switch to (another agent kind, one the session refuses) is the same as
+            // a project moved: closed, and the next run starts a fresh one.
+            if (!finished && input.routine !== undefined) {
+              const picked = yield* workerModel(
+                tool,
+                caller,
+                state.charter,
+                input.model,
+                state.charter.workerModels === undefined
+                  ? undefined
+                  : yield* rosterHere(state.charter.workerModels, state.charter),
+              );
+              // Every field of the model as admitted, effort (`variant`) and speed included.
+              const sameModel = modelFields(existing.model) === modelFields(picked.model);
+              if (!sameModel) {
+                const switched = yield* runtimes.setModel(existing.id, picked.model).pipe(
+                  Effect.as(true),
+                  Effect.orElseSucceed(() => false),
+                );
+                if (!switched) {
+                  yield* runtimes.close(existing.id).pipe(Effect.ignore);
+                  return yield* toolError(
+                    tool,
+                    refusal(
+                      "routine_changed",
+                      `The routine "${input.routine.name}" now runs on a model its half-made worker “${existing.title}” can't switch to, so that worker was closed and none started; the next run starts a fresh one.`,
+                    ),
+                  );
+                }
+              }
+              if (existing.title !== input.title) {
+                yield* runtimes
+                  .updateThread(existing.id, (thread) => ({ ...thread, title: input.title }))
+                  .pipe(Effect.ignore);
+              }
+            }
             workerWorkspaces.set(existing.id, workspaceId);
             if (existing.parked) parkedWorkers.add(existing.id);
             if (!finished) {
@@ -398,6 +476,34 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 `"${input.group}" isn't a usable group name. Use a short slug such as release-0-4.`,
               ),
             );
+          }
+          if (input.unattended === true) {
+            // Under the spawn lock, so a spawn racing this one is counted: what would need the
+            // user's card is refused here, never asked, and never let through on a stale count.
+            const outside = yield* outsideWorkspace(
+              tool,
+              [input.project, ...(input.alsoIn ?? [])],
+              state,
+            );
+            if (outside.length > 0) {
+              return yield* toolError(
+                tool,
+                refusal(
+                  "unattended",
+                  `It needs your approval to add ${outside.map(repoLabel).join(" and ")} to the "${state.workspace.name}" workspace, so no worker started.`,
+                ),
+              );
+            }
+            const { budget } = yield* survey(state, false);
+            if (!budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok) {
+              return yield* toolError(
+                tool,
+                refusal(
+                  "unattended_cap",
+                  `It needs your approval: ${budget.liveWorkers} workers are live and the charter allows ${budget.maxConcurrentWorkers}, so no worker started.`,
+                ),
+              );
+            }
           }
           const project = yield* resolveProject(tool, input.project, state, call);
           const others: Array<Project> = [];
@@ -587,7 +693,13 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   model,
                   mode,
                   workspaceId,
-                  spawnedBy: { threadId: caller.id, feature: slug },
+                  spawnedBy: {
+                    threadId: caller.id,
+                    feature: slug,
+                    ...(input.routine === undefined
+                      ? {}
+                      : { routine: { id: input.routine.id, name: input.routine.name } }),
+                  },
                   extraCheckouts,
                   additionalDirectories: [
                     ...extraCheckouts.map((extra) => extra.path),
@@ -770,7 +882,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             : [],
         ),
       );
-      const feature = taskFeature(input.input.text, taken);
+      const feature = taskFeature(input.name ?? input.input.text, taken);
       // The workspace's standing instructions reach a worker the user starts too.
       const text = withBriefFooter(input.input.text, briefFooterOf(state.charter));
       const hold = input.hold === true;
@@ -801,6 +913,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     });
 
   return {
+    setRoutineAdmission,
     spawnNeedsApproval,
     describeSpawn,
     checkWorkerModel,

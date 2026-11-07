@@ -37,6 +37,8 @@ import { DreamFiles } from "../orchestration/dream-files.ts";
 import { DreamsLive } from "../orchestration/dreams.ts";
 import { OrchestrationMemory } from "../orchestration/memory.ts";
 import { OrchestrationLive } from "../orchestration/service.ts";
+import { RoutinesLive } from "../routines/routines.ts";
+import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { OrchestratorAppToolsLive } from "../orchestration/tools.ts";
 import { ServerConfig } from "../config.ts";
@@ -341,6 +343,7 @@ export const ServerCore = Layer.unwrap(
         ReviewRequestAppToolsLive,
         OrchestrationAppToolsLive,
         OrchestratorAppToolsLive,
+        RoutineAppToolsLive,
         SettingsAppToolsLive,
         WorkspaceAppToolsLive,
         IssueAppToolsLive,
@@ -353,7 +356,9 @@ export const ServerCore = Layer.unwrap(
         .pipe(
           Layer.provideMerge(MergeWhenReadyLive),
           Layer.provideMerge(IssueReporter.layer),
-          Layer.provideMerge(Layer.mergeAll(DreamsLive, ThreadArchiverLive, WorktreeSweepLive)),
+          Layer.provideMerge(
+            Layer.mergeAll(DreamsLive, RoutinesLive, ThreadArchiverLive, WorktreeSweepLive),
+          ),
           Layer.provideMerge(Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer)),
           Layer.provideMerge(OrchestrationLive),
           // Gram's own full checks, which the solo merge policy accepts in place of CI, under the

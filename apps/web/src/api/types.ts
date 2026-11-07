@@ -37,6 +37,7 @@ import type { ProfilesApi } from "./profiles/types";
 import type { ProjectsApi } from "./projects/types";
 import type { PullRequestsApi } from "./pull-requests/types";
 import type { ReviewRequestsApi } from "./review-requests/types";
+import type { RoutinesApi } from "./routines/types";
 import type { ThreadWakesApi } from "./thread-wakes/types";
 import type { SessionsApi } from "./sessions/types";
 import type { SettingsApi } from "./settings/types";
@@ -250,6 +251,7 @@ export interface Api
     ProjectsApi,
     PullRequestsApi,
     ReviewRequestsApi,
+    RoutinesApi,
     SessionsApi,
     SettingsApi,
     SpeechApi,

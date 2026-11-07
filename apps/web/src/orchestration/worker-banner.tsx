@@ -1,7 +1,7 @@
 import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Brain, Columns3, FolderGit2, HandGrab, Pause, Settings2 } from "lucide-react";
+import { Brain, Columns3, FolderGit2, HandGrab, Pause, Repeat, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -112,6 +112,7 @@ export function WorkerBanner({
   const chipFolded = useTitlebarSlot((s) => inTitlebar && s.fold >= FOLD_ALL);
   if (thread.spawnedBy === undefined) return null;
   const repos = workerRepoNames(thread, entry);
+  const routine = thread.spawnedBy.routine;
 
   return (
     <>
@@ -154,6 +155,28 @@ export function WorkerBanner({
         </div>
       )}
       {!held && entry !== undefined && !FINISHED_WORKER.has(entry.state) && <TakeOverLine />}
+      {routine !== undefined && (
+        // Where it came from, quietly: a routine's run started it, not a message from anyone.
+        <p
+          data-testid="worker-banner-routine"
+          className="flex min-w-0 items-center gap-2 border-b border-edge px-3 py-1 text-meta text-muted-foreground"
+        >
+          <Repeat aria-hidden className="size-icon-row shrink-0" />
+          <span className="min-w-0 truncate" title={`From routine ${routine.name}`}>
+            From routine <span className="text-foreground/80">{routine.name}</span>
+          </span>
+          {workspace !== undefined && (
+            <button
+              type="button"
+              data-testid="worker-banner-routines"
+              className={ACTION}
+              onClick={() => openWorkspaceSettings(workspace.workspace.id)}
+            >
+              Routines
+            </button>
+          )}
+        </p>
+      )}
       {repos !== undefined && (
         <p
           data-testid="worker-banner-repos"

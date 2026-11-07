@@ -16,6 +16,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { ThreadArchive } from "./archive.ts";
 import { makeFinishedWorkers } from "./finished-workers.ts";
+import { routineHandlers } from "../routines/routines.ts";
 import { Orchestration } from "./service.ts";
 
 /** `workspace.*`, `orchestrator.*`, `thread.detach` and `thread.joinWorkspace`. */
@@ -155,7 +156,8 @@ export const orchestrationHandlers = Effect.gen(function* () {
 
 /** The orchestration group's handler layer. */
 export const OrchestrationHandlersLive = OrchestrationRpcs.toLayer(
-  Effect.map(orchestrationHandlers, (handlers) =>
-    OrchestrationRpcs.of(logDefects(OrchestrationRpcs, handlers)),
-  ),
+  Effect.gen(function* () {
+    const handlers = { ...(yield* orchestrationHandlers), ...(yield* routineHandlers) };
+    return OrchestrationRpcs.of(logDefects(OrchestrationRpcs, handlers));
+  }),
 );

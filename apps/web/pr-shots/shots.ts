@@ -1694,6 +1694,110 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "workspace-routines",
+    title:
+      "Workspace settings: Routines under Models, with a weekday worker routine, an orchestrator one and one off",
+    open: async (page) => {
+      await openOrchestratorOf(page, async () => {
+        const made = await window.gramMock!.simulateOrchestration("board");
+        const mock = window.gramMock as unknown as {
+          simulateRoutineState?: (workspaceId: string, id: string, state: unknown) => void;
+          listWorkspaces: () => Promise<
+            ReadonlyArray<{ workspace: { id: string }; charter: Record<string, unknown> }>
+          >;
+          setOrchestratorCharter: (id: string, charter: unknown) => Promise<unknown>;
+        };
+        // The base has no routines in its charter or no run states; it shows the page as it was.
+        if (mock.simulateRoutineState !== undefined) {
+          const state = (await mock.listWorkspaces()).find(
+            (each) => each.workspace.id === made.workspaceId,
+          )!;
+          // The page's fixed clock, which each time below is a day and a clock time from.
+          const today = Date.now();
+          const at = (hm: string, days = 0) => {
+            const [h, m] = hm.split(":").map(Number);
+            const day = new Date(today);
+            day.setDate(day.getDate() + days);
+            day.setHours(h!, m!, 0, 0);
+            return day.getTime();
+          };
+          await mock.setOrchestratorCharter(made.workspaceId, {
+            ...state.charter,
+            routines: [
+              {
+                id: "routine-ci",
+                name: "Daily CI triage",
+                brief: "Look at main's failing jobs and open one PR per real failure.",
+                schedule: { every: "weekday", at: "09:00" },
+              },
+              {
+                id: "routine-deps",
+                name: "Weekly dependency check",
+                brief:
+                  "Check for outdated dependencies and brief a worker for each bump worth doing.",
+                schedule: { every: "week", day: 1, at: "08:00" },
+                target: "orchestrator",
+              },
+              {
+                id: "routine-flakes",
+                name: "Nightly flake sweep",
+                brief: "Rerun the flaky suites and report what still fails.",
+                schedule: { every: "hours", hours: 12 },
+                off: true,
+              },
+            ],
+          });
+          mock.simulateRoutineState(made.workspaceId, "routine-ci", {
+            nextRunAt: at("09:00", 1),
+            scheduleKey: JSON.stringify({ every: "weekday", at: "09:00" }),
+            lastRun: { at: at("09:00"), outcome: "started", threadId: made.working },
+            lastWorker: made.working,
+          });
+          mock.simulateRoutineState(made.workspaceId, "routine-deps", {
+            nextRunAt: at("08:00", 4),
+            scheduleKey: JSON.stringify({ every: "week", day: 1, at: "08:00" }),
+            lastRun: {
+              at: at("08:00", -3),
+              outcome: "skipped",
+              detail: 'The worker from its last run, "Bump effect", is still live.',
+            },
+          });
+        }
+        return made;
+      });
+      await openWorkspaceSettingsFromBar(page);
+      await page.getByTestId("workspace-page").waitFor();
+      // Where the section sits, under Models; the base has none, so its neighbour stands in.
+      const routines = page.getByTestId("workspace-routines");
+      await (
+        (await routines.count()) > 0
+          ? routines
+          : page.getByRole("region", { name: "Reviews & merging" })
+      ).scrollIntoViewIfNeeded();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "worker-routine-banner",
+    title: "A worker a routine started: From routine under its header, with a way to its Routines",
+    open: async (page) => {
+      await openOrchestratorOf(page, async () => {
+        const made = await window.gramMock!.simulateOrchestration("board");
+        const mock = window.gramMock as unknown as {
+          simulateRoutineWorker?: (threadId: string, routine: { id: string; name: string }) => void;
+        };
+        mock.simulateRoutineWorker?.(made.briefed, { id: "routine-ci", name: "Daily CI triage" });
+        sessionStorage.setItem("gram.shots.worker", made.briefed);
+        return made;
+      });
+      const worker = await page.evaluate(() => sessionStorage.getItem("gram.shots.worker")!);
+      await threadRow(page, worker).click();
+      await page.getByRole("heading", { name: /^Worker: / }).waitFor();
+      await page.mouse.move(900, 500);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
     name: "workspace-sheet",
     title: 'Workspace settings from the title bar\'s "…"',
     modes: ["dark"],

@@ -23,11 +23,14 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * then trimmed the same day back under the sizes measured before condition wakes (59,504, 33,500
  * and 22,669): `schedule_wake` lists its condition flat (`WakeConditionInput`), and prompts and
  * tool descriptions lost their repeats. Measured then at 58,957, 33,497 and 22,649; each limit
- * sits about 4% over.
+ * sits about 4% over. The worker's raised on 2026-11-05, on purpose, for two worker tools that
+ * routines and workspace memory need (#198 with #199 merged in): `memory_list` and `memory_read`,
+ * read-only, with the prompt's line on when to look; and `routine_create`, whose call from a worker
+ * always asks the user. Its description was cut first; measured then at 35,470, about 4% under it.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
   orchestrator: 61_300,
-  worker: 34_850,
+  worker: 36_900,
   plain: 23_550,
 };
 

@@ -440,9 +440,18 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         now,
       ).filter((limit) => atThreshold(limit, pauseAtPct));
       for (const limit of reached) {
-        const decision =
-          holdOf((yield* readOutbox(workspaceId)).limitHolds, limit, now)?.decision ??
-          (yield* askLimit(callerId, workspaceId, limit, pauseAtPct));
+        const decided = holdOf((yield* readOutbox(workspaceId)).limitHolds, limit, now)?.decision;
+        // A routine's run asks nobody: without the user's answer for this window it doesn't start.
+        if (decided === undefined && input.unattended === true) {
+          return yield* toolError(
+            tool,
+            refusal(
+              "unattended",
+              `${limitName(limit)} is at ${usedPct(limit.utilization)}%, at the workspace's ${pauseAtPct}% threshold, and nobody was there to say whether to start more workers, so none started.`,
+            ),
+          );
+        }
+        const decision = decided ?? (yield* askLimit(callerId, workspaceId, limit, pauseAtPct));
         if (decision === "keepGoing") continue;
         const until =
           limit.resetsAt === undefined
@@ -533,6 +542,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       if (found === undefined) return undefined;
       const { limit, project } = found;
       const now = yield* Clock.currentTimeMillis;
+      // `unattended` stays: its release is admitted against the cap under the spawn lock as well.
       const { priority: _priority, atLimit: _atLimit, ...rest } = input;
       const stored: StoredHeldBrief = {
         id: `held-${randomUUID().slice(0, 8)}`,
@@ -843,6 +853,20 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
           continue;
         }
         yield* spawnBreaker.abandoned(claimed);
+        // An unattended brief found every slot taken under the spawn lock, which the look above
+        // can't promise: it waits for a slot, as one the look had found taken does.
+        if (spawned.error.startsWith("unattended_cap: ")) {
+          const live = /(\d+) workers are live/.exec(spawned.error)?.[1];
+          if (claimed.waitsForSlot !== true) {
+            notes.push(slotWaitNote(claimed, Number(live ?? slot.live), slot.cap));
+          }
+          yield* putBackHeld(workspaceId, {
+            ...claimed,
+            waitsForSlot: true,
+            retryAt: now + HELD_RETRY_MS,
+          });
+          continue;
+        }
         // Its feature was paused meanwhile: held as it was, without counting a try, until the
         // resume arms it again.
         if (spawned.error.startsWith("feature_paused: ")) {
@@ -975,8 +999,12 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       const spawned = yield* spawnHeld(workspaceId, claimed).pipe(
         Effect.catch((error) =>
           // Put back as it was, so a refusal loses nothing: it still starts at the reset, and
-          // one whose reset has passed is looked at again now.
-          putBackHeld(workspaceId, claimed).pipe(
+          // one whose reset has passed is looked at again now. A routine's brief its routine no
+          // longer admits (removed, off, changed) is let go instead: it would never start.
+          (error.message.startsWith("routine_changed: ")
+            ? Effect.void
+            : putBackHeld(workspaceId, claimed)
+          ).pipe(
             Effect.andThen(armLimitResume(workspaceId)),
             Effect.andThen(orchestrationChanged(workspaceId)),
             Effect.andThen(

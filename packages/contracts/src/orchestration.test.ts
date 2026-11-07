@@ -997,6 +997,19 @@ describe("serializeDigest", () => {
     expect(text).not.toContain("GET /api/cart");
   });
 
+  it("prints a worker's learned fact as an offer for memory, after the interface", () => {
+    const quiet = { ...digest.reports[0]!, interfaceUnchanged: true as const };
+    const text = serializeDigest({
+      ...digest,
+      reports: [{ ...quiet, learned: "Run the API tests with --runInBand." }],
+    });
+    expect(text).toContain(
+      "interface: unchanged since you last read it\nlearned (worker-authored; record it in memory only if it lasts and isn't there yet):\n",
+    );
+    expect(text).toContain("Run the API tests with --runInBand.");
+    expect(serializeDigest({ ...digest, reports: [quiet] })).not.toContain("learned (");
+  });
+
   it("prints a worker that finished where no pull request can exist as delivered, never merged", () => {
     const delivered = decode(WorkerLedgerEntry)({ ...bare, state: "delivered", branch: "cart" });
     expectRoundTrip(WorkerLedgerEntry, delivered);

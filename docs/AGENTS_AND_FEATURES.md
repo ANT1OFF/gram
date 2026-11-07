@@ -118,6 +118,8 @@ changes into events that wake the thread that cares:
   pinned to the head it checked.
 - **Digests.** Worker reports, finished turns, errors, long-open requests and pull request changes
   wake the orchestrator with one digest built from the current ledger.
+- **Routines.** A workspace's [routines](#routines) start a fresh worker (or brief the orchestrator)
+  on a schedule: every day, every weekday or once a week at a time you set, or every few hours.
 
 ### Condition wakes
 
@@ -178,6 +180,76 @@ To add a kind:
    met (with its facts), not met (with a new baseline, if any), or `undefined` when it couldn't
    tell. Give it a `pollEvery`, a `debounce`, and optionally a `changes` stream.
 3. List it in `WakeConditionSourcesLive`, and name it in `schedule_wake`'s description.
+
+### Routines
+
+A routine is a brief kept in the workspace's charter that runs on a schedule: a daily CI triage, a
+weekly dependency check, a stale-PR sweep. Each has a name of its own in the workspace, a brief of
+up to 4,000 characters, and a schedule: `every` `day`, `weekday` or `week` `at` a 24-hour local
+time (for `week` a `day` from 0 for Sunday to 6, Monday when absent), or `every` `hours` with
+`hours` from 1 to 168, counted from its last run. Each run starts a fresh worker in its `project`
+(the home project by default) on its `model` (the roster's default by default), or, with `target`
+`orchestrator`, puts its brief in the orchestrator's next digest. A workspace keeps at most eight.
+Every write of the charter gives a routine without one an `id`, the one its name had if it had
+one, so its runs follow it through a rename.
+
+Three ways change them, all through the charter's one write path:
+
+- Settings → Workspaces → a workspace → Routines adds, edits, turns off, removes and runs one now,
+  and shows each one's last and next run; each change saves with Undo.
+- The orchestrator keeps them with `routine_create` and `routine_update` (`remove: true` deletes
+  one). Their schedule is a few words: `daily 09:00`, `weekdays 09:00`, `weekly mon 09:00` or
+  `every 6 hours`. A routine is a standing change to the charter that starts work with nobody
+  there, so adding one, turning one back on, or widening one (its schedule, brief, project, model,
+  target or name) always asks the user, from the orchestrator as from a worker: a forced card for
+  that call, showing the routine in full, that `bypassPermissions` and Full autonomy don't lift.
+  Turning one off or removing one only takes autonomy away, and the orchestrator does that without
+  a card. A change is pinned when the card is raised: the routine by its id, and exactly what it is
+  and will be, both shown on the card. The approved call applies that and only that, and refuses if
+  the routine changed meanwhile. A worker is bound `routine_create` alone.
+- Settings by chat: `settings_propose` with `workspace.routines`, the whole list, each brief in full
+  on the card the user approves.
+
+The orchestrator's charter names them, and an open session is told when they change.
+
+How a run goes is the engine's (`routines/routines.ts`), its state kept in the workspace's outbox
+under the routine's id:
+
+- A routine's worker is the orchestrator's, spawned through the same `spawn_worker` path, so the
+  workspace's autonomy, worker cap, limits, approvals and merge gates apply unchanged. The spawn is
+  unattended: a run never raises a card. What would ask the user (one worker past the cap, a repo
+  outside the workspace, the limit threshold's question without an answer for that window) refuses
+  instead, the cap and the repos checked under the spawn's own lock so a racing spawn is counted,
+  and a held brief of a routine keeps that rule when it is released. The run is recorded as failed,
+  and the orchestrator's next digest says why. Its brief opens by naming the routine, and its
+  header says "From routine <name>".
+- Each run is one occurrence, claimed before it starts anything; the claim's request id is its
+  spawn's, so a run a restart cut short finds its worker again and finishes one a crash left
+  without its brief. The claim stays until the occurrence settles: while its brief is held, being
+  released, or its worker is live, a due run is skipped and recorded so. Its phase is read from
+  durable facts under the lock every release of a held brief takes.
+- Every launch of a routine's worker goes through one admission, called while the spawn lock is
+  held: a scheduled run, Run now, a held brief's release (by a reset, a probe or the user, after a
+  restart too) and a half-made worker's recovery. It reads the routine as the charter has it then.
+  One removed launches nothing; a scheduled run or a held brief launches nothing for a routine off,
+  toggled or rescheduled since its run was decided; otherwise the worker starts with exactly the
+  routine's brief, name, project and model then. A held brief it refuses is let go, not kept. A
+  half-made worker is finished only in the project it was made in, and with the routine's name and
+  model as admitted: one whose routine moved to another project, or to a model it can't switch to,
+  is closed, and the next run starts a fresh one.
+- A routine new, turned on again or given a new schedule is reckoned from then, never run for a time
+  it missed. The charter's write path counts each turn off or on as a new generation, so a run that
+  waited while the routine went off and on again reckons from then instead of running. Turned off,
+  it keeps its claim, so a run still going is followed to its end and a
+  worker a crash left half made is still finished; removed, its state goes, and a run that was
+  under way doesn't bring it back. A run missed while Gram was closed runs once, a minute after the next start, never
+  once per miss. A paused workspace pauses its routines: a run that falls due waits and runs once
+  on the resume. An orchestrator routine's note goes into the digest once per occurrence.
+- Times are read in the machine's time zone, so a daylight-saving change keeps 09:00 at 09:00; a
+  time the change skips runs once that night.
+
+Source: [routines](../packages/contracts/src/routines.ts), [engine](../packages/server/src/routines/routines.ts),
+[schedules](../packages/server/src/routines/schedule.ts), [tools](../packages/server/src/routines/tools.ts).
 
 ### Merge freezes
 
@@ -571,6 +643,74 @@ suggested topic names. Files such as `goals.md`, `decisions.md` and
 `memory_list` reports actual files; `memory_read` returns a missing-file error for
 an unwritten topic. Suggested names do not establish recorded goals or decisions.
 The orchestrator should record actual information and update its index as it goes.
+
+Workers can read their orchestrator's memory with `memory_list` and `memory_read`, while that
+orchestrator holds the workspace, and can't change it: the orchestrator stays its one curator.
+A worker's reads go through the anchored tree, every folder below the data root opened without
+following a link, so no symlink anywhere in the path, standing or swapped in mid-read, leads into
+another workspace. What a worker reads of memory is an allow-list that fails closed
+(`orchestration/memory-filter.ts`). It lists only names of lowercase words joined by `-`, in
+folders named the same way, ending `.md`, with no credential word and no token shape in them (a
+known token prefix like `xoxb`, long digit runs, letter-and-digit alternation, random letters,
+base64 of text), so not the `MEMORY.md` index. It reads a file only when the file is plainly safe
+prose: printable ASCII, typographic punctuation and Latin-1 letters (folded to ASCII before any
+check); no escape or encoding syntax (`\u`, `\x`, `%XX`, `&#`, `&name;`) or delimiter left open;
+no URL or network-path userinfo (`//…@`, `user:pass@`), connection string (`Key=value;` fields),
+password-file record (four or more non-empty `:`-separated fields, as in `.pgpass`, not IPv6),
+`user:pass` pair ending a short line or as a value (`login=amy:pw`), Redis ACL rule or `AUTH`
+command (after a prompt or in a sentence), or client password option (`curl -u user:pass`, a
+`-p`/`-w`/`-a` beside a user flag); no strong credential word or stem anywhere (secret, token,
+key, password, pwd, cookie, credential, bearer, dsn, `requirepass`, `masterauth`, `client_send`,
+a word ending in `pw` like `bindpw`), nor a weak one (auth, session, pass, env, private, acl,
+login, bind) with a value right after it or leading a bare directive line (`AUTH amy orchard`,
+not a sentence), camelCase and snake_case split first; no base64 or hex that
+decodes to text, however it is split (spaces, lines, commas, list markers, quotes); and no
+token-like run once cited commit SHAs (a pure hex run after `at`, `head`, `commit` or `sha`, or
+before `…`, in a clause with no assignment or credential word) and plain paths are taken out. A
+header, if any, is one closed `---` block that is a flat map of plain scalars with no `private` in
+it. Anything else is dropped whole, never redacted or partly shown; the orchestrator sees it
+all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
+digest shows it to the orchestrator, which records it only when it holds for later work. Solo
+threads have no workspace memory.
+
+### Known limits of worker memory reads
+
+The worker read filter is defense in depth, not a guarantee. It lowers the chance that a
+credential copied into memory reaches a worker's provider through `memory_read`; it doesn't make
+memory a safe place for credentials.
+
+- **Workers can read the files directly.** A worker is a local agent CLI running as the user on
+  the same machine. Memory lives under Gram's data folder
+  (`<data>/orchestration/<workspace>/`), and the filter only governs the `memory_list` and
+  `memory_read` tools. A worker allowed to read files outside its checkout can open them there.
+- **Writes are scrubbed, more narrowly.** What Gram writes to memory (`memory_write`,
+  `memory_append`, `memory_edit` and a dream's adoption) passes through the same scrubber as
+  Gram's logs, which redacts the credential shapes it knows. That scrubber is narrower than the
+  read filter, and a file edited by hand outside Gram isn't scrubbed at all.
+- **What reviewers found, and what's left.** Independent reviews of #198, rounds 8 to 13,
+  found the classes below. Each is fixed and has a test in
+  `orchestration/memory-headers.test.ts`. Encodings and formats not yet covered may still get
+  through.
+  - Front matter that hides a private flag: a `...` close, comments, other fence styles, nested
+    or tagged YAML.
+  - Auth headers and cookies, including credential labels written with `_` as the separator or
+    inside camelCase and other compound names.
+  - Encoded credentials: escaped, percent-encoded, HTML-encoded and base64 forms, including
+    nested and mixed encodings, short or line-wrapped base64, and base64 or hex split up by
+    punctuation, list markers or quotes.
+  - Look-alike and invisible characters: full-width letters and zero-width separators.
+  - Credentials behind a delimiter left open, such as an unclosed key block or code fence.
+  - Token-shaped file and folder names.
+  - User and password pairs in URLs, including scheme-relative ones.
+  - Database connection strings, and password-file records like `.pgpass` lines.
+  - Redis, LDAP, SMTP and proxy configuration directives, and Redis `AUTH` in a prompt
+    transcript or a sentence.
+  - Passwords given as command-line options, as `curl`, `docker login`, database clients and
+    `ldapsearch` take them.
+  - A labelled credential that the commit-SHA exemption let through.
+- **Two accepted limits.** A token typed one character at a time between separators reads,
+  because no single piece looks like a token. An unlabelled hex value written as a cited commit
+  reads, because it can't be told apart from a commit SHA.
 
 Memory persists in a versioned filesystem tree, with `CURRENT` naming the adopted
 version; opening another session preserves existing files. Startup explains the

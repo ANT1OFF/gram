@@ -1,4 +1,6 @@
 import {
+  withRoutineGenerations,
+  withRoutineIds,
   connectorEntryProblem,
   derivedTitle,
   autonomyOf,
@@ -739,8 +741,20 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
         const problem = connectorEntryProblem(entry);
         if (problem !== undefined) throw new MockInvalidState(`“${entry.trim()}”: ${problem}`);
       }
-      const next = put({ ...find(workspaceId), charter });
+      // As the server's write path: every routine is kept with an id.
+      const before = find(workspaceId);
+      const routines = withRoutineGenerations(
+        before.charter.routines,
+        withRoutineIds(before.charter.routines, charter.routines, () => crypto.randomUUID()),
+      );
+      const next = put({
+        ...before,
+        charter: routines === undefined ? charter : { ...charter, routines },
+      });
       host.emit({ type: "orchestration.changed", workspaceId });
+      if (JSON.stringify(before.charter.routines) !== JSON.stringify(next.charter.routines)) {
+        host.emit({ type: "routines.changed", workspaceId });
+      }
       return next;
     },
 

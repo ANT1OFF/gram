@@ -30,6 +30,8 @@ const STALE_QUERIES: {
   "memory.changed": ({ workspaceId }) => [["memory", workspaceId]],
   // A thread of the workspace produced a file: the Files view's pages read it again.
   "outputs.changed": ({ workspaceId }) => [["outputs", workspaceId]],
+  // A routine was saved, removed or ran: Settings' list reads it again.
+  "routines.changed": ({ workspaceId }) => [["routines", workspaceId]],
   // A doc was published, updated or saved: its list and every open doc read again.
   "docs.changed": ({ workspaceId }) => [["docs", workspaceId]],
   // An adoption or a restore replaces memory wholesale, so both go stale together.

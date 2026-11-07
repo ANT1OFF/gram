@@ -26,7 +26,8 @@
     "ghostty-web": "catalog:",
     "node-pty": "catalog:",
     "pino": "10.4.0",
-    "smol-toml": "1.9.1"
+    "smol-toml": "1.9.1",
+    "yaml": "2.8.1"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

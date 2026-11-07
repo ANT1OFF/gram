@@ -49,6 +49,9 @@ import { anchoredTree } from "./anchored-tree.ts";
 import type { AnchoredOptions } from "./anchored-files.ts";
 import { isInside, realPath } from "@gram/git";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
+import { workerMayEnter, workerMayRead } from "./memory-filter.ts";
+
+export { workerMayEnter, workerMayRead } from "./memory-filter.ts";
 
 /** The index every orchestrator session starts from. */
 export const MEMORY_INDEX = "MEMORY.md";
@@ -150,6 +153,17 @@ export interface OrchestrationMemoryShape {
   list(workspaceId: string): Effect.Effect<ReadonlyArray<MemoryFile>, MemoryError>;
   /** One file's text, scrubbed again in case it was edited by hand. */
   read(workspaceId: string, path: string): Effect.Effect<string, MemoryError>;
+  /**
+   * `list` as a worker sees it: through the anchored tree (every folder below the data root opened
+   * without following a link, so no symlink in any ancestor can lead out of this workspace), and
+   * without the files `workerMayRead` keeps from workers.
+   */
+  listForWorker(workspaceId: string): Effect.Effect<ReadonlyArray<MemoryFile>, MemoryError>;
+  /**
+   * `read` as a worker sees it: through the anchored tree, and `NotFound` for a file
+   * `workerMayRead` keeps from workers, by its name or by a `private: true` line in its front matter.
+   */
+  readForWorker(workspaceId: string, path: string): Effect.Effect<string, MemoryError>;
   /** `MEMORY.md`, or `""` when there is none yet. */
   index(workspaceId: string): Effect.Effect<string, MemoryError>;
   /**
@@ -859,6 +873,53 @@ const make = (root: string): OrchestrationMemoryShape => {
       return files.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     });
 
+  /** `listVersion` through the anchored tree, without what a worker may not see. */
+  const listVersionForWorker = (workspaceId: string, version: string) =>
+    Effect.gen(function* () {
+      const within = versionRel(version);
+      const files: Array<MemoryFile> = [];
+      const walk = (relDir: string, depth: number): Effect.Effect<void, MemoryError> =>
+        Effect.gen(function* () {
+          const treeRel = relDir === "" ? within : `${within}/${relDir}`;
+          const entries = yield* adoptionTree.listDir(
+            workspaceId,
+            treeRel,
+            relDir === "" ? "" : within,
+          );
+          for (const entry of entries ?? []) {
+            const path = relDir === "" ? entry.name : `${relDir}/${entry.name}`;
+            // A folder is entered only when its name is plain; a file listed only when it may be read.
+            if (entry.kind === "dir" ? !workerMayEnter(path) : !workerMayRead(path)) continue;
+            // `other` (a symlink included) is neither entered nor listed.
+            if (entry.kind === "dir") {
+              if (!entry.name.startsWith(".") && depth < MEMORY_MAX_DEPTH) {
+                yield* walk(path, depth + 1);
+              }
+            } else if (entry.kind === "file" && memoryPathProblem(path) === undefined) {
+              const file = yield* adoptionTree.resolveInTree(
+                workspaceId,
+                `${within}/${path}`,
+                within,
+              );
+              // Listed only when it may be read: its front matter and text are looked at too.
+              const text = yield* adoptionTree
+                .readText(workspaceId, `${within}/${path}`, within, path, MEMORY_READ_MAX_BYTES)
+                .pipe(Effect.orElseSucceed(() => undefined));
+              if (text === undefined || !workerMayRead(path, text)) continue;
+              if (file.kind === "file" && file.stats !== undefined) {
+                files.push({
+                  path,
+                  bytes: file.stats.size,
+                  modifiedAt: Math.round(file.stats.mtimeMs),
+                });
+              }
+            }
+          }
+        });
+      yield* walk("", 1);
+      return files.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    });
+
   /** Copies `text` into the file's history and drops what is older than the newest twenty. */
   const archive = (workspaceId: string, version: string, path: string, text: string) =>
     Effect.gen(function* () {
@@ -1067,6 +1128,39 @@ const make = (root: string): OrchestrationMemoryShape => {
         Effect.flatMap(adopted(workspaceId), (version) =>
           version === undefined ? Effect.succeed([]) : listVersion(workspaceId, version),
         ),
+      ),
+
+    listForWorker: (workspaceId) =>
+      guarded(workspaceId, undefined, () =>
+        Effect.flatMap(adopted(workspaceId, adoptionTree), (version) =>
+          version === undefined ? Effect.succeed([]) : listVersionForWorker(workspaceId, version),
+        ),
+      ),
+
+    readForWorker: (workspaceId, path) =>
+      guarded(workspaceId, path, () =>
+        Effect.gen(function* () {
+          const missing = new NotFound({
+            entity: "file",
+            id: path,
+            message: `No memory file ${path}`,
+          });
+          if (!workerMayRead(path)) return yield* missing;
+          const version = yield* adopted(workspaceId, adoptionTree);
+          if (version === undefined) return yield* missing;
+          const within = versionRel(version);
+          // Anchored: every folder down to the file is opened without following a link, and the
+          // file is read through that same chain, so nothing swapped in between leads elsewhere.
+          const text = yield* adoptionTree.readText(
+            workspaceId,
+            `${within}/${path}`,
+            within,
+            path,
+            MEMORY_READ_MAX_BYTES,
+          );
+          if (!workerMayRead(path, text)) return yield* missing;
+          return redactText(text);
+        }),
       ),
 
     read: (workspaceId, path) =>
