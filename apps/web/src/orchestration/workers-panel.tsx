@@ -1,5 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
-import type { ThreadId, WorkspaceId } from "@gram/contracts";
+import type { FeatureCardPr, ThreadId, WorkspaceId } from "@gram/contracts";
 import {
   CheckIcon,
   ChevronDown,
@@ -26,7 +26,8 @@ import { askKeysByThread } from "./ask-model";
 import { keepBeside } from "./beside-store";
 import { useWorkspaceAsks } from "./ask-stack";
 import { useAnsweredWorkers } from "./needs-you-store";
-import { ROW_MARK } from "./overview-section";
+import { useChipsFit, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
+import { ROW_MARK, ROW_STATUS } from "./overview-section";
 import { StatusDot } from "./status-dot";
 import { useMessageOrchestrator } from "./message-orchestrator";
 import { useFinishedWorkerPages } from "./use-finished-workers";
@@ -423,16 +424,19 @@ function Group({
       </h3>
       <div id={body} hidden={isFolded} className="flex flex-col">
         {count === 0 ? (
-          <p
-            data-testid="workers-group-empty"
-            className={cn(ROW_GRID, "text-meta text-muted-foreground")}
-          >
-            <span className="col-start-2">
-              {group.id === "needs" && here !== undefined
-                ? `Nothing in ${here} needs you`
-                : group.empty}
-            </span>
-          </p>
+          // Only Needs you says it is empty, naming its workspace; any other group's 0 says it.
+          group.id === "needs" && (
+            <p
+              data-testid="workers-group-empty"
+              className={cn(ROW_GRID, "text-meta text-muted-foreground")}
+            >
+              <span className="col-start-2">
+                {group.id === "needs" && here !== undefined
+                  ? `Nothing in ${here} needs you`
+                  : group.empty}
+              </span>
+            </p>
+          )
         ) : (
           <>
             {rows.map((row) => (
@@ -471,41 +475,80 @@ function Group({
   );
 }
 
-/** A worker: its dot, its title (two lines before it is cut) and its age. Opens it. */
+/**
+ * A worker, in the sidebar's row shape: its dot, its title on one line (cut at its end, whole on
+ * hover) and its age, then one muted status line (amber while it needs you) with its PR chips at
+ * the line's end while they fit beside the words. Opens it.
+ */
 function Row({ row }: { row: PanelRow }) {
   const openWorker = useOpenWorker();
   const current = useIsCurrentThread(row.threadId);
+  const chips = useWorkerPrChips(row.threadId, NO_CARD_PRS);
+  const { line, words, ghost, fits } = useChipsFit(chips.length);
   return (
-    <button
-      type="button"
-      data-testid="workers-panel-row"
-      data-thread-id={row.threadId}
-      data-dot={row.dot}
-      aria-current={current ? "page" : undefined}
-      title={`${row.title}\n${row.status}`}
-      onClick={(event) => openWorker(row, event)}
-      className={cn(
-        ROW_GRID,
-        "items-start rounded-xs py-1.5 text-left text-body outline-none hover:bg-accent focus-visible:focus-ring aria-current:choice-selected",
-      )}
-    >
-      <span className={ROW_MARK}>
-        <StatusDot state={row.dot} />
-      </span>
-      <span className="line-clamp-2 text-foreground [overflow-wrap:anywhere]">
-        <span className="sr-only">{row.status}: </span>
-        {row.title}
-      </span>
-      <span
-        data-testid="workers-panel-age"
-        title={row.at}
-        className="flex h-lh items-center text-meta text-muted-foreground tabular-nums"
+    <div className="relative">
+      <button
+        type="button"
+        data-testid="workers-panel-row"
+        data-thread-id={row.threadId}
+        data-dot={row.dot}
+        aria-current={current ? "page" : undefined}
+        title={`${row.title}\n${row.status}`}
+        onClick={(event) => openWorker(row, event)}
+        className={cn(
+          ROW_GRID,
+          "items-start rounded-xs py-1.5 text-left text-body outline-none hover:bg-accent focus-visible:focus-ring aria-current:choice-selected",
+        )}
       >
-        {row.age}
-      </span>
-    </button>
+        <span className={ROW_MARK}>
+          <StatusDot state={row.dot} />
+        </span>
+        <span className="min-w-0 truncate text-foreground">{row.title}</span>
+        <span
+          data-testid="workers-panel-age"
+          title={row.at}
+          className="flex h-lh items-center text-meta text-muted-foreground tabular-nums"
+        >
+          {row.age}
+        </span>
+        <span ref={line} className={cn(ROW_STATUS, "flex-wrap content-start overflow-hidden")}>
+          <span
+            ref={words}
+            data-testid="workers-panel-status"
+            className={cn(
+              "min-w-0 flex-[0_1_auto] truncate",
+              row.dot === "needs" && "text-status-needs",
+            )}
+          >
+            {row.line}
+          </span>
+          <WorkerPrChips
+            threadId={row.threadId}
+            cardPrs={NO_CARD_PRS}
+            chips={chips}
+            dense
+            ghost
+            ghostRef={ghost}
+            className="ml-auto"
+          />
+        </span>
+      </button>
+      {/* The chips sit over the status line, outside the row's button: each is a button of its own. */}
+      {fits && (
+        <WorkerPrChips
+          threadId={row.threadId}
+          cardPrs={NO_CARD_PRS}
+          chips={chips}
+          dense
+          className="absolute right-1.5 bottom-1.5"
+        />
+      )}
+    </div>
   );
 }
+
+/** The panel's rows have no feature card: their chips come from the thread and the ledger. */
+const NO_CARD_PRS: readonly FeatureCardPr[] = [];
 
 /**
  * Whether `threadId` is open in the main view, which its row marks as the current place. Only this

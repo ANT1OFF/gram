@@ -65,6 +65,11 @@ export interface PanelRow {
   readonly dot: DotState;
   /** Its state in words, for a screen reader and the row's hover: "Waiting · checks on #142". */
   readonly status: string;
+  /**
+   * Its status line under the title: `status` without the state word its group's heading already
+   * says ("Checks on #142"), or that word alone when it says nothing more.
+   */
+  readonly line: string;
   /** Compact age since it last did something or finished: `now`, `5m`, `3h`. */
   readonly age: string;
   /** That time in full (`formatStamp`), for the age's hover; absent with no time to go by. */
@@ -84,6 +89,14 @@ const dotOf = (row: WorkerRow): DotState => (row.tab === "done" ? glyphState(row
 const lastAt = (row: WorkerRow, summary: ThreadSummary | undefined): number | undefined =>
   row.finishedAt ?? summary?.thread.lastActivityAt;
 
+/** `status` less its leading state word, sentence-cased: "Waiting · checks on #88" is "Checks on #88". */
+export const lineOf = (status: string, dot: DotState): string => {
+  const prefix = `${STATUS_WORDS[dot]} · `;
+  if (!status.startsWith(prefix)) return status;
+  const rest = status.slice(prefix.length);
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+};
+
 /** A ⌘J row as the panel's: its dot, its words and its age. */
 export const panelRow = (
   row: WorkerRow,
@@ -93,17 +106,19 @@ export const panelRow = (
   const dot = dotOf(row);
   const at = lastAt(row, summary);
   const word = row.waiting?.label ?? STATUS_WORDS[dot];
+  // Starting is the whole of what it says: its now line says it too.
+  const status =
+    row.starting === true
+      ? STARTING
+      : word === row.now || row.now === ""
+        ? word
+        : `${word} · ${row.now}`;
   return {
     threadId: row.threadId,
     title: row.title,
     dot,
-    // Starting is the whole of what it says: its now line says it too.
-    status:
-      row.starting === true
-        ? STARTING
-        : word === row.now || row.now === ""
-          ? word
-          : `${word} · ${row.now}`,
+    status,
+    line: lineOf(status, dot),
     age: at === undefined ? "" : formatRelative(at, now),
     at: at === undefined ? undefined : formatStamp(at, now),
     mainOnly: row.cleanedUp === true || row.solo === true,

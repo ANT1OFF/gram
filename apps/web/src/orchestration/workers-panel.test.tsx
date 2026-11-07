@@ -34,6 +34,7 @@ vi.mock("@tanstack/react-router", () => ({ useParams: () => ({}) }));
 vi.mock("@/shell/thread-switcher", () => ({ useOpenThread: () => opened }));
 vi.mock("./use-orchestration", () => ({
   useOrchestratorLedgers: () => new Map([[WORKSPACE, ledger]]),
+  useOrchestratorLedger: () => ({ data: ledger }),
   useWorkspaces: () => [],
 }));
 vi.mock("./use-finished-workers", () => ({
@@ -123,6 +124,15 @@ describe("the Workers tab", () => {
       "Approvals, questions and failures for you",
     );
     expect(within(group("waiting")).getByTestId("workers-group-count").textContent).toBe("0");
+    // Any other empty group is its heading and its 0, not a line of its own.
+    expect(within(group("waiting")).queryByTestId("workers-group-empty")).toBeNull();
+  });
+
+  it("says each worker's state under its title, as the sidebar's row does", () => {
+    seed([worker("run", "working", { status: "running" })], [summary("run", "running")]);
+    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
+    const row = within(group("running")).getByTestId("workers-panel-row");
+    expect(within(row).getByTestId("workers-panel-status").textContent).toBe("Working");
   });
 
   it("says once that there are no workers yet, with the orchestrator a click away, instead of five empty groups", () => {
