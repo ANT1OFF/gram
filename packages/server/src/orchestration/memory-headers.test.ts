@@ -103,6 +103,15 @@ const percent = [...GH].map((char) => `%${char.charCodeAt(0).toString(16)}`).joi
 const html = [...GH].map((char) => `&#${char.charCodeAt(0)};`).join("");
 const base64 = Buffer.from(`token=${GH}`).toString("base64");
 const AWS_ASSIGNMENT = `${["AWS", "SECRET", "ACCESS", "KEY"].join("_")}=${"abcdefghijklmnopqrstuv"}0123456789ABCDxyz`;
+const SHA = "0123456789abcdef0123456789abcdef01234567";
+const ACCESS = ["access", "Key"].join("");
+const CLIENT_SECRET = ["client", "Secret"].join("");
+/** `GH` in base64, as the reviewer split it: four characters a piece. */
+const PIECES =
+  Buffer.from(GH)
+    .toString("base64")
+    .match(/.{1,4}/g) ?? [];
+const HEX_BYTES = [...Buffer.from(GH)].map((byte) => byte.toString(16).padStart(2, "0"));
 const SLACK_LONG = ["xoxb", "123456789012", "123456789012", "abcdefghijklmnopqrstuvwx"].join("-");
 const USERINFO = ["amy", "orchard-willow"].join(":");
 const HEX_TEXT = Buffer.from(["pass", "word=abcdefgh"].join("")).toString("hex");
@@ -124,7 +133,7 @@ const WRAPPED_BASE64 = (
 ).join("\n");
 
 /**
- * Every case from the reviews of #198, rounds 3 to 9, as one table: the path and text a worker would
+ * Every case from the reviews of #198, rounds 3 to 11, as one table: the path and text a worker would
  * read, and whether it may. A file a worker may not read is dropped whole: nothing in it is shown.
  */
 const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, allowed: boolean]> =
@@ -225,6 +234,50 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
       false,
     ],
     ["10.4: hex-encoded text, after at", "a.md", `Landed at ${HEX_TEXT}.`, false],
+    // Round 11, the reviewer's exact payloads (findings 1 to 4 and 7), and their class.
+    ["11.1: accessKey= before a SHA", "sha.md", `${ACCESS}=${SHA}...`, false],
+    ["11.1: clientSecret at a SHA", "at.md", `${CLIENT_SECRET} at ${SHA}`, false],
+    ["11.1: encryptionKey=", "a.md", `encryptionKey=${SHA}...`, false],
+    ["11.1: signingKey=", "a.md", `signingKey=${SHA}...`, false],
+    ["11.1: authToken at", "a.md", `authToken at ${SHA}`, false],
+    ["11.1: client_secret at", "a.md", `client_secret at ${SHA}`, false],
+    ["11.1: KEY=", "a.md", `KEY=${SHA}...`, false],
+    ["11.1: apiKey at", "a.md", `apiKey at ${SHA}`, false],
+    ["11.1: an assignment in the clause", "a.md", `id = at ${SHA}`, false],
+    ["11.2: base64 split by commas", "split.md", PIECES.join(", "), false],
+    [
+      "11.2: base64 as a Markdown list",
+      "split.md",
+      PIECES.map((piece) => `- ${piece}`).join("\n"),
+      false,
+    ],
+    [
+      "11.2: base64 in quoted pieces",
+      "split.md",
+      PIECES.map((piece) => `'${piece}'`).join(" "),
+      false,
+    ],
+    ["11.2: hex bytes split by colons", "split.md", HEX_BYTES.join(":"), false],
+    ["11.2: hex bytes split by spaces", "split.md", HEX_BYTES.join(" "), false],
+    ["11.3: scheme-relative userinfo", "relative.md", `//${USERINFO}@example.test/`, false],
+    ["11.3: bare userinfo", "relative.md", `${USERINFO}@example.test`, false],
+    ["11.4: ODBC connection string", "odbc.md", "Server=db;UID=amy;PWD=orchard-willow;", false],
+    ["11.4: PWD=", "odbc.md", "PWD=orchard-willow", false],
+    ["11.4: PWD:", "odbc.md", "PWD: orchard-willow", false],
+    [
+      "11.4: a connection string with no keyword",
+      "odbc.md",
+      "Server=db;Database=app;Uid=amy;",
+      false,
+    ],
+    ["11.4: a DSN", "odbc.md", "The dsn is orchard-willow.", false],
+    ["11.7: hex with a NUL before text", "a.md", `at 00${HEX_TEXT}`, false],
+    ["accented credential word", "a.md", "P\u00e4ssw\u00f6rd: orchard", false],
+    ["a weak word with a value", "a.md", "The session is orchard-willow.", false],
+    ["a weak word in an assignment", "a.md", "env: staging", false],
+    ["a random letter name", "abcdefghijklmnopqrstuvwxyz.md", "Ordinary prose.", false],
+    ["an alternating name", "a1b2c3d4.md", "Ordinary prose.", false],
+    ["a token-shaped folder", `${SLACK}/notes.md`, "Ordinary prose.", false],
     // Plain prose a worker still reads: not over-blocked.
     ["a word on each line", "days.md", "Mondays\nTuesdays\nWednesdays\nrelease-notes", true],
     [
@@ -235,7 +288,7 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ],
     ["10.4: a short head", "decisions.md", "Reviewed at head e0d0a61, then fixed.", true],
     ["10.4: a SHA with an ellipsis", "decisions.md", "Merged as 3b64ac47\u2026 on Friday.", true],
-    ["10.4: commit and sha", "decisions.md", "See commit 720331533d7451d6 and sha: abc1234.", true],
+    ["10.4: commit and sha", "decisions.md", "See commit 720331533d7451d6 and sha abc1234.", true],
     [
       "10.5: a file in a folder",
       "repos/api.md",
@@ -246,6 +299,33 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ["plain names with numbers", "release-notes-2026-11-07.md", "Ordinary prose.", true],
     ["a word that starts like a prefix", "github-actions.md", "Ordinary prose.", true],
     ["a URL with no userinfo", "links.md", "Docs live at https://example.test/docs/start.", true],
+    [
+      // The body reads; a file named `auth.md` stays hidden by the name rule (rounds 4 and 9).
+      "11.5: a security decision",
+      "decisions.md",
+      "2026-11-07: PR #198 keeps authentication in the CLI.",
+      true,
+    ],
+    [
+      "11.5: a source location",
+      "location.md",
+      "The coordinator lives in packages/server/src/orchestration/service/spawning.ts.",
+      true,
+    ],
+    ["11.5: accented prose", "style.md", "Pr\u00e9f\u00e9rer les petits changements.", true],
+    ["11.6: a long topic name", "internationalization.md", "Ordinary prose.", true],
+    ["11.6: a year suffix", "test2026.md", "Ordinary prose.", true],
+    ["11.6: a long topic folder", "internationalization/notes.md", "Ordinary prose.", true],
+    ["11.7 (accepted): an uncited-looking SHA", "a.md", `Use the value at ${SHA}.`, true],
+    ["a short alternation in a name", "e2e-notes.md", "Ordinary prose.", true],
+    ["a weak word as a verb", "ci.md", "The tests pass on main.", true],
+    ["a private repo", "repos.md", "The site repo is private and lives under the team.", true],
+    [
+      "a camelCase name in prose",
+      "code.md",
+      "Routines save through editCharter, not writeCharter.",
+      true,
+    ],
     ["tabs, not spaces", "conventions.md", "Use tabs, not spaces.", true],
     [
       "typographic punctuation",
