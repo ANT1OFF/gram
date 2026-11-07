@@ -1,3 +1,4 @@
+import { type ThreadId } from "@gram/contracts";
 import { SqliteMigrator } from "@effect/sql-sqlite-node";
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { describe, expect, it } from "@effect/vitest";
@@ -46,6 +47,7 @@ describe("migration ordering gate", () => {
         [1, "baseline"],
         [2, "merge_freezes"],
         [3, "message_receipts"],
+        [4, "merge_fences"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -155,6 +157,7 @@ describe("the baseline", () => {
         "table helper_usage",
         "table labels",
         "table local_checks",
+        "table merge_fences",
         "table merge_freezes",
         "table message_receipts",
         "table message_search",
@@ -200,6 +203,7 @@ describe("the baseline", () => {
         [1, "baseline"],
         [2, "merge_freezes"],
         [3, "message_receipts"],
+        [4, "merge_fences"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -223,6 +227,7 @@ describe("the baseline", () => {
           "baseline",
           "merge_freezes",
           "message_receipts",
+          "merge_fences",
         ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
@@ -271,6 +276,43 @@ describe("the baseline", () => {
     }),
   );
 
+  it.effect(
+    "a reopened database keeps unresolved fences and moved tips independently of threads",
+    () =>
+      Effect.gen(function* () {
+        const file = join(yield* tempDir, "fences.db");
+        const record = {
+          key: "example/project\u0000main",
+          moved: ["old-tip"],
+          pending: {
+            pr: { repo: "example/project", number: 5 },
+            head: "expected-head",
+            threadId: "invented-worker" as ThreadId,
+            tip: "checked-tip",
+            at: 1,
+          },
+        };
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          yield* store.putMergeFence(record);
+        }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          expect(yield* store.listMergeFences).toEqual([record]);
+          yield* store.putMergeFence({
+            key: record.key,
+            moved: [...record.moved, record.pending.tip],
+          });
+        }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          expect(yield* store.listMergeFences).toEqual([
+            { key: record.key, moved: ["old-tip", "checked-tip"] },
+          ]);
+        }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+      }),
+  );
+
   it.effect("takes a 1.x migration appended after it, once, on a database it made", () =>
     Effect.gen(function* () {
       const file = join(yield* tempDir, "gram.db");
@@ -281,7 +323,7 @@ describe("the baseline", () => {
       yield* Effect.void.pipe(Effect.provide(open(migrations)));
       const next = {
         ...migrations,
-        "0004_example": Effect.gen(function* () {
+        "0005_example": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`ALTER TABLE projects ADD COLUMN example TEXT`;
         }),
@@ -297,7 +339,8 @@ describe("the baseline", () => {
             [1, "baseline"],
             [2, "merge_freezes"],
             [3, "message_receipts"],
-            [4, "example"],
+            [4, "merge_fences"],
+            [5, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
       }

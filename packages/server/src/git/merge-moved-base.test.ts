@@ -7,6 +7,7 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import { Pr, Proc, ProcTimeout } from "@gram/git";
+import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -23,7 +24,8 @@ import { RuntimeTestLayer } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { waitReal } from "../orchestration/test-harness.ts";
 import { LocalChecks, LOCAL_CHECK_ISOLATION, type LocalCheck } from "./local-checks.ts";
-import { MergeFreezesNone } from "./merge-freezes.ts";
+import type { EventHub } from "../events/event-hub.ts";
+import { type MergeFreezes, MergeFreezesNone } from "./merge-freezes.ts";
 import { MergeRecheckMs, MergeWhenReady, MergeWhenReadyLive } from "./merge-when-ready.ts";
 import { GitRefresh } from "./platform.ts";
 import { GitStatePublisher } from "./publisher.ts";
@@ -82,6 +84,7 @@ interface Options {
   readonly launch?: (nth: number) => LaunchFate | undefined;
   /** What `gh pr view` says of a PR's state; by default the truth. */
   readonly stateRead?: () => string;
+  readonly headRead?: () => string;
   /** The wait between rechecks; short by default. */
   readonly recheckMs?: number;
   /** How long GitHub takes to answer a read. */
@@ -95,6 +98,7 @@ const scenario = <E, R>(
   options: Options,
   body: (world: {
     readonly service: MergeWhenReady["Service"];
+    readonly restart: Effect.Effect<MergeWhenReady["Service"]>;
     readonly store: ThreadStore["Service"];
     readonly threads: ReadonlyArray<ThreadId>;
     /** The PRs merged on GitHub, whatever Gram heard of it. */
@@ -129,7 +133,14 @@ const scenario = <E, R>(
           const number = Number(args[2]);
           if (args[0] === "pr" && args[1] === "view")
             return Effect.succeed(
-              ok(options.stateRead?.() ?? (merged.includes(number) ? "MERGED" : "OPEN")),
+              ok(
+                args.includes("state,headRefOid")
+                  ? JSON.stringify({
+                      state: options.stateRead?.() ?? (merged.includes(number) ? "MERGED" : "OPEN"),
+                      headRefOid: options.headRead?.() ?? headOf(number),
+                    })
+                  : (options.stateRead?.() ?? (merged.includes(number) ? "MERGED" : "OPEN")),
+              ),
             );
           if (args[0] !== "pr" || args[1] !== "merge") return Effect.succeed(ok());
           launches.push(number);
@@ -143,7 +154,14 @@ const scenario = <E, R>(
             return Effect.fail(new ProcTimeout({ bin: "gh", message: "invented: timed out" }));
           return Effect.succeed(
             fate === "reset-applied" || fate === "refused"
-              ? { ...ok(), status: 1, stderr: "invented: gh failed" }
+              ? {
+                  ...ok(),
+                  status: 1,
+                  stderr:
+                    fate === "refused"
+                      ? "GraphQL: Pull Request is not mergeable (mergePullRequest)"
+                      : "invented: gh failed",
+                }
               : ok(),
           );
         }),
@@ -218,7 +236,7 @@ const scenario = <E, R>(
       observe: () => Effect.void,
     });
     const layer = MergeWhenReadyLive.pipe(
-      Layer.provide(MergeFreezesNone),
+      Layer.provideMerge(MergeFreezesNone),
       Layer.provideMerge(provider),
       Layer.provideMerge(proc),
       Layer.provideMerge(publisher),
@@ -262,8 +280,25 @@ const scenario = <E, R>(
         threads.push(thread.id);
       }
       const service = yield* MergeWhenReady;
+      const scope = yield* Effect.scope;
+      const restartContext = yield* Effect.context<
+        | ThreadStore
+        | ThreadRuntimes
+        | GitStatePublisher
+        | EventHub
+        | Proc
+        | Pr
+        | GitRefresh
+        | MergeFreezes
+      >();
       yield* body({
         service,
+        restart: Effect.map(
+          Layer.buildWithScope(Layer.fresh(MergeWhenReadyLive), scope).pipe(
+            Effect.provide(restartContext),
+          ),
+          (context) => Context.get(context, MergeWhenReady),
+        ),
         store,
         threads,
         merged,
@@ -685,6 +720,106 @@ describe("armed merges on a base that moved", () => {
       ),
     );
 
+    it.live("restart preserves a fence while GitHub still reads OPEN at the old tip", () =>
+      scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          recheckMs: 60_000,
+          stateRead: () => "OPEN",
+          launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
+        },
+        ({ service, restart, threads, launches, ensured }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "first launched",
+              Effect.sync(() => launches.length === 1),
+            );
+            const restored = yield* restart;
+            yield* restored.check(threads[1]!);
+            yield* Effect.sleep(Duration.millis(100));
+            expect(launches).toEqual([5]);
+            expect(ensured).toEqual([]);
+          }),
+      ),
+    );
+
+    it.live("the fence is already durable while gh is still in flight", () =>
+      scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          recheckMs: 60_000,
+          stateRead: () => "OPEN",
+          launch: (nth) => (nth === 1 ? "hung-applied" : undefined),
+        },
+        ({ service, restart, threads, launches, store }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "gh in flight",
+              Effect.sync(() => launches.length === 1),
+            );
+            expect((yield* store.listMergeFences)[0]?.pending).toMatchObject({
+              threadId: threads[0]!,
+              head: headOf(5),
+              tip: RECORDED,
+            });
+            const restored = yield* restart;
+            yield* restored.check(threads[1]!);
+            yield* Effect.sleep(Duration.millis(100));
+            expect(launches).toEqual([5]);
+          }),
+      ),
+    );
+
+    it.live("timeout stays fenced beyond the interval until a late success is observed", () => {
+      let state = "OPEN";
+      return scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          recheckMs: 20,
+          stateRead: () => state,
+          launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
+        },
+        ({ service, store, threads, launches, ensured, moveTip, finish, tip }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "first launched",
+              Effect.sync(() => launches.length === 1),
+            );
+            yield* service.check(threads[1]!);
+            yield* Effect.sleep(Duration.millis(150));
+            expect(launches).toEqual([5]);
+            expect(ensured).toEqual([]);
+            expect((yield* store.getThread(threads[0]!)).boundPr?.mergeWaiting?.why).toContain(
+              "fenced",
+            );
+            state = "MERGED";
+            moveTip();
+            yield* service.check(threads[1]!);
+            yield* waitReal(
+              "check on new tip",
+              Effect.sync(() => ensured.length === 1),
+            );
+            expect(ensured).toEqual([[headOf(6), tip()]]);
+            yield* finish(headOf(6), tip());
+            yield* waitReal(
+              "second merge",
+              Effect.sync(() => launches.length === 2),
+            );
+            expect(launches).toEqual([5, 6]);
+            expect((yield* store.getThread(threads[0]!)).boundPr?.mergeWaiting).toBeUndefined();
+          }),
+      );
+    });
+
     it.live("holds everything back while the PR's state can't be read, and says so", () =>
       scenario(
         {
@@ -706,6 +841,13 @@ describe("armed merges on a base that moved", () => {
               "the thread is told",
               Effect.map(notices(), (texts) => texts.some((text) => text.includes("isn't known"))),
             );
+            yield* waitReal(
+              "the second records its blocked outcome",
+              Effect.map(
+                store.getThread(threads[1]!),
+                (t) => t.boundPr?.mergeWaiting?.why.includes("isn't known") === true,
+              ),
+            );
             expect(launches).toEqual([5]);
             expect((yield* store.getThread(threads[1]!)).boundPr?.mergeWaiting?.why).toContain(
               "isn't known",
@@ -715,11 +857,66 @@ describe("armed merges on a base that moved", () => {
     );
 
     it.live.each([
-      ["a lost reply it never applied", "lost-unapplied"],
-      ["a refusal", "refused"],
-    ] as const)("lets go once GitHub had time to show it: %s", ([, fate]) =>
+      ["unapplied timeout", "lost-unapplied", "OPEN", headOf(5)],
+      ["closed PR", "lost-applied", "CLOSED", headOf(5)],
+      ["another head merged", "lost-applied", "MERGED", headOf(9)],
+      ["rejection at another head", "refused", "OPEN", headOf(9)],
+    ] as const)("keeps uncertainty fenced: %s", ([, fate, state, head]) =>
       scenario(
-        { numbers: [5, 6], passed: both, launch: (nth) => (nth === 1 ? fate : undefined) },
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          recheckMs: 20,
+          launch: (nth) => (nth === 1 ? fate : undefined),
+          stateRead: () => state,
+          headRead: () => head,
+        },
+        ({ service, threads, launches, store }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "first launch",
+              Effect.sync(() => launches.length === 1),
+            );
+            yield* service.check(threads[1]!);
+            yield* Effect.sleep(Duration.millis(150));
+            expect(launches).toEqual([5]);
+            expect((yield* store.listMergeFences)[0]?.pending?.head).toBe(headOf(5));
+          }),
+      ),
+    );
+
+    it.live("restart retains a moved tip after the uncertain merge is reconciled", () =>
+      scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
+        },
+        ({ service, restart, threads, launches, store }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "resolved durable move",
+              Effect.map(
+                store.listMergeFences,
+                (rows) =>
+                  rows[0]?.pending === undefined && rows[0]?.moved.includes(RECORDED) === true,
+              ),
+            );
+            const restored = yield* restart;
+            yield* restored.check(threads[1]!);
+            yield* Effect.sleep(Duration.millis(100));
+            expect(launches).toEqual([5]);
+          }),
+      ),
+    );
+
+    it.live("lets go after a confirmed rejection and an OPEN read at the same head", () =>
+      scenario(
+        { numbers: [5, 6], passed: both, launch: (nth) => (nth === 1 ? "refused" : undefined) },
         ({ service, threads, merged, launches }) =>
           Effect.gen(function* () {
             yield* service.check(threads[0]!);

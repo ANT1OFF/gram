@@ -225,6 +225,35 @@ describe("a ledger PR row", () => {
     ).toBeUndefined();
   });
 
+  it("keeps a fenced PR visible while its GitHub badge cannot be read", () => {
+    const row = workerOf(
+      shopWorker(
+        { badge: undefined },
+        {
+          boundPr: {
+            repo: "acme/shop",
+            number: 204,
+            monitor: true,
+            mergeWaiting: { why: "merge outcome is unknown; base is fenced", since: 1 },
+          },
+        },
+      ),
+    ).pr;
+    expect(row).toMatchObject({
+      repo: "acme/shop",
+      number: 204,
+      mergeWhenReady: { waiting: "merge outcome is unknown; base is fenced" },
+    });
+  });
+
+  it("shows a durable uncertainty fence even after its merge intent was removed", () => {
+    const row = prRow("acme/shop", prBadge({}), undefined, false, {
+      why: "acme/shop#5 at abc is fenced across restarts; inspect it on GitHub",
+      since: 1,
+    });
+    expect(row.mergeWhenReady?.waiting).toContain("fenced across restarts");
+  });
+
   const threads = { unresolved: 0, blockers: 0, suggestions: 0, outdatedUnresolved: 0 };
 
   it("says who a review waits on, where the bot is, and whether Gram merges it", () => {

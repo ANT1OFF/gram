@@ -89,6 +89,7 @@ import {
 } from "./stored.ts";
 import { durableCommit, durableSqliteLayer } from "./durable-commit.ts";
 import { makeMessageReceipts } from "./message-receipts.ts";
+import { MergeFence } from "./merge-fence.ts";
 import { DAY_MS } from "../zone-time.ts";
 
 /**
@@ -341,6 +342,8 @@ export interface ThreadStoreShape {
     { readonly thread: Thread; readonly context: ThreadUpdateContext },
     ThreadNotFound
   >;
+  listMergeFences: Effect.Effect<ReadonlyArray<MergeFence>>;
+  putMergeFence(fence: MergeFence): Effect.Effect<void>;
   listThreads: Effect.Effect<ReadonlyArray<Thread>>;
   updateThread(
     id: ThreadId,
@@ -1855,6 +1858,20 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               const thread = yield* readThread(id);
               return { thread, context: yield* readThreadAuthority(thread, callerId) };
             }),
+          ),
+        // Safety records must fail closed if corrupt; silently skipping one permits a duplicate.
+        listMergeFences: run(
+          sql<{ data: string }>`SELECT data FROM merge_fences`.pipe(
+            Effect.map((rows) =>
+              rows.map((row) => Schema.decodeUnknownSync(MergeFence)(JSON.parse(row.data))),
+            ),
+          ),
+        ),
+        putMergeFence: (fence) =>
+          run(
+            sql`INSERT INTO merge_fences (key, data)
+          VALUES (${fence.key}, ${toJson(MergeFence, fence)})
+          ON CONFLICT (key) DO UPDATE SET data = excluded.data`.pipe(Effect.asVoid),
           ),
         listThreads: run(
           Effect.gen(function* () {

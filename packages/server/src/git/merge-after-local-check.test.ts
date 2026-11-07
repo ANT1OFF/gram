@@ -71,7 +71,18 @@ describe("an armed merge after Gram's own check fails", () => {
         run: (_bin, args) =>
           Effect.sync(() => {
             if (args[0] === "pr" && args[1] === "merge") merged.push([...args]);
-            return { status: 0, stdout: "", stderr: "", truncated: false };
+            return {
+              status: 0,
+              stdout:
+                args[0] === "pr" && args[1] === "view"
+                  ? JSON.stringify({
+                      state: merged.length > 0 ? "MERGED" : "OPEN",
+                      headRefOid: HEAD,
+                    })
+                  : "",
+              stderr: "",
+              truncated: false,
+            };
           }),
       });
       const provider = Layer.succeed(Pr, {

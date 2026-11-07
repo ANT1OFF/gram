@@ -117,7 +117,13 @@ describe("actual merge launch with GitHub CI evidence", () => {
                 return { status: 1, stdout: "", stderr: "", truncated: false };
               if (args[0] === "pr") {
                 verificationEnded = true;
-                return { status: 0, stdout: "", stderr: "", truncated: false };
+                return {
+                  status: 0,
+                  stdout:
+                    args[1] === "view" ? JSON.stringify({ state: "MERGED", headRefOid: HEAD }) : "",
+                  stderr: "",
+                  truncated: false,
+                };
               }
               if (args.some((arg) => arg.startsWith("ref="))) {
                 policyReads++;
@@ -423,6 +429,7 @@ describe("actual merge launch with GitHub CI evidence", () => {
                 "--repo",
                 "example/project",
               ],
+              ["pr", "view", "5", "--repo", "example/project", "--json", "state,headRefOid"],
             ]);
             expect(policyReads).toBeGreaterThan(0);
             if (scenario === "required optional queued")

@@ -502,11 +502,18 @@ pass on the old tip: N of them cost N checks in a row, not N side by side. A mer
 check, ends a turn at once; a pass that doesn't merge ends it after two minutes, so one pull
 request can't hold up the rest. `local_check` asks for its own check and doesn't queue.
 
-A merge Gram didn't hear the end of fences its base as a confirmed one does. If `gh` times out,
-exits non-zero or is cut off, GitHub may still have applied it, so nothing launches onto that base
-until the pull request is read: merged counts as a move of the base, and open or closed counts as
-not merged only two minutes after the launch, since GitHub's reads can lag a merge. A plain refusal
-takes the same path, so the next merge onto that base can wait up to two minutes.
+Before invoking `gh pr merge`, Gram records a durable fence for the base, the expected PR head
+and the checked tip. A timeout, crash, interruption or ambiguous non-zero exit keeps that fence
+across restarts and changes to the intent. Time alone never clears it. A fresh GitHub read must
+show the PR merged at the expected head, or still open at that head after an explicit provider
+rejection of the merge mutation. A generic process error, an unreadable response, a different
+head or a closed PR leaves it fenced. Confirmed moved tips are retained across restarts too.
+
+The owning worker is told immediately when the outcome is uncertain, and its ledger/status
+waiting reason names the fenced PR and head. Inspect that PR on GitHub if it stays stuck; Gram
+continues observing it but does not retry an ambiguous external write. A manual merge at the
+expected head can resolve it. An unapplied timeout with no definitive rejection stays fenced
+for human investigation rather than guessing from an open read.
 
 An armed merge that can't go yet says why on the pull request's status (`pr_status` under
 `bound.mergeWaiting`, the ledger and the PR context): its turn, the pull requests in `after`, a
