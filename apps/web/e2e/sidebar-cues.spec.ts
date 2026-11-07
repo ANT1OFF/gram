@@ -1,9 +1,15 @@
 import { expect, test } from "@playwright/test";
 import { threadRow } from "./thread-row";
 
+// The pinned clock below is midday in this zone, whatever the machine's.
+test.use({ timezoneId: "UTC" });
+
 test("a row says its status, the opened thread its label and fork, and a bookmark lands in /new", async ({
   page,
 }) => {
+  // t-docs was last active a minute before the page loads: just after midnight that was the day
+  // before, which its hover dates. At midday it is the same day, a bare clock.
+  await page.clock.setFixedTime(new Date("2026-11-07T12:00:00Z"));
   // Open no thread: a playing script changes statuses under the clicks.
   await page.goto("/");
 
