@@ -57,16 +57,24 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   workspace, a worker, a solo thread, a PR, a Done item), is its mark (a Done item's is its
   state's dot, as a worker's is) and title (`ROW`, `ROW_TITLE`), then one muted status line (`ROW_STATUS`) with what trails it at the right edge: a
   time, or its badges (a worker's PR chips) only while they fit beside the words: the status wins,
-  and the row's hover names the PR. The title has the row's whole width and wraps to a second
-  line before it is cut at its end (never its middle), the whole of it on hover, so a long name
-  reads whole rather than stopping mid-word; most rows stay 48 px (two 20 px lines with its
-  padding). What needs you is listed first. Done starts folded to one row, "8 done · History",
-  whose History opens History on its Done chip: the Board and History already list finished work,
-  and History is old work's one home (the palette hands its matches there too). Unfolded, Done
-  shows the three chats that finished last, solo threads that settled on their own included, then
-  "N more in History". Each workspace folds its workers under its chevron. Marks centre on one
-  column and titles start on one edge, the pill, Search, section titles and Open History
-  included. The overview's sections sit a list's step (12 px) apart.
+  and the row's hover names the PR. The title is one line with the row's whole width, cut at its
+  end (never its middle) with an ellipsis, and the row's hover (its `title`, or a worker's card)
+  says the whole of it, so every row keeps one height: 36 px for a title alone, 48 px with its
+  status line, never taller. A worker's agent mark shows only where its workspace's workers run
+  different agents; all on one agent, the state dot alone marks each row and the hover names the
+  agent. What needs you is listed first. Done starts folded to one row, "8 done", and a click
+  anywhere on it unfolds it: the Board and History already list finished work. History, at the
+  column's foot ("History", its key on its hover), is old work's one way in from the sidebar, and
+  the palette hands a search matching finished threads there too. Unfolded, Done shows the three
+  chats that finished last, solo threads that settled on their own included, then "N more in
+  History", which continues the same list on History's Done chip. Each workspace folds its workers
+  under its chevron. Every section's title has one look, muted 13 px words beside its chevron; a
+  Gram word's explanation ("Solo threads") is on its hover, never a dotted underline there. Marks
+  centre on one column and titles start on one edge, the pill, Search, section titles and History
+  included. The overview's sections sit a list's step (12 px) apart. The compact rail (60 px,
+  under 1280 px) gives each workspace and the solo threads a tile with its kind's glyph (an
+  orchestrator's, a thread's, as the palette draws them), never letters cut from a name; its
+  flyout heads with the whole name.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings and between a reply's blocks, 16 px between sections and at a
   pane's edges. A settings row takes 8 px above and below, and a page's groups sit 24 px apart
@@ -88,8 +96,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   (`text-meta`), never smaller. `text-caption` is only for what is never read for meaning: a key
   cap, a count badge, a footer's key legend. A third, quieter level (a hint, a step's evidence, a
   pending line) is `text-subtle` (`fg-subtle`), which holds the text floor like `fg-muted`; never
-  fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A title wraps to two lines before it is cut short at
-  its end, and its hover says the whole of it, a sidebar row's title included. Metadata a heading or the whole list already says is left out: no repo on each
+  fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A title wraps
+  to two lines before it is cut short at its end, and its hover says the whole of it; a sidebar
+  row's title keeps to one line, so its rows stay even. Metadata a heading or the whole list already says is left out: no repo on each
   row when every row has the same one, no workspace under its own heading.
 - **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,
   `ShortcutKbd cap`), never a faded one; elsewhere a hint goes in the tooltip.

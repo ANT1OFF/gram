@@ -572,8 +572,8 @@ export type OverviewSection = "orchestrators" | "solo" | "pullRequests" | "doneT
 
 /**
  * The sections that start folded: the things you check now and then. Done folds to one row, "8
- * done · History": the Board shows what finished today and History keeps it all, so the sidebar
- * leaves them to those.
+ * done", that unfolds on a click: the Board shows what finished today and History keeps it all, so
+ * the sidebar leaves them to those.
  */
 export const OVERVIEW_FOLDED_BY_DEFAULT: readonly OverviewSection[] = ["pullRequests", "doneToday"];
 
