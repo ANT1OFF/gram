@@ -44,6 +44,10 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     spent with no credits).
 - **Radii are soft:** 8 to 16 px (`radius-xs` to `radius-xl`); the composer is rounder (22 px);
   small marks (a key cap, a bar, a swatch) take 4 px (`radius-2xs`).
+- **A dialog fits the window:** it opens a fifth of the way down and is never taller than the
+  rest of the window less a margin (`DialogShell`). Its actions stay in view: a dialog whose body
+  can grow (a form, a list) scrolls that body and keeps its error and buttons pinned below it, so
+  a short window never hides Submit.
 - **Rows:** 36 px by default (`--row-comfortable`), 30 px in compact density (`--row-compact`).
   Lists, menus and the sidebar share one row shape. Every sidebar row, whatever it lists (a
   workspace, a worker, a solo thread, a PR, a Done item), is its mark (a Done item's is its

@@ -151,114 +151,121 @@ export function ReportIssueForm({
       description={`Filed on ${GRAM_REPO} with your GitHub account.`}
       onClose={onClose}
     >
-      <form className="flex flex-col gap-3" onSubmit={(event) => void submit(event)}>
+      <form className="flex min-h-0 flex-col gap-3" onSubmit={(event) => void submit(event)}>
+        {/* The fields scroll in a short window; the error and the buttons below them stay in view.
+            The inset keeps the inputs' focus rings inside the scroll box. */}
         <div
-          role="radiogroup"
-          aria-label="Kind"
-          className="flex gap-1"
-          onKeyDown={(event) =>
-            radioGroupKeyDown(
-              event,
-              KINDS.map((option) => option.value),
-              kind,
-              setKind,
-            )
-          }
+          data-testid="report-issue-fields"
+          className="-m-1 flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain p-1"
         >
-          {KINDS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={kind === option.value}
-              tabIndex={kind === option.value ? 0 : -1}
-              onClick={() => setKind(option.value)}
-              className="group flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-reading text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring aria-checked:border-ring aria-checked:bg-accent aria-checked:text-foreground"
-            >
-              <option.icon
-                aria-hidden
-                className={cn("size-icon-row", kind === option.value && option.tone)}
-              />
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <label className="flex flex-col gap-1">
-          <span className={labelCls}>Title</span>
-          <input
-            aria-label="Title"
-            className={cn(inputCls, "h-8")}
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className={labelCls}>Description</span>
-          <textarea
-            aria-label="Description"
-            rows={6}
-            placeholder={
-              kind === "bug"
-                ? "What you did, what happened, what you expected"
-                : kind === "feature"
-                  ? "The problem it would solve"
-                  : undefined
+          <div
+            role="radiogroup"
+            aria-label="Kind"
+            className="flex gap-1"
+            onKeyDown={(event) =>
+              radioGroupKeyDown(
+                event,
+                KINDS.map((option) => option.value),
+                kind,
+                setKind,
+              )
             }
-            className={cn(inputCls, "resize-y py-2")}
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-          />
-        </label>
-        <div className="flex flex-wrap items-center gap-3">
-          <Select
-            value={area}
-            items={AREAS}
-            onValueChange={(next) => {
-              if (next !== null) setArea(next);
-            }}
           >
-            <SelectTrigger aria-label="Area" className="text-meta">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {AREAS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <label className="flex h-8 items-center gap-2 text-reading">
-            <input
-              type="checkbox"
-              checked={includeDiagnostics}
-              onChange={(event) => setIncludeDiagnostics(event.target.checked)}
-            />
-            Include diagnostics
-          </label>
-        </div>
-        {includeDiagnostics && footer.data !== undefined && (
-          <Collapsible>
-            <CollapsibleTrigger
-              data-testid="report-issue-diagnostics"
-              className="group flex items-center gap-1 text-meta text-muted-foreground hover:text-foreground"
-            >
-              <ChevronRight
-                aria-hidden
-                className="size-icon-chip shrink-0 transition-transform group-data-[panel-open]:rotate-90"
-              />
-              What's added
-            </CollapsibleTrigger>
-            <CollapsibleContent className="gram-collapse">
-              <pre
-                data-testid="report-issue-diagnostics-body"
-                className="mt-1 overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta whitespace-pre-wrap"
+            {KINDS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={kind === option.value}
+                tabIndex={kind === option.value ? 0 : -1}
+                onClick={() => setKind(option.value)}
+                className="group flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-reading text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring aria-checked:border-ring aria-checked:bg-accent aria-checked:text-foreground"
               >
-                {footer.data}
-              </pre>
-            </CollapsibleContent>
-          </Collapsible>
-        )}
+                <option.icon
+                  aria-hidden
+                  className={cn("size-icon-row", kind === option.value && option.tone)}
+                />
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <label className="flex flex-col gap-1">
+            <span className={labelCls}>Title</span>
+            <input
+              aria-label="Title"
+              className={cn(inputCls, "h-8")}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelCls}>Description</span>
+            <textarea
+              aria-label="Description"
+              rows={6}
+              placeholder={
+                kind === "bug"
+                  ? "What you did, what happened, what you expected"
+                  : kind === "feature"
+                    ? "The problem it would solve"
+                    : undefined
+              }
+              className={cn(inputCls, "resize-y py-2")}
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <Select
+              value={area}
+              items={AREAS}
+              onValueChange={(next) => {
+                if (next !== null) setArea(next);
+              }}
+            >
+              <SelectTrigger aria-label="Area" className="text-meta">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AREAS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <label className="flex h-8 items-center gap-2 text-reading">
+              <input
+                type="checkbox"
+                checked={includeDiagnostics}
+                onChange={(event) => setIncludeDiagnostics(event.target.checked)}
+              />
+              Include diagnostics
+            </label>
+          </div>
+          {includeDiagnostics && footer.data !== undefined && (
+            <Collapsible>
+              <CollapsibleTrigger
+                data-testid="report-issue-diagnostics"
+                className="group flex items-center gap-1 text-meta text-muted-foreground hover:text-foreground"
+              >
+                <ChevronRight
+                  aria-hidden
+                  className="size-icon-chip shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+                />
+                What's added
+              </CollapsibleTrigger>
+              <CollapsibleContent className="gram-collapse">
+                <pre
+                  data-testid="report-issue-diagnostics-body"
+                  className="mt-1 overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta whitespace-pre-wrap"
+                >
+                  {footer.data}
+                </pre>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+        </div>
         {error !== undefined && (
           <div
             role="alert"

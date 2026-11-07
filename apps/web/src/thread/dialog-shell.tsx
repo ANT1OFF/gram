@@ -8,6 +8,10 @@ import { cn } from "@/lib/utils";
  * A centred modal with the app's dialog chrome; closing (Esc, backdrop, Cancel) calls `onClose`.
  * These dialogs open from menus, the palette and shortcuts rather than a trigger, so closing gives
  * focus back to what had it before, or to `returnFocus()` when that's gone.
+ *
+ * It never runs past the window: below its 20% top it stops a margin short of the bottom and
+ * scrolls. A body that can grow scrolls itself instead, with its actions after it, so they stay
+ * in view (see `ReportIssueForm`).
  */
 export function DialogShell({
   testId,
@@ -46,7 +50,7 @@ export function DialogShell({
           finalFocus={returnFocusTo(opener, returnFocus)}
           initialFocus={initialFocus}
           className={cn(
-            "fixed top-[20%] left-1/2 z-50 flex w-[min(32rem,90vw)] -translate-x-1/2 flex-col gap-4 rounded-lg border border-edge bg-popover p-5 text-popover-foreground shadow-modal transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
+            "fixed top-[20%] left-1/2 z-50 flex max-h-[calc(80dvh-1.5rem)] w-[min(32rem,90vw)] -translate-x-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-lg border border-edge bg-popover p-5 text-popover-foreground shadow-modal transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
             className,
           )}
         >
