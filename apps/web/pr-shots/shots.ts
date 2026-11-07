@@ -659,7 +659,7 @@ const openDirectTask = async (page: Page, width: number) => {
   await page.goto("/new-task?way=direct");
   await page.getByRole("form", { name: "New task" }).waitFor();
   await page.getByTestId("task-authority").waitFor();
-  await page.getByRole("button", { name: /Start (workspace and )?worker/ }).waitFor();
+  await page.getByRole("button", { name: /Start (workspace and )?task/ }).waitFor();
   await page.waitForTimeout(600);
 };
 

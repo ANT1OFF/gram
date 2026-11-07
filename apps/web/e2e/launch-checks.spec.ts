@@ -100,7 +100,8 @@ test("launch checks show what's missing, link to details and dismiss for the ses
       }),
     );
   }, MOCK_LAUNCH_CHECKS_KEY);
-  await page.goto("/");
+  // A thread, not the first-run screen, whose card would say these instead of the banner.
+  await page.goto("/t/t-flaky");
 
   const banner = page.getByTestId("launch-checks-banner");
   await expect(banner).toContainText("Claude Code isn't signed in. Run claude in a terminal");
@@ -226,14 +227,15 @@ test("a dismissed problem shows again when the check result changes", async ({ p
       checks: JSON.stringify({ tools: toolsWithGh({ found: false }), ghSignedIn: false }),
     },
   );
-  await page.goto("/");
+  // A thread, not the first-run screen, whose card would say these instead of the banner.
+  await page.goto("/t/t-flaky");
 
   const banner = page.getByTestId("launch-checks-banner");
   await expect(banner).toHaveText(/gh isn't installed/);
   await banner.getByRole("button", { name: "Dismiss" }).click();
   await expect(banner).toBeHidden();
   await page.reload();
-  await expect(page.getByTestId("welcome")).toBeVisible();
+  await expect(page.getByTestId("pane-header")).toBeVisible();
   await expect(banner).toBeHidden();
 
   await page.evaluate(({ key, checks }) => sessionStorage.setItem(key, checks), {
@@ -327,7 +329,8 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   // Open says what it runs with; before any workspace there is no Board to switch to.
   await expect(welcome.getByTestId("welcome-runs-with")).toHaveText("Runs with Codex");
   await expect(page.getByTestId("view-switcher")).toHaveCount(0);
-  await expect(page.getByTestId("overview-empty-hint")).toContainText("No workspaces yet");
+  // The welcome is the one message on the home page: the sidebar doesn't repeat it.
+  await expect(page.getByTestId("overview-empty-hint")).toHaveCount(0);
   // Codex alone is enough: Claude Code missing is shown, but is nothing to fix.
   await expect(welcome.getByRole("radio", { name: /^web/ })).toBeVisible();
   // Before any setup there are no pull requests or usage beside the welcome.
@@ -383,6 +386,71 @@ test("first run is one screen: how Gram works, the agents, a repository and past
     .toBe(true);
   // Optional gateways stay in Settings; subscription onboarding never prompts for a key.
   await expect(page.getByTestId("gateway-offer")).toHaveCount(0);
+});
+
+test("first run with no agent warns once and leads with installing one", async ({ page }) => {
+  // Neither agent installed: set here, never the machine's own CLIs.
+  await page.addInitScript(({ key, checks }) => sessionStorage.setItem(key, checks), {
+    key: MOCK_LAUNCH_CHECKS_KEY,
+    checks: JSON.stringify({
+      tools: [
+        { tool: "git", found: true, version: "2.47.1" },
+        { tool: "gh", found: true, version: "2.63.0" },
+      ],
+      claudeSignIn: "notSignedIn",
+      codexSignIn: "notSignedIn",
+      ghSignedIn: true,
+    }),
+  });
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
+  await page.goto("/");
+  const welcome = page.getByTestId("welcome");
+  await expect(welcome.getByTestId("welcome-runs-with")).toHaveText(
+    "Install Claude Code or Codex to start",
+  );
+  // One warning: the card says it with its remedies, so no banner and no title bar chip.
+  await expect(page.getByTestId("launch-checks-banner")).toHaveCount(0);
+  await expect(page.getByTestId("launch-issues-chip")).toHaveCount(0);
+  await expect(page.getByTestId("overview-empty-hint")).toHaveCount(0);
+  // Installing is the next step; the repository is only set up for now.
+  const install = welcome.getByRole("link", { name: /^Install Claude Code/ });
+  await expect(install).toHaveClass(/bg-primary/);
+  const open = welcome.getByTestId("welcome-open");
+  await expect(open).toHaveText(/^Set up /);
+  await expect(open).not.toHaveClass(/bg-primary/);
+  await expect(welcome.getByTestId("welcome-next")).toContainText("once an agent is ready");
+
+  // Seen on the card, it counts as seen: off the first run it is the title bar's setup chip,
+  // which opens the banner on it.
+  await page.goto("/settings");
+  await expect(page.getByTestId("launch-checks-banner")).toHaveCount(0);
+  await page.getByTestId("launch-issues-chip").click();
+  await expect(page.getByTestId("launch-checks-banner")).toContainText(
+    "Neither Claude Code nor Codex is installed",
+  );
+});
+
+test("an empty home says no workspaces once, with Open a repository as its primary", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem("gram.mock.fresh", "1");
+    sessionStorage.setItem(
+      "gram.mock.settings",
+      JSON.stringify({ onboarding: { welcomeSeen: true } }),
+    );
+  });
+  await page.goto("/");
+  const home = page.getByTestId("home-empty");
+  await expect(home.getByTestId("empty-title")).toHaveText("No workspaces yet");
+  await expect(page.getByTestId("overview-empty-hint")).toHaveCount(0);
+  await expect(page.getByText("No workspaces yet")).toHaveCount(1);
+  const open = home.getByRole("button", { name: "Open a repository" });
+  await expect(open).toHaveClass(/bg-primary/);
+  await open.click();
+  await expect(page).toHaveURL(/\/new-workspace/);
+  // Away from home, the sidebar says what will fill it.
+  await expect(page.getByTestId("overview-empty-hint")).toContainText("No workspaces yet");
 });
 
 test("first run can be skipped for good", async ({ page }) => {
@@ -762,7 +830,8 @@ test("sign-in guidance names the local commands", async ({ page }) => {
       }),
     );
   }, MOCK_LAUNCH_CHECKS_KEY);
-  await page.goto("/");
+  // A thread, not the first-run screen, whose card would say these instead of the banner.
+  await page.goto("/t/t-flaky");
   const banner = page.getByTestId("launch-checks-banner");
   await expect(banner).toContainText("claude");
   await expect(banner).toContainText("gh auth login");

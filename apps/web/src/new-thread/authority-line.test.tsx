@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { ChatAuthorityLine, TaskAuthorityLine, chatAuthority, taskSummary } from "./authority-line";
 
@@ -13,7 +15,7 @@ describe("taskSummary", () => {
     ).toEqual({
       where: "Runs in billing-api",
       who: "Reports to the billing-api orchestrator",
-      approval: "Asks you",
+      approval: "Ask",
       merge: "Opens its pull request; merging waits for you",
     });
     expect(
@@ -29,7 +31,7 @@ describe("taskSummary", () => {
     ).toEqual({
       where: "Runs in api",
       who: "Planned by the api orchestrator",
-      approval: "Asks you",
+      approval: "Ask",
       merge: "Asks before a push, a pull request or a merge",
     });
   });
@@ -68,42 +70,84 @@ describe("taskSummary", () => {
 });
 
 describe("TaskAuthorityLine", () => {
-  it("puts ownership and merge approval on separate lines, the approval amber at Full", () => {
-    render(<TaskAuthorityLine way="direct" workspace="api" autonomy="full" hold={false} />);
-    expect(screen.getByTestId("task-owner").textContent).toBe(
-      "Runs in api · Reports to the api orchestrator",
+  it("says where it runs, whom it reports to and merge approval on lines of their own", () => {
+    render(
+      <TooltipProvider>
+        <TaskAuthorityLine
+          way="direct"
+          workspace="api"
+          places={["api", "New worktree, new branch"]}
+          autonomy="full"
+          hold={false}
+        />
+      </TooltipProvider>,
     );
+    expect(screen.getByTestId("task-destination").textContent).toBe(
+      "Runs in api · api · New worktree, new branch",
+    );
+    expect(screen.getByTestId("task-owner").textContent).toBe("Reports to the api orchestrator");
     const merge = screen.getByTestId("task-merge-approval");
     expect(merge.textContent).toBe(
-      "Merge approval Automatic · Merges its pull request without asking you.",
+      "Merge approvalAutomaticMerges its pull request without asking you.",
     );
     expect(merge.querySelector("span.text-warning")?.textContent).toBe("Automatic");
+    expect(screen.queryByTestId("task-destination-remembered")).toBeNull();
   });
 
   it("is calm below Full", () => {
     render(<TaskAuthorityLine way="plan" workspace="api" autonomy="publish" hold={false} />);
-    expect(screen.getByTestId("task-owner").textContent).toBe(
-      "Runs in api · Planned by the api orchestrator",
-    );
-    expect(screen.getByTestId("task-merge-approval").textContent).toMatch(
-      /^Merge approval Asks you · /,
-    );
+    expect(screen.getByTestId("task-owner").textContent).toBe("Planned by the api orchestrator");
+    expect(screen.getByTestId("task-merge-approval").textContent).toMatch(/^Merge approvalAsk/);
     expect(screen.getByTestId("task-authority").querySelector(".text-warning")).toBeNull();
   });
 
-  it("opens the controls that change it from the approval's value", () => {
-    const onChange = vi.fn();
+  it("marks a remembered place and changes it in one click", () => {
+    const onChangeWhere = vi.fn();
     render(
-      <TaskAuthorityLine
-        way="direct"
-        workspace="api"
-        autonomy="publish"
-        hold={false}
-        onChange={onChange}
-      />,
+      <TooltipProvider>
+        <TaskAuthorityLine
+          way="direct"
+          workspace="billing-api"
+          autonomy="full"
+          hold={false}
+          remembered
+          onChangeWhere={onChangeWhere}
+          changeWhereHint="⌘⇧L"
+        />
+      </TooltipProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Merge approval: Asks you. Change" }));
-    expect(onChange).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("task-destination").dataset.remembered).toBe("true");
+    expect(screen.getByTestId("task-destination-remembered").textContent).toBe("Remembered");
+    fireEvent.click(screen.getByRole("button", { name: "Change where it runs (⌘⇧L)" }));
+    expect(onChangeWhere).toHaveBeenCalledOnce();
+  });
+
+  it("offers merge approval as Ask or Automatic, named as the workspace's setting", () => {
+    const onPick = vi.fn();
+    render(
+      <TooltipProvider>
+        <TaskAuthorityLine
+          way="direct"
+          workspace="api"
+          autonomy="full"
+          hold={false}
+          approval={{ label: "Merge approval for api, a workspace setting", onPick }}
+        />
+      </TooltipProvider>,
+    );
+    // The scope is in words beside the choice, not only on hover.
+    expect(screen.getByTestId("task-merge-approval-scope").textContent).toBe(
+      "Merge approval for api",
+    );
+    const group = screen.getByRole("radiogroup", {
+      name: "Merge approval for api, a workspace setting",
+    });
+    const automatic = within(group).getByRole("radio", { name: "Automatic" });
+    expect(automatic.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(automatic);
+    expect(onPick).not.toHaveBeenCalled();
+    fireEvent.click(within(group).getByRole("radio", { name: "Ask" }));
+    expect(onPick).toHaveBeenCalledWith("ask");
   });
 });
 

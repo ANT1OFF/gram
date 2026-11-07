@@ -11,11 +11,14 @@ export interface EmptyAction {
   readonly icon?: LucideIcon | undefined;
   readonly onClick: () => void;
   readonly testId?: string | undefined;
+  /** The filled primary: only where it is the one way in to the whole app (home, nothing set up). */
+  readonly primary?: boolean | undefined;
 }
 
 /**
  * What an empty view says, the same on every surface: its glyph drawn on, a short title (a fragment,
- * "No docs yet"), one line on what goes there, and at most one action, an outline button. The
+ * "No docs yet"), one line on what goes there, and at most one action, an outline button (filled
+ * where it is the app's one way in: home with nothing set up). The
  * Board, the Inbox, History, the panel's Docs and Workers tabs and the home page all use it, so an
  * empty place always reads the same way.
  */
@@ -64,7 +67,7 @@ export function EmptyState({
         <Button
           type="button"
           size="sm"
-          variant="outline"
+          variant={action.primary ? "default" : "outline"}
           data-testid={action.testId ?? "empty-action"}
           className="mt-3"
           onClick={action.onClick}

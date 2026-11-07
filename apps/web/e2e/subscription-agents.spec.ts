@@ -32,7 +32,7 @@ test("Codex starts a thread with its own model and credentials without configuri
   });
   await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/code/sandbox");
   await form.getByLabel("First prompt").fill("Explain this project.");
-  await form.getByRole("button", { name: /Create thread/ }).click();
+  await form.getByRole("button", { name: /Start chat/ }).click();
   await expect(page).toHaveURL(/\/t\/t-/);
   expect(
     await page.evaluate(() => JSON.parse(sessionStorage.getItem("gram.e2e.createdModel")!)),
@@ -54,7 +54,7 @@ test("signed-out Codex remains selectable and retrying after login discovers its
   await page.getByRole("option", { name: "Codex", exact: true }).click();
   await expect(form.getByRole("alert")).toContainText("codex login");
   await expect(form.getByRole("combobox", { name: "Model", exact: true })).toHaveCount(0);
-  await expect(form.getByRole("button", { name: /Create thread/ })).toBeDisabled();
+  await expect(form.getByRole("button", { name: /Start chat/ })).toBeDisabled();
   await page.evaluate(() => {
     sessionStorage.setItem("gram.mock.launchChecks", JSON.stringify({ codexSignIn: "signedIn" }));
   });

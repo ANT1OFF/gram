@@ -47,6 +47,7 @@ function HomeEmpty() {
           label: "Open a repository",
           icon: FolderGit2,
           testId: "home-open-repository",
+          primary: true,
           onClick: () => void navigate({ to: "/new-workspace" }),
         }}
       />

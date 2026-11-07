@@ -43,8 +43,8 @@ import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
 import { PressScale, Spinner } from "@/motion";
 import { useTaskDraftStore } from "@/orchestration/task-draft-store";
 import {
-  defaultTaskTarget,
   settledTaskTarget,
+  startingTaskTarget,
   taskRepos,
   taskTargetKey,
   type TaskTarget,
@@ -59,6 +59,7 @@ import { AuthorityExplainer } from "@/new-thread/authority-explainer";
 import { TaskAuthorityLine } from "@/new-thread/authority-line";
 import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { ControlDetails } from "@/new-thread/control-details";
+import { useWorkspaceMergeApproval } from "@/new-thread/merge-approval";
 import { NewFormHeader, WHO_ENTRY, WhereFact, WhereStop, type Who } from "@/new-thread/who-does-it";
 import { WorkspaceAutonomy } from "@/new-thread/workspace-autonomy";
 import { readCameFrom, type CameFrom } from "@/shell/came-from";
@@ -140,18 +141,16 @@ export function NewTaskDraft({
     (!settled || workspaces.some((state) => state.workspace.id === initialWorkspace))
       ? { kind: "workspace", workspaceId: initialWorkspace }
       : undefined;
-  const target = settledTaskTarget(
-    picked ??
-      named ??
-      defaultTaskTarget({
-        current,
-        here: from.kind === "workspace" ? from.workspaceId : undefined,
-        workspaces,
-        projects,
-        last,
-      }),
+  const starting = startingTaskTarget({
+    current,
+    here: from.kind === "workspace" ? from.workspaceId : undefined,
     workspaces,
-  );
+    projects,
+    last,
+  });
+  const target = settledTaskTarget(picked ?? named ?? starting?.target, workspaces);
+  // Kept from the last task rather than read off where the draft was opened: said beside Start.
+  const remembered = picked === undefined && named === undefined && starting?.from === "last";
   // The window is on the workspace the task goes to while it is drafted, so the title bar and the
   // overview name the one the form does.
   const showing = target?.kind === "workspace" ? target.workspaceId : undefined;
@@ -278,22 +277,10 @@ export function NewTaskDraft({
   const [hold, setHold] = useState(false);
   const holdId = useId();
   const formRef = useRef<HTMLFormElement>(null);
-  // Control and approvals, which the summary beside Start opens to the control that changes it.
   const [controlsOpen, setControlsOpen] = useState(false);
-  const openControls = () => {
-    setControlsOpen(true);
-    // The autonomy picker, which the merge part names; else the hold switch.
-    requestAnimationFrame(() => {
-      const form = formRef.current;
-      focusIfConnected(
-        form?.querySelector<HTMLElement>('[data-testid="workspace-autonomy-trigger"]') ??
-          form?.querySelector<HTMLElement>('[data-testid="task-hold"] [role="switch"]'),
-      );
-    });
-  };
 
   // A repeat start: the target is the one the last task went to and no new workspace is made, so
-  // who does it and where it runs fold to one line until Change unfolds them.
+  // who does it and where it runs fold away, said by the line beside Start until its Change.
   const [expanded, setExpanded] = useState(false);
   const repeat =
     settled &&
@@ -302,6 +289,22 @@ export function NewTaskDraft({
     target.kind === "workspace" &&
     taskTargetKey(last) === taskTargetKey(target);
   const folded = repeat && !expanded;
+  // Where it runs, changed from beside Start in one click or ⌘⇧L: a folded form unfolds, and the
+  // workspace's menu opens.
+  const [whereOpen, setWhereOpen] = useState(false);
+  const changeWhere = () => {
+    if (attachments.uploading) return;
+    setExpanded(true);
+    requestAnimationFrame(() => setWhereOpen(true));
+  };
+  useShortcut({
+    id: "draft.where",
+    keys: "mod+shift+l",
+    label: "Change where a new task runs",
+    group: "Composer",
+    run: changeWhere,
+  });
+  const whereHint = useShortcutHint("draft.where");
 
   // Arriving here (⌘N, New task, the New menu) starts where typing does: the brief. Focus already
   // in a field (a carried draft's, say) stays.
@@ -409,10 +412,10 @@ export function NewTaskDraft({
     way === "plan"
       ? makesOne
         ? "Start workspace and send"
-        : "Send to orchestrator"
+        : "Send to team"
       : makesOne
-        ? "Start workspace and worker"
-        : "Start worker";
+        ? "Start workspace and task"
+        : "Start task";
   // What Start waits on while a check runs, in its own words on the button: the task's selection,
   // then each agent's readiness, then the workspace's autonomy the summary beside it names.
   const checking: string | undefined =
@@ -439,6 +442,13 @@ export function NewTaskDraft({
     : workspace === undefined
       ? undefined
       : autonomyOf(workspace.charter);
+  const mergeApproval = useWorkspaceMergeApproval(
+    workspace,
+    autonomy ?? autonomyOf(DEFAULT_CHARTER),
+  );
+  // The places after the workspace, as the form names them: a direct worker's repo and checkout.
+  const places =
+    way === "direct" && repo !== undefined ? [repo.name, "New worktree, new branch"] : [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -588,32 +598,14 @@ export function NewTaskDraft({
               </div>
             </div>
           }
-          summary={
-            folded
-              ? {
-                  places: [
-                    name,
-                    ...(way === "direct" && repo !== undefined
-                      ? [repo.name, "New worktree, new branch"]
-                      : []),
-                  ],
-                  onExpand: () => {
-                    setExpanded(true);
-                    // Unfolded, the keyboard picks up at the choice it was folding.
-                    requestAnimationFrame(() =>
-                      focusIfConnected(
-                        formRef.current?.querySelector('[role="radio"][aria-checked="true"]'),
-                      ),
-                    );
-                  },
-                }
-              : undefined
-          }
+          folded={folded}
           where={
             <>
               <WhereStop label={makesOne ? "New workspace for" : "Workspace"}>
                 <TaskTargetPicker
                   value={target}
+                  open={whereOpen}
+                  onOpenChange={setWhereOpen}
                   disabled={attachments.uploading}
                   workspaces={workspaces}
                   projects={projects}
@@ -779,11 +771,29 @@ export function NewTaskDraft({
                   <TaskAuthorityLine
                     way={way}
                     workspace={name}
+                    places={places}
                     makesOne={makesOne}
-                    autonomy={autonomy}
+                    // While a pick saves, the line says the level it is saving.
+                    autonomy={makesOne ? autonomy : mergeApproval.autonomy}
                     hold={way === "direct" && hold}
-                    onChange={makesOne ? undefined : openControls}
+                    remembered={remembered}
+                    onChangeWhere={attachments.uploading ? undefined : changeWhere}
+                    changeWhereHint={whereHint || undefined}
+                    // A new workspace's level is the Autonomy choice above; an existing one's
+                    // merge approval is picked here.
+                    approval={
+                      makesOne
+                        ? undefined
+                        : {
+                            label: mergeApproval.label,
+                            onPick: mergeApproval.pick,
+                            disabled: !mergeApproval.ready || mergeApproval.busy || sending,
+                          }
+                    }
                   />
+                )}
+                {!makesOne && mergeApproval.below !== undefined && (
+                  <span className="basis-full pl-5.5">{mergeApproval.below}</span>
                 )}
                 {way === "plan" && budget !== undefined && (
                   <span

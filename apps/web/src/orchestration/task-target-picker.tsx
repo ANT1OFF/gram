@@ -31,6 +31,8 @@ export function TaskTargetPicker({
   workspaces,
   projects,
   onPick,
+  open,
+  onOpenChange,
 }: {
   value: TaskTarget | undefined;
   /** While a file is still uploading, which the new-workspace sheet couldn't take with it. */
@@ -38,6 +40,9 @@ export function TaskTargetPicker({
   workspaces: readonly WorkspaceState[];
   projects: readonly Project[];
   onPick: (target: DraftTarget) => void;
+  /** Open from elsewhere too: the New form's Change beside Start, and its shortcut. */
+  open?: boolean | undefined;
+  onOpenChange?: ((open: boolean) => void) | undefined;
 }) {
   const repos = reposWithoutWorkspace(workspaces, projects);
   const current = value === undefined ? undefined : taskTargetKey(value);
@@ -50,7 +55,12 @@ export function TaskTargetPicker({
   const label = workspace?.workspace.name ?? repo?.name ?? "Choose a workspace";
 
   return (
-    <Menu.Root>
+    <Menu.Root
+      {...(open === undefined ? {} : { open })}
+      {...(onOpenChange === undefined
+        ? {}
+        : { onOpenChange: (next: boolean) => onOpenChange(next) })}
+    >
       <Menu.Trigger
         data-testid="task-target"
         disabled={disabled}

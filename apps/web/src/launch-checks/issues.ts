@@ -23,6 +23,27 @@ export interface LaunchIssue {
 }
 
 /**
+ * The problems the first-run screen's readiness card already says, with what to do about each: a
+ * missing or signed-out agent, git and the GitHub CLI. While that card is on screen the banner and
+ * its chip leave them to it, so a first run with no agent warns once, not twice.
+ */
+const FIRST_RUN_COVERS: ReadonlySet<string> = new Set([
+  "agents-missing",
+  "claude-missing",
+  "claude-signed-out",
+  "claude-api-key",
+  "claude-third-party",
+  "codex-missing",
+  "codex-signed-out",
+  "codex-api-key",
+  "git-missing",
+  "gh-missing",
+  "gh-signed-out",
+]);
+
+export const firstRunCovers = (issue: LaunchIssue): boolean => FIRST_RUN_COVERS.has(issue.id);
+
+/**
  * What to tell the user about the launch checks, most important first. An unreadable Claude sign-in
  * status isn't reported: Diagnostics shows it, and a wrong alarm would be worse.
  */

@@ -89,7 +89,7 @@ const setup = (choices: TaskWorkerChoice[], workers: Record<string, string> = {}
 };
 
 const startButton = () =>
-  screen.getByRole("button", { name: /Start workspace and worker/ }) as HTMLButtonElement;
+  screen.getByRole("button", { name: /Start workspace and task/ }) as HTMLButtonElement;
 
 const send = async (refused = true) => {
   fireEvent.change(screen.getByLabelText("What needs doing"), {

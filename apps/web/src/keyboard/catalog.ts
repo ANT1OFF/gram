@@ -277,7 +277,13 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   {
     id: "draft.create",
     keys: "mod+enter",
-    label: "Create thread, start the task, or create the workspace",
+    label: "Start the chat or task, or create the workspace",
+    group: "Composer",
+  },
+  {
+    id: "draft.where",
+    keys: "mod+shift+l",
+    label: "Change where a new task runs",
     group: "Composer",
   },
   { id: "terminal.zoomIn", keys: "mod+=", label: "Zoom in terminal", group: "Terminal" },

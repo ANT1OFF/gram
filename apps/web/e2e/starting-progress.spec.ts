@@ -11,7 +11,7 @@ test("a starting worker shows its progress under the brief until its first outpu
   });
   await page.goto("/new-task?way=direct");
   await page.getByLabel("What needs doing").fill("Add retry coverage for the queue consumer.");
-  await page.getByRole("button", { name: /Start (workspace and )?worker/ }).click();
+  await page.getByRole("button", { name: /Start (workspace and )?task/ }).click();
   await expect(page).toHaveURL(/\/t\//);
   await expect(page.getByTestId("message-user").first()).toContainText("Add retry coverage");
 

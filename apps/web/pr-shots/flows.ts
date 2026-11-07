@@ -118,7 +118,7 @@ const steps: readonly Shot[] = [
       });
       await page.goto("/new-task?way=direct");
       await page.getByLabel("What needs doing").fill("Add retry coverage for the queue consumer.");
-      await page.getByRole("button", { name: /Start (workspace and )?worker/ }).click();
+      await page.getByRole("button", { name: /Start (workspace and )?task/ }).click();
       await expect(page).toHaveURL(/\/t\//);
       await page.getByLabel("Message", { exact: true }).waitFor();
       await page.getByTestId("message-user").first().waitFor();
@@ -131,7 +131,7 @@ const steps: readonly Shot[] = [
     open: async (page) => {
       await page.goto("/new-task?way=direct");
       await page.getByLabel("What needs doing").fill("Add retry coverage for the queue consumer.");
-      await page.getByRole("button", { name: /Start (workspace and )?worker/ }).click();
+      await page.getByRole("button", { name: /Start (workspace and )?task/ }).click();
       await expect(page).toHaveURL(/\/t\//);
       await page.getByLabel("Message", { exact: true }).waitFor();
       // The next one, by its shortcut, in the same session: the last target is remembered.

@@ -49,7 +49,7 @@ export interface BindingRow {
 
 /**
  * The catalog with the overrides applied. Clashes between defaults are deliberate (they're scoped,
- * e.g. Send and Create thread), so only a clash involving an override is reported.
+ * e.g. Send and Start chat), so only a clash involving an override is reported.
  */
 export function bindingRows(
   catalog: readonly ShortcutDefinition[],

@@ -63,7 +63,7 @@ test("a screenshot pasted into /new moves into the thread and its first message 
   await expect(chip).toHaveAttribute("data-status", "ready");
   await expect(chip).toHaveAttribute("title", /attachments\/_drafts\/[0-9a-f-]+\/Screenshot\.png$/);
 
-  await page.getByRole("button", { name: /Create thread/ }).click();
+  await page.getByRole("button", { name: /Start chat/ }).click();
   await expect(page).toHaveURL(/\/t\/t-mock-/);
   const first = page.getByTestId("message-user").first();
   await expect(first).toContainText("what's in this screenshot?");
