@@ -447,7 +447,7 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   await expect(page.getByTestId("status-waiting")).toHaveCount(0);
   const needsYou = page.getByTestId("overview-needs-you");
   const all = Number(await needsYou.getAttribute("data-count"));
-  await expect(needsYou).toContainText(`${all} need you`);
+  await expect(needsYou).toHaveAccessibleName(new RegExp(`^${all} need you: `));
   // The pill is the one way in: the title bar has no Inbox button beside it.
   await expect(page.getByTestId("inbox-button")).toHaveCount(0);
 
@@ -530,7 +530,7 @@ test("Send answer turns the worker's row, card and chip to answered with the cou
   await expect(row.getByTestId("overview-worker-now")).toHaveText("asks you");
   await expect(card.getByTestId("feature-card-now")).toHaveText("asks you");
   const pill = page.getByTestId("overview-needs-you");
-  const before = Number((await pill.textContent())?.match(/\d+/)?.[0]);
+  const before = Number(await pill.getAttribute("data-count"));
 
   await page.getByTestId("overview-needs-you").click();
   await goTo(page, "A refund webhook");
@@ -539,7 +539,7 @@ test("Send answer turns the worker's row, card and chip to answered with the cou
   await page.keyboard.press("Escape");
 
   // Inside Undo's window, before the answer has even gone out: every view says so with the count.
-  await expect(pill).toContainText(String(before - 1));
+  await expect(pill).toHaveAttribute("data-count", String(before - 1));
   await expect(row.getByTestId("overview-worker-now")).toHaveText("answered · resuming");
   await expect(row).not.toHaveAttribute("data-asking");
   await expect(row.getByTestId("overview-worker-dot")).not.toHaveAttribute("data-tone", "needs");

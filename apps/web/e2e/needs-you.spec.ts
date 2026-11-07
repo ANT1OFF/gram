@@ -544,7 +544,7 @@ test("narrow: the rail's pill opens an Inbox that fits, and with no pill ⌘⌥3
   await page.setViewportSize({ width: 520, height: 800 });
   await expect(page.getByTestId("overview-rail-needs-you")).toBeHidden();
   // With no pill on screen, the title bar's entry is the way in, in the pill's own words.
-  await expect(page.getByTestId("inbox-button")).toHaveText(/^\d+ needs? you$/);
+  await expect(page.getByTestId("inbox-button")).toHaveAccessibleName(/^\d+ needs? you: \d+ /);
   await page.keyboard.press("ControlOrMeta+Alt+3");
   await expect(inbox(page)).toBeVisible();
   await fits(520);

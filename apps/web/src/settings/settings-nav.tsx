@@ -33,6 +33,7 @@ export function SettingsNav({
   currentPage,
   badges,
   headingRef,
+  needsYou,
   search,
   onNavigate,
 }: {
@@ -49,6 +50,8 @@ export function SettingsNav({
   badges?: Readonly<Partial<Record<SettingsGroupId, ReactNode>>>;
   /** The "Settings" heading, focusable from script (tabIndex -1). */
   headingRef?: Ref<HTMLHeadingElement>;
+  /** The needs-you pill, over the search where the overview has it, so it never moves. */
+  needsYou?: ReactNode;
   /** The search box, between the heading and the list. */
   search?: ReactNode;
   /** A group's link was clicked. */
@@ -68,6 +71,7 @@ export function SettingsNav({
       >
         Settings
       </h1>
+      {needsYou}
       {search}
       <SectionPicker groups={groups} current={current} onNavigate={onNavigate} />
       <ul className="flex flex-col gap-0.5 text-reading @max-2xl/settings:hidden">

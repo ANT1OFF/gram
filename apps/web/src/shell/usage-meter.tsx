@@ -17,11 +17,11 @@ import {
   limitTone,
   limitWarns,
   nextLimitChange,
-  tightestLimit,
+  shownLimit,
   useUsageLimits,
   type LimitProvider,
   type LimitWindow,
-  type TightestLimit,
+  type ShownLimit,
   type UsageLimit,
   type UsageLimits,
 } from "@/stores/usage-limits";
@@ -65,17 +65,24 @@ export function useMinuteNow(): number {
 }
 
 /**
- * The window's one way into usage: the title bar's subscription meter, the limit closest to running
- * out (the highest usage of any provider's window, as its hover and name say), as a thin bar and a
- * share, opening onto every provider's 5-hour and weekly windows and a link to the Usage page.
- * Neutral until 90%, so amber in the title bar means what needs you. Until an agent reports a
- * limit, an icon that opens the Usage page.
+ * The window's one way into usage: the title bar's subscription meter, as a thin bar and a share,
+ * opening onto every provider's 5-hour and weekly windows and a link to the Usage page. On a thread
+ * it is that thread's agent's closest window, so its name matches the composer's; elsewhere, or
+ * once another provider's is about to stop work, the highest of all (`shownLimit`), as its hover and
+ * name say. Neutral until 90%, so amber in the title bar means what needs you. Until an agent
+ * reports a limit, an icon that opens the Usage page.
+ *
+ * Open, it gives way to the conversation: it closes when focus moves outside it, onto an approval
+ * card's buttons say, so it never stays over the card that asks.
  */
 export function UsageMeter({
+  agent,
   className,
   textClassName,
   shortTextClassName = "hidden",
 }: {
+  /** The agent of the thread in view, whose usage the meter shows. */
+  agent?: string | undefined;
   className?: string;
   /** For the reading beside the bar, which a narrow title bar trades for its short form. */
   textClassName?: string;
@@ -87,8 +94,9 @@ export function UsageMeter({
 }) {
   const limits = useUsageLimits((s) => s.limits);
   const now = useLimitsNow(limits);
-  const tightest = tightestLimit(limits, now);
+  const tightest = shownLimit(limits, now, agent);
   const [open, setOpen] = useState(false);
+  useGiveWay(open, setOpen);
   if (tightest === undefined) return <UsageLink className={className} />;
   const warns = limitWarns(tightest.limit);
   const tone = limitTone(tightest.limit);
@@ -143,6 +151,28 @@ export function UsageMeter({
 }
 
 /**
+ * Closes the open popover once focus moves outside it: a click or Tab onto an approval card's
+ * buttons, the composer, anything in the conversation, which a ringed card's own focus does too.
+ * Its trigger is no "outside": a click there toggles it as before. An ask arriving elsewhere leaves
+ * it be: the user may be reading it.
+ */
+function useGiveWay(open: boolean, setOpen: (open: boolean) => void) {
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: FocusEvent) => {
+      const target = event.target;
+      // The window taking focus back (from a tab a middle-click opened, say) lands on the body:
+      // nothing else asked for the user.
+      if (!(target instanceof Element) || target === document.body) return;
+      if (target.closest('[data-testid="usage-limits"], [data-testid="usage-meter"]')) return;
+      setOpen(false);
+    };
+    document.addEventListener("focusin", away);
+    return () => document.removeEventListener("focusin", away);
+  }, [open, setOpen]);
+}
+
+/**
  * How much of the window's foot the popover leaves clear, in CSS px: the composer and an approval
  * or question card above it, the conversation's action area. A short window scrolls the popover
  * rather than laying it over them.
@@ -186,7 +216,7 @@ function LimitsPopover({
   shown,
   onLeave,
 }: {
-  shown: Pick<TightestLimit, "provider" | "window">;
+  shown: Pick<ShownLimit, "provider" | "window" | "why">;
   /** Closes the popover as its link leaves for the Usage page. */
   onLeave: () => void;
 }) {
@@ -212,8 +242,9 @@ function LimitsPopover({
       ))}
       <div className="grid gap-2 border-t border-border pt-2.5 text-meta text-muted-foreground">
         <p data-testid="usage-limits-foot">
-          The title bar shows the highest: {agentLabel(shown.provider)}{" "}
-          {WINDOW_LABEL[shown.window].toLowerCase()}. Includes your own use outside Gram.
+          The title bar shows {shown.why === "agent" ? "this thread's agent" : "the highest"}:{" "}
+          {agentLabel(shown.provider)} {WINDOW_LABEL[shown.window].toLowerCase()}. Includes your own
+          use outside Gram.
         </p>
         <Link
           to="/usage"

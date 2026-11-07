@@ -134,7 +134,8 @@ export function AppShell() {
         >
           <ShellTitlebar
             sidebarShown={sidebarShown}
-            needsYouPill={sidebarShown}
+            // Settings' sections carry the pill where the overview does.
+            needsYouPill={sidebarShown || settings}
             settings={settings}
             compactRail={fit.sidebar === "compact"}
             panelShown={panelShown}

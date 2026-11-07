@@ -73,11 +73,20 @@ test("the popover forecasts a window that is filling, and dates a reading gone q
   const ages = popover.getByTestId("usage-limit-age");
   const colours = await ages.evaluateAll((all) => all.map((el) => getComputedStyle(el).color));
   expect(new Set(colours).size).toBe(1);
-  // The window the title bar shows is marked, and named at the foot.
-  await expect(codex.locator('[data-testid="usage-limit-row"][data-shown]')).toHaveAttribute(
+  // The window the title bar shows is marked, and named at the foot: on this Claude thread,
+  // Claude's closest, though Codex's is higher.
+  await expect(claude.locator('[data-testid="usage-limit-row"][data-shown]')).toHaveAttribute(
     "data-window",
-    "fiveHour",
+    "weekly",
   );
+  await expect(codex.locator('[data-testid="usage-limit-row"][data-shown]')).toHaveCount(0);
+  await expect(popover.getByTestId("usage-limits-foot")).toContainText(
+    "The title bar shows this thread's agent: Claude Code weekly.",
+  );
+  // Off a thread, it is the highest of all, and says so.
+  await page.keyboard.press("Escape");
+  await page.goto("/usage");
+  await page.getByTestId("usage-meter").click();
   await expect(popover.getByTestId("usage-limits-foot")).toContainText(
     "The title bar shows the highest: Codex 5-hour.",
   );

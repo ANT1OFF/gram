@@ -517,7 +517,8 @@ test("Needs you counts the asks across every workspace, and lists them by worksp
   await expect(needs).not.toHaveAttribute("data-count", "0");
   const count = Number(await needs.getAttribute("data-count"));
   expect(count).toBeGreaterThan(1);
-  await expect(needs).toContainText(`${count} need you`);
+  // Its words name the kinds, or past two the count; its name always says the count, then kinds.
+  await expect(needs).toHaveAccessibleName(new RegExp(`^${count} need you: \\d+ \\w+`));
   // Its hover says its scope, every workspace, and how much of it is where by kind: here first,
   // then each other place, so the header needn't repeat it.
   await expect(needs).toHaveAttribute(
@@ -559,7 +560,8 @@ test("Needs you counts what the agents left waiting on you too, and goes to it",
     }),
   );
   await expect(needs).toHaveAttribute("data-count", "1");
-  await expect(needs).toContainText("1 needs you");
+  await expect(needs).toHaveText("1 step to take");
+  await expect(needs).toHaveAccessibleName(/^1 needs you: 1 step to take/);
 
   // Its Open thread goes to the thread it lives in, at the message that added it.
   await needs.click();

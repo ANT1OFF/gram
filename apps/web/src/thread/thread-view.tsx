@@ -379,6 +379,8 @@ export function ThreadView({
   const needs = needsYou(summary) || summary.pendingRequests.length > 0;
   const activity = activityLine(status, detail, summary.activity);
   const display = threadStatusOf(summary, detail);
+  // The glyph says work is under way: the turn's spinner, or what runs under the thread.
+  const glyphWorks = display.working || display.running !== undefined || status === "starting";
   // A thread alone in Chat puts its header in the window's title bar: one bar, not two. The
   // title and the empty room move the window; everything after the title is a control.
   const inTitlebar = carriedByBar;
@@ -546,10 +548,20 @@ export function ThreadView({
         </div>
         {/* Outside the chips that drop when short of room: Hand back must always be there. */}
         <WorkerActions thread={thread} inTitlebar={inTitlebar} />
+        {/* In the title bar the glyph shows only while the thread works: at rest it is the bar's
+            default, and what needs you (an approval, a question, an error) is the needs-you pill's
+            and the card's to say, so the bar never carries a second, unlabelled warning beside it.
+            Its words stay for screen readers. */}
         <Hint
           label={statusHint(display, activity)}
           side="bottom"
-          render={<span data-testid="pane-status" className="relative flex shrink-0" />}
+          render={
+            <span
+              data-testid="pane-status"
+              data-quiet={(inTitlebar && !glyphWorks) || undefined}
+              className={cn("relative flex shrink-0", inTitlebar && !glyphWorks && "hidden")}
+            />
+          }
         >
           <Swap swapKey={display.label}>
             <display.icon

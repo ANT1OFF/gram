@@ -99,6 +99,13 @@ describe("limit formatting", () => {
     expect(meterLabel({ ...tightest, window: "weekly" })).toBe(
       "Highest subscription usage: Claude Code weekly limit 42% used",
     );
+    // On a thread, the meter is that thread's agent's, and says so.
+    expect(meterHint({ ...tightest, why: "agent" })).toBe(
+      "This thread's agent: Claude Code 5-hour limit, 42%",
+    );
+    expect(meterLabel({ ...tightest, why: "agent" })).toBe(
+      "This thread's agent's subscription usage: Claude Code 5-hour limit 42% used",
+    );
   });
 
   it("says a full window the agent goes on past is on credits, not a stop", () => {
