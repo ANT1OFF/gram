@@ -228,6 +228,49 @@ describe("the baseline", () => {
     }),
   );
 
+  it.effect("upgrades the previous 0002 database to receipts without replacing existing data", () =>
+    Effect.gen(function* () {
+      const file = join(yield* tempDir, "upgrade-receipts.db");
+      const open = (record: Parameters<typeof migratorOptions>[0]) =>
+        SqliteMigrator.layer(migratorOptions(record)).pipe(
+          Layer.provideMerge(SqliteClient.layer({ filename: file })),
+        );
+      const previous = {
+        "0001_baseline": migrations["0001_baseline"],
+        "0002_merge_freezes": migrations["0002_merge_freezes"],
+      };
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`INSERT INTO projects(id, root, name) VALUES ('prior-project', '/synthetic/upgrade', 'before receipts')`;
+        expect((yield* applied).map((row) => row.migration_id)).toEqual([1, 2]);
+        expect(yield* sql`SELECT name FROM sqlite_master WHERE name = 'message_receipts'`).toEqual(
+          [],
+        );
+      }).pipe(Effect.provide(open(previous)));
+      for (let reopen = 0; reopen < 2; reopen++) {
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect(yield* sql`SELECT id, name FROM projects`).toEqual([
+            { id: "prior-project", name: "before receipts" },
+          ]);
+          expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
+            [1, "baseline"],
+            [2, "merge_freezes"],
+            [3, "message_receipts"],
+          ]);
+          // A closed thread has no live row, but must retain its permanent safety identity.
+          if (reopen === 0) {
+            yield* sql`INSERT INTO message_receipts(thread_id, client_message_id, fingerprint, retired)
+              VALUES ('closed-thread', 'old-client-id', 'synthetic', 1)`;
+          }
+          expect(yield* sql`SELECT client_message_id, retired FROM message_receipts`).toEqual([
+            { client_message_id: "old-client-id", retired: 1 },
+          ]);
+        }).pipe(Effect.provide(open(migrations)));
+      }
+    }),
+  );
+
   it.effect("takes a 1.x migration appended after it, once, on a database it made", () =>
     Effect.gen(function* () {
       const file = join(yield* tempDir, "gram.db");
