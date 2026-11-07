@@ -2714,6 +2714,34 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("overview-section-orchestrators"),
   },
   {
+    name: "sidebar-agent-marks",
+    title: "An orchestrator's workers on Claude Code and on Codex, each with its agent's mark",
+    open: async (page) => {
+      await openOrchestrators(page, false);
+      // Two of its Claude Code workers moved to Codex, so both agents show side by side.
+      await page.evaluate(() => {
+        const mock = window.gramMock!;
+        const workers = [...document.querySelectorAll('[data-testid="overview-worker"]')]
+          .map((row) => row.getAttribute("data-thread-id"))
+          .filter((id): id is string => id !== null);
+        for (const id of workers.filter((_, index) => index % 2 === 1)) {
+          const { thread } = mock.world.summary(id as never);
+          mock.world.replaceThread({ ...thread, model: { agent: "codex", model: "gpt-5-codex" } });
+        }
+      });
+      await expect(page.getByTestId("overview-worker").first()).toHaveAttribute(
+        "aria-label",
+        /, Claude Code, /,
+      );
+      await expect(page.getByTestId("overview-worker").nth(1)).toHaveAttribute(
+        "aria-label",
+        /, Codex, /,
+      );
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("overview-section-orchestrators"),
+  },
+  {
     name: "orchestrators-folded",
     title: "The same Orchestrators, each folded by its chevron",
     open: (page) => openOrchestrators(page, true),
