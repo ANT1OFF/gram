@@ -21,7 +21,7 @@ import { threadScope } from "@/palette/palette-items";
 import { useLayoutStore, type PaletteScope } from "@/stores/layout";
 
 import { PrContextMenuItems } from "./pr-menu-items";
-import { LaterContextMenuItems, SnoozeMenuItems } from "./snooze-menu-items";
+import { LaterContextMenuItems } from "./snooze-menu-items";
 import { useThreadActions } from "./use-thread-actions";
 
 export const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
@@ -192,7 +192,6 @@ export function ThreadMenuItems({
         )}
         {thread.parked ? "Unarchive" : "Archive"}
       </Menu.Item>
-      <SnoozeMenuItems threadId={threadId} itemClassName={itemClassName} />
       {actions.toggleDone !== undefined && (
         <Menu.Item
           className={itemClassName}

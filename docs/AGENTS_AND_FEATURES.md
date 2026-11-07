@@ -86,7 +86,8 @@ configured pass.
   → General → Settle idle threads (7 by default; Never keeps it). Pinned, unread and waiting
   threads stay, and new activity brings a thread back. Mark unread on a row keeps a thread in
   view to come back to.
-- **Snooze.** A thread's header menu, a solo row's Come back later and the palette snooze it for
+- **Snooze.** A solo row's Come back later and the palette (from anywhere, or a header's "…" →
+  More…) snooze a thread for
   an hour, until 18:00, until 09:00 tomorrow, until Monday 09:00 or until a time you pick. It
   leaves the lists (a solo thread under a folded Snoozed line) and its header says "Snoozed until
   Fri 09:00" beside Unsnooze. It comes back unread at that time, or sooner when it asks you

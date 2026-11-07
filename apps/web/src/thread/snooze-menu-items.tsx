@@ -1,6 +1,5 @@
-import { Menu } from "@base-ui/react/menu";
 import type { ThreadId } from "@gram/contracts";
-import { AlarmClockOff, BellRing, ChevronRightIcon, Clock, Mail, MailOpen } from "lucide-react";
+import { AlarmClockOff, BellRing, Clock, Mail, MailOpen } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -10,8 +9,6 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
-import { MENU_POPUP } from "@/lib/selection";
-import { cn } from "@/lib/utils";
 
 import { snoozePresets, snoozeTime } from "./snooze-model";
 import { useThreadActions } from "./use-thread-actions";
@@ -92,95 +89,5 @@ export function LaterContextMenuItems({ threadId }: { threadId: ThreadId }) {
         )}
       </ContextMenuSubContent>
     </ContextMenuSub>
-  );
-}
-
-/** The header menu's snooze items, as `ContextSnoozeItems` has them. */
-function MenuSnoozeItems({
-  threadId,
-  itemClassName,
-}: {
-  threadId: ThreadId;
-  itemClassName: string;
-}) {
-  const actions = useThreadActions(threadId);
-  const { now, presets } = usePresets();
-  const snooze = actions.snooze;
-  if (snooze === undefined) return null;
-  return (
-    <>
-      {presets.map((preset) => (
-        <Menu.Item
-          key={preset.id}
-          data-testid={`menu-snooze-${preset.id}`}
-          className={itemClassName}
-          onClick={() => snooze(preset.at)}
-        >
-          <Clock aria-hidden className="size-icon-row" />
-          {preset.label}
-          <span className={WHEN}>{snoozeTime(preset.at, now)}</span>
-        </Menu.Item>
-      ))}
-      <Menu.Item
-        data-testid="menu-snooze-custom"
-        className={itemClassName}
-        onClick={actions.snoozeCustom}
-      >
-        <Clock aria-hidden className="size-icon-row" />
-        Pick a time…
-      </Menu.Item>
-    </>
-  );
-}
-
-/**
- * The pane header's Snooze: a submenu of the presets and a time of the user's, or Unsnooze while it
- * is snoozed. Absent for a workspace's orchestrator.
- */
-export function SnoozeMenuItems({
-  threadId,
-  itemClassName,
-}: {
-  threadId: ThreadId;
-  itemClassName: string;
-}) {
-  const actions = useThreadActions(threadId);
-  const { thread } = actions;
-  if (!thread || actions.snooze === undefined) return null;
-  if (thread.snoozedUntil !== undefined) {
-    return (
-      <Menu.Item
-        data-testid="menu-unsnooze"
-        className={itemClassName}
-        onClick={() => actions.snooze?.(undefined)}
-      >
-        <AlarmClockOff aria-hidden className="size-icon-row" />
-        Unsnooze
-      </Menu.Item>
-    );
-  }
-  return (
-    <Menu.SubmenuRoot>
-      <Menu.SubmenuTrigger
-        data-testid="menu-snooze"
-        className={cn(itemClassName, "data-[popup-open]:row-cursor")}
-      >
-        <Clock aria-hidden className="size-icon-row" />
-        Snooze
-        <ChevronRightIcon aria-hidden className="ml-auto text-muted-foreground" />
-      </Menu.SubmenuTrigger>
-      <Menu.Portal>
-        <Menu.Positioner
-          side="right"
-          align="start"
-          alignOffset={-4}
-          className="isolate z-50 outline-none"
-        >
-          <Menu.Popup data-testid="menu-snooze-popup" aria-label="Snooze" className={MENU_POPUP}>
-            <MenuSnoozeItems threadId={threadId} itemClassName={itemClassName} />
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.SubmenuRoot>
   );
 }
