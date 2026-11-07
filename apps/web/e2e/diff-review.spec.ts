@@ -60,22 +60,19 @@ test("the file tree jumps to a file, and n / p step through its hunks", async ({
   await expect(page.getByRole("combobox", { name: "Message" })).toHaveValue("n");
   await expect(retry.locator("[data-hunk='0']")).toHaveAttribute("data-current", "true");
 
-  // The tree hides from the View menu, and stays hidden across a reload.
-  await panel.getByRole("button", { name: /^View/ }).click();
-  await page.getByRole("menuitemcheckbox", { name: "File tree" }).click();
+  // The tree hides from its toggle in the toolbar, and stays hidden across a reload.
+  await panel.getByRole("button", { name: "File tree" }).click();
   await expect(tree).toHaveCount(0);
   await page.reload();
   await expect(panel.getByTestId("diff-file").first()).toBeVisible();
-  await panel.getByRole("button", { name: /^View/ }).click();
-  await expect(page.getByRole("menuitemcheckbox", { name: "File tree" })).toHaveAttribute(
-    "aria-checked",
+  await expect(panel.getByRole("button", { name: "File tree" })).toHaveAttribute(
+    "aria-pressed",
     "false",
   );
-  await page.keyboard.press("Escape");
   await expect(panel.getByRole("tree")).toHaveCount(0);
 });
 
-test("a patch of three files or fewer opens with its tree folded, and View's File tree opens it", async ({
+test("a patch of three files or fewer opens with its tree folded, and File tree opens it", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
@@ -86,12 +83,11 @@ test("a patch of three files or fewer opens with its tree folded, and View's Fil
   await dragPanelEdge(page, -420);
   // Wide enough for the tree, which the stored choice shows for a larger patch.
   await expect(panel.getByTestId("diff-summary")).toHaveAttribute("data-files", "2");
-  await panel.getByRole("button", { name: /^View/ }).click();
-  const toggle = page.getByRole("menuitemcheckbox", { name: "File tree" });
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  const toggle = panel.getByRole("button", { name: "File tree" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await expect(panel.getByRole("tree")).toHaveCount(0);
   await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await expect(
     panel.getByRole("tree", { name: "Changed files" }).getByRole("treeitem"),
   ).toHaveCount(2);
@@ -108,15 +104,17 @@ test("split view shows old and new side by side once the panel is wide enough", 
   const panel = page.getByTestId("diff-panel");
   await expect(panel.getByTestId("patch")).toBeVisible();
 
-  await panel.getByRole("button", { name: /^View/ }).click();
-  await page.getByRole("menuitemradio", { name: "Split" }).click();
-  // The default panel is too narrow: unified it stays, and the choice says why.
+  const split = panel.getByRole("radio", { name: "Split" });
+  await split.click();
+  await expect(split).toHaveAttribute("aria-checked", "true");
+  // The default panel is too narrow: unified it stays, and the choice says why on hover.
   await expect(panel).toHaveAttribute("data-layout", "unified");
-  await expect(page.getByRole("menuitemradio", { name: "Split" })).toHaveAttribute(
-    "title",
-    /wider/,
+  // A hint opens as the pointer comes onto its trigger, not while it rests there after the click.
+  await page.mouse.move(0, 0);
+  await split.hover();
+  await expect(page.locator('[data-slot="tooltip-content"]').last()).toContainText(
+    "needs a wider panel",
   );
-  await page.keyboard.press("Escape");
 
   await dragPanelEdge(page, -320);
   await expect(panel).toHaveAttribute("data-layout", "split");
@@ -134,9 +132,7 @@ test("split view shows old and new side by side once the panel is wide enough", 
   // Narrowed again, it drops back to unified, and returns to split when widened.
   await dragPanelEdge(page, 320);
   await expect(panel).toHaveAttribute("data-layout", "unified");
-  await panel.getByRole("button", { name: /^View/ }).click();
-  await page.getByRole("menuitemradio", { name: "Unified" }).click();
-  await page.keyboard.press("Escape");
+  await panel.getByRole("radio", { name: "Unified" }).click();
   await dragPanelEdge(page, -320);
   await expect(panel).toHaveAttribute("data-layout", "unified");
 });

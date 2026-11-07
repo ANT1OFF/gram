@@ -55,6 +55,31 @@ test('a finished worker with no messages shows its outcome, not "No messages yet
   );
 });
 
+test("a finished worker's outcome lists its PR's files, each a click from its diff", async ({
+  page,
+}) => {
+  const outcome = await openReleaseNotes(page);
+  const card = outcome.getByTestId("thread-outcome-pr-files");
+  await expect(card.getByRole("heading", { name: "Changed in PR #61" })).toBeVisible();
+  await expect(card).toContainText("3 files +10 −1");
+  const rows = card.getByTestId("thread-outcome-pr-file");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.first()).toContainText("docs/releases/0.9.md");
+  await expect(rows.first()).toContainText("+4 −0");
+
+  // A file opens the PR panel at that file, expanded.
+  await card.locator('[data-path="CHANGELOG.md"]').click();
+  await expect(page.getByRole("tab", { name: "PR", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  const file = page
+    .getByTestId("right-panel")
+    .locator('[data-testid="diff-file"][data-path="CHANGELOG.md"]');
+  await expect(file.locator("[data-diff-file-header]")).toHaveAttribute("aria-expanded", "true");
+  await expect(file.getByTestId("patch")).toContainText("See [the release notes]");
+});
+
 test("a finished worker's outcome finds it in History, or resumes from its report as a draft", async ({
   page,
 }) => {

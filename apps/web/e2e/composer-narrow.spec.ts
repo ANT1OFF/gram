@@ -190,7 +190,7 @@ test("beside a review in a 1024 px window, effort keeps a short word", async ({ 
   await page.mouse.move(600, 600);
   await page.keyboard.press("Escape");
   await expect(shell).toHaveAttribute("data-review-focus", "false");
-  await expect(page.getByTestId("review-room-offer")).toBeVisible();
+  await expect(page.getByTestId("review-focus")).toHaveAttribute("data-narrow", "true");
 
   const toolbar = page.getByTestId("composer-toolbar");
   // Its laid-out width, not its box: the chat eases back in from Focus review.

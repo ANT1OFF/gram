@@ -9,6 +9,7 @@ import {
   type DiffFile,
   type DiffScope,
   type GitState,
+  type PrDetail,
   type PrDetailResult,
   type PrReviewState,
   type PrState,
@@ -459,6 +460,46 @@ export function mockCreatedPrDetail(
 
 const RUNS = "https://github.com/example/api/actions/runs";
 
+/** PRs a scenario seeds for its threads, as a merged worker's: read before the fixed ones below. */
+const seededPrDetails = new Map<ThreadId, PrDetail>();
+
+/** A merged PR with `files` for `threadId`, as the realistic scenario's finished workers have. */
+export function seedMergedPr(
+  threadId: ThreadId,
+  pr: {
+    readonly number: number;
+    readonly repo: string;
+    readonly title: string;
+    readonly branch: string;
+    readonly files: readonly DiffFile[];
+  },
+): void {
+  seededPrDetails.set(threadId, {
+    headRefOid: `${pr.number}e4c1a9`.padEnd(40, "0"),
+    number: pr.number,
+    state: "MERGED",
+    url: `https://github.com/${pr.repo}/pull/${pr.number}`,
+    title: pr.title,
+    body: "",
+    isDraft: false,
+    author: "alex",
+    baseRefName: "main",
+    headRefName: pr.branch,
+    additions: pr.files.reduce((sum, file) => sum + file.additions, 0),
+    deletions: pr.files.reduce((sum, file) => sum + file.deletions, 0),
+    changedFiles: pr.files.length,
+    commits: 2,
+    reviewDecision: "APPROVED",
+    checks: "passing",
+    checksPassed: 3,
+    checksTotal: 3,
+    checkRuns: [],
+    commitList: [],
+    conversation: [],
+    files: pr.files,
+  });
+}
+
 /** `rerun`: `git.prRerunChecks` asked for the failed Windows run again, so it's queued. */
 export function mockPrDetail(
   threadId: ThreadId,
@@ -468,6 +509,8 @@ export function mockPrDetail(
     isDraft = false,
   }: MockPrWrites & { readonly rerun?: boolean } = {},
 ): PrDetailResult {
+  const seeded = seededPrDetails.get(threadId);
+  if (seeded !== undefined) return { available: true, detail: seeded };
   if (threadId === "t-question") return { available: false };
   if (threadId !== "t-flaky") return { available: true };
   return {
