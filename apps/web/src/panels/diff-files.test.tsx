@@ -71,12 +71,39 @@ describe("DiffFileList", () => {
     render(<DiffFileList files={["a", "b", "c", "d", "e"].map((p) => sized(p, 79))} />);
     expect(expanded()).toEqual(["true", "true", "true", "true", "true"]);
     cleanup();
-    // 400 changed lines in all is past small: more than three files start folded, as before.
+    // 400 changed lines in all is past small: more than three files start folded but the first.
     render(<DiffFileList files={["a", "b", "c", "d", "e"].map((p) => sized(p, 80))} />);
-    expect(expanded()).toEqual(["false", "false", "false", "false", "false"]);
+    expect(expanded()).toEqual(["true", "false", "false", "false", "false"]);
     cleanup();
     render(<DiffFileList files={[sized("a", 10), sized("lock", 900)]} />);
     expect(expanded()).toEqual(["true", "false"]);
+  });
+
+  it("opens a large diff on its first file that isn't gated, the gated ones still folded", () => {
+    // t-flaky's change: an image, then readable files, then a 2,752-line lockfile.
+    const files = [
+      { ...sized("assets/retry-timeline.png", 0), binary: true },
+      { ...sized("big.ts", 401) },
+      { ...sized("huge.ts", 9), tooLarge: true },
+      sized("pnpm-lock.yaml", 300),
+      sized("docs/testing.md", 3),
+      sized("src/retry.test.ts", 3),
+    ];
+    render(<DiffFileList files={files} />);
+    expect(expanded()).toEqual(["false", "false", "false", "false", "true", "false"]);
+    cleanup();
+    // Nothing readable: every file waits behind its header, as before.
+    render(
+      <DiffFileList
+        files={[
+          sized("package-lock.json", 200),
+          sized("big.ts", 500),
+          sized("c.ts", 401),
+          sized("d.ts", 401),
+        ]}
+      />,
+    );
+    expect(expanded()).toEqual(["false", "false", "false", "false"]);
   });
 
   it("wraps long unified lines on request instead of scrolling them", () => {

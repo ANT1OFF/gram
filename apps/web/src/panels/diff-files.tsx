@@ -1,4 +1,4 @@
-import type { DiffFile, DiffFileStatus } from "@gram/contracts";
+import { generatedKind, type DiffFile, type DiffFileStatus } from "@gram/contracts";
 import {
   ChevronRight,
   Copy,
@@ -74,10 +74,33 @@ function moveBetweenHeaders(event: KeyboardEvent<HTMLButtonElement>) {
 }
 
 /**
- * Files with collapsible patches; a small change set (`FEW_FILES` files, or under
- * `LARGE_FILE_LINES` changed lines in all) starts expanded, except a file with more than
- * `LARGE_FILE_LINES` changed lines. `wrap` wraps long lines instead of scrolling them. Each file that still exists gets "Show in Files" with `onReveal`,
- * "Open in editor" with `onOpenInEditor` and "Reveal in Finder" with `onRevealInFileManager` (`path`
+ * Whether `file` waits behind its header until asked for: a patch too large to read here, a binary
+ * one, one past `LARGE_FILE_LINES` changed lines, or a generated file (a lockfile, a bundle).
+ */
+export const gatedFile = (file: DiffFile): boolean =>
+  file.tooLarge ||
+  file.binary ||
+  file.additions + file.deletions > LARGE_FILE_LINES ||
+  generatedKind(file.path) !== undefined;
+
+/**
+ * Which of `files` start open: every one but a file past `LARGE_FILE_LINES` changed lines in a
+ * small change set (`FEW_FILES` files, or under `LARGE_FILE_LINES` changed lines in all); in a
+ * larger one, the first that isn't gated (`gatedFile`), so the diff never opens on a column of
+ * folded headers over an empty pane.
+ */
+export function initiallyOpen(files: readonly DiffFile[]): boolean[] {
+  const small =
+    files.length <= FEW_FILES ||
+    files.reduce((sum, file) => sum + file.additions + file.deletions, 0) < LARGE_FILE_LINES;
+  if (small) return files.map((file) => file.additions + file.deletions <= LARGE_FILE_LINES);
+  const first = files.findIndex((file) => !gatedFile(file));
+  return files.map((_, at) => at === first);
+}
+
+/**
+ * Files with collapsible patches, open as `initiallyOpen` says. `wrap` wraps long lines instead of
+ * scrolling them. Each file that still exists gets "Show in Files" with `onReveal`, "Open in editor" with `onOpenInEditor` and "Reveal in Finder" with `onRevealInFileManager` (`path`
  * is relative to the checkout). `focus` expands and scrolls to the file at `focus.path`, or to its
  * hunk `focus.hunk`, again whenever `focus.key` changes.
  */
@@ -98,12 +121,12 @@ export function DiffFileList({
   onRevealInFileManager?: (path: string) => void;
   focus?: DiffFocus | undefined;
 }) {
-  const expanded =
-    files.length <= FEW_FILES ||
-    files.reduce((sum, file) => sum + file.additions + file.deletions, 0) < LARGE_FILE_LINES;
+  // A file asked for as the list opens (an agent's target) is what opens, alone.
+  const targeted = focus !== undefined && files.some((file) => file.path === focus.path);
+  const open = initiallyOpen(files);
   return (
     <ul className="divide-y divide-border">
-      {files.map((file) => {
+      {files.map((file, at) => {
         const exists = file.status !== "deleted";
         return (
           <DiffFileRow
@@ -111,7 +134,7 @@ export function DiffFileList({
             file={file}
             layout={layout}
             wrap={wrap}
-            defaultOpen={expanded && file.additions + file.deletions <= LARGE_FILE_LINES}
+            defaultOpen={!targeted && open[at] === true}
             {...(onReveal && exists ? { onReveal } : {})}
             {...(onOpenInEditor && exists ? { onOpenInEditor } : {})}
             {...(onRevealInFileManager && exists ? { onRevealInFileManager } : {})}

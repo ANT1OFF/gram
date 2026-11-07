@@ -380,6 +380,12 @@ const APPROVAL_NAV = 'nav[aria-label="Approval navigation"]';
 const THREAD_VIEW = "[data-thread-view]";
 
 /**
+ * Where an approval card's keys reach from, as its thread view does: that view, or the Focus review
+ * strip (`data-approval-keys`), which answers the thread's approvals while its view is covered.
+ */
+const KEY_AREA = `${THREAD_VIEW}, [data-approval-keys]`;
+
+/**
  * The control in each card's element that last had focus. A focused element removed with its row
  * leaves focus on the page and says nothing, so this is what tells that the card had it.
  */
@@ -1087,9 +1093,9 @@ export function ApprovalCard({
     const focus = document.activeElement;
     if (focus === null || focus === document.body) return true;
     if (card === null) return false;
-    const view = card.closest(THREAD_VIEW);
-    // In the card, or on the pager in its thread view that just showed it.
-    const paging = focus.closest(APPROVAL_NAV) !== null && focus.closest(THREAD_VIEW) === view;
+    const view = card.closest(KEY_AREA);
+    // In the card, or on the pager in its thread view (or strip) that just showed it.
+    const paging = focus.closest(APPROVAL_NAV) !== null && focus.closest(KEY_AREA) === view;
     if (card.contains(focus) || paging) return !types(focus);
     return view !== null && plainKeysReach(focus, view);
   };

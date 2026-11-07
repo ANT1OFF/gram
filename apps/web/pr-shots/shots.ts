@@ -1615,8 +1615,73 @@ const ROUTINES_POLISH_SHOTS: readonly Shot[] = [
   },
 ];
 
+/** Focus review entered from the right panel's tab row, the strip settled beside it. */
+const enterFocusReview = async (page: Page) => {
+  await page.getByTestId("right-panel").getByRole("button", { name: "Focus review" }).click();
+  await expect(page.getByTestId("review-strip")).toBeVisible();
+  await page.mouse.move(1700, 1080);
+  await page.waitForTimeout(700);
+};
+
+// Round 12's review problems: the empty scope's totals, the strip's approval and links, one tab
+// set in both modes, and a diff that opens on something to read.
+const REVIEW_SHOTS: readonly Shot[] = [
+  {
+    name: "review-focus-approval",
+    title:
+      "Focus review on t-flaky waiting on its approval: the strip answers it (Allow once, Always…, Deny), the same tabs as beside the chat, the first readable file open",
+    open: async (page) => {
+      await seedMockSettings(page, { panel: { open: true, tab: "diff" } });
+      await page.setViewportSize({ width: 1728, height: 1095 });
+      await openThread(page);
+      await page.getByTestId("diff-panel").getByTestId("diff-file").first().waitFor();
+      await enterFocusReview(page);
+    },
+  },
+  {
+    name: "review-focus-links",
+    title:
+      "Focus review on the worker Search in Settings: its latest message's link rendered as #142, with Open conversation under it",
+    open: async (page) => {
+      await page.addInitScript(() =>
+        sessionStorage.setItem("gram.mock.orchestration", "realistic"),
+      );
+      await seedMockSettings(page, { panel: { open: true, tab: "diff" } });
+      await page.setViewportSize({ width: 1728, height: 1095 });
+      await page.goto("/");
+      await page.getByTestId("app-shell").waitFor();
+      const made = await page.evaluate(async () => {
+        const started = await window.gramMock!.startedRealistic();
+        if (started === undefined) throw new Error("the mock did not start the realistic scenario");
+        return started;
+      });
+      await threadRow(page, made.searchWorker).click();
+      await page.waitForURL(new RegExp(`/t/${made.searchWorker}$`));
+      await page.getByTestId("diff-panel").waitFor();
+      await enterFocusReview(page);
+      await expect(page.getByTestId("review-strip-latest")).toContainText("#142");
+    },
+  },
+  {
+    name: "review-uncommitted-empty",
+    title:
+      "A clean tree's Diff with Uncommitted picked: no totals beside the empty scope (before: the branch's 1 file +3 −1)",
+    open: async (page) => {
+      await seedMockSettings(page, { panel: { open: true, tab: "diff" } });
+      await page.goto("/t/t-docs");
+      await page.getByTestId("diff-panel").getByTestId("diff-file").first().waitFor();
+      await page.getByTestId("diff-panel").getByRole("radio", { name: "Uncommitted" }).click();
+      await page.getByTestId("diff-empty").waitFor();
+      await page.mouse.move(10, 890);
+      await page.waitForTimeout(600);
+    },
+    element: (page) => page.getByTestId("right-panel"),
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
   ...ROUTINES_POLISH_SHOTS,
+  ...REVIEW_SHOTS,
   ...STATE_TRUTH_SHOTS,
   ...SNOOZE_SHOTS,
   ...PANEL_TAB_SHOTS,
