@@ -254,7 +254,7 @@ describe("threads store events", () => {
       {
         kind: "info",
         title: "Review round 3: changes requested",
-        body: "1 blocker, 3 unresolved",
+        body: "1 blocking, 3 unresolved",
         threadId: T,
       },
       { kind: "needsInput", title: "Review round 4: changes requested" },

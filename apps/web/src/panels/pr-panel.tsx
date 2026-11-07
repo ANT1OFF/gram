@@ -299,7 +299,11 @@ function PrTabs({
           <TabsTrigger value="review">
             Review
             {unresolved ? (
-              <span className="ml-1 text-muted-foreground tabular-nums">
+              <span
+                // The count is the bot's open findings, not what blocks the merge: say so on hover.
+                title={`${unresolved} open review finding${unresolved === 1 ? "" : "s"}`}
+                className="ml-1 text-muted-foreground tabular-nums"
+              >
                 <NumberTicker value={unresolved} />
               </span>
             ) : null}

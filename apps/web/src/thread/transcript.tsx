@@ -28,6 +28,7 @@ import { AwaitingToolsProvider } from "./awaiting-tools";
 import { CompactingLine } from "./compaction-marker";
 import { StartingProgress } from "./starting-progress";
 import { StopReceiptLine, useStopReceipt } from "./stop-receipt";
+import { LimitWaitLine } from "./limit-wait-line";
 import { startingSteps } from "./starting-progress-model";
 import { EmptyThread } from "./empty-thread";
 import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
@@ -266,10 +267,14 @@ export function Transcript({
   }, []);
   // A stopped turn's receipt follows the last thing it said, not the composer far below it.
   const stopReceipt = useStopReceipt(threadId);
+  // So does a wait on a provider limit, and the line that says one ended early.
+  const limitWait = useThreadsStore((s) => s.byId[threadId]?.thread.limitWait);
+  const limitCleared = useThreadsStore((s) => s.byId[threadId]?.thread.limitCleared);
+  const limitLine = limitWait !== undefined || limitCleared !== undefined;
   // One line under the last row at a time: a compaction under way, else a fresh thread's start,
-  // else where a stopped turn ended.
+  // else where a stopped turn ended, else a limit's wait.
   const tailLine =
-    compaction !== undefined || startSteps !== undefined || stopReceipt !== undefined;
+    compaction !== undefined || startSteps !== undefined || stopReceipt !== undefined || limitLine;
   const endRoom = FADE_PX + (tailLine ? compactingRow : 0);
   // An orchestrator's stream is its own digest of the thread, with no turns to fold.
   const orchestrated = useOrchestratorStreamContext() !== undefined;
@@ -921,9 +926,17 @@ export function Transcript({
                         <CompactingLine compaction={compaction} />
                       ) : startSteps !== undefined ? (
                         <StartingProgress threadId={threadId} steps={startSteps} />
+                      ) : stopReceipt !== undefined ? (
+                        <StopReceiptLine threadId={threadId} receipt={stopReceipt} />
                       ) : (
-                        stopReceipt !== undefined && (
-                          <StopReceiptLine threadId={threadId} receipt={stopReceipt} />
+                        limitLine && (
+                          <LimitWaitLine
+                            thread={{
+                              id: threadId,
+                              ...(limitWait === undefined ? {} : { limitWait }),
+                              ...(limitCleared === undefined ? {} : { limitCleared }),
+                            }}
+                          />
                         )
                       )}
                     </div>

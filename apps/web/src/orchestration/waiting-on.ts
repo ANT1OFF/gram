@@ -105,6 +105,19 @@ export const waitLabel = (reason: Pick<WaitReason, "kind" | "short">): string =>
   return reason.short === "" ? word : `${word} · ${reason.short}`;
 };
 
+/**
+ * Where a worker's PR stands while it waits on it, for a header that says the turn and the PR apart
+ * ("Turn: finished · PR: waiting on checks"); `undefined` for a wait that isn't its PR's.
+ */
+export const prWaitWords = (kind: WaitKind): string | undefined => PR_WAIT_WORDS[kind];
+
+const PR_WAIT_WORDS: Readonly<Partial<Record<WaitKind, string>>> = {
+  checks: "waiting on checks",
+  review: "waiting on review",
+  merge: "waiting to merge",
+  dependency: "waiting on another PR",
+};
+
 /** The reasons, the one the label names first, and the label and hover they make; none, nothing. */
 export const waitingOf = (reasons: readonly WaitReason[]): WaitingOn | undefined => {
   const sorted = reasons.toSorted(

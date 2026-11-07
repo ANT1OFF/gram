@@ -26,7 +26,7 @@ function botGlyphOf(review: PrReviewState): ReviewGlyphState | undefined {
   if (blockers > 0) {
     return {
       kind: "blockers",
-      label: `Review bot: ${plural(blockers, "blocker")}`,
+      label: `Review bot: ${plural(blockers, "blocking finding")}`,
       count: blockers,
     };
   }
@@ -84,7 +84,8 @@ const textOf = ({ kind, count = 0 }: ReviewGlyphState): string => {
     case "inFlight":
       return "reviewing";
     case "blockers":
-      return plural(count, "blocker");
+      // Findings the bot tagged as blocking, never "blockers": that count is the merge reasons'.
+      return `${count} blocking`;
     case "approved":
       return "approved";
     case "changesRequested":

@@ -144,8 +144,12 @@ test("Stop leaves a receipt at the turn's end, and Continue picks the turn up", 
   await expect(receipt.getByTestId("stop-receipt-label")).toHaveText(
     /^Stopped by you · \d\d:\d\d$/,
   );
-  // The reply it stopped on stays above it.
-  await expect(page.getByText("I'll start by reading the test")).toBeVisible();
+  // The reply it stopped on stays above it, the receipt right under it, not by the composer.
+  const said = page.getByText("I'll start by reading the test");
+  await expect(said).toBeVisible();
+  const saidBox = await said.boundingBox();
+  const receiptBox = await receipt.boundingBox();
+  expect(receiptBox!.y - (saidBox!.y + saidBox!.height)).toBeLessThan(80);
   await receipt.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByTestId("message-user").last()).toContainText("Continue");
   await expect(receipt).toHaveCount(0);
@@ -204,4 +208,45 @@ test("a retry that failed too is one card: the newest attempt, with the earlier 
   ).toHaveCount(1);
   await card.getByRole("button", { name: "1 earlier attempt" }).click();
   await expect(card.getByTestId("agent-error-earlier-attempt")).toContainText("Attempt 1");
+});
+
+test("a repeated rate limit offers an automatic retry in 30 s, and another model", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date("2026-11-05T12:00:00Z") });
+  await page.goto("/t/t-docs");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  const throttled = {
+    kind: "rateLimit",
+    httpStatus: 429,
+    retryable: true,
+    text: "The provider is rate limiting requests (HTTP 429).",
+  } as const;
+  for (let i = 0; i < 2; i++) {
+    await page.evaluate(
+      (error) => window.gramMock!.simulateTurnError("t-docs" as never, error, "Run the e2e suite"),
+      throttled,
+    );
+  }
+  const card = page.getByTestId("agent-error").last();
+  await expect(card.getByTestId("agent-error-attempt-number")).toContainText("attempt 2 of 2");
+  // Try another model opens this thread's model picker.
+  await card.getByRole("button", { name: "Try another model" }).click();
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toBeHidden();
+
+  await card.getByRole("button", { name: "Retry automatically in 30 s" }).click();
+  const armed = card.getByTestId("agent-error-auto-retry-armed");
+  // Never more than the 30 s it was set for, then counting down.
+  await expect(armed).toContainText(/Retrying in (30|2\d) s/);
+  await page.clock.runFor(10_000);
+  await expect(armed).toContainText(/Retrying in (20|1\d) s/);
+  // Cancel stands it down: Retry by hand is still there.
+  await card.getByRole("button", { name: "Cancel" }).click();
+  await expect(card.getByTestId("agent-error-auto-retry")).toBeVisible();
+  // Armed again, it sends the turn's message once the time is up, as Retry does.
+  await card.getByRole("button", { name: "Retry automatically in 30 s" }).click();
+  await page.clock.runFor(31_000);
+  await expect(card).toHaveAttribute("data-state", "retried");
 });
