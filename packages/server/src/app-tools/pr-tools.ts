@@ -62,6 +62,7 @@ import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { defineAppTool, failed, OWN_PR_AUDIENCE, refuseOrchestratorPr } from "./definition.ts";
+import { resolveMergeFenceTool } from "./resolve-merge-fence.ts";
 import { AppToolRegistry } from "./registry.ts";
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
@@ -1296,6 +1297,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
 
     yield* registry.register([
       mergeFreezeTool,
+      resolveMergeFenceTool(store, mergeWhenReady),
       prBind,
       prUnbind,
       prStatus,

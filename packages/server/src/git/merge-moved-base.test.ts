@@ -7,6 +7,7 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import { Pr, Proc, ProcTimeout } from "@gram/git";
+import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -17,13 +18,16 @@ import * as Schema from "effect/Schema";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveMergeFenceTool } from "../app-tools/resolve-merge-fence.ts";
+import { approvalFor, bindAppTools } from "../app-tools/registry.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { captureLogs } from "@gram/agents/testing/logs";
 import { RuntimeTestLayer } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { waitReal } from "../orchestration/test-harness.ts";
 import { LocalChecks, LOCAL_CHECK_ISOLATION, type LocalCheck } from "./local-checks.ts";
-import { MergeFreezesNone } from "./merge-freezes.ts";
+import type { EventHub } from "../events/event-hub.ts";
+import { type MergeFreezes, MergeFreezesNone } from "./merge-freezes.ts";
 import { MergeRecheckMs, MergeWhenReady, MergeWhenReadyLive } from "./merge-when-ready.ts";
 import { GitRefresh } from "./platform.ts";
 import { GitStatePublisher } from "./publisher.ts";
@@ -68,7 +72,13 @@ const record = (head: string, base: string, status: LocalCheck["status"]): Local
 const ok = (stdout = "") => ({ status: 0, stdout, stderr: "", truncated: false });
 
 /** Lost: `gh` timed out. Reset: it exited 1. Hung: it never answers, until it is interrupted. */
-type LaunchFate = "lost-applied" | "lost-unapplied" | "reset-applied" | "refused" | "hung-applied";
+type LaunchFate =
+  | "lost-applied"
+  | "lost-unapplied"
+  | "reset-applied"
+  | "refused"
+  | "hung-applied"
+  | "queued";
 
 interface Options {
   readonly numbers: ReadonlyArray<number>;
@@ -82,6 +92,9 @@ interface Options {
   readonly launch?: (nth: number) => LaunchFate | undefined;
   /** What `gh pr view` says of a PR's state; by default the truth. */
   readonly stateRead?: () => string;
+  readonly headRead?: () => string;
+  readonly branchTip?: () => string | undefined;
+  readonly branchRead?: () => Effect.Effect<void>;
   /** The wait between rechecks; short by default. */
   readonly recheckMs?: number;
   /** How long GitHub takes to answer a read. */
@@ -95,6 +108,7 @@ const scenario = <E, R>(
   options: Options,
   body: (world: {
     readonly service: MergeWhenReady["Service"];
+    readonly restart: Effect.Effect<MergeWhenReady["Service"]>;
     readonly store: ThreadStore["Service"];
     readonly threads: ReadonlyArray<ThreadId>;
     /** The PRs merged on GitHub, whatever Gram heard of it. */
@@ -129,12 +143,26 @@ const scenario = <E, R>(
           const number = Number(args[2]);
           if (args[0] === "pr" && args[1] === "view")
             return Effect.succeed(
-              ok(options.stateRead?.() ?? (merged.includes(number) ? "MERGED" : "OPEN")),
+              ok(
+                args.includes("state,headRefOid")
+                  ? JSON.stringify({
+                      state: options.stateRead?.() ?? (merged.includes(number) ? "MERGED" : "OPEN"),
+                      headRefOid: options.headRead?.() ?? headOf(number),
+                    })
+                  : (options.stateRead?.() ?? (merged.includes(number) ? "MERGED" : "OPEN")),
+              ),
             );
+          if (args[0] === "api" && args[1]?.includes("/branches/"))
+            return Effect.succeed(
+              options.branchTip !== undefined && options.branchTip() === undefined
+                ? { ...ok(), status: 1 }
+                : ok(JSON.stringify({ commit: { sha: options.branchTip?.() ?? tip() } })),
+            ).pipe(Effect.tap(() => options.branchRead?.() ?? Effect.void));
+
           if (args[0] !== "pr" || args[1] !== "merge") return Effect.succeed(ok());
           launches.push(number);
           const fate = options.launch?.(launches.length);
-          if (fate !== "lost-unapplied" && fate !== "refused") {
+          if (fate !== "lost-unapplied" && fate !== "refused" && fate !== "queued") {
             merged.push(number);
             if (options.stuckTip !== true) merges++;
           }
@@ -143,7 +171,14 @@ const scenario = <E, R>(
             return Effect.fail(new ProcTimeout({ bin: "gh", message: "invented: timed out" }));
           return Effect.succeed(
             fate === "reset-applied" || fate === "refused"
-              ? { ...ok(), status: 1, stderr: "invented: gh failed" }
+              ? {
+                  ...ok(),
+                  status: 1,
+                  stderr:
+                    fate === "refused"
+                      ? "GraphQL: Pull Request is not mergeable (mergePullRequest)"
+                      : "invented: gh failed",
+                }
               : ok(),
           );
         }),
@@ -174,14 +209,18 @@ const scenario = <E, R>(
           reason: "local check configured for invented",
         }),
       lookup: (_dir, head, base) => Effect.sync(() => records.get(`${head}:${base}`)),
-      ensure: (_dir, head, base, { onDone }) =>
+      ensure: (_dir, head, base, { onDone, after }) =>
         Effect.sync(() => {
           const key = `${head}:${base}`;
           const known = records.get(key);
           if (known?.status === "running") listeners.get(key)!.push(onDone);
-          if (known !== undefined) return known;
+          if (
+            known !== undefined &&
+            !(known.status === "passed" && after !== undefined && known.startedAt <= after)
+          )
+            return known;
           ensured.push([head, base]);
-          const running = record(head, base, "running");
+          const running = { ...record(head, base, "running"), startedAt: Date.now() };
           records.set(key, running);
           listeners.set(key, [onDone]);
           mostAtOnce = Math.max(mostAtOnce, listeners.size);
@@ -218,7 +257,7 @@ const scenario = <E, R>(
       observe: () => Effect.void,
     });
     const layer = MergeWhenReadyLive.pipe(
-      Layer.provide(MergeFreezesNone),
+      Layer.provideMerge(MergeFreezesNone),
       Layer.provideMerge(provider),
       Layer.provideMerge(proc),
       Layer.provideMerge(publisher),
@@ -262,8 +301,25 @@ const scenario = <E, R>(
         threads.push(thread.id);
       }
       const service = yield* MergeWhenReady;
+      const scope = yield* Effect.scope;
+      const restartContext = yield* Effect.context<
+        | ThreadStore
+        | ThreadRuntimes
+        | GitStatePublisher
+        | EventHub
+        | Proc
+        | Pr
+        | GitRefresh
+        | MergeFreezes
+      >();
       yield* body({
         service,
+        restart: Effect.map(
+          Layer.buildWithScope(Layer.fresh(MergeWhenReadyLive), scope).pipe(
+            Effect.provide(restartContext),
+          ),
+          (context) => Context.get(context, MergeWhenReady),
+        ),
         store,
         threads,
         merged,
@@ -286,7 +342,10 @@ const scenario = <E, R>(
         finish: (head, base) =>
           Effect.gen(function* () {
             const key = `${head}:${base}`;
-            const ended = record(head, base, options.outcome?.(head, base) ?? "passed");
+            const ended = {
+              ...record(head, base, options.outcome?.(head, base) ?? "passed"),
+              startedAt: records.get(key)?.startedAt ?? 1,
+            };
             records.set(key, ended);
             const waiting = listeners.get(key) ?? [];
             listeners.delete(key);
@@ -685,6 +744,106 @@ describe("armed merges on a base that moved", () => {
       ),
     );
 
+    it.live("restart preserves a fence while GitHub still reads OPEN at the old tip", () =>
+      scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          recheckMs: 60_000,
+          stateRead: () => "OPEN",
+          launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
+        },
+        ({ service, restart, threads, launches, ensured }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "first launched",
+              Effect.sync(() => launches.length === 1),
+            );
+            const restored = yield* restart;
+            yield* restored.check(threads[1]!);
+            yield* Effect.sleep(Duration.millis(100));
+            expect(launches).toEqual([5]);
+            expect(ensured).toEqual([]);
+          }),
+      ),
+    );
+
+    it.live("the fence is already durable while gh is still in flight", () =>
+      scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          recheckMs: 60_000,
+          stateRead: () => "OPEN",
+          launch: (nth) => (nth === 1 ? "hung-applied" : undefined),
+        },
+        ({ service, restart, threads, launches, store }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "gh in flight",
+              Effect.sync(() => launches.length === 1),
+            );
+            expect((yield* store.listMergeFences)[0]?.pending).toMatchObject({
+              threadId: threads[0]!,
+              head: headOf(5),
+              tip: RECORDED,
+            });
+            const restored = yield* restart;
+            yield* restored.check(threads[1]!);
+            yield* Effect.sleep(Duration.millis(100));
+            expect(launches).toEqual([5]);
+          }),
+      ),
+    );
+
+    it.live("timeout stays fenced beyond the interval until a late success is observed", () => {
+      let state = "OPEN";
+      return scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          recheckMs: 20,
+          stateRead: () => state,
+          launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
+        },
+        ({ service, store, threads, launches, ensured, moveTip, finish, tip }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "first launched",
+              Effect.sync(() => launches.length === 1),
+            );
+            yield* service.check(threads[1]!);
+            yield* Effect.sleep(Duration.millis(150));
+            expect(launches).toEqual([5]);
+            expect(ensured).toEqual([]);
+            expect((yield* store.getThread(threads[0]!)).boundPr?.mergeWaiting?.why).toContain(
+              "fenced",
+            );
+            state = "MERGED";
+            moveTip();
+            yield* service.check(threads[1]!);
+            yield* waitReal(
+              "check on new tip",
+              Effect.sync(() => ensured.length === 1),
+            );
+            expect(ensured).toEqual([[headOf(6), tip()]]);
+            yield* finish(headOf(6), tip());
+            yield* waitReal(
+              "second merge",
+              Effect.sync(() => launches.length === 2),
+            );
+            expect(launches).toEqual([5, 6]);
+            expect((yield* store.getThread(threads[0]!)).boundPr?.mergeWaiting).toBeUndefined();
+          }),
+      );
+    });
+
     it.live("holds everything back while the PR's state can't be read, and says so", () =>
       scenario(
         {
@@ -706,6 +865,13 @@ describe("armed merges on a base that moved", () => {
               "the thread is told",
               Effect.map(notices(), (texts) => texts.some((text) => text.includes("isn't known"))),
             );
+            yield* waitReal(
+              "the second records its blocked outcome",
+              Effect.map(
+                store.getThread(threads[1]!),
+                (t) => t.boundPr?.mergeWaiting?.why.includes("isn't known") === true,
+              ),
+            );
             expect(launches).toEqual([5]);
             expect((yield* store.getThread(threads[1]!)).boundPr?.mergeWaiting?.why).toContain(
               "isn't known",
@@ -715,11 +881,418 @@ describe("armed merges on a base that moved", () => {
     );
 
     it.live.each([
-      ["a lost reply it never applied", "lost-unapplied"],
-      ["a refusal", "refused"],
-    ] as const)("lets go once GitHub had time to show it: %s", ([, fate]) =>
+      ["unapplied timeout", "lost-unapplied", "OPEN", headOf(5)],
+      ["closed PR", "lost-applied", "CLOSED", headOf(5)],
+      ["another head merged", "lost-applied", "MERGED", headOf(9)],
+      ["rejection at another head", "refused", "OPEN", headOf(9)],
+    ] as const)("keeps uncertainty fenced: %s", ([, fate, state, head]) =>
       scenario(
-        { numbers: [5, 6], passed: both, launch: (nth) => (nth === 1 ? fate : undefined) },
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          recheckMs: 20,
+          launch: (nth) => (nth === 1 ? fate : undefined),
+          stateRead: () => state,
+          headRead: () => head,
+        },
+        ({ service, threads, launches, store }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "first launch",
+              Effect.sync(() => launches.length === 1),
+            );
+            yield* service.check(threads[1]!);
+            yield* Effect.sleep(Duration.millis(150));
+            expect(launches).toEqual([5]);
+            expect((yield* store.listMergeFences)[0]?.pending?.head).toBe(headOf(5));
+          }),
+      ),
+    );
+
+    it.live("restart retains a moved tip after the uncertain merge is reconciled", () =>
+      scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
+        },
+        ({ service, restart, threads, launches, store }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "resolved durable move",
+              Effect.map(
+                store.listMergeFences,
+                (rows) =>
+                  rows[0]?.pending === undefined && rows[0]?.moved.includes(RECORDED) === true,
+              ),
+            );
+            const restored = yield* restart;
+            yield* restored.check(threads[1]!);
+            yield* Effect.sleep(Duration.millis(100));
+            expect(launches).toEqual([5]);
+          }),
+      ),
+    );
+
+    it.live(
+      "an authorized terminal reconciliation releases a different-head manual merge and retires old passes",
+      () => {
+        let state = "OPEN";
+        return scenario(
+          {
+            numbers: [5, 6],
+            passed: [...both, [6, tipAfter(1)]],
+            stuckTip: true,
+            recheckMs: 60_000,
+            stateRead: () => state,
+            headRead: () => headOf(9),
+            branchTip: () => tipAfter(1),
+            launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
+          },
+          ({ service, restart, store, threads, launches, ensured, moveTip, tip, finish }) =>
+            Effect.gen(function* () {
+              yield* service.check(threads[0]!);
+              yield* waitReal(
+                "unknown launch",
+                Effect.sync(() => launches.length === 1),
+              );
+              yield* service.check(threads[1]!);
+              yield* waitReal(
+                "fenced at the expected head",
+                Effect.map(
+                  store.getThread(threads[1]!),
+                  (t) => t.boundPr?.mergeWaiting?.why.includes("isn't known") === true,
+                ),
+              );
+              // A human merged another head. The automatic expected-head reconciliation must stay put.
+              state = "MERGED";
+              expect((yield* store.listMergeFences)[0]?.pending?.head).toBe(headOf(5));
+              yield* store.updateThread(threads[0]!, (t) => ({
+                ...t,
+                boundPr: {
+                  ...t.boundPr!,
+                  mergeWhenReady: { ...t.boundPr!.mergeWhenReady!, hold: "independent review" },
+                },
+              }));
+              expect((yield* store.getThread(threads[0]!)).boundPr?.mergeWaiting?.why).toContain(
+                "resolve_merge_fence",
+              );
+              const result = yield* service.resolveFence(threads[0]!, {
+                repo: "example/project",
+                number: 5,
+                head: headOf(5),
+                userApproved: true,
+              });
+              expect(result.resolved).toBe(true);
+              expect(result.base).toBe(tipAfter(1));
+              expect((yield* store.getThread(threads[0]!)).boundPr?.mergeWhenReady?.hold).toBe(
+                "independent review",
+              );
+              // Restoration cannot resurrect either the old pass or the pending launch.
+              const restored = yield* restart;
+              expect((yield* store.listMergeFences)[0]?.pending).toBeUndefined();
+              yield* restored.check(threads[1]!);
+              yield* Effect.sleep(Duration.millis(100));
+              expect(launches).toEqual([5]);
+              moveTip();
+              yield* restored.check(threads[1]!);
+              yield* waitReal(
+                "new verification",
+                Effect.sync(() => ensured.length === 1),
+              );
+              expect(ensured).toEqual([[headOf(6), tip()]]);
+              yield* finish(headOf(6), tip());
+              yield* waitReal(
+                "the verified later merge",
+                Effect.sync(() => launches.length === 2),
+              );
+            }),
+        );
+      },
+    );
+
+    it.live("a later merge cannot use a new pass on an intermediate lagging base", () => {
+      let state = "OPEN";
+      return scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          recheckMs: 60_000,
+          stateRead: () => state,
+          headRead: () => headOf(9),
+          branchTip: () => tipAfter(2),
+          launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
+        },
+        ({ service, store, threads, launches, ensured, finish, moveTip }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "uncertain launch",
+              Effect.sync(() => launches.length === 1),
+            );
+            state = "MERGED";
+            yield* service.resolveFence(threads[0]!, {
+              repo: "example/project",
+              number: 5,
+              head: headOf(5),
+              userApproved: true,
+            });
+            // The independent branch read has T2; PR status still lags at intermediate T1.
+            moveTip();
+            yield* service.check(threads[1]!);
+            yield* waitReal(
+              "check on intermediate tip",
+              Effect.sync(() => ensured.length === 1),
+            );
+            yield* finish(headOf(6), tipAfter(1));
+            yield* waitReal(
+              "divergent fresh tip reads block launch",
+              Effect.map(
+                store.getThread(threads[1]!),
+                (t) => t.boundPr?.mergeWaiting?.why.includes("couldn't be read") === true,
+              ),
+            );
+            expect(launches).toEqual([5]);
+            moveTip();
+            yield* service.mutate(threads[1]!, Effect.void);
+            yield* waitReal(
+              "new check on verified branch tip",
+              Effect.sync(() => ensured.length === 2),
+            );
+            expect(ensured[1]).toEqual([headOf(6), tipAfter(2)]);
+            yield* finish(headOf(6), tipAfter(2));
+            yield* waitReal(
+              "verified merge",
+              Effect.sync(() => launches.length === 2),
+            );
+          }),
+      );
+    });
+
+    it.live(
+      "explicit CLOSED reconciliation clears an acknowledged queue's stale moved-tip barrier",
+      () => {
+        let state = "OPEN";
+        return scenario(
+          {
+            numbers: [5, 6],
+            passed: both,
+            stuckTip: true,
+            recheckMs: 60_000,
+            stateRead: () => state,
+            headRead: () => headOf(9),
+            launch: (nth) => (nth === 1 ? "queued" : undefined),
+          },
+          ({ service, store, threads, launches, ensured, finish }) =>
+            Effect.gen(function* () {
+              yield* service.check(threads[0]!);
+              yield* waitReal(
+                "acknowledged queue is still fenced",
+                Effect.map(
+                  store.listMergeFences,
+                  (rows) =>
+                    rows[0]?.pending !== undefined && rows[0]?.moved.includes(RECORDED) === true,
+                ),
+              );
+              yield* store.updateThread(threads[1]!, (t) => ({
+                ...t,
+                boundPr: {
+                  ...t.boundPr!,
+                  mergeWhenReady: { ...t.boundPr!.mergeWhenReady!, hold: "independent hold" },
+                },
+              }));
+              state = "CLOSED";
+              yield* service.resolveFence(threads[0]!, {
+                repo: "example/project",
+                number: 5,
+                head: headOf(5),
+                userApproved: true,
+              });
+              expect((yield* store.listMergeFences)[0]?.moved).not.toContain(RECORDED);
+              expect((yield* store.getThread(threads[1]!)).boundPr?.mergeWhenReady?.hold).toBe(
+                "independent hold",
+              );
+              yield* Effect.sleep(Duration.millis(2));
+              yield* store.updateThread(threads[1]!, (t) => {
+                const { hold: _, ...intent } = t.boundPr!.mergeWhenReady!;
+                return { ...t, boundPr: { ...t.boundPr!, mergeWhenReady: intent } };
+              });
+              yield* service.check(threads[1]!);
+              yield* waitReal(
+                "fresh check on the unchanged base",
+                Effect.sync(() => ensured.length === 1),
+              );
+              expect(ensured).toEqual([[headOf(6), RECORDED]]);
+              expect(launches).toEqual([5]);
+              yield* finish(headOf(6), RECORDED);
+              yield* waitReal(
+                "verified later merge",
+                Effect.sync(() => launches.length === 2),
+              );
+            }),
+        );
+      },
+    );
+
+    it.live("terminal reconciliation refuses a worker, OPEN state, and an unreadable base", () => {
+      let state = "OPEN";
+      let branch: string | undefined;
+      return scenario(
+        {
+          numbers: [5],
+          passed: [[5, RECORDED]],
+          recheckMs: 60_000,
+          stateRead: () => state,
+          headRead: () => headOf(9),
+          branchTip: () => branch,
+          launch: () => "lost-unapplied",
+        },
+        ({ service, store, threads, launches }) =>
+          Effect.gen(function* () {
+            const caller = threads[0]!;
+            yield* service.check(caller);
+            yield* waitReal(
+              "unknown launch",
+              Effect.sync(() => launches.length === 1),
+            );
+            const definition = resolveMergeFenceTool(store, service);
+            const input = { pr: "example/project#5" };
+            const target = yield* definition.resolve!(caller, input);
+            expect(
+              approvalFor(
+                definition.descriptor.class,
+                yield* definition.needsApproval!(caller, input, target),
+              ),
+            ).toBe("forced");
+            expect(
+              (yield* definition.handle(caller, target, { carded: false }).pipe(Effect.flip))
+                .message,
+            ).toContain("Only the user");
+            const [tool] = bindAppTools([definition], caller);
+            expect(
+              (yield* tool!.run({ ...input, userApproved: true }).pipe(Effect.flip)).message,
+            ).toContain("userApproved");
+            expect(
+              (yield* definition.handle(caller, target, { carded: true }).pipe(Effect.flip))
+                .message,
+            ).toContain("merged or closed");
+            state = "CLOSED";
+            expect(
+              (yield* definition.handle(caller, target, { carded: true }).pipe(Effect.flip))
+                .message,
+            ).toContain("base branch cannot be verified");
+            expect((yield* store.listMergeFences)[0]?.pending).toBeDefined();
+            branch = RECORDED;
+            expect(yield* definition.handle(caller, target, { carded: true })).toMatchObject({
+              resolved: true,
+              terminal: "CLOSED",
+              observedHead: headOf(9),
+            });
+            expect((yield* store.listMergeFences)[0]?.verifyAfter).toBeTypeOf("number");
+            expect((yield* store.listMergeFences)[0]?.pending).toBeUndefined();
+            expect(
+              (yield* definition.handle(caller, target, { carded: true }).pipe(Effect.flip))
+                .message,
+            ).toContain("no longer exists");
+            expect(launches).toEqual([5]);
+          }),
+      );
+    });
+
+    it.live(
+      "only the current owning orchestrator can resolve explicitly without a user card",
+      () => {
+        let state = "OPEN";
+        let branchRead = Effect.void;
+        return scenario(
+          {
+            numbers: [5],
+            passed: [[5, RECORDED]],
+            recheckMs: 60_000,
+            stateRead: () => state,
+            branchRead: () => branchRead,
+            headRead: () => headOf(9),
+            launch: () => "lost-unapplied",
+          },
+          ({ service, store, threads, launches }) =>
+            Effect.gen(function* () {
+              const owner = yield* store.getThread(threads[0]!);
+              const runtimes = yield* ThreadRuntimes;
+              const orchestrator = yield* runtimes.create({
+                projectRoot: owner.checkout.path,
+                checkout: { kind: "main", path: owner.checkout.path },
+              });
+              yield* Effect.addFinalizer(() => runtimes.close(orchestrator.id).pipe(Effect.ignore));
+              yield* store.updateThread(orchestrator.id, (t) => ({
+                ...t,
+                role: "orchestrator",
+                workspaceId: owner.workspaceId!,
+              }));
+              yield* store.updateThread(owner.id, (t) => ({
+                ...t,
+                spawnedBy: { threadId: orchestrator.id, feature: "invented-fence" },
+              }));
+              yield* store.updateWorkspace(owner.workspaceId!, (s) => ({
+                ...s,
+                workspace: { ...s.workspace, orchestratorThreadId: orchestrator.id },
+                charter: { ...s.charter, autonomy: "full" },
+              }));
+              yield* service.check(owner.id);
+              yield* waitReal(
+                "pending",
+                Effect.sync(() => launches.length === 1),
+              );
+              state = "CLOSED";
+              const definition = resolveMergeFenceTool(store, service);
+              const input = { pr: "example/project#5" };
+              const target = yield* definition.resolve!(orchestrator.id, input);
+              expect(yield* definition.needsApproval!(orchestrator.id, input, target)).toBe(false);
+              yield* store.updateWorkspace(owner.workspaceId!, (s) => ({
+                ...s,
+                workspace: { ...s.workspace, orchestratorThreadId: owner.id },
+              }));
+              expect(
+                (yield* definition
+                  .handle(orchestrator.id, target, { carded: false })
+                  .pipe(Effect.flip)).message,
+              ).toContain("Only the user");
+              yield* store.updateWorkspace(owner.workspaceId!, (s) => ({
+                ...s,
+                workspace: { ...s.workspace, orchestratorThreadId: orchestrator.id },
+              }));
+              branchRead = store
+                .updateWorkspace(owner.workspaceId!, (s) => ({
+                  ...s,
+                  workspace: { ...s.workspace, orchestratorThreadId: owner.id },
+                }))
+                .pipe(Effect.asVoid, Effect.orDie);
+              expect(
+                (yield* definition
+                  .handle(orchestrator.id, target, { carded: false })
+                  .pipe(Effect.flip)).message,
+              ).toContain("authority or pending fence changed");
+              expect((yield* store.listMergeFences)[0]?.pending).toBeDefined();
+              branchRead = Effect.void;
+              yield* store.updateWorkspace(owner.workspaceId!, (s) => ({
+                ...s,
+                workspace: { ...s.workspace, orchestratorThreadId: orchestrator.id },
+              }));
+              expect(
+                yield* definition.handle(orchestrator.id, target, { carded: false }),
+              ).toMatchObject({ resolved: true });
+            }),
+        );
+      },
+    );
+
+    it.live("lets go after a confirmed rejection and an OPEN read at the same head", () =>
+      scenario(
+        { numbers: [5, 6], passed: both, launch: (nth) => (nth === 1 ? "refused" : undefined) },
         ({ service, threads, merged, launches }) =>
           Effect.gen(function* () {
             yield* service.check(threads[0]!);

@@ -1,8 +1,10 @@
+import { Thread, type ThreadId } from "@gram/contracts";
 import { SqliteMigrator } from "@effect/sql-sqlite-node";
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,6 +48,7 @@ describe("migration ordering gate", () => {
         [1, "baseline"],
         [2, "merge_freezes"],
         [3, "message_receipts"],
+        [4, "merge_fences"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -155,6 +158,7 @@ describe("the baseline", () => {
         "table helper_usage",
         "table labels",
         "table local_checks",
+        "table merge_fences",
         "table merge_freezes",
         "table message_receipts",
         "table message_search",
@@ -200,6 +204,7 @@ describe("the baseline", () => {
         [1, "baseline"],
         [2, "merge_freezes"],
         [3, "message_receipts"],
+        [4, "merge_fences"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -223,6 +228,7 @@ describe("the baseline", () => {
           "baseline",
           "merge_freezes",
           "message_receipts",
+          "merge_fences",
         ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
@@ -257,6 +263,7 @@ describe("the baseline", () => {
             [1, "baseline"],
             [2, "merge_freezes"],
             [3, "message_receipts"],
+            [4, "merge_fences"],
           ]);
           // A closed thread has no live row, but must retain its permanent safety identity.
           if (reopen === 0) {
@@ -271,6 +278,127 @@ describe("the baseline", () => {
     }),
   );
 
+  it.effect(
+    "upgrades the previous 0003 database to merge fences and preserves its data on reopen",
+    () =>
+      Effect.gen(function* () {
+        const file = join(yield* tempDir, "previous-to-fences.db");
+        const closed = Schema.decodeUnknownSync(Thread)({
+          id: "closed-worker",
+          projectId: "upgrade-project",
+          title: "prior closed worker",
+          userNamed: false,
+          model: { agent: "claude", model: "synthetic" },
+          mode: "default",
+          checkout: { kind: "main", path: "/invented/previous-schema" },
+          labels: [],
+          pinned: false,
+          parked: false,
+          unread: false,
+          createdAt: 1,
+          lastActivityAt: 1,
+        });
+        const fence = {
+          key: "synthetic-base",
+          moved: [],
+          pending: {
+            pr: { repo: "example/project", number: 5 },
+            threadId: "upgrade-worker" as ThreadId,
+            head: "expected-head",
+            tip: "checked-tip",
+            at: 1,
+          },
+        };
+        const entries = Object.entries(migrations);
+        const last = entries.at(-1)!;
+        expect(last[0]).toMatch(/_merge_fences$/);
+        const previous = Object.fromEntries(entries.slice(0, -1));
+        const previousId = Number(last[0].split("_")[0]) - 1;
+        const open = (record: Parameters<typeof migratorOptions>[0]) =>
+          SqliteMigrator.layer(migratorOptions(record)).pipe(
+            Layer.provideMerge(SqliteClient.layer({ filename: file })),
+          );
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect((yield* applied).at(-1)?.migration_id).toBe(previousId);
+          expect((yield* tableNames).has("merge_fences")).toBe(false);
+          yield* sql`INSERT INTO projects (id, root, name) VALUES ('upgrade-project', '/invented/previous-schema', 'preserved')`;
+          yield* sql`INSERT INTO local_checks (key, data) VALUES ('older-pass', '{"synthetic":"retained"}')`;
+          yield* sql`INSERT INTO closed_threads(thread_id, closed_at, data)
+            VALUES (${closed.id}, 1, ${JSON.stringify(closed)})`;
+          yield* sql`INSERT INTO message_receipts(thread_id, client_message_id, fingerprint, retired)
+            VALUES ('closed-worker', 'prior-retry', 'synthetic-prior-receipt', 1)`;
+        }).pipe(Effect.provide(open(previous)));
+        for (let reopen = 0; reopen < 2; reopen++) {
+          yield* Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            expect((yield* applied).map((r) => [r.migration_id, r.name])).toEqual(
+              entries.map(([key]) => {
+                const [id, ...name] = key.split("_");
+                return [Number(id), name.join("_")];
+              }),
+            );
+            expect(
+              yield* sql`SELECT root, name FROM projects WHERE id = 'upgrade-project'`,
+            ).toEqual([{ root: "/invented/previous-schema", name: "preserved" }]);
+            expect(yield* sql`SELECT data FROM local_checks WHERE key = 'older-pass'`).toEqual([
+              { data: '{"synthetic":"retained"}' },
+            ]);
+            expect(
+              yield* sql`SELECT client_message_id, fingerprint, retired FROM message_receipts`,
+            ).toEqual([
+              {
+                client_message_id: "prior-retry",
+                fingerprint: "synthetic-prior-receipt",
+                retired: 1,
+              },
+            ]);
+            expect((yield* tableNames).has("merge_fences")).toBe(true);
+            const store = yield* ThreadStore;
+            if (reopen === 0) yield* store.putMergeFence(fence);
+            expect(yield* store.listMergeFences).toEqual([fence]);
+          }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+        }
+      }),
+  );
+
+  it.effect(
+    "a reopened database keeps unresolved fences and moved tips independently of threads",
+    () =>
+      Effect.gen(function* () {
+        const file = join(yield* tempDir, "fences.db");
+        const record = {
+          key: "example/project\u0000main",
+          moved: ["old-tip"],
+          pending: {
+            pr: { repo: "example/project", number: 5 },
+            head: "expected-head",
+            threadId: "invented-worker" as ThreadId,
+            tip: "checked-tip",
+            at: 1,
+          },
+        };
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          yield* store.putMergeFence(record);
+        }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          expect(yield* store.listMergeFences).toEqual([record]);
+          yield* store.putMergeFence({
+            key: record.key,
+            moved: [...record.moved, record.pending.tip],
+          });
+        }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          expect(yield* store.listMergeFences).toEqual([
+            { key: record.key, moved: ["old-tip", "checked-tip"] },
+          ]);
+        }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+      }),
+  );
+
   it.effect("takes a 1.x migration appended after it, once, on a database it made", () =>
     Effect.gen(function* () {
       const file = join(yield* tempDir, "gram.db");
@@ -281,7 +409,7 @@ describe("the baseline", () => {
       yield* Effect.void.pipe(Effect.provide(open(migrations)));
       const next = {
         ...migrations,
-        "0004_example": Effect.gen(function* () {
+        "0005_example": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`ALTER TABLE projects ADD COLUMN example TEXT`;
         }),
@@ -297,7 +425,8 @@ describe("the baseline", () => {
             [1, "baseline"],
             [2, "merge_freezes"],
             [3, "message_receipts"],
-            [4, "example"],
+            [4, "merge_fences"],
+            [5, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
       }

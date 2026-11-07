@@ -406,10 +406,16 @@ const messageReceipts = Effect.gen(function* () {
     WHERE outcome IS NOT NULL`;
 });
 
+const mergeFences = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE merge_fences (key TEXT PRIMARY KEY, data TEXT NOT NULL)`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
   "0003_message_receipts": messageReceipts,
+  "0004_merge_fences": mergeFences,
 };
 
 /**

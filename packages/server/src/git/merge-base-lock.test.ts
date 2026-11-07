@@ -68,7 +68,18 @@ describe("merges onto one base from two workspaces", () => {
               merged.push(Number(args[2]));
               if (moves) base = MOVED;
             }
-            return { status: 0, stdout: "", stderr: "", truncated: false };
+            return {
+              status: 0,
+              stdout:
+                args[0] === "pr" && args[1] === "view"
+                  ? JSON.stringify({
+                      state: merged.includes(Number(args[2])) ? "MERGED" : "OPEN",
+                      headRefOid: HEADS[Number(args[2])],
+                    })
+                  : "",
+              stderr: "",
+              truncated: false,
+            };
           }),
       });
       // Each fresh read waits a moment for the other's: unserialized, both read the old base.
