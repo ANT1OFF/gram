@@ -64,15 +64,18 @@ test("Focus review takes the window but for a strip of the chat, and Esc gives i
 
   await panel.getByRole("button", { name: "Focus review" }).click();
   await expect(shell).toHaveAttribute("data-review-focus", "true");
-  await expect.poll(() => widthOf(panel)).toBe(1440 - 48);
+  await expect.poll(() => widthOf(panel)).toBe(1440 - 300);
   await expect(page.getByTestId("overview-sidebar")).toHaveCount(0);
   await expect(chat).toHaveAttribute("inert");
   // The transcript stays mounted at its width under the panel, so it isn't laid out anew.
   await expect(page.getByTestId("thread-view")).toHaveCount(1);
   expect(await widthOf(chat)).toBe(chatWidth);
+  // The strip keeps the conversation readable: its title and its latest message.
   const strip = page.getByTestId("review-strip");
   await expect(strip).toBeVisible();
-  await expect(strip).toContainText("Fix flaky retry test");
+  await expect(strip).toHaveAttribute("data-readable", "true");
+  await expect(strip.getByTestId("review-strip-title")).toHaveText("Fix flaky retry test");
+  await expect(strip.getByTestId("review-strip-latest")).not.toBeEmpty();
 
   await page.mouse.move(700, 600);
   await page.keyboard.press("Escape");
@@ -122,16 +125,18 @@ test("beside a review the chat keeps its room, and a review held too narrow take
   const chat = page.locator("main");
   await expect(tab(page, "Diff")).toHaveAttribute("aria-selected", "true");
   await expect.poll(() => widthOf(panel)).toBe(352);
-  const offer = panel.getByTestId("review-room-offer");
-  await expect(offer).toHaveCount(0);
+  // Narrower than a review reads, it offers Focus review in words beside its tabs, with no notice
+  // row of its own under them.
+  const offer = panel.getByTestId("review-focus");
+  await expect(offer).toHaveAttribute("data-narrow", "true");
+  await expect(panel.getByTestId("review-room-offer")).toHaveCount(0);
   await expect(shell).toHaveAttribute("data-review-focus", "false");
 
   // Dragged wide, the review stops where the chat keeps 520 px, too narrow to read: it takes the
   // window on its own, and leaves the chat its strip.
   await dragHandle(page, -400);
   await expect(shell).toHaveAttribute("data-review-focus", "true");
-  await expect.poll(() => widthOf(panel)).toBe(1024 - 48);
-  await expect(offer).toHaveCount(0);
+  await expect.poll(() => widthOf(panel)).toBe(1024 - 300);
 
   // Esc gives the chat back, side by side as the user chose: the review says why it is cramped and
   // offers focus again, and isn't taken again on its own.
@@ -140,11 +145,7 @@ test("beside a review the chat keeps its room, and a review held too narrow take
   await expect(shell).toHaveAttribute("data-review-focus", "false");
   await expect.poll(() => widthOf(chat)).toBe(520);
   await expect.poll(() => widthOf(panel)).toBe(1024 - 60 - 520);
-  await expect(offer).toContainText("Too narrow to read beside the conversation.");
-
-  // Kept side by side, the offer goes; taken, the review gets the window.
-  await offer.getByRole("button", { name: "Keep side by side" }).click();
-  await expect(offer).toHaveCount(0);
+  await expect(offer).toHaveAttribute("data-narrow", "true");
   await expect(shell).toHaveAttribute("data-review-focus", "false");
 
   // With room again and then short once more, it takes focus on its own again.
@@ -154,43 +155,47 @@ test("beside a review the chat keeps its room, and a review held too narrow take
   await expect(shell).toHaveAttribute("data-review-focus", "true");
 });
 
-test("Wrap lines and Ignore whitespace change the diff and are remembered", async ({ page }) => {
+test("Split, Wrap lines and Hide whitespace changes sit in the review toolbar and are remembered", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/t/t-flaky");
   const diff = page.getByTestId("diff-panel");
   const clock = diff.locator('[data-testid="diff-file"][data-path="src/clock.ts"]');
   await clock.locator("[data-diff-file-header]").click();
   await expect(clock.locator('tr[data-kind="add"]')).toHaveCount(2);
-  await expect(clock.getByTestId("patch")).toHaveAttribute("data-wrap", "false");
-
-  // Both sit in the one labelled View menu, which stays open while its checks change.
-  await diff.getByRole("button", { name: /^View/ }).click();
-  const wrap = page.getByRole("menuitemcheckbox", { name: "Wrap lines" });
-  const ignore = page.getByRole("menuitemcheckbox", { name: "Ignore whitespace" });
-  await wrap.click();
-  await expect(wrap).toHaveAttribute("aria-checked", "true");
+  // Lines wrap until the user says otherwise.
   await expect(clock.getByTestId("patch")).toHaveAttribute("data-wrap", "true");
+
+  // Each choice is a toggle in the toolbar, not behind a menu.
+  const wrap = diff.getByRole("button", { name: "Wrap lines" });
+  const ignore = diff.getByRole("button", { name: "Hide whitespace changes" });
+  await expect(wrap).toHaveAttribute("aria-pressed", "true");
+  await wrap.click();
+  await expect(wrap).toHaveAttribute("aria-pressed", "false");
+  await expect(clock.getByTestId("patch")).toHaveAttribute("data-wrap", "false");
   await ignore.click();
-  await expect(ignore).toHaveAttribute("aria-checked", "true");
-  await page.keyboard.press("Escape");
+  await expect(ignore).toHaveAttribute("aria-pressed", "true");
   // The re-indented line is context now.
   await expect(clock.locator('tr[data-kind="add"]')).toHaveCount(1);
   await expect(clock.locator('tr[data-kind="del"]')).toHaveCount(1);
+  await expect(diff.getByRole("radio", { name: "Unified" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
 
   await page.reload();
   const again = page.getByTestId("diff-panel");
-  await again.getByRole("button", { name: /^View/ }).click();
-  await expect(page.getByRole("menuitemcheckbox", { name: "Wrap lines" })).toHaveAttribute(
-    "aria-checked",
+  await expect(again.getByRole("button", { name: "Wrap lines" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  await expect(again.getByRole("button", { name: "Hide whitespace changes" })).toHaveAttribute(
+    "aria-pressed",
     "true",
   );
-  await expect(page.getByRole("menuitemcheckbox", { name: "Ignore whitespace" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  await page.keyboard.press("Escape");
   const reloaded = again.locator('[data-testid="diff-file"][data-path="src/clock.ts"]');
   await reloaded.locator("[data-diff-file-header]").click();
   await expect(reloaded.locator('tr[data-kind="add"]')).toHaveCount(1);
-  await expect(reloaded.getByTestId("patch")).toHaveAttribute("data-wrap", "true");
+  await expect(reloaded.getByTestId("patch")).toHaveAttribute("data-wrap", "false");
 });

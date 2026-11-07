@@ -1,4 +1,12 @@
-import type { DraftId, GitState, Thread, ThreadId, WorkerLedgerEntry } from "@gram/contracts";
+import type {
+  DiffFile,
+  DraftId,
+  GitState,
+  Thread,
+  ThreadId,
+  WorkerLedgerEntry,
+} from "@gram/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import {
@@ -13,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { useApi } from "@/api/context";
 import { carryDraft } from "@/composer/draft-prefill";
 import { Button } from "@/components/ui/button";
 import { useHistoryStore } from "@/history/history-view";
@@ -21,6 +30,8 @@ import { cn } from "@/lib/utils";
 import { reportLine } from "@/orchestration/board-model";
 import { useOrchestratorLedger } from "@/orchestration/use-orchestration";
 import { workerEntryOf } from "@/orchestration/workers-model";
+import { FILE_STATUS } from "@/panels/diff-files";
+import { prDetailQuery, prDetailStamp } from "@/panels/pr-detail-query";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -66,7 +77,7 @@ export const threadDidWork = (thread: Thread, entry: WorkerLedgerEntry | undefin
   thread.settledMerge !== undefined ||
   entry?.lastReport !== undefined;
 
-const files = (n: number) => `${n} ${n === 1 ? "file" : "files"} changed`;
+const filesChanged = (n: number) => `${n} ${n === 1 ? "file" : "files"} changed`;
 
 /** A saved PR state in the outcome's words. */
 const PR_STATE: Readonly<Record<NonNullable<OutcomePr["state"]>, string>> = {
@@ -110,6 +121,97 @@ function Fact({ term, testId, children }: { term: string; testId: string; childr
   );
 }
 
+/** The most of a PR's files the outcome lists; "Review all" opens the rest in the PR panel. */
+const OUTCOME_FILES_MAX = 8;
+
+/**
+ * What the thread's PR changed, file by file with its lines added and removed, each a click from
+ * its diff in the PR panel; "Review in PR" opens them all there.
+ */
+function OutcomeFiles({
+  number,
+  files,
+  onReview,
+  onFile,
+}: {
+  number: number;
+  files: readonly DiffFile[];
+  onReview: () => void;
+  onFile: (path: string) => void;
+}) {
+  const additions = files.reduce((sum, file) => sum + file.additions, 0);
+  const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
+  const shown = files.slice(0, OUTCOME_FILES_MAX);
+  const more = files.length - shown.length;
+  return (
+    <section
+      aria-labelledby="thread-outcome-files-title"
+      data-testid="thread-outcome-pr-files"
+      className="flex flex-col gap-2 pt-2"
+    >
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <h3 id="thread-outcome-files-title" className="text-body-strong">
+          Changed in PR #{number}
+        </h3>
+        <span className="text-meta text-muted-foreground tabular-nums">
+          {files.length} {files.length === 1 ? "file" : "files"}{" "}
+          <span className="font-mono text-success">+{additions}</span>{" "}
+          <span className="font-mono text-destructive">−{deletions}</span>
+        </span>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          className="ms-auto self-center"
+          data-testid="thread-outcome-review"
+          onClick={onReview}
+        >
+          <GitPullRequest data-icon="inline-start" />
+          Review in PR
+        </Button>
+      </div>
+      <ul className="flex flex-col overflow-hidden rounded-lg border border-edge-group bg-card [&>li~li]:border-t [&>li~li]:border-border/60">
+        {shown.map((file) => {
+          const status = FILE_STATUS[file.status];
+          return (
+            <li key={file.path}>
+              <button
+                type="button"
+                data-testid="thread-outcome-pr-file"
+                data-path={file.path}
+                title={`Review ${file.path} in PR #${number}`}
+                onClick={() => onFile(file.path)}
+                className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-meta outline-none hover:bg-accent focus-visible:focus-ring"
+              >
+                <status.icon aria-hidden className={cn("size-icon-row shrink-0", status.tone)} />
+                <span className="min-w-0 flex-1 truncate font-mono">
+                  {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+                </span>
+                <span className="sr-only">{status.label}</span>
+                <span className="shrink-0 font-mono tabular-nums">
+                  <span className="text-success">+{file.additions}</span>{" "}
+                  <span className="text-destructive">−{file.deletions}</span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+        {more > 0 && (
+          <li>
+            <button
+              type="button"
+              onClick={onReview}
+              className="flex w-full px-3 py-2 text-left text-meta text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring"
+            >
+              {more} more in the PR
+            </button>
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
 /**
  * The brief "Resume from report" starts a new draft with: what the thread was, its last report and
  * its PR, for the user to edit and start like any other. Nothing of the old conversation is in it,
@@ -138,12 +240,21 @@ export const resumeBrief = (
  * it: how it ended, its last report, its PR and its changed files, each a click from its panel.
  */
 export function EmptyThread({ threadId }: { threadId: ThreadId }) {
+  const api = useApi();
   const navigate = useNavigate();
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   const git = useThreadsStore((s) => s.byId[threadId]?.git);
   const worker = thread?.spawnedBy !== undefined;
   const { data: ledger } = useOrchestratorLedger(worker ? thread?.workspaceId : undefined);
   const entry = workerEntryOf(ledger?.features, threadId);
+  // The PR's files, from the same query (and cache) the PR panel reads: what a finished thread
+  // changed, after its worktree is gone.
+  const prStamp = prDetailStamp(git, thread?.boundPr);
+  const { data: prResult } = useQuery({
+    ...prDetailQuery(api, threadId, prStamp),
+    enabled: prStamp !== null && thread !== undefined && threadDidWork(thread, entry),
+  });
+  const prDetail = prResult?.detail;
 
   if (thread === undefined || !threadDidWork(thread, entry)) {
     return (
@@ -165,8 +276,10 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
     thread.completedAt === undefined
       ? undefined
       : `${pr?.state === "merged" ? "Merged" : "Completed"} ${formatStamp(thread.completedAt)}`;
-  const show = (panel: "pr" | "diff") =>
-    useLayoutStore.getState().requestPanel({ threadId, panel }, threadId);
+  const show = (panel: "pr" | "diff", target?: string) =>
+    useLayoutStore
+      .getState()
+      .requestPanel({ threadId, panel, ...(target === undefined ? {} : { target }) }, threadId);
   // A new draft with the report as its brief, through the same New form and its Start as any other:
   // a worker's to a new worker of its workspace, anything else to a one-off thread.
   const resume = () => {
@@ -273,6 +386,14 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
             Find in History
           </Button>
         </div>
+        {prDetail !== undefined && prDetail.files.length > 0 && (
+          <OutcomeFiles
+            number={prDetail.number}
+            files={prDetail.files}
+            onReview={() => show("pr")}
+            onFile={(path) => show("pr", path)}
+          />
+        )}
       </div>
       {/* Beside it, the facts Gram saved of how it ended, and when each thing happened. */}
       <aside
@@ -336,7 +457,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
           <Fact term="Files" testId="thread-outcome-changed">
             {changed > 0 ? (
               <>
-                <span className="tabular-nums">{files(changed)}</span>
+                <span className="tabular-nums">{filesChanged(changed)}</span>
                 <Button
                   type="button"
                   size="xs"

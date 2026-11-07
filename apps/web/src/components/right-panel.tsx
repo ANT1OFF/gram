@@ -32,12 +32,18 @@ import { PreviewSuggestionNotice } from "@/panels/preview-suggestion";
 import { useReviewRequests } from "@/reviews/review-requests";
 import { useFeature } from "@/settings/use-diagnostics";
 import { useToastDock } from "@/shell/toast-dock";
-import { isReviewTab, reviewsTabShown, useLayoutStore, type RightPanelTab } from "@/stores/layout";
+import {
+  fitShell,
+  isReviewTab,
+  reviewsTabShown,
+  useLayoutStore,
+  type RightPanelTab,
+} from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { besideShown, useBesideStore } from "@/orchestration/beside-store";
 
 import { tabFolds, tabNamed, useTabLabelFit } from "./panel-tab-labels";
-import { ReviewRoomOffer, useKeepReadingPlace } from "./review-room";
+import { useKeepReadingPlace } from "./review-room";
 import type * as PanelTabs from "./right-panel-tabs";
 
 /** A tab of the strip: the stored ones, and the worker open beside the chat, kept per window. */
@@ -292,7 +298,6 @@ export function RightPanel() {
             <ExpandToggle />
           )}
         </div>
-        {reviewAction && !focused && <ReviewRoomOffer />}
         <Suspense fallback={null}>
           <RightPanelTabs
             threadId={threadId}
@@ -472,22 +477,33 @@ function ExpandToggle() {
  */
 function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolean }) {
   const toggle = useLayoutStore((s) => s.toggleReviewFocus);
+  // Narrower than a review reads well beside the chat: the action is offered as an outlined
+  // button, its hint saying why, rather than a notice of its own under the tabs.
+  const narrow = useLayoutStore((s) => !focused && fitShell(s).reviewNarrow);
   const focusHint = useShortcutHint("review.focus");
   const restoreHint = useShortcutHint("panel.restore");
   const label = focused ? "Restore" : "Focus review";
   const hint = focused ? restoreHint : focusHint;
   return (
     <Hint
-      label={withHint(label, hint)}
+      label={
+        narrow
+          ? `Too narrow to read beside the conversation.\n${withHint("Focus review gives it the window, the conversation a strip beside it", hint)}`
+          : withHint(label, hint)
+      }
       side="top"
       render={
         <Button
-          variant="ghost"
+          variant={narrow ? "outline" : "ghost"}
           size="sm"
           aria-label={label}
           data-testid="review-focus"
           data-words={words}
-          className="h-7 shrink-0 gap-0 px-1.5 text-meta text-muted-foreground hover:text-foreground"
+          data-narrow={narrow}
+          className={cn(
+            "h-7 shrink-0 gap-0 px-1.5 text-meta",
+            !narrow && "text-muted-foreground hover:text-foreground",
+          )}
           onClick={toggle}
         />
       }

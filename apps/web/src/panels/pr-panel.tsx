@@ -334,6 +334,25 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
     return ifTarget(identityOf(detail, git?.origin), git?.pr, git?.origin);
   });
   const { actions } = useDiffFileActions(threadId);
+  // A file asked for from elsewhere (the outcome of a finished thread): its section opens and the
+  // file expands and scrolls into view, once.
+  const fileRequest = useLayoutStore((s) => s.panelTargets.pr);
+  const consumePanelTarget = useLayoutStore((s) => s.consumePanelTarget);
+  const fileTarget = fileRequest?.threadId === threadId ? fileRequest : undefined;
+  const fileFocus =
+    fileTarget !== undefined && detail.files.some((file) => file.path === fileTarget.target)
+      ? { path: fileTarget.target, key: fileTarget.id }
+      : undefined;
+  // After the rows' own effects, so the file has already expanded and scrolled.
+  useEffect(() => {
+    if (fileTarget !== undefined) consumePanelTarget("pr", fileTarget.id);
+  }, [fileTarget, consumePanelTarget]);
+  const [filesRevealed, setFilesRevealed] = useState(0);
+  const [seenFileTarget, setSeenFileTarget] = useState<number>();
+  if (fileFocus !== undefined && fileFocus.key !== seenFileTarget) {
+    setSeenFileTarget(fileFocus.key);
+    setFilesRevealed((n) => n + 1);
+  }
   // The Diff tab's Wrap lines holds for the PR's files too.
   const wrapLines = useLayoutStore((s) => s.diffWrap);
   const panel = useRef<HTMLDivElement>(null);
@@ -651,9 +670,10 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
         meta={`${detail.changedFiles} changed`}
         empty={detail.note ?? "No files"}
         count={detail.files.length}
+        reveal={filesRevealed}
       >
         {detail.note && <p className="px-3 pb-1 text-meta text-warning">{detail.note}</p>}
-        <DiffFileList files={detail.files} wrap={wrapLines} {...actions} />
+        <DiffFileList files={detail.files} wrap={wrapLines} {...actions} focus={fileFocus} />
       </Section>
     </div>
   );

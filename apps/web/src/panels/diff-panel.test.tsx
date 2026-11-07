@@ -111,6 +111,7 @@ describe("DiffPanel", () => {
   });
 
   it("asks again without whitespace-only changes, and wraps lines, as remembered", async () => {
+    useLayoutStore.setState({ diffWrap: false });
     const gitDiff = vi.fn(
       async (threadId: ThreadId, scope: DiffScope, options?: { ignoreWhitespace?: boolean }) =>
         mockDiff(threadId, scope, options),
@@ -123,10 +124,9 @@ describe("DiffPanel", () => {
     expect(summary.dataset["files"]).toBe(String(screen.getAllByTestId("diff-file").length));
     expect(summary.textContent).toMatch(/files\+.*−/);
 
-    // The display choices sit under one labelled View menu.
-    fireEvent.click(screen.getByRole("button", { name: /^View/ }));
-    const ignore = await screen.findByRole("menuitemcheckbox", { name: "Ignore whitespace" });
-    expect(ignore.getAttribute("aria-checked")).toBe("false");
+    // The display choices sit in the toolbar, as toggles that say whether they are on.
+    const ignore = screen.getByRole("button", { name: "Hide whitespace changes" });
+    expect(ignore.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(ignore);
     await waitFor(() =>
       expect(gitDiff).toHaveBeenLastCalledWith(
@@ -144,9 +144,9 @@ describe("DiffPanel", () => {
     await waitFor(() => expect(clock.querySelectorAll('tr[data-kind="add"]')).toHaveLength(1));
     expect(clock.querySelectorAll('tr[data-kind="del"]')).toHaveLength(1);
 
-    const wrap = screen.getByRole("menuitemcheckbox", { name: "Wrap lines" });
+    const wrap = screen.getByRole("button", { name: "Wrap lines" });
     fireEvent.click(wrap);
-    await waitFor(() => expect(wrap.getAttribute("aria-checked")).toBe("true"));
+    await waitFor(() => expect(wrap.getAttribute("aria-pressed")).toBe("true"));
     expect(useLayoutStore.getState().diffWrap).toBe(true);
   });
 
@@ -391,10 +391,8 @@ describe("DiffPanel", () => {
     await screen.findAllByTestId("diff-file");
     const panel = screen.getByTestId("diff-panel");
     expect(panel.dataset["layout"]).toBe("unified");
-    fireEvent.click(screen.getByRole("button", { name: /^View/ }));
-    const split = await screen.findByRole("menuitemradio", { name: "Split" });
-    expect(split.getAttribute("title")).toMatch(/wider/);
-    expect(split.textContent).toContain("Needs a wider panel");
+    // Split stays the choice, shown unified until the panel has room for it.
+    expect(screen.getByRole("radio", { name: "Split" }).getAttribute("aria-checked")).toBe("true");
 
     width = 700;
     act(() => observers.forEach((report) => report()));
@@ -405,7 +403,7 @@ describe("DiffPanel", () => {
     expect(panel.dataset["layout"]).toBe("split");
     expect(screen.getByTestId("patch").dataset["layout"]).toBe("split");
 
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Unified" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Unified" }));
     expect(useLayoutStore.getState().diffLayout).toBe("unified");
     expect(panel.dataset["layout"]).toBe("unified");
     vi.unstubAllGlobals();
@@ -480,7 +478,8 @@ describe("DiffPanel", () => {
     await screen.findAllByTestId("diff-file");
 
     fireEvent.click(screen.getByRole("radio", { name: "Branch" }));
-    expect(await screen.findByText("comparing to origin/main")).toBeTruthy();
+    // The branch and its base are in the toolbar, not a row under it.
+    await waitFor(() => expect(screen.getByTestId("diff-branch").textContent).toMatch(/vs main$/));
     expect(gitDiff).toHaveBeenLastCalledWith(T, { kind: "branch" });
   });
 
@@ -502,11 +501,11 @@ describe("DiffPanel", () => {
       "No uncommitted changes. Showing branch vs main",
     );
     expect(screen.getAllByTestId("diff-file")).toHaveLength(1);
-    expect(screen.queryByText("comparing to origin/main")).toBeNull();
+    expect(screen.queryByTestId("diff-branch")?.textContent ?? "").not.toMatch(/vs /);
     expect(screen.queryByText("No changes")).toBeNull();
 
     fireEvent.click(screen.getByRole("radio", { name: "Branch" }));
-    expect(await screen.findByText("comparing to origin/main")).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId("diff-branch").textContent).toMatch(/vs main$/));
     expect(screen.queryByTestId("diff-fallback")).toBeNull();
   });
 
