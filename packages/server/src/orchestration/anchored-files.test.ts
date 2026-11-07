@@ -4,26 +4,34 @@ import * as Effect from "effect/Effect";
 import * as fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { anchoredRequest } from "./anchored-files.ts";
+import { anchoredRequest, withAnchoredFiles } from "./anchored-files.ts";
 import type { SpawnOptions } from "node:child_process";
 
-const processCalls = vi.hoisted(() => ({ missing: false, calls: [] as unknown[][] }));
+const processCalls = vi.hoisted(() => ({
+  missing: false,
+  calls: [] as unknown[][],
+  children: [] as ChildProcess.ChildProcess[],
+}));
 vi.mock("node:child_process", async (importOriginal) => {
   const real = await importOriginal<typeof ChildProcess>();
   return {
     ...real,
     spawn: ((command: string, args: ReadonlyArray<string>, options: SpawnOptions) => {
       processCalls.calls.push([command, args, options]);
-      return real.spawn(
+      const child = real.spawn(
         processCalls.missing ? "/gram-test-no-such-interpreter" : command,
         args,
         options,
       );
+      processCalls.children.push(child);
+      return child;
     }) as unknown as typeof real.spawn,
   };
 });
 const roots: string[] = [];
 afterEach(() => {
+  for (const child of processCalls.children.splice(0))
+    expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
   processCalls.missing = false;
   processCalls.calls.length = 0;
   for (const root of roots.splice(0)) fs.rmSync(root, { force: true, recursive: true });
@@ -100,4 +108,94 @@ it("revocation/interruption cleans its staged temp and leaves the old file intac
   expect(result._tag).toBe("Failure");
   expect(fs.readFileSync(join(dir, "w1/a.md"), "utf8")).toBe("old");
   expect(fs.readdirSync(join(dir, "w1"))).toEqual(["a.md"]);
+});
+
+it("shares startup across concurrent operations, retaining per-request paths and boundaries", async () => {
+  const dirs = [root(), root()];
+  const phases: string[] = [];
+  const result = await Effect.runPromise(
+    withAnchoredFiles(
+      Effect.gen(function* () {
+        yield* Effect.all(
+          dirs.map((dir, index) =>
+            anchoredRequest(
+              dir,
+              { ...request, op: "write", rel: "a.md", content: `${index}` },
+              {
+                boundary: (phase) =>
+                  Effect.sync(() => {
+                    phases.push(`${index}:${phase}`);
+                  }),
+              },
+            ),
+          ),
+          { concurrency: "unbounded" },
+        );
+        // A complete refusal leaves the protocol ready for the next operation.
+        yield* Effect.flip(anchoredRequest(dirs[0]!, { ...request, op: "read", rel: "missing" }));
+        return yield* Effect.all(
+          dirs.map((dir) => anchoredRequest<string>(dir, { ...request, op: "read", rel: "a.md" })),
+          { concurrency: "unbounded" },
+        );
+      }),
+    ),
+  );
+  expect(result).toEqual(["0", "1"]);
+  expect(phases).toEqual([
+    "0:anchored",
+    "0:staged",
+    "0:committing",
+    "1:anchored",
+    "1:staged",
+    "1:committing",
+  ]);
+  expect(processCalls.calls).toHaveLength(1);
+});
+
+it("discards a revoked batch handshake before another operation and cleans staged files", async () => {
+  const dir = root();
+  fs.mkdirSync(join(dir, "w1"));
+  fs.writeFileSync(join(dir, "w1/a.md"), "old");
+  const result = await Effect.runPromise(
+    withAnchoredFiles(
+      Effect.gen(function* () {
+        const exit = yield* anchoredRequest(
+          dir,
+          { ...request, op: "write", rel: "a.md", content: "candidate" },
+          { boundary: (phase) => (phase === "staged" ? Effect.interrupt : Effect.void) },
+        ).pipe(Effect.exit);
+        expect(exit._tag).toBe("Failure");
+        return yield* anchoredRequest<string>(dir, { ...request, op: "read", rel: "a.md" });
+      }),
+    ),
+  );
+  expect(result).toBe("old");
+  expect(processCalls.calls).toHaveLength(2);
+  expect(fs.readdirSync(join(dir, "w1"))).toEqual(["a.md"]);
+});
+
+it("reopens paths for every batched request and refuses a substituted workspace symlink", async () => {
+  const dir = root();
+  const outside = root();
+  fs.mkdirSync(join(dir, "w1"));
+  fs.writeFileSync(join(dir, "w1/a.md"), "original");
+  fs.writeFileSync(join(outside, "a.md"), "outside");
+  const result = await Effect.runPromise(
+    withAnchoredFiles(
+      Effect.gen(function* () {
+        const read = anchoredRequest<string>(dir, { ...request, op: "read", rel: "a.md" });
+        expect(yield* read).toBe("original");
+        fs.renameSync(join(dir, "w1"), join(dir, "saved"));
+        fs.symlinkSync(outside, join(dir, "w1"));
+        yield* Effect.flip(read);
+        fs.unlinkSync(join(dir, "w1"));
+        fs.mkdirSync(join(dir, "w1"));
+        fs.writeFileSync(join(dir, "w1/a.md"), "replacement");
+        return yield* read;
+      }),
+    ),
+  );
+  expect(result).toBe("replacement");
+  expect(fs.readFileSync(join(outside, "a.md"), "utf8")).toBe("outside");
+  expect(processCalls.calls).toHaveLength(1);
 });

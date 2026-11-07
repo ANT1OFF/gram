@@ -83,43 +83,39 @@ describe("keybindings file", () => {
     expect((await readKeybindings(dir)).bindings).toEqual({ "thread.new": "mod+shift+n" });
   });
 
-  it("polls on Windows and watches the folder elsewhere", () => {
+  it("polls on macOS and Windows and watches the folder elsewhere", () => {
     expect(keybindingsWatchMode("win32")).toBe("poll");
-    expect(keybindingsWatchMode("darwin")).toBe("watch");
+    expect(keybindingsWatchMode("darwin")).toBe("poll");
     expect(keybindingsWatchMode("linux")).toBe("watch");
   });
 
-  // The folder-watch variant runs only where the product watches folders. On Windows the sequence
-  // it exercises (native folder watch, stop, delete the folder) aborts Node; see
-  // `keybindingsWatchMode`.
-  const modes = (
-    [
-      ["a folder watch", "darwin"],
-      ["stat polling, as on Windows", "win32"],
-    ] as const
-  ).filter(
-    ([, platform]) =>
-      keybindingsWatchMode(platform) === "poll" ||
-      keybindingsWatchMode(process.platform) === "watch",
-  );
+  const modes = [
+    ["this platform's mode", process.platform],
+    ["stat polling, as on Windows", "win32"],
+  ] as const;
 
   it.each(modes)(
     "notices when the file changes on disk with %s, then stops",
     async (_mode, platform) => {
       const dir = await tempDir();
-      const onChange = vi.fn();
+      const noticed = Promise.withResolvers<void>();
+      const onChange = vi.fn(() => noticed.resolve());
       const stop = watchKeybindings(dir, onChange, { debounceMs: 20, pollMs: 20, platform });
+      let deadline: ReturnType<typeof setTimeout> | undefined;
       try {
         await writeFile(join(dir, "other.txt"), "x");
-        // A native watch (FSEvents) can coalesce or drop events that land right after it subscribes,
-        // and a loaded runner delays the rest, so keep changing the file until one is noticed.
-        const deadline = Date.now() + 15_000;
-        for (let n = 0; onChange.mock.calls.length === 0; n++) {
-          if (Date.now() > deadline) throw new Error("no change to keybindings.json was noticed");
-          await writeFile(join(dir, KEYBINDINGS_FILE), `{"bindings": {}, "n": ${n}}`);
-          await new Promise((resolve) => setTimeout(resolve, 150));
-        }
+        await writeFile(join(dir, KEYBINDINGS_FILE), '{"bindings": {}}');
+        await Promise.race([
+          noticed.promise,
+          new Promise<never>((_resolve, reject) => {
+            deadline = setTimeout(
+              () => reject(new Error("no change to keybindings.json was noticed")),
+              15_000,
+            );
+          }),
+        ]);
       } finally {
+        clearTimeout(deadline);
         stop();
         stop();
       }

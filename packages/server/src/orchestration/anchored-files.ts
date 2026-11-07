@@ -7,6 +7,10 @@
  */
 import { InvalidState, NotFound } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Context from "effect/Context";
+import * as Option from "effect/Option";
+import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 
@@ -49,7 +53,7 @@ def send(value):
     print(json.dumps(value, ensure_ascii=True), flush=True)
 def boundary(phase):
     send({"phase": phase})
-    if sys.stdin.readline(32) != "continue\n":
+    if sys.stdin.buffer.readline(32) != b"continue\n":
         raise ValueError("File operation revoked")
 def plain(s):
     if not isinstance(s, str) or not s or s in (".", "..") or "/" in s or "\\" in s or "\x00" in s:
@@ -220,62 +224,81 @@ def remove(parent, name):
     finally:
         os.close(child)
     os.rmdir(name, dir_fd=parent)
-try:
+while True:
     raw = sys.stdin.buffer.readline(8 * MAX + 1)
-    if len(raw) > 8 * MAX:
-        raise ValueError("Request exceeds helper cap")
-    result = run(json.loads(raw))
-    send({"result": result})
-except Exception as e:
-    send({"error": "missing" if isinstance(e, FileNotFoundError) else "refused",
-        "message": str(e)[:300]})
+    if not raw:
+        break
+    try:
+        if len(raw) > 8 * MAX:
+            raise ValueError("Request exceeds helper cap")
+        result = run(json.loads(raw))
+        send({"result": result})
+    except Exception as e:
+        send({"error": "missing" if isinstance(e, FileNotFoundError) else "refused",
+            "message": str(e)[:300]})
 `;
 
-/** One short-lived process per operation; interruption/denial closes stdin so staged writes clean up. */
-export const anchoredRequest = <A>(
-  root: string,
-  request: AnchoredRequest,
-  options: AnchoredOptions = {},
-): Effect.Effect<A, InvalidState | NotFound> =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      if (process.platform !== "darwin" && process.platform !== "linux")
-        return yield* new InvalidState({
-          message:
-            "Dream's anchored file operations require macOS/Linux and /usr/bin/python3; unavailable on this platform",
-        });
-      const child = spawn("/usr/bin/python3", ["-I", "-S", "-u", "-c", ANCHORED_FILE_PROGRAM], {
-        cwd: "/",
-        env: {},
-        stdio: ["pipe", "pipe", "pipe"],
-        timeout: 20_000,
-        killSignal: "SIGKILL",
-      });
-      // Deliberately discard stderr: neither Python startup nor OS errors may log private data.
-      child.stderr.resume();
-      const lines = createInterface({ input: child.stdout });
-      const iterator = lines[Symbol.asyncIterator]();
-      let spawnError = false;
-      child.once("error", () => {
-        spawnError = true;
-        lines.close();
-      });
-      const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
-      child.stdin.on("error", () => undefined);
-      yield* Effect.addFinalizer(() =>
-        Effect.promise(async () => {
-          child.stdin.end();
-          // A cooperative EOF lets the fixed helper unlink its own staged temp before exit.
-          const timer = setTimeout(() => child.kill("SIGKILL"), 1000);
-          await closed;
-          clearTimeout(timer);
-          lines.close();
-        }),
-      );
+interface Session {
+  readonly run: <A>(
+    root: string,
+    request: AnchoredRequest,
+    options: AnchoredOptions,
+  ) => Effect.Effect<A, InvalidState | NotFound>;
+}
+
+class AnchoredSession extends Context.Service<AnchoredSession, Session>()(
+  "@gram/server/AnchoredSession",
+) {}
+
+/** One fixed helper, with a fresh fd traversal and authorization handshake for every request. */
+const launch = Effect.gen(function* () {
+  if (process.platform !== "darwin" && process.platform !== "linux")
+    return yield* new InvalidState({
+      message:
+        "Dream's anchored file operations require macOS/Linux and /usr/bin/python3; unavailable on this platform",
+    });
+  const child = spawn("/usr/bin/python3", ["-I", "-S", "-u", "-c", ANCHORED_FILE_PROGRAM], {
+    cwd: "/",
+    env: {},
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  // Deliberately discard stderr: neither Python startup nor OS errors may log private data.
+  child.stderr.resume();
+  const lines = createInterface({ input: child.stdout });
+  const iterator = lines[Symbol.asyncIterator]();
+  let spawnError = false;
+  child.once("error", () => {
+    spawnError = true;
+    lines.close();
+  });
+  const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
+  child.stdin.on("error", () => undefined);
+  let closing: Promise<void> | undefined;
+  const close = Effect.promise(() => {
+    closing ??= (async () => {
+      child.stdin.end();
+      // A cooperative EOF lets the fixed helper unlink its own staged temp before exit.
+      const timer = setTimeout(() => child.kill("SIGKILL"), 1000);
+      await closed;
+      clearTimeout(timer);
+      lines.close();
+    })();
+    return closing;
+  });
+  yield* Effect.addFinalizer(() => close);
+
+  const run: Session["run"] = <A>(
+    root: string,
+    request: AnchoredRequest,
+    options: AnchoredOptions,
+  ) =>
+    Effect.suspend(() => {
       const raw = JSON.stringify({ ...request, root }) + "\n";
       if (Buffer.byteLength(raw) > 32 * 1024 * 1024)
-        return yield* new InvalidState({ message: "File request exceeds helper cap" });
-      child.stdin.write(raw);
+        return new InvalidState({ message: "File request exceeds helper cap" });
+      // The existing bound applies to each operation, including its authorization callbacks.
+      const timer = setTimeout(() => child.kill("SIGKILL"), 20_000);
+      let complete = false;
       const receive = (): Effect.Effect<A, InvalidState | NotFound> =>
         Effect.gen(function* () {
           const next = yield* Effect.tryPromise({
@@ -298,6 +321,20 @@ export const anchoredRequest = <A>(
               },
             catch: () => new InvalidState({ message: "Invalid anchored file helper response" }),
           });
+          if (response.phase) {
+            if (options.boundary)
+              yield* options
+                .boundary(response.phase)
+                .pipe(Effect.mapError((e) => new InvalidState({ message: e.message })));
+            const advance = Effect.sync(() => child.stdin.write("continue\n")).pipe(
+              Effect.andThen(receive),
+            );
+            // Keep the binding/store guard held through the result, exactly as for one operation.
+            const final =
+              request.op === "write" ? response.phase === "staged" : response.phase === "anchored";
+            return yield* final && options.commit ? options.commit(advance) : advance;
+          }
+          complete = true;
           if (response.error === "missing")
             return yield* new NotFound({
               entity: "file",
@@ -308,22 +345,69 @@ export const anchoredRequest = <A>(
             return yield* new InvalidState({
               message: `Confined file operation refused: ${response.message ?? "unavailable"}`,
             });
-          if (response.phase) {
-            if (options.boundary)
-              yield* options
-                .boundary(response.phase)
-                .pipe(Effect.mapError((e) => new InvalidState({ message: e.message })));
-            const advance = Effect.sync(() => child.stdin.write("continue\n")).pipe(
-              Effect.andThen(receive),
-            );
-            // Reads/deletes/mkdir/list start only while authorized; writes stage first then take the
-            // same guard for the rename. Keep it held until the helper returns, not just the check.
-            const final =
-              request.op === "write" ? response.phase === "staged" : response.phase === "anchored";
-            return yield* final && options.commit ? options.commit(advance) : advance;
-          }
           return response.result as A;
         });
-      return yield* receive();
-    }),
+      child.stdin.write(raw);
+      return receive().pipe(
+        Effect.ensuring(
+          Effect.suspend(() => {
+            clearTimeout(timer);
+            // A denied/interrupted handshake must never consume another request's reply.
+            return complete ? Effect.void : close;
+          }),
+        ),
+      );
+    });
+  return { run, close, usable: () => closing === undefined && child.exitCode === null };
+});
+
+const makeSession = Effect.gen(function* () {
+  const scope = yield* Effect.scope;
+  const gate = yield* Semaphore.make(1);
+  let helper: Effect.Success<typeof launch> | undefined;
+  const run: Session["run"] = <A>(
+    root: string,
+    request: AnchoredRequest,
+    options: AnchoredOptions,
+  ) =>
+    gate.withPermit(
+      Effect.suspend(() => {
+        if (helper?.usable()) return helper.run<A>(root, request, options);
+        return Effect.gen(function* () {
+          helper = yield* launch.pipe(Scope.provide(scope));
+          return yield* helper.run<A>(root, request, options);
+        });
+      }),
+    );
+  return { run };
+});
+
+/**
+ * Amortize interpreter startup within one caller operation. No fd, path result or authorization
+ * is cached. Nested calls share the helper; concurrent requests serialize. The scope closes it
+ * before returning, and interruption discards a helper still inside a handshake.
+ */
+export const withAnchoredFiles = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  Effect.flatMap(Effect.serviceOption(AnchoredSession), (session) =>
+    Option.isSome(session)
+      ? effect
+      : Effect.scoped(
+          Effect.flatMap(makeSession, (made) =>
+            effect.pipe(Effect.provideService(AnchoredSession, made)),
+          ),
+        ),
+  );
+
+/** Without a batch scope, retain one short-lived helper per operation. */
+export const anchoredRequest = <A>(
+  root: string,
+  request: AnchoredRequest,
+  options: AnchoredOptions = {},
+): Effect.Effect<A, InvalidState | NotFound> =>
+  Effect.flatMap(Effect.serviceOption(AnchoredSession), (session) =>
+    Option.isSome(session)
+      ? session.value.run<A>(root, request, options)
+      : withAnchoredFiles(anchoredRequest<A>(root, request, options)),
   );

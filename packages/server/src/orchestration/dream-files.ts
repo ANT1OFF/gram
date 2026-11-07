@@ -39,6 +39,7 @@ import type * as Scope from "effect/Scope";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { ServerConfig } from "../config.ts";
+import { withAnchoredFiles } from "./anchored-files.ts";
 import { redactText } from "../logging/redact.ts";
 import {
   checkMemorySet,
@@ -286,7 +287,7 @@ const guarded = <A, E, R = never>(
     // The id becomes a folder name and a file name; the contract's pattern, checked again here
     // because this is the layer that touches the disk.
     if (!DREAM_ID.test(dreamId)) return yield* refuse("Not a dream id a folder can be named after");
-    return yield* run();
+    return yield* withAnchoredFiles(run());
   });
 
 /** The refusal of a dream's output for breaking memory's caps. */
@@ -585,12 +586,16 @@ const make = (root: string): DreamFilesShape => {
       ),
 
     mergeFolder: (workspaceId, dreamId) =>
-      guarded(workspaceId, dreamId, () => {
-        const rel = `${mergeRel(dreamId)}/${randomUUID()}`;
-        return Effect.acquireRelease(tree.ensureDir(workspaceId, rel, "dream-merges"), () =>
-          Effect.ignore(tree.removeTree(workspaceId, rel, "dream-merges")),
-        );
-      }),
+      guarded(workspaceId, dreamId, () =>
+        Effect.succeed(`${mergeRel(dreamId)}/${randomUUID()}`),
+      ).pipe(
+        // The folder belongs to the caller's merge scope, beyond the helper batch's lifetime.
+        Effect.flatMap((rel) =>
+          Effect.acquireRelease(tree.ensureDir(workspaceId, rel, "dream-merges"), () =>
+            Effect.ignore(tree.removeTree(workspaceId, rel, "dream-merges")),
+          ),
+        ),
+      ),
 
     discard: (workspaceId, dreamId) =>
       guarded(workspaceId, dreamId, () =>

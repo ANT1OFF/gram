@@ -1,4 +1,4 @@
-import { unwatchFile, watch, watchFile, type Stats } from "node:fs";
+import { statSync, watch } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { KeybindingOverrides, KeybindingsState } from "@gram/contracts";
@@ -106,14 +106,13 @@ export async function writeKeybindings(
 }
 
 /**
- * How `watchKeybindings` notices changes. Windows polls the file's stat instead of watching the
- * folder: on Windows, a native directory `fs.watch` that is closed and whose folder is deleted soon
- * after aborts Node with 0xC0000409. That was reproduced in a separate process on windows-latest
- * (Node 24.20) with watch → change → stop → `rmSync`. Tests do exactly that, and a user deleting the
- * data folder could too. Polling holds no handle on the folder.
+ * Watch one configuration file with stat polling on macOS and Windows. macOS FSEvents can lose
+ * its only change; native directory-watch setup and teardown are also synchronous.
+ * Windows directory watches can abort Node if closed just before their folder is deleted
+ * (0xC0000409, reproduced on Node 24.20). Polling holds no directory handle on either platform.
  */
 export const keybindingsWatchMode = (platform: NodeJS.Platform): "watch" | "poll" =>
-  platform === "win32" ? "poll" : "watch";
+  platform === "win32" || platform === "darwin" ? "poll" : "watch";
 
 export interface WatchKeybindingsOptions {
   readonly debounceMs?: number;
@@ -126,7 +125,8 @@ export interface WatchKeybindingsOptions {
 
 /**
  * Calls `onChange` (debounced) whenever `keybindings.json` changes in `dataDir`. Returns a stop
- * function; stopping twice is harmless.
+ * function; stopping twice is harmless. A single stat baseline covers creation, replacement,
+ * edits and deletion, without replaying unchanged events.
  */
 export function watchKeybindings(
   dataDir: string,
@@ -135,39 +135,54 @@ export function watchKeybindings(
 ): () => void {
   const debounceMs = options.debounceMs ?? 150;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let poll: ReturnType<typeof setInterval> | undefined;
   let stopped = false;
+  const path = join(dataDir, KEYBINDINGS_FILE);
+  const stamp = () => {
+    try {
+      const stat = statSync(path);
+      return `${stat.dev}:${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
+    } catch {
+      return undefined;
+    }
+  };
+  // Capture before returning, including a missing file. An asynchronous first stat can absorb
+  // the first write as its baseline when the native event for that write is lost.
+  let previous = stamp();
   const changed = () => {
     if (stopped) return;
+    const current = stamp();
+    if (current === previous) return;
+    previous = current;
     clearTimeout(timer);
     timer = setTimeout(onChange, debounceMs);
   };
+  const startPolling = () => {
+    if (poll === undefined) poll = setInterval(changed, options.pollMs ?? 1000);
+    poll.unref();
+  };
 
-  let close: () => void;
-  if (keybindingsWatchMode(options.platform ?? process.platform) === "poll") {
-    const path = join(dataDir, KEYBINDINGS_FILE);
-    const listener = (current: Stats, previous: Stats) => {
-      if (current.mtimeMs !== previous.mtimeMs || current.size !== previous.size) changed();
-    };
-    watchFile(path, { interval: options.pollMs ?? 1000, persistent: false }, listener);
-    close = () => unwatchFile(path, listener);
+  let close: (() => void) | undefined;
+  const platform = options.platform ?? process.platform;
+  if (keybindingsWatchMode(platform) === "poll") {
+    startPolling();
   } else {
     try {
       const watcher = watch(dataDir, (_event, filename) => {
         if (filename !== null && filename.toString() !== KEYBINDINGS_FILE) return;
         changed();
       });
-      // A watch that dies (e.g. the folder is removed) just stops hot-reloading.
-      watcher.on("error", () => watcher.close());
+      watcher.on("error", (error) => {
+        watcher.close();
+        if (stopped) return;
+        options.onWatchFailed?.(error);
+        startPolling();
+      });
       close = () => watcher.close();
     } catch (error) {
       // Linux's inotify limit (ENOSPC/EMFILE) throws here; polling the file needs no watch.
       options.onWatchFailed?.(error);
-      const path = join(dataDir, KEYBINDINGS_FILE);
-      const listener = (current: Stats, previous: Stats) => {
-        if (current.mtimeMs !== previous.mtimeMs || current.size !== previous.size) changed();
-      };
-      watchFile(path, { interval: options.pollMs ?? 1000, persistent: false }, listener);
-      close = () => unwatchFile(path, listener);
+      startPolling();
     }
   }
 
@@ -175,6 +190,7 @@ export function watchKeybindings(
     if (stopped) return;
     stopped = true;
     clearTimeout(timer);
-    close();
+    clearInterval(poll);
+    close?.();
   };
 }
