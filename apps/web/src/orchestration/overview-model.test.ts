@@ -7,6 +7,7 @@ import {
   ASKS_YOU,
   foldByKey,
   foldedSummaryText,
+  mixedAgents,
   nowLineShown,
   orchestratorHover,
   orchestratorLine,
@@ -552,5 +553,17 @@ describe("plain status lines", () => {
     expect(plainRunning("Running: 2 shells and a subagent")).toBe(
       "Running 2 shells and a subagent",
     );
+  });
+});
+
+describe("mixedAgents", () => {
+  it("is false while every worker runs the same agent, or none is known", () => {
+    expect(mixedAgents([])).toBe(false);
+    expect(mixedAgents(["claude", "claude", undefined])).toBe(false);
+    expect(mixedAgents([undefined, undefined])).toBe(false);
+  });
+
+  it("is true once two workers run different agents", () => {
+    expect(mixedAgents(["claude", undefined, "codex"])).toBe(true);
   });
 });

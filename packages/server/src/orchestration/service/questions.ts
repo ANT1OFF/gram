@@ -374,10 +374,8 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         const recorded =
           retry &&
           !queued &&
-          (yield* store.listMessages(worker.id)).some(
-            (message) =>
-              message.role === "user" &&
-              message.parts.some((part) => part.type === "text" && part.text === text),
+          (yield* store.listUserMessages(worker.id)).some((message) =>
+            message.parts.some((part) => part.type === "text" && part.text === text),
           );
         const delivered: QuestionDelivery | undefined = queued
           ? "queued"

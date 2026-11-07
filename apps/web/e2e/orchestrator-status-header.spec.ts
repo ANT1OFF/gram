@@ -170,8 +170,11 @@ test.describe(() => {
     await page.keyboard.press("Escape");
     await expect(detail).toBeHidden();
 
+    // One fold on the line, no × beside it: Dismiss is in what it opens.
+    await expect(since.getByRole("button")).toHaveCount(1);
     // Dismissed, it stays gone for that absence, even as the view opens again.
-    await since.getByRole("button", { name: "Dismiss Since you left" }).click();
+    await since.getByTestId("since-you-left-open").click();
+    await detail.getByRole("button", { name: "Dismiss Since you left" }).click();
     await expect(header.getByTestId("since-you-left")).toHaveCount(0);
     await page.getByTestId("overview-needs-you").click();
     await page.keyboard.press("Escape");
@@ -202,8 +205,9 @@ test("short of room the strip drops whole items, never their words, and the swit
     expect.stringMatching(/^Since you left 2 merged/),
   ]);
 
-  // As the Inbox docks beside it, the chat narrows: the last items go whole.
-  await page.setViewportSize({ width: 1000, height: 900 });
+  // As the Inbox docks beside it, the chat narrows: the last items go whole. (Since you left has
+  // no × of its own now, so the line holds every item down to a narrower chat than it did.)
+  await page.setViewportSize({ width: 900, height: 900 });
   await expect.poll(async () => (await shown()).length).toBeLessThan(wide.length);
   const narrow = await shown();
   for (const item of narrow) expect(item).toMatch(/^\d+ [a-z]|^Since you left/);

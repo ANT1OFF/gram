@@ -506,6 +506,21 @@ export const foldByKey = (
 };
 
 /**
+ * Whether a list of workers runs more than one agent, so each row's agent mark says something its
+ * neighbours don't. With one agent for all (or none known), the state dot alone marks each row and
+ * the agent is on its hover.
+ */
+export const mixedAgents = (agents: Iterable<string | undefined>): boolean => {
+  let first: string | undefined;
+  for (const agent of agents) {
+    if (agent === undefined) continue;
+    if (first === undefined) first = agent;
+    else if (agent !== first) return true;
+  }
+  return false;
+};
+
+/**
  * Whether a workspace's tile in the compact rail has its working ring: its orchestrator works, as
  * the state word says, or works on with workers at work while an ask waits (the word then says
  * nothing of work, the ask badge saying it needs you). Paused or parked, it rests.

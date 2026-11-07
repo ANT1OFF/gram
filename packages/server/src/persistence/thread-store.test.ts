@@ -337,6 +337,53 @@ describe("ThreadStore", () => {
         expect(yield* store.messageTextsWith(id, ["/etc/hosts"])).toEqual(["Wrote C:\\tmp\\r.md"]);
         expect(yield* store.messageTextsWith(id, ["nowhere"])).toEqual([]);
 
+        // Messages by part type: a part's own type, never the same words inside a tool's input
+        // or a message's text.
+        yield* store.upsertMessage(id, {
+          id: "u3",
+          role: "user",
+          parts: [
+            { type: "text", text: 'pasted {"type":"file"} here' },
+            { type: "file", mediaType: "image/png", url: "file:///tmp/a.png" },
+          ],
+        } as never);
+        yield* store.upsertMessage(id, {
+          id: "a3",
+          role: "assistant",
+          parts: [
+            {
+              type: "dynamic-tool",
+              toolName: "Write",
+              toolCallId: "w",
+              state: "input-available",
+              // Stored as `"input":{"type":"file",…}`: the row matches, the parts decide.
+              input: { type: "file", path: "/tmp/b.png" },
+            },
+          ],
+        } as never);
+        expect((yield* store.messagesWithParts(id, ["file"])).map((m) => m.id)).toEqual(["u3"]);
+        expect(
+          (yield* store.messagesWithParts(id, ["file", "dynamic-tool"])).map((m) => m.id),
+        ).toEqual(["a2", "u3", "a3"]);
+        expect(yield* store.messagesWithParts(id, ["data-handoff"])).toEqual([]);
+
+        // The last messages in order, how many there are, and whether any has a role, read alone.
+        expect((yield* store.lastMessages(id, 2)).map((m) => m.id)).toEqual(["u3", "a3"]);
+        expect((yield* store.lastMessages(id, 50)).map((m) => m.id)).toEqual([
+          "u1",
+          "a1",
+          "u2",
+          "a2",
+          "u3",
+          "a3",
+        ]);
+        expect(yield* store.messageCount(id)).toBe(6);
+        expect(yield* store.hasMessages(id)).toBe(true);
+        expect(yield* store.hasMessages(id, "user")).toBe(true);
+        expect(yield* store.hasMessages(id, "system")).toBe(false);
+        expect(yield* store.hasMessages("missing" as ThreadId)).toBe(false);
+        expect(yield* store.messageCount("missing" as ThreadId)).toBe(0);
+
         const turnId = "turn1" as TurnId;
         yield* store.startTurn(id, turnId, 10);
         yield* store.endTurn(turnId, { endedAt: 20, reason: "interrupted" });

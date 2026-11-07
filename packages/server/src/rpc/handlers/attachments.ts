@@ -34,7 +34,8 @@ export const attachmentHandlers = Effect.gen(function* () {
 
     "attachment.read": ({ threadId, path }) =>
       Effect.gen(function* () {
-        const stored = yield* store.listMessages(threadId);
+        // Only a `file` or stored tool-image part can name an attachment, so only those decode.
+        const stored = yield* store.messagesWithParts(threadId, ["file", "data-tool-image"]);
         return yield* readThreadAttachment(
           [...stored, ...(yield* runtimes.liveMessages(threadId))],
           path,

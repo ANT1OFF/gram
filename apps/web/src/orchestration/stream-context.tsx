@@ -105,7 +105,8 @@ export function StreamExtrasView({
   const titleOf = (threadId: ThreadId) =>
     stream.workers.find((worker) => worker.threadId === threadId)?.title;
   return (
-    <div data-testid="stream-extras" className="flex flex-col gap-1.5">
+    // A reply's block step (12 px) between the update and its cards, and after the message above.
+    <div data-testid="stream-extras" className="mt-3 flex flex-col gap-3 first:mt-0">
       <UpdateBlock
         lines={extras.lines}
         digests={extras.digests}

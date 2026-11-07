@@ -309,6 +309,8 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
   const intervened = new Set<ThreadId>();
   /** Workers started from New for their orchestrator, until their brief, the user's words, is sent. */
   const briefed = new Set<ThreadId>();
+  /** Workers started from New, held or not, until their first turn begins (`takeNewBrief`). */
+  const fromNew = new Set<ThreadId>();
   /**
    * Threads that have run a turn, as the server's memo records it (`hasStartedTurn`): a worker reads
    * `briefed` until one has, and `working` after, however soon that turn ends.
@@ -1476,6 +1478,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
         spawnedBy: { threadId: orchestrator.id, feature },
       };
       if (!hold) briefed.add(worker.id);
+      fromNew.add(worker.id);
       host.replace(worker);
       host.emit({ type: "orchestration.changed", workspaceId });
       return worker;
@@ -1590,6 +1593,14 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       const thread = make({ workspaceId, spawnedBy });
       host.emit({ type: "orchestration.changed", workspaceId });
       return { thread, membership: "restored" };
+    },
+
+    /**
+     * Whether `threadId` is a worker started from New whose first turn begins now, which works on
+     * its brief as a real one does (`workerBriefScript`); true once per worker.
+     */
+    takeNewBrief(threadId: ThreadId): boolean {
+      return fromNew.delete(threadId);
     },
 
     /** The user sent `threadId` a message: a worker is marked so its orchestrator holds off. */

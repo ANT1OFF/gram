@@ -33,6 +33,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     the merged colour is done, and red failed. The row beside a dot says its state in words, with
     the reason for a wait ("Waiting · checks"), and the dot's hover says what its colour or fill
     means ("Hollow: waiting on checks, a review, a wake or a limit"), so the dots need no legend.
+    A PR's pending checks, queued or running, and a review bot's round under way take the same
+    hollow ring as a glyph (`PendingRing`), still in every motion setting, wherever they show:
+    a wait can last an hour, and only a turn under way turns (`Spinner`, Stop's ring).
   - **One amber in each mode.** The needs-you text, its dots, its count's ring and the pill's
     border are one hue (`status-needs` is `status-needs-mark` darkened to the text floor, never a
     different colour); the light palettes of the Neutral family seed a true amber, not an orange.
@@ -54,16 +57,24 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   workspace, a worker, a solo thread, a PR, a Done item), is its mark (a Done item's is its
   state's dot, as a worker's is) and title (`ROW`, `ROW_TITLE`), then one muted status line (`ROW_STATUS`) with what trails it at the right edge: a
   time, or its badges (a worker's PR chips) only while they fit beside the words: the status wins,
-  and the row's hover names the PR. The title has the row's whole width and wraps to a second
-  line before it is cut at its end (never its middle), the whole of it on hover, so a long name
-  reads whole rather than stopping mid-word; most rows stay 48 px (two 20 px lines with its
-  padding). What needs you is listed first. Done starts folded to one row, "8 done · History",
-  whose History opens History on its Done chip: the Board and History already list finished work,
-  and History is old work's one home (the palette hands its matches there too). Unfolded, Done
-  shows the three chats that finished last, solo threads that settled on their own included, then
-  "N more in History". Each workspace folds its workers under its chevron. Marks centre on one
-  column and titles start on one edge, the pill, Search, section titles and Open History
-  included. The overview's sections sit a list's step (12 px) apart.
+  and the row's hover names the PR. The title is one line with the row's whole width, cut at its
+  end (never its middle) with an ellipsis, and the row's hover (its `title`, or a worker's card)
+  says the whole of it, so every row keeps one height: 36 px for a title alone, 48 px with its
+  status line, never taller. A worker's agent mark shows only where its workspace's workers run
+  different agents; all on one agent, the state dot alone marks each row and the hover names the
+  agent. What needs you is listed first. Done starts folded to one row, "8 done", and a click
+  anywhere on it unfolds it: the Board and History already list finished work. History, at the
+  column's foot ("History", its key on its hover), is old work's one way in from the sidebar, and
+  the palette hands a search matching finished threads there too. Unfolded, Done shows the three
+  chats that finished last, solo threads that settled on their own included, then "N more in
+  History", which continues the same list on History's Done chip. Each workspace folds its workers
+  under its chevron. Every section's title has one look, muted 13 px words beside its chevron; a
+  Gram word's explanation ("Solo threads") is on its hover, never a dotted underline there. Marks
+  centre on one column and titles start on one edge, the pill, Search, section titles and History
+  included. The overview's sections sit a list's step (12 px) apart. The compact rail (60 px,
+  under 1280 px) gives each workspace and the solo threads a tile with its kind's glyph (an
+  orchestrator's, a thread's, as the palette draws them), never letters cut from a name; its
+  flyout heads with the whole name.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings and between a reply's blocks, 16 px between sections and at a
   pane's edges. A settings row takes 8 px above and below, and a page's groups sit 24 px apart
@@ -85,8 +96,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   (`text-meta`), never smaller. `text-caption` is only for what is never read for meaning: a key
   cap, a count badge, a footer's key legend. A third, quieter level (a hint, a step's evidence, a
   pending line) is `text-subtle` (`fg-subtle`), which holds the text floor like `fg-muted`; never
-  fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A title wraps to two lines before it is cut short at
-  its end, and its hover says the whole of it, a sidebar row's title included. Metadata a heading or the whole list already says is left out: no repo on each
+  fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A title wraps
+  to two lines before it is cut short at its end, and its hover says the whole of it; a sidebar
+  row's title keeps to one line, so its rows stay even. Metadata a heading or the whole list already says is left out: no repo on each
   row when every row has the same one, no workspace under its own heading.
 - **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,
   `ShortcutKbd cap`), never a faded one; elsewhere a hint goes in the tooltip.
@@ -127,7 +139,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
     Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`, History `History`, a wait
     `Hourglass`. A row a chevron already folds needs no second glyph (an orchestrator's update is
-    its chevron and time).
+    its chevron and time, and no rule: a reply's 12 px block step sets it apart).
   - A control that acts on a choice names it: a sound's preview is one "Preview Chime" button
     beside the choice, never a row of bare play glyphs.
 - **A list row's trailing slot is its status, never an action:** History says what happened
@@ -196,6 +208,11 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   of the workspace and its views, and no overview beside it.
 - **A status strip keeps its words:** short of room it drops whole items from its end, never their
   words, so a count never stands alone and no two read the same.
+- **One band above the transcript, one below.** The orchestrator's chat has one quiet muted line
+  over it, with no rule under it: the counts, then "Since you left" as a fold (its Dismiss inside,
+  no ×), then Show all activity at its end; "New" is the transcript's own line, over the first
+  message you haven't seen. A worker's PR and CI are the strip above its composer, and Take over
+  stays the title bar's (the strip adds no second one).
 - **Motion is short and springy:** 220 to 320 ms with the theme's ease-out, springs for presses
   and arrivals, and none under reduced motion.
 

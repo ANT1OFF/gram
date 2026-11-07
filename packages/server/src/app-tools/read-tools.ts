@@ -28,6 +28,7 @@ import { redactText } from "../logging/redact.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient } from "../platform/unstable.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { captureReadWorker, withReadWorker } from "../persistence/read-worker.ts";
 import { searchThreads } from "../search/search.ts";
 import { defineAppTool } from "./definition.ts";
 import { AppToolRegistry } from "./registry.ts";
@@ -154,6 +155,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
     const checkpoints = yield* Checkpoints;
     const proc = yield* Proc;
     const sql = yield* SqlClient.SqlClient;
+    const reads = withReadWorker(yield* captureReadWorker);
     const provideGit = <A, E>(effect: Effect.Effect<A, E, Proc | Checkpoints>) =>
       effect.pipe(
         Effect.provideService(Proc, proc),
@@ -478,14 +480,14 @@ export const ReadAppToolsLive = Layer.effectDiscard(
           if (summary === undefined) {
             return yield* new AppToolError({ tool, message: `unknown thread ${threadId}` });
           }
-          const stored = yield* store.listMessages(summary.thread.id);
+          const stored = yield* store.lastMessages(summary.thread.id, clamp(messages, 1, 50));
           let budget = THREAD_TEXT_CAP;
           const transcript: Array<{
             role: string;
             text: string;
             from?: ReturnType<typeof senderOf>;
           }> = [];
-          for (const message of stored.slice(-clamp(messages, 1, 50)).toReversed()) {
+          for (const message of stored.toReversed()) {
             if (budget <= 0) break;
             const cut = truncate(
               redactText(messageText(message)),
@@ -513,7 +515,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
             thread: yield* compactThread(summary, yield* projectsById, caller),
             queued: summary.queue.length,
             pendingRequests: summary.pendingRequests.length,
-            messageCount: stored.length,
+            messageCount: yield* store.messageCount(summary.thread.id),
             messages: transcript,
           };
         }).pipe(Effect.mapError(toolError("get_thread"))),
@@ -533,6 +535,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
       handle: (_threadId, { query, limit = 20 }) =>
         searchThreads({ query, limit: clamp(limit, 1, 50) }).pipe(
           Effect.provideService(SqlClient.SqlClient, sql),
+          reads,
           Effect.map((result) => ({
             hits: result.hits.map((hit) => ({
               threadId: hit.threadId,

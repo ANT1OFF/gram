@@ -81,6 +81,7 @@ import { ledgerSlotsText } from "./overview-extras-model";
 import {
   foldByKey,
   foldedSummaryText,
+  mixedAgents,
   nowLineShown,
   orchestratorHover,
   stateWord,
@@ -707,6 +708,9 @@ function WorkspaceFeatures({
       (item) => item.kind !== "worker" || !away.has(item.row.threadId),
     );
   }, [features, snoozed]);
+  const agentMark = useAgentsMixed(
+    items.flatMap((item) => (item.kind === "worker" ? [item.row.threadId] : [])),
+  );
   if (items.length === 0) {
     if (empty) return null;
     return (
@@ -724,7 +728,12 @@ function WorkspaceFeatures({
         {items.map((item) =>
           item.kind === "worker" ? (
             <PresenceItem key={item.row.threadId}>
-              <WorkerRow row={item.row} feature={item.feature} updatedAt={item.updatedAt} />
+              <WorkerRow
+                row={item.row}
+                feature={item.feature}
+                updatedAt={item.updatedAt}
+                agentMark={agentMark}
+              />
             </PresenceItem>
           ) : (
             <PresenceItem key={item.held.id}>
@@ -738,21 +747,35 @@ function WorkspaceFeatures({
 }
 
 /**
+ * Whether the workers listed together run more than one agent (`mixedAgents`): only then does each
+ * row show its agent's mark. All on one agent, the state dot alone marks a row, and its name and
+ * hover card say the agent.
+ */
+export function useAgentsMixed(threadIds: readonly ThreadId[]): boolean {
+  return useThreadsStore((s) =>
+    mixedAgents(threadIds.map((id) => s.byId[id]?.thread.model?.agent)),
+  );
+}
+
+/**
  * A live worker: a click opens it, where any ask it has shows, ⌥-click peeks and ⌘/Ctrl-click keeps
  * it beside; a right-click (or Shift+F10) opens its menu, and it drags onto a grid pane. Its agent's
- * mark always shows, Claude's as Codex's, and a second line only for an ask, a failure or real
- * activity; its name and hover card keep the rest. In the compact rail's flyout it has no hover
- * card of its own (`card={false}`), the flyout being one.
+ * mark shows only while its list mixes agents (`agentMark`), and a second line only for an ask, a
+ * failure or real activity; its name and hover card keep the rest. In the compact rail's flyout it
+ * has no hover card of its own (`card={false}`), the flyout being one.
  */
 export function WorkerRow({
   row,
   feature,
   updatedAt,
+  agentMark = false,
   card = true,
 }: {
   row: OverviewWorkerRow;
   feature: string;
   updatedAt: number;
+  /** Its list's workers run more than one agent, so its agent's mark says which. */
+  agentMark?: boolean;
   card?: boolean;
 }) {
   const openThread = useOpenThread();
@@ -817,8 +840,8 @@ export function WorkerRow({
     onClick,
     onKeyDown: rowMenuKeys,
     ...threadDragProps(row.threadId),
-    // Like every row: its title, on up to two lines with the whole of it on hover, and its status
-    // with its PR chips at the line's right edge. The dot sits on the title's first line.
+    // Like every row: its title on one line with the whole of it on hover, and its status with its
+    // PR chips at the line's right edge.
     className: cn(ROW, "items-start", CURRENT_ROW, settled && SETTLED),
   };
   const prChips = useWorkerPrChips(row.threadId, row.prs);
@@ -834,7 +857,8 @@ export function WorkerRow({
         data-tone={tone}
         className={DOT_ON_FIRST_LINE}
       />
-      {/* Its title beside the trailing marks (a pause, its agent), on up to two lines and then cut at its end; the hover card, or the flyout's tooltip, says the whole. */}
+      {/* Its title beside the trailing marks (a pause, its agent), one line cut at its end; the
+          hover card, or the flyout's tooltip, says the whole. */}
       <span
         data-testid="overview-worker-title"
         className={cn(ROW_TITLE, "col-span-1 text-foreground", unread && UNREAD_TITLE)}
@@ -843,7 +867,7 @@ export function WorkerRow({
       </span>
       <span className="flex h-lh items-center gap-1.5 text-muted-foreground">
         {pause !== undefined && <WorkerPauseMark pause={pause} />}
-        {agent !== undefined && (
+        {agentMark && agent !== undefined && (
           <span data-testid="overview-worker-agent" className="flex">
             <AgentIcon agent={agent} className="size-icon-row" />
           </span>
@@ -1211,9 +1235,9 @@ function HeldRow({ held }: { held: FeatureCardHeld }) {
 }
 
 /**
- * A solo row's usual height (two 20 px lines, the title's and its status's, and 4 px above and
- * below), the virtual list's estimate until it measures a row with a two-line title, and the space
- * between rows (the section's `gap-px`).
+ * A solo row's height (two 20 px lines, the title's and its status's, and 4 px above and below), the
+ * virtual list's estimate until it measures a row, and the space between rows (the section's
+ * `gap-px`).
  */
 const SOLO_ROW = 48;
 const SOLO_GAP = 1;
@@ -1508,9 +1532,8 @@ export function SoloRow({
             display.working && "gram-working",
           )}
         />
-        {/* Like every row: its title on up to two lines, cut at its end with the whole on hover,
-            and its status under it with its last activity at the edge. The virtual list measures
-            each drawn row, so a two-line title keeps the rows under it anchored. */}
+        {/* Like every row: its title on one line, cut at its end with the whole on hover, and its
+            status under it with its last activity at the edge. */}
         <span className={cn(ROW_TITLE, thread.unread && UNREAD_TITLE)}>{title}</span>
         <span data-testid="overview-solo-status" className={ROW_STATUS}>
           <span

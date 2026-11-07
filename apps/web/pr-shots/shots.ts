@@ -1251,6 +1251,30 @@ const SNOOZE_SHOTS: readonly Shot[] = [
       await page.waitForTimeout(600);
     },
   },
+  {
+    name: "sidebar-realistic",
+    title:
+      "The realistic morning's sidebar at 1440 px: one-line titles, no agent mark where every worker runs one agent, Done folded to one row, History at the foot",
+    open: async (page) => {
+      await openRealisticMorning(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.getByTestId("overview-sidebar").waitFor();
+      await page.mouse.move(1100, 500);
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "sidebar-realistic-900",
+    title:
+      "The realistic morning at 900 px, where the overview is its compact rail: a glyph per workspace and for the solo threads, never letters cut from a name",
+    open: async (page) => {
+      await openRealisticMorning(page);
+      await page.setViewportSize({ width: 900, height: 900 });
+      await page.getByTestId("overview-rail").waitFor();
+      await page.mouse.move(700, 500);
+      await page.waitForTimeout(600);
+    },
+  },
 ];
 
 /**

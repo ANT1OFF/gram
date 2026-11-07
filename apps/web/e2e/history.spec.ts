@@ -277,29 +277,31 @@ test("History groups by orchestrator on request, a choice kept across a reload",
   await expect(groups.filter({ hasText: /^agent-platform$/ })).toHaveCount(0);
 });
 
-test("the sidebar's Done is one row into History, and opened shows the latest three", async ({
+test("the sidebar's Done is one row that unfolds, and opened shows the latest three", async ({
   page,
 }) => {
   await start(page);
   const done = page.getByTestId("overview-section-doneToday");
   const shown = done.getByTestId("overview-done");
-  // Folded as it starts: one row, "N done · History", which opens History on its Done chip.
-  await expect(done.getByTestId("overview-section-doneToday-folded")).toHaveText(/^\d+ done$/);
+  // Folded as it starts: one row, "N done", with no way into History of its own: History is the
+  // column's foot.
+  const folded = done.getByTestId("overview-section-doneToday-folded");
+  await expect(folded).toHaveText(/^\d+ done$/);
   await expect(shown.first()).toBeHidden();
-  await done.getByTestId("overview-done-history").click();
-  await expect(history(page)).toBeVisible();
-  await expect(chip(page, "Done")).toHaveAttribute("aria-checked", "true");
-  await page.keyboard.press("Escape");
-  await expect(history(page)).toBeHidden();
-
-  await done.getByRole("button", { name: /^Done, \d+$/ }).click();
+  await expect(done.getByTestId("overview-done-history")).toHaveCount(0);
+  // A click anywhere on the row unfolds it, its far end too, not only on its words.
+  const line = done.getByRole("button", { name: /^Done, \d+$/ });
+  await line.scrollIntoViewIfNeeded();
+  const box = (await line.boundingBox())!;
+  await page.mouse.click(box.x + box.width - 8, box.y + box.height / 2);
+  await expect(line).toHaveAttribute("aria-expanded", "true");
   await expect(shown).toHaveCount(3);
   await expect(shown.first()).toBeVisible();
-  // A title wraps to a second line before it is cut, so a row is two or three lines, never more.
+  // One line each: every row is the same height, its title cut at the end.
   const heights = await shown.evaluateAll((els) =>
     els.map((el) => el.getBoundingClientRect().height),
   );
-  for (const height of heights) expect(height).toBeLessThanOrEqual(68);
+  expect(new Set(heights).size).toBe(1);
   const sidebarIds = await shown.evaluateAll((els) =>
     els.map((el) => el.getAttribute("data-thread-id")!),
   );
