@@ -16,17 +16,22 @@ import { useNeedsYouPill } from "./use-needs-you";
 export const needsYouWords = (count: number): string =>
   count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
 
-/** More kinds than this and the pill says the count alone, its hover the kinds. */
-const KINDS_SHOWN = 2;
+/**
+ * How many kinds each form names before it says the count alone, its hover the kinds: the
+ * sidebar's row, a column wide, two; a chip in a bar, with the bar's width, three.
+ */
+const KINDS_SHOWN = { row: 2, chip: 3 } as const;
 
 /**
- * The pill's words: what needs you by kind, "1 question · 1 error", or with more kinds than fit,
- * "4 need you" (`needsYouWords`), as with nothing at all.
+ * The pill's words: what needs you by kind, "1 question · 1 error", or with more kinds than fit
+ * (`max`), "4 need you" (`needsYouWords`), as with nothing at all.
  */
-export const needsYouPillWords = (count: number, kinds: readonly string[]): string =>
-  count > 0 && kinds.length > 0 && kinds.length <= KINDS_SHOWN
-    ? kinds.join(" · ")
-    : needsYouWords(count);
+export const needsYouPillWords = (
+  count: number,
+  kinds: readonly string[],
+  max: number = KINDS_SHOWN.row,
+): string =>
+  count > 0 && kinds.length > 0 && kinds.length <= max ? kinds.join(" · ") : needsYouWords(count);
 
 /** The entry's hover: the count with its scope ("across all workspaces"), then where they are. */
 export const needsYouScope = (count: number, where: string): string =>
@@ -53,7 +58,7 @@ export function NeedsYouEntry({
 } & Omit<ComponentProps<"button">, "children" | "className">) {
   const { count, parts, scope: where, label, hint, openAsks } = useNeedsYouPill();
   if (variant === "chip" && count === 0) return null;
-  const words = needsYouPillWords(count, parts);
+  const words = needsYouPillWords(count, parts, KINDS_SHOWN[variant]);
   return (
     <button
       type="button"

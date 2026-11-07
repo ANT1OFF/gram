@@ -68,6 +68,13 @@ describe("needsYouPillWords", () => {
 
   it("says the count alone past two kinds, or with none", () => {
     expect(needsYouPillWords(4, ["1 error", "2 approvals", "1 question"])).toBe("4 need you");
+    // A chip in a bar has room for three: Quiet's "1 of 2" card then agrees with its pill.
+    expect(needsYouPillWords(3, ["1 error", "1 approval", "1 question"], 3)).toBe(
+      "1 error · 1 approval · 1 question",
+    );
+    expect(needsYouPillWords(5, ["1 error", "2 approvals", "1 question", "1 draft"], 3)).toBe(
+      "5 need you",
+    );
     expect(needsYouPillWords(0, [])).toBe("Nothing needs you");
     expect(needsYouSpoken(0, [])).toBe("Nothing needs you");
   });

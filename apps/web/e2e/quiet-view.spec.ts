@@ -147,7 +147,7 @@ test("the strip shows a dot per worker, and a workspace opens onto its workers",
   const home = strip.locator(`[data-workspace="${made.workspaceId}"]`);
   await expect(home.getByTestId("quiet-dot").first()).toBeVisible();
   // What needs you, in the sidebar pill's words and count.
-  await expect(strip.getByTestId("quiet-asks")).toHaveText(/^\d+ needs? you$/);
+  await expect(strip.getByTestId("quiet-asks")).toHaveAccessibleName(/^\d+ needs? you: \d+ /);
 
   await home.click();
   const peek = quiet(page).getByTestId("quiet-peek");
