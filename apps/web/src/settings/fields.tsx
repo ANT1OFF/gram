@@ -120,7 +120,8 @@ export function Field({
  * One setting on one line of a `SettingsGroup` card: its name and one line of description on the
  * left, its control on the right, dropping below when the two don't fit side by side. `onReset` is
  * passed only while the value differs from its default, so the reset icon it shows also marks what
- * was changed. A change stored from the row says "Saved" beside its name for a moment.
+ * was changed. A change stored from the row says "Saved" (and Undo, for a typed one) just before
+ * its control for a moment.
  */
 export function SettingRow({
   label,
@@ -146,7 +147,7 @@ export function SettingRow({
   learnMore?: ReactNode;
   /**
    * Under the control, right-aligned: such as how to keep a draft not saved yet. Kept off the name's
-   * line, which holds only the name, its reset and "Saved".
+   * line, which holds only the name and its reset.
    */
   hint?: ReactNode;
   /** Puts the default back; absent while the value is the default. */
@@ -157,7 +158,7 @@ export function SettingRow({
   disabledReason?: string | undefined;
   /** Full-width content under the row, such as a list the setting edits. */
   detail?: ReactNode;
-  /** A typed setting's key for `offerUndo`, whose Undo shows after "Saved". */
+  /** A typed setting's key for `offerUndo`, whose Undo shows beside "Saved", before the control. */
   undoKey?: string;
   children?: ReactNode;
 }) {
@@ -174,13 +175,17 @@ export function SettingRow({
         <div className="flex min-w-0 flex-[1_1_14rem]">
           <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
             {onReset && <ResetButton label={label} onReset={onReset} />}
-            <SavedMark row={row} />
-            {undoKey !== undefined && <UndoSave undoKey={undoKey} />}
+            {children === undefined && <SaveReceipt row={row} undoKey={undoKey} />}
           </RowLabel>
         </div>
         {children !== undefined && (
           <div className="ms-auto flex max-w-full min-w-0 flex-col items-end gap-1">
-            <div className="flex max-w-full min-w-0 flex-wrap items-center justify-end gap-2">
+            <div className="relative flex max-w-full min-w-0 flex-wrap items-center justify-end gap-2">
+              {/* Hung off the control's leading edge, out of the flow, so it neither moves the
+                  control nor wraps it under the name as it comes and goes. */}
+              <span className="pointer-events-none absolute end-full top-1/2 me-2 -translate-y-1/2 *:pointer-events-auto">
+                <SaveReceipt row={row} undoKey={undoKey} />
+              </span>
               <WhyDisabled reason={disabledReason}>{children}</WhyDisabled>
             </div>
             {hint}
@@ -190,6 +195,19 @@ export function SettingRow({
       {detail}
       {error && <ExpandableError message={error} />}
     </div>
+  );
+}
+
+/**
+ * "✓ Saved" and, for a typed setting, its Undo: on the control's side of the row, where the eye is
+ * as the change is made, rather than beside the name across the row.
+ */
+function SaveReceipt({ row, undoKey }: { row: string; undoKey: string | undefined }) {
+  return (
+    <span data-testid="setting-receipt" className="flex items-center gap-1 whitespace-nowrap">
+      <SavedMark row={row} />
+      {undoKey !== undefined && <UndoSave undoKey={undoKey} />}
+    </span>
   );
 }
 

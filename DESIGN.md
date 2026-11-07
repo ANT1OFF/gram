@@ -56,7 +56,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   start on one edge, the pill, Search, section titles and Open History included.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings and between a reply's blocks, 16 px between sections and at a
-  pane's edges. A settings row takes 12 px above and below, and a page's groups sit 24 px apart
+  pane's edges. A settings row takes 8 px above and below, and a page's groups sit 24 px apart
   (`SETTINGS_STACK`) on every page. A table stops at its columns' width, so its rules don't run
   on into empty space.
 - **Separate by surface and space before lines.** A group of rows is a raised card whose fill is
@@ -64,11 +64,11 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   and light, whose raised step is faint, keeps a hairline. Inside it a hairline between rows is
   the only line. Don't add a rule, a card edge or a glyph where space or the surface step already
   says it.
-- **Settings descriptions** (a setting's or a group's line under its name) are `text-body` in
-  `text-description` (`--fg-description`, the secondary `fg-muted`, so the name and what it does
-  read as two levels), no wider than
-  `--description-measure`; a settings segment is a full 32 px target (`SEGMENT_ROOMY`). A row takes
-  16 px above and below. Its main control (a segment, a field, a switch) leads; a row of small
+- **Settings descriptions** (a setting's line under its name, and a group's line beside its
+  title) are one short line of `text-meta` in `text-description` (`--fg-description`, the
+  secondary `fg-muted`, so the name and what it does read as two levels), no wider than
+  `--description-measure`; a settings segment is a full 32 px target (`SEGMENT_ROOMY`). A row's
+  "Saved" and Undo show just before its control, where the change was made. Its main control (a segment, a field, a switch) leads; a row of small
   secondary toggles beside it (Sidebar sections' checkboxes) is `text-body`, muted until checked.
 - **Titles and metadata:** a title at 14 to 15 px in `fg` (`text-body-strong` or `text-reading`),
   its metadata (where it is from, its state, a time, a chip's word) at 13 px in `fg-muted`
