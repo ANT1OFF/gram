@@ -49,8 +49,16 @@ test("finds a message from ⌘K, then within the thread with ⌘F", async ({ pag
 
   await page.keyboard.press("ControlOrMeta+f");
   await page.getByLabel("Find in thread").fill("localStorage");
-  await expect(page.getByTestId("find-status")).toHaveText("1 of 1");
-  await expect.poll(flashed).toContainEqual(expect.stringContaining("localStorage"));
+  await expect(page.getByTestId("find-status")).toHaveText(/^(\d+) of \1$/);
+  // Drawn already, so it isn't scrolled to and flashed: the match itself is marked.
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const highlight = CSS.highlights.get("gram-find-current");
+        return highlight ? [...highlight].map((range) => range.toString()) : [];
+      }),
+    )
+    .toEqual([expect.stringMatching(/^localstorage$/i)]);
 });
 
 /** Adds a thread of `turns` generated turns and opens it from the sidebar, keeping the mock. */

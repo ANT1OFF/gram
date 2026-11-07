@@ -284,6 +284,16 @@
     box-shadow: 0 0 0 6px color-mix(in oklab, var(--color-primary) 10%, transparent);
     scroll-margin-top: 1.5rem;
   }
+  /* Find in thread's matches (thread/find-highlight.ts), the current one stronger. */
+  ::highlight(gram-find) {
+    background-color: color-mix(in oklab, var(--color-highlight) 18%, transparent);
+  }
+  ::highlight(gram-find-current) {
+    background-color: color-mix(in oklab, var(--color-highlight) 60%, transparent);
+    color: var(--color-foreground);
+    text-decoration: underline 2px var(--color-highlight);
+    text-underline-offset: 3px;
+  }
   /* The card a Needs you jump lands on (orchestration/use-needs-you.ts), ringed for a moment. */
   [data-needs-you-flash="true"] {
     outline: 2px solid var(--color-status-needs-mark);

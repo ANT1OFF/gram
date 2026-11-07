@@ -16,7 +16,7 @@ import { STATUS_WORDS } from "@/orchestration/status-words";
 import { workersByTab } from "@/orchestration/workers-model";
 import { STATUS_DISPLAY } from "@/sidebar/status";
 
-import { paletteStatusWords, statusWord } from "./status-words";
+import { paletteDot, paletteStatusWords, statusWord } from "./status-words";
 
 // Round 8: the palette said "Search in Settings · Stopped" and every orchestrator "Stopped" while
 // the sidebar and ⌘J said "Waiting · checks" and "4 workers · 3 working". The palette now reads the
@@ -136,5 +136,22 @@ describe("one vocabulary", () => {
       expect(words).toContain(STATUS_DISPLAY[status].label);
     }
     expect(words).not.toContain("Idle");
+  });
+});
+
+describe("paletteDot", () => {
+  it.each([
+    ["Needs approval", "needs"],
+    ["Running", "working"],
+    ["Starting…", "working"],
+    ["3 workers · 1 working · 2 need you", "working"],
+    ["3 workers · 2 need you", "idle"],
+    ["Paused", "held"],
+    ["Waiting · checks", "waiting"],
+    ["Failed", "error"],
+    ["Done", "done"],
+    ["Stopped", "idle"],
+  ] as const)("%s → %s", (word, dot) => {
+    expect(paletteDot(word)).toBe(dot);
   });
 });

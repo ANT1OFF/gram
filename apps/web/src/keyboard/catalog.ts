@@ -29,6 +29,15 @@ export const paneMoveKeys = (
  */
 export const DICTATE_KEYS = isMac() ? "altright" : "mod+shift+space";
 
+/**
+ * Next and previous thread: ⌘⌥] / ⌘⌥[ on macOS. Elsewhere Ctrl+Alt with a bracket is AltGr typing
+ * the bracket on many layouts (`isAltGraphText`), so it never arrives as a shortcut: Ctrl+PgDn /
+ * Ctrl+PgUp, the next and previous tab everywhere else.
+ */
+export const THREAD_STEP_KEYS = isMac()
+  ? { next: "mod+alt+]", previous: "mod+alt+[" }
+  : { next: "mod+pagedown", previous: "mod+pageup" };
+
 const paneMove = (
   [
     ["left", "arrowleft"],
@@ -88,6 +97,7 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   { id: "review.focus", keys: "mod+alt+f", label: "Focus review", group: "App" },
   { id: "focus.toggle", keys: "mod+shift+.", label: "Focus mode", group: "App" },
   { id: "panel.refresh", keys: "mod+alt+r", label: "Refresh Diff / PR panel", group: "App" },
+  { id: "diff.toggle", keys: "mod+d", label: "Show / hide the diff", group: "App" },
   { id: "diff.nextHunk", keys: "n", label: "Next change in the diff", group: "Navigation" },
   {
     id: "diff.previousHunk",
@@ -122,6 +132,18 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
     id: "thread.cyclePrev",
     keys: "ctrl+shift+tab",
     label: "Switch threads backwards",
+    group: "Navigation",
+  },
+  {
+    id: "thread.next",
+    keys: THREAD_STEP_KEYS.next,
+    label: "Next thread in the sidebar",
+    group: "Navigation",
+  },
+  {
+    id: "thread.previous",
+    keys: THREAD_STEP_KEYS.previous,
+    label: "Previous thread in the sidebar",
     group: "Navigation",
   },
   {

@@ -36,6 +36,7 @@ import { retryHiddenOf } from "./attempt-model";
 import { MessageBlock } from "./message-block";
 import { isToolPart, type Chapter } from "./parts";
 import { runningSubagents } from "./subagent-strip-model";
+import type { ScrollAnchor } from "./find-bar";
 import { ConversationRail } from "./table-of-contents";
 import { reuseFolds, turnFolds, type MessageFold } from "./tool-group-model";
 import { FileRefsProvider } from "./file-ref-link";
@@ -147,6 +148,22 @@ export function revealCard(root: ParentNode, chain: readonly string[]): boolean 
   return false;
 }
 
+/** Where to put the transcript back to: Esc in find, to where it stood when find opened. */
+export interface ScrollRestore {
+  readonly anchor: ScrollAnchor;
+  /** Changes on every request. */
+  readonly nonce: number;
+}
+
+/** The scroller of `threadId`'s transcript, in the focused pane if it is in two. */
+export function transcriptScroller(threadId: string): HTMLElement | undefined {
+  const views = [
+    ...document.querySelectorAll<HTMLElement>(`[data-thread-view=${JSON.stringify(threadId)}]`),
+  ];
+  const view = views.find((each) => each.dataset.focused === "true") ?? views[0];
+  return view?.querySelector<HTMLElement>("[data-transcript]") ?? undefined;
+}
+
 const NO_MESSAGES: readonly GramUIMessage[] = [];
 
 export function Transcript({
@@ -163,6 +180,7 @@ export function Transcript({
   chapters = [],
   onChapterJump,
   reveal,
+  restore,
   flashId,
   earlier = false,
   loadingEarlier = false,
@@ -189,6 +207,8 @@ export function Transcript({
   onChapterJump?: (messageId: string) => void;
   /** A search hit to scroll to the middle of the view. */
   reveal?: JumpRequest | undefined;
+  /** Where to scroll back to, e.g. as find closes with Esc. */
+  restore?: ScrollRestore | undefined;
   /** A message to highlight briefly, e.g. the search hit just scrolled to. */
   flashId?: string | undefined;
   /** The thread has older history than `messages`, which `onLoadEarlier` pages in. */
@@ -567,6 +587,44 @@ export function Transcript({
     frame = requestAnimationFrame(settle);
     return () => cancelAnimationFrame(frame);
   }, [reveal, virtualizer, setFollowing, revealFold]);
+
+  // Back to where find opened: the bottom, following again, or the row that was first in view at
+  // the same height, which a few frames keep there while rows above settle at their measured size.
+  useEffect(() => {
+    if (!restore) return;
+    const { anchor } = restore;
+    pendingJump.current = undefined;
+    virtualizer.cancelScroll();
+    manualGesture.current = undefined;
+    const index =
+      anchor.messageId === undefined
+        ? -1
+        : previousMessages.current.findIndex((m) => m.id === anchor.messageId);
+    if (anchor.atEnd || index === -1) {
+      if (!anchor.atEnd) return;
+      setFollowing(true);
+      virtualizer.scrollToEnd();
+      return;
+    }
+    setFollowing(false);
+    virtualizer.scrollToIndex(index, { align: "start" });
+    let frames = REVEAL_SETTLE_FRAMES;
+    let frame = 0;
+    const settle = () => {
+      const scroller = scrollRef.current;
+      const row = scroller?.querySelector<HTMLElement>(
+        `[data-message-id=${JSON.stringify(anchor.messageId)}]`,
+      );
+      if (scroller && row) {
+        const off =
+          row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.top;
+        if (Math.abs(off) > 1) scroller.scrollTop += off;
+      } else virtualizer.scrollToIndex(index, { align: "start" });
+      if (--frames > 0) frame = requestAnimationFrame(settle);
+    };
+    frame = requestAnimationFrame(settle);
+    return () => cancelAnimationFrame(frame);
+  }, [restore, virtualizer, setFollowing]);
 
   // This pane's transcript answers ⌥↑ / ⌥↓ while focus is in the pane, or nowhere in the focused one.
   const inPane = () => {

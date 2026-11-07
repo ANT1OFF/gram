@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { HISTORY_TEST_ID, useHistoryStore } from "@/history/history-view";
 import { inboxKey } from "@/inbox/inbox-store";
 import { INBOX_TEST_ID } from "@/inbox/inbox-view";
-import { paneMoveKeys } from "@/keyboard/catalog";
+import { paneMoveKeys, THREAD_STEP_KEYS } from "@/keyboard/catalog";
 import { keyLabel, registerShortcut, useShortcut } from "@/keyboard/registry";
 import { besideToggle, closeBeside, keepBeside } from "@/orchestration/beside-store";
 import { boardWorkspaceFor } from "@/orchestration/board-model";
@@ -13,13 +13,20 @@ import { newEntryRoute } from "@/orchestration/new-entry";
 import { useOpenBoard } from "@/orchestration/open-board";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { useWorkersListStore, WORKERS_LIST_TEST_ID } from "@/orchestration/workers-list";
-import { GRID_PRESETS, splitCandidate, useLayoutStore, type FocusDirection } from "@/stores/layout";
+import {
+  fitShell,
+  GRID_PRESETS,
+  splitCandidate,
+  useLayoutStore,
+  type FocusDirection,
+} from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { toggleOverviewSidebar } from "@/views/shell-layout";
 
 import { focusPanel, focusSidebar } from "./focus-regions";
 import { startNewTask } from "./new-task";
 import { focusPaneComposer, gridShown } from "./pane-focus";
+import { stepThread } from "./step-thread";
 import { useOpenThread } from "./thread-switcher";
 
 /** Focus is in no dialog, or in the one with test id `own`: a toggle that may close itself. */
@@ -298,6 +305,36 @@ export function useGlobalShortcuts() {
     label: "Focus review",
     group: "App",
     run: () => useLayoutStore.getState().toggleReviewFocus(),
+  });
+
+  // On the Diff tab and showing, the panel hides; otherwise it shows the Diff tab.
+  useShortcut({
+    id: "diff.toggle",
+    keys: "mod+d",
+    label: "Show / hide the diff",
+    group: "App",
+    when: () => currentId !== undefined,
+    run: () => {
+      const layout = useLayoutStore.getState();
+      if (layout.panelTab === "diff" && fitShell(layout).panel !== "none") layout.togglePanel();
+      else layout.revealPanel("diff", { thread: true });
+    },
+  });
+
+  useShortcut({
+    id: "thread.next",
+    keys: THREAD_STEP_KEYS.next,
+    label: "Next thread in the sidebar",
+    group: "Navigation",
+    run: () => stepThread(1, currentId, openThread),
+  });
+
+  useShortcut({
+    id: "thread.previous",
+    keys: THREAD_STEP_KEYS.previous,
+    label: "Previous thread in the sidebar",
+    group: "Navigation",
+    run: () => stepThread(-1, currentId, openThread),
   });
 
   useShortcut({
