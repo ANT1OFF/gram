@@ -1,4 +1,5 @@
 import {
+  withRoutineGenerations,
   withRoutineIds,
   connectorEntryProblem,
   derivedTitle,
@@ -741,8 +742,9 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       }
       // As the server's write path: every routine is kept with an id.
       const before = find(workspaceId);
-      const routines = withRoutineIds(before.charter.routines, charter.routines, () =>
-        crypto.randomUUID(),
+      const routines = withRoutineGenerations(
+        before.charter.routines,
+        withRoutineIds(before.charter.routines, charter.routines, () => crypto.randomUUID()),
       );
       const next = put({
         ...before,

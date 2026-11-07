@@ -24,7 +24,7 @@
  * a dream started from: whoever needs that baseline later has to keep its own copy (`snapshot`
  * for the hashes, the dream's out-of-folder manifest for the text).
  */
-import { FsError, InvalidState, NotFound, type MemoryWrite } from "@gram/contracts";
+import { FsError, InvalidState, NotFound, SECRET_KEY, type MemoryWrite } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -778,20 +778,43 @@ const guarded = <A, E = never>(
   });
 
 /**
- * Memory paths a worker never sees: a file or folder marked private (a `private` segment, or a
- * `*.private.md` name), and names shaped like credentials (a key, a secret, a token, an `.env`).
- * The orchestrator, memory's one curator, sees them all.
+ * What a worker never sees of memory, by name: a file or folder marked private (a `private`
+ * segment, or a `*.private.md` name), and one named like a credential: a secret-named word as the
+ * scrubber knows them (`SECRET_KEY`: token, secret, password, credential, an API or private key), a
+ * `key` or `keys` word, an auth or env dotfile, an SSH key, or a key or certificate file. The
+ * orchestrator, memory's one curator, sees them all.
  */
 const WORKER_HIDDEN_SEGMENT =
-  /^(?:private|\.env(?:\..*)?|.*\.private\.md|.*(?:secret|token|passwords?|credentials?|api[-_]?keys?|private[-_]?keys?)[^/]*|(?:id_(?:rsa|dsa|ecdsa|ed25519)|.*\.(?:pem|key|p12|pfx))(?:\.pub)?)$/i;
+  /^(?:private|.*\.private\.md|\.(?:env|npmrc|netrc|pgpass|pypirc|htpasswd|git-credentials)(?:\..*)?|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|.*\.(?:pem|key|p12|pfx|jks|keystore|kdbx|asc|gpg)|(?:.*[-_. ])?(?:keys?|auth|passwd|creds?)(?:[-_. ].*)?)$/i;
 
-/** Whether a worker may see the memory file at `path`, and, with its text, whether it isn't private. */
+/** Text shaped like a credential, beside what the scrubber already finds (`redactText`). */
+const CREDENTIAL_TEXT = [
+  /-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE|PGP PRIVATE KEY BLOCK)-----/,
+  /\bxox[abprs]-[\w-]{10,}/,
+  /\beyJ[\w-]{10,}\.eyJ[\w-]{10,}\.[\w-]{10,}/,
+  /\b(?:sk|rk|pk)_(?:live|test)_\w{16,}/,
+  /\bAIza[\w-]{35}\b/,
+];
+
+/** Whether `text` holds anything credential-shaped: what the scrubber would change, or the rest. */
+const credentialShaped = (text: string): boolean =>
+  redactText(text) !== text || CREDENTIAL_TEXT.some((pattern) => pattern.test(text));
+
+/**
+ * Whether a worker may see the memory file at `path`: not by a private or credential-shaped name,
+ * and, given its text, not marked `private: true` in its front matter nor holding anything
+ * credential-shaped. A file it may not see is neither listed nor read.
+ */
 export const workerMayRead = (path: string, text?: string): boolean => {
-  if (path.split("/").some((segment) => WORKER_HIDDEN_SEGMENT.test(segment))) return false;
+  const segments = path.split("/");
+  if (segments.some((segment) => WORKER_HIDDEN_SEGMENT.test(segment) || SECRET_KEY.test(segment))) {
+    return false;
+  }
   if (text === undefined) return true;
   // Front matter: a first `---` block that says `private: true`.
   const front = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1];
-  return front === undefined || !/^private:\s*(?:true|yes)\s*$/im.test(front);
+  if (front !== undefined && /^private:\s*(?:true|yes)\s*$/im.test(front)) return false;
+  return !credentialShaped(text);
 };
 
 const make = (root: string): OrchestrationMemoryShape => {
@@ -914,6 +937,11 @@ const make = (root: string): OrchestrationMemoryShape => {
                 `${within}/${path}`,
                 within,
               );
+              // Listed only when it may be read: its front matter and text are looked at too.
+              const text = yield* adoptionTree
+                .readText(workspaceId, `${within}/${path}`, within, path, MEMORY_READ_MAX_BYTES)
+                .pipe(Effect.orElseSucceed(() => undefined));
+              if (text === undefined || !workerMayRead(path, text)) continue;
               if (file.kind === "file" && file.stats !== undefined) {
                 files.push({
                   path,

@@ -185,7 +185,9 @@ Three ways change them, all through the charter's one write path:
   target or name) always asks the user, from the orchestrator as from a worker: a forced card for
   that call, showing the routine in full, that `bypassPermissions` and Full autonomy don't lift.
   Turning one off or removing one only takes autonomy away, and the orchestrator does that without
-  a card. A worker is bound `routine_create` alone.
+  a card. A change is pinned when the card is raised: the routine by its id, and exactly what it is
+  and will be, both shown on the card. The approved call applies that and only that, and refuses if
+  the routine changed meanwhile. A worker is bound `routine_create` alone.
 - Settings by chat: `settings_propose` with `workspace.routines`, the whole list, each brief in full
   on the card the user approves.
 
@@ -208,7 +210,9 @@ under the routine's id:
   released, or its worker is live, a due run is skipped and recorded so. Its phase is read from
   durable facts under the lock every release of a held brief takes.
 - A routine new, turned on again or given a new schedule is reckoned from then, never run for a time
-  it missed. Turned off, it keeps its claim, so a run still going is followed to its end and a
+  it missed. The charter's write path counts each turn off or on as a new generation, so a run that
+  waited while the routine went off and on again reckons from then instead of running. Turned off,
+  it keeps its claim, so a run still going is followed to its end and a
   worker a crash left half made is still finished; removed, its state goes, and a run that was
   under way doesn't bring it back. A run missed while Gram was closed runs once, a minute after the next start, never
   once per miss. A paused workspace pauses its routines: a run that falls due waits and runs once
@@ -595,9 +599,11 @@ Workers can read their orchestrator's memory with `memory_list` and `memory_read
 orchestrator holds the workspace, and can't change it: the orchestrator stays its one curator.
 A worker's reads go through the anchored tree, every folder below the data root opened without
 following a link, so no symlink anywhere in the path, standing or swapped in mid-read, leads into
-another workspace. A worker doesn't see what is marked private (a `private` folder, a
-`*.private.md` name, or `private: true` in a file's front matter) or a file named like a credential
-(a key, a secret, a token, an `.env`); the orchestrator sees it all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
+another workspace. A worker neither lists nor reads what is marked private (a `private` folder, a
+`*.private.md` name, or `private: true` in a file's front matter), a file named like a credential
+(a key, a secret, a token, an auth or `.env` file, a key or certificate file), or one whose text
+holds one (a PEM block, a provider token, what the log scrubber would redact); the orchestrator
+sees it all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
 digest shows it to the orchestrator, which records it only when it holds for later work. Solo
 threads have no workspace memory.
 

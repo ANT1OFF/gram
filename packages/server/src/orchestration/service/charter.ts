@@ -11,6 +11,7 @@ import {
   type Thread,
   type WorkspaceState,
   applyCharterWrites,
+  withRoutineGenerations,
   withRoutineIds,
   settingsHold,
   type SettingsRequirement,
@@ -78,7 +79,10 @@ const withIdsOf =
 
 /** `charter` with an id on each routine (`withRoutineIds`), the one its name had in `prior`. */
 const withIds = (prior: OrchestratorCharter, charter: OrchestratorCharter): OrchestratorCharter => {
-  const routines = withRoutineIds(prior.routines, charter.routines, randomUUID);
+  const routines = withRoutineGenerations(
+    prior.routines,
+    withRoutineIds(prior.routines, charter.routines, randomUUID),
+  );
   return routines === charter.routines || routines === undefined
     ? charter
     : { ...charter, routines };

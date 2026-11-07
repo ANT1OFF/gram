@@ -6,6 +6,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { type ThreadId, type WorkspaceId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
@@ -22,7 +23,8 @@ import {
 import { tmpdir } from "node:os";
 import nodePath from "node:path";
 import { anchoredRequest } from "../orchestration/anchored-files.ts";
-import { AppToolRegistry } from "../app-tools/registry.ts";
+import { AppToolRegistry, bindAppTools } from "../app-tools/registry.ts";
+import { ThreadStore } from "../persistence/thread-store.ts";
 import { hasGit } from "../git/test-repo.ts";
 import { workerThreadId } from "../orchestration/outbox.ts";
 import { Orchestration } from "../orchestration/service.ts";
@@ -49,6 +51,13 @@ import {
 } from "./test-kit.ts";
 
 const SLOW = { timeout: 90_000 } as const;
+
+/** The routine's workers: the threads whose `spawnedBy` names it. */
+const workersOf = (id: string) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore;
+    return (yield* store.listThreads).filter((thread) => thread.spawnedBy?.routine?.id === id);
+  });
 
 /** The paths a `memory_list` result names. */
 const listed = (result: unknown) =>
@@ -87,6 +96,13 @@ describe.skipIf(!hasGit)("routines and worker memory: third review", () => {
             };
             expect(yield* asks(thread.id, "orchestrator", "routine_create", create)).toBe(true);
             expect(yield* asks(worker.thread.id, "worker", "routine_create", create)).toBe(true);
+            // A routine to change, saved as the user's approval of `routine_create` would.
+            yield* session.callTool("routine_create", { ...create, name: "x" });
+            // A roster, so a model change names one the workspace has.
+            yield* (yield* Orchestration).editCharter(thread.workspaceId as WorkspaceId, (c) => ({
+              ...c,
+              workerModels: [{ agent: "claude", model: "fake-opus", default: true }],
+            }));
             const update = (change: Record<string, unknown>) =>
               asks(thread.id, "orchestrator", "routine_update", { routine: "x", ...change });
             for (const widening of [
@@ -345,4 +361,165 @@ it("[16] a worker's anchored memory read can't be led into another workspace by 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+describe.skipIf(!hasGit)("routines and worker memory: fourth review", () => {
+  it.effect(
+    "[17] applies an approved routine change only to the routine the card showed, as it was then",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const registry = yield* AppToolRegistry;
+            const { session, thread, workspaceId } = yield* openOrchestrator(world);
+            yield* session.callTool("routine_create", {
+              name: "Triage",
+              brief: "Look at main's checks.",
+              schedule: "daily 09:00",
+              target: "worker",
+            });
+            const definition = registry.definitions.find(
+              (each) => each.descriptor.name === "routine_update",
+            )!;
+            const cards: Array<{ description: string; input: unknown }> = [];
+            const orchestration = yield* Orchestration;
+            // While the card is up, the routine is renamed and another takes its name.
+            const [update] = bindAppTools([definition], thread.id, {
+              approve: (_threadId, _descriptor, input, description) =>
+                Effect.gen(function* () {
+                  cards.push({ description: description ?? "", input });
+                  yield* orchestration
+                    .editCharter(workspaceId, (charter) => ({
+                      ...charter,
+                      routines: [
+                        ...(charter.routines ?? []).map((each) =>
+                          each.name === "Triage" ? { ...each, name: "Old triage" } : each,
+                        ),
+                        {
+                          name: "Triage",
+                          brief: "Someone else's routine.",
+                          schedule: { every: "day" as const, at: "18:00" },
+                        },
+                      ],
+                    }))
+                    .pipe(Effect.orDie);
+                }),
+            });
+            const refused = yield* update!
+              .run({ routine: "Triage", brief: "Look at every branch's checks." })
+              .pipe(Effect.flip);
+            expect(refused.message).toContain("changed after this was asked");
+            // The card showed the routine pinned, before and after.
+            expect(cards[0]!.description).toContain("Before:");
+            expect(cards[0]!.description).toContain("Look at main's checks.");
+            expect(cards[0]!.description).toContain("After:");
+            expect(cards[0]!.description).toContain("Look at every branch's checks.");
+            const store = yield* ThreadStore;
+            const routines = (yield* store.getWorkspace(workspaceId)).charter.routines ?? [];
+            expect(routines.map((each) => [each.name, each.brief])).toEqual([
+              ["Old triage", "Look at main's checks."],
+              ["Triage", "Someone else's routine."],
+            ]);
+          }),
+        );
+      }),
+    SLOW,
+  );
+
+  it.effect(
+    "[18] keeps memory named like a credential, holding one, or marked private out of a worker's list and reads",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const { session, workspaceId } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "reader" });
+            yield* completeTurn(worker.session);
+            yield* session.callTool("memory_write", {
+              path: "conventions.md",
+              content: "Tabs, not spaces.",
+            });
+            yield* session.callTool("memory_write", {
+              path: "notes.md",
+              content: "---\nprivate: true\n---\nNot for workers.",
+            });
+            // Written by hand, past memory's own scrubbing on write.
+            const root = nodePath.join(world.dir, "memory", workspaceId);
+            const version = readFileSync(nodePath.join(root, "CURRENT"), "utf8").trim();
+            const dir = nodePath.join(root, "versions", version);
+            const byHand: Record<string, string> = {
+              "deploy-key.md": "The deploy setup.",
+              "github-auth.md": "How the bot signs in.",
+              "ops.md":
+                "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----",
+              "slack.md": "Webhook token xoxb-123456789012-abcdefghijkl",
+            };
+            for (const [path, content] of Object.entries(byHand)) {
+              writeFileSync(nodePath.join(dir, path), content);
+            }
+            const seen = listed(yield* worker.session.callTool("memory_list", {}));
+            expect(seen).toContain("conventions.md");
+            for (const path of ["notes.md", ...Object.keys(byHand)]) {
+              expect(seen, path).not.toContain(path);
+              const refused = yield* worker.session
+                .callTool("memory_read", { path })
+                .pipe(Effect.flip);
+              expect(refused.message, path).toContain("No memory file");
+            }
+            const all = listed(yield* session.callTool("memory_list", {}));
+            for (const path of ["notes.md", ...Object.keys(byHand)]) expect(all).toContain(path);
+          }),
+        );
+      }),
+    SLOW,
+  );
+
+  it.effect(
+    "[19] doesn't run a routine turned off and on again while its due run waited, but reckons it from then",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const orchestration = yield* Orchestration;
+            const { project, workspaceId } = yield* openOrchestrator(world);
+            const routine = yield* workerRoutine(workspaceId, project.id);
+            // A release of a held brief is under way: the due run waits for it.
+            const gate = yield* Deferred.make<void>();
+            const holding = yield* orchestration
+              .withHeldReleases(workspaceId, Deferred.await(gate))
+              .pipe(Effect.forkScoped);
+            yield* settle;
+            yield* TestClock.adjust("1 hour");
+            yield* settle;
+            yield* editRoutine(routine.id, (each) => ({ ...each, off: true }));
+            yield* editRoutine(routine.id, (each) => {
+              const { off: _off, ...rest } = each;
+              return rest;
+            });
+            const toggledAt = yield* Clock.currentTimeMillis;
+            yield* Deferred.succeed(gate, undefined);
+            yield* Fiber.join(holding);
+            yield* settle;
+            const after = yield* waitReal(
+              "the routine reckoned again",
+              routineNow(routine.id).pipe(
+                Effect.map((each) =>
+                  each.nextRunAt !== undefined && each.nextRunAt > toggledAt ? each : undefined,
+                ),
+              ),
+            );
+            expect(after.lastRun).toBeUndefined();
+            expect(yield* workersOf(routine.id)).toHaveLength(0);
+            expect(after.generation).toBe(2);
+          }),
+        );
+      }),
+    SLOW,
+  );
 });

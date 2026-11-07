@@ -92,6 +92,12 @@ export const WorkspaceRoutine = Schema.Struct({
   target: Schema.optionalKey(Schema.Literal("orchestrator")),
   /** Kept but not run. */
   off: Schema.optionalKey(Schema.Literal(true)),
+  /**
+   * How many times it has been turned off or on, set by the charter's write path alone
+   * (`withRoutineGenerations`): a run that finds another than the one its next run was reckoned
+   * for reckons again from now rather than run, however quickly it went off and on again.
+   */
+  generation: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
 export type WorkspaceRoutine = typeof WorkspaceRoutine.Type;
 
@@ -132,6 +138,29 @@ export const withRoutineIds = (
     const id = (known !== undefined && !taken.has(known) ? known : newId()) as RoutineId;
     taken.add(id);
     return { ...routine, id, name };
+  });
+};
+
+/**
+ * `next`'s routines with their generation as the charter's write path keeps it: the one each had in
+ * `prior` (by id), one more when its `off` flipped, and none for a routine new to the charter.
+ * Whatever generation `next` carries is ignored: only this sets it.
+ */
+export const withRoutineGenerations = (
+  prior: ReadonlyArray<WorkspaceRoutine> | undefined,
+  next: ReadonlyArray<WorkspaceRoutine> | undefined,
+): ReadonlyArray<WorkspaceRoutine> | undefined => {
+  if (next === undefined) return undefined;
+  const before = new Map(
+    (prior ?? []).flatMap((routine) => (routine.id === undefined ? [] : [[routine.id, routine]])),
+  );
+  return next.map((routine) => {
+    const { generation: _given, ...rest } = routine;
+    const was = routine.id === undefined ? undefined : before.get(routine.id);
+    if (was === undefined) return rest;
+    const flipped = (was.off === true) !== (routine.off === true);
+    const generation = (was.generation ?? 0) + (flipped ? 1 : 0);
+    return generation === 0 ? rest : { ...rest, generation };
   });
 };
 
@@ -256,6 +285,8 @@ export const RoutineState = Schema.Struct({
   nextRunAt: Schema.optionalKey(Schema.Number),
   /** The schedule `nextRunAt` was reckoned for: a new one reckons again from now. */
   scheduleKey: Schema.optionalKey(Schema.String),
+  /** The routine's generation `nextRunAt` was reckoned for: an off and on since reckons again. */
+  generation: Schema.optionalKey(Schema.Int),
   lastRun: Schema.optionalKey(RoutineRun),
   claim: Schema.optionalKey(RoutineClaim),
   /** The worker its latest run made, a held brief released since included. */

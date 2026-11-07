@@ -300,7 +300,11 @@ describe.skipIf(!hasGit)("routines", () => {
               });
             // A new routine is a standing charter change: the user's, whoever asks ([12] has the rest).
             expect(yield* asks(thread.id, "orchestrator", "routine_create")).toBe(true);
-            expect(yield* asks(thread.id, "orchestrator", "routine_update")).toBe(false);
+            // Changing one names a routine that exists: one that doesn't is refused, not asked.
+            const unknown = yield* asks(thread.id, "orchestrator", "routine_update").pipe(
+              Effect.flip,
+            );
+            expect(unknown.message).toContain('no routine "x"');
             expect(yield* asks(worker.thread.id, "worker", "routine_create")).toBe(true);
             // A worker is bound create alone: listing, changing and removing are the orchestrator's.
             const workerTools = registry

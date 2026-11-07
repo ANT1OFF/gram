@@ -85,6 +85,16 @@ const modelOf = (tool: string, charter: OrchestratorCharter, named: string) =>
     return model as ModelRef;
   });
 
+/** A routine whole, as a card shows it: its schedule, where it runs, whether it is off, and its brief. */
+const routineText = (routine: WorkspaceRoutine): string =>
+  [
+    `"${routine.name}", ${routineScheduleText(routine.schedule)}`,
+    routine.target === "orchestrator" ? "to the orchestrator" : "starts a worker",
+    ...(routine.project === undefined ? [] : [`in project ${routine.project}`]),
+    ...(routine.model === undefined ? [] : [`on ${workerModelLabel(routine.model)}`]),
+    ...(routine.off === true ? ["off"] : []),
+  ].join(", ") + `: ${routine.brief}`;
+
 /**
  * Whether a `routine_update` call only narrows what runs: it removes the routine, or turns it off and
  * changes nothing else. Anything else (on again, a new schedule, brief, project, model, target or
@@ -283,36 +293,21 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         off: Schema.optionalKey(Schema.Boolean),
         remove: Schema.optionalKey(Schema.Boolean),
       }),
-      // Off or removed only takes autonomy away; anything else adds or widens what runs.
-      needsApproval: (caller, input) =>
-        Effect.map(orchestration.authorityOf(caller), (authority) =>
-          authority === undefined ? true : !onlyNarrows(input),
-        ),
-      describe: (caller, input) =>
-        Effect.succeed(
-          input.remove === true
-            ? `Remove the routine "${input.routine}" [asked by thread ${caller}]`
-            : `Change the routine "${input.routine}": ${Object.entries(input)
-                .filter(([key]) => key !== "routine")
-                .map(([key, value]) => `${key} ${JSON.stringify(value)}`)
-                .join(", ")} [asked by thread ${caller}]`,
-        ),
-      handle: (caller, input) =>
+      // Pinned before any card: the routine by its id, and exactly what it is and will be. The card
+      // shows that, and the handler applies it only to that routine, as it was then.
+      resolve: (caller, input) =>
         Effect.gen(function* () {
           const tool = "routine_update";
           const state = yield* callerWorkspace(tool, caller);
           const key = routineNameKey(input.routine);
-          const known = (state.charter.routines ?? []).find(
+          const before = (state.charter.routines ?? []).find(
             (each) => routineNameKey(each.name) === key,
           );
-          if (known === undefined) {
+          if (before?.id === undefined) {
             return yield* toolError(tool, `This workspace has no routine "${input.routine}".`);
           }
           if (input.remove === true) {
-            yield* editRoutines(tool, state, (current) =>
-              current.filter((each) => routineNameKey(each.name) !== key),
-            );
-            return { removed: known.name };
+            return { workspaceId: state.workspace.id, id: before.id, before, after: undefined };
           }
           const parsed =
             input.schedule === undefined ? undefined : parseRoutineSchedule(input.schedule);
@@ -325,41 +320,72 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
             input.model === undefined
               ? undefined
               : yield* modelOf(tool, state.charter, input.model);
-          const change = (routine: WorkspaceRoutine): WorkspaceRoutine => {
-            const {
-              target: _target,
-              off: _off,
-              project: _project,
-              model: _model,
-              ...rest
-            } = routine;
-            const target =
-              input.target ?? (routine.target === "orchestrator" ? "orchestrator" : "worker");
-            const off = input.off ?? routine.off === true;
-            const keptProject = project ?? routine.project;
-            const keptModel = model ?? routine.model;
-            return {
-              ...rest,
-              ...(input.name === undefined ? {} : { name: input.name.trim() }),
-              ...(input.brief === undefined ? {} : { brief: input.brief }),
-              ...(parsed === undefined ? {} : { schedule: parsed.schedule }),
-              ...(target === "orchestrator" ? { target: "orchestrator" as const } : {}),
-              ...(target === "worker" && keptProject !== undefined ? { project: keptProject } : {}),
-              ...(target === "worker" && keptModel !== undefined ? { model: keptModel } : {}),
-              ...(off ? { off: true as const } : {}),
-            };
+          const { target: _target, off: _off, project: _project, model: _model, ...rest } = before;
+          const target =
+            input.target ?? (before.target === "orchestrator" ? "orchestrator" : "worker");
+          const off = input.off ?? before.off === true;
+          const keptProject = project ?? before.project;
+          const keptModel = model ?? before.model;
+          const after: WorkspaceRoutine = {
+            ...rest,
+            ...(input.name === undefined ? {} : { name: input.name.trim() }),
+            ...(input.brief === undefined ? {} : { brief: input.brief }),
+            ...(parsed === undefined ? {} : { schedule: parsed.schedule }),
+            ...(target === "orchestrator" ? { target: "orchestrator" as const } : {}),
+            ...(target === "worker" && keptProject !== undefined ? { project: keptProject } : {}),
+            ...(target === "worker" && keptModel !== undefined ? { model: keptModel } : {}),
+            ...(off ? { off: true as const } : {}),
           };
-          const renamed = input.name?.trim() ?? known.name;
+          return { workspaceId: state.workspace.id, id: before.id, before, after };
+        }),
+      approvalRequiresResolvedTarget: true,
+      // Off or removed only takes autonomy away; anything else adds or widens what runs.
+      needsApproval: (caller, input) =>
+        Effect.map(orchestration.authorityOf(caller), (authority) =>
+          authority === undefined ? true : !onlyNarrows(input),
+        ),
+      describe: (caller, pinned) =>
+        Effect.succeed(
+          pinned.after === undefined
+            ? `Remove the routine "${pinned.before.name}":\n\n${routineText(pinned.before)}\n\n[asked by thread ${caller}]`
+            : `Change the routine "${pinned.before.name}".\n\nBefore: ${routineText(pinned.before)}\n\nAfter: ${routineText(pinned.after)}\n\n[asked by thread ${caller}]`,
+        ),
+      cardDetails: (pinned) => ({
+        routine: pinned.id,
+        before: pinned.before,
+        after: pinned.after ?? null,
+      }),
+      handle: (caller, pinned) =>
+        Effect.gen(function* () {
+          const tool = "routine_update";
+          const state = yield* callerWorkspace(tool, caller);
+          if (state.workspace.id !== pinned.workspaceId) {
+            return yield* toolError(tool, "This routine's workspace is no longer yours.");
+          }
+          const same = (each: WorkspaceRoutine) =>
+            JSON.stringify(each) === JSON.stringify(pinned.before);
           const saved = yield* editRoutines(tool, state, (current) => {
-            if (
-              routineNameKey(renamed) !== key &&
-              current.some((each) => routineNameKey(each.name) === routineNameKey(renamed))
-            ) {
-              return { error: `This workspace already has a routine named "${renamed}".` };
+            const now = current.find((each) => each.id === pinned.id);
+            // Changed, renamed or removed since the card: nothing is applied to what it is now.
+            if (now === undefined || !same(now)) {
+              return {
+                error: `The routine "${pinned.before.name}" changed after this was asked; nothing was changed. Look again and ask anew.`,
+              };
             }
-            return current.map((each) => (routineNameKey(each.name) === key ? change(each) : each));
+            if (pinned.after === undefined) return current.filter((each) => each.id !== pinned.id);
+            const after = pinned.after;
+            if (
+              current.some(
+                (each) =>
+                  each.id !== pinned.id && routineNameKey(each.name) === routineNameKey(after.name),
+              )
+            ) {
+              return { error: `This workspace already has a routine named "${after.name}".` };
+            }
+            return current.map((each) => (each.id === pinned.id ? after : each));
           });
-          return yield* result(tool, saved, renamed);
+          if (pinned.after === undefined) return { removed: pinned.before.name };
+          return yield* result(tool, saved, pinned.after.name);
         }),
     });
 

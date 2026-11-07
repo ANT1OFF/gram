@@ -133,15 +133,39 @@ interface Routine extends RoutineState {
   readonly model?: ModelRef | undefined;
   readonly target?: "orchestrator" | undefined;
   readonly enabled: boolean;
+  /** The charter's generation for it now; `generation` is the one `nextRunAt` was reckoned for. */
+  readonly charterGeneration: number;
 }
 
 /** The schedule as `RoutineState.scheduleKey` keeps it, to tell a new one from the one reckoned. */
 const scheduleKeyOf = (schedule: RoutineSchedule) => JSON.stringify(schedule);
 
+/**
+ * Whether the routine's next run was reckoned for something it no longer is: none yet, another
+ * schedule, or before an off and on (`generation`). Such a routine is reckoned again from now; a
+ * run never starts on what it was.
+ */
+const stale = (routine: Routine) =>
+  routine.nextRunAt === undefined ||
+  routine.scheduleKey !== scheduleKeyOf(routine.schedule) ||
+  (routine.generation ?? 0) !== routine.charterGeneration;
+
+/** The routine reckoned again from `now`, for what it is now; a claim stays until it settles. */
+const reckoned = (routine: Routine, now: number): Routine => {
+  const { waiting: _waiting, ...rest } = routine;
+  return {
+    ...rest,
+    nextRunAt: nextRunAfter(routine.schedule, now, localZone()),
+    scheduleKey: scheduleKeyOf(routine.schedule),
+    generation: routine.charterGeneration,
+  };
+};
+
 /** The run state of `routine`, as the outbox keeps it. */
 const stateOf = (routine: Routine): RoutineState => ({
   ...(routine.nextRunAt === undefined ? {} : { nextRunAt: routine.nextRunAt }),
   ...(routine.scheduleKey === undefined ? {} : { scheduleKey: routine.scheduleKey }),
+  ...(routine.generation === undefined ? {} : { generation: routine.generation }),
   ...(routine.lastRun === undefined ? {} : { lastRun: routine.lastRun }),
   ...(routine.claim === undefined ? {} : { claim: routine.claim }),
   ...(routine.lastWorker === undefined ? {} : { lastWorker: routine.lastWorker }),
@@ -290,6 +314,7 @@ const routineOf = (
   ...(routine.model === undefined ? {} : { model: routine.model }),
   ...(routine.target === undefined ? {} : { target: routine.target }),
   enabled: routine.off !== true,
+  charterGeneration: routine.generation ?? 0,
 });
 
 const statusOf = (routine: Routine, charterRoutine: WorkspaceRoutine): RoutineStatus => ({
@@ -614,6 +639,7 @@ export const RoutinesLive = Layer.effect(
         Effect.gen(function* (): Effect.fn.Return<
           | { readonly routine: Routine; readonly ran: RoutineRun }
           | { readonly routine: Routine; readonly busy: string }
+          | { readonly routine: Routine; readonly stale: true }
         > {
           let routine = stored;
           const rows = yield* ledgerRows(routine.workspaceId);
@@ -643,6 +669,22 @@ export const RoutinesLive = Layer.effect(
               case "settled":
                 routine = withoutClaim(routine, phase.threadId);
                 break;
+            }
+          }
+          // Under the held-release lock, just before anything starts: the routine as the charter
+          // has it now. Turned off, off and on, or rescheduled while this run waited: nothing new.
+          if (!manual) {
+            const current = yield* store.getWorkspace(routine.workspaceId).pipe(
+              Effect.map((each) => charterRoutines(each).find((r) => r.id === routine.id)),
+              Effect.orElseSucceed(() => undefined),
+            );
+            if (
+              current === undefined ||
+              current.off === true ||
+              (current.generation ?? 0) !== routine.charterGeneration ||
+              scheduleKeyOf(current.schedule) !== scheduleKeyOf(routine.schedule)
+            ) {
+              return { routine, stale: true as const };
             }
           }
           const busy = yield* otherBusy(routine, undefined, rows);
@@ -677,10 +719,10 @@ export const RoutinesLive = Layer.effect(
             // Recorded as the run it was: a scheduled one moves the schedule on past its slot.
             return yield* runClaim(stored, state, now, last, last.manual === true);
           }
-          const stale =
+          const done =
             phase.phase === "settled" ||
             (phase.phase === "pending" && (last.manual === true || last.slot !== stored.nextRunAt));
-          if (!stale) return undefined;
+          if (!done) return undefined;
           const next = withoutClaim(stored, phase.phase === "settled" ? phase.threadId : undefined);
           yield* write(next);
           yield* changed(stored.workspaceId);
@@ -712,6 +754,14 @@ export const RoutinesLive = Layer.effect(
               return yield* disarm(timerKey(workspaceId, id));
             }
             const now = yield* Clock.currentTimeMillis;
+            // Waited on the lock while it went off and on, or got a new schedule: reckoned again
+            // from now, never run on the time it had before.
+            if (stored.enabled && stale(stored)) {
+              const next = reckoned(stored, now);
+              yield* write(next, true);
+              yield* changed(workspaceId);
+              return yield* arm(next);
+            }
             const isDue =
               stored.enabled && stored.nextRunAt !== undefined && now >= stored.nextRunAt;
             if (state.paused !== undefined) {
@@ -730,6 +780,16 @@ export const RoutinesLive = Layer.effect(
               return yield* arm((yield* load(state, id)) ?? stored);
             }
             const outcome = yield* runOnce(stored, state, now, false);
+            if ("stale" in outcome) {
+              // Changed under it: the engine's look at the charter change reckons it again.
+              const fresh = yield* load(state, id);
+              if (fresh === undefined || !fresh.enabled)
+                return yield* disarm(timerKey(workspaceId, id));
+              const next = reckoned(fresh, now);
+              yield* write(next, true);
+              yield* changed(workspaceId);
+              return yield* arm(next);
+            }
             const next =
               "busy" in outcome
                 ? recorded(
@@ -796,15 +856,9 @@ export const RoutinesLive = Layer.effect(
             }
             for (const charterRoutine of routines) {
               let routine = routineOf(workspaceId, charterRoutine, runs[charterRoutine.id]);
-              const key = scheduleKeyOf(routine.schedule);
-              if (routine.nextRunAt === undefined || routine.scheduleKey !== key) {
-                // New, back on, or a new schedule: from now. A claim stays until it settles.
-                const { waiting: _waiting, ...rest } = routine;
-                routine = {
-                  ...rest,
-                  nextRunAt: nextRunAfter(routine.schedule, now, localZone()),
-                  scheduleKey: key,
-                };
+              if (stale(routine)) {
+                // New, back on (however briefly it was off), or a new schedule: from now.
+                routine = reckoned(routine, now);
                 yield* write(routine, true);
                 touched = true;
               }
@@ -853,6 +907,10 @@ export const RoutinesLive = Layer.effect(
           if ("busy" in outcome) {
             if (outcome.routine !== routine) yield* changed(workspaceId);
             return yield* new InvalidState({ message: outcome.busy });
+          }
+          // Run now doesn't recheck the schedule (its own click is the go-ahead), so never stale.
+          if ("stale" in outcome) {
+            return yield* new InvalidState({ message: "The routine changed; try again." });
           }
           yield* record(outcome.routine, outcome.ran);
           // A resumed scheduled run moved the next run on: its timer follows.
