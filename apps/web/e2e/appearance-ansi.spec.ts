@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openPanelTab } from "./panel-tab";
 
 // The canvas paints SGR text in the `--ansi-*` tokens the same way for every palette, so two cases
 // cover both modes and both contrasts. Every family's ANSI contrast, in both contrasts, is
@@ -97,7 +98,7 @@ for (const { family, mode, contrast } of cases) {
       });
     }, sgr);
     const panel = page.getByTestId("right-panel");
-    await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+    await openPanelTab(panel, "Terminal");
     const terminal = panel.getByTestId("terminal").first();
     const surface = terminal.getByTestId("terminal-surface");
     await expect(terminal.locator("[data-terminal-text]")).toContainText("bright-white");

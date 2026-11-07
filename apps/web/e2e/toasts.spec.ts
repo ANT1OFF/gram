@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { slowdown } from "./slowdown";
+import { openPanelTab } from "./panel-tab";
 
 test("a toast docks below the open right panel, so the panel's lowest button stays clickable", async ({
   page,
@@ -8,7 +9,7 @@ test("a toast docks below the open right panel, so the panel's lowest button sta
   await page.clock.install();
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "PR", exact: true }).click();
+  await openPanelTab(panel, "PR");
   const content = panel.getByRole("tabpanel", { name: "PR", exact: true });
   await expect(content).toBeVisible();
 

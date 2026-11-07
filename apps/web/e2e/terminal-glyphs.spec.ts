@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { terminalText } from "./terminal";
+import { openPanelTab } from "./panel-tab";
 
 const ICONS = "\uf109 \uf2db \uf108 \uf0a0 \ue70f \uf489 \u{f02e0} \ue0b0";
 const GLYPHS = `ICONS: ${ICONS} \uefff`;
@@ -48,7 +49,7 @@ const openTerminal = async (page: Page, beforeOpen?: () => Promise<void>) => {
   await page.goto("/t/t-flaky", { waitUntil: "domcontentloaded" });
   await beforeOpen?.();
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+  await openPanelTab(panel, "Terminal");
   const terminal = panel.getByTestId("terminal").first();
   await expect(terminalText(terminal)).toContainText("$", { timeout: 15_000 });
   await terminal.getByTestId("terminal-surface").click();

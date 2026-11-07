@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { terminalText } from "./terminal";
+import { openPanelTab } from "./panel-tab";
 
 test("adds a suggested script and one of its own, then runs them by click, key and palette", async ({
   page,
@@ -16,7 +17,7 @@ test("adds a suggested script and one of its own, then runs them by click, key a
   await expect(page.getByTestId("menu-run-script")).toHaveCount(0);
   await page.keyboard.press("Escape");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+  await openPanelTab(panel, "Terminal");
   // The shell's canvas mounts as it starts; opened before, the menu would lose the click to it.
   await expect(terminalText(panel.getByTestId("terminal").first())).toContainText("$");
   await panel.getByRole("button", { name: "Run script" }).click();
@@ -105,7 +106,7 @@ test("with scripts saved, Run script is the bar's \"…\"'s and every chip keeps
   await page.goto("/t/t-flaky");
   await addTestScript(page);
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "PR", exact: true }).click();
+  await openPanelTab(panel, "PR");
   await expect(panel.getByTestId("pr-panel")).toBeVisible();
   await page.evaluate(() => window.gramMock?.simulateUnpushed("t-flaky" as never, 2));
   await page
@@ -116,7 +117,7 @@ test("with scripts saved, Run script is the bar's \"…\"'s and every chip keeps
 
   // The PR review opens wider than Files. Match pane-header-overflow's 352 px panel:
   // the review deliberately leaves less chat room and folds chips sooner.
-  await panel.getByRole("tab", { name: "Files", exact: true }).click();
+  await openPanelTab(panel, "Files");
   await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(352);
 
   const header = page.getByTestId("pane-header").first();

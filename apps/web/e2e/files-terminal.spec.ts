@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test";
 
 import { terminalText } from "./terminal";
+import { openPanelTab } from "./panel-tab";
 
 test("browses the checkout and previews a file in the Files tab", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Files", exact: true }).click();
+  await openPanelTab(panel, "Files");
 
   // The Diff tab's tree is named Files too, and lingers while its tab fades out.
   const tree = panel.getByTestId("files-tree-pane").getByRole("tree", { name: "Files" });
@@ -43,7 +44,7 @@ test("drags the split between the file tree and the preview, and keeps it after 
 }) => {
   const openRetry = async () => {
     const panel = page.getByTestId("right-panel");
-    await panel.getByRole("tab", { name: "Files", exact: true }).click();
+    await openPanelTab(panel, "Files");
     const tree = panel
       .getByTestId("files-tree-pane")
       .getByRole("tree", { name: "Files", exact: true });
@@ -77,7 +78,7 @@ test("drags the split between the file tree and the preview, and keeps it after 
 test("types in the Terminal tab, sees the echo, and app shortcuts still work", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+  await openPanelTab(panel, "Terminal");
 
   const terminal = panel.getByTestId("terminal").first();
   const rows = terminalText(terminal);

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openPanelTab } from "./panel-tab";
 
 test("shows the review glyph, resolves a bot thread and asks the agent to address one", async ({
   page,
@@ -19,7 +20,7 @@ test("shows the review glyph, resolves a bot thread and asks the agent to addres
 
   // The number opens the PR panel, whatever tab the panel was on.
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Diff", exact: true }).click();
+  await openPanelTab(panel, "Diff");
   await badge.click();
   await expect(panel.getByRole("tab", { name: "PR", exact: true })).toHaveAttribute(
     "aria-selected",

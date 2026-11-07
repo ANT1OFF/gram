@@ -50,7 +50,7 @@ export function RightPanelTabs({
       )}
       <TabsContent value="diff" className="flex min-h-0 flex-col">
         {threadId && <WorktreeBanner threadId={threadId} />}
-        {threadId ? <DiffPanel key={threadId} threadId={threadId} /> : <NoThread />}
+        {threadId ? <DiffPanel key={threadId} threadId={threadId} prLink /> : <NoThread />}
       </TabsContent>
       <TabsContent value="pr" className="flex min-h-0 flex-col">
         {threadId ? <PrPanel key={threadId} threadId={threadId} /> : <NoThread />}

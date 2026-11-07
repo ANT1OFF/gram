@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { terminalText } from "./terminal";
+import { openPanelTab } from "./panel-tab";
 
 test("finds in the terminal: highlights matches, steps through them, and Esc returns to the shell", async ({
   page,
 }) => {
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+  await openPanelTab(panel, "Terminal");
 
   const terminal = panel.getByTestId("terminal").first();
   const rows = terminalText(terminal);

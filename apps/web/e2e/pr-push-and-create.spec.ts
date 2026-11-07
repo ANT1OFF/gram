@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { openPanelTab } from "./panel-tab";
 
 test("creates a PR for an unpublished branch, pushing it first", async ({ page }) => {
   await page.goto("/t/t-dark");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "PR", exact: true }).click();
+  await openPanelTab(panel, "PR");
   await expect(panel.getByText("No PR for this branch")).toBeVisible();
   await expect(panel.getByTestId("push-button")).toHaveText("Publish branch");
   // The PR panel is where a branch is published; the pane header has no push button of its own.

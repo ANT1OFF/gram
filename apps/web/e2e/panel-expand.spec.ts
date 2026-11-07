@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { slowdown } from "./slowdown";
 import { setLayout } from "./layout";
 import { threadRow } from "./thread-row";
+import { openPanelTab } from "./panel-tab";
 
 type Box = NonNullable<Awaited<ReturnType<Locator["boundingBox"]>>>;
 
@@ -42,7 +43,7 @@ async function dragHandle(page: Page, dx: number) {
  * instead (review-width.spec.ts).
  */
 async function filesTab(page: Page) {
-  await page.getByTestId("right-panel").getByRole("tab", { name: "Files", exact: true }).click();
+  await openPanelTab(page.getByTestId("right-panel"), "Files");
   await expect(page.getByRole("button", { name: "Expand panel" })).toBeVisible();
 }
 

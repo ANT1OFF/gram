@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { threadRow } from "./thread-row";
+import { openPanelTab } from "./panel-tab";
 
 test("the PR panel shows reviewers, requests a review and edits labels", async ({ page }) => {
   await page.goto("/t/t-flaky");
-  await page.getByRole("tab", { name: "PR", exact: true }).click();
+  await openPanelTab(page.getByTestId("right-panel"), "PR");
   const panel = page.getByTestId("pr-panel");
   // Reviewers, labels and watching wait folded under what blocks the merge.
   await panel.getByTestId("pr-manage-toggle").click();
@@ -52,6 +53,6 @@ test("⌘K checks a PR out into a new worktree and a thread that follows it", as
   await expect(page.getByTestId("pane-header").first()).toContainText(
     "#412 Make the retry test deterministic",
   );
-  await page.getByRole("tab", { name: "PR", exact: true }).click();
+  await openPanelTab(page.getByTestId("right-panel"), "PR");
   await expect(page.getByTestId("pr-binding-status")).toHaveText("Following example/api#412");
 });

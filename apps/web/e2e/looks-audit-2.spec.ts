@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { slowdown } from "./slowdown";
 import { threadRow } from "./thread-row";
+import { openPanelTab } from "./panel-tab";
 
 // Looks and accessibility audit of the surfaces added in M3 wave "tonight": Glass, the only look,
 // light and dark, standard and more contrast. Each surface is driven from the mock, then its text is checked
@@ -268,7 +269,7 @@ const SURFACES: Surface[] = [
   {
     name: "pr-actions",
     open: async (page) => {
-      await page.getByTestId("right-panel").getByRole("tab", { name: "PR", exact: true }).click();
+      await openPanelTab(page.getByTestId("right-panel"), "PR");
       const panel = page.getByTestId("pr-panel");
       await expect(panel.getByTestId("pr-actions")).toBeVisible();
       return panel;
@@ -277,7 +278,7 @@ const SURFACES: Surface[] = [
   {
     name: "diff-panel",
     open: async (page) => {
-      await page.getByTestId("right-panel").getByRole("tab", { name: "Diff", exact: true }).click();
+      await openPanelTab(page.getByTestId("right-panel"), "Diff");
       const file = page
         .getByTestId("right-panel")
         .locator("[data-testid='diff-file'][data-path='src/retry.test.ts']");

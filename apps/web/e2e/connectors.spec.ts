@@ -51,7 +51,6 @@ test("starts a cold thread's session as its Connectors tab opens, once, and list
   await page.goto("/t/t-grpc");
   await page.waitForFunction(() => window.gramMock !== undefined);
   const panel = page.getByTestId("right-panel");
-  const filesTab = panel.getByRole("tab", { name: "Files", exact: true });
   const tab = panel.getByTestId("connectors-panel");
   const starts = () => page.evaluate(() => window.gramMock!.sessionStarts);
 
@@ -61,7 +60,7 @@ test("starts a cold thread's session as its Connectors tab opens, once, and list
   await expect(tab.getByTestId("connectors-snapshot")).toContainText("as of");
   expect(await starts()).toEqual([]);
 
-  await filesTab.click();
+  await openPanelTab(panel, "Files");
   await page.evaluate(() => window.gramMock!.park("t-grpc" as never, false));
   await openPanelTab(panel, "Connectors");
   await expect(tab).toContainText("Starting the session…");
@@ -69,7 +68,7 @@ test("starts a cold thread's session as its Connectors tab opens, once, and list
   expect(await starts()).toEqual(["t-grpc"]);
 
   // Flipping away and back starts nothing more.
-  await filesTab.click();
+  await openPanelTab(panel, "Files");
   await openPanelTab(panel, "Connectors");
   await expect(tab.getByTestId("connector")).toHaveCount(7);
   expect(await starts()).toEqual(["t-grpc"]);

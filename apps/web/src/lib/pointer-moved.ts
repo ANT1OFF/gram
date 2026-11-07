@@ -13,7 +13,13 @@
 /** A real movement's events (pointer and mouse, over and move) arrive within this of each other. */
 const SAME_MOVE_MS = 48;
 
-let last: { x: number; y: number } | undefined;
+/**
+ * Where the pointer was, by the kind of event that said so. A pointer event's position is fractional
+ * and its mouse twin's whole pixels, so the pair the browser sends for one layout change under a
+ * still pointer differ: each is compared with the last of its own kind, or every pair would read as
+ * a move, while a move of under a pixel still is one.
+ */
+const last = new Map<"pointer" | "mouse", { x: number; y: number }>();
 let movedAt = Number.NEGATIVE_INFINITY;
 /** What the pointer was over at its last change of position. */
 let movedOver: EventTarget | null = null;
@@ -21,11 +27,14 @@ let listening = false;
 
 const record = (event: MouseEvent) => {
   const { clientX: x, clientY: y } = event;
-  if (last === undefined || last.x !== x || last.y !== y) {
+  const kind = event.type.startsWith("pointer") ? "pointer" : "mouse";
+  // The first of a kind has only the other kind's last to go on.
+  const was = last.get(kind) ?? last.get(kind === "pointer" ? "mouse" : "pointer");
+  if (was === undefined || was.x !== x || was.y !== y) {
     movedAt = event.timeStamp;
     movedOver = event.target;
   }
-  last = { x, y };
+  last.set(kind, { x, y });
 };
 
 /** Starts recording; idempotent. Called by the first tooltip, so pages without one pay nothing. */
@@ -54,7 +63,7 @@ export function pointerMovedFor(event: Event | undefined, on?: Element | null): 
 
 /** For tests: forget what was recorded. */
 export function resetPointerMoves(): void {
-  last = undefined;
+  last.clear();
   movedAt = Number.NEGATIVE_INFINITY;
   movedOver = null;
 }

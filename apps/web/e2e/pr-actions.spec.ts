@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openPanelTab } from "./panel-tab";
 
 test("the PR row's menu copies, opens and refreshes the PR", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -26,7 +27,7 @@ test("the PR row's menu copies, opens and refreshes the PR", async ({ page }) =>
 test("the PR overview leads with what blocks the merge and one next step", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/t/t-flaky");
-  await page.getByRole("tab", { name: "PR", exact: true }).click();
+  await openPanelTab(page.getByTestId("right-panel"), "PR");
   const panel = page.getByTestId("pr-panel");
 
   const blocked = panel.getByTestId("pr-merge-blocked");
@@ -74,7 +75,7 @@ test("the PR overview leads with what blocks the merge and one next step", async
 
 test("rerun failed checks, then squash-merge the PR from the panel", async ({ page }) => {
   await page.goto("/t/t-flaky");
-  await page.getByRole("tab", { name: "PR", exact: true }).click();
+  await openPanelTab(page.getByTestId("right-panel"), "PR");
   const panel = page.getByTestId("pr-panel");
 
   const checks = panel.getByRole("region", { name: "Checks" });
