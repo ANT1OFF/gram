@@ -3,7 +3,7 @@ import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, layer } from "@effect/vitest";
-import { GramRpcs } from "@gram/contracts";
+import { GramRpcs, type SendResult } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ServerConfig } from "../../config.ts";
@@ -129,7 +129,7 @@ describe("message retry after a lost acknowledgement", () => {
           const clientMessageId = `lost-${mode}`;
           if (mode === "queueSteer") yield* runtimes.send(thread.id, input);
           const queued = yield* store.listQueue(thread.id);
-          const dispatch = (rpc: typeof client) =>
+          const dispatch = (rpc: typeof client): Effect.Effect<SendResult | void, unknown> =>
             mode === "queueSteer"
               ? rpc["thread.queue.steer"]({
                   threadId: thread.id,

@@ -226,7 +226,7 @@ export function useThreadFeed<T>(threadId: ThreadId, selector: (state: ThreadFee
         cold.get(threadId)?.feed.store.getState() ??
         EMPTY_FEED,
       getInitialState: () => EMPTY_FEED,
-      subscribe: (changed: () => void) => {
+      subscribe: (changed: (state: ThreadFeedState, previous: ThreadFeedState) => void) => {
         const entry = hold(api, threadId);
         const unsubscribe = entry.feed.store.subscribe(changed);
         return () => {
