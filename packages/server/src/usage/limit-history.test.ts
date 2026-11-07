@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  creditBurn,
   LIMIT_HISTORY_BUCKET_MS,
   LIMIT_HISTORY_RETENTION_MS,
   type ServerEvent,
@@ -157,8 +158,8 @@ describe("limit history sampling", () => {
           {
             agent: "codex",
             points: [
-              { at: START, balance: 1250 },
-              { at: START + HOUR, balance: 1180.5 },
+              { at: START, balance: 1250, spent: 0, added: 0 },
+              { at: START + HOUR, balance: 1180.5, spent: 69.5, added: 0 },
             ],
           },
         ]);
@@ -244,6 +245,60 @@ describe("limit history across a reset", () => {
         expect(points.map((p) => [p.utilization, p.peak])).toEqual([[0.55, 0.6]]);
       }),
     ),
+  );
+});
+
+/** Codex reports `creditsBalance`, as a turn's rate-limit event would. */
+const creditReading = (creditsBalance: string) =>
+  Effect.gen(function* () {
+    const readings = yield* UsageLimitReadings;
+    yield* readings.record(reading({ creditsAvailable: true, creditsBalance }));
+  });
+
+describe("credit history", () => {
+  it.effect("keeps a spend and a top-up inside one quarter hour apart", () =>
+    withReadings(
+      ":memory:",
+      START,
+      Effect.gen(function* () {
+        const readings = yield* UsageLimitReadings;
+        const balance = (creditsBalance: string) =>
+          readings.record(reading({ creditsAvailable: true, creditsBalance }));
+        yield* balance("1000");
+        yield* TestClock.adjust(LIMIT_HISTORY_BUCKET_MS);
+        // Within the next quarter hour: 100 spent, then 500 added.
+        yield* balance("900");
+        yield* TestClock.adjust(5 * MINUTE);
+        yield* balance("1400");
+        const week = (yield* readings.history(7)).credits[0]?.points ?? [];
+        expect(creditBurn(week)).toMatchObject({ spent: 100, added: 500 });
+        // And by the hour, for a month.
+        const month = (yield* readings.history(30)).credits[0]?.points ?? [];
+        yield* TestClock.adjust(HOUR);
+        yield* balance("1350");
+        const later = (yield* readings.history(30)).credits[0]?.points ?? [];
+        expect(month).toHaveLength(1);
+        expect(creditBurn(later)).toMatchObject({ spent: 50, added: 0 });
+      }),
+    ),
+  );
+
+  it.effect("carries the balance across a restart, and a spend in the same bucket after it", () =>
+    Effect.gen(function* () {
+      const db = tempDb();
+      yield* withReadings(db.path, START, creditReading("1000"));
+      yield* withReadings(db.path, START + LIMIT_HISTORY_BUCKET_MS, creditReading("950"));
+      const points = yield* withReadings(
+        db.path,
+        START + LIMIT_HISTORY_BUCKET_MS + 5 * MINUTE,
+        Effect.gen(function* () {
+          yield* creditReading("900");
+          return (yield* (yield* UsageLimitReadings).history(7)).credits[0]?.points ?? [];
+        }),
+      );
+      db.done();
+      expect(creditBurn(points)).toMatchObject({ spent: 100, added: 0 });
+    }),
   );
 });
 

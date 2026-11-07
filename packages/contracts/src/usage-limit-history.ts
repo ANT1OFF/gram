@@ -62,8 +62,18 @@ export const LimitHistorySeries = Schema.Struct({
 });
 export type LimitHistorySeries = typeof LimitHistorySeries.Type;
 
-/** One bucket of an account's credits: the balance last read in it. */
-export const CreditHistoryPoint = Schema.Struct({ at: Schema.Number, balance: Schema.Number });
+/** One bucket of an account's credits: the balance last read in it, and what moved it. */
+export const CreditHistoryPoint = Schema.Struct({
+  at: Schema.Number,
+  /** The last balance read in the bucket. */
+  balance: Schema.Number,
+  /**
+   * The falls and rises in balance since the balance kept before this bucket, every reading in
+   * the bucket counted, so a spend and a top-up within one bucket don't cancel out.
+   */
+  spent: Schema.Number,
+  added: Schema.Number,
+});
 export type CreditHistoryPoint = typeof CreditHistoryPoint.Type;
 
 export const CreditHistorySeries = Schema.Struct({
@@ -130,7 +140,10 @@ export function coarsenLimitPoints(
   return out;
 }
 
-/** As `coarsenLimitPoints`, for a credit balance: the last balance in each bucket. */
+/**
+ * As `coarsenLimitPoints`, for a credit balance: the last balance in each bucket, and what was
+ * spent and added through it.
+ */
 export function coarsenCreditPoints(
   points: ReadonlyArray<CreditHistoryPoint>,
   step: number,
@@ -138,8 +151,15 @@ export function coarsenCreditPoints(
   const out: CreditHistoryPoint[] = [];
   for (const point of points) {
     const at = limitHistoryBucket(point.at, step);
-    if (out.at(-1)?.at === at) out[out.length - 1] = { at, balance: point.balance };
-    else out.push({ at, balance: point.balance });
+    const last = out.at(-1);
+    if (last?.at === at)
+      out[out.length - 1] = {
+        at,
+        balance: point.balance,
+        spent: last.spent + point.spent,
+        added: last.added + point.added,
+      };
+    else out.push({ ...point, at });
   }
   return out;
 }
@@ -157,9 +177,10 @@ export interface CreditBurn {
 }
 
 /**
- * How fast an account spends its credits over `points`: the sum of every fall in balance (a top-up
- * is a rise, counted apart so it never reads as negative spend), and per day once the readings span
- * a day. `undefined` with fewer than two balances.
+ * How fast an account spends its credits over `points`: what each bucket after the first spent
+ * and added (a top-up counted apart, so it never reads as negative spend), every reading in a
+ * bucket counted; per day once the readings span a day. The first bucket's moves are left out:
+ * they are measured from a balance before the period. `undefined` with fewer than two balances.
  */
 export function creditBurn(points: ReadonlyArray<CreditHistoryPoint>): CreditBurn | undefined {
   const first = points[0];
@@ -167,10 +188,9 @@ export function creditBurn(points: ReadonlyArray<CreditHistoryPoint>): CreditBur
   if (first === undefined || last === undefined || points.length < 2) return undefined;
   let spent = 0;
   let added = 0;
-  for (let i = 1; i < points.length; i++) {
-    const change = points[i]!.balance - points[i - 1]!.balance;
-    if (change < 0) spent -= change;
-    else added += change;
+  for (const point of points.slice(1)) {
+    spent += point.spent;
+    added += point.added;
   }
   const span = last.at - first.at;
   return {

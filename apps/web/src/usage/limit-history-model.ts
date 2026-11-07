@@ -116,15 +116,27 @@ export const creditCount = (value: number): string =>
   Math.round(value).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
 /**
- * "180 spent over 7 days · about 26 a day": what the balance's falls add up to over the readings
- * kept, and per day once they span one. "No credits spent" when the balance never fell.
+ * "180 spent over 7 days · about 26 a day": what was spent over the readings kept, and per day
+ * once they span one. "No credits spent" when nothing was.
  */
 export function burnText(burn: CreditBurn): string {
   if (burn.spent === 0) return "No credits spent in this period";
-  const span = Math.max(1, Math.round((burn.to - burn.from) / DAY));
-  const over = burn.to - burn.from < DAY ? "today" : `over ${span} day${span === 1 ? "" : "s"}`;
   const perDay = burn.perDay === undefined ? "" : ` · about ${creditCount(burn.perDay)} a day`;
-  return `${creditCount(burn.spent)} spent ${over}${perDay}`;
+  return `${creditCount(burn.spent)} spent over ${spanText(burn.to - burn.from)}${perDay}`;
+}
+
+/**
+ * "7 days", "6 hours", "10 minutes": how long the readings span, never "today", which a span
+ * across midnight isn't.
+ */
+function spanText(span: number): string {
+  const [size, unit] =
+    span >= DAY
+      ? [Math.round(span / DAY), "day"]
+      : span >= HOUR
+        ? [Math.round(span / HOUR), "hour"]
+        : [Math.max(1, Math.round(span / 60_000)), "minute"];
+  return `${size} ${unit}${size === 1 ? "" : "s"}`;
 }
 
 /** "500 added": the period's top-ups, when there were any. */

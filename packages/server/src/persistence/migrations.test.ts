@@ -424,6 +424,10 @@ describe("the baseline", () => {
         expect((yield* applied).at(-1)?.name).toBe("merge_fences");
         expect((yield* tableNames).has("usage_limit_history")).toBe(false);
         yield* sql`INSERT INTO usage_limits (key, data) VALUES ('codex//five_hour', '{"synthetic":true}')`;
+        // What 0003 and 0004 keep, so an edit to 0005 that touched their tables would fail here.
+        yield* sql`INSERT INTO message_receipts(thread_id, client_message_id, fingerprint, retired)
+          VALUES ('synthetic-thread', 'synthetic-client-id', 'synthetic-print', 1)`;
+        yield* sql`INSERT INTO merge_fences (key, data) VALUES ('synthetic-base', '{"synthetic":true}')`;
       }).pipe(Effect.provide(open(previous)));
       for (let reopen = 0; reopen < 2; reopen++) {
         yield* Effect.gen(function* () {
@@ -435,12 +439,25 @@ describe("the baseline", () => {
           expect(yield* sql`SELECT key, data FROM usage_limits`).toEqual([
             { key: "codex//five_hour", data: '{"synthetic":true}' },
           ]);
+          expect(
+            yield* sql`SELECT thread_id, client_message_id, fingerprint, retired FROM message_receipts`,
+          ).toEqual([
+            {
+              thread_id: "synthetic-thread",
+              client_message_id: "synthetic-client-id",
+              fingerprint: "synthetic-print",
+              retired: 1,
+            },
+          ]);
+          expect(yield* sql`SELECT key, data FROM merge_fences`).toEqual([
+            { key: "synthetic-base", data: '{"synthetic":true}' },
+          ]);
           if (reopen === 0) {
             yield* sql`INSERT INTO usage_limit_history
               (agent, limit_window, bucket, window_id, utilization, peak, resets_at)
               VALUES ('codex', 'five_hour', 900000, 1, 0.4, 0.5, NULL)`;
-            yield* sql`INSERT INTO usage_credit_history (agent, bucket, balance)
-              VALUES ('codex', 900000, 1250)`;
+            yield* sql`INSERT INTO usage_credit_history (agent, bucket, balance, spent, added)
+              VALUES ('codex', 900000, 1250, 0, 0)`;
           }
           expect(
             yield* sql`SELECT agent, limit_window, bucket, utilization, peak, resets_at

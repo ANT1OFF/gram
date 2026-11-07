@@ -82,14 +82,18 @@ function windowPoints(
  * one top-up three weeks ago, ending on the balance the kept reading names.
  */
 function creditPoints(balance: number, days: number, now: number): CreditHistoryPoint[] {
-  const points: CreditHistoryPoint[] = [];
+  const balances: { at: number; balance: number }[] = [];
   let left = balance;
   for (let at = limitHistoryBucket(now); at >= now - days * DAY; at -= HOUR) {
-    if (watched(at)) points.push({ at, balance: Math.round(left) });
+    if (watched(at)) balances.push({ at, balance: Math.round(left) });
     if (Math.abs(at - (now - 21 * DAY)) < HOUR / 2) left -= 500;
     if (watched(at)) left += noise(at / HOUR) < 0.3 ? Math.round(noise(at / HOUR + 1) * 12) : 0;
   }
-  return points.toReversed();
+  // Oldest first, each with what moved it from the balance before.
+  return balances.toReversed().map((point, i, all) => {
+    const change = i === 0 ? 0 : point.balance - all[i - 1]!.balance;
+    return { ...point, spent: Math.max(0, -change), added: Math.max(0, change) };
+  });
 }
 
 /**

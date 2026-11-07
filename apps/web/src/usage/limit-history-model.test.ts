@@ -82,7 +82,15 @@ describe("credit words", () => {
     expect(burnText({ spent: 210, added: 0, from: T, to: T + 7 * DAY, perDay: 30 })).toBe(
       "210 spent over 7 days · about 30 a day",
     );
-    expect(burnText({ spent: 6, added: 0, from: T, to: T + HOUR })).toBe("6 spent today");
+    expect(burnText({ spent: 6, added: 0, from: T, to: T + HOUR })).toBe("6 spent over 1 hour");
+    // Under a day but across midnight: hours, never "today".
+    const evening = Date.UTC(2026, 10, 1, 23);
+    expect(burnText({ spent: 100, added: 0, from: evening, to: evening + 6 * HOUR })).toBe(
+      "100 spent over 6 hours",
+    );
+    expect(burnText({ spent: 3, added: 0, from: T, to: T + 10 * MINUTE })).toBe(
+      "3 spent over 10 minutes",
+    );
     expect(burnText({ spent: 0, added: 500, from: T, to: T + DAY })).toBe(
       "No credits spent in this period",
     );

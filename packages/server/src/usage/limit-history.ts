@@ -9,6 +9,7 @@ import {
   limitHistoryBucket,
   limitHistoryStep,
   type AgentKind,
+  type CreditHistoryPoint,
   type CreditHistorySeries,
   type LimitHistoryDays,
   type LimitHistoryPoint,
@@ -50,6 +51,16 @@ interface CreditRow {
   readonly agent: string;
   readonly bucket: number;
   readonly balance: number;
+  readonly spent: number;
+  readonly added: number;
+}
+
+/** An account's latest kept credit bucket. */
+interface CreditState {
+  readonly bucket: number;
+  readonly balance: number;
+  readonly spent: number;
+  readonly added: number;
 }
 
 export interface LimitHistoryStore {
@@ -82,7 +93,9 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
   const lastWindow = new Map<string, WindowState>();
   /** Series whose latest point was looked up in the database, after a restart. */
   const recovered = new Set<string>();
-  const lastCredit = new Map<string, { readonly at: number; readonly balance: number }>();
+  /** Each account's latest kept balance, for what the next one spent or added. */
+  const lastCredit = new Map<string, CreditState>();
+  const recoveredCredit = new Set<string>();
   let prunedAt = -Infinity;
 
   const prune: LimitHistoryStore["prune"] = (now) =>
@@ -123,6 +136,27 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
         ...(row.resets_at === null ? {} : { resetsAt: row.resets_at }),
       };
       lastWindow.set(key, state);
+      return state;
+    });
+
+  /** The account's latest kept balance, from memory or, once after a restart, the database. */
+  const latestCredit = (agent: string, bucket: number) =>
+    Effect.gen(function* () {
+      const known = lastCredit.get(agent);
+      if (known !== undefined || recoveredCredit.has(agent)) return known;
+      recoveredCredit.add(agent);
+      const [row] = yield* run(
+        sql<CreditRow>`SELECT agent, bucket, balance, spent, added FROM usage_credit_history
+          WHERE agent = ${agent} AND bucket <= ${bucket} ORDER BY bucket DESC LIMIT 1`,
+      );
+      if (row === undefined) return undefined;
+      const state: CreditState = {
+        bucket: row.bucket,
+        balance: row.balance,
+        spent: row.spent,
+        added: row.added,
+      };
+      lastCredit.set(agent, state);
       return state;
     });
 
@@ -175,12 +209,22 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
       }
       const balance = creditBalanceNumber(record.creditsBalance);
       if (balance === undefined) return;
-      const credit = lastCredit.get(record.agent);
-      if (credit !== undefined && credit.at === bucket && credit.balance === balance) return;
-      lastCredit.set(record.agent, { at: bucket, balance });
-      yield* run(sql`INSERT INTO usage_credit_history (agent, bucket, balance)
-        VALUES (${record.agent}, ${bucket}, ${balance})
-        ON CONFLICT(agent, bucket) DO UPDATE SET balance = excluded.balance`);
+      const credit = yield* latestCredit(record.agent, bucket);
+      if (credit !== undefined && credit.bucket === bucket && credit.balance === balance) return;
+      // The move from the last balance kept, added to the bucket's own when it is the same one.
+      const change = credit === undefined ? 0 : balance - credit.balance;
+      const carried = credit?.bucket === bucket ? credit : { spent: 0, added: 0 };
+      const kept: CreditState = {
+        bucket,
+        balance,
+        spent: carried.spent + Math.max(0, -change),
+        added: carried.added + Math.max(0, change),
+      };
+      lastCredit.set(record.agent, kept);
+      yield* run(sql`INSERT INTO usage_credit_history (agent, bucket, balance, spent, added)
+        VALUES (${record.agent}, ${bucket}, ${balance}, ${kept.spent}, ${kept.added})
+        ON CONFLICT(agent, bucket) DO UPDATE SET
+          balance = excluded.balance, spent = excluded.spent, added = excluded.added`);
     });
 
   const read: LimitHistoryStore["read"] = (days, now) =>
@@ -194,7 +238,7 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
           ORDER BY agent, limit_window, bucket, window_id`,
       );
       const creditRows = yield* run(
-        sql<CreditRow>`SELECT agent, bucket, balance FROM usage_credit_history
+        sql<CreditRow>`SELECT agent, bucket, balance, spent, added FROM usage_credit_history
           WHERE bucket >= ${from} AND bucket <= ${to} ORDER BY agent, bucket`,
       );
       const oldest = yield* run(
@@ -221,11 +265,11 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
         });
         byWindow.set(key, series);
       }
-      const byAgent = new Map<AgentKind, { at: number; balance: number }[]>();
+      const byAgent = new Map<AgentKind, CreditHistoryPoint[]>();
       for (const row of creditRows) {
         if (!isAgent(row.agent)) continue;
         const points = byAgent.get(row.agent) ?? [];
-        points.push({ at: row.bucket, balance: row.balance });
+        points.push({ at: row.bucket, balance: row.balance, spent: row.spent, added: row.added });
         byAgent.set(row.agent, points);
       }
       const windows: LimitHistorySeries[] = [...byWindow.values()].map((series) => ({

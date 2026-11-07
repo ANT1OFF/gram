@@ -3,6 +3,7 @@ import {
   creditBurn,
   limitForecast,
   limitPace,
+  type CreditHistoryPoint,
   type LimitHistoryDays,
   type LimitHistoryPoint,
   type UsageLimitHistory,
@@ -404,7 +405,7 @@ function CreditsCard({
 }: {
   provider: LimitProvider;
   limit: UsageLimit | undefined;
-  points: readonly { readonly at: number; readonly balance: number }[];
+  points: readonly CreditHistoryPoint[];
   history: UsageLimitHistory | undefined;
   days: LimitHistoryDays;
 }) {

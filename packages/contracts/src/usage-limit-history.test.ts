@@ -61,21 +61,28 @@ describe("limit history buckets", () => {
     ]);
   });
 
-  it("coarsens a credit balance to the last in each bucket", () => {
+  it("coarsens a credit balance to the last in each bucket, summing what moved it", () => {
     expect(
       coarsenCreditPoints(
         [
-          { at: T, balance: 900 },
-          { at: T + 45 * MINUTE, balance: 880 },
-          { at: T + HOUR, balance: 870 },
+          { at: T, balance: 900, spent: 0, added: 0 },
+          { at: T + 45 * MINUTE, balance: 1380, spent: 20, added: 500 },
+          { at: T + HOUR, balance: 1370, spent: 10, added: 0 },
         ],
         HOUR,
       ),
     ).toEqual([
-      { at: T, balance: 880 },
-      { at: T + HOUR, balance: 870 },
+      { at: T, balance: 1380, spent: 20, added: 500 },
+      { at: T + HOUR, balance: 1370, spent: 10, added: 0 },
     ]);
   });
+});
+
+const point = (at: number, balance: number, spent = 0, added = 0) => ({
+  at,
+  balance,
+  spent,
+  added,
 });
 
 describe("credits", () => {
@@ -87,23 +94,25 @@ describe("credits", () => {
       expect(creditBalanceNumber(bad)).toBeUndefined();
   });
 
-  it("burns the falls, counts a top-up apart, and says per day once a day is read", () => {
-    expect(creditBurn([{ at: T, balance: 100 }])).toBeUndefined();
+  it("burns what each bucket spent, counts a top-up apart, and says per day once a day is read", () => {
+    expect(creditBurn([point(T, 100)])).toBeUndefined();
     expect(
       creditBurn([
-        { at: T, balance: 1000 },
-        { at: T + HOUR, balance: 950 },
-        { at: T + DAY, balance: 1450 },
-        { at: T + 2 * DAY, balance: 1300 },
+        // The first bucket's moves are from before the period, and left out.
+        point(T, 1000, 40, 0),
+        point(T + HOUR, 950, 50),
+        // A spend and a top-up inside one bucket, both counted.
+        point(T + DAY, 1450, 100, 600),
+        point(T + 2 * DAY, 1300, 150),
       ]),
-    ).toEqual({ spent: 200, added: 500, from: T, to: T + 2 * DAY, perDay: 100 });
+    ).toEqual({ spent: 300, added: 600, from: T, to: T + 2 * DAY, perDay: 150 });
     // Under a day: no per-day rate from a few hours.
-    expect(
-      creditBurn([
-        { at: T, balance: 10 },
-        { at: T + HOUR, balance: 4 },
-      ]),
-    ).toEqual({ spent: 6, added: 0, from: T, to: T + HOUR });
+    expect(creditBurn([point(T, 10), point(T + HOUR, 4, 6)])).toEqual({
+      spent: 6,
+      added: 0,
+      from: T,
+      to: T + HOUR,
+    });
   });
 });
 

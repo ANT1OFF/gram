@@ -414,7 +414,9 @@ const mergeFences = Effect.gen(function* () {
 /**
  * Subscription limit history (`usage/limit-history.ts`): each window's share and reset, and each
  * account's credit balance, one row per quarter hour, pruned past 35 days. `window_id` keeps a
- * window that reset inside a quarter hour apart from the next, each with its own peak. Only the numbers the
+ * window that reset inside a quarter hour apart from the next, each with its own peak; `spent` and
+ * `added` keep every move of a balance within its quarter hour, so a spend and a top-up there
+ * don't cancel out. Only the numbers the
  * meter already shows; never a token, a login or an account identifier.
  */
 const usageLimitHistory = Effect.gen(function* () {
@@ -434,6 +436,8 @@ const usageLimitHistory = Effect.gen(function* () {
     agent TEXT NOT NULL,
     bucket INTEGER NOT NULL,
     balance REAL NOT NULL,
+    spent REAL NOT NULL,
+    added REAL NOT NULL,
     PRIMARY KEY (agent, bucket)
   ) WITHOUT ROWID`;
   yield* sql`CREATE INDEX usage_credit_history_bucket ON usage_credit_history(bucket)`;
