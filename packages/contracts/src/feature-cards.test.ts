@@ -163,6 +163,11 @@ describe("stationOf", () => {
 });
 
 describe("now line", () => {
+  it("says a worker spawned and not begun is starting, as every other surface does", () => {
+    expect(nowLineOf(worker({ state: "briefed", status: "idle" }))).toBe("starting…");
+    expect(nowLineOf(worker({ state: "briefed", status: "cold" }))).toBe("starting…");
+  });
+
   it("is four words or fewer, deterministic, from reports, requests or the tool call", () => {
     const lines = [
       nowLineOf(worker({ status: "running" }), "Running uv run pytest tests/queue"),

@@ -81,6 +81,14 @@ describe("the one needs-you selector", () => {
       "t-refunds",
     ]);
     expect(needsYouThreads(needsYouIn(groups, { workspaceId: GRAM })).size).toBe(0);
+    // One approval two workers wait on with equal input is one item on both.
+    const shared = {
+      ...item("ask:push", "approval", "t-form", GRAM),
+      ask: {
+        group: { entries: [{ threadId: "t-form" }, { threadId: "t-docs" }] },
+      } as unknown as Ask,
+    };
+    expect([...needsYouThreads([shared])].toSorted()).toEqual(["t-docs", "t-form"]);
     // An orchestrator's own question with no thread to open adds no worker.
     expect(needsYouThreads([item("ask:m", "question", undefined, GRAM)]).size).toBe(0);
   });

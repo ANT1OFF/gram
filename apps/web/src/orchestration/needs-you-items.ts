@@ -368,9 +368,17 @@ export const needsYouIn = (
   return groups.find((group) => group.workspaceId === scope.workspaceId)?.items ?? [];
 };
 
-/** The threads `items` are on: what a list of threads or workers marks as needing you. */
+/**
+ * The threads `items` are on: what a list of threads or workers marks as needing you. One approval
+ * several workers wait on with equal input is one item, its group's entries each a thread on it.
+ */
 export const needsYouThreads = (items: readonly NeedsYouItem[]): ReadonlySet<ThreadId> =>
-  new Set(items.flatMap((item) => (item.threadId === undefined ? [] : [item.threadId])));
+  new Set(
+    items.flatMap((item) => [
+      ...(item.threadId === undefined ? [] : [item.threadId]),
+      ...(item.ask?.group?.entries.map((entry) => entry.threadId) ?? []),
+    ]),
+  );
 
 /**
  * What a thread's row says it needs you for, when the list has an item on it: the first of its

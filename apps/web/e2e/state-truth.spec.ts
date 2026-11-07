@@ -129,6 +129,13 @@ test("a worker spawned and not yet begun reads Starting everywhere, never Stoppe
   const row = threadRow(page, made.briefed);
   await expect(row.getByTestId("overview-worker-starting")).toHaveText("Starting…");
   await expect(row).not.toContainText("Stopped");
+  // Its feature card in the orchestrator's chat says the same, not "briefed".
+  await expect(
+    page
+      .getByTestId("feature-card-worker")
+      .filter({ has: page.locator(`a[href$="/t/${made.briefed}"]`) })
+      .getByTestId("feature-card-now"),
+  ).toHaveText("starting…");
 
   // The Workers panel lists it as running, its state in words Starting.
   const panel = await workersPanel(page);
@@ -137,6 +144,14 @@ test("a worker spawned and not yet begun reads Starting everywhere, never Stoppe
     .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.briefed}"]`);
   await expect(listed).toHaveAttribute("data-dot", "working");
   await expect(listed).toHaveAttribute("title", /\nStarting…$/);
+  // Both workers waiting on one shared approval are under Needs you, as the sidebar says they ask.
+  for (const id of made.waiting) {
+    await expect(
+      panel
+        .getByTestId("workers-group-needs")
+        .locator(`[data-testid="workers-panel-row"][data-thread-id="${id}"]`),
+    ).toHaveCount(1);
+  }
 
   // Its own header says the same.
   await row.click();
