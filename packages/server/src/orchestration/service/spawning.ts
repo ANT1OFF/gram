@@ -331,6 +331,48 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 ),
               );
             }
+            // Finished as admitted: the routine's model and name now, as a fresh run would have. A
+            // model it can't switch to (another agent kind, one the session refuses) is the same as
+            // a project moved: closed, and the next run starts a fresh one.
+            if (!finished && input.routine !== undefined) {
+              const picked = yield* workerModel(
+                tool,
+                caller,
+                state.charter,
+                input.model,
+                state.charter.workerModels === undefined
+                  ? undefined
+                  : yield* rosterHere(state.charter.workerModels, state.charter),
+              );
+              const sameModel =
+                JSON.stringify([
+                  existing.model.agent,
+                  existing.model.model,
+                  existing.model.profileId,
+                ]) ===
+                JSON.stringify([picked.model.agent, picked.model.model, picked.model.profileId]);
+              if (!sameModel) {
+                const switched = yield* runtimes.setModel(existing.id, picked.model).pipe(
+                  Effect.as(true),
+                  Effect.orElseSucceed(() => false),
+                );
+                if (!switched) {
+                  yield* runtimes.close(existing.id).pipe(Effect.ignore);
+                  return yield* toolError(
+                    tool,
+                    refusal(
+                      "routine_changed",
+                      `The routine "${input.routine.name}" now runs on a model its half-made worker “${existing.title}” can't switch to, so that worker was closed and none started; the next run starts a fresh one.`,
+                    ),
+                  );
+                }
+              }
+              if (existing.title !== input.title) {
+                yield* runtimes
+                  .updateThread(existing.id, (thread) => ({ ...thread, title: input.title }))
+                  .pipe(Effect.ignore);
+              }
+            }
             workerWorkspaces.set(existing.id, workspaceId);
             if (existing.parked) parkedWorkers.add(existing.id);
             if (!finished) {

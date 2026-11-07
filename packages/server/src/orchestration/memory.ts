@@ -25,7 +25,7 @@
  * for the hashes, the dream's out-of-folder manifest for the text).
  */
 import { FsError, InvalidState, NotFound, SECRET_KEY, type MemoryWrite } from "@gram/contracts";
-import { parse as parseYaml } from "yaml";
+import { isMap, isScalar, parseDocument } from "yaml";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -803,8 +803,8 @@ const credentialShaped = (text: string): boolean =>
 
 /**
  * Whether a worker may see the memory file at `path`: not by a private or credential-shaped name,
- * and, given its text, not marked `private: true` in its front matter nor holding anything
- * credential-shaped. A file it may not see is neither listed nor read.
+ * and, given its text, with a plain header or none (`plainHeader`) and nothing credential-shaped in
+ * it. A file it may not see is neither listed nor read.
  */
 export const workerMayRead = (path: string, text?: string): boolean => {
   const segments = path.split("/");
@@ -812,120 +812,71 @@ export const workerMayRead = (path: string, text?: string): boolean => {
     return false;
   }
   if (text === undefined) return true;
-  if (privateHeader(text)) return false;
+  if (!plainHeader(text)) return false;
   return !credentialShaped(text);
 };
 
-/** A region's lines without its fence lines (`---`, `...`, `+++`). */
-const unfenced = (body: string) =>
-  body
-    .split(/\r?\n/)
-    .filter((line) => !/^\s*(?:---|\.\.\.|\+\+\+)\s*$/.test(line))
-    .join("\n");
+/** A YAML node that is a plain or quoted scalar with no tag or anchor: what a plain header holds. */
+const plainScalar = (node: unknown): boolean =>
+  isScalar(node) &&
+  node.tag === undefined &&
+  node.anchor === undefined &&
+  (node.type === "PLAIN" || node.type === "QUOTE_DOUBLE" || node.type === "QUOTE_SINGLE") &&
+  (node.value === null || ["string", "number", "boolean"].includes(typeof node.value));
 
 /**
- * A file's header, as the regions the private marker is looked for in: what comes before its body,
- * however written. Leading HTML comments count (their insides, front matter commented out
- * included), then a `---` YAML or `+++` TOML front matter block, closed or not (an unclosed one
- * runs to the end, so it errs to private). Fence lines inside a region are left out.
+ * Whether a worker may read a file's text, by its header, failing closed. Allowed only when the file
+ * has no header at all (its first non-blank text is the body), or its header is one closed `---`
+ * YAML front matter block that parses cleanly as a flat block map whose keys and values are plain
+ * or quoted scalars: no tags (`!!omap`, `!!set`, …), anchors, aliases, merge keys, nesting, flow
+ * style or block scalars, and the word `private` nowhere in the header, comments included.
+ * Everything else (an HTML comment before the body, TOML, an unclosed block, YAML that doesn't
+ * parse or holds anything more) is private to workers. The orchestrator reads it all.
  */
-const headerRegions = (
-  text: string,
-): ReadonlyArray<{ readonly body: string; readonly toml: boolean }> => {
-  let rest = text.replace(/^\uFEFF/, "");
-  const regions: Array<{ body: string; toml: boolean }> = [];
-
-  for (;;) {
-    rest = rest.replace(/^\s+/, "");
-    if (rest.startsWith("<!--")) {
-      const end = rest.indexOf("-->");
-      const inner = end === -1 ? rest.slice(4) : rest.slice(4, end);
-      regions.push({ body: unfenced(inner), toml: /^\s*\+\+\+\s*$/m.test(inner) });
-      if (end === -1) return regions;
-      rest = rest.slice(end + 3);
-      continue;
-    }
-    const fence = /^(---|\+\+\+)[ \t]*\r?\n/.exec(rest);
-    if (fence !== null) {
-      const body = rest.slice(fence[0].length);
-      const close = (fence[1] === "---" ? /^(?:---|\.\.\.)[ \t]*$/m : /^\+\+\+[ \t]*$/m).exec(body);
-      regions.push({
-        body: close === null ? body : body.slice(0, close.index),
-        toml: fence[1] === "+++",
-      });
-    }
-    return regions;
+const plainHeader = (text: string): boolean => {
+  const rest = text.replace(/^\uFEFF/, "").replace(/^\s+/, "");
+  // A leading HTML comment, a TOML block, or anything fence-like that isn't `---`: not plain.
+  if (rest.startsWith("<!--") || rest.startsWith("+++")) return false;
+  const fence = /^---[ \t]*\r?\n/.exec(rest);
+  if (fence === null) return !rest.startsWith("---");
+  const body = rest.slice(fence[0].length);
+  const close = /^(?:---|\.\.\.)[ \t]*$/m.exec(body);
+  if (close === null) return false;
+  const header = body.slice(0, close.index);
+  if (/private/i.test(header)) return false;
+  // Line by line too, so syntax that parses to a flat map anyway (an explicit `? key`, a directive,
+  // a value carried onto the next line) is refused: each line is blank, a comment, or one
+  // unindented `key: value` with a plain key.
+  const lines = header.split(/\r?\n/);
+  if (
+    !lines.every(
+      (line) =>
+        line.trim() === "" || line.startsWith("#") || /^[A-Za-z_][\w.-]*:(?:[ \t]|$)/.test(line),
+    )
+  ) {
+    return false;
   }
-};
+  let doc: ReturnType<typeof parseDocument>;
+  try {
+    doc = parseDocument(header, { uniqueKeys: true, merge: false });
+  } catch {
+    return false;
+  }
+  if (doc.errors.length > 0 || doc.warnings.length > 0) return false;
+  const contents = doc.contents;
+  // An empty front matter block is as good as none.
+  if (contents === null) return true;
+  if (!isMap(contents) || contents.flow === true || contents.tag !== undefined) return false;
+  if (contents.anchor !== undefined) return false;
 
-/** Whether a parsed `private` value says private: anything but a plain false. */
-const truthy = (value: unknown): boolean =>
-  value === null ||
-  value === undefined ||
-  value === true ||
-  (typeof value === "number" && value !== 0) ||
-  (typeof value === "string" &&
-    !["false", "no", "off", "0", ""].includes(value.trim().toLowerCase())) ||
-  (typeof value === "object" && value !== null);
-
-/** Whether a parsed YAML value carries a truthy `private` key, or a bare `private`, at any depth. */
-const hasPrivate = (value: unknown, depth = 0): boolean => {
-  // A bare `private` (a scalar, or an item of a list) is a marker with no value: private.
-  if (typeof value === "string") return value.trim().toLowerCase() === "private";
-  if (depth > 8 || value === null || typeof value !== "object") return false;
-  if (Array.isArray(value)) return value.some((each) => hasPrivate(each, depth + 1));
-  return Object.entries(value).some(
-    ([key, each]) =>
-      (key.trim().toLowerCase() === "private" && truthy(each)) || hasPrivate(each, depth + 1),
+  return contents.items.every(
+    (pair) =>
+      plainScalar(pair.key) &&
+      typeof (pair.key as { value: unknown }).value === "string" &&
+      (pair.key as { value: string }).value !== "<<" &&
+      (pair.value === null || plainScalar(pair.value)),
   );
 };
-
-/** One region's lines with a leading `#`, `//` or `;` comment marker taken off: what was commented out. */
-const uncommented = (body: string) =>
-  body
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^(\s*)(?:#+|\/\/|;)\s?/, "$1"))
-    .join("\n");
-
-/** A `private` key on a line of TOML, or of text that doesn't parse: `private`, `private = …`. */
-const privateLine = (body: string) =>
-  body.split(/\r?\n/).some((line) => {
-    const marker = /^\s*(?:#+|\/\/|;)?\s*["']?private["']?\s*(?:[:=]\s*(.*?))?\s*,?\s*$/i.exec(
-      line,
-    );
-    return marker !== null && truthy(marker[1]?.replace(/^["']|["']$/g, "") ?? null);
-  });
-
-/**
- * Whether a file's header marks it private: a truthy `private` key anywhere in it, in YAML front
- * matter (block or flow style, at any depth), commented out or not, or in TOML. Fails closed: a
- * YAML region that doesn't parse is private.
- */
-const privateHeader = (text: string): boolean =>
-  headerRegions(text).some((region) => {
-    if (region.toml) return privateLine(region.body) || privateLine(uncommented(region.body));
-    let parsed: unknown;
-    try {
-      parsed = parseYaml(region.body);
-    } catch {
-      return true;
-    }
-    if (hasPrivate(parsed)) return true;
-    // What was commented out counts too: the commented lines as one document, then each alone,
-    // and a line look for what was never YAML.
-    const commented = region.body
-      .split(/\r?\n/)
-      .filter((line) => /^\s*(?:#+|\/\/|;)/.test(line))
-      .map((line) => uncommented(line));
-    const marked = (body: string) => {
-      try {
-        return hasPrivate(parseYaml(body));
-      } catch {
-        return privateLine(body);
-      }
-    };
-    return marked(commented.join("\n")) || commented.some(marked);
-  });
 
 const make = (root: string): OrchestrationMemoryShape => {
   const locks = makeKeyedLock<string>();

@@ -70,6 +70,11 @@ const pemBlock = [
 ].join(" ");
 const slackToken = ["xoxb", "123456789012", "abcdefghijkl"].join("-");
 
+/** A YAML header with `private: true` nested `levels` deep. */
+const deep = (levels: number) =>
+  Array.from({ length: levels }, (_, n) => `${"  ".repeat(n)}l${n}:`).join("\n") +
+  `\n${"  ".repeat(levels)}private: true`;
+
 /** The paths a `memory_list` result names. */
 const listed = (result: unknown) =>
   ((result as { files: ReadonlyArray<{ path: string }> }).files ?? []).map((file) => file.path);
@@ -622,7 +627,8 @@ describe.skipIf(!hasGit)("routines and worker memory: fifth review", () => {
             "yaml-comment.md": "---\ntitle: Plans\n# private: true\n---\nNot for workers.",
             "toml.md": '+++\nprivate = "yes"\n+++\nNot for workers.',
             "bare.md": "---\nprivate\n---\nNot for workers.",
-            "public.md": "---\nprivate: false\n---\nFor everyone.",
+            "false.md": "---\nprivate: false\n---\nAny private key hides it, whatever its value.",
+            "public.md": "---\ntitle: Conventions\nupdated: 2026-11-07\n---\nFor everyone.",
           };
           for (const [path, content] of Object.entries(files)) {
             yield* session.callTool("memory_write", { path, content });
@@ -728,7 +734,65 @@ describe.skipIf(!hasGit)("routines and worker memory: sixth review", () => {
             };
             const shown: Record<string, string> = {
               "plain.md": "No header at all.",
-              "public.md": "---\n{private: false, title: Public}\n---\nFor everyone.",
+              "public.md": "---\ntitle: Public\nowner: 'ops'\n---\nFor everyone.",
+            };
+            for (const [path, content] of Object.entries({ ...hidden, ...shown })) {
+              yield* session.callTool("memory_write", { path, content });
+            }
+            const seen = listed(yield* worker.session.callTool("memory_list", {}));
+            for (const path of Object.keys(shown)) expect(seen, path).toContain(path);
+            for (const path of Object.keys(hidden)) {
+              expect(seen, path).not.toContain(path);
+              const refused = yield* worker.session
+                .callTool("memory_read", { path })
+                .pipe(Effect.flip);
+              expect(refused.message, path).toContain("No memory file");
+            }
+          }),
+        );
+      }),
+    SLOW,
+  );
+});
+
+describe.skipIf(!hasGit)("worker memory: seventh review, only plain headers", () => {
+  it.effect(
+    "[29] keeps tagged, deeply nested and every other unusual header from a worker, and shows plain ones",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const { session } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "reader" });
+            yield* completeTurn(worker.session);
+
+            const hidden: Record<string, string> = {
+              // The reviewer's cases.
+              "omap.md": "---\n!!omap\n- title: Plans\n- private: true\n---\nNot for workers.",
+              "set.md": "---\n!!set\n? private\n? title\n---\nNot for workers.",
+              "deep.md": `---\n${deep(10)}\n---\nNot for workers.`,
+              // And whatever else isn't a flat map of plain scalars.
+              "tagged-value.md": "---\ntitle: !!str Plans\n---\nNot for workers.",
+              "anchor.md": "---\ntitle: &a Plans\nother: *a\n---\nNot for workers.",
+              "nested-once.md": "---\nmeta:\n  title: Plans\n---\nNot for workers.",
+              "list.md": "---\ntags:\n  - a\n---\nNot for workers.",
+              "flow.md": "---\n{title: Plans}\n---\nNot for workers.",
+              "block-scalar.md": "---\nnote: |\n  text\n---\nNot for workers.",
+              "merge.md": "---\n<<: {title: Plans}\n---\nNot for workers.",
+              "duplicate.md": "---\ntitle: a\ntitle: b\n---\nNot for workers.",
+              "scalar.md": "---\njust a line\n---\nNot for workers.",
+              "unclosed.md": "---\ntitle: Plans\nNot for workers.",
+              "toml.md": "+++\ntitle = 'Plans'\n+++\nNot for workers.",
+              "comment.md": "<!-- a note -->\nNot for workers.",
+              "word.md": "---\ntitle: Plans\n# keep this private\n---\nNot for workers.",
+            };
+            const shown: Record<string, string> = {
+              "plain.md": "No header at all.",
+              "flat.md":
+                "---\ntitle: Plans\nupdated: 2026-11-07\ncount: 3\ndone: true\n---\nFor everyone.",
+              "empty.md": "---\n---\nFor everyone.",
             };
             for (const [path, content] of Object.entries({ ...hidden, ...shown })) {
               yield* session.callTool("memory_write", { path, content });

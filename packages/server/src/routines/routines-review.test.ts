@@ -824,3 +824,77 @@ describe.skipIf(!hasGit)("routines: sixth review, one admission under the spawn 
     SLOW,
   );
 });
+
+describe.skipIf(!hasGit)("routines: seventh review, recovery as admitted", () => {
+  it.effect(
+    "[30] finishes a half-made worker with its routine's name and model as admitted after a restart",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const made = yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const orchestration = yield* Orchestration;
+            const { project, workspaceId, thread: orchestrator } = yield* openOrchestrator(world);
+            yield* orchestration.editCharter(workspaceId, (charter) => ({
+              ...charter,
+              workerModels: [
+                { agent: "claude", model: "fake-opus", default: true },
+                { agent: "claude", model: "fake-haiku" },
+              ],
+            }));
+            const routine = yield* workerRoutine(workspaceId, project.id);
+            const slot = routine.nextRunAt!;
+            const requestId = `routine:${routine.id}:${slot}`;
+            const threadId = workerThreadId(workspaceId, requestId);
+            yield* stageState(routine.id, { ...stateOf(routine), claim: { requestId, slot } });
+            const runtimes = yield* ThreadRuntimes;
+            yield* runtimes.create({
+              id: threadId,
+              projectRoot: world.repo,
+              checkout: { kind: "main", path: world.repo },
+              title: routine.name,
+              model: { agent: "claude", model: "fake-opus" },
+              workspaceId,
+              spawnedBy: {
+                threadId: orchestrator.id,
+                feature: "routine-ci-triage",
+                routine: { id: routine.id, name: routine.name },
+              },
+              deferOpen: true,
+            });
+            // Renamed and moved to the other model before the restart; its project stays.
+            yield* editRoutine(routine.id, (each) => ({
+              ...each,
+              name: "Renamed triage",
+              model: { agent: "claude", model: "fake-haiku" },
+            }));
+            return { id: routine.id, threadId };
+          }),
+        );
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            yield* settle;
+            yield* TestClock.adjust("1 minute");
+            const ran = yield* ranAfter(made.id, 0);
+            expect(ran.lastRun).toMatchObject({ outcome: "started", threadId: made.threadId });
+            const store = yield* ThreadStore;
+            const worker = yield* store.getThread(made.threadId);
+            expect(worker.title).toBe("Renamed triage");
+            expect(worker.model).toMatchObject({ agent: "claude", model: "fake-haiku" });
+            const fake = yield* FakeAgentControl;
+            const brief = yield* waitReal(
+              "the recovered worker's brief",
+              Effect.sync(
+                () =>
+                  fake.sessions.find((each) => each.options.threadId === made.threadId)?.sent[0],
+              ),
+            );
+            expect(brief.text).toContain('routine "Renamed triage"');
+          }),
+        );
+      }),
+    SLOW,
+  );
+});

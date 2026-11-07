@@ -215,8 +215,9 @@ under the routine's id:
   One removed launches nothing; a scheduled run or a held brief launches nothing for a routine off,
   toggled or rescheduled since its run was decided; otherwise the worker starts with exactly the
   routine's brief, name, project and model then. A held brief it refuses is let go, not kept. A
-  half-made worker is finished only in the project it was made in: one whose routine moved since is
-  closed, and the next run starts a fresh one.
+  half-made worker is finished only in the project it was made in, and with the routine's name and
+  model as admitted: one whose routine moved to another project, or to a model it can't switch to,
+  is closed, and the next run starts a fresh one.
 - A routine new, turned on again or given a new schedule is reckoned from then, never run for a time
   it missed. The charter's write path counts each turn off or on as a new generation, so a run that
   waited while the routine went off and on again reckons from then instead of running. Turned off,
@@ -607,13 +608,14 @@ Workers can read their orchestrator's memory with `memory_list` and `memory_read
 orchestrator holds the workspace, and can't change it: the orchestrator stays its one curator.
 A worker's reads go through the anchored tree, every folder below the data root opened without
 following a link, so no symlink anywhere in the path, standing or swapped in mid-read, leads into
-another workspace. A worker neither lists nor reads what is marked private (a `private` folder, a
-`*.private.md` name, or a truthy `private` anywhere in a file's header: its front matter parsed as
-YAML, block or flow style and at any depth, including what is commented out or inside a leading HTML
-comment, or TOML; a header that doesn't parse counts as private), a file named like a credential
-(a key, a secret, a token, an auth or `.env` file, a key or certificate file), or one whose text
-holds one (a PEM block, a provider token, what the log scrubber would redact); the orchestrator
-sees it all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
+another workspace. A worker neither lists nor reads a file named like a credential (a key, a secret, a token, an
+auth or `.env` file, a key or certificate file), one whose text holds a credential (a PEM block, a
+provider token, what the log scrubber would redact), or one marked private, and what counts as
+not private is narrow: a worker reads a file only when it has no header, or its header is one
+closed `---` block that is a flat map of plain or quoted scalars, one `key: value` per line, with
+no tags, anchors, aliases, nesting, flow style or block scalars, and no `private` anywhere in it,
+comments included. Any other header (a leading HTML comment, TOML, an unclosed block, YAML that
+doesn't parse) is private to workers; the orchestrator sees it all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
 digest shows it to the orchestrator, which records it only when it holds for later work. Solo
 threads have no workspace memory.
 
