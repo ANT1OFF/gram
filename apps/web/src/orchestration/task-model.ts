@@ -45,20 +45,23 @@ const inWorkspace = (state: WorkspaceState): TaskTarget => ({
 });
 
 /**
- * Which target the draft starts on. From a thread, its repo decides: the thread's own workspace
- * (an orchestrator's or a worker's), else the workspace that is only that repo, else one it is
- * part of, else that repo, to make a workspace for on send. Only without a thread do the last one
- * used, the only workspace, and then the most useful repo come in. `undefined` when Gram
- * knows no project at all.
+ * Which target the draft starts on: where it was opened from. A workspace's own page (`here`) is
+ * that workspace. From a thread, its repo decides: the thread's own workspace (an orchestrator's or
+ * a worker's), else the workspace that is only that repo, else one it is part of, else that repo,
+ * to make a workspace for on send. Only from neither do the last one used, the only workspace, and
+ * then the most useful repo come in. `undefined` when Gram knows no project at all.
  */
 export function defaultTaskTarget(input: {
   readonly current?: Thread | undefined;
+  readonly here?: WorkspaceId | undefined;
   readonly workspaces: readonly WorkspaceState[];
   readonly projects: readonly Project[];
   readonly last?: TaskTarget | undefined;
 }): TaskTarget | undefined {
-  const { current, workspaces, projects, last } = input;
+  const { current, here, workspaces, projects, last } = input;
   const repos = reposWithoutWorkspace(workspaces, projects);
+  const page = workspaces.find((state) => here !== undefined && state.workspace.id === here);
+  if (page !== undefined) return inWorkspace(page);
   if (current !== undefined) {
     const own = workspaces.find((state) => state.workspace.id === current.workspaceId);
     if (own !== undefined) return inWorkspace(own);

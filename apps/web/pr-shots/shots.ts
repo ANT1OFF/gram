@@ -1256,6 +1256,128 @@ const SNOOZE_SHOTS: readonly Shot[] = [
   },
 ];
 
+/**
+ * The realistic morning at the tour's window size, the panel closed, as a working window opens it;
+ * what it made, with its workspaces by name.
+ */
+const openMorning = async (page: Page, path = "/") => {
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.orchestration", "realistic"));
+  await seedMockSettings(page, { panel: { open: false } });
+  await page.setViewportSize({ width: 1728, height: 1095 });
+  await page.goto(path);
+  await page.getByTestId("app-shell").waitFor();
+  return page.evaluate(async () => {
+    const made = await window.gramMock!.startedRealistic();
+    if (made === undefined) throw new Error("the mock did not start with the realistic scenario");
+    const ids = Object.fromEntries(
+      (await window.gramMock!.listWorkspaces()).map((s) => [s.workspace.name, s.workspace.id]),
+    );
+    return { ...made, ids };
+  });
+};
+
+/** ⌥⌘N, a goal typed, the form settled. */
+const startTaskHere = async (page: Page) => {
+  await page.keyboard.press("ControlOrMeta+Alt+n");
+  await page.getByLabel("What needs doing").fill("Add retry coverage for the queue consumer.");
+  await page.getByTestId("task-target").waitFor();
+  await page.waitForTimeout(600);
+};
+
+/** The Gram orchestrator read some way up its transcript, as a reader leaves it for Settings. */
+const readGramHalfway = async (page: Page) => {
+  const made = await openMorning(page);
+  await openOrchestrator(page, made.orchestratorThreadId);
+  const transcript = page.getByTestId("transcript");
+  await transcript.locator("[data-message-id]").first().waitFor();
+  await page.waitForTimeout(600);
+  await transcript.hover();
+  for (let i = 0; i < 2; i++) await page.mouse.wheel(0, -330);
+  await page.waitForTimeout(500);
+  return made;
+};
+
+/** Where New task starts, how it is labelled, and where Settings returns to. */
+const NAVIGATION_SHOTS: readonly Shot[] = [
+  {
+    name: "new-task-from-solo-thread",
+    title:
+      "⌥⌘N from the solo thread Bump dependencies (repo api): the form and the title bar name the same workspace",
+    modes: ["dark"],
+    open: async (page) => {
+      await openMorning(page, "/t/t-deps");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await startTaskHere(page);
+    },
+  },
+  {
+    name: "new-task-from-workspace-page",
+    title: "⌥⌘N from billing-api's page in Settings, with a Gram worker left in the pane",
+    modes: ["dark"],
+    open: async (page) => {
+      const made = await openMorning(page);
+      await page
+        .locator(`[data-testid="overview-worker"][data-thread-id="${made.searchWorker}"]`)
+        .click();
+      await page.waitForURL(new RegExp(`/t/${made.searchWorker}$`));
+      await page.keyboard.press("ControlOrMeta+Comma");
+      await page
+        .getByRole("navigation", { name: "Settings sections" })
+        .getByRole("link", { name: "Workspaces" })
+        .click();
+      await page
+        .getByTestId("workspace-settings")
+        .getByText("billing-api", { exact: true })
+        .click();
+      await page.waitForURL(new RegExp(`/settings/workspaces/${made.ids["billing-api"]}$`));
+      await page.waitForTimeout(400);
+      await startTaskHere(page);
+    },
+  },
+  {
+    name: "sidebar-new-task",
+    title: "The overview's header at its default width: the + says New task",
+    open: async (page) => {
+      await openMorning(page);
+      await page.mouse.move(1000, 900);
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("overview-sidebar").locator(":scope > div").first(),
+  },
+  {
+    name: "settings-back-named",
+    title: "Settings opened from the Gram orchestrator, Back hovered",
+    modes: ["dark"],
+    open: async (page) => {
+      await readGramHalfway(page);
+      await page.keyboard.press("ControlOrMeta+Comma");
+      await page.getByTestId("settings-back").hover();
+      await page.locator('[data-slot="tooltip-content"]').waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
+  {
+    name: "settings-return-place",
+    title:
+      "The Gram orchestrator read some way up, then Settings → Agents and Back: where the transcript lands",
+    modes: ["dark"],
+    open: async (page) => {
+      await readGramHalfway(page);
+      await page.keyboard.press("ControlOrMeta+Comma");
+      await page.getByTestId("settings-title").waitFor();
+      await page
+        .getByRole("link", { name: /Agents/ })
+        .first()
+        .click();
+      await page.waitForURL(/\/settings\/agents/);
+      await page.getByTestId("settings-back").click();
+      await page.getByTestId("transcript").waitFor();
+      await page.mouse.move(1000, 1000);
+      await page.waitForTimeout(1500);
+    },
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
   ...SNOOZE_SHOTS,
   ...PANEL_TAB_SHOTS,
@@ -3738,6 +3860,7 @@ export const SHOTS: readonly Shot[] = [
       await page.waitForTimeout(600);
     },
   },
+  ...NAVIGATION_SHOTS,
 ];
 
 /**

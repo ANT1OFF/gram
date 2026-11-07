@@ -1,7 +1,8 @@
-import type { Thread, ThreadId, WorkspaceState } from "@gram/contracts";
+import type { Thread, ThreadId, WorkspaceId, WorkspaceState } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
 
 import { readLast } from "@/orchestration/home";
+import { useTaskDraftStore } from "@/orchestration/task-draft-store";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -42,12 +43,16 @@ export function useViewSolo(): boolean {
   return chat && solo;
 }
 
-/** `viewWorkspace` for the window's route. The switcher and Board read this one. */
+/**
+ * `viewWorkspace` for the window's route. Without a thread in it, a workspace's own page is on that
+ * workspace and a New task draft on the one it is aimed at. The switcher and Board read this one.
+ */
 export function useViewWorkspace(): WorkspaceState | undefined {
-  const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const params = useParams({ strict: false }) as { threadId?: ThreadId; workspaceId?: WorkspaceId };
   const thread = useThreadsStore((s) =>
-    threadId === undefined ? undefined : s.byId[threadId]?.thread,
+    params.threadId === undefined ? undefined : s.byId[params.threadId]?.thread,
   );
+  const drafting = useTaskDraftStore((s) => s.showing);
   const workspaces = useWorkspaces();
-  return viewWorkspace(thread, workspaces, readLast());
+  return viewWorkspace(thread, workspaces, params.workspaceId ?? drafting ?? readLast());
 }

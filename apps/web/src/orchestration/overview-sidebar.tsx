@@ -306,8 +306,9 @@ export function OverviewSidebar() {
     >
       {/* The title bar's height. Hide sidebar leads, after macOS's window buttons, in the spot the
           title bar's Show sidebar takes while it is hidden, so the toggle never moves. Too narrow
-          for them all beside the buttons, the rest wrap to a row below rather than clip. */}
-      <div className="flex min-h-(--titlebar-height) shrink-0 flex-wrap content-start items-center gap-1 px-2 py-1.5 pl-[max(--spacing(2),var(--window-lights-inset))] [-webkit-app-region:drag]">
+          for them all beside the buttons, the rest wrap to a row below rather than clip. Its
+          room past those buttons decides whether New says its words. */}
+      <div className="@container/overview-head flex min-h-(--titlebar-height) shrink-0 flex-wrap content-start items-center gap-1 px-2 py-1.5 pl-[max(--spacing(2),var(--window-lights-inset))] [-webkit-app-region:drag]">
         {/* Each icon says what it does the moment it's hovered, with its key where it has one. */}
         <Hint
           label={withHint("Hide sidebar", hideHint)}
