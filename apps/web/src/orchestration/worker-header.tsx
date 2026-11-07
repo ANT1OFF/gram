@@ -2,7 +2,6 @@ import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
 import { Menu } from "@base-ui/react/menu";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRight, HandGrab, Info, SquareSplitHorizontal } from "lucide-react";
-import { useState } from "react";
 
 import { Hint } from "@/components/hint";
 import { Term } from "@/components/term";
@@ -30,7 +29,7 @@ import { openFeatureSheet } from "./feature-sheet-store";
 import { orchestratorRowTitle } from "./tree-model";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { prWaitWords } from "./waiting-on";
-import { FINISHED_WORKER, goToThread } from "./worker-banner";
+import { FINISHED_WORKER, goToThread, useTakeOverLine } from "./worker-banner";
 import { workerGlideId, useWorkersListStore } from "./workers-list";
 import { workerEntryOf, workerRow } from "./workers-model";
 
@@ -354,13 +353,12 @@ export function useSendTakesControl(thread: Thread): boolean {
 /**
  * What Take over changes, once its first-time line under the header has been seen: a small ⓘ
  * beside Take over that says it on hover or focus, rather than the line stacking over every worker
- * view. Decided as the view opens, as the line is, so the two never show together.
+ * view. Never beside the line itself: while it shows for this worker, the ⓘ stays away.
  */
-function TakeOverInfo({ inTitlebar }: { inTitlebar: boolean }) {
-  const [seen] = useState(
-    () => useServerSettings.getState().settings?.onboarding.takeOverHintSeen === true,
-  );
-  if (!seen) return null;
+function TakeOverInfo({ threadId, inTitlebar }: { threadId: ThreadId; inTitlebar: boolean }) {
+  const seen = useServerSettings((s) => s.settings?.onboarding.takeOverHintSeen === true);
+  const lineShown = useTakeOverLine((s) => s.shownFor === threadId);
+  if (!seen || lineShown) return null;
   return (
     <Hint
       label={WORKER_TAKE_OVER_LINE}
@@ -473,7 +471,7 @@ export function WorkerActions({
         )
       )}
       {!actions.held && actions.takeOver !== undefined && (
-        <TakeOverInfo key={thread.id} inTitlebar={inTitlebar} />
+        <TakeOverInfo threadId={thread.id} inTitlebar={inTitlebar} />
       )}
     </>
   );

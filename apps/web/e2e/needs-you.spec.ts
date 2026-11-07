@@ -35,8 +35,8 @@ interface Seeded {
 /** A window wide enough to dock the Inbox beside a chat at its reading width (`inboxDockFit`). */
 const WIDE = { width: 1728, height: 1000 };
 
-const start = async (page: Page): Promise<Seeded> => {
-  await page.setViewportSize(WIDE);
+const start = async (page: Page, size = WIDE): Promise<Seeded> => {
+  await page.setViewportSize(size);
   await page.goto("/t/t-flaky");
   await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
   await expect(page.getByTestId("approval-card")).toBeVisible();
@@ -577,8 +577,7 @@ test("narrow: the rail's pill opens an Inbox that fits, and with no pill ⌘⌥3
 }) => {
   // Below the open overview's width, the compact rail carries the pill, the one way in: the title
   // bar has no Inbox button beside it.
-  await page.setViewportSize({ width: 1000, height: 800 });
-  await start(page);
+  await start(page, { width: 1000, height: 800 });
   await expect(page.getByTestId("inbox-button")).toHaveCount(0);
   await page.getByTestId("overview-rail-needs-you").click();
   await expect(inbox(page)).toBeVisible();

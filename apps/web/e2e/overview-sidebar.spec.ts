@@ -499,7 +499,10 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
   await expect(orchestrators).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(soloHead).toBeFocused();
+  // Folded, Done's last stop is its History, then its own title.
   await page.keyboard.press("End");
+  await expect(overview(page).getByTestId("overview-done-history")).toBeFocused();
+  await page.keyboard.press("ArrowUp");
   await expect(doneHead).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await expect(prsHead).toBeFocused();
@@ -512,7 +515,10 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
   // Folded, Solo threads' rows are passed over the same way.
   await page.keyboard.press("Home");
   await soloHead.click();
+  // Folded, Done's last stop is its History, then its own title.
   await page.keyboard.press("End");
+  await expect(overview(page).getByTestId("overview-done-history")).toBeFocused();
+  await page.keyboard.press("ArrowUp");
   await expect(doneHead).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await expect(prsHead).toBeFocused();

@@ -284,7 +284,7 @@ test("the sidebar's Done is one row into History, and opened shows the latest th
   const shown = done.getByTestId("overview-done");
   // Folded as it starts: one row, "N done · History", which opens History on its Done chip.
   await expect(done.getByTestId("overview-section-doneToday-folded")).toHaveText(/^\d+ done$/);
-  await expect(shown).toHaveCount(0);
+  await expect(shown.first()).toBeHidden();
   await done.getByTestId("overview-done-history").click();
   await expect(history(page)).toBeVisible();
   await expect(chip(page, "Done")).toHaveAttribute("aria-checked", "true");
@@ -293,6 +293,7 @@ test("the sidebar's Done is one row into History, and opened shows the latest th
 
   await done.getByRole("button", { name: /^Done, \d+$/ }).click();
   await expect(shown).toHaveCount(3);
+  await expect(shown.first()).toBeVisible();
   // A title wraps to a second line before it is cut, so a row is two or three lines, never more.
   const heights = await shown.evaluateAll((els) =>
     els.map((el) => el.getBoundingClientRect().height),

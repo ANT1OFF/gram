@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Brain, Columns3, FolderGit2, HandGrab, Pause, Repeat, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { create } from "zustand";
 
 import { useApi } from "@/api/context";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
@@ -52,12 +53,23 @@ export const FINISHED_WORKER: ReadonlySet<string> = new Set(["merged", "delivere
 const BANNER =
   "flex min-w-0 items-center gap-2 border-b border-border px-3 py-1 text-meta text-foreground";
 
+/** The worker whose Take over line shows now, so its header's ⓘ doesn't say it a second time. */
+export const useTakeOverLine = create<{
+  shownFor: ThreadId | undefined;
+  set: (threadId: ThreadId) => void;
+  clear: (threadId: ThreadId) => void;
+}>()((set) => ({
+  shownFor: undefined,
+  set: (threadId) => set({ shownFor: threadId }),
+  clear: (threadId) => set((s) => (s.shownFor === threadId ? { shownFor: undefined } : s)),
+}));
+
 /**
  * What Take over would change, in a quiet line of its own the first time a worker offers it. Once
  * shown it is remembered for the user (`onboarding.takeOverHintSeen`) and stays for this view only;
  * after, the header's Take over carries it on its hint, and the line no longer stacks over the work.
  */
-function TakeOverLine() {
+function TakeOverLine({ threadId }: { threadId: ThreadId }) {
   const save = useSaveSettings();
   // Decided as the view opens, so saving it as seen doesn't take it away while it is read. The
   // settings arrive before any thread opens; without them it stays folded rather than flash.
@@ -71,6 +83,12 @@ function TakeOverLine() {
       console.error("save takeOverHintSeen", error),
     );
   }, [shown, save]);
+  // While it shows, the header's ⓘ (`TakeOverInfo`) stays away: the line already says it.
+  useEffect(() => {
+    if (!shown) return;
+    useTakeOverLine.getState().set(threadId);
+    return () => useTakeOverLine.getState().clear(threadId);
+  }, [shown, threadId]);
   if (!shown) return null;
   return (
     <p
@@ -154,7 +172,9 @@ export function WorkerBanner({
           </span>
         </div>
       )}
-      {!held && entry !== undefined && !FINISHED_WORKER.has(entry.state) && <TakeOverLine />}
+      {!held && entry !== undefined && !FINISHED_WORKER.has(entry.state) && (
+        <TakeOverLine threadId={thread.id} />
+      )}
       {routine !== undefined && (
         // Where it came from, quietly: a routine's run started it, not a message from anyone.
         <p
