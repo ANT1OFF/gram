@@ -90,7 +90,12 @@ test("snoozed from the palette to a time of your own, it comes back unread at th
 test("the palette's snooze step names itself and its thread, and takes a typed time", async ({
   page,
 }) => {
-  await start(page);
+  // An idle thread: t-flaky's turn asks for an approval as it plays, and a thread that asks
+  // something comes back from its snooze at once, so snoozing it would race that ask.
+  await page.clock.install({ time: FRIDAY_LATE });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/t/t-deps");
+  await page.getByLabel("Message", { exact: true }).waitFor();
   await page.keyboard.press("ControlOrMeta+k");
   const palette = page.getByTestId("command-palette");
   const field = palette.getByRole("combobox");
@@ -99,7 +104,7 @@ test("the palette's snooze step names itself and its thread, and takes a typed t
 
   // Not the search it replaced: the step says what it does, to which thread, and what to type.
   await expect(palette.getByTestId("palette-step")).toContainText("Snooze thread");
-  await expect(palette.getByTestId("palette-step-subject")).toHaveText("Fix flaky retry test");
+  await expect(palette.getByTestId("palette-step-subject")).toHaveText("Bump dependencies");
   await expect(field).toHaveAttribute("placeholder", "Snooze until… (e.g. fri 14:00)");
   await expect(field).toHaveAccessibleName("Snooze thread");
 
