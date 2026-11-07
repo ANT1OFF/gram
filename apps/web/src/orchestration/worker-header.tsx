@@ -6,6 +6,7 @@ import { ChevronRight, HandGrab, PanelRight } from "lucide-react";
 import { Hint } from "@/components/hint";
 import { Term } from "@/components/term";
 import { focusOtherWindow } from "@/desktop/open-thread";
+import { normaliseKeys } from "@/keyboard/bindings";
 import { effectiveKeys } from "@/keyboard/bindings-store";
 import { catalogKeys } from "@/keyboard/catalog";
 import { keyLabel, useShortcut } from "@/keyboard/registry";
@@ -36,6 +37,12 @@ import { workerEntryOf, workerRow } from "./workers-model";
  * approval's Deny is 3, not Esc, so a waiting approval stays waiting; only where Deny is rebound
  * to Esc does a worker with one waiting keep Esc for it.
  */
+/** Whether Deny is bound to Esc, however the binding spells it ("esc", "Escape", "escape"). */
+const denyTakesEsc = (): boolean => {
+  const keys = effectiveKeys("approval.deny", catalogKeys("approval.deny") ?? "");
+  return keys !== undefined && keys !== "" && normaliseKeys(keys) === normaliseKeys("escape");
+};
+
 export function useBackToOrchestrator(threadId: ThreadId, focused: boolean): void {
   const navigate = useNavigate();
   const orchestrator = useThreadsStore((s) => s.byId[threadId]?.thread.spawnedBy?.threadId);
@@ -47,7 +54,7 @@ export function useBackToOrchestrator(threadId: ThreadId, focused: boolean): voi
       group: "Navigation",
       when: () =>
         !(
-          effectiveKeys("approval.deny", catalogKeys("approval.deny") ?? "") === "escape" &&
+          denyTakesEsc() &&
           useThreadsStore
             .getState()
             .byId[threadId]?.pendingRequests.some((request) => request.kind === "approval")
