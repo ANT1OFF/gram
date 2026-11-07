@@ -133,7 +133,7 @@ const WRAPPED_BASE64 = (
 ).join("\n");
 
 /**
- * Every case from the reviews of #198, rounds 3 to 12, as one table: the path and text a worker would
+ * Every case from the reviews of #198, rounds 3 to 13, as one table: the path and text a worker would
  * read, and whether it may. A file a worker may not read is dropped whole: nothing in it is shown.
  */
 const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, allowed: boolean]> =
@@ -291,6 +291,54 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ["12.2: a netrc name", "netrc.md", "Ordinary prose.", false],
     ["12.2: a dotted pgpass name", ".pgpass", "Ordinary prose.", false],
     ["12.2: a dotted netrc name", ".netrc", "Ordinary prose.", false],
+    // Round 13, the reviewer's exact payloads (findings 1 to 4), and their class.
+    ["13.1: curl -u user:pass", "curl.md", "curl -u amy:orchard https://example.test/", false],
+    [
+      "13.1: curl --user",
+      "smtp.md",
+      "curl --url smtp://mail.example.test --user amy:orchard",
+      false,
+    ],
+    [
+      "13.1: docker login",
+      "docker.md",
+      "docker login registry.example.test -u amy -p orchard",
+      false,
+    ],
+    ["13.1: mariadb -p attached", "maria.md", "mariadb -u amy -porchard app", false],
+    ["13.1: mongosh", "mongo.md", "mongosh --username amy -p orchard", false],
+    [
+      "13.1: ldapsearch -w",
+      "directory.md",
+      "ldapsearch -x -D cn=amy,dc=example,dc=test -w orchard",
+      false,
+    ],
+    ["13.2: bindpw", "bind.md", "bindpw orchard", false],
+    ["13.2: rootpw", "root.md", "rootpw orchard", false],
+    ["13.2: rootpwmodpw", "directory.md", "rootpwmodpw orchard", false],
+    ["13.3: Postfix sasl_passwd", "relay.md", "[smtp.example.test]:587 amy:orchard", false],
+    [
+      "13.3: Squid login=",
+      "proxy.md",
+      "cache_peer proxy.example.test parent 3128 0 login=amy:orchard",
+      false,
+    ],
+    [
+      "13.3: Exim client_send list",
+      "exim.md",
+      "fixed_login:\n  driver = plaintext\n  public_name = LOGIN\n  client_send = : amy : orchard",
+      false,
+    ],
+    [
+      "13.3: Exim client_send carets",
+      "mail.md",
+      "fixed_plain:\n  driver = plaintext\n  public_name = PLAIN\n  client_send = ^amy^orchard",
+      false,
+    ],
+    ["13.4: Redis prompt transcript", "console.md", "127.0.0.1:6379> AUTH amy orchard", false],
+    ["13.4: AUTH in a sentence", "command.md", "Run AUTH amy orchard to connect.", false],
+    ["13.4: a shell prompt", "console.md", "$ requirepass orchard", false],
+    ["13.4: lowercase auth after a prompt", "console.md", "redis> auth orchard", false],
     ["accented credential word", "a.md", "P\u00e4ssw\u00f6rd: orchard", false],
     ["a weak word with a value", "a.md", "The session is orchard-willow.", false],
     ["a weak word in an assignment", "a.md", "env: staging", false],
@@ -358,6 +406,17 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
       true,
     ],
     ["times are no record", "schedule.md", "It ran 07:49:20 and again at 09:00.", true],
+    ["13.5: a short sentence", "short.md", "Authentication works.", true],
+    ["13.5: a short private sentence", "people.md", "Private repositories work.", true],
+    ["13.6: IPv6 loopback", "sockets.md", "The service binds to [::1]:8080.", true],
+    ["13.6: a Rust path", "rust.md", "Use std::sync::Arc for sharing.", true],
+    ["13.6: a full IPv6 address", "sockets.md", "It listens on 2001:db8:0:0:0:0:0:1 too.", true],
+    ["13.7: a flag after a weak word", "flags.md", "We use authentication with retry=false.", true],
+    ["a port in prose", "ports.md", "Vite serves on localhost:5173 during dev.", true],
+    ["an AUTH sentence", "redis-notes.md", "AUTH is required on the shared cache.", true],
+    ["mkdir -p", "setup.md", "Run mkdir -p dist before the build.", true],
+    ["a login page", "web.md", "The login page lives in apps/web.", true],
+    ["a GitHub search", "search.md", "Search with is:open label:bug in the tracker.", true],
     ["a user in prose", "people.md", "The user amy owns the release checklist.", true],
     ["a weak word as a verb", "ci.md", "The tests pass on main.", true],
     ["a private repo", "repos.md", "The site repo is private and lives under the team.", true],

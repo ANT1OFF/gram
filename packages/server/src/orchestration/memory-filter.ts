@@ -22,18 +22,23 @@ const STRONG =
  */
 const WEAK = "pass|auth|authn|authz|authorization|authentication|sessions?|private|env|acl";
 
+/** Weak words that label a credential only in a file's text, never in a name: `login=amy:pw`. */
+const WEAK_IN_TEXT = "logins?|bind";
+
 /**
  * Credential stems that drop an entry inside any word, compounds that don't split included:
- * `PGPASSWORD`, `requirepass`, `masterauth`, `MYAPIKEY`.
+ * `PGPASSWORD`, `requirepass`, `masterauth`, `MYAPIKEY`, Exim's `client_send`, and a word ending in
+ * `pw` or `pwd` (LDAP's `bindpw`, `rootpw`, `rootpwmodpw`).
  */
-const STEM = /passw(?:or)?d|passphrase|apikey|requirepass|masterauth|masteruser|credential|secret/i;
+const STEM =
+  /passw(?:or)?d|passphrase|apikey|requirepass|masterauth|masteruser|credential|secret|client_send|[a-z]pwd?(?![a-z])/i;
 
 /** `alternatives` as whole words: anything but a letter or digit is a boundary (`_`, `-`, `.`). */
 const asWords = (alternatives: string, flags = "i") =>
   new RegExp(`(?:^|[^a-z0-9])(?:${alternatives})(?=$|[^a-z0-9])`, flags);
 
 const STRONG_WORD = asWords(STRONG);
-const WEAK_WORD = asWords(WEAK, "gi");
+const WEAK_WORD = asWords(`${WEAK}|${WEAK_IN_TEXT}`, "gi");
 const ANY_WORD = asWords(`${STRONG}|${WEAK}`);
 
 /** Names of files that hold credentials, as a word in a memory name: `pgpass.md`, `netrc.md`. */
@@ -70,8 +75,8 @@ const LINKING = /^(?:is|was|are|be|to|as|of|set|now|=|:|-|=>)$/i;
 
 /**
  * Whether a weak credential word is followed by a value: an assignment right after it
- * (`auth: x`, `session=x`), or a value-like word among the next two (`session orchard-willow`,
- * `env is staging-2`), linking words skipped. A value elsewhere in the clause (`retry=false`, a path,
+ * (`auth: x`, `session=x`), or a value-like word next (`session orchard-willow`, `env is
+ * staging-2`), linking words skipped. A value elsewhere in the clause (`retry=false`, a path,
  * `owner/repo#198`) is not the weak word's.
  */
 const weakShaped = (text: string): boolean => {
@@ -83,9 +88,10 @@ const weakShaped = (text: string): boolean => {
       .split(/[;,\n!?]|\.(?=\s|$)/)[0]!
       .split(/\s+/)
       .filter((word) => word !== "" && !LINKING.test(word))
-      .slice(0, 2)
+      .slice(0, 1)
       .map((word) => word.replace(/[).\]}]+$/, ""));
-    if (next.some(valueLike)) return true;
+    // `retry=false` after it is a flag of its own, not this word's value.
+    if (next.some((word) => valueLike(word) && !/^[A-Za-z_][\w.-]*=/.test(word))) return true;
   }
   return false;
 };
@@ -97,12 +103,41 @@ const weakShaped = (text: string): boolean => {
  */
 const directiveLine = (text: string): boolean =>
   text.split(/\r?\n/).some((line) => {
-    const words = line
+    const bare = line
       .trim()
-      .replace(/^[-*+>]\s+/, "")
-      .split(/\s+/);
+      .replace(PROMPT, "")
+      .replace(/^[-*+>]\s+/, "");
+    // A sentence (`Authentication works.`) is no directive: config and commands don't end in one.
+    if (/[.!?]$/.test(bare)) return false;
+    const words = bare.split(/\s+/);
     return words.length >= 2 && words.length <= 3 && credentialWord(words[0]!);
   });
+
+/** A shell or client prompt before a command: `$ `, `# `, `127.0.0.1:6379> `, `redis> `. */
+const PROMPT = /^(?:[$#%]|[\w.:@[\]-]*>)\s+/;
+
+/**
+ * Redis's `AUTH` command, upper case, with its arguments, anywhere: in a prompt's transcript
+ * (`127.0.0.1:6379> AUTH amy orchard`) or a sentence (`Run AUTH amy orchard to connect.`).
+ */
+const AUTH_COMMAND =
+  /(?:^|[\s>`'"(])AUTH\s+(?!(?:is|was|are|and|or|the|to|for|with|in|on|of|by|as|via|from)\b)\S+/;
+
+/**
+ * A password passed to a client as an option: `-u`/`--user` with `user:pass` (curl), or a
+ * password flag (`-p`, `-w`, `-a`, `-P`, attached or not) on a line that also names a user
+ * (`-u`, `-U`, `--user`, `--username`, `-D`, `--login`): `docker login -u amy -p orchard`,
+ * `mariadb -u amy -porchard`, `mongosh --username amy -p orchard`, `ldapsearch -D cn=amy -w x`.
+ */
+const OPTION_CREDENTIAL =
+  /(?:^|\s)(?:-u|-U|--user|--username|--proxy-user)[\s=]+[^\s:]+:\S+|^(?=.*\s(?:-[uUD]|--user(?:name)?|--login)[\s=]\S).*\s-[pwaP](?:\s+|=)?\S/m;
+
+/** A `user:pass` pair alone at the end of a short line, as a map holds it (Postfix's `sasl_passwd`). */
+const PAIR_LINE =
+  /(?:^|\n)[ \t]*(?:\S+[ \t]+){0,2}[^\s:@/]+:[^\s:@/]*[A-Za-z][^\s:@/]*[ \t]*(?=\n|$)/;
+
+/** An assignment whose value is a `user:pass` pair: Squid's `login=amy:orchard`. */
+const PAIR_VALUE = /=[^\s:=/@]+:[^\s:=/@]*[A-Za-z][^\s:=/@]*(?=\s|$)/;
 
 /**
  * A Redis ACL rule or a password on a client's command line: `user amy on >orchard ~* +@all`,
@@ -112,10 +147,17 @@ const COMMAND_CREDENTIAL =
   /(?:^|\n)\s*(?:acl\s+setuser|user)\s+\S+[^\n]*?\s[>#<!]\S|\bredis-cli\b[^\n]*\s(?:-a|--user|--askpass)\b|\bmysql\b[^\n]*\s-p\S/i;
 
 /**
- * A positional credential record: four or more `:`-separated fields with no spaces, as a password
- * file holds them (`.pgpass`'s `host:port:db:user:password`, and the like).
+ * A positional credential record: four or more non-empty `:`-separated fields with no spaces, as a
+ * password file holds them (`.pgpass`'s `host:port:db:user:password`). `std::sync::Arc` and
+ * `[::1]:8080` have empty fields; an all-hex record is an IPv6 address or a MAC.
  */
-const COLON_RECORD = /(?:^|\s)[^\s:]*(?::[^\s:]*){3,}(?=\s|$)/;
+const COLON_RECORD_SHAPE = /(?:^|\s)([^\s:]+(?::[^\s:]+){3,})(?=[\s.,;)]|$)/g;
+
+/** Whether `text` has a colon record whose fields aren't all short hex (an IPv6 address, a MAC). */
+const colonRecord = (text: string): boolean =>
+  [...text.matchAll(COLON_RECORD_SHAPE)].some(
+    (match) => !match[1]!.split(":").every((field) => /^[0-9a-fA-F]{1,4}$/.test(field)),
+  );
 
 /** Whether `text` has a credential word: a strong one or a stem anywhere, a weak one with a value. */
 const credentialWords = (text: string): boolean =>
@@ -377,9 +419,10 @@ const withoutPaths = (text: string): string =>
 const plainProse = (text: string): boolean => {
   if (openDelimiter(text) || !PLAIN_CHARS.test(text) || ENCODED.test(text)) return false;
   const ascii = folded(text);
-  if (USERINFO.test(ascii) || CONNECTION_STRING.test(ascii) || COLON_RECORD.test(ascii))
-    return false;
-  if (COMMAND_CREDENTIAL.test(ascii) || credentialWords(ascii)) return false;
+  if (USERINFO.test(ascii) || CONNECTION_STRING.test(ascii) || colonRecord(ascii)) return false;
+  if (COMMAND_CREDENTIAL.test(ascii) || OPTION_CREDENTIAL.test(ascii)) return false;
+  if (AUTH_COMMAND.test(ascii) || PAIR_LINE.test(ascii) || PAIR_VALUE.test(ascii)) return false;
+  if (credentialWords(ascii)) return false;
   const runs = withoutPaths(withoutShas(ascii));
   return !splitEncoding(runs) && !tokenRun(runs);
 };
