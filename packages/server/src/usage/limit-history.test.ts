@@ -97,9 +97,16 @@ describe("limit history sampling", () => {
             agent: "codex",
             window: "five_hour",
             points: [
-              { at: START, utilization: 0.5, peak: 0.55, resetsAt: START + 4 * HOUR },
+              {
+                at: START,
+                windowId: START + 4 * HOUR,
+                utilization: 0.5,
+                peak: 0.55,
+                resetsAt: START + 4 * HOUR,
+              },
               {
                 at: START + LIMIT_HISTORY_BUCKET_MS,
+                windowId: START + 4 * HOUR,
                 utilization: 0.6,
                 peak: 0.6,
                 resetsAt: START + 4 * HOUR,
@@ -176,7 +183,13 @@ describe("limit history sampling", () => {
         const month = yield* readings.history(30);
         expect(month.step).toBe(HOUR);
         expect(month.windows[0]?.points).toEqual([
-          { at: START, utilization: 0.25, peak: 0.3, resetsAt: START + 4 * HOUR },
+          {
+            at: START,
+            windowId: START + 4 * HOUR,
+            utilization: 0.25,
+            peak: 0.3,
+            resetsAt: START + 4 * HOUR,
+          },
         ]);
         expect((yield* readings.history(7)).windows[0]?.points).toHaveLength(4);
       }),
@@ -184,33 +197,89 @@ describe("limit history sampling", () => {
   );
 });
 
+describe("limit history across a reset", () => {
+  it.effect("a reset inside a quarter hour starts a fresh peak for the new window", () =>
+    withReadings(
+      ":memory:",
+      START,
+      Effect.gen(function* () {
+        const readings = yield* UsageLimitReadings;
+        // The old window, spent, resets ten minutes in; the new one opens at 5%.
+        yield* readings.record(
+          reading({ status: "rejected", utilization: 1, resetsAt: START + 10 * MINUTE }),
+        );
+        yield* TestClock.adjust(11 * MINUTE);
+        yield* readings.record(
+          reading({ utilization: 0.05, resetsAt: START + 5 * HOUR + 10 * MINUTE }),
+        );
+        const points = (yield* readings.history(7)).windows[0]?.points ?? [];
+        expect(points.map((p) => [p.utilization, p.peak])).toEqual([
+          [1, 1],
+          [0.05, 0.05],
+        ]);
+        expect(new Set(points.map((p) => p.windowId)).size).toBe(2);
+        // A month by the hour keeps the two windows apart too.
+        const month = (yield* readings.history(30)).windows[0]?.points ?? [];
+        expect(month.map((p) => [p.utilization, p.peak])).toEqual([
+          [1, 1],
+          [0.05, 0.05],
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("a window that rose and fell a little within itself keeps its peak", () =>
+    withReadings(
+      ":memory:",
+      START,
+      Effect.gen(function* () {
+        const readings = yield* UsageLimitReadings;
+        yield* readings.record(reading({ utilization: 0.6 }));
+        yield* TestClock.adjust(5 * MINUTE);
+        // The rolling reset moved five minutes and the share eased: still the same window.
+        yield* readings.record(
+          reading({ utilization: 0.55, resetsAt: START + 4 * HOUR + 5 * MINUTE }),
+        );
+        const points = (yield* readings.history(7)).windows[0]?.points ?? [];
+        expect(points.map((p) => [p.utilization, p.peak])).toEqual([[0.55, 0.6]]);
+      }),
+    ),
+  );
+});
+
 describe("limit history retention", () => {
-  it.effect("survives a restart, and keeps a peak read before it", () =>
-    Effect.gen(function* () {
-      const db = tempDb();
-      yield* withReadings(
-        db.path,
-        START,
-        Effect.gen(function* () {
-          const readings = yield* UsageLimitReadings;
-          yield* readings.record(reading({ utilization: 0.7 }));
-        }),
-      );
-      const history = yield* withReadings(
-        db.path,
-        START + 5 * MINUTE,
-        Effect.gen(function* () {
-          const readings = yield* UsageLimitReadings;
-          // A new window, its share far lower, in the same quarter hour as the last reading.
-          yield* readings.record(reading({ utilization: 0.05, resetsAt: START + 5 * HOUR }));
-          return yield* readings.history(7);
-        }),
-      );
-      db.done();
-      expect(history.windows[0]?.points).toEqual([
-        { at: START, utilization: 0.05, peak: 0.7, resetsAt: START + 5 * HOUR },
-      ]);
-    }),
+  it.effect(
+    "survives a restart: keeps a peak read before it, and a reset after it starts over",
+    () =>
+      Effect.gen(function* () {
+        const db = tempDb();
+        yield* withReadings(
+          db.path,
+          START,
+          Effect.gen(function* () {
+            const readings = yield* UsageLimitReadings;
+            yield* readings.record(reading({ utilization: 0.7 }));
+          }),
+        );
+        const history = yield* withReadings(
+          db.path,
+          START + 5 * MINUTE,
+          Effect.gen(function* () {
+            const readings = yield* UsageLimitReadings;
+            // The same window, its share eased, in the same quarter hour: the peak stays.
+            yield* readings.record(reading({ utilization: 0.65 }));
+            // Then the window resets and a new one opens in that quarter hour: a fresh peak.
+            yield* TestClock.adjust(MINUTE);
+            yield* readings.record(reading({ utilization: 0.05, resetsAt: START + 9 * HOUR }));
+            return yield* readings.history(7);
+          }),
+        );
+        db.done();
+        expect(history.windows[0]?.points.map((p) => [p.utilization, p.peak])).toEqual([
+          [0.65, 0.7],
+          [0.05, 0.05],
+        ]);
+      }),
   );
 
   it.effect("prunes what ages past the retention on start", () =>
@@ -256,11 +325,11 @@ describe("limit history retention", () => {
           const sql = yield* SqlClient.SqlClient;
           // As a clock set far ahead would have left them.
           yield* sql`INSERT INTO usage_limit_history
-          (agent, limit_window, bucket, utilization, peak, resets_at)
-          VALUES ('codex', 'five_hour', ${START + 30 * DAY}, 0.5, 0.5, NULL)`.pipe(Effect.orDie);
+          (agent, limit_window, bucket, window_id, utilization, peak, resets_at)
+          VALUES ('codex', 'five_hour', ${START + 30 * DAY}, 1, 0.5, 0.5, NULL)`.pipe(Effect.orDie);
           yield* sql`INSERT INTO usage_limit_history
-          (agent, limit_window, bucket, utilization, peak, resets_at)
-          VALUES ('codex', 'five_hour', ${START - LIMIT_HISTORY_RETENTION_MS - DAY}, 0.5, 0.5, NULL)`.pipe(
+          (agent, limit_window, bucket, window_id, utilization, peak, resets_at)
+          VALUES ('codex', 'five_hour', ${START - LIMIT_HISTORY_RETENTION_MS - DAY}, 1, 0.5, 0.5, NULL)`.pipe(
             Effect.orDie,
           );
           // Pruned on start, under an hour ago: these wait for the next prune.

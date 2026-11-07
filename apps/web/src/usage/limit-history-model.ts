@@ -67,21 +67,21 @@ export interface WindowHistorySummary {
   readonly windows: number;
 }
 
-/** A window's period at a glance: its peak, and how many of its windows reached the limit. */
+/**
+ * A window's period at a glance: its peak, and how many of its windows (`windowId`, so a reset
+ * inside a bucket counts as two) reached the limit.
+ */
 export function windowHistorySummary(
   points: readonly LimitHistoryPoint[],
 ): WindowHistorySummary | undefined {
   if (points.length === 0) return undefined;
-  const byReset = new Map<number, number>();
+  const byWindow = new Map<number, number>();
   let peak = 0;
   for (const point of points) {
     peak = Math.max(peak, point.peak);
-    if (point.resetsAt === undefined) continue;
-    // A rolling window's reset moves a little; a quarter hour apart is the same window.
-    const key = Math.round(point.resetsAt / (15 * 60_000));
-    byReset.set(key, Math.max(byReset.get(key) ?? 0, point.peak));
+    byWindow.set(point.windowId, Math.max(byWindow.get(point.windowId) ?? 0, point.peak));
   }
-  const peaks = [...byReset.values()];
+  const peaks = [...byWindow.values()];
   return { peak, atLimit: peaks.filter((each) => each >= 1).length, windows: peaks.length };
 }
 

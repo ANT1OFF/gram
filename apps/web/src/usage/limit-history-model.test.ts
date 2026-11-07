@@ -51,15 +51,29 @@ describe("history runs", () => {
 
 describe("window summary", () => {
   it("names the peak and how many windows reached the limit, a moving reset one window", () => {
+    const first = T + 2 * HOUR;
+    const second = T + 7 * HOUR;
     const summary = windowHistorySummary([
-      { at: T, utilization: 0.5, peak: 0.5, resetsAt: T + 2 * HOUR },
-      { at: T + HOUR, utilization: 1, peak: 1, resetsAt: T + 2 * HOUR + 4 * MINUTE },
-      { at: T + 3 * HOUR, utilization: 0.3, peak: 0.3, resetsAt: T + 7 * HOUR },
+      { at: T, windowId: first, utilization: 0.5, peak: 0.5, resetsAt: first },
+      { at: T + HOUR, windowId: first, utilization: 1, peak: 1, resetsAt: first + 4 * MINUTE },
+      { at: T + 3 * HOUR, windowId: second, utilization: 0.3, peak: 0.3, resetsAt: second },
     ]);
     expect(summary).toEqual({ peak: 1, atLimit: 1, windows: 2 });
     expect(atLimitText(summary!)).toBe("Reached the limit in 1 of 2 windows");
     expect(atLimitText({ peak: 0.4, atLimit: 0, windows: 3 })).toBeUndefined();
     expect(windowHistorySummary([])).toBeUndefined();
+  });
+
+  it("counts a window that reset inside a bucket apart from the next, with its own peak", () => {
+    // The review's case: a spent window resets inside a quarter hour and the next opens at 5%.
+    const spent = T + 10 * MINUTE;
+    const next = T + 5 * HOUR + 10 * MINUTE;
+    expect(
+      windowHistorySummary([
+        { at: T, windowId: spent, utilization: 1, peak: 1, resetsAt: spent },
+        { at: T, windowId: next, utilization: 0.05, peak: 0.05, resetsAt: next },
+      ]),
+    ).toEqual({ peak: 1, atLimit: 1, windows: 2 });
   });
 });
 

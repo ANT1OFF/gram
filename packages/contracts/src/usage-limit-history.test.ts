@@ -25,20 +25,43 @@ describe("limit history buckets", () => {
   });
 
   it("coarsens to the last share, the highest peak and the last reset named", () => {
+    const W = T + 2 * HOUR;
     expect(
       coarsenLimitPoints(
         [
-          { at: T, utilization: 0.4, peak: 0.4, resetsAt: T + 2 * HOUR },
-          { at: T + 15 * MINUTE, utilization: 0.7, peak: 0.75 },
-          { at: T + 30 * MINUTE, utilization: 0.05, peak: 0.6, resetsAt: T + 5 * HOUR },
-          { at: T + HOUR, utilization: 0.1, peak: 0.1 },
+          { at: T, windowId: W, utilization: 0.4, peak: 0.4, resetsAt: W },
+          { at: T + 15 * MINUTE, windowId: W, utilization: 0.7, peak: 0.75 },
+          { at: T + 30 * MINUTE, windowId: W, utilization: 0.6, peak: 0.6, resetsAt: W + MINUTE },
+          { at: T + HOUR, windowId: W, utilization: 0.65, peak: 0.65 },
         ],
         HOUR,
       ),
     ).toEqual([
-      { at: T, utilization: 0.05, peak: 0.75, resetsAt: T + 5 * HOUR },
-      { at: T + HOUR, utilization: 0.1, peak: 0.1 },
+      { at: T, windowId: W, utilization: 0.6, peak: 0.75, resetsAt: W + MINUTE },
+      { at: T + HOUR, windowId: W, utilization: 0.65, peak: 0.65 },
     ]);
+  });
+
+  it("never carries a peak across a window's reset inside a coarse bucket", () => {
+    const old = T + 20 * MINUTE;
+    const next = T + 5 * HOUR + 20 * MINUTE;
+    expect(
+      coarsenLimitPoints(
+        [
+          { at: T, windowId: old, utilization: 0.9, peak: 0.9, resetsAt: old },
+          { at: T + 15 * MINUTE, windowId: old, utilization: 1, peak: 1, resetsAt: old },
+          { at: T + 15 * MINUTE, windowId: next, utilization: 0.02, peak: 0.02, resetsAt: next },
+          { at: T + 45 * MINUTE, windowId: next, utilization: 0.05, peak: 0.05, resetsAt: next },
+        ],
+        HOUR,
+      ),
+    ).toEqual([
+      { at: T, windowId: old, utilization: 1, peak: 1, resetsAt: old },
+      { at: T, windowId: next, utilization: 0.05, peak: 0.05, resetsAt: next },
+    ]);
+  });
+
+  it("coarsens a credit balance to the last in each bucket", () => {
     expect(
       coarsenCreditPoints(
         [

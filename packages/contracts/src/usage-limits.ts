@@ -98,6 +98,23 @@ export const limitCurrent = (
 ): boolean => reading !== undefined && limitExpiresAt(reading) > now;
 
 /**
+ * Whether a reading of `next` at `now` is of the same window as `before`, the window's last reading:
+ * `before` is still current, its reset moved no more than `LIMIT_SAME_WINDOW_MS` (or either named
+ * none), and the share didn't fall by more than `LIMIT_DROP`. The one rule for where a window ends,
+ * for the kept readings and the kept history alike.
+ */
+export const sameLimitWindow = (
+  before: Pick<LimitReading, "resetsAt" | "at"> & { readonly utilization: number },
+  next: { readonly resetsAt?: number | undefined; readonly utilization: number },
+  now: number,
+): boolean =>
+  limitCurrent(before, now) &&
+  (before.resetsAt === undefined ||
+    next.resetsAt === undefined ||
+    Math.abs(before.resetsAt - next.resetsAt) <= LIMIT_SAME_WINDOW_MS) &&
+  next.utilization >= before.utilization - LIMIT_DROP;
+
+/**
  * `before` with `report`, which arrived at `now`, in it; `before` itself when the report says
  * nothing the meter can use (no share and not at the limit, or a reset already past). A report of a
  * new window (its reset moved past `LIMIT_SAME_WINDOW_MS`, or its share fell) starts the samples
@@ -116,11 +133,12 @@ export function nextLimitReading(
   const last = before?.samples.at(-1);
   const sameWindow =
     before !== undefined &&
-    limitCurrent(before, now) &&
-    (before.resetsAt === undefined ||
-      report.resetsAt === undefined ||
-      Math.abs(before.resetsAt - report.resetsAt) <= LIMIT_SAME_WINDOW_MS) &&
-    (last === undefined || utilization >= last.utilization - LIMIT_DROP);
+    sameLimitWindow(
+      // With no sample yet, any share is of the same window.
+      { ...before, utilization: last?.utilization ?? 0 },
+      { resetsAt: report.resetsAt, utilization },
+      now,
+    );
   const kept = sameWindow ? before.samples : [];
   const samples =
     sameWindow && last !== undefined && last.utilization === utilization

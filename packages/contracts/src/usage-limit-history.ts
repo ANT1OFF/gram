@@ -31,10 +31,19 @@ export const limitHistoryBucket = (at: number, step = LIMIT_HISTORY_BUCKET_MS): 
 export const LimitHistoryQuery = Schema.Struct({ days: LimitHistoryDays });
 export type LimitHistoryQuery = typeof LimitHistoryQuery.Type;
 
-/** One bucket of a window: the share last read in it, the highest, and the reset it named. */
+/**
+ * One bucket of one window: the share last read in it, the highest, and the reset it named. A
+ * window that resets inside a bucket leaves two points there, its own and the next window's, so a
+ * new window never inherits the old one's peak.
+ */
 export const LimitHistoryPoint = Schema.Struct({
   /** Epoch ms the bucket starts. */
   at: Schema.Number,
+  /**
+   * Which window of the series the readings are of: the reset first read for it, or when it was
+   * first read if it named none. Windows are told apart by `sameLimitWindow`.
+   */
+  windowId: Schema.Number,
   /** From 0 to 1: the last reading in the bucket. */
   utilization: Schema.Number,
   /** From 0 to 1: the highest reading in the bucket. */
@@ -91,7 +100,8 @@ export const creditBalanceNumber = (balance: string | undefined): number | undef
 
 /**
  * Buckets at `step` from finer ones, oldest first: each keeps the last reading in it, the highest
- * peak, and the last reset named.
+ * peak, and the last reset named, never across a window's reset: a coarse bucket a window reset in
+ * holds a point for each window.
  */
 export function coarsenLimitPoints(
   points: ReadonlyArray<LimitHistoryPoint>,
@@ -101,12 +111,13 @@ export function coarsenLimitPoints(
   for (const point of points) {
     const at = limitHistoryBucket(point.at, step);
     const last = out.at(-1);
-    if (last === undefined || last.at !== at) {
+    if (last === undefined || last.at !== at || last.windowId !== point.windowId) {
       out.push({ ...point, at });
       continue;
     }
     out[out.length - 1] = {
       at,
+      windowId: point.windowId,
       utilization: point.utilization,
       peak: Math.max(last.peak, point.peak),
       ...(point.resetsAt !== undefined

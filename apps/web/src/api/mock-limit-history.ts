@@ -71,7 +71,7 @@ function windowPoints(
         top * (through ** 0.8 + (noise(at / LIMIT_HISTORY_BUCKET_MS) - 0.5) * 0.04),
       );
       peak = Math.max(peak, share);
-      points.push({ at, utilization: peak, peak, resetsAt: reset });
+      points.push({ at, windowId: reset, utilization: peak, peak, resetsAt: reset });
     }
   }
   return points.toSorted((a, b) => a.at - b.at);

@@ -437,8 +437,8 @@ describe("the baseline", () => {
           ]);
           if (reopen === 0) {
             yield* sql`INSERT INTO usage_limit_history
-              (agent, limit_window, bucket, utilization, peak, resets_at)
-              VALUES ('codex', 'five_hour', 900000, 0.4, 0.5, NULL)`;
+              (agent, limit_window, bucket, window_id, utilization, peak, resets_at)
+              VALUES ('codex', 'five_hour', 900000, 1, 0.4, 0.5, NULL)`;
             yield* sql`INSERT INTO usage_credit_history (agent, bucket, balance)
               VALUES ('codex', 900000, 1250)`;
           }
