@@ -43,16 +43,19 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     A PR's pending checks, queued or running, and a review bot's round under way take the same
     hollow ring as a glyph (`PendingRing`), still in every motion setting, wherever they show:
     a wait can last an hour, and only a turn under way turns (`Spinner`, Stop's ring).
-  - **One amber in each mode.** The needs-you text, its dots, its count's ring and the pill's
-    border are one hue (`status-needs` is `status-needs-mark` darkened to the text floor, never a
-    different colour); the light palettes of the Neutral family seed a true amber, not an orange.
+  - **One amber in each mode.** The needs-you text and its dots are one hue (`status-needs` is
+    `status-needs-mark` darkened to the text floor, never a different colour); the light palettes
+    of the Neutral family seed a true amber, not an orange. Words take `status-needs` (AA, 5.5:1 or
+    more on every light surface), never the mark token, which is for dots and glyphs only. A
+    needs-you pill or count is a neutral outline (`sidebar-block-border`), never an amber ring or
+    fill: only its dot and the count of what asks are amber.
   - **One alarm per failure:** the error's card in the transcript and the thread's one red dot.
     Everything else stays neutral: the plan strip, the title bar, a label's chip (named, never
     tinted). The needs-you entry counts errors among what needs you but never tints them: its
     amber dot and words are for what asks ("1 question" amber, "· 1 error" muted), errors alone
     leave it neutral, and in the title bar the chip itself is neutral, its dot and the asks' words
-    the bar's one amber mark; the compact rail's count and the Board's waiting chip turn amber
-    only while something asks too. A retry that ran through says what was done and how it went
+    the bar's one amber mark; the compact rail's count (its number, in a neutral outline) and the
+    Board's waiting chip turn amber only while something asks too. A retry that ran through says what was done and how it went
     ("Retried at 14:11 · succeeded"), its failure folded under Details.
   - `warning` is for a caution on a setting the user chose: Bypass (amber with its lock, on
     purpose), Full autonomy, a key clash, and the usage meter from 90% of a limit (red once
@@ -72,7 +75,10 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   and the row's hover names the PR. The title is one line with the row's whole width, cut at its
   end (never its middle) with an ellipsis, and the row's hover (its `title`, or a worker's card)
   says the whole of it, so every row keeps one height: 36 px for a title alone, 48 px with its
-  status line, never taller. A worker's agent mark shows only where its workspace's workers run
+  status line, never taller. A worker's status line says only what its dot can't: a wait's
+  reason, an ask, a failure, its plan's step, "Starting…", or its PR chips. At work with none of
+  these ("Running", or the tool it runs this minute), it has no second line and is 36 px; its
+  hover card says what it runs. A worker's agent mark shows only where its workspace's workers run
   different agents; all on one agent, the state dot alone marks each row and the hover names the
   agent. What needs you is listed first. Done starts folded to one row, "8 done", and a click
   anywhere on it unfolds it: the Board and History already list finished work. History, at the
@@ -80,13 +86,17 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   the palette hands a search matching finished threads there too. Unfolded, Done shows the three
   chats that finished last, solo threads that settled on their own included, then "N more in
   History", which continues the same list on History's Done chip. Each workspace folds its workers
-  under its chevron. Every section's title has one look, muted 13 px words beside its chevron; a
+  under its chevron. A workspace at rest (nothing running, nothing asking, no brief held, not
+  the one in view) folds with the others into one "Idle · N" row at the end of the list, which
+  unfolds to their rows (kept across reloads); it leaves the group the moment something runs or
+  asks there. Every section's title has one look, muted 13 px words beside its chevron; a
   Gram word's explanation ("Solo threads") is on its hover, never a dotted underline there. Marks
   centre on one column and titles start on one edge, the pill, Search, section titles and History
   included. The overview's sections sit a list's step (12 px) apart. The compact rail (60 px,
-  under 1280 px) gives each workspace and the solo threads a tile with its kind's glyph (an
-  orchestrator's, a thread's, as the palette draws them), never letters cut from a name; its
-  flyout heads with the whole name.
+  under 1280 px) gives each workspace a tile with its monogram, one letter of its name
+  ("billing-api" is "B"), two only where workspaces share a first letter ("BA", `monograms`), in
+  the tile's own text colour, never a coloured avatar; the solo threads' tile keeps a thread's
+  glyph. Its flyout heads with the whole name, which is in the tile's accessible name too.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings and between a reply's blocks, 16 px between sections and at a
   pane's edges. A settings row takes 8 px above and below, and a page's groups sit 24 px apart
