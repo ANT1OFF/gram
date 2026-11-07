@@ -58,11 +58,11 @@ describe("ValueWords with a dimension", () => {
   });
 });
 
+const box = (top: number, left: number, width: number, height: number) =>
+  DOMRect.fromRect({ x: left, y: top, width, height });
+
 // The model picker opened over the draft being written; its list now clears the whole composer.
 describe("aboveComposer", () => {
-  const box = (top: number, left: number, width: number, height: number) =>
-    DOMRect.fromRect({ x: left, y: top, width, height });
-
   it("spans the trigger's column from the composer's top down to the trigger", () => {
     const slab = document.createElement("div");
     slab.dataset["surface"] = "composer";
