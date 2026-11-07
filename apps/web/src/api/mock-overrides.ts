@@ -18,13 +18,17 @@ export const mockSessionExpired = (): boolean => flag(MOCK_SESSION_EXPIRED_KEY) 
 /**
  * `"board"`: the mock starts with `simulateOrchestration("board")`'s workspace, as a relaunch finds
  * it. `"realistic"`: it starts with `simulateRealistic()`'s working morning instead, the seeded
- * threads' own asks left answered, as the screenshot tour and flows show Gram.
+ * threads' own asks left answered, as the screenshot tour and flows show Gram. `"scale"`: it starts
+ * with `seedScale()`'s ten workspaces and 300 threads.
  */
 export const MOCK_ORCHESTRATION_KEY = "gram.mock.orchestration";
 
 export const mockStartsWithBoard = (): boolean => flag(MOCK_ORCHESTRATION_KEY) === "board";
 
 export const mockStartsRealistic = (): boolean => flag(MOCK_ORCHESTRATION_KEY) === "realistic";
+
+/** `"scale"`: the mock starts with `seedScale()`'s app at scale, for the performance specs. */
+export const mockStartsAtScale = (): boolean => flag(MOCK_ORCHESTRATION_KEY) === "scale";
 
 /** `"1"`: the mock starts with no threads, as a true first run does. */
 export const MOCK_FRESH_KEY = "gram.mock.fresh";

@@ -2,6 +2,7 @@ import type { MockCoreScenes, ThreadRuntime } from "./mock-thread-runtime";
 import { IDENTITY, MOCK_CAPABILITIES } from "./mock-thread-runtime";
 import type {
   AgentModel,
+  DiffFile,
   ReviewRequest,
   GramUIMessageChunk,
   Thread,
@@ -11,7 +12,8 @@ import type {
   UsageSummary,
 } from "@gram/contracts";
 import { longTranscript, longTurnChunks } from "@gram/contracts/testing";
-import { mockGitState } from "./mock-git";
+import { mockGitState, registerMockThreadDiff } from "./mock-git";
+import type { MockScaleWorkspaces } from "./mock-scale";
 import { mockPrStateThreads } from "./mock-pr-states";
 import { PROJECTS, finish, seedSummaries, start } from "./mock-scripts";
 
@@ -72,15 +74,31 @@ export function stopBusyThreads(core: MockCoreScenes) {
   for (const timer of core.busy) clearInterval(timer);
   core.busy.length = 0;
   for (const runtime of core.threads.values()) {
-    if (runtime.summary.thread.id.startsWith("t-busy-") && runtime.summary.status === "running") {
+    const id = runtime.summary.thread.id;
+    if ((id.startsWith("t-busy-") || streamed.delete(id)) && runtime.summary.status === "running") {
       core.abortInflight(runtime);
       core.setStatus(runtime, "idle");
     }
   }
 }
 
-/** One thread's endless turn, `offset` ms out of phase with the others so they don't tick as one. */
-function keepBusy(core: MockCoreScenes, runtime: ThreadRuntime, offset: number) {
+/** The threads `streamThread` set working, which `stopBusyThreads` brings back to idle. */
+const streamed = new Set<string>();
+
+/**
+ * Perf hook: `threadId` works until `stopBusyThreads`, as a `seedBusyThreads` thread does, with
+ * `speed` of its ticks every 40 ms: at 30, an hour of streaming arrives in two minutes.
+ */
+export function streamThread(core: MockCoreScenes, threadId: ThreadId, speed = 1): void {
+  streamed.add(threadId);
+  keepBusy(core, core.runtime(threadId), 0, speed);
+}
+
+/**
+ * One thread's endless turn, `offset` ms out of phase with the others so they don't tick as one,
+ * `speed` ticks at a time.
+ */
+function keepBusy(core: MockCoreScenes, runtime: ThreadRuntime, offset: number, speed = 1) {
   const threadId = runtime.summary.thread.id;
   let messageId = "";
   let ticks = 0;
@@ -124,7 +142,11 @@ function keepBusy(core: MockCoreScenes, runtime: ThreadRuntime, offset: number) 
     ticks++;
   };
   const starter = setTimeout(() => {
-    core.busy.push(setInterval(tick, 40));
+    core.busy.push(
+      setInterval(() => {
+        for (let i = 0; i < speed; i++) tick();
+      }, 40),
+    );
   }, offset);
   core.busy.push(starter);
 }
@@ -177,6 +199,81 @@ export function seedInFlightTurn(core: MockCoreScenes, { steps }: { steps: numbe
   for (const event of events) runtime.fold.apply(event);
   core.setStatus(runtime, "running");
   return id;
+}
+
+/** What `seedScale` made, for a perf spec to navigate by. */
+export interface MockScale extends MockScaleWorkspaces {
+  /** The thread with a 5,000-message transcript and a 3,000-line uncommitted diff. */
+  readonly longThreadId: ThreadId;
+  /** Threads outside any workspace, newest first. */
+  readonly looseIds: readonly ThreadId[];
+}
+
+/** `lines` changed lines of TypeScript over hunks of 50, as `git diff` prints them. */
+export function scaleDiffPatch(lines: number): string {
+  const rows: string[] = [];
+  for (let h = 0; h * 50 < lines; h++) {
+    const from = 1 + h * 80;
+    rows.push(`@@ -${from},52 +${from},52 @@ export function section${h}() {`);
+    rows.push(`   const section = ${h};`);
+    for (let i = 0; i < 25; i++) {
+      rows.push(`-  const value${i} = compute(section, ${i}); // retry clock ${h}.${i}`);
+    }
+    for (let i = 0; i < 25; i++) {
+      rows.push(
+        `+  const value${i} = await computeAsync(section, ${i}, { retries: 3 }); // ${h}.${i}`,
+      );
+    }
+    rows.push(`   return section;`);
+  }
+  return rows.join("\n");
+}
+
+/**
+ * Perf hook: the app at scale. `simulateScaleWorkspaces`' ten workspaces (an orchestrator with forty
+ * workers, nine with nine), loose threads up to `threads` in all, and one thread with
+ * `messages` messages of heavy tool output and an uncommitted diff of `diffLines` lines over twenty
+ * files. Seeding takes a few seconds.
+ */
+export async function seedScale(
+  core: MockCoreScenes,
+  {
+    threads = 300,
+    messages = 5_000,
+    diffLines = 3_000,
+  }: { threads?: number; messages?: number; diffLines?: number } = {},
+): Promise<MockScale> {
+  const made = await core.orchestration.simulateScaleWorkspaces({
+    projects: core.projects().map((project) => project.id),
+  });
+  const loose = Math.max(0, threads - made.threadIds.length - 1 - core.threads.size);
+  const looseIds = seedLongThreads(core, { count: loose, turns: 2 });
+  const [longThreadId] = seedLongThreads(core, { count: 1, turns: Math.ceil(messages / 2) });
+  const big: DiffFile = {
+    path: "src/scale/big-module.ts",
+    status: "modified",
+    additions: diffLines / 2,
+    deletions: diffLines / 2,
+    patch: scaleDiffPatch(diffLines),
+    binary: false,
+    tooLarge: false,
+  };
+  const small = Array.from({ length: 19 }, (_, i): DiffFile => ({
+    path: `src/scale/part-${i}.ts`,
+    status: "modified",
+    additions: 2,
+    deletions: 1,
+    patch: `@@ -1,3 +1,4 @@\n-export const part = ${i};\n+export const part = ${i + 1};\n+export const next = ${i + 2};\n  // part ${i}`,
+    binary: false,
+    tooLarge: false,
+  }));
+  registerMockThreadDiff(longThreadId!, [big, ...small]);
+  const runtime = core.runtime(longThreadId!);
+  const base = runtime.summary.git ?? mockGitState("t-flaky" as ThreadId, undefined)!;
+  const git = { ...base, changedFiles: 20, changesToken: "mock-scale-diff" };
+  runtime.summary = { ...runtime.summary, git };
+  core.emit({ type: "git.state", threadId: longThreadId!, state: git });
+  return { ...made, longThreadId: longThreadId!, looseIds };
 }
 
 /**

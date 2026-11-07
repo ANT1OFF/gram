@@ -84,6 +84,7 @@ import { simulate } from "./mock-orchestration-report";
 import { ledgerEntry, slugOf, groupByFeature } from "./mock-ledger";
 import { simulateReaching, type MockReachingSimulation } from "./mock-reaching";
 import { simulateWorkersList, type MockWorkersSimulation } from "./mock-workers";
+import { simulateScaleWorkspaces } from "./mock-scale";
 import type {
   ApiServerEvent,
   OpenOrchestratorTarget,
@@ -1633,6 +1634,11 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     /** `simulateRealistic` (`mock-realistic.ts`). */
     simulateRealistic(deps: MockRealisticDeps) {
       return simulateRealistic(scenes, deps);
+    },
+
+    /** `simulateScaleWorkspaces` (`mock-scale.ts`), for the performance specs. */
+    simulateScaleWorkspaces(options: Parameters<typeof simulateScaleWorkspaces>[1]) {
+      return simulateScaleWorkspaces(scenes, options);
     },
 
     /** `simulateDigestStream` (`mock-realistic.ts`), over the realistic scenario. */
