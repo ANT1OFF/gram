@@ -79,6 +79,8 @@ test("the popover drops clear of the approval card it would cover", async ({ pag
   // A real window's size, the right panel open beside the chat as a review has it.
   await page.setViewportSize({ width: 1728, height: 1095 });
   await page.goto("/t/t-flaky");
+  // The mock is imported lazily, so `window.gramMock` lands a moment after `goto`.
+  await page.waitForFunction(() => window.gramMock !== undefined);
   await flakyAsked(page);
   const card = page.getByTestId("approval-card").first();
   await expect(card).toBeVisible();
