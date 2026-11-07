@@ -300,6 +300,7 @@ describe.skipIf(!PERF)("warm Claude session memory", () => {
         const from = history.get(coldThread)?.length ?? 0;
         const coldPath = () => (history.get(coldThread) ?? []).slice(from);
         yield* client["thread.send"]({
+          clientMessageId: crypto.randomUUID(),
           threadId: coldThread,
           input: { text: "Reply with the single word OK." },
         });

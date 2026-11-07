@@ -1,6 +1,6 @@
 import type { GramUIMessage, ThreadId, ThreadSummary, WorkspaceId } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useStore } from "zustand";
 
 import { useApi } from "@/api/context";
@@ -212,17 +212,32 @@ export function feedLoaded(threadId: ThreadId): boolean {
   return entries.get(threadId)?.feed.store.getState().phase === "live";
 }
 
+const EMPTY_FEED = createThreadFeed().store.getInitialState();
+
 /** Subscribes to a thread's message feed while mounted and selects from its store. */
 export function useThreadFeed<T>(threadId: ThreadId, selector: (state: ThreadFeedState) => T): T {
   const api = useApi();
-  const entry = entryFor(api, threadId);
-
-  useEffect(() => {
-    const current = hold(api, threadId);
-    return () => release(threadId, current);
-  }, [api, threadId]);
-
-  return useStore(entry.feed.store, selector);
+  // React can abandon a render without running effects or cleanup. Only the committed
+  // external-store subscription may open/retain a feed; reads never create entries.
+  const store = useMemo(
+    () => ({
+      getState: () =>
+        entries.get(threadId)?.feed.store.getState() ??
+        cold.get(threadId)?.feed.store.getState() ??
+        EMPTY_FEED,
+      getInitialState: () => EMPTY_FEED,
+      subscribe: (changed: () => void) => {
+        const entry = hold(api, threadId);
+        const unsubscribe = entry.feed.store.subscribe(changed);
+        return () => {
+          unsubscribe();
+          release(threadId, entry);
+        };
+      },
+    }),
+    [api, threadId],
+  );
+  return useStore(store, selector);
 }
 
 /**

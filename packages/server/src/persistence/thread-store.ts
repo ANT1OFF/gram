@@ -88,6 +88,7 @@ import {
   readableRow,
   readableRows,
 } from "./stored.ts";
+import { makeMessageReceipts } from "./message-receipts.ts";
 import { DAY_MS } from "../zone-time.ts";
 
 /**
@@ -306,6 +307,7 @@ export interface HistoryRewind {
 }
 
 export interface ThreadStoreShape {
+  readonly messageReceipt: ReturnType<typeof makeMessageReceipts>;
   usageOverview(
     query: UsageOverviewQuery,
     history?: UsageHistoryInput,
@@ -936,7 +938,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const unreadable = makeUnreadableLog();
-      // Every public method is one statement or one top-level transaction; nothing nests.
+      const receiptScope = yield* Effect.scope;
+      // The data methods below use one statement or one top-level transaction; nothing nests.
+      // Message receipts own separate reservation/outcome transactions around the runtime action.
       const tx = <A, E, R>(effect: Effect.Effect<A, E, R>) => run(sql.withTransaction(effect));
 
       /** A settings-by-chat audit row, and a workspace's own `settings` event; inside a `tx`. */
@@ -1647,6 +1651,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         );
 
       return ThreadStore.of({
+        messageReceipt: makeMessageReceipts(sql, receiptScope),
         setCompletion,
         updateCompletion,
         listQueue: (threadId) =>

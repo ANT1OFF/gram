@@ -387,9 +387,22 @@ const mergeFreezes = Effect.gen(function* () {
   yield* sql`CREATE TABLE merge_freezes (key TEXT PRIMARY KEY, data TEXT NOT NULL)`;
 });
 
+const messageReceipts = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE message_receipts (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    client_message_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    outcome TEXT,
+    UNIQUE (thread_id, client_message_id)
+  )`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
+  "0003_message_receipts": messageReceipts,
 };
 
 /**

@@ -394,7 +394,7 @@ const headOf = (data) => {
   }
   for (const threadId of turnThreadIds) {
     const sentAt = performance.now();
-    request(shared, "thread.send", { threadId, input: { text: "go" } });
+    request(shared, "thread.send", { clientMessageId: crypto.randomUUID(), threadId, input: { text: "go" } });
     turnStarts.push(await visit(threadId));
     await sleep(Math.max(0, turnMs - (performance.now() - sentAt)));
     turnEnds.push(await visit(threadId));

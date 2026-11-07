@@ -567,6 +567,7 @@ layer(TestServer, { excludeTestServices: true })("server over a real socket", (i
         expect(ids).toContain(thread.id);
 
         const error = yield* client["thread.send"]({
+          clientMessageId: crypto.randomUUID(),
           threadId: "missing" as ThreadId,
           input: { text: "hi" },
         }).pipe(Effect.flip);

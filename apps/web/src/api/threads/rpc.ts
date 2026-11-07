@@ -2,7 +2,7 @@ import type { MessageId } from "@gram/contracts";
 
 import { resubscribing } from "../connection";
 import { isThreadNotFound } from "../errors";
-import { iterate, run, type RpcContext } from "../rpc-client";
+import { iterate, runMessage, run, type RpcContext } from "../rpc-client";
 import type { ApiThreadFeedEvent } from "../types";
 import type { ThreadsApi } from "./types";
 
@@ -30,8 +30,16 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => ({
   threadHistory: (threadId, before) =>
     run(client["thread.history"]({ threadId, before: before as MessageId })),
   createThread: (input) => run(client["thread.create"](input)),
-  send: (threadId, input) => run(client["thread.send"]({ threadId, input })),
-  steer: (threadId, input) => run(client["thread.steer"]({ threadId, input })),
+  send: (threadId, input) =>
+    runMessage(
+      client["thread.send"]({ threadId, input, clientMessageId: crypto.randomUUID() }),
+      connection,
+    ),
+  steer: (threadId, input) =>
+    runMessage(
+      client["thread.steer"]({ threadId, input, clientMessageId: crypto.randomUUID() }),
+      connection,
+    ),
   interrupt: (threadId) => run(client["thread.interrupt"]({ threadId })),
   resumeLimitWait: (threadId) => run(client["thread.resumeLimitWait"]({ threadId })),
   cancelLimitWait: (threadId) => run(client["thread.cancelLimitWait"]({ threadId })),
@@ -80,7 +88,11 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => ({
     run(client["thread.queue.edit"]({ threadId, itemId, input })),
   queueReorder: (threadId, itemIds) => run(client["thread.queue.reorder"]({ threadId, itemIds })),
   queueRemove: (threadId, itemId) => run(client["thread.queue.remove"]({ threadId, itemId })),
-  queueSteer: (threadId, itemId) => run(client["thread.queue.steer"]({ threadId, itemId })),
+  queueSteer: (threadId, itemId) =>
+    runMessage(
+      client["thread.queue.steer"]({ threadId, itemId, clientMessageId: crypto.randomUUID() }),
+      connection,
+    ),
   acceptTask: (threadId, taskId) => run(client["task.accept"]({ threadId, taskId })),
   dismissTask: (threadId, taskId) => run(client["task.dismiss"]({ threadId, taskId })),
   prCheckout: (projectRoot, number, repo) =>

@@ -45,6 +45,7 @@ describe("migration ordering gate", () => {
       expect(resolved.map(([id, name]) => [id, name])).toEqual([
         [1, "baseline"],
         [2, "merge_freezes"],
+        [3, "message_receipts"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -153,6 +154,7 @@ describe("the baseline", () => {
         "table labels",
         "table local_checks",
         "table merge_freezes",
+        "table message_receipts",
         "table message_search",
         "table messages",
         "table orchestration_events",
@@ -195,6 +197,7 @@ describe("the baseline", () => {
       expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
         [1, "baseline"],
         [2, "merge_freezes"],
+        [3, "message_receipts"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -214,7 +217,11 @@ describe("the baseline", () => {
       yield* Effect.gen(function* () {
         const store = yield* ThreadStore;
         expect((yield* store.listProjects).map((p) => p.root)).toEqual(["/invented/baseline"]);
-        expect((yield* applied).map((row) => row.name)).toEqual(["baseline", "merge_freezes"]);
+        expect((yield* applied).map((row) => row.name)).toEqual([
+          "baseline",
+          "merge_freezes",
+          "message_receipts",
+        ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
   );
@@ -229,7 +236,7 @@ describe("the baseline", () => {
       yield* Effect.void.pipe(Effect.provide(open(migrations)));
       const next = {
         ...migrations,
-        "0003_example": Effect.gen(function* () {
+        "0004_example": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`ALTER TABLE projects ADD COLUMN example TEXT`;
         }),
@@ -244,7 +251,8 @@ describe("the baseline", () => {
           expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
             [1, "baseline"],
             [2, "merge_freezes"],
-            [3, "example"],
+            [3, "message_receipts"],
+            [4, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
       }

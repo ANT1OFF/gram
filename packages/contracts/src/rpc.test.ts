@@ -979,6 +979,22 @@ describe("GramRpcs", () => {
     expect(() => decode({ path: "~/", limit: 0 })).toThrow();
   });
 
+  it("requires a bounded stable identity for send, steer and queued steering", () => {
+    for (const tag of ["thread.send", "thread.steer", "thread.queue.steer"]) {
+      const decode = payloadOf(tag);
+      const payload =
+        tag === "thread.queue.steer"
+          ? { threadId: "t1", itemId: "q1" }
+          : { threadId: "t1", input: { text: "hello" } };
+      const request = { ...payload, clientMessageId: "synthetic-message-1" };
+      expect(decode(request)).toEqual(request);
+      expect(() => decode(payload)).toThrow();
+      for (const clientMessageId of ["", "x".repeat(129), "bad id"]) {
+        expect(() => decode({ ...payload, clientMessageId })).toThrow();
+      }
+    }
+  });
+
   it("decodes a thread.subscribe payload with and without afterRev", () => {
     const subscribe = payloadOf("thread.subscribe");
     expect(subscribe({ threadId: "t1" })).toEqual({ threadId: "t1" });

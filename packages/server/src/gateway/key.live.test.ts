@@ -336,7 +336,11 @@ describe.skipIf(!live)("gateway key, live (GRAM_LIVE_GATEWAY_KEY=1)", () => {
         for (const threadId of threads) {
           yield* Effect.sleep("500 millis");
           const from = events.length;
-          yield* client["thread.send"]({ threadId, input: { text: "Again, please." } });
+          yield* client["thread.send"]({
+            clientMessageId: crypto.randomUUID(),
+            threadId,
+            input: { text: "Again, please." },
+          });
           yield* turnCompleted(events, threadId, from);
         }
         expect(calls(ROTATED).some((s) => s.path.includes("/responses"))).toBe(true);
