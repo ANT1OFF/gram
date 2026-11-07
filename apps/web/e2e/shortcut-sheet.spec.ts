@@ -57,7 +57,7 @@ test("next and previous thread follow the sidebar, and ⌘D shows and hides the 
   // as its threads run, so reading them first and pressing after could disagree.
   const stepFrom = (delta: 1 | -1) =>
     page.evaluate(
-      ({ step, mac }) => {
+      ({ step, onMac }) => {
         const rows = [
           ...document.querySelectorAll<HTMLElement>(
             '[data-testid="overview-sidebar"] :is([data-testid="overview-workspace-row"], [data-testid="overview-worker"], [data-testid="overview-solo"], [data-testid="overview-done"])',
@@ -65,7 +65,7 @@ test("next and previous thread follow the sidebar, and ⌘D shows and hides the 
         ].map((row) => row.dataset.threadId ?? "");
         const current = location.pathname.split("/").at(-1)!;
         const expected = rows[rows.indexOf(current) + step];
-        const [key, code] = mac
+        const [key, code] = onMac
           ? step === 1
             ? ["]", "BracketRight"]
             : ["[", "BracketLeft"]
@@ -76,16 +76,16 @@ test("next and previous thread follow the sidebar, and ⌘D shows and hides the 
           new KeyboardEvent("keydown", {
             key,
             code,
-            metaKey: mac,
-            ctrlKey: !mac,
-            altKey: mac,
+            metaKey: onMac,
+            ctrlKey: !onMac,
+            altKey: onMac,
             bubbles: true,
             cancelable: true,
           }),
         );
         return expected;
       },
-      { step: delta, mac },
+      { step: delta, onMac: mac },
     );
 
   await page.getByLabel("Message", { exact: true }).click();
