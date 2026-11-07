@@ -14,6 +14,7 @@ import { compactWorkerRow } from "../orchestration/ledger.ts";
 import { decodeOutbox } from "../orchestration/outbox.ts";
 import { makeWorld, prBadge, serverLayer, waitReal } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import * as ReadWorker from "../persistence/read-worker.ts";
 import * as WalCheckpointer from "../persistence/wal-checkpointer.ts";
 import { SqlClient } from "../platform/unstable.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
@@ -193,6 +194,29 @@ describe.skipIf(!PERF)("synthetic large SQLite workload", () => {
                   "searchScoped",
                   searchThreads({ query: "needle", threadId: threadId(0), limit: 50 }),
                 );
+                // The same searches on the read worker, with how long the event loop stood still
+                // during each call against the same call on the main connection.
+                const stalled = <A, E, R>(name: string, effect: Effect.Effect<A, E, R>) =>
+                  Effect.gen(function* () {
+                    const lag = monitorEventLoopDelay({ resolution: 1 });
+                    lag.enable();
+                    // Its timer starts on the loop's next turn; a block before that goes unseen.
+                    yield* Effect.sleep("5 millis");
+                    const value = yield* measure(name, effect);
+                    // The histogram records a delay once the loop runs again after it.
+                    yield* Effect.sleep("20 millis");
+                    lag.disable();
+                    (metrics[`${name}LoopMax`] ??= []).push(lag.max / 1e6);
+                    return value;
+                  });
+                const readWorker = yield* Layer.build(ReadWorker.layer(database));
+                const common = { query: "synthetic", limit: 50 };
+                const onLoop = yield* stalled("searchCommonOnLoop", searchThreads(common));
+                const offLoop = yield* stalled(
+                  "searchCommonOffLoop",
+                  searchThreads(common).pipe(Effect.provide(readWorker)),
+                );
+                expect(offLoop).toEqual(onLoop);
                 if (SCOPES) {
                   yield* measure(
                     "searchWorkerScoped",
