@@ -3530,6 +3530,28 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("shell-titlebar"),
   },
   {
+    name: "titlebar-orchestrator-usage",
+    title:
+      "The orchestrator's title bar with Codex's 5-hour window spent on credits: the usage button and Memory beside Chat · Board",
+    open: async (page) => {
+      await openOverviewHome(page, 1440, { panel: false });
+      await page.evaluate(() =>
+        window.gramMock!.simulateUsageLimit({
+          agent: "codex",
+          window: "five_hour",
+          utilization: 1,
+          resetsAt: Date.now() + 60 * 60_000,
+          credits: true,
+          creditsAvailable: true,
+          creditsBalance: "100",
+        }),
+      );
+      await page.getByTestId("usage-meter").waitFor();
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("shell-titlebar"),
+  },
+  {
     name: "titlebar-menu",
     title:
       "The title bar's one \"…\" on an orchestrator: the thread's menu, the workspace's controls and the window's, in words",

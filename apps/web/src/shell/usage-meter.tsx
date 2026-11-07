@@ -83,12 +83,21 @@ export function useMinuteNow(): number {
 export function UsageMeter({
   agent,
   className,
+  glyph = false,
+  barClassName,
   textClassName,
   shortTextClassName = "hidden",
 }: {
   /** The agent of the thread in view, whose usage the meter shows. */
   agent?: string | undefined;
   className?: string;
+  /**
+   * Leads with usage's glyph, the one the Usage button shows before any reading, so in a bar of
+   * icons the meter reads as that same button with its share beside it.
+   */
+  glyph?: boolean;
+  /** For the bar, which a narrow title bar leaves to the glyph and the share. */
+  barClassName?: string;
   /** For the reading beside the bar, which a narrow title bar trades for its short form. */
   textClassName?: string;
   /**
@@ -141,8 +150,18 @@ export function UsageMeter({
               TONE_TEXT[tone],
             )}
           >
+            {glyph && (
+              <ChartNoAxesCombined
+                aria-hidden
+                data-testid="usage-meter-glyph"
+                className="size-icon-bar shrink-0"
+              />
+            )}
             {/* An old reading dims its bar only, so the words keep the text floor. */}
-            <LimitBar limit={tightest.limit} className={cn("w-9", stale && "opacity-50")} />
+            <LimitBar
+              limit={tightest.limit}
+              className={cn("w-9", stale && "opacity-50", barClassName)}
+            />
             <span className={textClassName}>{meterText(tightest)}</span>
             {/* Drawn from its attribute, so the meter's words stay the one reading it has. */}
             <span

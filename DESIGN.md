@@ -176,9 +176,12 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   opens when the pointer moves onto its trigger, never for one that appears under a resting
   pointer, and opens on the side away from what sits next to it (a panel's tabs above, over the
   panel's empty top, not over the notice under them).
-- **The title bar is icon-only and few:** the workspace, Chat · Board and the thread's title, then
+- **The title bar is icon-only and few:** the workspace, Chat · Board and the thread's title (an
+  orchestrator's with its Memory glyph), then
   what wants you (a setup problem folded from its banner, its glyph with a count, a paused workspace, usage, the bell), one "…" with everything else in words and
   shortcuts, and the panels' group at the end (a worker's Open beside, then the panel's toggle). The usage meter
+  is a button like the bar's others: usage's glyph, its bar and its share ("85%"), the bar giving way on a narrow
+  bar, and the provider and window in its hover and name; with no reading yet it is the glyph alone. It
   follows one rule (on a thread its agent's closest limit, unless another's passes 90%; elsewhere the highest),
   and its hover and popover name which ("This thread: …", "Highest: …"). A popover from the bar drops clear of a
   card that asks for a decision. The overview's header holds its own two toggles; Settings sits beside History at

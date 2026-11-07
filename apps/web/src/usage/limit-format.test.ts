@@ -121,6 +121,8 @@ describe("limit formatting", () => {
       limit: { utilization: 1, status: "allowed", credits: true, expiresAt: NOW + 3_600_000 },
     };
     expect(meterText(tightest)).toBe("Claude 100% used · credits");
+    // The title bar shows the share alone, so its hover says the credits.
+    expect(meterSource(tightest)).toBe("Highest: Claude Code 5-hour 100% · on credits");
     expect(meterLabel(tightest)).toBe(
       "Highest subscription usage: Claude Code 5-hour limit 100% used, continuing on credits",
     );

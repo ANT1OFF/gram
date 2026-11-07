@@ -65,10 +65,11 @@ export const meterSourceWord = (why: MeterWhy["why"]): string =>
 
 /**
  * What the meter's number is, as its hover and its popover's head say it: "This thread: Claude
- * Code weekly 61%", or off a thread "Highest: Codex 5-hour 85%".
+ * Code weekly 61%", or off a thread "Highest: Codex 5-hour 85%", and "· on credits" past a window
+ * the agent goes on from on credits, since the title bar shows the share alone.
  */
 export const meterSource = ({ provider, window, limit, why }: TightestLimit & MeterWhy): string =>
-  `${meterSourceWord(why)}: ${agentLabel(provider)} ${windowWord(window)} ${limitPercent(limit.utilization)}%`;
+  `${meterSourceWord(why)}: ${agentLabel(provider)} ${windowWord(window)} ${limitPercent(limit.utilization)}%${limit.credits === true ? " · on credits" : ""}`;
 
 /**
  * The meter's hover: its source (`meterSource`), then what a click opens, since the title bar's

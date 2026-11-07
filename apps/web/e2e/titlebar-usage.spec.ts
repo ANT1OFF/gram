@@ -109,6 +109,88 @@ test("the popover drops clear of the approval card it would cover", async ({ pag
   expect(hit).toBe(true);
 });
 
+test("the title bar's meter is the Usage button on an orchestrator, a worker and a narrow bar", async ({
+  page,
+}) => {
+  await seed(page, { "gram.mock.orchestration": "board" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  // A launch with a workspace lands on its orchestrator.
+  await expect(page).toHaveURL(/\/t\/t-mock-\d+$/);
+  await page.waitForFunction(() => window.gramMock !== undefined);
+  // Codex's 5-hour window spent, carried on credits: past the warning, so the meter shows it.
+  await page.evaluate(() =>
+    window.gramMock!.simulateUsageLimit({
+      agent: "codex",
+      window: "five_hour",
+      utilization: 1,
+      resetsAt: Date.now() + 3_600_000,
+      credits: true,
+      creditsAvailable: true,
+      creditsBalance: "100",
+    }),
+  );
+  const bar = page.getByTestId("shell-titlebar");
+  const meter = bar.getByTestId("usage-meter");
+  const hint = page.locator('[data-slot="tooltip-content"][data-open]');
+
+  const readsAsButton = async ({ bar: withBar }: { bar: boolean }) => {
+    await expect(meter).toBeVisible();
+    // Usage's glyph, the one the Usage button has before any reading, then the bar and the share:
+    // the title bar is icon-only, so the words are its hover's and its name's. Narrow, the glyph
+    // and the share stand without the bar.
+    await expect(meter.getByTestId("usage-meter-glyph")).toBeVisible();
+    if (withBar) await expect(meter.getByTestId("usage-meter-fill")).toBeVisible();
+    else await expect(meter.getByTestId("usage-meter-fill")).toBeHidden();
+    await expect(meter.getByTestId("usage-meter-short")).toBeVisible();
+    await expect(meter.getByText("Codex 100% used · credits")).toBeHidden();
+    await expect(meter).toHaveAccessibleName(
+      /Codex 5-hour limit 100% used, continuing on credits$/,
+    );
+    await meter.hover();
+    await expect(hint).toContainText("Codex 5-hour 100% · on credits");
+    // And it is a button: a click opens every provider's limits.
+    await meter.click();
+    const popover = page.getByRole("dialog", { name: "Subscription usage" });
+    await expect(popover).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(popover).toBeHidden();
+    await page.mouse.move(0, 450);
+  };
+
+  await readsAsButton({ bar: true });
+  // A worker's bar.
+  await page.goto("/t/t-flaky");
+  await readsAsButton({ bar: true });
+  // A narrow bar keeps the button.
+  await page.setViewportSize({ width: 900, height: 800 });
+  await readsAsButton({ bar: false });
+});
+
+test("an orchestrator's title bar has Memory beside Chat · Board", async ({ page }) => {
+  await seed(page, { "gram.mock.orchestration": "board" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/t\/t-mock-\d+$/);
+  const workspaceId = await page.evaluate(
+    async () => (await window.gramMock!.listWorkspaces())[0]!.workspace.id,
+  );
+  const bar = page.getByTestId("shell-titlebar");
+  await expect(bar.getByTestId("pane-role")).toBeVisible();
+  // An icon with its name on hover, like the bar's other icons.
+  const memory = bar.getByRole("link", { name: "Memory", exact: true });
+  await expect(memory).toBeVisible();
+  await expect(memory).toHaveText("");
+  // To the right of the views and the orchestrator's glyph.
+  const views = (await bar.getByTestId("view-switcher").boundingBox())!;
+  const box = (await memory.boundingBox())!;
+  expect(box.x).toBeGreaterThan(views.x + views.width);
+  await memory.hover();
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText("Memory");
+  await memory.click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceId}/memory$`));
+});
+
 test("the meter waits for a limit, warns from 90% once, and ignores gateways", async ({ page }) => {
   await seed(page, { "gram.mock.limits": "none" });
   await page.goto("/t/t-flaky");
