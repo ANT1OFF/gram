@@ -391,7 +391,7 @@ export const makeSessionLifecycle = ({
               const fresh = yield* open(yield* resumeOptions(marked, resumeAt));
               // A thread with a conversation (e.g. a transcript Claude Code cleaned up) continues
               // without the agent's memory of it, so say so.
-              if ((yield* store.listMessages(rt.threadId)).length > 0) {
+              if (yield* store.hasMessages(rt.threadId)) {
                 yield* hub.publish({
                   type: "notify",
                   kind: "info",

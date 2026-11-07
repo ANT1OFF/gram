@@ -207,6 +207,13 @@ describe.skipIf(!PERF)("synthetic large SQLite workload", () => {
                   ),
                 );
                 yield* measure("orchestratorFullHistory", store.listMessages(threadId(0)));
+                // What an attachment read, an orchestrator's send check and `get_thread` read of it.
+                yield* measure(
+                  "orchestratorAttachmentParts",
+                  store.messagesWithParts(threadId(0), ["file", "data-tool-image"]),
+                );
+                yield* measure("orchestratorUserMessages", store.listUserMessages(threadId(0)));
+                yield* measure("orchestratorLastTen", store.lastMessages(threadId(0), 10));
                 for (const stream of streams) yield* Fiber.join(stream);
                 yield* waitReal(
                   "all synthetic turns idle",

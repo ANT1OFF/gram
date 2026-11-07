@@ -337,16 +337,14 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         if (ownWorkerOnly && !delegated) {
           return yield* new AppToolError({ tool, message: "It is no longer your worker." });
         }
-        const callerUser = (yield* store.listMessages(caller)).filter((m) => m.role === "user");
+        const callerUser = yield* store.listUserMessages(caller);
         const callerOrigin = callerUser.length === 0 ? undefined : originOf(callerUser.at(-1)!);
         let depth = 1;
         let counted: ReadonlyArray<number> | undefined;
         if (delegated) {
           yield* orchestration.checkSend(caller, target.thread.id);
         } else {
-          const targetUser = (yield* store.listMessages(target.thread.id)).filter(
-            (m) => m.role === "user",
-          );
+          const targetUser = yield* store.listUserMessages(target.thread.id);
           const verdict = checkSend({
             caller,
             target: target.thread.id,
