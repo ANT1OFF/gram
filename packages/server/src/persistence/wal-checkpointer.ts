@@ -124,7 +124,7 @@ export interface ConnectionPolicy {
   update(sql: SqlClient.SqlClient, frames: 0 | 1000): Effect.Effect<void, SqlError>;
 }
 
-/** One policy per store scope; mode changes are serialized with the same borrower gate. */
+/** One target per store scope; applying it is serialized with the same borrower gate. */
 export const makeConnectionPolicy = (): ConnectionPolicy => {
   let frames: 0 | 1000 = 1000;
   return {
@@ -134,10 +134,11 @@ export const makeConnectionPolicy = (): ConnectionPolicy => {
       Effect.scoped(
         Effect.uninterruptible(
           Effect.gen(function* () {
-            const connection = yield* sql.reserve;
-            // Record the desired mode under the borrower gate. A later generation replays it
-            // even if applying it to this damaged generation fails.
+            // Complete the controller's state transition before the first fallible operation.
+            // Opening a replacement can fail too; the next successful generation must still
+            // replay this target even when the controller already considers it selected.
             frames = next;
+            const connection = yield* sql.reserve;
             yield* connection.executeUnprepared(
               `PRAGMA wal_autocheckpoint = ${frames}`,
               [],

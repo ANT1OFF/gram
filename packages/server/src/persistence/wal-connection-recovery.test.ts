@@ -1,13 +1,16 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Worker } from "node:worker_threads";
 import { SqlClient, SqlError, ConnectionError } from "../platform/unstable.ts";
-import { durableCommit } from "./durable-commit.ts";
+import { durableCommit, durableSqliteLayer } from "./durable-commit.ts";
 import { ThreadStore } from "./thread-store.ts";
+import * as WalCheckpointer from "./wal-checkpointer.ts";
 
 class CheckpointWorker extends EventEmitter {
   unref() {}
@@ -96,6 +99,66 @@ const withController = (
   }).pipe(Effect.scoped);
 
 describe("checkpoint policy after connection replacement", () => {
+  for (const resuming of [false, true]) {
+    it.effect(
+      `retains the ${resuming ? "resumed" : "fallback"} target when replacement open fails`,
+      () =>
+        Effect.gen(function* () {
+          const dir = mkdtempSync(join(tmpdir(), "gram-wal-open-failure-"));
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => rmSync(dir, { recursive: true, force: true })),
+          );
+          const filename = join(dir, "recovery.db");
+          const worker = new CheckpointWorker();
+          const policy = WalCheckpointer.makeConnectionPolicy();
+          const rejected = yield* Deferred.make<void>();
+          let rejectNextOpen = false;
+          const initialize = (sql: SqlClient.SqlClient) =>
+            Effect.gen(function* () {
+              if (rejectNextOpen) {
+                rejectNextOpen = false;
+                yield* Deferred.succeed(rejected, undefined);
+                return yield* Effect.fail(
+                  new SqlError({
+                    reason: new ConnectionError({
+                      cause: new Error("synthetic replacement open failure"),
+                      operation: "connect",
+                    }),
+                  }),
+                );
+              }
+              yield* policy.apply(sql);
+            });
+          const layer = WalCheckpointer.layer(filename, {
+            connectionPolicy: policy,
+            staleMs: 60_000,
+            spawn: () => worker as unknown as Worker,
+          }).pipe(Layer.provideMerge(durableSqliteLayer({ filename }, initialize)));
+          yield* Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            expect(yield* readMode(sql)).toBe(0);
+            if (resuming) {
+              worker.emit("message", { kind: "error", message: "synthetic checkpoint failure" });
+              yield* awaitMode(sql, 1000);
+            }
+            yield* replaceConnection(sql);
+            rejectNextOpen = true;
+            worker.emit(
+              "message",
+              resuming
+                ? { kind: "checkpoint", log: 0, checkpointed: 0, ms: 0 }
+                : { kind: "error", message: "synthetic checkpoint failure" },
+            );
+            // The controller's lease really attempts a new generation, then fails before receiving it.
+            yield* Deferred.await(rejected);
+            expect(yield* readMode(sql)).toBe(resuming ? 0 : 1000);
+            yield* replaceConnection(sql);
+            expect(yield* readMode(sql)).toBe(resuming ? 0 : 1000);
+          }).pipe(Effect.provide(layer));
+        }).pipe(Effect.scoped),
+    );
+  }
+
   it.effect(
     "restores healthy worker mode before the first borrower, without waiting for a report",
     () =>
