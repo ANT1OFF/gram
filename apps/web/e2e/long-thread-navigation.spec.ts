@@ -541,7 +541,8 @@ test("message stepping and search own their scroll after a conversation jump", a
     .poll(() =>
       page.evaluate(() => {
         const highlight = CSS.highlights.get("gram-find-current");
-        const [range] = highlight ? [...highlight] : [];
+        // The highlight holds the live ranges find added, so they measure.
+        const [range] = highlight ? ([...highlight] as Range[]) : [];
         const view = document.querySelector('[data-testid="transcript"]')?.getBoundingClientRect();
         if (!range || !view) return "none";
         const box = range.getBoundingClientRect();
