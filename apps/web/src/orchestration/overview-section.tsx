@@ -1,7 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Term } from "@/components/term";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { seeTerm, type TermId } from "@/lib/first-use";
 import { cn } from "@/lib/utils";
@@ -16,18 +15,14 @@ export const STOP = OVERVIEW_STOP;
 /**
  * Every row's shape, whatever it lists: a 10 px mark column, then its title (`ROW_TITLE`), and under
  * it one compact status line (`ROW_STATUS`) with what trails it (a time, its badges) at the right
- * edge. A title too long for its line wraps to a second before it is cut, at its end and never mid
- * word where a word break fits, and its hover says the whole of it; the status line stays under it.
+ * edge. The title is one line, cut at its end with an ellipsis, and its hover says the whole of it,
+ * so every row keeps the same height and a list of them reads as even rows.
  */
 export const ROW =
   "grid w-full cursor-default grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-2 rounded-(--radius-sm) px-1.5 py-1 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring";
 
-/**
- * A row's title: the row's full width, up to two lines, then cut at its end with an ellipsis. A
- * long title reads whole at a sidebar's usual width rather than stopping mid-word ("Inline
- * comments in the …").
- */
-export const ROW_TITLE = "col-span-2 min-w-0 line-clamp-2 break-words";
+/** A row's title: the row's full width, one line, cut at its end with an ellipsis. */
+export const ROW_TITLE = "col-span-2 min-w-0 truncate";
 
 /** A row's status line, under its title: muted words, and its time or badges at the right edge. */
 export const ROW_STATUS =
@@ -50,7 +45,9 @@ export const SETTLED =
  * A section with a title that folds it, its fold kept in the layout store. Only folded does it say
  * its count; open, its rows do, and the title's name and hover keep the number. `action`, a control
  * of the section's own, sits at the title's end while it is open; `folded`, while it is folded,
- * puts its own words in the title's place ("8 done") and a control after them.
+ * puts its own words in the title's place ("8 done"). The whole line is the fold's button, and
+ * every section's title has the one look: a Gram word's explanation (`term`) is on its hover, never
+ * marked on the title itself.
  */
 export function Section({
   id,
@@ -66,11 +63,11 @@ export function Section({
   title: string;
   count: number;
   action?: ReactNode;
-  /** Folded, the title's words and a control after them, in place of its name and count. */
-  folded?: { words: string; action: ReactNode } | undefined;
+  /** Folded, the title's words in place of its name and count. */
+  folded?: string | undefined;
   /** What the section's name means, on its hover and to a screen reader. */
   hint?: string;
-  /** The Gram word the name is, marked as one until its `hint` has been seen. */
+  /** The Gram word the name is: its `hint`'s hover counts as the word's first use. */
   term?: TermId;
   children: ReactNode;
 }) {
@@ -80,8 +77,7 @@ export function Section({
   return (
     <section aria-label={title} data-testid={`overview-section-${id}`} className="flex flex-col">
       <div className="flex items-center gap-1">
-        {/* Folded to its own words, the control after them follows them, not the row's end. */}
-        <h2 className={cn("min-w-0", !(folded && foldedLine !== undefined) && "flex-1")}>
+        <h2 className="min-w-0 flex-1">
           <button
             type="button"
             {...{ [STOP]: "" }}
@@ -105,13 +101,11 @@ export function Section({
               )}
             />
             {folded && foldedLine !== undefined ? (
-              <span data-testid={`overview-section-${id}-folded`} className="tabular-nums">
-                {foldedLine.words}
+              <span data-testid={`overview-section-${id}-folded`} className="flex-1 tabular-nums">
+                {foldedLine}
               </span>
             ) : (
-              <span className="flex-1">
-                {term === undefined ? title : <Term term={term}>{title}</Term>}
-              </span>
+              <span className="flex-1">{title}</span>
             )}
             {folded && foldedLine === undefined && count > 0 && (
               <span className="tracking-normal tabular-nums">{count}</span>
@@ -119,7 +113,6 @@ export function Section({
           </button>
         </h2>
         {!folded && action}
-        {folded && foldedLine?.action}
       </div>
       <div id={body} hidden={folded} className="flex flex-col gap-px">
         {children}

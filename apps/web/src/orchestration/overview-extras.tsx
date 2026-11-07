@@ -206,26 +206,9 @@ export function OverviewDone() {
       title="Done"
       count={rows.length}
       hint="Finished and settled chats, latest first. History has them all."
-      // Folded, as it starts: one row, "8 done · History", the Board and History having the rest.
-      folded={{
-        words: `${rows.length} done`,
-        action: (
-          <span className="flex h-6 shrink-0 items-center gap-1 text-meta text-muted-foreground">
-            <span aria-hidden>·</span>
-            <button
-              type="button"
-              {...{ [STOP]: "" }}
-              data-testid="overview-done-history"
-              aria-haspopup="dialog"
-              title="Open History on Done"
-              onClick={() => useHistoryStore.getState().show("done")}
-              className="rounded-(--radius-sm) px-1 outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              History
-            </button>
-          </span>
-        ),
-      }}
+      // Folded, as it starts: one row, "8 done", that unfolds on a click anywhere on it. History,
+      // at the column's foot, is the one way to the rest.
+      folded={`${rows.length} done`}
     >
       {shown.map((row) => (
         <DoneRow key={row.threadId} row={row} now={now} />
@@ -309,9 +292,9 @@ function DoneRow({ row, now }: { row: RecentDone; now: number }) {
 }
 
 /**
- * The column's foot, out of the scroll so it is always there: the way into History, one line under
- * Done's few rows that opens every past chat in one searchable list, and Settings beside it. With
- * Done turned off, History's line goes and Settings stays.
+ * The column's foot, out of the scroll so it is always there: History, the sidebar's one way into
+ * every past chat in one searchable list (Done's folded row only unfolds), and Settings beside it.
+ * With Done turned off, History's line goes and Settings stays.
  */
 export function OverviewHistory({ showHistory = true }: { showHistory?: boolean }) {
   const hint = useShortcutHint("history.open");
@@ -329,10 +312,10 @@ export function OverviewHistory({ showHistory = true }: { showHistory?: boolean 
           onClick={() => useHistoryStore.getState().show()}
           className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-body text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
         >
-          {/* An inline glyph, on Search's and the rows' marks. */}
+          {/* An inline glyph, on Search's and the rows' marks. Its key is on its hover: beside
+              Settings the foot has no room for it on one line. */}
           <History aria-hidden className="size-icon-row shrink-0" />
-          <span className="flex-1">Open History</span>
-          {hint !== "" && <kbd className="font-sans text-meta tabular-nums">{hint}</kbd>}
+          <span className="flex-1 truncate">History</span>
         </button>
       ) : (
         <span className="flex-1" />

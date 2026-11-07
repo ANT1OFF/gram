@@ -6,7 +6,7 @@ import {
   type WorkspaceId,
   type WorkspaceState,
 } from "@gram/contracts";
-import { PanelLeftClose, UnfoldHorizontal } from "lucide-react";
+import { MessageSquare, Network, PanelLeftClose, UnfoldHorizontal } from "lucide-react";
 import {
   useMemo,
   useRef,
@@ -56,6 +56,7 @@ import {
   SoloRow,
   switchOverview,
   OrchestratorAtWork,
+  useAgentsMixed,
   useOverviewFeatures,
   WorkerRow,
 } from "./overview-sidebar";
@@ -183,33 +184,13 @@ function RailNeedsYou() {
   );
 }
 
-/** A tile: its workspace's name in small words, cut short where it must; its flyout's head says the whole. */
-const TILE =
-  "relative grid size-9 shrink-0 place-items-center rounded-xs border border-sidebar-block-border bg-sidebar-block px-0.5 text-caption font-medium text-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring aria-current:border-foreground/35 aria-current:bg-sidebar-row-active aria-current:text-foreground";
-
-/** The most letters a tile's name shows whole, at its size. */
-const TILE_LETTERS = 5;
-
 /**
- * A workspace's name as its tile says it: whole when it fits, else a short form that still reads as
- * the name ("billing-api" is "BA", "frontend" "Fr") rather than a cut-off word ("billi…"). The
- * tile's flyout and its accessible name say it in full.
+ * A tile: the glyph its kind has everywhere in Gram (a workspace's orchestrator, a thread), never
+ * letters cut from its name ("BA" for billing-api reads as a code). Its flyout, open on hover or
+ * focus, heads with the whole name, and its accessible name says it too.
  */
-export function tileLabel(name: string): string {
-  const trimmed = name.trim();
-  if (trimmed.length <= TILE_LETTERS) return trimmed;
-  const parts = trimmed.split(/[\s._/-]+/u).filter((part) => part !== "");
-  if (parts.length > 1) {
-    const [head] = parts;
-    if (head !== undefined && head.length <= TILE_LETTERS && parts.length === 2 && head.length >= 3)
-      return head;
-    return parts
-      .slice(0, 3)
-      .map((part) => part[0]!.toLocaleUpperCase())
-      .join("");
-  }
-  return trimmed[0]!.toLocaleUpperCase() + trimmed.slice(1, 2);
-}
+const TILE =
+  "relative grid size-9 shrink-0 place-items-center rounded-xs border border-sidebar-block-border bg-sidebar-block text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-current:border-foreground/35 aria-current:bg-sidebar-row-active aria-current:text-foreground";
 
 /** One tile per workspace, in the switcher's order, as the open overview's rows. */
 function WorkspaceTiles() {
@@ -301,9 +282,7 @@ function WorkspaceTile({
               ringing ? "gram-ring-breathe border-status-working/55" : "border-transparent",
             )}
           />
-          <span aria-hidden data-testid="overview-tile-name" className="max-w-full truncate">
-            {tileLabel(state.workspace.name)}
-          </span>
+          <Network aria-hidden data-testid="overview-tile-glyph" className="size-icon-row" />
           {asks > 0 && (
             <span
               aria-hidden
@@ -361,9 +340,7 @@ function SoloTile() {
       }
       tile={
         <>
-          <span aria-hidden data-testid="overview-tile-name" className="max-w-full truncate">
-            Solo
-          </span>
+          <MessageSquare aria-hidden data-testid="overview-tile-glyph" className="size-icon-row" />
           <TileCount count={solo.length} />
         </>
       }
@@ -545,6 +522,7 @@ function CurrentWorkers({ workspaceId }: { workspaceId: WorkspaceId }) {
   const features = useOverviewFeatures(workspaceId);
   const items = useMemo(() => overviewItems(features), [features]);
   const workers = items.flatMap((item) => (item.kind === "worker" ? [item] : []));
+  const agentMark = useAgentsMixed(workers.map((item) => item.row.threadId));
   if (workers.length === 0) {
     return (
       <OrchestratorAtWork workspaceId={workspaceId} className="px-1.5 py-1">
@@ -558,6 +536,7 @@ function CurrentWorkers({ workspaceId }: { workspaceId: WorkspaceId }) {
       row={item.row}
       feature={item.feature}
       updatedAt={item.updatedAt}
+      agentMark={agentMark}
       card={false}
     />
   ));
@@ -572,11 +551,15 @@ function OtherWorkers({ workspaceId }: { workspaceId: WorkspaceId }) {
   const threads = useThreadsStore(
     useShallow((s) => workingWorkerThreads(s.byId, s.statusDetail, workspaceId)),
   );
+  const agentMark = useAgentsMixed(threads.map((summary) => summary.thread.id));
   if (threads.length === 0) return <Empty>No workers at work.</Empty>;
-  return threads.map((summary) => <OtherWorkerRow key={summary.thread.id} summary={summary} />);
+  return threads.map((summary) => (
+    <OtherWorkerRow key={summary.thread.id} summary={summary} agentMark={agentMark} />
+  ));
 }
 
-function OtherWorkerRow({ summary }: { summary: ThreadSummary }) {
+/** Another workspace's worker at work; its agent's mark only while its list mixes agents. */
+function OtherWorkerRow({ summary, agentMark }: { summary: ThreadSummary; agentMark: boolean }) {
   const openThread = useOpenThread();
   const { thread } = summary;
   const title = threadDisplayTitle(thread);
@@ -590,6 +573,7 @@ function OtherWorkerRow({ summary }: { summary: ThreadSummary }) {
       data-testid="overview-worker"
       data-thread-id={thread.id}
       aria-label={`${title}, ${now}`}
+      title={`${title}\n${now}`}
       onClick={(event) => {
         if (besideKey(event)) keepBeside(thread.id, openThread);
         else if (event.altKey)
@@ -604,7 +588,7 @@ function OtherWorkerRow({ summary }: { summary: ThreadSummary }) {
       />
       <span className="truncate text-foreground">{title}</span>
       <span className="flex text-muted-foreground">
-        {thread.model?.agent !== undefined && (
+        {agentMark && thread.model?.agent !== undefined && (
           <AgentIcon agent={thread.model.agent} className="size-icon-chip" />
         )}
       </span>
