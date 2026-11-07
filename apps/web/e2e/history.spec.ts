@@ -107,7 +107,9 @@ test("History filters by title and repo as you type, and by kind with its chips"
   for (const where of await rows(page).getByTestId("history-where").allTextContents())
     expect(where).toContain("docs");
   await search.fill("no such thing anywhere");
-  await expect(history(page).getByTestId("history-empty")).toHaveText("No matches");
+  await expect(history(page).getByTestId("history-empty").getByTestId("empty-title")).toHaveText(
+    "No matches",
+  );
   await search.fill("");
 
   // Each chip keeps only its kind.

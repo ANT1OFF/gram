@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
-  Check,
   ChevronDown,
   ChevronRight,
   Circle,
@@ -16,7 +15,6 @@ import {
   FolderOpen,
   GitPullRequest,
   Globe,
-  History,
   MessageSquare,
   Network,
   Plus,
@@ -50,7 +48,7 @@ import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 
 import { matchRepos, RECENT_LIMIT } from "./repo-search";
-import { runsWith, toolRows, type ToolState } from "./tools";
+import { runsWith, toolRows, type ToolRow, type ToolState } from "./tools";
 
 /**
  * Whether this app session shows the first-run screen; decided once, when settings first load, so
@@ -107,7 +105,7 @@ const STEPS: readonly { icon: LucideIcon; short: string; line: ReactNode }[] = [
   {
     icon: Network,
     short: "An orchestrator briefs workers",
-    line: "One per workspace. It splits a task into pieces and follows each one through.",
+    line: "One per workspace. It starts by surveying your repositories and suggesting first tasks, then splits each task into pieces and follows them through.",
   },
   {
     icon: GitPullRequest,
@@ -174,23 +172,27 @@ function FirstRun() {
     if (path !== undefined) await startAt(path);
   };
 
+  const skip = () => {
+    useWelcome.setState({ open: false });
+    void record();
+  };
+
   return (
     <section
       aria-labelledby="welcome-title"
       data-testid="welcome"
-      className="flex w-full max-w-3xl flex-col gap-6 rounded-xl border border-edge bg-card p-6 text-reading text-card-foreground shadow-raised"
+      className="flex w-full max-w-2xl flex-col gap-5 rounded-xl border border-edge bg-card p-6 text-reading text-card-foreground shadow-raised"
     >
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <h2 id="welcome-title" className="font-heading text-heading">
-            Pick a repository to start
-          </h2>
-          <p data-testid="welcome-line" className="text-reading text-muted-foreground">
-            A workspace groups your repositories, and its orchestrator coordinates the agents that
-            work in them.
-          </p>
-        </div>
-        <StartSteps picked={picked} />
+      <div className="flex flex-col gap-1">
+        <h2 id="welcome-title" className="font-heading text-heading">
+          Open a repository
+        </h2>
+        <p data-testid="welcome-line" className="text-reading text-muted-foreground">
+          Gram makes it a workspace, whose orchestrator hands your tasks to agents and follows each
+          one to a pull request.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2">
         {searchable && (
           <RepoSearch
             query={query}
@@ -211,23 +213,33 @@ function FirstRun() {
           onOpen={openRepo}
         />
         {searchable && matches.length === 0 && (
-          <p data-testid="welcome-repos-none" className="px-2 text-meta text-muted-foreground">
+          <p data-testid="welcome-repos-none" className="px-3 text-meta text-muted-foreground">
             No repository matches “{query.trim()}”. Add it below.
           </p>
         )}
         {matches.length > repos.length && (
-          <p data-testid="welcome-repos-more" className="px-2 text-meta text-muted-foreground">
+          <p data-testid="welcome-repos-more" className="px-3 text-meta text-muted-foreground">
             {matches.length - repos.length} more. Type to narrow the list.
           </p>
         )}
-        {/* Whether the agents can run, beside the action that starts them. */}
-        <AgentStrip />
-        <div className="flex flex-wrap items-center gap-2">
-          {/* The one primary action: open the picked repository, or with none to pick, a folder. */}
-          {picked !== undefined && (
+        {picked !== undefined && (
+          // Another way in, quiet under the list it adds to: a folder, or a clone from GitHub.
+          <AddRepositoryMenu
+            disabled={pending !== undefined}
+            onFolder={() => void chooseFolder()}
+            onClone={() => setAdding(true)}
+          />
+        )}
+        <Expand open={adding}>
+          {adding && <AddRepository onAdded={(project) => start(project)} />}
+        </Expand>
+      </div>
+      <div className="flex flex-col gap-3">
+        {/* The one primary action with Skip beside it as the secondary one, the agents under them. */}
+        <div data-testid="welcome-actions" className="flex flex-wrap items-center gap-2">
+          {picked !== undefined ? (
             <Button
               type="button"
-              size="sm"
               data-testid="welcome-open"
               disabled={pending !== undefined}
               onClick={() => openRepo(picked)}
@@ -240,14 +252,11 @@ function FirstRun() {
               Open {picked.name}
               <ArrowRight data-icon="inline-end" />
             </Button>
-          )}
-          {picked !== undefined && <RunsWith />}
-          {picked === undefined ? (
-            // Nothing to pick: the other sources are the way in, so they stand on their own.
+          ) : (
+            // Nothing to pick: a folder on disk is the way in, a clone the other.
             <>
               <Button
                 type="button"
-                size="sm"
                 data-testid="welcome-open-folder"
                 disabled={pending !== undefined}
                 onClick={() => void chooseFolder()}
@@ -257,8 +266,7 @@ function FirstRun() {
               </Button>
               <Button
                 type="button"
-                variant="ghost"
-                size="sm"
+                variant="outline"
                 aria-expanded={adding}
                 disabled={pending !== undefined}
                 onClick={() => setAdding((open) => !open)}
@@ -267,132 +275,64 @@ function FirstRun() {
                 Clone from GitHub
               </Button>
             </>
-          ) : (
-            <AddRepositoryMenu
-              disabled={pending !== undefined}
-              onFolder={() => void chooseFolder()}
-              onClone={() => setAdding(true)}
-            />
           )}
           <Button
             type="button"
-            variant="ghost"
-            size="sm"
-            className="ml-auto text-muted-foreground"
-            onClick={() => {
-              useWelcome.setState({ open: false });
-              void record();
-            }}
+            variant={picked === undefined ? "ghost" : "outline"}
+            data-testid="welcome-skip"
+            onClick={skip}
           >
             Skip
           </Button>
         </div>
-        {picked !== undefined && (
-          // What Open leads to, so the first click holds no surprise.
-          <p data-testid="welcome-next" className="text-meta text-muted-foreground">
-            Next: a new workspace on {picked.name}, where you choose how much it may do on its own
-            and, if you like, what it should work on first.
-          </p>
-        )}
-        <Expand open={adding}>
-          {adding && <AddRepository onAdded={(project) => start(project)} />}
-        </Expand>
         {error !== undefined && (
           <p role="alert" className="text-meta text-destructive">
             {error}
           </p>
         )}
+        <Readiness />
+        {picked !== undefined && (
+          // What Open leads to, so the first click holds no surprise, and that the survey comes next.
+          <p data-testid="welcome-next" className="text-meta text-muted-foreground">
+            Next: choose how much it may do on its own. Its orchestrator then surveys {picked.name}{" "}
+            and suggests first tasks; nothing starts until you pick one.
+          </p>
+        )}
       </div>
-      <HowItWorks />
-      <ImportSessions />
+      <MoreAboutGram />
     </section>
   );
 }
 
-/**
- * The first run's three steps across the top, each with where it stands: the repository picked,
- * the agent its work runs on (or what to do first), and the workspace Open makes. A step that is
- * settled takes a check; nothing here acts, the controls under it do.
- */
-function StartSteps({ picked }: { picked: RepositoryCandidate | undefined }) {
-  const { checks } = useLaunchChecks();
-  const agent = checks === undefined ? undefined : runsWith(toolRows(checks));
-  const steps: readonly { label: string; value: string; done: boolean }[] = [
-    { label: "Repository", value: picked?.name ?? "Pick one below", done: picked !== undefined },
-    {
-      label: "Agent",
-      value:
-        agent === undefined
-          ? "Checking…"
-          : agent.ready
-            ? agent.words.replace(/^Runs with /, "")
-            : agent.words,
-      done: agent?.ready === true,
-    },
-    {
-      label: "Workspace",
-      value: picked === undefined ? "Opens next" : `Opens on ${picked.name}`,
-      done: false,
-    },
-  ];
-  return (
-    <ol
-      aria-label="Steps to start"
-      data-testid="welcome-start-steps"
-      className="grid grid-cols-1 gap-2 sm:grid-cols-3"
-    >
-      {steps.map((step, index) => (
-        <li
-          key={step.label}
-          data-done={step.done}
-          className="flex min-w-0 items-start gap-2 rounded-md border border-edge px-3 py-2"
-        >
-          <span
-            aria-hidden
-            className={cn(
-              "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-edge text-caption text-muted-foreground",
-              step.done && "choice-selected text-foreground",
-            )}
-          >
-            {step.done ? <Check className="size-icon-chip" /> : index + 1}
-          </span>
-          <span className="flex min-w-0 flex-col">
-            <span className="text-body-strong">{step.label}</span>
-            <span className="truncate text-meta text-muted-foreground">{step.value}</span>
-          </span>
-          <span className="sr-only">{step.done ? ", done" : ""}</span>
-        </li>
-      ))}
-    </ol>
-  );
-}
+/** The footer's two folds: how Gram works, and past CLI sessions to pick up. */
+type More = "how" | "import";
 
 /**
- * How Gram works, folded under the start: the line under the heading says what a workspace and
- * its orchestrator are, so the three steps (who gives the work, who plans it and who does it) are
- * there for whoever wants them, each with its fuller line.
+ * Under the start, folded until asked for: how Gram works, in three rows (who gives the work, who
+ * plans it and who does it), and past CLI sessions to import. One row of two disclosures, so the
+ * first screen is the repository, the agent and Open.
  */
-function HowItWorks() {
-  const [open, setOpen] = useState(false);
+function MoreAboutGram() {
+  const [open, setOpen] = useState<More>();
+  const toggle = (which: More) => setOpen((was) => (was === which ? undefined : which));
   return (
-    <div className="flex flex-col gap-2 border-t border-border pt-4">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        aria-expanded={open}
-        data-testid="welcome-how"
-        className="-ml-2.5 self-start"
-        onClick={() => setOpen((was) => !was)}
-      >
-        <ChevronRight
-          data-icon="inline-start"
-          className={cn("transition-transform duration-(--dur-fast)", open && "rotate-90")}
+    <div className="flex flex-col gap-2 border-t border-border pt-3">
+      <div className="-ml-2.5 flex flex-wrap items-center gap-1">
+        <Disclosure
+          open={open === "how"}
+          testId="welcome-how"
+          onClick={() => toggle("how")}
+          label="How it works"
         />
-        How it works
-      </Button>
-      <Expand open={open}>
-        {open && (
+        <Disclosure
+          open={open === "import"}
+          testId="welcome-import"
+          onClick={() => toggle("import")}
+          label="Import past CLI sessions"
+        />
+      </div>
+      <Expand open={open === "how"}>
+        {open === "how" && (
           <ol
             aria-label="How Gram works"
             data-testid="welcome-steps"
@@ -410,13 +350,43 @@ function HowItWorks() {
           </ol>
         )}
       </Expand>
+      <Expand open={open === "import"}>{open === "import" && <ImportSessions />}</Expand>
     </div>
   );
 }
 
+function Disclosure({
+  open,
+  testId,
+  label,
+  onClick,
+}: {
+  open: boolean;
+  testId: string;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      aria-expanded={open}
+      data-testid={testId}
+      onClick={onClick}
+    >
+      <ChevronRight
+        data-icon="inline-start"
+        className={cn("transition-transform duration-(--dur-fast)", open && "rotate-90")}
+      />
+      {label}
+    </Button>
+  );
+}
+
 /**
- * The first run's other ways in, behind one named action beside Open: a folder on disk, or a clone
- * from GitHub, which unfolds its form under the row.
+ * The first run's other ways in, behind one quiet action under the list: a folder on disk, or a
+ * clone from GitHub, which unfolds its form under it.
  */
 function AddRepositoryMenu({
   disabled,
@@ -432,7 +402,14 @@ function AddRepositoryMenu({
       <Menu.Trigger
         disabled={disabled}
         data-testid="welcome-add"
-        render={<Button type="button" variant="outline" size="sm" />}
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="self-start text-muted-foreground"
+          />
+        }
       >
         <Plus data-icon="inline-start" />
         Add repository
@@ -530,65 +507,44 @@ function useFirstRunRepos() {
 
 /**
  * Sessions started in a terminal with Claude Code or Codex, picked up as threads: a repository
- * first, then its past sessions, as ⌘K's Resume past session lists them.
+ * first, then its past sessions, as ⌘K's Resume past session lists them. Shown once its fold opens.
  */
 function ImportSessions() {
   const { repos } = useFirstRunRepos();
-  const [open, setOpen] = useState(false);
   const [root, setRoot] = useState<string>();
   const folder = root ?? repos[0]?.root;
   return (
-    <div className="flex flex-col gap-2 border-t border-border pt-4">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-expanded={open}
-          data-testid="welcome-import"
-          className="-ml-2.5"
-          onClick={() => setOpen((was) => !was)}
+    <div data-testid="welcome-import-sessions" className="flex flex-col gap-2">
+      <p className="text-meta text-muted-foreground">
+        Pick up a Claude Code or Codex session you started in a terminal.
+      </p>
+      {repos.length > 1 && (
+        <div
+          role="radiogroup"
+          aria-label="Sessions from"
+          className="flex flex-wrap items-center gap-1"
         >
-          <History data-icon="inline-start" />
-          Import past CLI sessions
-        </Button>
-        <span className="text-meta text-muted-foreground">
-          Pick up a Claude Code or Codex session you started in a terminal.
-        </span>
-      </div>
-      <Expand open={open}>
-        {open && (
-          <div className="flex flex-col gap-2">
-            {repos.length > 1 && (
-              <div
-                role="radiogroup"
-                aria-label="Sessions from"
-                className="flex flex-wrap items-center gap-1"
-              >
-                {repos.map((repo) => (
-                  <button
-                    key={repo.root}
-                    type="button"
-                    role="radio"
-                    aria-checked={repo.root === folder}
-                    onClick={() => setRoot(repo.root)}
-                    className="rounded-md border border-border px-2 py-0.5 text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring aria-checked:choice-selected"
-                  >
-                    {repo.name}
-                  </button>
-                ))}
-              </div>
-            )}
-            {folder === undefined ? (
-              <p className="text-meta text-muted-foreground">
-                Pick a repository above first; sessions are listed by the folder they ran in.
-              </p>
-            ) : (
-              <ResumeSessions key={folder} projectRoot={folder} />
-            )}
-          </div>
-        )}
-      </Expand>
+          {repos.map((repo) => (
+            <button
+              key={repo.root}
+              type="button"
+              role="radio"
+              aria-checked={repo.root === folder}
+              onClick={() => setRoot(repo.root)}
+              className="rounded-md border border-border px-2 py-0.5 text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring aria-checked:choice-selected"
+            >
+              {repo.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {folder === undefined ? (
+        <p className="text-meta text-muted-foreground">
+          Pick a repository above first; sessions are listed by the folder they ran in.
+        </p>
+      ) : (
+        <ResumeSessions key={folder} projectRoot={folder} />
+      )}
     </div>
   );
 }
@@ -673,33 +629,6 @@ function RecentRepos({
   );
 }
 
-/**
- * Beside Open, the agent its work runs on ("Runs with Codex"), or with none ready, what to do
- * first. Reads the same launch checks as the strip above, while they load says nothing.
- */
-function RunsWith() {
-  const { checks } = useLaunchChecks();
-  if (checks === undefined) return null;
-  const { ready, agents, words } = runsWith(toolRows(checks));
-  return (
-    <span
-      data-testid="welcome-runs-with"
-      data-ready={ready}
-      className={cn(
-        "flex min-w-0 items-center gap-1.5 text-meta",
-        ready ? "text-muted-foreground" : "text-warning",
-      )}
-    >
-      {ready ? (
-        agents.map((agent) => <AgentIcon key={agent} agent={agent} className="size-icon-row" />)
-      ) : (
-        <CircleAlert aria-hidden className="size-icon-row shrink-0" />
-      )}
-      {words}
-    </span>
-  );
-}
-
 /** How each state reads beside its icon: never by colour alone. */
 const STATE: Readonly<Record<ToolState, { icon: LucideIcon; words: string; className: string }>> = {
   ready: { icon: CircleCheck, words: "Ready", className: "text-success" },
@@ -708,24 +637,31 @@ const STATE: Readonly<Record<ToolState, { icon: LucideIcon; words: string; class
   optional: { icon: Circle, words: "Not installed", className: "text-muted-foreground" },
 };
 
+/** What the GitHub CLI is for, beside it while it isn't set up: it is optional, not a blocker. */
+const GH_FOR = "For pull requests and their checks";
+
 /**
- * Claude Code and Codex, each ready or not, from the launch checks Settings → Agents reads; git
- * only when it is missing. One that isn't installed links to its install instructions; one that
- * isn't ready offers Check again, which runs the checks once more. Only reads the checks. The
- * version or the remedy is on each name's hover and focus.
+ * Under Open, what its work runs on: "Runs with Codex" when an agent is ready, else the one thing
+ * to do first. Under that line, each tool that isn't ready yet: an agent no other covers says how
+ * to install or sign in to it, with its install docs; one another agent covers, the GitHub CLI and
+ * git when missing stay one quiet row each. Check again runs the checks once more. Only reads them.
  */
-function AgentStrip() {
+function Readiness() {
   const { checks, recheck } = useLaunchChecks();
   const [checking, setChecking] = useState(false);
-  const rows =
-    checks === undefined
-      ? []
-      : toolRows(checks).filter(
-          (row) =>
-            row.tool === "claude" ||
-            row.tool === "codex" ||
-            (row.tool === "git" && row.state !== "ready"),
-        );
+  if (checks === undefined) {
+    return (
+      <p role="status" data-testid="welcome-agents" className="text-meta text-muted-foreground">
+        Checking your agents…
+      </p>
+    );
+  }
+  const all = toolRows(checks);
+  const { ready, agents, words } = runsWith(all);
+  // The ones still to set up, those that stop the start first; a ready agent is named in the line.
+  const rows = all
+    .filter((row) => row.state !== "ready")
+    .toSorted((a, b) => Number(a.state === "optional") - Number(b.state === "optional"));
   const again = () => {
     setChecking(true);
     recheck()
@@ -733,75 +669,101 @@ function AgentStrip() {
       .finally(() => setChecking(false));
   };
   return (
-    <div data-testid="welcome-agents" className="rounded-md bg-accent/60 px-3 py-1.5 text-meta">
-      {checks === undefined ? (
-        <span role="status" className="block py-1 text-muted-foreground">
-          Checking your agents…
+    <div
+      data-testid="welcome-agents"
+      data-ready={ready}
+      className="flex flex-col gap-1 rounded-md bg-accent/60 px-3 py-2 text-meta"
+    >
+      <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1">
+        <span
+          data-testid="welcome-runs-with"
+          data-ready={ready}
+          className={cn(
+            "flex min-w-0 items-center gap-1.5 font-medium",
+            ready ? "text-foreground" : "text-warning",
+          )}
+        >
+          {ready ? (
+            agents.map((agent) => <AgentIcon key={agent} agent={agent} className="size-icon-row" />)
+          ) : (
+            <CircleAlert aria-hidden className="size-icon-row shrink-0" />
+          )}
+          {words}
         </span>
-      ) : (
-        <ul aria-label="Agents" className="flex flex-col">
-          {rows.map((row) => {
-            const state = STATE[row.state];
-            const Icon = state.icon;
-            const words = row.tool === "git" ? "Not installed" : state.words;
-            return (
-              <li
-                key={row.tool}
-                data-state={row.state}
-                data-tool={row.tool}
-                className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 py-0.5"
-              >
-                <Hint
-                  label={<CommandText text={row.detail} />}
-                  render={
-                    <span
-                      // Focusable, so the version or the remedy behind it reaches the keyboard too.
-                      tabIndex={0}
-                      className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:focus-ring"
-                    />
-                  }
-                >
-                  {row.tool === "git" ? (
-                    <FolderGit2 aria-hidden className="size-icon-row text-muted-foreground" />
-                  ) : (
-                    <AgentIcon agent={row.tool} className="size-icon-row" />
-                  )}
-                  <span className="font-medium">{row.name}</span>
-                  <Icon aria-hidden className={cn("ml-1 size-icon-row", state.className)} />
-                  <span
-                    className={row.state === "ready" ? "text-foreground" : "text-muted-foreground"}
-                  >
-                    {words}
-                  </span>
-                  <span className="sr-only">: {row.detail.replaceAll("`", "")}</span>
-                </Hint>
-                {row.state !== "ready" && (
-                  <span className="ml-auto flex items-center gap-1">
-                    {row.installUrl !== undefined && (
-                      <OutboundLink
-                        href={row.installUrl}
-                        title={`How to install ${row.name}`}
-                        // Optional, with another agent ready: a quiet link, not a second start.
-                        className={buttonVariants({
-                          size: "xs",
-                          variant: row.state === "optional" ? "ghost" : "outline",
-                          className: row.state === "optional" ? "text-muted-foreground" : undefined,
-                        })}
-                      >
-                        Install {row.name}
-                        <ExternalLink data-icon="inline-end" aria-hidden />
-                      </OutboundLink>
-                    )}
-                    <Button size="xs" variant="ghost" disabled={checking} onClick={again}>
-                      {checking ? "Checking…" : "Check again"}
-                    </Button>
-                  </span>
-                )}
-              </li>
-            );
-          })}
+        {rows.length > 0 && (
+          <Button size="xs" variant="ghost" className="ml-auto" disabled={checking} onClick={again}>
+            {checking ? "Checking…" : "Check again"}
+          </Button>
+        )}
+      </div>
+      {rows.length > 0 && (
+        <ul aria-label="Tools to set up" className="flex flex-col">
+          {rows.map((row) => (
+            <ToolLine key={row.tool} row={row} />
+          ))}
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * One tool that isn't ready. Needed (no other agent covers it, or git): its remedy is spelled out
+ * under it, the command marked, with its install docs beside. Optional: one quiet row, the remedy
+ * on its hover.
+ */
+function ToolLine({ row }: { row: ToolRow }) {
+  const state = STATE[row.state];
+  const Icon = state.icon;
+  const needed = row.state === "missing" || row.state === "attention";
+  const note = row.tool === "gh" ? GH_FOR : undefined;
+  return (
+    <li
+      data-state={row.state}
+      data-tool={row.tool}
+      className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-0.5 py-0.5"
+    >
+      <Hint
+        label={<CommandText text={row.detail} />}
+        render={
+          <span
+            // Focusable, so the version or the remedy behind it reaches the keyboard too.
+            tabIndex={0}
+            className="flex items-center gap-1.5 rounded-sm text-muted-foreground outline-none focus-visible:focus-ring"
+          />
+        }
+      >
+        {row.tool === "claude" || row.tool === "codex" ? (
+          <AgentIcon agent={row.tool} className="size-icon-row" />
+        ) : (
+          <FolderGit2 aria-hidden className="size-icon-row" />
+        )}
+        <span className={needed ? "font-medium text-foreground" : undefined}>{row.name}</span>
+        <Icon aria-hidden className={cn("ml-1 size-icon-chip", state.className)} />
+        <span>{state.words}</span>
+        {note !== undefined && <span>· {note}</span>}
+        <span className="sr-only">: {row.detail.replaceAll("`", "")}</span>
+      </Hint>
+      {row.installUrl !== undefined && (
+        <OutboundLink
+          href={row.installUrl}
+          title={`How to install ${row.name}`}
+          // Optional, with another agent ready: a quiet link, not a second start.
+          className={buttonVariants({
+            size: "xs",
+            variant: needed ? "outline" : "ghost",
+            className: cn("ml-auto", !needed && "text-muted-foreground"),
+          })}
+        >
+          Install {row.name}
+          <ExternalLink data-icon="inline-end" aria-hidden />
+        </OutboundLink>
+      )}
+      {needed && (
+        <p data-testid="welcome-remedy" className="basis-full pl-5.5 text-muted-foreground">
+          <CommandText text={row.detail} />
+        </p>
+      )}
+    </li>
   );
 }

@@ -61,25 +61,52 @@ afterEach(() => {
 });
 
 describe("first run", () => {
-  it("is one screen: a repository to pick, the agents beside Open, and one line on what a workspace is", async () => {
+  it("leads with a repository and the agent it runs on, Skip beside Open, the rest folded", async () => {
     const { api, render, updateSettings } = load(withOnboarding({}));
     for (const profile of await api.listProfiles()) await api.removeProfile(profile.id);
     render();
 
     const welcome = within(await screen.findByTestId("welcome"));
-    // It leads with the repository: the screen's heading is the pick.
-    const heading = welcome.getByRole("heading", { name: "Pick a repository to start" });
+    // It leads with the repository: the screen's heading is the action.
+    const heading = welcome.getByRole("heading", { name: "Open a repository" });
     expect(screen.getByTestId("welcome").querySelector("h2")).toBe(heading);
     await waitFor(() => expect(api.launchChecks).toHaveBeenCalled());
     await vi.mocked(api.launchChecks).mock.results[0]!.value;
     expect(await welcome.findByRole("radio", { name: /^api/ })).toBeTruthy();
-    // The agents' readiness sits right before the actions it gates.
-    const strip = welcome.getByTestId("welcome-agents");
-    expect(strip.nextElementSibling?.contains(welcome.getByTestId("welcome-open"))).toBe(true);
-    // One plain line says what a workspace and its orchestrator are; the steps are optional.
+    // One sentence says what a workspace and its orchestrator are; no steps grid before the pick.
     expect(welcome.getByTestId("welcome-line").textContent).toBe(
-      "A workspace groups your repositories, and its orchestrator coordinates the agents that work in them.",
+      "Gram makes it a workspace, whose orchestrator hands your tasks to agents and follows each one to a pull request.",
     );
+    expect(welcome.queryByRole("list", { name: "Steps to start" })).toBeNull();
+    // Open is the one primary action, Skip its secondary beside it, and readiness right under them.
+    const actions = welcome.getByTestId("welcome-actions");
+    const open = welcome.getByTestId("welcome-open");
+    const skip = welcome.getByTestId("welcome-skip");
+    expect(open.nextElementSibling).toBe(skip);
+    expect(open.className).toContain("bg-primary");
+    expect(skip.className).not.toContain("bg-primary");
+    expect(skip.className).toContain("border");
+    expect(actions.nextElementSibling).toBe(welcome.getByTestId("welcome-agents"));
+    // Every agent ready: the line names them, and there is nothing to set up or re-check.
+    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe(
+      "Runs with Claude Code or Codex",
+    );
+    expect(welcome.queryByRole("list", { name: "Tools to set up" })).toBeNull();
+    expect(welcome.queryByRole("button", { name: "Check again" })).toBeNull();
+    expect(welcome.queryByRole("link", { name: /^Install/ })).toBeNull();
+    // The most recent repository is picked, so the one primary action opens it; picking another
+    // moves the check and the button with it.
+    expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("true");
+    expect(open.textContent).toContain("Open api");
+    // What Open leads to, the survey a new workspace starts with included.
+    const next = welcome.getByTestId("welcome-next").textContent;
+    expect(next).toContain("how much it may do on its own");
+    expect(next).toContain("surveys api and suggests first tasks");
+    fireEvent.click(welcome.getByRole("radio", { name: /^web/ }));
+    expect(welcome.getByRole("radio", { name: /^web/ }).getAttribute("aria-checked")).toBe("true");
+    expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("false");
+    expect(welcome.getByTestId("welcome-open").textContent).toContain("Open web");
+    // How it works and the import are one footer of folds, each opening on its own.
     expect(welcome.queryByRole("list", { name: "How Gram works" })).toBeNull();
     fireEvent.click(welcome.getByRole("button", { name: "How it works" }));
     expect(
@@ -91,38 +118,10 @@ describe("first run", () => {
       expect.stringContaining("An orchestrator briefs workers"),
       expect.stringContaining("Each worker opens a PR"),
     ]);
-    // Every agent ready: each says so, and there is nothing to re-check.
-    const agents = within(await welcome.findByRole("list", { name: "Agents" })).getAllByRole(
-      "listitem",
-    );
-    expect(agents.map((item) => item.getAttribute("data-state"))).toEqual(["ready", "ready"]);
-    expect(agents.map((item) => within(item).queryByText("Ready") !== null)).toEqual([true, true]);
-    expect(welcome.queryByRole("button", { name: "Check again" })).toBeNull();
-    expect(welcome.queryByRole("link", { name: /^Install/ })).toBeNull();
-    // Beside Open, what its work runs on.
-    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe(
-      "Runs with Claude Code or Codex",
-    );
-    // The most recent repository is picked, so the one primary action opens it; picking another
-    // moves the check and the button with it.
-    expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("true");
-    expect(welcome.getByTestId("welcome-open").textContent).toContain("Open api");
-    // Three steps across the top say where each stands, and a line under Open says what it opens.
-    const steps = within(welcome.getByRole("list", { name: "Steps to start" })).getAllByRole(
-      "listitem",
-    );
-    expect(steps.map((step) => step.getAttribute("data-done"))).toEqual(["true", "true", "false"]);
-    expect(steps[0]!.textContent).toContain("api");
-    expect(steps[1]!.textContent).toContain("Claude Code or Codex");
-    expect(steps[2]!.textContent).toContain("Opens on api");
-    expect(welcome.getByTestId("welcome-next").textContent).toContain("a new workspace on api");
-    fireEvent.click(welcome.getByRole("radio", { name: /^web/ }));
-    expect(welcome.getByRole("radio", { name: /^web/ }).getAttribute("aria-checked")).toBe("true");
-    expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("false");
-    expect(welcome.getByTestId("welcome-open").textContent).toContain("Open web");
-    expect(steps[2]!.textContent).toContain("Opens on web");
-    expect(welcome.getByRole("button", { name: "Import past CLI sessions" })).toBeTruthy();
-    // The other ways in are behind one named action beside Open, not a row of their own.
+    expect(welcome.queryByTestId("welcome-import-sessions")).toBeNull();
+    fireEvent.click(welcome.getByRole("button", { name: "Import past CLI sessions" }));
+    expect(welcome.getByTestId("welcome-import-sessions")).toBeTruthy();
+    // The other ways in are behind one quiet action under the list, not a row of their own.
     expect(welcome.queryByRole("button", { name: "Open a folder…" })).toBeNull();
     expect(welcome.queryByRole("button", { name: "Clone from GitHub" })).toBeNull();
     fireEvent.click(welcome.getByRole("button", { name: "Add repository" }));
@@ -176,8 +175,11 @@ describe("first run", () => {
     await waitFor(() => expect(api.listRepositories).toHaveBeenCalled());
     expect(welcome.queryByRole("radiogroup", { name: "Repositories" })).toBeNull();
     expect(welcome.queryByTestId("welcome-open")).toBeNull();
-    // The default button variant is the primary one; beside a picked repository it is outlined.
+    // The default button variant is the primary one; Clone is its secondary, Skip quieter still.
     expect(folder.className).toContain("bg-primary");
+    expect(welcome.getByRole("button", { name: "Clone from GitHub" }).className).toContain(
+      "border",
+    );
   });
 
   it("offers a focused search once the repositories outgrow the list", async () => {
@@ -227,14 +229,13 @@ describe("first run", () => {
     });
     render();
     const welcome = within(await screen.findByTestId("welcome"));
-    const agents = within(await welcome.findByRole("list", { name: "Agents" })).getAllByRole(
+    const rows = within(await welcome.findByRole("list", { name: "Tools to set up" })).getAllByRole(
       "listitem",
     );
-    // Both agents, each with its state; git only when it is missing.
-    expect(agents.map((item) => item.getAttribute("data-tool"))).toEqual(["claude", "codex"]);
-    expect(agents[1]?.getAttribute("data-state")).toBe("ready");
-    expect(agents[1]?.textContent).toContain("Ready");
-    const claude = agents[0];
+    // The ready agent is named in the line under Open; only the one to sign in to is listed.
+    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe("Runs with Codex");
+    expect(rows.map((item) => item.getAttribute("data-tool"))).toEqual(["claude"]);
+    const claude = rows[0];
     expect(claude?.getAttribute("data-state")).toBe("attention");
     expect(claude?.textContent).toContain("Run claude in a terminal to sign in.");
     fireEvent.click(welcome.getByRole("button", { name: "Check again" }));
@@ -242,7 +243,7 @@ describe("first run", () => {
     expect(updateSettings).not.toHaveBeenCalled();
   });
 
-  it("gives a CLI that isn't installed a link to its install docs and a re-check", async () => {
+  it("keeps an agent another one covers to one quiet row with its install docs", async () => {
     const { api, render } = load(withOnboarding({}), {
       ...ALL_READY,
       tools: ALL_READY.tools.filter((tool) => tool.tool !== "claude"),
@@ -250,19 +251,63 @@ describe("first run", () => {
     });
     render();
     const welcome = within(await screen.findByTestId("welcome"));
-    const agents = within(await welcome.findByRole("list", { name: "Agents" })).getAllByRole(
+    const rows = within(await welcome.findByRole("list", { name: "Tools to set up" })).getAllByRole(
       "listitem",
     );
-    const [claude, codex] = agents;
+    const [claude] = rows;
+    expect(rows).toHaveLength(1);
     expect(claude?.getAttribute("data-state")).toBe("optional");
     expect(claude?.textContent).toContain("Not installed");
+    // Optional: the remedy is on its hover, not spelled out under it.
+    expect(within(claude!).queryByTestId("welcome-remedy")).toBeNull();
     const install = within(claude!).getByRole("link", { name: /^Install Claude Code/ });
     expect(install.getAttribute("href")).toBe("https://docs.claude.com/en/docs/claude-code/setup");
-    expect(codex?.textContent).toContain("Ready");
-    expect(within(codex!).queryByRole("link")).toBeNull();
     expect(welcome.getByTestId("welcome-runs-with").textContent).toBe("Runs with Codex");
-    fireEvent.click(within(claude!).getByRole("button", { name: "Check again" }));
+    fireEvent.click(welcome.getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(api.launchChecks).toHaveBeenCalledWith(true));
+  });
+
+  it("spells out how to install each agent while neither is ready", async () => {
+    const { render } = load(withOnboarding({}), {
+      ...ALL_READY,
+      tools: ALL_READY.tools.filter((tool) => tool.tool !== "claude" && tool.tool !== "codex"),
+      claudeSignIn: "unknown",
+      codexSignIn: "notSignedIn",
+    });
+    render();
+    const welcome = within(await screen.findByTestId("welcome"));
+    const rows = within(await welcome.findByRole("list", { name: "Tools to set up" })).getAllByRole(
+      "listitem",
+    );
+    expect(welcome.getByTestId("welcome-runs-with").getAttribute("data-ready")).toBe("false");
+    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe(
+      "Install Claude Code or Codex to start",
+    );
+    expect(rows.map((row) => row.getAttribute("data-tool"))).toEqual(["claude", "codex"]);
+    for (const row of rows) {
+      expect(row.getAttribute("data-state")).toBe("missing");
+      expect(within(row).getByTestId("welcome-remedy").textContent).toContain("npm i -g");
+      expect(within(row).getByRole("link", { name: /^Install/ })).toBeTruthy();
+    }
+  });
+
+  it("says what the GitHub CLI is for while it is missing, without blocking the start", async () => {
+    const { render } = load(withOnboarding({}), {
+      ...ALL_READY,
+      tools: ALL_READY.tools.filter((tool) => tool.tool !== "gh"),
+      ghSignedIn: false,
+    });
+    render();
+    const welcome = within(await screen.findByTestId("welcome"));
+    const rows = within(await welcome.findByRole("list", { name: "Tools to set up" })).getAllByRole(
+      "listitem",
+    );
+    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe(
+      "Runs with Claude Code or Codex",
+    );
+    expect(rows.map((row) => row.getAttribute("data-tool"))).toEqual(["gh"]);
+    expect(rows[0]?.getAttribute("data-state")).toBe("optional");
+    expect(rows[0]?.textContent).toContain("For pull requests");
   });
 
   it("shows nothing after the first run", async () => {

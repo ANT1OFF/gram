@@ -26,6 +26,7 @@ import {
 } from "react";
 
 import { useApi } from "@/api/context";
+import { EmptyState } from "@/components/empty-state";
 import { Hint } from "@/components/hint";
 import { QueryError } from "@/components/not-available";
 import { Button } from "@/components/ui/button";
@@ -394,14 +395,12 @@ export function OutputsView({ workspaceId }: { workspaceId: WorkspaceId }) {
         ) : pages.status === "pending" ? (
           <PanelMessage loading>Loading files…</PanelMessage>
         ) : outputs.length === 0 ? (
-          <div
-            role="status"
-            data-testid="outputs-empty"
-            className="flex flex-col items-center gap-1 p-10 text-center text-reading text-muted-foreground"
-          >
-            <Images aria-hidden className="mb-1 size-icon-empty" />
-            <p className="text-foreground">No files yet</p>
-          </div>
+          <EmptyState
+            testId="outputs-empty"
+            icon={Images}
+            title="No files yet"
+            line="Images and other files this workspace's threads share land here."
+          />
         ) : (
           <div className="flex flex-col gap-5">
             {groups.map((group) => (

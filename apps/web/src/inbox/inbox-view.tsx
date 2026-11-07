@@ -3,6 +3,7 @@ import {
   AlarmClock,
   Bell,
   CircleCheck,
+  History,
   Inbox as InboxIcon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -16,7 +17,9 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 
+import { EmptyState, type EmptyAction } from "@/components/empty-state";
 import { Hint } from "@/components/hint";
+import { useHistoryStore } from "@/history/history-view";
 import { Button } from "@/components/ui/button";
 import { keyLabel } from "@/keyboard/registry";
 import { formatRelative, formatWakeTime } from "@/lib/time";
@@ -658,14 +661,17 @@ function LaterList({
 }) {
   if (later.length === 0) {
     return (
-      <div
-        data-testid="inbox-empty"
-        className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center text-reading text-muted-foreground"
-      >
-        <AlarmClock aria-hidden className="size-icon-empty" />
-        <p className="font-medium text-foreground">Nothing for later</p>
-        <p className="text-meta">Later puts an item away for an hour.</p>
-      </div>
+      <EmptyState
+        testId="inbox-empty"
+        className="flex-1 justify-center"
+        icon={AlarmClock}
+        title="Nothing for later"
+        line="Later puts an item away for an hour, then brings it back here."
+        action={{
+          label: "Back to what needs you",
+          onClick: () => useInboxStore.getState().setLater(false),
+        }}
+      />
     );
   }
   return (
@@ -700,20 +706,31 @@ function LaterList({
 }
 
 function Empty({ laterCount }: { laterCount: number }) {
+  // What is put away comes first; with nothing put away, what finished is the next place to look.
+  const action: EmptyAction =
+    laterCount > 0
+      ? {
+          label: `${laterCount} put away for later`,
+          icon: AlarmClock,
+          onClick: () => useInboxStore.getState().setLater(true),
+        }
+      : {
+          label: "Open History",
+          icon: History,
+          onClick: () => {
+            useInboxStore.getState().close();
+            useHistoryStore.getState().show();
+          },
+        };
   return (
-    <div
-      data-testid="inbox-empty"
-      className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center text-reading text-muted-foreground"
-    >
-      <CircleCheck aria-hidden className="size-icon-empty text-success" />
-      <p className="font-medium text-foreground">Nothing needs you</p>
-      <p className="text-meta">Every workspace is clear.</p>
-      {laterCount > 0 && (
-        <Button size="xs" variant="ghost" onClick={() => useInboxStore.getState().setLater(true)}>
-          <AlarmClock aria-hidden data-icon="inline-start" />
-          {laterCount} put away for later
-        </Button>
-      )}
-    </div>
+    <EmptyState
+      testId="inbox-empty"
+      className="flex-1 justify-center"
+      icon={CircleCheck}
+      iconClassName="text-success"
+      title="Nothing needs you"
+      line="Approvals, questions and failures from every workspace land here."
+      action={action}
+    />
   );
 }

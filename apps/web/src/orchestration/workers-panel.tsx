@@ -1,10 +1,19 @@
 import { Menu } from "@base-ui/react/menu";
 import type { ThreadId, WorkspaceId } from "@gram/contracts";
-import { CheckIcon, ChevronDown, ListFilter, Search, X } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronDown,
+  ListFilter,
+  MessageSquare,
+  Search,
+  Workflow,
+  X,
+} from "lucide-react";
 import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { create } from "zustand";
 import { useParams } from "@tanstack/react-router";
 
+import { EmptyState } from "@/components/empty-state";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { useNow } from "@/lib/use-now";
@@ -18,6 +27,7 @@ import { useWorkspaceAsks } from "./ask-stack";
 import { useAnsweredWorkers } from "./needs-you-store";
 import { ROW_MARK } from "./overview-section";
 import { StatusDot } from "./status-dot";
+import { useMessageOrchestrator } from "./message-orchestrator";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedgers } from "./use-orchestration";
 import { WorkersDocs } from "./workers-docs";
@@ -123,9 +133,13 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
   );
   const [query, setQuery] = useState<string | undefined>(undefined);
   const shown = useWorkersPanelStore((s) => s.shown);
-  const groups = filteredGroups(statusGroups(tabs, byId, now, query ?? ""), shown);
+  const all = statusGroups(tabs, byId, now, query ?? "");
+  const groups = filteredGroups(all, shown);
   const searching = query !== undefined && query.trim() !== "";
   const matches = groups.some((group) => group.rows.length > 0);
+  // No worker at all, in any group: one empty state, not five groups that each say so.
+  const none = !searching && all.every((group) => group.rows.length === 0);
+  const messageOrchestrator = useMessageOrchestrator();
 
   return (
     <div
@@ -137,7 +151,19 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
       <Header query={query} onQuery={setQuery} />
       <div className="flex min-h-0 flex-1 flex-col gap-section overflow-y-auto px-section pt-inset pb-section">
         <WorkersDocs workspaceId={workspaceId} />
-        {searching && !matches ? (
+        {none ? (
+          <EmptyState
+            testId="workers-empty"
+            icon={Workflow}
+            title="No workers yet"
+            line="The orchestrator briefs a worker for each piece of a task; each shows here by where it stands."
+            action={{
+              label: "Message the orchestrator",
+              icon: MessageSquare,
+              onClick: () => messageOrchestrator(workspaceId),
+            }}
+          />
+        ) : searching && !matches ? (
           <p role="status" className="text-body text-muted-foreground">
             No matches
           </p>

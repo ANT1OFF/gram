@@ -119,6 +119,8 @@ describe("OutputsView", () => {
   it("says so when nothing was made yet", async () => {
     vi.spyOn(api, "listOutputs").mockResolvedValue({ outputs: [] });
     renderWithApi(<OutputsView workspaceId={workspaceId} />, api);
-    expect((await screen.findByTestId("outputs-empty")).textContent).toBe("No files yet");
+    expect(
+      within(await screen.findByTestId("outputs-empty")).getByTestId("empty-title").textContent,
+    ).toBe("No files yet");
   });
 });

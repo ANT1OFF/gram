@@ -7,7 +7,7 @@ import {
   type WorkspaceId,
   type WorkspaceState,
 } from "@gram/contracts";
-import { CircleAlert, Columns3, Layers } from "lucide-react";
+import { Archive, CircleAlert, Columns3, Layers, MessageSquare } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -20,10 +20,11 @@ import {
   type RefObject,
 } from "react";
 
+import { EmptyState } from "@/components/empty-state";
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 import { VirtualRows, type RowPlace } from "@/lib/virtual-rows";
-import { drawOn, GlideItem, GlideList } from "@/motion";
+import { GlideItem, GlideList } from "@/motion";
 import { askKeysByThread } from "@/orchestration/ask-model";
 import { UndoLine } from "@/inbox/inbox-line";
 import { showInboxAsk } from "@/inbox/inbox-store";
@@ -49,6 +50,7 @@ import {
   type RailRow,
   type RailWorker,
 } from "@/orchestration/rail-model";
+import { useMessageOrchestrator } from "@/orchestration/message-orchestrator";
 import { useSetStage } from "@/orchestration/use-board-actions";
 import { useFeatureCards, useFeatureSummary } from "@/orchestration/use-feature-cards";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
@@ -504,6 +506,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   // Show finished: archived workers, and the lines whose work is over, back on the Board.
   const finishedShown = useLayoutStore((s) => s.boardArchivedShown.includes(workspaceId));
   const openWorker = useOpenWorker();
+  const messageOrchestrator = useMessageOrchestrator();
   // A worker that asks is a click from its ask in the Inbox; ⌘-click or ⌥-click still opens it.
   const asks = useWorkspaceAsks().find((w) => w.workspaceId === workspaceId)?.asks;
   const askOf = useMemo(() => {
@@ -606,25 +609,32 @@ function RailBoard({ state }: { state: WorkspaceState }) {
         <div className={cn(grid && rows.length > 0 && GRID_WIDTH)}>
           {rows.length > 0 && (grid ? <GridHeads /> : !listed && <LaneHeads counts={counts} />)}
           {rows.length === 0 ? (
-            <div
-              role="status"
-              data-testid="rail-empty"
-              className="flex flex-col items-center gap-1 p-10 text-center text-reading text-muted-foreground"
-            >
-              <Columns3 aria-hidden ref={drawOn} className="mb-1 size-icon-empty" />
-              {hidden > 0 ? (
-                <>
-                  {/* Its finished work is in Done, as the sidebar has it; Show finished brings it here. */}
-                  <p className="text-foreground">Nothing going now</p>
-                  <p className="text-meta">Finished work is in Done.</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-foreground">No features yet</p>
-                  <p className="text-meta">Ask the orchestrator to build one.</p>
-                </>
-              )}
-            </div>
+            hidden > 0 ? (
+              // Its finished work is in Done, as the sidebar has it; Show finished brings it here.
+              <EmptyState
+                testId="rail-empty"
+                icon={Columns3}
+                title="Nothing going now"
+                line="Finished work is in Done."
+                action={{
+                  label: `Show finished (${hidden})`,
+                  icon: Archive,
+                  onClick: () => useLayoutStore.getState().toggleBoardArchived(workspaceId),
+                }}
+              />
+            ) : (
+              <EmptyState
+                testId="rail-empty"
+                icon={Columns3}
+                title="No features yet"
+                line="Each task the orchestrator takes on becomes a feature here, with its workers and PRs."
+                action={{
+                  label: "Message the orchestrator",
+                  icon: MessageSquare,
+                  onClick: () => messageOrchestrator(workspaceId),
+                }}
+              />
+            )
           ) : (
             <GlideList id={`rail-${workspaceId}`}>
               {/* Only the lines near the view draw: a workspace may hold many. */}

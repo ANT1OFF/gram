@@ -351,7 +351,16 @@ function SheetForm({
           }))
         }
       />
-      <Field label="What should it work on?" htmlFor={taskId}>
+      <Field
+        label="What should it work on?"
+        htmlFor={taskId}
+        // The survey Start sends anyway, so the field reads as optional, not as the only way to begin.
+        hint={
+          <span data-testid="new-workspace-discover">
+            Either way, it first surveys the repositories and asks which starter tasks to run.
+          </span>
+        }
+      >
         <textarea
           ref={focusTask}
           id={taskId}
