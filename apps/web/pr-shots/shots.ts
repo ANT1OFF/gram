@@ -305,7 +305,7 @@ const README_PARKED = ["t-flaky", "t-question", "t-plan", "t-background", "t-edi
 /**
  * The README's scene (`simulateReadme`): `storefront`'s orchestrator in the default look, the right
  * panel closed and no usage limits reported, at `width` × `height`. The README's images in
- * `docs/assets/` are `readme-hero`, `readme-board` and `readme-quiet` (`openReadmeQuiet`), resized
+ * `docs/assets/` are `readme-hero`, `readme-board`, `readme-inbox` and `readme-quiet` (`openReadmeQuiet`), resized
  * to 1600 px wide and palette-quantised.
  */
 const openReadme = async (page: Page, width: number, height: number) => {
@@ -2301,10 +2301,29 @@ export const SHOTS: readonly Shot[] = [
     modes: ["dark"],
     open: async (page) => {
       // Narrow and without the sidebar, which the hero shows, so the rows read at README width.
-      await openReadme(page, 1120, 660);
+      await openReadme(page, 1120, 540);
       await page.getByRole("button", { name: "Hide sidebar" }).click();
       await openBoardView(page);
+      await page.getByTestId("board-layout-option").filter({ hasText: "Lanes" }).click();
+      // The merged workers too, so the lanes run from briefed to merged.
+      await page.getByTestId("rail-show-archived").click();
       await page.getByTestId("rail-worker").first().waitFor();
+      await page.mouse.move(1116, 536);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "readme-inbox",
+    title: "README: the Inbox docked beside `storefront`'s orchestrator, on its one question",
+    modes: ["dark"],
+    open: async (page) => {
+      // Without the sidebar, which the hero shows, so the Inbox docks beside the chat.
+      await openReadme(page, 1520, 900);
+      await page.getByRole("button", { name: "Hide sidebar" }).click();
+      await page.keyboard.press("ControlOrMeta+Shift+I");
+      await page.locator('[data-testid="inbox"][data-docked]').waitFor();
+      await page.getByTestId("inbox-item").first().click();
+      await page.mouse.move(1516, 896);
       await page.waitForTimeout(800);
     },
   },
