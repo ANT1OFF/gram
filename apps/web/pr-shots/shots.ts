@@ -1472,8 +1472,10 @@ const ROUTINES_POLISH_SHOTS: readonly Shot[] = [
     title: "Settings → Routines: every workspace's routines on a page of its own (new)",
     open: async (page) => {
       await seedMockSettings(page, { appearance: { mode: "system" } });
+      await page.setViewportSize({ width: 1440, height: 900 });
       await page.goto("/t/t-flaky");
-      await page.waitForFunction(() => window.gramMock !== undefined);
+      await threadRow(page, "t-flaky").waitFor();
+      await page.getByLabel("Message", { exact: true }).waitFor();
       await page.evaluate(async () => {
         const api = window.gramMock!;
         const made = await api.simulateOrchestration("board");
@@ -1502,7 +1504,11 @@ const ROUTINES_POLISH_SHOTS: readonly Shot[] = [
           } as never,
         );
       });
-      await page.goto("/settings/routines");
+      // In the app, not a reload, which would start the mock afresh: the palette's Go to.
+      await page.keyboard.press("ControlOrMeta+k");
+      const palette = page.getByTestId("command-palette");
+      await palette.getByRole("combobox").fill("routines");
+      await palette.getByRole("option", { name: "Routines", exact: true }).click();
       await page.getByTestId("routines-page").waitFor();
       await page.getByTestId("routine-row").first().waitFor();
       await page.waitForTimeout(400);
