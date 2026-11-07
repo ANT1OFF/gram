@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.10.0](https://github.com/ANT1OFF/gram/compare/v1.9.0...v1.10.0) (2026-11-07)
+
+
+### Features
+
+* a Workers panel tab that groups an orchestrator's workers by status, with search, a filter and a slot for Docs ([#194](https://github.com/ANT1OFF/gram/issues/194)) ([b96799a](https://github.com/ANT1OFF/gram/commit/b96799a2b4f3be6b87e6c4afcf26a1b7d6d65ef6))
+* composer pickers say their value, check it and confirm a pick; a clearer Stop ([#171](https://github.com/ANT1OFF/gram/issues/171)) ([721e97b](https://github.com/ANT1OFF/gram/commit/721e97b6a326e03e53815c97d9d7e922052712b9))
+* Discover workspace, a survey a new workspace starts with and the user can run again ([#195](https://github.com/ANT1OFF/gram/issues/195)) ([455a2c5](https://github.com/ANT1OFF/gram/commit/455a2c5fb42f9e3a82c2db3f238e66c1420ca344))
+* dock the Inbox beside the work, with short list rows ([#179](https://github.com/ANT1OFF/gram/issues/179)) ([084c9cd](https://github.com/ANT1OFF/gram/commit/084c9cd0c442fcc954480de7b1621d7896cde7dd))
+* fewer status states without a legend, one alarm per failure, status words before PR chips, short words in the status strip, firmer light selection ([#185](https://github.com/ANT1OFF/gram/issues/185)) ([23858c4](https://github.com/ANT1OFF/gram/commit/23858c480d61d44b934fc6d49c0dcf4317f6f489))
+* larger, firmer secondary text, a type scale with distinct steps, icon sizes per context, middle-cut sidebar titles, said defaults, an equal merge summary, weighted settings rows, History status apart from its action, and a centred memory review ([#188](https://github.com/ANT1OFF/gram/issues/188)) ([b9aa18c](https://github.com/ANT1OFF/gram/commit/b9aa18c61f74cf3cf709584d9a417158863f4ffd))
+* legible secondary text, firmer light edges and clearer status marks ([#205](https://github.com/ANT1OFF/gram/issues/205)) ([7a2e149](https://github.com/ANT1OFF/gram/commit/7a2e14925a62d08edd88118eb7dc583e3ea3fa50))
+* one approval verb set with a scoped receipt, anchored General settings, a View menu on the review bar, speed in words, a compact Dreams page and a wording sweep ([#182](https://github.com/ANT1OFF/gram/issues/182)) ([5f5352f](https://github.com/ANT1OFF/gram/commit/5f5352fb77f464661e41544c0bebfe57bbbf30e2))
+* one count for what needs you, one answer receipt, a neutral usage meter, thread context in the Inbox ([#172](https://github.com/ANT1OFF/gram/issues/172)) ([d59d997](https://github.com/ANT1OFF/gram/commit/d59d997dd14896ea951befa0f715506958597150))
+* one spacing rhythm and quieter, single-weight icons ([#196](https://github.com/ANT1OFF/gram/issues/196)) ([34cf6f4](https://github.com/ANT1OFF/gram/commit/34cf6f42c0219757aab5e3c88086d9021c503a75))
+* one two-line sidebar row, one dot per state with a legend, a folded setup chip, a turn-aware plan strip, light digests and a content-width Board ([#180](https://github.com/ANT1OFF/gram/issues/180)) ([e26c7dd](https://github.com/ANT1OFF/gram/commit/e26c7dd3ee8b1ffb1d2dd953b4a36398e28aaaa5))
+* one way into the Inbox and usage, a folding setup banner, destinations first in a shorter palette, and a narrower usage popover ([#184](https://github.com/ANT1OFF/gram/issues/184)) ([96dc9c9](https://github.com/ANT1OFF/gram/commit/96dc9c9194445148ec6aef6b3811a59704b37d87))
+* open a worker beside its orchestrator's chat in the right panel's Thread tab to read and steer it, the orchestrator's messages folded to one line, and New where you last looked ([#200](https://github.com/ANT1OFF/gram/issues/200)) ([727e154](https://github.com/ANT1OFF/gram/commit/727e154146a13464ebc124fd87d8a2e1269072a4))
+* plain New form with one authority line, one card per retried turn, one PR blocker summary, review keeps the chat's room, old-thread actions, inline first-run steps ([#178](https://github.com/ANT1OFF/gram/issues/178)) ([035cf99](https://github.com/ANT1OFF/gram/commit/035cf99f96dfb4ab04f7fb0a3f6f0ed745c77b55))
+* readable settings, Save/Cancel and Undo on typed fields, labelled usage, Dreams run cards, theme previews, a stronger light scrim and one approval verb ([#177](https://github.com/ANT1OFF/gram/issues/177)) ([f7bcdc3](https://github.com/ANT1OFF/gram/commit/f7bcdc3836024bdb13a0da667f7c96dcf40f86a9))
+* repeat starts fold to the brief, starting progress, PR blocker first, shortcut search, save hint, first-run search ([#174](https://github.com/ANT1OFF/gram/issues/174)) ([941192b](https://github.com/ANT1OFF/gram/commit/941192b38e9161b797ab9fff89e963ced5ebb5e0))
+* review an oversized diff here, a chunk of hunks at a time, or as a summary ([#170](https://github.com/ANT1OFF/gram/issues/170)) ([de202ce](https://github.com/ANT1OFF/gram/commit/de202ceb244a816e52b3e9121722ee59e262f261))
+* separate dark surfaces, one amber, tighter headings and a clearer secondary step, two-line sidebar titles, one icon stroke, a named sound preview and dot meanings on hover ([#190](https://github.com/ANT1OFF/gram/issues/190)) ([2e7d758](https://github.com/ANT1OFF/gram/commit/2e7d758593f5710b484b5e0d401a54437a144556))
+* Start says what it checks, one where/who/merge summary, a compact Inbox list with a divider, a one-line first run, the old thread's saved outcome and a Board Done band ([#183](https://github.com/ANT1OFF/gram/issues/183)) ([482b697](https://github.com/ANT1OFF/gram/commit/482b6978949e83f10ed1a148731e86111538f68c))
+* stronger current row, one elevation step, a readable Board stage bar and one date format ([#175](https://github.com/ANT1OFF/gram/issues/175)) ([3081f44](https://github.com/ANT1OFF/gram/commit/3081f449a2c6efc1bfc068a9a4e2b53a1e677973))
+* the approval card under the tool row it decides, Stop steps back while a turn waits on you, a named usage limit with a full Retry, what Take over changes, and a Merge button that says it is blocked ([#191](https://github.com/ANT1OFF/gram/issues/191)) ([51f4b81](https://github.com/ANT1OFF/gram/commit/51f4b81526fb981a93574bc589e150e7badd9b10))
+* the narrow composer keeps short values, one toolbar order, Stop in words, title-bar hover labels ([#181](https://github.com/ANT1OFF/gram/issues/181)) ([d309540](https://github.com/ANT1OFF/gram/commit/d3095406ae31d7dd45d07475384a282dab709acd))
+* the setup notice once as an icon, whole words in the status strip, the title before secondary header items, Settings as its own place, hints only when pointed at, and composed first-run, outcome, Board and History ([#192](https://github.com/ANT1OFF/gram/issues/192)) ([3ca99e6](https://github.com/ANT1OFF/gram/commit/3ca99e687a89048605849601a7c51dea1434bac0))
+* the waiting row links to its approval, one neutral disabled style, an inline Board Done, sentence-case headings, a firmer dark scrim, auto Focus review when cramped, and room for code, the Inbox and Quiet's context ([#186](https://github.com/ANT1OFF/gram/issues/186)) ([d7262fa](https://github.com/ANT1OFF/gram/commit/d7262faae1581467c4beb354e15db329c4477e8c))
+* workspace docs: publish_doc, doc cards, a pinned chip and an editable Docs tab ([#197](https://github.com/ANT1OFF/gram/issues/197)) ([277fbb4](https://github.com/ANT1OFF/gram/commit/277fbb4399d6a8b6080f6f1cc185b24b3143d5e9))
+
+
+### Bug Fixes
+
+* a stopped Watch PR isn't a failing PR, the merge wait doesn't go stale, and the refusal is clear ([#176](https://github.com/ANT1OFF/gram/issues/176)) ([372b17a](https://github.com/ANT1OFF/gram/commit/372b17a8b057163d45d5ec0f4c7da932b9ea2de5))
+* effort keeps a short word in a narrow composer beside a review ([#189](https://github.com/ANT1OFF/gram/issues/189)) ([140157c](https://github.com/ANT1OFF/gram/commit/140157c2873b28614560b591ba633d936ce37464))
+* one status vocabulary, scoped blocker counts, one attention entry, honest tab, gauge and error states, a catch-up that never repeats ([#187](https://github.com/ANT1OFF/gram/issues/187)) ([8eb8a4a](https://github.com/ANT1OFF/gram/commit/8eb8a4a9561ca6db6855f20551469e87d1c45da4))
+* pin usage-limit test clocks across midnight ([#201](https://github.com/ANT1OFF/gram/issues/201)) ([26da3d6](https://github.com/ANT1OFF/gram/commit/26da3d6fa22cbbcc3dc0fe531761211b7a5a6103))
+* stabilize Board measurements and sidebar interactions ([#193](https://github.com/ANT1OFF/gram/issues/193)) ([e600d01](https://github.com/ANT1OFF/gram/commit/e600d01449db46fbd902a14870c7feb27c3dc7bb))
+
 ## [1.9.0](https://github.com/ANT1OFF/gram/compare/v1.8.0...v1.9.0) (2026-11-05)
 
 
