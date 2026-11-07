@@ -30,11 +30,13 @@ type MockWorkerFacts = Pick<ThreadSummary, "thread" | "status" | "git"> &
 
 /**
  * The server's `WorkerStateInput` from what the mock knows about a worker's thread. The mock keeps
- * no input times or turn rows, so a report always stands and a turn has started once it reported.
+ * no input times or turn rows, so a report always stands; a turn has started once one ran
+ * (`started`, as the server's memo records it) or once it reported.
  */
 export const mockStateInput = (
   summary: MockWorkerFacts,
   lastReport: WorkerReport | undefined,
+  started = false,
 ): WorkerStateInput => {
   const { thread, git } = summary;
   const badge = git?.pr;
@@ -45,7 +47,7 @@ export const mockStateInput = (
     ...(lastReport === undefined
       ? {}
       : { lastReport: { state: lastReport.state, at: lastReport.at } }),
-    hasStartedTurn: lastReport !== undefined,
+    hasStartedTurn: started || lastReport !== undefined,
     pendingRequestCount: summary.pendingRequests?.length ?? 0,
     ...(badge === undefined ? {} : { pr: prFactsOf(badge) }),
     reopened: reopenedSinceMerge(thread, [badge]),
@@ -66,11 +68,14 @@ export const mockStateInput = (
 export const mockWorkerState = (
   summary: MockWorkerFacts,
   lastReport: WorkerReport | undefined,
-): WorkerState => workerState(mockStateInput(summary, lastReport));
+  started = false,
+): WorkerState => workerState(mockStateInput(summary, lastReport, started));
 
 /** What the ledger knows about a worker beyond its thread: only the simulations set any of it. */
 export interface WorkerExtras {
   readonly lastReport?: WorkerReport | undefined;
+  /** A turn of its has run in this mock session: no longer briefed. */
+  readonly started?: boolean | undefined;
   /** When each pending request was raised, epoch ms. */
   readonly askedAt: ReadonlyMap<string, number>;
   readonly overlapsWith: readonly ThreadId[];
@@ -129,7 +134,7 @@ export const ledgerEntry = (
   summary: ThreadSummary,
   feature: string,
   projectName: string,
-  { lastReport, askedAt, overlapsWith, userIntervened, alsoIn, wakes, now }: WorkerExtras,
+  { lastReport, started, askedAt, overlapsWith, userIntervened, alsoIn, wakes, now }: WorkerExtras,
 ): WorkerLedgerEntry => {
   const { thread, git, usage } = summary;
   return {
@@ -139,8 +144,8 @@ export const ledgerEntry = (
     threadId: thread.id,
     title: thread.title,
     ...(thread.checkout.branch === undefined ? {} : { branch: thread.checkout.branch }),
-    state: workerState(mockStateInput(summary, lastReport)),
-    stateBase: workerStateBase(mockStateInput(summary, lastReport)),
+    state: workerState(mockStateInput(summary, lastReport, started)),
+    stateBase: workerStateBase(mockStateInput(summary, lastReport, started)),
     status: summary.status,
     ...(summary.activity === undefined ? {} : { activity: summary.activity }),
     ...(thread.lastError === undefined

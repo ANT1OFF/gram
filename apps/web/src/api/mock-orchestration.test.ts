@@ -712,6 +712,8 @@ describe("mock ledger rules", () => {
   it("derives a worker's state from its thread before its word", () => {
     expect(mockWorkerState(summary("idle"), undefined)).toBe("briefed");
     expect(mockWorkerState(summary("running"), undefined)).toBe("working");
+    // A turn has run, as the server's memo records it: working, however soon the turn ended.
+    expect(mockWorkerState(summary("idle"), undefined, true)).toBe("working");
     expect(mockWorkerState(summary("idle"), report("progress"))).toBe("working");
     expect(mockWorkerState(summary("idle"), report("blocked"))).toBe("blocked");
     expect(mockWorkerState(summary("needsApproval"), report("done"))).toBe("needsUser");

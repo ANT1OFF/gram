@@ -290,7 +290,8 @@ export const nowLineOf = (
       if (worker.state === "readyToMerge") return "ready to merge";
       return "in review";
     }
-    if (worker.state === "briefed") return "briefed";
+    // Spawned and not begun: starting, as the web's sidebar, Workers panel and header say it.
+    if (worker.state === "briefed") return "starting…";
     if (report !== undefined)
       return report.state === "done" ? "reported done" : reportGist(report.summary);
     if (worker.quiet?.lastTool !== undefined) return `stopped after ${worker.quiet.lastTool}`;

@@ -135,9 +135,28 @@ export interface ToneFacts {
 }
 
 /**
+ * Whether a worker is starting: its session opening (`starting`), or spawned with its first turn
+ * not begun. The server keeps a worker `briefed` until a turn starts (`workerStateBase`), whatever
+ * its session's status says meanwhile (`cold` or `idle` before the brief lands), so a briefed
+ * worker at rest has not stopped: it has not begun. Its tone is working's and its words are
+ * `STARTING`. An ask or a failure is never starting: it says that instead.
+ */
+export const workerStarting = (
+  facts: Pick<ToneFacts, "asking" | "state" | "failed" | "status">,
+): boolean =>
+  !facts.asking &&
+  !facts.failed &&
+  facts.status !== "needsApproval" &&
+  facts.status !== "needsInput" &&
+  facts.status !== "error" &&
+  facts.status !== "ended" &&
+  (facts.state === "briefed" || facts.status === "starting");
+
+/**
  * A worker's tone, the one selector the Board's chips and the overview sidebar's rows and counts
- * read: an ask or a failure first, then the end of the road, then whether it works right now, then
- * what the shared activity says of it at rest: waiting on automation, needing attention, or idle.
+ * read: an ask or a failure first, then the end of the road, then whether it works right now (or
+ * is starting: `workerStarting`), then what the shared activity says of it at rest: waiting on
+ * automation, needing attention, or idle.
  */
 export const workerTone = (facts: ToneFacts): RailTone => {
   const { state, status, activity } = facts;
@@ -149,6 +168,8 @@ export const workerTone = (facts: ToneFacts): RailTone => {
   if (state !== undefined && DONE.has(state)) return "merged";
   if (status === "needsApproval" || status === "needsInput") return "needs";
   if (status === "running" || status === "starting" || facts.working === true) return "working";
+  // Spawned and not begun: starting, never stopped. One with a wait armed already says that wait.
+  if (workerStarting(facts) && activity !== "automation") return "working";
   return activity === "working"
     ? "working"
     : activity === "automation"

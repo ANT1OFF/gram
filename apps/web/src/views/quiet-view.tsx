@@ -8,7 +8,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { formatKeys } from "@/keyboard/registry";
-import { showInboxAsk } from "@/inbox/inbox-store";
+import { showInbox, showInboxAsk } from "@/inbox/inbox-store";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { DrawnCheck, Swap } from "@/motion";
@@ -33,6 +33,7 @@ import { AskDetails, ReplyField, useOpenThread, useWorkspaceAsks } from "@/orche
 import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import { NeedsYouEntry } from "@/orchestration/needs-you-entry";
+import { needsYouIn } from "@/orchestration/needs-you-items";
 import { useDerivedAsks } from "@/orchestration/needs-you-store";
 import { allWorkspacesPaused, setAllWorkspacesPaused } from "@/orchestration/pause-workspace";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
@@ -41,9 +42,12 @@ import { UsageMeter } from "@/shell/usage-meter";
 
 import type { ViewProps } from "./board-view";
 import {
+  deckPosition,
   dotTone,
+  notInDeck,
   quietDeck,
   quietSummary,
+  restLine,
   sendLater,
   type DeckCard,
   type DeckSource,
@@ -111,6 +115,10 @@ export function QuietView({ workspaceId }: ViewProps) {
   const held = useAskStackStore((s) => s.held);
   const problems = useAskStackStore((s) => s.problems);
   const takeBack = useAskStackStore((s) => s.undo);
+  // What needs you everywhere, by the selector the pill counts by, less what the deck can answer:
+  // said beside the deck so its count and the pill's add up.
+  const groups = useDerivedAsks((s) => s.needsYou.groups);
+  const rest = useMemo(() => notInDeck(needsYouIn(groups, "all"), deck), [groups, deck]);
   const rootRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLInputElement | null>(null);
 
@@ -261,7 +269,9 @@ export function QuietView({ workspaceId }: ViewProps) {
         <Swap swapKey={card?.ask.key ?? "empty"} as="div" className="w-full max-w-xl">
           {card === undefined ? (
             <div data-testid="quiet-empty" className="grid gap-1.5 text-center">
-              <p className="text-heading font-normal">Nothing needs you</p>
+              <p className="text-heading font-normal">
+                {rest.length === 0 ? "Nothing needs you" : "Nothing to answer here"}
+              </p>
               <p data-testid="quiet-summary" className="text-reading text-muted-foreground">
                 {quietSummary(strip)}
               </p>
@@ -287,6 +297,22 @@ export function QuietView({ workspaceId }: ViewProps) {
             />
           )}
         </Swap>
+        {rest.length > 0 && (
+          <p
+            data-testid="quiet-rest"
+            className="mt-3 flex items-center gap-1 text-body text-muted-foreground"
+          >
+            {restLine(rest)}
+            <button
+              type="button"
+              data-testid="quiet-rest-open"
+              onClick={() => showInbox()}
+              className="rounded-sm px-1 underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Open Inbox
+            </button>
+          </p>
+        )}
         {last !== undefined && (
           <p
             key={last.key}
@@ -382,7 +408,7 @@ function QuietCard({
         )}
         <span className="flex-1" />
         <span data-testid="quiet-position" className="shrink-0 tabular-nums">
-          1 of {total}
+          {deckPosition(total)}
         </span>
         {onOpen !== undefined && (
           <Button

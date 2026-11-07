@@ -3,13 +3,15 @@ import type { ThreadId, ThreadSummary } from "@gram/contracts";
 import { formatRelative, formatStamp } from "@/lib/time";
 
 import type { RailTone } from "./rail-model";
-import { glyphState, STATUS_WORDS, type DotState } from "./status-words";
+import { glyphState, STARTING, STATUS_WORDS, type DotState } from "./status-words";
 import { searchRows, type WorkerRow, type WorkersByTab } from "./workers-model";
 
 // The panel's Workers tab: a workspace's workers by where they stand, in the few states every view
-// says (`STATUS_WORDS`). Its rows are ⌘J's (`workersByTab`), so each worker's tone, and so its group
-// and every count here, is the one selector the sidebar, the Board and the Inbox read
-// (`liveWorkerTone`). Pure, so it is tested without a browser. No React.
+// says (`STATUS_WORDS`). Its rows are ⌘J's (`workersByTab`), so each worker's tone, and so its group,
+// is the one selector the sidebar and the Board read (`liveWorkerTone`); what puts a worker under
+// Needs you is the one needs-you selector the pill, the badges and the Inbox count by (`needsYouIn`),
+// so Needs you here lists exactly the workers the workspace's badge counts items for. Pure, so it is
+// tested without a browser. No React.
 
 export type StatusGroupId = "needs" | "running" | "waiting" | "stopped" | "done";
 
@@ -41,13 +43,14 @@ export const FOLDED_BY_DEFAULT: readonly StatusGroupId[] = ["done"];
 export const DONE_SHOWN = 5;
 
 /**
- * A live worker's group by its tone. A failure is the Inbox's too (`needsYouFailures`), so a failed
- * worker is listed with what needs you, its red dot saying why; one stalled on its own next step
- * (attention) has stopped, as its grey dot says.
+ * A live worker's group by its tone, once Needs you has taken the workers the needs-you list has an
+ * item for (`groupOf`). One whose tone still says needs or error without an item (its ask put away
+ * for Later, its failure dismissed, a report the orchestrator answers) is at rest: Stopped, its dot
+ * still saying why. One stalled on its own next step (attention) has stopped too.
  */
 const TONE_GROUP: Readonly<Record<RailTone, StatusGroupId>> = {
-  needs: "needs",
-  error: "needs",
+  needs: "stopped",
+  error: "stopped",
   working: "running",
   waiting: "waiting",
   attention: "stopped",
@@ -94,31 +97,43 @@ export const panelRow = (
     threadId: row.threadId,
     title: row.title,
     dot,
-    status: word === row.now || row.now === "" ? word : `${word} · ${row.now}`,
+    // Starting is the whole of what it says: its now line says it too.
+    status:
+      row.starting === true
+        ? STARTING
+        : word === row.now || row.now === ""
+          ? word
+          : `${word} · ${row.now}`,
     age: at === undefined ? "" : formatRelative(at, now),
     at: at === undefined ? undefined : formatStamp(at, now),
     mainOnly: row.cleanedUp === true || row.solo === true,
   };
 };
 
-/** Which group a ⌘J row goes in. */
-export const groupOf = (row: WorkerRow): StatusGroupId =>
-  row.tab === "done" ? "done" : TONE_GROUP[row.tone];
+/**
+ * Which group a ⌘J row goes in: Needs you when the needs-you list has an item on its thread
+ * (`needing`, from `needsYouThreads` over the workspace's `needsYouIn`), Done when its work is over,
+ * else by its tone.
+ */
+export const groupOf = (row: WorkerRow, needing: ReadonlySet<ThreadId>): StatusGroupId =>
+  needing.has(row.threadId) ? "needs" : row.tab === "done" ? "done" : TONE_GROUP[row.tone];
 
 /**
  * Every group in order, each with the rows of `tabs` that are its and that match `query`: Now's in
  * the ledger's feature and spawn order, so rows don't jump as they change, and Done's latest first.
+ * `needing` are the threads the workspace's needs-you items are on.
  */
 export const statusGroups = (
   tabs: WorkersByTab,
   byId: Readonly<Record<string, ThreadSummary | undefined>>,
   now: number,
+  needing: ReadonlySet<ThreadId>,
   query = "",
 ): readonly StatusGroup[] => {
   const all = [...tabs.now, ...tabs.done].flatMap((feature) => feature.rows);
   const rows = new Map<StatusGroupId, PanelRow[]>(STATUS_GROUPS.map((spec) => [spec.id, []]));
   for (const row of searchRows(all, query)) {
-    rows.get(groupOf(row))!.push(panelRow(row, byId[row.threadId], now));
+    rows.get(groupOf(row, needing))!.push(panelRow(row, byId[row.threadId], now));
   }
   return STATUS_GROUPS.map((spec) => ({ ...spec, rows: rows.get(spec.id)! }));
 };
@@ -137,3 +152,11 @@ export const filterLabel = (shown: ReadonlySet<StatusGroupId>): string =>
     : STATUS_GROUPS.filter((spec) => shown.has(spec.id))
         .map((spec) => spec.label)
         .join(", ");
+
+/**
+ * What needs you outside the panel's workspace, said under its Needs you so that count reads as
+ * this workspace's share of the pill's: "2 need you elsewhere", or "1 more needs you elsewhere"
+ * beside rows of its own.
+ */
+export const elsewhereLine = (elsewhere: number, here: number): string =>
+  `${elsewhere}${here > 0 ? " more" : ""} ${elsewhere === 1 ? "needs" : "need"} you elsewhere`;

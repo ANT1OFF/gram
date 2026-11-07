@@ -1,6 +1,7 @@
 import type { ThreadId, WorkspaceId } from "@gram/contracts";
 
 import type { Ask } from "@/orchestration/ask-model";
+import { kindsText, type NeedsYouItem } from "@/orchestration/needs-you-items";
 import { WAIT_LABELS, type WorkerActivity } from "@/orchestration/wait-model";
 import type { RailTone } from "@/orchestration/rail-model";
 import type { WorkerRow } from "@/orchestration/workers-model";
@@ -64,6 +65,29 @@ export const quietDeck = (
       .toSorted((a, b) => back.get(a.ask.key)! - back.get(b.ask.key)!),
   ];
 };
+
+/**
+ * What needs you that the deck has no card for: the Needs you list's items everywhere
+ * (`needsYouIn(groups, "all")`, what the pill counts) less the asks the deck holds. Errors, steps
+ * to take and other waits are answered in their threads, not here; Quiet says how many there are
+ * so its "1 of N" and the pill's count add up.
+ */
+export const notInDeck = (
+  items: readonly NeedsYouItem[],
+  deck: readonly Pick<DeckCard, "ask">[],
+): readonly NeedsYouItem[] => {
+  const carded = new Set(deck.map((card) => `ask:${card.ask.key}`));
+  return items.filter((item) => !carded.has(item.key));
+};
+
+/** "1 error waits in the Inbox": the rest `notInDeck` leaves, by kind; none when there is none. */
+export const restLine = (rest: readonly NeedsYouItem[]): string | undefined =>
+  rest.length === 0
+    ? undefined
+    : `${kindsText(rest)} ${rest.length === 1 ? "waits" : "wait"} in the Inbox`;
+
+/** "1 of 3 to answer": the deck's place, which counts its cards and nothing else. */
+export const deckPosition = (total: number): string => `1 of ${total} to answer`;
 
 /** Sends `key` to the back of the deck; the list keeps only keys still in it. */
 export const sendLater = (

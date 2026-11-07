@@ -15,6 +15,7 @@ import { workersByTab, type WorkerRow, type WorkersByTab } from "./workers-model
 import {
   filteredGroups,
   filterLabel,
+  elsewhereLine,
   FOLDED_BY_DEFAULT,
   groupOf,
   panelRow,
@@ -80,12 +81,16 @@ const tabsOf = (now: WorkerRow[], done: WorkerRow[] = []): WorkersByTab => ({
   done: done.length === 0 ? [] : [{ feature: "refunds", rows: done }],
 });
 
+const NONE: ReadonlySet<ThreadId> = new Set();
+const needing = (...threads: string[]): ReadonlySet<ThreadId> =>
+  new Set(threads.map((id) => id as ThreadId));
+
 const ids = (groups: ReturnType<typeof statusGroups>, id: StatusGroupId) =>
   groups.find((group) => group.id === id)!.rows.map((each) => each.threadId);
 
 describe("the Workers tab's groups", () => {
   it("lists every group in order, each named by the one status word and saying what it holds", () => {
-    const groups = statusGroups(tabsOf([]), {}, NOW);
+    const groups = statusGroups(tabsOf([]), {}, NOW, NONE);
     expect(groups.map((group) => group.label)).toEqual([
       "Needs you",
       "Running",
@@ -105,15 +110,27 @@ describe("the Workers tab's groups", () => {
     expect(FOLDED_BY_DEFAULT).toEqual(["done"]);
   });
 
-  it("puts each worker in its tone's group, a failure with what needs you", () => {
-    expect(groupOf(row("a", "needs"))).toBe("needs");
-    expect(groupOf(row("b", "error"))).toBe("needs");
-    expect(groupOf(row("c", "working"))).toBe("running");
-    expect(groupOf(row("d", "waiting"))).toBe("waiting");
-    expect(groupOf(row("e", "attention"))).toBe("stopped");
-    expect(groupOf(row("f", "idle"))).toBe("stopped");
-    expect(groupOf(row("g", "merged"))).toBe("done");
-    expect(groupOf(row("h", "idle", { tab: "done", glyph: "merged" }))).toBe("done");
+  it("puts a worker under Needs you exactly when the needs-you list has an item on it", () => {
+    const listed = needing("a", "b", "w", "h");
+    expect(groupOf(row("a", "needs"), listed)).toBe("needs");
+    expect(groupOf(row("b", "error"), listed)).toBe("needs");
+    // A Waiting on you item on a worker at work: the Inbox lists it, so Needs you does too.
+    expect(groupOf(row("w", "working"), listed)).toBe("needs");
+    // Finished, with something still on it for you: it needs you before it is done.
+    expect(groupOf(row("h", "idle", { tab: "done", glyph: "merged" }), listed)).toBe("needs");
+  });
+
+  it("puts every other worker in its tone's group", () => {
+    expect(groupOf(row("c", "working"), NONE)).toBe("running");
+    expect(groupOf(row("d", "waiting"), NONE)).toBe("waiting");
+    expect(groupOf(row("e", "attention"), NONE)).toBe("stopped");
+    expect(groupOf(row("f", "idle"), NONE)).toBe("stopped");
+    expect(groupOf(row("g", "merged"), NONE)).toBe("done");
+    expect(groupOf(row("h", "idle", { tab: "done", glyph: "merged" }), NONE)).toBe("done");
+    // An ask put away for Later, a failure dismissed: no item, so not counted as needing you here
+    // when the badge and the Inbox don't count it; at rest, its dot still says why.
+    expect(groupOf(row("a", "needs"), NONE)).toBe("stopped");
+    expect(groupOf(row("b", "error"), NONE)).toBe("stopped");
   });
 
   it("reads tones from the shared selector, so its counts are the sidebar's and the Board's", () => {
@@ -132,10 +149,12 @@ describe("the Workers tab's groups", () => {
       shipped: summary("shipped", "idle", { completedAt: NOW - 5 * MINUTE }),
     };
     const tabs = workersByTab(ledger, { byId, statusDetail: {}, now: NOW });
-    const groups = statusGroups(tabs, byId, NOW);
-    // Each row's group is its ⌘J row's tone, whatever list it is drawn in.
+    // What the needs-you list holds for this workspace: the ask and the failure.
+    const listed = needing("ask", "broke");
+    const groups = statusGroups(tabs, byId, NOW, listed);
+    // Each row's group is its ⌘J row's, whatever list it is drawn in.
     for (const each of tabs.now.flatMap((feature) => feature.rows)) {
-      expect(ids(groups, groupOf(each))).toContain(each.threadId);
+      expect(ids(groups, groupOf(each, listed))).toContain(each.threadId);
     }
     expect(ids(groups, "needs")).toEqual(["ask", "broke"]);
     expect(ids(groups, "running")).toEqual(["run"]);
@@ -145,9 +164,17 @@ describe("the Workers tab's groups", () => {
 
   it("filters by search over the title, feature and repo", () => {
     const tabs = tabsOf([row("a", "working"), row("b", "idle", { title: "Fix the mailer" })]);
-    const groups = statusGroups(tabs, {}, NOW, "mailer");
+    const groups = statusGroups(tabs, {}, NOW, NONE, "mailer");
     expect(ids(groups, "running")).toEqual([]);
     expect(ids(groups, "stopped")).toEqual(["b"]);
+  });
+});
+
+describe("what needs you elsewhere", () => {
+  it("says the rest of the pill's count apart from this workspace's", () => {
+    expect(elsewhereLine(2, 0)).toBe("2 need you elsewhere");
+    expect(elsewhereLine(1, 0)).toBe("1 needs you elsewhere");
+    expect(elsewhereLine(1, 2)).toBe("1 more needs you elsewhere");
   });
 });
 
@@ -190,6 +217,11 @@ describe("a row", () => {
     });
   });
 
+  it("says Starting while it is spawned and not begun, never Stopped", () => {
+    const starting = row("a", "working", { starting: true, now: "starting…" });
+    expect(panelRow(starting, undefined, NOW).status).toBe("Starting…");
+  });
+
   it("opens in the main view only once closed with its worktree, or for a solo thread", () => {
     expect(panelRow(row("a", "merged", { cleanedUp: true }), undefined, NOW).mainOnly).toBe(true);
     expect(panelRow(row("b", "merged", { solo: true }), undefined, NOW).mainOnly).toBe(true);
@@ -197,7 +229,7 @@ describe("a row", () => {
 });
 
 describe("the filter", () => {
-  const groups = statusGroups(tabsOf([]), {}, NOW);
+  const groups = statusGroups(tabsOf([]), {}, NOW, NONE);
 
   it("shows every group with none picked", () => {
     expect(filteredGroups(groups, new Set())).toHaveLength(STATUS_GROUPS.length);

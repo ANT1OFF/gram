@@ -203,7 +203,8 @@ describe("the now line", () => {
       ],
       [worker("stuck", "f", "blocked", { reportStands: true }), "blocked"],
       [worker("held", "f", "working", { userIntervened: true }), "Under your control"],
-      [worker("brief", "f", "briefed"), "briefed"],
+      // Spawned, its session at rest before the brief lands: starting too, never stopped.
+      [worker("brief", "f", "briefed"), "starting…"],
       [worker("err", "f", "error"), "stopped on an error"],
       [worker("gone", "f", "archived"), "archived"],
       [
