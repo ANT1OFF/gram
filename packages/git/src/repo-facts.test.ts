@@ -78,13 +78,69 @@ describe.skipIf(!hasGit)("the sweep's per-checkout git reads", () => {
       take();
       // The sweep after: the four `rev-parse`s and the origin's `git config` were five runs.
       expect(yield* resolvePrInputs(path)).toEqual(inputs);
-      expect(take()).toEqual(["git rev-parse --show-toplevel HEAD @{upstream} --abbrev-ref HEAD"]);
+      expect(take()).toEqual([
+        "git rev-parse --show-toplevel HEAD @{upstream} --abbrev-ref HEAD @{upstream}",
+      ]);
+      // And once its upstream is known, none while nothing moved.
+      expect(yield* resolvePrInputs(path)).toEqual(inputs);
+      expect(take()).toEqual([]);
       // From a folder below the toplevel as well.
       const sub = nodePath.join(path, "sub");
       write(nodePath.join(sub, "file.txt"), "x");
       expect(yield* resolvePrInputs(sub)).toEqual(inputs);
     }).pipe(Effect.provide(layer));
   });
+
+  it.live(
+    "reads a checkout's HEAD again only once a commit, checkout, push or upstream moves it",
+    () => {
+      const { layer, take } = counted();
+      return Effect.gen(function* () {
+        const path = repo();
+        const first = commit(path, "a.txt");
+        const inputs = () => resolvePrInputs(path);
+        const settle = function* () {
+          yield* inputs();
+          yield* inputs();
+          take();
+        };
+        // Never pushed: no upstream, and the branch and its origin tip are asked as well.
+        yield* settle();
+        expect(yield* inputs()).toMatchObject({ branch: "feat", localTip: first, remoteTip: "" });
+        expect(take()).toEqual([]);
+        // A commit moves the branch's ref.
+        const second = commit(path, "b.txt");
+        expect(yield* inputs()).toMatchObject({ localTip: second });
+        // `git push -u`: the upstream's ref and the config.
+        pushed(path);
+        expect(yield* inputs()).toMatchObject({ localTip: second, remoteTip: second });
+        yield* settle();
+        expect(yield* inputs()).toMatchObject({ remoteTip: second });
+        expect(take()).toEqual([]);
+        // A fetch moves the upstream alone.
+        const third = commit(path, "c.txt");
+        run(path, "update-ref", "refs/remotes/origin/feat", "HEAD~2");
+        expect(yield* inputs()).toMatchObject({ localTip: third, remoteTip: first });
+        // Packed, then moved while packed.
+        run(path, "pack-refs", "--all");
+        expect(yield* inputs()).toMatchObject({ localTip: third, remoteTip: first });
+        run(path, "update-ref", "refs/remotes/origin/feat", third);
+        expect(yield* inputs()).toMatchObject({ remoteTip: third });
+        // Another branch checked out, and detached.
+        run(path, "checkout", "-q", "-b", "other");
+        expect(yield* inputs()).toMatchObject({ branch: "other", remoteTip: "" });
+        run(path, "checkout", "-q", "--detach");
+        expect(yield* inputs()).toBeUndefined();
+        run(path, "checkout", "-q", "feat");
+        expect(yield* inputs()).toMatchObject({ branch: "feat", remoteTip: third });
+        // Its upstream unset.
+        run(path, "branch", "-q", "--unset-upstream");
+        expect(yield* inputs()).toMatchObject({ branch: "feat", remoteTip: third });
+        run(path, "update-ref", "-d", "refs/remotes/origin/feat");
+        expect(yield* inputs()).toMatchObject({ branch: "feat", remoteTip: "" });
+      }).pipe(Effect.provide(layer));
+    },
+  );
 
   it.live("asks for origin tips again only once one of their refs moves", () => {
     const { layer, take } = counted();
