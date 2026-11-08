@@ -190,7 +190,11 @@ export function useOverviewFeatures(workspaceId: WorkspaceId): readonly Overview
   return useMemo(() => {
     const running: RunningWorker[] = [];
     for (let i = 0; i + 2 < flat.length; i += 3) {
-      running.push({ threadId: flat[i] as ThreadId, title: flat[i + 1]!, feature: flat[i + 2]! });
+      running.push({
+        threadId: flat[i] as ThreadId,
+        title: flat[i + 1]!,
+        feature: flat[i + 2]!,
+      });
     }
     const keys = askKeysByThread(asks ?? []);
     const held = new Set(
@@ -202,7 +206,10 @@ export function useOverviewFeatures(workspaceId: WorkspaceId): readonly Overview
     for (const worker of ledger?.features.flatMap((feature) => feature.workers) ?? []) {
       const report = worker.lastReport;
       if (report !== undefined) {
-        reports.set(worker.threadId, { at: report.at, nextStep: report.evidence?.nextStep });
+        reports.set(worker.threadId, {
+          at: report.at,
+          nextStep: report.evidence?.nextStep,
+        });
       }
     }
     return overviewFeatures(cards, keys, over, running, held, activities, reports, tones, waits);
@@ -299,8 +306,12 @@ function useRevealViewed() {
   }, [viewed, section]);
 }
 
-/** The Orchestrator layout's left column: what needs you, the orchestrators and the solo threads. */
-export function OverviewSidebar() {
+/**
+ * The Orchestrator layout's left column: what needs you, the orchestrators and the solo threads. On
+ * a phone it is the drawer's content: Search and New task at its top, no sidebar toggles, and no
+ * usage at its foot (the header's More has it).
+ */
+export function OverviewSidebar({ phone = false }: { phone?: boolean }) {
   const hideHint = useShortcutHint("sidebar.toggle");
   useRevealViewed();
   // The optional sections Settings → General turned off.
@@ -315,49 +326,58 @@ export function OverviewSidebar() {
       {...{ [OVERVIEW_ROOT]: "open" }}
       className="flex min-h-0 flex-1 flex-col border-r border-sidebar-divider bg-sidebar text-sidebar-foreground"
     >
-      {/* The title bar's height. Hide sidebar leads, after macOS's window buttons, in the spot the
+      {phone ? (
+        <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
+          <OverviewSearch />
+          <NewEntryMenu />
+        </div>
+      ) : (
+        <>
+          {/* The title bar's height. Hide sidebar leads, after macOS's window buttons, in the spot the
           title bar's Show sidebar takes while it is hidden, so the toggle never moves. Too narrow
           for them all beside the buttons, the rest wrap to a row below rather than clip. Its
           room past those buttons decides whether New says its words. */}
-      <div className="@container/overview-head flex min-h-(--titlebar-height) shrink-0 flex-wrap content-start items-center gap-1 px-2 py-1.5 pl-[max(--spacing(2),var(--window-lights-inset))] [-webkit-app-region:drag]">
-        {/* Each icon says what it does the moment it's hovered, with its key where it has one. */}
-        <Hint
-          label={withHint("Hide sidebar", hideHint)}
-          side="bottom"
-          render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Hide sidebar"
-              data-testid="overview-hide"
-              className="text-muted-foreground [-webkit-app-region:no-drag]"
-              onClick={toggleOverviewSidebar}
-            />
-          }
-        >
-          <PanelLeftClose />
-        </Hint>
-        {/* The sidebar's own two, side by side and drawn apart: Hide folds it away, Compact
+          <div className="@container/overview-head flex min-h-(--titlebar-height) shrink-0 flex-wrap content-start items-center gap-1 px-2 py-1.5 pl-[max(--spacing(2),var(--window-lights-inset))] [-webkit-app-region:drag]">
+            {/* Each icon says what it does the moment it's hovered, with its key where it has one. */}
+            <Hint
+              label={withHint("Hide sidebar", hideHint)}
+              side="bottom"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Hide sidebar"
+                  data-testid="overview-hide"
+                  className="text-muted-foreground [-webkit-app-region:no-drag]"
+                  onClick={toggleOverviewSidebar}
+                />
+              }
+            >
+              <PanelLeftClose />
+            </Hint>
+            {/* The sidebar's own two, side by side and drawn apart: Hide folds it away, Compact
             narrows it to tiles. Settings is at the foot, beside History. */}
-        <Hint
-          label="Compact sidebar: workspaces as tiles"
-          side="bottom"
-          render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Compact sidebar"
-              data-testid="overview-compact"
-              className="text-muted-foreground [-webkit-app-region:no-drag]"
-              onClick={() => switchOverview("compact")}
-            />
-          }
-        >
-          <FoldHorizontal />
-        </Hint>
-        <UpdatePill size="xs" />
-        <NewEntryMenu />
-      </div>
+            <Hint
+              label="Compact sidebar: workspaces as tiles"
+              side="bottom"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Compact sidebar"
+                  data-testid="overview-compact"
+                  className="text-muted-foreground [-webkit-app-region:no-drag]"
+                  onClick={() => switchOverview("compact")}
+                />
+              }
+            >
+              <FoldHorizontal />
+            </Hint>
+            <UpdatePill size="xs" />
+            <NewEntryMenu />
+          </div>
+        </>
+      )}
       {/* The spacing scale's named steps: sections a list's step apart (12 px), as a list's
           headings are, so the column reads as one even list rather than blocks with gaps. */}
       <div
@@ -367,13 +387,13 @@ export function OverviewSidebar() {
         {/* What needs you, and the way to find anything else, as one block at the top. */}
         <div className="flex flex-col gap-tight">
           <NeedsYou />
-          <OverviewSearch />
+          {!phone && <OverviewSearch />}
         </div>
         <Orchestrators />
       </div>
       {/* History and Settings share the foot: the places you go to rather than work in. */}
       <OverviewHistory showHistory={!hidden.includes("doneToday")} />
-      {!beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
+      {!phone && !beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
     </aside>
   );
 }

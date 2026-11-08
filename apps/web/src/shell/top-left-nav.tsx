@@ -9,7 +9,7 @@ import { UpdatePill } from "@/updates/update-pill";
 import { cn } from "@/lib/utils";
 
 const NAV =
-  "relative text-muted-foreground [-webkit-app-region:no-drag] data-[status=active]:bg-sidebar-row-active data-[status=active]:text-foreground";
+  "relative text-muted-foreground [-webkit-app-region:no-drag] data-[status=active]:bg-sidebar-row-active data-[status=active]:text-foreground in-data-phone-drawer:size-11";
 
 /**
  * Settings as an icon, once in the window: at the open overview's foot beside History, at the top

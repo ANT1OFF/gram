@@ -3,6 +3,7 @@ import { useParams, useRouterState } from "@tanstack/react-router";
 import { useLayoutEffect } from "react";
 
 import { useInboxDock } from "@/inbox/inbox-dock";
+import { usePhone } from "@/lib/use-phone";
 import { useServerSettings } from "@/settings-sync/store";
 import { useWindowWidth } from "@/shell/side-resize";
 import {
@@ -60,14 +61,16 @@ export function useShellLayout() {
   // Settings is a place of its own: the overview steps aside (the title bar has Back and the
   // page's name), and its stored mode stays as it was for when Settings closes.
   const settings = page === "/settings";
+  // A phone has no room beside the chat for the overview: it is the header's drawer instead.
+  const phone = usePhone();
   const input = {
     windowWidth,
     threadInView: hasThread,
     threadQuiet,
     focusMode,
     sidebarWidth,
-    sidebarPeek: settings ? false : sidebarPeek,
-    overviewSidebar: settings ? "hidden" : overviewSidebar,
+    sidebarPeek: settings || phone ? false : sidebarPeek,
+    overviewSidebar: settings || phone ? "hidden" : overviewSidebar,
     panelOpen,
     panelWidth,
     panelExpanded,
@@ -106,6 +109,7 @@ export function useShellLayout() {
     focusMode,
     /** Settings is open: the title bar carries Back and its name, and no overview shows. */
     settings,
+    phone,
     panelLeft,
     hasThread,
     windowResizing,

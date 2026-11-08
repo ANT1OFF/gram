@@ -13,6 +13,7 @@ import { useMotionLevel } from "@/motion";
 import { OverviewRail } from "@/orchestration/overview-rail";
 import { OverviewSidebar, useCarryOverviewFocus } from "@/orchestration/overview-sidebar";
 import { ConnectionBanner } from "@/shell/connection-banner";
+import { PhoneDrawer } from "@/shell/phone-drawer";
 import { ReviewStrip } from "@/shell/review-strip";
 import { ShellTitlebar } from "@/shell/shell-titlebar";
 import { SideResizeHandle } from "@/shell/side-resize";
@@ -42,6 +43,7 @@ export function AppShell() {
     fit,
     focusMode,
     settings,
+    phone,
     panelLeft,
     hasThread,
     windowResizing,
@@ -188,6 +190,7 @@ export function AppShell() {
           )}
         </div>
       </div>
+      {phone && <PhoneDrawer />}
       <QuietLayer />
       <MenuBar />
     </>

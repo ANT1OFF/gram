@@ -20,9 +20,10 @@ export const STOP = OVERVIEW_STOP;
  * its badges. One line, one height (`--space-row`): the title is cut at its end with an ellipsis,
  * and its hover says the whole of it and the rest of its state, so a list of rows reads as even
  * rows in every section. The title keeps at least 2.5 rem: short of room, the edge gives way first.
+ * In the phone's drawer a row is two lines, its title over what trails it, 48 px tall.
  */
 export const ROW =
-  "grid min-h-(--space-row) w-full cursor-default grid-cols-[0.625rem_minmax(2.5rem,1fr)_auto] items-center gap-x-2 rounded-(--radius-sm) px-1.5 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring";
+  "grid min-h-(--space-row) w-full cursor-default grid-cols-[0.625rem_minmax(2.5rem,1fr)_auto] items-center gap-x-2 rounded-(--radius-sm) px-1.5 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring in-data-phone-drawer:min-h-12 in-data-phone-drawer:grid-cols-[0.625rem_minmax(0,1fr)] in-data-phone-drawer:gap-x-3 in-data-phone-drawer:px-2 in-data-phone-drawer:py-1";
 
 /** A row's title: one line, cut at its end with an ellipsis. */
 export const ROW_TITLE = "min-w-0 truncate";
@@ -32,7 +33,7 @@ export const ROW_TITLE = "min-w-0 truncate";
  * than 7 rem, so the title keeps most of the row.
  */
 export const ROW_TRAIL =
-  "flex h-lh max-w-28 min-w-0 items-center justify-end gap-x-1.5 text-meta text-muted-foreground";
+  "flex h-lh max-w-28 min-w-0 items-center justify-end gap-x-1.5 text-meta text-muted-foreground in-data-phone-drawer:col-start-2 in-data-phone-drawer:max-w-none in-data-phone-drawer:justify-start in-data-phone-drawer:empty:hidden";
 
 /**
  * A two-line row's status line, under its title (the Workers tab's rows): muted words, and its time
