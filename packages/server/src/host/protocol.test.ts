@@ -12,6 +12,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
+import { terminalsOnHost } from "./terminals.ts";
 import {
   connectHost,
   HOST_CAPABILITIES,
@@ -76,6 +77,7 @@ const connected = (overrides: Partial<HostHello> = {}) =>
       files: filesOn(yield* Proc),
       worktrees: yield* Worktrees,
       git: gitOn(yield* Proc),
+      terminals: yield* terminalsOnHost,
       scan: Effect.succeed(SCAN),
     };
     yield* Effect.forkScoped(

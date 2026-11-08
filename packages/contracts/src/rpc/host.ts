@@ -7,7 +7,8 @@ import { FsSearchResult } from "../fs-search.ts";
 import { Checkout } from "../domain.ts";
 import { FsListing } from "../fs.ts";
 import { GitState } from "../git.ts";
-import { HostId } from "../ids.ts";
+import { HostId, TerminalId, ThreadId } from "../ids.ts";
+import { TerminalEvent, TerminalInfo, TerminalOpened } from "../terminal.ts";
 import { WorktreeList } from "../worktrees.ts";
 import { PositiveInt } from "./shared.ts";
 
@@ -18,7 +19,7 @@ import { PositiveInt } from "./shared.ts";
 export const HOST_PROTOCOL_VERSION = 1;
 
 /** What a host can do, named so a control plane uses only what a host advertised. */
-export const HostCapability = Schema.Literals(["files", "ports", "worktrees", "git"]);
+export const HostCapability = Schema.Literals(["files", "ports", "worktrees", "git", "terminals"]);
 export type HostCapability = typeof HostCapability.Type;
 
 /** The host's answer to `host.hello`: who it is and what it can do. */
@@ -102,6 +103,38 @@ export const HostGitChange = Schema.Struct({
   live: Schema.Boolean,
   state: GitState,
 });
+
+/** A thread's terminal as the host holds it, with its raw scrollback. */
+export const HostTerminalSnapshot = Schema.Struct({
+  terminalId: TerminalId,
+  threadId: Schema.optionalKey(ThreadId),
+  cwd: Schema.String,
+  shell: Schema.String,
+  alive: Schema.Boolean,
+  script: Schema.optionalKey(Schema.String),
+  exitCode: Schema.optionalKey(Schema.Int),
+  signal: Schema.optionalKey(Schema.String),
+  scrollback: Schema.String,
+  scrollbackCut: Schema.Boolean,
+  cols: Schema.Int,
+  rows: Schema.Int,
+});
+
+/**
+ * A thread's shell starting or ending on the host, so the control plane can count it among the
+ * thread's processes for its port chips.
+ */
+export const HostTerminalRoot = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("add"),
+    threadId: ThreadId,
+    pid: Schema.Int,
+    terminalId: TerminalId,
+  }),
+  Schema.Struct({ kind: Schema.Literal("remove"), pid: Schema.Int }),
+]);
+
+const terminalErrors = Schema.Union([NotFound, InvalidState, HostFailed]);
 
 const worktreeErrors = Schema.Union([HostWorktreeFailed, HostFailed]);
 const commandErrors = Schema.Union([HostCommandFailed, HostFailed]);
@@ -219,4 +252,53 @@ export const HostRpcs = RpcGroup.make(
     success: HostGitChange,
     stream: true,
   }),
+  /**
+   * A shell in `cwd`, already chosen by the control plane, with the settings it read: the host has
+   * none of its own.
+   */
+  Rpc.make("host.terminals.open", {
+    payload: {
+      threadId: Schema.optionalKey(ThreadId),
+      cwd: Schema.String,
+      cols: PositiveInt,
+      rows: PositiveInt,
+      shell: Schema.optionalKey(Schema.String),
+      command: Schema.optionalKey(Schema.String),
+      script: Schema.optionalKey(Schema.String),
+      settingsShell: Schema.optionalKey(Schema.String),
+      path: Schema.String,
+    },
+    success: TerminalOpened,
+    error: terminalErrors,
+  }),
+  Rpc.make("host.terminals.input", {
+    payload: { terminalId: TerminalId, data: Schema.String },
+    error: terminalErrors,
+  }),
+  Rpc.make("host.terminals.resize", {
+    payload: { terminalId: TerminalId, cols: PositiveInt, rows: PositiveInt },
+    error: terminalErrors,
+  }),
+  /** Kills the shell and waits for it to exit. */
+  Rpc.make("host.terminals.close", {
+    payload: { terminalId: TerminalId },
+    error: Schema.Union([NotFound, HostFailed]),
+  }),
+  Rpc.make("host.terminals.list", {
+    payload: { threadId: Schema.optionalKey(ThreadId) },
+    success: Schema.Array(TerminalInfo),
+  }),
+  /** The scrollback as one `replay`, then live output, ending after `exit`. */
+  Rpc.make("host.terminals.subscribe", {
+    payload: { terminalId: TerminalId },
+    success: TerminalEvent,
+    error: Schema.Union([NotFound, HostFailed]),
+    stream: true,
+  }),
+  Rpc.make("host.terminals.snapshot", {
+    payload: { threadId: ThreadId },
+    success: Schema.Array(HostTerminalSnapshot),
+  }),
+  /** Threads' shells as they start and end, until the caller stops listening. */
+  Rpc.make("host.terminals.roots", { success: HostTerminalRoot, stream: true }),
 );

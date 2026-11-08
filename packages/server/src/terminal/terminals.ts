@@ -25,9 +25,9 @@ import { resolveShell, shellCommand, signalName, terminalEnv } from "./shell.ts"
 import { ptyInvocation } from "./shell-check.ts";
 import { ensureSpawnHelperExecutable } from "./spawn-helper.ts";
 
-const HELD = "the thread is closing, so its terminals take no input";
+export const HELD = "the thread is closing, so its terminals take no input";
 
-interface OpenTerminal {
+export interface OpenTerminal {
   readonly threadId?: ThreadId;
   readonly cwd?: string;
   readonly cols: number;
@@ -61,9 +61,20 @@ export interface TerminalsDeps {
   readonly batchWindowMs?: number;
 }
 
+/**
+ * What a terminal opens with when its caller has read the settings already (a host process the
+ * server opens it on, which has no settings of its own): they stand in for `settingsShell` and
+ * `path`.
+ */
+export interface OpenSettings {
+  readonly settingsShell?: string | undefined;
+  readonly path: string;
+}
+
 export interface Terminals {
   open(
     request: OpenTerminal,
+    settings?: OpenSettings,
   ): Effect.Effect<TerminalOpened, ThreadNotFound | NotFound | InvalidState>;
   input(terminalId: TerminalId, data: string): Effect.Effect<void, NotFound | InvalidState>;
   resize(
@@ -154,18 +165,22 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
         return yield* resolveFolder(folder);
       });
 
-    const open: Terminals["open"] = (request) =>
+    const open: Terminals["open"] = (request, settings) =>
       Effect.gen(function* () {
         const cwd = yield* cwdFor(request);
         const shell = shellCommand(
           request.shell,
-          yield* deps.settingsShell,
+          settings === undefined ? yield* deps.settingsShell : settings.settingsShell,
           process.env,
           process.platform,
         );
         const resolved = resolveShell(shell.file, process.platform, process.env["PATH"] ?? "");
         if (!resolved.found) return yield* new InvalidState({ message: resolved.message });
-        const env = terminalEnv(process.env, yield* deps.path, process.platform);
+        const env = terminalEnv(
+          process.env,
+          settings === undefined ? yield* deps.path : settings.path,
+          process.platform,
+        );
         const args =
           request.command === undefined
             ? shell.args

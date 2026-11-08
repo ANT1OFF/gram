@@ -16,6 +16,7 @@ import {
   LOCAL_HOST_ID,
   HostWorktreeFailed,
   NotFound,
+  type TerminalEvent,
 } from "@gram/contracts";
 import {
   type ProcError,
@@ -41,6 +42,13 @@ import {
 } from "../platform/unstable.ts";
 import type { HostFiles } from "./files.ts";
 import type { HostGit } from "./git.ts";
+import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
+import type {
+  OpenSettings,
+  OpenTerminal,
+  Terminals,
+  TerminalSnapshot,
+} from "../terminal/terminals.ts";
 
 /** A machine's worktrees, as a host serves them: the request's own options, all of them data. */
 export interface HostWorktrees {
@@ -61,6 +69,7 @@ export interface HostService {
   readonly files: HostFiles;
   readonly worktrees: HostWorktrees;
   readonly git: HostGit;
+  readonly terminals: HostTerminalsService;
   readonly scan: Effect.Effect<PortScan, unknown>;
 }
 
@@ -70,6 +79,7 @@ export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
   "ports",
   "worktrees",
   "git",
+  "terminals",
 ];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
@@ -156,6 +166,23 @@ const handlersFor = (host: HostService) =>
       "host.git.local": ({ cwd }) => host.git.local(cwd).pipe(Effect.mapError(commandToWire)),
       "host.git.present": ({ cwd }) => host.git.present(cwd),
       "host.git.watch": ({ paths, ...options }) => host.git.watch(paths, options),
+      "host.terminals.open": ({ settingsShell, path, ...request }) =>
+        host.terminals.terminals.open(request, { settingsShell, path }).pipe(
+          // Every open names its folder, so no thread is looked up here.
+          Effect.catchTag("ThreadNotFound", (error) =>
+            Effect.fail(new InvalidState({ message: `No thread ${error.threadId}` })),
+          ),
+        ),
+      "host.terminals.input": ({ terminalId, data }) =>
+        host.terminals.terminals.input(terminalId, data),
+      "host.terminals.resize": ({ terminalId, cols, rows }) =>
+        host.terminals.terminals.resize(terminalId, cols, rows),
+      "host.terminals.close": ({ terminalId }) => host.terminals.terminals.close(terminalId),
+      "host.terminals.list": ({ threadId }) => host.terminals.terminals.list(threadId),
+      "host.terminals.subscribe": ({ terminalId }) =>
+        host.terminals.terminals.subscribe(terminalId),
+      "host.terminals.snapshot": ({ threadId }) => host.terminals.terminals.snapshot(threadId),
+      "host.terminals.roots": () => host.terminals.roots,
     }),
   );
 
@@ -195,12 +222,35 @@ export interface HostGitConnection {
   ) => Stream.Stream<Stream.Success<ReturnType<HostGit["watch"]>>, HostUnavailable>;
 }
 
+/**
+ * A host's terminals as the control plane reaches them. The control plane chooses each one's folder
+ * and reads its settings. A host that has gone has no terminals: its reads come back empty, a
+ * close finds nothing to do, and a subscription ends with its shell's exit.
+ */
+export interface HostTerminalsConnection {
+  readonly open: (
+    request: OpenTerminal & { readonly cwd: string },
+    settings: OpenSettings,
+  ) => Effect.Effect<Effect.Success<ReturnType<Terminals["open"]>>, NotFound | InvalidState>;
+  readonly input: Terminals["input"];
+  readonly resize: Terminals["resize"];
+  readonly close: Terminals["close"];
+  readonly list: Terminals["list"];
+  readonly subscribe: Terminals["subscribe"];
+  readonly snapshot: (
+    threadId: Parameters<Terminals["snapshot"]>[0],
+  ) => Effect.Effect<ReadonlyArray<TerminalSnapshot>>;
+  /** The host's threads' shells as they start and end; fails once the host has gone. */
+  readonly roots: Stream.Stream<TerminalRoot, HostUnavailable>;
+}
+
 /** A connected host, as the control plane reaches it. */
 export interface HostConnection {
   readonly hello: HostHello;
   readonly files: HostFiles;
   readonly worktrees: HostWorktrees;
   readonly git: HostGitConnection;
+  readonly terminals: HostTerminalsConnection;
   readonly scan: Effect.Effect<PortScan, unknown>;
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
@@ -464,11 +514,84 @@ export const connectHost = (
               ),
         ),
     };
+    /**
+     * A stream from the host that fails, rather than hangs, once the host has gone: a `NotFound`
+     * stays itself, anything else ends the host and reads as `HostUnavailable`.
+     */
+    const hostStream = <A, E>(
+      stream: Stream.Stream<A, E>,
+    ): Stream.Stream<A, Extract<E, NotFound> | HostUnavailable> =>
+      Stream.suspend((): Stream.Stream<A, Extract<E, NotFound> | HostUnavailable> =>
+        ended
+          ? Stream.fail(unavailable("This machine's host has stopped."))
+          : stream.pipe(
+              Stream.catch((error): Stream.Stream<never, Extract<E, NotFound> | HostUnavailable> =>
+                error instanceof NotFound
+                  ? Stream.fail(error as Extract<E, NotFound>)
+                  : Stream.fromEffect(
+                      Effect.andThen(
+                        markEnded(failureText(error)),
+                        Effect.fail(unavailable(HOST_NOT_ANSWERING)),
+                      ),
+                    ),
+              ),
+              Stream.interruptWhen(gone),
+            ),
+      );
+    const fileCall = <A, E extends { readonly _tag: string; readonly message?: string }>(
+      call: Effect.Effect<A, E>,
+    ) =>
+      guarded(call).pipe(
+        Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+      );
+    const terminals: HostTerminalsConnection = {
+      open: (request, settings) =>
+        fileCall(
+          client["host.terminals.open"](
+            defined({
+              threadId: request.threadId,
+              cwd: request.cwd,
+              cols: request.cols,
+              rows: request.rows,
+              shell: request.shell,
+              command: request.command,
+              script: request.script,
+              settingsShell: settings.settingsShell,
+              path: settings.path,
+            }),
+          ),
+        ),
+      input: (terminalId, data) => fileCall(client["host.terminals.input"]({ terminalId, data })),
+      resize: (terminalId, cols, rows) =>
+        fileCall(client["host.terminals.resize"]({ terminalId, cols, rows })),
+      // A host that went took its shells with it, so there is nothing left to close.
+      close: (terminalId) =>
+        guarded(client["host.terminals.close"]({ terminalId })).pipe(
+          Effect.catch((error) => (error instanceof NotFound ? Effect.fail(error) : Effect.void)),
+        ),
+      list: (threadId) =>
+        guarded(client["host.terminals.list"](defined({ threadId }))).pipe(
+          Effect.orElseSucceed(() => []),
+        ),
+      subscribe: (terminalId) =>
+        hostStream(client["host.terminals.subscribe"]({ terminalId })).pipe(
+          // A shell whose host went has ended too.
+          Stream.catch((error): Stream.Stream<TerminalEvent, NotFound> =>
+            error instanceof NotFound ? Stream.fail(error) : Stream.make({ type: "exit" }),
+          ),
+        ),
+      snapshot: (threadId) =>
+        guarded(client["host.terminals.snapshot"]({ threadId })).pipe(
+          Effect.orElseSucceed(() => []),
+        ),
+      roots: hostStream(client["host.terminals.roots"]()),
+    };
     return {
       hello,
       files,
       worktrees,
       git,
+      terminals,
       scan: guarded(client["host.ports.scan"]()).pipe(Effect.map(scanFromWire)),
       gone: () => ended,
     };
