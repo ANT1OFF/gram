@@ -9,7 +9,7 @@ import {
   type ThreadStatus,
   type ThreadSummary,
 } from "@gram/contracts";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
@@ -87,13 +87,19 @@ const renderActions = (message: GramUIMessage, rewind: Api["rewind"]) =>
     </ApiProvider>,
   );
 
+/** The "…" beside Copy holds every other action: open it, then find one. */
+const fromMore = async (testId: string) => {
+  fireEvent.click(screen.getByTestId("message-more"));
+  return screen.findByTestId(testId);
+};
+
 const rewindRejecting = async (error: unknown) => {
   seed("idle", "history");
   renderActions(
     assistant,
     vi.fn(async () => Promise.reject(error)),
   );
-  fireEvent.click(screen.getByTestId("message-rewind"));
+  fireEvent.click(await fromMore("message-rewind"));
   fireEvent.click(await screen.findByRole("button", { name: "Rewind" }));
   return (await screen.findByRole("alert")).textContent;
 };
@@ -157,12 +163,36 @@ describe("MessageActions copy", () => {
 });
 
 describe("MessageActions", () => {
+  // Round 15: copy, inbox, history, fork and "…" in a row under every message read as a strip of
+  // bare glyphs. Copy stays in sight; the rest are named in the "…".
+  it("shows Copy and the \u2026 alone, every other action named inside it", async () => {
+    seed("idle", "history");
+    renderActions(assistant, vi.fn());
+    const row = screen.getByTestId("message-actions");
+    expect(
+      within(row)
+        .getAllByRole("button")
+        .map((b) => b.getAttribute("aria-label")),
+    ).toEqual(["Copy message", "More message actions"]);
+    fireEvent.click(screen.getByTestId("message-more"));
+    const items = await screen.findAllByRole("menuitem");
+    expect(items.map((item) => item.getAttribute("aria-label"))).toEqual([
+      "Add to Waiting on you",
+      "Rewind to here",
+      "Fork from here",
+      "Fork into worktree…",
+    ]);
+    // Each named, with a line on what it does.
+    for (const item of items) expect(item.textContent).toContain(item.getAttribute("aria-label"));
+    expect(items[1]!.textContent).toContain("Remove the conversation after this reply");
+  });
+
   it("rewinds to an assistant message, restoring files when the agent supports it", async () => {
     seed("idle", "historyAndFiles");
     const rewind = vi.fn(async () => {});
     renderActions(assistant, rewind);
 
-    fireEvent.click(screen.getByTestId("message-rewind"));
+    fireEvent.click(await fromMore("message-rewind"));
     fireEvent.click(await screen.findByLabelText("Restore files too"));
     fireEvent.click(screen.getByRole("button", { name: "Rewind" }));
 
@@ -173,16 +203,17 @@ describe("MessageActions", () => {
     for (const rewind of [undefined, "history"] as const) {
       seed("idle", rewind);
       renderActions(assistant, vi.fn());
-      fireEvent.click(screen.getByTestId("message-rewind"));
+      fireEvent.click(await fromMore("message-rewind"));
       await screen.findByRole("button", { name: "Rewind" });
       expect(screen.queryByLabelText("Restore files too")).toBeNull();
       cleanup();
     }
   });
 
-  it("hides the actions when the agent can't rewind", () => {
+  it("hides the actions when the agent can't rewind", async () => {
     seed("idle", "none");
     renderActions(assistant, vi.fn());
+    await fromMore("message-wait");
     expect(screen.queryByTestId("message-rewind")).toBeNull();
   });
 
@@ -201,7 +232,7 @@ describe("MessageActions", () => {
     const rewind = vi.fn(async () => {});
     renderActions(user, rewind);
 
-    fireEvent.click(screen.getByTestId("message-edit"));
+    fireEvent.click(await fromMore("message-edit"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
 
     expect(useDraftStore.getState().text[T]).toBe("Fix the retry test");
@@ -210,14 +241,14 @@ describe("MessageActions", () => {
   });
 
   it.each(["starting", "running", "needsApproval", "needsInput"] as const)(
-    "blocks rewinding while %s but keeps the reason keyboard-accessible",
-    (status) => {
+    "blocks rewinding while %s and says why in words, to sight and to a screen reader",
+    async (status) => {
       seed(status, "history");
       renderActions(assistant, vi.fn());
-      const trigger = screen.getByTestId("message-rewind");
+      const trigger = await fromMore("message-rewind");
       expect(trigger.getAttribute("aria-disabled")).toBe("true");
-      expect(trigger.tabIndex).toBe(0);
       expect(trigger.getAttribute("aria-description")).toBe("Wait for the turn to finish");
+      expect(trigger.textContent).toContain("Wait for the turn to finish");
       fireEvent.click(trigger);
       expect(screen.queryByTestId("rewind-confirm")).toBeNull();
     },
@@ -226,15 +257,15 @@ describe("MessageActions", () => {
   it("explains a reply without agent message ids and blocks both forks", async () => {
     seed("idle", "history");
     renderActions({ ...assistant, metadata: {} }, vi.fn());
-    const trigger = screen.getByTestId("message-rewind");
+    const trigger = await fromMore("message-rewind");
     expect(trigger.getAttribute("aria-disabled")).toBe("true");
 
     expect(trigger.getAttribute("aria-description")).toBe("This reply can't be rewound to yet");
     const fork = screen.getByTestId("message-fork");
     expect(fork.getAttribute("aria-disabled")).toBe("true");
+    expect(fork.textContent).toContain("This reply can't be forked from yet");
     fireEvent.click(fork);
-    fireEvent.click(screen.getByTestId("message-more"));
-    const worktree = await screen.findByTestId("message-fork-worktree");
+    const worktree = screen.getByTestId("message-fork-worktree");
     expect(worktree.getAttribute("aria-disabled")).toBe("true");
     expect(worktree.textContent).toContain("This reply can't be forked from yet");
     fireEvent.click(worktree);
