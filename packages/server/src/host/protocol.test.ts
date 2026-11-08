@@ -176,6 +176,20 @@ describe("host protocol", () => {
         .remove({ repoPath: repo, worktreeDir: created.checkout.path, openCheckouts: [] })
         .pipe(Effect.flip);
       expect(dirty).toMatchObject({ _tag: "WorktreeError", dirty: true });
+      expect(yield* host.worktrees.pendingPermissions(repo, created.checkout.path)).toEqual([]);
+      yield* host.worktrees.remove({
+        repoPath: repo,
+        worktreeDir: created.checkout.path,
+        force: true,
+        openCheckouts: [],
+      });
+      const restored = yield* host.worktrees.restore({
+        repoPath: repo,
+        worktreeDir: created.checkout.path,
+        branch: "feature/host",
+        openCheckouts: [],
+      });
+      expect(restored).toEqual({ kind: "restored", source: "local" });
       yield* host.worktrees.remove({
         repoPath: repo,
         worktreeDir: created.checkout.path,

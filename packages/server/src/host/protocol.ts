@@ -124,7 +124,7 @@ type Defined<A> = {
 const defined = <A extends object>(value: A): Defined<A> =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Defined<A>;
 
-/** The protocol's handlers over a host's own folders and scan. */
+/** The protocol's handlers over a host's own folders, worktrees, git state and scan. */
 const handlersFor = (host: HostService) =>
   HostRpcs.toLayer(
     HostRpcs.of({

@@ -153,6 +153,28 @@ describe("WorkerHosts", () => {
   );
 
   it.live(
+    "a snapshot that reuses the local read builds on what the host's watcher last saw",
+    () =>
+      Effect.gen(function* () {
+        const tmp = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(tmp)));
+        const repo = makeRepo(tmp);
+        const { local } = yield* WorkerHosts;
+        const [seen] = yield* local.git
+          .watch([repo], { debounceMs: 50, cooldownMs: 100 })
+          .pipe(Stream.take(1), Stream.runCollect, Effect.timeout("20 seconds"));
+        expect(seen?.state).toMatchObject({ repo: true, changedFiles: 0 });
+        // Changed after the watch stopped, so only a fresh read sees it.
+        writeFileSync(join(repo, "after-the-watch.txt"), "x\n");
+        const reused = yield* local.git.snapshot(repo, { remote: false, reuseLocal: true });
+        expect(reused).toMatchObject({ changedFiles: 0, origin: "acme/widgets" });
+        const fresh = yield* local.git.snapshot(repo, { remote: false });
+        expect(fresh).toMatchObject({ changedFiles: 1, origin: "acme/widgets" });
+      }).pipe(Effect.scoped, Effect.provide(ThroughHost)),
+    30_000,
+  );
+
+  it.live(
     "a host process that stops hands this machine's work back to the server",
     () =>
       Effect.gen(function* () {

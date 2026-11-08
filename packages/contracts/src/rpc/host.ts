@@ -212,8 +212,8 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.git.watch", {
     payload: {
       paths: Schema.Array(Schema.String),
-      debounceMs: Schema.optionalKey(Schema.Int),
-      cooldownMs: Schema.optionalKey(Schema.Int),
+      debounceMs: Schema.optionalKey(Schema.Number),
+      cooldownMs: Schema.optionalKey(Schema.Number),
       backend: Schema.optionalKey(Schema.Literals(["parcel", "node"])),
     },
     success: HostGitChange,
