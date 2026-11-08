@@ -28,9 +28,13 @@ const offered = {
   ],
 };
 
-/** Settings' model field, or the prompt box's choices chip, which says the model first. */
-const modelPicker = () =>
-  screen.queryByRole("combobox", { name: "Model" }) ?? screen.getByTestId("composer-choices");
+/**
+ * The model as said by Settings' model field, or by the prompt box's choices chip, whose name says
+ * the model first (the chip itself is icons, its words on hover).
+ */
+const modelWords = () =>
+  screen.queryByRole("combobox", { name: "Model" })?.textContent ??
+  screen.getByTestId("composer-choices").getAttribute("aria-label");
 
 function ChooserAndDiagnostics({ chooser }: { chooser: ReactNode }) {
   const [open, setOpen] = useState(true);
@@ -101,7 +105,7 @@ describe.each([
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: "Agent" }).textContent).toContain("Codex"),
     );
-    expect(modelPicker().textContent).toContain("Codex default");
+    expect(modelWords()).toContain("Codex default");
     expect(listing.mock.calls.filter(([agent]) => agent === "claude")).toHaveLength(3);
     expect(listing.mock.calls.filter(([agent]) => agent === "codex")).toHaveLength(3);
     expect(save).not.toHaveBeenCalled();
@@ -179,7 +183,7 @@ describe.each([
       await waitFor(() => expect(recheck.getAttribute("aria-busy")).toBe("false"));
       expect(listing.mock.calls.filter(([requested]) => requested === agent)).toHaveLength(2);
       fireEvent.click(screen.getByRole("button", { name: "Open chooser" }));
-      await waitFor(() => expect(modelPicker().textContent).toContain("Recovered account model"));
+      await waitFor(() => expect(modelWords()).toContain("Recovered account model"));
       expect(listing.mock.calls.filter(([requested]) => requested === agent)).toHaveLength(2);
       expect(
         listing.mock.calls.filter(

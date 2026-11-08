@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { chipWords, choicesChip, choicesPopup, openChoices } from "./composer-choices";
+import { chipFace, choicesChip, choicesPopup, openChoices } from "./composer-choices";
 
 for (const agent of ["claude", "codex"] as const)
   test(`${agent} speed persists independently of effort and resets on an unsupported model`, async ({
@@ -64,7 +64,7 @@ for (const agent of ["claude", "codex"] as const)
       .getByRole("option", { name: "Synthetic Fast model", exact: true })
       .click();
     // In the new-thread form, as in a thread's composer, speed is a section of the choices, and
-    // the chip says it only once it is Fast.
+    // the chip draws its bolt only once it is Fast.
     await expect(chip).toHaveAccessibleName(/ · Speed: Standard$/);
     await openChoices(page, form, "speed");
     await expect(
@@ -75,7 +75,7 @@ for (const agent of ["claude", "codex"] as const)
     await page.getByRole("option", { name: "Fast", exact: true }).click();
     await expect(chip).toHaveAccessibleName(/ · Speed: Fast$/);
     await expect(chip).toHaveAccessibleName(/ · Effort: High · /);
-    await expect.poll(() => chipWords(chip)).toMatch(/ · Fast$/);
+    await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: ["speed"] });
     await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/code/sandbox");
     await form.getByLabel("First prompt").fill("Synthetic speed preference test.");
     await form.getByRole("button", { name: /Start chat/ }).click();

@@ -49,7 +49,6 @@ import { useServerSettings } from "@/settings-sync/store";
 import { inOpenFence } from "./mention";
 import { enterSends } from "./send-key";
 import { AgentFields, choiceModel, gatewayReady } from "./agent-fields";
-import { useToolbarLayout } from "./use-toolbar-layout";
 import { modeSection } from "./choice-sections";
 import { ComposerChoices } from "./choices";
 import { useModels } from "./models";
@@ -86,7 +85,6 @@ type CheckoutKind = CheckoutRequest["kind"];
  * The prompt box's one measured control, the choices chip, as in a thread's composer; it never
  * folds, since the row wraps instead.
  */
-const NEW_THREAD_BLOCKS = [{ id: "choices", foldable: false }];
 /** How long a pick's words stay beside the chip, as long as a thread composer's note. */
 const PICKED_MS = 2500;
 
@@ -352,13 +350,6 @@ function ConfiguredNewThreadDraft() {
   });
 
   const createLabel = stage === "failed" ? "Retry" : "Start chat";
-  // One choices chip, as in a thread's composer: model · effort · mode · speed, saying the values
-  // that aren't at their defaults as the row's room allows (`useToolbarLayout`).
-  const {
-    ref: toolbarRef,
-    size: labelOf,
-    wrapped,
-  } = useToolbarLayout<HTMLFieldSetElement>(NEW_THREAD_BLOCKS);
   const modeChoice = modeSection({ value: mode, onChange: setMode });
   // A pick is confirmed in words beside the chip for a moment, as in a thread's composer.
   const [picked, setPicked] = useState<string>();
@@ -500,7 +491,6 @@ function ConfiguredNewThreadDraft() {
                     )}
                   <DictationError state={dictation.state} />
                   <fieldset
-                    ref={toolbarRef}
                     data-testid="new-thread-toolbar"
                     className="flex flex-wrap items-center gap-1 px-2 pb-2"
                   >
@@ -510,29 +500,17 @@ function ConfiguredNewThreadDraft() {
                         <span role="status" className="px-2 text-meta text-muted-foreground">
                           Discovering local agents…
                         </span>
-                        <div
-                          data-toolbar-block="choices"
-                          className="flex min-w-0 shrink-0 items-center"
-                        >
-                          <ComposerChoices
-                            sections={[modeChoice]}
-                            size={labelOf("choices")}
-                            onPicked={onPicked}
-                          />
-                        </div>
+                        <ComposerChoices sections={[modeChoice]} onPicked={onPicked} />
                       </>
                     ) : (
                       <AgentFields
                         ghost
                         value={choice}
                         onChange={setChoice}
-                        size={labelOf}
                         mode={modeChoice}
                         onPicked={onPicked}
                       />
                     )}
-                    {/* Wrapped, the pickers have this row to themselves; the rest goes on the next. */}
-                    {wrapped && <div aria-hidden className="h-0 basis-full" />}
                     <span
                       aria-live="polite"
                       data-testid="draft-dictation-status"

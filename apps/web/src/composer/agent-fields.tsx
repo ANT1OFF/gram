@@ -15,6 +15,7 @@ import { useEffect } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
+import { Hint } from "@/components/hint";
 import {
   Select,
   SelectContent,
@@ -32,7 +33,6 @@ import { PickerTrigger } from "./picker-trigger";
 import { defaultModelId, effortOptions, useModels } from "./models";
 import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION } from "./options";
 import { GHOST_TRIGGER } from "./styles";
-import type { LabelSize } from "./toolbar-layout";
 
 /** What a new thread runs on; `profileId` only when the user explicitly selects a gateway. */
 export interface AgentChoice {
@@ -122,7 +122,6 @@ function PromptBoxChoices({
   shownModel,
   efforts,
   mode,
-  size,
   onPicked,
 }: {
   value: AgentChoice;
@@ -134,7 +133,6 @@ function PromptBoxChoices({
   shownModel: string;
   efforts: readonly PickerOption<string>[];
   mode: ChoiceSection | undefined;
-  size: LabelSize;
   onPicked: ((words: string) => void) | undefined;
 }) {
   const model = useModelSection({
@@ -182,22 +180,16 @@ function PromptBoxChoices({
       ];
   return (
     <>
-      {/* Measured as lead space, so the chip's words fit beside it rather than run under Send. */}
       {!needsKey && model.status !== undefined && (
-        <div data-toolbar-lead className="flex shrink-0 items-center">
-          {model.status}
-        </div>
+        <div className="flex shrink-0 items-center">{model.status}</div>
       )}
       {sections.length > 0 && (
-        <div data-toolbar-block="choices" className="flex min-w-0 shrink-0 items-center">
-          <ComposerChoices
-            sections={sections}
-            size={size}
-            onOpen={model.onOpen}
-            onClose={model.onClose}
-            onPicked={onPicked}
-          />
-        </div>
+        <ComposerChoices
+          sections={sections}
+          onOpen={model.onOpen}
+          onClose={model.onClose}
+          onPicked={onPicked}
+        />
       )}
     </>
   );
@@ -215,7 +207,6 @@ export function AgentFields({
   ghost = false,
   initializeDefault = true,
   subscriptionOnly = false,
-  size,
   mode,
   onPicked,
 }: {
@@ -232,8 +223,6 @@ export function AgentFields({
   initializeDefault?: boolean;
   /** For explicit CLI-only transitions; never offers gateway/account migration. */
   subscriptionOnly?: boolean;
-  /** In the prompt box, how the choices chip says its values as the row's room allows. */
-  size?: ((id: string) => LabelSize) | undefined;
   /** The prompt box's mode, its section between effort and speed. */
   mode?: ChoiceSection | undefined;
   /** In the prompt box, told each pick in words, to confirm it. */
@@ -282,10 +271,22 @@ export function AgentFields({
             onChange({ agent: next as AgentKind, model: "", speed: "standard" });
           }}
         >
-          <SelectTrigger aria-label="Agent" data-toolbar-lead={ghost || undefined} {...trigger}>
-            <AgentIcon agent={value.agent} className="size-icon-bar" />
-            <SelectValue />
-          </SelectTrigger>
+          {ghost ? (
+            // The prompt box's composer row is icons with their words on hover: the agent's mark,
+            // its name in the tooltip and read with the picker's value.
+            <Hint
+              label={`Agent: ${agentLabel(value.agent)}`}
+              render={<SelectTrigger aria-label="Agent" {...trigger} />}
+            >
+              <AgentIcon agent={value.agent} className="size-icon-bar" />
+              <SelectValue className="sr-only" />
+            </Hint>
+          ) : (
+            <SelectTrigger aria-label="Agent" {...trigger}>
+              <AgentIcon agent={value.agent} className="size-icon-bar" />
+              <SelectValue />
+            </SelectTrigger>
+          )}
           <SelectContent>
             {agentItems.map((o) => (
               <SelectItem key={o.value} value={o.value}>
@@ -295,15 +296,19 @@ export function AgentFields({
             ))}
           </SelectContent>
         </Select>
-      ) : (
-        <span
-          data-toolbar-lead={ghost || undefined}
-          className={
-            ghost
-              ? "flex h-7 items-center gap-1.5 px-2 text-meta font-medium text-muted-foreground"
-              : "flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-reading"
+      ) : ghost ? (
+        // The one agent there is, as its mark alone; its name on hover and to a screen reader.
+        <Hint
+          label={agentLabel(agents[0] ?? value.agent)}
+          render={
+            <span className="flex size-8 items-center justify-center text-muted-foreground" />
           }
         >
+          <AgentIcon agent={agents[0] ?? value.agent} className="size-icon-bar" />
+          <span className="sr-only">{agentLabel(agents[0] ?? value.agent)}</span>
+        </Hint>
+      ) : (
+        <span className="flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-reading">
           <AgentIcon
             agent={agents[0] ?? value.agent}
             className="size-icon-row text-muted-foreground"
@@ -332,11 +337,7 @@ export function AgentFields({
             });
           }}
         >
-          <SelectTrigger
-            aria-label="Gateway profile"
-            data-toolbar-lead={ghost || undefined}
-            {...trigger}
-          >
+          <SelectTrigger aria-label="Gateway profile" {...trigger}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -366,7 +367,6 @@ export function AgentFields({
           shownModel={shownModel}
           efforts={efforts}
           mode={mode}
-          size={size?.("choices") ?? "full"}
           onPicked={onPicked}
         />
       ) : (

@@ -1,14 +1,6 @@
 import { Popover } from "@base-ui/react/popover";
-import { CheckIcon } from "lucide-react";
-import {
-  Fragment,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { CheckIcon, SlidersHorizontal } from "lucide-react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
 import { shortcutHint } from "@/keyboard/bindings";
@@ -22,14 +14,13 @@ import { aboveComposer } from "./above-composer";
 import { ModelSearch } from "./model-picker";
 import type { PickerOption } from "./picker";
 import { GHOST_TRIGGER } from "./styles";
-import type { LabelSize } from "./toolbar-layout";
 
 /** A row of a section's list; a disabled one says why in its description. */
 export type ChoiceOption = PickerOption<string> & { readonly disabled?: boolean | undefined };
 
 /**
  * One of the composer's dimensions (model, effort, mode or speed): a section of the choices
- * popover, and a value on the chip unless it is at its default.
+ * popover, and a glyph on the chip while its value is off its default in a way that matters.
  */
 export interface ChoiceSection {
   readonly id: string;
@@ -41,13 +32,14 @@ export interface ChoiceSection {
    */
   readonly named: string;
   /**
-   * The value on the chip, in full and in three to six letters ("Extra high", "X-high"). Absent, it
-   * drops out: a default, or a dimension that doesn't apply. The name and tooltip still say it.
+   * A 14 px glyph on the chip beside the agent's mark, only while the value is off its default and
+   * matters for safety or cost: Bypass's open lock in the warning colour, Fast's bolt. Absent, the
+   * value is said only in the chip's name and tooltip, as every value is.
    */
-  readonly chip?: { readonly full: string; readonly compact: string } | undefined;
+  readonly glyph?: ReactNode;
   /** Why it doesn't apply here: its section is greyed and says so on hover. */
   readonly unavailable?: string | undefined;
-  /** A caution on the value (Bypass): its words on the chip take the warning colour. */
+  /** A caution on the value (Bypass): said in the tooltip, and its words in the popover warn. */
   readonly warning?: string | undefined;
   /** The shortcut that opens the popover on this section. */
   readonly shortcut?: { readonly id: string; readonly keys: string } | undefined;
@@ -66,51 +58,6 @@ export interface ChoiceSection {
     | undefined;
   /** What the section shows in place of its list, such as models still loading or failing. */
   readonly body?: ReactNode;
-}
-
-/**
- * The chip's words at each size: `value` is the first section's alone, the model's. At `icon` all
- * three are hidden, and still there to be measured. With no value to show yet, as a thread's
- * settings load, the first section's words stand in, so the chip is never an empty pill.
- */
-function ChipWords({ sections, size }: { sections: readonly ChoiceSection[]; size: LabelSize }) {
-  const chipped = sections.flatMap((section) =>
-    section.chip === undefined ? [] : [{ section, chip: section.chip }],
-  );
-  const first = sections[0];
-  const shown =
-    chipped.length > 0 || first === undefined
-      ? chipped
-      : [{ section: first, chip: { full: first.named, compact: first.named } }];
-  const words = (pick: "full" | "compact", only?: number) =>
-    shown.slice(0, only).map(({ section, chip }, index) => (
-      <Fragment key={section.id}>
-        {index > 0 && " · "}
-        <span className={section.warning ? "text-warning" : undefined}>{chip[pick]}</span>
-      </Fragment>
-    ));
-  return (
-    <>
-      {/* All three are there to be measured (`useToolbarLayout`); the ones not showing are hidden. */}
-      <span data-toolbar-label className={cn("min-w-0 truncate", size !== "full" && "sr-only")}>
-        {words("full")}
-      </span>
-      <span
-        aria-hidden
-        data-toolbar-compact
-        className={cn("min-w-0 truncate", size !== "short" && "sr-only")}
-      >
-        {words("compact")}
-      </span>
-      <span
-        aria-hidden
-        data-toolbar-value
-        className={cn("min-w-0 truncate", size !== "value" && "sr-only")}
-      >
-        {words("compact", 1)}
-      </span>
-    </>
-  );
 }
 
 /** Registers one section's shortcut; a component, so the sections can come and go. */
@@ -135,17 +82,16 @@ function SectionShortcut({
 const MOVES = new Set(["ArrowDown", "ArrowUp", "Home", "End"]);
 
 /**
- * The composer's one choices chip: the agent's mark, then the model, effort, mode and speed that
- * aren't at their defaults, in short words ("Opus · High · Auto"), and one popover with a section
- * for each. Short of room the words take their compact forms, then the model's alone, and only at
- * the narrowest give way to the mark (`useToolbarLayout`); the name and tooltip always say every
- * value and its shortcut. Each section's shortcut opens the popover on it, and a pick closes it.
+ * The composer's one choices chip, in icons: the agent's mark, then a small glyph for any value
+ * off its default that matters for safety or cost (Bypass, Fast), and one popover with a section
+ * for each dimension, in words. The chip says no word: its name and tooltip say every value and
+ * its shortcut. Being glyphs alone, it is one width at any toolbar width, so nothing measures it.
+ * Each section's shortcut opens the popover on it, and a pick closes it.
  */
 export function ComposerChoices({
   sections,
   mark,
   agentLabel,
-  size = "full",
   focused = false,
   onOpen,
   onClose,
@@ -153,11 +99,13 @@ export function ComposerChoices({
   onPicked,
 }: {
   sections: readonly ChoiceSection[];
-  /** The agent the model runs on; absent where an agent picker beside it carries the mark. */
+  /**
+   * The agent the model runs on; absent where an agent picker beside it carries the mark, and the
+   * chip then draws the sliders glyph in its place.
+   */
   mark?: ReactNode;
   /** The agent's name, read after the chip's name. */
   agentLabel?: string | undefined;
-  size?: LabelSize;
   /** Registers the sections' shortcuts only for the focused pane. */
   focused?: boolean;
   /** Called as the popover opens, by click or shortcut. */
@@ -241,8 +189,11 @@ export function ComposerChoices({
     ...warnings,
   ].join("\n");
   const description = [agentLabel, ...warnings].filter(Boolean).join(". ") || undefined;
-  // Without a mark there is nothing to stand in for the words: the model's name stays.
-  const shown = size === "icon" && !mark ? "value" : size;
+  const glyphs = sections.flatMap((section) =>
+    section.glyph === undefined || section.unavailable !== undefined
+      ? []
+      : [{ id: section.id, glyph: section.glyph }],
+  );
 
   const rows = () => [...(popup.current?.querySelectorAll<HTMLElement>("[data-choice-row]") ?? [])];
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -312,20 +263,21 @@ export function ComposerChoices({
             data-warning={warnings.length > 0 ? "true" : undefined}
             className={cn(
               GHOST_TRIGGER,
-              "inline-flex max-w-full min-w-0 shrink-0 items-center justify-center rounded-md whitespace-nowrap outline-none select-none",
+              "inline-flex shrink-0 items-center justify-center gap-1 rounded-md px-1.5 outline-none select-none",
             )}
           />
         }
       >
-        {mark && (
-          <span aria-hidden className="flex shrink-0 items-center">
-            <PulseOnce trigger={landed} when={landed > 0}>
-              {mark}
-            </PulseOnce>
+        <span aria-hidden className="flex shrink-0 items-center">
+          <PulseOnce trigger={landed} when={landed > 0}>
+            {mark ?? <SlidersHorizontal data-testid="choices-glyph" className="size-icon-bar" />}
+          </PulseOnce>
+        </span>
+        {glyphs.map(({ id, glyph }) => (
+          <span key={id} aria-hidden data-chip-glyph={id} className="flex shrink-0 items-center">
+            {glyph}
           </span>
-        )}
-        {/* Rendered at every size, so `useToolbarLayout` always has the words to measure. */}
-        <ChipWords sections={sections} size={shown} />
+        ))}
       </Hint>
       <Popover.Portal>
         {/* Above the whole composer, so the popover never covers the draft. */}

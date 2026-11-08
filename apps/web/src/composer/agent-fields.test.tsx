@@ -347,8 +347,9 @@ const findChip = async (text: string | RegExp) => {
   return chip;
 };
 
-/** The words the chip shows with room: its values that aren't at their defaults. */
-const chipWords = (chip: HTMLElement) => chip.querySelector("[data-toolbar-label]")?.textContent;
+/** The glyphs the chip draws beside its mark: only values that matter for safety or cost. */
+const chipGlyphs = (chip: HTMLElement) =>
+  [...chip.querySelectorAll<HTMLElement>("[data-chip-glyph]")].map((el) => el.dataset["chipGlyph"]);
 
 describe("AgentFields speed", () => {
   it("drops Speed from the prompt box's chip at its default, its name and section still saying it", async () => {
@@ -356,8 +357,9 @@ describe("AgentFields speed", () => {
     // The CLI decides, though Fast is there.
     renderSpeed({ agent: "claude", model: "m" }, ["standard", "fast"], true);
     const chip = await findChip(/Speed: CLI default$/);
-    expect(chip.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
-    expect(chipWords(chip)).not.toMatch(/Default|Speed|Standard/);
+    // Icons alone, words on hover: no bolt at the default.
+    expect(chip.textContent).toBe("");
+    expect(chipGlyphs(chip)).toEqual([]);
     // Its section lists the speeds, the CLI's default checked, with what Fast costs.
     await user.click(chip);
     await user.click(await screen.findByTestId("choices-speed"));
@@ -372,15 +374,15 @@ describe("AgentFields speed", () => {
     cleanup();
     // Standard is a default too.
     renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard"], true);
-    expect(chipWords(await findChip(/Speed: Standard$/))).not.toContain("Standard");
+    expect(chipGlyphs(await findChip(/Speed: Standard$/))).toEqual([]);
   });
 
-  it("says Fast on the prompt box's chip, and Speed in full outside it", async () => {
+  it("draws Fast's bolt on the prompt box's chip, and Speed in full outside it", async () => {
     const user = userEvent.setup();
     renderSpeed({ agent: "claude", model: "m", speed: "fast" }, ["standard", "fast"], true);
     const chip = await findChip(/Speed: Fast$/);
-    expect(chipWords(chip)).toMatch(/ · Fast$/);
-    expect(chip.querySelector("[data-toolbar-compact]")?.textContent).toMatch(/ · Fast$/);
+    expect(chip.textContent).toBe("");
+    expect(chipGlyphs(chip)).toEqual(["speed"]);
     await user.hover(chip);
     await waitFor(() =>
       expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toContain(
@@ -394,14 +396,15 @@ describe("AgentFields speed", () => {
 });
 
 describe("AgentFields effort", () => {
-  it("says its value on the prompt box's chip, picks it in its section, and is labelled outside it", async () => {
+  it("says its value in the prompt box's chip's name, picks it in its section, and is labelled outside it", async () => {
     const user = userEvent.setup();
     const choice: AgentChoice = { agent: "claude", model: "opus", variant: "high" };
     const onChange = vi.fn();
     renderWithApi(<AgentFields ghost value={choice} onChange={onChange} />, mockApi());
     const chip = await findChip(/Effort: High/);
-    // With room, as in a thread's composer, the value shows after the model's.
-    expect(chipWords(chip)).toBe("Claude Opus · High");
+    // As in a thread's composer, the chip says no word: its name and tooltip say the effort.
+    expect(chip.getAttribute("aria-label")).toMatch(/^Claude Opus\b.* · Effort: High\b/);
+    expect(chip.textContent).toBe("");
     await user.hover(chip);
     expect(await screen.findByText(/Effort: High/)).toBeTruthy();
     await user.click(chip);

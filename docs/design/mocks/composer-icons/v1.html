@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Composer icons directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .slab {
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+        background: var(--surface-1);
+        width: 100%;
+      }
+      .slab .draft {
+        padding: 12px 16px 4px;
+        min-height: 52px;
+        color: var(--fg-subtle);
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 8px 8px;
+      }
+      .bar .fill {
+        flex: 1;
+      }
+      .ib {
+        display: inline-grid;
+        place-items: center;
+        min-width: 32px;
+        height: 32px;
+        padding: 0 6px;
+        border: 0;
+        border-radius: var(--radius-md);
+        background: transparent;
+        color: var(--fg-muted);
+        gap: 4px;
+        grid-auto-flow: column;
+      }
+      .ib:hover {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .ib svg {
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .ib svg.small {
+        width: 14px;
+        height: 14px;
+      }
+      .caution {
+        color: var(--warning-text);
+      }
+      .round {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border: 0;
+        border-radius: 999px;
+      }
+      .send {
+        background: var(--accent);
+        color: var(--on-accent);
+      }
+      .stop-solid {
+        background: var(--fg);
+        color: var(--surface-1);
+      }
+      .stop-solid:hover {
+        background: var(--danger);
+      }
+      .stop-ghost {
+        background: transparent;
+        color: var(--fg);
+        box-shadow: inset 0 0 0 1px var(--border-strong);
+      }
+      .stop-quiet {
+        background: color-mix(in oklab, var(--danger) 14%, transparent);
+        color: var(--danger-text);
+      }
+      .glyph {
+        position: relative;
+        width: 16px;
+        height: 16px;
+        display: grid;
+        place-items: center;
+      }
+      .glyph .sq {
+        width: 8px;
+        height: 8px;
+        border-radius: 1.5px;
+        background: currentColor;
+      }
+      .glyph .ring {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        border: 1.5px solid color-mix(in oklab, currentColor 30%, transparent);
+        border-top-color: currentColor;
+      }
+      .meter {
+        width: 20px;
+        height: 4px;
+        border-radius: 999px;
+        background: color-mix(in oklab, var(--fg) 15%, transparent);
+        overflow: hidden;
+      }
+      .meter span {
+        display: block;
+        height: 100%;
+        width: 36%;
+        background: var(--fg-muted);
+        border-radius: 999px;
+      }
+      .tip {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: var(--radius-sm);
+        background: var(--fg);
+        color: var(--surface-1);
+        font-size: 12px;
+        white-space: pre;
+        line-height: 1.4;
+      }
+      .cap {
+        font-size: 12px;
+        color: var(--fg-muted);
+        margin: 10px 0 4px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        Composer controls back to icons, words on hover. The chip is the agent's mark plus a glyph
+        only for a safety or cost value (Bypass, Fast); the meter is its bar alone. A and B differ
+        in Stop: a solid foreground circle (A) or a ringed outline (B). Pick one by name.
+      </p>
+
+      <section class="board" data-name="A Solid stop" data-size="560x620">
+        <div class="board-frame">
+          <div class="content">
+            <p class="cap">Idle · Opus, Ask (all at their defaults)</p>
+            <div class="slab">
+              <div class="draft">Message this thread…</div>
+              <div class="bar">
+                <button class="ib" type="button" aria-label="Claude · Claude Opus · Mode: Ask">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" />
+                  </svg>
+                </button>
+                <span class="fill"></span>
+                <button class="ib" type="button" aria-label="Context: 36% of the window used">
+                  <span class="meter"><span></span></span>
+                </button>
+                <button class="round send" type="button" aria-label="Send">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="m5 12 7-7 7 7M12 19V5" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <p class="cap">Bypass and Fast set: a caution lock and a bolt beside the mark</p>
+            <div class="slab">
+              <div class="draft">Message this thread…</div>
+              <div class="bar">
+                <button
+                  class="ib"
+                  type="button"
+                  aria-label="Claude · Claude Opus · Mode: Bypass · Speed: Fast"
+                >
+                  <svg viewBox="0 0 24 24">
+                    <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" />
+                  </svg>
+                  <svg class="small caution" viewBox="0 0 24 24">
+                    <rect x="3" y="11" width="18" height="11" rx="2" />
+                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                  </svg>
+                  <svg class="small" viewBox="0 0 24 24" style="fill: currentColor">
+                    <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+                  </svg>
+                </button>
+                <span class="fill"></span>
+                <button class="ib" type="button" aria-label="Context: 36% of the window used">
+                  <span class="meter"><span></span></span>
+                </button>
+                <button class="round send" type="button" aria-label="Send">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="m5 12 7-7 7 7M12 19V5" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <span class="tip"
+              >Claude · Claude Opus (⌘⇧M) Effort: Model default (⌘⇧E) Mode: Bypass (⌘⇧A) Speed:
+              Fast</span
+            >
+            <p class="cap">Running: Stop in Send's place, square in the turning ring</p>
+            <div class="slab">
+              <div class="draft">Message this thread…</div>
+              <div class="bar">
+                <button class="ib" type="button" aria-label="Claude · Claude Opus">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" />
+                  </svg>
+                </button>
+                <span class="fill"></span>
+                <button class="ib" type="button" aria-label="Context: 36% of the window used">
+                  <span class="meter"><span></span></span>
+                </button>
+                <button class="round stop-solid" type="button" aria-label="Stop">
+                  <span class="glyph"><span class="ring"></span><span class="sq"></span></span>
+                </button>
+                <span class="tip">Stop (⌘.)</span>
+              </div>
+            </div>
+            <p class="cap">Waits on your answer: the danger tint, no ring</p>
+            <div class="slab">
+              <div class="bar" style="padding-top: 8px">
+                <span class="fill"></span>
+                <button class="round stop-quiet" type="button" aria-label="Stop">
+                  <span class="glyph"><span class="sq"></span></span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="B Ghost stop" data-size="560x620">
+        <div class="board-frame">
+          <div class="content">
+            <p class="cap">Running: Stop as an outlined circle in the text colour</p>
+            <div class="slab">
+              <div class="draft">Message this thread…</div>
+              <div class="bar">
+                <button class="ib" type="button" aria-label="Claude · Claude Opus">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" />
+                  </svg>
+                </button>
+                <span class="fill"></span>
+                <button class="ib" type="button" aria-label="Context: 36% of the window used">
+                  <span class="meter"><span></span></span>
+                </button>
+                <button class="round stop-ghost" type="button" aria-label="Stop">
+                  <span class="glyph"><span class="ring"></span><span class="sq"></span></span>
+                </button>
+              </div>
+            </div>
+            <p class="cap">Waits on your answer: the danger tint, no ring</p>
+            <div class="slab">
+              <div class="bar" style="padding-top: 8px">
+                <span class="fill"></span>
+                <button class="round stop-quiet" type="button" aria-label="Stop">
+                  <span class="glyph"><span class="sq"></span></span>
+                </button>
+              </div>
+            </div>
+            <p class="cap">
+              Trade-off: B is lighter, but beside a draftless Send's disabled ring it reads as the
+              same faint button; A keeps Stop unmistakable while the agent works.
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
