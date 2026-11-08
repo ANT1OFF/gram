@@ -1,6 +1,7 @@
 export * from "./app-tools.ts";
 export * from "./gateway.ts";
 export * from "./dream-support.ts";
+export * from "./event-log.ts";
 export * from "./helper.ts";
 export type * from "./host.ts";
 export * from "./mcp-native.ts";
