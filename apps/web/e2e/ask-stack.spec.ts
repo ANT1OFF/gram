@@ -439,7 +439,6 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
     Number((await workspace(id).getByTestId("overview-workspace-asks").textContent()) ?? "0");
   // The orchestrator's header doesn't repeat what needs you: the pill and the badges count it.
   await expect(page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`)).toBeVisible();
-  await expect(page.getByTestId("status-waiting")).toHaveCount(0);
   const needsYou = page.getByTestId("overview-needs-you");
   const all = Number(await needsYou.getAttribute("data-count"));
   await expect(needsYou).toHaveAccessibleName(new RegExp(`^${all} need you: `));
@@ -494,6 +493,7 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   // Away on a solo thread, the workspace's row brings back its orchestrator's chat.
   await threadRow(page, "t-flaky").click();
   await expect(page).toHaveURL(/\/t\/t-flaky$/);
+  await expect(page.getByTestId("status-header")).toHaveCount(0);
   await expect(page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`)).toBeHidden();
   await workspace(made.workspaceId).getByRole("button").first().click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));

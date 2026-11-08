@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi, type MockApi } from "@/api/mock";
 import { renderWithApi } from "@/panels/test-utils";
 import { CommandPalette } from "@/palette/command-palette";
+import { useAllActivity } from "@/stores/all-activity";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -135,5 +136,33 @@ describe("ThreadMenu thread actions", () => {
       ).toBeUndefined(),
     );
     abort.abort();
+  });
+});
+
+describe("ThreadMenu Show all activity", () => {
+  afterEach(() => useAllActivity.setState({ shown: new Set() }));
+
+  it("is an orchestrator chat's view option, and toggles what its chat shows", async () => {
+    useThreadsStore.setState((s) => {
+      const entry = s.byId[FLAKY]!;
+      return {
+        byId: {
+          ...s.byId,
+          [FLAKY]: { ...entry, thread: { ...entry.thread, role: "orchestrator" } },
+        },
+      };
+    });
+    renderWithApi(<ThreadMenu threadId={FLAKY} />, api);
+    await openMenu();
+    const item = await screen.findByTestId("menu-all-activity");
+    expect(item.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(item);
+    expect(useAllActivity.getState().shown.has(FLAKY)).toBe(true);
+  });
+
+  it("is not offered on any other thread", async () => {
+    renderWithApi(<ThreadMenu threadId={FLAKY} />, api);
+    await openMenu();
+    expect(screen.queryByTestId("menu-all-activity")).toBeNull();
   });
 });

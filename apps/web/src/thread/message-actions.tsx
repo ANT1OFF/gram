@@ -68,18 +68,24 @@ const IN_FLOW =
   "-mt-1 flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 focus-within:opacity-100 has-data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100";
 
 /**
- * Over the message's top corner on a raised strip, taking no room of its own: the orchestrator's
- * chat, where a reserved row under every message would set its replies further from what follows
- * than an update is from them, and the rhythm would be uneven. The parent is positioned.
+ * On a raised strip over the message, taking no room of its own: the orchestrator's chat, where a
+ * reserved row under every message would set its replies further from what follows than an update
+ * is from them, and the rhythm would be uneven. Only where `float-actions` holds (a pointer that
+ * hovers, a message at least 40 rem wide, its `@container/message`); on touch or in a narrow
+ * column the strip is the in-flow row, always shown on touch. The message is positioned.
  */
 const FLOATING =
-  "absolute top-0 z-10 flex items-center gap-1 rounded-(--radius-sm) border border-edge bg-popover p-0.5 shadow-overlay opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 focus-within:opacity-100 has-data-[popup-open]:opacity-100";
+  "float-actions:absolute float-actions:z-10 float-actions:mt-0 float-actions:flex-nowrap float-actions:whitespace-nowrap float-actions:rounded-(--radius-sm) float-actions:border float-actions:border-edge float-actions:bg-popover float-actions:p-0.5 float-actions:shadow-overlay";
+
+/** A reply's strip sits at its end, over the last line's end; a user's beside its bubble's top. */
+const FLOAT_REPLY = "float-actions:right-0 float-actions:bottom-0";
+const FLOAT_USER = "float-actions:top-0 float-actions:right-full float-actions:mr-2";
 
 /**
  * Copy, Add to Waiting on you, rewind / edit and, on replies, fork actions under a message, and
  * when it arrived, shown on hover or keyboard focus. `turnEnd`: the reply that ends a finished
- * turn, which can copy the whole turn. `floating`: over the message's top corner instead of in a
- * row under it (`FLOATING`), the reply's at its end, the user's beside its bubble.
+ * turn, which can copy the whole turn. `floating`: over the message where there is room and a
+ * hovering pointer (`FLOATING`), the reply's at its end, the user's beside its bubble.
  */
 export function MessageActions({
   threadId,
@@ -96,9 +102,12 @@ export function MessageActions({
   const isUser =
     message.role === "user" && !message.parts.some((part) => part.type === "data-thread-origin");
   const readOnly = useReadOnlyTranscript();
-  const place = floating
-    ? cn(FLOATING, isUser ? "right-full mr-2" : "right-0")
-    : cn(IN_FLOW, isUser ? "justify-end" : "justify-start");
+  const place = cn(
+    IN_FLOW,
+    isUser ? "justify-end" : "justify-start",
+    floating && FLOATING,
+    floating && (isUser ? FLOAT_USER : FLOAT_REPLY),
+  );
   if (readOnly) {
     return (
       <div data-testid="message-actions" data-floating={floating || undefined} className={place}>

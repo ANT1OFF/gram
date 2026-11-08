@@ -18,6 +18,16 @@ export function StatusHeader({
   digests?: readonly DeliveredDigest[] | undefined;
 }) {
   if (thread.role !== "orchestrator" || thread.workspaceId === undefined) return null;
-  if (digests === undefined) return null;
-  return <SinceYouLeft key={`since-you-left:${thread.id}`} thread={thread} digests={digests} />;
+  return (
+    // One quiet muted line with no rule under it. Hidden while empty (`empty:hidden`): with no
+    // absence to sum up, or once it is dismissed, there is no band over the chat at all.
+    <div
+      data-testid="status-header"
+      className="flex min-w-0 shrink-0 items-center px-2 py-0.5 empty:hidden"
+    >
+      {digests !== undefined && (
+        <SinceYouLeft key={`since-you-left:${thread.id}`} thread={thread} digests={digests} />
+      )}
+    </div>
+  );
 }

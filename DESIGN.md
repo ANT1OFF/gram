@@ -236,8 +236,10 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   chevron, never a card; only an ask (amber) or a failure (red) colours one, and a call still
   running, waiting on you or failed keeps its card. One 12 px step separates every block of the
   stream, a reply from an update the same as an update from the next reply: a message's Copy,
-  rewind and time float over its corner on hover (beside a bubble, at a reply's end) instead of
-  reserving a row under it.
+  rewind and time float on hover (beside a bubble's top, over the end of a reply's last line)
+  instead of reserving a row under it. They float only with a pointer that hovers and a message at
+  least 40 rem wide (`float-actions`); on touch, where they always show, and in a narrow column
+  they keep their row.
 - **Motion is short and springy:** 220 to 320 ms with the theme's ease-out, springs for presses
   and arrivals, and none under reduced motion.
 

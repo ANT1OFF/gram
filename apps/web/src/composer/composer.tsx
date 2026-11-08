@@ -895,7 +895,7 @@ export function Composer({
     ? `Queue: sends when the turn ends. ${steerModifier}-click to steer`
     : "Queue: sends when the turn ends";
   // Into a worker the orchestrator directs, the send is also a take-over: its name says so.
-  const control = takesControl ? ` and take over from the orchestrator` : "";
+  const control = takesControl ? " and take over from the orchestrator" : "";
   const queueControl = takesControl ? `. ${TAKES_OVER_LINE}` : "";
   const actionLabels = {
     send: { aria: `Send${control}`, hint: withHint(`Send${control}`, sendKeyHint) },

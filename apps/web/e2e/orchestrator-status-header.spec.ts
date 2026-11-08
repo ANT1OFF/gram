@@ -199,12 +199,12 @@ test.describe(() => {
     await since.getByTestId("since-you-left-open").click();
     await detail.getByRole("button", { name: "Dismiss Since you left" }).click();
     await expect(page.getByTestId("since-you-left")).toHaveCount(0);
-    await expect(page.getByTestId("status-header")).toHaveCount(0);
+    await expect(page.getByTestId("status-header")).toBeHidden();
     await page.getByTestId("overview-needs-you").click();
     await page.keyboard.press("Escape");
     await openOrchestrator(page, made.orchestratorThreadId);
     await page.getByLabel("Message", { exact: true }).waitFor();
-    await expect(page.getByTestId("status-header")).toHaveCount(0);
+    await expect(page.getByTestId("status-header")).toBeHidden();
     await expect(page.getByTestId("since-you-left")).toHaveCount(0);
   });
 });
