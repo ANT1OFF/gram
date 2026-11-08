@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PHONE_MAX_WIDTH, usePhone } from "./use-phone";
+import { PHONE_QUERY, usePhone } from "./use-phone";
 
 function fakeMedia(matches: boolean) {
   const listeners = new Set<() => void>();
@@ -15,7 +15,7 @@ function fakeMedia(matches: boolean) {
   vi.stubGlobal(
     "matchMedia",
     vi.fn((query: string) => {
-      expect(query).toBe(`(max-width: ${PHONE_MAX_WIDTH}px)`);
+      expect(query).toBe(PHONE_QUERY);
       return list;
     }),
   );

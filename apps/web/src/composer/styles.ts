@@ -23,7 +23,7 @@ export const GHOST_MIRROR =
  * without the row growing.
  */
 export const PHONE_HIT =
-  "max-sm:relative max-sm:after:absolute max-sm:after:-inset-1.5 max-sm:after:content-['']";
+  "phone:relative phone:after:absolute phone:after:-inset-1.5 phone:after:content-['']";
 
 /**
  * A toolbar control: no border, muted until hovered, and as tall as Send (32 px) so every target on
@@ -33,7 +33,7 @@ export const GHOST_TRIGGER = `h-8 min-w-8 gap-1.5 border-transparent px-2 text-m
 
 /** Send and Stop: a 32 px circle holding one glyph, 44 px on a phone. */
 export const ROUND =
-  "grid size-8 max-sm:size-11 shrink-0 place-items-center rounded-(--composer-button-radius) outline-none transition-[opacity,box-shadow,background-color,color] focus-visible:focus-ring disabled:cursor-default";
+  "grid size-8 phone:size-11 shrink-0 place-items-center rounded-(--composer-button-radius) outline-none transition-[opacity,box-shadow,background-color,color] focus-visible:focus-ring disabled:cursor-default";
 
 /**
  * Stop's fill while a turn runs, on `ROUND`: solid in the text colour, so it reads as a stop button

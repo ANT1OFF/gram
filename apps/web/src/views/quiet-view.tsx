@@ -624,7 +624,7 @@ function Strip({
       {/* The window's one attention entry, in the sidebar pill's words and count. */}
       <NeedsYouEntry variant="chip" data-testid="quiet-asks" />
       <UsageMeter iconOnly={phone} />
-      <span className="text-muted-foreground tabular-nums max-sm:hidden">
+      <span className="text-muted-foreground tabular-nums phone:hidden">
         {pad(time.getHours())}:{pad(time.getMinutes())}
       </span>
       <QuietMenu />

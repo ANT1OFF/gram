@@ -204,7 +204,7 @@ function AgentStatusRow({
   return (
     <div role="group" aria-label={name} data-testid="agent-check" data-trouble={trouble?.level}>
       {/* On a phone its actions wrap under its name rather than run past the card. */}
-      <div className="flex min-h-7 items-center gap-2 max-sm:flex-wrap">
+      <div className="flex min-h-7 items-center gap-2 phone:flex-wrap">
         <AgentIcon agent={agent} className="size-icon-row" />
         <span className="font-medium">{name}</span>
         {shown !== undefined && (

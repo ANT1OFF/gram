@@ -757,7 +757,7 @@ export function MemoryView({
           aria-label="Memory"
           data-testid="memory-tabs"
           // On a phone the tabs keep one line each and the row scrolls sideways.
-          className="sticky top-0 z-10 bg-thread px-4 max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&_[data-slot=tabs-indicator]]:bottom-0 max-sm:whitespace-nowrap max-sm:[&>button]:h-11 max-sm:[&>button]:shrink-0"
+          className="sticky top-0 z-10 bg-thread px-4 phone:overflow-x-auto phone:[scrollbar-width:none] phone:[&_[data-slot=tabs-indicator]]:bottom-0 phone:whitespace-nowrap phone:[&>button]:h-11 phone:[&>button]:shrink-0"
         >
           <TabsTrigger value="overview" data-testid="memory-tab-overview">
             Current memory

@@ -376,7 +376,7 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
       )}
       <div
         data-testid="history-keys"
-        className="flex shrink-0 max-sm:hidden items-center gap-3 border-t border-border px-3 py-1.5 text-caption text-muted-foreground"
+        className="flex shrink-0 phone:hidden items-center gap-3 border-t border-border px-3 py-1.5 text-caption text-muted-foreground"
       >
         <span>
           <kbd className="font-sans">↑↓</kbd> move
@@ -475,10 +475,10 @@ function HistoryRow({
         {active && (
           <span
             data-testid="history-action"
-            className="flex items-center gap-1 text-foreground max-sm:hidden"
+            className="flex items-center gap-1 text-foreground phone:hidden"
           >
             {action}
-            <kbd className={cn(KEY_CAP, "max-sm:hidden")}>{keyLabel("⏎")}</kbd>
+            <kbd className={cn(KEY_CAP, "phone:hidden")}>{keyLabel("⏎")}</kbd>
           </span>
         )}
         <span className="flex items-center gap-2">

@@ -732,7 +732,7 @@ function CardShell({
             "flex shrink-0 flex-wrap items-center gap-2",
             compact ? "mt-2" : "mt-3",
             // A phone stacks the verbs, each a full-width 44 px target, without their key caps.
-            "max-sm:flex-col max-sm:items-stretch max-sm:[&_button]:h-11 max-sm:[&_button]:w-full max-sm:[&_kbd]:hidden",
+            "phone:flex-col phone:items-stretch phone:[&_button]:h-11 phone:[&_button]:w-full phone:[&_kbd]:hidden",
           )}
         >
           {footer}

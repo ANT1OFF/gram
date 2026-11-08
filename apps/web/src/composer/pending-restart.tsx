@@ -37,7 +37,7 @@ export function PendingRestart({ threadId }: { threadId: ThreadId }) {
           type="button"
           data-testid="pending-restart"
           aria-label="Restart pending: MCP config changed"
-          className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 max-sm:relative max-sm:after:absolute max-sm:after:-inset-2 max-sm:after:content-['']"
+          className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 phone:relative phone:after:absolute phone:after:-inset-2 phone:after:content-['']"
           onClick={() => requestRestart(api, threadId)}
         />
       }

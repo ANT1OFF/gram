@@ -92,7 +92,7 @@ describe("the Inbox on a phone", () => {
     expect(within(sheet).queryByTestId("inbox-keys")).toBeNull();
     expect(within(sheet).queryByTestId("inbox-detail")).toBeNull();
     expect(within(sheet).getAllByTestId("inbox-card")).toHaveLength(1);
-    expect(sheet.className).toContain("max-sm:inset-0");
+    expect(sheet.className).toContain("phone:inset-0");
   });
 
   it("opens a card's thread on a tap when it has nothing to answer in place", async () => {

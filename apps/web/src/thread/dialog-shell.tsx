@@ -9,14 +9,14 @@ import { cn } from "@/lib/utils";
 /**
  * On a phone (below `sm`), a big dialog's popup (the Inbox, History, the palette) as a full-screen
  * sheet: the whole window, square, its rows 48 px and every button a 44 px target. Added after the
- * popup's own classes; every class is `max-sm:`, so wider windows keep the dialog as it was.
+ * popup's own classes; every class is `phone:`, so wider windows keep the dialog as it was.
  */
 export const PHONE_SHEET = cn(
-  "max-sm:inset-0 max-sm:top-0 max-sm:left-0 max-sm:h-dvh max-sm:max-h-none max-sm:w-full max-sm:translate-x-0",
-  "max-sm:rounded-none max-sm:border-0 max-sm:bg-background max-sm:shadow-none",
-  "max-sm:pt-[env(safe-area-inset-top)] max-sm:pb-[env(safe-area-inset-bottom)]",
-  "max-sm:data-[ending-style]:scale-100 max-sm:data-[starting-style]:scale-100",
-  "max-sm:[&_[role=option]]:min-h-12 max-sm:[&_button]:min-h-11 max-sm:[&_button]:min-w-11",
+  "phone:inset-0 phone:top-0 phone:left-0 phone:h-dvh phone:max-h-none phone:w-full phone:translate-x-0",
+  "phone:rounded-none phone:border-0 phone:bg-background phone:shadow-none",
+  "phone:pt-[env(safe-area-inset-top)] phone:pb-[env(safe-area-inset-bottom)]",
+  "phone:data-[ending-style]:scale-100 phone:data-[starting-style]:scale-100",
+  "phone:[&_[role=option]]:min-h-12 phone:[&_button]:min-h-11 phone:[&_button]:min-w-11",
 );
 
 /**

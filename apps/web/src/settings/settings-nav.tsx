@@ -60,7 +60,7 @@ export function SettingsNav({
   return (
     <nav
       aria-label="Settings sections"
-      className="w-60 shrink-0 overflow-y-auto border-r border-border p-3 @max-2xl/settings:flex @max-2xl/settings:w-auto @max-2xl/settings:items-center @max-2xl/settings:gap-2 @max-2xl/settings:overflow-visible @max-2xl/settings:border-r-0 @max-2xl/settings:border-b @max-2xl/settings:py-2 @max-2xl/settings:*:data-search:mb-0 @max-2xl/settings:*:data-search:min-w-0 @max-2xl/settings:*:data-search:flex-1 max-sm:flex-wrap max-sm:*:data-search:order-last max-sm:*:data-search:basis-full!"
+      className="w-60 shrink-0 overflow-y-auto border-r border-border p-3 @max-2xl/settings:flex @max-2xl/settings:w-auto @max-2xl/settings:items-center @max-2xl/settings:gap-2 @max-2xl/settings:overflow-visible @max-2xl/settings:border-r-0 @max-2xl/settings:border-b @max-2xl/settings:py-2 @max-2xl/settings:*:data-search:mb-0 @max-2xl/settings:*:data-search:min-w-0 @max-2xl/settings:*:data-search:flex-1 phone:flex-wrap phone:*:data-search:order-last phone:*:data-search:basis-full!"
     >
       <h1
         ref={headingRef}
@@ -128,7 +128,7 @@ function SectionPicker({
   return (
     <div
       data-testid="settings-section-picker"
-      className="hidden shrink-0 @max-2xl/settings:flex max-sm:min-w-0 max-sm:flex-1"
+      className="hidden shrink-0 @max-2xl/settings:flex phone:min-w-0 phone:flex-1"
     >
       <Select
         value={current ?? null}
@@ -143,7 +143,7 @@ function SectionPicker({
         <SelectTrigger
           size="sm"
           aria-label="Settings section"
-          className="max-w-44 max-sm:h-11 max-sm:w-full max-sm:max-w-none"
+          className="max-w-44 phone:h-11 phone:w-full phone:max-w-none"
         >
           <SelectValue placeholder="Section" />
         </SelectTrigger>

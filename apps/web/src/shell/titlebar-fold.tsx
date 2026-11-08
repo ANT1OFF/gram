@@ -101,7 +101,7 @@ function Keys({ id }: { id: string }) {
   const hint = useShortcutHint(id);
   // A phone has no keyboard to name.
   return hint ? (
-    <span className="ml-auto pl-4 text-meta text-muted-foreground max-sm:hidden">{hint}</span>
+    <span className="ml-auto pl-4 text-meta text-muted-foreground phone:hidden">{hint}</span>
   ) : null;
 }
 
@@ -577,7 +577,7 @@ function ThreadItems({ threadId, items }: { threadId: ThreadId; items: ReactNode
 
 /** On a phone every item is a 44 px target, and the menu stays inside the screen. */
 const PHONE_MENU =
-  "max-sm:max-w-[calc(100vw-1rem)] max-sm:[&_[role^=menuitem]]:min-h-11 max-sm:max-h-[calc(100dvh-5rem)] max-sm:overflow-y-auto";
+  "phone:max-w-[calc(100vw-1rem)] phone:[&_[role^=menuitem]]:min-h-11 phone:max-h-[calc(100dvh-5rem)] phone:overflow-y-auto";
 
 /**
  * What a phone's header leaves out of its bar, first in its "…": Chat or Board, and the workspace

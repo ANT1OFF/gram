@@ -1363,7 +1363,7 @@ export function PaletteBody({
                       </span>
                     )}
                     {item.shortcut && (
-                      <kbd className="ml-auto shrink-0 pl-3 font-mono text-caption text-muted-foreground max-sm:hidden">
+                      <kbd className="ml-auto shrink-0 pl-3 font-mono text-caption text-muted-foreground phone:hidden">
                         {item.shortcut}
                       </kbd>
                     )}
@@ -1383,7 +1383,7 @@ export function PaletteBody({
       </Swap>
       <div
         data-testid="palette-keys"
-        className="flex gap-3 border-t max-sm:hidden border-border px-3 py-1.5 text-caption text-muted-foreground"
+        className="flex gap-3 border-t phone:hidden border-border px-3 py-1.5 text-caption text-muted-foreground"
       >
         {/* The catalog's words: History's "↑↓ move", and "Actions" for a row's own commands. */}
         {items.length > 1 && (
