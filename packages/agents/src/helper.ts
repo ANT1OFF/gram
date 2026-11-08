@@ -44,9 +44,17 @@ export interface HelperReply {
 export interface HelperAdapter {
   /** Guided Codex can retain CLI host context and non-environment native tools. */
   readonly mode?: "tool-free" | "guided";
+  /** Discovery warnings travel with the models from the same isolated child. */
+  readonly inspect?: Effect.Effect<
+    {
+      readonly models: ReadonlyArray<AgentModel>;
+      readonly warnings: ReadonlyArray<string>;
+    },
+    HelperTransportError
+  >;
   readonly models: Effect.Effect<ReadonlyArray<AgentModel>, HelperTransportError>;
   readonly generate: (call: HelperCall) => Effect.Effect<HelperReply, HelperTransportError>;
 }
 
 export const CODEX_HELPER_RESTRICTION =
-  "This Codex adapter has no guided subscription helper transport. Select a Codex 0.166.0 runtime and refresh. Ordinary Codex chats still work.";
+  "This Codex adapter has no guided subscription helper transport. Select a supported Codex runtime and refresh. Ordinary Codex chats still work.";

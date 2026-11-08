@@ -8,7 +8,6 @@ export { CodexRpcError, makeCodexRpc, type CodexIo, type CodexRpc } from "./rpc.
 export {
   CodexServers,
   CodexServersLive,
-  codexVersionWarning,
   type CodexServer,
   type CodexServersConfig,
 } from "./servers.ts";
@@ -23,7 +22,7 @@ export {
   policyFor,
   type CodexHostConfig,
 } from "./session.ts";
-export { CODEX_CLI_VERSION } from "./version.ts";
+export { CODEX_CLI_VERSION, codexVersionWarning, compareCodexVersion } from "./version.ts";
 export {
   codexCounts,
   addCodexCounts,
