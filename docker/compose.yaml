@@ -1,0 +1,18 @@
+# Gram's server in a Linux container. The web app opens at the boot URL the server prints
+# (`docker compose -f docker/compose.yaml logs gram`), on this machine only.
+services:
+  gram:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    # This machine's loopback only, on the same port the server listens on, so the boot URL works
+    # as printed. Nothing else on the network reaches it.
+    ports:
+      - "127.0.0.1:4317:4317"
+    volumes:
+      # Gram's state, the agents' logins and settings, and the code the threads work on.
+      - gram-home:/home/gram
+    init: false
+    restart: unless-stopped
+volumes:
+  gram-home:

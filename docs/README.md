@@ -7,7 +7,7 @@ rather than repeat it.
 
 | Topic                                         | Detailed children                                                                                      | What belongs here                                                       |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| [Development](DEVELOPMENT.md)                 | [Testing](VERIFICATION.md), [remote access](REMOTE_ACCESS.md)                                          | Toolchain, install/run setup, packaging and verification                |
+| [Development](DEVELOPMENT.md)                 | [Testing](VERIFICATION.md), [remote access](REMOTE_ACCESS.md), [Docker](DOCKER.md)                     | Toolchain, install/run setup, packaging and verification                |
 | [Contributing](../CONTRIBUTING.md)            | [AGENTS.md](../AGENTS.md), [security policy](../SECURITY.md), [Code of Conduct](../CODE_OF_CONDUCT.md) | Branches, pull requests, reviews, merging and reporting vulnerabilities |
 | [Agents and features](AGENTS_AND_FEATURES.md) | [Settings by chat](design/settings-by-chat.md), [worker questions](design/worker-questions.md)         | Provider selection, context consent, capability and permission limits   |
 | [Architecture](ARCHITECTURE.md)               | Linked package/service implementation                                                                  | Dependency direction and state ownership                                |
