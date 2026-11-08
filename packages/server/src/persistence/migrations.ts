@@ -454,8 +454,10 @@ const usageLimitHistory = Effect.gen(function* () {
  * replies itself (`ThreadRuntimes.liveMessages`), so the lag is never seen.
  */
 const partTypesOf = (row: "new") =>
-  `INSERT OR IGNORE INTO message_parts (message_rowid, thread_id, type)
-    SELECT ${row}.rowid, ${row}.thread_id, json_extract(p.value, '$.type')
+  // DISTINCT, not OR IGNORE: inside a trigger, the firing statement's conflict policy (an upsert's
+  // ON CONFLICT) overrides the trigger's own.
+  `INSERT INTO message_parts (message_rowid, thread_id, type)
+    SELECT DISTINCT ${row}.rowid, ${row}.thread_id, json_extract(p.value, '$.type')
     FROM json_each(CASE WHEN json_valid(${row}.message) THEN ${row}.message ELSE '{}' END, '$.parts') p
     WHERE json_extract(p.value, '$.type') IS NOT NULL;`;
 
@@ -469,7 +471,10 @@ const messageParts = Effect.gen(function* () {
       PRIMARY KEY (message_rowid, type)
     ) WITHOUT ROWID`,
     `CREATE INDEX message_parts_thread_type ON message_parts(thread_id, type)`,
-    `CREATE TRIGGER messages_parts_insert AFTER INSERT ON messages BEGIN ${partTypesOf("new")} END`,
+    `CREATE TRIGGER messages_parts_insert AFTER INSERT ON messages BEGIN
+        DELETE FROM message_parts WHERE message_rowid = new.rowid;
+        ${partTypesOf("new")}
+      END`,
     `CREATE TRIGGER messages_parts_update AFTER UPDATE OF message, search_pending, thread_id ON messages
       WHEN new.search_pending IS NULL OR new.search_pending IS old.search_pending BEGIN
         DELETE FROM message_parts WHERE message_rowid = old.rowid;
@@ -478,8 +483,8 @@ const messageParts = Effect.gen(function* () {
     `CREATE TRIGGER messages_parts_delete AFTER DELETE ON messages BEGIN
       DELETE FROM message_parts WHERE message_rowid = old.rowid;
     END`,
-    `INSERT OR IGNORE INTO message_parts (message_rowid, thread_id, type)
-      SELECT m.rowid, m.thread_id, json_extract(p.value, '$.type')
+    `INSERT INTO message_parts (message_rowid, thread_id, type)
+      SELECT DISTINCT m.rowid, m.thread_id, json_extract(p.value, '$.type')
       FROM messages m,
         json_each(CASE WHEN json_valid(m.message) THEN m.message ELSE '{}' END, '$.parts') p
       WHERE json_extract(p.value, '$.type') IS NOT NULL`,

@@ -386,7 +386,11 @@ describe("ThreadStore", () => {
         expect(yield* handoffs()).toEqual(["a4"]);
         yield* store.upsertMessage(id, replyA4([{ type: "text", text: "a" }]));
         expect(yield* handoffs()).toEqual([]);
-        yield* store.upsertMessage(id, replyA4([handoff]));
+        // Two parts of one type, as most replies have, and an upsert over the stored row.
+        yield* store.upsertMessage(
+          id,
+          replyA4([handoff, { type: "text", text: "b" }, { type: "text", text: "c" }]),
+        );
         expect(yield* handoffs()).toEqual(["a4"]);
         yield* store.truncateMessagesFrom(id, "a4");
         expect(yield* handoffs()).toEqual([]);
