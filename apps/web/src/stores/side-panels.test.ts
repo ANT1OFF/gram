@@ -755,18 +755,17 @@ describe("side panels", () => {
     expect(sanitizeOverviewView({ overviewBeforeHide: "hidden" })).toEqual({});
   });
 
-  it("starts Pull requests and Done folded, and remembers them", () => {
+  it("starts At rest folded, and remembers it", () => {
     const folded = (section: OverviewSection) => overviewSectionFolded(s(), section);
-    expect(OVERVIEW_FOLDED_BY_DEFAULT).toEqual(["pullRequests", "doneToday"]);
-    expect(folded("pullRequests")).toBe(true);
-    expect(folded("doneToday")).toBe(true);
+    expect(OVERVIEW_FOLDED_BY_DEFAULT).toEqual(["rest"]);
+    expect(folded("rest")).toBe(true);
     expect(folded("solo")).toBe(false);
-    s().toggleOverviewSection("pullRequests");
-    expect(folded("pullRequests")).toBe(false);
-    expect(s().overviewUnfolded).toEqual(["pullRequests"]);
+    s().toggleOverviewSection("rest");
+    expect(folded("rest")).toBe(false);
+    expect(s().overviewUnfolded).toEqual(["rest"]);
     expect(s().overviewFolded).toEqual([]);
-    s().toggleOverviewSection("pullRequests");
-    expect(folded("pullRequests")).toBe(true);
+    s().toggleOverviewSection("rest");
+    expect(folded("rest")).toBe(true);
     expect(s().overviewUnfolded).toEqual([]);
 
     // ⌘J opens a folded section, and leaves an open one open.
@@ -780,20 +779,27 @@ describe("side panels", () => {
     expect(s().overviewFolded).toEqual(["solo"]);
     s().unfoldOverviewSection("solo");
     expect(folded("solo")).toBe(false);
-    // Done opens from its one row, and folds back to it.
-    s().toggleOverviewSection("doneToday");
-    expect(folded("doneToday")).toBe(false);
-    expect(s().overviewUnfolded).toEqual(["doneToday"]);
-    s().toggleOverviewSection("doneToday");
-    expect(folded("doneToday")).toBe(true);
 
     // A default-folded section is never kept among the folded ones, nor the reverse.
     expect(
       sanitizeOverviewView({
-        overviewFolded: ["pullRequests", "solo"],
-        overviewUnfolded: ["solo", "pullRequests", "doneToday", "x"],
+        overviewFolded: ["rest", "solo"],
+        overviewUnfolded: ["solo", "rest", "x"],
       }),
-    ).toEqual({ overviewFolded: ["solo"], overviewUnfolded: ["pullRequests", "doneToday"] });
+    ).toEqual({ overviewFolded: ["solo"], overviewUnfolded: ["rest"] });
+    // A section At rest took in (Pull requests, Done) or the idle group left open opens At rest;
+    // folded, they leave it folded.
+    expect(sanitizeOverviewView({ overviewUnfolded: ["pullRequests"] })).toEqual({
+      overviewUnfolded: ["rest"],
+    });
+    expect(sanitizeOverviewView({ overviewUnfolded: ["doneToday"] })).toEqual({
+      overviewUnfolded: ["rest"],
+    });
+    expect(
+      sanitizeOverviewView({ workspacesCollapsedNodes: ["overview-idle:open", "overview:ws-1"] }),
+    ).toEqual({ overviewUnfolded: ["rest"] });
+    expect(sanitizeOverviewView({ overviewUnfolded: [] })).toEqual({ overviewUnfolded: [] });
+    expect(sanitizeOverviewView({ workspacesCollapsedNodes: ["overview:ws-1"] })).toEqual({});
   });
 
   it("keeps the sections Settings turns off in the column's order", () => {

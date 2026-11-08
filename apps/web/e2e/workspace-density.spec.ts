@@ -22,6 +22,17 @@ async function resizePane(page: Page, width: number) {
   await expect(handle).toHaveAttribute("aria-valuenow", String(width));
 }
 
+/** The density's row height in px (`--space-row`), which every overview row takes. */
+const rowStep = (page: Page) =>
+  page.getByTestId("overview-sidebar").evaluate((element) => {
+    const probe = document.createElement("div");
+    probe.style.height = "var(--space-row)";
+    element.append(probe);
+    const height = probe.offsetHeight;
+    probe.remove();
+    return height;
+  });
+
 for (const mode of ["light", "dark"] as const) {
   test(`workspace names, workers and keyboard details survive overview resizing in ${mode}`, async ({
     page,
@@ -50,11 +61,17 @@ for (const mode of ["light", "dark"] as const) {
 
     for (const width of [180, 280, 380, 280, 180]) {
       await resizePane(page, width);
-      // At work while its PR fails CI: the step always shows, and the failing PR's chip beside it
-      // wherever it fits; short of room it waits on the row's hover card rather than cut the step.
-      await expect(working.getByTestId("overview-worker-step")).toBeVisible();
-      if (width >= 380) await expect(failingPr.locator('[data-checks="failing"]')).toBeVisible();
-      await expect(resting.getByTestId("overview-worker-step")).toHaveCount(0);
+      // At work while its PR fails CI: one line, its dot saying it works, and the failing PR's
+      // chip after its title wherever it fits; short of room it waits on the row's hover card.
+      // Every row one height: the density's row (`--space-row`).
+      const rowHeight = await rowStep(page);
+      await expect(working).toHaveJSProperty("offsetHeight", rowHeight);
+      // The title wins: the failing PR's chip shows only while the whole title fits beside it.
+      if ((await failingPr.count()) > 0) {
+        const title = working.getByTestId("overview-worker-title");
+        expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      }
+      await expect(resting).toHaveJSProperty("offsetHeight", rowHeight);
       await expect(working.getByTestId("overview-worker-title")).toHaveText(
         "Improve workspace navigation and preserve approval boundaries",
       );
@@ -84,6 +101,23 @@ for (const mode of ["light", "dark"] as const) {
       await sidebar.screenshot({ path: test.info().outputPath(`${mode}-${width}.png`) });
     }
 
+    // A short title leaves the room: at a wide pane the failing PR's chip is after it, saying so.
+    await resizePane(page, 380);
+    await page.evaluate(
+      (threadId) => window.gramMock!.rename(threadId as never, "Nav fix"),
+      made.working,
+    );
+    await expect(working.getByTestId("overview-worker-title")).toHaveText("Nav fix");
+    await expect(failingPr.locator('[data-checks="failing"]')).toBeVisible();
+    await page.evaluate(
+      (threadId) =>
+        window.gramMock!.rename(
+          threadId as never,
+          "Improve workspace navigation and preserve approval boundaries",
+        ),
+      made.working,
+    );
+
     // Crossing widths keeps the focused worker attached to its existing DOM node.
     await resting.focus();
     await resting.evaluate((element) => {
@@ -105,7 +139,11 @@ for (const mode of ["light", "dark"] as const) {
       (threadId) => window.gramMock!.simulateStatus(threadId, "error", "Synthetic worker failure"),
       made.working,
     );
-    await expect(working.getByTestId("overview-worker-step")).toHaveCount(0);
+    // Failed, its edge says so in words.
+    await expect(
+      working.locator('[data-testid="overview-worker-now"], [data-testid="overview-worker-state"]'),
+    ).toHaveText(/.+/);
+    await expect(working).toHaveJSProperty("offsetHeight", await rowStep(page));
     expect(errors).toEqual([]);
     await test.info().attach("pane-geometry", {
       body: JSON.stringify(samples, null, 2),

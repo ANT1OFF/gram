@@ -37,8 +37,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   - **One dot per state, and few states**, the same in the sidebar, on the Board and in Workers
     (`StatusDot`): amber needs you, the accent is running and pulses, a hollow accent ring is
     waiting on something outside it (checks, a review, a wake, a usage limit), grey has stopped,
-    the merged colour is done, and red failed. The row beside a dot says its state in words, with
-    the reason for a wait ("Waiting · checks"), and the dot's hover says what its colour or fill
+    the merged colour is done, and red failed. The row beside a dot says at its edge what the dot
+    can't, as a wait's reason ("checks"), and the dot's hover says what its colour or fill
     means ("Hollow: waiting on checks, a review, a wake or a limit"), so the dots need no legend.
     A PR's pending checks, queued or running, and a review bot's round under way take the same
     hollow ring as a glyph (`PendingRing`), still in every motion setting, wherever they show:
@@ -72,35 +72,47 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   a short window never hides Submit.
 - **Rows:** 36 px by default (`--row-comfortable`), 30 px in compact density (`--row-compact`).
   Lists, menus and the sidebar share one row shape. Every sidebar row, whatever it lists (a
-  workspace, a worker, a solo thread, a PR, a Done item), is its mark (a Done item's is its
-  state's dot, as a worker's is) and title (`ROW`, `ROW_TITLE`), then one muted status line (`ROW_STATUS`) with what trails it at the right edge: a
-  time, or its badges (a worker's PR chips) only while they fit beside the words: the status wins,
-  and the row's hover names the PR. The title is one line with the row's whole width, cut at its
-  end (never its middle) with an ellipsis, and the row's hover (its `title`, or a worker's card)
-  says the whole of it, so every row keeps one height: 36 px for a title alone, 48 px with its
-  status line, never taller. A worker's status line says only what its dot can't: a wait's
-  reason, an ask, a failure, its plan's step, "Starting…", or its PR chips. At work with none of
-  these ("Running", or the tool it runs this minute), it has no second line and is 36 px; its
-  hover card says what it runs. A worker's agent mark shows only where its workspace's workers run
-  different agents; all on one agent, the state dot alone marks each row and the hover names the
-  agent. What needs you is listed first. Done starts folded to one row, "8 done", and a click
-  anywhere on it unfolds it: the Board and History already list finished work. History, at the
-  column's foot ("History", its key on its hover), is old work's one way in from the sidebar, and
-  the palette hands a search matching finished threads there too. Unfolded, Done shows the three
-  chats that finished last, solo threads that settled on their own included, then "N more in
-  History", which continues the same list on History's Done chip. Each workspace folds its workers
-  under its chevron. A workspace at rest (nothing running, nothing asking, no brief held, not
-  the one in view) folds with the others into one "Idle · N" row at the end of the list, which
-  unfolds to their rows (kept across reloads); it leaves the group the moment something runs or
-  asks there. A lone workspace at rest keeps its own row, since "Idle · 1" would only hide its
-  name. Every section's title has one look, muted 13 px words beside its chevron; a
-  Gram word's explanation ("Solo threads") is on its hover, never a dotted underline there. Marks
-  centre on one column and titles start on one edge, the pill, Search, section titles and History
-  included. The overview's sections sit a list's step (12 px) apart. The compact rail (60 px,
-  under 1280 px) gives each workspace a tile with its monogram, one letter of its name
-  ("billing-api" is "B"), two only where workspaces share a first letter ("BA", `monograms`), in
-  the tile's own text colour, never a coloured avatar; the solo threads' tile keeps a thread's
-  glyph. Its flyout heads with the whole name, which is in the tile's accessible name too.
+  workspace, a worker, a solo thread, a PR, a Done item), is one line of one height
+  (`--space-row`): its mark (a Done item's is its state's dot, as a worker's is), its title
+  (`ROW`, `ROW_TITLE`), and at the right edge what trails it in short muted words (`ROW_TRAIL`,
+  never wider than 7 rem): a time, a PR's ref, a workspace's "3 working", or what the dot
+  can't say. The title is cut at its end (never its middle) with an ellipsis, and the row's hover
+  (its `title`, or a worker's card) says the whole of it and the rest of its state, so a list
+  reads as even rows, never one taller than the next. A worker's edge says only what its dot
+  can't: an ask ("asks you"), a failure, a wait's reason without "Waiting" (the hollow dot says
+  it: "checks on #88", `waitShort`) or "Starting…". The words win: with words at its edge its PR
+  chips stay on its hover card. At work, its dot says it all: no words, its PR chips after its
+  title only while the whole title fits beside them (else its hover names the PR), and its hover
+  card says its plan's step and what it runs. A solo thread's edge says what needs you or failed
+  in that colour ("Needs approval"), else when it was last active. A
+  worker's agent mark shows only where its workspace's workers run different agents; all on one
+  agent, the state dot alone marks each row and the hover names the agent. What needs you is
+  listed first.
+  - **The sidebar groups by state, in three sections at most:** Orchestrators (the workspaces
+    where something runs or asks, and the one in view), Solo threads, and At rest at the end,
+    folded until opened (kept across reloads): what needs nothing of you, the workspaces at rest
+    (nothing running, nothing asking, no brief held, not the one in view), the pull requests and
+    Done, each under a heading with its count. A workspace leaves At rest the moment something
+    runs or asks there, and a lone one at rest keeps its row, since folded away alone it would
+    only hide its name. Pull requests show only beside work: on an empty home (no workspace, no
+    thread) they would stand alone. Done shows the three chats that finished last, solo threads that settled
+    on their own included, then "N more in History", which continues the same list on History's
+    Done chip. History, at the column's foot ("History", its key on its hover), is old work's one
+    way in from the sidebar, and the palette hands a search matching finished threads there too.
+    Each workspace folds its workers under its chevron.
+  - **Every section's title has one look** (`SECTION_TITLE`), folded or open: its chevron on the
+    rows' mark column, its name in muted 13 px words where the rows' titles start, and its count
+    in the column at the right edge where the rows' trailing words end; At rest's headings and
+    a solo list's Archived and Snoozed folds take the same grid. A Gram word's explanation ("Solo
+    threads") is on its hover, never a dotted underline there. Marks centre on one column and
+    titles start on one edge, the pill, Search, section titles and History included. The
+    overview's sections sit a list's step (12 px) apart.
+  - The compact rail (60 px, under 1280 px) gives each workspace a tile with its monogram, one
+    letter of its name ("billing-api" is "B"), two only where workspaces share a first letter
+    ("BA", `monograms`), in the tile's own text colour, never a coloured avatar, with its count
+    at the corner; the solo threads' tile keeps a thread's glyph. Its flyout opens the moment the
+    tile is hovered or focused and heads with the whole name, so a letter is never left to guess;
+    the name is in the tile's accessible name too.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings and between a reply's blocks, 16 px between sections and at a
   pane's edges. A settings row takes 8 px above and below, and a page's groups sit 24 px apart
@@ -241,7 +253,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   one status line without the state its heading says. ⌘J, Workers in the title bar's "…", the
   palette and the status strip's count open it with the keys on its rows; ⌘J again puts the panel
   back as it was. There is no second list in a dialog, and while the tab is open the sidebar folds
-  its workspace's workers to its line ("7 workers · in Workers"), its chevron leading
+  its workspace's workers to its line ("7 in Workers"), its chevron leading
   to the tab.
 - **An explanation shows once, then folds into its control.** What Take over changes is a line
   under a worker's header the first time it is offered; after, Take over's own hint says it, with
@@ -303,7 +315,7 @@ selection are in [globals.css](apps/web/src/styles/globals.css) and
 | Class              | Size / line | Weight   | For                                                               |
 | ------------------ | ----------- | -------- | ----------------------------------------------------------------- |
 | `text-caption`     | 11 / 16 px  | inherits | Key caps, count badges, a key legend. Never meaning or a heading. |
-| `text-meta`        | 13 / 20 px  | inherits | Metadata, timestamps, chips, help, a row's second line.           |
+| `text-meta`        | 13 / 20 px  | inherits | Metadata, timestamps, chips, help, a row's trailing words.        |
 | `text-body`        | 14 / 20 px  | inherits | UI text: rows, menus, buttons, labels, settings.                  |
 | `text-body-strong` | 14 / 20 px  | 500      | A row's or card's title; an emphasised label.                     |
 | `text-reading`     | 15 / 24 px  | inherits | Content: messages, descriptions, inputs, a dialog's body.         |
