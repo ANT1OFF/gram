@@ -22,7 +22,9 @@ import { useAvailableAgents } from "@/composer/agent-fields";
 import { keyLabel } from "@/keyboard/registry";
 import { KEY_CAP } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
+import { PhoneSheetHeader } from "@/thread/dialog-shell";
 import { DoneGroupingMenu } from "@/orchestration/done-grouping-menu";
 import { DONE_PAGE, doneWhenLong, doneWindow } from "@/orchestration/done-model";
 import { useFinishedWorkerPages } from "@/orchestration/use-finished-workers";
@@ -122,6 +124,7 @@ function usePastSessions(roots: readonly string[]) {
 
 /** History inside its dialog, loaded apart from the shell: `HistoryView` opens it. */
 export function HistoryBody({ onPicked }: { onPicked: () => void }) {
+  const phone = usePhone();
   const api = useApi();
   const queryClient = useQueryClient();
   const workspaces = useWorkspaces();
@@ -249,9 +252,10 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
   let index = -1;
   return (
     <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
+      {phone && <PhoneSheetHeader title="History" />}
       <div className="flex items-center gap-2 border-b border-border px-3">
         <Search aria-hidden className="size-icon-row text-muted-foreground" />
-        <Dialog.Title className="sr-only">History</Dialog.Title>
+        {!phone && <Dialog.Title className="sr-only">History</Dialog.Title>}
         <input
           autoFocus
           data-testid="history-search"
@@ -361,7 +365,7 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
             </button>
           )}
         </div>
-        {cursorEntry !== undefined && (
+        {cursorEntry !== undefined && !phone && (
           <Preview entry={cursorEntry} now={now} ledgers={ledgers} finished={finished} />
         )}
       </div>
@@ -372,7 +376,7 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
       )}
       <div
         data-testid="history-keys"
-        className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1.5 text-caption text-muted-foreground"
+        className="flex shrink-0 max-sm:hidden items-center gap-3 border-t border-border px-3 py-1.5 text-caption text-muted-foreground"
       >
         <span>
           <kbd className="font-sans">↑↓</kbd> move
@@ -469,9 +473,12 @@ function HistoryRow({
       <span className="ml-auto flex shrink-0 items-center gap-3 pl-3 text-meta text-muted-foreground">
         {/* The cursor row's action, ahead of the status columns so they stay aligned. */}
         {active && (
-          <span data-testid="history-action" className="flex items-center gap-1 text-foreground">
+          <span
+            data-testid="history-action"
+            className="flex items-center gap-1 text-foreground max-sm:hidden"
+          >
             {action}
-            <kbd className={KEY_CAP}>{keyLabel("⏎")}</kbd>
+            <kbd className={cn(KEY_CAP, "max-sm:hidden")}>{keyLabel("⏎")}</kbd>
           </span>
         )}
         <span className="flex items-center gap-2">

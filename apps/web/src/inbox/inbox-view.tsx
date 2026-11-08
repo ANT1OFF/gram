@@ -2,6 +2,8 @@ import { Dialog } from "@base-ui/react/dialog";
 
 import { lazyPart } from "@/lib/lazy-part";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
+import { cn } from "@/lib/utils";
+import { PHONE_SHEET } from "@/thread/dialog-shell";
 
 import { useInboxDock } from "./inbox-dock";
 import { useInboxStore } from "./inbox-store";
@@ -44,7 +46,10 @@ export function InboxView() {
               ? false
               : returnFocusTo(opener)()
           }
-          className="fixed top-[6%] left-1/2 z-50 flex h-[min(44rem,86vh)] w-[min(68rem,94vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className={cn(
+            "fixed top-[6%] left-1/2 z-50 flex h-[min(44rem,86vh)] w-[min(68rem,94vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
+            PHONE_SHEET,
+          )}
         >
           {open && <body.InboxBody />}
         </Dialog.Popup>

@@ -39,6 +39,7 @@ import { formatKeys, keyLabel } from "@/keyboard/registry";
 import { listIndexForKey } from "@/lib/list-keys";
 import { formatRelative } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 import {
@@ -64,6 +65,7 @@ import {
 import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
 import { recentlyResolved } from "@/thread/waiting-model";
+import { PhoneSheetHeader } from "@/thread/dialog-shell";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { useThreadSearch, type ThreadSearchState } from "@/thread/use-thread-search";
 import { threadDisplayTitle } from "@/thread/thread-title";
@@ -146,6 +148,7 @@ export function PaletteBody({
   initialScope: PaletteScope | undefined;
   onDone: () => void;
 }) {
+  const phone = usePhone();
   const api = useApi();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -1147,7 +1150,11 @@ export function PaletteBody({
   let index = -1;
   return (
     <>
-      <Dialog.Title className="sr-only">Command palette</Dialog.Title>
+      {phone ? (
+        <PhoneSheetHeader title="Command palette" />
+      ) : (
+        <Dialog.Title className="sr-only">Command palette</Dialog.Title>
+      )}
       <div className="flex items-center gap-2 border-b border-border px-3">
         <Search aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         {scopeTitle !== undefined && (
@@ -1356,7 +1363,7 @@ export function PaletteBody({
                       </span>
                     )}
                     {item.shortcut && (
-                      <kbd className="ml-auto shrink-0 pl-3 font-mono text-caption text-muted-foreground">
+                      <kbd className="ml-auto shrink-0 pl-3 font-mono text-caption text-muted-foreground max-sm:hidden">
                         {item.shortcut}
                       </kbd>
                     )}
@@ -1376,7 +1383,7 @@ export function PaletteBody({
       </Swap>
       <div
         data-testid="palette-keys"
-        className="flex gap-3 border-t border-border px-3 py-1.5 text-caption text-muted-foreground"
+        className="flex gap-3 border-t max-sm:hidden border-border px-3 py-1.5 text-caption text-muted-foreground"
       >
         {/* The catalog's words: History's "↑↓ move", and "Actions" for a row's own commands. */}
         {items.length > 1 && (

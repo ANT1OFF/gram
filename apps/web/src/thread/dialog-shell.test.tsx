@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { useRef, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { Dialog, DialogShell } from "./dialog-shell";
+import { Dialog, DialogShell, PhoneSheetHeader } from "./dialog-shell";
 
 afterEach(cleanup);
 
@@ -59,5 +59,32 @@ describe("DialogShell", () => {
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole("button", { name: "Composer" })),
     );
+  });
+});
+
+/** A sheet titled by its phone header. */
+function Sheet() {
+  const [open, setOpen] = useState(true);
+  return (
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog.Portal>
+        <Dialog.Popup data-testid="sheet">
+          <PhoneSheetHeader title="History" />
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+describe("PhoneSheetHeader", () => {
+  it("titles the sheet and closes it from its 44 px Close", async () => {
+    render(<Sheet />);
+    const sheet = await screen.findByTestId("sheet");
+    expect(screen.getByRole("dialog", { name: "History" })).toBe(sheet);
+    const close = screen.getByTestId("sheet-close");
+    expect(close.getAttribute("aria-label")).toBe("Close");
+    expect(close.className).toContain("size-11");
+    fireEvent.click(close);
+    await waitFor(() => expect(screen.queryByTestId("sheet")).toBeNull());
   });
 });
