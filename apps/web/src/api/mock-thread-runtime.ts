@@ -15,6 +15,7 @@ import type {
   ThreadId,
   ThreadIdentity,
   ThreadSummary,
+  UsageSummary,
   UserInput,
 } from "@gram/contracts";
 import type { ThreadFeed } from "@/stores/thread-feed";
@@ -56,6 +57,8 @@ export interface ThreadRuntime {
   heldAt?: string | undefined;
   /** `restartSession` came mid-turn: the session restarts once the turn ends. */
   restartAfterTurn: boolean;
+  /** The running turn's last usage report, which its reply is stamped with as the turn ends. */
+  turnUsage?: UsageSummary | undefined;
 }
 
 /** What each agent's session reports it runs, as the real adapters list them. */
