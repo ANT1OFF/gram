@@ -44,6 +44,7 @@ import { shortcutPressed } from "@/keyboard/bindings";
 import { isMac, runShortcut, useShortcut } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import {
   DictationMirror,
@@ -55,10 +56,20 @@ import {
   useMirrorFit,
 } from "@/dictation/composer-dictation";
 import { DictationButton } from "@/dictation/dictation-button";
-import { PressScale, RingSpinner, RunningEdge, SharedSlab, Swap } from "@/motion";
+import {
+  PressScale,
+  RingSpinner,
+  RunningEdge,
+  SharedSlab,
+  Swap,
+} from "@/motion";
 import { useServerSettings } from "@/settings-sync/store";
 import { activityLine, backgroundWorking } from "@/sidebar/status";
-import { useDiffComments, useDiffCommentsStore, withDiffComments } from "@/stores/diff-comments";
+import {
+  useDiffComments,
+  useDiffCommentsStore,
+  withDiffComments,
+} from "@/stores/diff-comments";
 import { useDraftStore } from "@/stores/drafts";
 import { useSuggestionsStore } from "@/stores/suggestions";
 import { useThreadsStore } from "@/stores/threads";
@@ -87,7 +98,12 @@ import {
   useProviderLabel,
   useRefreshModels,
 } from "./models";
-import { effortSection, modelSection, modeSection, speedSection } from "./choice-sections";
+import {
+  effortSection,
+  modelSection,
+  modeSection,
+  speedSection,
+} from "./choice-sections";
 import { ComposerChoices, type ChoiceSection } from "./choices";
 import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION, MODE_OPTIONS } from "./options";
 import type { PickerOption } from "./picker";
@@ -130,7 +146,10 @@ const BUSY: ReadonlySet<ThreadStatus> = new Set([
   "needsInput",
 ]);
 /** A turn held at the user's answer: nothing runs, and the card's answer is the step to take. */
-const WAITING_ON_YOU: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
+const WAITING_ON_YOU: ReadonlySet<ThreadStatus> = new Set([
+  "needsApproval",
+  "needsInput",
+]);
 const HINT_MS = 2500;
 /**
  * The threads with a send or steer waiting for the connection, across every composer: a thread's
@@ -170,19 +189,24 @@ export function Composer({
   const queryClient = useQueryClient();
   const surfaceRef = useRef<HTMLDivElement>(null);
   // The thread `/new` just created: its composer moves in from where the hero's prompt box was.
-  const handoff = useSlabHandoff((s) => (s.threadId === threadId ? s.from : undefined));
+  const handoff = useSlabHandoff((s) =>
+    s.threadId === threadId ? s.from : undefined,
+  );
   const summary = useThreadsStore((s) => s.byId[threadId]);
   const identity = useThreadsStore((s) => s.byId[threadId]?.identity);
 
   const text = useDraftStore((s) => s.text[threadId] ?? "");
   const editing = useDraftStore((s) => s.edits[threadId]);
-  const setText = (value: string) => useDraftStore.getState().setText(threadId, value);
+  const setText = (value: string) =>
+    useDraftStore.getState().setText(threadId, value);
   const attachments = useAttachments({ threadId });
   const diffComments = useDiffComments(threadId);
   const [hint, setHint] = useState<string | undefined>();
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
-  const hintTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const hintMounted = useRef(false);
   useEffect(() => {
     hintMounted.current = true;
@@ -192,6 +216,7 @@ export function Composer({
     };
   }, []);
   const [dragging, setDragging] = useState(false);
+  const phone = usePhone();
   const dragDepth = useRef(0);
   const sendHint = useShortcutHint("composer.send");
   const newDraftHint = useShortcutHint("composer.sendNewDraft");
@@ -202,11 +227,16 @@ export function Composer({
   const running = RUNNING.has(status);
   // Unknown until settings load, and Enter doesn't send till then: assuming the default would post
   // the first line of someone who chose "Shortcut only" and started typing at once.
-  const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
+  const sendKey = useServerSettings((s) =>
+    s.settings ? sendKeyOf(s.settings) : undefined,
+  );
   // The turn is over but a background subagent is still working. To the user that is the agent
   // running, so Stop stays: between turns it stops those subagents, which an interrupt can't reach.
   const background = useThreadsStore((s) =>
-    backgroundWorking(status, activityLine(status, s.statusDetail[threadId], summary?.activity)),
+    backgroundWorking(
+      status,
+      activityLine(status, s.statusDetail[threadId], summary?.activity),
+    ),
   );
   const busy = BUSY.has(status);
   // Stop steps back while the turn only waits on an answer; a background agent still works.
@@ -225,21 +255,30 @@ export function Composer({
   // starts falls through to the agent's commands and Gram's, as everywhere else.
   const orchestrator = useOrchestratorVerbs(threadId);
   const verbs =
-    query === undefined || orchestrator === undefined ? [] : filterVerbs(orchestrator.verbs, query);
+    query === undefined || orchestrator === undefined
+      ? []
+      : filterVerbs(orchestrator.verbs, query);
   const commands =
-    query === undefined || verbs.length > 0 ? [] : filterCommands(available, query, gramLast);
+    query === undefined || verbs.length > 0
+      ? []
+      : filterCommands(available, query, gramLast);
   const optionCount = verbs.length > 0 ? verbs.length : commands.length;
   const menuOpen = optionCount > 0;
   const typedCommand = resolveTyped(agent, text, reported ?? [], canFork);
   const slashNote =
-    typedCommand.kind === "unavailable" && !menuOpen ? typedCommand.note : undefined;
+    typedCommand.kind === "unavailable" && !menuOpen
+      ? typedCommand.note
+      : undefined;
   const activeIndex = Math.min(slashIndex, optionCount - 1);
   const menuId = `slash-menu-${threadId}`;
   const canSend =
     !attachments.uploading &&
-    (text.trim() !== "" || attachments.ready.length > 0 || diffComments.length > 0);
+    (text.trim() !== "" ||
+      attachments.ready.length > 0 ||
+      diffComments.length > 0);
 
-  const root = summary === undefined ? undefined : effectiveCheckout(summary.thread).path;
+  const root =
+    summary === undefined ? undefined : effectiveCheckout(summary.thread).path;
   const mentions = useMentions({
     id: `mention-menu-${threadId}`,
     text,
@@ -260,7 +299,9 @@ export function Composer({
   const suggestOn = useServerSettings(
     (s) => s.settings !== undefined && helperOn(s.settings, "suggest"),
   );
-  const suggestions = useSuggestionsStore((s) => (suggestOn ? s.byThread[threadId] : undefined));
+  const suggestions = useSuggestionsStore((s) =>
+    suggestOn ? s.byThread[threadId] : undefined,
+  );
   const attended = useWindowAttended();
   const [fieldFocused, setFieldFocused] = useState(false);
   const [composing, setComposing] = useState(false);
@@ -292,7 +333,9 @@ export function Composer({
       dictation.active,
   });
   /** What the last whole acceptance left in the box, to tell whether it was edited before sending. */
-  const accepted = useRef<{ turnId: string; text: string } | undefined>(undefined);
+  const accepted = useRef<{ turnId: string; text: string } | undefined>(
+    undefined,
+  );
   const record = (event: SuggestEvent) =>
     void api
       .recordHelperEvent({ kind: "suggest", event })
@@ -305,12 +348,21 @@ export function Composer({
   // doesn't fit pins the keys to the field's corner instead. Measured afresh each time, the field
   // back at its own height first, so a shorter reply shrinks it.
   // Dictated words not yet committed sit in the same mirror, and the field grows to hold them too.
-  const partialInline = ghost === undefined && dictation.partial !== "" && caretAtEnd;
-  const ghostRest = ghost?.rest ?? (partialInline ? dictation.partial : undefined);
+  const partialInline =
+    ghost === undefined && dictation.partial !== "" && caretAtEnd;
+  const ghostRest =
+    ghost?.rest ?? (partialInline ? dictation.partial : undefined);
   const ghostPosition = ghost?.position;
-  const hintPinned = useMirrorFit(fieldRef, mirrorRef, ghostRest, ghostPosition, text);
+  const hintPinned = useMirrorFit(
+    fieldRef,
+    mirrorRef,
+    ghostRest,
+    ghostPosition,
+    text,
+  );
   useEffect(() => {
-    if (shown && useSuggestionsStore.getState().count(threadId)) record("shown");
+    if (shown && useSuggestionsStore.getState().count(threadId))
+      record("shown");
     // `record` is recreated every render and only reads `api`.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [shown, threadId]);
@@ -323,7 +375,11 @@ export function Composer({
       useThreadsStore.subscribe((s, previous) => {
         const now = s.byId[threadId]?.status;
         const before = previous.byId[threadId]?.status;
-        if (now !== undefined && RUNNING.has(now) && (before === undefined || !RUNNING.has(before)))
+        if (
+          now !== undefined &&
+          RUNNING.has(now) &&
+          (before === undefined || !RUNNING.has(before))
+        )
           turns.current += 1;
       }),
     [threadId],
@@ -354,7 +410,16 @@ export function Composer({
         }
       })
       .catch((error: unknown) => console.warn("suggestions", error));
-  }, [api, busy, generation, looking, lastActivityAt, suggestOn, suggestions, threadId]);
+  }, [
+    api,
+    busy,
+    generation,
+    looking,
+    lastActivityAt,
+    suggestOn,
+    suggestions,
+    threadId,
+  ]);
 
   /** Types `insert` after what's there, as the user would have, so ⌘Z undoes it. Never sends. */
   const acceptSuggestion = (current: Ghost, insert: string, whole: boolean) => {
@@ -370,7 +435,10 @@ export function Composer({
     }
     if (useSuggestionsStore.getState().take(threadId)) record("taken");
     if (whole) {
-      accepted.current = { turnId: suggestions.turnId, text: current.suggestion };
+      accepted.current = {
+        turnId: suggestions.turnId,
+        text: current.suggestion,
+      };
       record("accepted");
     } else {
       record("wordAccepted");
@@ -387,7 +455,12 @@ export function Composer({
 
   /** The message to send, and how to give its draft back if it doesn't go. */
   const take = ():
-    | { input: UserInput; giveBack: () => void; release: () => void; active: () => boolean }
+    | {
+        input: UserInput;
+        giveBack: () => void;
+        release: () => void;
+        active: () => boolean;
+      }
     | undefined => {
     if (!canSend) return undefined;
     const files = attachments.capture();
@@ -431,7 +504,12 @@ export function Composer({
       setText([typed, since].filter(Boolean).join("\n\n"));
       useDiffCommentsStore.getState().restore(threadId, reviewed);
     };
-    return { input, giveBack, release: files.release, active: () => files.active };
+    return {
+      input,
+      giveBack,
+      release: files.release,
+      active: () => files.active,
+    };
   };
 
   /** Ends that wait when the composer goes, as switching threads unmounts it. */
@@ -470,10 +548,16 @@ export function Composer({
     clearTimeout(hintTimer.current);
     setHint(RECONNECT_HINT);
     try {
-      const back = await whenReconnected(api.connection, RECONNECT_WAIT_MS, abort.signal);
+      const back = await whenReconnected(
+        api.connection,
+        RECONNECT_WAIT_MS,
+        abort.signal,
+      );
       if (abort.signal.aborted || !attachments.active) return false;
       if (!back) {
-        flash("Couldn't send: not connected to the server. Your message is still here.");
+        flash(
+          "Couldn't send: not connected to the server. Your message is still here.",
+        );
         return false;
       }
       const now = latestDraft.current;
@@ -482,7 +566,8 @@ export function Composer({
         now.items.length === attachments.items.length &&
         now.items.every(
           (each, i) =>
-            each.key === attachments.items[i]?.key && each.status === attachments.items[i]?.status,
+            each.key === attachments.items[i]?.key &&
+            each.status === attachments.items[i]?.status,
         );
       if (!same) {
         flash("Connected again: send your message when it's ready");
@@ -594,9 +679,12 @@ export function Composer({
     } catch (error) {
       if (files.restore()) {
         const since = useDraftStore.getState().text[threadId] ?? "";
-        setText([draft.text, since].filter((value) => value !== "").join("\n\n"));
+        setText(
+          [draft.text, since].filter((value) => value !== "").join("\n\n"),
+        );
       }
-      if (files.active) flash(`Couldn't stash the draft: ${errorMessage(error)}`);
+      if (files.active)
+        flash(`Couldn't stash the draft: ${errorMessage(error)}`);
       return false;
     } finally {
       files.release();
@@ -622,7 +710,8 @@ export function Composer({
       attachments.adopt(taken.attachments);
       if (replacing) flash("Stashed your current draft");
     } catch (error) {
-      if (files.active) flash(`Couldn't restore the draft: ${errorMessage(error)}`);
+      if (files.active)
+        flash(`Couldn't restore the draft: ${errorMessage(error)}`);
     } finally {
       files.release();
       refreshStashes();
@@ -645,7 +734,11 @@ export function Composer({
   );
 
   /** Does what Gram has for `action`, which the box held as `typedText`. */
-  const runNative = async (action: NativeAction, args: string, typedText: string) => {
+  const runNative = async (
+    action: NativeAction,
+    args: string,
+    typedText: string,
+  ) => {
     const failed = (what: string) => (error: unknown) => {
       // As a rejected send does: whatever was typed while it was in flight stays, after it.
       const since = (useDraftStore.getState().text[threadId] ?? "").trim();
@@ -656,14 +749,18 @@ export function Composer({
     switch (action) {
       case "newThread": {
         const checkout = summary?.thread.checkout;
-        prefillDraftProject(checkout ? (checkout.repoRoot ?? checkout.path) : undefined);
+        prefillDraftProject(
+          checkout ? (checkout.repoRoot ?? checkout.path) : undefined,
+        );
         return void navigate({ to: "/new" });
       }
       case "pickModel": {
         const wanted = args.toLowerCase();
         const match = modelChoices.find(
           (o) =>
-            wanted !== "" && (o.value.toLowerCase() === wanted || o.label.toLowerCase() === wanted),
+            wanted !== "" &&
+            (o.value.toLowerCase() === wanted ||
+              o.label.toLowerCase() === wanted),
         );
         if (match !== undefined) return onModel(match.value);
         if (wanted !== "") flash(`No model called ${args} here`);
@@ -677,7 +774,10 @@ export function Composer({
         if (args === "") return dialogs.open({ kind: "rename", threadId });
         return api
           .rename(threadId, args)
-          .then(() => flash("Renamed the thread"), failed("Couldn't rename the thread"));
+          .then(
+            () => flash("Renamed the thread"),
+            failed("Couldn't rename the thread"),
+          );
       case "fork":
         return dialogs.open({ kind: "fork", threadId });
       case "findThread":
@@ -685,7 +785,10 @@ export function Composer({
       case "addDirectory":
         return api
           .addDirectory(threadId, args)
-          .then((folder) => flash(`The agent can use ${folder} now`), failed("Couldn't add it"));
+          .then(
+            (folder) => flash(`The agent can use ${folder} now`),
+            failed("Couldn't add it"),
+          );
       case "closeThread":
         return dialogs.open({ kind: "close", threadId });
       case "connectors":
@@ -732,7 +835,8 @@ export function Composer({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !imeComposing(event);
+    const plain =
+      !event.metaKey && !event.ctrlKey && !event.altKey && !imeComposing(event);
     if (menuOpen && plain) {
       const next =
         verbs.length > 0
@@ -744,7 +848,9 @@ export function Composer({
       }
       if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
         event.preventDefault();
-        return verbs.length > 0 ? chooseVerb(verbs[activeIndex]!) : choose(commands[activeIndex]!);
+        return verbs.length > 0
+          ? chooseVerb(verbs[activeIndex]!)
+          : choose(commands[activeIndex]!);
       }
       if (event.key === "Escape") {
         event.preventDefault();
@@ -773,7 +879,9 @@ export function Composer({
       }
       if (step !== 0 && ghost.count > 1) {
         event.preventDefault();
-        return useSuggestionsStore.getState().choose(threadId, stepped(ghost, step));
+        return useSuggestionsStore
+          .getState()
+          .choose(threadId, stepped(ghost, step));
       }
       if (event.key === "Escape" && plain) {
         event.preventDefault();
@@ -804,7 +912,11 @@ export function Composer({
         setText(previous);
         mentions.quiet(previous, previous.length);
       }
-    } else if (event.key === "ArrowDown" && history.navigating && selectionStart === value.length) {
+    } else if (
+      event.key === "ArrowDown" &&
+      history.navigating &&
+      selectionStart === value.length
+    ) {
       const next = history.next();
       if (next !== undefined) {
         event.preventDefault();
@@ -840,7 +952,10 @@ export function Composer({
   const model = summary?.thread.model;
   const models = useModels(model?.agent ?? "claude", model?.profileId);
   // Claude's built-in list is no fallback for a gateway agent's models.
-  const refreshModels = useRefreshModels(model?.agent ?? "claude", model?.profileId);
+  const refreshModels = useRefreshModels(
+    model?.agent ?? "claude",
+    model?.profileId,
+  );
   // A rate-limited turn's "Try another model" opens this thread's picker, whichever pane has focus.
   const onModelAsked = useCallback(
     (open: () => void) => onModelPickerAsked(threadId, open),
@@ -856,7 +971,8 @@ export function Composer({
   );
   const efforts = effortOptions(models, model?.model);
   // The model's own default heads the list, so the current effort always has its check.
-  const effortChoices = efforts.length > 0 ? [DEFAULT_EFFORT_OPTION, ...efforts] : [];
+  const effortChoices =
+    efforts.length > 0 ? [DEFAULT_EFFORT_OPTION, ...efforts] : [];
   const modelWarning =
     model?.profileId !== undefined
       ? gatewayModelWarning(models, model.model)
@@ -870,7 +986,12 @@ export function Composer({
   const stopLabel = background ? "Stop the background agents" : "Stop";
   const steerModifier = isMac() ? "⌘" : "Ctrl";
   const sendHeld = useModHeld(steerable && hasDraft);
-  const action = sendAction({ hasDraft, busy, background, steering: steerable && sendHeld });
+  const action = sendAction({
+    hasDraft,
+    busy,
+    background,
+    steering: steerable && sendHeld,
+  });
   const sendKeyHint = sendKey === "enter" ? "↵" : sendHint;
   const queueLabel = steerable
     ? `Queue: sends when the turn ends. ${steerModifier}-click to steer`
@@ -879,13 +1000,22 @@ export function Composer({
   const control = takesControl ? " and take over from the orchestrator" : "";
   const queueControl = takesControl ? `. ${TAKES_OVER_LINE}` : "";
   const actionLabels = {
-    send: { aria: `Send${control}`, hint: withHint(`Send${control}`, sendKeyHint) },
-    queue: { aria: `Queue${control}`, hint: withHint(`${queueLabel}${queueControl}`, sendKeyHint) },
+    send: {
+      aria: `Send${control}`,
+      hint: withHint(`Send${control}`, sendKeyHint),
+    },
+    queue: {
+      aria: `Queue${control}`,
+      hint: withHint(`${queueLabel}${queueControl}`, sendKeyHint),
+    },
     steer: { aria: "Steer now", hint: STEER_LABEL },
     // The word and its key, "Stop (⌘.)": an icon button's tooltip names it and its shortcut.
     stop: {
       aria: "Stop",
-      hint: withHint(waitingOnYou ? "Stop the turn instead of answering" : stopLabel, stopHint),
+      hint: withHint(
+        waitingOnYou ? "Stop the turn instead of answering" : stopLabel,
+        stopHint,
+      ),
     },
   } as const;
   useShortcut(
@@ -924,14 +1054,19 @@ export function Composer({
         ...rest,
         model: value,
         ...(variant === undefined ? {} : { variant }),
-        ...(model.speed === "fast" && !modelSpeeds(models, value).includes("fast")
+        ...(model.speed === "fast" &&
+        !modelSpeeds(models, value).includes("fast")
           ? { speed: "standard" as const }
           : {}),
       })
       .catch((error: unknown) => flash(errorMessage(error)));
   };
   /** Says a pick took, in words beside the glyph that changed: "Effort set to Extra high". */
-  const confirmPick = (label: string, options: readonly PickerOption<string>[], value: string) => {
+  const confirmPick = (
+    label: string,
+    options: readonly PickerOption<string>[],
+    value: string,
+  ) => {
     const option = options.find((o) => o.value === value);
     flash(`${label} set to ${option?.short ?? option?.label ?? value}`);
   };
@@ -941,7 +1076,9 @@ export function Composer({
     void api
       .setModel(
         threadId,
-        next === DEFAULT_EFFORT ? rest : { ...rest, variant: next as ReasoningVariant },
+        next === DEFAULT_EFFORT
+          ? rest
+          : { ...rest, variant: next as ReasoningVariant },
       )
       .then(() => confirmPick("Effort", effortChoices, next))
       .catch((error: unknown) => flash(errorMessage(error)));
@@ -950,7 +1087,9 @@ export function Composer({
     if (!model || speed === model.speed) return;
     void api
       .setModel(threadId, { ...model, speed })
-      .then(() => flash(`Speed set to ${speed === "fast" ? "Fast" : "Standard"}`))
+      .then(() =>
+        flash(`Speed set to ${speed === "fast" ? "Fast" : "Standard"}`),
+      )
       .catch((error: unknown) => flash(errorMessage(error)));
   };
   const onMode = (mode: PermissionMode) => {
@@ -958,7 +1097,9 @@ export function Composer({
     void api
       .setMode(threadId, mode)
       .then(() => confirmPick("Mode", MODE_OPTIONS, mode))
-      .catch((error: unknown) => flash(`Couldn't switch mode: ${errorMessage(error)}`));
+      .catch((error: unknown) =>
+        flash(`Couldn't switch mode: ${errorMessage(error)}`),
+      );
   };
   // One chip in every composer, the orchestrator's chat, a solo thread's and `/new` alike, and one
   // popover with a section for each of model · effort · mode · speed. The chip says the values
@@ -976,7 +1117,8 @@ export function Composer({
       search: model && {
         rowIcon: <AgentIcon agent={model.agent} className="size-icon-row" />,
         favourite: isFavourite,
-        onToggleFavourite: (value) => useModelFavourites.getState().toggle(model.agent, value),
+        onToggleFavourite: (value) =>
+          useModelFavourites.getState().toggle(model.agent, value),
       },
     }),
     effortSection({
@@ -1021,7 +1163,12 @@ export function Composer({
         {(running || background) && <RunningEdge moving={focused} />}
         {menuOpen &&
           (verbs.length > 0 ? (
-            <VerbMenu id={menuId} verbs={verbs} activeIndex={activeIndex} onChoose={chooseVerb} />
+            <VerbMenu
+              id={menuId}
+              verbs={verbs}
+              activeIndex={activeIndex}
+              onChoose={chooseVerb}
+            />
           ) : (
             <SlashMenu
               id={menuId}
@@ -1030,7 +1177,9 @@ export function Composer({
               onChoose={choose}
             />
           ))}
-        {slashNote !== undefined && !mentions.open && <SlashNote note={slashNote} />}
+        {slashNote !== undefined && !mentions.open && (
+          <SlashNote note={slashNote} />
+        )}
         {mentions.open && (
           <MentionMenu
             id={mentions.id}
@@ -1047,10 +1196,19 @@ export function Composer({
         />
         <div className="relative">
           {partialInline && (
-            <DictationMirror ref={mirrorRef} text={text} partial={dictation.partial} />
+            <DictationMirror
+              ref={mirrorRef}
+              text={text}
+              partial={dictation.partial}
+            />
           )}
           {ghost !== undefined && (
-            <div ref={mirrorRef} aria-hidden data-composer-mirror className={GHOST_MIRROR}>
+            <div
+              ref={mirrorRef}
+              aria-hidden
+              data-composer-mirror
+              className={GHOST_MIRROR}
+            >
               <span data-testid="composer-ghost">
                 <span className="text-transparent">{text}</span>
                 <span className="text-subtle">{ghost.rest}</span>
@@ -1058,7 +1216,11 @@ export function Composer({
               {/* Right after the reply rather than in the toolbar, which a narrow pane leaves no
                   room in: there the keys were cut to a sliver, and the reply read as a draft. */}
               {/* Kept in the flow while pinned, only hidden, so every measure counts its lines. */}
-              <GhostHint position={ghost.position} count={ghost.count} hidden={hintPinned} />
+              <GhostHint
+                position={ghost.position}
+                count={ghost.count}
+                hidden={hintPinned}
+              />
             </div>
           )}
           {ghost !== undefined && hintPinned && (
@@ -1074,11 +1236,15 @@ export function Composer({
           <textarea
             {...mentions.textareaProps}
             aria-label="Message"
-            aria-describedby={ghost === undefined ? undefined : `suggestion-${threadId}`}
+            aria-describedby={
+              ghost === undefined ? undefined : `suggestion-${threadId}`
+            }
             role="combobox"
             aria-expanded={listOpen}
             aria-controls={listOpen ? listId : undefined}
-            aria-activedescendant={listOpen ? `${listId}-${listActiveIndex}` : undefined}
+            aria-activedescendant={
+              listOpen ? `${listId}-${listActiveIndex}` : undefined
+            }
             aria-autocomplete="list"
             value={text}
             // Dictation's partial is drawn behind the field from its first character, where the
@@ -1087,11 +1253,16 @@ export function Composer({
               ghost !== undefined || dictation.active
                 ? ""
                 : (placeholder ??
-                  (takesControl
-                    ? `${running ? "Queue a message for this worker" : "Message this worker"}… (/ for commands, @ for files)`
-                    : running
-                      ? "Queue a message… (/ for commands, @ for files)"
-                      : "Message… (/ for commands, @ for files)"))
+                  // A phone's line holds the words alone: no keys to hint at on a touch keyboard.
+                  `${
+                    takesControl
+                      ? running
+                        ? "Queue a message for this worker"
+                        : "Message this worker"
+                      : running
+                        ? "Queue a message"
+                        : "Message"
+                  }…${phone ? "" : " (/ for commands, @ for files)"}`)
             }
             className={cn(SLAB_TEXTAREA, "relative")}
             onFocus={(event) => {
@@ -1109,7 +1280,8 @@ export function Composer({
               trackCaret(event.currentTarget);
             }}
             onScroll={(event) => {
-              if (mirrorRef.current) mirrorRef.current.scrollTop = event.currentTarget.scrollTop;
+              if (mirrorRef.current)
+                mirrorRef.current.scrollTop = event.currentTarget.scrollTop;
             }}
             onCompositionStart={() => setComposing(true)}
             onCompositionEnd={() => setComposing(false)}
@@ -1127,7 +1299,10 @@ export function Composer({
               history.reset();
               setSlashIndex(0);
               if (event.target.value === "") setSlashDismissed(false);
-              mentions.onChange(event.target.value, event.target.selectionStart);
+              mentions.onChange(
+                event.target.value,
+                event.target.selectionStart,
+              );
             }}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
@@ -1137,9 +1312,10 @@ export function Composer({
             here too once they run past the field's cap, where the mirror behind it can't scroll. */}
         {/* With the caret mid-draft the words can't show where they'll land, so they wait here; and
             here too once they run past the field's cap. */}
-        {dictation.partial !== "" && (!caretAtEnd || (partialInline && hintPinned)) && (
-          <DictationStrip partial={dictation.partial} />
-        )}
+        {dictation.partial !== "" &&
+          (!caretAtEnd || (partialInline && hintPinned)) && (
+            <DictationStrip partial={dictation.partial} />
+          )}
         <DictationError state={dictation.state} />
         {/* Icons with their words on hover: the row is one width however narrow the pane. */}
         <div
@@ -1148,7 +1324,11 @@ export function Composer({
         >
           <ComposerChoices
             sections={choices}
-            mark={model && <AgentIcon agent={model.agent} className="size-icon-bar" />}
+            mark={
+              model && (
+                <AgentIcon agent={model.agent} className="size-icon-bar" />
+              )
+            }
             agentLabel={model && agentLabel(model.agent)}
             focused={focused}
             onOpen={refreshModels}
@@ -1199,10 +1379,16 @@ export function Composer({
                         type="button"
                         aria-label={actionLabels[action].aria}
                         disabled={action !== "stop" && !canSend}
-                        data-waiting={action === "stop" && waitingOnYou ? "" : undefined}
+                        data-waiting={
+                          action === "stop" && waitingOnYou ? "" : undefined
+                        }
                         className={cn(
                           ROUND,
-                          action !== "stop" ? SEND_FILL : waitingOnYou ? STOP_QUIET : STOP_FILL,
+                          action !== "stop"
+                            ? SEND_FILL
+                            : waitingOnYou
+                              ? STOP_QUIET
+                              : STOP_FILL,
                         )}
                         onClick={runAction}
                       />
@@ -1212,7 +1398,10 @@ export function Composer({
                       // While it runs, the ring turns round the square: the button says the agent
                       // is at work, not only how to end it. Still under Reduced and Off. Its word
                       // and key are in its tooltip, as every icon button's are.
-                      <span aria-hidden className="relative grid size-4 place-items-center">
+                      <span
+                        aria-hidden
+                        className="relative grid size-4 place-items-center"
+                      >
                         {!waitingOnYou && (
                           <RingSpinner
                             data-testid="stop-ring"
@@ -1229,8 +1418,14 @@ export function Composer({
                   </Hint>
                 </PressScale>
               </ContextMenuTrigger>
-              <ContextMenuContent data-testid="send-menu" className="[&_svg]:size-icon-row">
-                <ContextMenuItem disabled={!canSend} onClick={() => void send()}>
+              <ContextMenuContent
+                data-testid="send-menu"
+                className="[&_svg]:size-icon-row"
+              >
+                <ContextMenuItem
+                  disabled={!canSend}
+                  onClick={() => void send()}
+                >
                   {busy ? <ListPlus aria-hidden /> : <ArrowUp aria-hidden />}
                   {busy ? "Queue" : "Send"}
                   <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
@@ -1238,7 +1433,10 @@ export function Composer({
                   </kbd>
                 </ContextMenuItem>
                 {steerable && (
-                  <ContextMenuItem disabled={!canSend} onClick={() => void steer()}>
+                  <ContextMenuItem
+                    disabled={!canSend}
+                    onClick={() => void steer()}
+                  >
                     <Send aria-hidden />
                     {STEER_LABEL}
                     <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
@@ -1246,7 +1444,10 @@ export function Composer({
                     </kbd>
                   </ContextMenuItem>
                 )}
-                <ContextMenuItem disabled={!canSend} onClick={() => void send(true)}>
+                <ContextMenuItem
+                  disabled={!canSend}
+                  onClick={() => void send(true)}
+                >
                   <SquarePen aria-hidden />
                   Send and start a new draft
                   <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">

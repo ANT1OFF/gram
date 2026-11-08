@@ -1,22 +1,34 @@
+import { Drawer } from "@base-ui/react/drawer";
 import { Popover } from "@base-ui/react/popover";
 import { CheckIcon, SlidersHorizontal } from "lucide-react";
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import { Hint } from "@/components/hint";
 import { shortcutHint } from "@/keyboard/bindings";
 import { useBindingsStore } from "@/keyboard/bindings-store";
 import { useShortcut } from "@/keyboard/registry";
 import { withHint } from "@/keyboard/use-shortcut-hint";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { PulseOnce } from "@/motion";
 
 import { aboveComposer } from "./above-composer";
+import { ChoicesSheet, chipWords } from "./choices-sheet";
 import { ModelSearch } from "./model-picker";
 import type { PickerOption } from "./picker";
 import { GHOST_TRIGGER } from "./styles";
 
 /** A row of a section's list; a disabled one says why in its description. */
-export type ChoiceOption = PickerOption<string> & { readonly disabled?: boolean | undefined };
+export type ChoiceOption = PickerOption<string> & {
+  readonly disabled?: boolean | undefined;
+};
 
 /**
  * One of the composer's dimensions (model, effort, mode or speed): a section of the choices
@@ -42,7 +54,8 @@ export interface ChoiceSection {
   /** A caution on the value (Bypass): said in the tooltip, and its words in the popover warn. */
   readonly warning?: string | undefined;
   /** The shortcut that opens the popover on this section. */
-  readonly shortcut?: { readonly id: string; readonly keys: string } | undefined;
+  readonly shortcut?:
+    { readonly id: string; readonly keys: string } | undefined;
   readonly value?: string | undefined;
   readonly options?: readonly ChoiceOption[] | undefined;
   readonly onChange?: ((value: string) => void) | undefined;
@@ -74,7 +87,10 @@ function SectionShortcut({
   enabled: boolean;
   run: () => void;
 }) {
-  useShortcut({ id, keys, label: `Pick ${label.toLowerCase()}`, group: "Composer", run }, enabled);
+  useShortcut(
+    { id, keys, label: `Pick ${label.toLowerCase()}`, group: "Composer", run },
+    enabled,
+  );
   return null;
 }
 
@@ -120,6 +136,7 @@ export function ComposerChoices({
   /** Told each pick in words, "Effort set to High", for a composer that confirms it there. */
   onPicked?: ((words: string) => void) | undefined;
 }) {
+  const phone = usePhone();
   const [open, setOpenState] = useState(false);
   const [active, setActive] = useState<string | undefined>(sections[0]?.id);
   // Counts openings, so each one starts its sections afresh: reopened while the last closing still
@@ -130,14 +147,17 @@ export function ComposerChoices({
   const base = useId();
   const overrides = useBindingsStore((s) => s.overrides);
   const hintOf = (section: ChoiceSection) =>
-    section.shortcut === undefined ? "" : shortcutHint(section.shortcut.id, overrides);
+    section.shortcut === undefined
+      ? ""
+      : shortcutHint(section.shortcut.id, overrides);
 
   // A pick rings the mark once it lands, and not for a value that changed by itself.
   const [pending, setPending] = useState<{ id: string; value: string }>();
   const [landed, setLanded] = useState(0);
   if (
     pending !== undefined &&
-    sections.find((section) => section.id === pending.id)?.value === pending.value
+    sections.find((section) => section.id === pending.id)?.value ===
+      pending.value
   ) {
     setPending(undefined);
     setLanded(landed + 1);
@@ -146,7 +166,9 @@ export function ComposerChoices({
   const setOpen = (next: boolean, at?: string) => {
     if (next) {
       onOpen?.();
-      setActive(at ?? sections.find((section) => section.unavailable === undefined)?.id);
+      setActive(
+        at ?? sections.find((section) => section.unavailable === undefined)?.id,
+      );
       if (!open) {
         setOpening(opening + 1);
         // A pick the server never took doesn't ring the mark for a later, unrelated change.
@@ -163,9 +185,10 @@ export function ComposerChoices({
   });
   useEffect(() => onAsked?.(() => asked.current()), [onAsked]);
 
+  /** A pick; the popover closes on it, the phone's sheet stays open for the next. */
   const pick = (section: ChoiceSection, option: ChoiceOption) => {
     if (option.disabled) return;
-    setOpen(false);
+    if (!phone) setOpen(false);
     if (option.value === section.value) return;
     setPending({ id: section.id, value: option.value });
     section.onChange?.(option.value);
@@ -178,24 +201,34 @@ export function ComposerChoices({
       : section.id === "model"
         ? section.named
         : `${section.label}: ${section.named}`;
-  const name = sections.map((section) => withHint(said(section), hintOf(section))).join(" · ");
-  const warnings = sections.flatMap((section) => (section.warning ? [section.warning] : []));
+  const name = sections
+    .map((section) => withHint(said(section), hintOf(section)))
+    .join(" · ");
+  const warnings = sections.flatMap((section) =>
+    section.warning ? [section.warning] : [],
+  );
   // The tooltip names the agent the mark stands for before the model, "Codex · GPT-5.5".
   const tip = [
     ...sections.map((section) => {
       const line = withHint(said(section), hintOf(section));
-      return section.id === "model" && agentLabel ? `${agentLabel} · ${line}` : line;
+      return section.id === "model" && agentLabel
+        ? `${agentLabel} · ${line}`
+        : line;
     }),
     ...warnings,
   ].join("\n");
-  const description = [agentLabel, ...warnings].filter(Boolean).join(". ") || undefined;
+  const description =
+    [agentLabel, ...warnings].filter(Boolean).join(". ") || undefined;
   const glyphs = sections.flatMap((section) =>
     section.glyph === undefined || section.unavailable !== undefined
       ? []
       : [{ id: section.id, glyph: section.glyph }],
   );
 
-  const rows = () => [...(popup.current?.querySelectorAll<HTMLElement>("[data-choice-row]") ?? [])];
+  const rows = () => [
+    ...(popup.current?.querySelectorAll<HTMLElement>("[data-choice-row]") ??
+      []),
+  ];
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!MOVES.has(event.key)) return;
     const target = event.target as HTMLElement;
@@ -203,8 +236,11 @@ export function ComposerChoices({
     if (target.closest("[data-model-search]")) return;
     // Down from the open Model heading goes into its search, where its list is.
     const search =
-      event.key === "ArrowDown" && target.getAttribute("aria-expanded") === "true"
-        ? target.closest("[data-choice-section]")?.querySelector<HTMLElement>("input")
+      event.key === "ArrowDown" &&
+      target.getAttribute("aria-expanded") === "true"
+        ? target
+            .closest("[data-choice-section]")
+            ?.querySelector<HTMLElement>("input")
         : undefined;
     if (search) {
       event.preventDefault();
@@ -228,30 +264,75 @@ export function ComposerChoices({
   /** Where focus lands as the popover opens: the search, else the open section's current value. */
   const initialFocus = () => {
     const el = popup.current;
-    const section = el?.querySelector<HTMLElement>(`[data-choice-section="${active}"]`);
+    const section = el?.querySelector<HTMLElement>(
+      `[data-choice-section="${active}"]`,
+    );
     return (
       section?.querySelector<HTMLElement>("input") ??
-      section?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]') ??
+      section?.querySelector<HTMLElement>(
+        '[role="option"][aria-selected="true"]',
+      ) ??
       section?.querySelector<HTMLElement>("[data-choice-row]") ??
       true
     );
   };
 
+  const shortcuts = sections.map(
+    (section) =>
+      section.shortcut && (
+        <SectionShortcut
+          key={section.id}
+          id={section.shortcut.id}
+          keys={section.shortcut.keys}
+          label={section.label}
+          enabled={focused}
+          run={() => setOpen(true, section.id)}
+        />
+      ),
+  );
+  const markGlyph = (
+    <span aria-hidden className="flex shrink-0 items-center">
+      <PulseOnce trigger={landed} when={landed > 0}>
+        {mark ?? (
+          <SlidersHorizontal
+            data-testid="choices-glyph"
+            className="size-icon-bar"
+          />
+        )}
+      </PulseOnce>
+    </span>
+  );
+
+  // A phone has no hover to say the values, so the chip says them in short words, and opens a sheet
+  // from the bottom in place of the popover.
+  if (phone)
+    return (
+      <Drawer.Root open={open} onOpenChange={(next) => setOpen(next)}>
+        {shortcuts}
+        <Drawer.Trigger
+          ref={trigger}
+          data-testid="composer-choices"
+          aria-label={name}
+          aria-description={description}
+          data-warning={warnings.length > 0 ? "true" : undefined}
+          className={cn(
+            GHOST_TRIGGER,
+            "inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 outline-none select-none",
+            warnings.length > 0 && "text-warning hover:text-warning",
+          )}
+        >
+          {markGlyph}
+          <span data-testid="choices-words" className="min-w-0 truncate">
+            {chipWords(sections)}
+          </span>
+        </Drawer.Trigger>
+        <ChoicesSheet key={opening} sections={sections} onPick={pick} />
+      </Drawer.Root>
+    );
+
   return (
     <Popover.Root open={open} onOpenChange={(next) => setOpen(next)}>
-      {sections.map(
-        (section) =>
-          section.shortcut && (
-            <SectionShortcut
-              key={section.id}
-              id={section.shortcut.id}
-              keys={section.shortcut.keys}
-              label={section.label}
-              enabled={focused}
-              run={() => setOpen(true, section.id)}
-            />
-          ),
-      )}
+      {shortcuts}
       <Hint
         label={tip}
         render={
@@ -268,13 +349,14 @@ export function ComposerChoices({
           />
         }
       >
-        <span aria-hidden className="flex shrink-0 items-center">
-          <PulseOnce trigger={landed} when={landed > 0}>
-            {mark ?? <SlidersHorizontal data-testid="choices-glyph" className="size-icon-bar" />}
-          </PulseOnce>
-        </span>
+        {markGlyph}
         {glyphs.map(({ id, glyph }) => (
-          <span key={id} aria-hidden data-chip-glyph={id} className="flex shrink-0 items-center">
+          <span
+            key={id}
+            aria-hidden
+            data-chip-glyph={id}
+            className="flex shrink-0 items-center"
+          >
             {glyph}
           </span>
         ))}
@@ -350,33 +432,49 @@ function Section({
     "aria-controls": `${id}-body`,
     "aria-disabled": unavailable || undefined,
     // Why it doesn't apply, said to a screen reader as the hint says it on hover.
-    "aria-description": unavailable ? `${section.label}: ${section.unavailable}` : undefined,
-    "data-testid": unavailable ? `unavailable-${section.id}` : `choices-${section.id}`,
+    "aria-description": unavailable
+      ? `${section.label}: ${section.unavailable}`
+      : undefined,
+    "data-testid": unavailable
+      ? `unavailable-${section.id}`
+      : `choices-${section.id}`,
     onClick: onExpand,
     className: cn(ROW, "h-8 px-2", unavailable && "opacity-50"),
   } as const;
   const words = (
     <>
-      <span className={cn("shrink-0", expanded ? "font-medium" : "text-muted-foreground")}>
+      <span
+        className={cn(
+          "shrink-0",
+          expanded ? "font-medium" : "text-muted-foreground",
+        )}
+      >
         {section.label}
       </span>
       <span
         className={cn(
           "ml-auto min-w-0 truncate",
-          unavailable ? "text-muted-foreground" : section.warning && "text-warning",
+          unavailable
+            ? "text-muted-foreground"
+            : section.warning && "text-warning",
         )}
       >
         {unavailable ? "Not available" : section.named}
       </span>
       {hint && (
-        <kbd aria-hidden className="shrink-0 font-mono text-caption text-muted-foreground">
+        <kbd
+          aria-hidden
+          className="shrink-0 font-mono text-caption text-muted-foreground"
+        >
           {hint}
         </kbd>
       )}
     </>
   );
   // Why it doesn't apply, or why it warns, on hover and focus.
-  const why = unavailable ? `${section.label}: ${section.unavailable}` : section.warning;
+  const why = unavailable
+    ? `${section.label}: ${section.unavailable}`
+    : section.warning;
   const heading =
     why === undefined ? (
       <button {...headingProps}>{words}</button>
@@ -400,7 +498,9 @@ function Section({
       {expanded && (
         <div id={`${id}-body`} className="pb-1">
           {unavailable ? (
-            <p className="px-2 pb-1 text-meta text-muted-foreground">{section.unavailable}</p>
+            <p className="px-2 pb-1 text-meta text-muted-foreground">
+              {section.unavailable}
+            </p>
           ) : section.body !== undefined ? (
             section.body
           ) : section.search ? (
@@ -408,7 +508,12 @@ function Section({
               value={section.value}
               options={options}
               onChange={(value) =>
-                onPick(options.find((option) => option.value === value) ?? { value, label: value })
+                onPick(
+                  options.find((option) => option.value === value) ?? {
+                    value,
+                    label: value,
+                  },
+                )
               }
               rowIcon={section.search.rowIcon}
               favourite={section.search.favourite}
@@ -466,7 +571,10 @@ function Section({
           )}
           {!unavailable &&
             section.notes?.map((note) => (
-              <p key={note} className="max-w-72 px-2 py-1 text-meta text-muted-foreground">
+              <p
+                key={note}
+                className="max-w-72 px-2 py-1 text-meta text-muted-foreground"
+              >
                 {note}
               </p>
             ))}
