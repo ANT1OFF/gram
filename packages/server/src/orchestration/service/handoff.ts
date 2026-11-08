@@ -255,7 +255,11 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
     previous: string | undefined,
   ) =>
     Effect.gen(function* () {
-      const marked = (yield* store.messagesWithParts(threadId, ["data-handoff"])).some((message) =>
+      const marked = [
+        ...(yield* store.messagesWithParts(threadId, ["data-handoff"])),
+        // A reply still streaming can be behind in the stored part index.
+        ...(yield* runtimes.liveMessages(threadId)),
+      ].some((message) =>
         message.parts.some((part) => part.type === "data-handoff" && part.data.at === marker.at),
       );
       if (!marked) {

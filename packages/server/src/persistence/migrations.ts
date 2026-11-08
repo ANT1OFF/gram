@@ -443,12 +443,62 @@ const usageLimitHistory = Effect.gen(function* () {
   yield* sql`CREATE INDEX usage_credit_history_bucket ON usage_credit_history(bucket)`;
 });
 
+/**
+ * Which part types each message holds (`ThreadStore.messagesWithParts`), so a read for a thread's
+ * attachments or handoff marks decodes only the messages that have them instead of scanning every
+ * stored message's text. One row per message and part type, keyed by the message's rowid; triggers
+ * keep it in step with every write to `messages`, as the search index's do (`search/schema.ts`).
+ *
+ * Like the search index, it skips a streaming reply's saves that move `search_pending` and catches
+ * up when the reply settles, or at the startup sweep after a crash. Every reader adds the open
+ * replies itself (`ThreadRuntimes.liveMessages`), so the lag is never seen.
+ */
+const partTypesOf = (row: "new") =>
+  // DISTINCT, not OR IGNORE: inside a trigger, the firing statement's conflict policy (an upsert's
+  // ON CONFLICT) overrides the trigger's own.
+  `INSERT INTO message_parts (message_rowid, thread_id, type)
+    SELECT DISTINCT ${row}.rowid, ${row}.thread_id, json_extract(p.value, '$.type')
+    FROM json_each(CASE WHEN json_valid(${row}.message) THEN ${row}.message ELSE '{}' END, '$.parts') p
+    WHERE json_extract(p.value, '$.type') IS NOT NULL;`;
+
+const messageParts = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const statements = [
+    `CREATE TABLE message_parts (
+      message_rowid INTEGER NOT NULL,
+      thread_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      PRIMARY KEY (message_rowid, type)
+    ) WITHOUT ROWID`,
+    `CREATE INDEX message_parts_thread_type ON message_parts(thread_id, type)`,
+    `CREATE TRIGGER messages_parts_insert AFTER INSERT ON messages BEGIN
+        DELETE FROM message_parts WHERE message_rowid = new.rowid;
+        ${partTypesOf("new")}
+      END`,
+    `CREATE TRIGGER messages_parts_update AFTER UPDATE OF message, search_pending, thread_id ON messages
+      WHEN new.search_pending IS NULL OR new.search_pending IS old.search_pending BEGIN
+        DELETE FROM message_parts WHERE message_rowid = old.rowid;
+        ${partTypesOf("new")}
+      END`,
+    `CREATE TRIGGER messages_parts_delete AFTER DELETE ON messages BEGIN
+      DELETE FROM message_parts WHERE message_rowid = old.rowid;
+    END`,
+    `INSERT INTO message_parts (message_rowid, thread_id, type)
+      SELECT DISTINCT m.rowid, m.thread_id, json_extract(p.value, '$.type')
+      FROM messages m,
+        json_each(CASE WHEN json_valid(m.message) THEN m.message ELSE '{}' END, '$.parts') p
+      WHERE json_extract(p.value, '$.type') IS NOT NULL`,
+  ];
+  for (const statement of statements) yield* sql.unsafe(statement);
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
   "0003_message_receipts": messageReceipts,
   "0004_merge_fences": mergeFences,
   "0005_usage_limit_history": usageLimitHistory,
+  "0006_message_parts": messageParts,
 };
 
 /**

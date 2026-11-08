@@ -56,8 +56,8 @@ ask_question ──► triage ──answer_worker(questionId, source)──► a
   orchestrator's line if there is one. Every surface follows one rule: pick a choice
   (a click, or 1–9) or write free text, then **Send answer** (or ⌘⏎). An approval's
   verbs act on a click or on their keys, the same on its card in the thread, the Inbox and
-  Quiet: 1 Allow once, 2 Always allow this rule… (which shows the rule first), 3 Deny, each shown
-  on its button and rebindable in Settings → Keyboard. From the Inbox and Quiet they wait out
+  Focus: 1 Allow once, 2 Always allow this rule… (which shows the rule first), 3 Deny, each shown
+  on its button and rebindable in Settings → Keyboard. From the Inbox and Focus they wait out
   Undo. The user can also dismiss the question, optionally
   with a reason.
 - **Delivery.** An answer or a dismissal goes to the worker as a server notice

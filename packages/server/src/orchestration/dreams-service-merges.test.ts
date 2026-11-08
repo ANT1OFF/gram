@@ -163,7 +163,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
         // Another adoption, or a restore, moved memory on.
         yield* memory.adopt(workspaceId, [{ path: "MEMORY.md", content: "# Memory index\n" }]);
         const moved = yield* Effect.flip(dreams.adopt(dream.id, { basedOn: review.memoryVersion }));
-        expect(moved.message).toContain("Review the dream again");
+        expect(moved.message).toContain("Review the memory update again");
         expect(yield* memory.currentVersion(workspaceId)).toBe("0002");
 
         const again = yield* dreams.review(dream.id);

@@ -79,7 +79,7 @@ test("Quiet covers the window until Esc", async ({ page }) => {
 
   await page.keyboard.press("ControlOrMeta+Alt+4");
   await expect(page.getByTestId("quiet-layer")).toBeVisible();
-  await page.getByRole("button", { name: /^Leave quiet/ }).click();
+  await page.getByRole("button", { name: /^Leave Focus/ }).click();
   await expect(page.getByTestId("quiet-layer")).toBeHidden();
 });
 

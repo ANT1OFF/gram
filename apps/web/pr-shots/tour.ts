@@ -229,7 +229,7 @@ const scenes: readonly Shot[] = [
     name: "composer-controls",
     title: "Composer: a grid pane dragged to its narrowest, its choices open on speed",
     open: async (page) => {
-      // A grid pane dragged down to its narrowest share (`MIN_PANE_SHARE`): the chip says the model
+      // A grid pane dragged down to its narrowest share (`MIN_PANE_SHARE`): the chip keeps its icons
       // at least, and its popover still holds every section, Speed's with what Fast costs.
       await page.setViewportSize(SET_SIZE);
       await seedMockSettings(page, {
@@ -308,7 +308,7 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "quiet",
-    title: "Quiet: the workspaces at rest, workers running or waiting, with nothing to answer here",
+    title: "Focus: the workspaces at rest, workers running or waiting, with nothing to answer here",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await page.getByTestId("titlebar-overflow").click();
@@ -357,7 +357,7 @@ const scenes: readonly Shot[] = [
   {
     name: "dreams",
     title:
-      "Memory → Draft memory update: the Dreams action, when the update is saved, and seeded running, completed and failed runs",
+      "Memory → Draft memory update: the memory update action, when the update is saved, and seeded running, completed and failed runs",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await openMemory(page);

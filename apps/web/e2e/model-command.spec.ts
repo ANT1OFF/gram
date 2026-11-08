@@ -6,12 +6,12 @@ test("a /model typed into a thread moves its model picker, and is offered in Set
   await page.goto("/t/t-deps");
   const composer = page.getByLabel("Message", { exact: true });
   const picker = page.getByTestId("composer-choices");
-  await expect(picker).not.toHaveText(/claude-preview/);
+  await expect(picker).not.toHaveAccessibleName(/claude-preview/);
 
   await composer.fill("/model claude-preview[1m]");
   await composer.press("Enter");
   // A model the agent doesn't list is shown by its id.
-  await expect(picker).toHaveText(/claude-preview\[1m\]/);
+  await expect(picker).toHaveAccessibleName(/claude-preview\[1m\]/);
 
   // In-app navigation: a reload would start the mock's threads over.
   await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -126,7 +126,7 @@ test("Gram answers its own slash commands, and explains a terminal-only one", as
 test("the model picker searches by name and agent, and the keyboard picks", async ({ page }) => {
   await page.goto("/t/t-deps");
   const picker = page.getByTestId("composer-toolbar").getByTestId("composer-choices");
-  await expect(picker).toHaveText(/Claude Opus/);
+  await expect(picker).toHaveAccessibleName(/Claude Opus/);
   await picker.click();
   const search = page.getByRole("combobox", { name: "Search models" });
   await expect(search).toBeFocused();
@@ -142,7 +142,7 @@ test("the model picker searches by name and agent, and the keyboard picks", asyn
   await search.press("ArrowDown");
   await search.press("Enter");
   await expect(list).toBeHidden();
-  await expect(picker).toHaveText(/Claude Haiku/);
+  await expect(picker).toHaveAccessibleName(/Claude Haiku/);
   await picker.click();
   await expect(search).toBeFocused();
   await search.press("Escape");
@@ -158,7 +158,7 @@ test("with many models the picker searches, and a starred model comes first", as
   }, custom);
   await page.goto("/t/t-deps");
   const picker = page.getByTestId("composer-toolbar").getByTestId("composer-choices");
-  await expect(picker).toHaveText(/Claude Opus/);
+  await expect(picker).toHaveAccessibleName(/Claude Opus/);
 
   await page.getByLabel("Message", { exact: true }).focus();
   await page.keyboard.press("ControlOrMeta+Shift+KeyM");
@@ -180,7 +180,7 @@ test("with many models the picker searches, and a starred model comes first", as
     list.getByRole("button", { name: "Remove Sonnet 5.5 from favourites" }),
   ).toBeAttached();
   await search.press("Enter");
-  await expect(picker).toHaveText(/Sonnet 5\.5/);
+  await expect(picker).toHaveAccessibleName(/Sonnet 5\.5/);
 
   await picker.click();
   await expect(list.getByText("Favourites")).toBeVisible();
@@ -204,7 +204,7 @@ test("the new thread's model picker lists every agent's models, and a Codex pick
   await page.goto("/new");
   const form = page.getByRole("form", { name: "New thread" });
   const picker = form.getByTestId("composer-choices");
-  await expect(picker).toHaveText(/Claude Opus/);
+  await expect(picker).toHaveAccessibleName(/Claude Opus/);
   await picker.click();
   const search = page.getByRole("combobox", { name: "Search models" });
   await expect(search).toBeFocused();
@@ -214,6 +214,6 @@ test("the new thread's model picker lists every agent's models, and a Codex pick
   await search.fill("codex");
   await expect(list.getByRole("option")).toHaveCount(1);
   await search.press("Enter");
-  await expect(picker).toHaveText(/GPT-5\.5/);
+  await expect(picker).toHaveAccessibleName(/GPT-5\.5/);
   await expect(form.getByLabel("Agent", { exact: true })).toContainText("Codex");
 });

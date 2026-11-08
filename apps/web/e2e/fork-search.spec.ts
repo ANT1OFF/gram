@@ -20,7 +20,8 @@ test("forks at a reply into a new thread with the history up to it", async ({ pa
 
   const reply = page.getByTestId("message-assistant").filter({ hasText: "Bumped 14 packages" });
   await reply.hover();
-  await reply.getByTestId("message-fork").click();
+  await reply.getByTestId("message-more").click();
+  await page.getByTestId("message-fork").click();
 
   await expect(page).not.toHaveURL(/\/t\/t-deps$/);
   await expect(page.getByTestId("pane-header")).toContainText("Fork of");

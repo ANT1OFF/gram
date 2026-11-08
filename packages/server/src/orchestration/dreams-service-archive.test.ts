@@ -201,7 +201,7 @@ describe.skipIf(!hasGit)("dreams", () => {
         expect(plan.backlog.messages).toBeGreaterThan(0);
         expect(plan.estimatedTokens).toBeLessThanOrEqual(20_000);
         expect(preview.notes[0]).toMatch(
-          /^1 thread \(\d+ new messages, ≈\d+k tokens\) left for the next dream/,
+          /^1 thread \(\d+ new messages, ≈\d+k tokens\) left for the next memory update/,
         );
 
         const first = yield* dreams.start({ workspaceId, kind: "dream", budgetTokens: 20_000 });

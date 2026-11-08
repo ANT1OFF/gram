@@ -33,6 +33,8 @@ const applied = Effect.gen(function* () {
     FROM ${sql(MIGRATIONS_TABLE)} ORDER BY migration_id`;
 });
 
+const storedMessage = (parts: ReadonlyArray<unknown>) => JSON.stringify({ parts });
+
 const tempDir = Effect.acquireRelease(
   Effect.sync(() => mkdtempSync(join(tmpdir(), "gram-baseline-"))),
   (dir) => Effect.sync(() => rmSync(dir, { recursive: true, force: true })),
@@ -50,6 +52,7 @@ describe("migration ordering gate", () => {
         [3, "message_receipts"],
         [4, "merge_fences"],
         [5, "usage_limit_history"],
+        [6, "message_parts"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -129,6 +132,7 @@ describe("the baseline", () => {
         "index closed_turns_thread",
         "index draft_stashes_thread",
         "index dreams_workspace",
+        "index message_parts_thread_type",
         "index message_receipts_pending",
         "index message_receipts_responses",
         "index messages_search_pending",
@@ -163,6 +167,7 @@ describe("the baseline", () => {
         "table local_checks",
         "table merge_fences",
         "table merge_freezes",
+        "table message_parts",
         "table message_receipts",
         "table message_search",
         "table messages",
@@ -193,6 +198,9 @@ describe("the baseline", () => {
         "trigger closed_messages_usage_insert",
         "trigger closed_messages_usage_update",
         "trigger helper_outputs_request_deleted",
+        "trigger messages_parts_delete",
+        "trigger messages_parts_insert",
+        "trigger messages_parts_update",
         "trigger messages_search_delete",
         "trigger messages_search_insert",
         "trigger messages_search_update",
@@ -211,6 +219,7 @@ describe("the baseline", () => {
         [3, "message_receipts"],
         [4, "merge_fences"],
         [5, "usage_limit_history"],
+        [6, "message_parts"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -236,6 +245,7 @@ describe("the baseline", () => {
           "message_receipts",
           "merge_fences",
           "usage_limit_history",
+          "message_parts",
         ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
@@ -272,6 +282,7 @@ describe("the baseline", () => {
             [3, "message_receipts"],
             [4, "merge_fences"],
             [5, "usage_limit_history"],
+            [6, "message_parts"],
           ]);
           // A closed thread has no live row, but must retain its permanent safety identity.
           if (reopen === 0) {
@@ -432,9 +443,10 @@ describe("the baseline", () => {
       for (let reopen = 0; reopen < 2; reopen++) {
         yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          expect((yield* applied).map((row) => row.name).slice(-2)).toEqual([
+          expect((yield* applied).map((row) => row.name).slice(-3)).toEqual([
             "merge_fences",
             "usage_limit_history",
+            "message_parts",
           ]);
           expect(yield* sql`SELECT key, data FROM usage_limits`).toEqual([
             { key: "codex//five_hour", data: '{"synthetic":true}' },
@@ -480,6 +492,45 @@ describe("the baseline", () => {
     }),
   );
 
+  it.effect("upgrades the previous 0005 database to part types, indexing its stored messages", () =>
+    Effect.gen(function* () {
+      const file = join(yield* tempDir, "previous-to-message-parts.db");
+      const entries = Object.entries(migrations);
+      const index = entries.findIndex(([key]) => /^\d+_message_parts$/.test(key));
+      expect(index).toBeGreaterThan(0);
+      const previous = Object.fromEntries(entries.slice(0, index));
+      const open = (record: Parameters<typeof migratorOptions>[0]) =>
+        SqliteMigrator.layer(migratorOptions(record)).pipe(
+          Layer.provideMerge(SqliteClient.layer({ filename: file })),
+        );
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        expect((yield* tableNames).has("message_parts")).toBe(false);
+        yield* sql`INSERT INTO projects(id, root, name) VALUES ('p', '/synthetic/parts', 'parts')`;
+        yield* sql`INSERT INTO threads(id, project_id, created_at, last_activity_at, data)
+          VALUES ('t', 'p', 0, 0, '{}')`;
+        yield* sql`INSERT INTO messages(thread_id, id, seq, role, message) VALUES
+          ('t', 'u1', 1, 'user', ${storedMessage([{ type: "text" }, { type: "file" }, { type: "file" }])}),
+          ('t', 'a1', 2, 'assistant', ${storedMessage([{ type: "data-handoff" }])}),
+          ('t', 'bad', 3, 'assistant', 'not json')`;
+      }).pipe(Effect.provide(open(previous)));
+      for (let reopen = 0; reopen < 2; reopen++) {
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect((yield* applied).at(-1)?.name).toBe("message_parts");
+          expect(
+            yield* sql`SELECT m.id, p.type FROM message_parts p
+              JOIN messages m ON m.rowid = p.message_rowid ORDER BY m.seq, p.type`,
+          ).toEqual([
+            { id: "u1", type: "file" },
+            { id: "u1", type: "text" },
+            { id: "a1", type: "data-handoff" },
+          ]);
+        }).pipe(Effect.provide(open(migrations)));
+      }
+    }),
+  );
+
   it.effect("takes a 1.x migration appended after it, once, on a database it made", () =>
     Effect.gen(function* () {
       const file = join(yield* tempDir, "gram.db");
@@ -490,7 +541,7 @@ describe("the baseline", () => {
       yield* Effect.void.pipe(Effect.provide(open(migrations)));
       const next = {
         ...migrations,
-        "0006_example": Effect.gen(function* () {
+        "0007_example": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`ALTER TABLE projects ADD COLUMN example TEXT`;
         }),
@@ -508,7 +559,8 @@ describe("the baseline", () => {
             [3, "message_receipts"],
             [4, "merge_fences"],
             [5, "usage_limit_history"],
-            [6, "example"],
+            [6, "message_parts"],
+            [7, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
       }

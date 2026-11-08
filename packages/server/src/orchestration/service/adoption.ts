@@ -708,7 +708,7 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           message:
             thread.role === "orchestrator"
               ? `This thread is a workspace's orchestrator, and ${model.agent} isn't admitted to orchestrate. Close it and open another to change that.`
-              : `This thread is a memory dream, and ${model.agent} isn't admitted for one.`,
+              : `This thread is a memory update, and ${model.agent} isn't admitted for one.`,
           threadId,
         });
       }

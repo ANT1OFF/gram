@@ -781,7 +781,7 @@ describe("MessageBlock sent time", () => {
     expect(screen.getByTestId("message-copy").getAttribute("aria-label")).toBe("Copy message");
   });
 
-  it("dates a notice and a reply in their actions, the reply's after its fork buttons", () => {
+  it("dates a notice and a reply in their actions, the reply's after its \u2026", async () => {
     const notice = mockReviewNotice(412);
     render(
       {
@@ -815,10 +815,11 @@ describe("MessageBlock sent time", () => {
     );
     expect(hint(screen.getByText("Read it."))).toBeUndefined();
     expect(hint(screen.getByTestId("tool-card"))).toBeUndefined();
-    // A reply the agent can't be forked from yet explains why in a tooltip, with no time over it.
-    expect(screen.getByTestId("message-fork").getAttribute("aria-description")).toBe(
-      "This reply can't be forked from yet",
-    );
+    // A reply the agent can't be forked from yet explains why in its "…", with no time over it.
+    fireEvent.click(screen.getByTestId("message-more"));
+    const fork = await screen.findByTestId("message-fork");
+    expect(fork.getAttribute("aria-description")).toBe("This reply can't be forked from yet");
+    expect(hint(fork)).toBeUndefined();
   });
 
   it("keeps the time as a hint over a message with no actions: one streaming, or a subagent's", () => {

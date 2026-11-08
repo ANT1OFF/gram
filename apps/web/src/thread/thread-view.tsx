@@ -400,7 +400,8 @@ export function ThreadView({
   // The chips drop by the pane's width, as they did in the pane, and the title bar is as wide as
   // the pane: the header itself is narrower there, sharing the bar with the window's controls.
   const hideSm = inTitlebar ? "@max-sm/titlebar:hidden" : "@max-sm:hidden";
-  // Beside the title bar's switcher, an orchestrator named for its workspace shows its glyph alone.
+  // Beside the title bar's switcher, an orchestrator named for its workspace shows no title and no
+  // glyph: the switcher and Chat say both.
   const titleShown = !(inTitlebar && paneTitle.workspaceName);
   const hideMd = inTitlebar ? "@max-md/titlebar:hidden" : "@max-md:hidden";
   // The PR strip over the composer owns the thread's PR while it shows it; once hidden from
@@ -448,7 +449,7 @@ export function ThreadView({
               the larger share of the room. */}
         <div
           // In the title bar, the room the bar folds its lesser buttons to keep: a few letters of
-          // the title, or the orchestrator's glyph and a chip when the switcher has its name.
+          // the title, or a chip when the switcher has the orchestrator's name.
           data-titlebar-room={inTitlebar ? (titleShown ? 96 : 48) : undefined}
           // Shorter still, the title is cut rather than run under the controls after it.
           className={cn("flex min-w-0 flex-1 items-center gap-2", inTitlebar && "overflow-x-clip")}
@@ -835,7 +836,9 @@ function PaneHeading({
       // The whole title on hover, wherever the header cuts it.
       title={gestures ? `${title}. Double-click to maximize or restore; drag to swap panes` : title}
     >
-      <RoleGlyph thread={thread} testId="pane-role" />
+      {/* Beside the title bar's switcher and Chat · Board, the place says "orchestrator": a glyph
+          there would be one more bare mark in the bar, so its name is for screen readers only. */}
+      <RoleGlyph thread={thread} testId="pane-role" spoken={!titleShown} />
       <span
         data-titlebar-title={titleShown ? "" : undefined}
         className={titleShown ? "truncate" : "sr-only"}

@@ -137,10 +137,14 @@ test("what the user adds by hand waits too, and their next message tells the age
   const transcript = page.getByTestId("transcript");
   const reply = transcript.getByTestId("message-assistant").first();
   await reply.hover();
-  await reply.getByTestId("message-wait").click();
+  await reply.getByTestId("message-more").click();
+  await page.getByTestId("message-wait").click();
   await expect(tray.getByTestId("waiting-count")).toContainText("1 waiting on you");
   await expect(tray).toContainText("Bumped 14 packages. All tests pass.");
-  await expect(reply.getByRole("button", { name: "Waiting on you", exact: true })).toBeDisabled();
+  await reply.hover();
+  await reply.getByTestId("message-more").click();
+  await expect(page.getByRole("menuitem", { name: "Waiting on you", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
   await expect(reply.getByTestId("wait-chip")).toHaveAttribute("data-state", "open");
 
   // The next message tells the agent, in a line under it that unfolds to what it read.

@@ -1558,7 +1558,7 @@ test("a charter lists worker models, and says which can't run here and where to 
   await expect(codex).toContainText("Codex reports tokens, not cost.");
   const dream = page.getByTestId("harness-note-dreams");
   await expect(dream).toContainText(
-    "Codex Dream starts with normal Codex permissions: workspace-write sandbox and on-request approvals.",
+    "On Codex, a memory update starts with normal Codex permissions: workspace-write sandbox and on-request approvals.",
   );
   await expect(dream).toContainText(
     "Instructions guide snapshot reads and candidate writes, but native tools can access other permitted files.",

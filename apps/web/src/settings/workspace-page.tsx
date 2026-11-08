@@ -600,7 +600,7 @@ function MoreOptions({ state, changes }: { state: WorkspaceState; changes: Chang
             workspaceId={workspace.id}
             charter={charter}
             disabled={changes.busy}
-            onChange={(next) => void save(next, "Dream setting saved")}
+            onChange={(next) => void save(next, "Memory update setting saved")}
           />
         </div>
       </Expand>

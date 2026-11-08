@@ -62,9 +62,9 @@ export function InterruptionRows() {
         />
       </SettingRow>
       <Toggle
-        label="Quiet when idle"
-        description="After five idle minutes, switch to Quiet: only what needs you."
-        keywords={["quiet", "idle", "away", "calm"]}
+        label="Focus when idle"
+        description="After five idle minutes, switch to Focus: only what needs you."
+        keywords={["focus", "quiet", "idle", "away", "calm"]}
         checked={settings.layout?.quietWhenIdle === true}
         onReset={resetOf("quietWhenIdle")}
         error={errorOf("quietWhenIdle")}

@@ -23,7 +23,6 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import {
   nodeFs,
-  parseCliVersion,
   parseProbeOutput,
   pathCandidates,
   probeScript,
@@ -54,7 +53,13 @@ import {
 import type { CodexRuntimeSource, ManagedCodex } from "./runtime.ts";
 import { makeThreadOwnership } from "./thread-ownership.ts";
 import { acquireHeld } from "../servers-hold.ts";
-import { CODEX_CLI_VERSION } from "./version.ts";
+import {
+  CODEX_CLI_VERSION,
+  codexVersionWarning,
+  compareCodexVersion,
+  parseCodexCliVersion,
+} from "./version.ts";
+export { codexVersionWarning } from "./version.ts";
 import { codexLineReader, writeCodexLine } from "./stdio.ts";
 
 export interface CodexServer {
@@ -240,14 +245,6 @@ export interface CodexServersConfig {
   };
 }
 
-/** Warns when the CLI is older than the generated protocol, or on a different major/minor. */
-export const codexVersionWarning = (cliVersion: string): string | undefined => {
-  const [major, minor, patch] = cliVersion.split(".").map(Number);
-  const [pMajor, pMinor, pPatch] = CODEX_CLI_VERSION.split(".").map(Number);
-  if (major === pMajor && minor === pMinor && (patch ?? 0) >= (pPatch ?? 0)) return undefined;
-  return `Codex ${cliVersion} differs from ${CODEX_CLI_VERSION}, which Gram's Codex adapter is built for; some features may misbehave.`;
-};
-
 const unavailable = (message: string) =>
   new AgentUnavailable({ agent: "codex", reason: "startup-failed", message });
 
@@ -379,7 +376,7 @@ export const CodexServersLive = (
             env: probed.env,
             timeoutMs: 15_000,
           }).pipe(
-            Effect.map((output) => parseCliVersion(output.stdout)),
+            Effect.map((output) => parseCodexCliVersion(output.stdout)),
             Effect.catch(() => Effect.succeed(undefined)),
           );
           const skew = version === undefined ? undefined : codexVersionWarning(version);
@@ -605,9 +602,12 @@ export const CodexServersLive = (
           const prepared = yield* executable;
           const managed: ManagedCodex | undefined = prepared.managed;
           managedHold = managed;
-          if (helperCwd !== undefined && prepared.cliVersion !== CODEX_HELPER_VERSION)
+          if (
+            helperCwd !== undefined &&
+            !(compareCodexVersion(prepared.cliVersion, CODEX_HELPER_VERSION) >= 0)
+          )
             return yield* unavailable(
-              "Codex guided helpers require the pinned CLI 0.166.0. Select that installed runtime, then refresh; unknown or other versions have not been qualified.",
+              `Codex guided helpers require CLI ${CODEX_HELPER_VERSION} or newer. Select a supported installed runtime, then refresh; older or unknown versions are unavailable.`,
             );
           if (home === "owned" && profileId !== undefined)
             return yield* unavailable(

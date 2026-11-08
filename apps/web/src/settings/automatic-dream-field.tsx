@@ -38,10 +38,10 @@ export function AutomaticDreamField({
   return (
     <div data-testid="automatic-dream-setting" className="flex flex-col gap-2">
       <Toggle
-        label="Dream automatically"
+        label="Update memory automatically"
         checked={threshold !== undefined}
         disabled={disabled}
-        description="Run a Dream, which drafts memory from past threads, once enough finish."
+        description="Start a memory update, which drafts memory from past threads, once enough finish."
         learnMore={
           <p>
             Each run waits for your review. Turning this on or changing the threshold starts a fresh
@@ -49,7 +49,7 @@ export function AutomaticDreamField({
             count. Failed or cancelled runs need a fresh batch.
           </p>
         }
-        keywords={["dream", "automatic", "completed threads", "memory"]}
+        keywords={["memory update", "dream", "automatic", "completed threads", "memory"]}
         onChange={(on) => {
           setDraft(undefined);
           setError(undefined);
@@ -60,13 +60,13 @@ export function AutomaticDreamField({
       {threshold !== undefined && (
         <>
           <Field
-            label="Completed threads before Dream"
-            description="How many threads finish here before a Dream starts."
+            label="Threads per memory update"
+            description="How many threads finish here before a memory update starts."
             htmlFor={`dream-threshold-${workspaceId}`}
           >
             <input
               id={`dream-threshold-${workspaceId}`}
-              aria-label="Completed threads before Dream"
+              aria-label="Threads per memory update"
               type="number"
               min={1}
               max={1000}
@@ -94,11 +94,11 @@ export function AutomaticDreamField({
           )}
           <p data-testid="automatic-dream-progress" className="text-meta text-muted-foreground">
             {status.data?.completed ?? 0} / {threshold} completed threads.{" "}
-            {status.data?.detail ?? "Loading automatic Dream status…"}
+            {status.data?.detail ?? "Loading automatic memory update status…"}
           </p>
           {status.isError && (
             <p role="alert" className="text-meta text-destructive">
-              Automatic Dream status could not be loaded.
+              Automatic memory update status could not be loaded.
             </p>
           )}
         </>

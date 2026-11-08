@@ -980,7 +980,7 @@ const COMPOSER_TOOLBAR_SHOTS: readonly Shot[] = [1728, 1440, 1024].flatMap((widt
   },
   {
     name: `composer-running-${width}`,
-    title: `A running turn's composer at ${width} px: Stop in words`,
+    title: `A running turn's composer at ${width} px: Stop as an icon in Send's place`,
     open: async (page) => {
       await page.setViewportSize({ width, height: 1095 });
       await openRunningComposer(page);
@@ -990,7 +990,7 @@ const COMPOSER_TOOLBAR_SHOTS: readonly Shot[] = [1728, 1440, 1024].flatMap((widt
   },
   {
     name: `new-prompt-${width}`,
-    title: `The /new prompt box at ${width} px: values in words`,
+    title: `The /new prompt box at ${width} px: icons, their words on hover`,
     open: openNewPrompt(width),
     element: composerSurface,
   },
@@ -1731,7 +1731,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "composer-diff-1024",
-    title: "A solo thread at 1024 px beside a wide diff: the narrow composer keeps short values",
+    title: "A solo thread at 1024 px beside a wide diff: the narrow composer keeps its icons",
     open: openSoloComposer(1024, true),
   },
   ...UPDATE_PILL_SHOTS,
@@ -3734,7 +3734,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "titlebar-layout",
-    title: 'The title bar\'s "…" open: Quiet, focus mode and the six layout presets',
+    title: 'The title bar\'s "…" open: Focus, Hide side panels and the six layout presets',
     open: async (page) => {
       await openThread(page);
       await page.getByTestId("titlebar-overflow").click();
@@ -3990,7 +3990,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "views-layout-picker",
-    title: 'The title bar\'s "…" open: Quiet, focus mode and the six layout presets',
+    title: 'The title bar\'s "…" open: Focus, Hide side panels and the six layout presets',
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateAsks());
       await page.getByTestId("titlebar-overflow").click();

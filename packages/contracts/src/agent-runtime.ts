@@ -18,7 +18,7 @@ export const RuntimeSource = Schema.Literals(["bundled", "path", "custom", "mana
 export type RuntimeSource = typeof RuntimeSource.Type;
 
 /**
- * How a CLI version fares with the bindings: `supported` within what was qualified, `graceful`
+ * How a CLI version fares with the bindings: `supported` within the accepted range (newer Codex carries a warning), `graceful`
  * when it runs with known gaps, `unsupported` when shown not to work, `unknown` when nothing says
  * either way (an unread version, or one not yet qualified). Only `unsupported` is proof.
  */

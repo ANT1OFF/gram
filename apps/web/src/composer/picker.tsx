@@ -7,9 +7,8 @@ import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 
 import { aboveComposer } from "./above-composer";
-import { PickerTrigger, usePickConfirm } from "./picker-trigger";
+import { PickerTrigger, usePickConfirm, type LabelSize } from "./picker-trigger";
 import { GHOST_TRIGGER } from "./styles";
-import type { LabelSize } from "./toolbar-layout";
 
 export interface PickerOption<V extends string> {
   value: V;

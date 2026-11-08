@@ -5,7 +5,11 @@ import { SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { PulseOnce } from "@/motion";
 
-import type { LabelSize } from "./toolbar-layout";
+/**
+ * How a toolbar trigger shows its value: in full, in its compact form, as its compact value alone
+ * beside its glyph, or as its glyph alone.
+ */
+export type LabelSize = "full" | "short" | "value" | "icon";
 
 /** `labelled` as a size: `true` is the value in full, `false` the glyph alone. */
 export const labelSize = (labelled: boolean | LabelSize): LabelSize =>
@@ -13,8 +17,8 @@ export const labelSize = (labelled: boolean | LabelSize): LabelSize =>
 
 /**
  * The value's words on a toolbar trigger: in full, in `compact` form when the row is short of room,
- * or the value alone when it is tighter still. All are there to be measured (`useToolbarLayout`);
- * the ones not showing are hidden, the full one still read by screen readers. With a `dimension`
+ * or the value alone when it is tighter still. All are rendered, so the row can be measured; the
+ * ones not showing are hidden, the full one still read by screen readers. With a `dimension`
  * the words say what the value is of, "Effort: Extra high", so a chip never reads as another's
  * ("Model default" beside the model picker); short of room, "Effort: X-high" or "Speed: Std", and
  * tighter, "X-high" or "Std" beside the picker's glyph, which then names the dimension. Never the
@@ -111,7 +115,7 @@ export function usePickConfirm(value: string | undefined) {
  * what it picks and the chosen value when `labelled`, without a glyph: "Effort: Extra high", "Mode:
  * Plan", so a value never reads as another control's. Short of room it says the value in `compact`
  * form ("Effort: X-high", "Effort: Default"), tighter the value alone beside its glyph ("X-high"),
- * and only at the narrowest gives way to its glyph alone (`useToolbarLayout`); either way the
+ * and only at the narrowest gives way to its glyph alone; either way the
  * trigger's name and its tooltip say both,
  * "Effort: Extra high", with the shortcut. As a form's `field` it names what it picks and shows the
  * value in full.
@@ -170,7 +174,7 @@ export function PickerTrigger({
     );
   const named = `${label}: ${value}`;
   const size = labelSize(labelled);
-  // Short of room its chevron goes, leaving the space to the words (`useToolbarLayout`).
+  // Short of room its chevron goes, leaving the space to the words.
   const bare = size !== "full";
   return (
     // A native title would wait a second before saying what the glyph means.
@@ -187,7 +191,7 @@ export function PickerTrigger({
       {/* The glyph stands in for words, never beside the ones it repeats: "Effort: High" says
           what a gauge only hints at, so it draws only once the dimension's word gives way, beside
           the value alone ("High") or alone. While the words show it is still laid out, invisible
-          and out of the flow, so `useToolbarLayout` measures the width it would take rather than
+          and out of the flow, so a measure of the row sees the width it would take rather than
           assume one. */}
       {glyph && (
         <span
@@ -201,7 +205,6 @@ export function PickerTrigger({
           {glyph}
         </span>
       )}
-      {/* Measured by `useToolbarLayout`, hidden or not, to know what showing it would take. */}
       <ValueWords value={words ?? value} compact={compact} labelled={labelled} dimension={label} />
     </Hint>
   );

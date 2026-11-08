@@ -170,7 +170,7 @@ export const AGENTS_DEFAULTS = defaults({
 /** Settings → Notifications. Where review requests show is kept on this computer, and isn't here. */
 export const NOTIFICATIONS_DEFAULTS = defaults({
   quietWhenIdle: {
-    label: "Quiet when idle",
+    label: "Focus when idle",
     read: (s) => s.layout?.quietWhenIdle === true,
     reset: { layout: { quietWhenIdle: null } },
   },

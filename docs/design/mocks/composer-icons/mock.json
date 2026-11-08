@@ -1,0 +1,15 @@
+{
+  "title": "Composer icons",
+  "slug": "composer-icons",
+  "status": "approved",
+  "template": "options",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-08"
+    }
+  ]
+}
