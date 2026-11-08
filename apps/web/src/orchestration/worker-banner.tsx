@@ -270,31 +270,20 @@ export function OrchestratorChips({
         label="Memory"
         side="bottom"
         render={
-          inTitlebar ? (
-            // A link, as below, drawn as the bar's icon buttons are.
-            <Link
-              to="/w/$workspaceId/memory"
-              params={{ workspaceId }}
-              aria-label="Memory"
-              data-testid="orchestrator-memory"
-              // Merged as `Button` merges them, so the toolbar glyph size wins over the base's.
-              className={cn(
-                buttonVariants({
-                  variant: "ghost",
-                  size: "icon-sm",
-                  className: "text-muted-foreground",
-                }),
-              )}
-            />
-          ) : (
-            <Link
-              to="/w/$workspaceId/memory"
-              params={{ workspaceId }}
-              aria-label="Memory"
-              data-testid="orchestrator-memory"
-              className={HEADER_LINK}
-            />
-          )
+          <Link
+            to="/w/$workspaceId/memory"
+            params={{ workspaceId }}
+            aria-label="Memory"
+            data-testid="orchestrator-memory"
+            className={
+              inTitlebar
+                ? // Drawn as the bar's icon buttons are. `cn` merges the variants' classes as
+                  // `Button` does: cva alone keeps the base's 16 px glyph rule beside `icon-sm`'s
+                  // 18 px one, and the base's wins.
+                  cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")
+                : HEADER_LINK
+            }
+          />
         }
       >
         <Brain aria-hidden className={inTitlebar ? undefined : "size-icon-row"} />

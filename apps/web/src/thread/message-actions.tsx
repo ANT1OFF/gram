@@ -172,6 +172,9 @@ function MessageMenu({
 }) {
   const more = useRef<HTMLButtonElement>(null);
   const [confirming, setConfirming] = useState(false);
+  // Rewind or Edit was chosen: its confirmation opens once the menu has closed and handed focus
+  // back to the "…", so that hand-back can't pull focus out of the confirmation.
+  const confirmNext = useRef(false);
   const [dialog, setDialog] = useState<{ notice?: string }>();
   const wait = useWait(threadId, message);
   const rewind = useRewind(threadId, message);
@@ -179,7 +182,13 @@ function MessageMenu({
   const reply = message.role === "assistant";
   return (
     <>
-      <Menu.Root>
+      <Menu.Root
+        onOpenChangeComplete={(open) => {
+          if (open || !confirmNext.current) return;
+          confirmNext.current = false;
+          setConfirming(true);
+        }}
+      >
         <Hint
           label="More message actions"
           render={
@@ -223,7 +232,9 @@ function MessageMenu({
                   aria-label={rewind.label}
                   aria-description={rewind.line}
                   disabled={rewind.disabledReason !== undefined}
-                  onClick={() => setConfirming(true)}
+                  onClick={() => {
+                    confirmNext.current = true;
+                  }}
                   className={MENU_ITEM}
                 >
                   <ItemText
@@ -465,6 +476,7 @@ function RewindConfirm({
   onOpenChange: (open: boolean) => void;
 }) {
   const api = useApi();
+  const cancel = useRef<HTMLButtonElement>(null);
   const [files, setFiles] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
@@ -510,6 +522,8 @@ function RewindConfirm({
         >
           <Popover.Popup
             data-testid="rewind-confirm"
+            // Into the confirmation, on its safe choice, however it was opened.
+            initialFocus={cancel}
             finalFocus={anchor}
             className="z-50 flex w-64 flex-col gap-2 rounded-(--radius-lg) border border-edge bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised) transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
@@ -537,7 +551,10 @@ function RewindConfirm({
               </p>
             )}
             <div className="flex justify-end gap-2">
-              <Popover.Close className="rounded-(--radius-sm) px-2 py-1 text-meta text-muted-foreground hover:text-foreground">
+              <Popover.Close
+                ref={cancel}
+                className="rounded-(--radius-sm) px-2 py-1 text-meta text-muted-foreground hover:text-foreground"
+              >
                 Cancel
               </Popover.Close>
               <Button size="xs" disabled={pending || busy} onClick={() => void confirm()}>

@@ -20,7 +20,8 @@ export const needsYouWords = (count: number): string =>
 
 /**
  * How many kinds each form names before it says the count alone, its hover the kinds: the
- * sidebar's row, a column wide, two; a chip in Quiet's strip, three (the title bar says them on its Inbox's hover).
+ * sidebar's row, a column wide, two; a chip in Quiet's strip, three (the title bar says them on
+ * its Inbox's hover).
  */
 const KINDS_SHOWN = { row: 2, chip: 3 } as const;
 

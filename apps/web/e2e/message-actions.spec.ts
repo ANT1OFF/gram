@@ -185,6 +185,33 @@ for (const width of [1440, 480]) {
   });
 }
 
+test("from the keyboard, Rewind's confirmation takes focus from the closing menu, and gives it back", async ({
+  page,
+}) => {
+  await page.goto("/t/t-deps");
+  const reply = page.getByTestId("transcript").getByTestId("message-assistant").first();
+  await reply.hover();
+  const more = reply.getByTestId("message-more");
+  await more.focus();
+  await page.keyboard.press("Enter");
+  const rewind = page.getByTestId("message-rewind");
+  await expect(page.getByRole("menu")).toBeVisible();
+  // Down the menu to Rewind: Copy turn, then Add to Waiting on you, come first.
+  for (let step = 0; step < 6; step++) {
+    if (await rewind.evaluate((item) => item === document.activeElement)) break;
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(rewind).toBeFocused();
+  await page.keyboard.press("Enter");
+  const confirmation = page.getByTestId("rewind-confirm");
+  await expect(confirmation).toBeVisible();
+  // Focus lands inside it, on Cancel, not left on the "…" the menu handed it back to.
+  await expect(confirmation.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(confirmation).toHaveCount(0);
+  await expect(more).toBeFocused();
+});
+
 test("busy message actions explain why on hover and focus and refuse activation", async ({
   page,
 }) => {
