@@ -68,9 +68,14 @@ ${env}
 `;
 };
 
-/** One systemd word: quoted, with its backslashes, quotes and specifiers escaped. */
-const systemdWord = (text: string) =>
-  `"${text.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%").replaceAll("$", "$$$$")}"`;
+/**
+ * One systemd word: quoted, with its backslashes, quotes and specifiers escaped, and in a command
+ * line its `$`, which systemd expands there (never in `Environment=`).
+ */
+const systemdWord = (text: string, command = false) => {
+  const quoted = text.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%");
+  return `"${command ? quoted.replaceAll("$", "$$$$") : quoted}"`;
+};
 
 /** The systemd user unit. */
 export const systemdUnit = (command: ServiceCommand): string => {
@@ -85,7 +90,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=${command.program.map(systemdWord).join(" ")}
+ExecStart=${command.program.map((word) => systemdWord(word, true)).join(" ")}
 ${env}
 Restart=always
 RestartSec=10

@@ -16,7 +16,7 @@ import {
 export const JOIN_LIFETIME_MS = 15 * 60_000;
 /** How many machines can be joined at once. */
 export const MAX_MACHINES = 16;
-/** How many recent dials' nonces are kept to refuse a replay; older ones are past the skew. */
+/** How many dials' nonces can be in their window at once; past it, dials wait. */
 const NONCES_KEPT = 4096;
 
 /** A joined machine as the main Gram keeps it: its pinned key and what it said it was. */
@@ -143,15 +143,18 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
     }
     return key;
   };
-  const seen = (nonce: string, until: number) => {
+  /**
+   * Records a dial's nonce: `replayed` when it was seen before, `full` when the set is full of
+   * nonces still in their window, which refuses the dial rather than forget one that could then
+   * be replayed.
+   */
+  const record = (nonce: string, until: number): "ok" | "replayed" | "full" => {
     const at = now();
-    for (const [kept, expires] of nonces) {
-      if (expires > at && nonces.size < NONCES_KEPT) break;
-      nonces.delete(kept);
-    }
-    if (nonces.has(nonce)) return true;
+    for (const [kept, expires] of nonces) if (expires <= at) nonces.delete(kept);
+    if (nonces.has(nonce)) return "replayed";
+    if (nonces.size >= NONCES_KEPT) return "full";
     nonces.set(nonce, until);
-    return false;
+    return "ok";
   };
   return {
     list: (): ReadonlyArray<PairedMachine> => machines,
@@ -235,8 +238,11 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
       if (!verifyConnect(key, claim, claim.signature))
         return { kind: "refused", status: 401, message: "unauthorized: bad signature" };
       // Checked after the signature, so a forged dial can't spend a real one's nonce.
-      if (seen(claim.nonce, claim.time + CONNECT_SKEW_MS))
+      const nonce = record(claim.nonce, claim.time + CONNECT_SKEW_MS);
+      if (nonce === "replayed")
         return { kind: "refused", status: 401, message: "unauthorized: dial replayed" };
+      if (nonce === "full")
+        return { kind: "refused", status: 401, message: "unauthorized: too many dials; wait" };
       if (machine.confirmedAt === undefined)
         return { kind: "refused", status: 403, message: "forbidden: confirm this machine first" };
       return { kind: "ok", machine };

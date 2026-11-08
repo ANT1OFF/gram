@@ -23,9 +23,12 @@ describe("the host's background service", () => {
       env: { ...command.env, ODD: 'a"b%c$d\\e' },
     });
     expect(unit).toContain('ExecStart="/opt/node 26/bin/node" "/srv/gram/main.ts" "run"');
-    expect(unit).toContain('Environment="ODD=a\\"b%%c$$d\\\\e"');
+    expect(unit).toContain('Environment="ODD=a\\"b%%c$d\\\\e"');
     expect(unit).toContain("Restart=always");
     expect(unit).toContain("WantedBy=default.target");
+    expect(systemdUnit({ ...command, program: ["/srv/$HOME/node"] })).toContain(
+      'ExecStart="/srv/$$HOME/node"',
+    );
     expect(() => systemdUnit({ ...command, program: ["/a\nb"] })).toThrow();
   });
 });

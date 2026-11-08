@@ -11,11 +11,12 @@ import { authTarget } from "../http/auth-target.ts";
 import { hostRoute } from "../http/machine-routes.ts";
 import type { RemoteAccess } from "../http/remote-access.ts";
 import { serverPort } from "../http/server.ts";
-import { HttpRouter, HttpServer, HttpServerRequest } from "../platform/unstable.ts";
-import { dialOnce } from "./dial.ts";
-import { generateHostKey, hostIdOf, privateKeyFrom } from "./machine-keys.ts";
+import { HttpRouter, HttpServer, HttpServerRequest, Socket } from "../platform/unstable.ts";
+import * as NodeSocket from "@effect/platform-node/NodeSocket";
+import { type DialOptions, dialOnce } from "./dial.ts";
+import { generateHostKey, hostIdOf, privateKeyFrom, signedConnectHeaders } from "./machine-keys.ts";
 import { memoryMachineStore } from "./paired-machines.ts";
-import { HOST_CAPABILITIES, type HostService } from "./protocol.ts";
+import { HOST_CAPABILITIES, type HostService, serveHost } from "./protocol.ts";
 import { RemoteHosts } from "./remote-hosts.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
@@ -91,6 +92,24 @@ const joinMachine = (base: string, code: string, publicKey: string) =>
     }).then(async (response) => ({ status: response.status, body: await response.text() })),
   );
 
+/** A machine joined over the route and confirmed, with what it dials with. */
+const joinedAndConfirmed = (hosts: RemoteHosts["Service"], base: string) =>
+  Effect.gen(function* () {
+    const key = generateHostKey();
+    const hostId = hostIdOf(key.publicKey);
+    const { url } = hosts.machines.mint(ORIGIN);
+    const code = new URLSearchParams(new URL(url).hash.slice(1)).get("code")!;
+    yield* joinMachine(base, code, key.publicKey);
+    hosts.machines.confirm(hostId);
+    const dial: DialOptions = {
+      origin: ORIGIN,
+      hostId,
+      key: privateKeyFrom(key.privateKeyPem),
+      url: `${base.replace("http:", "ws:")}/host/connect`,
+    };
+    return { hostId, dial };
+  });
+
 describe("joined machines over the network", () => {
   it.live(
     "joins with the link's code, waits for confirmation, then dials in and says hello",
@@ -162,6 +181,58 @@ describe("joined machines over the network", () => {
         },
         service(hostId),
       );
+      expect(hosts.list()[0]).not.toHaveProperty("onlineSince");
+    }).pipe(Effect.scoped),
+  );
+
+  it.live(
+    "keeps a machine removed while it says hello offline",
+    () =>
+      Effect.gen(function* () {
+        const { hosts, base } = yield* served;
+        const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+        // A host that holds back its hello for three seconds.
+        const slow = Effect.gen(function* () {
+          const socket = yield* Socket.makeWebSocket(dial.url!, {
+            headers: signedConnectHeaders(dial.key, dial.origin, dial.hostId),
+          });
+          let first = true;
+          const held: Socket.Socket = {
+            ...socket,
+            reader: Effect.map(socket.reader, (reader) => ({
+              ...reader,
+              pull: Effect.suspend(() => {
+                if (!first) return reader.pull;
+                first = false;
+                return Effect.andThen(Effect.sleep("3 seconds"), reader.pull);
+              }),
+            })),
+          };
+          yield* serveHost(held, yield* service(hostId));
+        }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
+        yield* Effect.forkScoped(slow);
+        yield* Effect.sleep("1 second");
+        hosts.remove(HostId.make(hostId));
+        yield* Effect.sleep("4 seconds");
+        expect(hosts.list()).toEqual([]);
+        expect(Effect.runSync(Effect.exit(hosts.connection(HostId.make(hostId))))._tag).toBe(
+          "Failure",
+        );
+      }).pipe(Effect.scoped),
+    20_000,
+  );
+
+  it.live("closes machines' connections when access moves off their address", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* served;
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      const fiber = yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+      yield* online(hosts, hostId);
+      hosts.keepOrigin(ORIGIN);
+      expect(hosts.list()[0]).toHaveProperty("onlineSince");
+      hosts.keepOrigin(undefined);
+      yield* Fiber.join(fiber).pipe(Effect.timeout("10 seconds"));
+      expect(hosts.list()).toEqual([expect.objectContaining({ id: hostId, confirmed: true })]);
       expect(hosts.list()[0]).not.toHaveProperty("onlineSince");
     }).pipe(Effect.scoped),
   );

@@ -237,7 +237,12 @@ export const AuthMiddleware = HttpRouter.middleware(
           case "pass":
             response =
               path !== undefined && REMOTE_MANAGEMENT_PATHS.has(path)
-                ? yield* remoteManagement(control, path, isRemote ? remote : undefined)
+                ? yield* remoteManagement(control, path, isRemote ? remote : undefined).pipe(
+                    // Access turned off, or onto another address: joined machines dial again.
+                    Effect.tap(() =>
+                      Effect.sync(() => remoteHosts?.keepOrigin(control.current()?.origin)),
+                    ),
+                  )
                 : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
                   ? isRemote || remoteHosts === undefined
                     ? HttpServerResponse.text("forbidden: local access only", { status: 403 })

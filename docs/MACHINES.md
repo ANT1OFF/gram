@@ -25,8 +25,11 @@ connected. Placing a worker on it comes with the Machines page and the machine p
 2. On the new machine, run:
 
    ```sh
-   node packages/server/src/host/main.ts join '<join link>'
+   node packages/server/src/host/main.ts join
    ```
+
+   and paste the link when it asks (or pipe it in). A link given after `join` works too, but it
+   then lands in your shell history and the process list.
 
    `--name <name>` sets the name it joins with (its host name by default), and `--no-service`
    leaves out the background service.
@@ -70,11 +73,14 @@ the host's folder; on Linux use `journalctl --user -u gram-host`.
   signature over them and the main Gram's address. The main Gram refuses one that isn't signed by
   the machine's pinned key, is more than two minutes off, repeats a nonce, or comes from a machine
   that hasn't been confirmed.
-- **Not a browser.** The join and dial endpoints answer only on the tailnet address, never on
-  loopback, and refuse any request with an `Origin`, so no web page can reach them. They take no
-  browser cookie, and a browser's cookie grants nothing there.
+- **Not a browser.** The join and dial endpoints answer only requests addressed to the tailnet
+  name (which Tailscale Serve forwards over loopback), and refuse any request with an `Origin`, so
+  no web page can reach them. They take no browser cookie, and a browser's cookie grants nothing
+  there. Without the join code or a joined machine's key they grant nothing either.
 - **Removing a machine** (`POST /machines/remove`) forgets its key and closes its connection at
-  once. Up to 16 machines can be joined.
+  once, including one still connecting. Turning access over Tailscale off, or onto another
+  address, closes every joined machine's connection; the machines stay joined and dial in again
+  once it is back. Up to 16 machines can be joined.
 
 The listing (`POST /machines/list`), join link, confirm and remove endpoints answer only the local
 app, never a paired phone or a joined machine, with the same Origin rules as phone access settings.

@@ -93,7 +93,7 @@ export const hostRoute = (hosts: RemoteHostsShape, remote: RemoteAccess, path: s
     if (decision.kind === "refused") return refuse(decision.message, decision.status);
     const socket = yield* request.upgrade.pipe(Effect.option);
     if (socket._tag === "None") return refuse("WebSocket required", 400);
-    yield* hosts.attach(decision.machine, socket.value);
+    yield* hosts.attach(decision.machine, socket.value, remote.origin);
     return HttpServerResponse.empty();
   });
 

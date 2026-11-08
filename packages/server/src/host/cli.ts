@@ -1,4 +1,5 @@
 import { hostname } from "node:os";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { HostId } from "@gram/contracts";
 import { HostId as HostIdSchema } from "@gram/contracts";
@@ -36,9 +37,10 @@ import { createPublicKey } from "node:crypto";
 
 const USAGE = `gram-host: run this machine's work for a Gram on another machine, over Tailscale.
 
-  gram-host join '<join link>' [--name <name>] [--no-service]
-      Join the Gram that made the link (Settings → Machines → Add a machine), and run as a
-      background service. Confirm the fingerprint it prints on that machine.
+  gram-host join [--name <name>] [--no-service]
+      Join the Gram that made a join link (Settings → Machines → Add a machine), pasted when
+      asked or piped in, and run as a background service. Confirm the fingerprint it prints
+      on that machine. The link can also follow \`join\`, but then it lands in shell history.
   gram-host run          Dial the main Gram and serve it, in the foreground.
   gram-host service install | uninstall | status
   gram-host status       What this machine joined, its fingerprint and the service's state.
@@ -60,7 +62,8 @@ export const parseJoinLink = (
   if (url.pathname !== HOST_JOIN_PATH || code === null || !/^[a-f0-9]{64}$/.test(code))
     return { error: "That isn't a join link. Make one in Settings → Machines on the main Gram." };
   try {
-    return { origin: remoteOrigin(url.origin) ?? "", code };
+    const origin = remoteOrigin(url.origin);
+    return origin === undefined ? { error: "That isn't a join link." } : { origin, code };
   } catch {
     return { error: "A join link must be the main Gram's https://….ts.net address." };
   }
@@ -74,6 +77,27 @@ export const defaultName = (raw = hostname()): string => {
     .slice(0, 64);
   return name === "" ? "machine" : name;
 };
+
+/** One line from standard input, the prompt shown when it is a terminal; undefined at its end. */
+const readLine = (prompt: string) =>
+  Effect.callback<string | undefined>((resume) => {
+    const lines = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: false,
+    });
+    if (process.stdin.isTTY) process.stdout.write(prompt);
+    let done = false;
+    lines.once("line", (line) => {
+      done = true;
+      lines.close();
+      resume(Effect.succeed(line.trim()));
+    });
+    lines.once("close", () => {
+      if (!done) resume(Effect.succeed(undefined));
+    });
+    return Effect.sync(() => lines.close());
+  });
 
 const flag = (args: ReadonlyArray<string>, name: string) => args.includes(name);
 const option = (args: ReadonlyArray<string>, name: string) => {
@@ -120,8 +144,12 @@ const install = (home: string) =>
 
 const join = (args: ReadonlyArray<string>, home: string) =>
   Effect.gen(function* () {
-    const link = args.find((arg) => !arg.startsWith("--") && arg !== option(args, "--name"));
-    if (link === undefined) return yield* fail("Give the join link: gram-host join '<link>'.");
+    // Read from the terminal by default, so the code stays out of shell history and `ps`.
+    const link =
+      args.find((arg) => !arg.startsWith("--") && arg !== option(args, "--name")) ??
+      (yield* readLine("Paste the join link from the main Gram: "));
+    if (link === undefined || link === "")
+      return yield* fail("Give the join link: gram-host join, then paste it.");
     const parsed = parseJoinLink(link);
     if ("error" in parsed) return yield* fail(parsed.error);
     const existing = readHostConfig(home);
