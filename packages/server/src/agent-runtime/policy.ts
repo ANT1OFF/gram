@@ -1,5 +1,5 @@
 import { CLAUDE_AGENT_SDK_VERSION } from "@gram/agents/claude";
-import { CODEX_CLI_VERSION } from "@gram/agents/codex";
+import { CODEX_CLI_VERSION, codexVersionWarning, compareCodexVersion } from "@gram/agents/codex";
 import type {
   BindingBaseline,
   CompatibilityVerdict,
@@ -74,7 +74,7 @@ export const compareVersions = (a: string, b: string): number => {
 
 export interface Judgement {
   readonly verdict: CompatibilityVerdict;
-  /** Why, when the verdict isn't `supported`. */
+  /** Compatibility warning or refusal, including accepted newer Codex versions. */
   readonly reason?: string;
 }
 
@@ -87,7 +87,8 @@ const NAMES: Readonly<Record<RuntimeAgent, string>> = {
  * `version` against the shipped baseline. Supported: the baseline's own release line, at or past
  * its patch (Claude: no more than ten patches past, as its SDK pairs a CLI line). Graceful: the
  * same line, an older patch. Unsupported: an older line, which lacks what the adapter calls.
- * Unknown: a newer line, or past Claude's window, which nothing has qualified yet; and prereleases.
+ * Newer stable Codex versions are supported with a warning. Unknown: a newer Claude line,
+ * past Claude's window, or prereleases, which nothing has qualified yet.
  */
 export const judgeAgainstBaseline = (agent: RuntimeAgent, version: string): Judgement => {
   const { cliVersion } = BASELINES[agent];
@@ -101,6 +102,8 @@ export const judgeAgainstBaseline = (agent: RuntimeAgent, version: string): Judg
       verdict: "unknown",
       reason: `${name} ${version} is a prerelease; nothing qualifies those yet.`,
     };
+  if (agent === "codex" && compareCodexVersion(version) > 0)
+    return { verdict: "supported", reason: codexVersionWarning(version)! };
   const sameLine = cli.major === base.major && cli.minor === base.minor;
   const ahead = cli.patch - base.patch;
   if (sameLine && ahead >= 0 && (agent !== "claude" || ahead <= CLAUDE_NEWER_PATCHES))

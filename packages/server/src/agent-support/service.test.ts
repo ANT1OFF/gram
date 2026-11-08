@@ -80,6 +80,20 @@ describe("selected harness read-only service", () => {
         expect(cacheReads).toEqual([false]);
         yield* handlers["agents.support"]({ model: result.model, refresh: true });
         expect(cacheReads).toEqual([false, true]);
+        for (const version of ["0.166.1", "0.167.0", "1.0.0"]) {
+          currentChecks = { ...signedIn, tools: [{ tool: "codex", found: true, version }] };
+          const newer = yield* handlers["agents.support"]({ model: result.model });
+          expect(newer.support.dreamGuided?.state).toBe("supported");
+          expect(newer.dreamMode).toBe("guided");
+          expect(newer.dreamReason).toContain(`Codex ${version} differs from 0.166.0`);
+          expect(
+            featurePreflight({
+              feature: "dream",
+              support: newer.support,
+              availability: newer.availability,
+            }).blocked,
+          ).toBe(false);
+        }
         for (const version of [undefined, "0.160.0", "0.163.0"]) {
           currentChecks = {
             ...signedIn,
@@ -163,7 +177,7 @@ describe("selected harness read-only service", () => {
         expect(result.version).toBe("0.160.0");
         expect(result.support.dream).toMatchObject({
           state: "unknown",
-          reason: expect.stringContaining("installed CLI 0.160.0 has not been qualified"),
+          reason: expect.stringContaining("installed CLI 0.160.0 is older or could not be read"),
         });
         expect(result.availability.state).toBe("unknown");
         expect(
