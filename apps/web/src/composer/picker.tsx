@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { useShortcut } from "@/keyboard/registry";
@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 
 import { aboveComposer } from "./above-composer";
-import { ModelCombobox } from "./model-picker";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { GHOST_TRIGGER } from "./styles";
 import type { LabelSize } from "./toolbar-layout";
@@ -65,27 +64,11 @@ interface PickerProps<V extends string> {
    * full, and its shortcut in a native title.
    */
   field?: boolean;
-  /** Moved into the toolbar's "…" menu: nothing renders, and the shortcut calls `onFoldedOpen`. */
-  folded?: boolean;
-  onFoldedOpen?: (() => void) | undefined;
   /** Called as the list opens, by click or shortcut. */
   onOpen?: (() => void) | undefined;
-  /**
-   * Subscribes to asks to open the list from outside the toolbar, such as a failed turn's "Try
-   * another model" (`onModelPickerAsked`); returns the unsubscribe.
-   */
-  onAsked?: ((open: () => void) => () => void) | undefined;
-  /** A searchable list with favourites, grouped by agent or gateway, instead of a select. */
-  search?:
-    | {
-        rowIcon: ReactNode;
-        favourite: (value: string) => boolean;
-        onToggleFavourite: (value: string) => void;
-      }
-    | undefined;
 }
 
-/** A compact select for the composer toolbar, opened with its shortcut; a glyph alone when narrow. */
+/** A compact select, opened with its shortcut: a settings form's field, or a glyph and its value. */
 export function Picker<V extends string>({
   label,
   shortcutId,
@@ -99,11 +82,7 @@ export function Picker<V extends string>({
   iconLabel,
   labelled = true,
   field = false,
-  folded = false,
-  onFoldedOpen,
   onOpen,
-  onAsked,
-  search,
 }: PickerProps<V>) {
   const [open, setOpenState] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -111,13 +90,6 @@ export function Picker<V extends string>({
     if (next) onOpen?.();
     setOpenState(next);
   };
-  // An ask from outside opens it as its shortcut does. Kept in a ref, so a re-render with new
-  // callbacks doesn't subscribe again.
-  const asked = useRef(() => {});
-  useEffect(() => {
-    asked.current = () => (folded ? onFoldedOpen?.() : setOpen(true));
-  });
-  useEffect(() => onAsked?.(() => asked.current()), [onAsked]);
   const hint = useShortcutHint(shortcutId);
   const confirm = usePickConfirm(value);
   useShortcut(
@@ -126,15 +98,14 @@ export function Picker<V extends string>({
       keys,
       label: `Pick ${label.toLowerCase()}`,
       group: "Composer",
-      run: () => (folded ? onFoldedOpen?.() : setOpen(true)),
+      run: () => setOpen(true),
     },
     focused && options.length > 0,
   );
 
-  if (folded) return null;
   const chosen = options.find((option) => option.value === value);
-  // The model's name in full; effort and mode in a word or two, the same on the trigger as in its
-  // tooltip ("Effort: Extra high").
+  // Effort and mode in a word or two, the same on the trigger as in its tooltip ("Effort: Extra
+  // high").
   const shown = chosen?.short ?? chosen?.label ?? "none";
   const named = field ? label : `${label}: ${shown}`;
   const tagged = withHint(named, hint);
@@ -143,26 +114,6 @@ export function Picker<V extends string>({
   const tip = [iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`, warning]
     .filter(Boolean)
     .join("\n");
-
-  if (search) {
-    return (
-      <ModelCombobox
-        label={label}
-        value={value}
-        options={options}
-        onChange={(next) => onChange(next as V)}
-        open={open}
-        onOpenChange={setOpen}
-        icon={icon}
-        title={title}
-        description={description}
-        warning={warning}
-        labelled={labelled}
-        tip={tip}
-        {...search}
-      />
-    );
-  }
 
   return (
     <Select

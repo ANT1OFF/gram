@@ -21,13 +21,13 @@ test("a model added in Settings is offered on /new, and a removed one is not", a
 
   await page.goto("/new");
   const form = page.getByRole("form", { name: "New thread" });
-  await form.getByRole("combobox", { name: "Model", exact: true }).click();
+  await form.getByTestId("composer-choices").click();
   await page.getByRole("option", { name: "Preview, 1M context" }).click();
-  await expect(form.getByRole("combobox", { name: "Model", exact: true })).toHaveText(
-    /Preview, 1M context/,
-  );
+  await expect(form.getByTestId("composer-choices")).toHaveText(/Preview, 1M context/);
   // A model added by id is assumed to take an effort, unless its row says otherwise.
-  await expect(form.getByRole("combobox", { name: "Effort" })).toBeVisible();
+  await expect(form.getByTestId("composer-choices")).toHaveAccessibleName(
+    / · Effort: Model default · /,
+  );
 
   await page.goto("/settings/agents");
   const saved = page.getByTestId("custom-models").getByRole("listitem", { name: "Custom model 1" });
@@ -37,7 +37,7 @@ test("a model added in Settings is offered on /new, and a removed one is not", a
   await page.getByTestId("custom-models").getByRole("button", { name: "Save" }).click();
   await expect(page.getByTestId("custom-models").getByRole("status")).toHaveText("Saved");
   await page.goto("/new");
-  await form.getByRole("combobox", { name: "Model", exact: true }).click();
+  await form.getByTestId("composer-choices").click();
   await expect(page.getByRole("option", { name: "Claude Opus" })).toBeVisible();
   await expect(page.getByRole("option", { name: "Preview, 1M context" })).toHaveCount(0);
 });
@@ -60,7 +60,7 @@ test("the model picker offers what the Claude account lists, and Mythos once it'
   await page.goto("/new");
   await page.evaluate((models) => window.gramMock?.seedClaudeAccountModels(models), ACCOUNT);
   const form = page.getByRole("form", { name: "New thread" });
-  const picker = form.getByRole("combobox", { name: "Model", exact: true });
+  const picker = form.getByTestId("composer-choices");
   await picker.click();
   await expect(page.getByRole("option", { name: "Claude Sonnet" })).toBeVisible();
   await expect(page.getByRole("option", { name: "Mythos" })).toHaveCount(0);
@@ -83,7 +83,7 @@ test("a thread on a model its Claude account no longer lists says so", async ({ 
   const composer = page.getByLabel("Message", { exact: true });
   await composer.fill("/model claude-mythos-5-1");
   await composer.press("Enter");
-  const picker = page.getByRole("combobox", { name: "Model", exact: true });
+  const picker = page.getByTestId("composer-toolbar").getByTestId("composer-choices");
   await expect(picker).toHaveText(/claude-mythos-5-1/);
   await expect(picker).toHaveAttribute("data-warning", "true");
   // Said the moment it's hovered, as every toolbar picker says its warning.

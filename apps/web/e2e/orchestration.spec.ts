@@ -141,7 +141,7 @@ test("an orchestrator and its worker are marked, and their transcripts show the 
   await expect(page.getByTestId("orchestrator-banner-paused")).toContainText("Paused by you");
   await page.getByTestId("orchestrator-banner-resume").click();
   await expect(page.getByTestId("orchestrator-banner-paused")).toHaveCount(0);
-  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveAttribute(
+  await expect(page.getByTestId("composer-choices")).toHaveAttribute(
     "aria-description",
     "Claude Code",
   );
@@ -220,7 +220,7 @@ test("an orchestrator and its worker are marked, and their transcripts show the 
   await expect(page.getByTestId("pane-role")).toHaveText("Worker");
   await expect(page.getByTestId("worker-crumb-feature")).toHaveText("rate-limit-headers");
   // The worker's harness is on its composer's model picker, as the orchestrator's is.
-  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveAttribute(
+  await expect(page.getByTestId("composer-choices")).toHaveAttribute(
     "aria-description",
     "Claude Code",
   );

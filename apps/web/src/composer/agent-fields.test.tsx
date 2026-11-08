@@ -340,35 +340,51 @@ const renderSpeed = (
   renderWithApi(<AgentFields ghost={ghost} value={choice} onChange={() => {}} />, api);
 };
 
+/** The prompt box's choices chip once it names `text`. */
+const findChip = async (text: string | RegExp) => {
+  const chip = await screen.findByTestId("composer-choices");
+  await waitFor(() => expect(chip.getAttribute("aria-label")).toMatch(text));
+  return chip;
+};
+
+/** The words the chip shows with room: its values that aren't at their defaults. */
+const chipWords = (chip: HTMLElement) => chip.querySelector("[data-toolbar-label]")?.textContent;
+
 describe("AgentFields speed", () => {
-  it("keeps Speed's slot in the prompt box, its value in a word, while there is nothing to pick", async () => {
-    // The CLI decides, though Fast is there: the slot stays, so the row reads as a thread's does.
+  it("drops Speed from the prompt box's chip at its default, its name and section still saying it", async () => {
+    const user = userEvent.setup();
+    // The CLI decides, though Fast is there.
     renderSpeed({ agent: "claude", model: "m" }, ["standard", "fast"], true);
-    const decides = await screen.findByRole("combobox", { name: "Speed: CLI default" });
-    expect(decides.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
-    // The chip says "Speed: Default"; its name, above, says whose.
-    expect(decides.querySelector("[data-toolbar-label]")?.textContent).toBe("Speed: Default");
+    const chip = await findChip(/Speed: CLI default$/);
+    expect(chip.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
+    expect(chipWords(chip)).not.toMatch(/Default|Speed|Standard/);
+    // Its section lists the speeds, the CLI's default checked, with what Fast costs.
+    await user.click(chip);
+    await user.click(await screen.findByTestId("choices-speed"));
+    const speeds = within(screen.getByRole("listbox", { name: "Speed" }));
+    expect(speeds.getByRole("option", { name: "CLI default" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(speeds.getByRole("option", { name: "Fast" })).toBeTruthy();
+    expect(screen.getByTestId("composer-choices-popup").textContent).toContain(
+      "separately billed usage credits",
+    );
     cleanup();
-    // Standard is all the model offers.
+    // Standard is a default too.
     renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard"], true);
-    expect(await screen.findByRole("combobox", { name: "Speed: Standard" })).toBeTruthy();
+    expect(chipWords(await findChip(/Speed: Standard$/))).not.toContain("Standard");
   });
 
-  it("says Speed's value in the prompt box as effort and mode do, and in full outside it", async () => {
+  it("says Fast on the prompt box's chip, and Speed in full outside it", async () => {
     const user = userEvent.setup();
-    renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard", "fast"], true);
-    // A short value after its dimension with room, as effort and mode say theirs, and on hover.
-    const speed = await screen.findByRole("combobox", { name: "Speed: Standard" });
-    expect(speed.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
-    expect(speed.querySelector("[data-toolbar-label]")?.textContent).toBe("Speed: Standard");
-    // Short of room its value stays, "Speed: Std", and tighter "Std" alone beside the bolt: never
-    // the dimension alone, and never the bolt alone.
-    expect(speed.querySelector("[data-toolbar-compact]")?.textContent).toBe("Speed: Std");
-    expect(speed.querySelector("[data-toolbar-value]")?.textContent).toBe("Std");
-    await user.hover(speed);
+    renderSpeed({ agent: "claude", model: "m", speed: "fast" }, ["standard", "fast"], true);
+    const chip = await findChip(/Speed: Fast$/);
+    expect(chipWords(chip)).toMatch(/ · Fast$/);
+    expect(chip.querySelector("[data-toolbar-compact]")?.textContent).toMatch(/ · Fast$/);
+    await user.hover(chip);
     await waitFor(() =>
-      expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toBe(
-        "Speed: Standard",
+      expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toContain(
+        "Speed: Fast",
       ),
     );
     cleanup();
@@ -378,22 +394,26 @@ describe("AgentFields speed", () => {
 });
 
 describe("AgentFields effort", () => {
-  it("says its value in the prompt box, named with it, and is labelled outside it", async () => {
+  it("says its value on the prompt box's chip, picks it in its section, and is labelled outside it", async () => {
     const user = userEvent.setup();
     const choice: AgentChoice = { agent: "claude", model: "opus", variant: "high" };
-    renderWithApi(<AgentFields ghost value={choice} onChange={() => {}} />, mockApi());
-    const glyph = await screen.findByRole("combobox", { name: "Effort: High" });
-    // With room, as in a thread's composer, the value shows beside the gauge.
-    expect(glyph.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
-    expect(glyph.textContent).toContain("High");
-    await user.hover(glyph);
-    expect(await screen.findByText("Effort: High")).toBeTruthy();
-    await user.click(glyph);
+    const onChange = vi.fn();
+    renderWithApi(<AgentFields ghost value={choice} onChange={onChange} />, mockApi());
+    const chip = await findChip(/Effort: High/);
+    // With room, as in a thread's composer, the value shows after the model's.
+    expect(chipWords(chip)).toBe("Claude Opus · High");
+    await user.hover(chip);
+    expect(await screen.findByText(/Effort: High/)).toBeTruthy();
+    await user.click(chip);
+    await user.click(await screen.findByTestId("choices-effort"));
     expect(screen.getByRole("option", { name: "Default effort" })).toBeTruthy();
     // The current level is checked, and each says what it costs.
     const high = screen.getByRole("option", { name: "High effort" });
     expect(high.getAttribute("aria-selected")).toBe("true");
     expect(high.textContent).toContain("Reasons longer");
+    await user.click(screen.getByRole("option", { name: "Low effort" }));
+    expect(onChange).toHaveBeenLastCalledWith({ ...choice, variant: "low" });
+    expect(screen.queryByTestId("composer-choices-popup")).toBeNull();
     cleanup();
     renderWithApi(<AgentFields value={choice} onChange={() => {}} />, mockApi());
     const labelled = await screen.findByRole("combobox", { name: "Effort" });
@@ -411,10 +431,10 @@ describe("AgentFields model list", () => {
       <AgentFields ghost value={{ agent: "claude", model: "opus" }} onChange={onChange} />,
       api,
     );
-    const picker = await screen.findByRole("combobox", { name: "Model" });
-    await waitFor(() => expect(picker.textContent).toContain("Claude Opus"));
-    await user.click(picker);
-    const search = screen.getByRole("combobox", { name: "Search models" });
+    const chip = await findChip(/^Claude Opus/);
+    // The chip opens on its Model section, the search focused.
+    await user.click(chip);
+    const search = await screen.findByRole("combobox", { name: "Search models" });
     await waitFor(() => expect(document.activeElement).toBe(search));
     // A heading per agent, each with its own models.
     const list = within(screen.getByTestId("model-picker"));
@@ -441,7 +461,7 @@ describe("AgentFields model list", () => {
       <AgentFields ghost value={{ agent: "claude", model: "opus" }} onChange={() => {}} />,
       api,
     );
-    await screen.findByRole("combobox", { name: "Model" });
+    await screen.findByTestId("composer-choices");
     await waitFor(() => expect(listing).toHaveBeenCalledWith("claude"));
     expect(listing.mock.calls.some(([agent]) => agent === "codex")).toBe(false);
   });

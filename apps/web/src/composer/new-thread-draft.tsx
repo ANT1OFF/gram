@@ -16,13 +16,12 @@ import { useApi } from "@/api/context";
 import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-preflight";
 import { checkoutInUsePath } from "@/api/errors";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { shortcutPressed } from "@/keyboard/bindings";
 import { useShortcut } from "@/keyboard/registry";
 import { ShortcutKbd, useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
-import { PressScale, Spinner, Swap } from "@/motion";
+import { PressScale, Spinner } from "@/motion";
 import { CheckoutInUseNotice, useCheckoutUsers } from "@/new-thread/checkout-in-use";
 import { ExistingWorktrees } from "@/new-thread/existing-worktrees";
 import { folderProblem } from "@/new-thread/fs-errors";
@@ -46,14 +45,13 @@ import {
 } from "@/dictation/composer-dictation";
 import { DictationButton } from "@/dictation/dictation-button";
 import { useServerSettings } from "@/settings-sync/store";
-import { modeWarning } from "@/thread/mode-warning";
 
 import { inOpenFence } from "./mention";
 import { enterSends } from "./send-key";
 import { AgentFields, choiceModel, gatewayReady } from "./agent-fields";
 import { useToolbarLayout } from "./use-toolbar-layout";
-import { aboveComposer } from "./above-composer";
-import { PickerTrigger, usePickConfirm } from "./picker-trigger";
+import { modeSection } from "./choice-sections";
+import { ComposerChoices } from "./choices";
 import { useModels } from "./models";
 import { AttachmentChips } from "./attachment-chips";
 import { randomBranchName } from "./branch-name";
@@ -67,9 +65,8 @@ import {
   useDraftProjectRoot,
 } from "./draft-prefill";
 import { MentionMenu } from "./mention-menu";
-import { MODE_ICONS, MODE_OPTIONS } from "./options";
 import { useSlabHandoff } from "./slab-handoff";
-import { GHOST_TRIGGER, SLAB, SLAB_TEXTAREA } from "./styles";
+import { SLAB, SLAB_TEXTAREA } from "./styles";
 import { useAttachments } from "./use-attachments";
 import { useMentions } from "./use-mentions";
 import {
@@ -86,15 +83,12 @@ type CheckoutKind = CheckoutRequest["kind"];
  * else the repo, to make a workspace for. Nothing for a folder Gram doesn't know yet.
  */
 /**
- * The prompt box's measured controls, in the composer's order. Mode is the one that may stand as
- * its glyph alone; none folds, since the row wraps instead.
+ * The prompt box's one measured control, the choices chip, as in a thread's composer; it never
+ * folds, since the row wraps instead.
  */
-const NEW_THREAD_BLOCKS = [
-  { id: "model", foldable: false },
-  { id: "effort", foldable: false },
-  { id: "mode", foldable: false },
-  { id: "speed", foldable: false },
-];
+const NEW_THREAD_BLOCKS = [{ id: "choices", foldable: false }];
+/** How long a pick's words stay beside the chip, as long as a thread composer's note. */
+const PICKED_MS = 2500;
 
 export function folderTarget(
   project: Project | undefined,
@@ -358,55 +352,23 @@ function ConfiguredNewThreadDraft() {
   });
 
   const createLabel = stage === "failed" ? "Retry" : "Start chat";
-  const ModeIcon = MODE_ICONS[mode];
-  const modeConfirm = usePickConfirm(mode);
-  const modeTrigger = useRef<HTMLButtonElement>(null);
-  const modeLabel = MODE_OPTIONS.find((option) => option.value === mode)?.label ?? mode;
-  const modeWarned = modeWarning(mode);
-  // The composer's order and words: model · effort · mode · speed, each saying its value as the
-  // row's room allows, as in a thread's composer (`useToolbarLayout`).
+  // One choices chip, as in a thread's composer: model · effort · mode · speed, saying the values
+  // that aren't at their defaults as the row's room allows (`useToolbarLayout`).
   const {
     ref: toolbarRef,
     size: labelOf,
     wrapped,
   } = useToolbarLayout<HTMLFieldSetElement>(NEW_THREAD_BLOCKS);
-  const modePicker = (
-    <Select
-      value={mode}
-      items={MODE_OPTIONS}
-      onValueChange={(value) => {
-        if (value === null) return;
-        modeConfirm.pick(value);
-        setMode(value as PermissionMode);
-      }}
-    >
-      <PickerTrigger
-        ref={modeTrigger}
-        size="sm"
-        label="Mode"
-        value={modeLabel}
-        compact={MODE_OPTIONS.find((option) => option.value === mode)?.compact}
-        labelled={labelOf("mode")}
-        icon={
-          <Swap swapKey={mode}>
-            <ModeIcon aria-hidden className="size-icon-bar" />
-          </Swap>
-        }
-        confirm={modeConfirm.landed}
-        tip={[`Mode: ${modeLabel}`, modeWarned].filter(Boolean).join("\n")}
-        aria-description={modeWarned}
-        data-warning={modeWarned ? "true" : undefined}
-        className={cn(GHOST_TRIGGER, modeWarned && "text-warning hover:text-warning")}
-      />
-      <SelectContent anchor={() => aboveComposer(modeTrigger.current)}>
-        {MODE_OPTIONS.map((o) => (
-          <SelectItem key={o.value} value={o.value} description={o.description}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
+  const modeChoice = modeSection({ value: mode, onChange: setMode });
+  // A pick is confirmed in words beside the chip for a moment, as in a thread's composer.
+  const [picked, setPicked] = useState<string>();
+  const pickedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(pickedTimer.current), []);
+  const onPicked = (words: string) => {
+    clearTimeout(pickedTimer.current);
+    setPicked(words);
+    pickedTimer.current = setTimeout(() => setPicked(undefined), PICKED_MS);
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -548,7 +510,16 @@ function ConfiguredNewThreadDraft() {
                         <span role="status" className="px-2 text-meta text-muted-foreground">
                           Discovering local agents…
                         </span>
-                        {modePicker}
+                        <div
+                          data-toolbar-block="choices"
+                          className="flex min-w-0 shrink-0 items-center"
+                        >
+                          <ComposerChoices
+                            sections={[modeChoice]}
+                            size={labelOf("choices")}
+                            onPicked={onPicked}
+                          />
+                        </div>
                       </>
                     ) : (
                       <AgentFields
@@ -556,7 +527,8 @@ function ConfiguredNewThreadDraft() {
                         value={choice}
                         onChange={setChoice}
                         size={labelOf}
-                        mode={modePicker}
+                        mode={modeChoice}
+                        onPicked={onPicked}
                       />
                     )}
                     {/* Wrapped, the pickers have this row to themselves; the rest goes on the next. */}
@@ -566,7 +538,7 @@ function ConfiguredNewThreadDraft() {
                       data-testid="draft-dictation-status"
                       className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
                     >
-                      {dictation.active ? dictationStatus(dictation.state) : undefined}
+                      {dictation.active ? dictationStatus(dictation.state) : picked}
                     </span>
                     {dictation.available && (
                       <DictationButton
