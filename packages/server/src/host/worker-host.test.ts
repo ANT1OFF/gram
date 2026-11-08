@@ -15,6 +15,7 @@ import { CheckoutService } from "../runtime/hooks.ts";
 import { HostTerminals } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
 import { makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
+import { LocalHostProcess } from "./local-process.ts";
 import { type WorkerHost, WorkerHosts } from "./worker-host.ts";
 
 const Agents = Layer.mergeAll(AgentHosts.layerNone, CheckoutService.layerNoGit);
@@ -216,6 +217,36 @@ describe("WorkerHosts", () => {
         expect(seen[0]).toMatchObject({ repo: true, branch: "main" });
         expect(seen.at(-1)).toBe(SERVER_STATE);
       }).pipe(Effect.scoped, Effect.provide(ThroughHost)),
+    30_000,
+  );
+
+  it.live(
+    "the checkouts' worktrees and the worker host share one host process",
+    () =>
+      Effect.gen(function* () {
+        const tmp = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(tmp)));
+        const repo = makeRepo(tmp);
+        const { local } = yield* WorkerHosts;
+        const { connection } = yield* LocalHostProcess;
+        expect(connection?.hello.pid).toBe(local.process?.pid);
+        // The server's own `Worktrees` here can only list, so a worktree made is the host's.
+        const worktreesForCheckouts = yield* Worktrees;
+        const created = yield* worktreesForCheckouts.create({
+          repoPath: repo,
+          branch: "made-by-the-host",
+          openCheckouts: [],
+        });
+        expect(created).toMatchObject({ reused: false, checkout: { branch: "made-by-the-host" } });
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(WorkerHosts.layerLocalOn, LocalHostProcess.worktrees).pipe(
+            Layer.provideMerge(LocalHostProcess.layerWith({ hostProcess: true })),
+            Layer.provide(InServer),
+          ),
+        ),
+      ),
     30_000,
   );
 });
