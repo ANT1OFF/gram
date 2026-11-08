@@ -36,6 +36,7 @@ import { HeldBriefLine } from "./held-brief";
 import { peek } from "./peek-store";
 import { useFeatureSummary } from "./use-feature-cards";
 import { stationDotClass } from "./overview-model";
+import { quietCard } from "./stream-model";
 
 // A feature's live card and the stream's one-line events (contracts `feature-cards.ts`). A card is
 // drawn once per feature and redrawn in place as its versions arrive; nothing in it animates while
@@ -318,6 +319,61 @@ export function FeatureCardView({
 }: {
   card: FeatureCard;
   /** Titles of workers outside this card, for overlap with another feature. */
+  workerTitle?: (threadId: ThreadId) => string | undefined;
+}) {
+  if (quietCard(card)) return <MergedFeatureLine card={card} />;
+  return <LiveFeatureCard card={card} {...(workerTitle === undefined ? {} : { workerTitle })} />;
+}
+
+/**
+ * A merged feature, flat: one line of quiet meta like the stream's other quiet lines, with no box,
+ * "history-sort · Stable sort in History merged gram#141". Its PR chip carries the merged glyph,
+ * the line's one coloured mark; the name still opens the feature's sheet.
+ */
+function MergedFeatureLine({ card }: { card: FeatureCard }) {
+  return (
+    <p
+      aria-label={`Feature ${card.feature}, merged`}
+      data-testid="feature-card"
+      data-flat="true"
+      data-feature={card.feature}
+      data-version={card.version}
+      data-station={card.station}
+      className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 py-0.5 text-meta text-muted-foreground"
+    >
+      <button
+        type="button"
+        data-testid="feature-card-open"
+        onClick={() => openFeatureSheet(card.workspaceId, card.feature)}
+        className="max-w-full min-w-0 truncate rounded-sm text-left underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {card.feature}
+      </button>
+      {card.workers.map((worker) => (
+        <span
+          key={worker.threadId}
+          data-testid="feature-card-worker"
+          data-station={worker.station}
+          className="flex min-w-0 items-center gap-1.5"
+        >
+          <span aria-hidden>·</span>
+          <WorkerLink threadId={worker.threadId}>{worker.title}</WorkerLink>
+          {worker.prs.length > 0 && <span>merged</span>}
+          {worker.prs.map((pr) => (
+            <PrChip key={`${pr.repo}#${pr.number}`} pr={pr} threadId={worker.threadId} />
+          ))}
+        </span>
+      ))}
+      {card.workers.every((worker) => worker.prs.length === 0) && <span>merged</span>}
+    </p>
+  );
+}
+
+function LiveFeatureCard({
+  card,
+  workerTitle,
+}: {
+  card: FeatureCard;
   workerTitle?: (threadId: ThreadId) => string | undefined;
 }) {
   const summary = useFeatureSummary(card);

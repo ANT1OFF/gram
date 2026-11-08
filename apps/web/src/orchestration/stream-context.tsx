@@ -4,8 +4,8 @@ import { createContext, use, useMemo, type ReactNode } from "react";
 import { useAllActivity } from "@/stores/all-activity";
 
 import { FeatureCardView } from "./feature-card";
-import { planStream, type StreamPlan } from "./stream-model";
-import { UpdateBlock } from "./update-block";
+import { cardRows, planRuns, planStream, quietCard, type StreamPlan } from "./stream-model";
+import { UpdateBlock, UpdateRun } from "./update-block";
 import { useFeatureCards } from "./use-feature-cards";
 
 /** A worker's name as orchestrator messages link it. */
@@ -19,6 +19,8 @@ export interface OrchestratorStream {
   readonly cards: ReadonlyMap<string, FeatureCard>;
   /** Every worker on a card, longest title first, for linking names in messages. */
   readonly workers: readonly WorkerName[];
+  /** The quiet stream (Show all activity off): runs of quiet rows are one line each. */
+  readonly quiet?: boolean;
 }
 
 /**
@@ -49,7 +51,13 @@ export function useOrchestratorStream(
   // Quiet unless the user asked for all of it: what changed nothing for them folds into its update.
   const all = useAllActivity((s) => thread !== undefined && s.shown.has(thread.id));
   const plan = useMemo(
-    () => (orchestrator ? planStream(messages, shown, { quiet: !all }) : NO_PLAN),
+    () =>
+      orchestrator
+        ? all
+          ? planStream(messages, shown)
+          : // Quiet: and a run of updates and merged lines in a row is one line.
+            planRuns(planStream(messages, shown, { quiet: true }), shown)
+        : NO_PLAN,
     [orchestrator, messages, shown, all],
   );
   const byFeature = useMemo(() => new Map(shown.map((card) => [card.feature, card])), [shown]);
@@ -72,8 +80,8 @@ export function useOrchestratorStream(
     [namesKey],
   );
   return useMemo(
-    () => (orchestrator ? { plan, cards: byFeature, workers } : undefined),
-    [orchestrator, plan, byFeature, workers],
+    () => (orchestrator ? { plan, cards: byFeature, workers, quiet: !all } : undefined),
+    [orchestrator, plan, byFeature, workers, all],
   );
 }
 
@@ -89,7 +97,8 @@ export function OrchestratorStreamProvider({
 
 /**
  * The update and cards that go with one message of the orchestrator's stream; nothing elsewhere.
- * A run of digests is one update block, its live cards beneath it.
+ * A run of digests is one update block, its live cards beneath it; in the quiet stream a run of
+ * quiet rows is one line that opens on each (`UpdateRun`).
  */
 export function StreamExtrasView({
   messageId,
@@ -104,21 +113,39 @@ export function StreamExtrasView({
   if (stream === undefined || extras === undefined) return null;
   const titleOf = (threadId: ThreadId) =>
     stream.workers.find((worker) => worker.threadId === threadId)?.title;
+  const cardOf = (feature: string) => {
+    const card = stream.cards.get(feature);
+    return card === undefined ? null : (
+      <FeatureCardView key={feature} card={card} workerTitle={titleOf} />
+    );
+  };
   return (
     // A reply's block step (12 px) between the update and its cards, and after the message above.
     <div data-testid="stream-extras" className="mt-3 flex flex-col gap-3 first:mt-0">
-      <UpdateBlock
-        lines={extras.lines}
-        digests={extras.digests}
-        replies={extras.replies}
-        renderReply={renderReply}
-      />
-      {extras.cards.map((feature) => {
+      {extras.run === undefined ? (
+        <UpdateBlock
+          lines={extras.lines}
+          digests={extras.digests}
+          replies={extras.replies}
+          renderReply={renderReply}
+        />
+      ) : (
+        <UpdateRun parts={extras.run} renderMerged={cardOf} renderReply={renderReply} />
+      )}
+      {cardRows(extras.cards, (feature) => {
         const card = stream.cards.get(feature);
-        return card === undefined ? null : (
-          <FeatureCardView key={feature} card={card} workerTitle={titleOf} />
-        );
-      })}
+        return stream.quiet === true && card !== undefined && quietCard(card);
+      }).map((row) =>
+        row.kind === "card" ? (
+          cardOf(row.feature)
+        ) : (
+          <UpdateRun
+            key={`run:${row.parts.map((part) => (part.kind === "merged" ? part.feature : "")).join(" ")}`}
+            parts={row.parts}
+            renderMerged={cardOf}
+          />
+        ),
+      )}
     </div>
   );
 }

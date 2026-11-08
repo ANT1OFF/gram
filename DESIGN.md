@@ -272,7 +272,14 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   merged · More") and an event Gram's own tools report there ("Started a worker", "Queued to merge
   when ready") are quiet meta, a line of `text-meta` in `fg-muted` at regular weight behind its
   chevron, never a card; only an ask (amber) or a failure (red) colours one, and a call still
-  running, waiting on you or failed keeps its card. One 12 px step separates every block of the
+  running, waiting on you or failed keeps its card. A merged feature is the same kind of line
+  ("history-sort · Stable sort in History merged gram#141"), flat, its PR chip the one mark; a
+  feature still moving keeps its card. **A run is one line:** two or more quiet rows in a row
+  (updates and merged lines, with no reply or message of yours between them) fold into one,
+  "09:54–09:57 Updates · 3 merged · 1 report · More" (merged lines alone, "6 merged"), which
+  opens in place on each row as it stood, by click, Enter or Space. Its words sum every row it
+  holds, so an ask or a failure inside it is still said there, amber or red. A single update stays
+  as it is, a live card ends the run, and Show all activity shows every row unfolded. One 12 px step separates every block of the
   stream, a reply from an update the same as an update from the next reply: a message's Copy,
   rewind and time float on hover (beside a bubble's top, over the end of a reply's last line)
   instead of reserving a row under it. They float only with a pointer that hovers and a message at

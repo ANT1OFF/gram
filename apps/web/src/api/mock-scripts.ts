@@ -428,6 +428,27 @@ const seedRequests: Record<string, PendingRequest[]> = {
   "t-plan": [PLAN_REQUEST],
 };
 
+/**
+ * What a seeded thread's transcript ends with once its question or plan is answered (`calmSeeds`,
+ * the realistic scenario's earlier day): the reply the answer brought, as `questionAnswered` and
+ * `planAnswered` write it. Without it the transcript ends on "I need two decisions from you." with
+ * no card under it, since the request it promised is gone.
+ */
+export function answeredSeedMessages(threadId: string): GramUIMessage[] {
+  switch (threadId) {
+    case "t-question":
+      return [
+        assistantMessage("m-q3", "Got it (date-fns · en-GB, nb-NO). Wiring up the picker now."),
+      ];
+    case "t-plan":
+      return [
+        assistantMessage("m-p3", "Plan approved. Starting with step 1 in `acceptEdits` mode."),
+      ];
+    default:
+      return [];
+  }
+}
+
 export function seedMessages(threadId: string): GramUIMessage[] {
   const edits = mockEditMessages(threadId);
   if (edits !== undefined) return edits;

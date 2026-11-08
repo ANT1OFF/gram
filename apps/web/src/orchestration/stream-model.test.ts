@@ -10,9 +10,12 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import {
+  cardRows,
   digestLineWords,
+  planRuns,
   planStream,
   replyPreview,
+  runWords,
   spawnedFeatures,
   updateWords,
 } from "./stream-model";
@@ -455,5 +458,202 @@ describe("the quiet stream", () => {
     expect(replyPreview([spawning("s", 1, "f")])).toBeUndefined();
     expect(replyPreview([reply("a", 1, "Older."), spawning("s", 2, "f")])).toBe("Older.");
     expect(replyPreview([reply("r", 1, "x".repeat(400))])?.length).toBe(160);
+  });
+});
+
+/** The quiet stream as an orchestrator's chat shows it: quiet episodes folded, then runs. */
+const quietPlan = (messages: readonly GramUIMessage[], cards: readonly FeatureCard[] = []) =>
+  planRuns(planStream(messages, cards, { quiet: true }), cards);
+
+const mergedCard = (name: string): FeatureCard => ({ ...card(name), station: "merged" });
+
+/** A digest whose worker now asks the user something. */
+const askingDigest = (generation: number) =>
+  digest(generation, {
+    changes: [
+      { threadId: A, feature: "f", title: "Queue worker", from: "working", to: "question" },
+    ],
+    features: [feature("f", [worker({ state: "question" })])],
+  });
+
+/** In `cardRows`' tests, a feature named m-something is merged. */
+const namedMerged = (name: string) => name.startsWith("m");
+
+/** A digest carrying one worker's progress report. */
+const withReport = (generation: number) =>
+  digest(generation, {
+    reports: [
+      { threadId: A, feature: "f", title: "Queue worker", state: "progress", summary: "Halfway." },
+    ],
+  } as unknown as Partial<OrchestrationDigest>);
+
+describe("runs of quiet rows", () => {
+  it("collapses updates with nothing between them into one row on the last, and says where each went", () => {
+    const messages = [
+      said("u1", 1, "user"),
+      digestMessage("d1", 2, digest(1)),
+      reply("r1", 3, "Still building."),
+      digestMessage("d2", 4, mergedDigest(2)),
+      reply("r2", 5, "#431 merged."),
+    ];
+    const plan = quietPlan(messages);
+    // The quiet update (d1 with its reply) and the merge's update stood one under the other.
+    expect(ids(plan.messages)).toEqual(["u1", "d2", "r2"]);
+    const run = plan.extras.get("d2")?.run;
+    expect(run?.map((part) => (part.kind === "update" ? part.messageId : part.feature))).toEqual([
+      "d1",
+      "d2",
+    ]);
+    // The row is the run alone: its own update is in it, not beside it.
+    expect(plan.extras.get("d2")).toMatchObject({ lines: [], digests: [], cards: [] });
+    expect(plan.extras.has("d1")).toBe(false);
+    // A search for what the run holds lands on its row, including what d1 had folded.
+    expect(plan.foldedInto.get("d1")).toBe("d2");
+    expect(plan.foldedInto.get("r1")).toBe("d2");
+    // Nothing it folded is lost: d1's reply is still in its part.
+    const first = run?.[0];
+    expect(first?.kind === "update" ? first.replies?.map((each) => each.id) : undefined).toEqual([
+      "r1",
+    ]);
+    expect(runWords(run ?? [], clock)).toEqual({
+      counts: [{ kind: "merged", text: "1 merged" }],
+      // Its digests carry no report; the merge's carries one change.
+      digest: "1 change",
+      time: "t2–t4",
+      needsYou: false,
+    });
+  });
+
+  it("leaves a single update as it is, and the plan it was given untouched", () => {
+    const messages = [
+      said("u1", 1, "user"),
+      digestMessage("d1", 2, mergedDigest(1)),
+      said("r1", 3),
+    ];
+    const quiet = planStream(messages, [], { quiet: true });
+    expect(planRuns(quiet, [])).toBe(quiet);
+    expect(quiet.extras.get("d1")?.run).toBeUndefined();
+  });
+
+  it("never runs across a reply or a message of the user's", () => {
+    const messages = [
+      digestMessage("d1", 1, mergedDigest(1)),
+      reply("r1", 2, "#431 merged."),
+      digestMessage("d2", 3, mergedDigest(2)),
+      said("u1", 4, "user"),
+      digestMessage("d3", 5, mergedDigest(3)),
+    ];
+    const plan = quietPlan(messages);
+    expect(ids(plan.messages)).toEqual(["d1", "r1", "d2", "u1", "d3"]);
+    for (const id of ["d1", "d2", "d3"]) expect(plan.extras.get(id)?.run).toBeUndefined();
+  });
+
+  it("takes merged features' lines next to an update into its run, and leaves the reply they followed", () => {
+    const messages = [
+      said("u1", 1, "user"),
+      spawning("s1", 2, "history-sort"),
+      digestMessage("d1", 3, mergedDigest(1)),
+      reply("r1", 4, "#431 merged."),
+    ];
+    const plan = quietPlan(messages, [mergedCard("history-sort")]);
+    expect(ids(plan.messages)).toEqual(["u1", "s1", "d1", "r1"]);
+    // The spawn's reply stands; the merged line under it joins the update below.
+    expect(plan.extras.get("s1")?.cards).toEqual([]);
+    const run = plan.extras.get("d1")?.run;
+    expect(run?.map((part) => part.kind)).toEqual(["merged", "update"]);
+    expect(runWords(run ?? [], clock).counts).toEqual([{ kind: "merged", text: "2 merged" }]);
+  });
+
+  it("counts a merged line once when an update in the run already said it merged", () => {
+    const messages = [
+      digestMessage("d1", 1, digest(1)),
+      reply("r1", 2, "Still going."),
+      digestMessage("d2", 3, mergedDigest(2)),
+    ];
+    const plan = quietPlan(messages, [mergedCard("rate-headers")]);
+    const run = plan.extras.get("d2")?.run;
+    expect(run?.map((part) => part.kind)).toEqual(["update", "update", "merged"]);
+    expect(runWords(run ?? [], clock).counts).toEqual([{ kind: "merged", text: "1 merged" }]);
+  });
+
+  it("ends a run at a live card, which stays a card under the run's row", () => {
+    const merging = mergedDigest(2);
+    const messages = [
+      digestMessage("d1", 1, digest(1)),
+      reply("r1", 2, "Still going."),
+      // The merge's digest also carries a live feature, whose card it anchors.
+      digestMessage("d2", 3, {
+        ...merging,
+        features: [...merging.features, feature("mail-trigger")],
+      }),
+      reply("r2", 4, "#431 merged; mail trigger is working."),
+    ];
+    const plan = quietPlan(messages, [card("mail-trigger")]);
+    expect(ids(plan.messages)).toEqual(["d2", "r2"]);
+    expect(plan.extras.get("d2")?.run?.map((part) => part.kind)).toEqual(["update", "update"]);
+    expect(plan.extras.get("d2")?.cards).toEqual(["mail-trigger"]);
+  });
+
+  it("says an ask or a failure inside a run on its row, first and toned", () => {
+    const messages = [
+      digestMessage("d1", 1, digest(1)),
+      reply("r1", 2, "Still going."),
+      digestMessage("d2", 3, askingDigest(2)),
+      reply("r2", 4, "It asks you which retry policy to keep."),
+    ];
+    const plan = quietPlan(messages);
+    expect(ids(plan.messages)).toEqual(["d2", "r2"]);
+    const words = runWords(plan.extras.get("d2")?.run ?? [], clock);
+    expect(words.counts[0]).toEqual({ kind: "ask", text: "1 waiting on you" });
+    expect(words.needsYou).toBe(true);
+  });
+
+  it("folds two or more merged lines in a row among a message's cards, never a live card", () => {
+    expect(cardRows(["m1", "m2", "m3", "live", "m4", "live2", "m5", "m6"], namedMerged)).toEqual([
+      {
+        kind: "run",
+        parts: [
+          { kind: "merged", feature: "m1" },
+          { kind: "merged", feature: "m2" },
+          { kind: "merged", feature: "m3" },
+        ],
+      },
+      { kind: "card", feature: "live" },
+      // A lone merged line stays a line.
+      { kind: "card", feature: "m4" },
+      { kind: "card", feature: "live2" },
+      {
+        kind: "run",
+        parts: [
+          { kind: "merged", feature: "m5" },
+          { kind: "merged", feature: "m6" },
+        ],
+      },
+    ]);
+    // Merged lines alone read as their count, with no time.
+    const words = runWords(
+      [
+        { kind: "merged", feature: "m1" },
+        { kind: "merged", feature: "m2" },
+      ],
+      clock,
+    );
+    expect(words).toEqual({
+      counts: [{ kind: "merged", text: "2 merged" }],
+      digest: undefined,
+      time: undefined,
+      needsYou: false,
+    });
+  });
+
+  it("gives a run one time when its updates came at once, and its digests' reports summed", () => {
+    const words = runWords(
+      [
+        { kind: "update", messageId: "d1", lines: [], digests: [entry("d1", 5, withReport(1))] },
+        { kind: "update", messageId: "d2", lines: [], digests: [entry("d2", 5, withReport(2))] },
+      ],
+      clock,
+    );
+    expect(words).toEqual({ counts: [], digest: "2 reports", time: "t5", needsYou: false });
   });
 });
