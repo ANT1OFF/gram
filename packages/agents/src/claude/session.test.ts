@@ -2482,6 +2482,48 @@ describe("app tools bridge", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("serves tools listed elsewhere in-process, each call handed back", () =>
+    Effect.gen(function* () {
+      const remote = harness();
+      const called: Array<string> = [];
+      yield* openSession({
+        // An endpoint too, as the host passes it: the listed tools win, never a URL in the CLI's
+        // arguments.
+        mcp: { url: "http://127.0.0.1:1/mcp", headers: { authorization: "Bearer t" } },
+        remoteAppTools: {
+          tools: [
+            {
+              name: "set_title",
+              description: "Set the title.",
+              inputSchema: { type: "object", properties: { title: { type: "string" } } },
+              alwaysLoad: true,
+            },
+          ],
+          call: async (name, args) => {
+            called.push(`${name} ${JSON.stringify(args)}`);
+            return { content: [{ type: "text", text: "done" }] };
+          },
+        },
+      }).pipe(Effect.provide(remote.layer));
+      const q = query(remote);
+      expect(q.options.mcpServers).toEqual({ gram: { type: "sdk", name: "gram", instance: {} } });
+      expect(remote.tools.map((t) => [t.name, t.extras?.alwaysLoad])).toEqual([
+        ["set_title", true],
+      ]);
+      expect(yield* Effect.promise(() => remote.tools[0]!.handler({ title: "x" }, {}))).toEqual({
+        content: [{ type: "text", text: "done" }],
+      });
+      expect(called).toEqual(['set_title {"title":"x"}']);
+      // Only the listed names pass unasked: another server whose name starts with `gram` doesn't.
+      expect(yield* preToolUse(q)("mcp__gram__set_title", { title: "x" })).toMatchObject({
+        hookSpecificOutput: { permissionDecision: "allow" },
+      });
+      expect(yield* preToolUse(q)("mcp__gram__x__delete", {})).not.toMatchObject({
+        hookSpecificOutput: { permissionDecision: "allow" },
+      });
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("gives a confined session no MCP server but Gram's own", () =>
     Effect.gen(function* () {
       const confined = harness();

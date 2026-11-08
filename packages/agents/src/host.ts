@@ -28,6 +28,7 @@ import type {
   ThreadId,
   UserInput,
 } from "@gram/contracts";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
@@ -65,6 +66,12 @@ export interface OpenSessionOptions {
   readonly model?: ModelRef;
   readonly permissionMode?: PermissionMode;
   readonly appTools?: AppToolRegistryPort;
+  /**
+   * The thread's app tools as another process serves them, for a session opened away from the
+   * server's registry. A host that serves app tools in-process takes these instead of `appTools`;
+   * any other ignores them.
+   */
+  readonly remoteAppTools?: RemoteAppTools;
   /**
    * The thread's app tools over the server's HTTP MCP transport, for agents that can't host them
    * in-process. The bearer token in `headers` binds every call to this thread.
@@ -141,6 +148,20 @@ export interface OpenSessionOptions {
    * A host that doesn't report them ignores it.
    */
   readonly onConnectorsSeen?: (seen: ConnectorsSeen) => void;
+}
+
+/** App tools listed by, and called through, the process that serves them. */
+export interface RemoteAppTools {
+  readonly tools: ReadonlyArray<{
+    readonly name: string;
+    readonly description: string;
+    /** An object JSON Schema, as the MCP listing gives it. */
+    readonly inputSchema: Readonly<Record<string, unknown>>;
+    /** Load it up front rather than behind the agent's tool search. */
+    readonly alwaysLoad: boolean;
+  }>;
+  /** Runs one; never rejects with a tool's own failure, which comes back as an error result. */
+  call(name: string, args: unknown, signal?: AbortSignal): Promise<CallToolResult>;
 }
 
 /** One report of a session's MCP servers (`OpenSessionOptions.onConnectorsSeen`). */

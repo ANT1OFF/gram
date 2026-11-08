@@ -62,6 +62,7 @@ import {
   MAIN_AGENT_APP_TOOLS,
   appToolName,
   buildAppToolServer,
+  buildRemoteAppToolServer,
 } from "./apptools.ts";
 import { expectedCliVersion, restoresSessionCost, supportsFastControl } from "./binary.ts";
 import {
@@ -638,9 +639,22 @@ export const makeClaudeHost = (
       const input = new AsyncPushQueue<SDKUserMessage>();
       const pending = new Map<RequestId, Pending>();
       const stderr: Array<string> = [];
+      // A session opened away from the server (in the host process) has no registry here: it serves
+      // the tools the server's MCP endpoint lists, in-process all the same, each call going to the
+      // endpoint, whose transport carries the approval gate.
       const appServer = o.appTools
         ? buildAppToolServer(o.threadId, o.appTools, sdk, o.audience)
-        : undefined;
+        : o.remoteAppTools
+          ? yield* Effect.try({
+              try: () => buildRemoteAppToolServer(o.remoteAppTools!, sdk),
+              catch: (error) =>
+                new AgentUnavailable({
+                  agent: "claude",
+                  reason: "startup-failed",
+                  message: `Gram's app tools couldn't be served: ${describeError(error)}`,
+                }),
+            })
+          : undefined;
       let endedReason: string | undefined;
       let effort = effortOf(o.model);
       let speed = o.model?.speed;

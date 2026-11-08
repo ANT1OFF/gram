@@ -2,8 +2,22 @@
 // server on the other. Today the stream is a pipe to a child process on this machine; a paired
 // machine's will be a connection over the tailnet, with the same messages.
 
+import type {
+  AgentSession,
+  ConnectorSignInStart,
+  ConnectorsSeen,
+  ConnectorStatus,
+  SequencedEvent,
+} from "@gram/agents";
 import {
+  AgentUnavailable,
+  AnswerUndelivered,
+  type HostAgentReload,
+  type HostSessionOpen,
+  type HostSessionOpened,
   HOST_PROTOCOL_VERSION,
+  InterruptHung,
+  ModeRefused,
   type HostCapability,
   HostCommandFailed,
   HostFailed,
@@ -42,6 +56,7 @@ import {
 } from "../platform/unstable.ts";
 import type { HostFiles } from "./files.ts";
 import type { HostGit } from "./git.ts";
+import type { HostSessionsService } from "./sessions.ts";
 import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
 import type {
   OpenSettings,
@@ -70,6 +85,7 @@ export interface HostService {
   readonly worktrees: HostWorktrees;
   readonly git: HostGit;
   readonly terminals: HostTerminalsService;
+  readonly sessions: HostSessionsService;
   readonly scan: Effect.Effect<PortScan, unknown>;
 }
 
@@ -80,6 +96,7 @@ export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
   "worktrees",
   "git",
   "terminals",
+  "sessions",
 ];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
@@ -123,6 +140,15 @@ const commandToWire = (error: ProcError) =>
     message: error.message,
   });
 
+/** A connector's status for the wire, its optional keys absent rather than undefined. */
+const connectorToWire = (status: ConnectorStatus) => defined({ ...status });
+
+const seenToWire = (seen: ConnectorsSeen) => ({
+  detailed: seen.detailed,
+  whole: seen.whole,
+  connectors: seen.connectors.map(connectorToWire),
+});
+
 /** `A` with each key that may be `undefined` made optional instead. */
 type Defined<A> = {
   [K in keyof A as undefined extends A[K] ? never : K]: A[K];
@@ -135,8 +161,8 @@ const defined = <A extends object>(value: A): Defined<A> =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Defined<A>;
 
 /** The protocol's handlers over a host's own folders, worktrees, git state and scan. */
-const handlersFor = (host: HostService) =>
-  HostRpcs.toLayer(
+const handlersFor = (host: HostService) => {
+  return HostRpcs.toLayer(
     HostRpcs.of({
       "host.hello": () => Effect.succeed(host.hello),
       "host.files.list": ({ path, showHidden, limit }) =>
@@ -183,8 +209,78 @@ const handlersFor = (host: HostService) =>
         host.terminals.terminals.subscribe(terminalId),
       "host.terminals.snapshot": ({ threadId }) => host.terminals.terminals.snapshot(threadId),
       "host.terminals.roots": () => host.terminals.roots,
+      "host.sessions.open": (request) => host.sessions.open(request),
+      "host.sessions.events": ({ handle, afterSeq }) => host.sessions.events(handle, afterSeq),
+      "host.sessions.ack": ({ handle, seq }) => host.sessions.ack(handle, seq),
+      "host.sessions.connectorsSeen": ({ handle }) =>
+        host.sessions.connectorsSeen(handle).pipe(Stream.map(seenToWire)),
+      "host.sessions.send": ({ handle, input, messageId }) =>
+        withSession(handle, (session) =>
+          session.send(input, messageId === undefined ? undefined : { messageId }),
+        ),
+      "host.sessions.steer": ({ handle, input }) =>
+        withSession(handle, (session) => session.steer(input)),
+      "host.sessions.interrupt": ({ handle }) =>
+        withSession(handle, (session) => session.interrupt),
+      "host.sessions.closeToolGate": ({ handle }) =>
+        withSession(handle, (session) => session.closeToolGate ?? Effect.void),
+      "host.sessions.stopBackgroundTasks": ({ handle }) =>
+        withSession(handle, (session) => session.stopBackgroundTasks ?? Effect.succeed(0)),
+      "host.sessions.stopTask": ({ handle, taskId }) =>
+        withSession(handle, (session) => session.stopTask?.(taskId) ?? Effect.succeed(false)),
+      "host.sessions.respond": ({ handle, requestId, answer }) =>
+        withSession(handle, (session) => session.respond(requestId, answer)),
+      "host.sessions.setMode": ({ handle, mode }) =>
+        withSession(handle, (session) => session.setMode(mode)),
+      "host.sessions.setModel": ({ handle, model }) =>
+        withSession(handle, (session) => session.setModel(model)),
+      "host.sessions.addDirectories": ({ handle, paths }) =>
+        withSession(handle, (session) => session.addDirectories?.(paths) ?? Effect.succeed(false)),
+      "host.sessions.processId": ({ handle }) =>
+        withSession(handle, (session) =>
+          (session.processId ?? Effect.succeed(undefined)).pipe(Effect.map((pid) => pid ?? null)),
+        ),
+      "host.sessions.connectorsStatus": ({ handle }) =>
+        withConnectors(handle, (connectors) =>
+          connectors.status.pipe(Effect.map((list) => list.map(connectorToWire))),
+        ),
+      "host.sessions.connectorsReconnect": ({ handle, name }) =>
+        withConnectors(handle, (connectors) => connectors.reconnect(name)),
+      "host.sessions.connectorsSetEnabled": ({ handle, name, enabled }) =>
+        withConnectors(handle, (connectors) => connectors.setEnabled(name, enabled)),
+      "host.sessions.connectorsAuthenticate": ({ handle, name }) =>
+        withConnectors(
+          handle,
+          (connectors): Effect.Effect<ConnectorSignInStart, AgentUnavailable | HostFailed> =>
+            connectors.authenticate === undefined
+              ? Effect.fail(
+                  new HostFailed({
+                    message: "This agent can't start a sign-in.",
+                  }),
+                )
+              : connectors.authenticate(name),
+        ),
+      "host.sessions.close": ({ handle }) => host.sessions.close(handle),
+      "host.sessions.reload": ({ agent, reload }) => host.sessions.reload(agent, reload),
     }),
   );
+  function withSession<A, E>(
+    handle: string,
+    f: (session: AgentSession) => Effect.Effect<A, E>,
+  ): Effect.Effect<A, E | HostFailed> {
+    return Effect.flatMap(host.sessions.session(handle), f);
+  }
+  function withConnectors<A, E>(
+    handle: string,
+    f: (connectors: NonNullable<AgentSession["connectors"]>) => Effect.Effect<A, E>,
+  ): Effect.Effect<A, E | HostFailed> {
+    return withSession(handle, (session): Effect.Effect<A, E | HostFailed> =>
+      session.connectors === undefined
+        ? Effect.fail(new HostFailed({ message: "This session has no connectors." }))
+        : f(session.connectors),
+    );
+  }
+};
 
 /**
  * Serves `host` on `socket` until the other end closes it. One connection, one control plane: a
@@ -244,6 +340,79 @@ export interface HostTerminalsConnection {
   readonly roots: Stream.Stream<TerminalRoot, HostUnavailable>;
 }
 
+/**
+ * A host's agent sessions as the control plane reaches them, each by the handle it chose. A call
+ * the host couldn't answer fails with `HostFailed`, whatever the reason; the errors an agent itself
+ * gives keep their own tags. A host that has gone has no sessions: their events end, a close finds
+ * nothing to do.
+ */
+export interface HostSessionsConnection {
+  readonly open: (
+    request: HostSessionOpen,
+  ) => Effect.Effect<HostSessionOpened, AgentUnavailable | HostFailed>;
+  readonly events: (
+    handle: string,
+    afterSeq: number,
+  ) => Stream.Stream<SequencedEvent, HostUnavailable | NotFound>;
+  readonly ack: (handle: string, seq: number) => Effect.Effect<void>;
+  readonly connectorsSeen: (handle: string) => Stream.Stream<ConnectorsSeen>;
+  readonly send: (
+    handle: string,
+    ...args: Parameters<AgentSession["send"]>
+  ) => Effect.Effect<void, HostFailed>;
+  readonly steer: (
+    handle: string,
+    ...args: Parameters<AgentSession["steer"]>
+  ) => Effect.Effect<void, HostFailed>;
+  readonly interrupt: (handle: string) => Effect.Effect<void, InterruptHung | HostFailed>;
+  readonly closeToolGate: (handle: string) => Effect.Effect<void, HostFailed>;
+  readonly stopBackgroundTasks: (handle: string) => Effect.Effect<number, HostFailed>;
+  readonly stopTask: (handle: string, taskId: string) => Effect.Effect<boolean, HostFailed>;
+  readonly respond: (
+    handle: string,
+    ...args: Parameters<AgentSession["respond"]>
+  ) => Effect.Effect<void, AnswerUndelivered | HostFailed>;
+  readonly setMode: (
+    handle: string,
+    ...args: Parameters<AgentSession["setMode"]>
+  ) => Effect.Effect<void, ModeRefused | HostFailed>;
+  readonly setModel: (
+    handle: string,
+    ...args: Parameters<AgentSession["setModel"]>
+  ) => Effect.Effect<void, HostFailed>;
+  readonly addDirectories: (
+    handle: string,
+    paths: ReadonlyArray<string>,
+  ) => Effect.Effect<boolean, HostFailed>;
+  readonly processId: (handle: string) => Effect.Effect<number | undefined, HostFailed>;
+  readonly connectors: {
+    readonly status: (
+      handle: string,
+    ) => Effect.Effect<ReadonlyArray<ConnectorStatus>, AgentUnavailable | HostFailed>;
+    readonly reconnect: (
+      handle: string,
+      name: string,
+    ) => Effect.Effect<void, AgentUnavailable | HostFailed>;
+    readonly setEnabled: (
+      handle: string,
+      name: string,
+      enabled: boolean,
+    ) => Effect.Effect<"applied" | "restart", AgentUnavailable | HostFailed>;
+    readonly authenticate: (
+      handle: string,
+      name: string,
+    ) => Effect.Effect<
+      { readonly authorizationUrl: string } | "started",
+      AgentUnavailable | HostFailed
+    >;
+  };
+  readonly close: (handle: string) => Effect.Effect<void>;
+  readonly reload: (
+    agent: HostSessionOpen["agent"],
+    reload: HostAgentReload,
+  ) => Effect.Effect<void>;
+}
+
 /** A connected host, as the control plane reaches it. */
 export interface HostConnection {
   readonly hello: HostHello;
@@ -251,6 +420,7 @@ export interface HostConnection {
   readonly worktrees: HostWorktrees;
   readonly git: HostGitConnection;
   readonly terminals: HostTerminalsConnection;
+  readonly sessions: HostSessionsConnection;
   readonly scan: Effect.Effect<PortScan, unknown>;
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
@@ -317,6 +487,11 @@ const keepInvalid = <E extends { readonly _tag: string; readonly message?: strin
   error: E,
 ): Effect.Effect<InvalidState> =>
   error instanceof InvalidState ? Effect.succeed(error) : asInvalid(error);
+
+/** For a session call that keeps none of the errors it can fail with. */
+const none = (error: unknown): error is never => error === none;
+const isAgentUnavailable = (error: unknown): error is AgentUnavailable =>
+  error instanceof AgentUnavailable;
 
 /** How long a host gets to say hello before it counts as not answering. */
 const HELLO_TIMEOUT = "5 seconds";
@@ -586,12 +761,108 @@ export const connectHost = (
         ),
       roots: hostStream(client["host.terminals.roots"]()),
     };
+    /**
+     * A session call: the agent's own errors pass as they are, and anything else (the host failing
+     * or not answering) reads as `HostFailed`, its detail logged.
+     */
+    const sessionCall = <A, E extends { readonly _tag: string; readonly message?: string }, K>(
+      call: Effect.Effect<A, E>,
+      keep: (error: unknown) => error is K,
+    ): Effect.Effect<A, K | HostFailed> =>
+      guarded(call).pipe(
+        Effect.catch((error) =>
+          keep(error)
+            ? Effect.fail(error)
+            : error instanceof HostFailed
+              ? Effect.fail(error)
+              : Effect.logWarning("worker host: a session call failed on the stream").pipe(
+                  Effect.annotateLogs({ reason: failureText(error) }),
+                  Effect.andThen(Effect.fail(new HostFailed({ message: HOST_NOT_ANSWERING }))),
+                ),
+        ),
+      );
+    const sessions: HostSessionsConnection = {
+      open: (request) => sessionCall(client["host.sessions.open"](request), isAgentUnavailable),
+      events: (handle, afterSeq) =>
+        hostStream(client["host.sessions.events"]({ handle, afterSeq })),
+      ack: (handle, seq) =>
+        guarded(client["host.sessions.ack"]({ handle, seq })).pipe(Effect.ignore),
+      connectorsSeen: (handle) =>
+        hostStream(client["host.sessions.connectorsSeen"]({ handle })).pipe(
+          Stream.catch(() => Stream.empty),
+        ),
+      send: (handle, input, sendOptions) =>
+        sessionCall(
+          client["host.sessions.send"](
+            defined({ handle, input, messageId: sendOptions?.messageId }),
+          ),
+          none,
+        ),
+      steer: (handle, input) => sessionCall(client["host.sessions.steer"]({ handle, input }), none),
+      interrupt: (handle) =>
+        sessionCall(
+          client["host.sessions.interrupt"]({ handle }),
+          (error): error is InterruptHung => error instanceof InterruptHung,
+        ),
+      closeToolGate: (handle) =>
+        sessionCall(client["host.sessions.closeToolGate"]({ handle }), none),
+      stopBackgroundTasks: (handle) =>
+        sessionCall(client["host.sessions.stopBackgroundTasks"]({ handle }), none),
+      stopTask: (handle, taskId) =>
+        sessionCall(client["host.sessions.stopTask"]({ handle, taskId }), none),
+      respond: (handle, requestId, answer) =>
+        sessionCall(
+          client["host.sessions.respond"]({ handle, requestId, answer }),
+          (error): error is AnswerUndelivered => error instanceof AnswerUndelivered,
+        ),
+      setMode: (handle, mode) =>
+        sessionCall(
+          client["host.sessions.setMode"]({ handle, mode }),
+          (error): error is ModeRefused => error instanceof ModeRefused,
+        ),
+      setModel: (handle, model) =>
+        sessionCall(client["host.sessions.setModel"]({ handle, model }), none),
+      addDirectories: (handle, paths) =>
+        sessionCall(client["host.sessions.addDirectories"]({ handle, paths }), none),
+      processId: (handle) =>
+        sessionCall(client["host.sessions.processId"]({ handle }), none).pipe(
+          Effect.map((pid) => pid ?? undefined),
+        ),
+      connectors: {
+        status: (handle) =>
+          sessionCall(client["host.sessions.connectorsStatus"]({ handle }), isAgentUnavailable),
+        reconnect: (handle, name) =>
+          sessionCall(
+            client["host.sessions.connectorsReconnect"]({ handle, name }),
+            isAgentUnavailable,
+          ),
+        setEnabled: (handle, name, enabled) =>
+          sessionCall(
+            client["host.sessions.connectorsSetEnabled"]({
+              handle,
+              name,
+              enabled,
+            }),
+            isAgentUnavailable,
+          ),
+        authenticate: (handle, name) =>
+          sessionCall(
+            client["host.sessions.connectorsAuthenticate"]({ handle, name }),
+            isAgentUnavailable,
+          ),
+      },
+      // A host that went took its sessions with it, so there is nothing left to close.
+      close: (handle) => guarded(client["host.sessions.close"]({ handle })).pipe(Effect.ignore),
+      reload: (agent, reload) =>
+        guarded(client["host.sessions.reload"]({ agent, reload })).pipe(Effect.ignore),
+    };
     return {
       hello,
       files,
       worktrees,
       git,
       terminals,
+      sessions,
       scan: guarded(client["host.ports.scan"]()).pipe(Effect.map(scanFromWire)),
       gone: () => ended,
     };

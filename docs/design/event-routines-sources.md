@@ -42,7 +42,7 @@ How each was judged:
    routine says so while they are off.
 2. **A PR becomes ready for review** (`prReady`, in the routine's project). The DeepSeek Harness
    case: opened ready, or moved out of draft. One small GraphQL list per poll, every 10 minutes.
-   Bots' PRs are left out unless asked for.
+   Bots' PRs are always left out.
 3. **Default-branch CI fails** (`ciFailed`, optional `branch`). The latest commit on the branch
    with a completed run that failed, timed out or couldn't start. One REST call every 10 minutes.
 4. **A release is published** (`releasePublished`, `npm` or `github`, `name`, `minAgeDays`).

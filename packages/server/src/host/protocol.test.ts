@@ -1,5 +1,4 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createServer, connect, type Socket as NetSocket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
@@ -23,32 +22,8 @@ import {
 } from "./protocol.ts";
 import type { PortScan } from "../ports/scan.ts";
 import { makeRepo, removeDir, tempDir, write } from "../git/test-repo.ts";
-
-/** Two ends of one local stream: the host's and the control plane's. */
-const streamPair = Effect.acquireRelease(
-  Effect.promise(
-    () =>
-      new Promise<{ host: NetSocket; control: NetSocket; dir: string }>((resolve, reject) => {
-        const dir = mkdtempSync(join(tmpdir(), "gram-host-protocol-"));
-        const path = join(dir, "s");
-        const server = createServer((host) => {
-          server.close();
-          resolve({ host, control, dir });
-        });
-        server.once("error", reject);
-        let control: NetSocket;
-        server.listen(path, () => {
-          control = connect(path);
-        });
-      }),
-  ),
-  ({ host, control, dir }) =>
-    Effect.sync(() => {
-      host.destroy();
-      control.destroy();
-      rmSync(dir, { recursive: true, force: true });
-    }),
-);
+import { noAgents, sessionsOnHost } from "./sessions.ts";
+import { streamPair } from "./test-stream.ts";
 
 const SCAN: PortScan = {
   listening: new Map([[41, [5173, 5174]]]),
@@ -78,6 +53,7 @@ const connected = (overrides: Partial<HostHello> = {}) =>
       worktrees: yield* Worktrees,
       git: gitOn(yield* Proc),
       terminals: yield* terminalsOnHost,
+      sessions: yield* sessionsOnHost(noAgents),
       scan: Effect.succeed(SCAN),
     };
     yield* Effect.forkScoped(
