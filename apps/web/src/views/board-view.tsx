@@ -7,7 +7,7 @@ import {
   type WorkspaceId,
   type WorkspaceState,
 } from "@gram/contracts";
-import { Archive, CircleAlert, Columns3, Layers, MessageSquare } from "lucide-react";
+import { Archive, Columns3, Hand, Layers, MessageSquare } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -297,7 +297,7 @@ function FeatureLine({
           </button>
           {row.card.paused === true && <PausedBadge testId="rail-paused" />}
           {needsMark && row.needs && (
-            <CircleAlert
+            <Hand
               aria-label="Needs you"
               data-testid="rail-needs"
               className="mt-1 size-icon-row shrink-0 text-status-needs-mark"

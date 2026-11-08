@@ -4,6 +4,9 @@ import { expect, test, type Page } from "@playwright/test";
 // merged workers) shows what Gram kept of it, not "No messages yet"; a thread that never started
 // still says that.
 const openReleaseNotes = async (page: Page) => {
+  // The realistic scenario stamps its reports minutes before now: hold the clock at midday so a
+  // run just after midnight doesn't date them yesterday ("7 Nov 23:28" rather than "23:28").
+  await page.clock.setFixedTime(new Date("2026-06-15T12:00:00"));
   await page.addInitScript(() => {
     sessionStorage.setItem("gram.mock.orchestration", "realistic");
   });

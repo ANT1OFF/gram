@@ -20,15 +20,18 @@ import {
 
 export interface FileIcon {
   readonly icon: LucideIcon;
-  /** A theme text colour; the muted one for files with nothing to tell apart. */
+  /**
+   * A theme text colour: the muted one for every kind. The glyph's shape tells files apart; the
+   * status colours mean a status, never a file type (DESIGN.md).
+   */
   readonly tone: string;
 }
 
 const MUTED = "text-muted-foreground";
 
 const byExtension: ReadonlyArray<readonly [readonly string[], FileIcon]> = [
-  [["md", "mdx", "markdown", "txt", "rst", "adoc"], { icon: FileText, tone: "text-info" }],
-  [["json", "jsonc", "json5"], { icon: FileBraces, tone: "text-warning" }],
+  [["md", "mdx", "markdown", "txt", "rst", "adoc"], { icon: FileText, tone: MUTED }],
+  [["json", "jsonc", "json5"], { icon: FileBraces, tone: MUTED }],
   [
     [
       "ts",
@@ -60,26 +63,20 @@ const byExtension: ReadonlyArray<readonly [readonly string[], FileIcon]> = [
       "dart",
       "scala",
     ],
-    { icon: FileCode, tone: "text-info" },
+    { icon: FileCode, tone: MUTED },
   ],
-  [
-    ["css", "scss", "sass", "less", "html", "htm", "xml", "svg"],
-    { icon: FileCode, tone: "text-merged" },
-  ],
-  [
-    ["sh", "bash", "zsh", "fish", "ps1", "bat", "cmd"],
-    { icon: FileTerminal, tone: "text-success" },
-  ],
+  [["css", "scss", "sass", "less", "html", "htm", "xml", "svg"], { icon: FileCode, tone: MUTED }],
+  [["sh", "bash", "zsh", "fish", "ps1", "bat", "cmd"], { icon: FileTerminal, tone: MUTED }],
   [["yaml", "yml", "toml", "ini", "cfg", "conf", "properties"], { icon: FileCog, tone: MUTED }],
   [["lock", "lockb"], { icon: FileLock, tone: MUTED }],
   [
     ["png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp", "heic"],
-    { icon: FileImage, tone: "text-merged" },
+    { icon: FileImage, tone: MUTED },
   ],
   [["zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar"], { icon: FileArchive, tone: MUTED }],
-  [["csv", "tsv", "xlsx", "xls", "ods"], { icon: FileSpreadsheet, tone: "text-success" }],
+  [["csv", "tsv", "xlsx", "xls", "ods"], { icon: FileSpreadsheet, tone: MUTED }],
   [["ttf", "otf", "woff", "woff2"], { icon: FileType, tone: MUTED }],
-  [["pem", "key", "crt", "p12"], { icon: FileKey, tone: "text-warning" }],
+  [["pem", "key", "crt", "p12"], { icon: FileKey, tone: MUTED }],
 ];
 
 const extensions = new Map(
@@ -100,9 +97,9 @@ export function fileIcon(
   if (kind === "dir") return { icon: expanded ? FolderOpen : Folder, tone: MUTED };
   if (kind === "symlink") return { icon: FileSymlink, tone: MUTED };
   const lower = name.toLowerCase();
-  if (lower.startsWith(".git")) return { icon: GitBranch, tone: "text-danger-text" };
+  if (lower.startsWith(".git")) return { icon: GitBranch, tone: MUTED };
   if (LOCKFILES.has(lower)) return { icon: FileLock, tone: MUTED };
-  if (lower === ".env" || lower.startsWith(".env.")) return { icon: FileKey, tone: "text-warning" };
+  if (lower === ".env" || lower.startsWith(".env.")) return { icon: FileKey, tone: MUTED };
   const dot = lower.lastIndexOf(".");
   const extension = dot > 0 ? lower.slice(dot + 1) : undefined;
   const known = extension === undefined ? undefined : extensions.get(extension);

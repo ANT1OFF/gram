@@ -24,7 +24,10 @@ describe("fileIcon", () => {
   });
 
   it("goes by extension, ignoring case, and falls back to a plain file", () => {
-    expect(fileIcon("README.MD", "file")).toEqual({ icon: FileText, tone: "text-info" });
+    expect(fileIcon("README.MD", "file")).toEqual({
+      icon: FileText,
+      tone: "text-muted-foreground",
+    });
     expect(fileIcon("tsconfig.json", "file").icon).toBe(FileBraces);
     expect(fileIcon("retry.ts", "file").icon).toBe(FileCode);
     expect(fileIcon("Makefile", "file").icon).toBe(File);

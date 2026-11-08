@@ -13,7 +13,7 @@ import {
   type WorkspaceState,
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Network, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { Network, Pencil, Trash2 } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 import { useApi } from "@/api/context";
@@ -105,7 +105,6 @@ export function RoutinesSection({
             disabled={changes.busy}
             onClick={() => setAdding(true)}
           >
-            <Plus data-icon="inline-start" />
             Add routine
           </Button>
         )
@@ -298,7 +297,6 @@ function RoutineRow({
             title={state.paused !== undefined ? "Resume the workspace to run routines" : undefined}
             onClick={runNow}
           >
-            <Play data-icon="inline-start" />
             Run now
           </Button>
           <RowMenuButton label={`Routine ${routine.name} actions`} actions={actions} />

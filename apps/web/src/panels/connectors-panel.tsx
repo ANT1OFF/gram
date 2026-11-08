@@ -20,7 +20,6 @@ import {
   CircleMinus,
   CircleOff,
   KeyRound,
-  Plus,
   RefreshCw,
   Share,
   type LucideIcon,
@@ -287,7 +286,6 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
             setNotice(undefined);
           }}
         >
-          <Plus data-icon="inline-start" />
           Add server…
         </Button>
         <Button

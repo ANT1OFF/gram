@@ -4,7 +4,7 @@ import {
   FEATURE_STAGE_NOTE_MAX,
   type FeatureStage,
 } from "@gram/contracts";
-import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { useId, useState } from "react";
 
 import type { SetStageInput } from "@/api/types";
@@ -204,7 +204,6 @@ export function StageEditor({
           disabled={draft.steps.length >= FEATURE_PLAN_MAX_STAGES}
           onClick={add}
         >
-          <Plus data-icon="inline-start" />
           Add step
         </Button>
         <span className="text-muted-foreground tabular-nums">

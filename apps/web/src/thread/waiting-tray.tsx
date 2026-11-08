@@ -27,7 +27,6 @@ import {
   Scale,
   ShieldQuestion,
   Sparkles,
-  Undo2,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -374,7 +373,7 @@ function ResolvedLine({
                 onClick={() => onReopen(item)}
                 className="ml-auto flex shrink-0 items-center gap-1 hover:text-foreground"
               >
-                <Undo2 aria-hidden className="size-icon-row" /> Reopen
+                Reopen
               </button>
             </li>
           ))}
@@ -521,7 +520,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                   onClick={() => undo(item)}
                   className="ml-auto flex shrink-0 items-center gap-1 hover:text-foreground"
                 >
-                  <Undo2 aria-hidden className="size-icon-row" /> Undo
+                  Undo
                 </button>
               </li>
             ))}
@@ -562,7 +561,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                           onClick={() => reopen(item)}
                           className="ml-auto flex shrink-0 items-center gap-1 hover:text-foreground"
                         >
-                          <Undo2 aria-hidden className="size-icon-row" /> Undo
+                          Undo
                         </button>
                       </li>
                     ))}

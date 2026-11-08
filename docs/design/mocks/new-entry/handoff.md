@@ -6,7 +6,7 @@
 
 `v1.html`, direction **A Menu** (board `#a-menu`). The build must match its states:
 
-- **menu**: the overview header's `+` (after Hide sidebar, Usage, Settings and Compact overview)
+- **menu**: the overview header's `+` (after Hide sidebar, Usage, Settings and Compact sidebar)
   opens a menu with, in order:
   - "Task for <workspace>'s orchestrator" with ⌘N and a Send to submenu of the workspaces, the
     default one ticked;

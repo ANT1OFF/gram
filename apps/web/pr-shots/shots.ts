@@ -57,6 +57,17 @@ export const seedMockSettings = (page: Page, patch: Record<string, unknown>) =>
     sessionStorage.setItem(key, JSON.stringify(saved));
   }, patch);
 
+/**
+ * Dismisses the setup banner when it still shows. Shown once, it folds to the title bar's chip at
+ * the next move, so a shot that navigated after load may find the chip instead.
+ */
+const dismissLaunchBanner = async (page: Page) => {
+  const banner = page.getByTestId("launch-checks-banner");
+  // One of the two shows once the checks are in: wait for it before deciding.
+  await banner.or(page.getByTestId("launch-issues-chip")).first().waitFor();
+  if (await banner.isVisible()) await banner.getByRole("button", { name: "Dismiss" }).click();
+};
+
 const openThread = async (page: Page) => {
   await page.goto("/t/t-flaky");
   await page.getByTestId("approval-card").waitFor();
@@ -1266,7 +1277,7 @@ const SNOOZE_SHOTS: readonly Shot[] = [
   {
     name: "sidebar-realistic-900",
     title:
-      "The realistic morning at 900 px, where the overview is its compact rail: a glyph per workspace and for the solo threads, never letters cut from a name",
+      "The realistic morning at 900 px, where the overview is its compact rail: a monogram per workspace, a glyph for the solo threads",
     open: async (page) => {
       await openRealisticMorning(page);
       await page.setViewportSize({ width: 900, height: 900 });
@@ -2903,6 +2914,19 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "usage-limits-legend",
+    title: "Settings → Usage over the realistic scenario: the history charts under their legend",
+    open: async (page) => {
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.addInitScript(() =>
+        sessionStorage.setItem("gram.mock.orchestration", "realistic"),
+      );
+      await page.goto("/settings/usage");
+      await expect(page.getByTestId("usage-window-history").first()).toBeVisible();
+      await expect(page.getByTestId("usage-history-legend")).toBeVisible();
+    },
+  },
+  {
     name: "usage-overview",
     title: "Recorded usage: baseline home without an overview; Usage with invented local totals",
     open: async (page) => {
@@ -2937,10 +2961,7 @@ export const SHOTS: readonly Shot[] = [
         // Seven days on the page before the limits-first redesign, thirty after it.
         await expect(page.getByTestId("usage-tokens")).toHaveText(/^(468,000|2\.3M)$/);
       }
-      await page
-        .getByTestId("launch-checks-banner")
-        .getByRole("button", { name: "Dismiss" })
-        .click();
+      await dismissLaunchBanner(page);
     },
   },
   {
@@ -2978,10 +2999,7 @@ export const SHOTS: readonly Shot[] = [
           process.env["GRAM_PR_SHOTS_LABEL"] === "before" ? "0" : "227",
         );
       }
-      await page
-        .getByTestId("launch-checks-banner")
-        .getByRole("button", { name: "Dismiss" })
-        .click();
+      await dismissLaunchBanner(page);
     },
   },
   {

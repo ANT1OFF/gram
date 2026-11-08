@@ -1,6 +1,6 @@
 import type { ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, FileDiff, SquareTerminal, X } from "lucide-react";
+import { FileDiff, SquareTerminal, X } from "lucide-react";
 import { useId, useMemo, type KeyboardEvent, type ReactNode } from "react";
 
 import { useApi } from "@/api/context";
@@ -367,7 +367,6 @@ function PrPeekView({
               useLayoutStore.getState().revealPanel("diff", { thread: true });
             }}
           >
-            <FileDiff aria-hidden />
             Diff
           </Button>
           <span className="flex-1" />
@@ -382,8 +381,7 @@ function PrPeekView({
                 )
               }
             >
-              <ExternalLink aria-hidden />
-              GitHub
+              Open on GitHub
             </Button>
           )}
         </div>

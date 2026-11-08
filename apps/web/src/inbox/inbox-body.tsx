@@ -352,7 +352,6 @@ export function InboxBody({
             />
           }
         >
-          <AlarmClock aria-hidden data-icon="inline-start" />
           Later
           {later.length > 0 && <span className="tabular-nums">{later.length}</span>}
         </Hint>

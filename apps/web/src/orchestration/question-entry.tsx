@@ -394,7 +394,6 @@ export function OpenQuestion({
               disabled={busy}
               data-testid="question-dismiss-confirm"
             >
-              <CircleX data-icon="inline-start" />
               Dismiss question
             </Button>
             <Button

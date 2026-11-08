@@ -6,7 +6,6 @@ import {
   CircleMinus,
   CircleX,
   MessageSquare,
-  UserPlus,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -62,7 +61,7 @@ export const reviewerRoster = (detail: PrDetail): Array<Reviewer> => {
     return {
       name: request.name,
       team: request.kind === "team",
-      state: { icon: CircleDashed, label, tone: "text-warning" },
+      state: { icon: CircleDashed, label, tone: "text-muted-foreground" },
     };
   });
   const reviewed = [...byAuthor.values()].map((review) => ({
@@ -179,7 +178,6 @@ export function PrPeople({ threadId, detail }: { threadId: ThreadId; detail: PrD
               disabled={action.pending}
               onClick={() => setOpen(true)}
             >
-              <UserPlus aria-hidden />
               Request review…
             </Button>
           )}

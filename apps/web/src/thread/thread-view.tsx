@@ -1,7 +1,7 @@
 import type { Thread, ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { GitFork, MessageSquareOff, X } from "lucide-react";
+import { GitFork, MessageSquareOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -884,7 +884,6 @@ function ThreadGoneNotice({ threadId }: { threadId: ThreadId }) {
       <MessageSquareOff aria-hidden className="size-icon-empty" />
       <p>This thread no longer exists.</p>
       <Button variant="outline" size="sm" onClick={close}>
-        <X data-icon="inline-start" />
         Close
       </Button>
     </div>

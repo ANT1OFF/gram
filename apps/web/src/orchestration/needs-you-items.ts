@@ -486,6 +486,24 @@ export const kindParts = (items: readonly NeedsYouItem[]): string[] =>
     return n === 0 ? [] : [`${n} ${n === 1 ? one : many}`];
   });
 
+/**
+ * Whether a `kindParts` entry counts errors ("1 error", "3 errors"): an error's alarm is its card and
+ * its thread's red dot, so the pills leave its words untinted and amber only what asks.
+ */
+export const isErrorPart = (part: string): boolean =>
+  KIND_WORDS.errors.some((word) => part.endsWith(` ${word}`));
+
+/**
+ * Whether a needs-you count of `count`, by kind `parts` (`kindParts`), holds anything that asks:
+ * what may take amber. Errors alone don't; with no kinds given, a count is taken to ask.
+ */
+export const asksAmong = (count: number, parts: readonly string[]): boolean =>
+  count > 0 && (parts.length === 0 || parts.some((part) => !isErrorPart(part)));
+
+/** Whether an item is an error rather than something that asks (`isErrorPart`, for items). */
+export const isErrorItem = (item: Pick<NeedsYouItem, "kind" | "wait">): boolean =>
+  sectionOf(item) === "errors";
+
 /** "1 question, 1 error": `kindParts` in a line. */
 export const kindsText = (items: readonly NeedsYouItem[]): string => kindParts(items).join(", ");
 

@@ -1,6 +1,6 @@
 import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlarmClock, RotateCw, SquareArrowOutUpRight, X } from "lucide-react";
+import { AlarmClock, SquareArrowOutUpRight, X } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -344,7 +344,6 @@ function WatchStoppedBody({ item, onResume }: { item: NeedsYouItem; onResume: ()
             disabled={item.threadId === undefined}
             onClick={onResume}
           >
-            <RotateCw aria-hidden data-icon="inline-start" />
             Resume watching
           </Button>
         </div>

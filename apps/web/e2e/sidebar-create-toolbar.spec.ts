@@ -21,7 +21,7 @@ test("New is one form: Who does it, an in chip with New workspace, and the short
   const sidebar = page.getByTestId("overview-sidebar");
   const add = sidebar.getByRole("button", { name: "New task", exact: true });
   await expect(add).toHaveAttribute("aria-haspopup", "menu");
-  await sidebar.getByRole("button", { name: "Compact overview", exact: true }).focus();
+  await sidebar.getByRole("button", { name: "Compact sidebar", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect(add).toBeFocused();
   expect(await showsFocus(add)).toBe(true);

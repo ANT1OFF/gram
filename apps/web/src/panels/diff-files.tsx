@@ -52,7 +52,12 @@ export const FILE_STATUS: Record<
   modified: { icon: FilePen, letter: "M", label: "Modified", tone: "text-info" },
   deleted: { icon: FileMinus, letter: "D", label: "Deleted", tone: "text-destructive" },
   renamed: { icon: FileSymlink, letter: "R", label: "Renamed", tone: "text-highlight" },
-  untracked: { icon: FileQuestionMark, letter: "U", label: "Untracked", tone: "text-warning" },
+  untracked: {
+    icon: FileQuestionMark,
+    letter: "U",
+    label: "Untracked",
+    tone: "text-muted-foreground",
+  },
 };
 
 /** A file's own actions, over the row's end while it is hovered or one of them has focus. */

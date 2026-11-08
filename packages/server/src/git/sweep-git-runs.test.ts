@@ -69,7 +69,7 @@ describe.skipIf(!hasGit)("the sweep's git runs", () => {
   });
 
   it.live(
-    "asks each checkout's roots and origin once, its PR inputs in one run, other worktrees every few sweeps",
+    "asks each checkout's roots, origin and PR inputs once while they stand, other worktrees every few sweeps",
     () =>
       Effect.gen(function* () {
         const dir = tempDir();
@@ -122,21 +122,26 @@ describe.skipIf(!hasGit)("the sweep's git runs", () => {
           ),
           detail,
         ).toEqual([]);
-        // The PR inputs: one run per checkout and sweep, and the branch's name for the two never pushed.
-        const inputs = all.filter((line) => line.startsWith("rev-parse --show-toplevel HEAD"));
-        expect(inputs, detail).toHaveLength(checkouts.length * WORK_ELSEWHERE_SWEEPS);
+        // The PR inputs: kept per checkout while its HEAD, branch and upstream refs stand. The first
+        // sweep learns which upstream the two pushed worktrees' stamps follow; none reads them after.
+        const inputs = sweeps.map(
+          (runs) => runs.filter((line) => line.startsWith("rev-parse --show-toplevel HEAD")).length,
+        );
+        expect(inputs[0], detail).toBeLessThanOrEqual(2);
+        expect(inputs.slice(1), detail).toEqual(Array.from(inputs.slice(1), () => 0));
         expect(
           all.filter((line) => line === "rev-parse --abbrev-ref HEAD"),
           detail,
-        ).toHaveLength(2 * WORK_ELSEWHERE_SWEEPS);
+        ).toEqual([]);
         // The worktree list for the PR-elsewhere cue and the work-elsewhere scan: the scan pass only.
         expect(
           sweeps.map((runs) => runs.filter((line) => line.startsWith("worktree list")).length),
           detail,
         ).toEqual([0, 0, 0, 2]);
         // 214 runs (52 a sweep) before the roots and origin were kept, the PR inputs read in one run
-        // and the cue's worktree list kept to the scan passes; 117 after. The slack is for a watcher.
-        expect(all.length, detail).toBeLessThanOrEqual(140);
+        // and the cue's worktree list kept to the scan passes; 117 after; 43 with the PR inputs kept.
+        // The slack is for a watcher.
+        expect(all.length, detail).toBeLessThanOrEqual(60);
       }).pipe(Effect.provide(layer)),
     60_000,
   );

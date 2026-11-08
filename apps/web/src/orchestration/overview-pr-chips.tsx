@@ -19,11 +19,15 @@ import { useOrchestratorLedger } from "./use-orchestration";
 // checks, people's review, the review bot and where its merge stands. A click opens the PR: the
 // thread's own in its PR panel, one it follows on GitHub. Hovering or focusing one shows its card.
 
+// The chip's words stay quiet: its glyphs carry the colour (the state's in GitHub's, the checks'
+// red when they fail), so a failing or merged PR adds one coloured mark, not a tinted pill.
 const TONE: Record<PrChipTone, string> = {
-  danger: "bg-destructive/12 text-destructive",
-  // Something for someone to look at: outlined, not amber, which is for what needs you.
+  // What blocks the merge, or something for someone to look at: outlined, never filled red or
+  // amber; the failing check's own glyph is the alarm.
+  danger: "bg-transparent text-foreground ring-1 ring-border-strong ring-inset",
   warning: "bg-transparent text-foreground ring-1 ring-border-strong ring-inset",
-  merged: "bg-transparent text-merged",
+  // Merged: the colour on its glyph only, the number muted.
+  merged: "bg-transparent text-muted-foreground",
   plain: "bg-sidebar-row-hover text-muted-foreground",
 };
 

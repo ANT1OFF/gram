@@ -1,5 +1,5 @@
 import type { FolderAccessDenial } from "@gram/contracts";
-import { FolderLock, RotateCw } from "lucide-react";
+import { FolderLock } from "lucide-react";
 import { useState } from "react";
 
 import { errorMessage } from "@/api/errors";
@@ -56,7 +56,6 @@ export function FolderAccessRecovery({
       {hint && <p className="text-muted-foreground">{hint}</p>}
       <div className="flex flex-wrap gap-1.5">
         <Button type="button" size="xs" variant="outline" disabled={retrying} onClick={onRetry}>
-          <RotateCw data-icon="inline-start" />
           Retry
         </Button>
         {privacy && (

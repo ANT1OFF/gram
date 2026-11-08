@@ -9,17 +9,7 @@ import type {
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import {
-  CircleCheck,
-  CircleDashed,
-  CircleX,
-  FileDiff,
-  GitBranch,
-  GitPullRequest,
-  History,
-  Play,
-  type LucideIcon,
-} from "lucide-react";
+import { CircleCheck, CircleDashed, CircleX, GitBranch, type LucideIcon } from "lucide-react";
 
 import { useApi } from "@/api/context";
 import { carryDraft } from "@/composer/draft-prefill";
@@ -166,7 +156,6 @@ function OutcomeFiles({
           data-testid="thread-outcome-review"
           onClick={onReview}
         >
-          <GitPullRequest data-icon="inline-start" />
           Review in PR
         </Button>
       </div>
@@ -372,7 +361,6 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
             title="Opens New with its last report as the brief. Nothing starts until you start it."
             onClick={resume}
           >
-            <Play data-icon="inline-start" />
             Resume from report
           </Button>
           <Button
@@ -382,7 +370,6 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
             data-testid="thread-outcome-history"
             onClick={() => useHistoryStore.getState().show("all", thread.title)}
           >
-            <History data-icon="inline-start" />
             Find in History
           </Button>
         </div>
@@ -423,7 +410,6 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
                 data-testid="thread-outcome-pr"
                 onClick={() => show("pr")}
               >
-                <GitPullRequest data-icon="inline-start" />
                 Open PR #{pr.number}
               </Button>
             </Fact>
@@ -465,7 +451,6 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
                   data-testid="thread-outcome-files"
                   onClick={() => show("diff")}
                 >
-                  <FileDiff data-icon="inline-start" />
                   Show changes
                 </Button>
               </>

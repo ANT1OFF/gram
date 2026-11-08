@@ -1,7 +1,7 @@
 import type { Label, LabelId } from "@gram/contracts";
 import { DEFAULT_PALETTE_ID, PRESET_PALETTES, resolvePalette } from "@gram/themes";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -99,7 +99,6 @@ export function LabelsDialog({ onClose }: { onClose: () => void }) {
       )}
       <div className="flex justify-between gap-2">
         <Button type="button" size="sm" variant="outline" onClick={() => void add()}>
-          <Plus data-icon="inline-start" />
           New label
         </Button>
         <Dialog.Close render={<Button type="button" size="sm" />}>Done</Dialog.Close>
