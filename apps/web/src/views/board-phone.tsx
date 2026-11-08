@@ -17,7 +17,7 @@ import { useThreadsStore } from "@/stores/threads";
 
 // The Board on a phone: a card per task rather than the grid's columns or the lanes, which a
 // 390 px window clips. Each card says its dot, title and state, its stage bar, then its station,
-// agent and PR; Now, Waiting and Done stand in for the desktop's lines and Done band. A tap opens
+// agent and PR (a card that needs you or failed says why instead of the bar and station); Now, Waiting and Done stand in for the desktop's lines and Done band. A tap opens
 // the worker's thread, or its ask in the Inbox, as the desktop's row does.
 
 export type PhoneBoardSegment = "now" | "waiting" | "done";
@@ -86,6 +86,9 @@ function TaskCard({
   const { worker, station } = card;
   const tone = RAIL_TONES[worker.tone];
   const agent = useThreadsStore((s) => s.byId[worker.threadId]?.thread.model?.agent);
+  // A card that waits on you or failed says why, in place of a stage bar that would read as
+  // progress under "Failed".
+  const stuck = worker.tone === "needs" || worker.tone === "error";
   return (
     <li
       data-testid="phone-board-card"
@@ -120,11 +123,17 @@ function TaskCard({
           {tone.label}
         </span>
       </button>
-      <StageBar station={station} />
+      {!stuck && <StageBar station={station} />}
       <span className="flex min-w-0 items-center gap-2 text-meta text-muted-foreground">
-        <span className="min-w-0 truncate">
-          {STATION_LABELS[station]}
-          {agent !== undefined && ` · ${agentLabel(agent)}`}
+        <span data-testid="phone-board-line" className="min-w-0 truncate first-letter:uppercase">
+          {stuck && worker.now !== "" ? (
+            worker.now
+          ) : (
+            <>
+              {STATION_LABELS[station]}
+              {agent !== undefined && ` · ${agentLabel(agent)}`}
+            </>
+          )}
         </span>
         <WorkerPrChips
           threadId={worker.threadId}

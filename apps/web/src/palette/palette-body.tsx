@@ -1204,7 +1204,9 @@ export function PaletteBody({
             picker?.placeholder !== undefined
               ? picker.placeholder
               : scope === undefined
-                ? "Go to a thread, worker or PR… (> for commands)"
+                ? phone
+                  ? "Go to a thread, worker or PR…"
+                  : "Go to a thread, worker or PR… (> for commands)"
                 : scope.kind === "thread"
                   ? "Thread commands…"
                   : "Workspace commands…"

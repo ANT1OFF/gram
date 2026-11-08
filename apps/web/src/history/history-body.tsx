@@ -438,20 +438,72 @@ function HistoryRow({
       ? ""
       : entry.repo
     : full;
+  const phone = usePhone();
+  const row = {
+    id: `history-row-${index}`,
+    role: "option",
+    "aria-selected": active,
+    "aria-busy": resuming || undefined,
+    "aria-label": `${entry.title}, ${full}, ${word}, ${whenLong}${entry.agent === undefined ? "" : `, ${agentLabel(entry.agent)}`}`,
+    "data-testid": "history-row",
+    "data-thread-id": entry.threadId,
+    "data-kind": entry.kind,
+    "data-outcome": entry.outcome ?? "imported",
+    "data-archived": entry.archived || undefined,
+    onMouseMove: onHover,
+    onClick: onOpen,
+  } as const;
+  const time = (
+    <time
+      data-testid="history-time"
+      dateTime={
+        entry.finishedAt === undefined ? undefined : new Date(entry.finishedAt).toISOString()
+      }
+      title={whenLong}
+      className="min-w-10 text-right tabular-nums"
+    >
+      {when}
+    </time>
+  );
+  if (phone) {
+    // Two lines on a phone: the whole title, then where, how it ended and when. No agent glyph:
+    // the row is the title's, and a narrow column can't spare the room.
+    return (
+      <div
+        {...row}
+        className={cn(
+          "flex min-h-14 cursor-default items-center gap-3 rounded-md px-2 py-1.5",
+          active && "row-cursor",
+          resuming && "opacity-60",
+        )}
+      >
+        <glyph.icon aria-hidden className={cn("size-icon-row shrink-0", glyph.tone)} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span data-testid="history-title" className="truncate text-reading">
+            {entry.title}
+          </span>
+          <span className="flex min-w-0 items-center gap-1.5 text-meta text-muted-foreground">
+            {where !== "" && (
+              <>
+                <span data-testid="history-where" className="min-w-0 truncate">
+                  {where}
+                </span>
+                <span aria-hidden>·</span>
+              </>
+            )}
+            <span data-testid="history-outcome" className="shrink-0 capitalize">
+              {word}
+            </span>
+            <span aria-hidden>·</span>
+            <span className="shrink-0">{time}</span>
+          </span>
+        </span>
+      </div>
+    );
+  }
   return (
     <div
-      id={`history-row-${index}`}
-      role="option"
-      aria-selected={active}
-      aria-busy={resuming || undefined}
-      aria-label={`${entry.title}, ${full}, ${word}, ${whenLong}${entry.agent === undefined ? "" : `, ${agentLabel(entry.agent)}`}`}
-      data-testid="history-row"
-      data-thread-id={entry.threadId}
-      data-kind={entry.kind}
-      data-outcome={entry.outcome ?? "imported"}
-      data-archived={entry.archived || undefined}
-      onMouseMove={onHover}
-      onClick={onOpen}
+      {...row}
       className={cn(
         "flex min-h-9 cursor-default items-center gap-2.5 rounded-md px-2 text-reading",
         active && "row-cursor",
@@ -486,16 +538,7 @@ function HistoryRow({
           <span data-testid="history-outcome" className="min-w-16 capitalize">
             {word}
           </span>
-          <time
-            data-testid="history-time"
-            dateTime={
-              entry.finishedAt === undefined ? undefined : new Date(entry.finishedAt).toISOString()
-            }
-            title={whenLong}
-            className="min-w-10 text-right tabular-nums"
-          >
-            {when}
-          </time>
+          {time}
         </span>
       </span>
     </div>

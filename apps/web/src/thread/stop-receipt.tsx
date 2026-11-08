@@ -73,6 +73,7 @@ export function StopReceiptLine({
       <Button
         size="xs"
         variant="outline"
+        className="phone:h-11 phone:px-4"
         data-testid="stop-receipt-continue"
         title="Send “Continue” so the agent picks up where it stopped"
         disabled={sending}

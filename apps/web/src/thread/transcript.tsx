@@ -11,6 +11,7 @@ import {
   type VirtualItem,
   type Virtualizer,
 } from "@tanstack/react-virtual";
+import { ArrowDown } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useMarkdown } from "@/components/ai-elements/markdown-loader";
@@ -840,17 +841,13 @@ export function Transcript({
         !isFollowing &&
         !quietAtEnd &&
         messages.length > 0 && (
-          <Button
-            className={cn(
-              "absolute thread-column-center bottom-6 z-10 -translate-x-1/2",
-              pressing && "pointer-events-none",
-            )}
-            variant="secondary"
-            size="sm"
+          <button
+            type="button"
+            className={cn(JUMP_PILL, pressing && "pointer-events-none")}
             onClick={jumpToLatest}
           >
-            Jump to latest
-          </Button>
+            <JumpLabel>Jump to latest</JumpLabel>
+          </button>
         )
       )}
       {onChapterJump && (
@@ -1223,6 +1220,33 @@ function Row({
 }
 
 /**
+ * The pill floating over the transcript's foot: raised off the page with an edge and a shadow, so
+ * it never reads as one more message under it.
+ */
+const PILL =
+  "absolute bottom-6 thread-column-center z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-edge bg-popover px-2.5 py-1 text-meta shadow-raised";
+
+/**
+ * The pill as a button, back to the end of the thread. On a phone it is a 44 px round ↓ at the
+ * right edge, as messaging apps have it: centred, it sat on the last message's words and actions.
+ */
+const JUMP_PILL = cn(
+  PILL,
+  "text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+  "phone:right-4 phone:left-auto phone:size-11 phone:translate-x-0 phone:justify-center phone:px-0",
+);
+
+/** A jump button's words, which a phone's round button keeps for its name only. */
+function JumpLabel({ children }: { children: string }) {
+  return (
+    <>
+      <ArrowDown aria-hidden className="hidden size-icon-bar phone:block" />
+      <span className="phone:sr-only">{children}</span>
+    </>
+  );
+}
+
+/**
  * A live worker's pill: "Following live" while the view keeps up with it, its dot breathing only
  * while text streams in; scrolled up, "Jump to live" brings the view back and follows again.
  * Following or not is the reader's; the worker never hears of it.
@@ -1247,10 +1271,8 @@ function FollowingLive({
       className={cn("size-1.5 rounded-full bg-status-working", streaming && "gram-breathe")}
     />
   );
-  const pill =
-    "absolute bottom-6 thread-column-center z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-edge bg-popover px-2.5 py-1 text-meta shadow-raised";
   return following ? (
-    <span role="status" data-testid="following-live" className={cn(pill, "text-muted-foreground")}>
+    <span role="status" data-testid="following-live" className={cn(PILL, "text-muted-foreground")}>
       {dot}
       Following live
     </span>
@@ -1258,15 +1280,11 @@ function FollowingLive({
     <button
       type="button"
       data-testid="jump-to-live"
-      className={cn(
-        pill,
-        "text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
-        pressing && "pointer-events-none",
-      )}
+      className={cn(JUMP_PILL, pressing && "pointer-events-none")}
       onClick={onJump}
     >
-      {dot}
-      Jump to live
+      <span className="contents phone:hidden">{dot}</span>
+      <JumpLabel>Jump to live</JumpLabel>
     </button>
   );
 }

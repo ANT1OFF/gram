@@ -89,6 +89,15 @@ describe("phone board", () => {
     expect(onOpen).toHaveBeenCalledWith("b", expect.anything());
   });
 
+  it("says why a card that needs you is stuck, in place of its stage bar", () => {
+    render(<PhoneBoard rows={rows} done={done} asking={new Set()} onOpen={() => {}} />);
+    const [busy, stuck] = screen.getAllByTestId("phone-board-card");
+    expect(busy!.querySelector("[data-testid=phone-board-stage]")).not.toBeNull();
+    expect(stuck!.dataset["tone"]).toBe("needs");
+    expect(stuck!.querySelector("[data-testid=phone-board-stage]")).toBeNull();
+    expect(stuck!.querySelector("[data-testid=phone-board-line]")?.textContent).toBe("editing");
+  });
+
   it("opens on the first segment with anything in it", () => {
     render(<PhoneBoard rows={[]} done={done} asking={new Set()} onOpen={() => {}} />);
     const checked = screen

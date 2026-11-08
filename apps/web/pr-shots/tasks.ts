@@ -124,7 +124,7 @@ export const TASKS: readonly Task[] = [
         await r.click(p.getByRole("option", { name: "Extra high effort" }));
       }
       await expect(p.getByTestId("composer-choices")).toHaveAccessibleName(
-        / · Effort: Extra high \(.+\) · /,
+        / · Effort: Extra high( \(.+\))? · /,
       );
     },
   },
