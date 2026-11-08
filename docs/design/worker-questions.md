@@ -48,7 +48,8 @@ ask_question ──► triage ──answer_worker(questionId, source)──► a
   limit-waiting or errored orchestrator. A paused workspace or a paused feature wakes no
   orchestrator, so the question forwards at once.
 - **The user answers** in one place: the Inbox, where the question shows beside the list,
-  answered in place or, with **Write your own answer**, as its full card. A feature's sheet,
+  answered in place (its choices, then **Other…** for the user's own words) or, with
+  **Read in full**, as its full card. A feature's sheet,
   Memory, the Board's chip, the overview's "N needs you" pill and an away notification (Open
   only, like the orchestrator's own questions) all open the Inbox on it rather than offer a
   second form; the worker's own transcript card answers it in context. The card shows the worker's words exactly, the worker's
