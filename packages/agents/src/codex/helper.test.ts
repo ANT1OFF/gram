@@ -35,6 +35,23 @@ const fixture = (extra: Record<string, string> = {}) => {
 };
 
 describe("only-Codex guided subscription helper child", () => {
+  for (const version of ["0.166.1", "0.167.0", "0.1000.0", "1.0.0"])
+    it.effect(`allows newer CLI ${version} with a runtime warning`, () => {
+      const f = fixture({ GRAM_HELPER_VERSION: version });
+      return f
+        .provide(
+          Effect.gen(function* () {
+            const server = yield* (yield* CodexServers).acquire(undefined, "user");
+            expect(server.warnings).toContain(
+              `Codex ${version} differs from 0.166.0, which Gram's Codex adapter is built for; some features may misbehave.`,
+            );
+            const adapter = makeCodexHelper(f.config, yield* GatewayKeyProvider);
+            expect((yield* adapter.models)[0]?.id).toBe("gpt-6-luna");
+            expect(yield* adapter.generate(call)).toEqual({ text: '{"goal":"synthetic"}' });
+          }),
+        )
+        .pipe(Effect.ensuring(Effect.sync(() => rmSync(f.root, { recursive: true, force: true }))));
+    });
   it.effect("rejects alternate inference endpoints before delivering any helper context", () => {
     const f = fixture({
       GRAM_HELPER_RETURNED_BASE_URL: "https://invented-provider.example.invalid/v1",
@@ -291,6 +308,7 @@ describe("only-Codex guided subscription helper child", () => {
     [{ GRAM_HELPER_INTERACTIVE: "1" }, "restriction", true],
     [{ GRAM_HELPER_TOOL: "1" }, "restriction", true],
     [{ GRAM_HELPER_VERSION: "0.159.2" }, "unavailable", false],
+    [{ GRAM_HELPER_VERSION: "0.166.0-alpha.2" }, "unavailable", false],
   ] as const)
     it.effect(`refuses ${Object.keys(extra)[0]} without alternate billing or provider`, () => {
       const f = fixture(extra);

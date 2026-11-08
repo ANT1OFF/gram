@@ -195,9 +195,7 @@ const resolveOne = (input: ResolveInput, agent: RuntimeAgent) =>
           }),
       baseline,
       verdict: current.verdict,
-      ...(current.verdict === "supported" || current.reason === undefined
-        ? {}
-        : { reason: current.reason }),
+      ...(current.reason === undefined ? {} : { reason: current.reason }),
       ...(newer === undefined ? {} : { newer }),
       installSteps: steps,
       ...(allowed === undefined ? {} : { managed: candidate === undefined ? {} : { candidate } }),
