@@ -77,6 +77,8 @@ export function PhoneDrawer() {
   const open = usePhoneDrawer((s) => s.open);
   const setOpen = usePhoneDrawer((s) => s.setOpen);
   useCloseOnPick(open);
+  // Leaving the phone layout (a tablet turned to landscape) closes it, so it doesn't come back open.
+  useEffect(() => () => usePhoneDrawer.getState().setOpen(false), []);
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>

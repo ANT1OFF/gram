@@ -56,6 +56,13 @@ describe("PhoneDrawer", () => {
     expect(screen.getByTestId("phone-menu").getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("closes when the phone layout goes away, so it doesn't come back open", () => {
+    const { rerender } = render(<Shell />);
+    openDrawer();
+    rerender(<PhoneMenuButton />);
+    expect(usePhoneDrawer.getState().open).toBe(false);
+  });
+
   it("closes on Escape", () => {
     render(<Shell />);
     openDrawer();

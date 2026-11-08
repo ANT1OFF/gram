@@ -200,7 +200,7 @@ export function keepBeside(worker: ThreadId, open: (threadId: ThreadId) => void)
  * which the link then opens as it always has.
  */
 export function openBesideFrom(orchestrator: ThreadId, worker: ThreadId): boolean {
-  if (orchestratorOf(worker) !== orchestrator) return false;
+  if (isTouch() || orchestratorOf(worker) !== orchestrator) return false;
   useBesideStore.getState().dock(worker);
   revealThreadTab();
   return true;
@@ -234,6 +234,8 @@ export function closeBeside() {
  */
 export function besideToggle(focused: ThreadId | undefined): "close" | ThreadId | undefined {
   const { worker, last, shown } = useBesideStore.getState();
+  // A touch screen opens nothing beside, but can still close what a wider window left there.
+  if (isTouch()) return worker !== undefined && shown ? "close" : undefined;
   if (worker !== undefined) return shown ? "close" : worker;
   if (focused === undefined) return undefined;
   if (orchestratorOf(focused) !== undefined) return focused;
