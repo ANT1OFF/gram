@@ -182,7 +182,18 @@ describe("agent runtime policy", () => {
       verdict: "supported",
       reason: expect.stringContaining("some features may misbehave"),
     });
-    expect(judgeAgainstBaseline("codex", `${minor(CODEX, 1)}-alpha.2`).verdict).toBe("unknown");
+    for (const version of [
+      `${patch(CODEX, 1)}-alpha.2`,
+      `${minor(CODEX, 1)}-alpha.2`,
+      "1.0.0-alpha.2",
+    ])
+      expect(judgeAgainstBaseline("codex", version)).toMatchObject({
+        verdict: "supported",
+        reason: expect.stringContaining(`Codex ${version} differs from ${CODEX}`),
+      });
+    for (const version of [`${CODEX}-alpha.2`, `${minor(CODEX, -1)}-alpha.2`])
+      expect(judgeAgainstBaseline("codex", version).verdict).toBe("unknown");
+    expect(judgeAgainstBaseline("claude", `${patch(CLAUDE, 1)}-alpha.2`).verdict).toBe("unknown");
     // Claude's SDK pairs a CLI line, and allows ten patches past it.
     expect(BASELINES.claude.cliVersion).toMatch(/^2\.1\.\d+$/);
     expect(judgeAgainstBaseline("claude", patch(CLAUDE, -1)).verdict).toBe("graceful");
@@ -792,15 +803,16 @@ describe("resolveAgentRuntimes", () => {
 
   it.effect("keeps the warning for an accepted newer installed Codex", () =>
     Effect.gen(function* () {
-      const version = minor(CODEX, 1);
-      const row = (yield* run({
-        checks: checks([{ tool: "codex", found: true, path: "/synthetic/codex", version }]),
-      }))["codex"]!;
-      expect(row).toMatchObject({
-        verdict: "supported",
-        reason: expect.stringContaining(`Codex ${version} differs from ${CODEX}`),
-        installSteps: [],
-      });
+      for (const version of [minor(CODEX, 1), `${minor(CODEX, 1)}-alpha.2`]) {
+        const row = (yield* run({
+          checks: checks([{ tool: "codex", found: true, path: "/synthetic/codex", version }]),
+        }))["codex"]!;
+        expect(row).toMatchObject({
+          verdict: "supported",
+          reason: expect.stringContaining(`Codex ${version} differs from ${CODEX}`),
+          installSteps: [],
+        });
+      }
     }),
   );
 
@@ -840,6 +852,18 @@ describe("resolveAgentRuntimes", () => {
       // Nothing older than or equal to what's installed counts as newer.
       const same = yield* run({ releases: released("codex", CODEX, 48) });
       expect(same["codex"]).not.toHaveProperty("newer");
+    }),
+  );
+
+  it.effect("keeps prerelease registry releases out of stable standalone updates", () =>
+    Effect.gen(function* () {
+      const row = (yield* run({
+        checks: checks([{ tool: "codex", found: true, path: "/synthetic/codex", version: CODEX }]),
+        realpath: () => `/synthetic/.codex/packages/standalone/current/bin/codex`,
+        releases: released("codex", `${minor(CODEX, 1)}-alpha.2`, 48),
+      }))["codex"]!;
+      expect(row).not.toHaveProperty("newer");
+      expect(row.installSteps).toEqual([]);
     }),
   );
 
