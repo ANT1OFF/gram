@@ -183,11 +183,28 @@ To add a kind:
 
 ### Routines
 
-A routine is a brief kept in the workspace's charter that runs on a schedule: a daily CI triage, a
-weekly dependency check, a stale-PR sweep. Each has a name of its own in the workspace, a brief of
-up to 4,000 characters, and a schedule: `every` `day`, `weekday` or `week` `at` a 24-hour local
+A routine is a brief kept in the workspace's charter that runs on a schedule, or when something
+happens: a daily CI triage, a weekly dependency check, a review of each PR that becomes ready. Each
+has a name of its own in the workspace, a brief of up to 4,000 characters, and exactly one of a
+`schedule` or an `on` event. A schedule is `every` `day`, `weekday` or `week` `at` a 24-hour local
 time (for `week` a `day` from 0 for Sunday to 6, Monday when absent), or `every` `hours` with
-`hours` from 1 to 168, counted from its last run. Each run starts a fresh worker in its `project`
+`hours` from 1 to 168, counted from its last run. An event is one of a closed list, seen by polling
+through the user's own `gh` and npm (no webhook, no public endpoint), why these four in
+[the survey](design/event-routines-sources.md):
+
+- `reviewRequested` (optional `repo`, `owner/name`): a review is requested from the user, as
+  Notifications' review requests list it, once the review holds there let it through. It reads that
+  poll's list and needs review requests on; while they are off the routine says so.
+- `prReady`: a pull request in the routine's `project` opens ready for review or leaves draft;
+  bots' PRs aside. One small GraphQL read every 10 minutes.
+- `ciFailed` (optional `branch`, the default branch when absent): the newest commit on the branch of
+  the routine's `project` with a completed Actions run has one that failed, timed out or couldn't
+  start; PR runs aside. One REST read every 10 minutes.
+- `releasePublished` (`source` `npm` or `github`, `name`, optional `minAgeDays` 0 to 90, 7 when
+  absent): the package publishes a stable release past the last one it saw, at least that old. Read
+  at most every six hours; a burst of releases is one event, for the newest.
+
+Each run starts a fresh worker in its `project`
 (the home project by default) on its `model` (the roster's default by default), or, with `target`
 `orchestrator`, puts its brief in the orchestrator's next digest. A workspace keeps at most eight.
 Every write of the charter gives a routine without one an `id`, the one its name had if it had
@@ -197,20 +214,23 @@ Three ways change them, all through the charter's one write path:
 
 - Settings → Routines (also in the palette's Go to, and under Workspaces & merging) lists every
   workspace's routines, as a workspace's own settings do under Routines. Either adds, edits, turns
-  off, removes and runs one now, and shows each one's last and next run; a routine is edited in a
-  dialog that names its workspace, and each change saves with Undo.
+  off, removes and runs one now, and shows each one's last and next run (an event routine: whether
+  it is watching, how many events wait, or why it can't look); a routine is edited in a dialog that
+  names its workspace, whose When picks On a schedule or When something happens, then the event and
+  its few fields. Each change saves with Undo.
 - The orchestrator keeps them with `routine_create` and `routine_update` (`remove: true` deletes
   one). Their schedule is a few words: `daily 09:00`, `weekdays 09:00`, `weekly mon 09:00` or
-  `every 6 hours`. A routine is a standing change to the charter that starts work with nobody
-  there, so adding one, turning one back on, or widening one (its schedule, brief, project, model,
-  target or name) always asks the user, from the orchestrator as from a worker: a forced card for
+  `every 6 hours`; or, instead, `on` an event in a few words: `review requested [owner/repo]`, `pr
+  ready`, `ci failed [branch]` or `release npm|github <name> [min-age <days>]`. A routine is a standing change to the charter that starts work with nobody
+  there, so adding one, turning one back on, or widening one (its schedule or event, brief, project,
+  model, target or name) always asks the user, from the orchestrator as from a worker: a forced card for
   that call, showing the routine in full, that `bypassPermissions` and Full autonomy don't lift.
   Turning one off or removing one only takes autonomy away, and the orchestrator does that without
   a card. A change is pinned when the card is raised: the routine by its id, and exactly what it is
   and will be, both shown on the card. The approved call applies that and only that, and refuses if
   the routine changed meanwhile. A worker is bound `routine_create` alone.
-- Settings by chat: `settings_propose` with `workspace.routines`, the whole list, each brief in full
-  on the card the user approves.
+- Settings by chat: `settings_propose` with `workspace.routines`, the whole list (each with its
+  `schedule` or its `on` event), each brief in full on the card the user approves.
 
 The orchestrator's charter names them, and an open session is told when they change.
 
@@ -250,8 +270,30 @@ under the routine's id:
 - Times are read in the machine's time zone, so a daylight-saving change keeps 09:00 at 09:00; a
   time the change skips runs once that night.
 
+An event routine comes due at each look instead of at a time, and its watch is kept in its state
+(`trigger`) beside its runs:
+
+- A look runs outside the engine's lock, since it may read GitHub, and what it found is merged under
+  the lock only if the routine is still what was looked for. A look that couldn't tell (offline, out
+  of the background allowance, the review-request poll not run yet) changes nothing; one that can't
+  look says why on its row.
+- The first look after the routine is new, changed (another event or parameter) or turned on again
+  records what is there as seen and fires for none of it. Turned off, its watch goes.
+- Each occurrence has a key (a PR's repo and number, a commit, a version), recorded as seen when it
+  is first found, so it is delivered at most once, across restarts too. One that came while Gram was
+  closed is found at the next start's look.
+- A run delivers what waits, at most five events listed and the rest counted, taken out of the
+  queue in the same write as its claim, so a run a restart cut short resumes with its own events.
+  New events wait (at most 20, the oldest dropped and counted) while its last occurrence is
+  unsettled, for 15 minutes after its last run, and while the workspace is paused; then they go in
+  one run. It is admitted, capped and refused like a scheduled run.
+- The events reach the brief after the routine's own words, in a fence marked as untrusted
+  external content: a title, a login or a workflow's name is someone else's text, data and never
+  instructions. Run now runs it with what waits, or with none.
+
 Source: [routines](../packages/contracts/src/routines.ts), [engine](../packages/server/src/routines/routines.ts),
-[schedules](../packages/server/src/routines/schedule.ts), [tools](../packages/server/src/routines/tools.ts).
+[schedules](../packages/server/src/routines/schedule.ts), [events](../packages/server/src/routines/events.ts),
+[tools](../packages/server/src/routines/tools.ts).
 
 ### Merge freezes
 

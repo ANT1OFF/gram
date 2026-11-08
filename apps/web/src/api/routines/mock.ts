@@ -1,5 +1,6 @@
 import {
   routineNameKey,
+  routineWhenKey,
   type RoutineId,
   type RoutineSchedule,
   type RoutineState,
@@ -55,13 +56,22 @@ export function createRoutinesMock(
       .map((routine) => {
         const id = (routine.id ?? routineNameKey(routine.name)) as RoutineId;
         const key = keyOf(workspaceId, id);
-        const scheduleKey = JSON.stringify(routine.schedule);
+        const scheduleKey = routineWhenKey(routine);
         let kept = states.get(key) ?? {};
         if (routine.off === true) {
-          const { nextRunAt: _next, ...rest } = kept;
+          const { nextRunAt: _next, trigger: _trigger, ...rest } = kept;
           kept = rest;
         } else if (kept.nextRunAt === undefined || kept.scheduleKey !== scheduleKey) {
-          kept = { ...kept, nextRunAt: mockNextRun(routine.schedule, now), scheduleKey };
+          // An event routine looks every few minutes, the first look only seeing what is there.
+          kept =
+            routine.schedule === undefined
+              ? {
+                  ...kept,
+                  nextRunAt: now + 10 * 60_000,
+                  scheduleKey,
+                  trigger: { seeded: true, lookedAt: now },
+                }
+              : { ...kept, nextRunAt: mockNextRun(routine.schedule, now), scheduleKey };
         }
         states.set(key, kept);
         return { routine, id, state: kept };

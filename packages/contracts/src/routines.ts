@@ -1,5 +1,6 @@
 // Workspace routines (docs/AGENTS_AND_FEATURES.md#routines): a brief kept in the workspace's charter
-// and run on a schedule. Each time one comes due it starts a fresh worker in one of the workspace's
+// and run on a schedule, or when something happens (`on`). Each time one comes due it starts a fresh
+// worker in one of the workspace's
 // projects, or puts its brief in the orchestrator's next digest. What a routine is lives in the
 // charter (`OrchestratorCharter.routines`), so every way of changing it goes through the charter's
 // one write path; how its runs went lives in the workspace's outbox (`RoutineState`), and the
@@ -8,6 +9,7 @@
 import * as Schema from "effect/Schema";
 import { ModelRef } from "./domain.ts";
 import { ProjectId, ThreadId } from "./ids.ts";
+import { BranchName, ReleaseName, RepoName } from "./wake-conditions.ts";
 
 /** The most routines one workspace keeps. */
 export const ROUTINES_MAX = 8;
@@ -62,6 +64,66 @@ export const IntervalSchedule = Schema.Struct({
 export const RoutineSchedule = Schema.Union([DailySchedule, WeeklySchedule, IntervalSchedule]);
 export type RoutineSchedule = typeof RoutineSchedule.Type;
 
+// Event triggers (docs/design/event-routines-sources.md): what a routine can start on beside a clock.
+// Each is seen by polling, never by a webhook, and closed: an unknown kind doesn't decode.
+
+/** The longest an event routine waits after a run before it fires again. */
+export const ROUTINE_EVENT_COOLDOWN_MINUTES = 15;
+/** The most events one run's brief lists; the rest are counted. */
+export const ROUTINE_EVENTS_PER_RUN = 5;
+/** The most events kept waiting for a routine that is busy, cooling down or paused. */
+export const ROUTINE_EVENTS_PENDING_MAX = 20;
+/** The most delivered occurrence keys a routine keeps, newest last. */
+export const ROUTINE_EVENTS_SEEN_MAX = 200;
+
+/** A review is requested from the user, as Notifications' review requests list it; in `repo` only, when named. */
+export const ReviewRequestedTrigger = Schema.Struct({
+  event: Schema.Literal("reviewRequested"),
+  repo: Schema.optionalKey(RepoName),
+});
+/** A pull request in the routine's project opens ready for review, or leaves draft. Bots' PRs aside. */
+export const PrReadyTrigger = Schema.Struct({ event: Schema.Literal("prReady") });
+/** A completed CI run fails on the newest commit of `branch` of the routine's project (its default branch when absent). */
+export const CiFailedTrigger = Schema.Struct({
+  event: Schema.Literal("ciFailed"),
+  branch: Schema.optionalKey(BranchName),
+});
+/** A package on npm, or a GitHub repo, publishes a release at least `minAgeDays` old (7 when absent). */
+export const ReleasePublishedTrigger = Schema.Struct({
+  event: Schema.Literal("releasePublished"),
+  source: Schema.Literals(["npm", "github"]),
+  name: ReleaseName,
+  minAgeDays: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 90 }))),
+});
+export const RoutineTrigger = Schema.Union([
+  ReviewRequestedTrigger,
+  PrReadyTrigger,
+  CiFailedTrigger,
+  ReleasePublishedTrigger,
+]);
+export type RoutineTrigger = typeof RoutineTrigger.Type;
+export type RoutineEventKind = RoutineTrigger["event"];
+export const ROUTINE_EVENT_KINDS: ReadonlyArray<RoutineEventKind> = [
+  "reviewRequested",
+  "prReady",
+  "ciFailed",
+  "releasePublished",
+];
+
+/** "when a review is requested from you", "when CI fails on main". */
+export const routineTriggerText = (on: RoutineTrigger): string => {
+  switch (on.event) {
+    case "reviewRequested":
+      return `when a review is requested from you${on.repo === undefined ? "" : ` in ${on.repo}`}`;
+    case "prReady":
+      return "when a pull request becomes ready for review";
+    case "ciFailed":
+      return `when CI fails on ${on.branch ?? "the default branch"}`;
+    case "releasePublished":
+      return `when ${on.name} publishes a release on ${on.source === "npm" ? "npm" : "GitHub"}`;
+  }
+};
+
 export const RoutineName = Schema.String.check(
   Schema.isMinLength(1),
   Schema.isMaxLength(ROUTINE_NAME_MAX),
@@ -83,8 +145,14 @@ export const WorkspaceRoutine = Schema.Struct({
   name: RoutineName,
   /** The worker's brief, or what the orchestrator is told: as the user approved it. */
   brief: RoutineBrief,
-  schedule: RoutineSchedule,
-  /** The repo the worker works in; absent is the workspace's home project. */
+  /** When it runs on a clock. A routine has this or `on`, never both. */
+  schedule: Schema.optionalKey(RoutineSchedule),
+  /** What it runs on instead of a clock: an event seen by polling. */
+  on: Schema.optionalKey(RoutineTrigger),
+  /**
+   * The repo the worker works in; absent is the workspace's home project. A `prReady` or `ciFailed`
+   * routine watches this repo too.
+   */
   project: Schema.optionalKey(ProjectId),
   /** The worker's model; absent is the roster's default, as for a worker the user starts. */
   model: Schema.optionalKey(ModelRef),
@@ -98,8 +166,35 @@ export const WorkspaceRoutine = Schema.Struct({
    * for reckons again from now rather than run, however quickly it went off and on again.
    */
   generation: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-});
+}).check(
+  Schema.makeFilter(
+    (routine: { readonly schedule?: unknown; readonly on?: unknown }) =>
+      (routine.schedule === undefined) !== (routine.on === undefined) ||
+      "A routine runs on a `schedule` or `on` an event: give exactly one.",
+  ),
+);
 export type WorkspaceRoutine = typeof WorkspaceRoutine.Type;
+
+/** What a routine runs on: a schedule, or an event. */
+export interface RoutineWhen {
+  readonly schedule?: RoutineSchedule | undefined;
+  readonly on?: RoutineTrigger | undefined;
+}
+
+/** When the routine runs, in words: its schedule or its event. */
+export const routineWhenText = (routine: RoutineWhen): string =>
+  routine.on !== undefined
+    ? routineTriggerText(routine.on)
+    : routine.schedule !== undefined
+      ? routineScheduleText(routine.schedule)
+      : "never";
+
+/**
+ * What a routine runs on, as one key: a change of it (another schedule, event or event parameter)
+ * reckons the routine again from now, and an event routine looks afresh.
+ */
+export const routineWhenKey = (routine: RoutineWhen): string =>
+  routine.on !== undefined ? JSON.stringify({ on: routine.on }) : JSON.stringify(routine.schedule);
 
 /** `name` as routines are compared: trimmed, case aside. */
 export const routineNameKey = (name: string): string => name.trim().toLowerCase();
@@ -221,6 +316,48 @@ export const parseRoutineSchedule = (
   };
 };
 
+/**
+ * An event as the routine tools take it, in a few words: `review requested [owner/repo]`, `pr
+ * ready`, `ci failed [branch]` or `release npm|github <name> [min-age <days>]`; what is wrong
+ * with it otherwise.
+ */
+export const parseRoutineTrigger = (
+  text: string,
+): { readonly on: RoutineTrigger } | { readonly error: string } => {
+  const words = text
+    .trim()
+    .replace(/^(review|pr|ci)-(requested|ready|failed)(?=\s|$)/i, "$1 $2")
+    .split(/\s+/);
+  const head = words.slice(0, 2).join(" ").toLowerCase();
+  const rest = words.slice(2);
+  const valid = Schema.decodeUnknownOption(RoutineTrigger);
+  const checked = (candidate: unknown) => {
+    const decoded = valid(candidate);
+    return decoded._tag === "Some" ? { on: decoded.value } : undefined;
+  };
+  const found =
+    head === "review requested" && rest.length <= 1
+      ? checked({ event: "reviewRequested", ...(rest[0] === undefined ? {} : { repo: rest[0] }) })
+      : head === "pr ready" && rest.length === 0
+        ? checked({ event: "prReady" })
+        : head === "ci failed" && rest.length <= 1
+          ? checked({ event: "ciFailed", ...(rest[0] === undefined ? {} : { branch: rest[0] }) })
+          : words[0]?.toLowerCase() === "release" &&
+              (words.length === 3 || (words.length === 5 && words[3]?.toLowerCase() === "min-age"))
+            ? checked({
+                event: "releasePublished",
+                source: words[1]?.toLowerCase(),
+                name: words[2],
+                ...(words[4] === undefined ? {} : { minAgeDays: Number(words[4]) }),
+              })
+            : undefined;
+  return (
+    found ?? {
+      error: `"${text}" isn't an event: give "review requested [owner/repo]", "pr ready", "ci failed [branch]" or "release npm|github <name> [min-age <days>]".`,
+    }
+  );
+};
+
 /** A routine's slug, for the feature its workers go under: `routine-ci-triage`. */
 export const routineSlug = (name: string): string => {
   // Split into words and cut by hand: a name is input, and `-+$` backtracks on long dash runs.
@@ -258,8 +395,52 @@ export const RoutineRun = Schema.Struct({
   heldId: Schema.optionalKey(Schema.String),
   /** The user's Run now, not the schedule. */
   manual: Schema.optionalKey(Schema.Literal(true)),
+  /** An event routine's run: how many events it carried. */
+  events: Schema.optionalKey(Schema.Int),
 });
 export type RoutineRun = typeof RoutineRun.Type;
+
+/**
+ * One occurrence an event routine saw. `key` is what makes it one (a PR's repo and number, a
+ * commit, a version), so it is delivered at most once. `ref`, `title`, `by` and `url` come from
+ * GitHub or a registry: data, which a brief fences as untrusted; `detail` is Gram's own words.
+ */
+export const RoutineEvent = Schema.Struct({
+  key: Schema.String.check(Schema.isMaxLength(300)),
+  /** Epoch ms it was first seen. */
+  at: Schema.Number,
+  ref: Schema.String.check(Schema.isMaxLength(300)),
+  title: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(300))),
+  by: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
+  url: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(500))),
+  detail: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(300))),
+});
+export type RoutineEvent = typeof RoutineEvent.Type;
+
+/**
+ * How an event routine's watch stands. Reset whenever what it runs on (`RoutineState.scheduleKey`)
+ * or its generation changes, so a routine new, changed or back on looks afresh and only records
+ * what is there already (`seeded`), never firing for it.
+ */
+export const RoutineTriggerState = Schema.Struct({
+  /** Its first look is done: what was there then is in `seen`. */
+  seeded: Schema.optionalKey(Schema.Literal(true)),
+  /** Keys delivered, or there at the first look, newest last, at most `ROUTINE_EVENTS_SEEN_MAX`. */
+  seen: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** What the source compares against beside the keys: a release routine's last version. */
+  baseline: Schema.optionalKey(Schema.String),
+  /** Seen and not yet delivered: they go to the next run. At most `ROUTINE_EVENTS_PENDING_MAX`. */
+  pending: Schema.optionalKey(Schema.Array(RoutineEvent)),
+  /** Events dropped past the pending cap since the last run, which the next run's brief counts. */
+  dropped: Schema.optionalKey(Schema.Int),
+  /** Epoch ms of its last run, which the cooldown counts from. */
+  firedAt: Schema.optionalKey(Schema.Number),
+  /** Epoch ms of its last look that read the source. */
+  lookedAt: Schema.optionalKey(Schema.Number),
+  /** Why the last look couldn't read the source, in a line the user can act on. */
+  problem: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(ROUTINE_RUN_DETAIL_MAX))),
+});
+export type RoutineTriggerState = typeof RoutineTriggerState.Type;
 
 /**
  * A routine's one unsettled run (its occurrence), kept before the run starts anything and until it
@@ -276,12 +457,19 @@ export const RoutineClaim = Schema.Struct({
   heldId: Schema.optionalKey(Schema.String),
   /** It made this worker: once that worker is gone or finished, it settled. */
   threadId: Schema.optionalKey(ThreadId),
+  /** An event routine's run: the events it delivers, taken from `pending` when it was claimed. */
+  events: Schema.optionalKey(Schema.Array(RoutineEvent)),
+  /** Events it delivers beyond those listed: counted in its brief. */
+  more: Schema.optionalKey(Schema.Int),
 });
 export type RoutineClaim = typeof RoutineClaim.Type;
 
 /** How a routine's runs stand, kept in the workspace's outbox under its id. */
 export const RoutineState = Schema.Struct({
-  /** Epoch ms it next comes due; absent while it is off. Past it, it runs at once. */
+  /**
+   * Epoch ms it next comes due; absent while it is off. Past it, it runs at once. For an event
+   * routine, when it next looks for events.
+   */
   nextRunAt: Schema.optionalKey(Schema.Number),
   /** The schedule `nextRunAt` was reckoned for: a new one reckons again from now. */
   scheduleKey: Schema.optionalKey(Schema.String),
@@ -295,6 +483,8 @@ export const RoutineState = Schema.Struct({
   lastHeld: Schema.optionalKey(Schema.String),
   /** Due, and waiting on its workspace's pause: it runs once when the workspace resumes. */
   waiting: Schema.optionalKey(Schema.Literal("paused")),
+  /** An event routine's watch. */
+  trigger: Schema.optionalKey(RoutineTriggerState),
 });
 export type RoutineState = typeof RoutineState.Type;
 

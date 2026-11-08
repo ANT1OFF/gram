@@ -1826,8 +1826,103 @@ const PHONE_ACCESS_SHOTS: readonly Shot[] = [
   },
 ];
 
+/** Event routines: the editor's When choice, and routines that run when something happens. */
+const EVENT_ROUTINE_SHOTS: readonly Shot[] = [
+  {
+    name: "routine-editor-event",
+    title:
+      "New routine, When: when something happens, CI fails on a branch of its repository (new; before: schedules only)",
+    open: async (page) => {
+      await openOrchestratorOf(page, () => window.gramMock!.simulateOrchestration("board"));
+      await openWorkspaceSettingsFromBar(page);
+      await page.getByTestId("workspace-page").waitFor();
+      await page.getByTestId("routine-add").click();
+      const editor = page.getByTestId("routine-editor");
+      await editor.getByLabel("Name").fill("Red main triage");
+      await editor
+        .getByLabel("Brief")
+        .fill("Find why main went red, fix it in one PR if the cause is clear, else report it.");
+      await editor.getByRole("radio", { name: "When something happens" }).click();
+      await editor.getByLabel("Event").click();
+      await page.getByRole("option", { name: "CI fails on a branch" }).click();
+      await editor.getByLabel("Branch").fill("main");
+      await editor.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "routines-page-events",
+    title:
+      "Settings → Routines with event routines: watching, events waiting, and a last run for 2 events (new)",
+    open: async (page) => {
+      await seedMockSettings(page, { appearance: { mode: "system" } });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto("/t/t-flaky");
+      await threadRow(page, "t-flaky").waitFor();
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page.evaluate(async () => {
+        const api = window.gramMock!;
+        const made = await api.simulateOrchestration("board");
+        const state = (await api.listWorkspaces()).find(
+          (each) => each.workspace.id === made.workspaceId,
+        )!;
+        await api.setOrchestratorCharter(
+          made.workspaceId as never,
+          {
+            ...state.charter,
+            routines: [
+              {
+                id: "routine-ci",
+                name: "Daily CI triage",
+                brief: "Look at main's failing jobs and open one PR per real failure.",
+                schedule: { every: "weekday", at: "09:00" },
+              },
+              {
+                id: "routine-review",
+                name: "Review ready PRs",
+                brief: "Review the pull request and leave one summary comment.",
+                on: { event: "prReady" },
+              },
+              {
+                id: "routine-red",
+                name: "Red main triage",
+                brief: "Find why main went red and fix it in one PR if the cause is clear.",
+                on: { event: "ciFailed" },
+              },
+            ],
+          } as never,
+        );
+        const now = Date.now();
+        api.simulateRoutineState(made.workspaceId as never, "routine-review", {
+          nextRunAt: now + 6 * 60_000,
+          scheduleKey: JSON.stringify({ on: { event: "prReady" } }),
+          trigger: { seeded: true, lookedAt: now - 4 * 60_000 },
+          lastRun: { at: now - 3 * 3_600_000, outcome: "started", events: 2 },
+        });
+        api.simulateRoutineState(made.workspaceId as never, "routine-red", {
+          nextRunAt: now + 2 * 60_000,
+          scheduleKey: JSON.stringify({ on: { event: "ciFailed" } }),
+          trigger: {
+            seeded: true,
+            lookedAt: now - 8 * 60_000,
+            pending: [{ key: "o/r@abc", at: now, ref: "o/r@abc1234" }],
+          },
+        });
+      });
+      await page.keyboard.press("ControlOrMeta+k");
+      const palette = page.getByTestId("command-palette");
+      await palette.getByRole("combobox").fill("routines");
+      await palette.getByRole("option", { name: "Routines", exact: true }).click();
+      await page.getByTestId("routines-page").waitFor();
+      await page.getByTestId("routine-row").first().waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
   ...PHONE_ACCESS_SHOTS,
+  ...EVENT_ROUTINE_SHOTS,
   ...ROUTINES_POLISH_SHOTS,
   ...REVIEW_SHOTS,
   ...STATE_TRUTH_SHOTS,

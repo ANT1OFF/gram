@@ -46,7 +46,7 @@ import {
 } from "./workspaces.ts";
 import {
   ROUTINES_MAX,
-  routineScheduleText,
+  routineWhenText,
   WorkspaceRoutines,
   type WorkspaceRoutine,
 } from "./routines.ts";
@@ -465,14 +465,14 @@ const workerText = (model: WorkerModel): string =>
 const isRoutine = (value: unknown): value is WorkspaceRoutine =>
   typeof value === "object" &&
   value !== null &&
-  "schedule" in value &&
+  ("schedule" in value || "on" in value) &&
   "brief" in value &&
   "name" in value;
 
 /** A routine whole, brief included: the card is where the user approves what it will run. */
 const routineText = (routine: WorkspaceRoutine): string =>
   [
-    `"${routine.name}", ${routineScheduleText(routine.schedule)}${routine.target === "orchestrator" ? ", to the orchestrator" : ""}${routine.off === true ? " (off)" : ""}`,
+    `"${routine.name}", ${routineWhenText(routine)}${routine.target === "orchestrator" ? ", to the orchestrator" : ""}${routine.off === true ? " (off)" : ""}`,
     ...(routine.project === undefined ? [] : [`in project ${routine.project}`]),
     ...(routine.model === undefined ? [] : [`on ${modelText(routine.model)}`]),
   ].join(", ") + `: ${routine.brief}`;
@@ -918,7 +918,7 @@ export const planSettingsChanges = (
         const decoded = decodeWith(WorkspaceRoutines, value);
         if (Result.isFailure(decoded)) {
           errors.push(
-            `${key}: expected the whole list of at most ${ROUTINES_MAX} routines, each { name, brief, schedule: { every: "day" | "weekday", at: "HH:MM" } | { every: "week", at: "HH:MM", day?: 0-6 } | { every: "hours", hours: 1-168 }, project?, model?, target?: "orchestrator", off? } with a name of its own, or null for none. ${firstLine(decoded.failure.message)}`,
+            `${key}: expected the whole list of at most ${ROUTINES_MAX} routines, each { name, brief, schedule: { every: "day" | "weekday", at: "HH:MM" } | { every: "week", at: "HH:MM", day?: 0-6 } | { every: "hours", hours: 1-168 }, or instead of schedule on: { event: "reviewRequested", repo?: "owner/name" } | { event: "prReady" } | { event: "ciFailed", branch? } | { event: "releasePublished", source: "npm" | "github", name, minAgeDays?: 0-90 }, project?, model?, target?: "orchestrator", off? } with a name of its own, or null for none. ${firstLine(decoded.failure.message)}`,
           );
           break;
         }

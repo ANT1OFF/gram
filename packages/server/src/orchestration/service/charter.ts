@@ -3,7 +3,7 @@
 import {
   autonomyOf,
   briefFooterOf,
-  routineScheduleText,
+  routineWhenText,
   InvalidState,
   connectorSetOf,
   type ConnectorSet,
@@ -114,7 +114,7 @@ const charterChangeNotes = (
     notes.push(
       on.length === 0
         ? "The workspace's routines changed: none runs now."
-        : `The workspace's routines changed. Now: ${on.map((routine) => `"${routine.name}" ${routineScheduleText(routine.schedule)}`).join("; ")}.`,
+        : `The workspace's routines changed. Now: ${on.map((routine) => `"${routine.name}" ${routineWhenText(routine)}`).join("; ")}.`,
     );
   }
   return notes;

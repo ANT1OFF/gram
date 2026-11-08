@@ -344,6 +344,8 @@ export const StoredHeldBrief = Schema.Struct({
         manual: Schema.optionalKey(Schema.Literal(true)),
         generation: Schema.optionalKey(Schema.Number),
         scheduleKey: Schema.optionalKey(Schema.String),
+        /** An event routine's run: the events it delivers, as its brief says them (fenced). */
+        event: Schema.optionalKey(Schema.String),
       }),
     ),
     /**

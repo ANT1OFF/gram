@@ -102,11 +102,11 @@ describe.skipIf(!hasGit)("routines", () => {
             at: "09:00",
           });
           const now = yield* Clock.currentTimeMillis;
-          expect(routine.nextRunAt).toBe(nextRunAfter(routine.schedule, now, localZone()));
+          expect(routine.nextRunAt).toBe(nextRunAfter(routine.schedule!, now, localZone()));
           yield* TestClock.adjust(routine.nextRunAt! - now);
           const ran = yield* ranAfter(routine.id, routine.nextRunAt!);
           expect(ran.lastRun?.outcome).toBe("started");
-          expect(ran.nextRunAt).toBe(nextRunAfter(routine.schedule, ran.lastRun!.at, localZone()));
+          expect(ran.nextRunAt).toBe(nextRunAfter(routine.schedule!, ran.lastRun!.at, localZone()));
           expect(ran.nextRunAt! - ran.lastRun!.at).toBeGreaterThanOrEqual(23 * HOUR_MS);
         }),
       );

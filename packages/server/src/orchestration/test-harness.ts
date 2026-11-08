@@ -54,6 +54,7 @@ import { OrchestrationMemory } from "./memory.ts";
 import { decodeOutbox } from "./outbox.ts";
 import { wrapUpText } from "./rules.ts";
 import { Orchestration, OrchestrationLive } from "./service.ts";
+import { type EventLook, type EventLookContext, RoutineEventSources } from "../routines/events.ts";
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
@@ -159,6 +160,15 @@ export interface World {
   /** The installed versions `versionChanged` reads, by target; `installedChanged` asks for a look. */
   readonly installed: Map<VersionTarget, string>;
   readonly installedChanged: PubSub.PubSub<void>;
+  /**
+   * What an event routine's look finds, by its event kind; absent, it can't tell. A function sees
+   * the look's context. Each look is in `eventLooks`, as `<kind> <baseline>`.
+   */
+  readonly routineEvents: Map<
+    string,
+    EventLook | ((context: EventLookContext) => Effect.Effect<EventLook>)
+  >;
+  readonly eventLooks: Array<string>;
 }
 
 const prKey = (pr: { readonly repo: string; readonly number: number }) =>
@@ -206,6 +216,8 @@ export const makeWorld = Effect.gen(function* () {
     releaseReads: [],
     installed: new Map(),
     installedChanged: yield* PubSub.unbounded<void>(),
+    routineEvents: new Map(),
+    eventLooks: [],
   };
   return world;
 });
@@ -440,6 +452,17 @@ const fakeReleases = (world: World) =>
       }),
   });
 
+/** What event routines' looks find, as `world` has it. */
+const fakeRoutineEvents = (world: World) =>
+  Layer.succeed(RoutineEventSources, {
+    look: (on, context) =>
+      Effect.suspend(() => {
+        world.eventLooks.push(`${on.event} ${context.baseline ?? "-"}`);
+        const found = world.routineEvents.get(on.event);
+        return typeof found === "function" ? found(context) : Effect.succeed(found);
+      }),
+  });
+
 /** Gram's and the CLIs' versions as `world` has them. */
 const fakeInstalled = (world: World) =>
   Layer.succeed(InstalledVersions, {
@@ -477,7 +500,7 @@ export const serverLayer = (
       Layer.provide(fakeGh(world)),
     ),
   ).pipe(
-    Layer.provideMerge(RoutinesLive),
+    Layer.provideMerge(RoutinesLive.pipe(Layer.provide(fakeRoutineEvents(world)))),
     Layer.provideMerge(OrchestrationLive),
     Layer.provideMerge(ComposerPresence.layer),
     Layer.provideMerge(localChecksOf(world)),
