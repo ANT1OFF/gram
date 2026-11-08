@@ -12,6 +12,7 @@ import * as Layer from "effect/Layer";
 import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
+import { terminalsOnHost } from "./terminals.ts";
 import { HOST_CAPABILITIES, serveHost } from "./protocol.ts";
 
 // The server starts the host as plain Node under Electron; what the host runs (git, ps, an editor
@@ -37,8 +38,9 @@ const program = Effect.gen(function* () {
     files: filesOn(proc),
     worktrees: yield* Worktrees,
     git: gitOn(proc),
+    terminals: yield* terminalsOnHost,
     scan: liveScan.pipe(Effect.provideService(Proc, proc)),
   });
-}).pipe(Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive))));
+}).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive))));
 
 NodeRuntime.runMain(program);

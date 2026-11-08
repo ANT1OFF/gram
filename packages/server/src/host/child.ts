@@ -21,8 +21,12 @@ const hostEntry = (): string =>
       ? join(__dirname, "gram-host.js")
       : fileURLToPath(new URL("./gram-host.js", import.meta.url));
 
-/** How long a host gets to exit on its own before it is killed. */
-const STOP_GRACE_MS = 3_000;
+/**
+ * How long a host gets to exit on its own before it is killed: past its terminals' worst reap (a
+ * HUP, 3 s, a KILL, 3 s), so a shell that ignores HUP is still killed by the host rather than
+ * orphaned when the host is.
+ */
+const STOP_GRACE_MS = 7_000;
 
 /** Stops our own child: its stream closes first, then a TERM, then a KILL if it lingers. */
 const stop = (child: ChildProcess) =>

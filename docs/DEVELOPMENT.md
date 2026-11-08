@@ -52,7 +52,7 @@ Effect patch intact. No pnpm is required.
 | `GRAM_FAKE_AGENT=1 bun run dev:desktop` | Desktop with the echo fake agent                                         |
 | `bun run dev`                           | Web UI and local Node server; echo agent by default                      |
 | `GRAM_FAKE_AGENT=0 bun run dev`         | Web UI/server using installed agents                                     |
-| `GRAM_HOST_PROCESS=1 bun run dev`       | Worker host as its own process (files, worktrees, git state, port scan)  |
+| `GRAM_HOST_PROCESS=1 bun run dev`       | Worker host as its own process (files, worktrees, git, terminals, ports) |
 | `bun run dev:mock`                      | Mock UI without server or agent processes                                |
 | `bun run dev:preview`                   | Owned browser/Vite mock preview with fresh storage and retained evidence |
 | `bun run build`                         | Typecheck, then web and desktop bundles                                  |

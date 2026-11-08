@@ -104,7 +104,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
 
   /**
    * This machine only, built from the services already in the server, its folders, worktrees, git
-   * state and port scan through `LocalHostProcess`. Terminals and agent sessions stay in the server
+   * state and port scan through `LocalHostProcess`. Agent sessions stay in the server
    * for now.
    */
   static readonly layerLocalOn: Layer.Layer<
