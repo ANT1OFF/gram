@@ -85,6 +85,9 @@ const keptCounts = (threadId: string) =>
     return [Number(messages?.n), Number(turns?.n)];
   }).pipe(Effect.orDie);
 
+const replyA4 = (parts: ReadonlyArray<unknown>) =>
+  ({ id: "a4", role: "assistant", parts }) as never;
+
 describe("migrations", () => {
   it.effect("create every table on a temp database and are idempotent", () =>
     Effect.gen(function* () {
@@ -366,6 +369,27 @@ describe("ThreadStore", () => {
           (yield* store.messagesWithParts(id, ["file", "dynamic-tool"])).map((m) => m.id),
         ).toEqual(["a2", "u3", "a3"]);
         expect(yield* store.messagesWithParts(id, ["data-handoff"])).toEqual([]);
+
+        // The part index follows each write: a streaming save waits for its refresh, a rewrite
+        // drops a type it no longer holds, and a truncation drops the row.
+        const handoffs = () =>
+          store.messagesWithParts(id, ["data-handoff"]).pipe(Effect.map((m) => m.map((x) => x.id)));
+        yield* store.upsertMessage(id, replyA4([{ type: "text", text: "a" }]), undefined, {
+          streaming: true,
+        });
+        const handoff = { type: "data-handoff", id: "h", data: { reason: "context", at: 1 } };
+        yield* store.upsertMessage(id, replyA4([{ type: "text", text: "a" }, handoff]), undefined, {
+          streaming: true,
+        });
+        expect(yield* handoffs()).toEqual([]);
+        expect(yield* store.refreshSearch(id, "a4")).toBe(true);
+        expect(yield* handoffs()).toEqual(["a4"]);
+        yield* store.upsertMessage(id, replyA4([{ type: "text", text: "a" }]));
+        expect(yield* handoffs()).toEqual([]);
+        yield* store.upsertMessage(id, replyA4([handoff]));
+        expect(yield* handoffs()).toEqual(["a4"]);
+        yield* store.truncateMessagesFrom(id, "a4");
+        expect(yield* handoffs()).toEqual([]);
 
         // The last messages in order, how many there are, and whether any has a role, read alone.
         expect((yield* store.lastMessages(id, 2)).map((m) => m.id)).toEqual(["u3", "a3"]);
