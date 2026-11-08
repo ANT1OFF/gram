@@ -109,7 +109,7 @@ export function ModelCombobox({
         compact={field ? undefined : (selected?.compact ?? compactModelName(shown))}
         labelled={labelled}
       />
-      {/* Short of room it goes, leaving the space to the name. */}
+      {/* Only beside the name in full, or in a form's field. */}
       {(whole || field) && (
         <ChevronDownIcon aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
       )}

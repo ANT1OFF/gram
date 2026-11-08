@@ -297,15 +297,20 @@ export function AgentFields({
           </SelectContent>
         </Select>
       ) : ghost ? (
-        // The one agent there is, as its mark alone; its name on hover and to a screen reader.
+        // The one agent there is, as its mark alone; its name on hover and focus, so the keyboard
+        // reaches the words too, and as its name to a screen reader.
         <Hint
           label={agentLabel(agents[0] ?? value.agent)}
           render={
-            <span className="flex size-8 items-center justify-center text-muted-foreground" />
+            <span
+              role="img"
+              tabIndex={0}
+              aria-label={agentLabel(agents[0] ?? value.agent)}
+              className="flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none focus-visible:focus-ring"
+            />
           }
         >
           <AgentIcon agent={agents[0] ?? value.agent} className="size-icon-bar" />
-          <span className="sr-only">{agentLabel(agents[0] ?? value.agent)}</span>
         </Hint>
       ) : (
         <span className="flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-reading">

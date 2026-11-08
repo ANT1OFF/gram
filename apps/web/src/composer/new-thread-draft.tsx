@@ -77,17 +77,13 @@ import {
 
 type CheckoutKind = CheckoutRequest["kind"];
 
+/** How long a pick's words stay beside the chip, as long as a thread composer's note. */
+const PICKED_MS = 2500;
+
 /**
  * Where the task draft goes from this folder: its own one-repo workspace, else one it is part of,
  * else the repo, to make a workspace for. Nothing for a folder Gram doesn't know yet.
  */
-/**
- * The prompt box's one measured control, the choices chip, as in a thread's composer; it never
- * folds, since the row wraps instead.
- */
-/** How long a pick's words stay beside the chip, as long as a thread composer's note. */
-const PICKED_MS = 2500;
-
 export function folderTarget(
   project: Project | undefined,
   workspaces: readonly WorkspaceState[],
