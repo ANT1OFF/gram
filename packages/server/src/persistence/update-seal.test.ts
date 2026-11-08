@@ -85,20 +85,26 @@ describe("update database seal", () => {
         const sql = yield* SqlClient.SqlClient.pipe(Effect.provideContext(context));
         yield* sql`CREATE TABLE IF NOT EXISTS seal_probe (id INTEGER PRIMARY KEY, data TEXT)`;
         yield* insert(sql, 200);
-        // Long enough on the worker's own connection (about 0.35 s) to outlast the seal's lock wait,
-        // and short enough to finish inside the worker's 2 s stop bound on a loaded macOS runner: a
-        // read stopped past it reruns on the writer, which then holds the seal past its own wait.
-        const read = yield* Effect.forkScoped(
-          readOffLoop<{ n: number }>(
-            `SELECT count(*) AS n FROM seal_probe a, seal_probe b, seal_probe c,
-              (${Array.from({ length: 5 }, (_, i) => `SELECT ${i}`).join(" UNION ALL ")})`,
-            [],
-          ).pipe(Effect.provideContext(context)),
+        const count = readOffLoop<{ n: number }>("SELECT count(*) AS n FROM seal_probe", []).pipe(
+          Effect.provideContext(context),
         );
-        yield* Effect.sleep("50 millis");
+        // The worker holds a snapshot until it is stopped: a read transaction left open on its
+        // connection, in place of a statement sized to outlast the seal's lock wait, so no runner's
+        // speed decides whether the seal meets a reader.
+        yield* readOffLoop("BEGIN", []).pipe(Effect.provideContext(context));
+        expect(yield* count).toEqual([{ n: 200 }]);
+        // Committed past the worker's snapshot: while it holds it, no checkpoint can empty the WAL.
+        yield* insert(sql, 1);
+        const [held] = yield* sql<{ busy: number; log: number; checkpointed: number }>`
+          PRAGMA wal_checkpoint(PASSIVE)`;
+        expect(held !== undefined && held.busy === 0 && held.log === held.checkpointed).toBe(false);
+        // Sent to the worker before the seal begins, so it is running when the seal stops it. Inside
+        // the snapshot it reads 200; rerun on the writer, it would read 201, or never start once
+        // sealed.
+        const read = yield* Effect.forkScoped(count, { startImmediately: true });
         expect(yield* sealForUpdate).toBe(true);
         expect(walBytes(file)).toBe(0);
-        expect(yield* Fiber.join(read)).toEqual([{ n: 5 * 200 ** 3 }]);
+        expect(yield* Fiber.join(read)).toEqual([{ n: 200 }]);
         const closed = yield* Scope.close(scope, Exit.void).pipe(Effect.timeoutOption(10_000));
         expect(Option.isSome(closed)).toBe(true);
       }),

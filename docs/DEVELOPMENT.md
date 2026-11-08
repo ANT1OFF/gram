@@ -46,16 +46,16 @@ Effect patch intact. No pnpm is required.
 
 ## Run locally
 
-| Command                                 | Behavior                                                                 |
-| --------------------------------------- | ------------------------------------------------------------------------ |
-| `bun run dev:desktop`                   | Electron, server and Vite; real installed agents by default              |
-| `GRAM_FAKE_AGENT=1 bun run dev:desktop` | Desktop with the echo fake agent                                         |
-| `bun run dev`                           | Web UI and local Node server; echo agent by default                      |
-| `GRAM_FAKE_AGENT=0 bun run dev`         | Web UI/server using installed agents                                     |
-| `GRAM_HOST_PROCESS=1 bun run dev`       | Worker host as its own process (files, worktrees, git, terminals, ports) |
-| `bun run dev:mock`                      | Mock UI without server or agent processes                                |
-| `bun run dev:preview`                   | Owned browser/Vite mock preview with fresh storage and retained evidence |
-| `bun run build`                         | Typecheck, then web and desktop bundles                                  |
+| Command                                 | Behavior                                                                                  |
+| --------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `bun run dev:desktop`                   | Electron, server and Vite; real installed agents by default                               |
+| `GRAM_FAKE_AGENT=1 bun run dev:desktop` | Desktop with the echo fake agent                                                          |
+| `bun run dev`                           | Web UI and local Node server; echo agent by default                                       |
+| `GRAM_FAKE_AGENT=0 bun run dev`         | Web UI/server using installed agents                                                      |
+| `GRAM_HOST_PROCESS=1 bun run dev`       | Worker host as its own process (files, worktrees, git, terminals, ports, Claude sessions) |
+| `bun run dev:mock`                      | Mock UI without server or agent processes                                                 |
+| `bun run dev:preview`                   | Owned browser/Vite mock preview with fresh storage and retained evidence                  |
+| `bun run build`                         | Typecheck, then web and desktop bundles                                                   |
 
 For isolated UI inspection and a signed-out capture, use the
 [preview procedure](VERIFICATION.md#isolated-ui-preview). It uses the installed
@@ -76,6 +76,9 @@ Source: [web dev loop](../apps/web/scripts/dev.mjs),
 For opt-in phone access to the existing server over private Tailscale HTTPS, follow
 [private mobile browser access](REMOTE_ACCESS.md). Pairing and remote authentication
 are separate from the desktop boot token.
+
+To run the server and web app in a Linux container, for example on Windows with Docker Desktop,
+follow [Gram in Docker](DOCKER.md).
 
 ## Browser and native prerequisites
 

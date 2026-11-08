@@ -13,7 +13,13 @@ import {
 import * as Schema from "effect/Schema";
 import { FENCE_OPENER } from "../git/untrusted-fence.ts";
 import { ciFailureOf, readyPrsOf, releaseLookOf } from "./events.ts";
-import { mergeLook, routineBrief, routineEventBlock } from "./routines.ts";
+import {
+  mergeLook,
+  requeued,
+  ROUTINE_LOOK_MISSES_TOLD,
+  routineBrief,
+  routineEventBlock,
+} from "./routines.ts";
 
 const DAY = 86_400_000;
 const ev = (n: number): RoutineEvent => ({ key: `o/r#${n}`, at: 0, ref: `o/r#${n}` });
@@ -125,7 +131,14 @@ describe("event routine sources", () => {
         0,
       ),
     ).toEqual([]);
-    expect(ciFailureOf(runsBody([]), "o/r", "main", 0)).toEqual([]);
+    expect(
+      ciFailureOf(
+        runsBody([run(9, "eee", "2026-11-08T15:00:00Z", null, { status: "in_progress" })]),
+        "o/r",
+        "main",
+        0,
+      ),
+    ).toEqual([]);
   });
 
   it("takes the newest release as the baseline, then fires once for the newest old enough", () => {
@@ -156,6 +169,35 @@ describe("event routine sources", () => {
       releaseLookOf({ ...on, minAgeDays: 0 }, [rel("1.3.0", 0)], "1.2.0", 100 * DAY).items,
     ).toHaveLength(1);
   });
+
+  // Review of #289, finding 5: a seed never swallows a release still inside its wait.
+  it("seeds from the newest release already old enough, so a younger one still fires", () => {
+    const on = { event: "releasePublished" as const, source: "npm" as const, name: "pkg" };
+    const rel = (version: string, daysAgo: number) => ({
+      version,
+      publishedAt: 100 * DAY - daysAgo * DAY,
+      url: "https://www.npmjs.com/package/pkg",
+      prerelease: false,
+    });
+    const releases = [rel("1.0.0", 30), rel("2.0.0", 2)];
+    const seeded = releaseLookOf(on, releases, undefined, 100 * DAY);
+    expect(seeded.baseline).toBe("1.0.0");
+    // Five days on, 2.0.0 is seven days old: it fires.
+    const later = releaseLookOf(on, releases, seeded.baseline, 105 * DAY);
+    expect(later.items.map((item) => item.key)).toEqual(["npm:pkg@2.0.0"]);
+    // Nothing old enough yet: every release fires once it is.
+    expect(releaseLookOf(on, [rel("1.0.0", 1)], undefined, 100 * DAY).baseline).toBe("0.0.0");
+  });
+
+  it("keys a release routine alike with its wait left out or given as the default", () => {
+    const on = { event: "releasePublished" as const, source: "npm" as const, name: "pkg" };
+    expect(routineWhenKey({ on })).toBe(routineWhenKey({ on: { ...on, minAgeDays: 7 } }));
+    expect(routineWhenKey({ on })).not.toBe(routineWhenKey({ on: { ...on, minAgeDays: 0 } }));
+  });
+
+  it("says the branch has no runs at all, apart from a green one", () => {
+    expect(ciFailureOf(runsBody([]), "o/r", "mian", 0)).toBeNull();
+  });
 });
 
 describe("an event routine's watch", () => {
@@ -173,12 +215,60 @@ describe("an event routine's watch", () => {
     const again = mergeLook(next, { items: [ev(2)] }, 30);
     expect(again.pending?.map((each) => each.key)).toEqual(["o/r#2"]);
     expect(mergeLook(again, { items: [ev(1)] }, 40).pending).toHaveLength(1);
-    expect(mergeLook(again, undefined, 50)).toBe(again);
+    expect(mergeLook(again, undefined, 50)).toEqual({ ...again, misses: 1 });
     expect(mergeLook(again, { problem: "Off." }, 60)).toMatchObject({
       problem: "Off.",
       lookedAt: 60,
     });
     expect(mergeLook({ ...again, problem: "Off." }, { items: [] }, 70).problem).toBeUndefined();
+  });
+
+  // Review of #289, finding 1: another repository seeds afresh rather than firing for all of it.
+  it("seeds afresh when a look is of another repository than the seeded one", () => {
+    const seeded = mergeLook({}, { items: [ev(1)], target: "o/r" }, 10);
+    expect(seeded.target).toBe("o/r");
+    const queued = mergeLook(seeded, { items: [ev(1), ev(2)], target: "o/r" }, 20);
+    expect(queued.pending).toHaveLength(1);
+    const moved = mergeLook(
+      { ...queued, firedAt: 5 },
+      { items: [{ key: "x/y#1", at: 0, ref: "x/y#1" }], target: "x/y" },
+      30,
+    );
+    expect(moved).toEqual({
+      firedAt: 5,
+      lookedAt: 30,
+      seeded: true,
+      seen: ["x/y#1"],
+      target: "x/y",
+    });
+  });
+
+  it("says so once looks keep failing to tell, and forgets it at the next answer", () => {
+    let watch = mergeLook({}, { items: [] }, 0);
+    for (let n = 1; n < ROUTINE_LOOK_MISSES_TOLD; n++) watch = mergeLook(watch, undefined, n);
+    expect(watch.problem).toBeUndefined();
+    watch = mergeLook(watch, undefined, 99);
+    expect(watch.problem).toContain("couldn't check");
+    const back = mergeLook(watch, { items: [] }, 100);
+    expect(back.problem).toBeUndefined();
+    expect(back.misses).toBeUndefined();
+  });
+
+  it("counts a waiting key as known, though it aged out of what was seen", () => {
+    const watch = mergeLook({ seeded: true, seen: [], pending: [ev(1)] }, { items: [ev(1)] }, 1);
+    expect(watch.pending?.map((each) => each.key)).toEqual(["o/r#1"]);
+  });
+
+  // Review of #289, findings 2 and 3: a run that delivered nothing puts its events back.
+  it("puts a run's events back ahead of what waits, counting what it didn't list", () => {
+    const back = requeued({ pending: [ev(3)], firedAt: 9 }, [ev(1), ev(2)], 4);
+    expect(back.pending?.map((each) => each.key)).toEqual(["o/r#1", "o/r#2", "o/r#3"]);
+    expect(back.dropped).toBe(4);
+    expect(back.firedAt).toBe(9);
+    const full = Array.from({ length: ROUTINE_EVENTS_PENDING_MAX }, (_, n) => ev(n + 10));
+    const capped = requeued({ pending: full }, [ev(1)], 0);
+    expect(capped.pending).toHaveLength(ROUTINE_EVENTS_PENDING_MAX);
+    expect(capped.dropped).toBe(1);
   });
 
   it("drops the oldest past the pending cap and counts them, keeping what it still sees", () => {

@@ -221,6 +221,19 @@ describe("event routines in the form", () => {
         now,
       ),
     ).toBe("Its project has no GitHub origin to watch.");
+    // Review of #289, finding 4: why events wait though the routine is on.
+    expect(
+      nextRunText(
+        review,
+        {
+          trigger: {
+            pending: [{ key: "k", at: 0, ref: "o/r#1" }],
+            blocked: 'The worker from its last run, "Review", is still live.',
+          },
+        },
+        now,
+      ),
+    ).toBe('1 event waiting. The worker from its last run, "Review", is still live.');
     expect(lastRunText({ at: now, outcome: "started", events: 2 }, now)).toBe(
       "Last ran 12:00 for 2 events, started a worker",
     );

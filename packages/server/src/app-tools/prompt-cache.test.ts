@@ -94,4 +94,35 @@ describe("app tool prompt prefix", () => {
       await server.close();
     }
   });
+  it("marks the core tools for Claude Code to load up front, as served in-process", async () => {
+    const tools = ["set_title", "list_threads"].map((name) =>
+      defineAppTool({
+        descriptor: {
+          name,
+          class: "self",
+          description: "Synthetic load fixture",
+        },
+        input: Schema.Struct({ text: Schema.String }),
+        handle: () => Effect.succeed("ok"),
+      }),
+    );
+    const server = makeMcpServer(() => bindAppTools(tools, threadId));
+    const client = new Client({
+      name: "synthetic-load-audit",
+      version: "1.0.0",
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const listed = (await client.listTools()).tools;
+      expect(listed.map((tool) => [tool.name, tool["_meta"]])).toEqual([
+        ["list_threads", undefined],
+        ["set_title", { "anthropic/alwaysLoad": true }],
+      ]);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
 });

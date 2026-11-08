@@ -29,6 +29,7 @@ import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
 import { captureLogs } from "@gram/agents/testing/logs";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { appToolsAt } from "../host/remote-app-tools.ts";
 import { McpRoute } from "./http-mcp.ts";
 import { mcpConnectionFor, McpTokens } from "./mcp-tokens.ts";
 import { AppToolRegistry } from "./registry.ts";
@@ -410,6 +411,22 @@ layer(McpServer, { excludeTestServices: true })("HTTP MCP transport", (it) => {
         { type: "image", data: "AA==", mimeType: "image/png" },
       ]);
     }),
+  );
+
+  it.effect("gives the host process the thread's tools, its calls reaching the thread", () =>
+    Effect.gen(function* () {
+      ran.length = 0;
+      const remote = yield* appToolsAt(yield* mcpConnectionFor(THREAD_B));
+      expect(remote.tools.map((t) => [t.name, t.inputSchema["type"], t.alwaysLoad])).toEqual([
+        ["echo", "object", false],
+        ["fail", "object", false],
+      ]);
+      const result = yield* Effect.promise(() => remote.call("echo", { text: "hi" }));
+      expect(result.content).toEqual([
+        { type: "text", text: JSON.stringify({ threadId: THREAD_B, text: "hi" }) },
+      ]);
+      expect(ran).toEqual([THREAD_B]);
+    }).pipe(Effect.scoped),
   );
 
   it.effect("returns tool errors and invalid input as isError", () =>

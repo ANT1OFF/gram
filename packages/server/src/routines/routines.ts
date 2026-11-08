@@ -213,7 +213,13 @@ const reckoned = (routine: Routine, now: number): Routine => {
     nextRunAt: routine.on !== undefined ? now : nextAfter(routine, now),
     scheduleKey: scheduleKeyOf(routine),
     generation: routine.charterGeneration,
-    ...(routine.on !== undefined ? { trigger: {} } : {}),
+    // Its last run's time stays, so an edit right after a run doesn't skip the cooldown.
+    ...(routine.on !== undefined
+      ? {
+          trigger:
+            routine.trigger?.firedAt === undefined ? {} : { firedAt: routine.trigger.firedAt },
+        }
+      : {}),
   };
 };
 
@@ -302,11 +308,45 @@ export const routineNote = (
 ): string =>
   `Routine "${routine.name}" (${routineWhenText(routine)}) is due. Its brief: ${routine.brief}${event === undefined ? "" : `\n\n${event}`}`;
 
+/** How many looks in a row may fail to tell before the routine says so. */
+export const ROUTINE_LOOK_MISSES_TOLD = 6;
+
+/** Said when looks keep failing to tell. */
+const MISSES_PROBLEM =
+  "Gram couldn't check the last few times: GitHub or the registry didn't answer (offline, signed out, rate-limited or out of the background allowance).";
+
 /**
- * An event routine's watch with one look merged in. A look that couldn't tell changes nothing; one
- * that couldn't look says why. The first look seeds: what is there is seen, none of it pending.
- * After it, each key not seen before is seen now and waits in `pending`. Keys the look still sees
- * stay seen however many come after them; others age out past `ROUTINE_EVENTS_SEEN_MAX`.
+ * `events` (and `more` counted) put back to wait, as a run that never started leaves them: ahead of
+ * what waits, the oldest dropped and counted past `ROUTINE_EVENTS_PENDING_MAX`.
+ */
+export const requeued = (
+  trigger: RoutineTriggerState | undefined,
+  events: ReadonlyArray<RoutineEvent>,
+  more: number,
+): RoutineTriggerState => {
+  const was = trigger ?? {};
+  if (events.length === 0 && more === 0) return was;
+  const known = new Set((was.pending ?? []).map((event) => event.key));
+  const queued = [...events.filter((event) => !known.has(event.key)), ...(was.pending ?? [])];
+  const over = Math.max(0, queued.length - ROUTINE_EVENTS_PENDING_MAX);
+  const pending = queued.slice(over);
+  const dropped = (was.dropped ?? 0) + over + more;
+  const { pending: _pending, dropped: _dropped, ...rest } = was;
+  return {
+    ...rest,
+    ...(pending.length === 0 ? {} : { pending }),
+    ...(dropped === 0 ? {} : { dropped }),
+  };
+};
+
+/**
+ * An event routine's watch with one look merged in. A look that couldn't tell changes nothing but
+ * its count of misses, and past `ROUTINE_LOOK_MISSES_TOLD` in a row says so; one that couldn't
+ * look says why. The first look seeds: what is there is seen, none of it pending; so does a look at
+ * another `target` than the seeded one (its repository changed), whatever waited for the old one
+ * dropped. After it, each key neither seen nor waiting is seen now and waits in `pending`. Keys the
+ * look still sees stay seen however many come after them; others age out past
+ * `ROUTINE_EVENTS_SEEN_MAX`.
  */
 export const mergeLook = (
   trigger: RoutineTriggerState | undefined,
@@ -314,31 +354,55 @@ export const mergeLook = (
   now: number,
 ): RoutineTriggerState => {
   const was = trigger ?? {};
-  if (look === undefined) return was;
-  if ("problem" in look) return { ...was, problem: look.problem, lookedAt: now };
-  const { problem: _problem, ...rest } = was;
+  if (look === undefined) {
+    const misses = (was.misses ?? 0) + 1;
+    return {
+      ...was,
+      misses,
+      ...(misses >= ROUTINE_LOOK_MISSES_TOLD ? { problem: MISSES_PROBLEM } : {}),
+    };
+  }
+  const { misses: _misses, ...counted } = was;
+  if ("problem" in look) return { ...counted, problem: look.problem, lookedAt: now };
+  const { problem: _problem, ...rest } = counted;
+  const retarget = rest.seeded === true && look.target !== undefined && rest.target !== look.target;
   const visible = [...new Set(look.items.map((item) => item.key))];
   const shown = new Set(visible);
-  const known = new Set(was.seen ?? []);
-  const seenNow = (extra: ReadonlyArray<string>) =>
-    [...(was.seen ?? []).filter((key) => !shown.has(key)), ...extra, ...visible]
-      .filter((key, at, all) => all.indexOf(key) === at)
-      .slice(-ROUTINE_EVENTS_SEEN_MAX);
-  const baseline = look.baseline ?? was.baseline;
-  const base = { ...rest, lookedAt: now, ...(baseline === undefined ? {} : { baseline }) };
-  if (was.seeded !== true) return { ...base, seeded: true, seen: seenNow([]) };
+  const baseline = look.baseline ?? (retarget ? undefined : rest.baseline);
+  const {
+    seeded: _seeded,
+    seen: _seen,
+    pending: _pending,
+    dropped: _dropped,
+    baseline: _baseline,
+    target: _target,
+    ...kept
+  } = rest;
+  const base = {
+    ...kept,
+    lookedAt: now,
+    ...(baseline === undefined ? {} : { baseline }),
+    ...(look.target === undefined ? {} : { target: look.target }),
+  };
+  if (rest.seeded !== true || retarget) {
+    return { ...base, seeded: true, seen: visible.slice(-ROUTINE_EVENTS_SEEN_MAX) };
+  }
+  const known = new Set([...(rest.seen ?? []), ...(rest.pending ?? []).map((e) => e.key)]);
   const fresh = look.items.filter(
     (item, at, all) =>
       !known.has(item.key) && all.findIndex((each) => each.key === item.key) === at,
   );
-  const queued = [...(was.pending ?? []), ...fresh];
+  const queued = [...(rest.pending ?? []), ...fresh];
   const over = Math.max(0, queued.length - ROUTINE_EVENTS_PENDING_MAX);
-  const dropped = (was.dropped ?? 0) + over;
+  const dropped = (rest.dropped ?? 0) + over;
   const pending = queued.slice(over);
-  const { pending: _pending, dropped: _dropped, ...kept } = base;
+  const seen = [...(rest.seen ?? []).filter((key) => !shown.has(key)), ...visible]
+    .filter((key, at, all) => all.indexOf(key) === at)
+    .slice(-ROUTINE_EVENTS_SEEN_MAX);
   return {
-    ...kept,
-    seen: seenNow([]),
+    ...base,
+    seeded: true,
+    seen,
     ...(pending.length === 0 ? {} : { pending }),
     ...(dropped === 0 ? {} : { dropped }),
   };
@@ -835,6 +899,20 @@ export const RoutinesLive = Layer.effect(
           : phase.phase === "held"
             ? { ...reached, heldId: phase.heldId }
             : { ...reached, threadId: phase.threadId };
+        // A run that started nothing (refused, failed, no orchestrator) delivered nothing: its
+        // events wait again, and the cooldown from this try paces the next.
+        const events = claim.events ?? [];
+        if (ran.outcome === "failed" && kept === undefined && events.length > 0) {
+          const retried: Routine = {
+            ...routine,
+            trigger: requeued(routine.trigger, events, claim.more ?? 0),
+          };
+          const told: RoutineRun = {
+            ...ran,
+            detail: detailOf(`${ran.detail ?? "It couldn't run."} Its events wait to run again.`),
+          };
+          return { routine: recorded(retried, told, manual, undefined), ran: told };
+        }
         return { routine: recorded(routine, ran, manual, kept), ran };
       });
 
@@ -871,10 +949,23 @@ export const RoutinesLive = Layer.effect(
                 // Its worker exists without its brief: finished, as the spawn's retry does.
                 return yield* runClaim(routine, state, now, last, last.manual === true);
               case "pending":
-                if (last.manual !== true && last.slot === routine.nextRunAt) {
+                // An event run is its events, not a slot: resumed whenever it comes up again.
+                if (
+                  last.manual !== true &&
+                  (routine.on !== undefined
+                    ? last.events !== undefined
+                    : last.slot === routine.nextRunAt)
+                ) {
                   return yield* runClaim(routine, state, now, last, false);
                 }
-                routine = withoutClaim(routine);
+                // Dropped, as a Run now a restart cut short is: its events wait again.
+                routine =
+                  last.events === undefined
+                    ? withoutClaim(routine)
+                    : {
+                        ...withoutClaim(routine),
+                        trigger: requeued(routine.trigger, last.events, last.more ?? 0),
+                      };
                 break;
               case "settled":
                 routine = withoutClaim(routine, phase.threadId);
@@ -920,7 +1011,7 @@ export const RoutinesLive = Layer.effect(
           if (!manual && now < cooled) return { routine, idle: true as const, until: cooled };
           const events = pending.slice(-ROUTINE_EVENTS_PER_RUN);
           const more = pending.length - events.length + (trigger.dropped ?? 0);
-          const { pending: _pending, dropped: _dropped, ...watch } = trigger;
+          const { pending: _pending, dropped: _dropped, blocked: _blocked, ...watch } = trigger;
           const claim: RoutineClaim = {
             ...slot,
             ...(events.length === 0 ? {} : { events }),
@@ -970,11 +1061,11 @@ export const RoutinesLive = Layer.effect(
       );
 
     /** Saves a run, tells the windows, notes a failure for the orchestrator; arms nothing. */
-    const record = (routine: Routine, ran: RoutineRun) =>
+    const record = (routine: Routine, ran: RoutineRun, quiet = false) =>
       Effect.gen(function* () {
         yield* write(routine);
         yield* changed(routine.workspaceId);
-        yield* noteFailure(routine, ran);
+        if (!quiet) yield* noteFailure(routine, ran);
       });
 
     /**
@@ -1040,21 +1131,33 @@ export const RoutinesLive = Layer.effect(
         const pending = merged?.pending ?? [];
         const look = nextAfter(routine, now);
         const cooled = (merged?.firedAt ?? Number.NEGATIVE_INFINITY) + COOLDOWN_MS;
-        /** Kept as it stands, looking next at `at`, and told to the windows when it changed. */
-        const wait = (next: Routine, at: number) =>
+        /**
+         * Kept as it stands, looking next at `at`, and told to the windows when it changed. A
+         * claim keeps its `nextRunAt` (the slot it was made for); `blocked` says why events wait.
+         */
+        const wait = (next: Routine, at: number, blocked?: string) =>
           Effect.gen(function* () {
-            const kept: Routine = { ...next, nextRunAt: at };
+            const { blocked: _was, ...watch } = next.trigger ?? {};
+            const waits = (watch.pending?.length ?? 0) + (watch.dropped ?? 0) > 0;
+            const kept: Routine = {
+              ...next,
+              nextRunAt: next.claim === undefined ? at : (next.nextRunAt ?? at),
+              trigger: blocked !== undefined && waits ? { ...watch, blocked } : watch,
+            };
             if (JSON.stringify(stateOf(kept)) !== JSON.stringify(stateOf(stored))) {
               yield* write(kept);
               yield* changed(stored.workspaceId);
             }
-            return yield* arm(kept);
+            return yield* arm(kept, Duration.millis(Math.max(0, at - now)));
           });
         const { waiting: _waiting, ...unpaused } = routine;
         if (state.paused !== undefined) {
-          // Events go on being seen while paused, and fire once on the resume.
+          // Events go on being seen while paused, and fire once on the resume; a run a restart
+          // cut short keeps its claim and slot, and resumes then.
           return yield* wait(
-            pending.length === 0 ? unpaused : { ...routine, waiting: "paused" },
+            pending.length === 0 && routine.claim === undefined
+              ? unpaused
+              : { ...routine, waiting: "paused" },
             look,
           );
         }
@@ -1068,11 +1171,16 @@ export const RoutinesLive = Layer.effect(
           return yield* wait(outcome.routine, Math.min(look, outcome.until ?? look));
         }
         if ("busy" in outcome) {
-          // Busy with the last occurrence: what waits stays for when it settles, unrecorded.
-          return yield* wait(outcome.routine, look);
+          // Busy with the last occurrence: what waits stays for when it settles, and says why.
+          return yield* wait(outcome.routine, look, outcome.busy);
         }
         const next = outcome.routine;
-        yield* record(next, outcome.ran);
+        // A retry that fails as the last try did isn't told to the orchestrator again.
+        const again =
+          outcome.ran.outcome === "failed" &&
+          stored.lastRun?.outcome === "failed" &&
+          stored.lastRun.detail === outcome.ran.detail;
+        yield* record(next, outcome.ran, again);
         yield* arm(next);
       });
 
