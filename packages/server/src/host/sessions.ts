@@ -1,5 +1,7 @@
 import {
   type AgentHost,
+  type McpEndpoint,
+  type RemoteAppTools,
   type AgentSession,
   type ConnectorsSeen,
   type EventLog,
@@ -12,6 +14,7 @@ import {
   AgentUnavailable,
   HostFailed,
   type HostAgentReload,
+  NotFound,
   type HostSessionOpen,
   type HostSessionOpened,
 } from "@gram/contracts";
@@ -23,6 +26,7 @@ import * as Fiber from "effect/Fiber";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import { appToolsAt } from "./remote-app-tools.ts";
 
 /** The agents a host runs sessions for, by kind. */
 export type HostAgents = (kind: AgentKind) => Effect.Effect<AgentHost, AgentUnavailable>;
@@ -36,7 +40,8 @@ export interface HostSessionsService {
   readonly open: (
     request: HostSessionOpen,
   ) => Effect.Effect<HostSessionOpened, AgentUnavailable | HostFailed>;
-  readonly events: (handle: string, afterSeq: number) => Stream.Stream<SequencedEvent, HostFailed>;
+  /** `NotFound` for a session that isn't open (any more). */
+  readonly events: (handle: string, afterSeq: number) => Stream.Stream<SequencedEvent, NotFound>;
   readonly ack: (handle: string, seq: number) => Effect.Effect<void>;
   readonly connectorsSeen: (handle: string) => Stream.Stream<ConnectorsSeen>;
   /** The open session under `handle`, for the calls that act on it. */
@@ -69,18 +74,28 @@ const CLOSED_EARLY_KEPT = 256;
 
 const noSession = (handle: string) => new HostFailed({ message: `No agent session ${handle}.` });
 
-/** The request as the agent's own options. Its app tools come over `mcp`, never in-process. */
+/**
+ * The request as the agent's own options. Its app tools are the ones the server's MCP endpoint
+ * lists, served to the agent in-process and called through the endpoint.
+ */
 const optionsFor = (
   request: HostSessionOpen,
+  remoteAppTools: RemoteAppTools | undefined,
   onConnectorsSeen: (seen: ConnectorsSeen) => void,
 ): OpenSessionOptions => {
   const { handle: _handle, agent: _agent, mcp, ...rest } = request;
   return {
     ...rest,
     ...(mcp === undefined ? {} : { mcp: { url: mcp.url, headers: mcp.headers } }),
+    ...(remoteAppTools === undefined ? {} : { remoteAppTools }),
     onConnectorsSeen,
   };
 };
+
+/** Reaches a thread's app tools at the server's MCP endpoint. */
+export type AppToolsAt = (
+  endpoint: McpEndpoint,
+) => Effect.Effect<RemoteAppTools, Error, Scope.Scope>;
 
 const openedFrom = (session: AgentSession): HostSessionOpened => ({
   closeToolGate: session.closeToolGate !== undefined,
@@ -112,12 +127,24 @@ const openedFrom = (session: AgentSession): HostSessionOpened => ({
  */
 export const sessionsOnHost = (
   agents: HostAgents,
+  toolsAt: AppToolsAt = appToolsAt,
 ): Effect.Effect<HostSessionsService, never, Scope.Scope> =>
   Effect.gen(function* () {
     const root = yield* Effect.scope;
     const entries = new Map<string, Entry>();
     /** Handles closed before their open came in, so the open, when it does, is refused. */
     const closedEarly = new Set<string>();
+
+    // Every session still open ends with the host, all at once, so their agents stop within the
+    // host's own grace.
+    yield* Effect.addFinalizer(() =>
+      Effect.suspend(() =>
+        Effect.forEach([...entries.keys()], (handle) => close(handle), {
+          concurrency: "unbounded",
+          discard: true,
+        }),
+      ),
+    );
 
     const close = (handle: string): Effect.Effect<void> =>
       Effect.suspend(() => {
@@ -164,7 +191,8 @@ export const sessionsOnHost = (
             }),
           );
         return Effect.gen(function* () {
-          const scope = yield* Scope.fork(root);
+          // Each its own, not the host's scope's child, so the host's end closes them all at once.
+          const scope = yield* Scope.make();
           const entry: Entry = { state: "opening", scope };
           // Taken before the first wait, so a close that comes in meanwhile finds it.
           entries.set(handle, entry);
@@ -175,13 +203,29 @@ export const sessionsOnHost = (
           } = {
             changes,
           };
+          const mcp = request.mcp;
           const fiber = yield* agents(request.agent).pipe(
             Effect.flatMap((host) =>
-              host.open(
-                optionsFor(request, (report) => {
-                  seen.last = report;
-                  PubSub.publishUnsafe(changes, report);
-                }),
+              Effect.flatMap(
+                mcp === undefined
+                  ? Effect.succeed(undefined)
+                  : toolsAt(mcp).pipe(
+                      Effect.mapError(
+                        (error) =>
+                          new AgentUnavailable({
+                            agent: request.agent,
+                            reason: "startup-failed",
+                            message: `Gram's app tools couldn't be reached: ${error.message}`,
+                          }),
+                      ),
+                    ),
+                (remoteAppTools) =>
+                  host.open(
+                    optionsFor(request, remoteAppTools, (report) => {
+                      seen.last = report;
+                      PubSub.publishUnsafe(changes, report);
+                    }),
+                  ),
               ),
             ),
             Effect.flatMap((session) =>
@@ -228,8 +272,14 @@ export const sessionsOnHost = (
       open,
       events: (handle, afterSeq) =>
         Stream.unwrap(
-          Effect.map(openEntry(handle), (entry) =>
-            entry.log.subscribe(afterSeq).pipe(Stream.interruptWhen(Deferred.await(entry.closed))),
+          Effect.map(
+            openEntry(handle).pipe(
+              Effect.mapError(() => new NotFound({ entity: "session", id: handle })),
+            ),
+            (entry) =>
+              entry.log
+                .subscribe(afterSeq)
+                .pipe(Stream.interruptWhen(Deferred.await(entry.closed))),
           ),
         ),
       ack: (handle, seq) =>

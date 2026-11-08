@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
-import type { AgentHost, AgentSession, OpenSessionOptions } from "@gram/agents";
+import type { AgentHost, AgentSession, OpenSessionOptions, RemoteAppTools } from "@gram/agents";
 import {
   type AgentEvent,
   type AgentKind,
@@ -85,6 +85,8 @@ const scriptedAgent = (kind: AgentKind, where: string) =>
 /** A host process's sessions over a real stream, and the server's agent routed through it. */
 const routed = Effect.gen(function* () {
   const onHost = yield* scriptedAgent("claude", "host");
+  /** The endpoints the host reached for a session's app tools. */
+  const reached: Array<string> = [];
   const inServer = yield* scriptedAgent("claude", "server");
   const { host: hostEnd, control } = yield* streamPair;
   const hostSocket = yield* NodeSocket.fromDuplex(Effect.succeed(hostEnd));
@@ -101,18 +103,32 @@ const routed = Effect.gen(function* () {
       worktrees: yield* Worktrees,
       git: gitOn(yield* Proc),
       terminals: yield* terminalsOnHost,
-      sessions: yield* sessionsOnHost((agent) =>
-        agent === "claude"
-          ? Effect.succeed(onHost.host)
-          : Effect.fail(new AgentUnavailable({ agent, message: "not here" })),
+      sessions: yield* sessionsOnHost(
+        (agent) =>
+          agent === "claude"
+            ? Effect.succeed(onHost.host)
+            : Effect.fail(new AgentUnavailable({ agent, message: "not here" })),
+        (endpoint) =>
+          Effect.sync(() => {
+            reached.push(endpoint.url);
+            return LISTED;
+          }),
       ),
       scan: Effect.succeed({ listening: new Map(), children: new Map() }),
     }),
   );
   const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)));
   const agent = agentHostThroughHost(connection.sessions, connection.gone, inServer.host);
-  return { onHost, inServer, agent, connection, hostEnd };
+  return { onHost, inServer, agent, connection, hostEnd, reached };
 });
+
+/** The app tools the endpoint lists, as the host hands them to the agent. */
+const LISTED: RemoteAppTools = {
+  tools: [
+    { name: "set_title", description: "", inputSchema: { type: "object" }, alwaysLoad: true },
+  ],
+  call: async () => ({ content: [] }),
+};
 
 const MCP = {
   url: "http://127.0.0.1:1/mcp",
@@ -134,7 +150,7 @@ const layer = Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)));
 describe("agent sessions through the host process", () => {
   it.live("opens a Claude session on the host, its calls and events crossing in order", () =>
     Effect.gen(function* () {
-      const { onHost, inServer, agent } = yield* routed;
+      const { onHost, inServer, agent, reached } = yield* routed;
       const seen: Array<string> = [];
       const session = yield* agent.open({
         threadId: THREAD,
@@ -149,6 +165,9 @@ describe("agent sessions through the host process", () => {
       expect(options.mcp).toEqual(MCP);
       expect(options.outwardGate).toBe("irreversible");
       expect(options.appTools).toBeUndefined();
+      // The host reached the endpoint itself, and gave the agent the tools it lists.
+      expect(reached).toEqual([MCP.url]);
+      expect(options.remoteAppTools).toBe(LISTED);
 
       yield* session.send({ text: "hello" });
       yield* session.steer({ text: "and this" });

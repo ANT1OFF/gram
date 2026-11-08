@@ -2482,39 +2482,45 @@ describe("app tools bridge", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("reaches Gram's app tools over the MCP endpoint when it has no registry", () =>
+  it.effect("serves tools listed elsewhere in-process, each call handed back", () =>
     Effect.gen(function* () {
       const remote = harness();
+      const called: Array<string> = [];
       yield* openSession({
-        mcp: {
-          url: "http://127.0.0.1:1/mcp",
-          headers: { authorization: "Bearer t" },
+        // An endpoint too, as the host passes it: the listed tools win, never a URL in the CLI's
+        // arguments.
+        mcp: { url: "http://127.0.0.1:1/mcp", headers: { authorization: "Bearer t" } },
+        remoteAppTools: {
+          tools: [
+            {
+              name: "set_title",
+              description: "Set the title.",
+              inputSchema: { type: "object", properties: { title: { type: "string" } } },
+              alwaysLoad: true,
+            },
+          ],
+          call: async (name, args) => {
+            called.push(`${name} ${JSON.stringify(args)}`);
+            return { content: [{ type: "text", text: "done" }] };
+          },
         },
       }).pipe(Effect.provide(remote.layer));
       const q = query(remote);
-      expect(q.options.mcpServers).toEqual({
-        gram: {
-          type: "http",
-          url: "http://127.0.0.1:1/mcp",
-          headers: { authorization: "Bearer t" },
-        },
+      expect(q.options.mcpServers).toEqual({ gram: { type: "sdk", name: "gram", instance: {} } });
+      expect(remote.tools.map((t) => [t.name, t.extras?.alwaysLoad])).toEqual([
+        ["set_title", true],
+      ]);
+      expect(yield* Effect.promise(() => remote.tools[0]!.handler({ title: "x" }, {}))).toEqual({
+        content: [{ type: "text", text: "done" }],
       });
-      // The endpoint's transport carries the approval gate, so the session lets its tools through.
+      expect(called).toEqual(['set_title {"title":"x"}']);
+      // Only the listed names pass unasked: another server whose name starts with `gram` doesn't.
       expect(yield* preToolUse(q)("mcp__gram__set_title", { title: "x" })).toMatchObject({
         hookSpecificOutput: { permissionDecision: "allow" },
       });
-    }).pipe(Effect.scoped),
-  );
-
-  it.effect("keeps the in-process app tools when it has a registry and an endpoint both", () =>
-    Effect.gen(function* () {
-      const both = harness();
-      yield* openSession({
-        appTools: registry([]),
-        mcp: { url: "http://127.0.0.1:1/mcp", headers: {} },
-      }).pipe(Effect.provide(both.layer));
-      const server = query(both).options.mcpServers?.["gram"] as { type?: string } | undefined;
-      expect(server?.type).toBe("sdk");
+      expect(yield* preToolUse(q)("mcp__gram__x__delete", {})).not.toMatchObject({
+        hookSpecificOutput: { permissionDecision: "allow" },
+      });
     }).pipe(Effect.scoped),
   );
 

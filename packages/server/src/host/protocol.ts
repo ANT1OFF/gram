@@ -353,7 +353,7 @@ export interface HostSessionsConnection {
   readonly events: (
     handle: string,
     afterSeq: number,
-  ) => Stream.Stream<SequencedEvent, HostUnavailable | HostFailed>;
+  ) => Stream.Stream<SequencedEvent, HostUnavailable | NotFound>;
   readonly ack: (handle: string, seq: number) => Effect.Effect<void>;
   readonly connectorsSeen: (handle: string) => Stream.Stream<ConnectorsSeen>;
   readonly send: (

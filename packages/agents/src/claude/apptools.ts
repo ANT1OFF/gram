@@ -9,7 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as z from "zod";
 import { appToolResultContent } from "../app-tools.ts";
-import type { AppTool, AppToolRegistryPort, ToolAudience } from "../host.ts";
+import type { AppTool, AppToolRegistryPort, RemoteAppTools, ToolAudience } from "../host.ts";
 
 export const APP_TOOL_SERVER = "gram";
 
@@ -127,4 +127,39 @@ export const buildAppToolServer = (
     ),
   });
   return { config, names: new Set(tools.map((t) => appToolName(t.descriptor.name))) };
+};
+
+/**
+ * The `gram` MCP server for a session whose tools are served elsewhere (`RemoteAppTools`): the
+ * same in-process server, so Claude Code treats it as it does the registry's, with each call
+ * handed to `remote`. `undefined` if it lists no tools.
+ */
+export const buildRemoteAppToolServer = (
+  remote: RemoteAppTools,
+  sdk: McpServerFactory,
+): AppToolServer | undefined => {
+  if (remote.tools.length === 0) return undefined;
+  const config = sdk.createSdkMcpServer({
+    name: APP_TOOL_SERVER,
+    version: "1.0.0",
+    tools: remote.tools.map((listed) => {
+      const zod = z.fromJSONSchema(listed.inputSchema as Parameters<typeof z.fromJSONSchema>[0]);
+      if (!(zod instanceof z.ZodObject)) {
+        throw new Error(`App tool input must be an object schema, got ${zod.def.type}`);
+      }
+      return sdk.tool(
+        listed.name,
+        listed.description,
+        zod.loose() as unknown as z.ZodRawShape,
+        (args, extra) =>
+          remote
+            .call(listed.name, args, signalOf(extra))
+            .catch((error: unknown) =>
+              textResult(error instanceof Error ? error.message : String(error), true),
+            ),
+        { alwaysLoad: listed.alwaysLoad },
+      );
+    }),
+  });
+  return { config, names: new Set(remote.tools.map((t) => appToolName(t.name))) };
 };

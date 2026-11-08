@@ -26,8 +26,11 @@ export const HOST_STOPPED_ENDED: AgentEvent = {
 /** How often the events a session's consumer has received are confirmed to its host. */
 const ACK_EVERY = "250 millis";
 
-/** How many times an event stream that broke while its host still runs is picked up again. */
-const EVENT_RESUMES = 3;
+/** The event a session ends with when its host no longer has it. */
+const HOST_SESSION_GONE_ENDED: AgentEvent = {
+  type: "ended",
+  reason: "This machine's host no longer has the session.",
+};
 
 /**
  * Whether a session can open in the host process. What can't cross as data keeps it in the server:
@@ -81,16 +84,11 @@ const logFailed = (call: string) => (error: HostFailed) =>
   );
 
 /**
- * A session opened in the host process, as the runtime holds it. Its events come numbered; the
- * ones received are confirmed to the host, and a stream that broke while the host still runs picks
- * up after the last one. A host that goes ends the session with an `ended` event.
+ * A session opened in the host process, as the runtime holds it. Its events come numbered, and the
+ * ones received are confirmed to the host, which keeps the rest for a stream that picks up again
+ * (as a reconnecting host's will). A host that goes ends the session with an `ended` event.
  */
-const openOnHost = (
-  host: HostSessionsConnection,
-  gone: () => boolean,
-  agent: AgentKind,
-  o: OpenSessionOptions,
-) =>
+const openOnHost = (host: HostSessionsConnection, agent: AgentKind, o: OpenSessionOptions) =>
   Effect.gen(function* () {
     const handle = randomUUID();
     // Added first, so a session whose open was given up on is closed on the host too.
@@ -121,28 +119,21 @@ const openOnHost = (
       return host.ack(handle, acked);
     }).pipe(Effect.repeat(Schedule.spaced(ACK_EVERY)), Effect.forkScoped);
 
-    const from = (resumes: number): Stream.Stream<AgentEvent> =>
+    /**
+     * The host's events after the last one received. A session the host no longer has ended there;
+     * a host that went ended it too.
+     */
+    const events: Stream.Stream<AgentEvent> = Stream.suspend(() =>
       host.events(handle, received).pipe(
-        // A stream picked up again may repeat what came before it broke.
-        Stream.filter((next) => next.seq > received),
         Stream.map((next) => {
           received = next.seq;
           return next.event;
         }),
         Stream.catch((error) =>
-          gone() || resumes >= EVENT_RESUMES
-            ? Stream.make(HOST_STOPPED_ENDED)
-            : Stream.unwrap(
-                Effect.logWarning("worker host: a session's events broke; picking them up").pipe(
-                  Effect.annotateLogs({
-                    reason: error.message,
-                    after: received,
-                  }),
-                  Effect.as(from(resumes + 1)),
-                ),
-              ),
+          Stream.make(error._tag === "NotFound" ? HOST_SESSION_GONE_ENDED : HOST_STOPPED_ENDED),
         ),
-      );
+      ),
+    );
 
     const connectors: AgentConnectors | undefined =
       opened.connectors === undefined
@@ -181,7 +172,7 @@ const openOnHost = (
           };
 
     const session: AgentSession = {
-      events: Stream.suspend(() => from(0)),
+      events,
       send: (input, sendOptions) =>
         host.send(handle, input, sendOptions).pipe(Effect.catch(logFailed("send"))),
       steer: (input) => host.steer(handle, input).pipe(Effect.catch(logFailed("steer"))),
@@ -272,7 +263,7 @@ export const agentHostThroughHost = (
       Effect.suspend(() =>
         gone() || !opensOnHost(kind, options)
           ? inServer.open(options)
-          : openOnHost(host, gone, kind, options).pipe(
+          : openOnHost(host, kind, options).pipe(
               // The host went before the session opened: the server opens it instead.
               Effect.catch((error) => (gone() ? inServer.open(options) : Effect.fail(error))),
             ),

@@ -62,6 +62,7 @@ import {
   MAIN_AGENT_APP_TOOLS,
   appToolName,
   buildAppToolServer,
+  buildRemoteAppToolServer,
 } from "./apptools.ts";
 import { expectedCliVersion, restoresSessionCost, supportsFastControl } from "./binary.ts";
 import {
@@ -638,13 +639,14 @@ export const makeClaudeHost = (
       const input = new AsyncPushQueue<SDKUserMessage>();
       const pending = new Map<RequestId, Pending>();
       const stderr: Array<string> = [];
+      // A session opened away from the server (in the host process) has no registry here: it serves
+      // the tools the server's MCP endpoint lists, in-process all the same, each call going to the
+      // endpoint, whose transport carries the approval gate.
       const appServer = o.appTools
         ? buildAppToolServer(o.threadId, o.appTools, sdk, o.audience)
-        : undefined;
-      // A session opened away from the server (in the host process) has no registry here: its app
-      // tools come over the server's MCP endpoint, whose transport carries the same approval gate.
-      const remoteAppTools =
-        appServer === undefined && o.appTools === undefined ? o.mcp : undefined;
+        : o.remoteAppTools
+          ? buildRemoteAppToolServer(o.remoteAppTools, sdk)
+          : undefined;
       let endedReason: string | undefined;
       let effort = effortOf(o.model);
       let speed = o.model?.speed;
@@ -743,10 +745,7 @@ export const makeClaudeHost = (
       const level = gateLevel(o.outwardGate);
       const gateAsksAbout = (toolName: string, toolInput: unknown): boolean =>
         gateAsks(level, outwardBashKind(toolName, toolInput));
-      const isAppTool = (toolName: string): boolean =>
-        appServer !== undefined
-          ? appServer.names.has(toolName)
-          : remoteAppTools !== undefined && toolName.startsWith(appToolName(""));
+      const isAppTool = (toolName: string): boolean => appServer?.names.has(toolName) ?? false;
       // A hook, not a deny rule: a rule would take the tool from the main agent too.
       const mainAgentOnly = new Set([...MAIN_AGENT_APP_TOOLS].map(appToolName));
       const toolGate = makeToolGate();
@@ -787,11 +786,7 @@ export const makeClaudeHost = (
         }
         return {};
       };
-      const gated =
-        level !== undefined ||
-        appServer !== undefined ||
-        remoteAppTools !== undefined ||
-        o.dreamFilesOnly === true;
+      const gated = level !== undefined || appServer !== undefined || o.dreamFilesOnly === true;
       // An admitted call ends here however it ends: run, failed, or refused by a rule or a card.
       const toolEnded: HookCallbackMatcher["hooks"][number] = async (hookInput, toolUseId) => {
         if (
@@ -954,19 +949,7 @@ export const makeClaudeHost = (
         ...(o.resumeId !== undefined && o.resumeAt !== undefined
           ? { resumeSessionAt: o.resumeAt }
           : {}),
-        ...(appServer !== undefined
-          ? { mcpServers: { [APP_TOOL_SERVER]: appServer.config } }
-          : remoteAppTools !== undefined
-            ? {
-                mcpServers: {
-                  [APP_TOOL_SERVER]: {
-                    type: "http" as const,
-                    url: remoteAppTools.url,
-                    headers: { ...remoteAppTools.headers },
-                  },
-                },
-              }
-            : {}),
+        ...(appServer === undefined ? {} : { mcpServers: { [APP_TOOL_SERVER]: appServer.config } }),
         ...(o.additionalDirectories === undefined
           ? {}
           : { additionalDirectories: [...o.additionalDirectories] }),

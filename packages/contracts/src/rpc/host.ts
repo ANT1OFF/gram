@@ -429,7 +429,7 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.sessions.events", {
     payload: { ...session, afterSeq: Schema.Int },
     success: HostSessionEvent,
-    error: HostFailed,
+    error: NotFound,
     stream: true,
   }),
   /** Confirms every event up to `seq`, which the host then lets go. */
