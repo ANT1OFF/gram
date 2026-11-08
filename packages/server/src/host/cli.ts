@@ -46,7 +46,8 @@ const USAGE = `gram-host: run this machine's work for a Gram on another machine,
   gram-host status       What this machine joined, its fingerprint and the service's state.
   gram-host leave        Stop the service and forget the join and its key.
 
-GRAM_HOST_HOME sets the folder the host keeps its join and key in.`;
+GRAM_HOST_HOME sets the folder the host keeps its join and key in, and GRAM_HOST_REPOS the one
+it clones repositories into for the workers placed on it (by default, repos in GRAM_HOST_HOME).`;
 
 /** A join link's origin and code, or why it isn't one. */
 export const parseJoinLink = (
@@ -120,6 +121,10 @@ const serviceCommand = (home: string): ServiceCommand => {
     env: {
       GRAM_HOST_HOME: home,
       PATH: process.env["PATH"] ?? "/usr/bin:/bin",
+      // Where it clones the repositories its workers use, when not its own folder's `repos`.
+      ...(process.env["GRAM_HOST_REPOS"]
+        ? { GRAM_HOST_REPOS: process.env["GRAM_HOST_REPOS"] }
+        : {}),
       // Run under Electron's own binary, as a packaged app's host is, it has to be plain Node.
       ...(process.versions["electron"] === undefined ? {} : { ELECTRON_RUN_AS_NODE: "1" }),
     },

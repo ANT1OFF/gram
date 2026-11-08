@@ -27,6 +27,8 @@ export const terminalsThroughHost = (
   inServer: Terminals,
   deps: Omit<TerminalsDeps, "closedThreads"> & {
     readonly closedThreads: Stream.Stream<ThreadId>;
+    /** Another machine's host: its shells open with its own default shell on its own PATH. */
+    readonly hostSettings?: boolean;
   },
 ) =>
   Effect.gen(function* () {
@@ -97,10 +99,11 @@ export const terminalsThroughHost = (
           const threadFolder =
             request.threadId === undefined ? undefined : yield* deps.threadFolder(request.threadId);
           const cwd = request.cwd ?? threadFolder ?? (yield* deps.defaultFolder) ?? homedir();
-          const resolved = settings ?? {
-            settingsShell: yield* deps.settingsShell,
-            path: yield* deps.path,
-          };
+          const resolved =
+            settings ??
+            (deps.hostSettings === true
+              ? undefined
+              : { settingsShell: yield* deps.settingsShell, path: yield* deps.path });
           // Checked last, as the server's own terminals do, so a hold taken meanwhile counts.
           if (held(request.threadId)) return yield* new InvalidState({ message: HELD });
           const opened = yield* host.open({ ...request, cwd }, resolved);

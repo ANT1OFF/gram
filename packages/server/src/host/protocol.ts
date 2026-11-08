@@ -56,6 +56,7 @@ import {
 } from "../platform/unstable.ts";
 import type { HostFiles } from "./files.ts";
 import type { HostGit } from "./git.ts";
+import type { HostRepos } from "./repos.ts";
 import type { HostSessionsService } from "./sessions.ts";
 import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
 import type {
@@ -82,6 +83,8 @@ export interface HostWorktrees {
 export interface HostService {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  /** The clones it keeps of repositories, for the workers placed on it. */
+  readonly repos: HostRepos;
   readonly worktrees: HostWorktrees;
   readonly git: HostGit;
   readonly terminals: HostTerminalsService;
@@ -97,6 +100,7 @@ export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
   "git",
   "terminals",
   "sessions",
+  "repos",
 ];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
@@ -175,6 +179,8 @@ const handlersFor = (host: HostService) => {
           Effect.map(scanToWire),
           Effect.mapError((error) => new HostFailed({ message: failureText(error) })),
         ),
+      "host.repos.ensure": ({ url }) =>
+        host.repos.ensure(url).pipe(Effect.mapError(worktreeToWire)),
       "host.worktrees.list": ({ repoPath, openCheckouts }) =>
         host.worktrees.list(repoPath, { openCheckouts }).pipe(Effect.mapError(worktreeToWire)),
       "host.worktrees.baseBranches": ({ repoPath }) =>
@@ -193,12 +199,14 @@ const handlersFor = (host: HostService) => {
       "host.git.present": ({ cwd }) => host.git.present(cwd),
       "host.git.watch": ({ paths, ...options }) => host.git.watch(paths, options),
       "host.terminals.open": ({ settingsShell, path, ...request }) =>
-        host.terminals.terminals.open(request, { settingsShell, path }).pipe(
-          // Every open names its folder, so no thread is looked up here.
-          Effect.catchTag("ThreadNotFound", (error) =>
-            Effect.fail(new InvalidState({ message: `No thread ${error.threadId}` })),
+        host.terminals.terminals
+          .open(request, path === undefined ? undefined : { settingsShell, path })
+          .pipe(
+            // Every open names its folder, so no thread is looked up here.
+            Effect.catchTag("ThreadNotFound", (error) =>
+              Effect.fail(new InvalidState({ message: `No thread ${error.threadId}` })),
+            ),
           ),
-        ),
       "host.terminals.input": ({ terminalId, data }) =>
         host.terminals.terminals.input(terminalId, data),
       "host.terminals.resize": ({ terminalId, cols, rows }) =>
@@ -324,9 +332,10 @@ export interface HostGitConnection {
  * close finds nothing to do, and a subscription ends with its shell's exit.
  */
 export interface HostTerminalsConnection {
+  /** Without `settings`, the host's own default shell on its own PATH. */
   readonly open: (
     request: OpenTerminal & { readonly cwd: string },
-    settings: OpenSettings,
+    settings: OpenSettings | undefined,
   ) => Effect.Effect<Effect.Success<ReturnType<Terminals["open"]>>, NotFound | InvalidState>;
   readonly input: Terminals["input"];
   readonly resize: Terminals["resize"];
@@ -417,6 +426,9 @@ export interface HostSessionsConnection {
 export interface HostConnection {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  readonly repos: {
+    readonly ensure: (url: string) => Effect.Effect<{ readonly path: string }, WorktreeError>;
+  };
   readonly worktrees: HostWorktrees;
   readonly git: HostGitConnection;
   readonly terminals: HostTerminalsConnection;
@@ -731,8 +743,8 @@ export const connectHost = (
               shell: request.shell,
               command: request.command,
               script: request.script,
-              settingsShell: settings.settingsShell,
-              path: settings.path,
+              settingsShell: settings?.settingsShell,
+              path: settings?.path,
             }),
           ),
         ),
@@ -859,6 +871,7 @@ export const connectHost = (
     return {
       hello,
       files,
+      repos: { ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })) },
       worktrees,
       git,
       terminals,

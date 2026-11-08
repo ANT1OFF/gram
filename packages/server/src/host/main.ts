@@ -15,6 +15,8 @@ import * as Layer from "effect/Layer";
 import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
+import { hostRepos } from "./host-config.ts";
+import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { sessionsOnHost } from "./sessions.ts";
@@ -72,6 +74,7 @@ const hostService = (
         pid: process.pid,
       },
       files: filesOn(proc),
+      repos: reposOn(proc, hostRepos()),
       worktrees: yield* Worktrees,
       git: gitOn(proc),
       terminals: yield* terminalsOnHost,

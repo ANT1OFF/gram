@@ -23,6 +23,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { agentHostThroughHost, HOST_STOPPED_ENDED } from "../runtime/host-agent-sessions.ts";
 import { filesOn } from "./files.ts";
+import { reposOn } from "./repos.ts";
 import { gitOn } from "./git.ts";
 import { connectHost, HOST_CAPABILITIES, serveHost } from "./protocol.ts";
 import { sessionsOnHost } from "./sessions.ts";
@@ -30,6 +31,8 @@ import { terminalsOnHost } from "./terminals.ts";
 import { streamPair } from "./test-stream.ts";
 
 const THREAD = "thread-on-the-host" as ThreadId;
+/** Never cloned into here: no test asks for a repository. */
+const REPOS = "/nonexistent/gram-host-repos";
 const CAPABILITIES = {
   modes: ["default"],
   models: [],
@@ -100,6 +103,7 @@ const routed = Effect.gen(function* () {
         pid: 1,
       },
       files: filesOn(yield* Proc),
+      repos: reposOn(yield* Proc, REPOS),
       worktrees: yield* Worktrees,
       git: gitOn(yield* Proc),
       terminals: yield* terminalsOnHost,

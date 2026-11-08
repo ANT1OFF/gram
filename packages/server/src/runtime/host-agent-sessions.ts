@@ -325,3 +325,41 @@ export const AgentHostsThroughHost: Layer.Layer<AgentHosts, never, AgentHosts | 
       });
     }),
   );
+
+/**
+ * `inServer`'s agent with its sessions opened on another machine's host, for a worker placed
+ * there. Nothing opens here instead: a session the host can't run, or one asked for while the
+ * machine is offline, is refused, since its folder is on that machine. Models and past sessions
+ * stay the server's, as they do for this machine's host process.
+ */
+export const agentHostOnMachine = (
+  host: HostSessionsConnection,
+  gone: () => boolean,
+  inServer: AgentHost,
+  machineName: string,
+): AgentHost => {
+  const kind = inServer.kind;
+  return {
+    ...inServer,
+    open: (options) =>
+      Effect.suspend(() =>
+        gone()
+          ? Effect.fail(
+              new AgentUnavailable({
+                agent: kind,
+                reason: "startup-failed",
+                message: `${machineName} is offline; its workers start once it's back.`,
+              }),
+            )
+          : !opensOnHost(kind, options)
+            ? Effect.fail(
+                new AgentUnavailable({
+                  agent: kind,
+                  reason: "startup-failed",
+                  message: `This session can't run on ${machineName} yet.`,
+                }),
+              )
+            : openOnHost(host, kind, options),
+      ),
+  };
+};

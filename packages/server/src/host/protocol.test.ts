@@ -10,6 +10,7 @@ import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { filesOn } from "./files.ts";
+import { reposOn } from "./repos.ts";
 import { gitOn } from "./git.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import {
@@ -24,6 +25,9 @@ import type { PortScan } from "../ports/scan.ts";
 import { makeRepo, removeDir, tempDir, write } from "../git/test-repo.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { streamPair } from "./test-stream.ts";
+
+/** Never cloned into here: the wire test asks only for a URL the host refuses. */
+const REPOS = "/nonexistent/gram-host-repos";
 
 const SCAN: PortScan = {
   listening: new Map([[41, [5173, 5174]]]),
@@ -50,6 +54,7 @@ const connected = (overrides: Partial<HostHello> = {}) =>
     const service: HostService = {
       hello: hello(overrides),
       files: filesOn(yield* Proc),
+      repos: reposOn(yield* Proc, REPOS),
       worktrees: yield* Worktrees,
       git: gitOn(yield* Proc),
       terminals: yield* terminalsOnHost,
@@ -193,6 +198,14 @@ describe("host protocol", () => {
         reason: "invalidRequest",
         message: "branch must be a valid git branch name",
       });
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+
+  it.effect("keeps a refused clone as the worktree layer's own error", () =>
+    Effect.gen(function* () {
+      const host = yield* connected();
+      const error = yield* host.repos.ensure("file:///etc").pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "WorktreeError", reason: "invalidRequest" });
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 

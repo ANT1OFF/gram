@@ -63,6 +63,24 @@ the host's folder; on Linux use `journalctl --user -u gram-host`.
 | `gram-host status`                                 | The main Gram it joined, its fingerprint, service |
 | `gram-host leave`                                  | Stop the service and forget the join and its key  |
 
+## Its repositories
+
+A worker placed on another machine works in a worktree of that machine's own clone of the
+project's repository, never in a folder on this one. The host finds the repository by the
+project's `origin` remote here and clones it the first time, then fetches it each time a worker
+starts there. Clones go in `repos` in the host's folder, by host, owner and name
+(`repos/github.com/acme/widgets`), or in `GRAM_HOST_REPOS` when it is set before `gram-host join`
+or `gram-host service install`.
+
+- Only `https://` and `ssh` remotes are cloned, never `file`, `ext` or `git://`, and never a URL
+  with a password or token in it. The clone uses that machine's own git credentials (its SSH keys
+  or credential helper), so the repository has to be reachable from there.
+- A clone that fails or is stopped leaves nothing behind. A folder that is already there but isn't
+  a clone of that remote is left alone, and the worker isn't started.
+- A joined machine's terminals open with its own default shell on its own PATH.
+- While the machine is offline its workers don't start and their folders aren't marked missing;
+  nothing falls back to running on this machine.
+
 ## How it is secured
 
 - **Its own key.** Joining makes an Ed25519 key pair on the new machine. The private key stays in
