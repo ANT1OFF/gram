@@ -1167,7 +1167,7 @@ export function ApprovalCard({
             </PressScale>
             <Button
               size="sm"
-              variant="secondary"
+              variant="outline"
               data-testid="approval-allow"
               disabled={pending}
               onClick={() => allow("once")}
@@ -1195,7 +1195,7 @@ export function ApprovalCard({
             {canAlways && (
               <Button
                 size="sm"
-                variant="secondary"
+                variant="outline"
                 data-testid="approval-always"
                 aria-expanded={confirming}
                 disabled={pending}

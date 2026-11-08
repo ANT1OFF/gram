@@ -12,7 +12,7 @@ import { boardWorkspaceFor } from "@/orchestration/board-model";
 import { newEntryRoute } from "@/orchestration/new-entry";
 import { useOpenBoard } from "@/orchestration/open-board";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
-import { useWorkersListStore, WORKERS_LIST_TEST_ID } from "@/orchestration/workers-list";
+import { toggleWorkersTab } from "@/orchestration/workers-tab";
 import {
   fitShell,
   GRID_PRESETS,
@@ -141,19 +141,16 @@ export function useGlobalShortcuts() {
     },
   });
 
-  // Every worker of the workspace, two steps from anywhere: ⌘J, then the worker. Always the same
-  // list, whatever the sidebar shows; the sidebar's own rows are ⌘⌥S away.
+  // Every worker of the workspace, two steps from anywhere: ⌘J, then the worker. It shows the right
+  // panel's Workers tab, the one worker list, with the keys on its rows; again, it puts the panel
+  // back as it was.
   useShortcut({
     id: "workers.open",
     keys: "mod+j",
     label: "Workers",
     group: "Navigation",
-    // Toggles, so the list (a dialog) closes with the same keys; no other dialog lets it open.
-    allowInDialogs: true,
-    when: () =>
-      inNoDialogBut(WORKERS_LIST_TEST_ID) &&
-      (useWorkersListStore.getState().open || boardWorkspace() !== undefined),
-    run: () => useWorkersListStore.getState().toggle(),
+    when: () => inNoDialogBut("") && boardWorkspace() !== undefined,
+    run: toggleWorkersTab,
   });
 
   // Every past chat, from anywhere: finished workers, done and archived threads, past sessions.

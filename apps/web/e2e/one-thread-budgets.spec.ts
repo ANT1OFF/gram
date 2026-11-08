@@ -166,7 +166,7 @@ for (let group = 0; group < WORKER_GROUPS; group++) {
     await more.click();
     await expect(button).toHaveText(/^Workers\d+ now/);
     await button.click();
-    const list = page.getByTestId("workers-list");
+    const list = page.getByTestId("workers-panel");
     await expect(list).toBeVisible();
     const ids = await page.evaluate(async (workspaceId) => {
       const mock = window.gramMock!;
@@ -182,26 +182,29 @@ for (let group = 0; group < WORKER_GROUPS; group++) {
       ].toSorted();
     }, made.workspaceId);
     expect(ids.length).toBeGreaterThan(3);
-    await page.keyboard.press("Escape");
-    await expect(list).toBeHidden();
     // The popups can mount before their queries have hydrated. Wait for the entire fixture's
-    // inventory, rather than partitioning a transient subset of rows on a loaded renderer: ⌘J has
-    // the workers on now, History's Workers chip the finished ones, and between them every one.
+    // inventory, rather than partitioning a transient subset of rows on a loaded renderer: the
+    // Workers tab has the workers it shows, History's Workers chip the finished ones, and between
+    // them every one.
     const history = page.getByTestId("history");
-    const rowIds = (surface: typeof list) =>
+    const rowIds = (surface: typeof list, selector: string) =>
       surface
-        .getByRole("option")
-        .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-thread-id")!));
-    await openWorkers();
-    await expect(list.getByRole("option").first()).toBeVisible();
-    const live = await rowIds(list);
-    await page.keyboard.press("Escape");
-    await expect(list).toBeHidden();
+        .locator(selector)
+        .evaluateAll((rows) =>
+          rows
+            .filter((row) => row.closest("[hidden]") === null)
+            .map((row) => row.getAttribute("data-thread-id")!),
+        );
+    const LIST_ROW = '[data-testid="workers-panel-row"]';
+    await expect(list.locator(LIST_ROW).first()).toBeVisible();
+    const live = await rowIds(list, LIST_ROW);
     await page.keyboard.press("ControlOrMeta+Shift+KeyH");
     await history.getByRole("radio", { name: "Workers" }).click();
     // History stays open while its pages come in; only its rows are read each time.
     await expect
-      .poll(async () => [...new Set([...live, ...(await rowIds(history))])].toSorted())
+      .poll(async () =>
+        [...new Set([...live, ...(await rowIds(history, '[role="option"]'))])].toSorted(),
+      )
       .toEqual(ids);
     await page.keyboard.press("Escape");
     await expect(history).toBeHidden();
@@ -212,13 +215,21 @@ for (let group = 0; group < WORKER_GROUPS; group++) {
       contentType: "application/json",
     });
     for (const id of selected) {
-      // On now: Workers in the title bar's "…". Finished: History. A few steps either way.
-      const surface = live.includes(id) ? list : history;
-      if (surface === list) await openWorkers();
-      else await page.keyboard.press("ControlOrMeta+Shift+KeyH");
-      const row = surface.getByRole("option").and(surface.locator(`[data-thread-id="${id}"]`));
-      await row.click();
-      await expect(surface).toBeHidden();
+      // In the Workers tab: Workers in the title bar's "…", then the worker with ⌘ for the main
+      // view. Else History. A few steps either way.
+      if (live.includes(id)) {
+        await openWorkers();
+        await list
+          .locator(`${LIST_ROW}[data-thread-id="${id}"]`)
+          .click({ modifiers: ["ControlOrMeta"] });
+      } else {
+        await page.keyboard.press("ControlOrMeta+Shift+KeyH");
+        await history
+          .getByRole("option")
+          .and(history.locator(`[data-thread-id="${id}"]`))
+          .click();
+        await expect(history).toBeHidden();
+      }
       await expect(page).toHaveURL(new RegExp(`/t/${id}$`));
       await page.keyboard.press("ControlOrMeta+1");
       await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));

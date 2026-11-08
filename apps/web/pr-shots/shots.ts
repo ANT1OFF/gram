@@ -501,15 +501,12 @@ const openReachingScenario = async (page: Page, { reaching = false } = {}) => {
   return scenario;
 };
 
-/**
- * ⌘J's Workers list. With the overview open ⌘J jumps into its worker rows instead, so the
- * overview is hidden first, as ⌘B does, the way `e2e/workers-list.spec.ts` opens the list.
- */
+/** ⌘J's Workers tab, the overview hidden as ⌘B does, the way `e2e/workers-tab.spec.ts` opens it. */
 const pressWorkersList = async (page: Page) => {
   await page.getByTestId("overview-hide").click();
   await expect(page.getByTestId("overview-sidebar")).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+KeyJ");
-  await page.getByTestId("workers-list").waitFor();
+  await page.getByTestId("workers-panel").waitFor();
 };
 
 const openWorkersScenario = async (page: Page) => {
@@ -1280,7 +1277,7 @@ const SNOOZE_SHOTS: readonly Shot[] = [
   {
     name: "sidebar-realistic-900",
     title:
-      "The realistic morning at 900 px, where the overview is its compact rail: a glyph per workspace and for the solo threads, never letters cut from a name",
+      "The realistic morning at 900 px, where the overview is its compact rail: a monogram per workspace, a glyph for the solo threads",
     open: async (page) => {
       await openRealisticMorning(page);
       await page.setViewportSize({ width: 900, height: 900 });
@@ -2402,7 +2399,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "workers-list-waiting",
-    title: "⌘J's Workers list says the same",
+    title: "⌘J's Workers tab says the same",
     modes: ["dark"],
     open: async (page) => {
       await openWaitingOn(page, true);
@@ -3760,7 +3757,7 @@ export const SHOTS: readonly Shot[] = [
       await openOrchestratorOf(page, () => window.gramMock!.simulateOneThread());
       await openBarMenu(page);
       await page.getByTestId("folded-workers").click();
-      await page.getByTestId("workers-list").waitFor();
+      await page.getByTestId("workers-panel").waitFor();
       await page.waitForTimeout(400);
     },
   },
@@ -4156,11 +4153,11 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "workers-list",
-    title: "⌘J: every worker of the workspace, Now tab",
+    title: "⌘J: every worker of the workspace, in the right panel's Workers tab",
     open: async (page) => {
       await openWorkersScenario(page);
       await pressWorkersList(page);
-      await page.getByTestId("worker-row").first().waitFor();
+      await page.getByTestId("workers-panel-row").first().waitFor();
     },
   },
   {
@@ -4169,7 +4166,10 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       const made = await openWorkersScenario(page);
       await pressWorkersList(page);
-      await page.getByTestId("workers-list").locator(`[data-thread-id="${made.live}"]`).click();
+      await page
+        .getByTestId("workers-panel")
+        .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.live}"]`)
+        .click({ modifiers: ["ControlOrMeta"] });
       await page.evaluate((id) => {
         window.gramMock!.simulateChunks(id as never, "shot-live" as never, [
           { type: "start", messageId: "shot-live" },
@@ -4200,7 +4200,10 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       const made = await openReachingScenario(page);
       await pressWorkersList(page);
-      await page.getByTestId("workers-list").locator(`[data-thread-id="${made.asking}"]`).click();
+      await page
+        .getByTestId("workers-panel")
+        .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.asking}"]`)
+        .click({ modifiers: ["ControlOrMeta"] });
       await page.getByTestId("worker-crumbs").waitFor();
     },
     element: (page) => page.getByTestId("pane-header").first(),
@@ -4212,7 +4215,10 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       const made = await openReachingScenario(page);
       await pressWorkersList(page);
-      await page.getByTestId("workers-list").locator(`[data-thread-id="${made.live}"]`).click();
+      await page
+        .getByTestId("workers-panel")
+        .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.live}"]`)
+        .click({ modifiers: ["ControlOrMeta"] });
       await page.getByTestId("worker-crumbs").waitFor();
       await page.keyboard.press("ControlOrMeta+Backslash");
       await page.getByTestId("beside-dock").waitFor();
@@ -4226,7 +4232,10 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       const made = await openReachingScenario(page);
       await pressWorkersList(page);
-      await page.getByTestId("workers-list").locator(`[data-thread-id="${made.live}"]`).click();
+      await page
+        .getByTestId("workers-panel")
+        .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.live}"]`)
+        .click({ modifiers: ["ControlOrMeta"] });
       await page.getByTestId("worker-crumbs").waitFor();
       const transcript = page.getByTestId("transcript").first();
       await transcript.waitFor();
@@ -4266,7 +4275,10 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       const made = await openReachingScenario(page, { reaching: true });
       await pressWorkersList(page);
-      await page.getByTestId("workers-list").locator(`[data-thread-id="${made.stuck}"]`).click();
+      await page
+        .getByTestId("workers-panel")
+        .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.stuck}"]`)
+        .click({ modifiers: ["ControlOrMeta"] });
       await expect(page.getByTestId("worker-stuck")).toHaveAttribute("data-source", "helper");
     },
   },

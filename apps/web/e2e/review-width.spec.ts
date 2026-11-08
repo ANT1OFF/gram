@@ -157,7 +157,7 @@ test("beside a review the chat keeps its room, and a review held too narrow take
   await expect(shell).toHaveAttribute("data-review-focus", "true");
 });
 
-test("Split, Wrap lines and Hide whitespace changes sit in the review toolbar and are remembered", async ({
+test("Split, Wrap lines and Hide whitespace changes sit in the review's View menu and are remembered", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -169,33 +169,37 @@ test("Split, Wrap lines and Hide whitespace changes sit in the review toolbar an
   // Lines wrap until the user says otherwise.
   await expect(clock.getByTestId("patch")).toHaveAttribute("data-wrap", "true");
 
-  // Each choice is a toggle in the toolbar, not behind a menu.
-  const wrap = diff.getByRole("button", { name: "Wrap lines" });
-  const ignore = diff.getByRole("button", { name: "Hide whitespace changes" });
-  await expect(wrap).toHaveAttribute("aria-pressed", "true");
+  // The view choices are one menu in the toolbar, each checked while on.
+  const menu = page.getByTestId("diff-view-options");
+  await diff.getByRole("button", { name: "View options" }).click();
+  const wrap = menu.getByRole("menuitemcheckbox", { name: "Wrap lines" });
+  const ignore = menu.getByRole("menuitemcheckbox", { name: "Hide whitespace changes" });
+  await expect(wrap).toHaveAttribute("aria-checked", "true");
   await wrap.click();
-  await expect(wrap).toHaveAttribute("aria-pressed", "false");
+  await expect(wrap).toHaveAttribute("aria-checked", "false");
   await expect(clock.getByTestId("patch")).toHaveAttribute("data-wrap", "false");
   await ignore.click();
-  await expect(ignore).toHaveAttribute("aria-pressed", "true");
+  await expect(ignore).toHaveAttribute("aria-checked", "true");
   // The re-indented line is context now.
   await expect(clock.locator('tr[data-kind="add"]')).toHaveCount(1);
   await expect(clock.locator('tr[data-kind="del"]')).toHaveCount(1);
-  await expect(diff.getByRole("radio", { name: "Unified" })).toHaveAttribute(
+  await expect(menu.getByRole("menuitemradio", { name: "Unified", exact: true })).toHaveAttribute(
     "aria-checked",
     "true",
   );
 
   await page.reload();
   const again = page.getByTestId("diff-panel");
-  await expect(again.getByRole("button", { name: "Wrap lines" })).toHaveAttribute(
-    "aria-pressed",
+  await again.getByRole("button", { name: "View options" }).click();
+  await expect(menu.getByRole("menuitemcheckbox", { name: "Wrap lines" })).toHaveAttribute(
+    "aria-checked",
     "false",
   );
-  await expect(again.getByRole("button", { name: "Hide whitespace changes" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await expect(
+    menu.getByRole("menuitemcheckbox", { name: "Hide whitespace changes" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
   const reloaded = again.locator('[data-testid="diff-file"][data-path="src/clock.ts"]');
   await reloaded.locator("[data-diff-file-header]").click();
   await expect(reloaded.locator('tr[data-kind="add"]')).toHaveCount(1);

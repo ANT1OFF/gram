@@ -60,7 +60,7 @@ const questionInDock = async (page: Page) => {
   return item;
 };
 
-/** The billing-api orchestrator, its header's Waiting on you, open on its one ask. */
+/** The billing-api orchestrator with the Inbox open on its one ask. */
 const questionInBilling = async (page: Page) => {
   const made = await openRealistic(page);
   const orchestrator = await page.evaluate(
@@ -70,11 +70,13 @@ const questionInBilling = async (page: Page) => {
     made.askingWorkspaceId,
   );
   await openOrchestrator(page, orchestrator);
-  // On a base from before the Inbox, the ask is in the orchestrator's dock.
-  const line = page.getByTestId("status-waiting");
-  await line.or(page.getByTestId("ask-stack")).first().waitFor();
-  if ((await line.count()) > 0) await line.click();
-  const item = page.getByTestId("ask-item").filter({ hasText: "A refund webhook" });
+  // The ask waits in the Inbox, which the sidebar's Needs you opens.
+  await page.getByTestId("overview-needs-you").click();
+  await page
+    .getByTestId("inbox-item")
+    .filter({ hasText: "A refund webhook that keeps failing" })
+    .click();
+  const item = page.getByTestId("inbox-detail").getByTestId("ask-item");
   await item.getByTestId("ask-option").first().waitFor();
   return item;
 };

@@ -213,7 +213,7 @@ export function UpdatesSection({
                 {action && check.canSelfInstall && (
                   <Button
                     size="xs"
-                    variant="secondary"
+                    variant="outline"
                     disabled={busy || (check.channel !== undefined && check.channel !== channel)}
                     onClick={() => void install(release)}
                   >

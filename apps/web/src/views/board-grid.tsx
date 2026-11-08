@@ -36,20 +36,16 @@ import { useFeatureSummary } from "@/orchestration/use-feature-cards";
 // lanes are the other layout (board-view.tsx).
 
 /**
- * The grid's four columns, shared by its heads and every row so the cells line up. Each is as wide
- * as what it holds needs and no wider: a task's name (two lines) to 15 rem, the stage bar's fixed
- * 9, Now's state and latest report line to 26, and the PR's chips and words to 12. No column takes
- * the rest, so a wide window leaves its room after the PR column, not before it.
+ * The grid's four columns, shared by its heads and every row so the cells line up. The table fills
+ * the Board's column, so a wide window leaves no dead gutter after it: the stage bar keeps its
+ * fixed 8 rem, and the words share the rest, Now (its state and latest report line) the most, then
+ * the task's name, then the PR's chips and words.
  */
 export const GRID_COLUMNS =
-  "grid grid-cols-[minmax(10rem,15rem)_9rem_minmax(12rem,26rem)_minmax(7rem,12rem)] gap-x-6";
+  "grid grid-cols-[minmax(10rem,2fr)_8rem_minmax(12rem,3fr)_minmax(7rem,1fr)] gap-x-6";
 
-/**
- * The grid's own width: its columns at their widest (62 rem), their three gaps and the rows' inset
- * either side. Its heads, rules and row hover stop there, so a wide window's spare room reads as
- * margin after the table rather than as empty Now and Pull request columns running to the edge.
- */
-export const GRID_WIDTH = "max-w-[calc(62rem+--spacing(26))]";
+/** How soon a cell's whole text shows on hover: quick, but not for a pointer passing over. */
+const HINT_MS = 200;
 
 /** The column heads over the rows. */
 export function GridHeads() {
@@ -70,34 +66,37 @@ export function GridHeads() {
 }
 
 /**
- * The stage bar: the station's name and where it stands ("Checks 3/5"), over five joined segments,
- * one per station, filled up to where the work stands. It says progress, not state: steps behind are
- * grey, the one it stands on is the accent (the current place) and stands taller than the rest, and
- * the worker's state stays with its dot and words in the Now cell, so the bar never adds a second
- * amber or red (DESIGN.md: one meaning per status colour). Steps ahead take border-strong in full,
- * so each segment holds the 3:1 a graphic needs on a light page.
+ * The stage bar: five joined segments, one per station, filled up to where the work stands, under
+ * the Stage head. It is the cell's one way of saying it, the station's name and step being its
+ * hover and accessible name, so a column of rows reads as bars rather than the same words on every
+ * line (the Now cell beside it already says "Working"). It says progress, not state: steps behind
+ * are grey, the one it stands on is the accent (the current place) and stands taller than the
+ * rest, and the worker's state stays with its dot and words in the Now cell, so the bar never adds
+ * a second amber or red (DESIGN.md: one meaning per status colour). Steps ahead take border-strong
+ * in full, so each segment holds the 3:1 a graphic needs on a light page.
  */
 export function StationSteps({ station }: { station: FeatureStation }) {
   const at = FEATURE_STATIONS.indexOf(station);
-  const label = STATION_LABELS[station];
+  const name = `${STATION_LABELS[station]}, step ${at + 1} of ${FEATURE_STATIONS.length}`;
   return (
-    <span
-      role="img"
-      aria-label={`${label}, step ${at + 1} of ${FEATURE_STATIONS.length}`}
-      data-testid="grid-stage"
-      data-station={station}
-      className="flex min-w-0 flex-col gap-1"
+    <Hint
+      label={name}
+      delay={HINT_MS}
+      render={
+        <span
+          role="img"
+          aria-label={name}
+          data-testid="grid-stage"
+          data-station={station}
+          // The first line's height, so the bar sits level with the task's name beside it.
+          className="flex h-lh min-w-0 items-center text-reading"
+        />
+      }
     >
-      <span aria-hidden className="flex min-w-0 items-baseline gap-1.5">
-        <span className="truncate text-body font-medium text-foreground">{label}</span>
-        <span className="shrink-0 text-meta text-muted-foreground tabular-nums">
-          {at + 1}/{FEATURE_STATIONS.length}
-        </span>
-      </span>
       <span
         aria-hidden
         data-testid="grid-stage-bar"
-        className="flex h-2.5 w-full max-w-36 items-center gap-0.5"
+        className="flex h-2.5 w-full max-w-32 items-center gap-0.5"
       >
         {FEATURE_STATIONS.map((each, index) => (
           <i
@@ -114,7 +113,7 @@ export function StationSteps({ station }: { station: FeatureStation }) {
           />
         ))}
       </span>
-    </span>
+    </Hint>
   );
 }
 
@@ -202,9 +201,6 @@ export function Status({ tone, now }: { tone: RailWorker["tone"]; now: string })
     </span>
   );
 }
-
-/** How soon a status's whole text shows on hover: quick, but not for a pointer passing over. */
-const HINT_MS = 200;
 
 /**
  * The worker's Now cell: its tone and what it does, a click from its thread (or its ask in the

@@ -5,6 +5,7 @@ import { ChevronRight, HandGrab, Info, SquareSplitHorizontal } from "lucide-reac
 
 import { Hint } from "@/components/hint";
 import { Term } from "@/components/term";
+import { buttonVariants } from "@/components/ui/button";
 import { focusOtherWindow } from "@/desktop/open-thread";
 import { normaliseKeys } from "@/keyboard/bindings";
 import { effectiveKeys } from "@/keyboard/bindings-store";
@@ -14,7 +15,7 @@ import { useNow } from "@/lib/use-now";
 import { EXPLAIN } from "@/lib/explain";
 import { seeTerm } from "@/lib/first-use";
 import { cn } from "@/lib/utils";
-import { GlideText, Swap } from "@/motion";
+import { Swap } from "@/motion";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 import { WORKER_TAKE_OVER_LINE } from "@/thread/orchestration-model";
@@ -30,7 +31,7 @@ import { orchestratorRowTitle } from "./tree-model";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { prWaitWords } from "./waiting-on";
 import { FINISHED_WORKER, goToThread, useTakeOverLine } from "./worker-banner";
-import { workerGlideId, useWorkersListStore } from "./workers-list";
+import { showWorkersTab } from "./workers-tab";
 import { workerEntryOf, workerRow } from "./workers-model";
 
 /**
@@ -112,7 +113,6 @@ export function WorkerCrumbs({
   inTitlebar?: boolean;
 }) {
   const workspaces = useWorkspaces();
-  const gliding = useWorkersListStore((s) => s.gliding === thread.id);
   const spawnedBy = thread.spawnedBy;
   const orchestrator = useThreadsStore((s) =>
     spawnedBy === undefined ? undefined : s.byId[spawnedBy.threadId]?.thread,
@@ -185,13 +185,11 @@ export function WorkerCrumbs({
               data-titlebar-title=""
               // In the title bar the worker's name keeps a few letters, however short of room.
               className={cn(CRUMB, "text-foreground", inTitlebar && "min-w-12")}
-              onClick={() => useWorkersListStore.getState().toggle()}
+              onClick={showWorkersTab}
             />
           }
         >
-          <GlideText glideId={gliding ? workerGlideId(thread.id) : undefined}>
-            {thread.title}
-          </GlideText>
+          {thread.title}
         </Hint>
       </nav>
     </h1>
@@ -325,8 +323,8 @@ function HoldChip({
   );
 }
 
-const HEADER_BUTTON =
-  "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1.5 text-meta text-foreground/80 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+/** A worker's worded actions are the app's outline secondary button (DESIGN.md, Buttons). */
+const HEADER_BUTTON = buttonVariants({ variant: "outline", size: "xs" });
 
 /**
  * In the title bar a worker's controls keep its other controls' shape: Open beside an icon button
@@ -334,7 +332,7 @@ const HEADER_BUTTON =
  */
 const TITLEBAR_ICON =
   "inline-flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
-const TITLEBAR_WORDS = "h-7 px-2";
+const TITLEBAR_WORDS = buttonVariants({ variant: "outline", size: "sm" });
 
 /**
  * Whether a message sent into `thread` would take it over: a live worker the orchestrator still
@@ -461,7 +459,7 @@ export function WorkerActions({
               <button
                 type="button"
                 data-testid="worker-take-over"
-                className={cn(HEADER_BUTTON, inTitlebar && TITLEBAR_WORDS)}
+                className={inTitlebar ? TITLEBAR_WORDS : HEADER_BUTTON}
                 onClick={actions.takeOver}
               />
             }

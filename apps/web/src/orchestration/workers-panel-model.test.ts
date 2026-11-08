@@ -18,6 +18,7 @@ import {
   elsewhereLine,
   FOLDED_BY_DEFAULT,
   groupOf,
+  lineOf,
   panelRow,
   STATUS_GROUPS,
   statusGroups,
@@ -240,5 +241,14 @@ describe("the filter", () => {
     const shown = new Set<StatusGroupId>(["needs", "waiting"]);
     expect(filteredGroups(groups, shown).map((group) => group.id)).toEqual(["needs", "waiting"]);
     expect(filterLabel(shown)).toBe("Needs you, Waiting");
+  });
+});
+
+describe("a row's status line", () => {
+  it("leaves out the state word its group's heading says, and keeps one that heading doesn't", () => {
+    expect(lineOf("Waiting · checks on #88", "waiting")).toBe("Checks on #88");
+    expect(lineOf("Needs you · wants to push", "needs")).toBe("Wants to push");
+    expect(lineOf("Paused · limit until 08:10", "waiting")).toBe("Paused · limit until 08:10");
+    expect(lineOf("Running", "working")).toBe("Running");
   });
 });

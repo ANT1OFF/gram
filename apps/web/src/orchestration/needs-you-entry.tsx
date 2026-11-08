@@ -77,10 +77,10 @@ export function NeedsYouEntry({
         variant === "row"
           ? "h-8 w-full rounded-(--radius-md) px-1.5"
           : "h-7 rounded-full px-2.5 text-meta",
-        // The sidebar's pill outlines in amber while something asks; in a bar the dot and the
-        // asks' words are the one amber mark, the pill itself neutral like the bar around it.
+        // Neutral everywhere: the sidebar's pill takes a plain outline while something asks, and
+        // only its dot and the count of what asks are amber (`status-needs`, AA on every palette).
         variant === "row" && asks
-          ? "border-status-needs-mark/60 font-medium text-status-needs hover:bg-status-needs-mark/10"
+          ? "border-sidebar-block-border font-medium text-foreground hover:bg-sidebar-row-hover"
           : variant === "chip"
             ? cn(
                 "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground aria-pressed:bg-accent",

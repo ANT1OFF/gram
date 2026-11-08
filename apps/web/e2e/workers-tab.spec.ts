@@ -5,13 +5,10 @@ import { MOCK_LIVE_CATCH_UP } from "../src/api/mock-workers";
 import { openOrchestrator, threadRow, upToOrchestrator } from "./thread-row";
 import { openPanelTab } from "./panel-tab";
 
-// ⌘J's Workers list and the worker view it opens, on the mock's workers scenario. Mock state lives
+// ⌘J's Workers tab and the worker view it opens, on the mock's workers scenario. Mock state lives
 // in the page, so every step navigates inside the app rather than reloading.
 
-/**
- * The scenario, from the orchestrator's thread: home, where ⌘J is two steps from any worker. The
- * overview is hidden, as with ⌘B: open, ⌘J jumps into its worker rows rather than this list.
- */
+/** The scenario, from the orchestrator's thread, with the overview hidden as with ⌘B. */
 const openScenario = async (page: Page): Promise<MockWorkersSimulation> => {
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
@@ -26,9 +23,16 @@ const openScenario = async (page: Page): Promise<MockWorkersSimulation> => {
   return made;
 };
 
-const list = (page: Page) => page.getByTestId("workers-list");
+const tab = (page: Page) => page.getByTestId("workers-panel");
 const row = (page: Page, threadId: string) =>
-  list(page).locator(`[data-testid="worker-row"][data-thread-id="${threadId}"]`);
+  tab(page).locator(`[data-testid="workers-panel-row"][data-thread-id="${threadId}"]`);
+
+/** ⌘J, then the worker with ⌘ held: open in the main view, as its crumbs need. */
+const openWorker = async (page: Page, threadId: string) => {
+  if (!(await tab(page).isVisible())) await page.keyboard.press("ControlOrMeta+KeyJ");
+  await row(page, threadId).click({ modifiers: ["ControlOrMeta"] });
+  await expect(page).toHaveURL(new RegExp(`/t/${threadId}$`));
+};
 
 const isHeld = (page: Page, made: MockWorkersSimulation, threadId: string) =>
   page.evaluate(
@@ -41,82 +45,51 @@ const isHeld = (page: Page, made: MockWorkersSimulation, threadId: string) =>
     { workspaceId: made.workspaceId, worker: threadId },
   );
 
-test("⌘J lists the workers on now by feature, and opens one in two steps", async ({ page }) => {
+test("⌘J shows the Workers tab with the keys on its rows, opens a worker, and puts the panel back", async ({
+  page,
+}) => {
   const made = await openScenario(page);
 
   await page.keyboard.press("ControlOrMeta+KeyJ");
-  await expect(list(page)).toBeVisible();
-  await expect(list(page)).toContainText("agent-platform");
-  const now = page.getByTestId("workers-section-now");
-  await expect(now).toBeVisible();
-
-  // Now: grouped by feature, each with a short now line from its activity or report.
-  await expect(now.getByRole("group", { name: "mail-retry-policy" })).toBeVisible();
-  await expect(row(page, made.live).getByTestId("worker-now")).toHaveText("running tests");
-  await expect(row(page, made.live)).toContainText("api");
-  await expect(row(page, made.asking).getByTestId("worker-now")).toHaveText("asked a question");
-  await expect(row(page, made.held).getByLabel("Under your control")).toBeVisible();
-  for (const line of await list(page).getByTestId("worker-now").allTextContents()) {
-    // " · " joins a wait's word to what it waits on (`waitLabel`): punctuation, not a word.
-    const words = line
-      .replace(/…$/, "")
-      .trim()
-      .split(/\s+/)
-      .filter((word) => word !== "·");
-    expect(words.length, line).toBeLessThanOrEqual(4);
-  }
-  await expect(
-    now
-      .getByTestId("worker-row")
-      .filter({ has: page.locator(`[data-thread-id="${made.doneToday}"]`) }),
-  ).toHaveCount(0);
-
-  // Finished workers are History's: no Done here, and the way there is the list's foot.
-  await expect(page.getByTestId("workers-section-done")).toHaveCount(0);
-  await expect(row(page, made.earlier[0]!)).toHaveCount(0);
-  await expect(list(page).getByTestId("workers-history")).toHaveText(/Finished in History/);
-
-  // The search box filters the list.
-  const search = page.getByTestId("workers-search");
-  await expect(search).toBeFocused();
-  await search.fill("backoff");
-  await expect(row(page, made.live)).toBeVisible();
-  await expect(row(page, made.asking)).toHaveCount(0);
-  // While typing, Home and End move the caret; only ↑↓ and Return belong to the list.
+  await expect(tab(page)).toBeVisible();
+  await expect(page.getByTestId("workers-panel-title")).toHaveText("Workers in agent-platform");
+  // The keys are on its rows: ↑↓ move between them.
+  const focused = () =>
+    page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? "");
+  await expect.poll(focused).toBe("workers-panel-row");
+  const first = await page.evaluate(() => document.activeElement?.getAttribute("data-thread-id"));
+  await page.keyboard.press("ArrowDown");
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-thread-id")))
+    .not.toBe(first);
   await page.keyboard.press("Home");
-  await expect.poll(() => search.evaluate((el: HTMLInputElement) => el.selectionStart)).toBe(0);
-  await page.keyboard.press("End");
-  await expect.poll(() => search.evaluate((el: HTMLInputElement) => el.selectionStart)).toBe(7);
-  await search.fill("no such worker");
-  await expect(list(page)).toContainText("No matches");
-  await search.fill("");
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-thread-id")))
+    .toBe(first);
 
-  // Two steps from the orchestrator: ⌘J, then the worker.
-  await row(page, made.live).click();
-  await expect(list(page)).toBeHidden();
+  // Each row says its state under its title, and the finished ones are under Done.
+  await expect(row(page, made.live).getByTestId("workers-panel-status")).not.toBeEmpty();
+  await expect(tab(page).getByTestId("workers-group-done")).toHaveAttribute("data-count", /^[1-9]/);
+
+  // ⌘J again puts the panel back as it was: hidden here.
+  await page.keyboard.press("ControlOrMeta+KeyJ");
+  await expect(tab(page)).toBeHidden();
+
+  // ⌘J, then ⌘⏎ on a row: the worker in the main view.
+  await page.keyboard.press("ControlOrMeta+KeyJ");
+  await expect(row(page, made.live)).toBeVisible();
+  await row(page, made.live).focus();
+  await page.keyboard.press("ControlOrMeta+Enter");
   await expect(page).toHaveURL(new RegExp(`/t/${made.live}$`));
   const crumbs = page.getByTestId("worker-crumbs");
   await expect(crumbs).toContainText("agent-platform");
   await expect(crumbs).toContainText("mail-retry-policy");
   await expect(crumbs).toContainText("Retry with backoff");
 
-  // ⌘J again toggles it, and the keyboard alone opens a worker too.
-  await page.keyboard.press("ControlOrMeta+KeyJ");
-  await expect(list(page)).toBeVisible();
-  await page.keyboard.press("ControlOrMeta+KeyJ");
-  await expect(list(page)).toBeHidden();
-  await page.keyboard.press("ControlOrMeta+KeyJ");
-  await page.keyboard.press("Home");
-  await page.keyboard.press("Enter");
-  await expect(list(page)).toBeHidden();
-  await expect(page).not.toHaveURL(new RegExp(`/t/${made.live}$`));
-  await expect(page.getByTestId("worker-crumbs")).toBeVisible();
-
-  // Another dialog keeps ⌘J out: it doesn't open the list over the palette.
+  // Another dialog keeps ⌘J out: it doesn't move the keys from the palette.
   await page.keyboard.press("ControlOrMeta+KeyK");
   await expect(page.getByTestId("command-palette")).toBeVisible();
   await page.keyboard.press("ControlOrMeta+KeyJ");
-  await expect(list(page)).toBeHidden();
   await expect(page.getByTestId("command-palette")).toBeVisible();
 });
 
@@ -126,16 +99,13 @@ test("a worker's crumbs lead to its feature and its siblings, and the switcher u
   const made = await openScenario(page);
   // Wide enough for the title bar to keep the feature crumb beside the worker's name.
   await page.setViewportSize({ width: 1680, height: 900 });
-  await page.keyboard.press("ControlOrMeta+KeyJ");
-  await row(page, made.asking).click();
-  await expect(page).toHaveURL(new RegExp(`/t/${made.asking}$`));
+  await openWorker(page, made.asking);
   // Beside the Files tab: a review opens wider and leaves the chat, and its title bar, 800 px.
   await openPanelTab(page.getByTestId("right-panel"), "Files");
 
+  // The worker's name shows every worker: the Workers tab.
   await page.getByTestId("worker-crumb-worker").click();
-  await expect(list(page)).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(list(page)).toBeHidden();
+  await expect(tab(page)).toBeVisible();
 
   // The feature opens its sheet over the worker, and Esc gives focus back to the crumb.
   const featureCrumb = page.getByTestId("worker-crumb-feature");
@@ -157,9 +127,7 @@ test("Following live pauses when you scroll up, and Jump to live follows again",
   page,
 }) => {
   const made = await openScenario(page);
-  await page.keyboard.press("ControlOrMeta+KeyJ");
-  await row(page, made.live).click();
-  await expect(page).toHaveURL(new RegExp(`/t/${made.live}$`));
+  await openWorker(page, made.live);
 
   const pill = page.getByTestId("following-live");
   await expect(pill).toHaveText("Following live");
@@ -215,8 +183,7 @@ test("watching a worker never holds it; a message does, and Hand back returns it
   expect(await isHeld(page, made, made.live)).toBe(false);
 
   // Open it, read the catch-up, scroll, jump back, open its panels: still the orchestrator's.
-  await page.keyboard.press("ControlOrMeta+KeyJ");
-  await row(page, made.live).click();
+  await openWorker(page, made.live);
   const catchUp = page.getByTestId("worker-catch-up");
   await expect(catchUp).toContainText(MOCK_LIVE_CATCH_UP);
   await expect(catchUp).toHaveAttribute("data-source", "helper");
@@ -227,8 +194,7 @@ test("watching a worker never holds it; a message does, and Hand back returns it
   expect(await isHeld(page, made, made.live)).toBe(false);
 
   // A worker whose report has no helper catch-up shows that report's own words.
-  await page.keyboard.press("ControlOrMeta+KeyJ");
-  await row(page, made.asking).click();
+  await openWorker(page, made.asking);
   await expect(page.getByTestId("worker-catch-up")).toHaveAttribute("data-source", "report");
   await expect(page.getByTestId("worker-catch-up")).toContainText(
     "Should Retry-After be seconds or an HTTP date?",
@@ -249,8 +215,7 @@ test("watching a worker never holds it; a message does, and Hand back returns it
   await expect.poll(() => isHeld(page, made, made.asking)).toBe(false);
 
   // The board's held worker shows the chip, not the old banner, and hands back the same way.
-  await page.keyboard.press("ControlOrMeta+KeyJ");
-  await row(page, made.held).click();
+  await openWorker(page, made.held);
   await expect(page.getByTestId("worker-hold")).toBeVisible();
   await expect(page.getByTestId("worker-banner-intervened")).toHaveCount(0);
   await page.getByTestId("worker-hand-back").click();
