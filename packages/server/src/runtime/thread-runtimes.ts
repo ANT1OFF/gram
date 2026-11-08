@@ -395,6 +395,7 @@ const make = Effect.gen(function* () {
             lastProgressAt: 0,
             lastTool: undefined,
             runningTools: new Set(),
+            toolTimes: new Map(),
             quiet: undefined,
             compaction: undefined,
             activityPublished: undefined,

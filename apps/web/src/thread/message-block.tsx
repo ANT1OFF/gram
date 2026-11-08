@@ -60,6 +60,7 @@ import { previewableFiles } from "./preview-files";
 import { publishedArtifacts } from "./published-artifacts";
 import { ToolCard } from "./tool-cards";
 import { ToolGroup, TurnFoldRow } from "./tool-group";
+import { TurnTimelineButton } from "./turn-timeline";
 import { toolImagesOf, toolRuns, type MessageFold } from "./tool-group-model";
 import { ToolImagesContext } from "./tool-images";
 import { TurnFilesChip } from "./turn-files-chip";
@@ -378,11 +379,16 @@ export const MessageBlock = memo(function MessageBlock({
       className={floating ? "@container/message relative max-w-full" : "max-w-full"}
     >
       {fold?.row && (
-        <TurnFoldRow
-          turn={fold.row}
-          open={foldOpen}
-          onToggle={() => useTurnFolds.getState().toggle(threadId, fold.turn)}
-        />
+        <div className="flex max-w-full items-center gap-0.5 self-start">
+          <TurnFoldRow
+            turn={fold.row}
+            open={foldOpen}
+            onToggle={() => useTurnFolds.getState().toggle(threadId, fold.turn)}
+          />
+          {fold.row.tools > 0 && (
+            <TurnTimelineButton threadId={threadId} turn={fold.turn} summary={fold.row} />
+          )}
+        </div>
       )}
       {/* A reply's parts (a tool row, its prose, a diff card) 12 px apart, a list's rhythm, so its
           blocks read as separate steps by space rather than run together at 8 px. */}
