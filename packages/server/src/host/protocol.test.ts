@@ -5,11 +5,23 @@ import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { HOST_PROTOCOL_VERSION, type HostHello, HostId, LOCAL_HOST_ID } from "@gram/contracts";
-import { Proc, ProcLive } from "@gram/git";
+import { type GitStateChange, Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 import { filesOn } from "./files.ts";
-import { connectHost, scanFromWire, scanToWire, serveHost, type HostService } from "./protocol.ts";
+import { gitOn } from "./git.ts";
+import {
+  connectHost,
+  HOST_CAPABILITIES,
+  scanFromWire,
+  scanToWire,
+  serveHost,
+  type HostService,
+} from "./protocol.ts";
 import type { PortScan } from "../ports/scan.ts";
+import { makeRepo, removeDir, tempDir, write } from "../git/test-repo.ts";
 
 /** Two ends of one local stream: the host's and the control plane's. */
 const streamPair = Effect.acquireRelease(
@@ -49,7 +61,7 @@ const SCAN: PortScan = {
 const hello = (overrides: Partial<HostHello> = {}): HostHello => ({
   protocol: HOST_PROTOCOL_VERSION,
   hostId: LOCAL_HOST_ID,
-  capabilities: ["files", "ports"],
+  capabilities: HOST_CAPABILITIES,
   platform: process.platform,
   pid: 4242,
   ...overrides,
@@ -62,6 +74,8 @@ const connected = (overrides: Partial<HostHello> = {}) =>
     const service: HostService = {
       hello: hello(overrides),
       files: filesOn(yield* Proc),
+      worktrees: yield* Worktrees,
+      git: gitOn(yield* Proc),
       scan: Effect.succeed(SCAN),
     };
     yield* Effect.forkScoped(
@@ -90,7 +104,7 @@ describe("host protocol", () => {
       const scan = yield* host.scan;
       expect(scan.listening.get(41)).toEqual([5173, 5174]);
       expect(scan.processes?.get(41)?.command).toBe("vite");
-    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 
   it.effect("keeps a host's refusal as the Files panel's own error, with its message", () =>
@@ -107,7 +121,7 @@ describe("host protocol", () => {
         _tag: "InvalidState",
         message: "Enter something to search for",
       });
-    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 
   it.effect("refuses a host on another protocol version", () =>
@@ -115,20 +129,101 @@ describe("host protocol", () => {
       const error = yield* connected({ protocol: HOST_PROTOCOL_VERSION + 1 }).pipe(Effect.flip);
       expect(error).toMatchObject({ _tag: "HostUnavailable" });
       expect(error.message).toContain(`protocol ${HOST_PROTOCOL_VERSION + 1}`);
-    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 
   it.effect("refuses a host that doesn't serve what this build needs", () =>
     Effect.gen(function* () {
       const error = yield* connected({ capabilities: ["files"] }).pipe(Effect.flip);
       expect(error.message).toContain("doesn't serve ports");
-    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 
   it.effect("refuses a host that answers as another machine", () =>
     Effect.gen(function* () {
       const error = yield* connected({ hostId: HostId.make("tower") }).pipe(Effect.flip);
       expect(error.message).toContain('answered as "tower"');
-    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+
+  it.effect("creates, lists and removes a worktree through the host", () =>
+    Effect.gen(function* () {
+      const tmp = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(tmp)));
+      const repo = makeRepo(tmp);
+      const host = yield* connected();
+      const created = yield* host.worktrees.create({
+        repoPath: repo,
+        branch: "feature/host",
+        openCheckouts: [],
+      });
+      expect(created).toMatchObject({ reused: false, checkout: { branch: "feature/host" } });
+      const listed = yield* host.worktrees.list(repo, { openCheckouts: [created.checkout.path] });
+      const entry = listed.worktrees.find((w) => w.branch === "feature/host");
+      expect(entry).toMatchObject({ isMain: false, isOpen: true });
+      // No `origin` here, so nothing to base on but the current HEAD.
+      expect(yield* host.worktrees.baseBranches(repo)).toMatchObject({ branches: [] });
+      const inUse = yield* host.worktrees
+        .remove({
+          repoPath: repo,
+          worktreeDir: created.checkout.path,
+          openCheckouts: [created.checkout.path],
+        })
+        .pipe(Effect.flip);
+      expect(inUse).toMatchObject({ _tag: "WorktreeError", reason: "conflict", dirty: false });
+      write(join(created.checkout.path, "wip.txt"), "uncommitted\n");
+      const dirty = yield* host.worktrees
+        .remove({ repoPath: repo, worktreeDir: created.checkout.path, openCheckouts: [] })
+        .pipe(Effect.flip);
+      expect(dirty).toMatchObject({ _tag: "WorktreeError", dirty: true });
+      yield* host.worktrees.remove({
+        repoPath: repo,
+        worktreeDir: created.checkout.path,
+        force: true,
+        openCheckouts: [],
+      });
+      const after = yield* host.worktrees.list(repo, { openCheckouts: [] });
+      expect(after.worktrees.map((w) => w.branch)).not.toContain("feature/host");
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+
+  it.effect("keeps a refused worktree request as the worktree layer's own error", () =>
+    Effect.gen(function* () {
+      const tmp = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(tmp)));
+      const repo = makeRepo(tmp);
+      const host = yield* connected();
+      const error = yield* host.worktrees
+        .create({ repoPath: repo, branch: "  ", openCheckouts: [] })
+        .pipe(Effect.flip);
+      expect(error).toMatchObject({
+        _tag: "WorktreeError",
+        reason: "invalidRequest",
+        message: "branch must be a valid git branch name",
+      });
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+
+  it.live("reads and watches a checkout's git state through the host", () =>
+    Effect.gen(function* () {
+      const tmp = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(tmp)));
+      const repo = makeRepo(tmp);
+      const host = yield* connected();
+      const state = yield* host.git.local(repo);
+      expect(state).toMatchObject({ repo: true, branch: "main", changedFiles: 0 });
+      expect(yield* host.git.present(repo)).toBe(true);
+      expect(yield* host.git.present(join(tmp, "gone"))).toBe(false);
+      const changes = yield* Queue.unbounded<GitStateChange>();
+      yield* host.git.watch([repo], { debounceMs: 100, cooldownMs: 300 }).pipe(
+        Stream.runForEach((change) => Queue.offer(changes, change)),
+        Effect.forkScoped,
+      );
+      const initial = yield* Queue.take(changes).pipe(Effect.timeout("15 seconds"));
+      expect(initial).toMatchObject({ path: repo, state: { changedFiles: 0 } });
+      write(join(repo, "tracked.txt"), "changed\n");
+      const edited = yield* Queue.take(changes).pipe(Effect.timeout("20 seconds"));
+      expect(edited).toMatchObject({ path: repo, state: { changedFiles: 1, branch: "main" } });
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 });

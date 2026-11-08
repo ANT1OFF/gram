@@ -58,6 +58,11 @@ export interface SnapshotOptions {
    * read stands in for the three `git` runs of a new one. Read anyway when there is none to reuse.
    */
   readonly reuseLocal?: boolean;
+  /**
+   * The checkout's local read, made elsewhere (by the machine's host), to build on in place of
+   * reading it here. `reuseLocal` is then moot.
+   */
+  readonly local?: GitState | undefined;
 }
 
 export class GitStateRuntime extends Context.Service<
@@ -79,6 +84,20 @@ export class GitStateRuntime extends Context.Service<
     readonly present: (cwd: string) => Effect.Effect<boolean>;
   }
 >()("@gram/git/GitStateRuntime") {}
+
+/**
+ * Whether the checkout's folder is there: false only when it is definitely gone, so a folder that
+ * can't be read counts as present and its git says why.
+ */
+export const checkoutPresent = (cwd: string): Effect.Effect<boolean> =>
+  Effect.sync(() => {
+    try {
+      return fs.statSync(cwd, { throwIfNoEntry: false }) !== undefined;
+    } catch {
+      // EACCES and the like: there, but unreadable.
+      return true;
+    }
+  });
 
 /**
  * Refresh the refs the rebase signal reads: the branch and its base only, throttled per repo, and
@@ -136,7 +155,9 @@ export const GitStateRuntimeLive = Layer.effect(
     const snapshot = (cwd: string, options: SnapshotOptions) =>
       provide(
         Effect.gen(function* () {
-          const kept = options.reuseLocal === true ? lastLocal.get(samePathKey(cwd)) : undefined;
+          const kept =
+            options.local ??
+            (options.reuseLocal === true ? lastLocal.get(samePathKey(cwd)) : undefined);
           const local = kept ?? (yield* readLocal(cwd));
           if (!local.repo) return local;
           const origin = yield* originOwnerRepo(cwd);
@@ -188,15 +209,7 @@ export const GitStateRuntimeLive = Layer.effect(
     return {
       local: (cwd) => provide(readLocal(cwd)),
       snapshot,
-      present: (cwd) =>
-        Effect.sync(() => {
-          try {
-            return fs.statSync(cwd, { throwIfNoEntry: false }) !== undefined;
-          } catch {
-            // EACCES and the like: there, but unreadable.
-            return true;
-          }
-        }),
+      present: checkoutPresent,
       watch: (paths, options) =>
         watchGitState(paths, options).pipe(
           Stream.tap((change) =>

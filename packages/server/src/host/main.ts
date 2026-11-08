@@ -6,10 +6,12 @@ import { Socket as NetSocket } from "node:net";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { HOST_PROTOCOL_VERSION, LOCAL_HOST_ID } from "@gram/contracts";
-import { Proc, ProcLive } from "@gram/git";
+import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
+import { gitOn } from "./git.ts";
 import { HOST_CAPABILITIES, serveHost } from "./protocol.ts";
 
 // The server starts the host as plain Node under Electron; what the host runs (git, ps, an editor
@@ -33,8 +35,10 @@ const program = Effect.gen(function* () {
       pid: process.pid,
     },
     files: filesOn(proc),
+    worktrees: yield* Worktrees,
+    git: gitOn(proc),
     scan: liveScan.pipe(Effect.provideService(Proc, proc)),
   });
-}).pipe(Effect.provide(ProcLive));
+}).pipe(Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive))));
 
 NodeRuntime.runMain(program);
