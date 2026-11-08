@@ -144,7 +144,7 @@ export const makeAutomaticDream = (deps: {
       if (Object.values(outbox.state.workers).some((worker) => worker.userIntervened))
         return "Waiting while a worker is held by you.";
       if ((yield* store.listDreams(workspace.workspace.id)).some((d) => d.status === "running"))
-        return "Waiting for the running Dream to end.";
+        return "Waiting for the running memory update to end.";
       return undefined;
     });
   const status = (workspaceId: WorkspaceId): Effect.Effect<AutomaticDreamStatus, NotFound> =>
@@ -152,7 +152,7 @@ export const makeAutomaticDream = (deps: {
       const workspace = yield* store.getWorkspace(workspaceId);
       const state = yield* store.getAutomaticDreamState(workspaceId);
       if (workspace.charter.automaticDreamThreshold === undefined || state === undefined)
-        return { completed: 0, detail: "Automatic Dream is off." };
+        return { completed: 0, detail: "Automatic memory updates are off." };
       const deferred = yield* gate(workspace);
       return {
         threshold: state.threshold,
@@ -197,7 +197,7 @@ export const makeAutomaticDream = (deps: {
           return {
             ...s,
             lastFailure:
-              "Waiting for the selected Dream model to become available. Check Settings → Agents.",
+              "Waiting for the selected memory update model to become available. Check Settings → Agents.",
           };
         });
         if (refused) yield* deps.changed(id);
@@ -314,7 +314,7 @@ export const makeAutomaticDream = (deps: {
         // Settings saves use a different lock and may have established a fresh epoch.
         const consumed = yield* consume(
           yield* store.getWorkspace(id),
-          "The last Dream failed or was cancelled. Counting a fresh batch of completed threads.",
+          "The last memory update failed or was cancelled. Counting a fresh batch of completed threads.",
           undefined,
           { epoch: state.epoch, failedDreamId: failed.id },
         );

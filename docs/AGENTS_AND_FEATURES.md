@@ -33,7 +33,7 @@ configured pass.
   push or open would still ask you first.
 - **Memory.** Each orchestrator keeps file-based [workspace memory](#workspace-memory) of goals,
   decisions and your standing rulings, which you can edit. An optional
-  [Dream](#dream-and-selected-harness-support) run consolidates it into a candidate you review.
+  [memory update](#memory-updates-and-selected-harness-support) run consolidates it into a candidate you review.
 - **Messaging.** The orchestrator sends briefs and messages to workers; workers send back reports
   and questions, and can message each other and their orchestrator directly. Below Full autonomy
   each such message asks you first. Messages between threads are labelled with their sender and
@@ -64,7 +64,7 @@ configured pass.
   whole question and its choices are in the pane. An approval's verbs take the keys its card in the
   thread does: <kbd>1</kbd> Allow once, <kbd>2</kbd> Always allow this rule…, <kbd>3</kbd> Deny. The Inbox docks in the side
   panel's column, beside the work, and <kbd>⏎</kbd> or Show thread puts the item's thread in the
-  main area next to it. In Quiet, or a window too narrow for it beside the chat, it opens as a
+  main area next to it. In Focus, or a window too narrow for it beside the chat, it opens as a
   dialog instead. The title bar's Inbox button, the sidebar's pill and <kbd>⌘⇧I</kbd> open it;
   docked, <kbd>⌘⇧I</kbd> from the thread brings focus back to its list, <kbd>⌘L</kbd> goes to the
   composer and <kbd>Esc</kbd> closes it. <kbd>⌘⇧U</kbd> steps through its items at the turn that
@@ -686,7 +686,7 @@ memory a safe place for credentials.
   (`<data>/orchestration/<workspace>/`), and the filter only governs the `memory_list` and
   `memory_read` tools. A worker allowed to read files outside its checkout can open them there.
 - **Writes are scrubbed, more narrowly.** What Gram writes to memory (`memory_write`,
-  `memory_append`, `memory_edit` and a dream's adoption) passes through the same scrubber as
+  `memory_append`, `memory_edit` and a memory update's adoption) passes through the same scrubber as
   Gram's logs, which redacts the credential shapes it knows. That scrubber is narrower than the
   read filter, and a file edited by hand outside Gram isn't scrubbed at all.
 - **What reviewers found, and what's left.** Independent reviews of #198, rounds 8 to 13,
@@ -786,12 +786,13 @@ Claude helpers use an isolated one-shot SDK query: no tools, strict empty MCP,
 empty setting sources, disabled hooks/plugins, no persisted history, Standard
 speed and a deny permission callback. Context waits for restriction verification.
 
-Codex helpers use the guided adapter pinned to **CLI 0.166.0**. It uses
+Codex helpers use the guided adapter built for **CLI 0.166.0**. Newer CLI versions
+are accepted with a compatibility warning. It uses
 separate ephemeral threads with no environment, requests read-only/no-network
 permissions and forbids escalation. Some models can still be offered `apply_patch`, which
 has no environment to run in. The child pins and verifies the built-in
 ChatGPT inference route before delivering context, overriding inherited custom
-endpoints only for that helper child. Other/unknown versions refuse with setup
+endpoints only for that helper child. Older or unknown versions refuse with setup
 advice. Residual native tools and ambient CLI host instructions/skills remain
 possible: guided is not a complete tool-free or snapshot-only guarantee.
 
@@ -806,32 +807,33 @@ Source: [helper settings/model policy](../packages/contracts/src/helper.ts),
 [Claude helper](../packages/agents/src/claude/helper.ts),
 [Codex helper policy](../packages/agents/src/codex/helper-policy.ts).
 
-## Dream and selected-harness support
+## Memory updates and selected-harness support
 
-Dream prepares a candidate. Review is the default; per-run Auto adopts only validated,
+A memory update prepares a candidate. Review is the default; per-run Auto adopts only validated,
 bounded memory output and preserves native permissions. It is a separate
 transport and permission decision from helper generation and ordinary coding.
-Claude Code supports bounded file-tool Dream on macOS/Linux with
+Claude Code supports bounded file-tool memory updates on macOS/Linux with
 `/usr/bin/python3`: snapshot inputs read-only, candidate/notes writable, native
 tools disabled.
 
-Codex Dream is guided at CLI 0.166.0: workspace-write sandbox and on-request
+Codex memory updates are guided at CLI 0.166.0: workspace-write sandbox and on-request
 approvals, with instructions guiding snapshot reads and candidate writes. Native
 tools can access other permitted files. Gram validates candidates before Review/Adopt or per-run Auto applies them. Complete file-only native-tool confinement is unavailable;
-strict file-only policy refuses this route. Other/unknown installed Codex versions
-remain unqualified for Dream while ordinary sessions stay available.
+strict file-only policy refuses this route. Newer installed Codex versions are accepted
+for memory updates with a compatibility warning. Older or unknown versions remain unavailable
+for memory updates while ordinary sessions stay available.
 
 Selected-harness preflight reads discovery, model/profile and support before
 startup. It does not run a provider turn, open a page or grant permissions.
 Admission revalidates startup inputs; stale roster/membership changes require retry.
-Source: [Dream support](../packages/agents/src/dream-support.ts),
+Source: [memory update support](../packages/agents/src/dream-support.ts),
 [support service](../packages/server/src/agent-support/service.ts),
-[Dream service](../packages/server/src/orchestration/dreams.ts).
+[memory update service](../packages/server/src/orchestration/dreams.ts).
 
-Automatic Dream is off by default. Each workspace's settings page (Settings → Workspaces,
-then Advanced) can start Dream after 1–1000 distinct completed worker or conversation threads (initial
+Automatic memory updates are off by default. Each workspace's settings page (Settings → Workspaces,
+then Advanced) can start a memory update after 1–1000 distinct completed worker or conversation threads (initial
 editable value 10). Completion means an agent/user completion mark or a merged PR;
-a reply ending or becoming idle does not count. Dream/orchestrator threads and helper
+a reply ending or becoming idle does not count. Memory update and orchestrator threads and helper
 jobs do not contribute. Ordinary conversations follow the workspace's project inputs;
 workers belong to their owning workspace.
 
@@ -839,11 +841,11 @@ Enabling or editing the threshold starts a fresh count without historical catch-
 Successful manual and automatic starts reset progress; failed or cancelled runs need
 fresh completed threads. Seen IDs survive restart and reopening while their live,
 closed or archived history is retained. A restart preserves recorded progress but does
-not count missed completions or replay a launch. Pauses, user holds, running Dreams and
+not count missed completions or replay a launch. Pauses, user holds, running memory updates and
 unavailable selected models defer launch. Relevant external activity or settings changes
 recheck a deferred launch; no UI timer runs it. Progress and deferral appear beside the
 setting. Automatic launches always use Review; they grant no global adoption authority.
-Scheduling uses one Dream service's start lock, with a durable claim before launch;
+Scheduling uses the memory update service's one start lock, with a durable claim before launch;
 exclusive coordination across independent server processes is not established.
 Source: [scheduler](../packages/server/src/orchestration/automatic-dream.ts).
 

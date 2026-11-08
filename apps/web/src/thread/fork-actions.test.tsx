@@ -72,7 +72,8 @@ describe("fork actions", () => {
     const forkThread = vi.fn(async () => thread("t2", { forkedFrom: { threadId: T } }));
     renderWithApi(<MessageActions threadId={T} message={reply} />, { forkThread });
 
-    fireEvent.click(screen.getByTestId("message-fork"));
+    fireEvent.click(screen.getByTestId("message-more"));
+    fireEvent.click(await screen.findByTestId("message-fork"));
     await waitFor(() => expect(forkThread).toHaveBeenCalledWith(T, { fromMessageId: "m2" }));
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: "t2" } }),
@@ -91,7 +92,8 @@ describe("fork actions", () => {
       },
       listProjects: async () => [],
     });
-    fireEvent.click(screen.getByTestId("message-fork"));
+    fireEvent.click(screen.getByTestId("message-more"));
+    fireEvent.click(await screen.findByTestId("message-fork"));
     expect(await screen.findByTestId("fork-dialog")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("needs its own worktree");
     expect(screen.queryByRole("alert")).toBeNull();
@@ -111,14 +113,20 @@ describe("fork actions", () => {
       </>,
       {},
     );
-    expect(screen.getAllByTestId("message-fork")).toHaveLength(1);
-    const trigger = screen.getByTestId("message-fork");
+    // The user's message's "…" has no fork in it.
+    fireEvent.click(screen.getAllByTestId("message-more")[1]!);
+    await screen.findByTestId("message-wait");
+    expect(screen.queryByTestId("message-fork")).toBeNull();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    cleanup();
+    renderWithApi(<MessageActions threadId={T} message={reply} />, {});
+    fireEvent.click(screen.getByTestId("message-more"));
+    const trigger = await screen.findByTestId("message-fork");
     expect(trigger.getAttribute("aria-disabled")).toBe("true");
-    expect(trigger.tabIndex).toBe(0);
+    expect(trigger.textContent).toContain("This agent can't fork threads yet");
     fireEvent.click(trigger);
     expect(navigate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId("message-more"));
-    const worktree = await screen.findByTestId("message-fork-worktree");
+    const worktree = screen.getByTestId("message-fork-worktree");
     expect(worktree.getAttribute("aria-disabled")).toBe("true");
     expect(worktree.textContent).toContain("This agent can't fork threads yet");
   });
@@ -144,7 +152,8 @@ describe("fork actions", () => {
         throw new NotImplemented({ rpc: "thread.fork" });
       },
     });
-    fireEvent.click(screen.getByTestId("message-fork"));
+    fireEvent.click(screen.getByTestId("message-more"));
+    fireEvent.click(await screen.findByTestId("message-fork"));
     expect((await screen.findByRole("alert")).textContent).toBe("Forking isn't available yet.");
     expect(navigate).not.toHaveBeenCalled();
   });

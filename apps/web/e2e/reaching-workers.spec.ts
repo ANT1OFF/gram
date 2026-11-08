@@ -237,12 +237,11 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   await openWorker(page, made.live);
   await expect(page.getByTestId("worker-take-over")).toBeVisible();
   await expect(page.getByTestId("worker-banner-take-over")).toHaveCount(0);
-  // It folds to an ⓘ beside Take over, which says it on hover.
-  const info = page.getByTestId("worker-take-over-info");
-  await expect(info).toBeVisible();
-  await info.hover();
+  // It folds into Take over's own hint, with no ⓘ beside it to say it a second time.
+  await expect(page.getByTestId("worker-take-over-info")).toHaveCount(0);
+  await page.getByTestId("worker-take-over").hover();
   await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
-    "the orchestrator stops messaging it until you hand it back",
+    "the orchestrator stops messaging it",
   );
   expect(await page.evaluate(() => window.gramMock!.getSettings())).toMatchObject({
     onboarding: { takeOverHintSeen: true },

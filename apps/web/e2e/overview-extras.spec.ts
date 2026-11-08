@@ -103,44 +103,46 @@ const toPanel = async (page: Page) => {
   return panel;
 };
 
-test("Pull requests starts folded and lists the PR lists' PRs, opening one on GitHub", async ({
+test("Pull requests start folded in At rest and list the PR lists' PRs, opening one on GitHub", async ({
   page,
 }) => {
   await start(page, IN_PANEL);
-  const title = sectionTitle(page, "pullRequests");
+  const title = sectionTitle(page, "rest");
   await expect(title).toHaveAttribute("aria-expanded", "false");
   const rows = section(page, "pullRequests").getByTestId("overview-pr");
   await expect(rows.first()).toBeHidden();
-  // Folded, it says how many; open, the rows do, the title's name and hover keeping the number.
-  const folded = await title.textContent();
+  // Folded or open, At rest says how many it holds in its title's count column.
+  const count = Number(
+    await section(page, "rest").getByTestId("overview-section-rest-count").textContent(),
+  );
 
   await title.click();
   await expect(title).toHaveAttribute("aria-expanded", "true");
   await expect(rows.first()).toBeVisible();
   const listed = await overviewPrs(page);
   expect(listed.length).toBeGreaterThan(1);
-  expect(folded).toContain(String(listed.length));
-  await expect(title).toHaveText("Pull requests");
-  await expect(title).toHaveAttribute("title", `Pull requests, ${listed.length}`);
-  await expect(title).toHaveAccessibleName(`Pull requests, ${listed.length}`);
+  expect(count).toBeGreaterThanOrEqual(listed.length);
+  await expect(title).toHaveAccessibleName(`At rest, ${count}`);
+  await expect(section(page, "pullRequests")).toHaveAccessibleName("Pull requests");
   // The review requests first, then your own, each under its own sub-heading; `repo#n · author`,
   // which list and every mark are on its hover.
   expect(listed.map((row) => row.kind)).toEqual(
     listed.map((row) => row.kind).toSorted((a, b) => (a === b ? 0 : a === "review" ? -1 : 1)),
   );
+  // Each kind under its own heading, its count in the titles' right column.
   await expect(section(page, "pullRequests").getByTestId("overview-pr-kind")).toHaveText([
-    "Review requests",
-    "Your PRs",
+    /^Review requests\d+$/,
+    /^Your PRs\d+$/,
   ]);
   const first = rows.first();
-  await expect(first).toHaveAttribute("title", /^Review requests · [\w.-]+#\d+( · .+)?\n/);
+  await expect(first).toHaveAttribute("title", /\nReview requests · [\w.-]+#\d+( · .+)?\n/);
   await expect(first).toHaveAccessibleName(/^Open .+#\d+ on GitHub: .+, .+#\d+( · .+)?, Review/);
-  // One glyph, and the rows' two lines: its title, then `repo#n · author` under it.
+  // One glyph, and one line: its title, then its short ref at the edge; its author on hover.
   await expect(first.getByTestId("overview-pr-glyph").locator("svg")).toHaveCount(1);
   await expect(first.locator("[data-pr-mark]")).toHaveCount(1);
-  await expect(first.getByTestId("overview-pr-sub")).toHaveText(/^[\w.-]+#\d+( · .+)?$/);
+  await expect(first.getByTestId("overview-pr-sub")).toHaveText(/^[\w.-]+#\d+$/);
   const rowHeight = (await first.boundingBox())!.height;
-  expect(rowHeight).toBe(48);
+  expect(rowHeight).toBe(36);
 
   // A click opens it on GitHub, as the lists' rows do.
   const url = await page.evaluate(async (pr) => {
@@ -160,15 +162,15 @@ test("Pull requests starts folded and lists the PR lists' PRs, opening one on Gi
   expect(inPanel.toSorted(byPr)).toEqual(listed.toSorted(byPr));
 });
 
-test("Pull requests stays folded until opened, kept across a reload, and leaves out a list placed nowhere", async ({
+test("At rest stays folded until opened, kept across a reload, and leaves out a PR list placed nowhere", async ({
   page,
 }) => {
   await start(page, IN_PANEL);
-  const title = sectionTitle(page, "pullRequests");
+  const title = sectionTitle(page, "rest");
   await title.click();
   await expect(title).toHaveAttribute("aria-expanded", "true");
   await page.reload();
-  await expect(sectionTitle(page, "pullRequests")).toHaveAttribute("aria-expanded", "true");
+  await expect(sectionTitle(page, "rest")).toHaveAttribute("aria-expanded", "true");
   const kinds = section(page, "pullRequests").getByTestId("overview-pr");
   await expect(kinds.and(page.locator('[data-kind="review"]')).first()).toBeVisible();
   await expect(kinds.and(page.locator('[data-kind="yours"]')).first()).toBeVisible();
@@ -293,7 +295,7 @@ test("⌘J opens the Workers tab whether the overview is open or hidden, and put
   await page.keyboard.press("ControlOrMeta+KeyJ");
   await expect(list).toBeVisible();
   const current = overview(page).locator('[data-testid="overview-workspace"][data-current]');
-  await expect(current.getByTestId("overview-workspace-in-tab")).toHaveText(" · in Workers");
+  await expect(current.getByTestId("overview-workspace-summary")).toHaveText(/^\d+ in Workers$/);
   await expect(current.getByTestId("overview-worker").first()).toBeHidden();
   await expect(current.getByTestId("overview-workspace-fold")).toHaveAttribute(
     "data-in-tab",
@@ -301,7 +303,7 @@ test("⌘J opens the Workers tab whether the overview is open or hidden, and put
   );
   await page.keyboard.press("ControlOrMeta+KeyJ");
   await expect(list).toBeHidden();
-  await expect(current.getByTestId("overview-workspace-in-tab")).toHaveCount(0);
+  await expect(current.getByTestId("overview-workspace-summary")).not.toHaveText(/in Workers/);
   await expect(current.getByTestId("overview-worker").first()).toBeVisible();
 
   // Hidden, the same tab.
@@ -317,6 +319,10 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
   page,
 }) => {
   await start(page);
+  // The pull requests are in At rest: opened, so they show (its fold is kept across reloads).
+  await section(page, "rest")
+    .getByRole("button", { name: /^At rest, \d+$/ })
+    .click();
   const shown = {
     solo: section(page, "solo"),
     pullRequests: section(page, "pullRequests"),

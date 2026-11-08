@@ -560,7 +560,7 @@ export function useScopeCommands(
         {
           id: `scope:memory:${workspaceId}`,
           label: "Open memory",
-          keywords: "orchestrator dream import questions decisions files",
+          keywords: "orchestrator memory update dream import questions decisions files",
           run: () => void navigate({ to: "/w/$workspaceId/memory", params: { workspaceId } }),
         },
         {

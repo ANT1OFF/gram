@@ -1372,7 +1372,7 @@ describe("CodexHost confined sessions", () => {
           openSession({ dreamFilesOnly: true, confineWrites: true }).pipe(Effect.provide(h.layer)),
         );
         expect(error).toMatchObject({ _tag: "AgentUnavailable", reason: "startup-failed" });
-        expect(error.message).toContain("Codex Dream is unavailable");
+        expect(error.message).toContain("Codex memory updates are unavailable");
         expect(error.message).toContain("Choose Claude Code.");
         expect(h.calls).toEqual([]);
       }),
@@ -1386,7 +1386,7 @@ describe("CodexHost confined sessions", () => {
           Effect.provide(h.layer),
         ),
       );
-      expect(error.message).toContain("bounded Dream file bridge");
+      expect(error.message).toContain("bounded memory update file bridge");
       expect(h.acquired).toEqual([]);
     }),
   );
@@ -1421,9 +1421,25 @@ describe("CodexHost confined sessions", () => {
     }),
   );
 
+  for (const cliVersion of ["0.166.1", "0.167.0", "1.0.0"])
+    it.effect(`guided Dream accepts newer CLI ${cliVersion}`, () =>
+      Effect.gen(function* () {
+        const h = harness({ cliVersion, statuses: [status("gram", "connected")] });
+        yield* openSession({
+          audience: "dream",
+          dreamGuided: true,
+          mcp: { url: "http://127.0.0.1:4317/mcp", headers: {} },
+        }).pipe(Effect.provide(h.layer));
+        expect(h.calls.find(([method]) => method === "thread/start")?.[1]).toMatchObject({
+          approvalPolicy: "on-request",
+          sandbox: "workspace-write",
+        });
+      }),
+    );
+
   for (const cliVersion of [null, "0.160.0"] as const)
     it.effect(
-      `guided Dream refuses unqualified CLI ${cliVersion} without affecting ordinary sessions`,
+      `guided Dream refuses older or unknown CLI ${cliVersion} without affecting ordinary sessions`,
       () =>
         Effect.gen(function* () {
           const h = harness({ cliVersion, statuses: [status("gram", "connected")] });
@@ -1434,7 +1450,7 @@ describe("CodexHost confined sessions", () => {
               mcp: { url: "http://127.0.0.1:4317/mcp", headers: {} },
             }).pipe(Effect.provide(h.layer)),
           );
-          expect(error.message).toContain("Codex Dream is pinned");
+          expect(error.message).toContain("Codex memory updates require CLI 0.166.0 or newer");
           expect(h.calls).toEqual([]);
           yield* openSession().pipe(Effect.provide(h.layer));
           expect(h.calls.some(([method]) => method === "thread/start")).toBe(true);

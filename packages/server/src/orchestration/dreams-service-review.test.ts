@@ -53,7 +53,7 @@ describe.skipIf(!hasGit)("dreams", () => {
         // Shown, never enforced: nothing stopped the dream over it.
         expect(completed.usage).toMatchObject({ costUsd: 0.42 });
         expect("failure" in completed).toBe(false);
-        expect(titles(events)).toContain("Dream finished — review it");
+        expect(titles(events)).toContain("Memory update finished — review it");
         const cards = (yield* store.listMessages(dream.threadId as ThreadId)).flatMap((message) =>
           message.parts.flatMap((part) => (part.type === "data-dream-report" ? [part.data] : [])),
         );
@@ -95,7 +95,7 @@ describe.skipIf(!hasGit)("dreams", () => {
         ]);
         expect(yield* memory.read(workspaceId, "decisions.md")).toContain("deploy on merge");
         expect((yield* outboxOf(workspaceId)).notes.join("\n")).toContain(
-          "adopted a dream as version 0002. Re-read MEMORY.md",
+          "adopted a memory update as version 0002. Re-read MEMORY.md",
         );
         expect(events).toContainEqual({ type: "orchestration.changed", workspaceId });
 
@@ -127,7 +127,9 @@ describe.skipIf(!hasGit)("dreams", () => {
         expect(yield* finishDream(tampered.dream, tampered.session, "failed")).toMatchObject({
           failure: "input_tampered",
         });
-        expect(titles(events).some((title) => title.startsWith("Dream failed:"))).toBe(true);
+        expect(titles(events).some((title) => title.startsWith("Memory update failed:"))).toBe(
+          true,
+        );
         expect((yield* Effect.flip(dreams.adopt(tampered.dream.id))).message).toContain(
           "can't be adopted",
         );

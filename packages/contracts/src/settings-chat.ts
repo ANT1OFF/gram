@@ -240,7 +240,7 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   ),
   ws(
     "workspace.automaticDreamThreshold",
-    "Automatic Dream after completions",
+    "Automatic memory update after completions",
     (w) => charterOf(w)?.automaticDreamThreshold,
     "off",
   ),
@@ -285,7 +285,7 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   pref("appearance.showCost", "Show gateway cost", (s) => s.appearance.showCost ?? false),
   pref("composer.sendKey", "Send key", sendKeyOf),
   pref("layout.openAtLaunch", "Open at launch", openAtLaunchOf),
-  pref("layout.quietWhenIdle", "Quiet when idle", (s) => s.layout?.quietWhenIdle ?? false),
+  pref("layout.quietWhenIdle", "Focus when idle", (s) => s.layout?.quietWhenIdle ?? false),
   pref("layout.overviewSidebar", "Overview sidebar", overviewSidebarOf, "automatic"),
   pref("layout.settleAfterDays", "Settle idle threads after (days)", settleAfterDaysOf),
   pref("notifications.native", "Desktop notifications"),

@@ -593,7 +593,7 @@ describe("OrchestrationMemory: caps", () => {
         expect(index).toMatchObject({ _tag: "InvalidState" });
         expect(index.message).toContain("8193 bytes");
         expect(index.message).toContain("8.0 KB");
-        expect(index.message).toContain("a dream");
+        expect(index.message).toContain("a memory update");
         expect((yield* f.memory.index(WS)).length).toBe(MEMORY_INDEX_MAX_BYTES);
 
         yield* f.memory.write(WS, "map.md", "x".repeat(MEMORY_FILE_MAX_BYTES));
@@ -603,7 +603,7 @@ describe("OrchestrationMemory: caps", () => {
         );
         expect(file.message).toContain("32770 bytes");
         expect(file.message).toContain("32.0 KB");
-        expect(file.message).toContain("a dream");
+        expect(file.message).toContain("a memory update");
         expect(historyOf(f, "map.md")).toEqual([]);
       }),
     ),
@@ -621,7 +621,7 @@ describe("OrchestrationMemory: caps", () => {
         const error = yield* Effect.flip(f.memory.write(WS, "one-too-many.md", "x"));
         expect(error).toMatchObject({ _tag: "InvalidState" });
         expect(error.message).toContain("40 files");
-        expect(error.message).toContain("a dream");
+        expect(error.message).toContain("a memory update");
 
         yield* f.memory.write(WS, "workers/w-1.md", "changed\n");
         yield* f.memory.remove(WS, "workers/w-2.md");

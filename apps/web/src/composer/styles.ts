@@ -30,22 +30,20 @@ export const ROUND =
   "grid size-8 shrink-0 place-items-center rounded-(--composer-button-radius) outline-none transition-[opacity,box-shadow,background-color,color] focus-visible:focus-ring disabled:cursor-default";
 
 /**
- * Stop while a turn runs: a solid pill in the text colour saying "Stop" beside its square, so it
- * reads as a stop button and never as Send's accent, the square inside a turning ring (drawn by
- * the composer) that says the agent is at work. As tall as Send, right-aligned where Send sits, so
- * its spot doesn't move. Danger only under the pointer.
+ * Stop's fill while a turn runs, on `ROUND`: solid in the text colour, so it reads as a stop button
+ * and never as Send's accent, its square inside a turning ring (drawn by the composer) that says
+ * the agent is at work. Send's size, in Send's place, so the spot doesn't move; no word and no key
+ * cap, as both are in its tooltip. Danger only under the pointer.
  */
-export const STOP_PILL =
-  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-(--composer-button-radius) bg-foreground pr-3 pl-2.5 text-meta font-medium text-background outline-none transition-colors hover:bg-destructive focus-visible:focus-ring";
+export const STOP_FILL = "bg-foreground text-background hover:bg-destructive";
 
 /**
- * Stop while the turn only waits on the user, at an approval or a question: the answer on its card
- * is the step to take, so Stop steps back from the solid pill, with no turning ring, as nothing
- * runs. It keeps a tint of its own, the danger tint a destructive button takes, so it still reads
- * as Stop at a glance and never as a faint outline. The same size and place as `STOP_PILL`.
+ * Stop's fill while the turn only waits on the user, at an approval or a question: the answer on
+ * its card is the step to take, so Stop steps back from the solid fill, with no turning ring, as
+ * nothing runs. It keeps a tint of its own, the danger tint a destructive button takes, so it still
+ * reads as Stop at a glance and never as a faint outline.
  */
-export const STOP_QUIET =
-  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-(--composer-button-radius) bg-destructive-tint pr-3 pl-2.5 text-meta font-medium text-destructive outline-none transition-colors hover:bg-destructive-tint-hover focus-visible:focus-ring";
+export const STOP_QUIET = "bg-destructive-tint text-destructive hover:bg-destructive-tint-hover";
 
 /**
  * Send's fill: the accent with a faint gloss, flat while pressed. With nothing to send it takes the

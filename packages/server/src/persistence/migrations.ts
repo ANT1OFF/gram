@@ -492,6 +492,33 @@ const messageParts = Effect.gen(function* () {
   for (const statement of statements) yield* sql.unsafe(statement);
 });
 
+/**
+ * Hosts: the machines checkouts live on and agents run on. Every record so far is on this machine,
+ * `local`, so nothing written before changes meaning. `threads.host_id` mirrors the host of the
+ * thread's `checkout` (absent there means `local`) so a host's threads are one indexed lookup.
+ * `hosts.data` is the host's own record (name, key fingerprint, routes), opaque to SQL;
+ * `session_leases` gives a thread's agent session to exactly one host under an `epoch` that a
+ * move bumps, so a host that comes back after its session moved is refused by epoch.
+ */
+const hosts = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE threads ADD COLUMN host_id TEXT NOT NULL DEFAULT 'local'`;
+  yield* sql`CREATE INDEX threads_host ON threads(host_id) WHERE host_id <> 'local'`;
+  yield* sql`CREATE TABLE hosts (
+    id TEXT PRIMARY KEY,
+    created_at INTEGER NOT NULL,
+    removed_at INTEGER,
+    data TEXT NOT NULL
+  )`;
+  yield* sql`CREATE TABLE session_leases (
+    thread_id TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+    host_id TEXT NOT NULL,
+    epoch INTEGER NOT NULL,
+    leased_at INTEGER NOT NULL
+  )`;
+  yield* sql`CREATE INDEX session_leases_host ON session_leases(host_id)`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -499,6 +526,7 @@ export const migrations = {
   "0004_merge_fences": mergeFences,
   "0005_usage_limit_history": usageLimitHistory,
   "0006_message_parts": messageParts,
+  "0007_hosts": hosts,
 };
 
 /**

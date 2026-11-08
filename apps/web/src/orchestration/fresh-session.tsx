@@ -43,10 +43,13 @@ export function HandingOff({
 export function ContextChip({
   pct,
   onAct,
+  inTitlebar = false,
   className,
 }: {
   pct: number;
   onAct: () => void;
+  /** One of the title bar's icon buttons: its size, stroke and hover fill. */
+  inTitlebar?: boolean;
   className?: string;
 }) {
   const label = `Context ${pct} % — start a fresh session`;
@@ -55,20 +58,32 @@ export function ContextChip({
       label={`${label}\nIt starts again from the orchestrator's memory and the ledger.`}
       side="bottom"
       render={
-        <button
-          type="button"
-          data-testid="context-chip"
-          data-pct={pct}
-          aria-label={label}
-          onClick={onAct}
-          className={cn(
-            "grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
-            className,
-          )}
-        />
+        inTitlebar ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            data-testid="context-chip"
+            data-pct={pct}
+            aria-label={label}
+            onClick={onAct}
+            className={cn("text-muted-foreground", className)}
+          />
+        ) : (
+          <button
+            type="button"
+            data-testid="context-chip"
+            data-pct={pct}
+            aria-label={label}
+            onClick={onAct}
+            className={cn(
+              "grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+              className,
+            )}
+          />
+        )
       }
     >
-      <ChartPie aria-hidden className="size-icon-row shrink-0" />
+      <ChartPie aria-hidden className={inTitlebar ? "shrink-0" : "size-icon-row shrink-0"} />
     </Hint>
   );
 }

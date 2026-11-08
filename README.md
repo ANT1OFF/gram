@@ -103,16 +103,16 @@ Gram doesn't prescribe a way of working. The same pieces run as a swarm of worke
 that message each other, or with the orchestrator calling on one worker for one job.
 [Agents and features](docs/AGENTS_AND_FEATURES.md) covers it in depth.
 
-## Quiet
+## Focus
 
 Watching a wall of agents work is a constant dopamine drip: something is always moving, and it
-pulls your attention all day. Quiet hides all of that and shows only what needs you, one card at a
+pulls your attention all day. Focus hides all of that and shows only what needs you, one card at a
 time, with a dot per worker along the bottom. Get on with your own work and come back when you're
 asked. Open it from View in the title bar's … menu or with ⌘⌥4 (Ctrl+Alt+4 on Linux), and leave
-with Esc; **Quiet when idle** in Settings → Notifications turns it on after five idle minutes with
+with Esc; **Focus when idle** in Settings → Notifications turns it on after five idle minutes with
 nothing asked.
 
-![Gram's Quiet view at rest: an otherwise empty window that reads "Nothing needs you. 5 workers are busy: 2 working, 3 waiting on checks." and, under it, "Quiet shows only what needs you, one card at a time. Esc leaves it." Along the bottom, the workspace's name with a dot per worker, filled for the two working and hollow for the three waiting, then usage, the time and a … menu; Leave quiet sits in the top corner.](docs/assets/gram-quiet.png)
+![Gram's Focus view at rest: an otherwise empty window that reads "Nothing needs you. 5 workers are busy: 2 working, 3 waiting on checks." and, under it, "Focus shows only what needs you, one card at a time. Esc leaves it." Along the bottom, the workspace's name with a dot per worker, filled for the two working and hollow for the three waiting, then usage, the time and a … menu; Leave Focus sits in the top corner.](docs/assets/gram-quiet.png)
 
 ## Docs
 

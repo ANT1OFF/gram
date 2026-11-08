@@ -8,7 +8,7 @@
 import * as Schema from "effect/Schema";
 import { AgentFailureKind } from "./agent-failure.ts";
 import { ChecksRollup } from "./git.ts";
-import { ProjectId, RequestId, ThreadId, WorkspaceId } from "./ids.ts";
+import { HostId, ProjectId, RequestId, ThreadId, WorkspaceId } from "./ids.ts";
 import { PrReviewRequest } from "./pr-people.ts";
 import { RunWatch } from "./run-watch.ts";
 import { ThreadStatus } from "./thread-status.ts";
@@ -476,6 +476,8 @@ export const WorkerLedgerEntry = Schema.Struct({
   changedFiles: Schema.Int,
   /** Its worktree's folder is gone, deleted outside Gram (`GitState.missing`). */
   worktreeMissing: Schema.optionalKey(Schema.Literal(true)),
+  /** The machine its checkout is on (`Checkout.hostId`); absent while that is this machine. */
+  hostId: Schema.optionalKey(HostId),
   /** The other repos this worker was given; `project`, `branch` and `pr` above are its first. */
   alsoIn: Schema.optionalKey(Schema.Array(WorkerRepo)),
   /** Workers in the same project whose changed files intersect this one's. */

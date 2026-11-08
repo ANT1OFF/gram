@@ -33,16 +33,21 @@ export const localHelperTransport = (hosts: AgentHosts["Service"]): LocalHelperT
                     ? CODEX_HELPER_RESTRICTION
                     : "This Claude adapter has no verified tool-free helper transport.",
               })
-            : host.helper.models.pipe(
-                Effect.map((models): HelperProviderStatus => ({
+            : (
+                host.helper.inspect ??
+                host.helper.models.pipe(Effect.map((models) => ({ models, warnings: [] })))
+              ).pipe(
+                Effect.map(({ models, warnings }): HelperProviderStatus => ({
                   provider,
                   state: "ready",
                   models,
                   mode: host.helper?.mode ?? "tool-free",
-                  detail:
+                  detail: [
+                    ...warnings,
                     host.helper?.mode === "guided"
                       ? CODEX_GUIDED_HELPER_DETAIL
                       : "Uses this CLI's existing subscription login. The provider decides access and usage limits when a call starts.",
+                  ].join(" "),
                 })),
                 Effect.catch((error) =>
                   Effect.succeed<HelperProviderStatus>({

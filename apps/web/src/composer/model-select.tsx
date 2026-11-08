@@ -224,7 +224,6 @@ export function useModelSection({
       }),
       // Named from the agent's own list, which has the model before the other agents' have loaded.
       named: shown.named,
-      chip: shown.chip,
     },
     status,
     onOpen,

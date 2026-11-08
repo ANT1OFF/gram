@@ -474,11 +474,11 @@ const HARNESS_NOTES: Partial<Record<AgentKind, readonly string[]>> = {
 
 /** How a dream is held on each harness; shown with the harness notes and where a dream's model is picked. */
 export const DREAM_HARNESS_NOTE =
-  "Dream uses bounded file tools on Claude: snapshot inputs are read-only, and only candidate output and notes are writable. This requires macOS or Linux with /usr/bin/python3 for directory-handle confinement. Claude native commands, network and subagents are disabled. Codex Dream starts with normal Codex permissions: workspace-write sandbox and on-request approvals. Instructions guide snapshot reads and candidate writes, but native tools can access other permitted files. Review and Adopt apply candidates through Gram.";
+  "Memory updates use bounded file tools on Claude: snapshot inputs are read-only, and only candidate output and notes are writable. This requires macOS or Linux with /usr/bin/python3 for directory-handle confinement. Claude native commands, network and subagents are disabled. On Codex, a memory update starts with normal Codex permissions: workspace-write sandbox and on-request approvals. Instructions guide snapshot reads and candidate writes, but native tools can access other permitted files. Review and Adopt apply candidates through Gram.";
 
 /** Said under the list whatever is in it. */
 export const HARNESS_GENERAL_NOTE =
-  "Orchestrators, workers and dreams can run on Claude Code or Codex where the harness supports the role.";
+  "Orchestrators, workers and memory updates can run on Claude Code or Codex where the harness supports the role.";
 
 /**
  * The harnesses worth explaining, each once: those in the worker models, then the kind of the

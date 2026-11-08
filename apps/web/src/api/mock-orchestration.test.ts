@@ -660,7 +660,7 @@ describe("MockApi orchestration", () => {
     await api.restoreMemory(id, "0001");
     await expect(
       api.adoptDream(completed.id, { ...seen, resolutions: { "decisions.md": "current" } }),
-    ).rejects.toThrow(/Review the dream again/);
+    ).rejects.toThrow(/Review the memory update again/);
     await api.restoreMemory(id, "0002");
     const adopted = await api.adoptDream(completed.id, {
       ...seen,

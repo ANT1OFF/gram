@@ -101,7 +101,8 @@ for (const width of [1440, 480]) {
     const reply = transcript.getByTestId("message-assistant").first();
     const actions = reply.getByTestId("message-actions");
     await reply.hover();
-    await expect(actions.getByRole("button")).toHaveCount(5);
+    // Round 15: Copy and "…" alone; inbox, history and fork glyphs were a strip of bare marks.
+    await expect(actions.getByRole("button")).toHaveCount(2);
     await expect(actions.getByTestId("message-sent-at")).toBeVisible();
     await expect(actions).not.toContainText("Rewind to here");
     await expect(actions).not.toContainText("Fork from here");
@@ -119,58 +120,97 @@ for (const width of [1440, 480]) {
     await page.mouse.move(0, 0);
     await page.keyboard.press("Tab");
     await copy.focus();
-    for (const label of [
-      "Copy message",
-      "Add to Waiting on you",
-      "Rewind to here",
-      "Fork from here",
-      "More message actions",
-    ]) {
+    for (const label of ["Copy message", "More message actions"]) {
       await expect(actions.getByRole("button", { name: label, exact: true })).toBeFocused();
       await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(label);
       if (label !== "More message actions") await page.keyboard.press("Tab");
     }
     await page.keyboard.press("Enter");
+    const menu = page.getByRole("menu");
+    // Every other action, in words, each with a line on what it does.
+    await expect(menu.getByRole("menuitem")).toHaveText([
+      /^Copy turnPrompt and replies as Markdown$/,
+      /^Add to Waiting on you/,
+      /^Rewind to hereRemove the conversation after this reply$/,
+      /^Fork from hereStart a new thread with the conversation up to this reply$/,
+      /^Fork into worktree…Continue from this reply in a new worktree$/,
+    ]);
     await expect(page.getByRole("menuitem", { name: "Copy turn", exact: true })).toBeFocused();
-    await expect(page.getByRole("menu")).toContainText("Prompt and replies as Markdown");
-    await page.getByRole("menu").screenshot({ path: testInfo.outputPath(`menu-${width}.png`) });
-    await page.keyboard.press("ArrowDown");
+    await menu.screenshot({ path: testInfo.outputPath(`menu-${width}.png`) });
+    await page.keyboard.press("End");
     await expect(page.getByTestId("message-fork-worktree")).toBeFocused();
     await page.keyboard.press("Enter");
     const dialog = page.getByTestId("fork-dialog");
     await expect(dialog).toContainText("conversation up to this reply, in a new worktree");
     await dialog.getByRole("button", { name: "Cancel" }).click();
-    await expect(actions.getByTestId("message-more")).toBeFocused();
+    const more = actions.getByTestId("message-more");
+    await expect(more).toBeFocused();
 
-    await actions.getByTestId("message-rewind").click();
+    // Rewind's confirmation opens under the "…" it was chosen from, and hands focus back to it.
+    await page.keyboard.press("Enter");
+    await page.getByTestId("message-rewind").click();
     const confirmation = page.getByTestId("rewind-confirm");
     await expect(confirmation).toContainText("Everything after this reply is removed");
+    const below = (await more.boundingBox())!;
+    expect((await confirmation.boundingBox())!.y).toBeGreaterThanOrEqual(below.y + below.height);
     await confirmation.getByRole("button", { name: "Cancel" }).click();
-    await expect(actions.getByTestId("message-rewind")).toBeFocused();
+    await expect(confirmation).toHaveCount(0);
+    await expect(more).toBeFocused();
     const prompt = transcript.getByTestId("message-user").first();
-    await page.keyboard.press("Tab");
-    await prompt.getByTestId("message-edit").focus();
+    const promptMore = prompt.getByTestId("message-more");
+    await promptMore.focus();
     await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(
-      "Edit from here",
+      "More message actions",
     );
     await page.keyboard.press("Enter");
+    await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText([
+      /^Add to Waiting on you/,
+      /^Edit from hereEdit this message and replace the conversation after it$/,
+    ]);
+    await page.getByTestId("message-edit").click();
     await expect(confirmation).toContainText("The composer is filled with it");
     await confirmation.getByRole("button", { name: "Cancel" }).click();
-    await expect(prompt.getByTestId("message-edit")).toBeFocused();
-    const wait = actions.getByTestId("message-wait");
-    await wait.click();
+    await expect(promptMore).toBeFocused();
+    await reply.hover();
+    await more.click();
+    await page.getByTestId("message-wait").click();
+    await reply.hover();
+    await more.click();
+    const wait = page.getByTestId("message-wait");
     await expect(wait).toBeDisabled();
     await expect(wait).toHaveAccessibleName("Waiting on you");
-    // Added, its line above the actions moves the button from under the clicking pointer, whose
-    // hover leave would close the tooltip focus opens; as above, the pointer goes first.
-    await page.mouse.move(0, 0);
-    await page.keyboard.press("Tab");
-    await wait.focus();
-    await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(
-      "Already added",
-    );
+    await expect(wait).toContainText("Already added");
+    await page.keyboard.press("Escape");
+    await expect(more).toBeFocused();
   });
 }
+
+test("from the keyboard, Rewind's confirmation takes focus from the closing menu, and gives it back", async ({
+  page,
+}) => {
+  await page.goto("/t/t-deps");
+  const reply = page.getByTestId("transcript").getByTestId("message-assistant").first();
+  await reply.hover();
+  const more = reply.getByTestId("message-more");
+  await more.focus();
+  await page.keyboard.press("Enter");
+  const rewind = page.getByTestId("message-rewind");
+  await expect(page.getByRole("menu")).toBeVisible();
+  // Down the menu to Rewind: Copy turn, then Add to Waiting on you, come first.
+  for (let step = 0; step < 6; step++) {
+    if (await rewind.evaluate((item) => item === document.activeElement)) break;
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(rewind).toBeFocused();
+  await page.keyboard.press("Enter");
+  const confirmation = page.getByTestId("rewind-confirm");
+  await expect(confirmation).toBeVisible();
+  // Focus lands inside it, on Cancel, not left on the "…" the menu handed it back to.
+  await expect(confirmation.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(confirmation).toHaveCount(0);
+  await expect(more).toBeFocused();
+});
 
 test("busy message actions explain why on hover and focus and refuse activation", async ({
   page,
@@ -189,23 +229,19 @@ test("busy message actions explain why on hover and focus and refuse activation"
     });
   });
   for (const testId of ["message-rewind", "message-fork"]) {
-    const action = reply.getByTestId(testId);
+    await reply.hover();
+    await reply.getByTestId("message-more").click();
+    const action = page.getByTestId(testId);
     await expect(action).toBeDisabled();
-    await action.hover();
-    await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(
-      "Wait for the turn to finish",
-    );
-    await page.mouse.move(0, 0);
-    await page.keyboard.press("Tab");
-    await action.focus();
-    await expect(action).toBeFocused();
-    await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(
-      "Wait for the turn to finish",
-    );
-    await page.keyboard.press("Enter");
-    await page.keyboard.press("Space");
+    // The reason in words under the action's name, to sight and to a screen reader.
+    await expect(action).toContainText("Wait for the turn to finish");
+    await expect(action).toHaveAttribute("aria-description", "Wait for the turn to finish");
+    await action.click({ force: true });
+    await action.press("Enter");
     await expect(page.getByTestId("rewind-confirm")).toHaveCount(0);
     await expect(page).toHaveURL(/\/t\/t-deps$/);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
   }
   await reply.getByTestId("message-more").click();
   await expect(reply.getByTestId("message-copy")).toBeEnabled();

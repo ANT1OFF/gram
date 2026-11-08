@@ -41,8 +41,19 @@ export const PRUNE_DIRS: ReadonlyArray<string> = [
 export const DEBOUNCE_MS = 400;
 /** Floor on recomputes from working-tree churn per checkout; leading and trailing edge both run. */
 export const COOLDOWN_MS = 2_000;
-/** macOS FSEvents can delay or lose events, including across libuv stream restarts. */
+/**
+ * macOS FSEvents can delay or lose events, including across libuv stream restarts, so each checkout
+ * is checked every `RECONCILE_MS`: its git dir's stamps (`HEAD`, the index, the branch's ref) at
+ * the cost of a few `stat`s, which a commit, a checkout or a staged change always moves.
+ */
 export const RECONCILE_MS = 10_000;
+/**
+ * A full read (three `git` runs) backstops a lost working-tree event. It runs `RECONCILE_MS` after
+ * the checkout last changed or had an event, then waits twice as long each time nothing changed, up
+ * to this: an idle checkout costs one read in minutes instead of six a minute, and a lost edit to it
+ * shows within this at worst. Any event or change starts the short wait again.
+ */
+export const RECONCILE_MAX_MS = 160_000;
 
 /** Settles once every native watcher call so far has. */
 let nativeTail: Promise<unknown> = Promise.resolve();
@@ -321,6 +332,39 @@ export interface WatchOptions {
   readonly backend?: WatchBackend | undefined;
 }
 
+/** Size and mtime of `path`, or "-" when it can't be read. */
+const fileStamp = (path: string): string => {
+  try {
+    const stat = fs.statSync(path);
+    return `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    return "-";
+  }
+};
+
+/**
+ * What a commit, a branch switch, a reset or a staged change moves in a checkout's git dir: its
+ * `HEAD` (and the branch ref it names, loose or packed) and its index. Working-tree edits don't
+ * show here; the backed-off full read catches those.
+ */
+export const gitDirStamp = (checkout: RepoRoots): string => {
+  let head = "";
+  try {
+    head = fs.readFileSync(nodePath.join(checkout.gitDir, "HEAD"), "utf8").trim();
+  } catch {
+    // Unreadable: the stamp says so, and the next full read decides.
+  }
+  const ref = head.startsWith("ref: ") ? head.slice(5) : undefined;
+  return [
+    head,
+    fileStamp(nodePath.join(checkout.gitDir, "index")),
+    ref === undefined ? "" : fileStamp(nodePath.join(checkout.common, ref)),
+    fileStamp(nodePath.join(checkout.common, "packed-refs")),
+    // A reftable repo keeps every ref here; its HEAD always names `.invalid`.
+    fileStamp(nodePath.join(checkout.common, "reftable", "tables.list")),
+  ].join("|");
+};
+
 const sameState = (a: GitState | undefined, b: GitState) =>
   a !== undefined && JSON.stringify(a) === JSON.stringify(b);
 
@@ -333,20 +377,31 @@ const sameState = (a: GitState | undefined, b: GitState) =>
 export const watchGitState = (
   paths: ReadonlyArray<string>,
   options: WatchOptions = {},
-): Stream.Stream<GitStateChange, never, Proc> =>
-  Stream.callback<GitStateChange, never, Proc>((queue) =>
+): Stream.Stream<GitStateChange, never, Proc> => {
+  // One record per checkout: a path asked for twice would count its reconcile ticks down twice.
+  const unique = [...new Set(paths)];
+  return Stream.callback<GitStateChange, never, Proc>((queue) =>
     Effect.gen(function* () {
       const debounceMs = options.debounceMs ?? DEBOUNCE_MS;
       const cooldownMs = options.cooldownMs ?? COOLDOWN_MS;
       const runFork = yield* FiberMap.makeRuntime<Proc, string>();
       const last = new Map<string, GitState>();
       const lastThrottledRun = new Map<string, number>();
+      /**
+       * macOS: per checkout, in reconcile ticks, the wait before its next full read and the ticks
+       * left until it.
+       */
+      const backoff = new Map<string, { wait: number; left: number }>();
+      const resetBackoff = (path: string) => {
+        if (backoff.has(path)) backoff.set(path, { wait: 1, left: 1 });
+      };
 
       const recompute = (path: string) =>
         localGitState(path).pipe(
           Effect.map((state) => {
             if (sameState(last.get(path), state)) return;
             last.set(path, state);
+            resetBackoff(path);
             Queue.offerUnsafe(queue, { path, state });
           }),
           Effect.ignore,
@@ -374,7 +429,7 @@ export const watchGitState = (
       };
 
       const checkouts: Array<WatchedCheckout> = [];
-      for (const path of paths) {
+      for (const path of unique) {
         const roots = yield* tryRepoRoots(path).pipe(Effect.orElseSucceed(() => undefined));
         if (roots) checkouts.push({ path, ...roots });
       }
@@ -389,6 +444,7 @@ export const watchGitState = (
       const enqueue = (classification: Classification) => {
         for (const path of classification.hit) {
           pending.set(path, (pending.get(path) ?? false) || classification.internal.has(path));
+          resetBackoff(path);
         }
         if (pending.size > 0 && timer === undefined) timer = setTimeout(flush, debounceMs);
       };
@@ -435,15 +491,39 @@ export const watchGitState = (
         );
       }
       // Subscribe before the initial read to close the ordinary setup/read race.
-      for (const path of paths) yield* recompute(path);
+      for (const path of unique) yield* recompute(path);
       if (process.platform === "darwin") {
+        const ticksMax = Math.max(1, Math.round(RECONCILE_MAX_MS / RECONCILE_MS));
+        const stamps = new Map<string, string>();
+        for (const checkout of checkouts) {
+          stamps.set(checkout.path, gitDirStamp(checkout));
+          backoff.set(checkout.path, { wait: 1, left: 1 });
+        }
+        const unrooted = unique.filter((path) => !checkouts.some((c) => c.path === path));
         yield* Effect.forkScoped(
           Effect.forever(
             Effect.sleep(RECONCILE_MS).pipe(
               Effect.andThen(
                 Effect.sync(() => {
-                  // Do not interrupt a slow read: it may need longer than this interval.
-                  for (const path of paths) runFork(path, recompute(path), { onlyIfMissing: true });
+                  for (const checkout of checkouts) {
+                    const { path } = checkout;
+                    const stamp = gitDirStamp(checkout);
+                    const moved = stamp !== stamps.get(path);
+                    stamps.set(path, stamp);
+                    const next = backoff.get(path) ?? { wait: 1, left: 1 };
+                    if (!moved && next.left > 1) {
+                      backoff.set(path, { wait: next.wait, left: next.left - 1 });
+                      continue;
+                    }
+                    // Nothing moved since the last full read: wait twice as long for the next.
+                    const wait = moved ? 1 : Math.min(next.wait * 2, ticksMax);
+                    backoff.set(path, { wait, left: wait });
+                    // Do not interrupt a slow read: it may need longer than this interval.
+                    runFork(path, recompute(path), { onlyIfMissing: true });
+                  }
+                  // A path that wasn't a repo when the watch began has no git dir to stamp.
+                  for (const path of unrooted)
+                    runFork(path, recompute(path), { onlyIfMissing: true });
                 }),
               ),
             ),
@@ -452,3 +532,4 @@ export const watchGitState = (
       }
     }),
   );
+};

@@ -183,13 +183,17 @@ export const makeAgentSupport = (deps: {
                     "Gram has a registered ordinary-session adapter. This does not qualify every CLI feature or model entitlement.",
                 }
               : unknown("No session adapter is registered in this build."),
-          dream: dream?.dream ?? unknown("This transport has not reported a supported Dream mode."),
+          dream:
+            dream?.dream ??
+            unknown("This transport has not reported a supported memory update mode."),
           dreamFiles:
             dream?.dreamFiles ??
             unknown("Enforced file-only access has not been verified for this transport."),
           dreamGuided:
             dream?.dreamGuided ??
-            unknown("An instruction-guided Dream mode has not been verified for this transport."),
+            unknown(
+              "An instruction-guided memory update mode has not been verified for this transport.",
+            ),
           browser,
           compaction,
           imageInput: unknown(

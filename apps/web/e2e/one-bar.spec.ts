@@ -136,7 +136,9 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
     await expect(bar.getByRole("button", { name, exact: true })).toHaveCount(0);
     await expect(bar.getByRole("link", { name, exact: true })).toHaveCount(0);
   }
-  await expect(bar.getByRole("button", { name: /^Quiet|^Layout|^Focus mode/ })).toHaveCount(0);
+  await expect(bar.getByRole("button", { name: /^Focus|^Layout|^Hide side panels/ })).toHaveCount(
+    0,
+  );
   await expect(bar.getByRole("button", { name: /^More/ })).toHaveCount(1);
   // Right of the title: usage (the sidebar's pill is the Inbox's one way in beside it), then the
   // "…", told apart by the room between them, and the panels' group at the end.
@@ -188,7 +190,7 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   const viewGroup = page.getByTestId("titlebar-menu-view");
   // Contents joins them once the thread has prompts or chapters to list: this one has none yet.
   await expect(viewGroup.getByTestId("menu-contents")).toHaveCount(0);
-  for (const name of [/^Quiet/, /^Focus mode/, /^History/]) {
+  for (const name of [/^Focus/, /^Hide side panels/, /^History/]) {
     await expect(viewGroup.getByRole("menuitem", { name })).toBeVisible();
   }
   await expect(viewGroup.getByRole("menuitemradio")).toHaveCount(6);

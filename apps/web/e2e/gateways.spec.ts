@@ -100,7 +100,7 @@ test("Claude Code and Codex use a gateway only after explicit selection, offered
     await form.getByLabel("Gateway profile").click();
     await page.getByRole("option", { name: "Team Gateway", exact: true }).click();
     await expect(form.getByLabel("Gateway profile")).toContainText("Team Gateway");
-    await expect(modelPicker(form)).toContainText("GPT-5.5");
+    await expect(modelPicker(form)).toHaveAccessibleName(/GPT-5\.5/);
     await expect(form.getByRole("link", { name: "Add your gateway key" })).toHaveCount(0);
   }
 
@@ -170,5 +170,5 @@ test("a long gateway list is searched in the draft's model picker", async ({ pag
     .and(page.locator(`[id="${await search.getAttribute("aria-controls")}"]`));
   await expect(picker.getByRole("option")).toHaveCount(1);
   await picker.getByRole("option", { name: /Team model 27/ }).click();
-  await expect(modelPicker(form)).toContainText("Team model 27");
+  await expect(modelPicker(form)).toHaveAccessibleName(/Team model 27/);
 });

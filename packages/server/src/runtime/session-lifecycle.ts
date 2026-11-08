@@ -14,7 +14,7 @@ import { type Runtime, locked, feedLocked, replyOf } from "./runtime-state.ts";
 import { missingThreadFolder } from "../fs/folders.ts";
 import { AgentUnavailable, type Thread, type TurnId, type ThreadId } from "@gram/contracts";
 import { UNKNOWN_FAILURE } from "./thread-error.ts";
-import { dreamSupportFor, type AppToolRegistryPort } from "@gram/agents";
+import { dreamSupportFor, sequenceEvents, type AppToolRegistryPort } from "@gram/agents";
 import type { ResumeOptions, ResumePlans } from "./history-plans.ts";
 import { dreamRolePromptFor } from "../orchestration/dream-prompt.ts";
 import { openCostSession } from "./cost-ledger.ts";
@@ -448,7 +448,12 @@ export const makeSessionLifecycle = ({
             }
           }),
         );
-        yield* Stream.runForEach(session.events, (event) => handleEvent(rt, event));
+        // Numbered, and confirmed once handled, so a reader that resubscribes resumes after the
+        // last event it handled. Across machines this is the host's replay after a dropped link.
+        const log = yield* sequenceEvents(session.events);
+        yield* Stream.runForEach(log.subscribe(), ({ seq, event }) =>
+          handleEvent(rt, event).pipe(Effect.andThen(log.ack(seq))),
+        );
       }).pipe(
         Effect.scoped,
         Effect.onExit((exit) => {

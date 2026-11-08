@@ -104,7 +104,7 @@ describe("Message other sessions", () => {
   });
 });
 
-const dream = () => screen.findByRole("switch", { name: "Dream automatically" });
+const dream = () => screen.findByRole("switch", { name: "Update memory automatically" });
 
 describe("a workspace charter save", () => {
   const workspace: WorkspaceState = {
@@ -145,9 +145,10 @@ describe("a workspace charter save", () => {
     });
     // Before the save answers, the switch and its threshold already show the choice.
     expect((await dream()).getAttribute("aria-checked")).toBe("true");
-    expect(
-      screen.getByRole("spinbutton", { name: "Completed threads before Dream" }),
-    ).toHaveProperty("value", "10");
+    expect(screen.getByRole("spinbutton", { name: "Threads per memory update" })).toHaveProperty(
+      "value",
+      "10",
+    );
 
     refuse?.(new Error("Charter refused."));
     await waitFor(async () => expect((await dream()).getAttribute("aria-checked")).toBe("false"));
