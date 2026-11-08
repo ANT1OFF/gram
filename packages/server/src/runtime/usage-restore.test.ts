@@ -15,7 +15,7 @@ import { ThreadRuntimes } from "./thread-runtimes.ts";
 
 const layerAt = (file: string) =>
   AppToolRegistry.layer.pipe(
-    Layer.provideMerge(ThreadRuntimes.layer),
+    Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
     Layer.provideMerge(EventHub.layer),
     Layer.provideMerge(ThreadStore.layerSqlite(file)),
     Layer.provideMerge(FakeAgentAdapter),

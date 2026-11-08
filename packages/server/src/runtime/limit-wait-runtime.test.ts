@@ -990,7 +990,7 @@ describe("a limit that no longer applies", () => {
 /** The runtime over a database file, so a test can stop it and start another on the same rows. */
 const layerOnFile = (file: string) =>
   AppToolRegistry.layer.pipe(
-    Layer.provideMerge(ThreadRuntimes.layer),
+    Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
     Layer.provideMerge(UsageLimitReadings.layer),
     Layer.provideMerge(EventHub.layer),
     Layer.provideMerge(ThreadStore.layerSqlite(file)),

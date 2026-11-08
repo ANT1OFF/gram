@@ -487,7 +487,9 @@ export const serverLayer = (
     Layer.provideMerge(AppToolRegistry.layer),
     Layer.provideMerge(runtimesOf(world)),
     // As the server has it: the runtime reads the limits (`limitedUntil`, early releases).
-    Layer.provideMerge(ThreadRuntimes.layer.pipe(Layer.provideMerge(UsageLimitReadings.layer))),
+    Layer.provideMerge(
+      ThreadRuntimes.layerOnLocalHost.pipe(Layer.provideMerge(UsageLimitReadings.layer)),
+    ),
     Layer.provideMerge(GitCheckoutLive),
     Layer.provideMerge(hubOf(world)),
     Layer.provideMerge(ThreadStore.layerSqlite(nodePath.join(world.dir, "gram.db"))),

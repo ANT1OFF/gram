@@ -13,7 +13,7 @@ import { RuntimeTestLayer, TEST_CONFIG, waitFor } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
 const EchoLayer = AppToolRegistry.layer.pipe(
-  Layer.provideMerge(ThreadRuntimes.layer),
+  Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
   Layer.provideMerge(EventHub.layer),
   Layer.provideMerge(ThreadStore.layerSqlite(":memory:")),
   Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo" })),
