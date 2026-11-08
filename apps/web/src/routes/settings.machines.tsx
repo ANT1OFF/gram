@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-/** Settings → Machines: for now only its pages, listed under it by the layout. */
+import { MachinesPage } from "@/settings/machines-page";
+
+/** Settings → Machines: the other machines joined to this Gram, then its pages. */
 export const Route = createFileRoute("/settings/machines")({
-  component: () => null,
+  component: MachinesPage,
 });
