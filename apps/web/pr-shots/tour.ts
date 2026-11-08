@@ -18,8 +18,11 @@ async function openMemory(page: Page): Promise<void> {
 
 /** The window the tour and flows capture: `--size`, else a real 1728 × 1095 window at 2×. */
 export const SET_SIZE = (() => {
-  const [width, height] = (process.env["GRAM_PR_SHOTS_SIZE"] || "1728x1095").split("x").map(Number);
-  if (!width || !height) throw new Error("GRAM_PR_SHOTS_SIZE is <width>x<height>");
+  const [width, height] = (process.env["GRAM_PR_SHOTS_SIZE"] || "1728x1095")
+    .split("x")
+    .map(Number);
+  if (!width || !height)
+    throw new Error("GRAM_PR_SHOTS_SIZE is <width>x<height>");
   return { width, height };
 })();
 
@@ -35,17 +38,27 @@ export const stageRealistic = (page: Page) =>
     sessionStorage.setItem("gram.mock.orchestration", "realistic");
     if (localStorage.getItem("gram.launch-banner") === null) {
       // `useBannerFold`'s keys: the mock app's version and the problem.
-      const seen = ["gh-signed-out", "gh-missing", "claude-signed-out", "codex-signed-out"];
+      const seen = [
+        "gh-signed-out",
+        "gh-missing",
+        "claude-signed-out",
+        "codex-signed-out",
+      ];
       localStorage.setItem(
         "gram.launch-banner",
-        JSON.stringify({ version: 0, state: { folded: seen.map((id) => `1.0.0-mock:${id}`) } }),
+        JSON.stringify({
+          version: 0,
+          state: { folded: seen.map((id) => `1.0.0-mock:${id}`) },
+        }),
       );
     }
     // Likewise the once-only line under a worker's header on what Take over changes: this user
     // has opened workers before, so it is the ⓘ beside Take over (`onboarding.takeOverHintSeen`).
     // The first time is reaching-workers.spec.ts's to show.
     const settingsKey = "gram.mock.settings";
-    const settings = JSON.parse(sessionStorage.getItem(settingsKey) ?? "{}") as {
+    const settings = JSON.parse(
+      sessionStorage.getItem(settingsKey) ?? "{}",
+    ) as {
       onboarding?: Record<string, unknown>;
     };
     if (settings.onboarding?.["takeOverHintSeen"] === undefined) {
@@ -70,7 +83,8 @@ export const stageRealistic = (page: Page) =>
 export const realisticMade = (page: Page) =>
   page.evaluate(async () => {
     const made = await window.gramMock!.startedRealistic();
-    if (made === undefined) throw new Error("the mock did not start with the realistic scenario");
+    if (made === undefined)
+      throw new Error("the mock did not start with the realistic scenario");
     return made;
   });
 
@@ -82,7 +96,9 @@ export const openRealistic = async (page: Page, path = "/") => {
   await page.getByTestId("app-shell").waitFor();
   const made = await realisticMade(page);
   await page
-    .locator(`[data-testid="overview-workspace"][data-workspace-id="${made.workspaceId}"]`)
+    .locator(
+      `[data-testid="overview-workspace"][data-workspace-id="${made.workspaceId}"]`,
+    )
     .waitFor();
   return made;
 };
@@ -193,12 +209,15 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "worker-transcript",
-    title: "Worker: a finished turn with folded commands, its edits and the files it changed",
+    title:
+      "Worker: a finished turn with folded commands, its edits and the files it changed",
     open: async (page) => {
       await openSearchWorker(page);
       // The finished turn opened, as a reader does: its reply, the folded commands and its edits.
       await page.getByTestId("turn-fold").first().click();
-      await page.getByRole("button", { name: /^Edited settings-search\.ts/ }).click();
+      await page
+        .getByRole("button", { name: /^Edited settings-search\.ts/ })
+        .click();
       const edit = page.getByTestId("file-edit").first();
       await edit.getByRole("button").last().click();
       await expect(edit).toContainText("words.every");
@@ -222,12 +241,15 @@ const scenes: readonly Shot[] = [
       await composer(page);
       await page.getByTestId("composer-choices").click();
       await page.getByTestId("choices-mode").click();
-      await expect(page.getByRole("option", { name: "Bypass", exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("option", { name: "Bypass", exact: true }),
+      ).toBeVisible();
     },
   }),
   realistic({
     name: "composer-controls",
-    title: "Composer: a grid pane dragged to its narrowest, its choices open on speed",
+    title:
+      "Composer: a grid pane dragged to its narrowest, its choices open on speed",
     open: async (page) => {
       // A grid pane dragged down to its narrowest share (`MIN_PANE_SHARE`): the chip keeps its icons
       // at least, and its popover still holds every section, Speed's with what Fast costs.
@@ -248,24 +270,34 @@ const scenes: readonly Shot[] = [
       // Each pane's transcript in, so the frame shows three working threads.
       await expect(page.getByTestId("pane")).toHaveCount(3);
       await expect(page.getByText(/^Loading conversation/)).toHaveCount(0);
-      const pane = page.locator('[data-testid="pane"][data-thread-id="t-deps"]');
+      const pane = page.locator(
+        '[data-testid="pane"][data-thread-id="t-deps"]',
+      );
       await pane
         .getByLabel("Message", { exact: true })
         .fill("Add retry coverage for the queue consumer.");
       await pane.getByTestId("composer-choices").click();
       await page.getByTestId("choices-speed").click();
-      await expect(page.getByRole("listbox", { name: "Speed" })).toBeVisible();
+      // A phone's sheet says speed as Fast's switch rather than a list.
+      await expect(
+        SET_SIZE.width < 640
+          ? page.getByTestId("choices-fast-switch")
+          : page.getByRole("listbox", { name: "Speed" }),
+      ).toBeVisible();
     },
   }),
   {
     name: "needs-you",
-    title: "Inbox: everything that needs you, by kind, the first shown beside the list",
+    title:
+      "Inbox: everything that needs you, by kind, the first shown beside the list",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await page.getByTestId("overview-needs-you").click();
       // The Inbox; on a base from before it, the popover.
       await page
-        .locator('[data-testid="inbox-detail"], [data-testid="needs-you-popover"]')
+        .locator(
+          '[data-testid="inbox-detail"], [data-testid="needs-you-popover"]',
+        )
         .first()
         .waitFor();
       await page.waitForTimeout(600);
@@ -273,13 +305,15 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "questions",
-    title: "Questions: a worker's question in the Inbox, opened over billing-api's chat",
+    title:
+      "Questions: a worker's question in the Inbox, opened over billing-api's chat",
     open: async (page) => {
       const made = await openRealistic(page);
       const orchestrator = await page.evaluate(
         async (id) =>
-          (await window.gramMock!.listWorkspaces()).find((w) => w.workspace.id === id)!.workspace
-            .orchestratorThreadId!,
+          (await window.gramMock!.listWorkspaces()).find(
+            (w) => w.workspace.id === id,
+          )!.workspace.orchestratorThreadId!,
         made.askingWorkspaceId,
       );
       await openOrchestrator(page, orchestrator);
@@ -297,7 +331,8 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "history",
-    title: "History: every past chat, searchable, with type chips, grouped by workspace",
+    title:
+      "History: every past chat, searchable, with type chips, grouped by workspace",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await page.getByTestId("overview-history").click();
@@ -308,7 +343,8 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "quiet",
-    title: "Focus: the workspaces at rest, workers running or waiting, with nothing to answer here",
+    title:
+      "Focus: the workspaces at rest, workers running or waiting, with nothing to answer here",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await page.getByTestId("titlebar-overflow").click();
@@ -342,16 +378,22 @@ const scenes: readonly Shot[] = [
       await stageRealistic(page);
       await page.goto("/settings/agents");
       await expect(page.getByTestId("agent-settings")).toBeVisible();
-      await page.getByRole("combobox", { name: "Model", exact: true }).first().waitFor();
+      await page
+        .getByRole("combobox", { name: "Model", exact: true })
+        .first()
+        .waitFor();
     },
   },
   {
     name: "settings-usage",
-    title: "Settings: Usage, each limit's pace, Codex credits and a week of history",
+    title:
+      "Settings: Usage, each limit's pace, Codex credits and a week of history",
     open: async (page) => {
       await stageRealistic(page);
       await page.goto("/settings/usage");
-      await expect(page.getByTestId("usage-window-history").first()).toBeVisible();
+      await expect(
+        page.getByTestId("usage-window-history").first(),
+      ).toBeVisible();
     },
   },
   {
@@ -368,19 +410,23 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "memory-overview",
-    title: "Memory → Current memory: the files rendered to read, recent changes, Edit beside each",
+    title:
+      "Memory → Current memory: the files rendered to read, recent changes, Edit beside each",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await openMemory(page);
       await expect(page.getByTestId("memory-overview-file")).toHaveCount(6);
       await expect(
-        page.getByTestId("memory-overview").getByRole("heading", { name: "Goals" }),
+        page
+          .getByTestId("memory-overview")
+          .getByRole("heading", { name: "Goals" }),
       ).toBeVisible();
     },
   },
   {
     name: "memory",
-    title: "Memory → Files: populated file list and goals editor, with its size and cap",
+    title:
+      "Memory → Files: populated file list and goals editor, with its size and cap",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await openMemory(page);
@@ -396,11 +442,14 @@ const scenes: readonly Shot[] = [
   }),
   {
     name: "review",
-    title: "Review: a worker's turn opened in the Diff panel beside its transcript",
+    title:
+      "Review: a worker's turn opened in the Diff panel beside its transcript",
     open: async (page) => {
       await openSearchWorker(page);
       await page.getByTestId("turn-files-chip").click();
-      await expect(page.getByTestId("right-panel")).toContainText("settings-search.ts");
+      await expect(page.getByTestId("right-panel")).toContainText(
+        "settings-search.ts",
+      );
       await page.waitForTimeout(600);
     },
   },
@@ -410,7 +459,11 @@ const scenes: readonly Shot[] = [
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await page.keyboard.press("ControlOrMeta+k");
-      await page.getByTestId("command-palette").getByRole("option").first().waitFor();
+      await page
+        .getByTestId("command-palette")
+        .getByRole("option")
+        .first()
+        .waitFor();
       await page.waitForTimeout(300);
     },
   },
@@ -429,7 +482,8 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "orchestrator-all-activity",
-    title: "The same chat with Show all activity on: every digest and reply, as it was sent",
+    title:
+      "The same chat with Show all activity on: every digest and reply, as it was sent",
     open: async (page) => {
       await openLongDay(page);
       // A view option: the title bar's "…", View, then Show all activity.
@@ -437,7 +491,9 @@ const scenes: readonly Shot[] = [
       await page.getByTestId("menu-view").click();
       await page.getByTestId("menu-all-activity").click();
       await expect(page.getByTestId("titlebar-overflow-menu")).toHaveCount(0);
-      await expect(page.locator('[data-testid="update-block"][data-quiet="true"]')).toHaveCount(0);
+      await expect(
+        page.locator('[data-testid="update-block"][data-quiet="true"]'),
+      ).toHaveCount(0);
       await page.waitForTimeout(600);
     },
   },
@@ -453,7 +509,8 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "stress-board",
-    title: "Stress test: the Board with grouped features and every worker stage",
+    title:
+      "Stress test: the Board with grouped features and every worker stage",
     open: async (page) => {
       await openScene(page);
       await board(page);
@@ -461,7 +518,8 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "stress-needs-you",
-    title: "Stress test: Needs you with requests across workspaces, failures and reviews",
+    title:
+      "Stress test: Needs you with requests across workspaces, failures and reviews",
     open: existing("needs-you"),
   },
   {
@@ -471,11 +529,14 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "stress-questions",
-    title: "Stress test: a forwarded question in the Inbox, among many asks, from the Board's chip",
+    title:
+      "Stress test: a forwarded question in the Inbox, among many asks, from the Board's chip",
     open: async (page) => {
       await page.goto("/t/t-flaky");
       await threadRow(page, "t-flaky").waitFor();
-      const made = await page.evaluate(() => window.gramMock!.simulateWorkerQuestions());
+      const made = await page.evaluate(() =>
+        window.gramMock!.simulateWorkerQuestions(),
+      );
       await openOrchestrator(page, made.orchestratorThreadId);
       await board(page);
       await page.getByTestId("rail-waiting-chip").click();
