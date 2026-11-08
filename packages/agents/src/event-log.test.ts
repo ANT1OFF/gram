@@ -1,6 +1,6 @@
 import type { AgentEvent } from "@gram/contracts";
 import { describe, expect, it } from "@effect/vitest";
-import * as Cause from "effect/Cause";
+import type * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
@@ -68,7 +68,7 @@ describe("sequenceEvents", () => {
     Effect.gen(function* () {
       const queue = yield* Queue.unbounded<AgentEvent, Cause.Done>();
       const log = yield* sequenceEvents(Stream.fromQueue(queue));
-      const reader = yield* Stream.runCollect(log.subscribe()).pipe(Effect.forkChild);
+      const reader = yield* Stream.runCollect(log.subscribe()).pipe(Effect.forkScoped);
       yield* Queue.offer(queue, status("a"));
       yield* Queue.offer(queue, status("b"));
       yield* Queue.end(queue);
