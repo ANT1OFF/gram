@@ -12,6 +12,7 @@ const GROUP_OF: Readonly<Record<string, string>> = {
   Routines: "Workspaces & merging",
   "Review bots": "Workspaces & merging",
   Storage: "Workspaces & merging",
+  "Phones and browsers": "Machines",
   Terminal: "Appearance",
   Diagnostics: "About",
   "What's New": "About",
