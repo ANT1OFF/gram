@@ -173,8 +173,8 @@ describe.skipIf(!hasGit)("dreams", () => {
         expect(ended).toMatchObject({ status: "completed", adoptionFailure: "persistence_error" });
         expect(ended.adoptedVersion).toBeUndefined();
         expect(yield* memory.index(workspaceId)).toBe(before);
-        expect(titles(events)).toContain("Dream automatic adoption stopped");
-        expect(titles(events)).not.toContain("Dream automatically adopted");
+        expect(titles(events)).toContain("Memory update automatic adoption stopped");
+        expect(titles(events)).not.toContain("Memory update automatically adopted");
         expect((yield* Effect.flip(dreams.adopt(dream.id))).message).toContain(
           "automatic adoption",
         );
@@ -208,7 +208,7 @@ describe.skipIf(!hasGit)("dreams", () => {
           expect(stopped.adoptedVersion).toBeUndefined();
           expect(yield* memory.currentVersion(workspaceId)).toBe("0002");
           expect(yield* memory.index(workspaceId)).toBe("# Written but not confirmed in SQLite\n");
-          expect(titles(events)).not.toContain("Dream automatically adopted");
+          expect(titles(events)).not.toContain("Memory update automatically adopted");
           yield* completeTurn(session, "duplicate completion");
           yield* settle;
           expect((yield* memory.versions(workspaceId)).length).toBe(2);

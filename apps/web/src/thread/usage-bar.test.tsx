@@ -251,20 +251,19 @@ describe("ContextRing", () => {
     expect(screen.queryByTestId("usage-ring")).toBeNull();
   });
 
-  it("fills a bar to the context used, says the number, and colours it by level", () => {
+  it("fills a bar to the context used, its words on hover, and colours it by level", async () => {
     const ring = renderRing(usage({ contextTokens: 186_000 }));
     expect(ring.getAttribute("aria-label")).toBe("Context: 93% of the window used");
     expect(ring.dataset["level"]).toBe("warning");
-    // Named on its face, "Context 93%"; under 36 rem the word goes and the number keeps 32 px.
-    expect(ring.textContent).toBe("Context 93%");
-    expect(screen.getByTestId("usage-ring-word").className).toContain(
-      "@max-[36rem]/composer:hidden",
-    );
-    expect(ring.className).toMatch(/\bh-8\b/);
-    expect(ring.className).toMatch(/\bmin-w-8\b/);
+    // The bar alone in a 32 px target, as every icon on the row: no word on its face.
+    expect(ring.textContent).toBe("");
+    expect(ring.className).toMatch(/\bsize-8\b/);
     expect(screen.getByTestId("usage-ring-bar").firstElementChild?.getAttribute("style")).toContain(
       "width: 93%",
     );
+    // Its words head the popover the pointer opens.
+    fireEvent.click(ring);
+    expect((await screen.findByTestId("usage-ring-title")).textContent).toBe("Context 93%");
   });
 
   it("never draws a circle beside Send, which read as a spinner on an idle thread", () => {
@@ -280,10 +279,13 @@ describe("ContextRing", () => {
   it("says Usage without a window, and still opens onto what is known", async () => {
     const ring = renderRing(withoutContextTokens());
     expect(ring.getAttribute("aria-label")).toBe("Usage");
-    expect(ring.textContent).toBe("Usage");
+    // An empty track, never a fill that would read as 0%.
+    expect(ring.textContent).toBe("");
+    expect(screen.getByTestId("usage-ring-bar").childElementCount).toBe(0);
 
     fireEvent.click(ring);
     await screen.findByTestId("usage");
+    expect(screen.getByTestId("usage-ring-title").textContent).toBe("Usage");
     expect(screen.getByTestId("usage-context").textContent).toBe("200K token window");
     // A thread on the subscription, so no dollars.
     expect(screen.queryByTestId("usage-cost")).toBeNull();

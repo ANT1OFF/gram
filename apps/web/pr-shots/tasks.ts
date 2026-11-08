@@ -118,8 +118,8 @@ export const TASKS: readonly Task[] = [
     goal: "Open the old Release notes for 0.9 thread from Done",
     path: "/t/t-docs",
     run: async (p, r) => {
-      // Done starts folded to one row, "N done": a click on it unfolds it.
-      await r.click(p.getByRole("button", { name: /^Done, \d+$/ }));
+      // Done is in At rest, folded to its title line: a click on it unfolds it.
+      await r.click(p.getByRole("button", { name: /^At rest, \d+$/ }));
       await r.click(p.getByRole("button", { name: /^Release notes for 0.9, Gram, merged/ }));
       await expect(
         p.getByRole("heading", { name: "Worker: Release notes for 0.9", exact: true }),

@@ -35,7 +35,7 @@ test("records a shortcut, takes another action's keys, and cancels on Escape", a
   await expect(sidebar).toContainText("Off");
 
   const focus = settings.getByTestId("binding-focus.toggle");
-  await focus.getByRole("button", { name: "Change Focus mode" }).click();
+  await focus.getByRole("button", { name: "Change Hide side panels" }).click();
   await expect(status).toContainText("Recording");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();

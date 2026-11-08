@@ -531,12 +531,12 @@ const steps: readonly Shot[] = [
     },
   },
   {
-    name: "stop-key",
-    title: "Stop: while you're in the composer, its key shows beside it",
+    name: "stop-hint",
+    title: "Stop: an icon in Send's place, its word and key on hover",
     open: async (page) => {
       await shot("send-button-running")(page);
-      await page.getByLabel("Message", { exact: true }).focus();
-      await expect(page.getByTestId("stop-key")).toHaveCSS("opacity", "1");
+      await page.getByRole("button", { name: "Stop", exact: true }).hover();
+      await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(/^Stop \(/);
     },
   },
   {
@@ -544,8 +544,8 @@ const steps: readonly Shot[] = [
     title: "Find old work: a finished worker whose conversation isn't on this computer",
     open: async (page) => {
       await page.goto("/t/t-docs");
-      // Done starts folded to one row, "N done": a click on it unfolds it.
-      await page.getByRole("button", { name: /^Done, \d+$/ }).click();
+      // Done is in At rest, folded to its title line: a click on it unfolds it.
+      await page.getByRole("button", { name: /^At rest, \d+$/ }).click();
       await page.getByRole("button", { name: /^Release notes for 0.9, Gram, merged/ }).click();
       await expect(
         page.getByRole("heading", { name: "Worker: Release notes for 0.9", exact: true }),

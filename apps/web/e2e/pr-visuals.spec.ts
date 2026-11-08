@@ -208,8 +208,8 @@ for (const mode of ["dark", "light"] as const) {
     const made = await start(page, mode);
     await seedPrs(page, made);
     const overview = page.getByTestId("overview-sidebar");
-    // A row's chips sit beside its status words only where they fit (the words win), so the
-    // overview is given room to show every chip read here.
+    // A row's chips sit after its title only while the whole title fits beside them (the title
+    // wins), so the overview is given room to show the live worker's chips read here.
     await page.getByTestId("left-resize").focus();
     for (let i = 0; i < 12; i++) await page.keyboard.press("ArrowRight");
     const chips = overview.locator(
@@ -221,7 +221,7 @@ for (const mode of ["dark", "light"] as const) {
         `[data-testid="overview-pr-chips"][data-thread-id="${threadId}"] [data-testid="overview-pr-chip"]`,
       );
     // Each chip leads with its state's glyph; the live worker's failing CI is its own to fix and
-    // its merge is armed; the held worker conflicts and waits on #214; the asking one is held.
+    // its merge is armed.
     await expect(chips.nth(0).locator('[data-pr-mark="state"]')).toHaveAttribute(
       "data-kind",
       "open",
@@ -233,18 +233,32 @@ for (const mode of ["dark", "light"] as const) {
     await expect(chips.nth(0).locator("[data-checks]")).toHaveAttribute("data-checks", "fixing");
     await expect(chips.nth(0)).toHaveAttribute("data-merge", "armed");
     await expect(chips.nth(0)).toHaveAttribute("data-tone", "plain");
-    await expect(chipOf(made.asking)).toHaveAttribute("data-merge", "held");
-    await expect(chipOf(made.asking)).toHaveAccessibleName(
+    // The held worker, at work, conflicts and waits on #214.
+    await expect(chipOf(made.held)).toHaveAttribute("data-merge", "conflicts");
+    await expect(chipOf(made.held)).toHaveAccessibleName(/merges after acme\/api#214/);
+    // The asking one's edge has words, so its chips stay off its row (the words win); the Workers
+    // tab, a status line wide, shows its held merge.
+    await expect(chipOf(made.asking)).toHaveCount(0);
+    await page.waitForTimeout(300);
+    await shot(`${mode}-overview`, overview);
+    const panel = page.getByTestId("workers-panel");
+    const panelChipOf = (threadId: string) =>
+      panel.locator(
+        `[data-testid="overview-pr-chips"][data-thread-id="${threadId}"] [data-testid="overview-pr-chip"]`,
+      );
+    await page.getByLabel("Message", { exact: true }).focus();
+    await page.keyboard.press("ControlOrMeta+KeyJ");
+    await expect(panel).toBeVisible();
+    await expect(panelChipOf(made.asking)).toHaveAttribute("data-merge", "held");
+    await expect(panelChipOf(made.asking)).toHaveAccessibleName(
       /merge paused by the orchestrator: after the 0\.2\.0 release/,
     );
-    await expect(chipOf(made.asking).locator('[data-pr-mark="review"]')).toHaveAttribute(
+    await expect(panelChipOf(made.asking).locator('[data-pr-mark="review"]')).toHaveAttribute(
       "data-kind",
       "approved",
     );
-    await expect(chipOf(made.held)).toHaveAttribute("data-merge", "conflicts");
-    await expect(chipOf(made.held)).toHaveAccessibleName(/merges after acme\/api#214/);
-    await page.waitForTimeout(300);
-    await shot(`${mode}-overview`, overview);
+    await page.keyboard.press("ControlOrMeta+KeyJ");
+    await expect(panel).toBeHidden();
     await chips.nth(0).hover();
     const card = page.getByTestId("overview-pr-card");
     await expect(card).toContainText("Retry the queue with backoff");

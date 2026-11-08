@@ -432,7 +432,7 @@ function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
         }}
       >
         <Moon aria-hidden className="mt-0.5" />
-        <Described label="Quiet" line={EXPLAIN.quiet} />
+        <Described label="Focus" line={EXPLAIN.quiet} />
         <Keys id="view.quiet" />
       </Menu.Item>
       <Menu.Item
@@ -441,7 +441,7 @@ function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
         onClick={() => useLayoutStore.getState().toggleFocusMode()}
       >
         <Focus aria-hidden />
-        {focusMode ? "Leave focus mode" : "Focus mode"}
+        {focusMode ? "Show side panels" : "Hide side panels"}
         <Keys id="focus.toggle" />
       </Menu.Item>
       <Menu.Item

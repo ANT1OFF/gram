@@ -25,7 +25,7 @@ test("the palette opens short on destinations, filters by kind and lists a group
   await expect(suggested.nth(0)).toContainText("Workers");
   await expect(suggested.nth(0).locator("kbd")).toHaveText(/J$/);
   await expect(suggested.nth(1)).toContainText("Memory");
-  await expect(suggested.nth(2)).toContainText("Quiet");
+  await expect(suggested.nth(2)).toContainText("Focus");
   // Opened short: it fits its box without scrolling past the fold.
   const results = palette.locator("#palette-results");
   const fits = await results.evaluate((el) => el.scrollHeight <= el.clientHeight + 1);

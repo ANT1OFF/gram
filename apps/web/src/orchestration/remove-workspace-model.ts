@@ -65,11 +65,11 @@ export const removalLines = (
   const passes = removal.passes.length;
   if (passes > 0) {
     happens.push(
-      `${passes === 1 ? "Its dream pass stops and closes" : `Its ${passes} dream passes stop and close`}, since a dream can't be reviewed without its workspace.`,
+      `${passes === 1 ? "Its memory update stops and closes" : `Its ${passes} memory updates stop and close`}, since a memory update can't be reviewed without its workspace.`,
     );
   }
   happens.push(
-    "Its charter, stages, groups, worker reports, dreams and history are deleted. This can't be undone.",
+    "Its charter, stages, groups, worker reports, memory updates and history are deleted. This can't be undone.",
   );
   const kept: string[] = [];
   if (removal.workers.some((worker) => worker.thread.checkout.kind === "worktree")) {

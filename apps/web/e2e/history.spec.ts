@@ -277,26 +277,26 @@ test("History groups by orchestrator on request, a choice kept across a reload",
   await expect(groups.filter({ hasText: /^agent-platform$/ })).toHaveCount(0);
 });
 
-test("the sidebar's Done is one row that unfolds, and opened shows the latest three", async ({
+test("the sidebar's Done is in At rest, which unfolds from its title, and shows the latest three", async ({
   page,
 }) => {
   await start(page);
+  const rest = page.getByTestId("overview-section-rest");
   const done = page.getByTestId("overview-section-doneToday");
   const shown = done.getByTestId("overview-done");
-  // Folded as it starts: one row, "N done", with no way into History of its own: History is the
-  // column's foot.
-  const folded = done.getByTestId("overview-section-doneToday-folded");
-  await expect(folded).toHaveText(/^\d+ done$/);
+  // Folded as it starts: At rest's one title line, its count in the right column, with no way into
+  // History of its own: History is the column's foot.
   await expect(shown.first()).toBeHidden();
   await expect(done.getByTestId("overview-done-history")).toHaveCount(0);
-  // A click anywhere on the row unfolds it, its far end too, not only on its words.
-  const line = done.getByRole("button", { name: /^Done, \d+$/ });
+  // A click anywhere on the title unfolds it, its far end too, not only on its words.
+  const line = rest.getByRole("button", { name: /^At rest, \d+$/ });
   await line.scrollIntoViewIfNeeded();
   const box = (await line.boundingBox())!;
   await page.mouse.click(box.x + box.width - 8, box.y + box.height / 2);
   await expect(line).toHaveAttribute("aria-expanded", "true");
   await expect(shown).toHaveCount(3);
   await expect(shown.first()).toBeVisible();
+  await expect(done.getByRole("heading", { name: /^Done/ })).toBeVisible();
   // One line each: every row is the same height, its title cut at the end.
   const heights = await shown.evaluateAll((els) =>
     els.map((el) => el.getBoundingClientRect().height),

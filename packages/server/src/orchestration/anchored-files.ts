@@ -258,7 +258,7 @@ const launch = Effect.gen(function* () {
   if (process.platform !== "darwin" && process.platform !== "linux")
     return yield* new InvalidState({
       message:
-        "Dream's anchored file operations require macOS/Linux and /usr/bin/python3; unavailable on this platform",
+        "Memory updates' anchored file operations require macOS/Linux and /usr/bin/python3; unavailable on this platform",
     });
   const child = spawn("/usr/bin/python3", ["-I", "-S", "-u", "-c", ANCHORED_FILE_PROGRAM], {
     cwd: "/",
@@ -311,7 +311,7 @@ const launch = Effect.gen(function* () {
           if (next.done)
             return yield* new InvalidState({
               message: spawnError
-                ? "Dream's anchored file helper requires /usr/bin/python3 with POSIX directory-handle support"
+                ? "Memory updates' anchored file helper requires /usr/bin/python3 with POSIX directory-handle support"
                 : "Anchored file helper ended without a result",
             });
           const response = yield* Effect.try({

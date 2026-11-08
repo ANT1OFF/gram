@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { TriangleAlert } from "lucide-react";
+import { Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -198,7 +198,7 @@ export function LaunchChecksBanner() {
       data-testid="launch-checks-banner"
       className="flex shrink-0 items-start gap-3 border-b border-edge bg-card px-4 py-2 text-reading text-card-foreground"
     >
-      <TriangleAlert aria-hidden className="mt-0.5 size-icon-row shrink-0 text-warning" />
+      <Wrench aria-hidden className="mt-0.5 size-icon-row shrink-0 text-warning" />
       <ul className="flex min-w-0 flex-1 flex-col gap-0.5">
         {issues.map((issue) => (
           <li key={issue.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -268,11 +268,13 @@ function useFoldAfterShowing(expanded: boolean, keys: readonly string[]) {
 }
 
 /**
- * The banner folded: one icon in the title bar, which is icon-only, while a problem stands that the
- * user has seen and not dismissed, with a count beside it so the glyph never stands unexplained.
- * Its hover names it ("1 setup problem: gh isn't installed…") and says a click shows it; a click
- * shows the banner again, with its Details. The banner and the chip never show at once: the chip is
- * the banner's folded self. Neutral, never amber: a setup problem isn't something asking of you.
+ * The banner folded: one icon button in the title bar, which is icon-only, while a problem stands
+ * that the user has seen and not dismissed. Setup's own glyph (`Wrench`, the banner's) and no
+ * number: a warning sign with a count read as a second count of what needs you beside the
+ * sidebar's pill, which counts something else. Its hover names it ("1 setup problem: gh isn't
+ * installed…") and says a click shows it; a click shows the banner again, with its Details. The
+ * banner and the chip never show at once: the chip is the banner's folded self. Neutral, never
+ * amber: a setup problem isn't something asking of you.
  */
 export function LaunchIssuesChip({ className }: { className?: string }) {
   const { shown, expanded } = useLaunchBanner();
@@ -285,26 +287,16 @@ export function LaunchIssuesChip({ className }: { className?: string }) {
       render={
         <Button
           variant="ghost"
-          size="sm"
+          size="icon-sm"
           data-testid="launch-issues-chip"
           data-count={shown.length}
           aria-label={name}
           onClick={() => useBannerFold.getState().setOpen(true)}
-          className={cn(
-            "shrink-0 gap-1 px-1.5 text-muted-foreground [&_svg:not([class*='size-'])]:size-icon-bar",
-            className,
-          )}
+          className={cn("shrink-0 text-muted-foreground", className)}
         />
       }
     >
-      <TriangleAlert aria-hidden />
-      <span
-        aria-hidden
-        data-testid="launch-issues-count"
-        className="text-caption font-medium tabular-nums"
-      >
-        {shown.length}
-      </span>
+      <Wrench aria-hidden />
     </Hint>
   );
 }

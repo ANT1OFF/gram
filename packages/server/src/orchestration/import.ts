@@ -296,8 +296,8 @@ export const importPreview = (input: {
             `Token counts are a flat guess of ${IMPORT_TOKENS_PER_SESSION.toLocaleString("en-US")} per session: the agents' history doesn't say how long a session is.`,
           ]),
       input.throughGateway
-        ? "The dream's model is reached through the LiteLLM gateway, so the redacted transcripts go through it."
-        : "Transcripts are redacted, stay on this machine, and are read only by the model the dream runs on.",
+        ? "The memory update's model is reached through the LiteLLM gateway, so the redacted transcripts go through it."
+        : "Transcripts are redacted, stay on this machine, and are read only by the model the memory update runs on.",
     ],
   };
 };

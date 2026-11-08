@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/context-menu";
 import { shortcutPressed } from "@/keyboard/bindings";
 import { isMac, runShortcut, useShortcut } from "@/keyboard/registry";
-import { KEY_CAP, useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
+import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
 import { cn } from "@/lib/utils";
 import {
@@ -113,18 +113,14 @@ import {
   SEND_FILL,
   SLAB,
   SLAB_TEXTAREA,
-  STOP_PILL,
+  STOP_FILL,
   STOP_QUIET,
 } from "./styles";
 import { StashMenu, stashesQueryKey } from "./stash-menu";
 import { useMentions } from "./use-mentions";
 import { useModHeld } from "./use-mod-held";
-import { useToolbarLayout } from "./use-toolbar-layout";
 import { useTypingPresence } from "./typing-presence";
 import { stopTurn } from "@/thread/stop-store";
-
-/** The toolbar's one measured control: the choices chip, which never folds away. */
-const CHOICE_BLOCKS = [{ id: "choices", foldable: false }];
 
 const RUNNING: ReadonlySet<ThreadStatus> = new Set(["starting", "running"]);
 const BUSY: ReadonlySet<ThreadStatus> = new Set([
@@ -886,17 +882,10 @@ export function Composer({
     send: { aria: `Send${control}`, hint: withHint(`Send${control}`, sendKeyHint) },
     queue: { aria: `Queue${control}`, hint: withHint(`${queueLabel}${queueControl}`, sendKeyHint) },
     steer: { aria: "Steer now", hint: STEER_LABEL },
-    // Stopping keeps what the turn wrote so far; only what it hadn't yet written is lost.
+    // The word and its key, "Stop (⌘.)": an icon button's tooltip names it and its shortcut.
     stop: {
       aria: "Stop",
-      hint: withHint(
-        background
-          ? stopLabel
-          : waitingOnYou
-            ? "Stop the turn instead of answering"
-            : `${stopLabel} · keeps the reply so far`,
-        stopHint,
-      ),
+      hint: withHint(waitingOnYou ? "Stop the turn instead of answering" : stopLabel, stopHint),
     },
   } as const;
   useShortcut(
@@ -1010,8 +999,6 @@ export function Composer({
       onChange: onSpeed,
     }),
   ];
-  const toolbar = useToolbarLayout(CHOICE_BLOCKS);
-  const { ref: toolbarRef, size: labelOf, wrapped } = toolbar;
 
   return (
     <div
@@ -1154,27 +1141,20 @@ export function Composer({
           <DictationStrip partial={dictation.partial} />
         )}
         <DictationError state={dictation.state} />
-        {/* The choices' words give way to compact ones, then to the model's alone, and only at
-            the narrowest to the agent's mark (toolbar-layout.ts). */}
+        {/* Icons with their words on hover: the row is one width however narrow the pane. */}
         <div
-          ref={toolbarRef}
           data-testid="composer-toolbar"
-          data-wrapped={wrapped || undefined}
-          className={cn("flex items-center gap-1 px-2 pb-2", wrapped ? "flex-wrap" : "flex-nowrap")}
+          className="flex flex-nowrap items-center gap-1 px-2 pb-2"
         >
-          <div data-toolbar-block="choices" className="flex min-w-0 shrink-0 items-center">
-            <ComposerChoices
-              sections={choices}
-              mark={model && <AgentIcon agent={model.agent} className="size-icon-bar" />}
-              agentLabel={model && agentLabel(model.agent)}
-              size={labelOf("choices")}
-              focused={focused}
-              onOpen={refreshModels}
-              onAsked={onModelAsked}
-            />
-          </div>
-          {wrapped && <div aria-hidden className="h-0 basis-full" />}
-          <div data-toolbar-fixed className="flex shrink-0 empty:hidden">
+          <ComposerChoices
+            sections={choices}
+            mark={model && <AgentIcon agent={model.agent} className="size-icon-bar" />}
+            agentLabel={model && agentLabel(model.agent)}
+            focused={focused}
+            onOpen={refreshModels}
+            onAsked={onModelAsked}
+          />
+          <div className="flex shrink-0 empty:hidden">
             <StashMenu
               threadId={threadId}
               onRestore={(saved) => void restore(saved)}
@@ -1193,7 +1173,7 @@ export function Composer({
                   ? TAKES_OVER_LINE
                   : undefined)}
           </span>
-          <div data-toolbar-fixed className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1.5">
             {dictation.available && (
               <DictationButton
                 state={dictation.state}
@@ -1220,45 +1200,27 @@ export function Composer({
                         aria-label={actionLabels[action].aria}
                         disabled={action !== "stop" && !canSend}
                         data-waiting={action === "stop" && waitingOnYou ? "" : undefined}
-                        className={
-                          action === "stop"
-                            ? waitingOnYou
-                              ? STOP_QUIET
-                              : STOP_PILL
-                            : cn(ROUND, SEND_FILL)
-                        }
+                        className={cn(
+                          ROUND,
+                          action !== "stop" ? SEND_FILL : waitingOnYou ? STOP_QUIET : STOP_FILL,
+                        )}
                         onClick={runAction}
                       />
                     }
                   >
                     {action === "stop" ? (
                       // While it runs, the ring turns round the square: the button says the agent
-                      // is at work, not only how to end it. Still under Reduced and Off.
-                      <>
-                        <span aria-hidden className="relative grid size-4 place-items-center">
-                          {!waitingOnYou && (
-                            <RingSpinner
-                              data-testid="stop-ring"
-                              className="pointer-events-none absolute inset-0 size-4"
-                            />
-                          )}
-                          <Square className="size-2 fill-current" />
-                        </span>
-                        <span>Stop</span>
-                        {/* Its key, in the pill's own colour, wherever the key works: this pane's
-                            composer, focused. In a composer under 18 rem it goes, by width alone,
-                            so a wide key such as "Ctrl+." can't push Stop out of the box; the
-                            tooltip keeps it. */}
-                        {focused && stopHint && (
-                          <kbd
-                            aria-hidden
-                            data-testid="stop-key"
-                            className={cn(KEY_CAP, "@max-[18rem]/composer:hidden")}
-                          >
-                            {stopHint}
-                          </kbd>
+                      // is at work, not only how to end it. Still under Reduced and Off. Its word
+                      // and key are in its tooltip, as every icon button's are.
+                      <span aria-hidden className="relative grid size-4 place-items-center">
+                        {!waitingOnYou && (
+                          <RingSpinner
+                            data-testid="stop-ring"
+                            className="pointer-events-none absolute inset-0 size-4"
+                          />
                         )}
-                      </>
+                        <Square className="size-2 fill-current" />
+                      </span>
                     ) : (
                       <Swap swapKey={action}>
                         <SendGlyph action={action} />

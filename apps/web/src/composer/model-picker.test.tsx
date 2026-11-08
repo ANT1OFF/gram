@@ -4,7 +4,7 @@ import { afterEach, expect, it } from "vitest";
 
 import { ModelCombobox } from "./model-picker";
 import { DEFAULT_MODEL_OPTIONS } from "./options";
-import type { LabelSize } from "./toolbar-layout";
+import type { LabelSize } from "./picker-trigger";
 
 afterEach(cleanup);
 

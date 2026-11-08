@@ -430,7 +430,7 @@ describe("settings by chat: planning", () => {
     expect(result.ok && result.plan.rows).toEqual([
       {
         key: "layout.quietWhenIdle",
-        label: "Quiet when idle",
+        label: "Focus when idle",
         before: "off (default)",
         after: "off",
       },

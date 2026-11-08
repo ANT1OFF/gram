@@ -17,7 +17,7 @@ test("Codex starts a thread with its own model and credentials without configuri
   const form = page.getByRole("form", { name: "New thread" });
   await form.getByRole("combobox", { name: "Agent" }).click();
   await page.getByRole("option", { name: "Codex", exact: true }).click();
-  await expect(form.getByTestId("composer-choices")).toContainText("GPT-5.5");
+  await expect(form.getByTestId("composer-choices")).toHaveAccessibleName(/GPT-5\.5/);
   // The seeded gateway has no key, so the subscription is the only way in and needs no picker.
   await expect(form.getByRole("combobox", { name: "Gateway profile" })).toHaveCount(0);
   await expect(form.getByRole("link", { name: "Add your gateway key" })).toHaveCount(0);
@@ -60,7 +60,7 @@ test("signed-out Codex remains selectable and retrying after login discovers its
     sessionStorage.setItem("gram.mock.launchChecks", JSON.stringify({ codexSignIn: "signedIn" }));
   });
   await form.getByRole("button", { name: "Retry models" }).click();
-  await expect(form.getByTestId("composer-choices")).toContainText("GPT-5.5");
+  await expect(form.getByTestId("composer-choices")).toHaveAccessibleName(/GPT-5\.5/);
   await expect(form.getByRole("alert")).toHaveCount(0);
   await expect(form.getByRole("combobox", { name: "Gateway profile" })).toHaveCount(0);
 });

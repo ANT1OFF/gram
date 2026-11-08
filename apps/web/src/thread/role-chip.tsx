@@ -21,7 +21,7 @@ export const ROLE_ICON: Record<ThreadRoleInfo["kind"], LucideIcon> = {
 const ROLE_NAME: Record<ThreadRoleInfo["kind"], string> = {
   orchestrator: "Orchestrator",
   worker: "Worker",
-  dream: "Dream",
+  dream: "Memory update",
 };
 
 /**
@@ -76,17 +76,27 @@ export function RoleChip({
 
 /**
  * The role as a glyph before a pane's title, with its sentence in the tooltip. Nothing for a plain
- * thread.
+ * thread. `spoken`: its name for a screen reader only, where the place already says the role (the
+ * title bar's Chat, beside the workspace's switcher, is the orchestrator's chat).
  */
 export function RoleGlyph({
   thread,
   testId,
+  spoken = false,
 }: {
   thread: Pick<Thread, "role" | "spawnedBy">;
   testId: string;
+  spoken?: boolean;
 }) {
   const info = useThreadRole(thread);
   if (info === undefined) return null;
+  if (spoken) {
+    return (
+      <span data-testid={testId} data-spoken="" className="sr-only">
+        {info.name}
+      </span>
+    );
+  }
   const Icon = ROLE_ICON[info.role.kind];
   return (
     <Hint
