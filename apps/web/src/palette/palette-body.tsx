@@ -19,7 +19,7 @@ import { openExternalUrl } from "@/api/open-external";
 import { showInbox } from "@/inbox/inbox-store";
 import { boardWorkspaceFor } from "@/orchestration/board-model";
 import { useOpenBoard } from "@/orchestration/open-board";
-import { useWorkersListStore } from "@/orchestration/workers-list";
+import { showWorkersTab } from "@/orchestration/workers-tab";
 import { openFeatureSheet } from "@/orchestration/feature-sheet-store";
 import { keepBeside } from "@/orchestration/beside-store";
 import { peek } from "@/orchestration/peek-store";
@@ -456,7 +456,7 @@ export function PaletteBody({
             label: "Workers",
             ...shortcut("workers.open"),
             keywords: "workers list live running features",
-            run: go("go:workers", () => useWorkersListStore.getState().toggle()),
+            run: go("go:workers", showWorkersTab),
           },
           {
             id: "go:memory",

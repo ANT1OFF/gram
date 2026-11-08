@@ -1,0 +1,908 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Workers pane directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      /* ---------- Shell: sidebar, chat, right panel ---------- */
+      .wp-app {
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr) 380px;
+        height: 100%;
+        min-height: inherit;
+        background: var(--surface-2);
+        color: var(--fg);
+        font-family: var(--font-ui);
+        font-size: 14px;
+        line-height: 20px;
+      }
+      .wp-side {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 12px 8px;
+        background: var(--surface-1);
+        border-right: 1px solid var(--border-subtle);
+        min-width: 0;
+      }
+      .wp-pill {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 12px;
+        border-radius: 999px;
+        border: 1px solid var(--status-needs-mark);
+        color: var(--status-needs);
+        font-size: 13px;
+      }
+      .wp-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 8px;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .wp-head .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .wp-chat {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .wp-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 44px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .wp-bar strong {
+        color: var(--fg);
+        font-weight: 500;
+      }
+      .wp-transcript {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 24px 32px;
+      }
+      .wp-gap {
+        border-radius: 14px;
+        background: var(--surface-3);
+        color: var(--fg-subtle);
+        font-size: 13px;
+        padding: 12px 16px;
+      }
+      .wp-composer {
+        margin: 0 32px 16px;
+        height: 72px;
+        border-radius: 22px;
+        background: var(--surface-3);
+        color: var(--fg-subtle);
+        padding: 14px 18px;
+        font-size: 14px;
+      }
+
+      /* ---------- Right panel ---------- */
+      .wp-panel {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        background: var(--surface-1);
+        border-left: 1px solid var(--border-subtle);
+      }
+      .wp-tabs {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 44px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: 14px;
+        color: var(--fg-muted);
+      }
+      .wp-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 8px;
+      }
+      .wp-tab[aria-selected="true"] {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .wp-tab .icon,
+      .wp-tool .icon {
+        width: 16px;
+        height: 16px;
+      }
+      .wp-tabs .push {
+        margin-left: auto;
+      }
+      .wp-ptitle {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 12px 16px 4px;
+      }
+      .wp-ptitle h2 {
+        flex: 1;
+        margin: 0;
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .wp-ptitle h2 span {
+        font-weight: 400;
+        color: var(--fg-muted);
+      }
+      .wp-tool {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        color: var(--fg-muted);
+        background: none;
+        border: 0;
+      }
+      .wp-seg {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        margin: 4px 16px 0;
+        border-radius: 8px;
+        background: var(--surface-3);
+        font-size: 13px;
+        width: max-content;
+      }
+      .wp-seg span {
+        padding: 2px 10px;
+        border-radius: 6px;
+        color: var(--fg-muted);
+      }
+      .wp-seg span[aria-selected="true"] {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .wp-groups {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        padding: 8px 16px 16px;
+        overflow: hidden;
+      }
+      .wp-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .wp-group-h {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+        height: 28px;
+        padding: 0 6px;
+        color: var(--fg-muted);
+      }
+      .wp-group-h .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .wp-group-h b {
+        font-weight: 500;
+        color: var(--fg);
+      }
+      .wp-group-h .n {
+        font-size: 13px;
+        margin-left: 8px;
+        font-variant-numeric: tabular-nums;
+      }
+      .wp-group-h.folded .icon {
+        transform: rotate(-90deg);
+      }
+
+      /* A worker row: dot, title (one line), age; then one muted status line with its badges. */
+      .wp-row {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        column-gap: 8px;
+        align-items: center;
+        padding: 6px 6px;
+        border-radius: 8px;
+      }
+      .wp-row:hover {
+        background: var(--surface-hover);
+      }
+      .wp-row.current {
+        background: color-mix(in oklab, var(--accent) 12%, var(--surface-1));
+        box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 40%, transparent);
+      }
+      .wp-row .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .wp-row .age {
+        font-size: 13px;
+        color: var(--fg-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .wp-row .s {
+        grid-column: 2 / 4;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .wp-row .s .w {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .wp-row .s .w.needs {
+        color: var(--status-needs);
+      }
+      .wp-row.plain .s {
+        display: none;
+      }
+      .wp-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 999px;
+        border: 1px solid var(--border-subtle);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--fg-muted);
+        white-space: nowrap;
+      }
+      .wp-chip .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .wp-chip.ok .icon {
+        color: var(--success);
+      }
+      .wp-chip.merged .icon {
+        color: var(--merged);
+      }
+      .wp-more {
+        padding: 2px 6px 2px 24px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+
+      /* Dots: the StatusDot states. */
+      .d {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        justify-self: center;
+      }
+      .d.needs {
+        background: var(--status-needs-mark);
+      }
+      .d.run {
+        background: var(--status-working);
+      }
+      .d.wait {
+        border: 1.5px solid var(--status-working);
+        width: 7px;
+        height: 7px;
+      }
+      .d.idle {
+        background: var(--status-idle);
+      }
+      .d.done {
+        background: var(--merged);
+      }
+
+      /* Sidebar rows. */
+      .wp-srow {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        column-gap: 8px;
+        align-items: center;
+        padding: 6px 8px;
+        border-radius: 8px;
+      }
+      .wp-srow .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .wp-srow .s {
+        grid-column: 2 / 4;
+        font-size: 13px;
+        color: var(--fg-muted);
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .wp-srow .s.needs {
+        color: var(--status-needs);
+      }
+      .wp-srow.ws {
+        background: var(--surface-hover);
+      }
+      .wp-srow.ws .t {
+        font-weight: 500;
+      }
+      .wp-srow .badge {
+        min-width: 20px;
+        height: 20px;
+        border-radius: 999px;
+        border: 1px solid var(--status-needs-mark);
+        color: var(--status-needs);
+        font-size: 11px;
+        line-height: 18px;
+        text-align: center;
+      }
+      .wp-srow.sub {
+        padding-left: 24px;
+      }
+      .wp-srow .ws-name {
+        grid-column: 2 / 4;
+        font-size: 13px;
+        color: var(--fg-subtle);
+      }
+      .wp-folded-note {
+        grid-column: 2 / 4;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        Gram already has this pane: the right panel's Workers tab, grouped by state. The question is
+        how far to take it. A enriches its rows, B also stops listing workers twice, C widens it to
+        every workspace. Content is the mock scenario's synthetic workers. Pick one by name.
+      </p>
+
+      <!-- ================= Today ================= -->
+      <section class="board" data-name="0 Today" data-size="1280x800">
+        <div class="board-frame">
+          <div class="wp-app">
+            <aside class="wp-side">
+              <div class="wp-pill"><span class="d needs"></span>4 approvals · 4 questions</div>
+              <div class="wp-head"><i data-icon="down"></i>Orchestrators</div>
+              <div class="list">
+                <div class="wp-srow ws">
+                  <span class="d run"></span><span class="t">agent-platform</span
+                  ><span class="badge">5</span><span class="s">7 workers · 2 working</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d needs"></span><span class="t">Refresh the setup guide</span
+                  ><span></span><span class="s needs">asks you</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d needs"></span><span class="t">Trigger form</span><span></span
+                  ><span class="s needs">asks you</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d needs"></span><span class="t">Document the mail trigger</span
+                  ><span></span><span class="s needs">asks you</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d needs"></span><span class="t">Mail trigger rate limit</span
+                  ><span></span><span class="s needs">asks you</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d run"></span><span class="t">Mail trigger queue worker</span
+                  ><span></span><span class="s">Running tests</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d run"></span><span class="t">Page the registry list</span
+                  ><span></span><span class="s">Starting…</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d wait"></span><span class="t">Mail trigger endpoint</span
+                  ><span></span><span class="s">Waiting · checks on #88</span>
+                </div>
+              </div>
+              <div class="wp-head"><i data-icon="down"></i>Solo threads</div>
+            </aside>
+            <section class="wp-chat">
+              <div class="wp-bar"><strong>agent-platform</strong> Chat · Board</div>
+              <div class="wp-transcript">
+                <div class="wp-gap">[The orchestrator's chat]</div>
+              </div>
+              <div class="wp-composer">Message…</div>
+            </section>
+            <aside class="wp-panel">
+              <div class="wp-tabs">
+                <span class="wp-tab" aria-selected="true">Workers</span
+                ><span class="wp-tab">Diff</span><span class="wp-tab">PR</span
+                ><span class="wp-tab push">More</span>
+              </div>
+              <div class="wp-ptitle">
+                <h2>Workers <span>in agent-platform</span></h2>
+                <span class="wp-tool"><i data-icon="search"></i></span
+                ><span class="wp-tool"><i data-icon="sliders"></i></span>
+              </div>
+              <div class="wp-groups">
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Needs you</b><span class="n">4</span></span>
+                  </div>
+                  <div class="wp-row plain">
+                    <span class="d needs"></span><span class="t">Trigger form</span
+                    ><span class="age">now</span>
+                  </div>
+                  <div class="wp-row plain">
+                    <span class="d needs"></span><span class="t">Document the mail trigger</span
+                    ><span class="age">now</span>
+                  </div>
+                  <div class="wp-row plain">
+                    <span class="d needs"></span><span class="t">Mail trigger rate limit</span
+                    ><span class="age">now</span>
+                  </div>
+                  <div class="wp-row plain">
+                    <span class="d needs"></span><span class="t">Refresh the setup guide</span
+                    ><span class="age">now</span>
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Running</b><span class="n">2</span></span>
+                  </div>
+                  <div class="wp-row plain">
+                    <span class="d run"></span><span class="t">Mail trigger queue worker</span
+                    ><span class="age">now</span>
+                  </div>
+                  <div class="wp-row plain">
+                    <span class="d run"></span><span class="t">Page the registry list</span
+                    ><span class="age">now</span>
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Waiting</b><span class="n">1</span></span>
+                  </div>
+                  <div class="wp-row plain">
+                    <span class="d wait"></span><span class="t">Mail trigger endpoint</span
+                    ><span class="age">now</span>
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Stopped</b><span class="n">0</span></span>
+                  </div>
+                  <div class="wp-more">Workers at rest with nothing running</div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h folded">
+                    <i data-icon="down"></i><span><b>Done</b><span class="n">0</span></span>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= A Richer rows ================= -->
+      <section class="board" data-name="A Richer rows" data-size="1280x800">
+        <div class="board-frame">
+          <div class="wp-app">
+            <aside class="wp-side">
+              <div class="wp-pill"><span class="d needs"></span>4 approvals · 4 questions</div>
+              <div class="wp-head"><i data-icon="down"></i>Orchestrators</div>
+              <div class="list">
+                <div class="wp-srow ws">
+                  <span class="d run"></span><span class="t">agent-platform</span
+                  ><span class="badge">5</span><span class="s">7 workers · 2 working</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d needs"></span><span class="t">Refresh the setup guide</span
+                  ><span></span><span class="s needs">asks you</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d needs"></span><span class="t">Trigger form</span><span></span
+                  ><span class="s needs">asks you</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d needs"></span><span class="t">Document the mail trigger</span
+                  ><span></span><span class="s needs">asks you</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d needs"></span><span class="t">Mail trigger rate limit</span
+                  ><span></span><span class="s needs">asks you</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d run"></span><span class="t">Mail trigger queue worker</span
+                  ><span></span><span class="s">Running tests</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d run"></span><span class="t">Page the registry list</span
+                  ><span></span><span class="s">Starting…</span>
+                </div>
+                <div class="wp-srow sub">
+                  <span class="d wait"></span><span class="t">Mail trigger endpoint</span
+                  ><span></span><span class="s">Waiting · checks on #88</span>
+                </div>
+              </div>
+              <div class="wp-head"><i data-icon="down"></i>Solo threads</div>
+            </aside>
+            <section class="wp-chat">
+              <div class="wp-bar"><strong>Mail trigger endpoint</strong> beside agent-platform</div>
+              <div class="wp-transcript">
+                <div class="wp-gap">[The worker, open beside its orchestrator's chat]</div>
+              </div>
+              <div class="wp-composer">Message worker — takes control…</div>
+            </section>
+            <aside class="wp-panel">
+              <div class="wp-tabs">
+                <span class="wp-tab" aria-selected="true">Workers</span
+                ><span class="wp-tab">Diff</span><span class="wp-tab">PR</span
+                ><span class="wp-tab push">More</span>
+              </div>
+              <div class="wp-ptitle">
+                <h2>Workers <span>in agent-platform</span></h2>
+                <span class="wp-tool"><i data-icon="search"></i></span
+                ><span class="wp-tool"><i data-icon="sliders"></i></span>
+              </div>
+              <div class="wp-groups">
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Needs you</b><span class="n">4</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Trigger form</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w needs">Wants to push · approval</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Document the mail trigger</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w needs">Wants to push · approval</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Mail trigger rate limit</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w needs">Asks you a question</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Refresh the setup guide</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w needs">Asks you a question</span></span>
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Running</b><span class="n">2</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d run"></span><span class="t">Mail trigger queue worker</span
+                    ><span class="age">now</span
+                    ><span class="s"
+                      ><span class="w">Running tests</span><span class="wp-chip">3/5</span></span
+                    >
+                  </div>
+                  <div class="wp-row">
+                    <span class="d run"></span><span class="t">Page the registry list</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w">Starting…</span></span>
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Waiting</b><span class="n">1</span></span>
+                  </div>
+                  <div class="wp-row current">
+                    <span class="d wait"></span><span class="t">Mail trigger endpoint</span
+                    ><span class="age">now</span
+                    ><span class="s"
+                      ><span class="w">Waiting · checks</span
+                      ><span class="wp-chip ok"><i data-icon="pr"></i>api#212</span
+                      ><span class="wp-chip"><i data-icon="pr"></i>web#88</span></span
+                    >
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h folded">
+                    <i data-icon="down"></i><span><b>Stopped</b><span class="n">0</span></span>
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h folded">
+                    <i data-icon="down"></i><span><b>Done</b><span class="n">0</span></span>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= B One list ================= -->
+      <section class="board" data-name="B One list" data-size="1280x800">
+        <div class="board-frame">
+          <div class="wp-app">
+            <aside class="wp-side">
+              <div class="wp-pill"><span class="d needs"></span>4 approvals · 4 questions</div>
+              <div class="wp-head"><i data-icon="down"></i>Orchestrators</div>
+              <div class="list">
+                <div class="wp-srow ws">
+                  <span class="d run"></span><span class="t">agent-platform</span
+                  ><span class="badge">5</span>
+                  <span class="folded-note wp-folded-note">7 workers · in the Workers tab</span>
+                </div>
+                <div class="wp-srow">
+                  <span class="d idle"></span><span class="t">docs</span><span></span>
+                  <span class="s">No workers</span>
+                </div>
+              </div>
+              <div class="wp-head"><i data-icon="down"></i>Solo threads</div>
+              <div class="list">
+                <div class="wp-srow">
+                  <span class="d needs"></span><span class="t">Fix flaky retry test</span
+                  ><span class="age" style="font-size: 13px; color: var(--fg-muted)">now</span
+                  ><span class="s needs">Needs approval</span>
+                </div>
+                <div class="wp-srow">
+                  <span class="d needs"></span><span class="t">Pick a date library</span
+                  ><span class="age" style="font-size: 13px; color: var(--fg-muted)">12m</span
+                  ><span class="s needs">Needs input</span>
+                </div>
+                <div class="wp-srow">
+                  <span class="d run"></span><span class="t">Rewrite the README</span><span></span
+                  ><span class="s">Running</span>
+                </div>
+                <div class="wp-srow">
+                  <span class="d idle"></span><span class="t">List the repo's files</span
+                  ><span class="age" style="font-size: 13px; color: var(--fg-muted)">45m</span
+                  ><span class="s">Stopped</span>
+                </div>
+              </div>
+            </aside>
+            <section class="wp-chat">
+              <div class="wp-bar"><strong>Mail trigger endpoint</strong> beside agent-platform</div>
+              <div class="wp-transcript">
+                <div class="wp-gap">[The worker, open beside its orchestrator's chat]</div>
+              </div>
+              <div class="wp-composer">Message worker — takes control…</div>
+            </section>
+            <aside class="wp-panel">
+              <div class="wp-tabs">
+                <span class="wp-tab" aria-selected="true">Workers</span
+                ><span class="wp-tab">Diff</span><span class="wp-tab">PR</span
+                ><span class="wp-tab push">More</span>
+              </div>
+              <div class="wp-ptitle">
+                <h2>Workers <span>in agent-platform</span></h2>
+                <span class="wp-tool"><i data-icon="search"></i></span
+                ><span class="wp-tool"><i data-icon="sliders"></i></span>
+              </div>
+              <div class="wp-groups">
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Needs you</b><span class="n">4</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Trigger form</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w needs">Wants to push · approval</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Document the mail trigger</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w needs">Wants to push · approval</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Mail trigger rate limit</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w needs">Asks you a question</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Refresh the setup guide</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w needs">Asks you a question</span></span>
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Running</b><span class="n">2</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d run"></span><span class="t">Mail trigger queue worker</span
+                    ><span class="age">now</span
+                    ><span class="s"
+                      ><span class="w">Running tests</span><span class="wp-chip">3/5</span></span
+                    >
+                  </div>
+                  <div class="wp-row">
+                    <span class="d run"></span><span class="t">Page the registry list</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w">Starting…</span></span>
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Waiting</b><span class="n">1</span></span>
+                  </div>
+                  <div class="wp-row current">
+                    <span class="d wait"></span><span class="t">Mail trigger endpoint</span
+                    ><span class="age">now</span
+                    ><span class="s"
+                      ><span class="w">Waiting · checks</span
+                      ><span class="wp-chip ok"><i data-icon="pr"></i>api#212</span
+                      ><span class="wp-chip"><i data-icon="pr"></i>web#88</span></span
+                    >
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h folded">
+                    <i data-icon="down"></i><span><b>Stopped</b><span class="n">0</span></span>
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h folded">
+                    <i data-icon="down"></i><span><b>Done</b><span class="n">0</span></span>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= C Every workspace ================= -->
+      <section class="board" data-name="C Every workspace" data-size="1280x800">
+        <div class="board-frame">
+          <div class="wp-app">
+            <aside class="wp-side">
+              <div class="wp-pill"><span class="d needs"></span>4 approvals · 4 questions</div>
+              <div class="wp-head"><i data-icon="down"></i>Orchestrators</div>
+              <div class="list">
+                <div class="wp-srow ws">
+                  <span class="d run"></span><span class="t">agent-platform</span
+                  ><span class="badge">5</span
+                  ><span class="wp-folded-note">7 workers · 2 working</span>
+                </div>
+                <div class="wp-srow">
+                  <span class="d run"></span><span class="t">docs</span><span></span
+                  ><span class="s">2 workers · 1 working</span>
+                </div>
+              </div>
+              <div class="wp-head"><i data-icon="down"></i>Solo threads</div>
+              <div class="list">
+                <div class="wp-srow">
+                  <span class="d needs"></span><span class="t">Fix flaky retry test</span
+                  ><span></span><span class="s needs">Needs approval</span>
+                </div>
+                <div class="wp-srow">
+                  <span class="d run"></span><span class="t">Rewrite the README</span><span></span
+                  ><span class="s">Running</span>
+                </div>
+              </div>
+            </aside>
+            <section class="wp-chat">
+              <div class="wp-bar"><strong>Mail trigger endpoint</strong> beside agent-platform</div>
+              <div class="wp-transcript">
+                <div class="wp-gap">[The worker, open beside its orchestrator's chat]</div>
+              </div>
+              <div class="wp-composer">Message worker — takes control…</div>
+            </section>
+            <aside class="wp-panel">
+              <div class="wp-tabs">
+                <span class="wp-tab" aria-selected="true">Workers</span
+                ><span class="wp-tab">Diff</span><span class="wp-tab">PR</span
+                ><span class="wp-tab push">More</span>
+              </div>
+              <div class="wp-ptitle">
+                <h2>Workers</h2>
+                <span class="wp-tool"><i data-icon="search"></i></span
+                ><span class="wp-tool"><i data-icon="sliders"></i></span>
+              </div>
+              <div class="wp-seg">
+                <span>agent-platform</span><span aria-selected="true">All workspaces</span>
+              </div>
+              <div class="wp-groups">
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Needs you</b><span class="n">5</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Trigger form</span
+                    ><span class="age">now</span
+                    ><span class="s"
+                      ><span class="w needs">agent-platform · wants to push</span></span
+                    >
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Document the mail trigger</span
+                    ><span class="age">now</span
+                    ><span class="s"
+                      ><span class="w needs">agent-platform · wants to push</span></span
+                    >
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Mail trigger rate limit</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w needs">agent-platform · asks you</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">Refresh the setup guide</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w needs">agent-platform · asks you</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d needs"></span><span class="t">[Docs worker]</span
+                    ><span class="age">4m</span
+                    ><span class="s"><span class="w needs">docs · asks you</span></span>
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Running</b><span class="n">3</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d run"></span><span class="t">Mail trigger queue worker</span
+                    ><span class="age">now</span
+                    ><span class="s"
+                      ><span class="w">agent-platform · running tests</span
+                      ><span class="wp-chip">3/5</span></span
+                    >
+                  </div>
+                  <div class="wp-row">
+                    <span class="d run"></span><span class="t">Page the registry list</span
+                    ><span class="age">now</span
+                    ><span class="s"><span class="w">agent-platform · starting…</span></span>
+                  </div>
+                  <div class="wp-row">
+                    <span class="d run"></span><span class="t">[Docs worker]</span
+                    ><span class="age">2m</span
+                    ><span class="s"><span class="w">docs · editing</span></span>
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h">
+                    <i data-icon="down"></i><span><b>Waiting</b><span class="n">1</span></span>
+                  </div>
+                  <div class="wp-row current">
+                    <span class="d wait"></span><span class="t">Mail trigger endpoint</span
+                    ><span class="age">now</span
+                    ><span class="s"
+                      ><span class="w">agent-platform · checks</span
+                      ><span class="wp-chip ok"><i data-icon="pr"></i>api#212</span></span
+                    >
+                  </div>
+                </div>
+                <div class="wp-group">
+                  <div class="wp-group-h folded">
+                    <i data-icon="down"></i><span><b>Done</b><span class="n">0</span></span>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

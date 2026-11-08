@@ -326,9 +326,10 @@ test("narrow, the title truncates, a worker's actions fold into the bar's \"…\
   await expect(folded.getByTestId("menu-workspace")).toBeVisible();
   await expect(folded.getByTestId("folded-workers")).toBeVisible();
   await folded.getByTestId("folded-workers").click();
-  await expect(page.getByTestId("workers-list")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("workers-list")).toBeHidden();
+  await expect(page.getByTestId("workers-panel")).toBeVisible();
+  // ⌘J puts the panel back as it was, and the bar's room with it.
+  await page.keyboard.press("ControlOrMeta+KeyJ");
+  await expect(page.getByTestId("workers-panel")).toBeHidden();
 
   // A worker keeps its name, a few letters at least; Take over is in the "…", and Open beside
   // stays in the panels' group, which never folds.

@@ -41,7 +41,7 @@ import { useOpenThread } from "@/shell/thread-switcher";
 import { UpdatePill } from "@/updates/update-pill";
 import { useSwitchWorkspace } from "@/shell/workspace-switcher";
 import { activityLine, settledRow, SETTLED_AFTER_MS, threadStatusOf } from "@/sidebar/status";
-import { overviewFoldKey, useLayoutStore, type ShellFit } from "@/stores/layout";
+import { fitShell, overviewFoldKey, useLayoutStore, type ShellFit } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useSame } from "@/stores/use-same";
 import { workerPauseHint } from "@/thread/orchestration-model";
@@ -116,6 +116,7 @@ import {
 import { shownPrNumbers, useChipsFit, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
 import { peek } from "./peek-store";
 import { ANSWERED, nowBesidePrs, TONE_DOT, workerStarting, type RailTone } from "./rail-model";
+import { showWorkersTab } from "./workers-tab";
 import { StatusDot } from "./status-dot";
 import { STARTING, STATUS_WORDS } from "./status-words";
 import { orchestratorOf, threadWorking, workingWorkerThreads } from "./tree-model";
@@ -605,7 +606,13 @@ function WorkspaceRow({
   // Its workers' count and how many of them work, by the tone their rows' dots take.
   const { live, working } = useWorkerTally(id, ledger, asking);
   const foldKey = overviewFoldKey(id);
-  const folded = useLayoutStore((s) => s.workspacesCollapsedNodes.includes(foldKey));
+  const userFolded = useLayoutStore((s) => s.workspacesCollapsedNodes.includes(foldKey));
+  // While the right panel shows this workspace's Workers tab, its workers are listed there, not
+  // twice: the sidebar folds them to its line, which says where they are.
+  const inTab = useLayoutStore(
+    (s) => here && s.panelTab === "workers" && fitShell(s).panel !== "none",
+  );
+  const folded = userFolded || inTab;
   const fold = (to: boolean) => useLayoutStore.getState().toggleWorkspaceNode(foldKey, to);
   const bodyId = useId();
   // What its orchestrator waits on at rest, unless its pause or park holds everything anyway.
@@ -711,7 +718,11 @@ function WorkspaceRow({
                         {live > 0 && " · "}
                       </span>
                     )}
-                    {live > 0 && foldedSummaryText({ live, working, asks: 0 })}
+                    {/* In the tab, how many and where: what they do is the tab's to say. */}
+                    {live > 0 && foldedSummaryText({ live, working: inTab ? 0 : working, asks: 0 })}
+                    {live > 0 && inTab && (
+                      <span data-testid="overview-workspace-in-tab"> · in Workers</span>
+                    )}
                     {live === 0 &&
                       !stateWordShown(word) &&
                       (orchestratorBusy
@@ -723,15 +734,29 @@ function WorkspaceRow({
             )}
           </button>
           <Hint
-            label={folded ? `Show ${name}'s workers` : `Hide ${name}'s workers`}
+            label={
+              inTab
+                ? `${name}'s workers are in the Workers tab`
+                : folded
+                  ? `Show ${name}'s workers`
+                  : `Hide ${name}'s workers`
+            }
             render={
               <button
                 type="button"
                 data-testid="overview-workspace-fold"
+                data-in-tab={inTab || undefined}
                 aria-expanded={!folded}
                 aria-controls={bodyId}
-                aria-label={folded ? `Show ${name}'s workers` : `Hide ${name}'s workers`}
-                onClick={() => fold(!folded)}
+                aria-label={
+                  inTab
+                    ? `Go to ${name}'s workers in the Workers tab`
+                    : folded
+                      ? `Show ${name}'s workers`
+                      : `Hide ${name}'s workers`
+                }
+                // In the tab: the chevron leads there, with the keys on its rows.
+                onClick={() => (inTab ? showWorkersTab() : fold(!folded))}
                 className="grid size-7 shrink-0 cursor-default place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring"
               />
             }

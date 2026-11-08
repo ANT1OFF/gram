@@ -48,7 +48,6 @@ import { useFeatureCards, useFeatureSummary } from "./use-feature-cards";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { StatusDot } from "./status-dot";
 import { useWorkerWaitings } from "./use-waiting-on";
-import { useWorkersListStore } from "./workers-list";
 import { workingWorkerThreads } from "./tree-model";
 import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-model";
 
@@ -164,7 +163,6 @@ export function useOpenWorker() {
       useViewStore.getState().setView("chat");
       return;
     }
-    useWorkersListStore.getState().opened(threadId);
     open(threadId);
   };
 }

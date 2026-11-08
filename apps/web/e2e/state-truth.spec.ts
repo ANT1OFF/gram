@@ -153,7 +153,9 @@ test("a worker spawned and not yet begun reads Starting everywhere, never Stoppe
     ).toHaveCount(1);
   }
 
-  // Its own header says the same.
-  await row.click();
+  // Its own header says the same. The panel lists the workers now, so the sidebar folds its rows:
+  // it opens from the panel's row, in the main view.
+  await expect(row).toBeHidden();
+  await listed.click({ modifiers: ["ControlOrMeta"] });
   await expect(page.getByTestId("worker-now-status")).toHaveText("starting…");
 });

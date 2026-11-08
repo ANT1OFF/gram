@@ -29,9 +29,9 @@ const open = async (page: Page, helpers: object = {}): Promise<MockReachingSimul
   return made;
 };
 
-const list = (page: Page) => page.getByTestId("workers-list");
+const list = (page: Page) => page.getByTestId("workers-panel");
 const row = (page: Page, threadId: string) =>
-  list(page).locator(`[data-testid="worker-row"][data-thread-id="${threadId}"]`);
+  list(page).locator(`[data-testid="workers-panel-row"][data-thread-id="${threadId}"]`);
 const pane = (page: Page, threadId: string) =>
   page.locator(`[data-testid="pane"][data-thread-id="${threadId}"]`);
 const composerOf = (page: Page, threadId: string) =>
@@ -48,10 +48,7 @@ const isHeld = (page: Page, made: MockReachingSimulation, threadId: string) =>
     { workspaceId: made.workspaceId, worker: threadId },
   );
 
-/**
- * The Workers list, from Workers in the title bar's "…": with the overview open, ⌘J jumps into the
- * overview's worker rows instead.
- */
+/** The right panel's Workers tab, from Workers in the title bar's "…". */
 const openList = async (page: Page) => {
   await page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow").click();
   await page.getByTestId("folded-workers").click();
@@ -60,7 +57,8 @@ const openList = async (page: Page) => {
 
 const openWorker = async (page: Page, threadId: string) => {
   await openList(page);
-  await row(page, threadId).click();
+  // ⌘-click: in the main view, not beside the chat.
+  await row(page, threadId).click({ modifiers: ["ControlOrMeta"] });
   await expect(pane(page, threadId)).toBeVisible();
 };
 
@@ -102,10 +100,9 @@ test("⌘\\ opens a worker beside the chat without holding it or taking typing",
   await dock.getByTestId("beside-close").click();
   await expect(dock).toHaveCount(0);
 
-  // ⌘⏎ in the Workers list opens the selected worker beside the chat.
+  // A worker's row in the Workers tab opens it beside the chat.
   await openList(page);
-  await row(page, made.asking).hover();
-  await page.keyboard.press("ControlOrMeta+Enter");
+  await row(page, made.asking).click();
   await expect(dock).toHaveAttribute("data-thread-id", made.asking);
   expect(await isHeld(page, made, made.live)).toBe(false);
   expect(await isHeld(page, made, made.asking)).toBe(false);
