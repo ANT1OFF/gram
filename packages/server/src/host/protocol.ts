@@ -5,6 +5,7 @@
 import {
   HOST_PROTOCOL_VERSION,
   type HostCapability,
+  HostCommandFailed,
   HostFailed,
   type HostHello,
   type HostId,
@@ -13,13 +14,22 @@ import {
   HostUnavailable,
   InvalidState,
   LOCAL_HOST_ID,
+  HostWorktreeFailed,
   NotFound,
 } from "@gram/contracts";
+import {
+  type ProcError,
+  ProcSpawnError,
+  ProcTimeout,
+  WorktreeError,
+  type Worktrees,
+} from "@gram/git";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 import type { PortScan } from "../ports/scan.ts";
 import {
   NetAddress,
@@ -30,16 +40,37 @@ import {
   SocketServer,
 } from "../platform/unstable.ts";
 import type { HostFiles } from "./files.ts";
+import type { HostGit } from "./git.ts";
 
-/** What a host serves: its folders and its port scan, and who it says it is. */
+/** A machine's worktrees, as a host serves them: the request's own options, all of them data. */
+export interface HostWorktrees {
+  readonly list: (
+    repoPath: string,
+    options: { readonly openCheckouts: ReadonlyArray<string> },
+  ) => ReturnType<Worktrees["Service"]["list"]>;
+  readonly baseBranches: Worktrees["Service"]["baseBranches"];
+  readonly create: Worktrees["Service"]["create"];
+  readonly remove: Worktrees["Service"]["remove"];
+  readonly restore: Worktrees["Service"]["restore"];
+  readonly pendingPermissions: Worktrees["Service"]["pendingPermissions"];
+}
+
+/** What a host serves: its folders, worktrees, git state and port scan, and who it says it is. */
 export interface HostService {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  readonly worktrees: HostWorktrees;
+  readonly git: HostGit;
   readonly scan: Effect.Effect<PortScan, unknown>;
 }
 
 /** The capabilities this build's host serves. */
-export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = ["files", "ports"];
+export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
+  "files",
+  "ports",
+  "worktrees",
+  "git",
+];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -72,7 +103,28 @@ export const scanFromWire = (wire: HostPortScan): PortScan => ({
 
 const failureText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** The protocol's handlers over a host's own folders and scan. */
+const worktreeToWire = (error: WorktreeError) =>
+  new HostWorktreeFailed({ reason: error.reason, message: error.message, dirty: error.dirty });
+
+const commandToWire = (error: ProcError) =>
+  new HostCommandFailed({
+    kind: error._tag === "ProcTimeout" ? "timeout" : "spawn",
+    bin: error.bin,
+    message: error.message,
+  });
+
+/** `A` with each key that may be `undefined` made optional instead. */
+type Defined<A> = {
+  [K in keyof A as undefined extends A[K] ? never : K]: A[K];
+} & {
+  [K in keyof A as undefined extends A[K] ? K : never]?: Exclude<A[K], undefined>;
+};
+
+/** Drops keys whose value is `undefined`, for a payload whose optional keys must be absent. */
+const defined = <A extends object>(value: A): Defined<A> =>
+  Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Defined<A>;
+
+/** The protocol's handlers over a host's own folders, worktrees, git state and scan. */
 const handlersFor = (host: HostService) =>
   HostRpcs.toLayer(
     HostRpcs.of({
@@ -87,6 +139,23 @@ const handlersFor = (host: HostService) =>
           Effect.map(scanToWire),
           Effect.mapError((error) => new HostFailed({ message: failureText(error) })),
         ),
+      "host.worktrees.list": ({ repoPath, openCheckouts }) =>
+        host.worktrees.list(repoPath, { openCheckouts }).pipe(Effect.mapError(worktreeToWire)),
+      "host.worktrees.baseBranches": ({ repoPath }) =>
+        host.worktrees.baseBranches(repoPath).pipe(Effect.mapError(worktreeToWire)),
+      "host.worktrees.create": (request) =>
+        host.worktrees.create(request).pipe(Effect.mapError(worktreeToWire)),
+      "host.worktrees.remove": (request) =>
+        host.worktrees.remove(request).pipe(Effect.mapError(worktreeToWire)),
+      "host.worktrees.restore": (request) =>
+        host.worktrees.restore(request).pipe(Effect.mapError(worktreeToWire)),
+      "host.worktrees.pendingPermissions": ({ repoPath, worktreeDir }) =>
+        host.worktrees
+          .pendingPermissions(repoPath, worktreeDir)
+          .pipe(Effect.mapError(worktreeToWire)),
+      "host.git.local": ({ cwd }) => host.git.local(cwd).pipe(Effect.mapError(commandToWire)),
+      "host.git.present": ({ cwd }) => host.git.present(cwd),
+      "host.git.watch": ({ paths, ...options }) => host.git.watch(paths, options),
     }),
   );
 
@@ -117,10 +186,21 @@ export const serveHost = (socket: Socket.Socket, host: HostService): Effect.Effe
     yield* Deferred.await(closed);
   }).pipe(Effect.scoped);
 
+/** A host's git state as the control plane reaches it: a watch ends when the host goes. */
+export interface HostGitConnection {
+  readonly local: HostGit["local"];
+  readonly present: HostGit["present"];
+  readonly watch: (
+    ...args: Parameters<HostGit["watch"]>
+  ) => Stream.Stream<Stream.Success<ReturnType<HostGit["watch"]>>, HostUnavailable>;
+}
+
 /** A connected host, as the control plane reaches it. */
 export interface HostConnection {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  readonly worktrees: HostWorktrees;
+  readonly git: HostGitConnection;
   readonly scan: Effect.Effect<PortScan, unknown>;
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
@@ -150,6 +230,38 @@ const keepFileErrors = <E extends { readonly _tag: string; readonly message?: st
   error instanceof NotFound || error instanceof InvalidState
     ? Effect.succeed(error)
     : asInvalid(error);
+
+/** A worktree call the host couldn't answer reads as the worktree layer's own error. */
+const worktreeFromWire = <E extends { readonly _tag: string; readonly message?: string }>(
+  error: E,
+): Effect.Effect<WorktreeError> =>
+  error instanceof HostWorktreeFailed
+    ? Effect.succeed(
+        new WorktreeError({ reason: error.reason, message: error.message, dirty: error.dirty }),
+      )
+    : Effect.map(
+        asInvalid(error),
+        (invalid) =>
+          new WorktreeError({ reason: "failed", message: invalid.message, dirty: false }),
+      );
+
+/**
+ * A git read the host couldn't answer reads as the command layer's own error: a host whose
+ * command overran stays a timeout, so its state reads as unknown rather than clean.
+ */
+const commandFromWire = <E extends { readonly _tag: string; readonly message?: string }>(
+  error: E,
+): Effect.Effect<ProcError> =>
+  error instanceof HostCommandFailed
+    ? Effect.succeed(
+        error.kind === "timeout"
+          ? new ProcTimeout({ bin: error.bin, message: error.message })
+          : new ProcSpawnError({ bin: error.bin, message: error.message }),
+      )
+    : Effect.map(
+        asInvalid(error),
+        (invalid) => new ProcSpawnError({ bin: "gram-host", message: invalid.message }),
+      );
 
 const keepInvalid = <E extends { readonly _tag: string; readonly message?: string }>(
   error: E,
@@ -271,9 +383,92 @@ export const connectHost = (
           Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
         ),
     };
+    const worktreeCall = <A, E extends { readonly _tag: string; readonly message?: string }>(
+      call: Effect.Effect<A, E>,
+    ) =>
+      guarded(call).pipe(
+        Effect.catch((error) => Effect.flatMap(worktreeFromWire(error), Effect.fail)),
+      );
+    const worktrees: HostWorktrees = {
+      list: (repoPath, { openCheckouts }) =>
+        worktreeCall(client["host.worktrees.list"]({ repoPath, openCheckouts })),
+      baseBranches: (repoPath) => worktreeCall(client["host.worktrees.baseBranches"]({ repoPath })),
+      create: (request) =>
+        worktreeCall(
+          client["host.worktrees.create"](
+            defined({
+              repoPath: request.repoPath,
+              branch: request.branch,
+              base: request.base,
+              openCheckouts: request.openCheckouts,
+            }),
+          ),
+        ),
+      remove: (request) =>
+        worktreeCall(
+          client["host.worktrees.remove"](
+            defined({
+              repoPath: request.repoPath,
+              worktreeDir: request.worktreeDir,
+              force: request.force,
+              mergeRules: request.mergeRules,
+              openCheckouts: request.openCheckouts,
+            }),
+          ),
+        ),
+      restore: (request) =>
+        worktreeCall(
+          client["host.worktrees.restore"](
+            defined({
+              repoPath: request.repoPath,
+              worktreeDir: request.worktreeDir,
+              branch: request.branch,
+              fromPr: request.fromPr,
+              openCheckouts: request.openCheckouts,
+            }),
+          ),
+        ),
+      pendingPermissions: (repoPath, worktreeDir) =>
+        worktreeCall(client["host.worktrees.pendingPermissions"]({ repoPath, worktreeDir })),
+    };
+    const git: HostGitConnection = {
+      local: (cwd) =>
+        guarded(client["host.git.local"]({ cwd })).pipe(
+          Effect.catch((error) => Effect.flatMap(commandFromWire(error), Effect.fail)),
+        ),
+      // A host that can't say counts the folder as there, as an unreadable folder does: its git
+      // then says why.
+      present: (cwd) =>
+        guarded(client["host.git.present"]({ cwd })).pipe(Effect.orElseSucceed(() => true)),
+      watch: (paths, watchOptions = {}) =>
+        Stream.suspend(() =>
+          ended
+            ? Stream.fail(unavailable("This machine's host has stopped."))
+            : client["host.git.watch"](
+                defined({
+                  paths,
+                  debounceMs: watchOptions.debounceMs,
+                  cooldownMs: watchOptions.cooldownMs,
+                  backend: watchOptions.backend,
+                }),
+              ).pipe(
+                Stream.catch((error) =>
+                  Stream.fromEffect(
+                    Effect.andThen(
+                      markEnded(failureText(error)),
+                      Effect.fail(unavailable(HOST_NOT_ANSWERING)),
+                    ),
+                  ),
+                ),
+                Stream.interruptWhen(gone),
+              ),
+        ),
+    };
     return {
       hello,
       files,
+      worktrees,
+      git,
       scan: guarded(client["host.ports.scan"]()).pipe(Effect.map(scanFromWire)),
       gone: () => ended,
     };
