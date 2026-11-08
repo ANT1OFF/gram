@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phone access · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .pa-settings {
+        display: flex;
+        flex: 1 1 100%;
+        align-self: stretch;
+        position: relative;
+      }
+      .pa-nav {
+        width: 240px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 12px;
+        border-right: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+      }
+      .pa-nav .sub {
+        padding-left: 30px;
+        font-size: var(--text-sm);
+      }
+      .pa-page {
+        flex: 1;
+        min-width: 0;
+        overflow: auto;
+        background: var(--surface-2);
+      }
+      .pa-page .content {
+        max-width: 720px;
+        margin: 0 auto;
+        gap: 20px;
+        padding: 28px 24px;
+      }
+      .pa-head {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .pa-head h2 {
+        margin: 0;
+        font-size: var(--text-lg);
+      }
+      .pa-group {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-3);
+      }
+      .pa-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        min-height: 56px;
+        flex-wrap: wrap;
+      }
+      .pa-row + .pa-row {
+        border-top: 1px solid var(--border-subtle);
+      }
+      .pa-row .text {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 1;
+        min-width: 200px;
+      }
+      .pa-row .text .label {
+        color: var(--fg);
+        font-weight: 550;
+      }
+      .pa-row .text .sub {
+        color: var(--fg-muted);
+        font-size: var(--text-sm);
+      }
+      .pa-device-icon {
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border-radius: var(--radius-md, 7px);
+        background: var(--surface-hover);
+        color: var(--fg-muted);
+        flex-shrink: 0;
+      }
+      .pa-group-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        color: var(--fg);
+      }
+      .pa-group-title .meta {
+        margin-left: auto;
+        font-weight: 400;
+        color: var(--fg-subtle);
+        font-size: var(--text-sm);
+      }
+      .pa-address {
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        color: var(--fg);
+        overflow-wrap: anywhere;
+      }
+      .pa-qr {
+        width: 220px;
+        height: 220px;
+        align-self: center;
+        color: var(--fg-muted);
+        font-size: var(--text-sm);
+        text-align: center;
+        padding: 12px;
+      }
+      .pa-countdown {
+        font-variant-numeric: tabular-nums;
+      }
+      .pa-phone-page {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 32px 20px;
+        text-align: left;
+      }
+      .pa-phone-page h3 {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        Phone access moves from an environment variable and a console snippet into Settings →
+        Machines → Phones and browsers: turn on Tailscale Serve from here, pair with a QR code, and
+        remove any one phone while Gram runs. Look at the four states of the page, the pairing
+        dialog and what a removed phone sees.
+      </p>
+
+      <!-- ===================== The page ===================== -->
+      <section
+        class="board"
+        data-name="Phones and browsers"
+        data-size="1280x800"
+        data-states="on,off,no-tailscale,env-var"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>Settings</span>
+            </div>
+            <div class="app-body">
+              <div class="pa-settings">
+                <nav class="pa-nav" aria-label="Settings sections">
+                  <a class="nav-item" href="#"><i data-icon="sliders"></i>General</a>
+                  <a class="nav-item" href="#"><i data-icon="sparkle"></i>Agents &amp; models</a>
+                  <a class="nav-item" href="#"><i data-icon="layers"></i>Usage</a>
+                  <a class="nav-item" href="#"><i data-icon="orch"></i>Workspaces &amp; merging</a>
+                  <a class="nav-item" href="#" aria-current="true"
+                    ><i data-icon="globe"></i>Machines</a
+                  >
+                  <a class="nav-item sub" href="#" aria-current="page">Phones and browsers</a>
+                  <a class="nav-item" href="#"><i data-icon="sun"></i>Appearance</a>
+                  <a class="nav-item" href="#"><i data-icon="bell"></i>Notifications</a>
+                  <a class="nav-item" href="#"><i data-icon="grid"></i>Keyboard</a>
+                  <a class="nav-item" href="#"><i data-icon="help"></i>About</a>
+                </nav>
+                <div class="pa-page">
+                  <div class="content">
+                    <div class="pa-head">
+                      <h2>Phones and browsers</h2>
+                      <span class="muted"
+                        >Use Gram from your phone's browser over your tailnet. A paired browser has
+                        full control of this Gram, as this window does.</span
+                      >
+                    </div>
+
+                    <!-- ON -->
+                    <div class="pa-group" data-when="on">
+                      <div class="pa-row">
+                        <div class="text">
+                          <span class="label">Phone access</span>
+                          <span class="sub">On through Tailscale Serve. Only your tailnet can reach it.</span>
+                        </div>
+                        <input
+                          class="switch"
+                          type="checkbox"
+                          role="switch"
+                          checked
+                          aria-label="Phone access"
+                        />
+                      </div>
+                      <div class="pa-row">
+                        <div class="text">
+                          <span class="label">Address</span>
+                          <span class="pa-address">https://[mac-name].[tailnet].ts.net:9443</span>
+                        </div>
+                        <button class="btn sm" type="button"><i data-icon="link"></i>Copy</button>
+                      </div>
+                    </div>
+
+                    <div class="stack" data-when="on" style="gap: 8px">
+                      <div class="pa-group-title">
+                        Paired
+                        <span class="meta">3 of 8</span>
+                        <button class="btn sm primary" type="button" data-goto="Pair a phone@waiting">
+                          <i data-icon="plus"></i>Pair a phone
+                        </button>
+                      </div>
+                      <div class="pa-group">
+                        <div class="pa-row">
+                          <span class="pa-device-icon"><i data-icon="msg"></i></span>
+                          <div class="text">
+                            <span class="label">iPhone · Safari</span>
+                            <span class="sub">Paired 2 November · last seen 09:41</span>
+                          </div>
+                          <button class="btn sm ghost" type="button" data-goto="Remove a phone">
+                            Remove
+                          </button>
+                        </div>
+                        <div class="pa-row">
+                          <span class="pa-device-icon"><i data-icon="panel"></i></span>
+                          <div class="text">
+                            <span class="label">iPad · Safari</span>
+                            <span class="sub">Paired 28 October · last seen yesterday 22:15</span>
+                          </div>
+                          <button class="btn sm ghost" type="button">Remove</button>
+                        </div>
+                        <div class="pa-row">
+                          <span class="pa-device-icon"><i data-icon="msg"></i></span>
+                          <div class="text">
+                            <span class="label">Android · Chrome</span>
+                            <span class="sub">Paired 3 October · not seen for 30 days</span>
+                          </div>
+                          <button class="btn sm ghost" type="button">Remove</button>
+                        </div>
+                      </div>
+                      <div class="row" style="justify-content: space-between">
+                        <span class="small subtle"
+                          >Removing a browser signs it out at once and closes its open
+                          connections.</span
+                        >
+                        <button class="btn sm ghost" type="button">Remove all</button>
+                      </div>
+                    </div>
+
+                    <!-- OFF, Tailscale ready -->
+                    <div class="pa-group" data-when="off">
+                      <div class="pa-row">
+                        <div class="text">
+                          <span class="label">Phone access</span>
+                          <span class="sub"
+                            >Off. Turning it on serves Gram at
+                            <span class="pa-address">https://[mac-name].[tailnet].ts.net:9443</span>
+                            to your tailnet only. Gram adds its own Serve listener and leaves
+                            any others alone.</span
+                          >
+                        </div>
+                        <button class="btn primary" type="button">Turn on</button>
+                      </div>
+                      <div class="pa-row">
+                        <div class="text">
+                          <span class="label">Port</span>
+                          <span class="sub">A free HTTPS port on this Mac's tailnet name.</span>
+                        </div>
+                        <input class="input" style="width: 96px" value="9443" aria-label="Port" />
+                      </div>
+                    </div>
+                    <div class="stack" data-when="off" style="gap: 8px">
+                      <div class="pa-group-title">Paired <span class="meta">2 of 8</span></div>
+                      <div class="pa-group">
+                        <div class="pa-row">
+                          <span class="pa-device-icon"><i data-icon="msg"></i></span>
+                          <div class="text">
+                            <span class="label">iPhone · Safari</span>
+                            <span class="sub">Paired 2 November · last seen 09:41</span>
+                          </div>
+                          <button class="btn sm ghost" type="button">Remove</button>
+                        </div>
+                        <div class="pa-row">
+                          <span class="pa-device-icon"><i data-icon="panel"></i></span>
+                          <div class="text">
+                            <span class="label">iPad · Safari</span>
+                            <span class="sub">Paired 28 October · last seen yesterday 22:15</span>
+                          </div>
+                          <button class="btn sm ghost" type="button">Remove</button>
+                        </div>
+                      </div>
+                      <span class="small subtle"
+                        >Paired browsers stay paired while access is off, and can't connect until
+                        it is back on.</span
+                      >
+                    </div>
+
+                    <!-- NO TAILSCALE -->
+                    <div class="callout warning" role="status" data-when="no-tailscale">
+                      <i data-icon="alert"></i>
+                      <div class="stack">
+                        <strong>Tailscale isn't running on this Mac</strong>
+                        <span
+                          >Phone access goes through Tailscale, so only your own devices can reach
+                          Gram. Install it, sign in, and turn on HTTPS certificates for your
+                          tailnet, then come back here.</span
+                        >
+                      </div>
+                      <button class="btn sm" type="button"><i data-icon="refresh"></i>Check again</button>
+                    </div>
+                    <div class="pa-group" data-when="no-tailscale">
+                      <div class="pa-row">
+                        <i data-icon="xcircle"></i>
+                        <div class="text">
+                          <span class="label">Tailscale installed</span>
+                          <span class="sub">Not found. <a href="#">Get Tailscale</a></span>
+                        </div>
+                      </div>
+                      <div class="pa-row">
+                        <i data-icon="dashed"></i>
+                        <div class="text">
+                          <span class="label">Signed in to a tailnet</span>
+                          <span class="sub">Checked once Tailscale is installed.</span>
+                        </div>
+                      </div>
+                      <div class="pa-row">
+                        <i data-icon="dashed"></i>
+                        <div class="text">
+                          <span class="label">HTTPS certificates on for the tailnet</span>
+                          <span class="sub"
+                            >Turned on in the Tailscale admin console, under DNS.</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- ENV VAR -->
+                    <div class="pa-group" data-when="env-var">
+                      <div class="pa-row">
+                        <div class="text">
+                          <span class="label">Phone access</span>
+                          <span class="sub"
+                            >On, set by <span class="mono">GRAM_REMOTE_ORIGIN</span> when Gram
+                            started. Unset it and restart to manage it here.</span
+                          >
+                        </div>
+                        <input
+                          class="switch"
+                          type="checkbox"
+                          role="switch"
+                          checked
+                          disabled
+                          aria-label="Phone access"
+                        />
+                      </div>
+                      <div class="pa-row">
+                        <div class="text">
+                          <span class="label">Address</span>
+                          <span class="pa-address">https://[mac-name].[tailnet].ts.net:9443</span>
+                          <span class="sub">Your own Serve listener; Gram doesn't change it.</span>
+                        </div>
+                        <button class="btn sm" type="button"><i data-icon="link"></i>Copy</button>
+                      </div>
+                    </div>
+                    <div class="stack" data-when="env-var" style="gap: 8px">
+                      <div class="pa-group-title">
+                        Paired
+                        <span class="meta">1 of 8</span>
+                        <button class="btn sm primary" type="button">
+                          <i data-icon="plus"></i>Pair a phone
+                        </button>
+                      </div>
+                      <div class="pa-group">
+                        <div class="pa-row">
+                          <span class="pa-device-icon"><i data-icon="msg"></i></span>
+                          <div class="text">
+                            <span class="label">iPhone · Safari</span>
+                            <span class="sub">Paired 2 November · last seen 09:41</span>
+                          </div>
+                          <button class="btn sm ghost" type="button">Remove</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== Pairing dialog ===================== -->
+      <section
+        class="board"
+        data-name="Pair a phone"
+        data-size="1280x800"
+        data-states="waiting,paired,expired,full"
+      >
+        <div class="board-frame">
+          <div class="app" style="position: relative">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>Settings</span>
+            </div>
+            <div class="app-body"><div class="pa-page"></div></div>
+            <div class="scrim">
+              <div class="dialog" role="dialog" aria-labelledby="pair-title">
+                <h3 id="pair-title" style="margin: 0">Pair a phone</h3>
+
+                <div class="stack" data-when="waiting" style="gap: 12px">
+                  <span class="muted"
+                    >Scan this with the phone's camera. Tailscale has to be connected on the
+                    phone.</span
+                  >
+                  <div class="placeholder pa-qr">QR code of the one-time pairing link</div>
+                  <div class="row" style="justify-content: center; gap: 8px">
+                    <span class="spinner" aria-hidden="true"></span>
+                    <span class="small muted"
+                      >Waiting for the phone · expires in
+                      <span class="pa-countdown">14:32</span></span
+                    >
+                  </div>
+                  <div class="callout info">
+                    <i data-icon="shield"></i>
+                    <span class="small"
+                      >Until it is used, this link lets any browser that opens it control Gram.
+                      Send it only to your own phone, never to a shared chat.</span
+                    >
+                  </div>
+                  <div class="dialog-actions">
+                    <button class="btn" type="button"><i data-icon="link"></i>Copy link</button>
+                    <button class="btn ghost" type="button">Cancel</button>
+                  </div>
+                </div>
+
+                <div class="stack" data-when="paired" style="gap: 12px">
+                  <div class="row" style="gap: 8px">
+                    <i data-icon="okcircle"></i>
+                    <strong>iPhone · Safari is paired</strong>
+                  </div>
+                  <span class="muted"
+                    >It's on the list now. Remove it there to sign it out.</span
+                  >
+                  <div class="dialog-actions">
+                    <button class="btn primary" type="button">Done</button>
+                  </div>
+                </div>
+
+                <div class="stack" data-when="expired" style="gap: 12px">
+                  <span class="muted"
+                    >This link expired after 15 minutes without being used, so it no longer
+                    works.</span
+                  >
+                  <div class="dialog-actions">
+                    <button class="btn ghost" type="button">Close</button>
+                    <button class="btn primary" type="button">
+                      <i data-icon="refresh"></i>New link
+                    </button>
+                  </div>
+                </div>
+
+                <div class="stack" data-when="full" style="gap: 12px">
+                  <div class="callout warning">
+                    <i data-icon="alert"></i>
+                    <span
+                      >Eight browsers are paired, the most Gram keeps. Remove one to pair
+                      another.</span
+                    >
+                  </div>
+                  <div class="dialog-actions">
+                    <button class="btn primary" type="button">Close</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== Remove confirm ===================== -->
+      <section class="board" data-name="Remove a phone" data-size="1280x800">
+        <div class="board-frame">
+          <div class="app" style="position: relative">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>Settings</span>
+            </div>
+            <div class="app-body"><div class="pa-page"></div></div>
+            <div class="scrim">
+              <div class="dialog" role="alertdialog" aria-labelledby="remove-title">
+                <h3 id="remove-title" style="margin: 0">Remove iPhone · Safari?</h3>
+                <span class="muted"
+                  >It's signed out at once, and any Gram tab open on it disconnects. Pair it
+                  again to use it.</span
+                >
+                <div class="dialog-actions">
+                  <button class="btn ghost" type="button">Cancel</button>
+                  <button class="btn danger" type="button">Remove</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== What a removed phone sees ===================== -->
+      <section class="board" data-name="Phone · removed" data-size="390x844">
+        <div class="board-frame">
+          <div class="phone">
+            <div class="pa-phone-page">
+              <h3>This browser was removed from Gram</h3>
+              <span class="muted"
+                >Someone signed it out from Gram's settings on the Mac. To use it again, pair it
+                from Settings → Machines → Phones and browsers there.</span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
