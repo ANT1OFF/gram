@@ -49,8 +49,7 @@ export const STOP_FILL = "bg-foreground text-background hover:bg-destructive";
  * nothing runs. It keeps a tint of its own, the danger tint a destructive button takes, so it still
  * reads as Stop at a glance and never as a faint outline.
  */
-export const STOP_QUIET =
-  "bg-destructive-tint text-destructive hover:bg-destructive-tint-hover";
+export const STOP_QUIET = "bg-destructive-tint text-destructive hover:bg-destructive-tint-hover";
 
 /**
  * Send's fill: the accent with a faint gloss, flat while pressed. With nothing to send it takes the

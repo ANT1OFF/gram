@@ -3,12 +3,7 @@ import type { ThreadId } from "@gram/contracts";
 
 import { cn } from "@/lib/utils";
 import { useThreadsStore } from "@/stores/threads";
-import {
-  contextLevel,
-  contextPercent,
-  UsageBar,
-  type ContextLevel,
-} from "@/thread/usage-bar";
+import { contextLevel, contextPercent, UsageBar, type ContextLevel } from "@/thread/usage-bar";
 import { useCostShown } from "@/usage/cost";
 
 import { PHONE_HIT } from "./styles";
@@ -22,8 +17,7 @@ const FILL: Record<ContextLevel, string> = {
 };
 
 /** How much of the bar to fill for `percent`, clamped to the track. */
-export const barShare = (percent: number): number =>
-  Math.min(100, Math.max(0, percent));
+export const barShare = (percent: number): number => Math.min(100, Math.max(0, percent));
 
 /** The trigger's name: the context filled when there is a window to fill, else just "Usage". */
 export const ringLabel = (percent: number | undefined): string =>
@@ -41,17 +35,9 @@ export const CONTEXT_HINT =
  * a spinner on a thread with nothing running. Without a window to measure, the bar is an empty
  * track named "Usage". Subscribed on its own, so a usage report renders only this.
  */
-export function ContextRing({
-  threadId,
-  countUp,
-}: {
-  threadId: ThreadId;
-  countUp: boolean;
-}) {
+export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp: boolean }) {
   const usage = useThreadsStore((s) => s.usage[threadId]);
-  const showCost = useCostShown(
-    useThreadsStore((s) => s.byId[threadId]?.thread.model),
-  );
+  const showCost = useCostShown(useThreadsStore((s) => s.byId[threadId]?.thread.model));
   if (!usage) return null;
   const percent = contextPercent(usage);
   const level = percent === undefined ? "normal" : contextLevel(percent);
@@ -87,28 +73,18 @@ export function ContextRing({
         </span>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Positioner
-          side="top"
-          align="end"
-          sideOffset={8}
-          className="isolate z-50"
-        >
+        <Popover.Positioner side="top" align="end" sideOffset={8} className="isolate z-50">
           <Popover.Popup
             data-surface="overlay"
             aria-label="Usage"
             className="origin-(--transform-origin) rounded-md border border-edge bg-popover px-3 py-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
-            <p
-              data-testid="usage-ring-title"
-              className="pt-1.5 text-meta font-medium tabular-nums"
-            >
+            <p data-testid="usage-ring-title" className="pt-1.5 text-meta font-medium tabular-nums">
               {percent === undefined ? "Usage" : `Context ${percent}%`}
             </p>
             <UsageBar usage={usage} countUp={countUp} showCost={showCost} />
             {percent !== undefined && (
-              <p className="max-w-64 pb-1 text-meta text-muted-foreground">
-                {CONTEXT_HINT}
-              </p>
+              <p className="max-w-64 pb-1 text-meta text-muted-foreground">{CONTEXT_HINT}</p>
             )}
           </Popover.Popup>
         </Popover.Positioner>

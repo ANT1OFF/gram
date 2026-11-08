@@ -14,11 +14,8 @@ import type { ChoiceOption, ChoiceSection } from "./choices";
  */
 export function chipWords(sections: readonly ChoiceSection[]): string {
   const words = sections.flatMap((section) => {
-    if (section.unavailable !== undefined || section.value === undefined)
-      return [];
-    const chosen = section.options?.find(
-      (option) => option.value === section.value,
-    );
+    if (section.unavailable !== undefined || section.value === undefined) return [];
+    const chosen = section.options?.find((option) => option.value === section.value);
     switch (section.id) {
       case "model":
         return [(chosen?.compact ?? section.named).replace(/^Claude /, "")];
@@ -99,16 +96,11 @@ function SheetSection({
   const headingId = `choices-sheet-${section.id}`;
   let body: ReactNode;
   if (section.unavailable !== undefined)
-    body = (
-      <p className="text-meta text-muted-foreground">{section.unavailable}</p>
-    );
+    body = <p className="text-meta text-muted-foreground">{section.unavailable}</p>;
   else if (section.body !== undefined) body = section.body;
-  else if (section.id === "model")
-    body = <ModelRows section={section} onPick={onPick} />;
-  else if (section.id === "speed")
-    body = <FastSwitch section={section} onPick={onPick} />;
-  else
-    body = <Segments section={section} headingId={headingId} onPick={onPick} />;
+  else if (section.id === "model") body = <ModelRows section={section} onPick={onPick} />;
+  else if (section.id === "speed") body = <FastSwitch section={section} onPick={onPick} />;
+  else body = <Segments section={section} headingId={headingId} onPick={onPick} />;
   const chosen = options.find((option) => option.value === section.value);
   return (
     <section
@@ -135,12 +127,7 @@ function SheetSection({
         section.id !== "model" &&
         section.id !== "speed" &&
         chosen?.description !== undefined && (
-          <p
-            className={cn(
-              "text-meta text-muted-foreground",
-              section.warning && "text-warning",
-            )}
-          >
+          <p className={cn("text-meta text-muted-foreground", section.warning && "text-warning")}>
             {chosen.description}
           </p>
         )}
@@ -177,29 +164,19 @@ function ModelRows({
             )}
           >
             {icon !== undefined && (
-              <span
-                aria-hidden
-                className="flex shrink-0 items-center text-muted-foreground"
-              >
+              <span aria-hidden className="flex shrink-0 items-center text-muted-foreground">
                 {icon}
               </span>
             )}
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-reading font-medium">
-                {option.label}
-              </span>
+              <span className="truncate text-reading font-medium">{option.label}</span>
               {option.description !== undefined && (
                 <span className="truncate text-meta text-muted-foreground">
                   {option.description}
                 </span>
               )}
             </span>
-            {selected && (
-              <CheckIcon
-                aria-hidden
-                className="size-icon-row shrink-0 text-link"
-              />
-            )}
+            {selected && <CheckIcon aria-hidden className="size-icon-row shrink-0 text-link" />}
           </button>
         );
       })}

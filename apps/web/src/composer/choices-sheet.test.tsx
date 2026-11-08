@@ -1,22 +1,10 @@
 // @vitest-environment happy-dom
 import type { PermissionMode } from "@gram/contracts";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  effortSection,
-  modelSection,
-  modeSection,
-  speedSection,
-} from "./choice-sections";
+import { effortSection, modelSection, modeSection, speedSection } from "./choice-sections";
 import { ComposerChoices, type ChoiceSection } from "./choices";
 import { chipWords } from "./choices-sheet";
 import { EFFORT_OPTIONS } from "./options";
@@ -52,9 +40,7 @@ const sections = ({
   effort?: string | undefined;
   mode?: PermissionMode;
   speed?: "standard" | "fast" | undefined;
-  on?: Partial<
-    Record<"model" | "effort" | "mode" | "speed", (value: string) => void>
-  >;
+  on?: Partial<Record<"model" | "effort" | "mode" | "speed", (value: string) => void>>;
 } = {}): ChoiceSection[] => [
   modelSection({
     value: "opus",
@@ -87,11 +73,9 @@ describe("chipWords", () => {
   it("says the model without its agent, the effort when set, the mode, and Fast when on", () => {
     expect(chipWords(sections({ effort: "high" }))).toBe("Opus · High · Auto");
     expect(chipWords(sections())).toBe("Opus · Auto");
-    expect(
-      chipWords(
-        sections({ effort: "medium", mode: "acceptEdits", speed: "fast" }),
-      ),
-    ).toBe("Opus · Med · Edits · Fast");
+    expect(chipWords(sections({ effort: "medium", mode: "acceptEdits", speed: "fast" }))).toBe(
+      "Opus · Med · Edits · Fast",
+    );
   });
 });
 
@@ -100,9 +84,7 @@ describe("the choices chip on a phone", () => {
 
   it("says its values in short words", () => {
     render(<ComposerChoices sections={sections({ effort: "high" })} />);
-    expect(screen.getByTestId("choices-words").textContent).toBe(
-      "Opus · High · Auto",
-    );
+    expect(screen.getByTestId("choices-words").textContent).toBe("Opus · High · Auto");
   });
 
   it("opens a bottom sheet with model rows, effort and mode segments and Fast's switch", async () => {
@@ -114,19 +96,13 @@ describe("the choices chip on a phone", () => {
     const opus = within(sheet).getByRole("option", { name: /Claude Opus/ });
     expect(opus.getAttribute("aria-selected")).toBe("true");
     expect(opus.textContent).toContain("Most capable");
-    expect(
-      within(sheet)
-        .getByRole("radio", { name: "High" })
-        .getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(
-      within(sheet)
-        .getByRole("radio", { name: "Auto" })
-        .getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(within(sheet).getByRole("switch").getAttribute("aria-checked")).toBe(
-      "false",
+    expect(within(sheet).getByRole("radio", { name: "High" }).getAttribute("aria-checked")).toBe(
+      "true",
     );
+    expect(within(sheet).getByRole("radio", { name: "Auto" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(within(sheet).getByRole("switch").getAttribute("aria-checked")).toBe("false");
   });
 
   it("writes each pick as the popover does and stays open for the next", async () => {
@@ -140,9 +116,7 @@ describe("the choices chip on a phone", () => {
     render(<ComposerChoices sections={sections({ on })} />);
     await user.click(screen.getByTestId("composer-choices"));
     const sheet = await screen.findByRole("dialog", { name: "Model and mode" });
-    await user.click(
-      within(sheet).getByRole("option", { name: /Claude Sonnet/ }),
-    );
+    await user.click(within(sheet).getByRole("option", { name: /Claude Sonnet/ }));
     await user.click(within(sheet).getByRole("radio", { name: "Max" }));
     await user.click(within(sheet).getByRole("radio", { name: "Plan" }));
     await user.click(within(sheet).getByRole("switch"));

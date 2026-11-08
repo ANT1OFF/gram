@@ -11,8 +11,7 @@ import { formatRelative } from "@/lib/time";
 import { useStashMenuStore } from "./stash-store";
 import { PHONE_HIT } from "./styles";
 
-export const stashesQueryKey = (threadId: ThreadId) =>
-  ["stashes", threadId] as const;
+export const stashesQueryKey = (threadId: ThreadId) => ["stashes", threadId] as const;
 
 /** What a stashed draft shows in the list: its first line, or what it had attached. */
 export function stashPreview(stash: DraftStash): string {
@@ -58,9 +57,7 @@ export function StashMenu({
       .removeStash(threadId, stash.id, keep)
       // The list closes with its last stash rather than staying open empty.
       .then(() => stashes.length === 1 && setOpen(false))
-      .catch((error: unknown) =>
-        onError(`Couldn't discard the draft: ${errorMessage(error)}`),
-      )
+      .catch((error: unknown) => onError(`Couldn't discard the draft: ${errorMessage(error)}`))
       .finally(
         () =>
           void queryClient.invalidateQueries({
@@ -84,12 +81,7 @@ export function StashMenu({
         {stashes.length}
       </Hint>
       <Popover.Portal>
-        <Popover.Positioner
-          side="top"
-          align="start"
-          sideOffset={6}
-          className="isolate z-50"
-        >
+        <Popover.Positioner side="top" align="start" sideOffset={6} className="isolate z-50">
           <Popover.Popup
             data-testid="stash-menu"
             data-surface="overlay"
@@ -97,14 +89,9 @@ export function StashMenu({
             className="w-80 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             {stashes.length === 0 ? (
-              <p className="px-2 py-1.5 text-reading text-muted-foreground">
-                No stashed drafts.
-              </p>
+              <p className="px-2 py-1.5 text-reading text-muted-foreground">No stashed drafts.</p>
             ) : (
-              <ul
-                aria-label="Stashed drafts"
-                className="flex max-h-72 flex-col overflow-y-auto"
-              >
+              <ul aria-label="Stashed drafts" className="flex max-h-72 flex-col overflow-y-auto">
                 {stashes.map((stash) => (
                   <li key={stash.id} className="group flex items-center gap-1">
                     <button
@@ -119,8 +106,7 @@ export function StashMenu({
                       <span className="truncate">{stashPreview(stash)}</span>
                       <span className="text-meta text-muted-foreground">
                         {formatRelative(stash.createdAt)}
-                        {stash.attachments.length > 0 &&
-                        stash.text.trim() !== ""
+                        {stash.attachments.length > 0 && stash.text.trim() !== ""
                           ? ` · ${stash.attachments.length} attached`
                           : ""}
                       </span>

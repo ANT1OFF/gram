@@ -88,9 +88,7 @@ describe("the Inbox on a phone", () => {
     renderWithApi(<InboxView />, createMockApi({ speed: 0, autoplay: false, persist: false }));
     const sheet = await screen.findByTestId("inbox");
     expect(within(sheet).getByTestId("sheet-header").textContent).toContain("Needs you");
-    expect(within(sheet).getByTestId("inbox-close").getAttribute("aria-label")).toBe(
-      "Close Inbox",
-    );
+    expect(within(sheet).getByTestId("inbox-close").getAttribute("aria-label")).toBe("Close Inbox");
     expect(within(sheet).queryByTestId("inbox-keys")).toBeNull();
     expect(within(sheet).queryByTestId("inbox-detail")).toBeNull();
     expect(within(sheet).getAllByTestId("inbox-card")).toHaveLength(1);
