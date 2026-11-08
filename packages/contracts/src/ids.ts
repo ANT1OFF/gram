@@ -10,6 +10,10 @@ export type ProjectId = typeof ProjectId.Type;
 export const ThreadId = id("ThreadId");
 export type ThreadId = typeof ThreadId.Type;
 
+/** A machine checkouts live on and agents run on; `local` is this one (`hosts.ts`). */
+export const HostId = id("HostId");
+export type HostId = typeof HostId.Type;
+
 /** AI SDK `UIMessage.id`. */
 export const MessageId = id("MessageId");
 export type MessageId = typeof MessageId.Type;

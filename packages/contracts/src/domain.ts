@@ -3,7 +3,16 @@ import { LimitCleared, LimitWait, ThreadError } from "./agent-failure.ts";
 import { BabysitState, HumanReviewNotice, ReviewNotice } from "./babysit.ts";
 import { CodexHome } from "./codex-home.ts";
 import { ChecksRollup, PrState } from "./git.ts";
-import { LabelId, ProfileId, ProjectId, RequestId, ThreadId, TurnId, WorkspaceId } from "./ids.ts";
+import {
+  HostId,
+  LabelId,
+  ProfileId,
+  ProjectId,
+  RequestId,
+  ThreadId,
+  TurnId,
+  WorkspaceId,
+} from "./ids.ts";
 import {
   MessageOrigin,
   OrchestrationDigest,
@@ -309,6 +318,11 @@ export type CheckoutKind = typeof CheckoutKind.Type;
 export const Checkout = Schema.Struct({
   kind: CheckoutKind,
   path: Schema.String,
+  /**
+   * The machine `path` is on (`hosts.ts`). Absent means this machine, as for every checkout
+   * written before hosts existed; only a checkout on another machine records one.
+   */
+  hostId: Schema.optionalKey(HostId),
   branch: Schema.optionalKey(Schema.String),
   /** Base branch the worktree was created from. */
   base: Schema.optionalKey(Schema.String),

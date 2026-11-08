@@ -8,6 +8,7 @@ import {
   DEFAULT_SETTINGS,
   DRAFT_STASH_LIMIT,
   DraftStash,
+  hostOf,
   Dream,
   DreamWatermark,
   FeatureCard,
@@ -1298,12 +1299,14 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             return yield* Effect.die(new Error(`thread ${unstamped.id} has more than one label`));
           const thread: Thread = { ...unstamped, revision: yield* nextRevision };
           yield* sql`INSERT INTO threads
-            (id, project_id, agent_session_id, pinned, parked, created_at, last_activity_at, data)
+            (id, project_id, agent_session_id, pinned, parked, created_at, last_activity_at, data,
+              host_id)
           VALUES (${thread.id}, ${thread.projectId}, ${thread.agentSessionId ?? null},
             ${thread.pinned ? 1 : 0}, ${thread.parked ? 1 : 0}, ${thread.createdAt},
-            ${thread.lastActivityAt}, ${toJson(Thread, thread)})
+            ${thread.lastActivityAt}, ${toJson(Thread, thread)}, ${hostOf(thread.checkout)})
           ON CONFLICT (id) DO UPDATE SET
             agent_session_id = excluded.agent_session_id,
+            host_id = excluded.host_id,
             pinned = excluded.pinned,
             parked = excluded.parked,
             last_activity_at = excluded.last_activity_at,
