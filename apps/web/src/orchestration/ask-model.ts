@@ -184,7 +184,35 @@ export interface Ask {
         readonly request?: { readonly threadId: ThreadId; readonly requestId: RequestId };
       }
     | undefined;
+  /**
+   * A question whose choices also take an answer in the user's own words: "Other…", last after
+   * them, picked as one more choice (`otherIndex`) and sent with the same Send answer.
+   */
+  readonly other?: { readonly question: string } | undefined;
 }
+
+/** Where "Other…" sits among an ask's choices, after the last; `undefined` for an ask without it. */
+export const otherIndex = (ask: Pick<Ask, "options" | "other">): number | undefined =>
+  ask.other === undefined ? undefined : ask.options.length;
+
+/** The key an ask's typed reply is kept under while it is written, so stepping away keeps it. */
+export const replyId = (ask: Pick<Ask, "ids" | "key">): string => ask.ids[0] ?? ask.key;
+
+/**
+ * What words typed for `ask` send: its reply field's, or its "Other…" answer's. A worker's go
+ * straight to the worker, an orchestrator's open question's to the orchestrator, a request's as its
+ * question's answer. `undefined` for an ask that takes no words.
+ */
+export const replyAction = (
+  ask: Pick<Ask, "freeForm" | "other" | "memory" | "worker">,
+  text: string,
+): Extract<AskAction, { kind: "answer" | "memory" | "worker" }> | undefined => {
+  const question = ask.freeForm?.question ?? ask.other?.question;
+  if (question === undefined) return undefined;
+  if (ask.worker !== undefined) return { kind: "worker", answer: text };
+  if (ask.memory !== undefined) return { kind: "memory", answer: text };
+  return { kind: "answer", answer: replyAnswer(question, text) };
+};
 
 /**
  * Each worker an ask in the stack waits on, with that ask's key (the first, when several do): the
@@ -357,6 +385,7 @@ export const askOf = (group: InboxGroup): Ask => {
     ...base,
     icon: "question",
     lead: question.question,
+    other: { question: question.question },
     options: question.options.map((option) => ({
       label: option.label,
       done: option.label,
@@ -410,6 +439,7 @@ export const memoryAskOf = (
   ];
   return {
     ...base,
+    other: { question: question.text },
     options: ordered.map((option) => ({
       label: option.label,
       done: option.label,
@@ -472,6 +502,7 @@ export const workerAskOf = (workspaceId: WorkspaceId, question: WorkerQuestion):
   ];
   return {
     ...base,
+    other: { question: question.question },
     options: ordered.map((option) => ({
       label: option.label,
       done: option.label,

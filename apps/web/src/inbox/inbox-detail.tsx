@@ -18,7 +18,9 @@ import {
   types,
 } from "@/orchestration/ask-keys";
 import {
-  replyAnswer,
+  otherIndex,
+  replyAction,
+  replyId,
   type ApprovalShortcut,
   type Ask,
   type AskOption,
@@ -205,15 +207,11 @@ function AskInPlace({
     send(option.done, action);
   };
   const reply = (text: string) => {
-    if (ask.freeForm === undefined) return;
-    send(
-      "Replied",
-      ask.worker !== undefined
-        ? { kind: "worker", answer: text }
-        : ask.memory === undefined
-          ? { kind: "answer", answer: replyAnswer(ask.freeForm.question, text) }
-          : { kind: "memory", answer: text },
-    );
+    const action = replyAction(ask, text);
+    if (action === undefined) return;
+    setPicked(undefined);
+    useAskStackStore.getState().setReply(replyId(ask), "");
+    send("Replied", action);
   };
   useInboxKeys((event) => {
     const target = event.target instanceof Element ? event.target : null;
@@ -236,6 +234,19 @@ function AskInPlace({
       sending = true;
     } else return false;
     const index = pick ?? picked;
+    if (index !== undefined && index === otherIndex(ask)) {
+      // "Other…": its number picks it and puts the cursor in its field, ⌘⏎ sends what is typed.
+      if (clock() - since.current < SETTLE_MS) return true;
+      if (!sending) {
+        setPicked(index);
+        replyRef.current?.focus();
+        return true;
+      }
+      const text = (useAskStackStore.getState().replies[replyId(ask)] ?? "").trim();
+      if (text === "") return false;
+      reply(text);
+      return true;
+    }
     const option = index === undefined ? undefined : ask.options[index];
     if (option === undefined || index === undefined) return false;
     if (clock() - since.current < SETTLE_MS) return true;
@@ -300,8 +311,9 @@ function AskDetail({ item }: { item: NeedsYouItem }) {
               setFull(true);
             }}
           />
-          {/* A question's own card: an answer in words too ("Other…"), and its answer row kept in
-              sight however long it runs. */}
+          {/* A question's own card: its whole text with the answer row kept in sight however
+              long it runs, the orchestrator's note, and Dismiss. Its own words are answered here
+              already, in "Other…". */}
           {(ask.memory !== undefined || ask.worker !== undefined) && ask.options.length > 0 && (
             <Button
               size="xs"
@@ -310,7 +322,7 @@ function AskDetail({ item }: { item: NeedsYouItem }) {
               className="ml-8.5 text-muted-foreground"
               onClick={() => setFull(true)}
             >
-              Write your own answer
+              Read in full
             </Button>
           )}
         </>
