@@ -5,6 +5,7 @@ import {
   Info,
   Keyboard,
   Mic,
+  MonitorSmartphone,
   Network,
   SlidersHorizontal,
   Sun,
@@ -42,6 +43,7 @@ import { GeneralSection } from "./general-section";
 import { HelpSection } from "./help-section";
 import { KeyboardSection } from "./keyboard-section";
 import { NotificationsSection } from "./notifications-section";
+import { PhoneAccessSummary } from "./phone-access-page";
 import { ReviewBotsSection } from "./review-bots-section";
 import { SearchScope } from "./search-scope";
 import { SettingsGroup } from "./settings-group";
@@ -92,6 +94,7 @@ export type SettingsGroupId =
   | "agents"
   | "usage"
   | "workspaces"
+  | "machines"
   | "appearance"
   | "notifications"
   | "keyboard"
@@ -124,6 +127,7 @@ export const SETTINGS_GROUPS: readonly SettingsNavGroup[] = [
     path: "/settings/workspaces",
     icon: Network,
   },
+  { id: "machines", label: "Machines", path: "/settings/machines", icon: MonitorSmartphone },
   { id: "appearance", label: "Appearance", path: "/settings/appearance", icon: Sun },
   { id: "notifications", label: "Notifications", path: "/settings/notifications", icon: Bell },
   { id: "keyboard", label: "Keyboard", path: "/settings/keyboard", icon: Keyboard },
@@ -161,6 +165,8 @@ export type SettingsPath =
   | "/settings/keyboard"
   | "/settings/voice-input"
   | "/settings/storage"
+  | "/settings/machines"
+  | "/settings/phones"
   | "/settings/about"
   | "/settings/diagnostics"
   | "/settings/help";
@@ -482,6 +488,38 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       "advanced",
     ],
     search: null,
+  },
+  {
+    id: "machines",
+    label: "Machines",
+    path: "/settings/machines",
+    group: "machines",
+    description: "The phones and browsers that use this Gram.",
+    keywords: ["phone", "mobile", "remote", "tailscale"],
+    search: null,
+  },
+  {
+    id: "phones",
+    label: "Phones and browsers",
+    path: "/settings/phones",
+    group: "machines",
+    description: "Use Gram from your phone's browser over your tailnet.",
+    keywords: [
+      "phone",
+      "mobile",
+      "iphone",
+      "android",
+      "ipad",
+      "remote",
+      "tailscale",
+      "serve",
+      "pair",
+      "qr",
+      "revoke",
+      "GRAM_REMOTE_ORIGIN",
+    ],
+    search: null,
+    summary: PhoneAccessSummary,
   },
   {
     id: "appearance",

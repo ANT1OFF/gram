@@ -27,7 +27,9 @@ import { Route as SettingsGatewaysRouteImport } from './routes/settings.gateways
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsHelpRouteImport } from './routes/settings.help'
 import { Route as SettingsKeyboardRouteImport } from './routes/settings.keyboard'
+import { Route as SettingsMachinesRouteImport } from './routes/settings.machines'
 import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
+import { Route as SettingsPhonesRouteImport } from './routes/settings.phones'
 import { Route as SettingsReviewBotsRouteImport } from './routes/settings.review-bots'
 import { Route as SettingsRoutinesRouteImport } from './routes/settings.routines'
 import { Route as SettingsStorageRouteImport } from './routes/settings.storage'
@@ -132,9 +134,19 @@ const SettingsKeyboardRoute = SettingsKeyboardRouteImport.update({
   path: '/keyboard',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsMachinesRoute = SettingsMachinesRouteImport.update({
+  id: '/machines',
+  path: '/machines',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsNotificationsRoute = SettingsNotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsPhonesRoute = SettingsPhonesRouteImport.update({
+  id: '/phones',
+  path: '/phones',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsReviewBotsRoute = SettingsReviewBotsRouteImport.update({
@@ -222,7 +234,9 @@ export interface FileRoutesByFullPath {
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/help': typeof SettingsHelpRoute
   '/settings/keyboard': typeof SettingsKeyboardRoute
+  '/settings/machines': typeof SettingsMachinesRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
+  '/settings/phones': typeof SettingsPhonesRoute
   '/settings/review-bots': typeof SettingsReviewBotsRoute
   '/settings/routines': typeof SettingsRoutinesRoute
   '/settings/storage': typeof SettingsStorageRoute
@@ -255,7 +269,9 @@ export interface FileRoutesByTo {
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/help': typeof SettingsHelpRoute
   '/settings/keyboard': typeof SettingsKeyboardRoute
+  '/settings/machines': typeof SettingsMachinesRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
+  '/settings/phones': typeof SettingsPhonesRoute
   '/settings/review-bots': typeof SettingsReviewBotsRoute
   '/settings/routines': typeof SettingsRoutinesRoute
   '/settings/storage': typeof SettingsStorageRoute
@@ -290,7 +306,9 @@ export interface FileRoutesById {
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/help': typeof SettingsHelpRoute
   '/settings/keyboard': typeof SettingsKeyboardRoute
+  '/settings/machines': typeof SettingsMachinesRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
+  '/settings/phones': typeof SettingsPhonesRoute
   '/settings/review-bots': typeof SettingsReviewBotsRoute
   '/settings/routines': typeof SettingsRoutinesRoute
   '/settings/storage': typeof SettingsStorageRoute
@@ -326,7 +344,9 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/help'
     | '/settings/keyboard'
+    | '/settings/machines'
     | '/settings/notifications'
+    | '/settings/phones'
     | '/settings/review-bots'
     | '/settings/routines'
     | '/settings/storage'
@@ -359,7 +379,9 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/help'
     | '/settings/keyboard'
+    | '/settings/machines'
     | '/settings/notifications'
+    | '/settings/phones'
     | '/settings/review-bots'
     | '/settings/routines'
     | '/settings/storage'
@@ -393,7 +415,9 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/help'
     | '/settings/keyboard'
+    | '/settings/machines'
     | '/settings/notifications'
+    | '/settings/phones'
     | '/settings/review-bots'
     | '/settings/routines'
     | '/settings/storage'
@@ -550,11 +574,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsKeyboardRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/machines': {
+      id: '/settings/machines'
+      path: '/machines'
+      fullPath: '/settings/machines'
+      preLoaderRoute: typeof SettingsMachinesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/notifications': {
       id: '/settings/notifications'
       path: '/notifications'
       fullPath: '/settings/notifications'
       preLoaderRoute: typeof SettingsNotificationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/phones': {
+      id: '/settings/phones'
+      path: '/phones'
+      fullPath: '/settings/phones'
+      preLoaderRoute: typeof SettingsPhonesRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/review-bots': {
@@ -674,7 +712,9 @@ interface SettingsRouteChildren {
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHelpRoute: typeof SettingsHelpRoute
   SettingsKeyboardRoute: typeof SettingsKeyboardRoute
+  SettingsMachinesRoute: typeof SettingsMachinesRoute
   SettingsNotificationsRoute: typeof SettingsNotificationsRoute
+  SettingsPhonesRoute: typeof SettingsPhonesRoute
   SettingsReviewBotsRoute: typeof SettingsReviewBotsRoute
   SettingsRoutinesRoute: typeof SettingsRoutinesRoute
   SettingsStorageRoute: typeof SettingsStorageRoute
@@ -699,7 +739,9 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHelpRoute: SettingsHelpRoute,
   SettingsKeyboardRoute: SettingsKeyboardRoute,
+  SettingsMachinesRoute: SettingsMachinesRoute,
   SettingsNotificationsRoute: SettingsNotificationsRoute,
+  SettingsPhonesRoute: SettingsPhonesRoute,
   SettingsReviewBotsRoute: SettingsReviewBotsRoute,
   SettingsRoutinesRoute: SettingsRoutinesRoute,
   SettingsStorageRoute: SettingsStorageRoute,

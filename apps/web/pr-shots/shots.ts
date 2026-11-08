@@ -1711,7 +1711,123 @@ const REVIEW_SHOTS: readonly Shot[] = [
   },
 ];
 
+/** A synthetic tailnet name: no real machine or tailnet. */
+const PHONE_ORIGIN = "https://mac-mini.tail-example.ts.net:9443";
+const PHONE_DNS = "mac-mini.tail-example.ts.net";
+const HOUR = 60 * 60_000;
+const PHONE_DEVICES = [
+  {
+    id: "a1b2c3d4e5f60718",
+    label: "iPhone · Safari",
+    pairedAt: CLOCK.getTime() - 13 * 24 * HOUR,
+    lastSeenAt: CLOCK.getTime() - (CLOCK.getTime() % HOUR),
+    expiresAt: CLOCK.getTime() + 350 * 24 * HOUR,
+  },
+  {
+    id: "0f1e2d3c4b5a6978",
+    label: "iPad · Safari",
+    pairedAt: CLOCK.getTime() - 48 * 24 * HOUR,
+    lastSeenAt: CLOCK.getTime() - 12 * HOUR,
+    expiresAt: CLOCK.getTime() + 317 * 24 * HOUR,
+  },
+  {
+    id: "9a8b7c6d5e4f3a2b",
+    label: "Android · Chrome",
+    pairedAt: CLOCK.getTime() - 73 * 24 * HOUR,
+    lastSeenAt: CLOCK.getTime() - 31 * 24 * HOUR,
+    expiresAt: CLOCK.getTime() + 292 * 24 * HOUR,
+  },
+];
+
+/** Answers the phone access endpoints, which the mock API doesn't serve, with `status`. */
+const stagePhoneAccess = async (page: Page, status: Record<string, unknown>) => {
+  await page.route(/\/remote\/status$/, (route) =>
+    route.fulfill({ json: { port: 9443, devices: [], ...status } }),
+  );
+  await page.route(/\/remote\/pair$/, (route) =>
+    route.fulfill({
+      json: {
+        url: `${PHONE_ORIGIN}/remote/connect#pair=${"5".repeat(64)}`,
+        expiresAt: CLOCK.getTime() + 14 * 60_000 + 32_000,
+      },
+    }),
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/settings/phones");
+  await page.getByTestId("phone-access").waitFor();
+};
+
+const PHONE_ACCESS_SHOTS: readonly Shot[] = [
+  {
+    name: "phones-on",
+    title: "Settings → Machines → Phones and browsers, on, with three paired",
+    open: (page) =>
+      stagePhoneAccess(page, {
+        mode: "on",
+        tailscale: { state: "ready", dnsName: PHONE_DNS },
+        origin: PHONE_ORIGIN,
+        devices: PHONE_DEVICES,
+      }),
+  },
+  {
+    name: "phones-off",
+    title: "Phones and browsers, off with Tailscale ready, two still paired",
+    open: (page) =>
+      stagePhoneAccess(page, {
+        mode: "off",
+        tailscale: { state: "ready", dnsName: PHONE_DNS },
+        devices: PHONE_DEVICES.slice(0, 2),
+      }),
+  },
+  {
+    name: "phones-no-tailscale",
+    title: "Phones and browsers, Tailscale not installed",
+    open: (page) => stagePhoneAccess(page, { mode: "off", tailscale: { state: "missing" } }),
+  },
+  {
+    name: "phones-env",
+    title: "Phones and browsers, set by GRAM_REMOTE_ORIGIN: the switch is locked",
+    open: (page) =>
+      stagePhoneAccess(page, {
+        mode: "env",
+        tailscale: { state: "ready", dnsName: PHONE_DNS },
+        origin: PHONE_ORIGIN,
+        devices: PHONE_DEVICES.slice(0, 1),
+      }),
+  },
+  {
+    name: "phones-pair",
+    title: "Pair a phone: the one-time link as a QR code, waiting for the phone",
+    open: async (page) => {
+      await stagePhoneAccess(page, {
+        mode: "on",
+        tailscale: { state: "ready", dnsName: PHONE_DNS },
+        origin: PHONE_ORIGIN,
+        devices: PHONE_DEVICES,
+        pairing: { state: "waiting", expiresAt: CLOCK.getTime() + 14 * 60_000 + 32_000 },
+      });
+      await page.getByTestId("phone-access-pair").click();
+      await page.getByTestId("phone-access-qr").waitFor();
+    },
+  },
+  {
+    name: "phones-remove",
+    title: "Remove a paired phone: what it does",
+    open: async (page) => {
+      await stagePhoneAccess(page, {
+        mode: "on",
+        tailscale: { state: "ready", dnsName: PHONE_DNS },
+        origin: PHONE_ORIGIN,
+        devices: PHONE_DEVICES,
+      });
+      await page.getByRole("button", { name: "Remove" }).first().click();
+      await page.getByTestId("phone-access-remove").waitFor();
+    },
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
+  ...PHONE_ACCESS_SHOTS,
   ...ROUTINES_POLISH_SHOTS,
   ...REVIEW_SHOTS,
   ...STATE_TRUTH_SHOTS,
