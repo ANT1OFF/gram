@@ -47,7 +47,7 @@ export function NewEntryMenu() {
             render={<Button variant="ghost" size="icon-sm" aria-label="New task" />}
             data-testid="new-entry"
             data-entry={last}
-            className="ml-auto gap-1 text-muted-foreground [-webkit-app-region:no-drag] @min-[12.5rem]/overview-head:w-auto @min-[12.5rem]/overview-head:pr-2.5 @min-[12.5rem]/overview-head:pl-1.5"
+            className="ml-auto gap-1 text-muted-foreground [-webkit-app-region:no-drag] @min-[12.5rem]/overview-head:w-auto @min-[12.5rem]/overview-head:pr-2.5 @min-[12.5rem]/overview-head:pl-1.5 in-data-phone-drawer:ml-0 in-data-phone-drawer:size-11 in-data-phone-drawer:bg-primary in-data-phone-drawer:text-primary-foreground"
           />
         }
       >

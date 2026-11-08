@@ -4,9 +4,12 @@ import { useState } from "react";
 import { InboxButton } from "@/inbox/inbox-button";
 import { LaunchIssuesChip } from "@/launch-checks/banner";
 import { TitlebarOpenBeside } from "@/orchestration/worker-header";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { TitlebarPause } from "@/orchestration/workspace-pause-button";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
+import { PhoneMenuButton } from "@/shell/phone-drawer";
+import { PhoneTitle } from "@/shell/phone-title";
 import { ShellToggle } from "@/shell/shell-toggle";
 import { TitlebarOverflow } from "@/shell/titlebar-fold";
 import {
@@ -82,6 +85,47 @@ export function ShellTitlebar({
 
   // With no panel to its right, the chat's titlebar runs under Windows' window controls.
   const titlebarAtEdge = panelLeft || !panelShown;
+  const phone = usePhone();
+
+  // A phone's one bar: the drawer's menu, where you are, Needs you and "…" with the rest in words.
+  // The thread's header and Board's controls still mount in the slot, out of sight: what they
+  // carry is in "…", folded all the way at this width.
+  if (phone) {
+    return (
+      <div
+        ref={setTitlebar}
+        data-surface="titlebar"
+        data-testid="shell-titlebar"
+        data-phone=""
+        data-solo-thread={soloBar || undefined}
+        data-carries={barThread ? "thread" : board ? "board" : undefined}
+        data-folded={folded || undefined}
+        data-fold={fold || undefined}
+        className="relative flex h-14 shrink-0 items-center gap-1 border-b border-border px-1"
+      >
+        {settings ? (
+          <div className="flex min-w-0 flex-1 items-center [&_button]:size-11">
+            <SettingsTitle />
+          </div>
+        ) : (
+          <>
+            <PhoneMenuButton />
+            <PhoneTitle className="pl-1" />
+          </>
+        )}
+        <div ref={setTitlebarSlot} data-testid="titlebar-slot" hidden />
+        <div
+          role="group"
+          aria-label="Attention"
+          data-testid="titlebar-attention"
+          className="flex shrink-0 items-center [&_[data-testid=inbox-button-dot]]:top-2.5 [&_[data-testid=inbox-button-dot]]:right-2.5 [&_button]:size-11"
+        >
+          <InboxButton />
+        </div>
+        <TitlebarOverflow orchestration={!soloBar} className="size-11 shrink-0" />
+      </div>
+    );
+  }
 
   return (
     <div
