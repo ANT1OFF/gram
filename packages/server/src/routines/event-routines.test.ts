@@ -18,9 +18,11 @@ import { hasGit } from "../git/test-repo.ts";
 import { FENCE_OPENER as FENCE_OPENER_TEXT } from "../git/untrusted-fence.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import {
+  atAutonomy,
   makeWorld,
   openOrchestrator,
   settle,
+  spawn,
   waitReal,
   withServer,
   type World,
@@ -40,6 +42,24 @@ const ev = (n: number, title = `PR ${n}`): RoutineEvent => ({
   title,
   by: "someone",
 });
+
+/** A PR in another repository than `ev`'s. */
+const other = (n: number): RoutineEvent => ({ key: `x/y#${n}`, at: 0, ref: `x/y#${n}` });
+
+/**
+ * Advances the clock a step at a time until `done` holds: a timer the engine arms after the state
+ * a test waits on is armed from the clock as it then stands, so one big step can race past it.
+ */
+const advanceUntil = <A, R>(label: string, done: Effect.Effect<A | undefined, never, R>) =>
+  Effect.gen(function* () {
+    for (let n = 0; n < 60; n++) {
+      const found = yield* done;
+      if (found !== undefined) return found;
+      yield* TestClock.adjust("1 minute");
+      yield* settle;
+    }
+    return yield* Effect.die(new Error(`clock ran out waiting for ${label}`));
+  });
 
 /** What the next looks find. */
 const sees = (world: World, ...items: ReadonlyArray<RoutineEvent>) =>
@@ -174,6 +194,8 @@ describe.skipIf(!hasGit)("event routines", () => {
             expect(waiting.trigger?.pending?.map((each) => each.key)).toEqual(["o/r#4"]);
             expect(yield* workersOf(routine.id)).toHaveLength(1);
             expect(waiting.lastRun?.outcome).toBe("started");
+            // Review of #289, finding 4: it says why the event waits.
+            expect(waiting.trigger?.blocked).toContain("is still live");
 
             // Done, but within the cooldown: it still waits; past it, it fires.
             yield* finish(first!.id);
@@ -455,4 +477,201 @@ describe.skipIf(!hasGit)("event routines", () => {
       );
     }),
   );
+
+  // Review of #289: the findings each reproduced, then fixed.
+  describe("review of #289", () => {
+    it.effect(
+      "[1] seeds afresh when the watched repository changes, firing for none of what is there",
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const { project, workspaceId } = yield* openOrchestrator(world);
+              let target = "o/a";
+              let items: ReadonlyArray<RoutineEvent> = [ev(1)];
+              world.routineEvents.set("prReady", () => Effect.sync(() => ({ items, target })));
+              const routine = yield* eventRoutine(workspaceId, project.id);
+              expect(routine.trigger?.target).toBe("o/a");
+              // Its project (or the home project, or the origin) now resolves to another repo
+              // with two PRs open: they are seen, not fired for.
+              target = "x/y";
+              items = [other(1), other(2)];
+              yield* TestClock.adjust("10 minutes");
+              const moved = yield* waitReal(
+                "the routine re-seeded on x/y",
+                routineNow(routine.id).pipe(
+                  Effect.map((each) => (each.trigger?.target === "x/y" ? each : undefined)),
+                ),
+              );
+              expect(moved.trigger?.seen).toEqual(["x/y#1", "x/y#2"]);
+              expect(moved.trigger?.pending).toBeUndefined();
+              yield* settle;
+              expect(yield* workersOf(routine.id)).toHaveLength(0);
+              // Only what comes after fires.
+              items = [other(1), other(2), other(3)];
+              yield* TestClock.adjust("10 minutes");
+              const [worker] = yield* workersAt(routine.id, 1);
+              const brief = yield* briefOf(worker!.id);
+              expect(brief).toContain("x/y#3");
+              expect(brief).not.toContain("x/y#1");
+            }),
+          );
+        }),
+      SLOW,
+    );
+
+    it.effect(
+      "[2] resumes a run a crash cut short though the workspace is paused at the restart",
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          const made = yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const orchestration = yield* Orchestration;
+              const { project, workspaceId } = yield* openOrchestrator(world);
+              yield* sees(world, ev(1));
+              const routine = yield* eventRoutine(workspaceId, project.id);
+              yield* stageState(routine.id, {
+                ...stateOf(routine),
+                trigger: { ...routine.trigger, seen: ["o/r#1", "o/r#5"] },
+                claim: {
+                  requestId: `routine:${routine.id}:${routine.nextRunAt}`,
+                  slot: routine.nextRunAt!,
+                  events: [ev(5)],
+                },
+              });
+              yield* orchestration.setPaused(workspaceId, true);
+              return { id: routine.id, workspaceId };
+            }),
+          );
+          yield* sees(world, ev(1), ev(5));
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const orchestration = yield* Orchestration;
+              yield* settle;
+              yield* TestClock.adjust("1 hour");
+              yield* settle;
+              expect(yield* workersOf(made.id)).toHaveLength(0);
+              expect((yield* routineNow(made.id)).claim?.events).toHaveLength(1);
+              yield* orchestration.setPaused(made.workspaceId, false);
+              yield* TestClock.adjust("10 minutes");
+              const [worker] = yield* workersAt(made.id, 1);
+              expect(yield* briefOf(worker!.id)).toContain("o/r#5:");
+            }),
+          );
+        }),
+      SLOW,
+    );
+
+    it.effect(
+      "[2] puts the events of a Run now a crash cut short back to wait",
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          const id = yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const { project, workspaceId } = yield* openOrchestrator(world);
+              yield* sees(world, ev(1));
+              const routine = yield* eventRoutine(workspaceId, project.id);
+              const now = yield* Clock.currentTimeMillis;
+              yield* stageState(routine.id, {
+                ...stateOf(routine),
+                trigger: { ...routine.trigger, seen: ["o/r#1", "o/r#6"], firedAt: now },
+                claim: {
+                  requestId: `routine:${routine.id}:manual:${now}`,
+                  slot: now,
+                  manual: true,
+                  events: [ev(6)],
+                },
+              });
+              return routine.id;
+            }),
+          );
+          yield* sees(world, ev(1), ev(6));
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              yield* settle;
+              yield* TestClock.adjust("1 minute");
+              // Back to wait, within the cooldown of the Run now that took them.
+              const back = yield* waitReal(
+                "the events back to wait",
+                routineNow(id).pipe(
+                  Effect.map((each) =>
+                    each.claim === undefined && each.trigger?.pending?.length === 1
+                      ? each
+                      : undefined,
+                  ),
+                ),
+              );
+              expect(back.trigger?.pending?.[0]?.key).toBe("o/r#6");
+              yield* TestClock.adjust("15 minutes");
+              const [worker] = yield* workersAt(id, 1);
+              expect(yield* briefOf(worker!.id)).toContain("o/r#6:");
+              expect((yield* routineNow(id)).lastRun).toMatchObject({ outcome: "started" });
+            }),
+          );
+        }),
+      SLOW,
+    );
+
+    it.effect(
+      "[3] keeps the events of a run that started nothing, and runs them once it can",
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const { thread, project, workspaceId } = yield* openOrchestrator(world);
+              const session = yield* atAutonomy(thread, "full", { maxConcurrentWorkers: 1 });
+              // The one worker the cap allows is someone else's: the routine's run is refused.
+              const busy = yield* spawn(session, { feature: "other" });
+              yield* sees(world);
+              const routine = yield* eventRoutine(workspaceId, project.id);
+              yield* sees(world, ev(2));
+              yield* TestClock.adjust("10 minutes");
+              const failed = yield* waitReal(
+                "the refused run",
+                routineNow(routine.id).pipe(
+                  Effect.map((each) => (each.lastRun?.outcome === "failed" ? each : undefined)),
+                ),
+              );
+              expect(failed.lastRun?.detail).toContain("wait to run again");
+              expect(failed.trigger?.pending?.map((each) => each.key)).toEqual(["o/r#2"]);
+              expect(failed.trigger?.firedAt).toBeDefined();
+              expect(failed.claim).toBeUndefined();
+              // The cap frees; past the cooldown the events run.
+              yield* (yield* ThreadRuntimes).close(busy.thread.id);
+              yield* settle;
+              yield* TestClock.adjust("10 minutes");
+              // The look ten minutes on, still within the cooldown: the events wait.
+              yield* waitReal(
+                "the look within the cooldown",
+                routineNow(routine.id).pipe(
+                  Effect.map((each) =>
+                    (each.trigger?.lookedAt ?? 0) > (each.trigger?.firedAt ?? 0) ? each : undefined,
+                  ),
+                ),
+              );
+              yield* settle;
+              expect(yield* workersOf(routine.id)).toHaveLength(0);
+              const [worker] = yield* advanceUntil(
+                "the retry's worker",
+                workersOf(routine.id).pipe(
+                  Effect.map((workers) => (workers.length > 0 ? workers : undefined)),
+                ),
+              );
+              expect(yield* briefOf(worker!.id)).toContain("o/r#2:");
+            }),
+          );
+        }),
+      SLOW,
+    );
+  });
 });

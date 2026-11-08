@@ -303,7 +303,10 @@ export const nextRunText = (
     const trigger = state.trigger;
     if (trigger?.problem !== undefined) return trigger.problem;
     const waiting = (trigger?.pending?.length ?? 0) + (trigger?.dropped ?? 0);
-    if (waiting > 0) return waiting === 1 ? "1 event waiting" : `${waiting} events waiting`;
+    if (waiting > 0) {
+      const count = waiting === 1 ? "1 event waiting" : `${waiting} events waiting`;
+      return trigger?.blocked === undefined ? count : `${count}. ${trigger.blocked}`;
+    }
     if (trigger?.lookedAt === undefined) return "Starts watching";
     return `Watching, checked ${formatStamp(trigger.lookedAt, now)}`;
   }

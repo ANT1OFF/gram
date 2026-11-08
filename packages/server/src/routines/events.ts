@@ -34,6 +34,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { compareVersions } from "../agent-runtime/policy.ts";
+import { DAY_MS } from "../zone-time.ts";
 import { asBackground, GhBudget } from "../github/budget.ts";
 import { ReviewRequestsPoller } from "../github/review-requests.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -59,7 +60,15 @@ export interface EventLookContext {
  * not polled yet), which changes nothing.
  */
 export type EventLook =
-  | { readonly items: ReadonlyArray<RoutineEvent>; readonly baseline?: string | undefined }
+  | {
+      readonly items: ReadonlyArray<RoutineEvent>;
+      readonly baseline?: string | undefined;
+      /**
+       * What was looked at, when the trigger doesn't say it alone: a PR or CI routine's resolved
+       * repository (and branch). The engine seeds afresh when it differs from the seeded one.
+       */
+      readonly target?: string | undefined;
+    }
   | { readonly problem: string }
   | undefined;
 
@@ -196,16 +205,18 @@ const NOT_THE_BRANCH = new Set(["pull_request", "pull_request_target"]);
 
 /**
  * The branch's red commit in an Actions runs answer: the newest commit with a completed run,
- * when one of its completed runs failed; none when it is green or nothing completed yet.
+ * when one of its completed runs failed; none when it is green or nothing completed yet; `null`
+ * when the branch has no runs at all (a mistyped branch, or a repository without Actions).
  */
 export const ciFailureOf = (
   body: string,
   repo: string,
   branch: string,
   now: number,
-): ReadonlyArray<RoutineEvent> | undefined => {
+): ReadonlyArray<RoutineEvent> | null | undefined => {
   const decoded = Option.getOrUndefined(decodeRuns(body));
   if (decoded === undefined) return undefined;
+  if (decoded.workflow_runs.length === 0) return null;
   const runs = decoded.workflow_runs
     .filter((run) => !NOT_THE_BRANCH.has(run.event) && run.status === "completed")
     .toSorted((a, b) => b.created_at.localeCompare(a.created_at));
@@ -240,8 +251,9 @@ const newestStable = (releases: ReadonlyArray<UpstreamRelease>) =>
 
 /**
  * A release routine's look over the package's releases: at the first look (no `baseline`) the
- * newest stable one is the baseline; after it, the newest stable release past the baseline and at
- * least `minAgeDays` old, once, which becomes the baseline. A burst of releases is one event.
+ * newest stable one already `minAgeDays` old is the baseline, so a younger one still fires once it
+ * is old enough; after it, the newest stable release past the baseline and at least `minAgeDays`
+ * old, once, which becomes the baseline. A burst of releases is one event.
  */
 export const releaseLookOf = (
   on: Extract<RoutineTrigger, { readonly event: "releasePublished" }>,
@@ -249,14 +261,16 @@ export const releaseLookOf = (
   baseline: string | undefined,
   now: number,
 ): Exclude<EventLook, undefined | { readonly problem: string }> => {
+  const minAgeDays = on.minAgeDays ?? RELEASE_MIN_AGE_DAYS;
   if (baseline === undefined) {
-    return { items: [], baseline: newestStable(releases)?.version ?? "0.0.0" };
+    const old = releases.filter((release) => now - release.publishedAt >= minAgeDays * DAY_MS);
+    return { items: [], baseline: newestStable(old)?.version ?? "0.0.0" };
   }
   const spec: ReleasePublishedCondition = {
     kind: "releasePublished",
     source: on.source,
     name: on.name,
-    minAgeDays: on.minAgeDays ?? RELEASE_MIN_AGE_DAYS,
+    minAgeDays,
   };
   const due = releaseDue(spec, baseline, releases, now);
   if (due === undefined) return { items: [], baseline };
@@ -358,7 +372,11 @@ export const RoutineEventSourcesLive = Layer.effect(
             }
             const current = yield* poller.current;
             // Not polled yet, signed out, or refused: an empty list then isn't "none".
-            if (current.checkedAt === undefined) return undefined;
+            if (current.checkedAt === undefined) {
+              return (yield* tools.ghReady)
+                ? undefined
+                : { problem: "GitHub's gh isn't installed or signed in on this computer." };
+            }
             const wanted = on.repo?.toLowerCase();
             return {
               items: current.requests
@@ -396,7 +414,7 @@ export const RoutineEventSourcesLive = Layer.effect(
             if (prs === null || (prs === undefined && NOT_FOUND.test(out.stderr))) {
               return { problem: `GitHub has no ${found.repo} that this login can see.` };
             }
-            return prs === undefined ? undefined : { items: prs };
+            return prs === undefined ? undefined : { items: prs, target: found.repo.toLowerCase() };
           }
           case "ciFailed": {
             const found = yield* repoOf(context.projectRoot);
@@ -414,7 +432,14 @@ export const RoutineEventSourcesLive = Layer.effect(
                 : undefined;
             }
             const items = ciFailureOf(out.stdout, found.repo, branch, now);
-            return items === undefined ? undefined : { items };
+            if (items === null) {
+              return {
+                problem: `${found.repo} has no CI runs on ${branch}. Check the branch's name.`,
+              };
+            }
+            return items === undefined
+              ? undefined
+              : { items, target: `${found.repo.toLowerCase()}@${branch}` };
           }
           case "releasePublished": {
             const list = yield* releasesOf(on.source, on.name);
