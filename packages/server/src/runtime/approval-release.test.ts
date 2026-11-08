@@ -85,7 +85,7 @@ const harness = (file = ":memory:") => {
       throw new Error("invented diagnostic logger fault");
     }
   });
-  const layer = ThreadRuntimes.layer.pipe(
+  const layer = ThreadRuntimes.layerOnLocalHost.pipe(
     Layer.provideMerge(store),
     Layer.provideMerge(hub),
     Layer.provideMerge(FakeAgentAdapter),

@@ -41,7 +41,7 @@ export const makeRuntimeTestLayer = (
   ),
 ) =>
   AppToolRegistry.layer.pipe(
-    Layer.provideMerge(ThreadRuntimes.layer),
+    Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
     Layer.provideMerge(UsageLimitReadings.layer),
     Layer.provideMerge(EventHub.layer),
     Layer.provideMerge(store),

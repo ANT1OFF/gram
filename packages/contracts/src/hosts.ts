@@ -30,3 +30,9 @@ export const checkoutRef = (checkout: {
 /** Two refs name the same place: the same host, and the same path compared as given. */
 export const sameCheckoutRef = (a: CheckoutRef, b: CheckoutRef): boolean =>
   a.hostId === b.hostId && a.path === b.path;
+
+/** No host by that id is paired, or it is not connected now. */
+export class HostUnavailable extends Schema.TaggedError<HostUnavailable>()("HostUnavailable", {
+  hostId: HostId,
+  message: Schema.String,
+}) {}

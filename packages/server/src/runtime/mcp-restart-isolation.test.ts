@@ -191,7 +191,7 @@ const fixture = (logs: CapturedLogs) => {
     },
     layerAt: (file: string) =>
       AppToolRegistry.layer.pipe(
-        Layer.provideMerge(ThreadRuntimes.layer),
+        Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
         Layer.provideMerge(EventHub.layer),
         Layer.provideMerge(ThreadStore.layerSqlite(file)),
         Layer.provideMerge(agents),

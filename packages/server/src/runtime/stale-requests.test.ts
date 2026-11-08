@@ -23,7 +23,7 @@ import { ThreadRuntimes } from "./thread-runtimes.ts";
 
 const echoLayerAt = (file: string) =>
   AppToolRegistry.layer.pipe(
-    Layer.provideMerge(ThreadRuntimes.layer),
+    Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
     Layer.provideMerge(EventHub.layer),
     Layer.provideMerge(ThreadStore.layerSqlite(file)),
     Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo" })),
@@ -156,7 +156,7 @@ describe("what a crash left behind", () => {
       const file = join(dir, "gram.db");
       const layer = () =>
         AppToolRegistry.layer.pipe(
-          Layer.provideMerge(ThreadRuntimes.layer),
+          Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
           Layer.provideMerge(EventHub.layer),
           Layer.provideMerge(ThreadStore.layerSqlite(file)),
           Layer.provideMerge(makeFakeAgentAdapter()),

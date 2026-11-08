@@ -68,6 +68,7 @@ import { LoopStallLog } from "../logging/loop-stalls.ts";
 import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { PreviewFiles } from "../preview/files.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
   HttpPlatform,
@@ -409,7 +410,12 @@ export const ServerCore = Layer.unwrap(
               Layer.provideMerge(UsageLimitReadings.layer),
             ),
           ),
-          Layer.provideMerge(Layer.mergeAll(GitCheckoutLive, ClaudeAiSeenLive)),
+          // The machines work runs on: only this one for now, over its agents and checkouts.
+          Layer.provideMerge(
+            WorkerHosts.layerLocal.pipe(
+              Layer.provideMerge(Layer.mergeAll(GitCheckoutLive, ClaudeAiSeenLive)),
+            ),
+          ),
           Layer.provideMerge(
             // Low enough for the port scan and the limit poll to rest while no window shows.
             Layer.mergeAll(EventHub.layer, TerminalGate.layer, PreviewFiles.layer, AppActivityLive),

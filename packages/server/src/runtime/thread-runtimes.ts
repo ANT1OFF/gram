@@ -43,8 +43,9 @@ import { ThreadPlans } from "../plans/service.ts";
 import { ThreadWaits } from "../waits/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ActivityTracker } from "./activity.ts";
-import { AgentHosts } from "./agent-hosts.ts";
-import { CheckoutService, TurnHooks } from "./hooks.ts";
+import type { AgentHosts } from "./agent-hosts.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
+import { type CheckoutService, TurnHooks } from "./hooks.ts";
 import type { EarlyReleases, ReleaseWave } from "./limit-wait.ts";
 import { makeRateLimitGate } from "./rate-limits.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
@@ -128,13 +129,20 @@ export class ThreadRuntimes extends Context.Service<ThreadRuntimes, ThreadRuntim
   static readonly layer: Layer.Layer<
     ThreadRuntimes | ThreadPlans | ThreadWaits | TurnActivity,
     never,
-    ThreadStore | EventHub | AgentHosts | ServerConfig | TurnHooks | CheckoutService
+    ThreadStore | EventHub | WorkerHosts | ServerConfig | TurnHooks
   > = Layer.effect(
     ThreadRuntimes,
     Effect.suspend(() => make),
   ).pipe(
     Layer.provideMerge(Layer.mergeAll(ThreadPlans.layer, ThreadWaits.layer, TurnActivity.layer)),
   );
+
+  /** `layer` on this machine's host alone, built from the agent hosts and checkout service. */
+  static readonly layerOnLocalHost: Layer.Layer<
+    ThreadRuntimes | ThreadPlans | ThreadWaits | TurnActivity,
+    never,
+    ThreadStore | EventHub | AgentHosts | ServerConfig | TurnHooks | CheckoutService
+  > = ThreadRuntimes.layer.pipe(Layer.provide(WorkerHosts.layerLocal));
 }
 
 /** One send of the input in flight: its runtime, and whether its message is in the feed. */
@@ -155,10 +163,11 @@ const make = Effect.gen(function* () {
   const plans = yield* ThreadPlans;
   const waits = yield* ThreadWaits;
   const turnActivity = yield* TurnActivity;
-  const hosts = yield* AgentHosts;
+  // This machine's host. A session and its checkout reach the machine only through it, so a thread
+  // on another machine can later take that machine's host instead.
+  const { sessions: hosts, checkouts } = (yield* WorkerHosts).local;
   const config = yield* ServerConfig;
   const hooks = yield* TurnHooks;
-  const checkouts = yield* CheckoutService;
   const sessions = yield* FiberMap.make<ThreadId>();
   /** Set by `shutdown`, for good: the process is about to exit. */
   let shuttingDown = false;

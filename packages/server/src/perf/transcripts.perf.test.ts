@@ -55,7 +55,7 @@ const MB = 1024 * 1024;
 
 const layerFor = (databaseFile: string) =>
   AppToolRegistry.layer.pipe(
-    Layer.provideMerge(ThreadRuntimes.layer),
+    Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
     Layer.provideMerge(EventHub.layer),
     Layer.provideMerge(ThreadStore.layerSqlite(databaseFile)),
     Layer.provideMerge(FakeAgentAdapter),
