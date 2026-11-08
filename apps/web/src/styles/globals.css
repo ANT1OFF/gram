@@ -31,6 +31,9 @@
 @custom-variant motion-reduce (&:where([data-motion="reduced"], [data-motion="reduced"] *, [data-motion="off"], [data-motion="off"] *));
 /* A message's actions float over it (the orchestrator's chat) only with a pointer that hovers and
    room in the message (`@container/message`); on touch or in a narrow column they keep their row. */
+/* A phone or an upright tablet (phone access): a window under 1024 px with a touch screen as its
+   main pointer. A narrow desktop window keeps the desktop layout. `usePhone()` uses the same query. */
+@custom-variant phone (@media (max-width: 1023px) and (pointer: coarse));
 @custom-variant float-actions {
   @media (hover: hover) {
     @container message (min-width: 40rem) {

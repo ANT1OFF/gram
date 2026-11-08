@@ -110,7 +110,7 @@ export function QuietLayer() {
           onClick={() => useViewStore.getState().setQuiet(false)}
         >
           Leave Focus
-          {hint && <kbd className="font-sans text-caption opacity-70">{hint}</kbd>}
+          {hint && <kbd className="font-sans text-caption opacity-70 phone:hidden">{hint}</kbd>}
         </Button>
       </div>
       {screen && <screen.QuietView workspaceId={workspace?.workspace.id} />}

@@ -1,0 +1,1058 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phone layout · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: var(--surface-1);
+        color: var(--fg);
+        font: 14px/20px var(--font-ui);
+      }
+      h1 {
+        font-size: 17px;
+        line-height: 24px;
+        font-weight: 600;
+        margin: 0 0 4px;
+      }
+      .lede {
+        color: var(--fg-muted);
+        margin: 0 0 20px;
+        max-width: 70ch;
+      }
+      .boards {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 28px;
+      }
+      .board {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .board > .label {
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .phone {
+        position: relative;
+        width: 390px;
+        height: 844px;
+        overflow: hidden;
+        border-radius: 28px;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-2);
+        display: flex;
+        flex-direction: column;
+      }
+      .mono {
+        font-family: var(--font-mono);
+        font-size: 13px;
+      }
+      .muted {
+        color: var(--fg-muted);
+      }
+      .subtle {
+        color: var(--fg-subtle);
+      }
+      .meta {
+        font-size: 13px;
+        line-height: 20px;
+        color: var(--fg-muted);
+      }
+      svg {
+        width: 20px;
+        height: 20px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.75;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex: none;
+      }
+
+      /* Header: menu, title, inbox, overflow. Every button is 44 px. */
+      .bar {
+        flex: none;
+        height: 52px;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 0 4px;
+        background: var(--surface-1);
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .icon-btn {
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        color: var(--fg-muted);
+        position: relative;
+        border: 0;
+        background: none;
+      }
+      .icon-btn .dot {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--status-needs-mark);
+      }
+      .bar .title {
+        flex: 1;
+        min-width: 0;
+        padding: 0 4px;
+      }
+      .bar .title b {
+        display: block;
+        font-weight: 600;
+        font-size: 15px;
+        line-height: 20px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .bar .title span {
+        display: block;
+        font-size: 12px;
+        line-height: 16px;
+        color: var(--fg-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* Transcript */
+      .scroll {
+        flex: 1;
+        overflow: hidden;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        font-size: 15px;
+        line-height: 24px;
+      }
+      .user {
+        align-self: flex-end;
+        max-width: 85%;
+        background: var(--surface-3);
+        border-radius: 16px;
+        padding: 10px 14px;
+      }
+      .tool {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 44px;
+        padding: 0 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 12px;
+        font-size: 14px;
+        color: var(--fg-muted);
+      }
+      .tool .mono {
+        color: var(--fg);
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        flex: 1;
+      }
+      .chip-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        min-height: 44px;
+        padding: 0 16px;
+        border-radius: 12px;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        color: var(--fg);
+        font: 500 14px/20px var(--font-ui);
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        justify-content: center;
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--on-accent);
+      }
+      .btn.ghost {
+        background: none;
+      }
+      .btn.wide {
+        flex: 1;
+      }
+
+      /* Composer */
+      .composer {
+        flex: none;
+        margin: 0 8px 8px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 22px;
+        background: var(--surface-3);
+        padding: 12px 8px 8px 16px;
+      }
+      .composer .ph {
+        color: var(--fg-subtle);
+        font-size: 15px;
+        line-height: 24px;
+        min-height: 24px;
+      }
+      .composer .row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 8px;
+      }
+      .composer .chip {
+        min-height: 36px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .send {
+        margin-left: auto;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: var(--on-accent);
+        display: grid;
+        place-items: center;
+      }
+      .send.stop {
+        background: var(--fg);
+        color: var(--surface-2);
+      }
+      .send.stop i {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        background: currentColor;
+        display: block;
+      }
+
+      /* Status dots */
+      .d {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: none;
+        display: inline-block;
+      }
+      .d.needs {
+        background: var(--status-needs-mark);
+      }
+      .d.run {
+        background: var(--status-working);
+      }
+      .d.wait {
+        border: 1.5px solid var(--status-working);
+      }
+      .d.fail {
+        background: var(--danger);
+      }
+      .d.done {
+        background: var(--merged);
+      }
+      .d.idle {
+        background: var(--status-idle);
+      }
+
+      /* Drawer */
+      .scrim {
+        position: absolute;
+        inset: 0;
+        background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+      }
+      .drawer {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 340px;
+        background: var(--surface-1);
+        border-right: 1px solid var(--border-subtle);
+        display: flex;
+        flex-direction: column;
+        box-shadow: 8px 0 32px rgb(0 0 0 / 0.25);
+      }
+      .drawer .top {
+        padding: 12px 12px 8px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .search {
+        flex: 1;
+        height: 44px;
+        border-radius: 12px;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-2);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        color: var(--fg-subtle);
+        font-size: 15px;
+      }
+      .drawer .list {
+        flex: 1;
+        overflow: hidden;
+        padding: 0 8px;
+      }
+      .sec {
+        font-size: 13px;
+        line-height: 20px;
+        color: var(--fg-muted);
+        padding: 14px 8px 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .sec .count {
+        margin-left: auto;
+        font-size: 12px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 48px;
+        padding: 0 8px;
+        border-radius: 12px;
+      }
+      .row.on {
+        background: var(--surface-3);
+      }
+      .row .t {
+        flex: 1;
+        min-width: 0;
+      }
+      .row .t b {
+        display: block;
+        font-weight: 500;
+        font-size: 15px;
+        line-height: 20px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row .t span {
+        display: block;
+        font-size: 13px;
+        line-height: 18px;
+        color: var(--fg-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row .t span.needs {
+        color: var(--status-needs);
+      }
+      .row .end {
+        font-size: 13px;
+        color: var(--fg-subtle);
+      }
+      .ws {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 44px;
+        padding: 0 8px;
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .ws .mark {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .drawer .foot {
+        border-top: 1px solid var(--border-subtle);
+        padding: 6px 8px;
+        display: flex;
+        gap: 4px;
+      }
+      .drawer .foot .row {
+        flex: 1;
+        min-height: 44px;
+        gap: 10px;
+        color: var(--fg-muted);
+        font-size: 14px;
+      }
+
+      /* Sheets */
+      .sheet-full {
+        position: absolute;
+        inset: 0;
+        background: var(--surface-2);
+        display: flex;
+        flex-direction: column;
+      }
+      .sheet-head {
+        flex: none;
+        height: 52px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 4px 0 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+      }
+      .sheet-head b {
+        flex: 1;
+        font-size: 17px;
+        line-height: 24px;
+        font-weight: 600;
+      }
+      .card {
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        border-radius: 16px;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .card .h {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .card .h b {
+        font-weight: 500;
+        font-size: 15px;
+        line-height: 20px;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .code {
+        font-family: var(--font-mono);
+        font-size: 13px;
+        background: var(--surface-2);
+        border-radius: 8px;
+        padding: 8px 10px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .opt {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 48px;
+        padding: 0 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 12px;
+        font-size: 15px;
+      }
+      .opt.sel {
+        border-color: var(--accent);
+      }
+      .opt .radio {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 1.5px solid var(--border-strong);
+        flex: none;
+      }
+      .opt.sel .radio {
+        border: 5px solid var(--accent);
+      }
+      .text-answer {
+        min-height: 48px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 12px;
+        padding: 12px;
+        color: var(--fg-subtle);
+        font-size: 15px;
+      }
+
+      .bottom-sheet {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: var(--surface-3);
+        border-radius: 20px 20px 0 0;
+        border-top: 1px solid var(--border-subtle);
+        padding: 8px 16px 24px;
+        box-shadow: 0 -8px 32px rgb(0 0 0 / 0.25);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .grab {
+        width: 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border-strong);
+        align-self: center;
+        margin-bottom: 8px;
+      }
+      .bs-title {
+        display: flex;
+        align-items: center;
+      }
+      .bs-title b {
+        flex: 1;
+        font-size: 17px;
+        font-weight: 600;
+        line-height: 24px;
+      }
+      .bs-sec {
+        font-size: 13px;
+        color: var(--fg-muted);
+        margin-top: 10px;
+      }
+      .seg {
+        display: flex;
+        border: 1px solid var(--border-subtle);
+        border-radius: 12px;
+        padding: 3px;
+        gap: 3px;
+      }
+      .seg span {
+        flex: 1;
+        min-height: 40px;
+        display: grid;
+        place-items: center;
+        border-radius: 9px;
+        font-size: 14px;
+        color: var(--fg-muted);
+      }
+      .seg span.on {
+        background: var(--surface-2);
+        color: var(--fg);
+        font-weight: 500;
+        box-shadow: 0 0 0 1px var(--border-subtle);
+      }
+      .mrow {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 52px;
+        padding: 0 4px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .mrow .t {
+        flex: 1;
+      }
+      .mrow .t b {
+        display: block;
+        font-weight: 500;
+        font-size: 15px;
+      }
+      .mrow .t span {
+        display: block;
+        font-size: 13px;
+        color: var(--fg-muted);
+        line-height: 18px;
+      }
+      .check {
+        color: var(--accent);
+      }
+      .toggle {
+        width: 44px;
+        height: 26px;
+        border-radius: 13px;
+        background: var(--border-subtle);
+        position: relative;
+      }
+      .toggle::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--surface-2);
+      }
+
+      /* Board cards */
+      .bcard {
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        border-radius: 16px;
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .bcard .h {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .bcard .h b {
+        flex: 1;
+        min-width: 0;
+        font-weight: 500;
+        font-size: 15px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .stages {
+        display: flex;
+        gap: 3px;
+      }
+      .stages i {
+        flex: 1;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border-subtle);
+      }
+      .stages i.cur {
+        background: var(--accent);
+      }
+      .bcard .f {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .pr {
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        padding: 0 6px;
+        font-size: 12px;
+        line-height: 20px;
+      }
+      .tabs {
+        display: flex;
+        gap: 6px;
+        padding: 10px 16px 4px;
+      }
+      .tabs span {
+        min-height: 36px;
+        padding: 0 14px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        font-size: 14px;
+        color: var(--fg-muted);
+        border: 1px solid var(--border-subtle);
+      }
+      .tabs span.on {
+        color: var(--fg);
+        background: var(--surface-3);
+        font-weight: 500;
+      }
+      .note {
+        font-size: 13px;
+        color: var(--fg-muted);
+        max-width: 390px;
+      }
+    </style>
+  </head>
+  <body>
+    <svg style="display: none">
+      <symbol id="menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
+      <symbol id="inbox" viewBox="0 0 24 24">
+        <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+        <path
+          d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"
+        />
+      </symbol>
+      <symbol id="more" viewBox="0 0 24 24">
+        <circle cx="5" cy="12" r="1" />
+        <circle cx="12" cy="12" r="1" />
+        <circle cx="19" cy="12" r="1" />
+      </symbol>
+      <symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></symbol>
+      <symbol id="search" viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </symbol>
+      <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+      <symbol id="up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7" /></symbol>
+      <symbol id="settings" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" />
+        <path
+          d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+        />
+      </symbol>
+      <symbol id="history" viewBox="0 0 24 24">
+        <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+        <path d="M3 3v5h5M12 7v5l3 2" />
+      </symbol>
+      <symbol id="gauge" viewBox="0 0 24 24">
+        <path d="M12 14l4-4" />
+        <path d="M3.34 19a10 10 0 1 1 17.32 0" />
+      </symbol>
+      <symbol id="sparkle" viewBox="0 0 24 24">
+        <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" />
+      </symbol>
+      <symbol id="chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></symbol>
+      <symbol id="check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+      <symbol id="board" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M9 4v16M15 4v16" />
+      </symbol>
+    </svg>
+
+    <h1>Phone layout · v1</h1>
+    <p class="lede">
+      Gram below 640 px wide (a phone through phone access). One header, a drawer for every thread,
+      full-screen sheets instead of two-pane dialogs, bottom sheets instead of popovers, cards
+      instead of the Board's table. Every control is at least 44 px; nothing shows a key legend.
+      Toggle the theme with the system setting, or add <code>data-theme="light"</code> to html.
+    </p>
+
+    <div class="boards">
+      <!-- 1. Thread -->
+      <section class="board" id="thread">
+        <div class="label">1 · A thread: header and composer</div>
+        <div class="phone">
+          <div class="bar">
+            <button class="icon-btn" aria-label="Threads">
+              <svg><use href="#menu" /></svg>
+            </button>
+            <div class="title"><b>Fix flaky retry test</b><span>api · working for 38s</span></div>
+            <button class="icon-btn" aria-label="Needs you">
+              <svg><use href="#inbox" /></svg><i class="dot"></i>
+            </button>
+            <button class="icon-btn" aria-label="More">
+              <svg><use href="#more" /></svg>
+            </button>
+          </div>
+          <div class="scroll">
+            <div class="user">Make the retry test deterministic.</div>
+            <div>
+              The flake comes from a real timer in the backoff. I swapped it for the fake clock the
+              other queue tests use.
+            </div>
+            <div class="tool">
+              <svg><use href="#chev" /></svg>Bash
+              <span class="mono">bun test queue/retry.test.ts</span>
+            </div>
+            <div>The test passes 20/20 now. I'd like to push the branch.</div>
+            <div class="card">
+              <div class="h"><i class="d needs"></i><b>Allow Bash?</b></div>
+              <div class="code">git push origin fix/flaky-retry</div>
+              <div class="chip-row">
+                <span class="btn primary wide">Allow once</span
+                ><span class="btn wide">Always allow</span><span class="btn ghost">Deny</span>
+              </div>
+            </div>
+          </div>
+          <div class="composer">
+            <div class="ph">Message this thread…</div>
+            <div class="row">
+              <span class="chip"
+                ><svg style="width: 16px; height: 16px"><use href="#sparkle" /></svg>Opus · High ·
+                Auto</span
+              >
+              <span class="send stop" aria-label="Stop"><i></i></span>
+            </div>
+          </div>
+        </div>
+        <p class="note">
+          Header: menu, title with its place and state underneath, Needs you (amber dot while
+          something asks), and More. Chat and Board, Usage, Memory, panels and Settings move into
+          More. While a turn runs, Stop takes Send's place.
+        </p>
+      </section>
+
+      <!-- 2. Drawer -->
+      <section class="board" id="drawer">
+        <div class="label">2 · The drawer: every thread, with its state</div>
+        <div class="phone">
+          <div class="bar">
+            <button class="icon-btn">
+              <svg><use href="#menu" /></svg>
+            </button>
+            <div class="title"><b>Fix flaky retry test</b><span>api</span></div>
+          </div>
+          <div class="scrim"></div>
+          <div class="drawer">
+            <div class="top">
+              <div class="search">
+                <svg><use href="#search" /></svg>Search threads
+              </div>
+              <span class="btn primary" style="width: 44px; padding: 0" aria-label="New task"
+                ><svg><use href="#plus" /></svg
+              ></span>
+            </div>
+            <div class="list">
+              <div class="sec"><i class="d needs"></i>Needs you<span class="count">2</span></div>
+              <div class="row">
+                <i class="d needs"></i>
+                <div class="t">
+                  <b>Fix flaky retry test</b><span class="needs">asks to run git push</span>
+                </div>
+                <span class="end">api</span>
+              </div>
+              <div class="row">
+                <i class="d needs"></i>
+                <div class="t">
+                  <b>Refund webhook</b><span class="needs">asks which currency</span>
+                </div>
+                <span class="end">billing</span>
+              </div>
+
+              <div class="ws"><span class="mark">a</span>api</div>
+              <div class="row on">
+                <i class="d run"></i>
+                <div class="t"><b>Orchestrator</b><span>3 workers · 1 PR in review</span></div>
+                <span class="end">now</span>
+              </div>
+              <div class="row">
+                <i class="d wait"></i>
+                <div class="t"><b>Queue consumer retries</b><span>#142 · checks</span></div>
+                <span class="end">5m</span>
+              </div>
+              <div class="row">
+                <i class="d fail"></i>
+                <div class="t"><b>Migrate settings schema</b><span>Failed · tests</span></div>
+                <span class="end">12m</span>
+              </div>
+              <div class="row">
+                <i class="d done"></i>
+                <div class="t"><b>Search in Settings</b><span>#137 merged</span></div>
+                <span class="end">09:19</span>
+              </div>
+
+              <div class="ws"><span class="mark">w</span>web</div>
+              <div class="row">
+                <i class="d idle"></i>
+                <div class="t"><b>Checkout button state</b><span>Stopped by you</span></div>
+                <span class="end">07:30</span>
+              </div>
+            </div>
+            <div class="foot">
+              <div class="row">
+                <svg><use href="#history" /></svg>History
+              </div>
+              <div class="row">
+                <svg><use href="#settings" /></svg>Settings
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="note">
+          Swipe from the edge or tap the menu. Needs you comes first, then each workspace's threads,
+          newest first; done threads fold after a day like the sidebar. Rows are 48 px, one line of
+          title and one of state, the state's words in its colour only when it asks you. Picking a
+          row closes the drawer.
+        </p>
+      </section>
+
+      <!-- 3. Needs you sheet -->
+      <section class="board" id="inbox">
+        <div class="label">3 · Needs you as a full-screen sheet</div>
+        <div class="phone">
+          <div class="sheet-full">
+            <div class="sheet-head">
+              <b>Needs you</b
+              ><button class="icon-btn" aria-label="Close">
+                <svg><use href="#x" /></svg>
+              </button>
+            </div>
+            <div class="scroll" style="font-size: 14px; line-height: 20px">
+              <div class="card">
+                <div class="h">
+                  <i class="d needs"></i><b>Fix flaky retry test</b><span class="meta">api</span>
+                </div>
+                <div class="muted">Asks to run</div>
+                <div class="code">git push origin fix/flaky-retry</div>
+                <div class="chip-row">
+                  <span class="btn primary wide">Allow once</span><span class="btn wide">Open</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="h">
+                  <i class="d needs"></i><b>Refund webhook</b><span class="meta">billing</span>
+                </div>
+                <div>
+                  Which currency should partial refunds use when the original charge was converted?
+                </div>
+                <div class="opt sel"><span class="radio"></span>The charge's currency</div>
+                <div class="opt"><span class="radio"></span>The account's default currency</div>
+                <div class="text-answer">Or type your own answer…</div>
+                <div class="chip-row">
+                  <span class="btn primary wide">Send answer</span
+                  ><span class="btn wide">Open</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="h">
+                  <i class="d fail"></i><b>Migrate settings schema</b><span class="meta">api</span>
+                </div>
+                <div class="muted">Failed: 2 tests in settings-migrate.test.ts</div>
+                <div class="chip-row">
+                  <span class="btn wide">Retry</span><span class="btn wide">Open</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="note">
+          One column of cards, answerable in place: an approval's buttons, a question's choices with
+          a free-text answer under them, a failure's Retry. Close is a 44 px button in the header;
+          no key legend. History and the command palette take the same sheet.
+        </p>
+      </section>
+
+      <!-- 4. Composer options -->
+      <section class="board" id="composer">
+        <div class="label">4 · Composer options as a bottom sheet</div>
+        <div class="phone">
+          <div class="bar">
+            <button class="icon-btn">
+              <svg><use href="#menu" /></svg>
+            </button>
+            <div class="title"><b>Fix flaky retry test</b><span>api</span></div>
+            <button class="icon-btn">
+              <svg><use href="#inbox" /></svg>
+            </button>
+            <button class="icon-btn">
+              <svg><use href="#more" /></svg>
+            </button>
+          </div>
+          <div class="scroll"><div class="user">Make the retry test deterministic.</div></div>
+          <div class="scrim"></div>
+          <div class="bottom-sheet">
+            <div class="grab"></div>
+            <div class="bs-title">
+              <b>Model and mode</b
+              ><button class="icon-btn">
+                <svg><use href="#x" /></svg>
+              </button>
+            </div>
+            <div class="bs-sec">Model</div>
+            <div class="mrow">
+              <div class="t"><b>Opus</b><span>Best for planning and hard changes</span></div>
+              <svg class="check"><use href="#check" /></svg>
+            </div>
+            <div class="mrow">
+              <div class="t"><b>Sonnet</b><span>Fast for everyday work</span></div>
+            </div>
+            <div class="mrow">
+              <div class="t"><b>GPT-5 Codex</b><span>Codex</span></div>
+            </div>
+            <div class="bs-sec">Effort</div>
+            <div class="seg">
+              <span>Low</span><span>Medium</span><span class="on">High</span><span>Max</span>
+            </div>
+            <div class="bs-sec">Mode</div>
+            <div class="seg">
+              <span>Ask</span><span>Plan</span><span class="on">Auto</span><span>Bypass</span>
+            </div>
+            <div class="mrow" style="border: 0; margin-top: 6px">
+              <div class="t">
+                <b>Fast mode</b><span>Faster output, uses more of your limit</span>
+              </div>
+              <span class="toggle"></span>
+            </div>
+          </div>
+        </div>
+        <p class="note">
+          The one chip opens a sheet from the bottom, not the desktop's three-column popover: model
+          rows with a line each, effort and mode as segments, Fast as a switch. Thumb-height,
+          dismissed by swipe, scrim or Close.
+        </p>
+      </section>
+
+      <!-- 5. Board -->
+      <section class="board" id="board">
+        <div class="label">5 · The Board as cards</div>
+        <div class="phone">
+          <div class="bar">
+            <button class="icon-btn">
+              <svg><use href="#menu" /></svg>
+            </button>
+            <div class="title"><b>Board</b><span>api · 5 tasks</span></div>
+            <button class="icon-btn">
+              <svg><use href="#inbox" /></svg><i class="dot"></i>
+            </button>
+            <button class="icon-btn">
+              <svg><use href="#more" /></svg>
+            </button>
+          </div>
+          <div class="tabs">
+            <span class="on">Now 3</span><span>Waiting 1</span><span>Done 4</span>
+          </div>
+          <div class="scroll" style="font-size: 14px; line-height: 20px; gap: 10px">
+            <div class="bcard">
+              <div class="h">
+                <i class="d needs"></i><b>Fix flaky retry test</b><span class="meta">asks you</span>
+              </div>
+              <div class="stages"><i></i><i></i><i class="cur"></i><i></i><i></i></div>
+              <div class="f">Test · Sonnet<span class="pr">#142</span></div>
+            </div>
+            <div class="bcard">
+              <div class="h">
+                <i class="d run"></i><b>Queue consumer retries</b><span class="meta">4m</span>
+              </div>
+              <div class="stages"><i></i><i class="cur"></i><i></i><i></i><i></i></div>
+              <div class="f">Build · Opus</div>
+            </div>
+            <div class="bcard">
+              <div class="h">
+                <i class="d fail"></i><b>Migrate settings schema</b><span class="meta">failed</span>
+              </div>
+              <div class="stages"><i></i><i></i><i class="cur"></i><i></i><i></i></div>
+              <div class="f">Test · Codex<span class="pr">#140</span></div>
+            </div>
+            <div class="bcard">
+              <div class="h">
+                <i class="d wait"></i><b>Release notes for 0.9</b><span class="meta">checks</span>
+              </div>
+              <div class="stages"><i></i><i></i><i></i><i class="cur"></i><i></i></div>
+              <div class="f">Review · Sonnet<span class="pr">#138</span></div>
+            </div>
+          </div>
+          <div class="composer">
+            <div class="ph">Message the orchestrator…</div>
+            <div class="row">
+              <span class="chip">Opus · High · Auto</span
+              ><span class="send"
+                ><svg><use href="#up" /></svg
+              ></span>
+            </div>
+          </div>
+        </div>
+        <p class="note">
+          Each task is a card: dot and title, its stage bar (grey, the current step in the accent),
+          stage, agent and PR. Now, Waiting and Done replace the desktop's columns. Chat and Board
+          switch from More.
+        </p>
+      </section>
+    </div>
+  </body>
+</html>

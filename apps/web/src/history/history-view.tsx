@@ -4,6 +4,8 @@ import { create } from "zustand";
 
 import { lazyPart } from "@/lib/lazy-part";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
+import { cn } from "@/lib/utils";
+import { PHONE_SHEET } from "@/thread/dialog-shell";
 
 import type { HistoryFilter } from "./history-model";
 
@@ -65,7 +67,10 @@ export function HistoryView() {
           aria-label="History"
           // A thread just opened takes focus in its pane; only a dismissal hands it back.
           finalFocus={() => (picked ? false : returnFocusTo(opener)())}
-          className="fixed top-[6%] left-1/2 z-50 flex h-[86vh] w-[min(72rem,94vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-modal transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className={cn(
+            "fixed top-[6%] left-1/2 z-50 flex h-[86vh] w-[min(72rem,94vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-modal transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
+            PHONE_SHEET,
+          )}
         >
           {open && <body.HistoryBody onPicked={() => setPicked(true)} />}
         </Dialog.Popup>

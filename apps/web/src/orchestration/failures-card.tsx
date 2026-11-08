@@ -117,10 +117,11 @@ export function FailureRowView({
       data-testid="board-failure"
       data-kind={failure.kind}
       data-thread-id={failure.threadId}
-      className="flex min-w-0 items-start gap-2 px-3 py-2"
+      // On a phone its words take the row and its buttons, 44 px tall, go under them.
+      className="flex min-w-0 items-start gap-2 px-3 py-2 phone:flex-wrap"
     >
       <CauseIcon step={row.step} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 phone:basis-[calc(100%-1.5rem)]">
         <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-reading">
           <span data-testid="board-failure-cause" className="shrink-0 font-medium text-destructive">
             {row.cause}
@@ -161,7 +162,7 @@ export function FailureRowView({
         data-testid="board-failure-action"
         data-step={row.step.kind}
         onClick={act}
-        className="mt-0.5"
+        className="mt-0.5 phone:ms-6 phone:h-11"
       >
         <StepIcon step={row.step} />
         {row.step.label}
@@ -177,7 +178,7 @@ export function FailureRowView({
               data-testid="board-failure-dismiss"
               aria-label={`Dismiss ${failure.tag} on ${failure.title}`}
               onClick={onDismiss}
-              className="mt-0.5 text-muted-foreground"
+              className="mt-0.5 text-muted-foreground phone:ms-auto phone:size-11"
             />
           }
         >

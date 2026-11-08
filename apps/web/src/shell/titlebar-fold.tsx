@@ -1,10 +1,11 @@
 import { Menu } from "@base-ui/react/menu";
 import type { GridPreset, ProjectId, ThreadId, WorkspaceState } from "@gram/contracts";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   BookOpen,
   Brain,
   BroomSparkles,
+  ChartNoAxesCombined,
   CheckIcon,
   ChevronRightIcon,
   CirclePause,
@@ -13,12 +14,15 @@ import {
   Ellipsis,
   Focus,
   History,
+  LayoutDashboard,
   MessageSquare,
   Moon,
   Network,
+  PanelRightOpen,
   PanelsTopLeft,
   Play,
   Rows3,
+  Settings,
   Settings2,
   Telescope,
   Workflow,
@@ -32,7 +36,9 @@ import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
 import { EXPLAIN } from "@/lib/explain";
 import { seeTerm } from "@/lib/first-use";
+import { usePhone, useTouch } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
+import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { DISCOVER_QUEUED, DISCOVER_SENT } from "@/orchestration/board-model";
 import { useDiscover, useTidyUp } from "@/orchestration/use-board-actions";
 import { WorkerMenuItems } from "@/orchestration/worker-header";
@@ -41,14 +47,21 @@ import { useWorkspacePause } from "@/orchestration/workspace-pause-button";
 import { RunScriptMenuItems } from "@/scripts/run-script-menu";
 import { useProjectScripts } from "@/scripts/use-project-scripts";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
-import { GRID_PRESETS, PRESET_LABELS, useLayoutStore, type BoardLayout } from "@/stores/layout";
+import {
+  fitShell,
+  GRID_PRESETS,
+  PRESET_LABELS,
+  useLayoutStore,
+  type BoardLayout,
+} from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { pauseClock } from "@/thread/orchestration-model";
 import { AllActivityItem, useThreadMenu } from "@/thread/thread-menu";
-import { useViewStore } from "@/views/view-store";
+import { chatRoute, switcherChecked, useViewStore, type AppView } from "@/views/view-store";
 import { useViewWorkspace } from "@/views/view-workspace";
 
 import { PresetGlyph } from "./preset-glyph";
+import { useSwitchWorkspace } from "./workspace-switcher";
 import { useTitlebarOutline } from "./titlebar-outline";
 import { FOLD_ALL, useTitlebarSlot, useTitlebarThread } from "./titlebar-slot";
 
@@ -86,7 +99,10 @@ function Described({ label, line }: { label: ReactNode; line: string }) {
 /** An item's shortcut, right-aligned as the palette shows it. */
 function Keys({ id }: { id: string }) {
   const hint = useShortcutHint(id);
-  return hint ? <span className="ml-auto pl-4 text-meta text-muted-foreground">{hint}</span> : null;
+  // A phone has no keyboard to name.
+  return hint ? (
+    <span className="ml-auto pl-4 text-meta text-muted-foreground phone:hidden">{hint}</span>
+  ) : null;
 }
 
 /** A submenu's current value, right-aligned before its chevron. */
@@ -136,7 +152,7 @@ function Submenu({
           <Menu.Popup
             data-testid={popupTestId}
             aria-label={popupLabel}
-            className={cn(MENU_POPUP, "max-h-80 overflow-y-auto")}
+            className={cn(MENU_POPUP, "max-h-80 overflow-y-auto", PHONE_MENU)}
           >
             {children}
           </Menu.Popup>
@@ -408,6 +424,8 @@ function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: 
 function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
   const state = useViewWorkspace();
   const preset = useLayoutStore((s) => s.grid.preset);
+  // A touch screen shows one pane at a time, so it offers no layouts.
+  const touch = useTouch();
   const focusMode = useLayoutStore((s) => s.focusMode);
   const fold = useTitlebarSlot((s) => s.fold);
   // The Board's Grid or Lanes, folded out of its header with the lesser buttons.
@@ -478,28 +496,30 @@ function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
           </Menu.RadioGroup>
         </>
       )}
-      {SEPARATOR}
-      <Menu.RadioGroup
-        data-testid="folded-layout"
-        value={preset}
-        onValueChange={(next: GridPreset) => useLayoutStore.getState().setPreset(next)}
-      >
-        <Menu.GroupLabel className={MENU_LABEL}>Layout</Menu.GroupLabel>
-        {GRID_PRESETS.map((value, i) => (
-          <Menu.RadioItem
-            key={value}
-            value={value}
-            aria-label={PRESET_LABELS[value]}
-            closeOnClick
-            className={MENU_ITEM}
-          >
-            <PresetGlyph preset={value} />
-            {PRESET_LABELS[value]}
-            <Keys id={`layout.preset${i + 1}`} />
-            <Check />
-          </Menu.RadioItem>
-        ))}
-      </Menu.RadioGroup>
+      {!touch && SEPARATOR}
+      {!touch && (
+        <Menu.RadioGroup
+          data-testid="folded-layout"
+          value={preset}
+          onValueChange={(next: GridPreset) => useLayoutStore.getState().setPreset(next)}
+        >
+          <Menu.GroupLabel className={MENU_LABEL}>Layout</Menu.GroupLabel>
+          {GRID_PRESETS.map((value, i) => (
+            <Menu.RadioItem
+              key={value}
+              value={value}
+              aria-label={PRESET_LABELS[value]}
+              closeOnClick
+              className={MENU_ITEM}
+            >
+              <PresetGlyph preset={value} />
+              {PRESET_LABELS[value]}
+              <Keys id={`layout.preset${i + 1}`} />
+              <Check />
+            </Menu.RadioItem>
+          ))}
+        </Menu.RadioGroup>
+      )}
     </Submenu>
   );
 }
@@ -559,6 +579,123 @@ function ThreadItems({ threadId, items }: { threadId: ThreadId; items: ReactNode
   );
 }
 
+/** On a phone every item is a 44 px target, and the menu stays inside the screen. */
+const PHONE_MENU =
+  "phone:max-w-[calc(100vw-1rem)] phone:[&_[role^=menuitem]]:min-h-11 phone:max-h-[calc(100dvh-5rem)] phone:overflow-y-auto";
+
+/**
+ * What a phone's header leaves out of its bar, first in its "…": Chat or Board, and the workspace
+ * to show, each in words.
+ */
+function PhonePlaces() {
+  const navigate = useNavigate();
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const view = useViewStore((s) => s.view);
+  const workspaces = useWorkspaces();
+  const current = useViewWorkspace();
+  const switchTo = useSwitchWorkspace();
+  const checked = switcherChecked(view, pathname) ?? "";
+  const pickView = (next: AppView) => {
+    useViewStore.getState().setView(next);
+    if (next === "chat" && !chatRoute(pathname)) {
+      void navigate({ to: useViewStore.getState().lastChat ?? "/" });
+    }
+  };
+  return (
+    <>
+      {workspaces.length > 0 && (
+        <Menu.RadioGroup
+          data-testid="phone-menu-view"
+          value={checked}
+          onValueChange={(next: AppView) => pickView(next)}
+        >
+          <Menu.GroupLabel className={MENU_LABEL}>View</Menu.GroupLabel>
+          <Menu.RadioItem value="chat" closeOnClick className={MENU_ITEM}>
+            <MessageSquare aria-hidden />
+            Chat
+            <Check />
+          </Menu.RadioItem>
+          <Menu.RadioItem
+            value="board"
+            closeOnClick
+            disabled={current === undefined}
+            className={MENU_ITEM}
+          >
+            <LayoutDashboard aria-hidden />
+            Board
+            <Check />
+          </Menu.RadioItem>
+        </Menu.RadioGroup>
+      )}
+      {workspaces.length > 1 && (
+        <Submenu
+          label="Switch workspace"
+          testId="phone-menu-workspaces"
+          popupLabel="Workspaces"
+          icon={<Network aria-hidden />}
+          current={current?.workspace.name}
+        >
+          <Menu.RadioGroup
+            value={current?.workspace.id ?? ""}
+            onValueChange={(id: string) => {
+              const picked = workspaces.find((each) => each.workspace.id === id);
+              if (picked !== undefined) switchTo(picked.workspace);
+            }}
+          >
+            {workspaces.map((each) => (
+              <Menu.RadioItem
+                key={each.workspace.id}
+                value={each.workspace.id}
+                closeOnClick
+                className={MENU_ITEM}
+              >
+                <span className="min-w-0 flex-1 truncate">{each.workspace.name}</span>
+                <Check />
+              </Menu.RadioItem>
+            ))}
+          </Menu.RadioGroup>
+        </Submenu>
+      )}
+      {workspaces.length > 0 && SEPARATOR}
+    </>
+  );
+}
+
+/** The window's own that a wide bar shows as icons: usage, the right panel and Settings. */
+function PhoneWindowItems() {
+  const navigate = useNavigate();
+  const panelShown = useLayoutStore((s) => fitShell(s).panel !== "none");
+  return (
+    <>
+      {SEPARATOR}
+      <Menu.Item
+        data-testid="phone-menu-usage"
+        className={MENU_ITEM}
+        onClick={() => void navigate({ to: "/settings/usage" })}
+      >
+        <ChartNoAxesCombined aria-hidden />
+        Usage
+      </Menu.Item>
+      <Menu.Item
+        data-testid="phone-menu-panel"
+        className={MENU_ITEM}
+        onClick={() => useLayoutStore.getState().togglePanel()}
+      >
+        <PanelRightOpen aria-hidden />
+        {panelShown ? "Hide side panel" : "Show side panel"}
+      </Menu.Item>
+      <Menu.Item
+        data-testid="phone-menu-settings"
+        className={MENU_ITEM}
+        onClick={() => void navigate({ to: "/settings" })}
+      >
+        <Settings aria-hidden />
+        Settings
+      </Menu.Item>
+    </>
+  );
+}
+
 function OverflowMenu({
   orchestration,
   thread,
@@ -571,6 +708,8 @@ function OverflowMenu({
   const state = useViewWorkspace();
   const workspace = orchestration && state !== undefined;
   const paletteHint = useShortcutHint("palette.open");
+  // A phone's header keeps only the menu, the title, Needs you and this: the rest is in here.
+  const phone = usePhone();
   // How many times the menu has opened: what it asked last time doesn't carry over.
   const [opening, setOpening] = useState(0);
   // The trigger's words show on hover and on Tab, but not as the menu closes and hands focus
@@ -638,9 +777,10 @@ function OverflowMenu({
           <Menu.Popup
             data-testid="titlebar-overflow-menu"
             finalFocus={returnFocus}
-            className={cn(MENU_POPUP, "w-64")}
+            className={cn(MENU_POPUP, "w-64", phone && PHONE_MENU)}
           >
             <div data-testid="titlebar-folded" role="group" aria-label="Title bar">
+              {phone && <PhonePlaces />}
               {thread !== undefined && <ThreadItems threadId={thread.id} items={thread.items} />}
               {workspace && (
                 <>
@@ -650,6 +790,7 @@ function OverflowMenu({
               )}
               {(thread !== undefined || workspace) && SEPARATOR}
               <ViewSubmenu threadId={thread?.id} />
+              {phone && <PhoneWindowItems />}
             </div>
           </Menu.Popup>
         </Menu.Positioner>

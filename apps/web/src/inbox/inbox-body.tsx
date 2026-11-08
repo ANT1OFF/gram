@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { keyLabel } from "@/keyboard/registry";
 import { formatRelative, formatWakeTime } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
+import { usePhone } from "@/lib/use-phone";
 import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { types } from "@/orchestration/ask-keys";
@@ -45,6 +46,7 @@ import { useNeedsYouJump, useNeedsYouList } from "@/orchestration/use-needs-you"
 import { paneComposerNow } from "@/shell/pane-focus";
 import { SideResizeHandle } from "@/shell/side-resize";
 import { fitShell, useLayoutStore } from "@/stores/layout";
+import { PhoneSheetHeader } from "@/thread/dialog-shell";
 import { useNotificationHistory, unreadNotifications } from "@/stores/notifications";
 
 import { InboxDetail } from "./inbox-detail";
@@ -207,6 +209,8 @@ export function InboxBody({
   docked?: string;
 }) {
   const docked = titleId !== undefined;
+  // On a phone the dialog is a full-screen sheet: one column of cards, answered by touch.
+  const phone = usePhone() && !docked;
   const { sections, later } = useNeedsYouList();
   const category = useInboxStore((s) => s.category);
   const setCategory = useInboxStore((s) => s.setCategory);
@@ -310,102 +314,111 @@ export function InboxBody({
     }
   };
 
+  const laterButton = (
+    <Hint
+      label={showLater ? "Back to what needs you" : "Later"}
+      side="bottom"
+      render={
+        <Button
+          size="xs"
+          variant={showLater ? "secondary" : "ghost"}
+          aria-pressed={showLater}
+          aria-label={`Later, ${later.length}`}
+          data-testid="inbox-show-later"
+          onClick={() => setLater(!showLater)}
+        />
+      }
+    >
+      Later
+      {later.length > 0 && <span className="tabular-nums">{later.length}</span>}
+    </Hint>
+  );
   // The strip, when it shows, sits right under the header: one line between the two, under it.
   const strip = !showLater && sections.length > 1;
   return (
     <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
-      <header
-        className={cn(
-          "flex shrink-0 items-center gap-2 px-3",
-          strip ? "pt-2" : "border-b border-shell-divider py-2",
-        )}
-      >
-        <InboxIcon aria-hidden className="size-icon-row text-muted-foreground" />
-        {docked ? (
-          <h2 id={titleId} className="text-title">
-            Inbox
-          </h2>
-        ) : (
-          <Dialog.Title className="text-title">Inbox</Dialog.Title>
-        )}
-        <p
-          data-testid="inbox-count"
-          className="min-w-0 flex-1 truncate text-meta text-muted-foreground"
+      {phone ? (
+        <PhoneSheetHeader title="Needs you" closeLabel="Close Inbox" testId="inbox-close">
+          {laterButton}
+        </PhoneSheetHeader>
+      ) : (
+        <header
+          className={cn(
+            "flex shrink-0 items-center gap-2 px-3",
+            strip ? "pt-2" : "border-b border-shell-divider py-2",
+          )}
         >
-          {showLater
-            ? `${later.length} for later`
-            : total === 0
-              ? "Nothing needs you"
-              : `${total} need${total === 1 ? "s" : ""} you`}
-        </p>
-        <Hint
-          label={showLater ? "Back to what needs you" : "Later"}
-          side="bottom"
-          render={
-            <Button
-              size="xs"
-              variant={showLater ? "secondary" : "ghost"}
-              aria-pressed={showLater}
-              aria-label={`Later, ${later.length}`}
-              data-testid="inbox-show-later"
-              onClick={() => setLater(!showLater)}
-            />
-          }
-        >
-          Later
-          {later.length > 0 && <span className="tabular-nums">{later.length}</span>}
-        </Hint>
-        {!showLater && total > 0 && (
+          <InboxIcon aria-hidden className="size-icon-row text-muted-foreground" />
+          {docked ? (
+            <h2 id={titleId} className="text-title">
+              Inbox
+            </h2>
+          ) : (
+            <Dialog.Title className="text-title">Inbox</Dialog.Title>
+          )}
+          <p
+            data-testid="inbox-count"
+            className="min-w-0 flex-1 truncate text-meta text-muted-foreground"
+          >
+            {showLater
+              ? `${later.length} for later`
+              : total === 0
+                ? "Nothing needs you"
+                : `${total} need${total === 1 ? "s" : ""} you`}
+          </p>
+          {laterButton}
+          {!showLater && total > 0 && (
+            <Hint
+              label={compact ? "Full list" : "Compact list"}
+              side="bottom"
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-pressed={compact}
+                  aria-label="Compact list"
+                  data-testid="inbox-compact"
+                  onClick={() =>
+                    setListWidth(compact ? inboxListDefault(docked) : INBOX_LIST_COMPACT)
+                  }
+                />
+              }
+            >
+              {compact ? <PanelLeftOpen aria-hidden /> : <PanelLeftClose aria-hidden />}
+            </Hint>
+          )}
+          {/* A way out to the history, not a peer of the Inbox's own controls: its glyph, named on
+            hover, with the unread count beside it while there is one. */}
           <Hint
-            label={compact ? "Full list" : "Compact list"}
+            label="Notification history, in the side panel"
             side="bottom"
             render={
               <Button
-                size="icon-xs"
+                size={unread > 0 ? "xs" : "icon-xs"}
                 variant="ghost"
-                aria-pressed={compact}
-                aria-label="Compact list"
-                data-testid="inbox-compact"
-                onClick={() =>
-                  setListWidth(compact ? inboxListDefault(docked) : INBOX_LIST_COMPACT)
-                }
+                data-testid="inbox-notifications"
+                aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+                onClick={() => {
+                  useInboxStore.getState().close();
+                  useLayoutStore.getState().revealPanel("notifications");
+                }}
               />
             }
           >
-            {compact ? <PanelLeftOpen aria-hidden /> : <PanelLeftClose aria-hidden />}
+            <Bell aria-hidden data-icon={unread > 0 ? "inline-start" : undefined} />
+            {unread > 0 && <span className="tabular-nums">{unread}</span>}
           </Hint>
-        )}
-        {/* A way out to the history, not a peer of the Inbox's own controls: its glyph, named on
-            hover, with the unread count beside it while there is one. */}
-        <Hint
-          label="Notification history, in the side panel"
-          side="bottom"
-          render={
-            <Button
-              size={unread > 0 ? "xs" : "icon-xs"}
-              variant="ghost"
-              data-testid="inbox-notifications"
-              aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
-              onClick={() => {
-                useInboxStore.getState().close();
-                useLayoutStore.getState().revealPanel("notifications");
-              }}
-            />
-          }
-        >
-          <Bell aria-hidden data-icon={unread > 0 ? "inline-start" : undefined} />
-          {unread > 0 && <span className="tabular-nums">{unread}</span>}
-        </Hint>
-        {docked ? (
-          <Button {...CLOSE} onClick={() => useInboxStore.getState().close()}>
-            <X aria-hidden />
-          </Button>
-        ) : (
-          <Dialog.Close render={<Button {...CLOSE} />}>
-            <X aria-hidden />
-          </Dialog.Close>
-        )}
-      </header>
+          {docked ? (
+            <Button {...CLOSE} onClick={() => useInboxStore.getState().close()}>
+              <X aria-hidden />
+            </Button>
+          ) : (
+            <Dialog.Close render={<Button {...CLOSE} />}>
+              <X aria-hidden />
+            </Dialog.Close>
+          )}
+        </header>
+      )}
       {strip && (
         <NeedsYouStrip
           sections={sections}
@@ -418,6 +431,32 @@ export function InboxBody({
         <LaterList later={later} now={now} onWake={actions.wake} />
       ) : total === 0 ? (
         <Empty laterCount={later.length} />
+      ) : phone ? (
+        <div
+          ref={listRef}
+          role="list"
+          aria-label="Needs you"
+          tabIndex={-1}
+          data-testid="inbox-list"
+          className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-3 outline-none"
+        >
+          {shown.map((section) => (
+            <section
+              key={section.key}
+              aria-label={section.label}
+              data-testid="inbox-section"
+              data-section={section.key}
+              className="flex flex-col gap-2"
+            >
+              <SectionHead label={section.label} count={section.items.length} />
+              {section.items.map((item) => (
+                <div key={item.key} role="listitem">
+                  <InboxDetail item={item} now={now} card onOpenThread={jump} />
+                </div>
+              ))}
+            </section>
+          ))}
+        </div>
       ) : (
         <div className="relative flex min-h-0 flex-1">
           {/* The detail keeps room for an answer's choices however wide the list is dragged. */}
@@ -486,29 +525,32 @@ export function InboxBody({
         </div>
       )}
       <NeedsYouUndo className="shrink-0 border-t border-shell-divider py-1" />
-      <div
-        data-testid="inbox-keys"
-        className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 border-t border-shell-divider px-3 py-1.5 text-caption text-muted-foreground"
-      >
-        <span>
-          <kbd className="font-sans">j k</kbd> move
-        </span>
-        <span>
-          <kbd className="font-sans">{keyLabel("⏎")}</kbd> {docked ? "show thread" : "open thread"}
-        </span>
-        <span>
-          <kbd className="font-sans">1–9</kbd> pick
-        </span>
-        <span>
-          <kbd className="font-sans">{keyLabel("⌘⏎")}</kbd> send
-        </span>
-        <span>
-          <kbd className="font-sans">{keyLabel("⌘Z")}</kbd> undo
-        </span>
-        <span>
-          <kbd className="font-sans">esc</kbd> close
-        </span>
-      </div>
+      {!phone && (
+        <div
+          data-testid="inbox-keys"
+          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 border-t border-shell-divider px-3 py-1.5 text-caption text-muted-foreground"
+        >
+          <span>
+            <kbd className="font-sans">j k</kbd> move
+          </span>
+          <span>
+            <kbd className="font-sans">{keyLabel("⏎")}</kbd>{" "}
+            {docked ? "show thread" : "open thread"}
+          </span>
+          <span>
+            <kbd className="font-sans">1–9</kbd> pick
+          </span>
+          <span>
+            <kbd className="font-sans">{keyLabel("⌘⏎")}</kbd> send
+          </span>
+          <span>
+            <kbd className="font-sans">{keyLabel("⌘Z")}</kbd> undo
+          </span>
+          <span>
+            <kbd className="font-sans">esc</kbd> close
+          </span>
+        </div>
+      )}
     </div>
   );
 }

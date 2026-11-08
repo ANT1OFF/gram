@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { currentWindow } from "@/desktop/window-identity";
+import { isTouch } from "@/lib/use-phone";
 import { focusPaneComposer } from "@/shell/pane-focus";
 import { fitShell, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -178,6 +179,8 @@ export const orchestratorOf = (worker: ThreadId): ThreadId | undefined =>
  * route.
  */
 export function keepBeside(worker: ThreadId, open: (threadId: ThreadId) => void): boolean {
+  // A touch screen shows one thing at a time: the worker opens on its own, as any thread does.
+  if (isTouch()) return false;
   const orchestrator = orchestratorOf(worker);
   if (orchestrator === undefined) return false;
   const { grid, openInPane } = useLayoutStore.getState();
@@ -197,7 +200,7 @@ export function keepBeside(worker: ThreadId, open: (threadId: ThreadId) => void)
  * which the link then opens as it always has.
  */
 export function openBesideFrom(orchestrator: ThreadId, worker: ThreadId): boolean {
-  if (orchestratorOf(worker) !== orchestrator) return false;
+  if (isTouch() || orchestratorOf(worker) !== orchestrator) return false;
   useBesideStore.getState().dock(worker);
   revealThreadTab();
   return true;
@@ -231,6 +234,8 @@ export function closeBeside() {
  */
 export function besideToggle(focused: ThreadId | undefined): "close" | ThreadId | undefined {
   const { worker, last, shown } = useBesideStore.getState();
+  // A touch screen opens nothing beside, but can still close what a wider window left there.
+  if (isTouch()) return worker !== undefined && shown ? "close" : undefined;
   if (worker !== undefined) return shown ? "close" : worker;
   if (focused === undefined) return undefined;
   if (orchestratorOf(focused) !== undefined) return focused;

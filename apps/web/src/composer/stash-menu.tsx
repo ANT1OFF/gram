@@ -9,6 +9,7 @@ import { errorMessage } from "@/api/errors";
 import { formatRelative } from "@/lib/time";
 
 import { useStashMenuStore } from "./stash-store";
+import { PHONE_HIT } from "./styles";
 
 export const stashesQueryKey = (threadId: ThreadId) => ["stashes", threadId] as const;
 
@@ -57,7 +58,12 @@ export function StashMenu({
       // The list closes with its last stash rather than staying open empty.
       .then(() => stashes.length === 1 && setOpen(false))
       .catch((error: unknown) => onError(`Couldn't discard the draft: ${errorMessage(error)}`))
-      .finally(() => void queryClient.invalidateQueries({ queryKey: stashesQueryKey(threadId) }));
+      .finally(
+        () =>
+          void queryClient.invalidateQueries({
+            queryKey: stashesQueryKey(threadId),
+          }),
+      );
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -67,7 +73,7 @@ export function StashMenu({
           <Popover.Trigger
             data-testid="stash-trigger"
             aria-label={`Stashed drafts (${stashes.length})`}
-            className="flex h-8 min-w-8 items-center justify-center gap-1 rounded-md px-2 text-meta font-medium text-muted-foreground tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring"
+            className={`flex h-8 min-w-8 items-center justify-center gap-1 rounded-md px-2 text-meta font-medium text-muted-foreground tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring ${PHONE_HIT}`}
           />
         }
       >

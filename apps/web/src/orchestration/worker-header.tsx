@@ -12,6 +12,7 @@ import { effectiveKeys } from "@/keyboard/bindings-store";
 import { catalogKeys } from "@/keyboard/catalog";
 import { keyLabel, useShortcut } from "@/keyboard/registry";
 import { useNow } from "@/lib/use-now";
+import { useTouch } from "@/lib/use-phone";
 import { EXPLAIN } from "@/lib/explain";
 import { seeTerm } from "@/lib/first-use";
 import { cn } from "@/lib/utils";
@@ -352,6 +353,8 @@ function useWorkerActions(thread: Thread) {
   const { takeOver } = useThreadActions(thread.id);
   const open = useOpenThread();
   const docked = useBesideStore((s) => s.worker === thread.id);
+  // A touch screen shows one thing at a time, so it offers no Open beside.
+  const touch = useTouch();
   const orchestrator = useThreadsStore((s) =>
     thread.spawnedBy === undefined ? undefined : s.byId[thread.spawnedBy.threadId],
   );
@@ -361,7 +364,7 @@ function useWorkerActions(thread: Thread) {
     worker,
     held,
     keepBeside:
-      worker && orchestrator !== undefined && !docked
+      worker && orchestrator !== undefined && !docked && !touch
         ? () => keepBeside(thread.id, open)
         : undefined,
     takeOver:

@@ -1,0 +1,14 @@
+{
+  "title": "Phone layout",
+  "slug": "phone-layout",
+  "status": "review",
+  "template": "options",
+  "current": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-08"
+    }
+  ]
+}

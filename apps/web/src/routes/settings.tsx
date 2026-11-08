@@ -121,7 +121,7 @@ function SettingsLayout() {
               <NeedsYouEntry
                 variant="row"
                 data-testid="settings-needs-you"
-                className="mb-2 @max-2xl/settings:mb-0 @max-2xl/settings:w-auto"
+                className="mb-2 @max-2xl/settings:mb-0 @max-2xl/settings:w-auto phone:min-h-11"
               />
             )
           }

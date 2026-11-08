@@ -125,6 +125,23 @@ describe("open beside", () => {
     expect(useDraftStore.getState().text).toEqual({});
   });
 
+  it("opens nothing beside on a touch screen, where a worker opens on its own", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({ matches: query === "(pointer: coarse)" })),
+    );
+    try {
+      const open = vi.fn();
+      expect(keepBeside(WORKER, open)).toBe(false);
+      expect(openBesideFrom(ORCH, WORKER)).toBe(false);
+      expect(besideToggle(WORKER)).toBeUndefined();
+      expect(open).not.toHaveBeenCalled();
+      expect(useBesideStore.getState().worker).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("does nothing for a thread that isn't a worker", () => {
     const open = vi.fn();
     expect(keepBeside(PLAIN, open)).toBe(false);

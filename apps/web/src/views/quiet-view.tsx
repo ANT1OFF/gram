@@ -47,6 +47,7 @@ import { allWorkspacesPaused, setAllWorkspacesPaused } from "@/orchestration/pau
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import type { WorkerRow } from "@/orchestration/workers-model";
 import { UsageMeter } from "@/shell/usage-meter";
+import { usePhone } from "@/lib/use-phone";
 
 import type { ViewProps } from "./board-view";
 import {
@@ -622,6 +623,8 @@ function Strip({
 }) {
   const now = useNow(true, undefined, 30_000);
   const time = new Date(now);
+  // A phone keeps the row on one line: usage as its glyph, and the phone's own clock.
+  const phone = usePhone();
   return (
     <footer
       data-testid="quiet-strip"
@@ -655,8 +658,8 @@ function Strip({
       </div>
       {/* The window's one attention entry, in the sidebar pill's words and count. */}
       <NeedsYouEntry variant="chip" data-testid="quiet-asks" />
-      <UsageMeter />
-      <span className="text-muted-foreground tabular-nums">
+      <UsageMeter iconOnly={phone} />
+      <span className="text-muted-foreground tabular-nums phone:hidden">
         {pad(time.getHours())}:{pad(time.getMinutes())}
       </span>
       <QuietMenu />

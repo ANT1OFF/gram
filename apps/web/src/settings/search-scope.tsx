@@ -182,7 +182,7 @@ export function SettingsSearchBox({
           if (query === "") onLeave();
           else onQueryChange("");
         }}
-        className="h-7 w-full rounded-md border border-input bg-transparent ps-7 pe-6 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="h-7 w-full rounded-md border border-input bg-transparent ps-7 pe-6 text-reading phone:h-11 phone:pe-11 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       />
       {query !== "" && (
         <button
@@ -192,7 +192,7 @@ export function SettingsSearchBox({
             onQueryChange("");
             inputRef.current?.focus();
           }}
-          className="absolute inset-y-0 end-1 my-auto flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+          className="absolute inset-y-0 end-1 my-auto flex size-5 items-center phone:end-0 phone:size-11 justify-center rounded-sm text-muted-foreground hover:text-foreground"
         >
           <X aria-hidden className="size-icon-row" />
         </button>

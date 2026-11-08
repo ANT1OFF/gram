@@ -38,7 +38,10 @@ export const stageRealistic = (page: Page) =>
       const seen = ["gh-signed-out", "gh-missing", "claude-signed-out", "codex-signed-out"];
       localStorage.setItem(
         "gram.launch-banner",
-        JSON.stringify({ version: 0, state: { folded: seen.map((id) => `1.0.0-mock:${id}`) } }),
+        JSON.stringify({
+          version: 0,
+          state: { folded: seen.map((id) => `1.0.0-mock:${id}`) },
+        }),
       );
     }
     // Likewise the once-only line under a worker's header on what Take over changes: this user
@@ -254,7 +257,12 @@ const scenes: readonly Shot[] = [
         .fill("Add retry coverage for the queue consumer.");
       await pane.getByTestId("composer-choices").click();
       await page.getByTestId("choices-speed").click();
-      await expect(page.getByRole("listbox", { name: "Speed" })).toBeVisible();
+      // A phone's sheet says speed as Fast's switch rather than a list.
+      await expect(
+        SET_SIZE.width < 1024
+          ? page.getByTestId("choices-fast-switch")
+          : page.getByRole("listbox", { name: "Speed" }),
+      ).toBeVisible();
     },
   }),
   {

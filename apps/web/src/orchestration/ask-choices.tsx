@@ -34,7 +34,8 @@ export function Kbd({
       data-testid="ask-kbd"
       aria-hidden={hidden || undefined}
       className={cn(
-        "rounded-2xs border border-border-strong/60 px-1 font-mono text-caption leading-4 text-muted-foreground",
+        // A phone has no keys to press: no legend.
+        "rounded-2xs border border-border-strong/60 px-1 font-mono text-caption leading-4 text-muted-foreground phone:hidden",
         className,
       )}
     >
@@ -278,7 +279,7 @@ export function SendAnswer({
           id={whyId}
           data-testid="send-answer-why"
           // Why Send waits stays on one line beside it: what is left of the row gives way first.
-          className="shrink-0 text-meta whitespace-nowrap text-muted-foreground"
+          className="shrink-0 text-meta whitespace-nowrap text-muted-foreground phone:shrink phone:whitespace-normal"
         >
           {why}
         </span>

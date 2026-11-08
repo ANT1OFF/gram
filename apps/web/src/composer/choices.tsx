@@ -1,3 +1,4 @@
+import { Drawer } from "@base-ui/react/drawer";
 import { Popover } from "@base-ui/react/popover";
 import { CheckIcon, SlidersHorizontal } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
@@ -7,16 +8,20 @@ import { shortcutHint } from "@/keyboard/bindings";
 import { useBindingsStore } from "@/keyboard/bindings-store";
 import { useShortcut } from "@/keyboard/registry";
 import { withHint } from "@/keyboard/use-shortcut-hint";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { PulseOnce } from "@/motion";
 
 import { aboveComposer } from "./above-composer";
+import { ChoicesSheet, chipWords } from "./choices-sheet";
 import { ModelSearch } from "./model-picker";
 import type { PickerOption } from "./picker";
 import { GHOST_TRIGGER } from "./styles";
 
 /** A row of a section's list; a disabled one says why in its description. */
-export type ChoiceOption = PickerOption<string> & { readonly disabled?: boolean | undefined };
+export type ChoiceOption = PickerOption<string> & {
+  readonly disabled?: boolean | undefined;
+};
 
 /**
  * One of the composer's dimensions (model, effort, mode or speed): a section of the choices
@@ -120,6 +125,7 @@ export function ComposerChoices({
   /** Told each pick in words, "Effort set to High", for a composer that confirms it there. */
   onPicked?: ((words: string) => void) | undefined;
 }) {
+  const phone = usePhone();
   const [open, setOpenState] = useState(false);
   const [active, setActive] = useState<string | undefined>(sections[0]?.id);
   // Counts openings, so each one starts its sections afresh: reopened while the last closing still
@@ -163,9 +169,10 @@ export function ComposerChoices({
   });
   useEffect(() => onAsked?.(() => asked.current()), [onAsked]);
 
+  /** A pick; the popover closes on it, the phone's sheet stays open for the next. */
   const pick = (section: ChoiceSection, option: ChoiceOption) => {
     if (option.disabled) return;
-    setOpen(false);
+    if (!phone) setOpen(false);
     if (option.value === section.value) return;
     setPending({ id: section.id, value: option.value });
     section.onChange?.(option.value);
@@ -237,21 +244,57 @@ export function ComposerChoices({
     );
   };
 
+  const shortcuts = sections.map(
+    (section) =>
+      section.shortcut && (
+        <SectionShortcut
+          key={section.id}
+          id={section.shortcut.id}
+          keys={section.shortcut.keys}
+          label={section.label}
+          enabled={focused}
+          run={() => setOpen(true, section.id)}
+        />
+      ),
+  );
+  const markGlyph = (
+    <span aria-hidden className="flex shrink-0 items-center">
+      <PulseOnce trigger={landed} when={landed > 0}>
+        {mark ?? <SlidersHorizontal data-testid="choices-glyph" className="size-icon-bar" />}
+      </PulseOnce>
+    </span>
+  );
+
+  // A phone has no hover to say the values, so the chip says them in short words, and opens a sheet
+  // from the bottom in place of the popover.
+  if (phone)
+    return (
+      <Drawer.Root open={open} onOpenChange={(next) => setOpen(next)}>
+        {shortcuts}
+        <Drawer.Trigger
+          ref={trigger}
+          data-testid="composer-choices"
+          aria-label={name}
+          aria-description={description}
+          data-warning={warnings.length > 0 ? "true" : undefined}
+          className={cn(
+            GHOST_TRIGGER,
+            "inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 outline-none select-none",
+            warnings.length > 0 && "text-warning hover:text-warning",
+          )}
+        >
+          {markGlyph}
+          <span data-testid="choices-words" className="min-w-0 truncate">
+            {chipWords(sections)}
+          </span>
+        </Drawer.Trigger>
+        <ChoicesSheet key={opening} sections={sections} onPick={pick} />
+      </Drawer.Root>
+    );
+
   return (
     <Popover.Root open={open} onOpenChange={(next) => setOpen(next)}>
-      {sections.map(
-        (section) =>
-          section.shortcut && (
-            <SectionShortcut
-              key={section.id}
-              id={section.shortcut.id}
-              keys={section.shortcut.keys}
-              label={section.label}
-              enabled={focused}
-              run={() => setOpen(true, section.id)}
-            />
-          ),
-      )}
+      {shortcuts}
       <Hint
         label={tip}
         render={
@@ -268,11 +311,7 @@ export function ComposerChoices({
           />
         }
       >
-        <span aria-hidden className="flex shrink-0 items-center">
-          <PulseOnce trigger={landed} when={landed > 0}>
-            {mark ?? <SlidersHorizontal data-testid="choices-glyph" className="size-icon-bar" />}
-          </PulseOnce>
-        </span>
+        {markGlyph}
         {glyphs.map(({ id, glyph }) => (
           <span key={id} aria-hidden data-chip-glyph={id} className="flex shrink-0 items-center">
             {glyph}
@@ -408,7 +447,12 @@ function Section({
               value={section.value}
               options={options}
               onChange={(value) =>
-                onPick(options.find((option) => option.value === value) ?? { value, label: value })
+                onPick(
+                  options.find((option) => option.value === value) ?? {
+                    value,
+                    label: value,
+                  },
+                )
               }
               rowIcon={section.search.rowIcon}
               favourite={section.search.favourite}

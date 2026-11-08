@@ -58,8 +58,9 @@ const INBOX = '[data-testid="inbox"]';
  * Hands every key pressed inside the Inbox to `take` before the Inbox's own keys see it, while
  * mounted; a key `take` answers goes no further.
  */
-function useInboxKeys(take: (event: KeyboardEvent) => boolean) {
+function useInboxKeys(take: (event: KeyboardEvent) => boolean, enabled = true) {
   const onKey = useEffectEvent((event: KeyboardEvent) => {
+    if (!enabled) return;
     if (event.defaultPrevented || event.isComposing || event.repeat) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest(INBOX) == null) return;
@@ -180,10 +181,13 @@ function AskInFull({
 function AskInPlace({
   ask,
   onFull,
+  card,
 }: {
   ask: Ask;
   /** An option that opens the ask in full: the pane draws its card instead. */
   onFull: (option: AskOption) => void;
+  /** One card of the phone's column: answered by touch, with no keys and no key hints. */
+  card: boolean;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -253,13 +257,13 @@ function AskInPlace({
     if (sending) choose(option);
     else setPicked(index);
     return true;
-  });
+  }, !card);
   const problem = ask.ids.map((id) => problems[id]).find((each) => each !== undefined);
   return (
     <AskItem
       ask={ask}
       current
-      hints="plain"
+      hints={card ? undefined : "plain"}
       arrived={false}
       problem={problem}
       picked={picked}
@@ -274,7 +278,7 @@ function AskInPlace({
 }
 
 /** An ask: in place, or its card when it is read in full first. */
-function AskDetail({ item }: { item: NeedsYouItem }) {
+function AskDetail({ item, card }: { item: NeedsYouItem; card: boolean }) {
   const ask = item.ask!;
   const [full, setFull] = useState(() => answersInFull(ask));
   const [always, setAlways] = useState(false);
@@ -297,7 +301,7 @@ function AskDetail({ item }: { item: NeedsYouItem }) {
       return true;
     }
     return answerKey(event, root.current);
-  });
+  }, !card);
   return (
     <div ref={root} data-testid="inbox-ask" data-full={full || undefined}>
       {full ? (
@@ -306,6 +310,7 @@ function AskDetail({ item }: { item: NeedsYouItem }) {
         <>
           <AskInPlace
             ask={ask}
+            card={card}
             onFull={(option) => {
               setAlways(option.action.kind === "open" && option.action.always === true);
               setFull(true);
@@ -364,17 +369,34 @@ function WatchStoppedBody({ item, onResume }: { item: NeedsYouItem; onResume: ()
   );
 }
 
-/** The selected item in full, with its answers, Open thread, Later and Dismiss. */
+/** Whether a phone card answers its item in place; one that doesn't opens its thread on a tap. */
+export const answersOnCard = (item: NeedsYouItem): boolean =>
+  item.ask !== undefined
+    ? !answersInFull(item.ask)
+    : item.wait !== undefined
+      ? item.threadId !== undefined
+      : item.kind === "watch" || item.failure !== undefined;
+
+/** What a tap on a card lands on that is a control of its own, not the card. */
+const CONTROL = "button, a, input, textarea, select, label, [role='radio'], [role='checkbox']";
+
+/**
+ * The selected item in full, with its answers, Open thread, Later and Dismiss. On a phone, `card`:
+ * one card of the Needs you column, the same answers by touch, without its thread's context; one
+ * with nothing to answer in place (a plan, a long request) says what it asks, and a tap opens it.
+ */
 export function InboxDetail({
   item,
   now,
   docked = false,
+  card = false,
   onOpenThread,
 }: {
   item: NeedsYouItem;
   now: number;
   /** Docked beside the work: its thread shows in the main area, and the Inbox stays. */
   docked?: boolean;
+  card?: boolean;
   onOpenThread: (item: NeedsYouItem) => void;
 }) {
   const actions = useNeedsYouActions();
@@ -382,13 +404,28 @@ export function InboxDetail({
   const where = [item.workspace, item.where === "" ? undefined : item.where]
     .filter((part) => part !== undefined)
     .join(" · ");
+  const inPlace = !card || answersOnCard(item);
+  const opens = !inPlace && item.threadId !== undefined;
   return (
     <section
       aria-label={kind.label}
-      data-testid="inbox-detail"
+      data-testid={card ? "inbox-card" : "inbox-detail"}
       data-key={item.key}
       data-kind={item.kind}
-      className="flex min-h-0 flex-1 flex-col"
+      data-opens={opens || undefined}
+      onClick={
+        opens
+          ? (event) => {
+              if (event.target instanceof Element && event.target.closest(CONTROL) !== null) return;
+              onOpenThread(item);
+            }
+          : undefined
+      }
+      className={
+        card
+          ? "flex flex-col rounded-xl border border-border bg-surface-3 pb-2"
+          : "flex min-h-0 flex-1 flex-col"
+      }
     >
       {/* A quiet line over the request: its kind, where it is from and when, and what else can be
           done with it. The request itself, under it, is what the pane leads with. */}
@@ -418,8 +455,8 @@ export function InboxDetail({
           }
           onClick={() => onOpenThread(item)}
         >
-          {docked ? "Show thread" : "Open thread"}
-          {!docked && <SquareArrowOutUpRight aria-hidden data-icon="inline-end" />}
+          {docked ? "Show thread" : card ? "Open" : "Open thread"}
+          {!docked && !card && <SquareArrowOutUpRight aria-hidden data-icon="inline-end" />}
         </Button>
         <Hint
           label="Later (1 hour)"
@@ -456,11 +493,24 @@ export function InboxDetail({
       </header>
       <div
         data-testid="inbox-detail-body"
-        className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3"
+        className={card ? "px-2 pt-1" : "min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3"}
       >
-        {item.ask !== undefined ? (
+        {!inPlace ? (
+          // What it asks, where its kind (the line above) doesn't already say it.
+          item.title !== kind.label && (
+            <p data-testid="inbox-card-summary" className="px-2 pb-1 text-reading break-words">
+              {item.title}
+              {item.command !== undefined && (
+                <>
+                  {" "}
+                  <code className="font-mono text-body break-all">{item.command}</code>
+                </>
+              )}
+            </p>
+          )
+        ) : item.ask !== undefined ? (
           // A new ask starts afresh: nothing picked, read in place unless it must be read in full.
-          <AskDetail key={item.key} item={item} />
+          <AskDetail key={item.key} item={item} card={card} />
         ) : item.wait !== undefined && item.threadId !== undefined ? (
           <ul className="px-2">
             <WaitingItemRow
@@ -481,8 +531,8 @@ export function InboxDetail({
             <FailureRowView item={item.failure} />
           </ul>
         ) : null}
-        {/* A thread gone with its worker has nothing to read. */}
-        {item.threadId !== undefined && item.owned && (
+        {/* A thread gone with its worker has nothing to read; a card leaves it to its thread. */}
+        {!card && item.threadId !== undefined && item.owned && (
           <InboxContext key={item.threadId} threadId={item.threadId} />
         )}
       </div>

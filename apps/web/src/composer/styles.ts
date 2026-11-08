@@ -19,15 +19,21 @@ export const GHOST_MIRROR =
   "pointer-events-none absolute inset-0 overflow-hidden px-4 pt-3 pb-1 text-reading leading-relaxed break-words whitespace-pre-wrap";
 
 /**
+ * On a phone, a toolbar control's hit area grows to 44 px past its 32 px look, so a thumb finds it
+ * without the row growing.
+ */
+export const PHONE_HIT =
+  "phone:relative phone:after:absolute phone:after:-inset-1.5 phone:after:content-['']";
+
+/**
  * A toolbar control: no border, muted until hovered, and as tall as Send (32 px) so every target on
  * the row is the same size, at least as wide as it is tall.
  */
-export const GHOST_TRIGGER =
-  "h-8 min-w-8 gap-1.5 border-transparent px-2 text-meta font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:focus-ring data-[size=sm]:h-8 data-[popup-open]:bg-accent dark:hover:bg-accent";
+export const GHOST_TRIGGER = `h-8 min-w-8 gap-1.5 border-transparent px-2 text-meta font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:focus-ring data-[size=sm]:h-8 data-[popup-open]:bg-accent dark:hover:bg-accent ${PHONE_HIT}`;
 
-/** Send and Stop: a 32 px circle holding one glyph. */
+/** Send and Stop: a 32 px circle holding one glyph, 44 px on a phone. */
 export const ROUND =
-  "grid size-8 shrink-0 place-items-center rounded-(--composer-button-radius) outline-none transition-[opacity,box-shadow,background-color,color] focus-visible:focus-ring disabled:cursor-default";
+  "grid size-8 phone:size-11 shrink-0 place-items-center rounded-(--composer-button-radius) outline-none transition-[opacity,box-shadow,background-color,color] focus-visible:focus-ring disabled:cursor-default";
 
 /**
  * Stop's fill while a turn runs, on `ROUND`: solid in the text colour, so it reads as a stop button

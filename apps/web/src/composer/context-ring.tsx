@@ -6,6 +6,8 @@ import { useThreadsStore } from "@/stores/threads";
 import { contextLevel, contextPercent, UsageBar, type ContextLevel } from "@/thread/usage-bar";
 import { useCostShown } from "@/usage/cost";
 
+import { PHONE_HIT } from "./styles";
+
 // The fill is read against the composer's card, so it takes the title bar's usage meter's tokens
 // (`LimitBar`), which the contrast matrix holds above the UI floor on every surface.
 const FILL: Record<ContextLevel, string> = {
@@ -48,7 +50,10 @@ export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp
         data-testid="usage-ring"
         data-level={level}
         aria-label={ringLabel(percent)}
-        className="grid size-8 shrink-0 place-items-center rounded-(--radius-sm) outline-none hover:bg-accent focus-visible:focus-ring"
+        className={cn(
+          "grid size-8 shrink-0 place-items-center rounded-(--radius-sm) outline-none hover:bg-accent focus-visible:focus-ring",
+          PHONE_HIT,
+        )}
       >
         {/* The bar alone; its words, "Context 36%", head the popover the pointer opens. */}
         <span

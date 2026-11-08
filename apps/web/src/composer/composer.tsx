@@ -44,6 +44,7 @@ import { shortcutPressed } from "@/keyboard/bindings";
 import { isMac, runShortcut, useShortcut } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import {
   DictationMirror,
@@ -192,6 +193,7 @@ export function Composer({
     };
   }, []);
   const [dragging, setDragging] = useState(false);
+  const phone = usePhone();
   const dragDepth = useRef(0);
   const sendHint = useShortcutHint("composer.send");
   const newDraftHint = useShortcutHint("composer.sendNewDraft");
@@ -370,7 +372,10 @@ export function Composer({
     }
     if (useSuggestionsStore.getState().take(threadId)) record("taken");
     if (whole) {
-      accepted.current = { turnId: suggestions.turnId, text: current.suggestion };
+      accepted.current = {
+        turnId: suggestions.turnId,
+        text: current.suggestion,
+      };
       record("accepted");
     } else {
       record("wordAccepted");
@@ -387,7 +392,12 @@ export function Composer({
 
   /** The message to send, and how to give its draft back if it doesn't go. */
   const take = ():
-    | { input: UserInput; giveBack: () => void; release: () => void; active: () => boolean }
+    | {
+        input: UserInput;
+        giveBack: () => void;
+        release: () => void;
+        active: () => boolean;
+      }
     | undefined => {
     if (!canSend) return undefined;
     const files = attachments.capture();
@@ -431,7 +441,12 @@ export function Composer({
       setText([typed, since].filter(Boolean).join("\n\n"));
       useDiffCommentsStore.getState().restore(threadId, reviewed);
     };
-    return { input, giveBack, release: files.release, active: () => files.active };
+    return {
+      input,
+      giveBack,
+      release: files.release,
+      active: () => files.active,
+    };
   };
 
   /** Ends that wait when the composer goes, as switching threads unmounts it. */
@@ -870,7 +885,12 @@ export function Composer({
   const stopLabel = background ? "Stop the background agents" : "Stop";
   const steerModifier = isMac() ? "⌘" : "Ctrl";
   const sendHeld = useModHeld(steerable && hasDraft);
-  const action = sendAction({ hasDraft, busy, background, steering: steerable && sendHeld });
+  const action = sendAction({
+    hasDraft,
+    busy,
+    background,
+    steering: steerable && sendHeld,
+  });
   const sendKeyHint = sendKey === "enter" ? "↵" : sendHint;
   const queueLabel = steerable
     ? `Queue: sends when the turn ends. ${steerModifier}-click to steer`
@@ -879,8 +899,14 @@ export function Composer({
   const control = takesControl ? " and take over from the orchestrator" : "";
   const queueControl = takesControl ? `. ${TAKES_OVER_LINE}` : "";
   const actionLabels = {
-    send: { aria: `Send${control}`, hint: withHint(`Send${control}`, sendKeyHint) },
-    queue: { aria: `Queue${control}`, hint: withHint(`${queueLabel}${queueControl}`, sendKeyHint) },
+    send: {
+      aria: `Send${control}`,
+      hint: withHint(`Send${control}`, sendKeyHint),
+    },
+    queue: {
+      aria: `Queue${control}`,
+      hint: withHint(`${queueLabel}${queueControl}`, sendKeyHint),
+    },
     steer: { aria: "Steer now", hint: STEER_LABEL },
     // The word and its key, "Stop (⌘.)": an icon button's tooltip names it and its shortcut.
     stop: {
@@ -1087,11 +1113,16 @@ export function Composer({
               ghost !== undefined || dictation.active
                 ? ""
                 : (placeholder ??
-                  (takesControl
-                    ? `${running ? "Queue a message for this worker" : "Message this worker"}… (/ for commands, @ for files)`
-                    : running
-                      ? "Queue a message… (/ for commands, @ for files)"
-                      : "Message… (/ for commands, @ for files)"))
+                  // A phone's line holds the words alone: no keys to hint at on a touch keyboard.
+                  `${
+                    takesControl
+                      ? running
+                        ? "Queue a message for this worker"
+                        : "Message this worker"
+                      : running
+                        ? "Queue a message"
+                        : "Message"
+                  }…${phone ? "" : " (/ for commands, @ for files)"}`)
             }
             className={cn(SLAB_TEXTAREA, "relative")}
             onFocus={(event) => {
