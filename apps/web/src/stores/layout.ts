@@ -568,14 +568,14 @@ export function sanitizeSidePanels(raw: unknown): Partial<SidePanels> {
 }
 
 /** The overview sidebar's sections, each folded by clicking its title. */
-export type OverviewSection = "orchestrators" | "solo" | "pullRequests" | "doneToday";
+export type OverviewSection = "orchestrators" | "solo" | "rest";
 
 /**
- * The sections that start folded: the things you check now and then. Done folds to one row, "8
- * done", that unfolds on a click: the Board shows what finished today and History keeps it all, so
- * the sidebar leaves them to those.
+ * The sections that start folded: the things you check now and then. "At rest" (the idle
+ * workspaces, the pull requests and Done) folds to its one title line: nothing in it needs you, the
+ * Board shows what finished today and History keeps it all.
  */
-export const OVERVIEW_FOLDED_BY_DEFAULT: readonly OverviewSection[] = ["pullRequests", "doneToday"];
+export const OVERVIEW_FOLDED_BY_DEFAULT: readonly OverviewSection[] = ["rest"];
 
 /** The overview sidebar as it was left: which sections are folded, and which show at all. */
 export interface OverviewView {
@@ -599,12 +599,7 @@ export type DoneGrouping = "date" | "orchestrator";
 
 const DONE_GROUPINGS: readonly DoneGrouping[] = ["date", "orchestrator"];
 
-const OVERVIEW_SECTIONS: readonly OverviewSection[] = [
-  "orchestrators",
-  "solo",
-  "pullRequests",
-  "doneToday",
-];
+const OVERVIEW_SECTIONS: readonly OverviewSection[] = ["orchestrators", "solo", "rest"];
 
 type OverviewFolds = Pick<OverviewView, "overviewFolded" | "overviewUnfolded">;
 

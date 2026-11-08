@@ -16,10 +16,10 @@ const openReleaseNotes = async (page: Page) => {
     if ((await window.gramMock!.startedRealistic()) === undefined)
       throw new Error("the mock did not start with the realistic scenario");
   });
-  // Done starts folded to one row; its title opens it onto its rows.
+  // Done is in At rest, folded to its title line; the title opens it onto its rows.
   await page
-    .getByTestId("overview-section-doneToday")
-    .getByRole("button", { name: /^Done, \d+$/ })
+    .getByTestId("overview-section-rest")
+    .getByRole("button", { name: /^At rest, \d+$/ })
     .click();
   await page.getByRole("button", { name: /^Release notes for 0.9, Gram, merged/ }).click();
   await expect(

@@ -3858,14 +3858,16 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "overview-sidebar-extras",
-    title: "The overview at 1440 px with Pull requests opened and History at its foot",
+    title:
+      "The overview at 1440 px with At rest opened (idle workspaces, pull requests, Done) and History at its foot",
     open: async (page) => {
       await openOverviewHome(page, 1440, { panel: false });
       const title = page
-        .getByTestId("overview-section-pullRequests")
+        .getByTestId("overview-section-rest")
         .getByRole("heading")
         .getByRole("button");
       if ((await title.getAttribute("aria-expanded")) === "false") await title.click();
+      await page.getByTestId("overview-section-pullRequests").waitFor();
       await page.getByTestId("overview-history").waitFor();
       // Off the column, so no row shows its hover.
       await page.mouse.move(1200, 400);

@@ -183,7 +183,7 @@ test("lists the workspaces in the switcher's order, the current one opened into 
     // The now line is always in the row's name, or what it waits on in its place (`rowWaiting`);
     // on the row only if it says more than the dot.
     const waits = row.getByTestId("overview-worker-waiting");
-    const waiting = (await waits.count()) === 0 ? undefined : await waits.textContent();
+    const waiting = (await waits.count()) === 0 ? undefined : await waits.getAttribute("title");
     const now = asking ? "asks you" : (waiting ?? each.now);
     expect(await row.getAttribute("aria-label")).toContain(`, ${now}`);
     const line = row.getByTestId("overview-worker-now");
@@ -480,26 +480,29 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
     overview(page).getByTestId(`overview-section-${id}`).getByRole("button", { name });
   const orchestrators = head("orchestrators", /Orchestrators/);
   const soloHead = head("solo", /Solo threads/);
-  // Pull requests comes after Solo threads, folded by default, then Done, folded to one row that
-  // only unfolds; History is at the column's foot, out of the list, its one way into History.
-  const prsHead = head("pullRequests", /Pull requests/);
-  const doneHead = head("doneToday", /Done/);
-  await expect(prsHead).toHaveAttribute("aria-expanded", "false");
-  await expect(doneHead).toHaveAttribute("aria-expanded", "false");
+  // At rest comes after Solo threads, folded by default: the pull requests and Done, which shows
+  // its last three; History is at the column's foot, out of the list, its one way into History.
+  const restHead = head("rest", /At rest/);
+  await expect(restHead).toHaveAttribute("aria-expanded", "false");
   await expect(overview(page).getByTestId("overview-history")).toHaveText("History");
   await expect(overview(page).getByTestId("overview-done-history")).toHaveCount(0);
-  // End reaches Done's own row while it is folded, and its line into History once open.
-  await doneHead.focus();
+  // End reaches At rest's own title while it is folded, and Done's line into History once open.
+  await restHead.focus();
   await page.keyboard.press("End");
-  await expect(doneHead).toBeFocused();
-  await doneHead.click();
-  await expect(doneHead).toHaveAttribute("aria-expanded", "true");
+  await expect(restHead).toBeFocused();
+  await restHead.click();
+  await expect(restHead).toHaveAttribute("aria-expanded", "true");
   await expect(overview(page).getByTestId("overview-done")).toHaveCount(3);
-  await doneHead.focus();
+  await expect(overview(page).getByTestId("overview-section-pullRequests")).toBeVisible();
+  await restHead.focus();
   await page.keyboard.press("End");
   await expect(overview(page).getByTestId("overview-done-more")).toBeFocused();
-  await doneHead.click();
-  await expect(doneHead).toHaveAttribute("aria-expanded", "false");
+  // Its headings are no stops: ↑ from Done's first row goes to the row before it.
+  await overview(page).getByTestId("overview-done").first().focus();
+  await page.keyboard.press("ArrowUp");
+  await expect(overview(page).getByTestId("overview-pr").last()).toBeFocused();
+  await restHead.click();
+  await expect(restHead).toHaveAttribute("aria-expanded", "false");
   await orchestrators.click();
   await expect(orchestrators).toHaveAttribute("aria-expanded", "false");
   await overview(page).getByTestId("overview-needs-you").focus();
@@ -507,11 +510,9 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
   await expect(orchestrators).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(soloHead).toBeFocused();
-  // Folded, Done's last stop is its own row.
+  // Folded, At rest's last stop is its own title.
   await page.keyboard.press("End");
-  await expect(doneHead).toBeFocused();
-  await page.keyboard.press("ArrowUp");
-  await expect(prsHead).toBeFocused();
+  await expect(restHead).toBeFocused();
   // The folded Parked line is a stop of its own, the rows hidden under it are not. Solo threads
   // marked done are in Done, so no line of their own follows it.
   await page.keyboard.press("ArrowUp");
@@ -521,11 +522,8 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
   // Folded, Solo threads' rows are passed over the same way.
   await page.keyboard.press("Home");
   await soloHead.click();
-  // Folded, Done's last stop is its own row.
   await page.keyboard.press("End");
-  await expect(doneHead).toBeFocused();
-  await page.keyboard.press("ArrowUp");
-  await expect(prsHead).toBeFocused();
+  await expect(restHead).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await expect(soloHead).toBeFocused();
 });
@@ -1375,14 +1373,16 @@ test("a worker still running after its feature is delivered shows with its step 
   const row = worker(page, made.doneToday);
   await expect(row).toBeVisible();
   await expect(row.getByTestId("overview-worker-dot")).toHaveAttribute("data-working", "true");
-  // One line: what it does, with the dot's "working" and its age in its name and hover card.
+  // One line: its pulsing dot says it works, with no words at its edge; what it does, its
+  // "working" and its age are in its name and hover card.
   await expect(row.getByTestId("overview-worker-now")).toHaveCount(0);
-  const line = row.getByTestId("overview-worker-step");
-  await expect(line).not.toHaveText("");
-  // The kind of thing it runs, never the command; the plan's step count only on its hover.
-  await expect(line).toHaveText("Running a command");
-  await expect(line).toHaveAttribute("title", "Step 2 of 2 · Running a command");
+  await expect(row.getByTestId("overview-worker-waiting")).toHaveCount(0);
   await expect(row.getByTestId("overview-ago")).toHaveCount(0);
+  // The kind of thing it runs, never the command, with its plan's step, on its hover card.
+  await row.hover();
+  await expect(page.getByTestId("overview-worker-card-step")).toHaveText(
+    "Step 2 of 2 · Running a command",
+  );
   await expect(row).toHaveAttribute("aria-label", /, working, .*last active \d{2}:\d{2}$/);
   // Its turn over, it leaves again.
   await page.evaluate((id) => window.gramMock!.simulateStatus(id as never, "idle"), made.doneToday);
@@ -1490,10 +1490,10 @@ test("a worker's PRs show as chips under its row, with checks and the review bot
   const chips = overview(page).locator(
     `[data-testid="overview-pr-chips"][data-thread-id="${made.live}"] [data-testid="overview-pr-chip"]`,
   );
-  // The status words win: at the default width the two chips can't sit beside them, so they wait
-  // on the hover card and the words stay whole.
-  await expect(worker(page, made.live)).toContainText("Running tests");
-  await expect(chips).toHaveCount(0);
+  // At work its dot says it works, so the row has no words, its step on the hover card: the chips
+  // take the line's end while they fit beside its title, and otherwise wait on the hover card.
+  await expect(worker(page, made.live).getByTestId("overview-worker-now")).toHaveCount(0);
+  await expect(worker(page, made.live)).toHaveJSProperty("offsetHeight", 36);
   // Given room, they take the line's end.
   const edge = page.getByTestId("left-resize");
   await edge.focus();
@@ -1660,8 +1660,9 @@ test.describe(() => {
     }, id);
     await expect(dot).toHaveCount(1);
     await expect(age).toHaveCount(0);
-    // Off the row, its last activity stays on its hover, under its whole title, and in its name.
-    await expect(row).toHaveAttribute("title", /^.+\nLast activity \d{2}:\d{2}$/);
+    // Off the row, its state and last activity stay on its hover, under its whole title, and in
+    // its name.
+    await expect(row).toHaveAttribute("title", /^.+\nRunning · Last activity \d{2}:\d{2}$/);
     await expect(row).toHaveAttribute("aria-label", /, Running, Last activity \d{2}:\d{2}$/);
 
     await row.click({ button: "right" });
@@ -1692,18 +1693,19 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
     page.locator(`[data-testid="overview-worker"][data-thread-id="${threadId}"]`);
   const waits = (threadId: string) => row(threadId).getByTestId("overview-worker-waiting");
 
-  // Its own PR is in the chip beside the words, or on the hover card where the chip doesn't fit,
-  // so the words leave its number out.
-  await expect(waits(made.ci)).toHaveText("Waiting · checks");
+  // The words win: with words at its edge a worker's PR chips stay on its hover card, so the words
+  // name its PR. The edge leaves "Waiting" to the hollow dot; the whole label is the words' hover.
+  await expect(waits(made.ci)).toHaveText("checks on #341");
+  await expect(waits(made.ci)).toHaveAttribute("title", "Waiting · checks on #341");
   await expect(waits(made.ci)).toHaveAttribute("data-kind", "checks");
-  await expect(waits(made.reviewing)).toHaveText("Waiting · review");
-  await expect(waits(made.stacked)).toHaveText("Waiting · #341 to merge");
-  await expect(waits(made.merging)).toHaveText("Waiting · merge of #345");
-  await expect(waits(made.release)).toHaveText("Waiting · Release run");
-  await expect(waits(made.rebase)).toHaveText("Waiting · #341 to merge");
-  await expect(waits(made.timed)).toHaveText(/^Waiting · until (\w{3} )?\d{2}:\d{2}$/);
+  await expect(waits(made.reviewing)).toHaveText("review on #343");
+  await expect(waits(made.stacked)).toHaveText("#341 to merge");
+  await expect(waits(made.merging)).toHaveText("merge of #345");
+  await expect(waits(made.release)).toHaveText("Release run");
+  await expect(waits(made.rebase)).toHaveText("#341 to merge");
+  await expect(waits(made.timed)).toHaveText(/^until (\w{3} )?\d{2}:\d{2}$/);
   await expect(waits(made.limited)).toHaveText(/^Paused · limit until (\w{3} )?\d{2}:\d{2}$/);
-  await expect(waits(made.exportPresets)).toHaveText("Waiting · main to move");
+  await expect(waits(made.exportPresets)).toHaveText("main to move");
   await expect(waits(made.exportPresets)).toHaveAttribute("data-kind", "condition");
   // Calm: the hollow waiting dot, never the needs-you one, and nothing added to Needs you.
   for (const id of [made.ci, made.timed, made.limited, made.release]) {
@@ -1722,7 +1724,7 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
     `[data-testid="overview-workspace"][data-workspace-id="${made.workspaceId}"]`,
   );
   const own = workspace.getByTestId("overview-orchestrator-waiting");
-  await expect(own).toHaveText("Waiting · thread to finish");
+  await expect(own).toHaveText("thread to finish");
   await expect(own).toHaveAttribute("data-kind", "condition");
   await expect(workspace.getByTestId("overview-workspace-row")).toHaveAttribute(
     "title",

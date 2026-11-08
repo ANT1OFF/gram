@@ -755,18 +755,17 @@ describe("side panels", () => {
     expect(sanitizeOverviewView({ overviewBeforeHide: "hidden" })).toEqual({});
   });
 
-  it("starts Pull requests and Done folded, and remembers them", () => {
+  it("starts At rest folded, and remembers it", () => {
     const folded = (section: OverviewSection) => overviewSectionFolded(s(), section);
-    expect(OVERVIEW_FOLDED_BY_DEFAULT).toEqual(["pullRequests", "doneToday"]);
-    expect(folded("pullRequests")).toBe(true);
-    expect(folded("doneToday")).toBe(true);
+    expect(OVERVIEW_FOLDED_BY_DEFAULT).toEqual(["rest"]);
+    expect(folded("rest")).toBe(true);
     expect(folded("solo")).toBe(false);
-    s().toggleOverviewSection("pullRequests");
-    expect(folded("pullRequests")).toBe(false);
-    expect(s().overviewUnfolded).toEqual(["pullRequests"]);
+    s().toggleOverviewSection("rest");
+    expect(folded("rest")).toBe(false);
+    expect(s().overviewUnfolded).toEqual(["rest"]);
     expect(s().overviewFolded).toEqual([]);
-    s().toggleOverviewSection("pullRequests");
-    expect(folded("pullRequests")).toBe(true);
+    s().toggleOverviewSection("rest");
+    expect(folded("rest")).toBe(true);
     expect(s().overviewUnfolded).toEqual([]);
 
     // ⌘J opens a folded section, and leaves an open one open.
@@ -780,20 +779,15 @@ describe("side panels", () => {
     expect(s().overviewFolded).toEqual(["solo"]);
     s().unfoldOverviewSection("solo");
     expect(folded("solo")).toBe(false);
-    // Done opens from its one row, and folds back to it.
-    s().toggleOverviewSection("doneToday");
-    expect(folded("doneToday")).toBe(false);
-    expect(s().overviewUnfolded).toEqual(["doneToday"]);
-    s().toggleOverviewSection("doneToday");
-    expect(folded("doneToday")).toBe(true);
 
-    // A default-folded section is never kept among the folded ones, nor the reverse.
+    // A default-folded section is never kept among the folded ones, nor the reverse; the sections
+    // At rest took in (Pull requests, Done) are dropped.
     expect(
       sanitizeOverviewView({
-        overviewFolded: ["pullRequests", "solo"],
-        overviewUnfolded: ["solo", "pullRequests", "doneToday", "x"],
+        overviewFolded: ["rest", "solo"],
+        overviewUnfolded: ["solo", "rest", "pullRequests", "doneToday", "x"],
       }),
-    ).toEqual({ overviewFolded: ["solo"], overviewUnfolded: ["pullRequests", "doneToday"] });
+    ).toEqual({ overviewFolded: ["solo"], overviewUnfolded: ["rest"] });
   });
 
   it("keeps the sections Settings turns off in the column's order", () => {

@@ -544,8 +544,8 @@ const steps: readonly Shot[] = [
     title: "Find old work: a finished worker whose conversation isn't on this computer",
     open: async (page) => {
       await page.goto("/t/t-docs");
-      // Done starts folded to one row, "N done": a click on it unfolds it.
-      await page.getByRole("button", { name: /^Done, \d+$/ }).click();
+      // Done is in At rest, folded to its title line: a click on it unfolds it.
+      await page.getByRole("button", { name: /^At rest, \d+$/ }).click();
       await page.getByRole("button", { name: /^Release notes for 0.9, Gram, merged/ }).click();
       await expect(
         page.getByRole("heading", { name: "Worker: Release notes for 0.9", exact: true }),

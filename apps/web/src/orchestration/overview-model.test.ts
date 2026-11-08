@@ -22,7 +22,9 @@ import {
   stationDotClass,
   tileWorking,
   steplessLine,
+  waitShort,
   workLineText,
+  workspaceWorkersText,
   type OverviewWorkerRow,
 } from "./overview-model";
 
@@ -450,6 +452,20 @@ describe("an orchestrator's line", () => {
     );
     expect(foldedSummaryText({ live: 1, working: 0, asks: 1 })).toBe("1 worker · 1 needs you");
     expect(foldedSummaryText({ live: 0, working: 0, asks: 0 })).toBe("0 workers");
+  });
+
+  it("says its workers in the few words its row's edge has room for", () => {
+    expect(workspaceWorkersText({ live: 4, working: 3, inTab: false })).toBe("3 working");
+    expect(workspaceWorkersText({ live: 1, working: 0, inTab: false })).toBe("1 worker");
+    expect(workspaceWorkersText({ live: 4, working: 0, inTab: false })).toBe("4 workers");
+    expect(workspaceWorkersText({ live: 7, working: 2, inTab: true })).toBe("7 in Workers");
+  });
+
+  it("leaves a wait's word to the hollow dot beside it", () => {
+    expect(waitShort("Waiting · checks on #69")).toBe("checks on #69");
+    expect(waitShort("Waiting")).toBe("Waiting");
+    expect(waitShort("Paused · resets 14:00")).toBe("Paused · resets 14:00");
+    expect(waitShort("Under your control")).toBe("Under your control");
   });
 
   it("folds on ← while open and opens on → while folded, as a tree row does", () => {
