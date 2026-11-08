@@ -163,7 +163,10 @@ export const TASKS: readonly Task[] = [
     },
     run: async (p, r) => {
       await r.click(p.getByRole("button", { name: "Retry", exact: true }));
-      await expect(p.getByText(/Retried · \d\d:\d\d/)).toBeVisible();
+      // The failed card turns into the retry's receipt once the retry ran through.
+      const card = p.locator('[data-testid="agent-error"][data-state="retried"]').last();
+      await expect(card).toHaveAttribute("data-recovered", "true");
+      await expect(card.getByTestId("agent-error-retried")).toBeVisible();
     },
   },
   {

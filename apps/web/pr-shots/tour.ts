@@ -226,10 +226,32 @@ const scenes: readonly Shot[] = [
   }),
   realistic({
     name: "composer-controls",
-    title: "Composer: additional controls menu open",
+    title: "Composer: a grid pane dragged to its narrowest, its pickers folded into the … menu",
     open: async (page) => {
-      await composer(page);
-      await page.getByRole("button", { name: "More composer controls" }).click();
+      // The pickers fold into "…" only when even their values can't fit, which at this window's
+      // width is a grid pane dragged down to its narrowest share (`MIN_PANE_SHARE`).
+      await page.setViewportSize(SET_SIZE);
+      await seedMockSettings(page, {
+        panel: { open: false },
+        layout: {
+          grid: {
+            preset: "3c",
+            // Threads at rest beside it: one still streaming kept the frame from settling.
+            panes: ["t-plan", "t-question", "t-deps"],
+            colFr: [0.425, 0.425, 0.15],
+            focused: 2,
+          },
+        },
+      });
+      await page.goto("/t/t-deps");
+      // Each pane's transcript in, so the frame shows three working threads.
+      await expect(page.getByTestId("pane")).toHaveCount(3);
+      await expect(page.getByText(/^Loading conversation/)).toHaveCount(0);
+      const pane = page.locator('[data-testid="pane"][data-thread-id="t-deps"]');
+      await pane
+        .getByLabel("Message", { exact: true })
+        .fill("Add retry coverage for the queue consumer.");
+      await pane.getByRole("button", { name: "More composer controls" }).click();
       await expect(page.getByTestId("composer-overflow-menu")).toBeVisible();
     },
   }),
@@ -249,7 +271,7 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "questions",
-    title: "Questions: a worker's question in the Inbox, opened from its orchestrator's header",
+    title: "Questions: a worker's question in the Inbox, opened over billing-api's chat",
     open: async (page) => {
       const made = await openRealistic(page);
       const orchestrator = await page.evaluate(
@@ -259,11 +281,15 @@ const scenes: readonly Shot[] = [
         made.askingWorkspaceId,
       );
       await openOrchestrator(page, orchestrator);
-      // The header's Waiting on you; on a base from before it, the Asks dock shows the ask itself.
-      const line = page.getByTestId("status-waiting");
-      await line.or(page.getByTestId("ask-stack")).first().waitFor();
-      if ((await line.count()) > 0) await line.click();
-      await page.getByTestId("ask-item").first().waitFor();
+      // The refund worker's question, the scenario's one ask, waits in the Inbox, which the
+      // sidebar's Needs you opens.
+      await page.getByTestId("overview-needs-you").click();
+      await page
+        .getByTestId("inbox-item")
+        .filter({ hasText: "A refund webhook that keeps failing" })
+        .click();
+      const item = page.getByTestId("inbox-detail").getByTestId("ask-item");
+      await item.getByTestId("ask-option").first().waitFor();
       await page.waitForTimeout(600);
     },
   },
