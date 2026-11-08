@@ -506,11 +506,16 @@ function Orchestrators() {
       (ledgers.get(id)?.held?.length ?? 0) === 0
     );
   });
-  const active = workspaces.filter((state) => !quiet.includes(state));
+  // One workspace at rest keeps a row of its own: folding it would swap its row for "Idle · 1",
+  // which takes the same line and hides its name.
+  const folded = quiet.length >= 2 ? quiet : [];
+  const active = workspaces.filter((state) => !folded.includes(state));
   return (
     <Section id="orchestrators" title="Orchestrators" count={workspaces.length}>
       {active.map(row)}
-      {quiet.length > 0 && <IdleWorkspaces count={quiet.length}>{quiet.map(row)}</IdleWorkspaces>}
+      {folded.length > 0 && (
+        <IdleWorkspaces count={folded.length}>{folded.map(row)}</IdleWorkspaces>
+      )}
     </Section>
   );
 }
@@ -519,8 +524,8 @@ function Orchestrators() {
 const IDLE_OPEN_KEY = "overview-idle:open";
 
 /**
- * The workspaces at rest, folded into one row at the list's end, "Idle · 3", which unfolds to their
- * rows: a workspace with nothing running and nothing asking says nothing a row of its own needs to.
+ * The workspaces at rest, two or more, folded into one row at the list's end, "Idle · 3", which
+ * unfolds to their rows: a workspace with nothing running and nothing asking says nothing a row of its own needs to.
  * Its fold is kept across reloads.
  */
 function IdleWorkspaces({ count, children }: { count: number; children: ReactNode }) {

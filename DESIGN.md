@@ -89,7 +89,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   under its chevron. A workspace at rest (nothing running, nothing asking, no brief held, not
   the one in view) folds with the others into one "Idle · N" row at the end of the list, which
   unfolds to their rows (kept across reloads); it leaves the group the moment something runs or
-  asks there. Every section's title has one look, muted 13 px words beside its chevron; a
+  asks there. A lone workspace at rest keeps its own row, since "Idle · 1" would only hide its
+  name. Every section's title has one look, muted 13 px words beside its chevron; a
   Gram word's explanation ("Solo threads") is on its hover, never a dotted underline there. Marks
   centre on one column and titles start on one edge, the pill, Search, section titles and History
   included. The overview's sections sit a list's step (12 px) apart. The compact rail (60 px,
