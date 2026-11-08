@@ -2,91 +2,24 @@
 // found by one machine-wide scan per poll and pushed as `thread.ports` events when they change. The
 // same scan finds what runs in the foreground of each terminal, pushed as `thread.terminalProcesses`.
 
-import type { TerminalId, TerminalProcess, ThreadId } from "@gram/contracts";
+import type { TerminalProcess, ThreadId } from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { homedir } from "node:os";
 import { EventHub } from "../events/event-hub.ts";
 import { AppActivity, pollWhileShown } from "../git/activity.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { redactText } from "../logging/redact.ts";
-import {
-  childrenOf,
-  foregroundOf,
-  portsByKey,
-  samePorts,
-  scanCommands,
-  shortCommand,
-  type Command,
-  type ProcessRow,
-} from "./pure.ts";
+import { foregroundOf, portsByKey, samePorts, shortCommand } from "./pure.ts";
+import { ProcessRoots } from "./roots.ts";
+import { liveScan, type PortScan } from "./scan.ts";
 
-/** One sweep of the machine: listening ports by pid, and the process tree as ppid → children. */
-export interface PortScan {
-  readonly listening: ReadonlyMap<number, ReadonlyArray<number>>;
-  readonly children: ReadonlyMap<number, ReadonlyArray<number>>;
-  /** Every process by pid, for what runs in the terminals; none found when left out. */
-  readonly processes?: ReadonlyMap<number, ProcessRow>;
-}
-
-/** `lsof` + `ps`, or `netstat` + CIM on Windows. */
-export const liveScan: Effect.Effect<PortScan, unknown, Proc> = Effect.gen(function* () {
-  const proc = yield* Proc;
-  const commands = scanCommands(process.platform);
-  const run = (command: Command) =>
-    proc.run(command.file, command.args, {
-      cwd: homedir(),
-      timeoutMs: 10_000,
-      maxOutputBytes: 16_000_000,
-    });
-  const [listeners, processes] = yield* Effect.all(
-    [run(commands.listeners), run(commands.processes)],
-    { concurrency: 2 },
-  );
-  const rows = commands.parseProcesses(processes.stdout);
-  return {
-    listening: commands.parseListeners(listeners.stdout),
-    children: childrenOf(rows),
-    processes: rows,
-  };
-});
-
-export interface ProcessRootsShape {
-  add(threadId: ThreadId, pid: number, terminalId?: TerminalId): void;
-  remove(pid: number): void;
-  readonly all: Effect.Effect<ReadonlyArray<readonly [ThreadId, number]>>;
-  /** The roots that are a terminal's shell, with the terminal. */
-  readonly terminals: Effect.Effect<
-    ReadonlyArray<{
-      readonly threadId: ThreadId;
-      readonly pid: number;
-      readonly terminalId: TerminalId;
-    }>
-  >;
-}
-
-/** Root pids a thread owns outside its agent session: its terminals' shells. */
-export class ProcessRoots extends Context.Service<ProcessRoots, ProcessRootsShape>()(
-  "@gram/server/ProcessRoots",
-) {
-  static readonly layer: Layer.Layer<ProcessRoots> = Layer.sync(ProcessRoots, () => {
-    const rootOf = new Map<number, { threadId: ThreadId; terminalId?: TerminalId | undefined }>();
-    return ProcessRoots.of({
-      add: (threadId, pid, terminalId) => void rootOf.set(pid, { threadId, terminalId }),
-      remove: (pid) => void rootOf.delete(pid),
-      all: Effect.sync(() => [...rootOf].map(([pid, root]) => [root.threadId, pid] as const)),
-      terminals: Effect.sync(() =>
-        [...rootOf].flatMap(([pid, { threadId, terminalId }]) =>
-          terminalId === undefined ? [] : [{ threadId, pid, terminalId }],
-        ),
-      ),
-    });
-  });
-}
+export { liveScan, type PortScan } from "./scan.ts";
+export { ProcessRoots, type ProcessRootsShape } from "./roots.ts";
 
 export interface ThreadPortsShape {
   /** The thread's ports as of the last scan; empty when none or unknown. */
@@ -219,5 +152,15 @@ export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>(
       }),
     );
 
-  static readonly layer = ThreadPorts.layerWith();
+  /** Over this machine's host's scan, so the chips read the machine the threads run on. */
+  static readonly layer: Layer.Layer<
+    ThreadPorts,
+    never,
+    ThreadRuntimes | EventHub | ProcessRoots | Proc | WorkerHosts
+  > = Layer.unwrap(
+    Effect.gen(function* () {
+      const { ports } = (yield* WorkerHosts).local;
+      return ThreadPorts.layerWith({ scan: ports.scan });
+    }),
+  );
 }

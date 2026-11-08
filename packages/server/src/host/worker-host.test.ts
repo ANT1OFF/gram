@@ -1,13 +1,29 @@
 import { HostId, LOCAL_HOST_ID } from "@gram/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import { GitStateRuntime, ProcLive, Worktrees } from "@gram/git";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { CheckoutService } from "../runtime/hooks.ts";
+import { HostTerminals } from "../terminal/host-terminals.ts";
+import type { Terminals } from "../terminal/terminals.ts";
 import { type WorkerHost, WorkerHosts } from "./worker-host.ts";
 
-const Local = WorkerHosts.layerLocal.pipe(
-  Layer.provideMerge(Layer.mergeAll(AgentHosts.layerNone, CheckoutService.layerNoGit)),
+const Agents = Layer.mergeAll(AgentHosts.layerNone, CheckoutService.layerNoGit);
+const Local = WorkerHosts.layerLocalForTests.pipe(Layer.provideMerge(Agents));
+
+// Stand-ins: only their identity is checked, so nothing on them is called.
+const worktrees = {} as Worktrees["Service"];
+const gitState = {} as GitStateRuntime["Service"];
+const terminals = {} as Terminals;
+const Machine = Layer.mergeAll(
+  Agents,
+  Layer.succeed(Worktrees, worktrees),
+  Layer.succeed(GitStateRuntime, gitState),
+  Layer.succeed(HostTerminals, terminals),
+  ProcLive,
 );
 
 describe("WorkerHosts", () => {
@@ -44,6 +60,35 @@ describe("WorkerHosts", () => {
       const hosts = WorkerHosts.fromHosts(local, [tower]);
       expect(yield* hosts.of({ hostId: tower.id })).toBe(tower);
       expect(yield* hosts.get(LOCAL_HOST_ID)).toBe(local);
+    }).pipe(Effect.provide(Local)),
+  );
+
+  it.effect("the local host holds this machine's worktrees, git state and terminals", () =>
+    Effect.gen(function* () {
+      const { local } = yield* WorkerHosts;
+      expect(local.worktrees).toBe(worktrees);
+      expect(local.git).toBe(gitState);
+      expect(local.terminals).toBe(terminals);
+      expect(typeof local.files.list).toBe("function");
+      expect(typeof local.ports.scan).toBe("object");
+    }).pipe(Effect.provide(WorkerHosts.layerLocal.pipe(Layer.provide(Machine)))),
+  );
+
+  it.effect("a test's host takes the parts its layer provides", () =>
+    Effect.gen(function* () {
+      const { local } = yield* WorkerHosts;
+      expect(local.worktrees).toBe(worktrees);
+      expect(local.git).toBe(gitState);
+    }).pipe(Effect.provide(WorkerHosts.layerLocalForTests.pipe(Layer.provide(Machine)))),
+  );
+
+  it.effect("a part a test's host leaves out dies with its name when reached", () =>
+    Effect.gen(function* () {
+      const { local } = yield* WorkerHosts;
+      const exit = yield* Effect.exit(local.worktrees.list("/repo", { openCheckouts: [] }));
+      expect(Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "").toContain("no worktrees");
+      const scan = yield* Effect.exit(local.ports.scan);
+      expect(Exit.isFailure(scan)).toBe(true);
     }).pipe(Effect.provide(Local)),
   );
 });

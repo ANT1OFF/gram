@@ -44,6 +44,7 @@ import { OrchestratorAppToolsLive } from "../orchestration/tools.ts";
 import { ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { TerminalGate } from "../terminal/gate.ts";
+import { HostTerminals } from "../terminal/host-terminals.ts";
 import { GitCheckoutLive, GitStatePublisherLive } from "../git/index.ts";
 import { LocalCheckRunner, LocalChecksLive } from "../git/local-checks.ts";
 import { MergeWhenReadyLive } from "../git/merge-when-ready.ts";
@@ -397,7 +398,6 @@ export const ServerCore = Layer.unwrap(
           Layer.provideMerge(Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer)),
           Layer.provideMerge(ThreadVisibility.layer),
           Layer.provideMerge(ThreadPorts.layer),
-          Layer.provideMerge(ProcessRoots.layer),
           // The outputs service observes the runtimes for files their threads produce; the browser
           // tools record evidence there too.
           // The docs a workspace's threads publish (`publish_doc`), kept in Gram's state.
@@ -410,15 +410,24 @@ export const ServerCore = Layer.unwrap(
               Layer.provideMerge(UsageLimitReadings.layer),
             ),
           ),
-          // The machines work runs on: only this one for now, over its agents and checkouts.
+          // The machines work runs on: only this one for now, over its agents, checkouts, git,
+          // files, terminals and port scan.
           Layer.provideMerge(
             WorkerHosts.layerLocal.pipe(
-              Layer.provideMerge(Layer.mergeAll(GitCheckoutLive, ClaudeAiSeenLive)),
+              Layer.provideMerge(
+                Layer.mergeAll(GitCheckoutLive, ClaudeAiSeenLive, HostTerminals.layer),
+              ),
             ),
           ),
           Layer.provideMerge(
             // Low enough for the port scan and the limit poll to rest while no window shows.
-            Layer.mergeAll(EventHub.layer, TerminalGate.layer, PreviewFiles.layer, AppActivityLive),
+            Layer.mergeAll(
+              EventHub.layer,
+              TerminalGate.layer,
+              PreviewFiles.layer,
+              AppActivityLive,
+              ProcessRoots.layer,
+            ),
           ),
           Layer.provideMerge(
             ThreadStore.layerSqlite(databaseFile, {

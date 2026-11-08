@@ -18,7 +18,6 @@ import {
   FILE_MAX_BYTES,
   FILE_MAX_BYTES_CEILING,
   LIST_LIMIT,
-  listFolder,
   mentionForms,
   mentionHints,
   outsideRoots,
@@ -31,9 +30,9 @@ import {
 } from "../../fs/files.ts";
 import { browseFolders, expandHome } from "../../fs/folders.ts";
 import { IMAGE_MAX_BYTES, readImage } from "../../fs/images.ts";
-import { listFileNames } from "../../fs/names.ts";
 import { makeVocabularyCache } from "../../fs/vocabulary.ts";
-import { SEARCH_MAX_PAGE, SEARCH_PAGE, searchFiles } from "../../fs/search.ts";
+import { SEARCH_MAX_PAGE, SEARCH_PAGE } from "../../fs/search.ts";
+import { WorkerHosts } from "../../host/worker-host.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import { filesWrittenBy, PreviewFiles } from "../../preview/files.ts";
@@ -96,6 +95,8 @@ export const fsHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const runtimes = yield* ThreadRuntimes;
   const proc = yield* Proc;
+  // The Files panel reads this machine's folders; which paths a thread may read stays decided here.
+  const hostFiles = (yield* WorkerHosts).local.files;
 
   const threadOf = (threadId: ThreadId) =>
     store
@@ -232,10 +233,10 @@ export const fsHandlers = Effect.gen(function* () {
     "fs.list": ({ path, threadId, showHidden, limit }) =>
       Effect.gen(function* () {
         const target = yield* resolveScoped(path, yield* scopeRoot(threadId));
-        return yield* listFolder(target, {
+        return yield* hostFiles.list(target, {
           showHidden: showHidden ?? false,
           limit: limit ?? LIST_LIMIT,
-        }).pipe(Effect.provideService(Proc, proc));
+        });
       }),
 
     "fs.file": ({ path, threadId, maxBytes }) =>
@@ -255,18 +256,18 @@ export const fsHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const checkout = yield* scopeRoot(threadId);
         const root = yield* resolveScoped(".", checkout);
-        return yield* searchFiles(root, query, {
+        return yield* hostFiles.search(root, query, {
           regex: regex ?? false,
           caseSensitive: caseSensitive ?? false,
           offset: offset ?? 0,
           limit: Math.min(limit ?? SEARCH_PAGE, SEARCH_MAX_PAGE),
-        }).pipe(Effect.provideService(Proc, proc));
+        });
       }),
 
     "fs.files": ({ threadId, path }) =>
       Effect.gen(function* () {
         const root = yield* resolveScoped(path ?? ".", yield* scopeRoot(threadId));
-        return yield* listFileNames(root).pipe(Effect.provideService(Proc, proc));
+        return yield* hostFiles.names(root);
       }),
 
     "fs.vocabulary": ({ threadId }) =>

@@ -1,9 +1,62 @@
 import { type HostId, hostOf, HostUnavailable, LOCAL_HOST_ID } from "@gram/contracts";
+import { GitStateRuntime, Proc, type ProcShape, Worktrees } from "@gram/git";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import { listFolder } from "../fs/files.ts";
+import { listFileNames } from "../fs/names.ts";
+import { searchFiles } from "../fs/search.ts";
+import { liveScan, type PortScan } from "../ports/scan.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { CheckoutService, type CheckoutServiceShape } from "../runtime/hooks.ts";
+import { HostTerminals } from "../terminal/host-terminals.ts";
+import type { Terminals } from "../terminal/terminals.ts";
+
+/** Reading a machine's folders for the Files panel, already scoped to a checkout by the caller. */
+const filesOn = (proc: ProcShape) => {
+  const on = Effect.provideService(Proc, proc);
+  return {
+    /** A folder's entries, dotfiles and git-ignored entries hidden unless asked for. */
+    list: (path: string, options: Parameters<typeof listFolder>[1]) =>
+      on(listFolder(path, options)),
+    /** Lines matching `query` under `root`, through `git grep` in a repository. */
+    search: (root: string, query: string, options: Parameters<typeof searchFiles>[2]) =>
+      on(searchFiles(root, query, options)),
+    /** Every file name under `root`, for the mention picker. */
+    names: (root: string) => on(listFileNames(root)),
+  };
+};
+
+export type HostFiles = ReturnType<typeof filesOn>;
+
+export interface HostPorts {
+  /** One sweep of the machine's listening ports and process tree. */
+  readonly scan: Effect.Effect<PortScan, unknown>;
+}
+
+/** The parts of a machine that its checkouts' work reads and runs on, beside its agents. */
+export interface HostMachine {
+  /** Listing, creating, removing and restoring the machine's worktrees. */
+  readonly worktrees: Worktrees["Service"];
+  /** The machine's checkouts' git state, read and watched. */
+  readonly git: GitStateRuntime["Service"];
+  /** The machine's folders, for the Files panel. */
+  readonly files: HostFiles;
+  /** The machine's pseudo-terminals. */
+  readonly terminals: Terminals;
+  /** What listens on the machine's ports, and what runs in its terminals. */
+  readonly ports: HostPorts;
+}
+
+/** A part a test's host leaves out: reaching it is a defect in the test, named so. */
+const missing = <A extends object>(part: string): A =>
+  new Proxy({} as A, {
+    get: (_, key) =>
+      typeof key === "symbol"
+        ? undefined
+        : () => Effect.die(new Error(`This test's host has no ${part} (${key} was called).`)),
+  });
 
 /**
  * One machine's worth of the work that touches a checkout: the agent sessions that run in it and
@@ -11,8 +64,9 @@ import { CheckoutService, type CheckoutServiceShape } from "../runtime/hooks.ts"
  * machine can later be another process or another computer without its callers changing.
  *
  * The local host is today's code, so a call on it is a function call. Owners move behind it one at
- * a time, each with its invariants: sessions and checkouts first; worktree listing, git, files,
- * terminals and ports after them.
+ * a time, each with its invariants: sessions and checkouts, then worktrees, git state, the Files
+ * panel's reads, terminals and the port scan. What decides whether a caller may reach a path stays
+ * with the caller; the host only does the reading and running.
  */
 export interface WorkerHost {
   /** `local` for this machine (`LOCAL_HOST_ID`); a paired machine's id otherwise. */
@@ -21,6 +75,11 @@ export interface WorkerHost {
   readonly sessions: AgentHosts["Service"];
   /** Creating, releasing, restoring and checking the presence of this machine's checkouts. */
   readonly checkouts: CheckoutServiceShape;
+  readonly worktrees: HostMachine["worktrees"];
+  readonly git: HostMachine["git"];
+  readonly files: HostMachine["files"];
+  readonly terminals: HostMachine["terminals"];
+  readonly ports: HostMachine["ports"];
 }
 
 export interface WorkerHostsShape {
@@ -51,16 +110,57 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     return WorkerHosts.of({ local, get, of: (record) => get(hostOf(record)) });
   };
 
-  /** This machine only, built from the agent hosts and checkout service already in the server. */
-  static readonly layerLocal: Layer.Layer<WorkerHosts, never, AgentHosts | CheckoutService> =
-    Layer.effect(
-      WorkerHosts,
-      Effect.gen(function* () {
-        return WorkerHosts.fromHosts({
-          id: LOCAL_HOST_ID,
-          sessions: yield* AgentHosts,
-          checkouts: yield* CheckoutService,
-        });
-      }),
-    );
+  /** This machine only, built from the services already in the server. */
+  static readonly layerLocal: Layer.Layer<
+    WorkerHosts,
+    never,
+    AgentHosts | CheckoutService | Worktrees | GitStateRuntime | Proc | HostTerminals
+  > = Layer.effect(
+    WorkerHosts,
+    Effect.gen(function* () {
+      return WorkerHosts.fromHosts({
+        id: LOCAL_HOST_ID,
+        sessions: yield* AgentHosts,
+        checkouts: yield* CheckoutService,
+        worktrees: yield* Worktrees,
+        git: yield* GitStateRuntime,
+        files: filesOn(yield* Proc),
+        terminals: yield* HostTerminals,
+        ports: { scan: liveScan.pipe(Effect.provideService(Proc, yield* Proc)) },
+      });
+    }),
+  );
+
+  /**
+   * This machine for tests that run agents without the rest of the server: the parts a test layer
+   * provides are used, and any it leaves out die with the part's name when reached.
+   */
+  static readonly layerLocalForTests: Layer.Layer<
+    WorkerHosts,
+    never,
+    AgentHosts | CheckoutService
+  > = Layer.effect(
+    WorkerHosts,
+    Effect.gen(function* () {
+      const optional = <I, S extends object>(tag: Context.Key<I, S>, part: string) =>
+        Effect.map(
+          Effect.serviceOption(tag),
+          Option.getOrElse(() => missing<S>(part)),
+        );
+      const proc = Option.getOrUndefined(yield* Effect.serviceOption(Proc));
+      return WorkerHosts.fromHosts({
+        id: LOCAL_HOST_ID,
+        sessions: yield* AgentHosts,
+        checkouts: yield* CheckoutService,
+        worktrees: yield* optional(Worktrees, "worktrees"),
+        git: yield* optional(GitStateRuntime, "git state"),
+        files: proc === undefined ? missing<HostFiles>("files") : filesOn(proc),
+        terminals: yield* optional(HostTerminals, "terminals"),
+        ports:
+          proc === undefined
+            ? { scan: Effect.die(new Error("This test's host has no port scan.")) }
+            : { scan: liveScan.pipe(Effect.provideService(Proc, proc)) },
+      });
+    }),
+  );
 }

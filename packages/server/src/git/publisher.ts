@@ -19,7 +19,6 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import {
-  GitStateRuntime,
   invalidatePrBadges,
   notARepoState,
   Pr,
@@ -50,6 +49,7 @@ import { activityMultiplier, makePollBackoff } from "../github/poll-backoff.ts";
 import { affordsExtras, asBackground, GhBudget, GhPriority } from "../github/budget.ts";
 import { OpenPrs } from "../github/open-prs.ts";
 import { RateLimitMonitor } from "../github/rate-limit-monitor.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { AppActivity, onScreen, type ActivityLevel } from "./activity.ts";
@@ -333,13 +333,13 @@ export const GitStatePublisherLive = Layer.effect(
     const store = yield* ThreadStore;
     const hub = yield* EventHub;
     const runtimes = yield* ThreadRuntimes;
-    const gitState = yield* GitStateRuntime;
+    // The checkouts' git state and worktrees are this machine's, read through its host.
+    const { git: gitState, worktrees } = (yield* WorkerHosts).local;
     const pr = yield* Pr;
     const config = yield* GitServerConfig;
     const refreshes = yield* GitRefresh;
     const reviewBots = yield* ReviewBots;
     const proc = yield* Proc;
-    const worktrees = yield* Worktrees;
     const rateLimits = yield* RateLimitMonitor;
     const openPrs = yield* OpenPrs;
     const budget = yield* GhBudget;

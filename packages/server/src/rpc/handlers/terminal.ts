@@ -5,44 +5,22 @@ import {
   TerminalRpcs,
   type ThreadId,
 } from "@gram/contracts";
-import { PathProbe } from "@gram/git";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
-import * as Stream from "effect/Stream";
 import { AppToolRegistry } from "../../app-tools/registry.ts";
 import { readTerminalTool } from "../../app-tools/terminal-tools.ts";
-import { EventHub, isThreadRemoved } from "../../events/event-hub.ts";
+import { WorkerHosts } from "../../host/worker-host.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
-import { ProcessRoots } from "../../ports/service.ts";
-import { TerminalGate } from "../../terminal/gate.ts";
 import { resolveScriptRun, ScriptsError } from "../../scripts/project-scripts.ts";
-import { makeTerminals } from "../../terminal/terminals.ts";
 import { checkShell } from "../../terminal/shell-check.ts";
 import { logDefects, type Handlers } from "./common.ts";
 
-/** `terminal.*`: pseudo-terminals for the Terminal tab, closed with their thread and at shutdown. */
+/** `terminal.*`: the Terminal tab, over the host's pseudo-terminals. */
 const terminalHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
-  const hub = yield* EventHub;
-  const probe = yield* PathProbe;
-  const roots = yield* ProcessRoots;
-  // Absent in test layers without closes only at rest.
-  const gate = Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate));
+  // This machine's terminals; a thread on another machine will reach that machine's instead.
+  const { terminals } = (yield* WorkerHosts).local;
 
-  const terminals = yield* makeTerminals({
-    roots,
-    ...(gate === undefined ? {} : { held: gate.held }),
-    threadFolder: (threadId) =>
-      store.getThread(threadId).pipe(Effect.map((thread) => effectiveCheckout(thread).path)),
-    defaultFolder: store.getSettings.pipe(Effect.map((settings) => settings.agents.defaultFolder)),
-    settingsShell: store.getSettings.pipe(Effect.map((settings) => settings.terminal.shell)),
-    path: probe.path,
-    closedThreads: hub
-      .internalEvents(isThreadRemoved, "terminal cleanup")
-      .pipe(Stream.map((event) => event.threadId)),
-  });
-
-  // The terminals live here rather than in a core service, so their tool registers from here too.
+  // The agent tool that reads a terminal registers with the handlers, as it always has.
   yield* (yield* AppToolRegistry).register([readTerminalTool(terminals)]);
 
   /** A project script's command and folder, read from the project's own scripts file now. */
