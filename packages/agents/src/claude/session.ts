@@ -645,7 +645,15 @@ export const makeClaudeHost = (
       const appServer = o.appTools
         ? buildAppToolServer(o.threadId, o.appTools, sdk, o.audience)
         : o.remoteAppTools
-          ? buildRemoteAppToolServer(o.remoteAppTools, sdk)
+          ? yield* Effect.try({
+              try: () => buildRemoteAppToolServer(o.remoteAppTools!, sdk),
+              catch: (error) =>
+                new AgentUnavailable({
+                  agent: "claude",
+                  reason: "startup-failed",
+                  message: `Gram's app tools couldn't be served: ${describeError(error)}`,
+                }),
+            })
           : undefined;
       let endedReason: string | undefined;
       let effort = effortOf(o.model);
