@@ -103,6 +103,8 @@ import {
   SESSION_LIFETIME_MS,
   REMOTE_CONNECT_PATH,
   REMOTE_CLAIM_PATH,
+  REMOTE_DISABLE_PATH,
+  REMOTE_ENABLE_PATH,
 } from "./remote-access.ts";
 import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./remote-routes.ts";
 import { RemoteControl } from "./remote-control.ts";
@@ -240,7 +242,10 @@ export const AuthMiddleware = HttpRouter.middleware(
                 ? yield* remoteManagement(control, path, isRemote ? remote : undefined).pipe(
                     // Access turned off, or onto another address: joined machines dial again.
                     Effect.tap(() =>
-                      Effect.sync(() => remoteHosts?.keepOrigin(control.current()?.origin)),
+                      Effect.sync(() => {
+                        if (path === REMOTE_ENABLE_PATH || path === REMOTE_DISABLE_PATH)
+                          remoteHosts?.keepOrigin(control.current()?.origin);
+                      }),
                     ),
                   )
                 : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
