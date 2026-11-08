@@ -51,11 +51,19 @@ export const terminalsThroughHost = (
         }),
       ),
       Effect.ignore,
-      // The host's shells end with it.
-      Effect.ensuring(uncountAll),
+      // The host's shells end with it, and their ids with them.
+      Effect.ensuring(
+        Effect.andThen(
+          uncountAll,
+          Effect.sync(() => onHost.clear()),
+        ),
+      ),
       Effect.forkScoped,
     );
+    /** Threads closed while this server runs, so a terminal opening as one closes is closed too. */
+    const closedIds = new Set<ThreadId>();
     yield* deps.closedThreads.pipe(
+      Stream.tap((threadId) => Effect.sync(() => closedIds.add(threadId))),
       Stream.runForEach((threadId) =>
         host
           .list(threadId)
@@ -97,6 +105,15 @@ export const terminalsThroughHost = (
           if (held(request.threadId)) return yield* new InvalidState({ message: HELD });
           const opened = yield* host.open({ ...request, cwd }, resolved);
           onHost.set(opened.terminalId, request.threadId);
+          // The open crossed to the host and back, so a hold taken or a close made meanwhile
+          // didn't see this shell: it is closed again here, as the server's own spawn never lets
+          // one through.
+          const threadId = request.threadId;
+          if (threadId !== undefined && (held(threadId) || closedIds.has(threadId))) {
+            yield* host.close(opened.terminalId).pipe(Effect.ignore);
+            onHost.delete(opened.terminalId);
+            return yield* new InvalidState({ message: HELD });
+          }
           return opened;
         });
       });

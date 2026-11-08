@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { terminalsThroughHost } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
@@ -39,6 +40,8 @@ const routed = Effect.gen(function* () {
   const host = yield* spawnLocalHost;
   const roots: Array<string> = [];
   const heldThreads = new Set<ThreadId>();
+  /** Counts hold checks; the one numbered `holdOn` finds the thread held. */
+  const holdChecks = { count: 0, holdOn: 0 };
   const closed = yield* Queue.unbounded<ThreadId>();
   const opened: Array<string> = [];
   const terminals = yield* terminalsThroughHost(
@@ -54,11 +57,14 @@ const routed = Effect.gen(function* () {
         add: (threadId, pid) => void roots.push(`add ${threadId} ${pid}`),
         remove: (pid) => void roots.push(`remove ${pid}`),
       },
-      held: (threadId) => heldThreads.has(threadId),
+      held: (threadId) => {
+        holdChecks.count++;
+        return heldThreads.has(threadId) || holdChecks.count === holdChecks.holdOn;
+      },
       closedThreads: Stream.fromQueue(closed),
     },
   );
-  return { host, terminals, roots, heldThreads, closed, opened, dir };
+  return { host, terminals, roots, heldThreads, holdChecks, closed, opened, dir };
 });
 
 const eventually = <A>(check: () => A | undefined, label: string) =>
@@ -159,6 +165,63 @@ describe.skipIf(process.platform === "win32")("terminals through the host proces
         yield* terminals.open({ threadId: THREAD, cols: 80, rows: 24, command: "true" });
         expect(opened).toEqual(["true"]);
       }).pipe(Effect.scoped),
+    30_000,
+  );
+
+  it.live(
+    "closes a shell whose thread was held while its open crossed to the host",
+    () =>
+      Effect.gen(function* () {
+        const { terminals, holdChecks } = yield* routed;
+        // The first check, before the open is sent, passes; the second, after it returns, holds.
+        holdChecks.holdOn = 2;
+        const refused = yield* terminals
+          .open({ threadId: THREAD, cols: 80, rows: 24, shell: "/bin/sh" })
+          .pipe(Effect.flip);
+        expect(refused).toMatchObject({ _tag: "InvalidState" });
+        expect(yield* terminals.list(THREAD)).toEqual([]);
+      }).pipe(Effect.scoped),
+    30_000,
+  );
+
+  it.live(
+    "kills a shell that ignores its hangup when the host process stops",
+    () =>
+      Effect.gen(function* () {
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), "gram-host-terminals-")));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+        const pidFile = join(dir, "pid");
+        const scope = yield* Scope.make();
+        const host = yield* spawnLocalHost.pipe(Scope.provide(scope));
+        yield* host.terminals.open(
+          {
+            cwd: dir,
+            cols: 80,
+            rows: 24,
+            shell: "/bin/sh",
+            command: `trap '' HUP; echo $$ > ${pidFile}; while :; do sleep 1; done`,
+          },
+          { path: process.env["PATH"] ?? "" },
+        );
+        const pid = yield* eventually(() => {
+          try {
+            const text = readFileSync(pidFile, "utf8").trim();
+            return text === "" ? undefined : Number(text);
+          } catch {
+            return undefined;
+          }
+        }, "the shell's pid");
+        yield* Scope.close(scope, Exit.void);
+        const alive = () => {
+          try {
+            process.kill(pid, 0);
+            return true;
+          } catch {
+            return false;
+          }
+        };
+        yield* eventually(() => (alive() ? undefined : true), "the shell killed");
+      }),
     30_000,
   );
 });
