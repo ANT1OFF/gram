@@ -152,13 +152,21 @@ export async function simulateRealistic(
   const at = (minutesAgo: number) => now - minutesAgo * MINUTE;
   const { gram, docs, api, web, infra } = deps.projects;
 
-  const workspace = async (name: string, projectIds: readonly [ProjectId, ...ProjectId[]]) => {
+  // Each orchestrator's last activity is fixed, Gram's the newest, so the launch (which opens the
+  // newest orchestrator) always lands on Gram, never on one of the idle workspaces.
+  const workspace = async (
+    name: string,
+    projectIds: readonly [ProjectId, ...ProjectId[]],
+    activeMinutesAgo: number,
+  ) => {
     const state = await create({
       name,
       projectIds,
       homeProjectId: projectIds[0],
     });
-    const orchestrator = await fillSlot(state, settings);
+    const filled = await fillSlot(state, settings);
+    const orchestrator: Thread = { ...filled, lastActivityAt: at(activeMinutesAgo) };
+    host.replace(orchestrator);
     host.setUsage(orchestrator.id, {
       tokens: { inputTokens: 0, outputTokens: 0 },
       contextWindow: 200_000,
@@ -167,10 +175,10 @@ export async function simulateRealistic(
     return { workspaceId: state.workspace.id, orchestrator };
   };
 
-  const gramSpace = await workspace("Gram", [gram, docs]);
-  const billing = await workspace("billing-api", [api]);
-  const webSpace = await workspace("web", [web]);
-  const infraSpace = await workspace("infra", [infra]);
+  const gramSpace = await workspace("Gram", [gram, docs], 7);
+  const billing = await workspace("billing-api", [api], 45);
+  const webSpace = await workspace("web", [web], 6 * 60);
+  const infraSpace = await workspace("infra", [infra], 9 * 60);
 
   const spawn = async (
     space: { workspaceId: WorkspaceId; orchestrator: Thread },

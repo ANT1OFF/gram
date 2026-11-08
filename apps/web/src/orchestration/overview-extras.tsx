@@ -43,59 +43,102 @@ import {
   CURRENT_ROW,
   ROW,
   ROW_MARK,
-  ROW_STATUS,
   ROW_TITLE,
+  ROW_TRAIL,
   RowMenu,
-  Section,
+  SECTION_TITLE,
   STOP,
 } from "./overview-section";
 import { StatusDot, type DotState } from "./status-dot";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 
-// The overview sidebar's extras: Pull requests, folded until opened and gone with nothing in it, the
+// The overview sidebar's extras: At rest's Pull requests and Done, each gone with nothing in it, the
 // way into History, and the usage meters and worker slots at its foot, off by default. Each reads
 // what the title bar's meter and History read, so they all say the same.
 
 /**
- * The review requests and the user's open PRs in one-line rows, under a sub-heading each when both
- * are there; a click opens the PR on GitHub, as there. A list placed nowhere is left out here too,
- * and with nothing to list the section stays away.
+ * The review requests and the user's open PRs, as At rest lists them: a list placed nowhere is left
+ * out here too.
  */
-export function OverviewPullRequests() {
+export function useOverviewPrRows(): readonly OverviewPrRow[] {
   const { data: requests } = useReviewRequests();
   const own = useOpenPrRows();
   const reviewsShown = useLayoutStore((s) => s.reviewRequestsPlacement !== "hidden");
   const ownShown = useLayoutStore((s) => s.openPrsPlacement !== "hidden");
-  const rows = useMemo(
+  return useMemo(
     () =>
       overviewPrRows(requests?.requests ?? [], own.rows, { reviews: reviewsShown, own: ownShown }),
     [requests, own.rows, reviewsShown, ownShown],
   );
+}
+
+/**
+ * The PRs in At rest, one row each, under one heading, "Pull requests", or one per kind ("Review
+ * requests", "Your PRs") when both are there, headed as At rest's other groups are. A click opens
+ * the PR on GitHub.
+ */
+export function OverviewPullRequests({ rows }: { rows: readonly OverviewPrRow[] }) {
   if (rows.length === 0) return null;
   const both = rows[0]?.kind !== rows.at(-1)?.kind;
+  const groups = both
+    ? (["review", "yours"] as const).map((kind) => ({
+        title: PR_KIND_LABEL[kind],
+        kinded: true,
+        rows: rows.filter((row) => row.kind === kind),
+      }))
+    : [{ title: "Pull requests", kinded: false, rows }];
   return (
-    <Section id="pullRequests" title="Pull requests" count={rows.length}>
-      {rows.map((row, i) => (
-        <Fragment key={row.key}>
-          {both && rows[i - 1]?.kind !== row.kind && (
-            <h3
-              data-testid="overview-pr-kind"
-              className="px-1.5 pt-1 pb-0.5 text-meta font-medium text-muted-foreground"
-            >
-              {PR_KIND_LABEL[row.kind]}
-            </h3>
-          )}
-          <PrRow row={row} />
+    <section
+      aria-label="Pull requests"
+      data-testid="overview-section-pullRequests"
+      className="flex flex-col gap-px"
+    >
+      {groups.map((group) => (
+        <Fragment key={group.title}>
+          <RestHeading
+            title={group.title}
+            count={group.rows.length}
+            testId={group.kinded ? "overview-pr-kind" : undefined}
+          />
+          {group.rows.map((row) => (
+            <PrRow key={row.key} row={row} />
+          ))}
         </Fragment>
       ))}
-    </Section>
+    </section>
   );
 }
 
 /**
- * A PR in the rows' two lines: its worst mark in the vocabulary (`worstPrMark`) and its title, then
- * `repo#n · author`. Its tooltip and name say the rest: which list it is on and every mark.
+ * A group's heading inside At rest ("Idle workspaces", "Pull requests", "Done"): a section title's
+ * look and grid, its count in the same right column, with no fold of its own.
+ */
+export function RestHeading({
+  title,
+  count,
+  testId,
+}: {
+  title: string;
+  count: number;
+  testId?: string | undefined;
+}) {
+  return (
+    <h3
+      data-testid={testId}
+      aria-label={`${title}, ${count}`}
+      className={cn(SECTION_TITLE, "mt-1 hover:text-muted-foreground")}
+    >
+      <span aria-hidden />
+      <span className="min-w-0 truncate">{title}</span>
+      <span className="tabular-nums">{count}</span>
+    </h3>
+  );
+}
+
+/**
+ * A PR in one row: its worst mark in the vocabulary (`worstPrMark`), its title, and its short ref
+ * at the edge. Its tooltip and name say the rest: its author, which list it is on and every mark.
  */
 function PrRow({ row }: { row: OverviewPrRow }) {
   const api = useApi();
@@ -113,9 +156,9 @@ function PrRow({ row }: { row: OverviewPrRow }) {
       data-ref={row.ref}
       data-pr={row.pr}
       aria-label={`Open ${row.ref} on GitHub: ${row.title}, ${words}, ${sub}, ${label}`}
-      title={`${label} · ${sub}\n${prTooltipOf(row.facts, marks)}`}
+      title={`${row.title}\n${label} · ${sub}\n${prTooltipOf(row.facts, marks)}`}
       onClick={() => void openExternalUrl(api, row.url).catch(() => {})}
-      className={cn(ROW, "items-start")}
+      className={ROW}
     >
       <span
         data-testid="overview-pr-glyph"
@@ -128,8 +171,8 @@ function PrRow({ row }: { row: OverviewPrRow }) {
       <span data-testid="overview-pr-title" className={ROW_TITLE}>
         {row.title}
       </span>
-      <span data-testid="overview-pr-sub" className={ROW_STATUS}>
-        <span className="truncate">{sub}</span>
+      <span data-testid="overview-pr-sub" className={ROW_TRAIL}>
+        <span className="truncate">{row.ref}</span>
       </span>
     </button>
   );
@@ -161,13 +204,10 @@ export function OverviewSearch() {
 }
 
 /**
- * Done: the three chats that finished last, each in the rows' two lines (its title and when, then
- * its outcome and where), muted until hovered, so they never compete with the live rows above. It
- * is the head of History's Done chip, solo threads that settled on their own included: the rest
- * are one line away there, never unfolded here, so a busy day's Done can't push the live rows off
- * screen. The open thread's row stays in sight.
+ * Every finished chat Done counts, latest first (`recentDone`), and the time its rows read: the head
+ * of History's Done chip, solo threads that settled on their own included.
  */
-export function OverviewDone() {
+export function useOverviewDone(): { rows: readonly RecentDone[]; now: number } {
   const api = useApi();
   const workspaces = useWorkspaces();
   const ids = useMemo(() => workspaces.map((state) => state.workspace.id), [workspaces]);
@@ -196,20 +236,28 @@ export function OverviewDone() {
       }),
     ),
   );
+  return { rows, now };
+}
+
+/**
+ * Done, At rest's last group: the three chats that finished last, one row each (its title, and
+ * when at the edge; its outcome and place on its hover), muted until hovered, so they never compete
+ * with the live rows above. The rest are one line away on History's Done chip, never unfolded here,
+ * so a busy day's Done can't push the live rows off screen. The open thread's row stays in sight.
+ */
+export function OverviewDone({ rows, now }: { rows: readonly RecentDone[]; now: number }) {
   const viewed = useParams({ strict: false }).threadId;
   if (rows.length === 0) return null;
   const shown = rows.filter((row, index) => index < RECENT_DONE || row.threadId === viewed);
   const more = rows.length - shown.length;
   return (
-    <Section
-      id="doneToday"
-      title="Done"
-      count={rows.length}
-      hint="Finished and settled chats, latest first. History has them all."
-      // Folded, as it starts: one row, "8 done", that unfolds on a click anywhere on it. History,
-      // at the column's foot, is the one way to the rest.
-      folded={`${rows.length} done`}
+    <section
+      aria-label="Done"
+      aria-description="Finished and settled chats, latest first. History has them all."
+      data-testid="overview-section-doneToday"
+      className="flex flex-col gap-px"
     >
+      <RestHeading title="Done" count={rows.length} />
       {shown.map((row) => (
         <DoneRow key={row.threadId} row={row} now={now} />
       ))}
@@ -221,14 +269,14 @@ export function OverviewDone() {
           aria-haspopup="dialog"
           title="Open History on Done"
           onClick={() => useHistoryStore.getState().show("done")}
-          className="flex h-6 w-full items-center gap-2 rounded-(--radius-sm) px-1.5 text-left text-meta text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(ROW, "text-meta text-muted-foreground hover:text-foreground")}
         >
           {/* An empty mark column, so the words start where the rows' titles do. */}
-          <span aria-hidden className="w-2.5 shrink-0" />
-          {more} more in History
+          <span aria-hidden />
+          <span className={ROW_TITLE}>{more} more in History</span>
         </button>
       )}
-    </Section>
+    </section>
   );
 }
 
@@ -244,7 +292,7 @@ const OUTCOME_DOT: Readonly<Record<HistoryOutcome, DotState>> = {
   idle: "idle",
 };
 
-/** A finished chat: its outcome's dot, its title and when, its outcome and place; muted until hovered. */
+/** A finished chat in one row: its outcome's dot, its title and when; muted until hovered. */
 function DoneRow({ row, now }: { row: RecentDone; now: number }) {
   const openThread = useOpenThread();
   // Only this row's answer: a move to another thread re-renders the two rows it changes, not all.
@@ -271,20 +319,20 @@ function DoneRow({ row, now }: { row: RecentDone; now: number }) {
         onKeyDown={rowMenuKeys}
         className={cn(
           ROW,
-          "items-start text-muted-foreground hover:text-foreground aria-current:text-foreground",
+          "text-muted-foreground hover:text-foreground aria-current:text-foreground",
           CURRENT_ROW,
         )}
       >
-        {/* Its state's dot, as a worker's row has: one mark family down the column. */}
+        {/* Its state's dot, as a worker's row has: one mark family down the column. Its outcome
+            and place are on its hover; the edge says when, or the outcome with no time to say. */}
         <span aria-hidden className={ROW_MARK}>
           <StatusDot state={row.outcome === undefined ? "done" : OUTCOME_DOT[row.outcome]} />
         </span>
         <span className={ROW_TITLE}>{row.title}</span>
-        <span data-testid="overview-done-status" className={ROW_STATUS}>
-          <span className="truncate">
-            <span className="capitalize">{word}</span> · {row.place}
+        <span data-testid="overview-done-status" className={ROW_TRAIL}>
+          <span className={cn("truncate tabular-nums", when === "" && "capitalize")}>
+            {when === "" ? word : when}
           </span>
-          {when !== "" && <span className="ms-auto shrink-0 tabular-nums">{when}</span>}
         </span>
       </button>
     </RowMenu>

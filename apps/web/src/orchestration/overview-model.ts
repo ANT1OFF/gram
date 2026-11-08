@@ -464,6 +464,33 @@ export interface FoldedSummary {
   readonly asks: number;
 }
 
+/**
+ * A workspace row's workers in the few words its edge has room for, so its name keeps the row:
+ * "3 working", "4 workers" with none at work, and "4 in Workers" while the Workers tab lists them.
+ * Its hover and name keep the full summary (`orchestratorHover`).
+ */
+export const workspaceWorkersText = ({
+  live,
+  working,
+  inTab,
+}: {
+  readonly live: number;
+  readonly working: number;
+  readonly inTab: boolean;
+}): string =>
+  inTab
+    ? `${live} in Workers`
+    : working > 0
+      ? `${working} working`
+      : `${live} ${live === 1 ? "worker" : "workers"}`;
+
+/**
+ * A wait in the words a row's edge has room for: the hollow dot beside it already says it waits,
+ * so "Waiting · checks on #69" is "checks on #69"; a pause or your hold keeps its word.
+ */
+export const waitShort = (label: string): string =>
+  label.startsWith("Waiting · ") ? label.slice("Waiting · ".length) : label;
+
 /** An orchestrator's summary in words: "3 workers · 1 working · 2 need you". */
 export const foldedSummaryText = ({ live, working, asks }: FoldedSummary): string =>
   [

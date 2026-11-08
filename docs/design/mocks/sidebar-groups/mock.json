@@ -1,0 +1,33 @@
+{
+  "title": "Sidebar groups",
+  "slug": "sidebar-groups",
+  "status": "in-review",
+  "template": "options",
+  "current": 1,
+  "approved": null,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-08"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A One style",
+      "board": "a-one-style",
+      "shots": {
+        "dark": "shots/a-dark.png",
+        "light": "shots/a-light.png"
+      }
+    },
+    {
+      "name": "B Fewer groups",
+      "board": "b-fewer-groups",
+      "shots": {
+        "dark": "shots/b-dark.png",
+        "light": "shots/b-light.png"
+      }
+    }
+  ]
+}
