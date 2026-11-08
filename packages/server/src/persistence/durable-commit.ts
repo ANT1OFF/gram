@@ -34,9 +34,12 @@ interface Generation {
  * worker stopped is replaced the same way as a poisoned one.
  */
 export const durableSqliteLayer = (
-  options: Pick<SqliteClient.SqliteClientConfig, "filename" | "readonly" | "busyTimeout"> & {
-    readonly offLoop?: boolean | undefined;
-  },
+  options:
+    | (Pick<SqliteClient.SqliteClientConfig, "filename" | "readonly" | "busyTimeout"> & {
+        readonly offLoop?: false | undefined;
+      })
+    // The writer worker opens read-write with its own busy timeout.
+    | (Pick<SqliteClient.SqliteClientConfig, "filename"> & { readonly offLoop: true }),
   initialize?: (sql: SqlClient.SqlClient) => Effect.Effect<void, SqlError>,
 ): Layer.Layer<SqlClient.SqlClient, SqlError> =>
   Layer.effect(
@@ -75,6 +78,8 @@ export const durableSqliteLayer = (
           );
         if (current !== undefined && !current.stopped()) return Effect.succeed(current);
         return Effect.gen(function* () {
+          // A generation whose worker stopped while idle: close its scope before replacing it.
+          yield* closeCurrent;
           const scope = yield* Scope.make();
           return yield* Effect.gen(function* () {
             const context = yield* Layer.buildWithScope(
@@ -135,7 +140,8 @@ export const durableSqliteLayer = (
           ),
         compiler: SqlStatement.makeCompilerSqlite(),
         spanAttributes: [["db.system.name", "sqlite"]],
-        beginTransaction: options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
+        beginTransaction:
+          options.offLoop !== true && options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
         releaseSavepoint: (name) => `RELEASE SAVEPOINT ${name}`,
         onCommitFailure: (conn) =>
           conn.executeUnprepared("ROLLBACK", [], undefined).pipe(Effect.asVoid),

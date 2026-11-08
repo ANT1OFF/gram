@@ -39,10 +39,10 @@ const STOP_TIMEOUT_MS = 10_000;
 
 const WORKER_SOURCE = String.raw`
 const { parentPort, workerData } = require("node:worker_threads");
-const { DatabaseSync, backup } = require("node:sqlite");
+const { DatabaseSync } = require("node:sqlite");
 const errorOf = (e) =>
   e instanceof Error
-    ? { message: e.message, code: e.code, errcode: e.errcode, errstr: e.errstr }
+    ? { message: e.message, code: e.code, errcode: e.errcode, errstr: e.errstr, prepare: e.gramPrepare === true }
     : { message: String(e) };
 let db;
 try {
@@ -80,7 +80,13 @@ const prepared = (sql) => {
   return statement;
 };
 const execute = (m) => {
-  const statement = m.prepared ? prepared(m.sql) : db.prepare(m.sql);
+  let statement;
+  try {
+    statement = m.prepared ? prepared(m.sql) : db.prepare(m.sql);
+  } catch (e) {
+    e.gramPrepare = true;
+    throw e;
+  }
   statement.setReadBigInts(m.safeIntegers);
   if (m.mode === "values") {
     statement.setReturnArrays(true);
@@ -104,14 +110,6 @@ parentPort.on("message", (m) => {
     parentPort.close();
     return;
   }
-  if (m.backup !== undefined) {
-    let totalPages = 0;
-    backup(db, m.backup, { progress: (p) => { totalPages = p.totalPages; } }).then(
-      (pages) => parentPort.postMessage({ kind: "ok", id: m.id, result: { totalPages: totalPages || pages, remainingPages: 0 }, inTx: db.isTransaction, ms: 0 }),
-      (e) => parentPort.postMessage({ kind: "error", id: m.id, error: errorOf(e), inTx: db.isTransaction, ms: 0 }),
-    );
-    return;
-  }
   const start = performance.now();
   try {
     const result = execute(m);
@@ -127,6 +125,8 @@ interface WorkerError {
   readonly code?: unknown;
   readonly errcode?: unknown;
   readonly errstr?: unknown;
+  /** Failed preparing the statement, not running it. */
+  readonly prepare?: boolean;
 }
 
 type Reply =
@@ -240,11 +240,6 @@ export const layer = (options: {
         exited.resolve();
       });
 
-      const failed = yield* Effect.promise(() => ready.promise);
-      if (failed !== undefined) {
-        void spawned.terminate();
-        return yield* Effect.fail(sqlError(failed, "Failed to open database", "connect"));
-      }
       let stopping: Promise<void> | undefined;
       /** Lets the running statement finish, closes the connection and ends the thread, once. */
       const stop = () =>
@@ -257,7 +252,13 @@ export const layer = (options: {
           await exited.promise;
           clearTimeout(timer);
         })());
+      // Before the wait for ready: a build interrupted while the worker opens still ends it.
       yield* Effect.addFinalizer(() => Effect.promise(stop));
+      const failed = yield* Effect.promise(() => ready.promise);
+      if (failed !== undefined) {
+        void spawned.terminate();
+        return yield* Effect.fail(sqlError(failed, "Failed to open database", "connect"));
+      }
 
       /** One message to the worker and its answer, waited for even when interrupted. */
       const send = (
@@ -277,7 +278,11 @@ export const layer = (options: {
               if (reply.kind === "ok") return resume(Effect.succeed(reply.result));
               if (reply.kind === "error")
                 return resume(
-                  Effect.fail(sqlError(reply.error, "Failed to execute statement", "execute")),
+                  Effect.fail(
+                    reply.error.prepare === true
+                      ? sqlError(reply.error, "Failed to prepare statement", "prepare")
+                      : sqlError(reply.error, "Failed to execute statement", "execute"),
+                  ),
                 );
             });
             // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node worker_threads has no origin argument.
@@ -355,10 +360,6 @@ export const layer = (options: {
       return Object.assign(client, {
         [writerStopped]: () => stopped,
         [crashWriter]: crash,
-        backup: (destination: string) =>
-          Effect.scoped(
-            Effect.flatMap(acquirer, () => send({ backup: destination }, "backup", [])),
-          ),
       }) satisfies WriterClient;
     }),
   ).pipe(Layer.provide(Reactivity.layer));

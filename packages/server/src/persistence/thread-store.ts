@@ -3336,7 +3336,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         ),
         Layer.provideMerge(seal?.over ?? Layer.empty),
         Layer.provideMerge(
-          durableSqliteLayer({ filename, offLoop: options.writerOffLoop === true }, initialize),
+          durableSqliteLayer(
+            options.writerOffLoop === true ? { filename, offLoop: true } : { filename },
+            initialize,
+          ),
         ),
         Layer.provideMerge(seal?.under ?? Layer.empty),
       );
