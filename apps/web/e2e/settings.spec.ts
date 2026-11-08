@@ -96,6 +96,7 @@ test("each tab is a page, with history, and Settings reopens on the last one", a
     "Agents & models",
     "Usage",
     "Workspaces & merging",
+    "Machines",
     "Appearance",
     "Notifications",
     "Keyboard",
