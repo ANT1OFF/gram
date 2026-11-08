@@ -4,9 +4,9 @@ import { defineConfig, devices } from "@playwright/test";
 // before/after images for a PR description. CI never runs it: the e2e config's `testDir` is `e2e/`.
 
 const port = process.env["GRAM_PR_SHOTS_PORT"] ?? "5194";
-// A phone-sized `--size` captures as a phone: a touch screen, which Gram's phone layout keys on.
+// A phone- or tablet-sized `--size` captures as one: a touch screen, which Gram's phone layout keys on.
 const sizeWidth = Number((process.env["GRAM_PR_SHOTS_SIZE"] || "1728x1095").split("x")[0]);
-const phone = sizeWidth > 0 && sizeWidth < 640;
+const phone = sizeWidth > 0 && sizeWidth < 1024;
 
 export default defineConfig({
   testDir: ".",

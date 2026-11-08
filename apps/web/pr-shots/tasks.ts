@@ -11,8 +11,8 @@ interface Task {
   run: (page: Page, record: TaskRecorder) => Promise<void>;
 }
 
-/** A phone-sized window (below 640 px): taps go through the drawer, More and sheets. */
-const onPhone = (page: Page) => (page.viewportSize()?.width ?? Infinity) < 640;
+/** A phone or upright tablet (below 1024 px): taps go through the drawer, More and sheets. */
+const onPhone = (page: Page) => (page.viewportSize()?.width ?? Infinity) < 1024;
 
 /** Opens the phone's threads drawer from the header's menu button. */
 const openDrawer = (page: Page, record: TaskRecorder) =>

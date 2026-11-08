@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { focusOtherWindow } from "@/desktop/open-thread";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
+import { useTouch } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { drawOn, GlideItem, GlideList, useMotionLevel } from "@/motion";
 import { useListedThreads } from "@/sidebar/listed";
@@ -40,8 +41,11 @@ export function ThreadGrid() {
   const { cols, rows } = GRID_SHAPES[grid.preset];
   const colFr = grid.colFr ?? even(cols);
   const rowFr = grid.rowFr ?? even(rows);
-  const multi = grid.panes.length > 1;
-  const maximized = multi && grid.maximized;
+  // On a touch screen one pane shows at a time, the focused one, whatever the layout: panes side
+  // by side are too cramped to read or tap there.
+  const touch = useTouch();
+  const multi = !touch && grid.panes.length > 1;
+  const maximized = grid.panes.length > 1 && (touch || grid.maximized);
   const instant = level !== "full" || resizing;
 
   return (

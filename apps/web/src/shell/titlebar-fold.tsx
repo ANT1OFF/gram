@@ -36,7 +36,7 @@ import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
 import { EXPLAIN } from "@/lib/explain";
 import { seeTerm } from "@/lib/first-use";
-import { usePhone } from "@/lib/use-phone";
+import { usePhone, useTouch } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { DISCOVER_QUEUED, DISCOVER_SENT } from "@/orchestration/board-model";
@@ -424,6 +424,8 @@ function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: 
 function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
   const state = useViewWorkspace();
   const preset = useLayoutStore((s) => s.grid.preset);
+  // A touch screen shows one pane at a time, so it offers no layouts.
+  const touch = useTouch();
   const focusMode = useLayoutStore((s) => s.focusMode);
   const fold = useTitlebarSlot((s) => s.fold);
   // The Board's Grid or Lanes, folded out of its header with the lesser buttons.
@@ -494,28 +496,30 @@ function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
           </Menu.RadioGroup>
         </>
       )}
-      {SEPARATOR}
-      <Menu.RadioGroup
-        data-testid="folded-layout"
-        value={preset}
-        onValueChange={(next: GridPreset) => useLayoutStore.getState().setPreset(next)}
-      >
-        <Menu.GroupLabel className={MENU_LABEL}>Layout</Menu.GroupLabel>
-        {GRID_PRESETS.map((value, i) => (
-          <Menu.RadioItem
-            key={value}
-            value={value}
-            aria-label={PRESET_LABELS[value]}
-            closeOnClick
-            className={MENU_ITEM}
-          >
-            <PresetGlyph preset={value} />
-            {PRESET_LABELS[value]}
-            <Keys id={`layout.preset${i + 1}`} />
-            <Check />
-          </Menu.RadioItem>
-        ))}
-      </Menu.RadioGroup>
+      {!touch && SEPARATOR}
+      {!touch && (
+        <Menu.RadioGroup
+          data-testid="folded-layout"
+          value={preset}
+          onValueChange={(next: GridPreset) => useLayoutStore.getState().setPreset(next)}
+        >
+          <Menu.GroupLabel className={MENU_LABEL}>Layout</Menu.GroupLabel>
+          {GRID_PRESETS.map((value, i) => (
+            <Menu.RadioItem
+              key={value}
+              value={value}
+              aria-label={PRESET_LABELS[value]}
+              closeOnClick
+              className={MENU_ITEM}
+            >
+              <PresetGlyph preset={value} />
+              {PRESET_LABELS[value]}
+              <Keys id={`layout.preset${i + 1}`} />
+              <Check />
+            </Menu.RadioItem>
+          ))}
+        </Menu.RadioGroup>
+      )}
     </Submenu>
   );
 }

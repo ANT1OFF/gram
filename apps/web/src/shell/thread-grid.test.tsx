@@ -55,6 +55,28 @@ const drop = (target: HTMLElement, data: Record<string, string>) => {
 };
 
 describe("ThreadGrid", () => {
+  it("shows only the focused pane, without pane controls, on a touch screen", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        matches: query === "(pointer: coarse)",
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      })),
+    );
+    try {
+      renderWithApi(<ThreadGrid />, api);
+      expect(screen.getByTestId("thread-grid").dataset["maximized"]).toBe("true");
+      const shown = screen
+        .getAllByTestId("pane")
+        .filter((element) => !element.classList.contains("hidden"));
+      expect(shown).toHaveLength(1);
+      expect(within(shown[0]!).queryByRole("button", { name: "Close pane" })).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("maximizes and restores on a header double-click, but not on its controls", () => {
     renderWithApi(<ThreadGrid />, api);
     const grid = screen.getByTestId("thread-grid");

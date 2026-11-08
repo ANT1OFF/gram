@@ -259,7 +259,7 @@ const scenes: readonly Shot[] = [
       await page.getByTestId("choices-speed").click();
       // A phone's sheet says speed as Fast's switch rather than a list.
       await expect(
-        SET_SIZE.width < 640
+        SET_SIZE.width < 1024
           ? page.getByTestId("choices-fast-switch")
           : page.getByRole("listbox", { name: "Speed" }),
       ).toBeVisible();

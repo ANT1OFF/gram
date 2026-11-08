@@ -48,11 +48,11 @@ export function ChoicesSheet({
   return (
     <Drawer.Portal>
       <Drawer.Backdrop className="fixed inset-0 z-50 scrim opacity-[calc(1-var(--drawer-swipe-progress,0))] transition-opacity duration-(--dur-base) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 data-swiping:duration-0" />
-      <Drawer.Viewport className="fixed inset-0 z-50 flex items-end">
+      <Drawer.Viewport className="fixed inset-0 z-50 flex items-end justify-center">
         <Drawer.Popup
           data-surface="overlay"
           data-testid="composer-choices-popup"
-          className="flex max-h-[85dvh] w-full translate-y-(--drawer-swipe-movement-y,0) flex-col rounded-t-xl border-t border-edge bg-popover pb-[env(safe-area-inset-bottom,0px)] text-popover-foreground shadow-overlay outline-none transition-transform duration-(--dur-move-base) ease-out data-[ending-style]:translate-y-full data-[starting-style]:translate-y-full data-swiping:select-none"
+          className="flex max-h-[85dvh] w-full max-w-xl translate-y-(--drawer-swipe-movement-y,0) flex-col rounded-t-xl border-t border-edge bg-popover pb-[env(safe-area-inset-bottom,0px)] text-popover-foreground shadow-overlay outline-none transition-transform duration-(--dur-move-base) ease-out data-[ending-style]:translate-y-full data-[starting-style]:translate-y-full data-swiping:select-none"
         >
           <div
             aria-hidden

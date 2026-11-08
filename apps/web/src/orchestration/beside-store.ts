@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { currentWindow } from "@/desktop/window-identity";
+import { isTouch } from "@/lib/use-phone";
 import { focusPaneComposer } from "@/shell/pane-focus";
 import { fitShell, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -178,6 +179,8 @@ export const orchestratorOf = (worker: ThreadId): ThreadId | undefined =>
  * route.
  */
 export function keepBeside(worker: ThreadId, open: (threadId: ThreadId) => void): boolean {
+  // A touch screen shows one thing at a time: the worker opens on its own, as any thread does.
+  if (isTouch()) return false;
   const orchestrator = orchestratorOf(worker);
   if (orchestrator === undefined) return false;
   const { grid, openInPane } = useLayoutStore.getState();

@@ -39,7 +39,7 @@ import { formatKeys, keyLabel } from "@/keyboard/registry";
 import { listIndexForKey } from "@/lib/list-keys";
 import { formatRelative } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
-import { usePhone } from "@/lib/use-phone";
+import { isTouch, usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 import {
@@ -102,6 +102,14 @@ import { paletteIcon, paletteIconKind } from "./palette-icons";
 import { paletteDot, paletteStatusWords, statusWord } from "./status-words";
 
 /** Steps of "Open in pane…" that keep the palette open for the next pick. */
+/** The pane commands a touch screen goes without, as it shows one pane at a time. */
+const PANE_ACTIONS = new Set([
+  "action:split",
+  "action:layout",
+  "action:openInPane",
+  "action:maximize",
+]);
+
 const KEEPS_OPEN = /^(pick:|action:openInPane$|action:resume$)/;
 const MESSAGE_LIMIT = 20;
 /** Claude Code on the web, opened as a plain page: Gram reads no session list from it. */
@@ -528,6 +536,8 @@ export function PaletteBody({
     },
   ];
 
+  // A touch screen shows one pane at a time: no splits, layouts or panes to open into.
+  const touch = isTouch();
   const actions: PaletteItem[] = [
     ...(scriptThread === undefined
       ? []
@@ -852,7 +862,7 @@ export function PaletteBody({
       keywords: "bug feedback feature request github question",
       run: () => useReportIssueDialog.getState().show(currentId),
     },
-  ];
+  ].filter((item) => !touch || !PANE_ACTIONS.has(item.id));
   // The workspace's own verbs, and its orchestrator's thread verbs only on the orchestrator itself;
   // the same command can come from the thread and from its workspace, so it is listed once.
   const inView = [
@@ -867,6 +877,7 @@ export function PaletteBody({
       all.findIndex((other) => other.id === item.id) === index &&
       // A command the app has anyway, such as Open in pane…, is listed once, with the others.
       !actions.some((action) => action.label === item.label) &&
+      !(touch && item.label === "Open in pane…") &&
       !destinations.some((destination) => destination.label === item.label),
   );
 
