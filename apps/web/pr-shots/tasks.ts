@@ -11,6 +11,13 @@ interface Task {
   run: (page: Page, record: TaskRecorder) => Promise<void>;
 }
 
+/** A phone-sized window (below 640 px): taps go through the drawer, More and sheets. */
+const onPhone = (page: Page) => (page.viewportSize()?.width ?? Infinity) < 640;
+
+/** Opens the phone's threads drawer from the header's menu button. */
+const openDrawer = (page: Page, record: TaskRecorder) =>
+  record.click(page.getByTestId("phone-menu"));
+
 /** Only prepare may stage fixtures. Every measured action uses a visible role/label or shortcut. */
 export const TASKS: readonly Task[] = [
   {
@@ -79,6 +86,7 @@ export const TASKS: readonly Task[] = [
     start: "Finished solo thread",
     goal: "Open the visible Search in Settings worker",
     run: async (p, r) => {
+      if (onPhone(p)) await openDrawer(p, r);
       await r.click(p.getByRole("button", { name: /^Search in Settings, Waiting/ }));
       await expect(
         p.getByRole("heading", { name: "Worker: Search in Settings", exact: true }),
@@ -91,9 +99,12 @@ export const TASKS: readonly Task[] = [
     start: "Solo thread with four realistic workspaces",
     goal: "Open billing-api's orchestrator",
     run: async (p, r) => {
+      if (onPhone(p)) await openDrawer(p, r);
       await r.click(p.getByRole("button", { name: /^billing-api,/ }));
       await expect(
-        p.getByRole("button", { name: "Workspace: billing-api", exact: true }),
+        onPhone(p)
+          ? p.getByTestId("phone-title").getByRole("heading", { name: "billing-api" })
+          : p.getByRole("button", { name: "Workspace: billing-api", exact: true }),
       ).toBeVisible();
     },
   },
@@ -104,8 +115,14 @@ export const TASKS: readonly Task[] = [
     goal: "Select Extra high effort",
     run: async (p, r) => {
       await r.click(p.getByTestId("composer-choices"));
-      await r.click(p.getByTestId("choices-effort"));
-      await r.click(p.getByRole("option", { name: "Extra high effort" }));
+      if (onPhone(p)) {
+        // The phone's sheet shows effort as segments, no submenu to open.
+        await r.click(p.getByRole("radio", { name: /^Extra high/ }));
+        await r.click(p.getByTestId("composer-choices-close"));
+      } else {
+        await r.click(p.getByTestId("choices-effort"));
+        await r.click(p.getByRole("option", { name: "Extra high effort" }));
+      }
       await expect(p.getByTestId("composer-choices")).toHaveAccessibleName(
         / · Effort: Extra high \(.+\) · /,
       );
@@ -118,6 +135,7 @@ export const TASKS: readonly Task[] = [
     goal: "Open the old Release notes for 0.9 thread from Done",
     path: "/t/t-docs",
     run: async (p, r) => {
+      if (onPhone(p)) await openDrawer(p, r);
       // Done is in At rest, folded to its title line: a click on it unfolds it.
       await r.click(p.getByRole("button", { name: /^At rest, \d+$/ }));
       await r.click(p.getByRole("button", { name: /^Release notes for 0.9, Gram, merged/ }));
@@ -193,6 +211,13 @@ export const TASKS: readonly Task[] = [
     start: "Finished solo thread with synthetic subscription usage",
     goal: "Open subscription usage and see limits",
     run: async (p, r) => {
+      if (onPhone(p)) {
+        // A phone's bar has no meter: More's Usage opens the limits page.
+        await r.click(p.getByRole("button", { name: "More", exact: true }));
+        await r.click(p.getByTestId("phone-menu-usage"));
+        await expect(p.getByText(/5.hour/i).first()).toBeVisible();
+        return;
+      }
       await r.click(p.getByRole("button", { name: /subscription usage/i }));
       await expect(p.getByRole("dialog", { name: "Subscription usage" })).toBeVisible();
       await expect(p.getByText(/5.hour/i).first()).toBeVisible();
