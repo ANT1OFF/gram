@@ -243,12 +243,20 @@ export const WORK_ELSEWHERE_SWEEPS = 4;
 export const LISTED_LOCAL_EVERY = 8;
 
 /**
- * Sweeps from one local read of a checkout to the next, by how closely it is looked at: every sweep
- * for one a pane shows, and never for one nobody can see, whose watcher and coming back on screen
- * (`ThreadVisibility.revealed`) bring it up to date.
+ * Sweeps between local reads of a checkout a pane shows while native watches cover it (its
+ * watcher's change stream says `live`): those report each change as it lands, so this read is only
+ * the fallback for an edit under a pruned build dir, as `LISTED_LOCAL_EVERY` is for a listed one.
  */
-export const localEvery = (attention: Attention): number => {
-  if (attention === "focused" || attention === "shown") return 1;
+export const SHOWN_LIVE_LOCAL_EVERY = 4;
+
+/**
+ * Sweeps from one local read of a checkout to the next, by how closely it is looked at: every sweep
+ * for one a pane shows that no native watch covers, every few for one that is (`live`), and never
+ * for one nobody can see, whose watcher and coming back on screen (`ThreadVisibility.revealed`)
+ * bring it up to date.
+ */
+export const localEvery = (attention: Attention, live = false): number => {
+  if (attention === "focused" || attention === "shown") return live ? SHOWN_LIVE_LOCAL_EVERY : 1;
   return attention === "listed" ? LISTED_LOCAL_EVERY : Number.POSITIVE_INFINITY;
 };
 
@@ -395,6 +403,8 @@ export const GitStatePublisherLive = Layer.effect(
     let sweeps = 0;
     /** Per checkout: the sweep count at its last local read of its own, or by its watcher. */
     const localReadAt = new Map<string, number>();
+    /** Checkouts whose watcher's change stream says native watches cover them (`live`). */
+    const liveWatched = new Set<string>();
     /** What `publishElsewhere` last read of the open checkouts, from `elsewhereInputs`. */
     let elsewhereRead: string | undefined;
 
@@ -1295,6 +1305,7 @@ export const GitStatePublisherLive = Layer.effect(
           if (wanted.has(key)) continue;
           watched.delete(key);
           yield* FiberMap.remove(watchers, key);
+          liveWatched.delete(key);
           if (!kept.has(key)) yield* forget(key);
         }
         for (const key of sweptOnly) {
@@ -1311,13 +1322,17 @@ export const GitStatePublisherLive = Layer.effect(
             refresh(path, { remote: config.sweepInterval !== undefined }).pipe(
               // The watcher has just read the checkout, so the refresh takes that read.
               Effect.andThen(
-                Stream.runForEach(gitState.watch([path]), () =>
+                Stream.runForEach(gitState.watch([path]), (change) =>
                   Effect.suspend(() => {
+                    if (change.live) liveWatched.add(key);
+                    else liveWatched.delete(key);
                     localReadAt.set(key, sweeps);
                     return refreshIn(path, { remote: false, reuseLocal: true });
                   }),
                 ),
               ),
+              // However the watcher ends, its checkout is polled as an unwatched one again.
+              Effect.ensuring(Effect.sync(() => liveWatched.delete(key))),
             ),
           );
         }
@@ -1529,8 +1544,12 @@ export const GitStatePublisherLive = Layer.effect(
             const parked = entry.threads.every((t) => t.parked);
             const attention = parked ? "listed" : yield* attentionOf(entry.threads);
             // Its last read is due again, or it has none: what that read showed may have changed.
+            const live = liveWatched.has(key);
             const localDue =
-              catchUp || sweeps - (localReadAt.get(key) ?? -Infinity) >= localEvery(attention);
+              catchUp ||
+              sweeps - (localReadAt.get(key) ?? -Infinity) >= localEvery(attention, live) ||
+              // Only the sweep's read sees a folder deleted: its watcher's reads just fail.
+              (live && !(yield* folderExists(entry.path)));
             if (quotaHeld) return { entry, parked, localDue, tier: "local" as const };
             const state = states.get(key);
             const burst = now < (expectingUntil.get(key) ?? 0);
