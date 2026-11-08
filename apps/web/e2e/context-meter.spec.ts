@@ -23,9 +23,9 @@ test("the thread ring opens the usage meter, with a gapless percent", async ({ p
   // Its bar alone on its face, its words in its name and on hover, heading its popover.
   await expect(ring).toHaveAccessibleName("Context: 31% of the window used");
   await expect(ring).toHaveText("");
+  // The pointer opens its popover, headed by its words.
   await ring.hover();
   await expect(page.getByTestId("usage-ring-title")).toHaveText("Context 31%");
-  await ring.click();
   const thread = page.locator('[data-slot="usage-meter"]');
   // Its popover says what the number measures.
   await expect(page.getByText(/^How much of the model's context window/)).toBeVisible();
