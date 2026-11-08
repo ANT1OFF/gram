@@ -81,7 +81,7 @@
   }
 }
 
-[data-look="glass"] [data-testid="tool-card"],
+[data-look="glass"] [data-testid="tool-card"]:not([data-quiet="true"]),
 [data-look="glass"] [data-testid="plan"],
 [data-look="glass"] [data-surface="card"] {
   border-color: color-mix(in oklab, var(--border-subtle) 60%, transparent);

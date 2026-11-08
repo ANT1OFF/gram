@@ -29,6 +29,15 @@
 /* Motion utilities follow the app's Motion setting, not the OS preference alone. */
 @custom-variant motion-safe (&:where([data-motion="full"], [data-motion="full"] *));
 @custom-variant motion-reduce (&:where([data-motion="reduced"], [data-motion="reduced"] *, [data-motion="off"], [data-motion="off"] *));
+/* A message's actions float over it (the orchestrator's chat) only with a pointer that hovers and
+   room in the message (`@container/message`); on touch or in a narrow column they keep their row. */
+@custom-variant float-actions {
+  @media (hover: hover) {
+    @container message (min-width: 40rem) {
+      @slot;
+    }
+  }
+}
 
 /* Registers rounded-2xs; the generated theme sets its value (4 px on Glass) and wins, unlayered. */
 @theme {

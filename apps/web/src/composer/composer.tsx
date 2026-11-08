@@ -143,10 +143,13 @@ const HINT_MS = 2500;
  * second send of the same draft beside the first mount's.
  */
 const waitingThreads = new Set<string>();
-/** What a message into a worker the orchestrator directs also does, on Send and its placeholder. */
-const TAKES_CONTROL = "takes control";
-/** Beside Send while a draft waits for that worker: the consequence, where the message goes. */
-const TAKES_CONTROL_LINE = "Sending takes control from the orchestrator";
+/**
+ * What a message into a worker the orchestrator directs also does, in one plain wording: Send's
+ * name and tooltip ("Send and take over from the orchestrator") and, while a draft waits, the line
+ * beside Send say it; the placeholder only names where the message goes ("Message this worker…"),
+ * so the field never reads as a warning.
+ */
+const TAKES_OVER_LINE = "Sending takes over from the orchestrator";
 /** Shown while a send waits for the connection to come back. */
 const RECONNECT_HINT = "Waiting for the connection — sends once it's back";
 
@@ -892,10 +895,11 @@ export function Composer({
     ? `Queue: sends when the turn ends. ${steerModifier}-click to steer`
     : "Queue: sends when the turn ends";
   // Into a worker the orchestrator directs, the send is also a take-over: its name says so.
-  const control = takesControl ? ` — ${TAKES_CONTROL}` : "";
+  const control = takesControl ? " and take over from the orchestrator" : "";
+  const queueControl = takesControl ? `. ${TAKES_OVER_LINE}` : "";
   const actionLabels = {
     send: { aria: `Send${control}`, hint: withHint(`Send${control}`, sendKeyHint) },
-    queue: { aria: `Queue${control}`, hint: withHint(`${queueLabel}${control}`, sendKeyHint) },
+    queue: { aria: `Queue${control}`, hint: withHint(`${queueLabel}${queueControl}`, sendKeyHint) },
     steer: { aria: "Steer now", hint: STEER_LABEL },
     // Stopping keeps what the turn wrote so far; only what it hadn't yet written is lost.
     stop: {
@@ -1146,7 +1150,7 @@ export function Composer({
                 ? ""
                 : (placeholder ??
                   (takesControl
-                    ? `${running ? "Queue a message" : "Message worker"} — ${TAKES_CONTROL}… (/ for commands, @ for files)`
+                    ? `${running ? "Queue a message for this worker" : "Message this worker"}… (/ for commands, @ for files)`
                     : running
                       ? "Queue a message… (/ for commands, @ for files)"
                       : "Message… (/ for commands, @ for files)"))
@@ -1330,7 +1334,7 @@ export function Composer({
               (dictation.active
                 ? dictationStatus(dictation.state)
                 : takesControl && hasDraft
-                  ? TAKES_CONTROL_LINE
+                  ? TAKES_OVER_LINE
                   : undefined)}
           </span>
           <div data-toolbar-fixed className="flex shrink-0 items-center gap-1.5">

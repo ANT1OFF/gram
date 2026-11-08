@@ -244,4 +244,40 @@ test.describe("touch message actions", () => {
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
     await page.screenshot({ path: testInfo.outputPath("message-actions-touch.png") });
   });
+
+  test("in the orchestrator's chat they keep their row under the message, shown, not floating", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => sessionStorage.setItem("gram.mock.orchestration", "realistic"));
+    await page.goto("/");
+    await page.getByTestId("app-shell").waitFor();
+    const made = await page.evaluate(async () => {
+      const started = await window.gramMock!.startedRealistic();
+      if (started === undefined) throw new Error("the mock did not start the realistic scenario");
+      return started;
+    });
+    // In the app's router, as a link goes: no reload, so the mock's world stays.
+    await page.evaluate((to) => {
+      history.pushState(history.state, "", to);
+      dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
+    }, `/t/${made.orchestratorThreadId}`);
+    const transcript = page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`);
+    for (const message of [
+      transcript.getByTestId("message-assistant").last(),
+      transcript.getByTestId("message-user").last(),
+    ]) {
+      await message.scrollIntoViewIfNeeded();
+      const actions = message.getByTestId("message-actions");
+      await expect(actions).toHaveAttribute("data-floating", "true");
+      await expect(actions).toHaveCSS("opacity", "1");
+      await expect(actions).toHaveCSS("position", "static");
+      // Under what it acts on, never over it.
+      const content = (await message
+        .locator('[data-slot="message-content"]')
+        .first()
+        .boundingBox())!;
+      const strip = (await actions.boundingBox())!;
+      expect(strip.y).toBeGreaterThanOrEqual(content.y + content.height - 1);
+    }
+  });
 });
