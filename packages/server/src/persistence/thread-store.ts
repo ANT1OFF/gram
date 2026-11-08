@@ -435,8 +435,9 @@ export interface ThreadStoreShape {
     needles: ReadonlyArray<string>,
   ): Effect.Effect<ReadonlyArray<GramUIMessage>>;
   /**
-   * The thread's messages with a part of one of `types`, in order; only those messages are decoded.
-   * The stored form is `JSON.stringify`'s, so every such part reads `"type":"<type>"` in it.
+   * The thread's messages with a part of one of `types`, in order; only those messages are read and
+   * decoded. A reply that is streaming now can be missing its newest parts for a few seconds (see
+   * `message_parts` in migration 0006), so callers add the open replies themselves.
    */
   messagesWithParts(
     threadId: ThreadId,
@@ -497,8 +498,9 @@ export interface ThreadStoreShape {
   deleteQueuedMessages(): Effect.Effect<number>;
   /**
    * Inserts a message at the end of the thread, or replaces it in place. Returns the thread's feed
-   * revision the write took. A `streaming` save leaves the message's search index row as it was,
-   * for a later save, `refreshSearch` or the startup sweep to refresh (`messageSearchPending`).
+   * revision the write took. A `streaming` save leaves the message's search index row and its part
+   * types (`messagesWithParts`) as they were, for a later save, `refreshSearch` or the startup sweep
+   * to refresh (`messageSearchPending`).
    */
   upsertMessage(
     threadId: ThreadId,
@@ -507,8 +509,8 @@ export interface ThreadStoreShape {
     options?: { readonly streaming?: boolean },
   ): Effect.Effect<number>;
   /**
-   * Brings the message's search index row up to its stored text, if a `streaming` save left it
-   * behind. Writes nothing else, so the feed revision doesn't move. `false` when another
+   * Brings the message's search index row and part types up to its stored text, if a `streaming`
+   * save left them behind. Writes nothing else, so the feed revision doesn't move. `false` when another
    * connection held the write lock past the busy timeout, for the caller to try again later.
    */
   refreshSearch(threadId: ThreadId, messageId: string): Effect.Effect<boolean>;
@@ -2124,15 +2126,25 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         messagesWith,
         messagesWithParts: (threadId, types) =>
-          messagesHolding(
-            threadId,
-            types.map((type) => `"type":${JSON.stringify(type)}`),
-          ).pipe(
-            // The needle can also sit inside a tool's input or output; the parts decide.
-            Effect.map((messages) =>
-              messages.filter((message) => message.parts.some((part) => types.includes(part.type))),
-            ),
-          ),
+          types.length === 0
+            ? Effect.succeed([])
+            : run(
+                // `message_parts` (migration 0006) names the rows; only those are read and decoded.
+                sql<{ id: string; message: string }>`SELECT id, message FROM messages
+                  WHERE rowid IN (SELECT message_rowid FROM message_parts
+                    WHERE thread_id = ${threadId} AND ${sql.or(
+                      [...new Set(types)].map((type) => sql`type = ${type}`),
+                    )})
+                  ORDER BY seq`.pipe(
+                  Effect.flatMap((rows) => messageRows("messages", threadId, rows)),
+                  // The stored types name the rows; the decoded parts still decide.
+                  Effect.map((messages) =>
+                    messages.filter((message) =>
+                      message.parts.some((part) => types.includes(part.type)),
+                    ),
+                  ),
+                ),
+              ),
         firstMessages: (threadId, count) =>
           run(
             sql<{ id: string; message: string }>`SELECT id, message FROM messages
@@ -2754,7 +2766,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 SELECT thread_id FROM dreams WHERE workspace_id = ${id})`;
               if (dreaming !== undefined) {
                 return yield* new InvalidState({
-                  message: `A dream thread of ${state.workspace.name} is still open. Try removing it again.`,
+                  message: `A memory update thread of ${state.workspace.name} is still open. Try removing it again.`,
                   threadId: dreaming.id as ThreadId,
                 });
               }
@@ -2895,7 +2907,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                       new NotFound({
                         entity: "dream",
                         id,
-                        message: "That dream no longer exists.",
+                        message: "That memory update no longer exists.",
                       }),
                     )
                   : Effect.succeed(dream),

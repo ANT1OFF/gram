@@ -313,7 +313,7 @@ export function createMockDreams(host: MockDreamsHost) {
       left.length === 0
         ? []
         : [
-            `${left.length} ${left.length === 1 ? "thread" : "threads"} left for the next dream, past this one's budget. Their watermarks stay where they are, so the next dream reads them.`,
+            `${left.length} ${left.length === 1 ? "thread" : "threads"} left for the next memory update, past this one's budget. Their watermarks stay where they are, so the next memory update reads them.`,
           ];
     return { plan, taken, notes };
   };
@@ -332,7 +332,7 @@ export function createMockDreams(host: MockDreamsHost) {
         archivedThreads: 11,
         notes: [
           ...notes,
-          "Transcripts are redacted, stay on this machine, and are read only by the model the dream runs on.",
+          "Transcripts are redacted, stay on this machine, and are read only by the model the memory update runs on.",
         ],
         dream: plan,
       };
@@ -420,7 +420,7 @@ export function createMockDreams(host: MockDreamsHost) {
       const cap = path === INDEX ? INDEX_MAX_BYTES : FILE_MAX_BYTES;
       if (bytes > cap) {
         throw new MockInvalidState(
-          `${path} would be ${bytes} bytes; the cap is ${cap}. Trim it, or run a dream to consolidate.`,
+          `${path} would be ${bytes} bytes; the cap is ${cap}. Trim it, or start a memory update to consolidate.`,
         );
       }
       if (!files.has(path) && files.size >= MAX_FILES) {
@@ -479,14 +479,14 @@ export function createMockDreams(host: MockDreamsHost) {
       );
       if (running !== undefined) {
         throw new MockInvalidState(
-          "A dream is already running for this workspace. Wait for it, or cancel it first.",
+          "A memory update is already running for this workspace. Wait for it, or cancel it first.",
         );
       }
       const home = host.projects().find((p) => p.id === state.workspace.homeProjectId);
       if (home === undefined) throw notFound("project", state.workspace.homeProjectId);
       const created = await host.createThread({
         projectRoot: home.root,
-        title: input.kind === "import" ? "Import history" : "Dream",
+        title: input.kind === "import" ? "Import history" : "Memory update",
         mode: "acceptEdits",
       });
       const thread: Thread = { ...created, role: "dream", workspaceId };
@@ -567,7 +567,7 @@ export function createMockDreams(host: MockDreamsHost) {
     async cancel(id: DreamId): Promise<Dream> {
       const dream = findDream(id);
       if (dream.status !== "running" && dream.status !== "pending") {
-        throw new MockInvalidState("Only a running dream can be cancelled.");
+        throw new MockInvalidState("Only a running memory update can be cancelled.");
       }
       if (dream.threadId !== undefined) host.setStatus(dream.threadId, "idle");
       return putDream({ ...dream, status: "canceled", failure: "canceled", endedAt: Date.now() });
@@ -577,20 +577,22 @@ export function createMockDreams(host: MockDreamsHost) {
       const dream = findDream(id);
       const output = outputs.get(id);
       if (dream.status !== "completed" || output === undefined) {
-        throw new MockInvalidState("Only a completed dream can be adopted.");
+        throw new MockInvalidState("Only a completed memory update can be adopted.");
       }
       if (dream.adoptedVersion !== undefined) {
-        throw new MockInvalidState(`This dream was adopted already, as ${dream.adoptedVersion}.`);
+        throw new MockInvalidState(
+          `This memory update was adopted already, as ${dream.adoptedVersion}.`,
+        );
       }
       const memory = memoryOf(dream.workspaceId);
       if (input.basedOn !== undefined && input.basedOn !== memory.current) {
         throw new MockInvalidState(
-          `Memory was adopted or restored since this review (it is version ${memory.current} now). Review the dream again.`,
+          `Memory was adopted or restored since this review (it is version ${memory.current} now). Review the memory update again.`,
         );
       }
       if (input.outputDigest !== undefined && input.outputDigest !== output.digest) {
         throw new MockInvalidState(
-          "The dream's output was changed since this review. Review the dream again.",
+          "The memory update's output was changed since this review. Review the memory update again.",
         );
       }
       const review = await this.review(id);
@@ -610,7 +612,7 @@ export function createMockDreams(host: MockDreamsHost) {
       );
       if (unmerged.length > 0) {
         throw new MockInvalidState(
-          `There is no finished merge of ${unmerged.map((file) => file.path).join(", ")} as memory and the dream's output hold it now. Merge it again, or choose a side.`,
+          `There is no finished merge of ${unmerged.map((file) => file.path).join(", ")} as memory and the memory update's output hold it now. Merge it again, or choose a side.`,
         );
       }
       const now = Date.now();
@@ -645,19 +647,19 @@ export function createMockDreams(host: MockDreamsHost) {
       const dream = findDream(id);
       if (dream.adoptedVersion !== undefined) {
         throw new MockInvalidState(
-          `That dream was already adopted as version ${dream.adoptedVersion}.`,
+          `That memory update was already adopted as version ${dream.adoptedVersion}.`,
         );
       }
       if (dream.status !== "completed") {
-        throw new MockInvalidState("Only a completed dream's conflicts can be merged.");
+        throw new MockInvalidState("Only a completed memory update's conflicts can be merged.");
       }
       const file = (await this.review(id)).files.find((candidate) => candidate.path === path);
       if (file?.status !== "conflict") {
-        throw new MockInvalidState(`${path} isn't a conflict of this dream's review.`);
+        throw new MockInvalidState(`${path} isn't a conflict of this memory update's review.`);
       }
       if (file.after === undefined || file.current === undefined) {
         throw new MockInvalidState(
-          `One side removed ${path}, so there are not two versions to merge. Take the dream's or keep memory's.`,
+          `One side removed ${path}, so there are not two versions to merge. Take the memory update's or keep memory's.`,
         );
       }
       if (file.merge?.status === "running") return file.merge;
@@ -678,7 +680,7 @@ export function createMockDreams(host: MockDreamsHost) {
     async discard(id: DreamId): Promise<void> {
       const dream = findDream(id);
       if (dream.status === "running" || dream.status === "pending") {
-        throw new MockInvalidState("The dream is still running: cancel it first.");
+        throw new MockInvalidState("The memory update is still running: cancel it first.");
       }
       // As the server does: the thread ran in the folder a discard deletes, so it is closed first.
       if (dream.threadId !== undefined) await host.closeThread(dream.threadId);
@@ -724,10 +726,10 @@ export function createMockDreams(host: MockDreamsHost) {
       };
 
       const report =
-        "# Dream report\n\n## Merged\n- Two entries about merge order in decisions.md said the same thing; kept one. Source: PR api#212.\n\n## Dropped\n- repos/docs-notes.md: a one-off debugging note from 2026-09-12 that no later session used.\n\n## New\n- conventions.md: branch names and who reviews what. Sources: mail-trigger, registry-paging.\n\n## Unresolved\n- Whether docs needs a preview deploy: left as Q3 in questions.md.\n";
+        "# Memory update report\n\n## Merged\n- Two entries about merge order in decisions.md said the same thing; kept one. Source: PR api#212.\n\n## Dropped\n- repos/docs-notes.md: a one-off debugging note from 2026-09-12 that no later session used.\n\n## New\n- conventions.md: branch names and who reviews what. Sources: mail-trigger, registry-paging.\n\n## Unresolved\n- Whether docs needs a preview deploy: left as Q3 in questions.md.\n";
       const conventions =
         "# Conventions\n\n- 2026-09-17 · Branches are feat/<slug>, the same in every repo of a feature. Source: mail-trigger.\n- 2026-09-20 · The repo's code owners review; the AI reviewer's approval is enough to merge. Source: registry-paging.\n";
-      const finished = await spawn("Dream");
+      const finished = await spawn("Memory update");
       const completedId = dreamId();
       const reviewFiles: DreamFileDiff[] = [
         { path: "conventions.md", status: "added", after: conventions },

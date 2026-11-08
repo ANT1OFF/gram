@@ -34,9 +34,9 @@ const CLUSTER_GAP = "ml-3 @max-2xl/titlebar:ml-1";
 
 /**
  * The chat column's title bar, icon-only and few: the workspace and its views, the thread's header
- * or Board's controls in the slot, then what wants your attention (the needs-you pill while no
- * column to the left shows it, a setup problem folded from its banner, a paused workspace, and the
- * thread's agent's usage), one "…" with
+ * or Board's controls in the slot, then what wants your attention (the Inbox while no column to
+ * the left shows the needs-you pill, a setup problem folded from its banner, a paused workspace,
+ * and the thread's agent's usage), one "…" with
  * everything else in words, and the panel. Narrow, what the slot carries folds into "…" too. Each
  * destination has one entry here or in the sidebar, never both.
  */
@@ -158,16 +158,18 @@ export function ShellTitlebar({
         data-testid="titlebar-attention"
         className="flex shrink-0 items-center gap-0.5"
       >
-        {/* What needs you has one place: the top of the column left of the chat, the sidebar's
-            pill, the compact rail's or Settings' own. With no column there (the sidebar hidden),
-            it is this bar's first chip, in the pill's words. Before setup the sidebar hides its
-            pill (the welcome is the one thing to look at), so the quiet Inbox icon here is the way
-            to what arrived meanwhile, startup notices say. */}
+        {/* What needs you is said in words in one place: the top of the column left of the chat,
+            the sidebar's pill, the compact rail's or Settings' own. With no column there (the
+            sidebar hidden), this group's first slot is the Inbox, an icon button like the rest of
+            the bar whatever is waiting (a dot on its corner while anything does, the pill's words
+            on hover), so it never widens or moves what follows it. Before setup the sidebar hides
+            its pill (the welcome is the one thing to look at), so the Inbox here is the way to
+            what arrived meanwhile, startup notices say. */}
         {(!needsYouPill || beforeSetup) && <InboxButton />}
-        {/* A setup problem seen once in its banner, folded here until dismissed: the bar's one
-            warning glyph, which says what it is on hover. The thread's own state (an approval, a
+        {/* A setup problem seen once in its banner, folded here until dismissed: setup's glyph
+            with no number, which says what it is on hover. The thread's own state (an approval, a
             question, an error) is the pill's to count and the card's to show, never a second
-            glyph here. */}
+            glyph or count here. */}
         <LaunchIssuesChip className="[-webkit-app-region:no-drag]" />
         {!soloBar && !settings && <TitlebarPause className="[-webkit-app-region:no-drag]" />}
         {/* Before any setup there is no work of Gram's to meter. Icon-only like the rest of the

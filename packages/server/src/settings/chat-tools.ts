@@ -181,7 +181,8 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
           Effect.gen(function* () {
             const tool = SETTINGS_READ_TOOL;
             const role = yield* runtimes.audienceOf(caller);
-            if (role === "dream") return yield* fail(tool, "Dreams don't read Gram's settings.");
+            if (role === "dream")
+              return yield* fail(tool, "Memory updates don't read Gram's settings.");
             const state = yield* workspaceInScope(tool, caller, role, workspaceId);
             const project = yield* projectInScope(tool, caller, state, projectId);
             const world = yield* worldOf(state, project);

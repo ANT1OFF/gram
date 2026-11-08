@@ -481,7 +481,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
                 expect(row.filesClosedAt).toBe(0);
               }
               expect(ended.filesClosedAt).toBe(0);
-              expect(titles(events).includes("Dream finished — review it")).toBe(
+              expect(titles(events).includes("Memory update finished — review it")).toBe(
                 outcome === "complete",
               );
               const cards = (yield* store.listMessages(dream.threadId as ThreadId)).flatMap(
@@ -553,7 +553,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
           role: "dream",
           workspaceId,
           projectId: project.id,
-          title: "Dream · shop",
+          title: "Memory update · shop",
           mode: "acceptEdits",
           checkout: { kind: "main", path: dream.outputDir },
         });
@@ -613,7 +613,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
         );
         expect(refused).toMatchObject({ _tag: "InvalidState" });
         expect(refused.message).toBe(
-          "A dream runs on claude or codex; unadmitted isn't admitted for one. Pick a model of one of those.",
+          "A memory update runs on claude or codex; unadmitted isn't admitted for one. Pick a model of one of those.",
         );
         expect(yield* store.listDreams(workspaceId)).toEqual([]);
         // Full autonomy changes nothing for a Claude dream: it reads what nobody vetted.
@@ -721,8 +721,8 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
             expect((yield* Effect.flip(dreams.adopt(dream.id))).message).toContain(
               "already adopted",
             );
-            expect(titles(events)).toContain("Dream automatically adopted");
-            expect(titles(events)).not.toContain("Dream finished — review it");
+            expect(titles(events)).toContain("Memory update automatically adopted");
+            expect(titles(events)).not.toContain("Memory update finished — review it");
             const report = (yield* store.listMessages(dream.threadId!)).flatMap((m) =>
               m.parts.filter((p) => p.type === "data-dream-report"),
             );

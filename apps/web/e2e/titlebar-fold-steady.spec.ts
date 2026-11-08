@@ -87,9 +87,9 @@ test("a worker's title bar holds its fold at a width where folding frees the roo
   const made = await start(page, 1600);
   await routeTo(page, `/t/${made.inReview}`);
   const bar = page.getByTestId("shell-titlebar");
-  // Wide, everything fits: Take over and its ⓘ are in the bar, unfolded.
+  // Wide, everything fits: Take over is in the bar, unfolded, its hint the one explanation (no ⓘ).
   await expect(bar.getByTestId("worker-take-over")).toBeVisible();
-  await expect(bar.getByTestId("worker-take-over-info")).toBeVisible();
+  await expect(bar.getByTestId("worker-take-over-info")).toHaveCount(0);
   await expect(bar).not.toHaveAttribute("data-fold");
 
   // Narrower, 4 px at a time, until the worker's title is short of room and Take over folds into

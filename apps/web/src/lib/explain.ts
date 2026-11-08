@@ -8,7 +8,7 @@ export const EXPLAIN = {
   dreams:
     "Gram rereads finished threads and drafts an update to this workspace's memory, with a source for each change. Memory changes once the draft is adopted.",
   takeOver:
-    "You direct this worker yourself and the orchestrator stops messaging it. Hand back from its header to return it.",
+    "You direct this worker yourself, as sending it a message also does, and the orchestrator stops messaging it. Hand back from its header to return it.",
   startHeld:
     "You direct it yourself, and the orchestrator can't message it until you hand it back from its header.",
   tidyUp:

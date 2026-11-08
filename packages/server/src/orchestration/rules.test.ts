@@ -3371,7 +3371,7 @@ describe("joining a workspace", () => {
     expect(refused({})).toBeUndefined();
     expect(refused({ role: "orchestrator" })).toContain("An orchestrator can't be added");
     expect(refused({ id: holder })).toContain("An orchestrator can't be added");
-    expect(refused({ role: "dream" })).toContain("memory dream");
+    expect(refused({ role: "dream" })).toContain("memory update");
     expect(refused({ workspaceId, spawnedBy: { threadId: holder, feature: "x" } })).toContain(
       "already a worker",
     );

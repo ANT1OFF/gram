@@ -26,7 +26,7 @@ const THREADS_SHOWN = 8;
 const ROLE_LABEL: Readonly<Record<UsageThreadRole, string>> = {
   orchestrator: "orchestrator",
   worker: "worker",
-  dream: "dream",
+  dream: "memory update",
   solo: "solo",
 };
 

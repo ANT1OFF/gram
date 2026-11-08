@@ -531,12 +531,12 @@ const steps: readonly Shot[] = [
     },
   },
   {
-    name: "stop-key",
-    title: "Stop: while you're in the composer, its key shows beside it",
+    name: "stop-hint",
+    title: "Stop: an icon in Send's place, its word and key on hover",
     open: async (page) => {
       await shot("send-button-running")(page);
-      await page.getByLabel("Message", { exact: true }).focus();
-      await expect(page.getByTestId("stop-key")).toHaveCSS("opacity", "1");
+      await page.getByRole("button", { name: "Stop", exact: true }).hover();
+      await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(/^Stop \(/);
     },
   },
   {

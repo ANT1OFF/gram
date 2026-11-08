@@ -79,9 +79,7 @@ export function AgentRuntimeDetails({
           </Fact>
         ))}
         <Fact label="Built for">{bindingLabel(runtime)}</Fact>
-        <Fact label="Compatibility">
-          {runtime.verdict === "supported" ? "supported" : (runtime.reason ?? runtime.verdict)}
-        </Fact>
+        <Fact label="Compatibility">{runtime.reason ?? runtime.verdict}</Fact>
         {note !== undefined && <Fact label="Newer">{note.detail}</Fact>}
         {releasesChecking && releasesCheckedAt === undefined ? (
           <Fact label="Newer releases">checking through your npm…</Fact>

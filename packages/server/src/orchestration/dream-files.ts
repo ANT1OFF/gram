@@ -318,7 +318,10 @@ const make = (root: string): DreamFilesShape => {
       );
       return yield* Effect.try({
         try: () => Schema.decodeUnknownSync(DreamManifest)(JSON.parse(text)),
-        catch: () => refuse("The dream's manifest can't be read, so the dream can't be trusted"),
+        catch: () =>
+          refuse(
+            "The memory update's manifest can't be read, so the memory update can't be trusted",
+          ),
       });
     });
 
@@ -355,7 +358,7 @@ const make = (root: string): DreamFilesShape => {
           const { workspaceId, dreamId } = input;
           if (input.sessions.length > DREAM_SESSIONS_MAX) {
             return yield* refuse(
-              `${input.sessions.length} transcripts; a dream reads at most ${DREAM_SESSIONS_MAX}. Chain dreams for more.`,
+              `${input.sessions.length} transcripts; a memory update reads at most ${DREAM_SESSIONS_MAX}. Run more memory updates for more.`,
             );
           }
           // An import starts from no memory at all, which no memory set is allowed to be.
@@ -377,7 +380,7 @@ const make = (root: string): DreamFilesShape => {
           const given = input.seeds ?? [];
           if (given.length > DREAM_SEEDS_MAX) {
             return yield* refuse(
-              `${given.length} seed files; a dream is given at most ${DREAM_SEEDS_MAX}`,
+              `${given.length} seed files; a memory update is given at most ${DREAM_SEEDS_MAX}`,
             );
           }
           const seeds = given.map((seed, index) => ({
@@ -529,7 +532,7 @@ const make = (root: string): DreamFilesShape => {
           if (paths.length === 0) {
             return yield* new DreamOutputRefused({
               failure: "no_output",
-              message: "The dream left no memory file in output/",
+              message: "The memory update left no memory file in output/",
             });
           }
           const files: Array<MemorySetFile> = [];
@@ -558,7 +561,7 @@ const make = (root: string): DreamFilesShape => {
             return yield* new DreamOutputRefused({
               failure: "missing_report",
               message:
-                "The dream ended without a nonempty output/REPORT.md; seeded memory alone is not a completed consolidation",
+                "The memory update ended without a nonempty output/REPORT.md; seeded memory alone is not a completed consolidation",
             });
           return { files: checked.files, report };
         }),

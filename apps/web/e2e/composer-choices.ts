@@ -44,16 +44,14 @@ export async function pickChoice(
   await expect(choicesPopup(page)).toBeHidden();
 }
 
-/** The words the chip shows: "" when its mark stands alone. */
-export const chipWords = (chip: Locator) =>
-  chip.evaluate((el) =>
-    [
-      ...el.querySelectorAll<HTMLElement>(
-        "[data-toolbar-label], [data-toolbar-compact], [data-toolbar-value]",
-      ),
-    ]
-      .filter((words) => !words.classList.contains("sr-only") && words.offsetWidth > 0)
-      .map((words) => words.textContent ?? "")
-      .join("")
-      .trim(),
-  );
+/**
+ * What the chip draws: the words it shows, none, as it is icons with its words on hover, and the
+ * sections whose glyph stands beside the agent's mark (Bypass's "mode", Fast's "speed").
+ */
+export const chipFace = (chip: Locator) =>
+  chip.evaluate((el) => ({
+    words: (el as HTMLElement).innerText.trim(),
+    glyphs: [...el.querySelectorAll<HTMLElement>("[data-chip-glyph]")].map(
+      (glyph) => glyph.dataset["chipGlyph"] ?? "",
+    ),
+  }));

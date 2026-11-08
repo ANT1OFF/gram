@@ -26,7 +26,7 @@ export function createDreamsMock(
         completed: 0,
         detail:
           threshold === undefined
-            ? "Automatic Dream is off."
+            ? "Automatic memory updates are off."
             : "Automatic runs await review. Counting distinct completed threads since the last start or setting edit.",
       };
     },

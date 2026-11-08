@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { chipWords, choicesChip, choicesPopup, openChoices } from "./composer-choices";
+import { chipFace, choicesChip, choicesPopup, openChoices } from "./composer-choices";
 
 /** Narrows the composer's column the way a narrow pane does, without changing the window. */
 const squeeze = (page: Page, width: number) =>
@@ -15,17 +15,17 @@ const box = async (locator: Locator) => {
 };
 
 // The composer's model, effort, mode and speed were four chips that crowded Send. They are one
-// chip now: it says the values that aren't at their defaults, its name and tooltip say every one,
-// and its popover has a section for each that checks the value and confirms a pick in words.
+// chip now, in icons: its name and tooltip say every value, and its popover has a section for each
+// that checks the value and confirms a pick in words.
 test("effort says its value, checks it in its section, and confirms a pick in words", async ({
   page,
 }) => {
   await page.goto("/t/t-deps");
   const toolbar = page.getByTestId("composer-toolbar");
   const chip = choicesChip(toolbar);
-  // No effort chosen: the model's own default, said as such in the name, left off the chip's words.
+  // No effort chosen: the model's own default, said as such in the name; the chip is its mark.
   await expect(chip).toHaveAccessibleName(/ · Effort: Model default \(.+\) · /);
-  await expect.poll(() => chipWords(chip)).toBe("Claude Opus · Ask");
+  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
 
   await chip.hover();
   await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
@@ -43,7 +43,8 @@ test("effort says its value, checks it in its section, and confirms a pick in wo
   await xhigh.click();
 
   await expect(chip).toHaveAccessibleName(/ · Effort: Extra high \(.+\) · /);
-  await expect.poll(() => chipWords(chip)).toBe("Claude Opus · Extra high · Ask");
+  // Effort matters for neither safety nor cost enough for a glyph: its name says it.
+  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
   await expect(toolbar.getByText("Effort set to Extra high")).toBeVisible();
   // Its shortcut opens the popover on its section, the current value checked and focused.
   await page.getByLabel("Message", { exact: true }).focus();
@@ -56,9 +57,9 @@ test("effort says its value, checks it in its section, and confirms a pick in wo
   await page.keyboard.press("Escape");
   await expect(choicesPopup(page)).toBeHidden();
 
-  // Narrow, the words shorten, and the name still says every value.
+  // Narrow, the chip is the same icons, and the name still says every value.
   await squeeze(page, 420);
-  await expect.poll(() => chipWords(chip)).toMatch(/^(Claude )?Opus · (Extra high|X-high) · Ask$/);
+  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
   await expect(chip).toHaveAccessibleName(/ · Effort: Extra high \(.+\) · /);
 });
 
@@ -83,7 +84,7 @@ test("the toolbar's targets are as tall as Send, and ring on keyboard focus", as
   await expect(chip).toBeFocused();
   await expect(chip).toHaveCSS("outline-style", "solid");
 });
-test("Stop says Stop beside its square, shows its key inside it, and keeps the reply", async ({
+test("Stop is an icon in Send's place, its word and key on hover, and keeps the reply", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -92,20 +93,20 @@ test("Stop says Stop beside its square, shows its key inside it, and keeps the r
   await page.goto("/t/t-flaky");
   const stop = page.getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeVisible();
-  // A filled pill with the word, not Send's accent and not a bare glyph.
+  // Filled, not Send's accent and not a faint outline; Send's size, with no word and no key cap.
   const fill = await stop.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(fill).not.toBe("rgba(0, 0, 0, 0)");
-  // Its word, and its key in a key cap inside it: visible, not only on focus or in a tooltip.
-  await expect(stop).toHaveText(/^Stop(⌘|Ctrl\+)\.$/);
+  await expect(stop).toHaveText("");
+  expect(await box(stop)).toMatchObject({ width: 32, height: 32 });
   await expect(page.getByTestId("stop-ring")).toBeVisible();
+  // Its word and its key are its tooltip, "Stop (⌘.)", as every icon button's are.
+  await stop.hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(/^Stop \((⌘|Ctrl\+)\.\)$/);
   // Where Send sits: the right edges line up, so the spot doesn't move as the turn starts and ends.
   const send = page.getByRole("button", { name: "Send", exact: true });
   const stopRight = await stop.evaluate((el) => el.getBoundingClientRect().right);
 
-  const key = stop.getByTestId("stop-key");
   await page.locator("body").click({ position: { x: 5, y: 300 } });
-  await expect(key).toBeVisible();
-  await expect(key).toHaveText(/^(⌘|Ctrl\+)\.$/);
 
   // What the turn had written when stopped stays in the thread.
   const said = page.getByText("I'll start by reading the test");

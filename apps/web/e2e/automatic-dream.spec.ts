@@ -39,10 +39,12 @@ test("automatic Dream is opt-in, validates its threshold, and saves its workspac
   await open();
   // Dream sits under More options on the workspace's own settings page.
   const section = page.getByTestId("workspace-page");
-  const toggle = section.getByRole("switch", { name: "Dream automatically" });
+  const toggle = section.getByRole("switch", { name: "Update memory automatically" });
   await expect(toggle).not.toBeChecked();
   await toggle.check();
-  const threshold = section.getByRole("spinbutton", { name: "Completed threads before Dream" });
+  const threshold = section.getByRole("spinbutton", {
+    name: "Threads per memory update",
+  });
   await expect(threshold).toHaveValue("10");
   await expect(section.getByTestId("automatic-dream-progress")).toContainText(
     "0 / 10 completed threads",

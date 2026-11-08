@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { chipWords, choicesChip, choicesPopup, openChoices, pickChoice } from "./composer-choices";
+import { chipFace, choicesChip, choicesPopup, openChoices, pickChoice } from "./composer-choices";
 import { seedTheme } from "./seed-theme";
 
 /** An element's right edge; off the scale when it isn't laid out at all. */
@@ -25,12 +25,13 @@ const rowSpread = (page: Page) =>
     return Math.round(Math.max(...centres) - Math.min(...centres));
   });
 
-// In a narrow pane the toolbar used to clip Stop and Send past the pane's edge, later dropped every
-// value for a glyph, and then kept a bare "Effort" and "Speed"; four chips crowded Send. Now one
-// chip says the values that aren't at their defaults, and short of room says them in compact
-// words, then the model's alone, its name always saying every value: never a bare glyph while
-// there is room for a word, and nothing folds into "…".
-test("the choices chip keeps its words as it narrows, its name every value", async ({ page }) => {
+// In a narrow pane the toolbar used to clip Stop and Send past the pane's edge; four chips crowded
+// Send, then one chip of words folded through shorter words to a row of its own. Now the chip is
+// icons with its words on hover (Johan, 2026-11-08): one width at every width, on one row, its name
+// always saying every value, and nothing folds into "…".
+test("the choices chip stays icons on one row as it narrows, its name every value", async ({
+  page,
+}) => {
   // Held running, so Stop and Steer stay offered: the script's later approval takes Steer away.
   await page.addInitScript(() => {
     window.gramMockHoldGates = true;
@@ -41,14 +42,13 @@ test("the choices chip keeps its words as it narrows, its name every value", asy
   const message = page.getByLabel("Message", { exact: true });
   const toolbar = page.getByTestId("composer-toolbar");
   // One control for model · effort · mode · speed, in every composer.
-  await expect(toolbar.locator("[data-toolbar-block]")).toHaveCount(1);
+  await expect(toolbar.getByTestId("composer-choices")).toHaveCount(1);
   const chip = choicesChip(toolbar);
   await expect(chip).toHaveAccessibleName(
     /^Claude Opus \(.+\) · Effort: Model default \(.+\) · Mode: Ask \(.+\) · Speed: CLI default$/,
   );
-  // With room, the model and mode in full; the defaults are left to its name.
-  await expect(chip.locator("[data-toolbar-label]")).not.toHaveClass(/\bsr-only\b/);
-  await expect.poll(() => chipWords(chip)).toBe("Claude Opus · Ask");
+  // The agent's mark alone: nothing set matters for safety or cost, and its name says the rest.
+  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
   await chip.hover();
   const tooltip = page.locator('[data-slot="tooltip-content"]');
   await expect(tooltip).toContainText("Mode: Ask");
@@ -59,36 +59,25 @@ test("the choices chip keeps its words as it narrows, its name every value", asy
   await page.keyboard.press("Escape");
   await expect(toolbar.getByRole("button", { name: "More composer controls" })).toHaveCount(0);
 
-  // With room the context gauge beside Send says what it measures, "Context 31%".
+  // The context gauge beside Send is its bar alone, 32 px, its words in its name.
   const gauge = page.getByTestId("usage-ring");
-  await expect(gauge).toHaveText(/^Context \d+%$/, { useInnerText: true });
+  await expect(gauge).toHaveText("", { useInnerText: true });
+  await expect(gauge).toHaveAccessibleName(/^Context: \d+% of the window used$/);
+  expect((await gauge.boundingBox())!.width).toBe(32);
 
-  // Short of room, the chip says its values compact, then the model's alone, on one row; short of
-  // that, it takes a row of its own above Send and Stop, in full again. Linux names Stop's key
-  // "Ctrl+.", some 26 px wider than "⌘.", so the exact step at a width differs by platform; what
-  // holds everywhere is that the chip says the model at least, and its name all.
+  // Narrower, the chip is the same icons, on the one row with Send and Stop, its name every value.
   const says = async () => {
-    await expect.poll(() => chipWords(chip)).toMatch(/^(Claude )?Opus( · Ask)?$/);
+    await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
     await expect(chip).toHaveAccessibleName(/ · Mode: Ask \(.+\) · Speed: CLI default$/);
-    // One row, or wrapped onto a row of its own above Send and Stop: never under or beside them.
-    if ((await toolbar.getAttribute("data-wrapped")) === "true") {
-      const chipBox = await chip.boundingBox();
-      const stopBox = await stop.boundingBox();
-      expect(stopBox!.y).toBeGreaterThanOrEqual(chipBox!.y + chipBox!.height);
-    } else {
-      expect(await rowSpread(page)).toBeLessThanOrEqual(1);
-    }
+    expect(await rowSpread(page)).toBeLessThanOrEqual(1);
   };
   await squeeze(page, 540);
   await says();
-  // Under 36 rem the gauge keeps the ring's 32 px, its number alone.
-  await expect(gauge).toHaveText(/^\d+%$/, { useInnerText: true });
-  expect((await gauge.boundingBox())!.width).toBeLessThanOrEqual(32);
   for (const width of [480, 400, 370, 300, 260]) {
     await squeeze(page, width);
     await says();
   }
-  // At 260 px the chip still says the model, and Stop stays inside the composer.
+  // At 260 px Stop stays inside the composer.
   const edge = await right(message);
   expect(await right(stop)).toBeLessThanOrEqual(edge);
 
@@ -117,7 +106,8 @@ test("the choices chip keeps its words as it narrows, its name every value", asy
   await modes.getByRole("option", { name: "Plan", exact: true }).click();
   await squeeze(page, 720);
   await expect(chip).toHaveAccessibleName(/ · Mode: Plan \(.+\) · /);
-  await expect.poll(() => chipWords(chip)).toBe("Claude Opus · Plan");
+  // Plan asks for more, not less: no caution glyph.
+  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
 });
 
 /** Drags the right panel's edge `dx` pixels, negative towards the left. */
@@ -137,7 +127,9 @@ async function dragPanel(page: Page, dx: number) {
 // A 1024 px window with a review beside the chat leaves the composer some 490 px: room for the
 // chip's words in full or compact, far from the narrowest. The four chips once took the gauge
 // alone for effort here while Mode still said "Ask".
-test("beside a review in a 1024 px window, the chip keeps its words", async ({ page }) => {
+test("beside a review in a 1024 px window, the chip keeps its icons and its name", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.goto("/t/t-flaky");
   const shell = page.getByTestId("app-shell");
@@ -154,8 +146,7 @@ test("beside a review in a 1024 px window, the chip keeps its words", async ({ p
   await expect.poll(() => toolbar.evaluate((el) => el.clientWidth)).toBeGreaterThan(400);
   const chip = choicesChip(toolbar);
   await expect(chip).toHaveAccessibleName(/ · Effort: Model default \(.+\) · Mode: Ask \(.+\) · /);
-  // The model and the mode in words: never the mark alone, and never the model alone here.
-  await expect.poll(() => chipWords(chip)).toMatch(/^(Claude )?Opus · Ask$/);
+  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
   await expect(toolbar.getByRole("button", { name: "More composer controls" })).toHaveCount(0);
 });
 test("right-click on Send offers steering and sending into a new draft", async ({ page }) => {
@@ -250,10 +241,8 @@ test("one send button: Stop while empty, Queue with a draft, Steer with the modi
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   await expect(button("Stop")).toBeVisible();
   await button("Stop").hover();
-  // Its word, that what the turn wrote stays, and its shortcut: ⌘. on macOS and Ctrl+. elsewhere.
-  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
-    /^Stop · keeps the reply so far \((⌘|Ctrl\+)\.\)$/,
-  );
+  // Its word and its shortcut: ⌘. on macOS and Ctrl+. elsewhere.
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(/^Stop \((⌘|Ctrl\+)\.\)$/);
 
   const message = page.getByLabel("Message", { exact: true });
   await message.fill("use the fake clock");

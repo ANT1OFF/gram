@@ -53,8 +53,11 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     Everything else stays neutral: the plan strip, the title bar, a label's chip (named, never
     tinted). The needs-you entry counts errors among what needs you but never tints them: its
     amber dot and words are for what asks ("1 question" amber, "· 1 error" muted), errors alone
-    leave it neutral, and in the title bar the chip itself is neutral, its dot and the asks' words
-    the bar's one amber mark; the compact rail's count (its number, in a neutral outline) and the
+    leave it neutral. Its words are the pill's alone (the sidebar's, Settings' strip's, Quiet's):
+    with the sidebar hidden the title bar's way in is the Inbox, an icon button in the attention
+    group's first slot, one size whatever waits, its corner dot amber while something asks (the
+    bar's one amber mark), neutral for errors alone, and the pill's words on hover, never a word
+    chip that jumps into the bar or a number on the glyph; the compact rail's count (its number, in a neutral outline) and the
     Board's waiting chip turn amber only while something asks too. A retry that ran through says what was done and how it went
     ("Retried at 14:11 · succeeded"), its failure folded under Details.
   - `warning` is for a caution on a setting the user chose: Bypass (amber with its lock, on
@@ -131,7 +134,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   leans toward the sidebar in a wide pane (`--thread-lean`, 0.5 centres it). Its prose (a
   paragraph, a list, a quote) stops at `--reading-measure` (70 ch of its own size, about 85
   characters) and leads at 22/14, while code, tables and cards take the column's full width. Memory's rendered
-  files and its draft review (Dreams) use it too, the review widening to `--settings-column-wide`
+  files and its draft review (Memory updates) use it too, the review widening to `--settings-column-wide`
   while a diff is open; Settings' pages take `settings-column` (60 rem, leaning `--settings-lean`).
   The sidebar keeps the width the user gives it, and its edge shows a grip while the pointer is
   over the column.
@@ -141,8 +144,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   glyph is no thinner than an 18 px toolbar one. A glyph stands in for a word, never beside the
   word it repeats: a button that says "Edit" or "Restore defaults", a status line's counts and
   a picker that shows its words take no glyph, and a picker's glyph draws only once its words
-  give way. A mark that says something its words don't (the composer choices chip's agent, a row's state
-  dot) stays. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
+  give way. A mark that says something its words don't (a row's state dot) stays. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
   sidebar's header and the composer's toolbar), `size-icon-row` 16 px beside UI text (rows, cards,
   menus, docks, buttons, the panel's tabs, which keep their names and fold into More by width
   rather than turn into bare glyphs, the rarer ones always under More so Focus review keeps the same tabs, and its action, whose words give way to its glyph), and `size-icon-chip` 14 px beside meta text (a chip,
@@ -159,10 +161,12 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     thread's role glyph, Open beside); colour on a glyph is a status it means, never decoration.
   - The open tab, view or toggle shows a background or an underline, never colour alone.
   - One meaning per glyph, and one glyph per meaning: the Inbox (everything that needs you) is
-    `Inbox`, a needs-you mark or count `Hand`, review `Eye`, take over `HandGrab`, a question `MessageCircleQuestion`, an approval
+    `Inbox`, a needs-you mark or count `Hand`, review `Eye`, take over `HandGrab`, a setup problem
+    `Wrench` (the banner's lead and its folded title-bar button, never a warning sign with a count
+    beside the needs-you pill's), a question `MessageCircleQuestion`, an approval
     `ShieldQuestion`, a plan `ListChecks`, effort the gauge, usage and limits
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
-    Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`, History `History`, a wait
+    Memory updates `MoonStar`, Focus `Moon`, Terminal `SquareTerminal`, History `History`, a wait
     `Hourglass`. A row a chevron already folds needs no second glyph (an orchestrator's update is
     its chevron and time, and no rule: the transcript's 12 px block step sets it apart).
   - A control that acts on a choice names it: a sound's preview is one "Preview Chime" button
@@ -176,7 +180,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
 - **Buttons have three styles** (`Button`, or `buttonVariants` on a link or a menu's trigger),
   never a hand-rolled bordered button:
   - **Filled primary** (`default`): the one action the view exists for, at most one per view
-    ("Draft memory update" in Dreams, "Allow once" on an approval). A destructive confirm takes the
+    ("Draft memory update" in Memory updates, "Allow once" on an approval). A destructive confirm takes the
     danger tone (`destructive`) in that place.
   - **Outline secondary** (`outline`): every other worded action that stands on its own: "Take
     over", "View changes", "Review", "Watch it run", "Always allow…". A list row's one lead action
@@ -199,17 +203,19 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     current value is its check.
   - Keyboard focus is the `focus-ring` outline (`--focus-ring`, `--focus-width`); a menu, list or
     dialog never rings as a whole.
-- **The composer's toolbar says its values in one chip:** every composer (the orchestrator's chat,
-  a solo thread's and `/new`) has one choices chip for model · effort · mode · speed, in that order:
-  the agent's mark, then the values in short words, "Opus · High · Auto". A value at its default
-  drops out (an effort left to the model, a speed that isn't Fast), so the chip says what was set;
-  the mode always shows. In `/new` the agent picker before it carries the mark. Short of room the
-  values take three to six letters ("Opus · X-high · Edits"), then the model's alone; still short,
-  the chip takes a row of its own above Send and Stop, and only when not even that fits does the
-  mark stand alone, never while a word fits. A caution keeps its colour on its
-  own word (Bypass). The chip's name and tooltip say every value and its shortcut, a default
-  saying whose it is, one line each on hover: "Claude · Claude Opus (⌘⇧M)", "Effort: Model default
-  (⌘⇧E)", "Mode: Auto (⌘⇧A)", "Speed: CLI default". Nothing folds into "…".
+- **The composer's toolbar is icons with their words on hover** (Johan's ruling, 2026-11-08: "we
+  have moved too far in the text direction"). Every control on the row is a glyph whose words are
+  its tooltip and its accessible name; the row shows no word of its own, so it is one width at any
+  pane width and nothing measures or folds it. The one exception is a warning, not a control: the
+  worker's "Sending takes over from the orchestrator" line (below).
+  - Every composer (the orchestrator's chat, a solo thread's and `/new`) has one choices chip for
+    model · effort · mode · speed: the agent's mark, and beside it a 14 px glyph only for a value
+    off its default that matters for safety or cost: Bypass's open lock in the warning colour,
+    Fast's filled bolt. Effort, Plan or Accept edits draw nothing. In `/new` the agent picker before
+    it is the agent's mark alone, its name on hover, and the chip draws the sliders glyph in the
+    mark's place. The chip's name and tooltip say every value and its shortcut, a default saying
+    whose it is, one line each on hover: "Claude · Claude Opus (⌘⇧M)", "Effort: Model default
+    (⌘⇧E)", "Mode: Auto (⌘⇧A)", "Speed: CLI default". Nothing folds into "…".
   - The chip opens one popover above the whole composer, never over the draft, with a section per
     dimension in the same order: a heading with its value and shortcut, one section open at a time,
     its list checking the current value with a line on what each costs (the model's searches, with
@@ -217,17 +223,17 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     greyed, "Not available", with why on hover and once opened, so the rest never move. Each
     dimension's shortcut opens the popover on its section, a pick closes it, and the pick is
     confirmed in words for a moment ("Effort set to High").
-  - Every target on the row is 32 px tall, and words keep 48 px clear of Send and Stop. Stop is a
-    solid pill reading "Stop" beside its square, the square inside the running ring, right-aligned
-    where Send sits, its key a key cap inside it while its pane has focus. While the turn only
-    waits on your answer, Stop steps back to the danger tint (no ring), still distinct from Send
-    and from a faint outline. Into a worker the orchestrator still directs, a message takes it
+  - Every target on the row is 32 px tall. Stop is an icon button in Send's place and at Send's
+    size: a filled square inside the running ring, on a solid fill in the text colour (danger under
+    the pointer), with no word and no key cap; its tooltip says "Stop (⌘.)", its name "Stop", and
+    ⌘. stops from the focused composer. While the turn only waits on your answer, Stop steps back
+    to the danger tint (no ring), still distinct from Send and from a faint outline. Into a worker
+    the orchestrator still directs, a message takes it
     over, said once in plain words where it happens: the placeholder only names where the message
     goes ("Message this worker…"), Send's name and tooltip say "Send and take over from the
     orchestrator", and with a draft the line beside Send says "Sending takes over from the
-    orchestrator". Beside Send the
-    context meter says "Context 36%" over its bar, the number alone in a composer under 36 rem,
-    and its popover says what it measures.
+    orchestrator". Beside Send the context meter is its bar alone in a 32 px target, never a ring;
+    the pointer opens its popover, headed "Context 36%", which says what it measures.
 - **The Inbox docks beside the chat only where the chat keeps its reading column** (760 px) beside
   it; in a narrower window (under about 1,600 px with the overview open) it opens over the work as
   a dialog, the same list and keys, rather than squeeze the chat to a strip.
@@ -237,23 +243,26 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   back as it was. There is no second list in a dialog, and while the tab is open the sidebar folds
   its workspace's workers to its line ("7 workers · in Workers"), its chevron leading
   to the tab.
-- **An explanation shows once, then folds to a mark.** What Take over changes is a line under a
-  worker's header the first time it is offered; after, it is an ⓘ beside Take over that says it on
-  hover or focus, so the line never stacks over every worker view.
+- **An explanation shows once, then folds into its control.** What Take over changes is a line
+  under a worker's header the first time it is offered; after, Take over's own hint says it, with
+  no ⓘ beside it to say it again, so the line never stacks over every worker view.
 - **Icon-only chrome names itself on hover:** the title bar's and the overview header's icons use
   the instant tooltip (`Hint`), never a native title, with the shortcut where there is one. A hint
   opens when the pointer moves onto its trigger, never for one that appears under a resting
   pointer, and opens on the side away from what sits next to it (a panel's tabs above, over the
   panel's empty top, not over the notice under them).
 - **The title bar is icon-only and few:** the workspace, Chat · Board and the thread's title (an
-  orchestrator's with its Memory glyph), then
-  what wants you (a setup problem folded from its banner, its glyph with a count, a paused workspace, usage, the bell), one "…" with everything else in words and
+  orchestrator's is its Memory glyph alone: the switcher and Chat already name it, so no role
+  glyph), then
+  what wants you (the Inbox while the sidebar is hidden, a setup problem folded from its banner as its glyph alone, a paused workspace, usage, the bell), one "…" with everything else in words and
   shortcuts, and the panels' group at the end (a worker's Open beside, then the panel's toggle). The usage meter
   is an icon button like the bar's others, usage's glyph alone, its reading in its hover and name. A dot on
   its corner is the one hint of a limit: a warning ring from 90%, filled amber once past the window on
   credits, red once spent; no words, and nothing moves. It
   follows one rule (on a thread its agent's closest limit, unless another's passes 90%; elsewhere the highest),
-  and its hover and popover name which ("This thread: …", "Highest: …"). A popover from the bar drops clear of a
+  and its hover and popover name which ("This thread: …", "Highest: …"). Every glyph in the bar is
+  one of its icon buttons, `icon-sm` with the toolbar glyph (18 px, one stroke), `fg-muted`, the
+  `bg-accent` hover fill, and its instant hint; a pane header's own glyphs keep the row size. A popover from the bar drops clear of a
   card that asks for a decision. The overview's header holds its own two toggles; Settings sits beside History at
   its foot. A new control goes in the "…" unless it is needed at a glance. A
   thread's title comes before its secondary buttons: the bar folds a worker's actions into "…"
@@ -279,9 +288,10 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   "09:54–09:57 Updates · 3 merged · 1 report · More" (merged lines alone, "6 merged"), which
   opens in place on each row as it stood, by click, Enter or Space. Its words sum every row it
   holds, so an ask or a failure inside it is still said there, amber or red. A single update stays
-  as it is, a live card ends the run, and Show all activity shows every row unfolded. One 12 px step separates every block of the
-  stream, a reply from an update the same as an update from the next reply: a message's Copy,
-  rewind and time float on hover (beside a bubble's top, over the end of a reply's last line)
+  as it is, a live card ends the run, and Show all activity shows every row unfolded. One 12 px
+  step separates every block of the stream, a reply from an update the same as an update from the
+  next reply: a message's Copy, its "…" and its time float on hover (beside a bubble's top, over
+  the end of a reply's last line)
   instead of reserving a row under it. They float only with a pointer that hovers and a message at
   least 40 rem wide (`float-actions`); on touch, where they always show, and in a narrow column
   they keep their row.

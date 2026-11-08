@@ -666,14 +666,14 @@ export const makeCodexHost = (
           agent: "codex",
           reason: "startup-failed",
           message:
-            "Codex Dream is unavailable: this transport cannot disable every native tool while allowing only the bounded Dream file bridge. Choose Claude Code.",
+            "Codex memory updates are unavailable: this transport cannot disable every native tool while allowing only the bounded memory update file bridge. Choose Claude Code.",
         });
       if (o.audience === "dream" && (o.dreamGuided !== true || o.mcp === undefined))
         return yield* new AgentUnavailable({
           agent: "codex",
           reason: "startup-failed",
           message:
-            "Guided Codex Dream requires its explicit mode and the bounded Dream file bridge.",
+            "A guided Codex memory update requires its explicit mode and the bounded memory update file bridge.",
         });
       const home = codexHomeFor(o);
       // A server-owned thread's eviction must not strand its writer behind unrelated lifetimes.

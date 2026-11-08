@@ -1245,7 +1245,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     }
     if (thread.parked) throw new MockInvalidState("the thread is archived");
     if (thread.role === "dream")
-      throw new MockInvalidState("a dream's session opens only for its run");
+      throw new MockInvalidState("a memory update's session opens only for its run");
     if (status !== "cold" && status !== "error") return "open";
     this.sessionStarts.push(threadId);
     this.#setStatus(runtime, "starting");
