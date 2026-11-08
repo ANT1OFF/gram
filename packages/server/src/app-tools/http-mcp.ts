@@ -42,9 +42,7 @@ const textResult = (text: string, isError = false): CallToolResult =>
 /** Runs the tool (which decodes its own input) and renders the outcome. Fails only on defects. */
 export const callAppTool = (tool: AppTool, args: unknown): Effect.Effect<CallToolResult> =>
   tool.run(args).pipe(
-    Effect.map((output): CallToolResult => ({
-      content: appToolResultContent(output),
-    })),
+    Effect.map((output): CallToolResult => ({ content: appToolResultContent(output) })),
     Effect.catchTag("AppToolError", (error) =>
       Effect.succeed({
         ...textResult(error.message, true),
@@ -173,9 +171,7 @@ export const McpRoute = Layer.unwrap(
           cancel: (id) => running.get(authorization)?.get(id)?.abort(),
         });
         // No `sessionIdGenerator`: stateless, so each request needs its own transport.
-        const transport = new StreamableHTTPServerTransport({
-          enableJsonResponse: true,
-        });
+        const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
         yield* Effect.acquireUseRelease(
           // The SDK's optional members don't satisfy `exactOptionalPropertyTypes`.
           Effect.promise(() => server.connect(transport as Transport)),

@@ -69,25 +69,14 @@ import { fixtureMessages } from "./testing.ts";
 
 /** An SDK task lifecycle message, trimmed to what the session reads. */
 const task = (subtype: string, task_id: string, extra: object = {}) =>
-  ({
-    type: "system",
-    subtype,
-    task_id,
-    session_id: "s",
-    uuid: task_id,
-    ...extra,
-  }) as never;
+  ({ type: "system", subtype, task_id, session_id: "s", uuid: task_id, ...extra }) as never;
 
 /** The CLI's level of background tasks, as `background_tasks_changed` lists them. */
 const listed = (...ids: Array<string>) =>
   ({
     type: "system",
     subtype: "background_tasks_changed",
-    tasks: ids.map((id) => ({
-      task_id: id,
-      task_type: "local_bash",
-      description: id,
-    })),
+    tasks: ids.map((id) => ({ task_id: id, task_type: "local_bash", description: id })),
     session_id: "s",
     uuid: ids.join(),
   }) as never;
@@ -263,13 +252,7 @@ const harness = (options: HarnessOptions = {}) => {
       handler: ToolDefinition["handler"],
       extras?: ToolDefinition["extras"],
     ) => {
-      const definition = {
-        name,
-        description,
-        inputSchema,
-        handler,
-        ...(extras ? { extras } : {}),
-      };
+      const definition = { name, description, inputSchema, handler, ...(extras ? { extras } : {}) };
       tools.push(definition);
       return definition;
     }) as unknown as ClaudeSdkShape["tool"],
@@ -285,10 +268,7 @@ const harness = (options: HarnessOptions = {}) => {
     ...(options.transcript === undefined ? {} : { importSessionToStore: options.transcript }),
   };
   const authChecks = { count: 0 };
-  const layer = ClaudeHostLayer({
-    newId: () => `id-${++ids}`,
-    ...options.config,
-  }).pipe(
+  const layer = ClaudeHostLayer({ newId: () => `id-${++ids}`, ...options.config }).pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(ClaudeSdk)(sdk),
@@ -297,11 +277,7 @@ const harness = (options: HarnessOptions = {}) => {
           prepare: Effect.succeed({
             binaryPath: "/bin/claude",
             sdkExecutable: "/bin/claude",
-            env: {
-              PATH: "/bin",
-              CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
-              ...options.env,
-            },
+            env: { PATH: "/bin", CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1", ...options.env },
             warnings: options.warnings ?? [],
             ...(options.cliVersion === undefined ? {} : { cliVersion: options.cliVersion }),
           }),
@@ -323,11 +299,7 @@ const harness = (options: HarnessOptions = {}) => {
 const openSession = (overrides: Partial<OpenSessionOptions> = {}) =>
   Effect.gen(function* () {
     const host = yield* ClaudeHost;
-    return yield* host.open({
-      threadId: ThreadId.make("t1"),
-      cwd: "/repo",
-      ...overrides,
-    });
+    return yield* host.open({ threadId: ThreadId.make("t1"), cwd: "/repo", ...overrides });
   });
 
 const take = (session: AgentSession, n: number) =>
@@ -362,18 +334,8 @@ const twoRunningShells = (): Array<SDKMessage> => [
       role: "assistant",
       model: "m",
       content: [
-        {
-          type: "tool_use",
-          id: "t1",
-          name: "Bash",
-          input: { command: "pnpm test" },
-        },
-        {
-          type: "tool_use",
-          id: "t2",
-          name: "Bash",
-          input: { command: "pnpm build" },
-        },
+        { type: "tool_use", id: "t1", name: "Bash", input: { command: "pnpm test" } },
+        { type: "tool_use", id: "t2", name: "Bash", input: { command: "pnpm build" } },
       ],
       usage: { input_tokens: 1, output_tokens: 1 },
     },
@@ -474,10 +436,9 @@ describe("ClaudeHost.open", () => {
       });
 
       const role = harness();
-      yield* openSession({
-        instructions: "You dispatch; workers do.",
-        resumeId: "sess-1",
-      }).pipe(Effect.provide(role.layer));
+      yield* openSession({ instructions: "You dispatch; workers do.", resumeId: "sess-1" }).pipe(
+        Effect.provide(role.layer),
+      );
       // On a resume too: with the default snapshot the first open's text would be replayed.
       expect(query(role).options.systemPrompt).toEqual({
         type: "preset",
@@ -496,23 +457,18 @@ describe("ClaudeHost.open", () => {
       );
       expect(query(resumed).options).toMatchObject({ resume: "r1" });
       expect(query(resumed).options).not.toHaveProperty("sessionId");
-      expect((yield* take(resumedSession, 1))[0]).toMatchObject({
-        agentSessionId: "r1",
-      });
+      expect((yield* take(resumedSession, 1))[0]).toMatchObject({ agentSessionId: "r1" });
 
       const forked = harness();
-      const forkedSession = yield* openSession({
-        resumeId: "r1",
-        fork: true,
-      }).pipe(Effect.provide(forked.layer));
+      const forkedSession = yield* openSession({ resumeId: "r1", fork: true }).pipe(
+        Effect.provide(forked.layer),
+      );
       expect(query(forked).options).toMatchObject({
         resume: "r1",
         forkSession: true,
         sessionId: "id-1",
       });
-      expect((yield* take(forkedSession, 1))[0]).toMatchObject({
-        agentSessionId: "id-1",
-      });
+      expect((yield* take(forkedSession, 1))[0]).toMatchObject({ agentSessionId: "id-1" });
     }),
   );
 
@@ -559,19 +515,12 @@ describe("ClaudeHost.open", () => {
         });
 
       expect(yield* costOf(harness({ transcript }), { resumeId: "r1" })).toEqual([0.25]);
-      expect(
-        yield* costOf(harness({ transcript }), {
-          resumeId: "r1",
-          fork: true,
-        }),
-      ).toEqual([0.25]);
+      expect(yield* costOf(harness({ transcript }), { resumeId: "r1", fork: true })).toEqual([
+        0.25,
+      ]);
       expect(reads).toEqual(["r1 in /repo", "r1 in /repo"]);
       // A fork into another worktree finds the source's transcript under its own checkout.
-      const elsewhere = {
-        resumeId: "r1",
-        fork: true,
-        cwd: "/other",
-      } as const;
+      const elsewhere = { resumeId: "r1", fork: true, cwd: "/other" } as const;
       expect(yield* costOf(harness({ transcript }), elsewhere)).toEqual([0.25]);
       expect(reads.slice(2)).toEqual(["r1 in /other", "r1 in undefined"]);
       reads.length = 2;
@@ -591,16 +540,12 @@ describe("ClaudeHost.open", () => {
       );
       expect(query(fresh).options).toMatchObject({ sessionId: "kept-1" });
       expect(query(fresh).options).not.toHaveProperty("resume");
-      expect((yield* take(freshSession, 1))[0]).toMatchObject({
-        agentSessionId: "kept-1",
-      });
+      expect((yield* take(freshSession, 1))[0]).toMatchObject({ agentSessionId: "kept-1" });
 
       const forked = harness();
-      yield* openSession({
-        resumeId: "r1",
-        fork: true,
-        sessionId: "kept-2",
-      }).pipe(Effect.provide(forked.layer));
+      yield* openSession({ resumeId: "r1", fork: true, sessionId: "kept-2" }).pipe(
+        Effect.provide(forked.layer),
+      );
       expect(query(forked).options).toMatchObject({
         resume: "r1",
         forkSession: true,
@@ -619,27 +564,19 @@ describe("ClaudeHost.open", () => {
 
   it.effect("reports a resume without a transcript as session-not-found", () =>
     Effect.gen(function* () {
-      const missing = harness({
-        startupStderr: "No conversation found with session ID: r1",
-      });
+      const missing = harness({ startupStderr: "No conversation found with session ID: r1" });
       const error = yield* openSession({ resumeId: "r1" }).pipe(
         Effect.provide(missing.layer),
         Effect.flip,
       );
-      expect(error).toMatchObject({
-        _tag: "AgentUnavailable",
-        reason: "session-not-found",
-      });
+      expect(error).toMatchObject({ _tag: "AgentUnavailable", reason: "session-not-found" });
 
       const other = harness({ startupStderr: "Segmentation fault" });
       const failed = yield* openSession({ resumeId: "r1" }).pipe(
         Effect.provide(other.layer),
         Effect.flip,
       );
-      expect(failed).toMatchObject({
-        _tag: "AgentUnavailable",
-        reason: "startup-failed",
-      });
+      expect(failed).toMatchObject({ _tag: "AgentUnavailable", reason: "startup-failed" });
     }),
   );
 
@@ -663,12 +600,7 @@ describe("ClaudeHost.open", () => {
   it.effect("fails before spawning when auth isn't a subscription login", () =>
     Effect.gen(function* () {
       const h = harness({
-        auth: Effect.fail(
-          new AgentUnavailable({
-            agent: "claude",
-            message: "api-key-auth: nope",
-          }),
-        ),
+        auth: Effect.fail(new AgentUnavailable({ agent: "claude", message: "api-key-auth: nope" })),
       });
       const error = yield* Effect.flip(openSession().pipe(Effect.provide(h.layer)));
       expect(error).toBeInstanceOf(AgentUnavailable);
@@ -694,37 +626,18 @@ describe("ClaudeHost on a gateway profile", () => {
                 { id: "opus-latest", name: "opus-latest" },
                 { id: "sonnet-latest", name: "sonnet-latest" },
                 { id: "a-claude-haiku-4.5", name: "a-claude-haiku-4.5" },
-                {
-                  id: "claude-opus-5.5-eu",
-                  name: "EU Opus",
-                  info: { webSearch: false },
-                },
-                {
-                  id: "claude-opus-5.5",
-                  name: "Bedrock Opus",
-                  info: { webSearch: false },
-                },
-                {
-                  id: "claude-haiku-4.5-eu",
-                  name: "EU Haiku",
-                  info: { webSearch: false },
-                },
+                { id: "claude-opus-5.5-eu", name: "EU Opus", info: { webSearch: false } },
+                { id: "claude-opus-5.5", name: "Bedrock Opus", info: { webSearch: false } },
+                { id: "claude-haiku-4.5-eu", name: "EU Haiku", info: { webSearch: false } },
               ],
             },
             key: Redacted.make(KEY),
           })
         : Effect.fail(
-            new AgentUnavailable({
-              agent,
-              message: `Gateway profile ${id} isn't configured.`,
-            }),
+            new AgentUnavailable({ agent, message: `Gateway profile ${id} isn't configured.` }),
           ),
   };
-  const gatewayModel = {
-    agent: "claude",
-    model: "claude-opus-4-8",
-    profileId,
-  } as const;
+  const gatewayModel = { agent: "claude", model: "claude-opus-4-8", profileId } as const;
   const subscriptionLock = Effect.fail(
     new AgentUnavailable({
       agent: "claude",
@@ -776,10 +689,7 @@ describe("ClaudeHost on a gateway profile", () => {
 
   it.effect("gives an orchestrator listing none every server only where tool search is on", () =>
     Effect.gen(function* () {
-      const lean = {
-        audience: "orchestrator",
-        mcpNoneWithoutToolSearch: true,
-      } as const;
+      const lean = { audience: "orchestrator", mcpNoneWithoutToolSearch: true } as const;
       // The gateway's base URL turns tool search off, so it takes none of the user's servers.
       const onGateway = harness({ gateway: provider });
       const gatewaySession = yield* openSession({
@@ -814,10 +724,7 @@ describe("ClaudeHost on a gateway profile", () => {
         allowedMcpServers: [],
       });
       // Forced on, a gateway session searches and keeps the user's servers.
-      const forcedOn = harness({
-        gateway: provider,
-        env: { ENABLE_TOOL_SEARCH: "true" },
-      });
+      const forcedOn = harness({ gateway: provider, env: { ENABLE_TOOL_SEARCH: "true" } });
       yield* openSession({ ...lean, model: gatewayModel }).pipe(Effect.provide(forcedOn.layer));
       expect(query(forcedOn).options.settings).toEqual(REFUSE_PEER_MESSAGES);
     }),
@@ -826,18 +733,18 @@ describe("ClaudeHost on a gateway profile", () => {
   it.effect("reopens rather than switch live across the EU data-zone boundary", () =>
     Effect.gen(function* () {
       const h = harness({ gateway: provider });
-      const session = yield* openSession({
-        model: { ...gatewayModel, model: "opus-latest" },
-      }).pipe(Effect.provide(h.layer));
+      const session = yield* openSession({ model: { ...gatewayModel, model: "opus-latest" } }).pipe(
+        Effect.provide(h.layer),
+      );
       expect(session.needsReopenFor?.("claude-opus-5.5-eu")).toBe(true);
       expect(session.needsReopenFor?.("sonnet-latest")).toBe(false);
       // Same zone, but Bedrock has no hosted web search, so the WebSearch setting has to change.
       expect(session.needsReopenFor?.("claude-opus-5.5")).toBe(true);
 
       const own = harness();
-      const subscription = yield* openSession({
-        model: { agent: "claude", model: "opus" },
-      }).pipe(Effect.provide(own.layer));
+      const subscription = yield* openSession({ model: { agent: "claude", model: "opus" } }).pipe(
+        Effect.provide(own.layer),
+      );
       expect(subscription.needsReopenFor?.("claude-opus-5.5-eu")).toBe(false);
       // The gateway key keeps claude.ai connectors out, and the panel says why.
       expect(session.connectors?.claudeAiUnavailable).toBe(GATEWAY_CLAUDE_AI_NOTE);
@@ -848,9 +755,9 @@ describe("ClaudeHost on a gateway profile", () => {
   it.effect("keeps an EU thread's subagents on EU routes, without hosted web search", () =>
     Effect.gen(function* () {
       const h = harness({ gateway: provider });
-      yield* openSession({
-        model: { ...gatewayModel, model: "claude-opus-5.5-eu" },
-      }).pipe(Effect.provide(h.layer));
+      yield* openSession({ model: { ...gatewayModel, model: "claude-opus-5.5-eu" } }).pipe(
+        Effect.provide(h.layer),
+      );
       const q = query(h);
       expect(q.options.env).toMatchObject({
         ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5.5-eu",
@@ -872,10 +779,7 @@ describe("ClaudeHost on a gateway profile", () => {
       for (const message of fixtureMessages("p03-session-state-with")) {
         q.output.push(
           message.type === "system" && message.subtype === "init"
-            ? ({
-                ...message,
-                apiKeySource: "ANTHROPIC_API_KEY",
-              } as SDKMessage)
+            ? ({ ...message, apiKeySource: "ANTHROPIC_API_KEY" } as SDKMessage)
             : message,
         );
       }
@@ -899,10 +803,7 @@ describe("ClaudeHost on a gateway profile", () => {
       expect(none.queries).toEqual([]);
 
       const refused = harness({ gateway: provider });
-      const other = {
-        ...gatewayModel,
-        profileId: "other" as typeof profileId,
-      };
+      const other = { ...gatewayModel, profileId: "other" as typeof profileId };
       const error = yield* Effect.flip(
         openSession({ model: other }).pipe(Effect.provide(refused.layer)),
       );
@@ -943,17 +844,12 @@ describe("ClaudeHost resumeAt and listModels", () => {
       yield* openSession({ resumeId: "r1", resumeAt: "msg-uuid" }).pipe(
         Effect.provide(resumed.layer),
       );
-      expect(query(resumed).options).toMatchObject({
-        resume: "r1",
-        resumeSessionAt: "msg-uuid",
-      });
+      expect(query(resumed).options).toMatchObject({ resume: "r1", resumeSessionAt: "msg-uuid" });
 
       const forked = harness();
-      yield* openSession({
-        resumeId: "r1",
-        fork: true,
-        resumeAt: "msg-uuid",
-      }).pipe(Effect.provide(forked.layer));
+      yield* openSession({ resumeId: "r1", fork: true, resumeAt: "msg-uuid" }).pipe(
+        Effect.provide(forked.layer),
+      );
       expect(query(forked).options).toMatchObject({
         resume: "r1",
         forkSession: true,
@@ -989,9 +885,7 @@ describe("ClaudeHost resumeAt and listModels", () => {
       const q = query(h);
       expect(q.calls).toEqual(["supportedModels"]);
       expect(q.closed).toBe(true);
-      expect(q.options).toMatchObject({
-        pathToClaudeCodeExecutable: "/bin/claude",
-      });
+      expect(q.options).toMatchObject({ pathToClaudeCodeExecutable: "/bin/claude" });
       // It connects no MCP server: not the user's, a project's, nor a claude.ai connector.
       expect(q.options).toMatchObject({
         strictMcpConfig: true,
@@ -1117,11 +1011,7 @@ describe("ClaudeHost resumeAt and listModels", () => {
     Effect.gen(function* () {
       const h = harness({
         auth: Effect.fail(
-          new AgentUnavailable({
-            agent: "claude",
-            reason: "api-key-auth",
-            message: "nope",
-          }),
+          new AgentUnavailable({ agent: "claude", reason: "api-key-auth", message: "nope" }),
         ),
       });
       const error = yield* Effect.flip(
@@ -1161,10 +1051,7 @@ describe("AgentSession", () => {
     Effect.gen(function* () {
       const h = harness();
       const session = yield* openSession().pipe(Effect.provide(h.layer));
-      yield* session.send({
-        text: "hi",
-        attachments: [{ path: "/a.png" }, { path: "/b c.txt" }],
-      });
+      yield* session.send({ text: "hi", attachments: [{ path: "/a.png" }, { path: "/b c.txt" }] });
       yield* session.steer({ text: "stop and do this" });
       yield* settle;
       expect(query(h).inputs).toEqual([
@@ -1223,18 +1110,12 @@ describe("AgentSession", () => {
       const q = query(h);
       const messages = fixtureMessages("p03-session-state-with");
       const result = messages.find((m) => m.type === "result")!;
-      q.output.push({
-        ...result,
-        terminal_reason: "aborted_tools",
-      } as SDKMessage);
+      q.output.push({ ...result, terminal_reason: "aborted_tools" } as SDKMessage);
       q.output.push(task("session_state_changed", "idle-1", { state: "idle" }));
       // A second update during the continuation also aborts only the SDK iteration.
       yield* settle;
       yield* session.steer({ text: "one more update" });
-      q.output.push({
-        ...result,
-        terminal_reason: "aborted_streaming",
-      } as SDKMessage);
+      q.output.push({ ...result, terminal_reason: "aborted_streaming" } as SDKMessage);
       for (const message of messages) q.output.push(message);
       q.output.end();
       const events = yield* Stream.runCollect(session.events);
@@ -1243,11 +1124,7 @@ describe("AgentSession", () => {
       ]);
       expect(events.filter((e) => e.type === "status" && e.status === "idle")).toHaveLength(1);
       expect(events.filter((e) => e.type === "usage").at(-1)).toMatchObject({
-        tokens: {
-          inputTokens: 30,
-          outputTokens: 114,
-          cacheReadTokens: 42990,
-        },
+        tokens: { inputTokens: 30, outputTokens: 114, cacheReadTokens: 42990 },
       });
     }),
   );
@@ -1261,10 +1138,7 @@ describe("AgentSession", () => {
       yield* session.interrupt;
       const q = query(h);
       const result = fixtureMessages("p03-session-state-with").find((m) => m.type === "result")!;
-      q.output.push({
-        ...result,
-        terminal_reason: "aborted_tools",
-      } as SDKMessage);
+      q.output.push({ ...result, terminal_reason: "aborted_tools" } as SDKMessage);
       q.output.end();
       expect(
         (yield* Stream.runCollect(session.events)).filter((e) => e.type === "turnEnd"),
@@ -1342,12 +1216,7 @@ describe("AgentSession", () => {
       q.output.end();
       yield* Fiber.join(collecting);
       expect(events.filter((e) => e.type === "usage").at(-1)).toMatchObject({
-        tokens: {
-          inputTokens: 1,
-          outputTokens: 2,
-          cacheReadTokens: 7,
-          cacheWriteTokens: 2,
-        },
+        tokens: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 7, cacheWriteTokens: 2 },
         costUsd: 0.4,
       });
       expect(events.filter((e) => e.type === "turnEnd")).toHaveLength(2);
@@ -1412,10 +1281,7 @@ describe("AgentSession", () => {
         const q = query(h);
         const messages = fixtureMessages("p03-session-state-with");
         const result = messages.find((m) => m.type === "result")!;
-        q.output.push({
-          ...result,
-          terminal_reason: "aborted_tools",
-        } as SDKMessage);
+        q.output.push({ ...result, terminal_reason: "aborted_tools" } as SDKMessage);
         yield* settle;
         const events: AgentEvent[] = [];
         const collecting = yield* Effect.forkScoped(
@@ -1469,11 +1335,7 @@ describe("AgentSession", () => {
       q.output.push({
         type: "system",
         subtype: "compact_boundary",
-        compact_metadata: {
-          trigger: "auto",
-          pre_tokens: 150_000,
-          post_tokens: 20_000,
-        },
+        compact_metadata: { trigger: "auto", pre_tokens: 150_000, post_tokens: 20_000 },
         uuid: "c1",
         session_id: "s",
       } as unknown as SDKMessage);
@@ -1567,16 +1429,8 @@ describe("AgentSession", () => {
           uuid: "u",
         } as unknown as SDKMessage);
       init([
-        {
-          name: "claude.ai Atlassian",
-          status: "connected",
-          source: "claudeai",
-        },
-        {
-          name: "claude.ai Snowflake",
-          status: "needs-auth",
-          source: "claudeai",
-        },
+        { name: "claude.ai Atlassian", status: "connected", source: "claudeai" },
+        { name: "claude.ai Snowflake", status: "needs-auth", source: "claudeai" },
         { name: "claude.ai Gmail", status: "needs-auth", source: "claudeai" },
       ]);
       // The config is read after that first init came: the listing is judged again.
@@ -1587,16 +1441,8 @@ describe("AgentSession", () => {
       ]);
       expect(envs[0]).toMatchObject({ PATH: "/bin" });
       init([
-        {
-          name: "claude.ai Atlassian",
-          status: "needs-auth",
-          source: "claudeai",
-        },
-        {
-          name: "claude.ai Snowflake",
-          status: "connected",
-          source: "claudeai",
-        },
+        { name: "claude.ai Atlassian", status: "needs-auth", source: "claudeai" },
+        { name: "claude.ai Snowflake", status: "connected", source: "claudeai" },
       ]);
       expect(yield* Stream.runCollect(Stream.take(lapsed, 1))).toEqual([
         { type: "connectorsLapsed", names: ["claude.ai Atlassian"] },
@@ -1646,11 +1492,7 @@ describe("AgentSession", () => {
         slash_commands: [],
         permissionMode: "default",
         mcp_servers: [
-          {
-            name: "claude.ai Teams",
-            status: "connected",
-            source: "claudeai",
-          },
+          { name: "claude.ai Teams", status: "connected", source: "claudeai" },
           { name: "files", status: "aNewerState", source: "user" },
         ],
       } as unknown as SDKMessage;
@@ -1673,20 +1515,14 @@ describe("AgentSession", () => {
         {
           detailed: false,
           whole: true,
-          connectors: [
-            {
-              name: "claude.ai Teams",
-              status: "connected",
-              scope: "claudeai",
-            },
-          ],
+          connectors: [{ name: "claude.ai Teams", status: "connected", scope: "claudeai" }],
         },
       ]);
       // An orchestrator's allowlist leaves connectors out without saying.
       expect(
-        (yield* reportsOf({
-          mcpAllowlist: ["https://organization.example.invalid/*"],
-        })).map((r) => r.whole),
+        (yield* reportsOf({ mcpAllowlist: ["https://organization.example.invalid/*"] })).map(
+          (r) => r.whole,
+        ),
       ).toEqual([false]);
       expect((yield* reportsOf({ confineWrites: true })).map((r) => r.whole)).toEqual([false]);
       // So does a workspace's denylist.
@@ -1768,10 +1604,9 @@ describe("AgentSession", () => {
       const gateFor = (outwardGate: NonNullable<OpenSessionOptions["outwardGate"]>) =>
         Effect.gen(function* () {
           const h = harness();
-          yield* openSession({
-            outwardGate,
-            permissionMode: "bypassPermissions",
-          }).pipe(Effect.provide(h.layer));
+          yield* openSession({ outwardGate, permissionMode: "bypassPermissions" }).pipe(
+            Effect.provide(h.layer),
+          );
           const hooks = query(h).options.hooks ?? {};
           expect(Object.keys(hooks)).toEqual([
             "PreToolUse",
@@ -1843,14 +1678,10 @@ describe("AgentSession", () => {
       const peerHook = (options: Partial<OpenSessionOptions>) =>
         Effect.gen(function* () {
           // As `buildChildEnv` prepares it, and `withPeerMessaging` takes it back out.
-          const h = harness({
-            cliVersion: "2.1.301",
-            env: { [PEER_MESSAGING_SWITCH]: "0" },
-          });
-          const session = yield* openSession({
-            outwardGate: "irreversible",
-            ...options,
-          }).pipe(Effect.provide(h.layer));
+          const h = harness({ cliVersion: "2.1.301", env: { [PEER_MESSAGING_SWITCH]: "0" } });
+          const session = yield* openSession({ outwardGate: "irreversible", ...options }).pipe(
+            Effect.provide(h.layer),
+          );
           const pre = query(h).options.hooks!.PreToolUse![0]!.hooks[0]!;
           const call = (tool_name: string, tool_input: unknown) =>
             Effect.promise((): Promise<HookJSONOutput> =>
@@ -1871,9 +1702,7 @@ describe("AgentSession", () => {
           return { h, session, call };
         });
       const denied = expect.objectContaining({
-        hookSpecificOutput: expect.objectContaining({
-          permissionDecision: "deny",
-        }),
+        hookSpecificOutput: expect.objectContaining({ permissionDecision: "deny" }),
       });
 
       const worker = yield* peerHook({ audience: "worker" });
@@ -1903,16 +1732,9 @@ describe("AgentSession", () => {
       expect(yield* worker.call("SendMessage", { to: "helper", message: "go" })).toEqual(denied);
 
       // An orchestrator the user lets send keeps both tools.
-      const allowed = yield* peerHook({
-        audience: "orchestrator",
-        peerMessaging: true,
-      });
+      const allowed = yield* peerHook({ audience: "orchestrator", peerMessaging: true });
       expect(yield* allowed.call("ListAgents", {})).toEqual({});
-      expect(
-        yield* allowed.call("SendMessage", {
-          to: "uds:/tmp/cc-socks/1.sock",
-        }),
-      ).toEqual({});
+      expect(yield* allowed.call("SendMessage", { to: "uds:/tmp/cc-socks/1.sock" })).toEqual({});
     }).pipe(Effect.scoped),
   );
 
@@ -2008,28 +1830,16 @@ describe("AgentSession", () => {
       // At `irreversible` a push isn't the gate's to ask about, so a card the mode raised for it
       // is an ordinary one.
       expect(yield* card({ outwardGate: "irreversible" }, "git push")).toMatchObject({
-        request: {
-          suggestions: [suggestion],
-          scopes: ["once", "session", "always"],
-        },
+        request: { suggestions: [suggestion], scopes: ["once", "session", "always"] },
       });
       expect(yield* card({ outwardGate: true }, "git status")).toMatchObject({
-        request: {
-          suggestions: [suggestion],
-          scopes: ["once", "session", "always"],
-        },
+        request: { suggestions: [suggestion], scopes: ["once", "session", "always"] },
       });
       expect(yield* card({ outwardGate: false }, "git push")).toMatchObject({
-        request: {
-          suggestions: [suggestion],
-          scopes: ["once", "session", "always"],
-        },
+        request: { suggestions: [suggestion], scopes: ["once", "session", "always"] },
       });
       expect(yield* card({}, "git push")).toMatchObject({
-        request: {
-          suggestions: [suggestion],
-          scopes: ["once", "session", "always"],
-        },
+        request: { suggestions: [suggestion], scopes: ["once", "session", "always"] },
       });
     }),
   );
@@ -2046,10 +1856,7 @@ describe("AgentSession", () => {
       );
       void result.then(() => q.calls.push("resolved"));
       yield* take(session, 4);
-      yield* session.respond(RequestId.make("req-plan"), {
-        kind: "plan",
-        decision: "approve",
-      });
+      yield* session.respond(RequestId.make("req-plan"), { kind: "plan", decision: "approve" });
       yield* Effect.promise(() => result);
       yield* settle;
       expect(q.calls).toEqual(["setPermissionMode:acceptEdits", "resolved"]);
@@ -2073,9 +1880,7 @@ describe("AgentSession", () => {
         decision: "approve",
         mode: "bypassPermissions",
       });
-      expect(yield* Effect.promise(() => result)).toMatchObject({
-        behavior: "allow",
-      });
+      expect(yield* Effect.promise(() => result)).toMatchObject({ behavior: "allow" });
       expect(yield* take(session, 1)).toEqual([
         {
           type: "notice",
@@ -2124,10 +1929,7 @@ describe("AgentSession", () => {
         requestId: "req-q",
       });
       const [, , request, status] = yield* take(session, 4);
-      expect(request).toMatchObject({
-        type: "request",
-        request: { kind: "question" },
-      });
+      expect(request).toMatchObject({ type: "request", request: { kind: "question" } });
       expect(status).toEqual({ type: "status", status: "awaitingInput" });
       yield* session.respond(RequestId.make("req-q"), {
         kind: "question",
@@ -2186,31 +1988,11 @@ describe("AgentSession", () => {
       const h = harness();
       const session = yield* openSession().pipe(Effect.provide(h.layer));
       const q = query(h);
-      q.output.push(
-        task("task_started", "bg-1", {
-          is_backgrounded: true,
-          tool_use_id: "t1",
-        }),
-      );
-      q.output.push(
-        task("task_started", "gone", {
-          is_backgrounded: true,
-          tool_use_id: "t2",
-        }),
-      );
+      q.output.push(task("task_started", "bg-1", { is_backgrounded: true, tool_use_id: "t1" }));
+      q.output.push(task("task_started", "gone", { is_backgrounded: true, tool_use_id: "t2" }));
       q.output.push(task("task_started", "fg-1", { tool_use_id: "t3" }));
-      q.output.push(
-        task("task_started", "bg-2", {
-          is_backgrounded: true,
-          tool_use_id: "t4",
-        }),
-      );
-      q.output.push(
-        task("task_notification", "bg-2", {
-          tool_use_id: "t4",
-          status: "completed",
-        }),
-      );
+      q.output.push(task("task_started", "bg-2", { is_backgrounded: true, tool_use_id: "t4" }));
+      q.output.push(task("task_notification", "bg-2", { tool_use_id: "t4", status: "completed" }));
       // Let the pump take them.
       for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
 
@@ -2228,11 +2010,7 @@ describe("AgentSession", () => {
       const h = harness({
         taskOutput: (taskId) =>
           taskId === TASK
-            ? Promise.resolve({
-                output: written,
-                total_bytes: written.length,
-                truncated: false,
-              })
+            ? Promise.resolve({ output: written, total_bytes: written.length, truncated: false })
             : Promise.reject(new Error("get_task_output: no shell or Monitor task")),
       });
       const session = yield* openSession().pipe(Effect.provide(h.layer));
@@ -2295,9 +2073,7 @@ describe("AgentSession", () => {
   it.effect("reads a background shell's output beside its call until its task ends", () =>
     Effect.gen(function* () {
       const written = new Map<string, string>();
-      const h = harness({
-        taskOutput: (taskId) => answerWith(written.get(taskId) ?? ""),
-      });
+      const h = harness({ taskOutput: (taskId) => answerWith(written.get(taskId) ?? "") });
       const session = yield* openSession().pipe(Effect.provide(h.layer));
       const q = query(h);
       const events: AgentEvent[] = [];
@@ -2409,9 +2185,7 @@ describe("AgentSession", () => {
   it.effect("reads running shells side by side, so a hung read holds up no other", () =>
     Effect.gen(function* () {
       let b2 = "";
-      const h = harness({
-        taskOutput: (taskId) => (taskId === "b1" ? never() : answerWith(b2)),
-      });
+      const h = harness({ taskOutput: (taskId) => (taskId === "b1" ? never() : answerWith(b2)) });
       const session = yield* openSession().pipe(Effect.provide(h.layer));
       const q = query(h);
       const events: AgentEvent[] = [];
@@ -2469,12 +2243,7 @@ describe("AgentSession", () => {
       const h = harness();
       const session = yield* openSession().pipe(Effect.provide(h.layer));
       const q = query(h);
-      q.output.push(
-        task("task_started", "moved", {
-          is_backgrounded: false,
-          tool_use_id: "t1",
-        }),
-      );
+      q.output.push(task("task_started", "moved", { is_backgrounded: false, tool_use_id: "t1" }));
       q.output.push(listed("moved"));
       for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
 
@@ -2500,18 +2269,15 @@ describe("AgentSession", () => {
   it.effect("sends the reasoning variant as effort on open, omitting none", () =>
     Effect.gen(function* () {
       const high = harness();
-      yield* openSession({
-        model: { agent: "claude", model: "opus", variant: "high" },
-      }).pipe(Effect.provide(high.layer));
-      expect(query(high).options).toMatchObject({
-        model: "opus",
-        effort: "high",
-      });
+      yield* openSession({ model: { agent: "claude", model: "opus", variant: "high" } }).pipe(
+        Effect.provide(high.layer),
+      );
+      expect(query(high).options).toMatchObject({ model: "opus", effort: "high" });
 
       const none = harness();
-      yield* openSession({
-        model: { agent: "claude", model: "opus", variant: "none" },
-      }).pipe(Effect.provide(none.layer));
+      yield* openSession({ model: { agent: "claude", model: "opus", variant: "none" } }).pipe(
+        Effect.provide(none.layer),
+      );
       expect(query(none).options).not.toHaveProperty("effort");
     }),
   );
@@ -2522,21 +2288,9 @@ describe("AgentSession", () => {
       const session = yield* openSession({
         model: { agent: "claude", model: "opus", variant: "low" },
       }).pipe(Effect.provide(h.layer));
-      yield* session.setModel({
-        agent: "claude",
-        model: "opus",
-        variant: "low",
-      });
-      yield* session.setModel({
-        agent: "claude",
-        model: "opus",
-        variant: "xhigh",
-      });
-      yield* session.setModel({
-        agent: "claude",
-        model: "sonnet",
-        variant: "none",
-      });
+      yield* session.setModel({ agent: "claude", model: "opus", variant: "low" });
+      yield* session.setModel({ agent: "claude", model: "opus", variant: "xhigh" });
+      yield* session.setModel({ agent: "claude", model: "sonnet", variant: "none" });
       expect(query(h).calls).toEqual([
         "setModel:opus",
         "setModel:opus",
@@ -2567,10 +2321,7 @@ describe("AgentSession", () => {
         message: "The session was closed.",
       });
       const events: ReadonlyArray<AgentEvent> = yield* Stream.runCollect(session.events);
-      expect(events.at(-1)).toEqual({
-        type: "requestResolved",
-        requestId: "req-c",
-      });
+      expect(events.at(-1)).toEqual({ type: "requestResolved", requestId: "req-c" });
     }),
   );
 });
@@ -2611,10 +2362,7 @@ const registry = (calls: Array<string>, tools?: () => ReadonlyArray<AppTool>) =>
   },
 });
 
-const allowed = (input: Record<string, unknown>) => ({
-  behavior: "allow",
-  updatedInput: input,
-});
+const allowed = (input: Record<string, unknown>) => ({ behavior: "allow", updatedInput: input });
 
 /** The session's `PreToolUse` hook, called as the SDK would for `tool_name`. */
 const preToolUse = (q: FakeQuery) => {
@@ -2695,10 +2443,9 @@ describe("app tools bridge", () => {
   it.effect("takes the shell, the network and subagents from a confined session only", () =>
     Effect.gen(function* () {
       const confined = harness();
-      yield* openSession({
-        confineWrites: true,
-        permissionMode: "acceptEdits",
-      }).pipe(Effect.provide(confined.layer));
+      yield* openSession({ confineWrites: true, permissionMode: "acceptEdits" }).pipe(
+        Effect.provide(confined.layer),
+      );
       expect(query(confined).options.disallowedTools).toEqual([...CONFINED_DISALLOWED]);
       expect(CONFINED_DISALLOWED).toEqual(
         expect.arrayContaining(["Bash", "WebFetch", "WebSearch", "Task"]),
@@ -2719,25 +2466,19 @@ describe("app tools bridge", () => {
       // As `buildChildEnv` prepares it: Claude Code's cross-session messaging off.
       const env = { [PEER_MESSAGING_SWITCH]: "0" };
       const worker = harness({ env });
-      yield* openSession({
-        audience: "worker",
-        permissionMode: "bypassPermissions",
-      }).pipe(Effect.provide(worker.layer));
+      yield* openSession({ audience: "worker", permissionMode: "bypassPermissions" }).pipe(
+        Effect.provide(worker.layer),
+      );
       expect(query(worker).options.env?.[PEER_MESSAGING_SWITCH]).toBe("0");
-      expect(query(worker).options.settings).toEqual({
-        crossSessionInbound: "refuse",
-      });
+      expect(query(worker).options.settings).toEqual({ crossSessionInbound: "refuse" });
 
       const permitted = harness({ env });
-      yield* openSession({
-        audience: "orchestrator",
-        peerMessaging: true,
-      }).pipe(Effect.provide(permitted.layer));
+      yield* openSession({ audience: "orchestrator", peerMessaging: true }).pipe(
+        Effect.provide(permitted.layer),
+      );
       expect(query(permitted).options.env).not.toHaveProperty(PEER_MESSAGING_SWITCH);
       // It may send, but nothing comes in past Gram, so a reply never arrives either.
-      expect(query(permitted).options.settings).toEqual({
-        crossSessionInbound: "refuse",
-      });
+      expect(query(permitted).options.settings).toEqual({ crossSessionInbound: "refuse" });
     }).pipe(Effect.scoped),
   );
 
@@ -2787,10 +2528,7 @@ describe("app tools bridge", () => {
       }).pipe(Effect.provide(confined.layer));
       const options = query(confined).options;
       expect(options.strictMcpConfig).toBe(true);
-      expect(options.settings).toEqual({
-        ...REFUSE_PEER_MESSAGES,
-        allowedMcpServers: [],
-      });
+      expect(options.settings).toEqual({ ...REFUSE_PEER_MESSAGES, allowedMcpServers: [] });
       expect(options.env?.["ENABLE_CLAUDEAI_MCP_SERVERS"]).toBe("false");
       expect(Object.keys(options.mcpServers ?? {})).toEqual(["gram"]);
       expect(CONFINED_MCP.allowedMcpServers).toEqual([]);
@@ -2972,10 +2710,7 @@ describe("app tools bridge", () => {
           ...resume,
         }).pipe(Effect.provide(h.layer));
         const options = query(h).options;
-        expect(options.settings).toEqual({
-          ...REFUSE_PEER_MESSAGES,
-          allowedMcpServers: [],
-        });
+        expect(options.settings).toEqual({ ...REFUSE_PEER_MESSAGES, allowedMcpServers: [] });
         expect(Object.keys(options.mcpServers ?? {})).toEqual([APP_TOOL_SERVER]);
         expect(options).not.toHaveProperty("strictMcpConfig");
         expect(options.env).not.toHaveProperty("ENABLE_CLAUDEAI_MCP_SERVERS");
@@ -3031,11 +2766,7 @@ describe("app tools bridge", () => {
       const [, , bare] = yield* take(session, 3);
       expect(bare).toMatchObject({
         type: "request",
-        request: {
-          kind: "approval",
-          toolName: "set_title",
-          scopes: ["once", "session", "always"],
-        },
+        request: { kind: "approval", toolName: "set_title", scopes: ["once", "session", "always"] },
       });
     }),
   );
@@ -3167,11 +2898,7 @@ describe("ClaudeHost.readSession", () => {
         cwd: "/repo",
         messages: [{ role: "user", text: "Fix the build" }],
       });
-      yield* host.readSession!({
-        cwd: "/repo",
-        agentSessionId: "s-1",
-        limit: 5,
-      });
+      yield* host.readSession!({ cwd: "/repo", agentSessionId: "s-1", limit: 5 });
       expect(calls).toEqual([
         ["s-1", { dir: "/repo", includeSystemMessages: true }],
         ["s-1", { dir: "/repo", includeSystemMessages: true, limit: 5 }],
@@ -3180,25 +2907,16 @@ describe("ClaudeHost.readSession", () => {
       const missing = yield* Effect.flip(
         host.readSession!({ cwd: "/repo", agentSessionId: "s-2" }),
       );
-      expect(missing).toMatchObject({
-        _tag: "NotFound",
-        entity: "session",
-        id: "s-2",
-      });
+      expect(missing).toMatchObject({ _tag: "NotFound", entity: "session", id: "s-2" });
     }),
   );
 
   it.effect("fails as unavailable when the SDK can't read, and is absent without a reader", () =>
     Effect.gen(function* () {
-      const broken = harness({
-        sessionMessages: () => Promise.reject(new Error("EACCES")),
-      });
+      const broken = harness({ sessionMessages: () => Promise.reject(new Error("EACCES")) });
       const host = yield* ClaudeHost.pipe(Effect.provide(broken.layer));
       const error = yield* Effect.flip(host.readSession!({ cwd: "/repo", agentSessionId: "s-1" }));
-      expect(error).toMatchObject({
-        _tag: "AgentUnavailable",
-        agent: "claude",
-      });
+      expect(error).toMatchObject({ _tag: "AgentUnavailable", agent: "claude" });
       const bare = yield* ClaudeHost.pipe(Effect.provide(harness().layer));
       expect(bare.readSession).toBeUndefined();
     }),
@@ -3316,9 +3034,7 @@ describe("nextLapsedConnectors", () => {
       scope: "claudeai",
       error_code: CLAUDEAI_BEARER_REJECTED,
     } as McpServerStatus;
-    expect(seenServer(status)).toMatchObject({
-      errorCode: CLAUDEAI_BEARER_REJECTED,
-    });
+    expect(seenServer(status)).toMatchObject({ errorCode: CLAUDEAI_BEARER_REJECTED });
   });
 });
 
@@ -3339,10 +3055,7 @@ describe("makeConnectors", () => {
           );
         },
       };
-      const connectors = makeConnectors(blocked, {
-        audience: "orchestrator",
-        mcpAllowlist: [],
-      });
+      const connectors = makeConnectors(blocked, { audience: "orchestrator", mcpAllowlist: [] });
       const teams = yield* Effect.flip(connectors.reconnect("teams"));
       expect(teams.message).toContain(
         "Gram's orchestrator connector allowlist doesn't include teams",
@@ -3355,10 +3068,7 @@ describe("makeConnectors", () => {
       expect(teams.message).not.toContain("enterprise managed policy");
       expect(calls).toEqual(["reconnect:teams", "reconnect:claude.ai Notes"]);
 
-      const confined = makeConnectors(blocked, {
-        confineWrites: true,
-        mcpAllowlist: ["teams"],
-      });
+      const confined = makeConnectors(blocked, { confineWrites: true, mcpAllowlist: ["teams"] });
       expect((yield* Effect.flip(confined.reconnect("teams"))).message).toContain(
         "confined session",
       );
@@ -3371,17 +3081,11 @@ describe("makeConnectors", () => {
       );
 
       // A worker's lists are its workspace's, which reopen the session by themselves.
-      const worker = makeConnectors(blocked, {
-        audience: "worker",
-        mcpAllowlist: ["parse"],
-      });
+      const worker = makeConnectors(blocked, { audience: "worker", mcpAllowlist: ["parse"] });
       const workerTeams = (yield* Effect.flip(worker.reconnect("teams"))).message;
       expect(workerTeams).toContain("workspace connector allowlist doesn't include teams");
       expect(workerTeams).toContain("picks the change up once it is idle");
-      const denied = makeConnectors(blocked, {
-        audience: "worker",
-        mcpDenylist: ["teams"],
-      });
+      const denied = makeConnectors(blocked, { audience: "worker", mcpDenylist: ["teams"] });
       expect((yield* Effect.flip(denied.reconnect("teams"))).message).toContain(
         "This workspace's connectors leave out teams",
       );
@@ -3397,11 +3101,7 @@ describe("makeConnectors", () => {
       );
       const lean = makeConnectors(
         blocked,
-        {
-          audience: "orchestrator",
-          mcpNoneWithoutToolSearch: true,
-          mcpAllowlist: [],
-        },
+        { audience: "orchestrator", mcpNoneWithoutToolSearch: true, mcpAllowlist: [] },
         { noToolSearch: true },
       );
       const leanTeams = (yield* Effect.flip(lean.reconnect("teams"))).message;
@@ -3425,10 +3125,7 @@ describe("makeConnectors", () => {
         "MCP server teams is blocked by enterprise managed policy",
         "Connection timed out",
       ]) {
-        const blocked = {
-          ...q,
-          reconnectMcpServer: () => Promise.reject(new Error(message)),
-        };
+        const blocked = { ...q, reconnectMcpServer: () => Promise.reject(new Error(message)) };
         for (const policy of [{}, { mcpAllowlist: ["teams"] }]) {
           expect(
             (yield* Effect.flip(makeConnectors(blocked, policy).reconnect("teams"))).message,
@@ -3452,11 +3149,7 @@ describe("makeConnectors", () => {
         callbackExpected: true,
         callbackPort: 53111,
       };
-      const sentry: McpServerStatus = {
-        name: "sentry",
-        status: "needs-auth",
-        scope: "user",
-      };
+      const sentry: McpServerStatus = { name: "sentry", status: "needs-auth", scope: "user" };
       const { q, calls } = fakeQuery([sentry], () => Promise.resolve(page));
       const connectors = makeConnectors(q);
       expect(yield* connectors.status).toEqual([
@@ -3483,10 +3176,7 @@ describe("makeConnectors", () => {
       const connectors = makeConnectors(q);
       expect(yield* connectors.authenticate!("sentry")).toBe("started");
       const notWeb = yield* Effect.flip(connectors.authenticate!("sentry"));
-      expect(notWeb).toMatchObject({
-        _tag: "AgentUnavailable",
-        agent: "claude",
-      });
+      expect(notWeb).toMatchObject({ _tag: "AgentUnavailable", agent: "claude" });
       expect(notWeb.message).toContain("isn't a web address");
       const garbled = yield* Effect.flip(connectors.authenticate!("sentry"));
       expect(garbled.message).toContain("its answer wasn't a sign-in page");
@@ -3514,16 +3204,8 @@ describe("makeConnectors", () => {
         requiresUserAction: true,
         callbackExpected: false,
       };
-      const linear: McpServerStatus = {
-        name: "linear",
-        status: "needs-auth",
-        scope: "claudeai",
-      };
-      const refused: McpServerStatus = {
-        ...linear,
-        status: "failed",
-        error: "HTTP 401",
-      };
+      const linear: McpServerStatus = { name: "linear", status: "needs-auth", scope: "claudeai" };
+      const refused: McpServerStatus = { ...linear, status: "failed", error: "HTTP 401" };
       const { q, calls, servers } = fakeQuery([linear], () => Promise.resolve(page));
       const connectors = makeConnectors(q);
       yield* connectors.authenticate!("linear");
@@ -3561,15 +3243,8 @@ describe("makeConnectors", () => {
           id: "mcpsrv_1",
         },
         tools: [
-          {
-            name: "search",
-            description: "Search",
-            annotations: { readOnly: true },
-          },
-          {
-            name: "purge",
-            annotations: { destructive: true, readOnly: false },
-          },
+          { name: "search", description: "Search", annotations: { readOnly: true } },
+          { name: "purge", annotations: { destructive: true, readOnly: false } },
           { name: "plain", _meta: { ui: { resourceUri: "ui://x" } } },
         ],
       } satisfies McpServerStatus;
@@ -3591,11 +3266,7 @@ describe("makeConnectors", () => {
         name: "claude.ai Teams",
         status: "needs-auth",
         scope: "claudeai",
-        config: {
-          type: "claudeai-proxy",
-          url: "https://teams.example/mcp",
-          id: "mcpsrv_3",
-        },
+        config: { type: "claudeai-proxy", url: "https://teams.example/mcp", id: "mcpsrv_3" },
         error_code: "CLAUDEAI_BEARER_REJECTED",
       } as McpServerStatus;
       const local: McpServerStatus = {
@@ -3621,22 +3292,14 @@ describe("makeConnectors", () => {
       });
       expect(policy).toMatchObject({
         url: "https://gmail.example/mcp?key=••••",
-        claudeAi: {
-          id: "mcpsrv_2",
-          blocked: "Not allowed for your seat",
-          orgManaged: true,
-        },
+        claudeAi: { id: "mcpsrv_2", blocked: "Not allowed for your seat", orgManaged: true },
       });
       // A connector sign-in can't fix Claude's own, so it isn't offered.
       expect(signIn).toMatchObject({
         claudeAi: { claudeSignInRejected: true },
         signInUnavailable: CLAUDE_SIGN_IN_AGAIN,
       });
-      expect(stdio).toEqual({
-        name: "files",
-        status: "connected",
-        scope: "local",
-      });
+      expect(stdio).toEqual({ name: "files", status: "connected", scope: "local" });
       expect(makeConnectors(q)).not.toHaveProperty("claudeAiUnavailable");
       expect(makeConnectors(q, {}, { gateway: true }).claudeAiUnavailable).toBe(
         GATEWAY_CLAUDE_AI_NOTE,
@@ -3718,10 +3381,7 @@ describe("Claude subscription limits", () => {
   );
   it.effect("closes a timed-out metadata query", () =>
     Effect.gen(function* () {
-      const h = harness({
-        config: { startupTimeoutMs: 1000 },
-        usage: () => new Promise(() => {}),
-      });
+      const h = harness({ config: { startupTimeoutMs: 1000 }, usage: () => new Promise(() => {}) });
       const host = yield* ClaudeHost.pipe(Effect.provide(h.layer));
       const fiber = yield* Effect.flip(host.readSubscriptionLimits!).pipe(Effect.forkScoped);
       yield* TestClock.adjust(1001);

@@ -76,14 +76,8 @@ describe("host protocol", () => {
       yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
       writeFileSync(join(dir, "notes.md"), "# hello host\n");
       const host = yield* connected();
-      expect(host.hello).toMatchObject({
-        protocol: HOST_PROTOCOL_VERSION,
-        pid: 4242,
-      });
-      const listing = yield* host.files.list(dir, {
-        showHidden: false,
-        limit: 10,
-      });
+      expect(host.hello).toMatchObject({ protocol: HOST_PROTOCOL_VERSION, pid: 4242 });
+      const listing = yield* host.files.list(dir, { showHidden: false, limit: 10 });
       expect(listing.entries.map((entry) => entry.name)).toEqual(["notes.md"]);
       const scan = yield* host.scan;
       expect(scan.listening.get(41)).toEqual([5173, 5174]);
@@ -110,9 +104,7 @@ describe("host protocol", () => {
 
   it.effect("refuses a host on another protocol version", () =>
     Effect.gen(function* () {
-      const error = yield* connected({
-        protocol: HOST_PROTOCOL_VERSION + 1,
-      }).pipe(Effect.flip);
+      const error = yield* connected({ protocol: HOST_PROTOCOL_VERSION + 1 }).pipe(Effect.flip);
       expect(error).toMatchObject({ _tag: "HostUnavailable" });
       expect(error.message).toContain(`protocol ${HOST_PROTOCOL_VERSION + 1}`);
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
@@ -143,19 +135,12 @@ describe("host protocol", () => {
         branch: "feature/host",
         openCheckouts: [],
       });
-      expect(created).toMatchObject({
-        reused: false,
-        checkout: { branch: "feature/host" },
-      });
-      const listed = yield* host.worktrees.list(repo, {
-        openCheckouts: [created.checkout.path],
-      });
+      expect(created).toMatchObject({ reused: false, checkout: { branch: "feature/host" } });
+      const listed = yield* host.worktrees.list(repo, { openCheckouts: [created.checkout.path] });
       const entry = listed.worktrees.find((w) => w.branch === "feature/host");
       expect(entry).toMatchObject({ isMain: false, isOpen: true });
       // No `origin` here, so nothing to base on but the current HEAD.
-      expect(yield* host.worktrees.baseBranches(repo)).toMatchObject({
-        branches: [],
-      });
+      expect(yield* host.worktrees.baseBranches(repo)).toMatchObject({ branches: [] });
       const inUse = yield* host.worktrees
         .remove({
           repoPath: repo,
@@ -163,18 +148,10 @@ describe("host protocol", () => {
           openCheckouts: [created.checkout.path],
         })
         .pipe(Effect.flip);
-      expect(inUse).toMatchObject({
-        _tag: "WorktreeError",
-        reason: "conflict",
-        dirty: false,
-      });
+      expect(inUse).toMatchObject({ _tag: "WorktreeError", reason: "conflict", dirty: false });
       write(join(created.checkout.path, "wip.txt"), "uncommitted\n");
       const dirty = yield* host.worktrees
-        .remove({
-          repoPath: repo,
-          worktreeDir: created.checkout.path,
-          openCheckouts: [],
-        })
+        .remove({ repoPath: repo, worktreeDir: created.checkout.path, openCheckouts: [] })
         .pipe(Effect.flip);
       expect(dirty).toMatchObject({ _tag: "WorktreeError", dirty: true });
       expect(yield* host.worktrees.pendingPermissions(repo, created.checkout.path)).toEqual([]);
@@ -226,11 +203,7 @@ describe("host protocol", () => {
       const repo = makeRepo(tmp);
       const host = yield* connected();
       const state = yield* host.git.local(repo);
-      expect(state).toMatchObject({
-        repo: true,
-        branch: "main",
-        changedFiles: 0,
-      });
+      expect(state).toMatchObject({ repo: true, branch: "main", changedFiles: 0 });
       expect(yield* host.git.present(repo)).toBe(true);
       expect(yield* host.git.present(join(tmp, "gone"))).toBe(false);
       const changes = yield* Queue.unbounded<GitStateChange>();
@@ -242,10 +215,7 @@ describe("host protocol", () => {
       expect(initial).toMatchObject({ path: repo, state: { changedFiles: 0 } });
       write(join(repo, "tracked.txt"), "changed\n");
       const edited = yield* Queue.take(changes).pipe(Effect.timeout("20 seconds"));
-      expect(edited).toMatchObject({
-        path: repo,
-        state: { changedFiles: 1, branch: "main" },
-      });
+      expect(edited).toMatchObject({ path: repo, state: { changedFiles: 1, branch: "main" } });
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 });

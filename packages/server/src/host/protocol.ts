@@ -125,19 +125,13 @@ export const scanFromWire = (wire: HostPortScan): PortScan => ({
   children: new Map(wire.children),
   ...(wire.processes === undefined
     ? {}
-    : {
-        processes: new Map(wire.processes.map((row) => [row.pid, row] as const)),
-      }),
+    : { processes: new Map(wire.processes.map((row) => [row.pid, row] as const)) }),
 });
 
 const failureText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const worktreeToWire = (error: WorktreeError) =>
-  new HostWorktreeFailed({
-    reason: error.reason,
-    message: error.message,
-    dirty: error.dirty,
-  });
+  new HostWorktreeFailed({ reason: error.reason, message: error.message, dirty: error.dirty });
 
 const commandToWire = (error: ProcError) =>
   new HostCommandFailed({
@@ -443,9 +437,7 @@ export const HOST_NOT_ANSWERING = "This machine's host isn't answering.";
 const asInvalid = (error: { readonly _tag: string; readonly message?: string }) =>
   error._tag === "HostFailed"
     ? Effect.succeed(
-        new InvalidState({
-          message: `This machine's host couldn't do it: ${error.message ?? ""}`,
-        }),
+        new InvalidState({ message: `This machine's host couldn't do it: ${error.message ?? ""}` }),
       )
     : Effect.logWarning("worker host: a call failed on the stream").pipe(
         Effect.annotateLogs({ reason: failureText(error) }),
@@ -465,20 +457,12 @@ const worktreeFromWire = <E extends { readonly _tag: string; readonly message?: 
 ): Effect.Effect<WorktreeError> =>
   error instanceof HostWorktreeFailed
     ? Effect.succeed(
-        new WorktreeError({
-          reason: error.reason,
-          message: error.message,
-          dirty: error.dirty,
-        }),
+        new WorktreeError({ reason: error.reason, message: error.message, dirty: error.dirty }),
       )
     : Effect.map(
         asInvalid(error),
         (invalid) =>
-          new WorktreeError({
-            reason: "failed",
-            message: invalid.message,
-            dirty: false,
-          }),
+          new WorktreeError({ reason: "failed", message: invalid.message, dirty: false }),
       );
 
 /**
@@ -573,9 +557,7 @@ export const connectHost = (
       );
 
     // Pings every five seconds. No retries: reopening would hand back the same closed stream.
-    const protocol = yield* RpcClient.makeProtocolSocket({
-      retryPolicy: Schedule.recurs(0),
-    }).pipe(
+    const protocol = yield* RpcClient.makeProtocolSocket({ retryPolicy: Schedule.recurs(0) }).pipe(
       Effect.provideService(Socket.Socket, socket),
       Effect.provide(RpcSerialization.layerNdjson),
     );
@@ -672,12 +654,7 @@ export const connectHost = (
           ),
         ),
       pendingPermissions: (repoPath, worktreeDir) =>
-        worktreeCall(
-          client["host.worktrees.pendingPermissions"]({
-            repoPath,
-            worktreeDir,
-          }),
-        ),
+        worktreeCall(client["host.worktrees.pendingPermissions"]({ repoPath, worktreeDir })),
     };
     const git: HostGitConnection = {
       local: (cwd) =>

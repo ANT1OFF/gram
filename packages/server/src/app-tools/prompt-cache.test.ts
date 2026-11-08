@@ -58,10 +58,7 @@ describe("app tool prompt prefix", () => {
     };
     let offered = bindAppTools(source, threadId, gate);
     const server = makeMcpServer(() => offered);
-    const client = new Client({
-      name: "synthetic-prefix-audit",
-      version: "1.0.0",
-    });
+    const client = new Client({ name: "synthetic-prefix-audit", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
@@ -83,18 +80,11 @@ describe("app tool prompt prefix", () => {
         "zeta",
       ]);
       for (const name of ["alpha", "zeta"]) {
-        const result = await client.callTool({
-          name,
-          arguments: { text: "invented input" },
-        });
+        const result = await client.callTool({ name, arguments: { text: "invented input" } });
         expect(result.content).toEqual([
           {
             type: "text",
-            text: JSON.stringify({
-              thread: threadId,
-              name,
-              text: "invented input",
-            }),
+            text: JSON.stringify({ thread: threadId, name, text: "invented input" }),
           },
         ]);
       }
@@ -104,7 +94,6 @@ describe("app tool prompt prefix", () => {
       await server.close();
     }
   });
-
   it("marks the core tools for Claude Code to load up front, as served in-process", async () => {
     const tools = ["set_title", "list_threads"].map((name) =>
       defineAppTool({

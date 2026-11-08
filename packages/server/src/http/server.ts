@@ -112,9 +112,7 @@ import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } fr
 export class LaunchToken extends Context.Service<LaunchToken, { readonly token: string }>()(
   "@gram/server/LaunchToken",
 ) {
-  static readonly layer = Layer.sync(LaunchToken, () => ({
-    token: makeLaunchToken(),
-  }));
+  static readonly layer = Layer.sync(LaunchToken, () => ({ token: makeLaunchToken() }));
 }
 
 export const serverPort = (server: HttpServer.HttpServer["Service"]): number =>
@@ -156,22 +154,16 @@ export const AuthMiddleware = HttpRouter.middleware(
           HttpServerResponse.setHeaders(response, {
             ...securityHeaders,
             ...(isRemote
-              ? {
-                  "content-security-policy": contentSecurityPolicy(port, remote.origin),
-                }
+              ? { "content-security-policy": contentSecurityPolicy(port, remote.origin) }
               : {}),
           });
         if (request.headers["tailscale-funnel-request"] !== undefined)
           return secureResponse(
-            HttpServerResponse.text("forbidden: private access only", {
-              status: 403,
-            }),
+            HttpServerResponse.text("forbidden: private access only", { status: 403 }),
           );
         if (target === undefined || (isRemote && target.searchParams.has("boot")))
           return secureResponse(
-            HttpServerResponse.text("forbidden: request target", {
-              status: 403,
-            }),
+            HttpServerResponse.text("forbidden: request target", { status: 403 }),
           );
         // Remote bootstrap has no app assets and exposes no data. The secret is a fragment.
         if (isRemote && path === REMOTE_CONNECT_PATH && request.method === "GET") {
@@ -234,9 +226,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                   : yield* httpEffect;
             break;
           case "boot":
-            response = yield* HttpServerResponse.redirect("/", {
-              status: 302,
-            }).pipe(
+            response = yield* HttpServerResponse.redirect("/", { status: 302 }).pipe(
               HttpServerResponse.setCookie(tokenCookieName(port), token, {
                 httpOnly: true,
                 sameSite: "strict",
@@ -266,9 +256,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                 }),
                 { ...securityHeaders, "content-security-policy": unpairedCsp },
               );
-            response = HttpServerResponse.text(decision.message, {
-              status: decision.status,
-            });
+            response = HttpServerResponse.text(decision.message, { status: decision.status });
             break;
         }
         return secureResponse(response);
@@ -318,15 +306,11 @@ const StaticRoutes = Layer.unwrap(
       ? HttpRouter.add(
           "GET",
           "/*",
-          HttpServerResponse.text("Gram server: no web root configured", {
-            status: 404,
-          }),
+          HttpServerResponse.text("Gram server: no web root configured", { status: 404 }),
         )
-      : HttpStaticServer.layer({
-          root: webRoot,
-          index: "index.html",
-          spa: true,
-        }).pipe(Layer.provide(GuardedHttpPlatform));
+      : HttpStaticServer.layer({ root: webRoot, index: "index.html", spa: true }).pipe(
+          Layer.provide(GuardedHttpPlatform),
+        );
   }),
 );
 
@@ -339,10 +323,7 @@ export const rpcRoutes = <Rpcs extends Rpc.Any, E, R>(
   group: RpcGroup.RpcGroup<Rpcs>,
   handlers: Layer.Layer<Rpc.ToHandler<Rpcs>, E, R>,
 ) =>
-  RpcServer.layer(group, {
-    disableTracing: true,
-    disableFatalDefects: true,
-  }).pipe(
+  RpcServer.layer(group, { disableTracing: true, disableFatalDefects: true }).pipe(
     Layer.provide(handlers),
     Layer.provide(RpcServer.layerProtocolWebsocket({ path: "/ws" })),
     Layer.provide(RpcSerialization.layerJson),
@@ -486,9 +467,7 @@ export const ServerCore = Layer.unwrap(
 );
 
 // Pinned ws implements closeTimeout; its bundled @types/ws has not declared it yet.
-const websocketOptions: NodeHttpServer.Options["websocket"] & {
-  readonly closeTimeout: number;
-} = {
+const websocketOptions: NodeHttpServer.Options["websocket"] & { readonly closeTimeout: number } = {
   closeTimeout: 1_000,
 };
 

@@ -168,10 +168,7 @@ const otherAllowlists = async (
   userDir: string | undefined,
   sources: ReadonlyArray<SettingSource> | undefined,
 ): Promise<ReadonlyArray<unknown>> => {
-  const files: ReadonlyArray<{
-    readonly source: SettingSource;
-    readonly path: string;
-  }> = [
+  const files: ReadonlyArray<{ readonly source: SettingSource; readonly path: string }> = [
     ...(userDir === undefined
       ? []
       : [{ source: "user" as const, path: join(userDir, "settings.json") }]),
@@ -384,10 +381,7 @@ const PEER_DENIED = {
   },
 };
 
-const CANCELLED: PermissionResult = {
-  behavior: "deny",
-  message: "The request was cancelled.",
-};
+const CANCELLED: PermissionResult = { behavior: "deny", message: "The request was cancelled." };
 
 /** Why a call is refused while the tool gate is closed (`AgentSession.closeToolGate`). */
 export const TOOL_GATE_REASON = PAUSE_STOP_TEXT;
@@ -660,10 +654,7 @@ export const makeClaudeHost = (
           o.model.profileId === undefined ? yield* listModels : [],
         );
         if (problem !== undefined)
-          return yield* new AgentUnavailable({
-            agent: "claude",
-            message: problem,
-          });
+          return yield* new AgentUnavailable({ agent: "claude", message: problem });
       }
       const reportSpeed = (report: {
         fast_mode_state?: string;
@@ -682,13 +673,9 @@ export const makeClaudeHost = (
                   ? "standard"
                   : "unknown",
             ...(report.fast_mode_disabled_reason !== undefined
-              ? {
-                  detail: `Claude Fast unavailable: ${report.fast_mode_disabled_reason}`,
-                }
+              ? { detail: `Claude Fast unavailable: ${report.fast_mode_disabled_reason}` }
               : state === "cooldown"
-                ? {
-                    detail: "Claude Fast is cooling down; requests use Standard.",
-                  }
+                ? { detail: "Claude Fast is cooling down; requests use Standard." }
                 : {}),
           },
         });
@@ -829,11 +816,7 @@ export const makeClaudeHost = (
               behavior: "deny",
               message: "Dream may use only its bounded file bridge",
             });
-          if (closed)
-            return resolve({
-              behavior: "deny",
-              message: "The session was closed.",
-            });
+          if (closed) return resolve({ behavior: "deny", message: "The session was closed." });
           const request = toPendingRequest(
             toolName,
             toolInput,
@@ -966,11 +949,7 @@ export const makeClaudeHost = (
         ...(o.resumeId === undefined
           ? { sessionId: agentSessionId }
           : o.fork === true
-            ? {
-                resume: o.resumeId,
-                forkSession: true,
-                sessionId: agentSessionId,
-              }
+            ? { resume: o.resumeId, forkSession: true, sessionId: agentSessionId }
             : { resume: o.resumeId }),
         ...(o.resumeId !== undefined && o.resumeAt !== undefined
           ? { resumeSessionAt: o.resumeAt }
@@ -1042,10 +1021,7 @@ export const makeClaudeHost = (
           Effect.gen(function* () {
             closed = true;
             for (const p of pending.values()) {
-              p.settle({
-                behavior: "deny",
-                message: "The session was closed.",
-              });
+              p.settle({ behavior: "deny", message: "The session was closed." });
             }
             input.end();
             yield* stopCli(query);
@@ -1584,9 +1560,7 @@ export const makeClaudeHost = (
         },
         addDirectories: (paths) =>
           Effect.tryPromise(() =>
-            q.applyFlagSettings({
-              permissions: { additionalDirectories: [...paths] },
-            }),
+            q.applyFlagSettings({ permissions: { additionalDirectories: [...paths] } }),
           ).pipe(
             Effect.as(true),
             Effect.orElseSucceed(() => false),
@@ -1757,9 +1731,7 @@ export const makeClaudeHost = (
           ),
           (q) =>
             Effect.tryPromise(() =>
-              q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({
-                skipBehaviors: true,
-              }),
+              q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }),
             ),
           (q) => Effect.sync(() => q.close()),
         ).pipe(

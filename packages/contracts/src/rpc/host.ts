@@ -265,11 +265,7 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.hello", { success: HostHello }),
   /** A folder's entries for the Files panel. */
   Rpc.make("host.files.list", {
-    payload: {
-      path: Schema.String,
-      showHidden: Schema.Boolean,
-      limit: PositiveInt,
-    },
+    payload: { path: Schema.String, showHidden: Schema.Boolean, limit: PositiveInt },
     success: FsListing,
     error: listErrors,
   }),
@@ -356,10 +352,7 @@ export const HostRpcs = RpcGroup.make(
     error: commandErrors,
   }),
   /** Whether a checkout's folder is there; false only when it is definitely gone. */
-  Rpc.make("host.git.present", {
-    payload: { cwd: Schema.String },
-    success: Schema.Boolean,
-  }),
+  Rpc.make("host.git.present", { payload: { cwd: Schema.String }, success: Schema.Boolean }),
   /** Each checkout's git state as it changes, until the caller stops listening. */
   Rpc.make("host.git.watch", {
     payload: {
@@ -420,7 +413,6 @@ export const HostRpcs = RpcGroup.make(
   }),
   /** Threads' shells as they start and end, until the caller stops listening. */
   Rpc.make("host.terminals.roots", { success: HostTerminalRoot, stream: true }),
-
   /**
    * Opens an agent session on the host under the control plane's `handle`. A close for the handle
    * that comes first, or while it opens, leaves the session closed.
