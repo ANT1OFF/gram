@@ -29,6 +29,7 @@ import {
   hasWatch,
   LISTED_LOCAL_EVERY,
   localEvery,
+  SHOWN_LIVE_LOCAL_EVERY,
   sweepTier,
 } from "./publisher.ts";
 import { makeRepo, removeDir, tempDir } from "./test-repo.ts";
@@ -809,6 +810,13 @@ describe("localEvery", () => {
     expect(localEvery("shown")).toBe(1);
     expect(localEvery("listed")).toBe(LISTED_LOCAL_EVERY);
     expect(localEvery("hidden")).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("reads a shown checkout native watches cover only now and then", () => {
+    expect(localEvery("focused", true)).toBe(SHOWN_LIVE_LOCAL_EVERY);
+    expect(localEvery("shown", true)).toBe(SHOWN_LIVE_LOCAL_EVERY);
+    expect(localEvery("listed", true)).toBe(LISTED_LOCAL_EVERY);
+    expect(localEvery("hidden", true)).toBe(Number.POSITIVE_INFINITY);
   });
 });
 

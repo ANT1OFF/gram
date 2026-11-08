@@ -70,7 +70,10 @@ const start = Effect.gen(function* () {
     Stream.runForEach((change) => Queue.offer(changes, change)),
     Effect.forkScoped,
   );
-  expect((yield* Queue.take(changes)).state).toMatchObject({ head: "initial", changedFiles: 0 });
+  const initial = yield* Queue.take(changes);
+  expect(initial.state).toMatchObject({ head: "initial", changedFiles: 0 });
+  // Its first change; the mocked native watch subscribed both its roots.
+  expect(initial).toMatchObject({ seq: 1, live: true });
   return { changes, fiber };
 });
 const latest = (changes: Queue.Queue<GitStateChange>) =>
