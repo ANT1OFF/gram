@@ -56,6 +56,23 @@ export const BEFORE_HANDOFF =
 export const RESERVED_REWIND =
   "the thread is closing or its worktree is being cleaned up; rewind it after";
 
+/**
+ * The thread's last message that `keep` keeps, read from the end in growing windows: what it skips
+ * (unsent launches, restart markers) is a few messages, and a fork can copy a history of thousands.
+ */
+const lastMessageWhere = (
+  store: ThreadStoreShape,
+  threadId: ThreadId,
+  keep: (message: GramUIMessage) => boolean,
+) =>
+  Effect.gen(function* () {
+    for (let window = 16; ; window *= 8) {
+      const tail = yield* store.lastMessages(threadId, window);
+      const found = tail.findLast(keep);
+      if (found !== undefined || tail.length < window) return found;
+    }
+  });
+
 /** What resume planning reads: the thread's stored history. */
 export interface ResumePlansDeps {
   readonly store: ThreadStoreShape;
@@ -90,10 +107,13 @@ export const makeResumePlans = ({ store }: ResumePlansDeps) => {
       // A launch the agent hasn't had yet, as a reopen before its session ever ran it leaves, is in
       // the feed under its queue item's id; the source session has no such message.
       const unsent = new Set<string>((yield* store.listQueue(thread.id)).map((item) => item.id));
-      const messages = (yield* store.listMessages(thread.id)).filter((m) => !unsent.has(m.id));
       const anchor =
         resumeAt ??
-        messages.findLast((m) => !isRestartMarker(m))?.metadata?.agentMessageIds?.at(-1);
+        (yield* lastMessageWhere(
+          store,
+          thread.id,
+          (m) => !unsent.has(m.id) && !isRestartMarker(m),
+        ))?.metadata?.agentMessageIds?.at(-1);
       // A fork runs in its source session's home.
       const options: ResumeOptions =
         anchor === undefined

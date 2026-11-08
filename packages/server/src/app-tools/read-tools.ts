@@ -379,7 +379,8 @@ export const ReadAppToolsLive = Layer.effectDiscard(
           const cwd = effectiveCheckout(thread).path;
           const all = yield* store.listTurns(threadId);
           const turns = all.slice(-clamp(limit, 1, 100));
-          const messages = yield* store.listMessages(threadId);
+          // Only prompts are named; a long thread's replies are most of its history.
+          const messages = yield* store.listUserMessages(threadId);
           const top = (yield* folderExists(cwd))
             ? yield* provideGit(tryRepoTop(cwd)).pipe(Effect.orElseSucceed(() => undefined))
             : undefined;
