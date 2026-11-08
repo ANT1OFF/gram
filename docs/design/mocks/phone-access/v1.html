@@ -188,7 +188,9 @@
                       <div class="pa-row">
                         <div class="text">
                           <span class="label">Phone access</span>
-                          <span class="sub">On through Tailscale Serve. Only your tailnet can reach it.</span>
+                          <span class="sub"
+                            >On through Tailscale Serve. Only your tailnet can reach it.</span
+                          >
                         </div>
                         <input
                           class="switch"
@@ -211,7 +213,11 @@
                       <div class="pa-group-title">
                         Paired
                         <span class="meta">3 of 8</span>
-                        <button class="btn sm primary" type="button" data-goto="Pair a phone@waiting">
+                        <button
+                          class="btn sm primary"
+                          type="button"
+                          data-goto="Pair a phone@waiting"
+                        >
                           <i data-icon="plus"></i>Pair a phone
                         </button>
                       </div>
@@ -260,8 +266,8 @@
                           <span class="sub"
                             >Off. Turning it on serves Gram at
                             <span class="pa-address">https://[mac-name].[tailnet].ts.net:9443</span>
-                            to your tailnet only. Gram adds its own Serve listener and leaves
-                            any others alone.</span
+                            to your tailnet only. Gram adds its own Serve listener and leaves any
+                            others alone.</span
                           >
                         </div>
                         <button class="btn primary" type="button">Turn on</button>
@@ -295,8 +301,8 @@
                         </div>
                       </div>
                       <span class="small subtle"
-                        >Paired browsers stay paired while access is off, and can't connect until
-                        it is back on.</span
+                        >Paired browsers stay paired while access is off, and can't connect until it
+                        is back on.</span
                       >
                     </div>
 
@@ -311,7 +317,9 @@
                           tailnet, then come back here.</span
                         >
                       </div>
-                      <button class="btn sm" type="button"><i data-icon="refresh"></i>Check again</button>
+                      <button class="btn sm" type="button">
+                        <i data-icon="refresh"></i>Check again
+                      </button>
                     </div>
                     <div class="pa-group" data-when="no-tailscale">
                       <div class="pa-row">
@@ -428,8 +436,8 @@
                   <div class="callout info">
                     <i data-icon="shield"></i>
                     <span class="small"
-                      >Until it is used, this link lets any browser that opens it control Gram.
-                      Send it only to your own phone, never to a shared chat.</span
+                      >Until it is used, this link lets any browser that opens it control Gram. Send
+                      it only to your own phone, never to a shared chat.</span
                     >
                   </div>
                   <div class="dialog-actions">
@@ -443,9 +451,7 @@
                     <i data-icon="okcircle"></i>
                     <strong>iPhone · Safari is paired</strong>
                   </div>
-                  <span class="muted"
-                    >It's on the list now. Remove it there to sign it out.</span
-                  >
+                  <span class="muted">It's on the list now. Remove it there to sign it out.</span>
                   <div class="dialog-actions">
                     <button class="btn primary" type="button">Done</button>
                   </div>
@@ -495,8 +501,8 @@
               <div class="dialog" role="alertdialog" aria-labelledby="remove-title">
                 <h3 id="remove-title" style="margin: 0">Remove iPhone · Safari?</h3>
                 <span class="muted"
-                  >It's signed out at once, and any Gram tab open on it disconnects. Pair it
-                  again to use it.</span
+                  >It's signed out at once, and any Gram tab open on it disconnects. Pair it again
+                  to use it.</span
                 >
                 <div class="dialog-actions">
                   <button class="btn ghost" type="button">Cancel</button>
