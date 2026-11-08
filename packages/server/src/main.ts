@@ -32,6 +32,7 @@ import { ServerLog, serverLogLayer } from "./logging/service.ts";
 import { ThreadStore } from "./persistence/thread-store.ts";
 import { sealForUpdate } from "./persistence/update-seal.ts";
 import { OpenerLive } from "./platform/opener.ts";
+import { TailscaleLive } from "./http/remote-control.ts";
 import { HttpServer } from "./platform/unstable.ts";
 import { AgentHosts } from "./runtime/agent-hosts.ts";
 import {
@@ -294,6 +295,8 @@ program.pipe(
         ),
       ),
       Layer.provideMerge(LogLive),
+      // Phone access turned on from Settings adds Gram's own Tailscale Serve listener.
+      Layer.provide(TailscaleLive),
       // Under the shell, so a forced quit spares the editors and file managers it opened.
       Layer.provide(
         OpenerLive((pid) => {

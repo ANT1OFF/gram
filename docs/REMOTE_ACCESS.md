@@ -4,17 +4,46 @@
 
 Gram can serve its web app through Tailscale Serve to a browser on your own phone. It is the same
 server, database, threads and agent processes as the desktop app, with the desktop layout; there
-is no native mobile app. Remote access is off unless `GRAM_REMOTE_ORIGIN` is set.
+is no native mobile app. Remote access is off until it is turned on from phone access settings
+(the local `/remote/enable` endpoint below) or `GRAM_REMOTE_ORIGIN` is set; the variable wins.
 
 ## Trust and authentication
 
-The server always listens on `127.0.0.1`. `GRAM_REMOTE_ORIGIN` allows exactly one
+The server always listens on `127.0.0.1`. Either way it accepts exactly one remote origin.
+`GRAM_REMOTE_ORIGIN` allows exactly one
 canonical `https://device.tailnet.ts.net` origin, optionally with a port. It must
 have no trailing slash, path, query, credentials, fragment, wildcard, uppercase or
 explicit default port. Invalid configuration stops startup; absent means off.
 The name is configuration, not proof of private transport: use only tailnet-only
 HTTPS Serve, never Funnel, a public proxy or a LAN listener. Restrict your tailnet
 policy to your intended devices/users before enabling it.
+
+### Turned on from settings
+
+Without `GRAM_REMOTE_ORIGIN`, the local app switches access through the Tailscale CLI
+(`tailscale` on PATH, Homebrew's, or the one inside the Mac app), never through a shell:
+
+- `tailscale status --json` must report the backend running, this machine's `.ts.net` name and
+  an HTTPS certificate domain for it. Otherwise turning on is refused with what to do: install
+  Tailscale, sign in, connect, or turn on HTTPS certificates for the tailnet.
+- Gram adds only its own HTTPS listener, `tailscale serve --bg --https=<port>
+  http://127.0.0.1:<loopback port>`, on the port asked for or the first of 9443, 9444, 9445,
+  9446 and 8443 that `tailscale serve status --json` shows free. A port that another listener
+  holds, or that Funnel shares, is refused. Gram never runs Funnel, `serve reset`, or anything
+  that touches another listener.
+- The setting is `<dataDir>/remote-access/serve.json` (`version`, `enabled`, `port`, `target`), private
+  like the pairings. The origin is `https://<name>.ts.net:<port>` (no port for 443).
+- Each launch gets a new loopback port, so Gram removes its listener when the server stops and
+  adds it back, pointed at the new port, when it starts. A crash leaves a listener pointing at a
+  dead loopback port until the next start re-points it; another program that later takes that
+  port would be reachable from the tailnet meanwhile, so turn access off before uninstalling.
+  Gram saves the exact target it points its listener at before asking Tailscale, and only a listener with that one `/` proxy and no other handler counts as Gram's; startup re-points only that one, and anything else on the saved port leaves access off with a problem the status reports.
+- Turning off removes that listener (only while it is still Gram's alone), even when saving the setting fails, closes every open
+  remote connection and keeps the pairings. The remote cookie is named after the Serve port, so
+  pairings survive restarts on a new loopback port.
+
+With `GRAM_REMOTE_ORIGIN` set, Serve stays the user's to configure, as below, and turning on or
+off is refused with a message naming the variable. Listing and removing browsers still work.
 
 Host and Origin checks remain in front of authentication. Forwarded host/protocol
 and Tailscale identity headers grant no trust. Forwarding headers refuse local
@@ -41,7 +70,8 @@ join the shared protected-path registry; do not add literal-path guards independ
 
 An already authenticated **local** browser can POST `/remote/pair` with its allowed
 local Origin. The response is `{ url, expiresAt }`, where `expiresAt` is Unix
-milliseconds. A new invitation replaces the previous outstanding one. Each link
+milliseconds. With eight browsers paired it answers 409 `{ reason: "full", max: 8 }`
+instead of minting a link. A new invitation replaces the previous outstanding one. Each link
 has 256 random bits, lasts 15 minutes and can be consumed once, including concurrent
 claims. Its secret is in `/remote/connect#pair=…`, never in an HTTP request URL.
 The self-contained bridge removes the fragment using `history.replaceState`
@@ -76,13 +106,32 @@ different owners. A different port and the cookie-name suffix do not isolate a
 compromised sibling service. Removing a browser cookie logs that browser out but
 does not revoke a copied cookie.
 
-To revoke every paired browser, normally stop Gram and verify the owning server
-and its descendants have exited, closing all upgraded WebSocket connections.
-Back up the whole data directory, remove only `<dataDir>/remote-access/`, then
-restart and pair again. Never reset storage while a server is running. There is
-no online or per-device revoke endpoint. Disabling
-`GRAM_REMOTE_ORIGIN` stops remote access but does not delete saved pairings;
-perform this offline reset before re-enabling if access must stay revoked.
+### Managing access
+
+These endpoints are answered by the authentication middleware itself, are in the
+protected-path registry, and take only POST with an Origin header, so a page on another
+origin can neither read nor forge them. Request bodies are JSON of at most 256 bytes.
+
+| Path                                         | Local app (launch cookie)                        | Paired browser                                           |
+| -------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------- |
+| `/remote/status`                             | The status below                                 | The status without `pairing`, plus `current`, its own id |
+| `/remote/pair`                               | A pairing link, or 409 when full                 | 403                                                      |
+| `/remote/enable` `{ port? }`                 | Turns access on; 409 `{ message }` when refused  | 403                                                      |
+| `/remote/disable`                            | Turns access off; 409 under `GRAM_REMOTE_ORIGIN` | 403                                                      |
+| `/remote/revoke` `{ id }` or `{ all: true }` | Removes that browser, or all of them             | Only `{ id }` of itself, which also expires its cookie   |
+
+The status (`RemoteAccessStatus` in `@gram/contracts`) is the mode (`off`, `on` or `env`),
+what Tailscale reported, the port, the origin while on, the paired browsers, the newest
+pairing link's state (`waiting`, `paired` with the device id, or `expired`) and any problem.
+Each browser has an id (the first 16 hex digits of its session hash), a name such as
+"iPhone · Safari" picked from a fixed list by its user agent at pairing (the user agent itself
+is never stored), when it paired, the hour it was last seen and when it expires.
+
+Removing a browser deletes its session hash at once (in memory first, so it holds even if saving fails; the answer is then a 500 saying it comes back at restart), so its next request gets 401, and closes
+its open WebSocket connections. Removing all does the same for every browser. These need the
+server running; with it stopped you can still back up the data directory and remove only
+`<dataDir>/remote-access/`, then restart and pair again. Never reset storage while a server is
+running. Unsetting `GRAM_REMOTE_ORIGIN` stops remote access but does not delete saved pairings.
 
 ## Set it up
 
@@ -125,7 +174,7 @@ data directory you already use (`GRAM_DATA_DIR`, if you set one).
    and [Serve guide](https://tailscale.com/docs/features/tailscale-serve).
 
 4. From the authenticated **local** Gram window's developer console, create a pairing link
-   with the existing cookie (in development, the Vite proxy forwards only this endpoint):
+   with the existing cookie (in development, the Vite proxy forwards only the local management endpoints):
 
    ```js
    const pairingResponse = await fetch("/remote/pair", {
@@ -160,9 +209,11 @@ applications alone.
 
 ## Tests
 
-`bun run test packages/server/src/http/auth-target.test.ts packages/server/src/http/remote-access.test.ts packages/server/src/http/remote-sessions.test.ts packages/server/src/http/auth.test.ts packages/server/src/http/server.test.ts packages/server/src/config.test.ts`
+`bun run test packages/server/src/http/auth-target.test.ts packages/server/src/http/remote-access.test.ts packages/server/src/http/remote-control.test.ts packages/server/src/http/remote-sessions.test.ts packages/server/src/http/auth.test.ts packages/server/src/http/server.test.ts packages/server/src/config.test.ts`
 checks validation, expiry, replay/races, CSRF/session swapping, header spoofing,
-cookie separation, static assets, MCP refusal and socket upgrades. The socket
+cookie separation, static assets, MCP refusal, socket upgrades, listing and removing
+browsers (including closing a removed browser's open socket), and turning Serve on and
+off against a synthetic Tailscale CLI that holds other listeners. The socket
 regression sends raw case/percent/slash/semicolon aliases through actual HTTP and
 WebSocket routing, plus malformed encodings and noncanonical boot requests.
 

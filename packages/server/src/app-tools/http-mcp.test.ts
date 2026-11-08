@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { tokenCookieName } from "../http/auth.ts";
+import { RemoteControl } from "../http/remote-control.ts";
 import { AuthMiddleware, LaunchToken, serverPort, ServerLayer } from "../http/server.ts";
 import { HttpRouter, HttpServer } from "../platform/unstable.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "../runtime/fake-agent.ts";
@@ -120,6 +121,7 @@ const McpServer = HttpRouter.serve(Layer.mergeAll(McpRoute, AuthMiddleware), {
   Layer.provideMerge(StubRegistry),
   Layer.provideMerge(McpTokens.layer),
   Layer.provideMerge(LaunchToken.layer),
+  Layer.provide(RemoteControl.layer),
   Layer.provideMerge(ServerConfig.layer(TEST_CONFIG)),
   Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })),
   Layer.orDie,
@@ -722,6 +724,7 @@ const productionMcpServer = HttpRouter.serve(Layer.mergeAll(McpRoute, AuthMiddle
   Layer.provideMerge(StubRegistry),
   Layer.provideMerge(McpTokens.layer),
   Layer.provideMerge(LaunchToken.layer),
+  Layer.provide(RemoteControl.layer),
   Layer.provideMerge(ServerConfig.layer(TEST_CONFIG)),
   Layer.provideMerge(
     NodeHttpServer.layer(createServer, {

@@ -8,6 +8,10 @@ const protectedPaths = [
   "/remote/pair",
   "/remote/connect",
   "/remote/claim",
+  "/remote/status",
+  "/remote/enable",
+  "/remote/disable",
+  "/remote/revoke",
 ] as const;
 const protectedRoutes = FindMyWay.make<string>();
 for (const path of protectedPaths) protectedRoutes.all(path, path);
