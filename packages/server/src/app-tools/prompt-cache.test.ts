@@ -33,17 +33,12 @@ describe("app tool prompt prefix", () => {
         })),
       );
     expect(serialized(first)).toBe(serialized(second));
-    expect(first.map((tool) => tool.descriptor.name)).toEqual([
-      "zeta",
-      "alpha",
-    ]);
-    expect(second.map((tool) => tool.descriptor.name)).toEqual([
+    expect(first.map((tool) => tool.descriptor.name)).toEqual(["zeta", "alpha"]);
+    expect(second.map((tool) => tool.descriptor.name)).toEqual(["alpha", "zeta"]);
+    expect(bindAppTools(first, threadId).map((tool) => tool.descriptor.name)).toEqual([
       "alpha",
       "zeta",
     ]);
-    expect(
-      bindAppTools(first, threadId).map((tool) => tool.descriptor.name),
-    ).toEqual(["alpha", "zeta"]);
   });
 
   it("preserves a synthetic warm prefix on MCP re-listing and still gates outward calls", async () => {
@@ -67,8 +62,7 @@ describe("app tool prompt prefix", () => {
       name: "synthetic-prefix-audit",
       version: "1.0.0",
     });
-    const [clientTransport, serverTransport] =
-      InMemoryTransport.createLinkedPair();
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
     try {
@@ -84,9 +78,10 @@ describe("app tool prompt prefix", () => {
         cache_creation_input_tokens: 0,
       });
       expect(after).toBe(before);
-      expect(
-        JSON.parse(after).map((tool: { name: string }) => tool.name),
-      ).toEqual(["alpha", "zeta"]);
+      expect(JSON.parse(after).map((tool: { name: string }) => tool.name)).toEqual([
+        "alpha",
+        "zeta",
+      ]);
       for (const name of ["alpha", "zeta"]) {
         const result = await client.callTool({
           name,
@@ -127,8 +122,7 @@ describe("app tool prompt prefix", () => {
       name: "synthetic-load-audit",
       version: "1.0.0",
     });
-    const [clientTransport, serverTransport] =
-      InMemoryTransport.createLinkedPair();
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
     try {

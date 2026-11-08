@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AgentConnectors,
-  AgentHost,
-  AgentSession,
-  OpenSessionOptions,
-} from "@gram/agents";
+import type { AgentConnectors, AgentHost, AgentSession, OpenSessionOptions } from "@gram/agents";
 import {
   type AgentEvent,
   type AgentKind,
@@ -40,10 +35,7 @@ const EVENT_RESUMES = 3;
  * workspace switch or a wait for a previous child (their proof is the server's own child), a dream
  * (its file bridge is in-process), and app tools with no MCP endpoint to reach them over.
  */
-export const opensOnHost = (
-  agent: AgentKind,
-  options: OpenSessionOptions,
-): boolean =>
+export const opensOnHost = (agent: AgentKind, options: OpenSessionOptions): boolean =>
   agent === "claude" &&
   options.model?.profileId === undefined &&
   options.switchStartup === undefined &&
@@ -54,16 +46,10 @@ export const opensOnHost = (
   (options.appTools === undefined || options.mcp !== undefined);
 
 const defined = <A extends object>(value: A): A =>
-  Object.fromEntries(
-    Object.entries(value).filter(([, v]) => v !== undefined),
-  ) as A;
+  Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as A;
 
 /** The options as the host takes them: data only, the app tools over the MCP endpoint. */
-const openRequest = (
-  handle: string,
-  agent: AgentKind,
-  o: OpenSessionOptions,
-): HostSessionOpen =>
+const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): HostSessionOpen =>
   defined({
     handle,
     agent,
@@ -75,10 +61,7 @@ const openRequest = (
     sessionId: o.sessionId,
     model: o.model,
     permissionMode: o.permissionMode,
-    mcp:
-      o.mcp === undefined
-        ? undefined
-        : { url: o.mcp.url, headers: { ...o.mcp.headers } },
+    mcp: o.mcp === undefined ? undefined : { url: o.mcp.url, headers: { ...o.mcp.headers } },
     additionalDirectories: o.additionalDirectories,
     audience: o.audience,
     instructions: o.instructions,
@@ -112,19 +95,17 @@ const openOnHost = (
     const handle = randomUUID();
     // Added first, so a session whose open was given up on is closed on the host too.
     yield* Effect.addFinalizer(() => host.close(handle));
-    const opened = yield* host
-      .open(openRequest(handle, agent, o))
-      .pipe(
-        Effect.catchTag("HostFailed", (error) =>
-          Effect.fail(
-            new AgentUnavailable({
-              agent,
-              reason: "startup-failed",
-              message: error.message,
-            }),
-          ),
+    const opened = yield* host.open(openRequest(handle, agent, o)).pipe(
+      Effect.catchTag("HostFailed", (error) =>
+        Effect.fail(
+          new AgentUnavailable({
+            agent,
+            reason: "startup-failed",
+            message: error.message,
+          }),
         ),
-      );
+      ),
+    );
     const onSeen = o.onConnectorsSeen;
     if (onSeen !== undefined) {
       yield* host.connectorsSeen(handle).pipe(
@@ -152,9 +133,7 @@ const openOnHost = (
           gone() || resumes >= EVENT_RESUMES
             ? Stream.make(HOST_STOPPED_ENDED)
             : Stream.unwrap(
-                Effect.logWarning(
-                  "worker host: a session's events broke; picking them up",
-                ).pipe(
+                Effect.logWarning("worker host: a session's events broke; picking them up").pipe(
                   Effect.annotateLogs({
                     reason: error.message,
                     after: received,
@@ -171,36 +150,22 @@ const openOnHost = (
         : {
             status: host.connectors
               .status(handle)
-              .pipe(
-                Effect.catchTag("HostFailed", (e) =>
-                  Effect.fail(unavailable(agent, e)),
-                ),
-              ),
+              .pipe(Effect.catchTag("HostFailed", (e) => Effect.fail(unavailable(agent, e)))),
             reconnect: (name) =>
               host.connectors
                 .reconnect(handle, name)
-                .pipe(
-                  Effect.catchTag("HostFailed", (e) =>
-                    Effect.fail(unavailable(agent, e)),
-                  ),
-                ),
+                .pipe(Effect.catchTag("HostFailed", (e) => Effect.fail(unavailable(agent, e)))),
             setEnabled: (name, enabled) =>
               host.connectors
                 .setEnabled(handle, name, enabled)
-                .pipe(
-                  Effect.catchTag("HostFailed", (e) =>
-                    Effect.fail(unavailable(agent, e)),
-                  ),
-                ),
+                .pipe(Effect.catchTag("HostFailed", (e) => Effect.fail(unavailable(agent, e)))),
             ...(opened.connectors.authenticate
               ? {
                   authenticate: (name: string) =>
                     host.connectors
                       .authenticate(handle, name)
                       .pipe(
-                        Effect.catchTag("HostFailed", (e) =>
-                          Effect.fail(unavailable(agent, e)),
-                        ),
+                        Effect.catchTag("HostFailed", (e) => Effect.fail(unavailable(agent, e))),
                       ),
                 }
               : {}),
@@ -218,15 +183,10 @@ const openOnHost = (
     const session: AgentSession = {
       events: Stream.suspend(() => from(0)),
       send: (input, sendOptions) =>
-        host
-          .send(handle, input, sendOptions)
-          .pipe(Effect.catch(logFailed("send"))),
-      steer: (input) =>
-        host.steer(handle, input).pipe(Effect.catch(logFailed("steer"))),
+        host.send(handle, input, sendOptions).pipe(Effect.catch(logFailed("send"))),
+      steer: (input) => host.steer(handle, input).pipe(Effect.catch(logFailed("steer"))),
       // A host that went has no turn left to stop.
-      interrupt: host
-        .interrupt(handle)
-        .pipe(Effect.catchTag("HostFailed", logFailed("interrupt"))),
+      interrupt: host.interrupt(handle).pipe(Effect.catchTag("HostFailed", logFailed("interrupt"))),
       respond: (requestId, answer) =>
         host
           .respond(handle, requestId, answer)
@@ -257,11 +217,7 @@ const openOnHost = (
         ? {
             stopBackgroundTasks: host
               .stopBackgroundTasks(handle)
-              .pipe(
-                Effect.catch((e) =>
-                  Effect.as(logFailed("stopBackgroundTasks")(e), 0),
-                ),
-              ),
+              .pipe(Effect.catch((e) => Effect.as(logFailed("stopBackgroundTasks")(e), 0))),
           }
         : {}),
       ...(opened.stopTask
@@ -269,11 +225,7 @@ const openOnHost = (
             stopTask: (taskId: string) =>
               host
                 .stopTask(handle, taskId)
-                .pipe(
-                  Effect.catch((e) =>
-                    Effect.as(logFailed("stopTask")(e), false),
-                  ),
-                ),
+                .pipe(Effect.catch((e) => Effect.as(logFailed("stopTask")(e), false))),
           }
         : {}),
       ...(opened.addDirectories
@@ -281,11 +233,7 @@ const openOnHost = (
             addDirectories: (paths: ReadonlyArray<string>) =>
               host
                 .addDirectories(handle, paths)
-                .pipe(
-                  Effect.catch((e) =>
-                    Effect.as(logFailed("addDirectories")(e), false),
-                  ),
-                ),
+                .pipe(Effect.catch((e) => Effect.as(logFailed("addDirectories")(e), false))),
           }
         : {}),
       ...(opened.processId
@@ -326,9 +274,7 @@ export const agentHostThroughHost = (
           ? inServer.open(options)
           : openOnHost(host, gone, kind, options).pipe(
               // The host went before the session opened: the server opens it instead.
-              Effect.catch((error) =>
-                gone() ? inServer.open(options) : Effect.fail(error),
-              ),
+              Effect.catch((error) => (gone() ? inServer.open(options) : Effect.fail(error))),
             ),
       ),
     ...(invalidateRuntime === undefined
@@ -347,9 +293,7 @@ export const agentHostThroughHost = (
               reloadConfig(profileId),
               host.reload(
                 kind,
-                profileId === undefined
-                  ? { kind: "config" }
-                  : { kind: "config", profileId },
+                profileId === undefined ? { kind: "config" } : { kind: "config", profileId },
               ),
             ),
         }),
@@ -368,32 +312,25 @@ export const agentHostThroughHost = (
  * `AgentHosts` with Claude's sessions opened in this machine's host process while it runs
  * (`agentHostThroughHost`); the agents as they are when it doesn't.
  */
-export const AgentHostsThroughHost: Layer.Layer<
-  AgentHosts,
-  never,
-  AgentHosts | LocalHostProcess
-> = Layer.effect(
-  AgentHosts,
-  Effect.gen(function* () {
-    const inner = yield* AgentHosts;
-    const connection = (yield* LocalHostProcess).connection;
-    if (connection === undefined) return inner;
-    // One wrapper per agent, so the runtime always holds the same object for it.
-    const wrapped = new WeakMap<AgentHost, AgentHost>();
-    return AgentHosts.of({
-      get: (kind) =>
-        Effect.map(inner.get(kind), (agent) => {
-          if (kind !== "claude") return agent;
-          const known = wrapped.get(agent);
-          if (known !== undefined) return known;
-          const through = agentHostThroughHost(
-            connection.sessions,
-            connection.gone,
-            agent,
-          );
-          wrapped.set(agent, through);
-          return through;
-        }),
-    });
-  }),
-);
+export const AgentHostsThroughHost: Layer.Layer<AgentHosts, never, AgentHosts | LocalHostProcess> =
+  Layer.effect(
+    AgentHosts,
+    Effect.gen(function* () {
+      const inner = yield* AgentHosts;
+      const connection = (yield* LocalHostProcess).connection;
+      if (connection === undefined) return inner;
+      // One wrapper per agent, so the runtime always holds the same object for it.
+      const wrapped = new WeakMap<AgentHost, AgentHost>();
+      return AgentHosts.of({
+        get: (kind) =>
+          Effect.map(inner.get(kind), (agent) => {
+            if (kind !== "claude") return agent;
+            const known = wrapped.get(agent);
+            if (known !== undefined) return known;
+            const through = agentHostThroughHost(connection.sessions, connection.gone, agent);
+            wrapped.set(agent, through);
+            return through;
+          }),
+      });
+    }),
+  );

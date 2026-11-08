@@ -8,21 +8,19 @@ import * as Effect from "effect/Effect";
 export const streamPair = Effect.acquireRelease(
   Effect.promise(
     () =>
-      new Promise<{ host: NetSocket; control: NetSocket; dir: string }>(
-        (resolve, reject) => {
-          const dir = mkdtempSync(join(tmpdir(), "gram-host-protocol-"));
-          const path = join(dir, "s");
-          const server = createServer((host) => {
-            server.close();
-            resolve({ host, control, dir });
-          });
-          server.once("error", reject);
-          let control: NetSocket;
-          server.listen(path, () => {
-            control = connect(path);
-          });
-        },
-      ),
+      new Promise<{ host: NetSocket; control: NetSocket; dir: string }>((resolve, reject) => {
+        const dir = mkdtempSync(join(tmpdir(), "gram-host-protocol-"));
+        const path = join(dir, "s");
+        const server = createServer((host) => {
+          server.close();
+          resolve({ host, control, dir });
+        });
+        server.once("error", reject);
+        let control: NetSocket;
+        server.listen(path, () => {
+          control = connect(path);
+        });
+      }),
   ),
   ({ host, control, dir }) =>
     Effect.sync(() => {

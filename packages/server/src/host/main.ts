@@ -6,11 +6,7 @@ import { Socket as NetSocket } from "node:net";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
-import {
-  AgentUnavailable,
-  HOST_PROTOCOL_VERSION,
-  LOCAL_HOST_ID,
-} from "@gram/contracts";
+import { AgentUnavailable, HOST_PROTOCOL_VERSION, LOCAL_HOST_ID } from "@gram/contracts";
 import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -59,10 +55,7 @@ const HostAgents: Layer.Layer<AgentHosts> =
 const program = Effect.gen(function* () {
   const proc = yield* Proc;
   const socket = yield* NodeSocket.fromDuplex(
-    Effect.sync(
-      () =>
-        new NetSocket({ fd: HOST_STREAM_FD, readable: true, writable: true }),
-    ),
+    Effect.sync(() => new NetSocket({ fd: HOST_STREAM_FD, readable: true, writable: true })),
   );
   yield* serveHost(socket, {
     hello: {
@@ -81,12 +74,7 @@ const program = Effect.gen(function* () {
   });
 }).pipe(
   Effect.scoped,
-  Effect.provide(
-    Layer.mergeAll(
-      WorktreesLive.pipe(Layer.provideMerge(ProcLive)),
-      HostAgents,
-    ),
-  ),
+  Effect.provide(Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)), HostAgents)),
 );
 
 NodeRuntime.runMain(program);

@@ -180,9 +180,7 @@ export const HostSessionOpen = Schema.Struct({
     }),
   ),
   additionalDirectories: Schema.optionalKey(Schema.Array(Schema.String)),
-  audience: Schema.optionalKey(
-    Schema.Literals(["plain", "orchestrator", "worker", "dream"]),
-  ),
+  audience: Schema.optionalKey(Schema.Literals(["plain", "orchestrator", "worker", "dream"])),
   instructions: Schema.optionalKey(Schema.String),
   outwardGate: Schema.optionalKey(
     Schema.Union([Schema.Boolean, Schema.Literals(["all", "irreversible"])]),

@@ -25,9 +25,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 /** The agents a host runs sessions for, by kind. */
-export type HostAgents = (
-  kind: AgentKind,
-) => Effect.Effect<AgentHost, AgentUnavailable>;
+export type HostAgents = (kind: AgentKind) => Effect.Effect<AgentHost, AgentUnavailable>;
 
 /**
  * A machine's agent sessions as its host serves them, each under the handle the control plane
@@ -38,20 +36,14 @@ export interface HostSessionsService {
   readonly open: (
     request: HostSessionOpen,
   ) => Effect.Effect<HostSessionOpened, AgentUnavailable | HostFailed>;
-  readonly events: (
-    handle: string,
-    afterSeq: number,
-  ) => Stream.Stream<SequencedEvent, HostFailed>;
+  readonly events: (handle: string, afterSeq: number) => Stream.Stream<SequencedEvent, HostFailed>;
   readonly ack: (handle: string, seq: number) => Effect.Effect<void>;
   readonly connectorsSeen: (handle: string) => Stream.Stream<ConnectorsSeen>;
   /** The open session under `handle`, for the calls that act on it. */
   readonly session: (handle: string) => Effect.Effect<AgentSession, HostFailed>;
   /** Ends the session and waits for its agent to stop; a handle not yet open stays closed. */
   readonly close: (handle: string) => Effect.Effect<void>;
-  readonly reload: (
-    agent: AgentKind,
-    reload: HostAgentReload,
-  ) => Effect.Effect<void>;
+  readonly reload: (agent: AgentKind, reload: HostAgentReload) => Effect.Effect<void>;
 }
 
 type Entry =
@@ -75,8 +67,7 @@ type Entry =
 /** How many handles closed before their open arrived are remembered. */
 const CLOSED_EARLY_KEPT = 256;
 
-const noSession = (handle: string) =>
-  new HostFailed({ message: `No agent session ${handle}.` });
+const noSession = (handle: string) => new HostFailed({ message: `No agent session ${handle}.` });
 
 /** The request as the agent's own options. Its app tools come over `mcp`, never in-process. */
 const optionsFor = (
@@ -86,9 +77,7 @@ const optionsFor = (
   const { handle: _handle, agent: _agent, mcp, ...rest } = request;
   return {
     ...rest,
-    ...(mcp === undefined
-      ? {}
-      : { mcp: { url: mcp.url, headers: mcp.headers } }),
+    ...(mcp === undefined ? {} : { mcp: { url: mcp.url, headers: mcp.headers } }),
     onConnectorsSeen,
   };
 };
@@ -155,98 +144,92 @@ export const sessionsOnHost = (
     const openEntry = (handle: string) =>
       Effect.suspend(() => {
         const entry = entries.get(handle);
-        return entry?.state === "open"
-          ? Effect.succeed(entry)
-          : Effect.fail(noSession(handle));
+        return entry?.state === "open" ? Effect.succeed(entry) : Effect.fail(noSession(handle));
       });
 
     const open: HostSessionsService["open"] = (request) =>
-      Effect.suspend(
-        (): Effect.Effect<HostSessionOpened, AgentUnavailable | HostFailed> => {
-          const handle = request.handle;
-          if (closedEarly.delete(handle))
-            return Effect.fail(
-              new AgentUnavailable({
-                agent: request.agent,
-                message: "The session was closed.",
-              }),
-            );
-          if (entries.has(handle))
-            return Effect.fail(
-              new HostFailed({
-                message: `Agent session ${handle} is already open.`,
-              }),
-            );
-          return Effect.gen(function* () {
-            const scope = yield* Scope.fork(root);
-            const entry: Entry = { state: "opening", scope };
-            // Taken before the first wait, so a close that comes in meanwhile finds it.
-            entries.set(handle, entry);
-            const changes = yield* PubSub.unbounded<ConnectorsSeen>();
-            const seen: {
-              last?: ConnectorsSeen;
-              readonly changes: PubSub.PubSub<ConnectorsSeen>;
-            } = {
-              changes,
-            };
-            const fiber = yield* agents(request.agent).pipe(
-              Effect.flatMap((host) =>
-                host.open(
-                  optionsFor(request, (report) => {
-                    seen.last = report;
-                    PubSub.publishUnsafe(changes, report);
-                  }),
-                ),
-              ),
-              Effect.flatMap((session) =>
-                Effect.map(sequenceEvents(session.events), (log) => ({
-                  session,
-                  log,
-                })),
-              ),
-              Scope.provide(scope),
-              Effect.forkIn(root),
-            );
-            entry.fiber = fiber;
-            const exit = yield* Fiber.await(fiber);
-            const stillOpening = entries.get(handle) === entry;
-            if (Exit.isFailure(exit) || !stillOpening) {
-              if (stillOpening) entries.delete(handle);
-              yield* Scope.close(scope, Exit.void);
-              if (Exit.isFailure(exit)) {
-                const failure = Cause.findErrorOption(exit.cause);
-                if (failure._tag === "Some") return yield* failure.value;
-              }
-              return yield* new AgentUnavailable({
-                agent: request.agent,
-                message: "The session was closed while it opened.",
-              });
-            }
-            const closed = yield* Deferred.make<void>();
-            entries.set(handle, {
-              state: "open",
-              scope,
-              session: exit.value.session,
-              log: exit.value.log,
-              seen,
-              closed,
-            });
-            return openedFrom(exit.value.session);
-          }).pipe(
-            // A caller that gave up on the open has no session to close: the host closes it.
-            Effect.onInterrupt(() => close(handle)),
+      Effect.suspend((): Effect.Effect<HostSessionOpened, AgentUnavailable | HostFailed> => {
+        const handle = request.handle;
+        if (closedEarly.delete(handle))
+          return Effect.fail(
+            new AgentUnavailable({
+              agent: request.agent,
+              message: "The session was closed.",
+            }),
           );
-        },
-      );
+        if (entries.has(handle))
+          return Effect.fail(
+            new HostFailed({
+              message: `Agent session ${handle} is already open.`,
+            }),
+          );
+        return Effect.gen(function* () {
+          const scope = yield* Scope.fork(root);
+          const entry: Entry = { state: "opening", scope };
+          // Taken before the first wait, so a close that comes in meanwhile finds it.
+          entries.set(handle, entry);
+          const changes = yield* PubSub.unbounded<ConnectorsSeen>();
+          const seen: {
+            last?: ConnectorsSeen;
+            readonly changes: PubSub.PubSub<ConnectorsSeen>;
+          } = {
+            changes,
+          };
+          const fiber = yield* agents(request.agent).pipe(
+            Effect.flatMap((host) =>
+              host.open(
+                optionsFor(request, (report) => {
+                  seen.last = report;
+                  PubSub.publishUnsafe(changes, report);
+                }),
+              ),
+            ),
+            Effect.flatMap((session) =>
+              Effect.map(sequenceEvents(session.events), (log) => ({
+                session,
+                log,
+              })),
+            ),
+            Scope.provide(scope),
+            Effect.forkIn(root),
+          );
+          entry.fiber = fiber;
+          const exit = yield* Fiber.await(fiber);
+          const stillOpening = entries.get(handle) === entry;
+          if (Exit.isFailure(exit) || !stillOpening) {
+            if (stillOpening) entries.delete(handle);
+            yield* Scope.close(scope, Exit.void);
+            if (Exit.isFailure(exit)) {
+              const failure = Cause.findErrorOption(exit.cause);
+              if (failure._tag === "Some") return yield* failure.value;
+            }
+            return yield* new AgentUnavailable({
+              agent: request.agent,
+              message: "The session was closed while it opened.",
+            });
+          }
+          const closed = yield* Deferred.make<void>();
+          entries.set(handle, {
+            state: "open",
+            scope,
+            session: exit.value.session,
+            log: exit.value.log,
+            seen,
+            closed,
+          });
+          return openedFrom(exit.value.session);
+        }).pipe(
+          // A caller that gave up on the open has no session to close: the host closes it.
+          Effect.onInterrupt(() => close(handle)),
+        );
+      });
 
     return {
       open,
       events: (handle, afterSeq) =>
         Stream.unwrap(
           Effect.map(openEntry(handle), (entry) =>
-            entry.log
-              .subscribe(afterSeq)
-              .pipe(Stream.interruptWhen(Deferred.await(entry.closed))),
+            entry.log.subscribe(afterSeq).pipe(Stream.interruptWhen(Deferred.await(entry.closed))),
           ),
         ),
       ack: (handle, seq) =>
@@ -268,8 +251,7 @@ export const sessionsOnHost = (
             ).pipe(Stream.interruptWhen(Deferred.await(entry.closed)));
           }),
         ),
-      session: (handle) =>
-        Effect.map(openEntry(handle), (entry) => entry.session),
+      session: (handle) => Effect.map(openEntry(handle), (entry) => entry.session),
       close,
       reload: (agent, reload) =>
         agents(agent).pipe(
@@ -290,6 +272,4 @@ export const sessionsOnHost = (
 
 /** A host that runs no agents: every open is refused. */
 export const noAgents: HostAgents = (agent) =>
-  Effect.fail(
-    new AgentUnavailable({ agent, message: `No ${agent} on this host.` }),
-  );
+  Effect.fail(new AgentUnavailable({ agent, message: `No ${agent} on this host.` }));
