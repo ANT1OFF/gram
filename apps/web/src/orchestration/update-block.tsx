@@ -8,7 +8,14 @@ import { Expand } from "@/motion";
 
 import { DigestLine } from "./digest-line";
 import { StreamLineView } from "./feature-card";
-import { replyPreview, updateWords, type StreamDigest, type TimedLine } from "./stream-model";
+import {
+  replyPreview,
+  runWords,
+  updateWords,
+  type RunPart,
+  type StreamDigest,
+  type TimedLine,
+} from "./stream-model";
 
 /**
  * A count's tone, only where it is an alarm or an ask: amber for what needs the user (#121), red
@@ -206,6 +213,102 @@ function QuietUpdate({
                 </div>
               ))}
             <DigestLine digests={digests} />
+          </div>
+        )}
+      </Expand>
+    </div>
+  );
+}
+
+/**
+ * A run of quiet rows (updates, and merged features' lines, with no reply or message of the user's
+ * between them) as one line of the same meta: "09:56–09:59 Updates · 3 merged · 1 report · More".
+ * It sums every row it holds, so an ask or a failure in it still says so on the line, in amber or
+ * red. It opens in place, by click, Enter or Space, on each row as it stood; `renderMerged` draws a
+ * merged feature's line, and `renderReply` a reply an update in it folded.
+ */
+export function UpdateRun({
+  parts,
+  renderMerged,
+  renderReply,
+}: {
+  parts: readonly RunPart[];
+  renderMerged: (feature: string) => ReactNode;
+  renderReply?: ((reply: GramUIMessage) => ReactNode) | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const [everOpened, setOpened] = useState(false);
+  const bodyId = useId();
+  const words = runWords(parts);
+  const said = words.counts.map((count) => count.text);
+  if (words.digest !== undefined) said.push(words.digest);
+  // Merged lines alone need no heading: "6 merged" says it.
+  const head = parts.some((part) => part.kind === "update") ? "Updates" : undefined;
+  const phrases = [
+    ...(head === undefined ? [] : [{ key: "head", text: head, tone: undefined }]),
+    ...words.counts.map((count) => ({
+      key: count.kind,
+      text: count.text,
+      tone: COUNT_TONE[count.kind],
+    })),
+    ...(words.digest === undefined ? [] : [{ key: "digest", text: words.digest, tone: undefined }]),
+  ];
+  return (
+    <div
+      data-testid="update-run"
+      data-parts={parts.length}
+      data-open={open}
+      data-needs-you={words.needsYou}
+      className="w-full"
+    >
+      <button
+        type="button"
+        data-testid="update-run-toggle"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        aria-label={[head, ...said, words.time?.replace("–", " to ")]
+          .filter((word) => word !== undefined)
+          .join(", ")}
+        className="group flex w-full min-w-0 items-center gap-1.5 rounded-sm py-0.5 text-left text-meta outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => {
+          setOpen(!open);
+          setOpened(true);
+        }}
+      >
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            "size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-fast) group-hover:text-foreground",
+            open && "rotate-90",
+          )}
+        />
+        <UpdateTime time={words.time} />
+        <span data-testid="update-run-words" className="min-w-0 truncate text-muted-foreground">
+          {phrases.map((phrase, index) => (
+            <span key={phrase.key}>
+              {index > 0 && " · "}
+              <span className={phrase.tone}>{phrase.text}</span>
+            </span>
+          ))}
+        </span>
+        <FoldWord open={open} />
+      </button>
+      <Expand open={open} id={bodyId}>
+        {(everOpened || open) && (
+          <div data-testid="update-run-body" className="flex flex-col gap-1 pt-0.5 pb-1 pl-5">
+            {parts.map((part) =>
+              part.kind === "update" ? (
+                <UpdateBlock
+                  key={part.messageId}
+                  lines={part.lines}
+                  digests={part.digests}
+                  replies={part.replies}
+                  renderReply={renderReply}
+                />
+              ) : (
+                <div key={`merged:${part.feature}`}>{renderMerged(part.feature)}</div>
+              ),
+            )}
           </div>
         )}
       </Expand>

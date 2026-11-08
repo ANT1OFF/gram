@@ -82,7 +82,11 @@ export function TurnFilesChip({
           <span className="text-success">+{additions.toLocaleString()}</span>{" "}
           <span className="text-destructive">−{deletions.toLocaleString()}</span>
         </span>
-        <span className="ml-auto flex items-center gap-1">
+        {/* Its actions wrap under the count in a narrow pane, inside the card's edge. */}
+        <span
+          data-testid="turn-files-actions"
+          className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1"
+        >
           {undone !== undefined ? (
             <span
               data-testid="turn-undone"

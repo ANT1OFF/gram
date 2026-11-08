@@ -220,6 +220,7 @@ import {
   modelCommand,
   modelSwitchedScript,
   orchestratorScript,
+  answeredSeedMessages,
   planAnswered,
   questionAnswered,
   seedMessages,
@@ -339,7 +340,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     this.#composer = createComposerMock(this.world, options.persist === true);
     const closedEarlier = this.#closed.ids();
     const seeds = mockStartsFresh() ? [] : seedSummaries();
-    for (const summary of mockStartsRealistic() ? calmSeeds(seeds) : seeds) {
+    const calm = mockStartsRealistic();
+    for (const summary of calm ? calmSeeds(seeds) : seeds) {
       if (closedEarlier.has(summary.thread.id)) continue;
       // `t-flaky`'s worktree has uncommitted work, so closing it with removal needs a force.
       const git = mockGitState(
@@ -354,7 +356,12 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
         ...(git ? { git } : {}),
       });
       // `messages` starts a subscription in the fold, so it's caught up again afterwards.
-      runtime.fold.apply({ type: "messages", messages: seedMessages(summary.thread.id) });
+      // A seed calmed of its question or plan reads as answered: the reply it brought follows.
+      const messages = seedMessages(summary.thread.id);
+      runtime.fold.apply({
+        type: "messages",
+        messages: calm ? [...messages, ...answeredSeedMessages(summary.thread.id)] : messages,
+      });
       runtime.fold.apply({ type: "caughtUp", rev: this.#rev });
     }
     // Seeded pending requests resume the conversation when answered.

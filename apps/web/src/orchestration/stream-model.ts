@@ -47,7 +47,33 @@ interface StreamExtras {
    * episodes changed for the user, oldest first; absent everywhere else.
    */
   readonly replies?: readonly GramUIMessage[];
+  /**
+   * In a quiet stream, the run of quiet rows this message's one row stands for (`foldRuns`), in the
+   * order they stood: shown as one line, "Updates · 3 merged · 1 report", that opens on each. Its
+   * own update is among them, so `lines` and `digests` are then empty, and `cards` are only those
+   * that came after the run.
+   */
+  readonly run?: readonly RunPart[];
 }
+
+/** One row of a run of quiet rows: an update, or a merged feature's line. */
+export type RunPart =
+  | {
+      readonly kind: "update";
+      /** The message the update stood on. */
+      readonly messageId: string;
+      readonly lines: readonly TimedLine[];
+      readonly digests: readonly StreamDigest[];
+      readonly replies?: readonly GramUIMessage[];
+    }
+  | { readonly kind: "merged"; readonly feature: string };
+
+/**
+ * Whether a feature's card is a quiet line rather than a card: merged, with no brief held for it,
+ * so nothing on it moves any more.
+ */
+export const quietCard = (card: Pick<FeatureCard, "station" | "held">): boolean =>
+  card.station === "merged" && card.held === undefined;
 
 export interface StreamPlan {
   /**
@@ -204,6 +230,106 @@ export function planStream(
   return { messages: shown, extras, digests, foldedInto };
 }
 
+/**
+ * The quiet stream's plan with each run of quiet rows as one row (`foldRuns`): the default view of
+ * an orchestrator's chat, over `planStream`'s quiet plan. `cards` say which features are merged
+ * lines. The plan it is given is left as it was.
+ */
+export function planRuns(plan: StreamPlan, cards: readonly FeatureCard[]): StreamPlan {
+  const extras = new Map(plan.extras);
+  const foldedInto = new Map(plan.foldedInto);
+  const merged = new Set(cards.filter(quietCard).map((card) => card.feature));
+  const messages = foldRuns(plan.messages, extras, merged, foldedInto);
+  return messages === undefined ? plan : { ...plan, messages, extras, foldedInto };
+}
+
+/**
+ * A run of quiet rows as one row (the quiet stream only). The rows of the stream, in order, are each
+ * message's own (a reply or the user's, never quiet), a digest's update, then the feature cards it
+ * anchors; an update and a merged feature's line are quiet. Two or more quiet rows in a row, at
+ * least one an update, with no reply or message of the user's between them, become one row on the
+ * last update's message, and every message the run took whole leaves the stream (a search for one
+ * opens all activity, as for a folded reply). A lone update stays as it is, and so does a merged
+ * line beside a reply only; a live card ends a run, since it is not quiet. Undefined when it found
+ * no run, and changed nothing.
+ */
+function foldRuns(
+  messages: readonly GramUIMessage[],
+  extras: Map<string, StreamExtras>,
+  merged: ReadonlySet<string>,
+  foldedInto: Map<string, string>,
+): readonly GramUIMessage[] | undefined {
+  let runs = 0;
+  /** The quiet rows so far, each with the message it came from. */
+  let pending: { readonly part: RunPart; readonly from: string }[] = [];
+  /** Each message a run took whole, with the message its row went to. */
+  const removed = new Map<string, string>();
+  const flush = () => {
+    const run = pending;
+    pending = [];
+    const anchor = run.findLast(({ part }) => part.kind === "update")?.from;
+    if (run.length < 2 || anchor === undefined) return;
+    runs += 1;
+    const taken = new Map<string, Set<string>>();
+    for (const { part, from } of run) {
+      if (part.kind === "update" && from !== anchor) removed.set(from, anchor);
+      if (part.kind === "merged") {
+        const features = taken.get(from) ?? new Set<string>();
+        features.add(part.feature);
+        taken.set(from, features);
+      }
+    }
+    // A message the run took part of keeps what wasn't quiet: a reply, a live card, a later line.
+    for (const [from, features] of taken) {
+      if (removed.has(from) || from === anchor) continue;
+      const own = extras.get(from);
+      if (own !== undefined)
+        extras.set(from, { ...own, cards: own.cards.filter((card) => !features.has(card)) });
+    }
+    const own = extras.get(anchor) ?? NOTHING;
+    const inRun = taken.get(anchor) ?? new Set<string>();
+    extras.set(anchor, {
+      lines: [],
+      digests: [],
+      cards: own.cards.filter((card) => !inRun.has(card)),
+      run: run.map(({ part }) => part),
+    });
+  };
+  for (const message of messages) {
+    const own = extras.get(message.id);
+    const update = digestOf(message) !== undefined && own !== undefined && own.digests.length > 0;
+    if (!update) flush();
+    else
+      pending.push({
+        from: message.id,
+        part: {
+          kind: "update",
+          messageId: message.id,
+          lines: own.lines,
+          digests: own.digests,
+          ...(own.replies === undefined ? {} : { replies: own.replies }),
+        },
+      });
+    for (const feature of own?.cards ?? []) {
+      if (merged.has(feature))
+        pending.push({ from: message.id, part: { kind: "merged", feature } });
+      else flush();
+    }
+  }
+  flush();
+  if (runs === 0) return undefined;
+  // What a quiet update had folded goes where that update went.
+  for (const [id, target] of foldedInto) {
+    const moved = removed.get(target);
+    if (moved !== undefined) foldedInto.set(id, moved);
+  }
+  for (const [id, target] of removed) {
+    foldedInto.set(id, target);
+    extras.delete(id);
+  }
+  return messages.filter((message) => !removed.has(message.id));
+}
+
 /** What makes an update one the user should read: a merge, a delivery, a failure, a question. */
 const NOTABLE: ReadonlySet<StreamLine["kind"]> = new Set(["merged", "delivered", "failed", "ask"]);
 
@@ -345,6 +471,93 @@ export function updateWords(
     counts,
     digest,
     time: Number.isFinite(newest) ? clock(newest) : undefined,
+    needsYou: byKind.has("ask") || byKind.has("failed"),
+  };
+}
+
+/** A message's cards as they show: each live card, and each run of merged lines as one row. */
+export type CardRow =
+  | { readonly kind: "card"; readonly feature: string }
+  | { readonly kind: "run"; readonly parts: readonly RunPart[] };
+
+/**
+ * A message's cards in order, with two or more merged lines in a row as one run (`UpdateRun`), as a
+ * run of updates is: a page that opens on a morning's merges reads one line, "6 merged", rather than
+ * a stack of them. A lone merged line, and every live card, stands as it is.
+ */
+export function cardRows(
+  features: readonly string[],
+  merged: (feature: string) => boolean,
+): CardRow[] {
+  const rows: CardRow[] = [];
+  let quiet: string[] = [];
+  const flush = () => {
+    if (quiet.length === 1) rows.push({ kind: "card", feature: quiet[0]! });
+    if (quiet.length > 1)
+      rows.push({ kind: "run", parts: quiet.map((feature) => ({ kind: "merged", feature })) });
+    quiet = [];
+  };
+  for (const feature of features) {
+    if (merged(feature)) quiet.push(feature);
+    else {
+      flush();
+      rows.push({ kind: "card", feature });
+    }
+  }
+  flush();
+  return rows;
+}
+
+/** What a run's one row says: "09:56–09:59 Updates · 1 waiting on you · 3 merged · 1 report". */
+export interface RunWords {
+  /** As an update's: what needs the user first, each toned as its lines are. */
+  readonly counts: readonly UpdateCount[];
+  /** Its digests' reports, else their changes: "1 report"; absent when they carry neither. */
+  readonly digest: string | undefined;
+  /** When its first and last updates came, "09:56–09:59", or one time when they are the same. */
+  readonly time: string | undefined;
+  /** An update in it asks for the user or failed: its words say so, in amber or red. */
+  readonly needsYou: boolean;
+}
+
+/**
+ * The words of a run's one row, summed over every row it holds, so nothing in it goes unsaid: an
+ * ask or a failure inside it is counted on the row, toned. A merged line counts as merged unless
+ * an update in the run already said that feature merged.
+ */
+export function runWords(
+  parts: readonly RunPart[],
+  clock: (at: number) => string = formatStamp,
+): RunWords {
+  const updates = parts.flatMap((part) => (part.kind === "update" ? [part] : []));
+  const lines = updates.flatMap((part) => part.lines);
+  const digests = updates.flatMap((part) => part.digests);
+  const said = new Set(
+    lines.flatMap(({ line }) =>
+      line.kind === "merged" && line.feature !== "" ? [line.feature] : [],
+    ),
+  );
+  const byKind = new Map<StreamLine["kind"], number>();
+  for (const { line } of lines) byKind.set(line.kind, (byKind.get(line.kind) ?? 0) + 1);
+  for (const part of parts) {
+    if (part.kind === "merged" && !said.has(part.feature))
+      byKind.set("merged", (byKind.get("merged") ?? 0) + 1);
+  }
+  const counts = COUNT_ORDER.flatMap((kind) => {
+    const n = byKind.get(kind);
+    return n === undefined ? [] : [{ kind, text: `${n} ${COUNT_WORDS[kind]}` }];
+  });
+  const times = updates.flatMap((part) => [
+    ...part.lines.flatMap(({ at }) => (at === undefined ? [] : [at])),
+    ...part.digests.flatMap(({ at }) => (at === undefined ? [] : [at])),
+    ...(part.replies ?? []).flatMap((reply) => reply.metadata?.createdAt ?? []),
+  ]);
+  const first = times.length === 0 ? undefined : clock(Math.min(...times));
+  const last = times.length === 0 ? undefined : clock(Math.max(...times));
+  return {
+    counts,
+    digest: digestLineWords(digests, clock).count,
+    time: first === last ? first : `${first}–${last}`,
     needsYou: byKind.has("ask") || byKind.has("failed"),
   };
 }

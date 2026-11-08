@@ -251,6 +251,18 @@ export function Transcript({
    */
   const [pressing, setPressing] = useState(false);
   /**
+   * Since following last stopped, the reader scrolled (a wheel, a touch, a key, the scrollbar):
+   * a pause they chose, which "Jump to latest" says even at the end. Anything else that pauses
+   * (a press on a fold or a card, a jump, rows reflowing) leaves the pill to what is below the view.
+   */
+  const [readerPaused, setReaderPaused] = useState(false);
+  /**
+   * The scrollport stands exactly at its end, read off the DOM after each commit and on each
+   * scroll: a fold closing at the end shrinks the page with no scroll, and the render that closed
+   * it still saw the open fold's height.
+   */
+  const [scrolledEnd, setScrolledEnd] = useState(true);
+  /**
    * The row of an actionable card under the pointer (`HOLD_UNDER_POINTER`), by its message id. While
    * there is one, rows above it that change size move the scroll with them and following holds off,
    * so the card stays where the pointer is rather than sliding from under a click.
@@ -418,6 +430,7 @@ export function Transcript({
       // ResizeObserver may run before React commits this input event's state update.
       virtualizer.options.scrollEndThreshold = value && held.current === undefined ? 1 : -1;
       setIsFollowing(value);
+      if (value) setReaderPaused(false);
     },
     [virtualizer],
   );
@@ -741,12 +754,21 @@ export function Transcript({
     run: () => step(1),
   });
 
-  const interruptJump = () => {
+  // On each new height, after it commits: a page that shrinks or grows needn't scroll at all.
+  const totalSize = virtualizer.getTotalSize();
+  useLayoutEffect(() => {
+    setScrolledEnd(scrolledToEnd(scrollRef.current));
+  }, [totalSize, isFollowing]);
+
+  /** `reader`: a scroll gesture paused it; a press on the content isn't one (see `readerPaused`). */
+  const interruptJump = (reader = true) => {
     pendingJump.current = undefined;
     virtualizer.cancelScroll();
     manualGesture.current = undefined;
     lastScrollTop.current = scrollRef.current?.scrollTop ?? 0;
     setFollowing(false);
+    // A press after the reader scrolled away leaves their pause as it was.
+    if (reader) setReaderPaused(true);
   };
 
   const forwardGesture = (kind: ScrollGesture["kind"], scroller: HTMLDivElement) => {
@@ -792,6 +814,13 @@ export function Transcript({
     .find((item) => item.end > (virtualizer.scrollOffset ?? 0))?.index;
   // The newest prompt can be below the top of a clamped final viewport. At the bottom, name that
   // last turn; everywhere else the row at the reading edge determines the current chapter.
+  // A press pauses following (so what was pressed stays put), which at the bottom left "Jump to
+  // latest" offering a jump to where the view already is. Paused by anything but the reader's own
+  // scroll and still exactly at the end, the pill stays hidden, and shows once anything arrives
+  // under the view. A pause the reader scrolled into keeps its pill, even clamped to the end.
+  // Read off the scrollport itself (`scrolledEnd`): the virtualizer's own distance can lag a clamp
+  // (a fold closing at the end leaves it a few px short while the view is there).
+  const quietAtEnd = !isFollowing && !readerPaused && scrolledEnd;
   const currentId = virtualizer.isAtEnd(CURRENT_BOTTOM_TOLERANCE)
     ? chapters.at(-1)?.id
     : firstVisible === undefined
@@ -809,6 +838,7 @@ export function Transcript({
         />
       ) : (
         !isFollowing &&
+        !quietAtEnd &&
         messages.length > 0 && (
           <Button
             className={cn(
@@ -844,8 +874,9 @@ export function Transcript({
         className="h-full min-h-0 overflow-y-auto mask-b-from-[calc(100%-1.5rem)] [overflow-anchor:none] data-under:mask-t-from-[calc(100%-1rem)]"
         onWheel={(event) => {
           if (event.deltaY === 0) return;
-          interruptJump();
           const el = event.currentTarget;
+          // Over a transcript too short to scroll, a wheel moves nothing: no reader's pause.
+          interruptJump(canScroll(el));
           if (
             !event.defaultPrevented &&
             event.deltaY > 0 &&
@@ -854,7 +885,8 @@ export function Transcript({
             forwardGesture("wheel", el);
         }}
         onTouchStart={(event) => {
-          interruptJump();
+          // A touch may be a tap on a control: only its move (below) is the reader scrolling.
+          interruptJump(false);
           const touch = event.touches[0];
           touchPosition.current = touch ? { id: touch.identifier, y: touch.clientY } : undefined;
         }}
@@ -867,7 +899,7 @@ export function Transcript({
           const delta = previous.y - touch.clientY;
           touchPosition.current = { id: touch.identifier, y: touch.clientY };
           if (delta === 0) return;
-          interruptJump();
+          interruptJump(canScroll(event.currentTarget));
           if (
             !event.defaultPrevented &&
             delta > 0 &&
@@ -893,16 +925,17 @@ export function Transcript({
           };
           window.addEventListener("pointerup", release, true);
           window.addEventListener("pointercancel", release, true);
-          interruptJump();
           scrollbarPointer.current = undefined;
           const el = event.currentTarget;
           const bounds = el.getBoundingClientRect();
           // Only a drag of this viewport's actual scrollbar owns a pointer scroll gesture.
-          if (
+          const scrollbar =
             event.target === el &&
             event.button === 0 &&
-            event.clientX >= bounds.left + el.clientWidth
-          ) {
+            event.clientX >= bounds.left + el.clientWidth;
+          // A press on the content pauses as a reader's scroll does, but isn't one.
+          interruptJump(scrollbar);
+          if (scrollbar) {
             scrollbarPointer.current = { id: event.pointerId, y: event.clientY };
             manualGesture.current = beginScrollGesture(
               "pointer",
@@ -930,14 +963,17 @@ export function Transcript({
             !["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)
           )
             return;
-          interruptJump();
           const target = event.target instanceof Element ? event.target : null;
-          if (
+          // A key that works a control (Space on a fold, typing, arrows in a radio group or a
+          // list) still pauses following, but isn't the reader scrolling away.
+          const operatesControl =
             event.defaultPrevented ||
-            target?.closest("input, textarea, select, [contenteditable=true]") ||
-            (event.key === " " && target?.closest("button, a, [role=button]"))
-          )
-            return;
+            target?.closest(
+              "input, textarea, select, [contenteditable=true], [role=radio], [role=listbox], [role=menu]",
+            ) != null ||
+            (event.key === " " && target?.closest("button, a, [role=button]") != null);
+          interruptJump(!operatesControl);
+          if (operatesControl) return;
           const forward =
             !["ArrowUp", "PageUp", "Home"].includes(event.key) &&
             !(event.key === " " && event.shiftKey);
@@ -968,6 +1004,7 @@ export function Transcript({
           // follow; an upward gesture must stay paused even for a subpixel movement.
           else if (!following.current && input.resume) setFollowing(true);
           lastScrollTop.current = el.scrollTop;
+          setScrolledEnd(bottom <= 0);
           el.toggleAttribute("data-under", el.scrollTop > 0);
           if (!following.current) wantEarlier(el);
         }}
@@ -1096,6 +1133,13 @@ function UnreadDivider() {
     </div>
   );
 }
+
+/** Whether a scrollport shows its very end (or there is none yet to show). */
+const scrolledToEnd = (el: HTMLElement | null) =>
+  el === null || el.scrollHeight - el.scrollTop - el.clientHeight <= 0;
+
+/** Whether a scrollport has anything to scroll: a gesture over one that hasn't moves nothing. */
+const canScroll = (el: HTMLElement) => el.scrollHeight - el.clientHeight > 1;
 
 /** A message counts as just sent for this long, which is when it animates in. */
 const ARRIVAL_MS = 3000;
