@@ -201,8 +201,10 @@ through the user's own `gh` and npm (no webhook, no public endpoint), why these 
   the routine's `project` with a completed Actions run has one that failed, timed out or couldn't
   start; PR runs aside. One REST read every 10 minutes.
 - `releasePublished` (`source` `npm` or `github`, `name`, optional `minAgeDays` 0 to 90, 7 when
-  absent): the package publishes a stable release past the last one it saw, at least that old. Read
-  at most every six hours; a burst of releases is one event, for the newest.
+  absent, and keyed alike either way): the package publishes a stable release past the last one it
+  saw, at least that old. Its first look takes the newest release already that old, so a younger
+  one still fires once it is. Read at most every six hours; a burst of releases is one event, for
+  the newest.
 
 Each run starts a fresh worker in its `project`
 (the home project by default) on its `model` (the roster's default by default), or, with `target`
@@ -275,10 +277,14 @@ An event routine comes due at each look instead of at a time, and its watch is k
 
 - A look runs outside the engine's lock, since it may read GitHub, and what it found is merged under
   the lock only if the routine is still what was looked for. A look that couldn't tell (offline, out
-  of the background allowance, the review-request poll not run yet) changes nothing; one that can't
-  look says why on its row.
+  of the background allowance, the review-request poll not run yet) changes nothing, and after six
+  in a row the row says so; one that can't look (gh signed out, no GitHub origin, a branch without
+  CI runs) says why on its row.
 - The first look after the routine is new, changed (another event or parameter) or turned on again
-  records what is there as seen and fires for none of it. Turned off, its watch goes.
+  records what is there as seen and fires for none of it. So does a look at another repository
+  (or branch) than the one it seeded on: the routine's project, the home project or the origin
+  changed. Turned off, its watch goes; its last run's time stays, so the cooldown holds across an
+  edit.
 - Each occurrence has a key (a PR's repo and number, a commit, a version), recorded as seen when it
   is first found, so it is delivered at most once, across restarts too. One that came while Gram was
   closed is found at the next start's look.
@@ -286,7 +292,12 @@ An event routine comes due at each look instead of at a time, and its watch is k
   queue in the same write as its claim, so a run a restart cut short resumes with its own events.
   New events wait (at most 20, the oldest dropped and counted) while its last occurrence is
   unsettled, for 15 minutes after its last run, and while the workspace is paused; then they go in
-  one run. It is admitted, capped and refused like a scheduled run.
+  one run. While a live worker or a held brief holds them, the row says which. It is admitted,
+  capped and refused like a scheduled run, but a run that started nothing (refused, no orchestrator,
+  a limit, an error) puts its events back to wait, and the cooldown paces the retry; the
+  orchestrator hears of a failure once, not at each retry. A run a restart cut short resumes with
+  its events whenever it comes up, a pause included; a Run now a restart cut short puts its events
+  back.
 - The events reach the brief after the routine's own words, in a fence marked as untrusted
   external content: a title, a login or a workflow's name is someone else's text, data and never
   instructions. Run now runs it with what waits, or with none.
