@@ -60,10 +60,14 @@ const plan: NeedsYouItem = {
 };
 
 function seedList(items: readonly NeedsYouItem[]) {
-  const sections = [{ key: "reviews", label: "Reviews", items }];
-  useDerivedAsks.setState((s) => ({
-    needsYou: { ...s.needsYou, groups: [], sections, items, later: [] },
-  }));
+  useDerivedAsks.setState({
+    needsYou: {
+      groups: [],
+      sections: [{ key: "reviews", label: "Reviews", items }],
+      items,
+      later: [],
+    },
+  });
 }
 
 beforeEach(() => {
