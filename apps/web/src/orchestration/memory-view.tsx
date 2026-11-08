@@ -756,7 +756,8 @@ export function MemoryView({
         <TabsList
           aria-label="Memory"
           data-testid="memory-tabs"
-          className="sticky top-0 z-10 bg-thread px-4"
+          // On a phone the tabs keep one line each and the row scrolls sideways.
+          className="sticky top-0 z-10 bg-thread px-4 max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&_[data-slot=tabs-indicator]]:bottom-0 max-sm:whitespace-nowrap max-sm:[&>button]:h-11 max-sm:[&>button]:shrink-0"
         >
           <TabsTrigger value="overview" data-testid="memory-tab-overview">
             Current memory

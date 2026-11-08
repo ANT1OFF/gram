@@ -22,6 +22,7 @@ import {
 
 import { EmptyState } from "@/components/empty-state";
 import { Hint } from "@/components/hint";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { VirtualRows, type RowPlace } from "@/lib/virtual-rows";
 import { GlideItem, GlideList } from "@/motion";
@@ -62,6 +63,7 @@ import { GroupBand } from "./board-group";
 import { StatusDot } from "@/orchestration/status-dot";
 
 import { DoneBand, doneRows } from "./board-done";
+import { PhoneBoard } from "./board-phone";
 import { GridHeads, GridLine, Status } from "./board-grid";
 import { BoardHeader } from "./board-header";
 import { useViewStore } from "./view-store";
@@ -548,6 +550,8 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   const counts = useMemo(() => laneCounts(rows), [rows]);
   const width = usePaneWidth(root);
   const grid = useLayoutStore((s) => s.boardLayout) === "grid";
+  // A phone: a card per task, as neither the grid's columns nor the lanes fit its width.
+  const phone = usePhone();
   const listed = !grid && width !== undefined && width < lanesMinWidth(counts);
   // Every open editor keeps its group's local draft mounted, even after another row takes focus.
   const [editingGroups, setEditingGroups] = useState<ReadonlySet<string>>(() => new Set());
@@ -602,84 +606,88 @@ function RailBoard({ state }: { state: WorkspaceState }) {
       <FailuresCard workspaceId={workspaceId} className="shrink-0 px-4 pt-2 pb-1" />
       <div
         data-testid="rail-scroller"
-        data-layout={grid ? "grid" : listed ? "stacked" : "lanes"}
+        data-layout={phone ? "phone" : grid ? "grid" : listed ? "stacked" : "lanes"}
         className="min-h-0 flex-1 overflow-y-auto pb-2"
         style={{ "--board-lanes": laneTemplate(counts) } as CSSProperties}
       >
-        <div>
-          {rows.length > 0 && (grid ? <GridHeads /> : !listed && <LaneHeads counts={counts} />)}
-          {rows.length === 0 ? (
-            hidden > 0 ? (
-              // Its finished work is in Done, as the sidebar has it; Show finished brings it here.
-              <EmptyState
-                testId="rail-empty"
-                icon={Columns3}
-                title="Nothing going now"
-                line="Finished work is in Done."
-                action={{
-                  label: `Show finished (${hidden})`,
-                  icon: Archive,
-                  onClick: () => useLayoutStore.getState().toggleBoardArchived(workspaceId),
-                }}
-              />
+        {phone && (rows.length > 0 || done.length > 0) ? (
+          <PhoneBoard rows={rows} done={done} asking={asking} onOpen={onOpen} />
+        ) : (
+          <div>
+            {rows.length > 0 && (grid ? <GridHeads /> : !listed && <LaneHeads counts={counts} />)}
+            {rows.length === 0 ? (
+              hidden > 0 ? (
+                // Its finished work is in Done, as the sidebar has it; Show finished brings it here.
+                <EmptyState
+                  testId="rail-empty"
+                  icon={Columns3}
+                  title="Nothing going now"
+                  line="Finished work is in Done."
+                  action={{
+                    label: `Show finished (${hidden})`,
+                    icon: Archive,
+                    onClick: () => useLayoutStore.getState().toggleBoardArchived(workspaceId),
+                  }}
+                />
+              ) : (
+                <EmptyState
+                  testId="rail-empty"
+                  icon={Columns3}
+                  title="No features yet"
+                  line="Each task the orchestrator takes on becomes a feature here, with its workers and PRs."
+                  action={{
+                    label: "Message the orchestrator",
+                    icon: MessageSquare,
+                    onClick: () => messageOrchestrator(workspaceId),
+                  }}
+                />
+              )
             ) : (
-              <EmptyState
-                testId="rail-empty"
-                icon={Columns3}
-                title="No features yet"
-                line="Each task the orchestrator takes on becomes a feature here, with its workers and PRs."
-                action={{
-                  label: "Message the orchestrator",
-                  icon: MessageSquare,
-                  onClick: () => messageOrchestrator(workspaceId),
-                }}
-              />
-            )
-          ) : (
-            <GlideList id={`rail-${workspaceId}`}>
-              {/* Only the lines near the view draw: a workspace may hold many. */}
-              <VirtualRows
-                as="ul"
-                label="Features"
-                bare
-                items={entries}
-                rowKey={entryKey}
-                estimate={grid ? GRID_LINE_HEIGHT : LINE_HEIGHT}
-                overscan={LINE_OVERSCAN}
-                retainedKeys={editingGroups}
-              >
-                {(entry, index, place) =>
-                  entry.kind === "line" ? (
-                    entry.headed === true ? (
-                      <OtherLine place={placed(place, index)}>{line(entry.row)}</OtherLine>
+              <GlideList id={`rail-${workspaceId}`}>
+                {/* Only the lines near the view draw: a workspace may hold many. */}
+                <VirtualRows
+                  as="ul"
+                  label="Features"
+                  bare
+                  items={entries}
+                  rowKey={entryKey}
+                  estimate={grid ? GRID_LINE_HEIGHT : LINE_HEIGHT}
+                  overscan={LINE_OVERSCAN}
+                  retainedKeys={editingGroups}
+                >
+                  {(entry, index, place) =>
+                    entry.kind === "line" ? (
+                      entry.headed === true ? (
+                        <OtherLine place={placed(place, index)}>{line(entry.row)}</OtherLine>
+                      ) : (
+                        line(entry.row, placed(place, index))
+                      )
                     ) : (
-                      line(entry.row, placed(place, index))
+                      <GroupBand
+                        workspaceId={workspaceId}
+                        group={entry.group}
+                        setStage={setStage}
+                        editing={editingGroups.has(entryKey(entry))}
+                        onEditingChange={(editing) =>
+                          setEditingGroups((previous) => {
+                            const next = new Set(previous);
+                            if (editing) next.add(entryKey(entry));
+                            else next.delete(entryKey(entry));
+                            return next;
+                          })
+                        }
+                        place={placed(place, index)}
+                      >
+                        {entry.group.rows.map((row) => line(row))}
+                      </GroupBand>
                     )
-                  ) : (
-                    <GroupBand
-                      workspaceId={workspaceId}
-                      group={entry.group}
-                      setStage={setStage}
-                      editing={editingGroups.has(entryKey(entry))}
-                      onEditingChange={(editing) =>
-                        setEditingGroups((previous) => {
-                          const next = new Set(previous);
-                          if (editing) next.add(entryKey(entry));
-                          else next.delete(entryKey(entry));
-                          return next;
-                        })
-                      }
-                      place={placed(place, index)}
-                    >
-                      {entry.group.rows.map((row) => line(row))}
-                    </GroupBand>
-                  )
-                }
-              </VirtualRows>
-            </GlideList>
-          )}
-          <DoneBand workspaceId={workspaceId} rows={done} repos={repos} onOpen={onOpen} />
-        </div>
+                  }
+                </VirtualRows>
+              </GlideList>
+            )}
+            <DoneBand workspaceId={workspaceId} rows={done} repos={repos} onOpen={onOpen} />
+          </div>
+        )}
       </div>
       <UndoLine testId="board-undo" />
     </div>
