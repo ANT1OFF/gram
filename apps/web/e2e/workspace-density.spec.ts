@@ -101,6 +101,23 @@ for (const mode of ["light", "dark"] as const) {
       await sidebar.screenshot({ path: test.info().outputPath(`${mode}-${width}.png`) });
     }
 
+    // A short title leaves the room: at a wide pane the failing PR's chip is after it, saying so.
+    await resizePane(page, 380);
+    await page.evaluate(
+      (threadId) => window.gramMock!.rename(threadId as never, "Nav fix"),
+      made.working,
+    );
+    await expect(working.getByTestId("overview-worker-title")).toHaveText("Nav fix");
+    await expect(failingPr.locator('[data-checks="failing"]')).toBeVisible();
+    await page.evaluate(
+      (threadId) =>
+        window.gramMock!.rename(
+          threadId as never,
+          "Improve workspace navigation and preserve approval boundaries",
+        ),
+      made.working,
+    );
+
     // Crossing widths keeps the focused worker attached to its existing DOM node.
     await resting.focus();
     await resting.evaluate((element) => {

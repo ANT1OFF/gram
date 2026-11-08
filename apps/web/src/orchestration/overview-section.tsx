@@ -1,11 +1,13 @@
 import { ChevronDown } from "lucide-react";
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { seeTerm, type TermId } from "@/lib/first-use";
 import { cn } from "@/lib/utils";
 import { OVERVIEW_STOP } from "@/shell/focus-regions";
 import { overviewSectionFolded, useLayoutStore, type OverviewSection } from "@/stores/layout";
+
+import { foldByKey } from "./overview-model";
 
 // The overview sidebar's pieces its sections share: a foldable section and the row's grid.
 
@@ -82,6 +84,13 @@ export function Section({
   const folded = useLayoutStore((s) => overviewSectionFolded(s, id));
   const toggle = useLayoutStore((s) => s.toggleOverviewSection);
   const body = `overview-${id}`;
+  // ← folds and → unfolds, as a tree row's do; anything else is the overview's.
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const to = foldByKey(event, folded);
+    if (to === undefined) return;
+    event.preventDefault();
+    toggle(id);
+  };
   return (
     <section aria-label={title} data-testid={`overview-section-${id}`} className="flex flex-col">
       <div className="flex items-center gap-1">
@@ -98,6 +107,7 @@ export function Section({
             onPointerEnter={term === undefined ? undefined : () => seeTerm(term)}
             onFocus={term === undefined ? undefined : () => seeTerm(term)}
             onClick={() => toggle(id)}
+            onKeyDown={onKeyDown}
             className={SECTION_TITLE}
           >
             <ChevronDown aria-hidden className={cn(SECTION_CHEVRON, folded && "-rotate-90")} />

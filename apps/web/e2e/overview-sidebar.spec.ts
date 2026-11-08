@@ -501,7 +501,14 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
   await overview(page).getByTestId("overview-done").first().focus();
   await page.keyboard.press("ArrowUp");
   await expect(overview(page).getByTestId("overview-pr").last()).toBeFocused();
-  await restHead.click();
+  // On its title, ← folds it and → opens it again, as a tree row's do.
+  await restHead.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(restHead).toHaveAttribute("aria-expanded", "false");
+  await expect(restHead).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(restHead).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("ArrowLeft");
   await expect(restHead).toHaveAttribute("aria-expanded", "false");
   await orchestrators.click();
   await expect(orchestrators).toHaveAttribute("aria-expanded", "false");

@@ -906,8 +906,8 @@ export function WorkerRow({
   const routine = working && !starting && !asking && !row.failed && row.now !== ANSWERED;
   const prChips = useWorkerPrChips(row.threadId, row.prs);
   // The words win outright: with words at its edge its PR chips stay on its hover card; at work,
-  // with no words, they sit after its title while the whole title fits beside them.
-  const chipsShown = routine ? prChips : NO_CHIPS;
+  // with no words or pause mark, they sit after its title while the whole title fits beside them.
+  const chipsShown = routine && pause === undefined ? prChips : NO_CHIPS;
   const { line, words, ghost, fits } = useChipsFit(chipsShown.length);
   const facts = [
     row.title,

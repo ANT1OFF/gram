@@ -780,14 +780,26 @@ describe("side panels", () => {
     s().unfoldOverviewSection("solo");
     expect(folded("solo")).toBe(false);
 
-    // A default-folded section is never kept among the folded ones, nor the reverse; the sections
-    // At rest took in (Pull requests, Done) are dropped.
+    // A default-folded section is never kept among the folded ones, nor the reverse.
     expect(
       sanitizeOverviewView({
         overviewFolded: ["rest", "solo"],
-        overviewUnfolded: ["solo", "rest", "pullRequests", "doneToday", "x"],
+        overviewUnfolded: ["solo", "rest", "x"],
       }),
     ).toEqual({ overviewFolded: ["solo"], overviewUnfolded: ["rest"] });
+    // A section At rest took in (Pull requests, Done) or the idle group left open opens At rest;
+    // folded, they leave it folded.
+    expect(sanitizeOverviewView({ overviewUnfolded: ["pullRequests"] })).toEqual({
+      overviewUnfolded: ["rest"],
+    });
+    expect(sanitizeOverviewView({ overviewUnfolded: ["doneToday"] })).toEqual({
+      overviewUnfolded: ["rest"],
+    });
+    expect(
+      sanitizeOverviewView({ workspacesCollapsedNodes: ["overview-idle:open", "overview:ws-1"] }),
+    ).toEqual({ overviewUnfolded: ["rest"] });
+    expect(sanitizeOverviewView({ overviewUnfolded: [] })).toEqual({ overviewUnfolded: [] });
+    expect(sanitizeOverviewView({ workspacesCollapsedNodes: ["overview:ws-1"] })).toEqual({});
   });
 
   it("keeps the sections Settings turns off in the column's order", () => {

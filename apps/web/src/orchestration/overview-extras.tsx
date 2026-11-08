@@ -124,7 +124,11 @@ export function RestHeading({
   testId?: string | undefined;
 }) {
   return (
-    <h3 data-testid={testId} className={cn(SECTION_TITLE, "mt-1 hover:text-muted-foreground")}>
+    <h3
+      data-testid={testId}
+      aria-label={`${title}, ${count}`}
+      className={cn(SECTION_TITLE, "mt-1 hover:text-muted-foreground")}
+    >
       <span aria-hidden />
       <span className="min-w-0 truncate">{title}</span>
       <span className="tabular-nums">{count}</span>
