@@ -31,7 +31,7 @@ test("the Board lists finished work under its lines, and brings it back on askin
   await expect(notes.getByTestId("board-done-pr")).toHaveText("#61 merged");
   await waitForBoardLayout(board);
   // One snapshot of the settled Board, rather than boxes from different entrance-animation frames.
-  const { lastY, doneY, prX, donePrX } = await notes.evaluate((row) => {
+  const { lastY, doneY, prX, donePrX, headsRight, scrollerRight } = await notes.evaluate((row) => {
     const root = row.closest('[data-testid="rail-board"]')!;
     const lines = root.querySelectorAll('[data-testid="rail-row"]');
     const heads = root.querySelector('[data-testid="board-grid-heads"]')!;
@@ -40,13 +40,18 @@ test("the Board lists finished work under its lines, and brings it back on askin
       doneY: row.closest('[data-testid="board-done"]')!.getBoundingClientRect().y,
       prX: heads.querySelector("span:last-child")!.getBoundingClientRect().x,
       donePrX: row.querySelector('[data-testid="board-done-pr"]')!.getBoundingClientRect().x,
+      headsRight: heads.getBoundingClientRect().right,
+      scrollerRight: root.querySelector('[data-testid="rail-scroller"]')!.getBoundingClientRect()
+        .right,
     };
   });
   // Below the lines at work, not among them.
   expect(doneY).toBeGreaterThan(lastY);
 
-  // The Pull request column sits after Now, not at the window's far edge.
-  expect(prX).toBeLessThan(1728 * 0.7);
+  // The table fills the Board's column, so a wide window leaves no dead gutter after it, and its
+  // Pull request column keeps to the right of Now.
+  expect(Math.abs(scrollerRight - headsRight)).toBeLessThan(24);
+  expect(prX).toBeGreaterThan(1728 * 0.5);
 
   // On the grid's columns: a finished task's PR sits under Pull request.
   expect(Math.abs(donePrX - prX)).toBeLessThan(2);

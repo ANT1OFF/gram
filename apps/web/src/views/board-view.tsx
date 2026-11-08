@@ -62,7 +62,7 @@ import { GroupBand } from "./board-group";
 import { StatusDot } from "@/orchestration/status-dot";
 
 import { DoneBand, doneRows } from "./board-done";
-import { GRID_WIDTH, GridHeads, GridLine, Status } from "./board-grid";
+import { GridHeads, GridLine, Status } from "./board-grid";
 import { BoardHeader } from "./board-header";
 import { useViewStore } from "./view-store";
 
@@ -606,7 +606,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
         className="min-h-0 flex-1 overflow-y-auto pb-2"
         style={{ "--board-lanes": laneTemplate(counts) } as CSSProperties}
       >
-        <div className={cn(grid && rows.length > 0 && GRID_WIDTH)}>
+        <div>
           {rows.length > 0 && (grid ? <GridHeads /> : !listed && <LaneHeads counts={counts} />)}
           {rows.length === 0 ? (
             hidden > 0 ? (

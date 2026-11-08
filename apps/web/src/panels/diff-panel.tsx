@@ -6,14 +6,13 @@ import {
   type TurnId,
 } from "@gram/contracts";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { Menu } from "@base-ui/react/menu";
 import {
-  Columns2,
+  CheckIcon,
+  ChevronDown,
   GitBranch,
   History,
   ListTree,
-  Pilcrow,
-  Rows2,
-  WrapText,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
@@ -21,7 +20,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefOb
 import { useApi } from "@/api/context";
 import { errorMessage, folderProblem } from "@/api/errors";
 import { Hint } from "@/components/hint";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { QueryError } from "@/components/not-available";
 import {
   Select,
@@ -79,8 +78,8 @@ const SMALL_PATCH_FILES = 3;
 const TREE_WIDTH = 208;
 
 const LAYOUTS = [
-  { kind: "unified", label: "Unified", icon: Rows2 },
-  { kind: "split", label: "Split", icon: Columns2 },
+  { kind: "unified", label: "Unified" },
+  { kind: "split", label: "Split" },
 ] as const;
 
 /** The element's width, following resizes; 0 until measured. */
@@ -407,13 +406,23 @@ export function DiffPanel({
 
 /** A view toggle: a 28 px glyph button on a fill while on, named with its state on hover. */
 const VIEW_TOGGLE =
-  "flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-accent aria-pressed:text-foreground aria-disabled:cursor-default";
+  "flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-accent aria-pressed:text-foreground";
+
+const VIEW_MENU_POPUP =
+  "z-50 min-w-56 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+const VIEW_MENU_ITEM =
+  "flex cursor-default items-start gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor data-[disabled]:text-muted-foreground [&_svg]:size-icon-row [&_svg]:shrink-0";
+
+/** A menu item's check column, so the items' words start on one edge. */
+function MenuCheck({ children }: { children: ReactNode }) {
+  return <span className="flex h-lh w-4 shrink-0 items-center justify-center">{children}</span>;
+}
 
 /**
- * The diff's display choices, in the review's toolbar where they are seen: unified or split as a
- * two-glyph segment, then wrap, whitespace and the file tree as toggles that show a fill while on.
- * Each is remembered. Split says on hover when the panel is too narrow for it (it shows unified until
- * there is room), and Wrap lines when split view holds it on.
+ * The diff's display choices, in the review's toolbar: the file tree, the one used often, as a
+ * toggle that shows a fill while on, then one "View" menu holding unified or split, Wrap lines and
+ * Hide whitespace changes. Each is remembered. Split says in the menu when the panel is too narrow
+ * for it (it shows unified until there is room), and Wrap lines when split view holds it on.
  */
 function DiffViewControls({
   layout,
@@ -435,67 +444,11 @@ function DiffViewControls({
   /** The file tree's choice, while the panel has room for it beside more than one file. */
   tree: { open: boolean; toggle: () => void } | undefined;
 }) {
-  const layoutSlab = useId();
   const shown = layout === "split" && splitFits ? "split" : "unified";
   // Each side of a split is half as wide, so its lines always wrap.
   const wrapFixed = shown === "split";
   return (
     <div data-testid="diff-view" className="flex shrink-0 items-center gap-1">
-      <div
-        role="radiogroup"
-        aria-label="Diff layout"
-        className={SEGMENT_TRACK}
-        onKeyDown={(event) =>
-          radioGroupKeyDown(
-            event,
-            LAYOUTS.map((option) => option.kind),
-            layout,
-            onLayout,
-          )
-        }
-      >
-        {LAYOUTS.map((option) => {
-          const narrow = option.kind === "split" && !splitFits;
-          const label = narrow ? "Split (needs a wider panel; showing unified)" : option.label;
-          return (
-            <Hint
-              key={option.kind}
-              label={label}
-              side="bottom"
-              render={
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={layout === option.kind}
-                  aria-label={option.label}
-                  data-layout={option.kind}
-                  tabIndex={layout === option.kind ? 0 : -1}
-                  onClick={() => onLayout(option.kind)}
-                  className="relative flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-(--dur-fast) outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground"
-                />
-              }
-            >
-              {layout === option.kind && (
-                <SegmentSlab group={layoutSlab} className={SEGMENT_SLAB} />
-              )}
-              <option.icon aria-hidden className="relative size-icon-row" />
-            </Hint>
-          );
-        })}
-      </div>
-      <ViewToggle
-        label="Wrap lines"
-        icon={WrapText}
-        pressed={wrapFixed || wrap}
-        onToggle={onWrap}
-        fixed={wrapFixed ? "always on in split view" : undefined}
-      />
-      <ViewToggle
-        label="Hide whitespace changes"
-        icon={Pilcrow}
-        pressed={ignoreWhitespace}
-        onToggle={onIgnoreWhitespace}
-      />
       {tree !== undefined && (
         <ViewToggle
           label="File tree"
@@ -505,39 +458,117 @@ function DiffViewControls({
           testId="diff-tree-toggle"
         />
       )}
+      <Menu.Root>
+        <Menu.Trigger
+          data-testid="diff-view-menu"
+          aria-label="View options"
+          className={cn(
+            buttonVariants({ variant: "ghost", size: "sm" }),
+            "px-2 data-popup-open:bg-accent data-popup-open:text-foreground",
+          )}
+        >
+          View
+          <ChevronDown aria-hidden className="size-icon-chip text-muted-foreground" />
+        </Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
+            <Menu.Popup
+              data-testid="diff-view-options"
+              data-surface="overlay"
+              className={VIEW_MENU_POPUP}
+            >
+              <Menu.RadioGroup
+                aria-label="Diff layout"
+                value={layout}
+                onValueChange={(next: DiffLayout) => onLayout(next)}
+              >
+                {LAYOUTS.map((option) => (
+                  <Menu.RadioItem
+                    key={option.kind}
+                    value={option.kind}
+                    data-layout={option.kind}
+                    className={VIEW_MENU_ITEM}
+                  >
+                    <MenuCheck>
+                      <Menu.RadioItemIndicator>
+                        <CheckIcon aria-hidden />
+                      </Menu.RadioItemIndicator>
+                    </MenuCheck>
+                    <span className="flex min-w-0 flex-col">
+                      {option.label}
+                      {option.kind === "split" && !splitFits && (
+                        <span className="text-meta text-muted-foreground">
+                          Needs a wider panel; showing unified
+                        </span>
+                      )}
+                    </span>
+                  </Menu.RadioItem>
+                ))}
+              </Menu.RadioGroup>
+              <Menu.Separator className="mx-2 my-1 h-px bg-border" />
+              <Menu.CheckboxItem
+                checked={wrapFixed || wrap}
+                disabled={wrapFixed}
+                onCheckedChange={onWrap}
+                className={VIEW_MENU_ITEM}
+              >
+                <MenuCheck>
+                  <Menu.CheckboxItemIndicator>
+                    <CheckIcon aria-hidden />
+                  </Menu.CheckboxItemIndicator>
+                </MenuCheck>
+                <span className="flex min-w-0 flex-col">
+                  Wrap lines
+                  {wrapFixed && (
+                    <span className="text-meta text-muted-foreground">Always on in split view</span>
+                  )}
+                </span>
+              </Menu.CheckboxItem>
+              <Menu.CheckboxItem
+                checked={ignoreWhitespace}
+                onCheckedChange={onIgnoreWhitespace}
+                className={VIEW_MENU_ITEM}
+              >
+                <MenuCheck>
+                  <Menu.CheckboxItemIndicator>
+                    <CheckIcon aria-hidden />
+                  </Menu.CheckboxItemIndicator>
+                </MenuCheck>
+                Hide whitespace changes
+              </Menu.CheckboxItem>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
     </div>
   );
 }
 
-/** A remembered on/off view choice. `fixed` says why it is on whatever the choice. */
+/** A remembered on/off view choice, named with its state on hover. */
 function ViewToggle({
   label,
   icon: Icon,
   pressed,
   onToggle,
-  fixed,
   testId,
 }: {
   label: string;
   icon: LucideIcon;
   pressed: boolean;
   onToggle: () => void;
-  fixed?: string | undefined;
   testId?: string;
 }) {
   return (
     <Hint
-      label={`${label}: ${fixed ?? (pressed ? "on" : "off")}`}
+      label={`${label}: ${pressed ? "on" : "off"}`}
       side="bottom"
       render={
         <button
           type="button"
           aria-label={label}
           aria-pressed={pressed}
-          // Held on by split view: still hoverable, so its hint says why.
-          aria-disabled={fixed !== undefined || undefined}
           data-testid={testId}
-          onClick={fixed === undefined ? onToggle : undefined}
+          onClick={onToggle}
           className={VIEW_TOGGLE}
         />
       }
