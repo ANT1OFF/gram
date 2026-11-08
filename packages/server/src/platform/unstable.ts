@@ -18,6 +18,8 @@ export * as RpcSchema from "effect/rpc/RpcSchema";
 export * as RpcSerialization from "effect/rpc/RpcSerialization";
 export * as RpcServer from "effect/rpc/RpcServer";
 export * as Socket from "effect/socket/Socket";
+export * as SocketServer from "effect/socket/SocketServer";
+export * as NetAddress from "effect/net/NetAddress";
 export * as SqlClient from "effect/sql/SqlClient";
 export { SqlError, ConnectionError } from "effect/sql/SqlError";
 export type { Connection as SqlConnection } from "effect/sql/SqlConnection";

@@ -16,7 +16,7 @@ export const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const LISTS = join(ROOT, "out", "notices", "lists");
 
 /** The bundles a packaged app carries; `generate.mjs` fails when one hasn't recorded its list. */
-export const BUNDLES = ["main", "preload", "server", "proc-worker", "speech", "web"];
+export const BUNDLES = ["main", "preload", "server", "proc-worker", "gram-host", "speech", "web"];
 
 const MARKER = `${sep}node_modules${sep}`;
 

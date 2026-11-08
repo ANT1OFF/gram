@@ -1,34 +1,24 @@
-import { type HostId, hostOf, HostUnavailable, LOCAL_HOST_ID } from "@gram/contracts";
-import { GitStateRuntime, Proc, type ProcShape, Worktrees } from "@gram/git";
+import {
+  type HostHello,
+  type HostId,
+  hostOf,
+  HostUnavailable,
+  LOCAL_HOST_ID,
+} from "@gram/contracts";
+import { GitStateRuntime, Proc, Worktrees } from "@gram/git";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { listFolder } from "../fs/files.ts";
-import { listFileNames } from "../fs/names.ts";
-import { searchFiles } from "../fs/search.ts";
+import { spawnLocalHost } from "./child.ts";
+import { filesOn, type HostFiles } from "./files.ts";
+
+export type { HostFiles } from "./files.ts";
 import { liveScan, type PortScan } from "../ports/scan.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { CheckoutService, type CheckoutServiceShape } from "../runtime/hooks.ts";
 import { HostTerminals } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
-
-/** Reading a machine's folders for the Files panel, already scoped to a checkout by the caller. */
-const filesOn = (proc: ProcShape) => {
-  const on = Effect.provideService(Proc, proc);
-  return {
-    /** A folder's entries, dotfiles and git-ignored entries hidden unless asked for. */
-    list: (path: string, options: Parameters<typeof listFolder>[1]) =>
-      on(listFolder(path, options)),
-    /** Lines matching `query` under `root`, through `git grep` in a repository. */
-    search: (root: string, query: string, options: Parameters<typeof searchFiles>[2]) =>
-      on(searchFiles(root, query, options)),
-    /** Every file name under `root`, for the mention picker. */
-    names: (root: string) => on(listFileNames(root)),
-  };
-};
-
-export type HostFiles = ReturnType<typeof filesOn>;
 
 export interface HostPorts {
   /** One sweep of the machine's listening ports and process tree. */
@@ -80,6 +70,8 @@ export interface WorkerHost {
   readonly files: HostMachine["files"];
   readonly terminals: HostMachine["terminals"];
   readonly ports: HostMachine["ports"];
+  /** The host process's hello, when this machine's host runs as its own process. */
+  readonly process?: HostHello | undefined;
 }
 
 export interface WorkerHostsShape {
@@ -115,21 +107,62 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     WorkerHosts,
     never,
     AgentHosts | CheckoutService | Worktrees | GitStateRuntime | Proc | HostTerminals
-  > = Layer.effect(
-    WorkerHosts,
-    Effect.gen(function* () {
-      return WorkerHosts.fromHosts({
-        id: LOCAL_HOST_ID,
-        sessions: yield* AgentHosts,
-        checkouts: yield* CheckoutService,
-        worktrees: yield* Worktrees,
-        git: yield* GitStateRuntime,
-        files: filesOn(yield* Proc),
-        terminals: yield* HostTerminals,
-        ports: { scan: liveScan.pipe(Effect.provideService(Proc, yield* Proc)) },
-      });
-    }),
+  > = Layer.suspend(() =>
+    WorkerHosts.layerLocalWith({ hostProcess: process.env["GRAM_HOST_PROCESS"] === "1" }),
   );
+
+  /**
+   * This machine, with `hostProcess` reading its folders and scanning its ports through the host
+   * running as its own process (`gram-host`), over the host protocol. A host process that can't
+   * start, or answers on another protocol version, leaves those parts in the server, as without
+   * it. Its other parts move to the host process one at a time.
+   */
+  static readonly layerLocalWith = (options: {
+    readonly hostProcess: boolean;
+  }): Layer.Layer<
+    WorkerHosts,
+    never,
+    AgentHosts | CheckoutService | Worktrees | GitStateRuntime | Proc | HostTerminals
+  > =>
+    Layer.effect(
+      WorkerHosts,
+      Effect.gen(function* () {
+        const proc = yield* Proc;
+        const inServer: {
+          readonly files: HostFiles;
+          readonly scan: HostPorts["scan"];
+          readonly hello?: HostHello;
+        } = {
+          files: filesOn(proc),
+          scan: liveScan.pipe(Effect.provideService(Proc, proc)),
+        };
+        const machine = options.hostProcess
+          ? yield* spawnLocalHost.pipe(
+              Effect.tap((host) =>
+                Effect.logInfo("worker host: running as its own process").pipe(
+                  Effect.annotateLogs({ pid: host.hello.pid }),
+                ),
+              ),
+              Effect.catch((error) =>
+                Effect.logWarning(
+                  "worker host: its process didn't start; it runs in the server",
+                ).pipe(Effect.annotateLogs({ reason: error.message }), Effect.as(inServer)),
+              ),
+            )
+          : inServer;
+        return WorkerHosts.fromHosts({
+          id: LOCAL_HOST_ID,
+          sessions: yield* AgentHosts,
+          checkouts: yield* CheckoutService,
+          worktrees: yield* Worktrees,
+          git: yield* GitStateRuntime,
+          files: machine.files,
+          terminals: yield* HostTerminals,
+          ports: { scan: machine.scan },
+          process: machine.hello,
+        });
+      }),
+    );
 
   /**
    * This machine for tests that run agents without the rest of the server: the parts a test layer

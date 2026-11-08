@@ -53,7 +53,7 @@ const FUSES = {
 };
 
 /** The Node-side bundles in app.asar, by the names their builds record lists under. */
-const NODE_BUNDLES = ["main", "preload", "server", "proc-worker", "speech"];
+const NODE_BUNDLES = ["main", "preload", "server", "proc-worker", "gram-host", "speech"];
 
 /** The lists in `dir` for NODE_BUNDLES, by name; a missing one is left out. */
 const readBundleLists = (dir) =>
@@ -76,6 +76,8 @@ const ASAR_ENTRIES = [
   "out/main/index.js",
   "out/server/server.js",
   "out/server/proc-worker.js",
+  // This machine's worker host, when it runs as its own process.
+  "out/server/gram-host.js",
   // The terminal emulator the server replays scrollback through; read from beside the bundle.
   "out/server/ghostty-vt.wasm",
   "out/preload/index.js",
