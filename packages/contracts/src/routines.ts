@@ -9,7 +9,7 @@
 import * as Schema from "effect/Schema";
 import { ModelRef } from "./domain.ts";
 import { ProjectId, ThreadId } from "./ids.ts";
-import { BranchName, ReleaseName, RepoName } from "./wake-conditions.ts";
+import { BranchName, RELEASE_MIN_AGE_DAYS, ReleaseName, RepoName } from "./wake-conditions.ts";
 
 /** The most routines one workspace keeps. */
 export const ROUTINES_MAX = 8;
@@ -194,7 +194,15 @@ export const routineWhenText = (routine: RoutineWhen): string =>
  * reckons the routine again from now, and an event routine looks afresh.
  */
 export const routineWhenKey = (routine: RoutineWhen): string =>
-  routine.on !== undefined ? JSON.stringify({ on: routine.on }) : JSON.stringify(routine.schedule);
+  routine.on !== undefined
+    ? JSON.stringify({ on: normalTrigger(routine.on) })
+    : JSON.stringify(routine.schedule);
+
+/** The trigger with its defaults filled in, so leaving one out and giving it key alike. */
+const normalTrigger = (on: RoutineTrigger): RoutineTrigger =>
+  on.event === "releasePublished"
+    ? { ...on, minAgeDays: on.minAgeDays ?? RELEASE_MIN_AGE_DAYS }
+    : on;
 
 /** `name` as routines are compared: trimmed, case aside. */
 export const routineNameKey = (name: string): string => name.trim().toLowerCase();
@@ -439,6 +447,16 @@ export const RoutineTriggerState = Schema.Struct({
   lookedAt: Schema.optionalKey(Schema.Number),
   /** Why the last look couldn't read the source, in a line the user can act on. */
   problem: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(ROUTINE_RUN_DETAIL_MAX))),
+  /**
+   * What the seeded keys were seen in: a PR or CI routine's resolved repository (and branch). A
+   * look at another one (the routine's project, the home project or the origin changed) seeds
+   * afresh rather than firing for everything already there.
+   */
+  target: Schema.optionalKey(Schema.String),
+  /** Looks in a row that couldn't tell; past a few, `problem` says so. */
+  misses: Schema.optionalKey(Schema.Int),
+  /** Why events wait though the cooldown is over: its last run's worker is live, or its brief held. */
+  blocked: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(ROUTINE_RUN_DETAIL_MAX))),
 });
 export type RoutineTriggerState = typeof RoutineTriggerState.Type;
 

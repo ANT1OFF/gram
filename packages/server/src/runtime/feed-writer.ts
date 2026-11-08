@@ -23,6 +23,7 @@ import {
   type GramUIMessage,
   type TurnEnd,
   type TurnId,
+  type UsageSummary,
   FEED_WINDOW_TURNS,
   type GramUIMessageChunk,
   type MessageId,
@@ -385,17 +386,24 @@ export const makeFeedWriter = ({
     );
 
   /**
-   * Stamps how a turn ended on its reply. A whole-message write: the stored row keeps its place, and
-   * unlike a chunk it doesn't read as the reply streaming again. Only the transcript hears of it.
+   * Stamps how a turn ended on its reply, and the tokens the turn used (`usage`, its reply's share:
+   * see `replyUsage`). A whole-message write: the stored row keeps its place, and unlike a chunk it
+   * doesn't read as the reply streaming again. Only the transcript hears of it.
    */
-  const stampTurnEnd = (rt: Runtime, messageId: MessageId, turnEnd: TurnEnd) =>
+  const stampTurnEnd = (
+    rt: Runtime,
+    messageId: MessageId,
+    turnEnd: TurnEnd,
+    usage?: UsageSummary,
+  ) =>
     feedLocked(
       rt,
       Effect.gen(function* () {
+        const stamp = { turnEnd, ...(usage === undefined ? {} : { usage }) };
         const held = rt.open.get(messageId);
         if (held !== undefined) {
           // A reply held for a tool's late output is saved from here again, so that keeps it too.
-          held.accumulator.apply({ type: "message-metadata", messageMetadata: { turnEnd } });
+          held.accumulator.apply({ type: "message-metadata", messageMetadata: stamp });
           // And a replay draws it from these rather than the store, closing it on this finish.
           const index = held.items.findLastIndex(
             ({ event }) => event.type === "chunk" && event.chunk.type === "finish",
@@ -403,14 +411,14 @@ export const makeFeedWriter = ({
           const finish = held.items[index];
           if (finish?.event.type === "chunk" && finish.event.chunk.type === "finish") {
             const chunk = finish.event.chunk;
-            const messageMetadata = { ...chunk.messageMetadata, turnEnd };
+            const messageMetadata = { ...chunk.messageMetadata, ...stamp };
             const event = { ...finish.event, chunk: { ...chunk, messageMetadata } };
             held.items[index] = { ...finish, event };
           }
         }
         const reply = yield* store.getMessage(rt.threadId, messageId);
         if (reply === undefined) return;
-        const message = { ...reply, metadata: { ...reply.metadata, turnEnd } };
+        const message = { ...reply, metadata: { ...reply.metadata, ...stamp } };
         const rev = yield* store.upsertMessage(rt.threadId, message);
         yield* publishFeed(rt, { type: "message", message, rev });
       }),

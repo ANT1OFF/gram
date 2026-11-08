@@ -2009,6 +2009,24 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "reply-tokens",
+    title:
+      "A finished turn's reply with its token line on hover, open on what makes it up and the context after it",
+    open: async (page) => {
+      await openFlakyAtApproval(page);
+      await elapse(page, FLAKY_DONE_MS);
+      await page.getByTestId("approval-allow").click();
+      await page.getByText("Done. Summary:").waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Stop", exact: true }).waitFor({ state: "hidden" });
+      const reply = page.getByTestId("message-actions").last();
+      await reply.scrollIntoViewIfNeeded();
+      await reply.hover();
+      await reply.getByTestId("reply-tokens").hover();
+      await page.getByTestId("reply-tokens-detail").waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
+  {
     name: "new-entry-header",
     title: "The overview header with its New control, at the 180 px minimum width",
     open: async (page) => {

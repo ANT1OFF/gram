@@ -42,7 +42,7 @@ import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { OrchestratorAppToolsLive } from "../orchestration/tools.ts";
-import { ServerConfig } from "../config.ts";
+import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { TerminalGate } from "../terminal/gate.ts";
 import { HostTerminals } from "../terminal/host-terminals.ts";
@@ -71,6 +71,7 @@ import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { PreviewFiles } from "../preview/files.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
+import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
@@ -429,8 +430,8 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           // The machines work runs on: only this one for now, over its agents, checkouts, git,
-          // files, terminals and port scan. One host process serves both the worker host and the
-          // worktrees the checkouts make.
+          // files, terminals and port scan. One host process serves the worker host, the worktrees
+          // the checkouts make, and the Claude sessions it can run.
           Layer.provideMerge(
             WorkerHosts.layerLocalOn.pipe(
               Layer.provideMerge(
@@ -438,6 +439,7 @@ export const ServerCore = Layer.unwrap(
                   GitCheckoutLive.pipe(Layer.provide(LocalHostProcess.worktrees)),
                   ClaudeAiSeenLive,
                   HostTerminals.layer,
+                  AgentHostsThroughHost,
                 ),
               ),
               Layer.provideMerge(LocalHostProcess.layer),
@@ -490,7 +492,7 @@ export const ServerLayer: Layer.Layer<
   AgentHosts | ServerConfig | GitPlatform | TurnHooks
 > = Layer.unwrap(
   Effect.gen(function* () {
-    const { port } = yield* ServerConfig;
+    const { port, listenHost } = yield* ServerConfig;
     return HttpRouter.serve(Layer.mergeAll(RpcRoutes, StaticRoutes, McpRoute, AuthMiddleware), {
       disableListenLog: true,
       disableLogger: true,
@@ -502,7 +504,7 @@ export const ServerLayer: Layer.Layer<
       Layer.provideMerge(LaunchToken.layer),
       Layer.provideMerge(
         NodeHttpServer.layer(createHttpListener, {
-          host: "127.0.0.1",
+          host: listenHost ?? LOOPBACK_HOST,
           port,
           // Close request/WebSocket scopes before awaiting the listener's final close. The
           // preemptive grace timeout interrupts a cached close effect; its later finalizer then
