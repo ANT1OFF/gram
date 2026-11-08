@@ -1,6 +1,6 @@
 import type { AgentKind, ProfileId } from "@gram/contracts";
 import { useMutation, useQueries } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
@@ -27,8 +27,8 @@ import {
   useRefreshModels,
 } from "./models";
 import type { PickerOption } from "./picker";
-import { GHOST_TRIGGER } from "./styles";
-import type { LabelSize } from "./toolbar-layout";
+import { modelSection } from "./choice-sections";
+import type { ChoiceSection } from "./choices";
 
 /** Where a model in the prompt box's list runs: an agent, through a gateway or its own account. */
 export interface ModelPick {
@@ -99,35 +99,8 @@ function useModelsAcross(
   return [...own, ...custom, ...gateway];
 }
 
-/**
- * The model picker for drafts and Settings, fed by `models.list` (a gateway agent's models come
- * from `profileId`). In the prompt box (`ghost`) it is the composer's searching list with
- * favourites, and with `onPick` every one of `agents`' models is in it, picking another agent's or
- * gateway's switching to it; elsewhere it searches past `MODEL_SEARCH_THRESHOLD` models.
- */
-export function ModelSelect({
-  agent,
-  profileId,
-  value,
-  onChange,
-  ghost = false,
-  agents,
-  onPick,
-  labelled = "full",
-}: {
-  agent: AgentKind;
-  profileId?: ProfileId;
-  value: string;
-  onChange: (model: string) => void;
-  /** Styled as a composer toolbar control, for the `/new` hero's prompt box. */
-  ghost?: boolean;
-  /** The agents whose models the prompt box lists beside `agent`'s; only with `onPick`. */
-  agents?: readonly AgentKind[] | undefined;
-  /** Called for a model of another agent or gateway than `agent` and `profileId`. */
-  onPick?: ((pick: ModelPick) => void) | undefined;
-  /** In the prompt box, the name in full or in short ("Opus"), as the row's room allows. */
-  labelled?: LabelSize | undefined;
-}) {
+/** A model list's state: loading before it has anything to show, or failed with a retry. */
+function useModelListing(agent: AgentKind, profileId: ProfileId | undefined, value: string) {
   const listing = useModelsQuery(agent, profileId);
   const provider = useProviderLabel(agent, profileId);
   // CLI aliases are a fallback only for local Claude, never for a gateway or another account.
@@ -138,16 +111,7 @@ export function ModelSelect({
     unlistedWarning(agent, profileId),
     provider,
   );
-  const across = onPick !== undefined && agents !== undefined;
   const refresh = useRefreshModels(agent, profileId);
-  const [open, setOpenState] = useState(false);
-  const acrossOptions = useModelsAcross(across ? agents : [], { agent, profileId }, options, open);
-  const setOpen = (next: boolean) => {
-    if (next) refresh();
-    setOpenState(next);
-  };
-  const favourite = useIsFavourite(agent);
-  const favouriteOf = useIsFavouriteOf();
   const { recheck } = useLaunchChecks();
   const retry = useMutation({
     mutationFn: async () => {
@@ -156,14 +120,12 @@ export function ModelSelect({
       else await listing.refetch();
     },
   });
-  if (listing.isPending && value === "")
-    return (
+  const status =
+    listing.isPending && value === "" ? (
       <span role="status" className="text-meta text-muted-foreground">
         Loading models…
       </span>
-    );
-  if (listing.isError)
-    return (
+    ) : listing.isError ? (
       <div role="alert" className="flex items-center gap-2 text-meta text-destructive">
         <span>{errorMessage(listing.error)}</span>
         {retry.isError && <span>{errorMessage(retry.error)}</span>}
@@ -171,37 +133,120 @@ export function ModelSelect({
           {retry.isPending ? "Retrying…" : "Retry models"}
         </Button>
       </div>
-    );
-  if (across) {
-    return (
-      <ModelCombobox
-        label="Model"
-        value={pickKey(agent, profileId, value)}
-        options={acrossOptions}
-        onChange={(key) => {
-          const pick = parsePick(key);
+    ) : undefined;
+  return { options, refresh, status };
+}
+
+/**
+ * The prompt box's Model section of its choices (`ComposerChoices`): the composer's searching list
+ * with favourites, and with `onPick` every one of `agents`' models in it, picking another agent's
+ * or gateway's switching to it. Another agent's models are asked for only once the popover opens.
+ * While the models load, or failing with a retry, there is no section: `status` stands in its
+ * place on the row, as the model picker's did.
+ */
+export function useModelSection({
+  agent,
+  profileId,
+  value,
+  onChange,
+  agents,
+  onPick,
+}: {
+  agent: AgentKind;
+  profileId?: ProfileId | undefined;
+  value: string;
+  onChange: (model: string) => void;
+  /** The agents whose models the list holds beside `agent`'s; only with `onPick`. */
+  agents?: readonly AgentKind[] | undefined;
+  /** Called for a model of another agent or gateway than `agent` and `profileId`. */
+  onPick?: ((pick: ModelPick) => void) | undefined;
+}): { section: ChoiceSection | undefined; status: ReactNode; onOpen: () => void } {
+  const { options, refresh, status } = useModelListing(agent, profileId, value);
+  const across = onPick !== undefined && agents !== undefined;
+  const [opened, setOpened] = useState(false);
+  const acrossOptions = useModelsAcross(
+    across ? agents : [],
+    { agent, profileId },
+    options,
+    opened,
+  );
+  const favourite = useIsFavourite(agent);
+  const favouriteOf = useIsFavouriteOf();
+  const onOpen = () => {
+    refresh();
+    setOpened(true);
+  };
+  if (status !== undefined) return { section: undefined, status, onOpen };
+  if (!across)
+    return {
+      section: modelSection({
+        value,
+        options,
+        onChange,
+        search: {
+          rowIcon: <AgentIcon agent={agent} className="size-icon-row" />,
+          favourite,
+          onToggleFavourite: (model) => useModelFavourites.getState().toggle(agent, model),
+        },
+      }),
+      status,
+      onOpen,
+    };
+  const shown = modelSection({ value, options, onChange });
+  return {
+    section: {
+      ...modelSection({
+        value: pickKey(agent, profileId, value),
+        options: acrossOptions,
+        onChange: (next) => {
+          const pick = parsePick(next);
           if (pick.agent === agent && pick.profileId === profileId) onChange(pick.model);
           else onPick(pick);
-        }}
-        open={open}
-        onOpenChange={setOpen}
-        // The agent picker beside it carries the mark.
-        icon={undefined}
-        title="Model"
-        description={undefined}
-        labelled={labelled}
-        favourite={(key) => {
-          const pick = parsePick(key);
-          return favouriteOf(pick.agent, pick.model);
-        }}
-        onToggleFavourite={(key) => {
-          const pick = parsePick(key);
-          useModelFavourites.getState().toggle(pick.agent, pick.model);
-        }}
-      />
-    );
-  }
-  if (ghost || options.length > MODEL_SEARCH_THRESHOLD) {
+        },
+        search: {
+          favourite: (next) => {
+            const pick = parsePick(next);
+            return favouriteOf(pick.agent, pick.model);
+          },
+          onToggleFavourite: (next) => {
+            const pick = parsePick(next);
+            useModelFavourites.getState().toggle(pick.agent, pick.model);
+          },
+        },
+      }),
+      // Named from the agent's own list, which has the model before the other agents' have loaded.
+      named: shown.named,
+      chip: shown.chip,
+    },
+    status,
+    onOpen,
+  };
+}
+
+/**
+ * The model picker for Settings and other forms, fed by `models.list` (a gateway agent's models
+ * come from `profileId`); it searches past `MODEL_SEARCH_THRESHOLD` models.
+ */
+export function ModelSelect({
+  agent,
+  profileId,
+  value,
+  onChange,
+}: {
+  agent: AgentKind;
+  profileId?: ProfileId;
+  value: string;
+  onChange: (model: string) => void;
+}) {
+  const { options, refresh, status } = useModelListing(agent, profileId, value);
+  const [open, setOpenState] = useState(false);
+  const setOpen = (next: boolean) => {
+    if (next) refresh();
+    setOpenState(next);
+  };
+  const favourite = useIsFavourite(agent);
+  if (status !== undefined) return status;
+  if (options.length > MODEL_SEARCH_THRESHOLD) {
     return (
       <ModelCombobox
         label="Model"
@@ -214,10 +259,10 @@ export function ModelSelect({
         rowIcon={<AgentIcon agent={agent} className="size-icon-row" />}
         title="Model"
         description={undefined}
-        labelled={ghost ? labelled : true}
+        labelled
         favourite={favourite}
         onToggleFavourite={(model) => useModelFavourites.getState().toggle(agent, model)}
-        field={!ghost}
+        field
       />
     );
   }
@@ -231,10 +276,7 @@ export function ModelSelect({
         if (next !== null) onChange(next);
       }}
     >
-      <SelectTrigger
-        aria-label="Model"
-        {...(ghost ? { size: "sm" as const, className: GHOST_TRIGGER } : {})}
-      >
+      <SelectTrigger aria-label="Model">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

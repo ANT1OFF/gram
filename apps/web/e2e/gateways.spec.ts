@@ -2,11 +2,8 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { openSettingsPage } from "./settings-nav";
 
-/**
- * The prompt box's model picker: named "Model" while it says its name in full, "Model: GPT-5.5"
- * once the toolbar is short of room and it drops its chevron.
- */
-const modelPicker = (form: Locator) => form.getByRole("combobox", { name: /^Model(: |$)/ });
+/** The prompt box's choices chip, which says the model first and opens on its Model section. */
+const modelPicker = (form: Locator) => form.getByTestId("composer-choices");
 
 const MOCK_AGENTS_KEY = "gram.mock.agents";
 

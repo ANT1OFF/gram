@@ -1,6 +1,6 @@
 import { Combobox } from "@base-ui/react/combobox";
 import { CheckIcon, ChevronDownIcon, Search, Star } from "lucide-react";
-import { useRef, type ReactNode } from "react";
+import { useRef, type ReactNode, type RefObject } from "react";
 
 import { Hint } from "@/components/hint";
 import { keyLabel } from "@/keyboard/registry";
@@ -163,111 +163,191 @@ export function ModelCombobox({
             aria-label="Models"
             className="flex w-80 max-w-(--available-width) origin-(--transform-origin) flex-col rounded-md border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
-            <div className="flex items-center gap-2 border-b border-border px-2.5">
-              <Search aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-              <Combobox.Input
-                aria-label="Search models"
-                placeholder="Search models…"
-                className="h-9 w-full bg-transparent text-reading outline-none placeholder:text-muted-foreground"
-                onKeyDown={(event) => {
-                  // An IME takes ⇧↵ to accept a candidate; 229 is how some browsers report it.
-                  const composing = event.nativeEvent.isComposing || event.keyCode === 229;
-                  if (event.key !== "Enter" || !event.shiftKey || composing) return;
-                  if (!highlighted.current || !onToggleFavourite) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onToggleFavourite(highlighted.current.value);
-                }}
-              />
-            </div>
-            <Combobox.Empty>
-              <p className="px-3 py-3 text-reading text-muted-foreground">No model matches.</p>
-            </Combobox.Empty>
-            <Combobox.List className="max-h-[min(20rem,var(--available-height))] overflow-y-auto overscroll-contain p-1 empty:p-0">
-              {(group: ModelGroup) => (
-                <Combobox.Group key={group.label} items={group.items as Option[]}>
-                  {headed && (
-                    <Combobox.GroupLabel className="px-2 pt-2 pb-1 text-caption font-medium text-muted-foreground">
-                      {group.label}
-                    </Combobox.GroupLabel>
-                  )}
-                  <Combobox.Collection>
-                    {(option: Option) => {
-                      const starred = favourite(option.value);
-                      return (
-                        // Named by the model alone: the star inside would otherwise join its name.
-                        <Combobox.Item
-                          key={option.value}
-                          value={option}
-                          aria-label={option.label}
-                          aria-description={option.description}
-                          className={ROW}
-                        >
-                          {(option.icon ?? rowIcon) !== undefined && (
-                            <span
-                              aria-hidden
-                              className="flex size-4 shrink-0 items-center text-muted-foreground"
-                            >
-                              {option.icon ?? rowIcon}
-                            </span>
-                          )}
-                          <span className="flex min-w-0 flex-1 flex-col">
-                            <span className="truncate">{option.label}</span>
-                            {option.description && (
-                              <span className="truncate text-meta text-muted-foreground">
-                                {option.description}
-                              </span>
-                            )}
-                          </span>
-                          <Combobox.ItemIndicator>
-                            <CheckIcon aria-hidden className="size-icon-row" />
-                          </Combobox.ItemIndicator>
-                          {/* Out of the tab order: the input keeps focus, and ⇧↵ stars from there. */}
-                          {onToggleFavourite && (
-                            <button
-                              type="button"
-                              tabIndex={-1}
-                              aria-label={
-                                starred
-                                  ? `Remove ${option.label} from favourites`
-                                  : `Add ${option.label} to favourites`
-                              }
-                              aria-pressed={starred}
-                              title={keyLabel(
-                                starred ? "Remove from favourites (⇧↵)" : "Favourite (⇧↵)",
-                              )}
-                              className={cn(
-                                "grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:text-foreground",
-                                // Every row shows its star, faint until the row is under the pointer.
-                                !starred &&
-                                  "opacity-40 group-hover/row:opacity-100 group-data-[highlighted]/row:opacity-100",
-                              )}
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                onToggleFavourite(option.value);
-                              }}
-                            >
-                              <Star
-                                aria-hidden
-                                className={cn(
-                                  "size-icon-row",
-                                  starred && "fill-current text-foreground",
-                                )}
-                              />
-                            </button>
-                          )}
-                        </Combobox.Item>
-                      );
-                    }}
-                  </Combobox.Collection>
-                </Combobox.Group>
-              )}
-            </Combobox.List>
+            <ModelSearchBody
+              headed={headed}
+              rowIcon={rowIcon}
+              favourite={favourite}
+              onToggleFavourite={onToggleFavourite}
+              highlighted={highlighted}
+            />
           </Combobox.Popup>
         </Combobox.Positioner>
       </Combobox.Portal>
+    </Combobox.Root>
+  );
+}
+
+/**
+ * The model list's search box, its empty state and its sections: favourites first, then a section
+ * per agent or gateway, each row with its mark, its description and a star. Inside a
+ * `Combobox.Root`, in its popup or inline.
+ */
+function ModelSearchBody({
+  headed,
+  rowIcon,
+  favourite,
+  onToggleFavourite,
+  highlighted,
+}: {
+  headed: boolean;
+  rowIcon: ReactNode;
+  favourite: (value: string) => boolean;
+  onToggleFavourite: ((value: string) => void) | undefined;
+  highlighted: RefObject<Option | undefined>;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-2 border-b border-border px-2.5">
+        <Search aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
+        <Combobox.Input
+          aria-label="Search models"
+          placeholder="Search models…"
+          className="h-9 w-full bg-transparent text-reading outline-none placeholder:text-muted-foreground"
+          onKeyDown={(event) => {
+            // An IME takes ⇧↵ to accept a candidate; 229 is how some browsers report it.
+            const composing = event.nativeEvent.isComposing || event.keyCode === 229;
+            if (event.key !== "Enter" || !event.shiftKey || composing) return;
+            if (!highlighted.current || !onToggleFavourite) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onToggleFavourite(highlighted.current.value);
+          }}
+        />
+      </div>
+      <Combobox.Empty>
+        <p className="px-3 py-3 text-reading text-muted-foreground">No model matches.</p>
+      </Combobox.Empty>
+      <Combobox.List className="max-h-[min(20rem,var(--available-height))] overflow-y-auto overscroll-contain p-1 empty:p-0">
+        {(group: ModelGroup) => (
+          <Combobox.Group key={group.label} items={group.items as Option[]}>
+            {headed && (
+              <Combobox.GroupLabel className="px-2 pt-2 pb-1 text-caption font-medium text-muted-foreground">
+                {group.label}
+              </Combobox.GroupLabel>
+            )}
+            <Combobox.Collection>
+              {(option: Option) => {
+                const starred = favourite(option.value);
+                return (
+                  // Named by the model alone: the star inside would otherwise join its name.
+                  <Combobox.Item
+                    key={option.value}
+                    value={option}
+                    aria-label={option.label}
+                    aria-description={option.description}
+                    className={ROW}
+                  >
+                    {(option.icon ?? rowIcon) !== undefined && (
+                      <span
+                        aria-hidden
+                        className="flex size-4 shrink-0 items-center text-muted-foreground"
+                      >
+                        {option.icon ?? rowIcon}
+                      </span>
+                    )}
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate">{option.label}</span>
+                      {option.description && (
+                        <span className="truncate text-meta text-muted-foreground">
+                          {option.description}
+                        </span>
+                      )}
+                    </span>
+                    <Combobox.ItemIndicator>
+                      <CheckIcon aria-hidden className="size-icon-row" />
+                    </Combobox.ItemIndicator>
+                    {/* Out of the tab order: the input keeps focus, and ⇧↵ stars from there. */}
+                    {onToggleFavourite && (
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        aria-label={
+                          starred
+                            ? `Remove ${option.label} from favourites`
+                            : `Add ${option.label} to favourites`
+                        }
+                        aria-pressed={starred}
+                        title={keyLabel(starred ? "Remove from favourites (⇧↵)" : "Favourite (⇧↵)")}
+                        className={cn(
+                          "grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:text-foreground",
+                          // Every row shows its star, faint until the row is under the pointer.
+                          !starred &&
+                            "opacity-40 group-hover/row:opacity-100 group-data-[highlighted]/row:opacity-100",
+                        )}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onToggleFavourite(option.value);
+                        }}
+                      >
+                        <Star
+                          aria-hidden
+                          className={cn("size-icon-row", starred && "fill-current text-foreground")}
+                        />
+                      </button>
+                    )}
+                  </Combobox.Item>
+                );
+              }}
+            </Combobox.Collection>
+          </Combobox.Group>
+        )}
+      </Combobox.List>
+    </>
+  );
+}
+
+/**
+ * The model list inline, open for as long as it shows: the Model section of the composer's
+ * choices. Typing filters, ↑↓ move, <kbd>↵</kbd> picks and <kbd>⇧↵</kbd> stars, as in
+ * `ModelCombobox`.
+ */
+export function ModelSearch({
+  value,
+  options,
+  onChange,
+  rowIcon,
+  favourite = NO_FAVOURITES,
+  onToggleFavourite,
+}: {
+  value: string | undefined;
+  options: readonly Option[];
+  onChange: (value: string) => void;
+  rowIcon?: ReactNode;
+  favourite?: ((value: string) => boolean) | undefined;
+  onToggleFavourite?: ((value: string) => void) | undefined;
+}) {
+  const highlighted = useRef<Option | undefined>(undefined);
+  const groups = modelGroups(options, favourite);
+  const headed = groups.length > 1 || options.some((option) => option.group !== undefined);
+  const selected = options.find((option) => option.value === value);
+  return (
+    <Combobox.Root<Option>
+      inline
+      open
+      items={groups as unknown as Option[]}
+      value={selected ?? null}
+      onValueChange={(next) => {
+        if (next) onChange(next.value);
+      }}
+      autoHighlight
+      itemToStringLabel={(option) => option.label}
+      isItemEqualToValue={(a, b) => a.value === b.value}
+      filter={(option, query) => matchesModel(option, query)}
+      onItemHighlighted={(option) => {
+        highlighted.current = option;
+      }}
+    >
+      <div data-model-search data-testid="model-picker" className="flex flex-col">
+        <ModelSearchBody
+          headed={headed}
+          rowIcon={rowIcon}
+          favourite={favourite}
+          onToggleFavourite={onToggleFavourite}
+          highlighted={highlighted}
+        />
+      </div>
     </Combobox.Root>
   );
 }

@@ -425,16 +425,17 @@ const steps: readonly Shot[] = [
   },
   {
     name: "effort-changed",
-    title: "Change: pick Extra high effort and see the gauge take it",
+    title: "Change: pick Extra high effort and see the choices chip take it",
     open: async (page) => {
       await seedMockSettings(page, { panel: { open: false } });
       await page.goto("/t/t-deps");
       await page.getByLabel("Message", { exact: true }).focus();
       await page.keyboard.press("ControlOrMeta+Shift+KeyE");
       await page.getByRole("option", { name: "Extra high effort" }).click();
-      await expect(page.getByRole("combobox", { name: "Effort: Extra high" })).toBeVisible();
-      await expect(page.getByTestId("effort-gauge")).toHaveAttribute("data-level", "xhigh");
-      // Said in words for a moment, beside the glyph that changed.
+      await expect(page.getByTestId("composer-choices")).toHaveAccessibleName(
+        / · Effort: Extra high \(.+\) · /,
+      );
+      // Said in words for a moment, beside the chip that changed.
       await expect(page.getByText("Effort set to Extra high")).toBeVisible();
     },
   },

@@ -306,11 +306,11 @@ describe("ThreadView header", () => {
 
     const header = await screen.findByTestId("pane-header");
     expect(header.textContent).not.toContain("Codex");
-    const picker = screen.getByRole("combobox", { name: "Model" });
+    const picker = screen.getByTestId("composer-choices");
     expect(picker.getAttribute("aria-description")).toBe("Codex");
-    // Its instant tooltip says it, as every toolbar picker's does.
+    // Its instant tooltip says it before the model, as every toolbar control's does.
     fireEvent.focus(picker);
-    const tip = await screen.findByText(/^Codex · Model/);
+    const tip = await screen.findByText(/^Codex · gpt-5\.5/i);
     expect(tip.closest('[data-slot="tooltip-content"]')).not.toBeNull();
   });
 

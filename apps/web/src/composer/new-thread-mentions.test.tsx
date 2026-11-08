@@ -61,14 +61,19 @@ describe("New thread draft @ mentions", () => {
     });
     expect(await screen.findByRole("form", { name: "New thread" })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Agent" }).textContent).toContain("Codex");
-    // Speed is its glyph unless Fast, and mode says its value, as in a thread's composer; Bypass
-    // keeps its tint.
-    expect(screen.getByRole("combobox", { name: "Speed: Fast" })).toBeTruthy();
-    const mode = screen.getByRole("combobox", { name: "Mode: Bypass" });
-    expect(mode.getAttribute("data-warning")).toBe("true");
-    expect(mode.className).toContain("text-warning");
-    expect(mode.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
-    expect(mode.textContent).toContain("Bypass");
+    // The choices chip says the saved mode and speed, as in a thread's composer: Fast is no
+    // default, so it shows, and Bypass keeps its tint.
+    const chip = screen.getByTestId("composer-choices");
+    const name = chip.getAttribute("aria-label") ?? "";
+    expect(name).toContain("Mode: Bypass");
+    expect(name).toContain("Speed: Fast");
+    expect(chip.getAttribute("data-warning")).toBe("true");
+    const words = chip.querySelector("[data-toolbar-label]")!;
+    expect(words.className).not.toContain("sr-only");
+    expect(words.textContent).toMatch(/· Bypass · Fast$/);
+    expect(screen.getByText("Bypass", { selector: "[data-toolbar-label] span" }).className).toBe(
+      "text-warning",
+    );
   });
 
   it("offers the project folder's files and inserts the chosen one", async () => {

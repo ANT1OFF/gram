@@ -1727,10 +1727,7 @@ export const SHOTS: readonly Shot[] = [
       "A solo thread at 1440 px, a draft typed, the model list open: it should not cover the draft",
     open: async (page) => {
       await openSoloComposer(1440)(page);
-      await page
-        .getByTestId("composer-toolbar")
-        .getByRole("combobox", { name: /^Model/ })
-        .click();
+      await page.getByTestId("composer-toolbar").getByTestId("composer-choices").click();
       await page.getByTestId("model-picker").waitFor();
       await page.waitForTimeout(300);
     },
@@ -3379,10 +3376,7 @@ export const SHOTS: readonly Shot[] = [
       });
       await page.setViewportSize({ width: 1200, height: 800 });
       await page.goto("/t/t-deps");
-      await page
-        .getByTestId("composer-toolbar")
-        .getByRole("combobox", { name: "Model", exact: true })
-        .click();
+      await page.getByTestId("composer-toolbar").getByTestId("composer-choices").click();
       await page.getByRole("option").first().waitFor();
       await page.waitForTimeout(400);
     },
@@ -3406,7 +3400,7 @@ export const SHOTS: readonly Shot[] = [
       await page.setViewportSize({ width: 1200, height: 900 });
       await page.goto("/new");
       const form = page.getByRole("form", { name: "New thread" });
-      await form.getByRole("combobox", { name: "Model", exact: true }).click();
+      await form.getByTestId("composer-choices").click();
       // Before, a plain list of Claude's models; after, Codex's section too.
       await page.getByRole("option").first().waitFor();
       await page.waitForTimeout(800);
@@ -3446,10 +3440,9 @@ export const SHOTS: readonly Shot[] = [
         });
       });
       await page.goto("/new");
-      await page
-        .getByRole("group", { name: "Agent" })
-        .getByLabel(/^Effort/)
-        .waitFor();
+      await expect(
+        page.getByRole("group", { name: "Agent" }).getByTestId("composer-choices"),
+      ).toHaveAccessibleName(/ · Effort: High · /);
     },
     element: (page) => page.getByRole("group", { name: "Agent" }),
   },

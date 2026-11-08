@@ -208,29 +208,31 @@ const scenes: readonly Shot[] = [
   },
   realistic({
     name: "composer-model",
-    title: "Composer: drafted message with the model picker open",
+    title: "Composer: drafted message with the choices open on the model",
     open: async (page) => {
       await composer(page);
-      await page.getByRole("combobox", { name: "Model", exact: true }).click();
+      await page.getByTestId("composer-choices").click();
       await expect(page.getByRole("listbox")).toBeVisible();
     },
   }),
   realistic({
     name: "composer-mode",
-    title: "Composer: permission mode picker open",
+    title: "Composer: the choices open on the permission mode",
     open: async (page) => {
       await composer(page);
-      await page.getByRole("combobox", { name: /^Mode: / }).click();
+      await page.getByTestId("composer-choices").click();
+      await page.getByTestId("choices-mode").click();
       await expect(page.getByRole("option", { name: "Bypass", exact: true })).toBeVisible();
     },
   }),
   realistic({
     name: "composer-controls",
-    title: "Composer: additional controls menu open",
+    title: "Composer: the choices open on speed, with what Fast costs",
     open: async (page) => {
       await composer(page);
-      await page.getByRole("button", { name: "More composer controls" }).click();
-      await expect(page.getByTestId("composer-overflow-menu")).toBeVisible();
+      await page.getByTestId("composer-choices").click();
+      await page.getByTestId("choices-speed").click();
+      await expect(page.getByRole("listbox", { name: "Speed" })).toBeVisible();
     },
   }),
   {

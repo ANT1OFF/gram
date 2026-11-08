@@ -1,13 +1,12 @@
 /**
- * How the composer's toolbar fits its width. Each control says its value in full ("Claude Opus",
- * "Effort: Extra high") while the row has room; short of it, each takes its compact form ("Opus",
- * "Effort: X-high", "Speed: Std"), from the right, and tighter, each keeps its value alone beside
- * its glyph ("X-high", "Std"), which names the dimension the words gave up. Still short, the
- * pickers move up to a row of their own above Send and Stop, in full, compact or value-alone
- * words, rather than lose their values. Only when even that can't fit do they drop to glyphs on
- * one row, from the right, and then fold into a "…" menu, also from the right. So a picker never shows its dimension
- * without its value. Pure, so the arithmetic is tested without a browser;
- * `use-toolbar-layout.ts` measures and `composer.tsx` renders it.
+ * How the composer's toolbar fits its width. Each measured control (the composer's choices chip)
+ * says its values in full ("Claude Opus · High · Auto") while the row has room; short of it, in
+ * their compact forms ("Opus · High · Auto"), from the right, and tighter, its value alone ("Opus").
+ * Still short, the controls move up to a row of their own above Send and Stop, in full, compact or
+ * value-alone words, rather than lose their values. Only when even that can't fit do they drop to
+ * glyphs on one row, from the right, and then fold into a "…" menu, also from the right, if they
+ * may. Pure, so the arithmetic is tested without a browser; `use-toolbar-layout.ts` measures and
+ * `composer.tsx` renders it.
  */
 
 /**

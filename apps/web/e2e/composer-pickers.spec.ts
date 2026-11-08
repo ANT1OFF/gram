@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { chipWords, choicesChip, choicesPopup, openChoices } from "./composer-choices";
+
 /** Narrows the composer's column the way a narrow pane does, without changing the window. */
 const squeeze = (page: Page, width: number) =>
   page.locator('[data-surface="composer"]').evaluate((el, w) => {
@@ -12,81 +14,75 @@ const box = async (locator: Locator) => {
   return found;
 };
 
-// The effort and mode pickers were glyphs alone: after a pick only the gauge changed, and the open
-// list marked nothing as current. Now they say their value while the row has room, check it in the
-// list, and confirm a pick in words.
-test("effort says its value, checks it in the list, and confirms a pick in words", async ({
+// The composer's model, effort, mode and speed were four chips that crowded Send. They are one
+// chip now: it says the values that aren't at their defaults, its name and tooltip say every one,
+// and its popover has a section for each that checks the value and confirms a pick in words.
+test("effort says its value, checks it in its section, and confirms a pick in words", async ({
   page,
 }) => {
   await page.goto("/t/t-deps");
   const toolbar = page.getByTestId("composer-toolbar");
-  const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
-  // No effort chosen: the model's own default, said as such.
-  await expect(effort).toHaveAccessibleName("Effort: Model default");
-  // Its words name what it picks, so the default never reads as the model picker's; its name and
-  // tooltip say whose default it is.
-  await expect(effort).toHaveText(/^Effort: Default/);
+  const chip = choicesChip(toolbar);
+  // No effort chosen: the model's own default, said as such in the name, left off the chip's words.
+  await expect(chip).toHaveAccessibleName(/ · Effort: Model default \(.+\) · /);
+  await expect.poll(() => chipWords(chip)).toBe("Claude Opus · Ask");
 
-  await effort.hover();
-  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
-    /^Effort: Model default \(.+\)$/,
+  await chip.hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
+    /Effort: Model default \(.+\)/,
   );
 
-  await effort.click();
-  const current = page.getByRole("option", { name: "Default effort" });
+  await openChoices(page, toolbar, "effort");
+  const efforts = page.getByRole("listbox", { name: "Effort" });
+  const current = efforts.getByRole("option", { name: "Default effort" });
   await expect(current).toHaveAttribute("aria-selected", "true");
   await expect(current).toContainText("Whatever level the model uses");
-  const xhigh = page.getByRole("option", { name: "Extra high effort" });
+  const xhigh = efforts.getByRole("option", { name: "Extra high effort" });
   await expect(xhigh).toHaveAttribute("aria-selected", "false");
   await expect(xhigh).toContainText("Reasons at length");
   await xhigh.click();
 
-  await expect(effort).toHaveAccessibleName("Effort: Extra high");
-  await expect(effort).toHaveText(/^Effort: Extra high/);
+  await expect(chip).toHaveAccessibleName(/ · Effort: Extra high \(.+\) · /);
+  await expect.poll(() => chipWords(chip)).toBe("Claude Opus · Extra high · Ask");
   await expect(toolbar.getByText("Effort set to Extra high")).toBeVisible();
-  await effort.click();
-  await expect(page.getByRole("option", { name: "Extra high effort" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  // Its shortcut opens the popover on its section, the current value checked and focused.
+  await page.getByLabel("Message", { exact: true }).focus();
+  await page.keyboard.press("ControlOrMeta+Shift+KeyE");
+  const checked = page
+    .getByRole("listbox", { name: "Effort" })
+    .getByRole("option", { name: "Extra high effort" });
+  await expect(checked).toHaveAttribute("aria-selected", "true");
+  await expect(checked).toBeFocused();
   await page.keyboard.press("Escape");
+  await expect(choicesPopup(page)).toBeHidden();
 
-  // Narrow, the words give way and the glyph stands alone, still named with its value.
+  // Narrow, the words shorten, and the name still says every value.
   await squeeze(page, 420);
-  await expect(effort.locator("[data-toolbar-label]")).toHaveClass(/\bsr-only\b/);
-  await expect(effort).toHaveAccessibleName("Effort: Extra high");
+  await expect.poll(() => chipWords(chip)).toMatch(/^(Claude )?Opus · (Extra high|X-high) · Ask$/);
+  await expect(chip).toHaveAccessibleName(/ · Effort: Extra high \(.+\) · /);
 });
 
 test("the toolbar's targets are as tall as Send, and ring on keyboard focus", async ({ page }) => {
   await page.goto("/t/t-deps");
   const toolbar = page.getByTestId("composer-toolbar");
-  const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
-  const speed = toolbar.getByRole("combobox", { name: /^Speed: / });
-  const targets = [
-    toolbar.getByRole("combobox", { name: "Model", exact: true }),
-    effort,
-    toolbar.getByRole("combobox", { name: /^Mode: / }),
-    speed,
-    toolbar.getByRole("button", { name: "Send", exact: true }),
-  ];
-  for (const target of targets) {
+  const chip = choicesChip(toolbar);
+  const send = toolbar.getByRole("button", { name: "Send", exact: true });
+  for (const target of [chip, send]) {
     const { width, height } = await box(target);
     expect(height).toBe(32);
     expect(width).toBeGreaterThanOrEqual(32);
   }
   // The row never runs its words into Send.
-  const send = await box(toolbar.getByRole("button", { name: "Send", exact: true }));
-  const last = await box(speed);
-  expect(send.x - (last.x + last.width)).toBeGreaterThanOrEqual(40);
+  const last = await box(chip);
+  expect((await box(send)).x - (last.x + last.width)).toBeGreaterThanOrEqual(48);
 
-  // From the message box, Tab walks the toolbar; the effort picker rings as every control does.
+  // From the message box, Tab reaches the chip, which rings as every control does.
   await page.getByLabel("Message", { exact: true }).focus();
-  for (let i = 0; i < 6 && !(await effort.evaluate((el) => el === document.activeElement)); i++)
+  for (let i = 0; i < 6 && !(await chip.evaluate((el) => el === document.activeElement)); i++)
     await page.keyboard.press("Tab");
-  await expect(effort).toBeFocused();
-  await expect(effort).toHaveCSS("outline-style", "solid");
+  await expect(chip).toBeFocused();
+  await expect(chip).toHaveCSS("outline-style", "solid");
 });
-
 test("Stop says Stop beside its square, shows its key inside it, and keeps the reply", async ({
   page,
 }) => {
@@ -123,27 +119,27 @@ test("Stop says Stop beside its square, shows its key inside it, and keeps the r
   await expect(said).toBeVisible();
 });
 
-// The model picker opened over the draft, hiding what was being written; every toolbar list now
-// opens above the whole composer.
-test("the toolbar's lists open above the composer, never over the draft", async ({ page }) => {
+// The model picker opened over the draft, hiding what was being written; the choices popover opens
+// above the whole composer, whichever section is open.
+test("the choices open above the composer, never over the draft", async ({ page }) => {
   await page.goto("/t/t-deps");
   const message = page.getByLabel("Message", { exact: true });
   await message.fill("Add retry coverage for the queue consumer.");
   const composer = await box(page.locator('[data-surface="composer"]'));
   const toolbar = page.getByTestId("composer-toolbar");
 
-  await toolbar.getByRole("combobox", { name: "Model", exact: true }).click();
-  const models = page.getByTestId("model-picker");
-  await expect(models).toBeVisible();
-  const list = await box(models);
-  expect(list.y + list.height).toBeLessThanOrEqual(composer.y);
+  await openChoices(page, toolbar, "model");
+  await expect(page.getByTestId("model-picker")).toBeVisible();
+  const popup = choicesPopup(page);
+  const above = async () => {
+    const shown = await box(popup);
+    expect(shown.y + shown.height).toBeLessThanOrEqual(composer.y);
+  };
+  await above();
+  await openChoices(page, toolbar, "effort");
+  await expect(page.getByRole("listbox", { name: "Effort" })).toBeVisible();
+  await above();
   await page.keyboard.press("Escape");
-
-  await toolbar.getByRole("combobox", { name: /^Effort: / }).click();
-  const efforts = page.locator('[data-slot="select-content"]');
-  await expect(efforts).toBeVisible();
-  const effortList = await box(efforts);
-  expect(effortList.y + effortList.height).toBeLessThanOrEqual(composer.y);
-  await page.keyboard.press("Escape");
+  await expect(popup).toBeHidden();
   await expect(message).toHaveValue("Add retry coverage for the queue consumer.");
 });

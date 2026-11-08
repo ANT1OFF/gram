@@ -1,4 +1,3 @@
-import { SpeedField, speedOptions, speedReport, speedUsage } from "./speed-field";
 import {
   modelSpeeds,
   type SpeedMode,
@@ -27,7 +26,6 @@ import {
   type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
-  type ReactNode,
 } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
@@ -74,7 +72,6 @@ import { DiffCommentChips } from "./diff-comment-chips";
 import { ghostOf, nextWord, stepped, typeIntoField, type Ghost } from "./ghost";
 import { usePromptHistory } from "./history";
 import { useAttachments } from "./use-attachments";
-import { modeWarning } from "@/thread/mode-warning";
 import { STEER_LABEL } from "@/thread/queue-list";
 
 import { MentionMenu } from "./mention-menu";
@@ -90,9 +87,10 @@ import {
   useProviderLabel,
   useRefreshModels,
 } from "./models";
-import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION, MODE_ICONS, MODE_OPTIONS } from "./options";
-import { Picker, type PickerOption } from "./picker";
-import { EffortGauge, SpeedGlyph } from "./picker-glyphs";
+import { effortSection, modelSection, modeSection, speedSection } from "./choice-sections";
+import { ComposerChoices, type ChoiceSection } from "./choices";
+import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION, MODE_OPTIONS } from "./options";
+import type { PickerOption } from "./picker";
 import { inOpenFence } from "./mention";
 import { sendAction, type SendAction } from "./send-action";
 import { enterSends, imeComposing } from "./send-key";
@@ -109,7 +107,6 @@ import {
 import { useSlabHandoff } from "./slab-handoff";
 import { useOrchestratorVerbs, VerbMenu } from "./verb-menu";
 import { filterVerbs, gridIndexForKey, VERB_COLUMNS, type Verb } from "./verbs";
-import { UnavailableSlot } from "./unavailable-slot";
 import {
   GHOST_MIRROR,
   ROUND,
@@ -120,12 +117,14 @@ import {
   STOP_QUIET,
 } from "./styles";
 import { StashMenu, stashesQueryKey } from "./stash-menu";
-import { ToolbarOverflow, type FoldedPicker } from "./toolbar-overflow";
 import { useMentions } from "./use-mentions";
 import { useModHeld } from "./use-mod-held";
 import { useToolbarLayout } from "./use-toolbar-layout";
 import { useTypingPresence } from "./typing-presence";
 import { stopTurn } from "@/thread/stop-store";
+
+/** The toolbar's one measured control: the choices chip, which never folds away. */
+const CHOICE_BLOCKS = [{ id: "choices", foldable: false }];
 
 const RUNNING: ReadonlySet<ThreadStatus> = new Set(["starting", "running"]);
 const BUSY: ReadonlySet<ThreadStatus> = new Set([
@@ -198,8 +197,6 @@ export function Composer({
   const sendHint = useShortcutHint("composer.send");
   const newDraftHint = useShortcutHint("composer.sendNewDraft");
   const stopHint = useShortcutHint("composer.stop");
-  const [overflowOpen, setOverflowOpen] = useState(false);
-  const [overflowSub, setOverflowSub] = useState<string | undefined>();
 
   const history = usePromptHistory(threadId);
   const status = summary?.status ?? "cold";
@@ -868,19 +865,7 @@ export function Composer({
         ? accountModelWarning(models, model.model)
         : undefined;
   const isFavourite = useIsFavourite(model?.agent ?? "claude");
-  // The effort picker only renders when the model has levels; otherwise ⌘⇧E explains why.
-  useShortcut(
-    {
-      id: "composer.effort",
-      keys: "mod+shift+e",
-      label: "Pick effort",
-      group: "Composer",
-      run: () => flash("This model has no effort levels"),
-    },
-    focused && efforts.length === 0,
-  );
 
-  const ModeIcon = MODE_ICONS[summary?.thread.mode ?? "default"];
   // The composer holds something, even if it can't go yet: a draft waiting on an upload isn't Stop.
   const hasDraft = canSend || attachments.uploading;
   const stopLabel = background ? "Stop the background agents" : "Stop";
@@ -982,81 +967,47 @@ export function Composer({
       .then(() => confirmPick("Mode", MODE_OPTIONS, mode))
       .catch((error: unknown) => flash(`Couldn't switch mode: ${errorMessage(error)}`));
   };
-  // The toolbar is chrome: its glyphs are 16 px, as the title bar's are.
-  const modeIcon = <ModeIcon aria-hidden className="size-icon-bar" />;
-  const effortIcon = <EffortGauge variant={model?.variant} className="size-icon-bar" />;
-
-  // One order everywhere, the orchestrator's chat, a solo thread's and `/new` alike: model ·
-  // effort · mode · speed, then "…". A control that doesn't apply keeps its slot, greyed, rather
-  // than letting the rest move up. Each says its value in words while the row has room ("Claude
-  // Opus", "Extra high", "Plan"); short of it, in a compact word ("Opus", "X-high"); then the
-  // pickers take a row of their own; and only at the narrowest do they give up their words for
-  // glyphs named in their tooltips, then fold into "…" from the right. Speed says its value in a
-  // word too ("CLI default", "Standard", "Fast"), its category on hover, as the others do.
-  const hasEffort = efforts.length > 0;
-  const speedApplies = model !== undefined && (model.agent === "claude" || model.agent === "codex");
-  const blocks = useMemo(
-    () => [
-      { id: "model", foldable: false },
-      { id: "effort", foldable: true, ...(hasEffort ? {} : { glyph: true }) },
-      { id: "mode", foldable: true },
-      { id: "speed", foldable: true, ...(speedApplies ? {} : { glyph: true }) },
-    ],
-    [hasEffort, speedApplies],
-  );
-  const toolbar = useToolbarLayout(blocks);
-  const { ref: toolbarRef, size: labelOf, folded, wrapped } = toolbar;
-  const isFolded = (id: string) => folded.includes(id);
-  const openFolded = (id: string) => {
-    setOverflowOpen(true);
-    setOverflowSub(id);
-  };
-  const foldedPickers: FoldedPicker[] = [
-    ...(hasEffort && isFolded("effort")
-      ? [
-          {
-            id: "effort",
-            label: "Effort",
-            icon: effortIcon,
-            value: model?.variant ?? DEFAULT_EFFORT,
-            options: effortChoices,
-            onChange: onEffort,
-          },
-        ]
-      : []),
-    ...(isFolded("mode")
-      ? [
-          {
-            id: "mode",
-            label: "Mode",
-            icon: modeIcon,
-            value: summary?.thread.mode,
-            options: MODE_OPTIONS,
-            onChange: (value: string) => onMode(value as PermissionMode),
-            warning: modeWarning(summary?.thread.mode),
-          },
-        ]
-      : []),
-    ...(model && speedApplies && isFolded("speed")
-      ? [
-          {
-            id: "speed",
-            label: "Speed",
-            icon: <SpeedGlyph speed={model.speed} />,
-            value: model.speed ?? "default",
-            options: speedOptions(models, model.model, model.speed, summary?.thread.speedState),
-            onChange: (value: string) => {
-              if (
-                value === "standard" ||
-                (value === "fast" && modelSpeeds(models, model.model).includes("fast"))
-              )
-                onSpeed(value);
-            },
-            description: `${speedUsage(model.agent)} ${speedReport(summary?.thread.speedState)}`,
-          },
-        ]
-      : []),
+  // One chip in every composer, the orchestrator's chat, a solo thread's and `/new` alike, and one
+  // popover with a section for each of model · effort · mode · speed. The chip says the values
+  // that aren't at their defaults in short words ("Opus · High · Auto"); short of room, in
+  // compact ones, then the model's alone, and only at the narrowest the agent's mark. Its name and
+  // tooltip say every value and its shortcut, and a dimension that doesn't apply is greyed in its
+  // section, saying why.
+  const choices: ChoiceSection[] = [
+    modelSection({
+      value: model?.model,
+      options: modelChoices,
+      onChange: onModel,
+      warning: modelWarning,
+      shortcut: { id: "composer.model", keys: "mod+shift+m" },
+      search: model && {
+        rowIcon: <AgentIcon agent={model.agent} className="size-icon-row" />,
+        favourite: isFavourite,
+        onToggleFavourite: (value) => useModelFavourites.getState().toggle(model.agent, value),
+      },
+    }),
+    effortSection({
+      efforts,
+      value: model?.variant,
+      onChange: onEffort,
+      shortcut: { id: "composer.effort", keys: "mod+shift+e" },
+    }),
+    modeSection({
+      value: summary?.thread.mode,
+      onChange: onMode,
+      shortcut: { id: "composer.mode", keys: "mod+shift+a" },
+    }),
+    speedSection({
+      agent: model?.agent ?? "claude",
+      models,
+      model: model?.model ?? "",
+      value: model?.speed,
+      state: summary?.thread.speedState ?? { speed: "unknown" },
+      onChange: onSpeed,
+    }),
   ];
+  const toolbar = useToolbarLayout(CHOICE_BLOCKS);
+  const { ref: toolbarRef, size: labelOf, wrapped } = toolbar;
 
   return (
     <div
@@ -1199,120 +1150,25 @@ export function Composer({
           <DictationStrip partial={dictation.partial} />
         )}
         <DictationError state={dictation.state} />
-        {/* Words give way to compact words, then the pickers take a row of their own, and only
-            then glyphs and "…" (toolbar-layout.ts). */}
+        {/* The choices' words give way to compact ones, then to the model's alone, and only at
+            the narrowest to the agent's mark (toolbar-layout.ts). */}
         <div
           ref={toolbarRef}
           data-testid="composer-toolbar"
           data-wrapped={wrapped || undefined}
           className={cn("flex items-center gap-1 px-2 pb-2", wrapped ? "flex-wrap" : "flex-nowrap")}
         >
-          <ToolbarBlock id="model" folded={false}>
-            <Picker
-              label="Model"
-              shortcutId="composer.model"
-              keys="mod+shift+m"
+          <div data-toolbar-block="choices" className="flex min-w-0 shrink-0 items-center">
+            <ComposerChoices
+              sections={choices}
+              mark={model && <AgentIcon agent={model.agent} className="size-icon-bar" />}
+              agentLabel={model && agentLabel(model.agent)}
+              size={labelOf("choices")}
               focused={focused}
-              value={model?.model}
-              options={modelChoices}
-              icon={model && <AgentIcon agent={model.agent} className="size-icon-bar" />}
-              iconLabel={model && agentLabel(model.agent)}
-              warning={modelWarning}
               onOpen={refreshModels}
               onAsked={onModelAsked}
-              labelled={labelOf("model")}
-              search={
-                model && {
-                  rowIcon: <AgentIcon agent={model.agent} className="size-icon-row" />,
-                  favourite: isFavourite,
-                  onToggleFavourite: (value) =>
-                    useModelFavourites.getState().toggle(model.agent, value),
-                }
-              }
-              onChange={onModel}
             />
-          </ToolbarBlock>
-          <ToolbarBlock
-            id="effort"
-            folded={isFolded("effort")}
-            separator={labelOf("effort") === "full"}
-          >
-            {hasEffort ? (
-              <Picker
-                label="Effort"
-                shortcutId="composer.effort"
-                keys="mod+shift+e"
-                focused={focused}
-                value={model?.variant ?? DEFAULT_EFFORT}
-                options={effortChoices}
-                icon={effortIcon}
-                labelled={labelOf("effort")}
-                folded={isFolded("effort")}
-                onFoldedOpen={() => openFolded("effort")}
-                onChange={onEffort}
-              />
-            ) : (
-              !isFolded("effort") && (
-                <UnavailableSlot label="Effort" reason="This model has no effort levels">
-                  {effortIcon}
-                </UnavailableSlot>
-              )
-            )}
-          </ToolbarBlock>
-          <ToolbarBlock id="mode" folded={isFolded("mode")} separator={labelOf("mode") === "full"}>
-            <Picker
-              label="Mode"
-              shortcutId="composer.mode"
-              keys="mod+shift+a"
-              focused={focused}
-              value={summary?.thread.mode}
-              options={MODE_OPTIONS}
-              icon={modeIcon}
-              warning={modeWarning(summary?.thread.mode)}
-              labelled={labelOf("mode")}
-              folded={isFolded("mode")}
-              onFoldedOpen={() => openFolded("mode")}
-              onChange={onMode}
-            />
-          </ToolbarBlock>
-          {!isFolded("speed") && (
-            <ToolbarBlock id="speed" folded={false} separator={labelOf("speed") === "full"}>
-              {model && speedApplies ? (
-                <SpeedField
-                  agent={model.agent}
-                  model={model.model}
-                  models={models}
-                  value={model.speed}
-                  state={summary?.thread.speedState ?? { speed: "unknown" }}
-                  ghost
-                  labelled={labelOf("speed")}
-                  onChange={onSpeed}
-                />
-              ) : (
-                <UnavailableSlot
-                  label="Speed"
-                  reason={`${model ? agentLabel(model.agent) : "This agent"} has one speed`}
-                >
-                  <SpeedGlyph speed={undefined} className="size-icon-bar" />
-                </UnavailableSlot>
-              )}
-            </ToolbarBlock>
-          )}
-          {foldedPickers.length > 0 ? (
-            <div className="flex">
-              <ToolbarOverflow
-                pickers={foldedPickers}
-                open={overflowOpen}
-                onOpenChange={(next) => {
-                  setOverflowOpen(next);
-                  if (!next) setOverflowSub(undefined);
-                }}
-                openSub={overflowSub}
-                onOpenSubChange={setOverflowSub}
-              />
-            </div>
-          ) : null}
-          {/* Wrapped, the pickers have this row to themselves; the rest goes on the next. */}
+          </div>
           {wrapped && <div aria-hidden className="h-0 basis-full" />}
           <div data-toolbar-fixed className="flex shrink-0 empty:hidden">
             <StashMenu
@@ -1456,33 +1312,6 @@ function SendGlyph({ action }: { action: Exclude<SendAction, "stop"> }) {
     case "send":
       return <ArrowUp aria-hidden className="size-icon-row" />;
   }
-}
-
-/**
- * One foldable control on the toolbar, measured by `useToolbarLayout`. Folded, its children stay
- * mounted outside the row, so a picker's shortcut still opens it in the "…" menu.
- */
-function ToolbarBlock({
-  id,
-  folded,
-  separator = false,
-  className,
-  children,
-}: {
-  id: string;
-  folded: boolean;
-  separator?: boolean;
-  className?: string | undefined;
-  children: ReactNode;
-}) {
-  if (folded) return <>{children}</>;
-  return (
-    <div data-toolbar-block={id} className={cn("flex shrink-0 items-center gap-1", className)}>
-      {/* The rule goes with the words in full, as `useToolbarLayout` counts it. */}
-      {separator && <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-border" />}
-      {children}
-    </div>
-  );
 }
 
 /**

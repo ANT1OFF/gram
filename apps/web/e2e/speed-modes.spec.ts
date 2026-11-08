@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { chipWords, choicesChip, choicesPopup, openChoices } from "./composer-choices";
+
 for (const agent of ["claude", "codex"] as const)
   test(`${agent} speed persists independently of effort and resets on an unsupported model`, async ({
     page,
@@ -53,28 +55,27 @@ for (const agent of ["claude", "codex"] as const)
       };
     });
     await page.clock.fastForward("05:01");
-    await form.getByRole("combobox", { name: "Model", exact: true }).click();
+    const chip = choicesChip(form);
+    await openChoices(page, form, "model");
     // The list holds every agent's models, each under its agent's name; this agent's is the one.
     await page
       .getByTestId("model-picker")
       .getByRole("group", { name: agent === "claude" ? "Claude Code" : "Codex" })
       .getByRole("option", { name: "Synthetic Fast model", exact: true })
       .click();
-    // In the new-thread form, as in a thread's composer, speed and effort are glyphs named with
-    // their values.
-    const speed = form.getByRole("combobox", { name: /^Speed: / });
-    await expect(speed).toHaveAccessibleName("Speed: Standard");
-    await speed.click();
+    // In the new-thread form, as in a thread's composer, speed is a section of the choices, and
+    // the chip says it only once it is Fast.
+    await expect(chip).toHaveAccessibleName(/ · Speed: Standard$/);
+    await openChoices(page, form, "speed");
     await expect(
-      page
-        .getByText(
-          agent === "claude" ? /separately billed usage credits/ : /more subscription allowance/,
-        )
-        .last(),
+      choicesPopup(page).getByText(
+        agent === "claude" ? /separately billed usage credits/ : /more subscription allowance/,
+      ),
     ).toBeVisible();
     await page.getByRole("option", { name: "Fast", exact: true }).click();
-    await expect(speed).toHaveAccessibleName("Speed: Fast");
-    await expect(form.getByRole("combobox", { name: "Effort: High" })).toBeVisible();
+    await expect(chip).toHaveAccessibleName(/ · Speed: Fast$/);
+    await expect(chip).toHaveAccessibleName(/ · Effort: High · /);
+    await expect.poll(() => chipWords(chip)).toMatch(/ · Fast$/);
     await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/code/sandbox");
     await form.getByLabel("First prompt").fill("Synthetic speed preference test.");
     await form.getByRole("button", { name: /Start chat/ }).click();
@@ -82,17 +83,14 @@ for (const agent of ["claude", "codex"] as const)
     expect(
       await page.evaluate(() => JSON.parse(sessionStorage.getItem("gram.speed-created")!)),
     ).toEqual({ agent, model: "fixture-fast", variant: "high", speed: "fast" });
-    // In the thread's composer speed and effort are glyphs, named with their values.
-    const currentSpeed = page.getByRole("combobox", { name: /^Speed: / });
-    await expect(currentSpeed).toHaveAccessibleName(/^Speed: Fast/);
-    // Its name is "Model" with the value in full beside it, "Model: …" once the row is short.
-    await page
-      .getByTestId("composer-toolbar")
-      .getByRole("combobox", { name: /^Model/ })
-      .click();
+    // The thread's composer says the same on its one chip.
+    const toolbar = page.getByTestId("composer-toolbar");
+    const current = choicesChip(toolbar);
+    await expect(current).toHaveAccessibleName(/ · Speed: Fast/);
+    await openChoices(page, toolbar, "model");
     await page.getByRole("option", { name: "Synthetic Standard model", exact: true }).click();
-    await expect(currentSpeed).toHaveAccessibleName("Speed: Standard");
-    await expect(page.getByRole("combobox", { name: "Effort: High" })).toBeVisible();
-    await currentSpeed.click();
+    await expect(current).toHaveAccessibleName(/ · Speed: Standard$/);
+    await expect(current).toHaveAccessibleName(/ · Effort: High \(.+\) · /);
+    await openChoices(page, toolbar, "speed");
     await expect(page.getByRole("option", { name: "Fast", exact: true })).toHaveCount(0);
   });

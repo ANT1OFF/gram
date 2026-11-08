@@ -5,7 +5,7 @@ test("a /model typed into a thread moves its model picker, and is offered in Set
 }) => {
   await page.goto("/t/t-deps");
   const composer = page.getByLabel("Message", { exact: true });
-  const picker = page.getByRole("combobox", { name: "Model", exact: true });
+  const picker = page.getByTestId("composer-choices");
   await expect(picker).not.toHaveText(/claude-preview/);
 
   await composer.fill("/model claude-preview[1m]");
@@ -27,10 +27,7 @@ test("a /model typed into a thread moves its model picker, and is offered in Set
   await expect(page.getByTestId("custom-models").getByRole("status")).toHaveText("Saved");
 
   await page.goto("/new");
-  await page
-    .getByRole("form", { name: "New thread" })
-    .getByRole("combobox", { name: "Model", exact: true })
-    .click();
+  await page.getByRole("form", { name: "New thread" }).getByTestId("composer-choices").click();
   await expect(page.getByRole("option", { name: "claude-preview[1m]" })).toBeVisible();
 });
 
@@ -128,9 +125,7 @@ test("Gram answers its own slash commands, and explains a terminal-only one", as
 
 test("the model picker searches by name and agent, and the keyboard picks", async ({ page }) => {
   await page.goto("/t/t-deps");
-  const picker = page
-    .getByTestId("composer-toolbar")
-    .getByRole("combobox", { name: "Model", exact: true });
+  const picker = page.getByTestId("composer-toolbar").getByTestId("composer-choices");
   await expect(picker).toHaveText(/Claude Opus/);
   await picker.click();
   const search = page.getByRole("combobox", { name: "Search models" });
@@ -162,9 +157,7 @@ test("with many models the picker searches, and a starred model comes first", as
     sessionStorage.setItem("gram.mock.settings", JSON.stringify({ agents: { customModels } }));
   }, custom);
   await page.goto("/t/t-deps");
-  const picker = page
-    .getByTestId("composer-toolbar")
-    .getByRole("combobox", { name: "Model", exact: true });
+  const picker = page.getByTestId("composer-toolbar").getByTestId("composer-choices");
   await expect(picker).toHaveText(/Claude Opus/);
 
   await page.getByLabel("Message", { exact: true }).focus();
@@ -210,7 +203,7 @@ test("the new thread's model picker lists every agent's models, and a Codex pick
   });
   await page.goto("/new");
   const form = page.getByRole("form", { name: "New thread" });
-  const picker = form.getByRole("combobox", { name: "Model", exact: true });
+  const picker = form.getByTestId("composer-choices");
   await expect(picker).toHaveText(/Claude Opus/);
   await picker.click();
   const search = page.getByRole("combobox", { name: "Search models" });

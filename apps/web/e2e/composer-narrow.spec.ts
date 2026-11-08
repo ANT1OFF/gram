@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { chipWords, choicesChip, choicesPopup, openChoices, pickChoice } from "./composer-choices";
 import { seedTheme } from "./seed-theme";
 
 /** An element's right edge; off the scale when it isn't laid out at all. */
@@ -25,10 +26,11 @@ const rowSpread = (page: Page) =>
   });
 
 // In a narrow pane the toolbar used to clip Stop and Send past the pane's edge, later dropped every
-// value for a glyph, and then kept a bare "Effort" and "Speed". Now each goes compact first
-// ("Opus", "Effort: Default"), then to its value beside its glyph ("Default"), then the pickers take
-// a row of their own, and only at the narrowest do glyphs and "…" stand in.
-test("the toolbar keeps its values as it narrows, before glyphs and …", async ({ page }) => {
+// value for a glyph, and then kept a bare "Effort" and "Speed"; four chips crowded Send. Now one
+// chip says the values that aren't at their defaults, and short of room says them in compact
+// words, then the model's alone, its name always saying every value: never a bare glyph while
+// there is room for a word, and nothing folds into "…".
+test("the choices chip keeps its words as it narrows, its name every value", async ({ page }) => {
   // Held running, so Stop and Steer stay offered: the script's later approval takes Steer away.
   await page.addInitScript(() => {
     window.gramMockHoldGates = true;
@@ -38,88 +40,55 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   await expect(stop).toBeVisible();
   const message = page.getByLabel("Message", { exact: true });
   const toolbar = page.getByTestId("composer-toolbar");
-  // One order, in every composer: model · effort · mode · speed.
-  await expect(toolbar.locator("[data-toolbar-block]")).toHaveCount(4);
-  expect(
-    await toolbar
-      .locator("[data-toolbar-block]")
-      .evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset["toolbarBlock"])),
-  ).toEqual(["model", "effort", "mode", "speed"]);
-  // With room, Mode says its value beside the glyph; its name and tooltip say it too, and the open
-  // list spells out every mode.
-  const mode = toolbar.getByRole("combobox", { name: /^Mode: / });
-  await expect(mode).toHaveAccessibleName("Mode: Ask");
-  await expect(mode.locator("[data-toolbar-label]")).not.toHaveClass(/\bsr-only\b/);
-  // Its words name what it picks, so a value never reads as another control's.
-  await expect(mode).toHaveText(/^Mode: Ask/);
-  await mode.hover();
+  // One control for model · effort · mode · speed, in every composer.
+  await expect(toolbar.locator("[data-toolbar-block]")).toHaveCount(1);
+  const chip = choicesChip(toolbar);
+  await expect(chip).toHaveAccessibleName(
+    /^Claude Opus \(.+\) · Effort: Model default \(.+\) · Mode: Ask \(.+\) · Speed: CLI default$/,
+  );
+  // With room, the model and mode in full; the defaults are left to its name.
+  await expect(chip.locator("[data-toolbar-label]")).not.toHaveClass(/\bsr-only\b/);
+  await expect.poll(() => chipWords(chip)).toBe("Claude Opus · Ask");
+  await chip.hover();
   const tooltip = page.locator('[data-slot="tooltip-content"]');
-  await expect(tooltip).toHaveText(/^Mode: Ask/);
-  // Opening the list puts the tooltip away, so the two never sit on top of each other.
-  await mode.click();
-  await expect(page.getByRole("option", { name: "Bypass", exact: true })).toBeVisible();
+  await expect(tooltip).toContainText("Mode: Ask");
+  // Opening the popover puts the tooltip away, so the two never sit on top of each other.
+  await chip.click();
+  await expect(choicesPopup(page)).toBeVisible();
   await expect(tooltip).toHaveCount(0);
   await page.keyboard.press("Escape");
-
-  // Speed at the CLI's default keeps its slot, named with its value (its word shows when the row
-  // has room, and is the first to go short of it); nothing waits in "…".
-  const more = toolbar.getByRole("button", { name: "More composer controls" });
-  const speed = toolbar.getByRole("combobox", { name: /^Speed/ });
-  await expect(speed).toBeVisible();
-  await expect(speed).toHaveAccessibleName("Speed: CLI default");
-  await expect(more).toHaveCount(0);
+  await expect(toolbar.getByRole("button", { name: "More composer controls" })).toHaveCount(0);
 
   // With room the context gauge beside Send says what it measures, "Context 31%".
   const gauge = page.getByTestId("usage-ring");
   await expect(gauge).toHaveText(/^Context \d+%$/, { useInnerText: true });
 
-  // Short of room, each picker gives up its chevron, then its dimension's word, from the right,
-  // and keeps its value beside its glyph: one row while the values fit, never a dimension alone
-  // ("Effort", "Speed": the narrow composer used to say just that). Linux names Stop's key
+  // Short of room, the chip says its values compact, then the model's alone, on one row; short of
+  // that, it takes a row of its own above Send and Stop, in full again. Linux names Stop's key
   // "Ctrl+.", some 26 px wider than "⌘.", so the exact step at a width differs by platform; what
-  // holds everywhere is that every picker says its value.
-  const model = toolbar.getByRole("combobox", { name: /^Model/ });
-  const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
+  // holds everywhere is that the chip says the model at least, and its name all.
   const says = async () => {
-    await expect.poll(() => shownWords(effort)).toMatch(/^(Effort: )?Default$/);
-    await expect.poll(() => shownWords(mode)).toMatch(/^(Mode: )?Ask$/);
-    await expect.poll(() => shownWords(speed)).toMatch(/^(Speed: )?Default$/);
-    await expect.poll(() => shownWords(model)).toMatch(/^(Claude )?Opus$/);
-  };
-  // One row, or wrapped onto a row of their own above Send and Stop: never under or beside them.
-  const placed = async () => {
+    await expect.poll(() => chipWords(chip)).toMatch(/^(Claude )?Opus( · Ask)?$/);
+    await expect(chip).toHaveAccessibleName(/ · Mode: Ask \(.+\) · Speed: CLI default$/);
+    // One row, or wrapped onto a row of its own above Send and Stop: never under or beside them.
     if ((await toolbar.getAttribute("data-wrapped")) === "true") {
-      const modeBox = await mode.boundingBox();
+      const chipBox = await chip.boundingBox();
       const stopBox = await stop.boundingBox();
-      expect(stopBox!.y).toBeGreaterThanOrEqual(modeBox!.y + modeBox!.height);
+      expect(stopBox!.y).toBeGreaterThanOrEqual(chipBox!.y + chipBox!.height);
     } else {
       expect(await rowSpread(page)).toBeLessThanOrEqual(1);
     }
   };
   await squeeze(page, 540);
   await says();
-  await placed();
-  await expect(model).toHaveAccessibleName(/^Model(: Claude Opus)?$/);
-  // Under 36 rem the gauge keeps the ring's 32 px, its number alone: the steps below are measured
-  // against what that slot leaves, and a wider gauge folded the pickers a step early.
+  // Under 36 rem the gauge keeps the ring's 32 px, its number alone.
   await expect(gauge).toHaveText(/^\d+%$/, { useInnerText: true });
   expect((await gauge.boundingBox())!.width).toBeLessThanOrEqual(32);
-
-  // Narrower, values alone beside their glyphs, on one row or, short of that, on a row of their
-  // own above Send and Stop: still every value at 370 px. (The bare "Effort" and "Speed" held words
-  // some 30 px further; a value costs that.)
-  for (const width of [480, 400, 370]) {
+  for (const width of [480, 400, 370, 300, 260]) {
     await squeeze(page, width);
     await says();
-    await placed();
   }
-
-  // Only at the narrowest do glyphs stand in, on one row, and the pickers fold into "…".
-  await squeeze(page, 260);
-  await expect(toolbar).not.toHaveAttribute("data-wrapped");
-  await expect(mode).toHaveCount(0);
-  await expect(more).toBeVisible();
-  expect(await rowSpread(page)).toBeLessThanOrEqual(1);
+  // At 260 px the chip still says the model, and Stop stays inside the composer.
   const edge = await right(message);
   expect(await right(stop)).toBeLessThanOrEqual(edge);
 
@@ -127,37 +96,28 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   await message.fill("use the fake clock");
   await squeeze(page, 230);
   await expect(toolbar.getByRole("button", { name: "Steer now" })).toHaveCount(0);
-  // Once the toolbar has laid itself out for the new width, a frame after the resize: at 260 px
-  // the draft's narrower Queue let every picker back as a glyph, and 230 px folds them again.
+  // Once the toolbar has laid itself out for the new width, a frame after the resize.
   const edge230 = await right(message);
   await expect
     .poll(() => right(page.getByRole("button", { name: "Queue", exact: true })))
     .toBeLessThanOrEqual(edge230);
-  await more.click();
-  await page
-    .getByTestId("composer-overflow-menu")
-    .getByRole("menuitem", { name: /^Speed/ })
-    .click();
-  // The submenu is named by its own aria-label; Base UI 1.9 prefers that to the trigger's text.
-  const speedMenu = page.getByRole("menu", { name: "Speed", exact: true });
-  await expect(speedMenu).toContainText("separately billed usage credits");
-  await speedMenu.getByRole("menuitemradio", { name: "Standard", exact: true }).click();
-  await page.keyboard.press("Escape");
+  // Narrow, every section is still there: Speed's says what Fast costs.
+  await openChoices(page, toolbar, "speed");
+  await expect(choicesPopup(page)).toContainText("separately billed usage credits");
+  await pickChoice(page, toolbar, "speed", "Standard");
+  await expect(chip).toHaveAccessibleName(/ · Speed: Standard$/);
   await message.fill("");
   await squeeze(page, 260);
 
-  // A folded picker is a submenu of "…", and its shortcut opens it there.
+  // Each dimension's shortcut opens the popover on its section.
   await message.focus();
   await page.keyboard.press("ControlOrMeta+Shift+KeyA");
-  const menu = page.getByTestId("composer-overflow-menu");
-  await expect(menu).toBeVisible();
-  await page
-    .getByRole("menu", { name: "Mode" })
-    .getByRole("menuitemradio", { name: "Plan" })
-    .click();
+  const modes = page.getByRole("listbox", { name: "Mode" });
+  await expect(modes).toBeVisible();
+  await modes.getByRole("option", { name: "Plan", exact: true }).click();
   await squeeze(page, 720);
-  await expect(mode).toHaveAccessibleName("Mode: Plan");
-  await expect(toolbar.getByRole("combobox", { name: "Speed: Standard" })).toBeVisible();
+  await expect(chip).toHaveAccessibleName(/ · Mode: Plan \(.+\) · /);
+  await expect.poll(() => chipWords(chip)).toBe("Claude Opus · Plan");
 });
 
 /** Drags the right panel's edge `dx` pixels, negative towards the left. */
@@ -174,24 +134,10 @@ async function dragPanel(page: Page, dx: number) {
   await page.mouse.up();
 }
 
-/** The words a toolbar picker shows beside its glyph: "" when the glyph stands alone. */
-const shownWords = (picker: Locator) =>
-  picker.evaluate((el) =>
-    [
-      ...el.querySelectorAll<HTMLElement>(
-        "[data-toolbar-label], [data-toolbar-compact], [data-toolbar-value]",
-      ),
-    ]
-      .filter((words) => !words.classList.contains("sr-only") && words.offsetWidth > 0)
-      .map((words) => words.textContent ?? "")
-      .join("")
-      .trim(),
-  );
-
-// A 1024 px window with a review beside the chat leaves the composer some 490 px: short of room
-// for every value in full, but far from the 280 px where glyphs take over. Effort's default used to
-// have no short word, so there it went to its gauge alone while Mode still said "Ask".
-test("beside a review in a 1024 px window, effort keeps a short word", async ({ page }) => {
+// A 1024 px window with a review beside the chat leaves the composer some 490 px: room for the
+// chip's words in full or compact, far from the narrowest. The four chips once took the gauge
+// alone for effort here while Mode still said "Ask".
+test("beside a review in a 1024 px window, the chip keeps its words", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.goto("/t/t-flaky");
   const shell = page.getByTestId("app-shell");
@@ -206,23 +152,12 @@ test("beside a review in a 1024 px window, effort keeps a short word", async ({ 
   const toolbar = page.getByTestId("composer-toolbar");
   // Its laid-out width, not its box: the chat eases back in from Focus review.
   await expect.poll(() => toolbar.evaluate((el) => el.clientWidth)).toBeGreaterThan(400);
-  const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
-  await expect(effort).toHaveAccessibleName("Effort: Model default");
-  const mode = toolbar.getByRole("combobox", { name: /^Mode: / });
-  await expect(mode).toHaveText(/^Mode: Ask/);
-  // A readable value of three letters or more, the compact one or the whole: never the gauge alone.
-  // Short, it says its own name, "Effort", not "Model", which beside the model picker read as a second.
-  await expect.poll(() => shownWords(effort)).toMatch(/^(Effort: )?Default$/);
-  // Speed too keeps its name, never the bolt alone.
-  await expect
-    .poll(() => shownWords(toolbar.getByRole("combobox", { name: /^Speed: / })))
-    .toMatch(/^Speed(: Default)?$/);
-  await expect
-    .poll(() => shownWords(toolbar.getByRole("combobox", { name: /^Model/ })))
-    .toMatch(/^(Opus|Claude Opus)$/);
+  const chip = choicesChip(toolbar);
+  await expect(chip).toHaveAccessibleName(/ · Effort: Model default \(.+\) · Mode: Ask \(.+\) · /);
+  // The model and the mode in words: never the mark alone, and never the model alone here.
+  await expect.poll(() => chipWords(chip)).toMatch(/^(Claude )?Opus · Ask$/);
   await expect(toolbar.getByRole("button", { name: "More composer controls" })).toHaveCount(0);
 });
-
 test("right-click on Send offers steering and sending into a new draft", async ({ page }) => {
   // Steer disappears when the scripted turn reaches approval; keep the turn running until clicked.
   await page.addInitScript(() => {

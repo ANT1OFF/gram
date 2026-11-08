@@ -1,14 +1,16 @@
 import { expect, test } from "@playwright/test";
 
+import { choicesChip, pickChoice } from "./composer-choices";
+
 test("deletes a past session, then continues the latest one on the chosen effort", async ({
   page,
 }) => {
   await page.goto("/new");
-  // The effort picker is a glyph named with its value, in the prompt box as in a thread's composer.
-  const effort = page.getByRole("combobox", { name: /^Effort: / });
-  await effort.click();
-  await page.getByRole("option", { name: "High effort", exact: true }).click();
-  await expect(effort).toHaveAccessibleName("Effort: High");
+  // Effort is a section of the choices, in the prompt box as in a thread's composer, and the chip
+  // says it once it isn't the model's default.
+  const form = page.getByRole("form", { name: "New thread" });
+  await pickChoice(page, form, "effort", "High effort");
+  await expect(choicesChip(form)).toHaveAccessibleName(/ · Effort: High · /);
 
   await page.getByRole("button", { name: "Resume a past session…" }).click();
   const picker = page.getByTestId("resume-sessions");
@@ -24,5 +26,7 @@ test("deletes a past session, then continues the latest one on the chosen effort
   await page.getByRole("button", { name: "Continue latest session" }).click();
   await expect(page).toHaveURL(/\/t\/t-/);
   await expect(page.getByTestId("pane-header")).toContainText("Speed up the flaky retry suite");
-  await expect(effort).toHaveAccessibleName("Effort: High");
+  await expect(choicesChip(page.getByTestId("composer-toolbar"))).toHaveAccessibleName(
+    / · Effort: High \(.+\) · /,
+  );
 });
