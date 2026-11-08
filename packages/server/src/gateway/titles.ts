@@ -211,7 +211,11 @@ export interface TitleDeps {
   readonly moments: Stream.Stream<TitleMoment>;
   readonly getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>;
   readonly turnCount: (threadId: ThreadId) => Effect.Effect<number>;
-  readonly messages: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<GramUIMessage>>;
+  /** The thread's first `limit` messages, in order, reading none after them. */
+  readonly messages: (
+    threadId: ThreadId,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<GramUIMessage>>;
   /** The slash commands the thread's session has reported, if it has yet. */
   readonly commands: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<SlashCommand> | undefined>;
   /** Applies `f` and publishes the change. */
@@ -233,6 +237,26 @@ const SHORT_OPENER = 80;
 const stillOurs = (thread: Thread, opening: Opening, given: string | undefined): boolean =>
   hasDefaultTitle(thread, opening.prompt, opening.commands) ||
   (!thread.userNamed && thread.agentNamed !== true && thread.title === given);
+
+/** How many of a thread's first messages are read for its opening before all of them are. */
+export const OPENING_WINDOW = 64;
+
+/**
+ * The thread's opening from its first `OPENING_WINDOW` messages, which hold it but for a thread
+ * opened with that many commands: the moments come with every status line of every turn, and a
+ * long thread's whole history is a decode of seconds on the server's loop.
+ */
+const openingFrom = (deps: TitleDeps, threadId: ThreadId) =>
+  Effect.gen(function* () {
+    const commands = yield* deps.commands(threadId);
+    const head = yield* deps.messages(threadId, OPENING_WINDOW);
+    const opening = openingOf(head, commands);
+    if (head.length < OPENING_WINDOW || (opening !== undefined && opening.reply !== "")) {
+      return opening;
+    }
+    // Its prompt or the reply to it lies past the window.
+    return openingOf(yield* deps.messages(threadId, Number.MAX_SAFE_INTEGER), commands);
+  });
 
 /**
  * Replaces a thread's first-prompt default title with a helper-LLM one: as its first turn starts,
@@ -262,11 +286,16 @@ export const runTitleWatcher = (deps: TitleDeps): Effect.Effect<void> => {
       // A first turn that was tried early is known to be the one settling, whatever the count says
       // by now: a queued message starts turn two right behind the `idle` this is still reading.
       const firstTurnSettling = phase === "settled" && early.has(threadId);
-      const opening = openingOf(yield* deps.messages(threadId), yield* deps.commands(threadId));
+      const opening = yield* openingFrom(deps, threadId);
       if (opening === undefined) return;
       const { prompt, reply } = opening;
       const firstTurn = opening.turnsBefore + 1;
-      if (!firstTurnSettling && (yield* deps.turnCount(threadId)) !== firstTurn) return;
+      if (!firstTurnSettling) {
+        const turns = yield* deps.turnCount(threadId);
+        // Past its first turn, it never will be again: no moment of it reads its history twice.
+        if (turns > firstTurn) done.add(threadId);
+        if (turns !== firstTurn) return;
+      }
       const given = early.get(threadId);
       if (!stillOurs(yield* deps.getThread(threadId), opening, given)) return;
       if (phase === "settled") {

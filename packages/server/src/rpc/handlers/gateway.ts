@@ -520,7 +520,7 @@ export const gatewayHandlers = Effect.gen(function* () {
     ),
     getThread: (threadId) => store.getThread(threadId),
     turnCount: (threadId) => store.listTurns(threadId).pipe(Effect.map((turns) => turns.length)),
-    messages: (threadId) => store.listMessages(threadId),
+    messages: (threadId, limit) => store.firstMessages(threadId, limit),
     commands: (threadId) => Effect.sync(() => sessionCommands.get(threadId)),
     updateThread: (threadId, f) => runtimes.updateThread(threadId, f),
   }).pipe(Effect.forkScoped);
