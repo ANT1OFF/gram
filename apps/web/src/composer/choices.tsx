@@ -68,20 +68,25 @@ export interface ChoiceSection {
   readonly body?: ReactNode;
 }
 
-/** The chip's words at each size: `value` is the first section's alone, the model's. */
-function ChipWords({
-  sections,
-  size,
-}: {
-  sections: readonly ChoiceSection[];
-  size: Exclude<LabelSize, "icon">;
-}) {
-  const shown = sections.filter((section) => section.chip !== undefined);
+/**
+ * The chip's words at each size: `value` is the first section's alone, the model's. At `icon` all
+ * three are hidden, and still there to be measured. With no value to show yet, as a thread's
+ * settings load, the first section's words stand in, so the chip is never an empty pill.
+ */
+function ChipWords({ sections, size }: { sections: readonly ChoiceSection[]; size: LabelSize }) {
+  const chipped = sections.flatMap((section) =>
+    section.chip === undefined ? [] : [{ section, chip: section.chip }],
+  );
+  const first = sections[0];
+  const shown =
+    chipped.length > 0 || first === undefined
+      ? chipped
+      : [{ section: first, chip: { full: first.named, compact: first.named } }];
   const words = (pick: "full" | "compact", only?: number) =>
-    shown.slice(0, only).map((section, index) => (
+    shown.slice(0, only).map(({ section, chip }, index) => (
       <Fragment key={section.id}>
         {index > 0 && " · "}
-        <span className={section.warning ? "text-warning" : undefined}>{section.chip?.[pick]}</span>
+        <span className={section.warning ? "text-warning" : undefined}>{chip[pick]}</span>
       </Fragment>
     ));
   return (
@@ -143,6 +148,7 @@ export function ComposerChoices({
   size = "full",
   focused = false,
   onOpen,
+  onClose,
   onAsked,
   onPicked,
 }: {
@@ -156,6 +162,8 @@ export function ComposerChoices({
   focused?: boolean;
   /** Called as the popover opens, by click or shortcut. */
   onOpen?: (() => void) | undefined;
+  /** Called as it closes, by a pick, Escape or a click away. */
+  onClose?: (() => void) | undefined;
   /**
    * Subscribes to asks to open the model's section from outside the toolbar, such as a failed
    * turn's "Try another model"; returns the unsubscribe.
@@ -176,22 +184,6 @@ export function ComposerChoices({
   const hintOf = (section: ChoiceSection) =>
     section.shortcut === undefined ? "" : shortcutHint(section.shortcut.id, overrides);
 
-  const setOpen = (next: boolean, at?: string) => {
-    if (next) {
-      onOpen?.();
-      setActive(at ?? sections.find((section) => section.unavailable === undefined)?.id);
-      if (!open) setOpening(opening + 1);
-    }
-    setOpenState(next);
-  };
-  // An ask from outside opens the model's section as its shortcut does. Kept in a ref, so a
-  // re-render with new callbacks doesn't subscribe again.
-  const asked = useRef(() => {});
-  useEffect(() => {
-    asked.current = () => setOpen(true, "model");
-  });
-  useEffect(() => onAsked?.(() => asked.current()), [onAsked]);
-
   // A pick rings the mark once it lands, and not for a value that changed by itself.
   const [pending, setPending] = useState<{ id: string; value: string }>();
   const [landed, setLanded] = useState(0);
@@ -202,9 +194,30 @@ export function ComposerChoices({
     setPending(undefined);
     setLanded(landed + 1);
   }
+
+  const setOpen = (next: boolean, at?: string) => {
+    if (next) {
+      onOpen?.();
+      setActive(at ?? sections.find((section) => section.unavailable === undefined)?.id);
+      if (!open) {
+        setOpening(opening + 1);
+        // A pick the server never took doesn't ring the mark for a later, unrelated change.
+        setPending(undefined);
+      }
+    } else if (open) onClose?.();
+    setOpenState(next);
+  };
+  // An ask from outside opens the model's section as its shortcut does. Kept in a ref, so a
+  // re-render with new callbacks doesn't subscribe again.
+  const asked = useRef(() => {});
+  useEffect(() => {
+    asked.current = () => setOpen(true, "model");
+  });
+  useEffect(() => onAsked?.(() => asked.current()), [onAsked]);
+
   const pick = (section: ChoiceSection, option: ChoiceOption) => {
     if (option.disabled) return;
-    setOpenState(false);
+    setOpen(false);
     if (option.value === section.value) return;
     setPending({ id: section.id, value: option.value });
     section.onChange?.(option.value);
@@ -229,13 +242,24 @@ export function ComposerChoices({
   ].join("\n");
   const description = [agentLabel, ...warnings].filter(Boolean).join(". ") || undefined;
   // Without a mark there is nothing to stand in for the words: the model's name stays.
-  const shown = size === "icon" ? (mark ? undefined : "value") : size;
+  const shown = size === "icon" && !mark ? "value" : size;
 
   const rows = () => [...(popup.current?.querySelectorAll<HTMLElement>("[data-choice-row]") ?? [])];
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!MOVES.has(event.key)) return;
+    const target = event.target as HTMLElement;
     // The model's search moves through its own list.
-    if ((event.target as HTMLElement).closest("[data-model-search]")) return;
+    if (target.closest("[data-model-search]")) return;
+    // Down from the open Model heading goes into its search, where its list is.
+    const search =
+      event.key === "ArrowDown" && target.getAttribute("aria-expanded") === "true"
+        ? target.closest("[data-choice-section]")?.querySelector<HTMLElement>("input")
+        : undefined;
+    if (search) {
+      event.preventDefault();
+      search.focus();
+      return;
+    }
     const all = rows();
     if (all.length === 0) return;
     event.preventDefault();
@@ -300,7 +324,8 @@ export function ComposerChoices({
             </PulseOnce>
           </span>
         )}
-        {shown !== undefined && <ChipWords sections={sections} size={shown} />}
+        {/* Rendered at every size, so `useToolbarLayout` always has the words to measure. */}
+        <ChipWords sections={sections} size={shown} />
       </Hint>
       <Popover.Portal>
         {/* Above the whole composer, so the popover never covers the draft. */}
@@ -372,6 +397,8 @@ function Section({
     "aria-expanded": expanded,
     "aria-controls": `${id}-body`,
     "aria-disabled": unavailable || undefined,
+    // Why it doesn't apply, said to a screen reader as the hint says it on hover.
+    "aria-description": unavailable ? `${section.label}: ${section.unavailable}` : undefined,
     "data-testid": unavailable ? `unavailable-${section.id}` : `choices-${section.id}`,
     onClick: onExpand,
     className: cn(ROW, "h-8 px-2", unavailable && "opacity-50"),

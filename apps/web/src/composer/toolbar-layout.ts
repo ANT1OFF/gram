@@ -4,9 +4,9 @@
  * their compact forms ("Opus · High · Auto"), from the right, and tighter, its value alone ("Opus").
  * Still short, the controls move up to a row of their own above Send and Stop, in full, compact or
  * value-alone words, rather than lose their values. Only when even that can't fit do they drop to
- * glyphs on one row, from the right, and then fold into a "…" menu, also from the right, if they
- * may. Pure, so the arithmetic is tested without a browser; `use-toolbar-layout.ts` measures and
- * `composer.tsx` renders it.
+ * glyphs on one row, from the right. A block marked `foldable` would then fold away; the choices
+ * chip is not, so nothing in the composer folds. Pure, so the arithmetic is tested without a
+ * browser; `use-toolbar-layout.ts` measures and `composer.tsx` renders it.
  */
 
 /**

@@ -28,7 +28,7 @@ import { ComposerChoices, type ChoiceSection } from "./choices";
 import { SpeedField } from "./speed-field";
 import { ModelSelect, useModelSection, type ModelPick } from "./model-select";
 import type { PickerOption } from "./picker";
-import { PickerTrigger, usePickConfirm } from "./picker-trigger";
+import { PickerTrigger } from "./picker-trigger";
 import { defaultModelId, effortOptions, useModels } from "./models";
 import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION } from "./options";
 import { GHOST_TRIGGER } from "./styles";
@@ -182,13 +182,19 @@ function PromptBoxChoices({
       ];
   return (
     <>
-      {!needsKey && model.status}
+      {/* Measured as lead space, so the chip's words fit beside it rather than run under Send. */}
+      {!needsKey && model.status !== undefined && (
+        <div data-toolbar-lead className="flex shrink-0 items-center">
+          {model.status}
+        </div>
+      )}
       {sections.length > 0 && (
         <div data-toolbar-block="choices" className="flex min-w-0 shrink-0 items-center">
           <ComposerChoices
             sections={sections}
             size={size}
             onOpen={model.onOpen}
+            onClose={model.onClose}
             onPicked={onPicked}
           />
         </div>
@@ -256,7 +262,6 @@ export function AgentFields({
   const shownModel = value.model || listedDefault || "";
   const efforts = models && !needsKey ? effortOptions(models, shownModel) : [];
   const effortItems = [DEFAULT_EFFORT_OPTION, ...efforts];
-  const effortConfirm = usePickConfirm(value.variant ?? DEFAULT_EFFORT);
   useEffect(() => {
     if (initializeDefault && value.model === "" && listedDefault && !needsKey) {
       onChange({ ...value, model: listedDefault });
@@ -389,7 +394,6 @@ export function AgentFields({
               items={effortItems}
               onValueChange={(next) => {
                 if (next === null) return;
-                effortConfirm.pick(next);
                 onChange(
                   withVariant(
                     value,

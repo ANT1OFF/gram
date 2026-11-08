@@ -160,7 +160,12 @@ export function useModelSection({
   agents?: readonly AgentKind[] | undefined;
   /** Called for a model of another agent or gateway than `agent` and `profileId`. */
   onPick?: ((pick: ModelPick) => void) | undefined;
-}): { section: ChoiceSection | undefined; status: ReactNode; onOpen: () => void } {
+}): {
+  section: ChoiceSection | undefined;
+  status: ReactNode;
+  onOpen: () => void;
+  onClose: () => void;
+} {
   const { options, refresh, status } = useModelListing(agent, profileId, value);
   const across = onPick !== undefined && agents !== undefined;
   const [opened, setOpened] = useState(false);
@@ -176,7 +181,9 @@ export function useModelSection({
     refresh();
     setOpened(true);
   };
-  if (status !== undefined) return { section: undefined, status, onOpen };
+  // Closed, the other agents' lists are no longer asked for; what they fetched stays cached.
+  const onClose = () => setOpened(false);
+  if (status !== undefined) return { section: undefined, status, onOpen, onClose };
   if (!across)
     return {
       section: modelSection({
@@ -191,6 +198,7 @@ export function useModelSection({
       }),
       status,
       onOpen,
+      onClose,
     };
   const shown = modelSection({ value, options, onChange });
   return {
@@ -220,6 +228,7 @@ export function useModelSection({
     },
     status,
     onOpen,
+    onClose,
   };
 }
 

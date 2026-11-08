@@ -11,6 +11,7 @@ import { ComposerChoices, type ChoiceSection } from "./choices";
 import { askModelPicker, onModelPickerAsked, useModelPickerRequests } from "./model-picker-request";
 import { EFFORT_OPTIONS } from "./options";
 import type { LabelSize } from "./toolbar-layout";
+import { useToolbarLayout } from "./use-toolbar-layout";
 
 afterEach(() => {
   cleanup();
@@ -133,12 +134,78 @@ describe("the choices chip", () => {
     const view = render(
       <ComposerChoices sections={sections()} size="icon" mark={<svg data-testid="mark" />} />,
     );
-    expect(shown("[data-toolbar-label]")).toBeNull();
+    // Every word is still there to be measured, and none of it shows.
+    for (const each of ["[data-toolbar-label]", "[data-toolbar-compact]", "[data-toolbar-value]"]) {
+      expect(shown(each), each).not.toBeNull();
+      expect(visible(each), each).toBe(false);
+    }
     expect(screen.getByTestId("mark")).toBeTruthy();
     view.rerender(<ComposerChoices sections={sections()} size="icon" />);
     expect(visible("[data-toolbar-value]")).toBe(true);
   });
+
+  it("is never an empty pill: with no value to show yet, the first section's words stand in", () => {
+    const loading = sections().map((section) => ({ ...section, chip: undefined }));
+    render(<ComposerChoices sections={loading} />);
+    expect(shown("[data-toolbar-label]")?.textContent).toBe("Claude Opus");
+  });
+
+  it("settles at its mark in a toolbar too narrow for a word, measuring its hidden words", async () => {
+    const spies = [
+      vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        return this.dataset["testid"] === "narrow-toolbar" ? 30 : 0;
+      }),
+      vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        if (!this.matches("[data-toolbar-block]")) return 0;
+        const words = [
+          ...this.querySelectorAll(
+            "[data-toolbar-label], [data-toolbar-compact], [data-toolbar-value]",
+          ),
+        ].filter((el) => !hidden(el));
+        return 16 + words.reduce((sum, el) => sum + letters(el), 0);
+      }),
+      vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        return letters(this);
+      }),
+    ];
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      render(<Narrow />);
+      await waitFor(() => expect(visible("[data-toolbar-label]")).toBe(false));
+      // Settled: a few more frames and it is still the mark, with no update loop on the way.
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
+      for (const each of ["[data-toolbar-label]", "[data-toolbar-compact]", "[data-toolbar-value]"])
+        expect(visible(each), each).toBe(false);
+      expect(errors).not.toHaveBeenCalledWith(expect.stringMatching(/Maximum update depth/));
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+      errors.mockRestore();
+    }
+  });
 });
+
+// happy-dom lays nothing out: a 30 px toolbar, the mark 16 px, each letter of a word 7 px.
+const letters = (el: Element) => (el.textContent ?? "").length * 7;
+const hidden = (el: Element) => el.className.includes("sr-only");
+const NARROW_BLOCKS = [{ id: "choices", foldable: false }];
+
+/** The chip in a toolbar measured by the real `useToolbarLayout`. */
+function Narrow() {
+  const { ref, size } = useToolbarLayout(NARROW_BLOCKS);
+  return (
+    <div ref={ref} data-testid="narrow-toolbar" style={{ padding: "0px", columnGap: "0px" }}>
+      <div data-toolbar-block="choices">
+        <ComposerChoices sections={sections()} size={size("choices")} mark={<svg />} />
+      </div>
+    </div>
+  );
+}
 
 describe("the choices popover", () => {
   it("opens on its Model section, and each section's list checks its value and says what each costs", async () => {
@@ -202,6 +269,7 @@ describe("the choices popover", () => {
     await user.click(chip());
     const effort = await screen.findByTestId("unavailable-effort");
     expect(effort.getAttribute("aria-disabled")).toBe("true");
+    expect(effort.getAttribute("aria-description")).toBe("Effort: This model has no effort levels");
     expect(effort.textContent).toContain("Not available");
     await user.hover(effort);
     expect(await screen.findByText("Effort: This model has no effort levels")).toBeTruthy();
@@ -251,6 +319,35 @@ describe("the choices popover", () => {
 
     act(() => void runShortcut("composer.mode"));
     expect(await screen.findByRole("listbox", { name: "Mode" })).toBeTruthy();
+  });
+
+  it("goes down from the open Model heading into its search", async () => {
+    const user = userEvent.setup();
+    render(<ComposerChoices sections={sections()} />);
+    await user.click(chip());
+    const heading = await screen.findByTestId("choices-model");
+    heading.focus();
+    fireEvent.keyDown(heading, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByRole("combobox", { name: "Search models" }));
+  });
+
+  it("tells its owner it closed, and a pick the server never took rings nothing on reopening", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const props = { mark: <svg />, onClose };
+    const view = render(<ComposerChoices sections={sections()} {...props} />);
+    await user.click(chip());
+    await user.click(await screen.findByTestId("choices-mode"));
+    await user.click(screen.getByRole("option", { name: "Plan" }));
+    expect(onClose).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByTestId("composer-choices-popup")).toBeNull());
+    // Reopened and closed with the pick never taken; the mode then reaches Plan by itself.
+    await user.click(chip());
+    await screen.findByTestId("composer-choices-popup");
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(2);
+    view.rerender(<ComposerChoices sections={sections({ mode: "plan" })} {...props} />);
+    expect(chip().querySelector("[data-testid=pulse-once]")).toBeNull();
   });
 
   it("registers its shortcuts only while its pane has focus", () => {
