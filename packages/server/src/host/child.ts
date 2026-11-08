@@ -84,7 +84,18 @@ export const spawnHost = (
       });
     }
     const socket = yield* NodeSocket.fromDuplex(Effect.succeed(stream));
-    return yield* connectHost(socket, { hostId: LOCAL_HOST_ID, gone: Deferred.await(ended) });
+    return yield* connectHost(socket, {
+      hostId: LOCAL_HOST_ID,
+      gone: Deferred.await(ended),
+      // A host found gone over its stream (it stopped answering) may still be running: stop it.
+      onEnded: () => stop(child),
+    }).pipe(
+      Effect.tapError((error) =>
+        Effect.logWarning("worker host: its process didn't connect").pipe(
+          Effect.annotateLogs({ reason: error.message }),
+        ),
+      ),
+    );
   });
 
 /** This machine's host process, from the build's own `gram-host` entry. */

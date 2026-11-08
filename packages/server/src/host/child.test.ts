@@ -58,7 +58,7 @@ describe("the host as its own process", () => {
           const error = yield* host.files
             .list(dir, { showHidden: false, limit: 10 })
             .pipe(Effect.flip);
-          expect(error._tag).toMatch(/HostUnavailable|InvalidState/);
+          expect(error._tag).toBe("InvalidState");
           expect(Date.now() - started).toBeLessThan(1_000);
         }
         const scan = yield* Effect.flip(host.scan);

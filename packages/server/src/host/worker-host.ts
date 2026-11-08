@@ -114,12 +114,13 @@ const throughHostProcess = (inServer: MachineParts) =>
       Effect.annotateLogs({ pid: host.hello.pid }),
     );
     const either =
-      <Args extends ReadonlyArray<unknown>, R>(
-        viaHost: (...args: Args) => R,
-        local: (...args: Args) => R,
+      <Args extends ReadonlyArray<unknown>, A, E>(
+        viaHost: (...args: Args) => Effect.Effect<A, E>,
+        local: (...args: Args) => Effect.Effect<A, E>,
       ) =>
-      (...args: Args): R =>
-        host.gone() ? local(...args) : viaHost(...args);
+      (...args: Args): Effect.Effect<A, E> =>
+        // Chosen when the read runs, so an effect built before the host went still falls back.
+        Effect.suspend(() => (host.gone() ? local(...args) : viaHost(...args)));
     const parts: MachineParts = {
       files: {
         list: either(host.files.list, inServer.files.list),

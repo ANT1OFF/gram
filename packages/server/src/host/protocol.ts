@@ -13,7 +13,7 @@ import {
   HostUnavailable,
   InvalidState,
   LOCAL_HOST_ID,
-  type NotFound,
+  NotFound,
 } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -147,16 +147,14 @@ const asInvalid = (error: { readonly _tag: string; readonly message?: string }) 
 const keepFileErrors = <E extends { readonly _tag: string; readonly message?: string }>(
   error: E,
 ): Effect.Effect<NotFound | InvalidState> =>
-  error._tag === "NotFound" || error._tag === "InvalidState"
-    ? Effect.succeed(error as unknown as NotFound | InvalidState)
+  error instanceof NotFound || error instanceof InvalidState
+    ? Effect.succeed(error)
     : asInvalid(error);
 
 const keepInvalid = <E extends { readonly _tag: string; readonly message?: string }>(
   error: E,
 ): Effect.Effect<InvalidState> =>
-  error._tag === "InvalidState"
-    ? Effect.succeed(error as unknown as InvalidState)
-    : asInvalid(error);
+  error instanceof InvalidState ? Effect.succeed(error) : asInvalid(error);
 
 /** How long a host gets to say hello before it counts as not answering. */
 const HELLO_TIMEOUT = "5 seconds";
@@ -169,6 +167,8 @@ export interface ConnectOptions {
    * once rather than waiting on a stream no one will answer. Never succeeds.
    */
   readonly gone?: Effect.Effect<never, HostUnavailable>;
+  /** Runs once when the host is found gone, whichever way: its owner stops what is left of it. */
+  readonly onEnded?: (reason: string) => Effect.Effect<void>;
 }
 
 /**
@@ -188,8 +188,18 @@ export const connectHost = (
     const goneNow = Effect.suspend(() =>
       Effect.fail(unavailable("This machine's host has stopped.")),
     );
-    const markEnded = Effect.sync(() => void (ended = true));
-    const gone = (options.gone ?? Effect.never).pipe(Effect.tapError(() => markEnded));
+    const markEnded = (reason: string) =>
+      Effect.suspend(() => {
+        if (ended) return Effect.void;
+        ended = true;
+        return Effect.logWarning("worker host: it has gone").pipe(
+          Effect.annotateLogs({ hostId: options.hostId, reason }),
+          Effect.andThen(options.onEnded?.(reason) ?? Effect.void),
+        );
+      });
+    const gone = (options.gone ?? Effect.never).pipe(
+      Effect.tapError((error) => markEnded(error.message)),
+    );
     // Marks the host ended as soon as it goes, not only when a call next races against it.
     yield* Effect.forkScoped(Effect.ignore(gone));
     /**
@@ -204,7 +214,7 @@ export const connectHost = (
           ? goneNow
           : Effect.raceFirst(call, gone).pipe(
               Effect.tapError((error) =>
-                error._tag === "RpcClientError" ? markEnded : Effect.void,
+                error._tag === "RpcClientError" ? markEnded(failureText(error)) : Effect.void,
               ),
             ),
       );
