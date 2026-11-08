@@ -360,6 +360,8 @@ export const gitDirStamp = (checkout: RepoRoots): string => {
     fileStamp(nodePath.join(checkout.gitDir, "index")),
     ref === undefined ? "" : fileStamp(nodePath.join(checkout.common, ref)),
     fileStamp(nodePath.join(checkout.common, "packed-refs")),
+    // A reftable repo keeps every ref here; its HEAD always names `.invalid`.
+    fileStamp(nodePath.join(checkout.common, "reftable", "tables.list")),
   ].join("|");
 };
 
@@ -375,8 +377,10 @@ const sameState = (a: GitState | undefined, b: GitState) =>
 export const watchGitState = (
   paths: ReadonlyArray<string>,
   options: WatchOptions = {},
-): Stream.Stream<GitStateChange, never, Proc> =>
-  Stream.callback<GitStateChange, never, Proc>((queue) =>
+): Stream.Stream<GitStateChange, never, Proc> => {
+  // One record per checkout: a path asked for twice would count its reconcile ticks down twice.
+  const unique = [...new Set(paths)];
+  return Stream.callback<GitStateChange, never, Proc>((queue) =>
     Effect.gen(function* () {
       const debounceMs = options.debounceMs ?? DEBOUNCE_MS;
       const cooldownMs = options.cooldownMs ?? COOLDOWN_MS;
@@ -425,7 +429,7 @@ export const watchGitState = (
       };
 
       const checkouts: Array<WatchedCheckout> = [];
-      for (const path of paths) {
+      for (const path of unique) {
         const roots = yield* tryRepoRoots(path).pipe(Effect.orElseSucceed(() => undefined));
         if (roots) checkouts.push({ path, ...roots });
       }
@@ -487,7 +491,7 @@ export const watchGitState = (
         );
       }
       // Subscribe before the initial read to close the ordinary setup/read race.
-      for (const path of paths) yield* recompute(path);
+      for (const path of unique) yield* recompute(path);
       if (process.platform === "darwin") {
         const ticksMax = Math.max(1, Math.round(RECONCILE_MAX_MS / RECONCILE_MS));
         const stamps = new Map<string, string>();
@@ -495,7 +499,7 @@ export const watchGitState = (
           stamps.set(checkout.path, gitDirStamp(checkout));
           backoff.set(checkout.path, { wait: 1, left: 1 });
         }
-        const unrooted = paths.filter((path) => !checkouts.some((c) => c.path === path));
+        const unrooted = unique.filter((path) => !checkouts.some((c) => c.path === path));
         yield* Effect.forkScoped(
           Effect.forever(
             Effect.sleep(RECONCILE_MS).pipe(
@@ -528,3 +532,4 @@ export const watchGitState = (
       }
     }),
   );
+};
