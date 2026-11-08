@@ -251,10 +251,11 @@ export function Transcript({
    */
   const [pressing, setPressing] = useState(false);
   /**
-   * The last pause came from a press on the content (a fold, a card's button), not from the
-   * reader scrolling: at the end, it leaves nothing for "Jump to latest" to jump to.
+   * Since following last stopped, the reader scrolled (a wheel, a touch, a key, the scrollbar):
+   * a pause they chose, which "Jump to latest" says even at the end. Anything else that pauses
+   * (a press on a fold or a card, a jump, rows reflowing) leaves the pill to what is below the view.
    */
-  const [pressPaused, setPressPaused] = useState(false);
+  const [readerPaused, setReaderPaused] = useState(false);
   /**
    * The row of an actionable card under the pointer (`HOLD_UNDER_POINTER`), by its message id. While
    * there is one, rows above it that change size move the scroll with them and following holds off,
@@ -423,6 +424,7 @@ export function Transcript({
       // ResizeObserver may run before React commits this input event's state update.
       virtualizer.options.scrollEndThreshold = value && held.current === undefined ? 1 : -1;
       setIsFollowing(value);
+      if (value) setReaderPaused(false);
     },
     [virtualizer],
   );
@@ -746,17 +748,15 @@ export function Transcript({
     run: () => step(1),
   });
 
-  /** `press`: a press on the content paused it, not a reader's scroll (see `pressPaused`). */
-  const interruptJump = (press = false) => {
-    // Only a press that is what paused it: a press while the reader had already scrolled away
-    // leaves their pause as it was.
-    const pausedByPress = press && (following.current || pressPaused);
+  /** `reader`: a scroll gesture paused it; a press on the content isn't one (see `readerPaused`). */
+  const interruptJump = (reader = true) => {
     pendingJump.current = undefined;
     virtualizer.cancelScroll();
     manualGesture.current = undefined;
     lastScrollTop.current = scrollRef.current?.scrollTop ?? 0;
     setFollowing(false);
-    setPressPaused(pausedByPress);
+    // A press after the reader scrolled away leaves their pause as it was.
+    if (reader) setReaderPaused(true);
   };
 
   const forwardGesture = (kind: ScrollGesture["kind"], scroller: HTMLDivElement) => {
@@ -803,10 +803,10 @@ export function Transcript({
   // The newest prompt can be below the top of a clamped final viewport. At the bottom, name that
   // last turn; everywhere else the row at the reading edge determines the current chapter.
   // A press pauses following (so what was pressed stays put), which at the bottom left "Jump to
-  // latest" offering a jump to where the view already is. Paused by a press and still exactly at
-  // the end, the pill stays hidden, and shows once anything arrives under the view. A pause the
-  // reader scrolled into keeps its pill, even clamped to the end by a resize.
-  const pressAtEnd = pressPaused && virtualizer.isAtEnd(0);
+  // latest" offering a jump to where the view already is. Paused by anything but the reader's own
+  // scroll and still exactly at the end, the pill stays hidden, and shows once anything arrives
+  // under the view. A pause the reader scrolled into keeps its pill, even clamped to the end.
+  const quietAtEnd = !readerPaused && virtualizer.isAtEnd(0);
   const currentId = virtualizer.isAtEnd(CURRENT_BOTTOM_TOLERANCE)
     ? chapters.at(-1)?.id
     : firstVisible === undefined
@@ -824,7 +824,7 @@ export function Transcript({
         />
       ) : (
         !isFollowing &&
-        !pressAtEnd &&
+        !quietAtEnd &&
         messages.length > 0 && (
           <Button
             className={cn(
@@ -918,7 +918,7 @@ export function Transcript({
             event.button === 0 &&
             event.clientX >= bounds.left + el.clientWidth;
           // A press on the content pauses as a reader's scroll does, but isn't one.
-          interruptJump(!scrollbar);
+          interruptJump(scrollbar);
           if (scrollbar) {
             scrollbarPointer.current = { id: event.pointerId, y: event.clientY };
             manualGesture.current = beginScrollGesture(
