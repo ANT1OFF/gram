@@ -92,16 +92,16 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { WorkspaceOutputs } from "../outputs/workspace-outputs.ts";
 import {
-  createRemoteAccess,
   pairingCsp,
   pairingDocument,
-  REMOTE_PAIR_PATH,
+  unpairedCsp,
+  unpairedDocument,
   SESSION_LIFETIME_MS,
   REMOTE_CONNECT_PATH,
   REMOTE_CLAIM_PATH,
-  remoteCookieName,
 } from "./remote-access.ts";
-import { fileRemoteSessionStore } from "./remote-sessions.ts";
+import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./remote-routes.ts";
+import { RemoteControl } from "./remote-control.ts";
 import { authTarget } from "./auth-target.ts";
 import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } from "./auth.ts";
 
@@ -127,15 +127,7 @@ export const AuthMiddleware = HttpRouter.middleware(
     const config = yield* ServerConfig;
     const mcpTokens = yield* McpTokens;
     const port = serverPort(server);
-    const remote =
-      config.remoteOrigin === undefined
-        ? undefined
-        : createRemoteAccess(
-            config.remoteOrigin,
-            port,
-            Date.now,
-            fileRemoteSessionStore(config.dataDir, config.remoteOrigin, port),
-          );
+    const control = yield* RemoteControl;
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
       "cache-control": "no-store",
@@ -153,6 +145,7 @@ export const AuthMiddleware = HttpRouter.middleware(
         };
         const target = authTarget(request.url);
         const path = target?.path;
+        const remote = control.current();
         const isRemote = remote !== undefined && request.headers["host"] === remote.host;
         const secureResponse = (response: HttpServerResponse.HttpServerResponse) =>
           HttpServerResponse.setHeaders(response, {
@@ -197,7 +190,7 @@ export const AuthMiddleware = HttpRouter.middleware(
           if (session === undefined)
             return secureResponse(HttpServerResponse.text("pairing refused", { status: 403 }));
           const response = yield* HttpServerResponse.text("paired").pipe(
-            HttpServerResponse.setCookie(remoteCookieName(port), session, {
+            HttpServerResponse.setCookie(remote.cookieName, session, {
               maxAge: SESSION_LIFETIME_MS,
               secure: true,
               httpOnly: true,
@@ -223,14 +216,11 @@ export const AuthMiddleware = HttpRouter.middleware(
         switch (decision.kind) {
           case "pass":
             response =
-              path === REMOTE_PAIR_PATH
-                ? remote !== undefined &&
-                  request.method === "POST" &&
-                  request.headers["origin"] !== undefined &&
-                  !isRemote
-                  ? HttpServerResponse.jsonUnsafe(remote.mint())
-                  : HttpServerResponse.text("pairing unavailable", { status: 403 })
-                : yield* httpEffect;
+              path !== undefined && REMOTE_MANAGEMENT_PATHS.has(path)
+                ? yield* remoteManagement(control, path, isRemote ? remote : undefined)
+                : isRemote && path === "/ws"
+                  ? yield* closedOnRevoke(remote, remote.sessionOf(authRequest), httpEffect)
+                  : yield* httpEffect;
             break;
           case "boot":
             response = yield* HttpServerResponse.redirect("/", { status: 302 }).pipe(
@@ -249,6 +239,20 @@ export const AuthMiddleware = HttpRouter.middleware(
                 : yield* httpEffect;
             break;
           case "reject":
+            // A phone opening Gram unpaired, or after it was removed, gets a page saying so.
+            if (
+              isRemote &&
+              decision.status === 401 &&
+              request.method === "GET" &&
+              (request.headers["accept"] ?? "").includes("text/html")
+            )
+              return HttpServerResponse.setHeaders(
+                HttpServerResponse.text(unpairedDocument, {
+                  status: 401,
+                  contentType: "text/html; charset=utf-8",
+                }),
+                { ...securityHeaders, "content-security-policy": unpairedCsp },
+              );
             response = HttpServerResponse.text(decision.message, { status: decision.status });
             break;
         }
@@ -472,6 +476,7 @@ export const ServerLayer: Layer.Layer<
     }).pipe(
       Layer.merge(LoopStallLog),
       Layer.provideMerge(ServerCore),
+      Layer.provide(RemoteControl.layer),
       Layer.provideMerge(McpTokens.layer),
       Layer.provideMerge(LaunchToken.layer),
       Layer.provideMerge(
