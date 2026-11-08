@@ -3,11 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Brain, Columns3, FolderGit2, HandGrab, Pause, Repeat, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { create } from "zustand";
 
 import { useApi } from "@/api/context";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { Hint } from "@/components/hint";
+import { cn } from "@/lib/utils";
+import { buttonVariants } from "@/components/ui/button";
 import { focusOtherWindow } from "@/desktop/open-thread";
 import { useSaveSettings } from "@/settings/use-save-settings";
 import { useServerSettings } from "@/settings-sync/store";
@@ -53,23 +54,12 @@ export const FINISHED_WORKER: ReadonlySet<string> = new Set(["merged", "delivere
 const BANNER =
   "flex min-w-0 items-center gap-2 border-b border-border px-3 py-1 text-meta text-foreground";
 
-/** The worker whose Take over line shows now, so its header's ⓘ doesn't say it a second time. */
-export const useTakeOverLine = create<{
-  shownFor: ThreadId | undefined;
-  set: (threadId: ThreadId) => void;
-  clear: (threadId: ThreadId) => void;
-}>()((set) => ({
-  shownFor: undefined,
-  set: (threadId) => set({ shownFor: threadId }),
-  clear: (threadId) => set((s) => (s.shownFor === threadId ? { shownFor: undefined } : s)),
-}));
-
 /**
  * What Take over would change, in a quiet line of its own the first time a worker offers it. Once
  * shown it is remembered for the user (`onboarding.takeOverHintSeen`) and stays for this view only;
  * after, the header's Take over carries it on its hint, and the line no longer stacks over the work.
  */
-function TakeOverLine({ threadId }: { threadId: ThreadId }) {
+function TakeOverLine() {
   const save = useSaveSettings();
   // Decided as the view opens, so saving it as seen doesn't take it away while it is read. The
   // settings arrive before any thread opens; without them it stays folded rather than flash.
@@ -83,12 +73,6 @@ function TakeOverLine({ threadId }: { threadId: ThreadId }) {
       console.error("save takeOverHintSeen", error),
     );
   }, [shown, save]);
-  // While it shows, the header's ⓘ (`TakeOverInfo`) stays away: the line already says it.
-  useEffect(() => {
-    if (!shown) return;
-    useTakeOverLine.getState().set(threadId);
-    return () => useTakeOverLine.getState().clear(threadId);
-  }, [shown, threadId]);
   if (!shown) return null;
   return (
     <p
@@ -172,9 +156,7 @@ export function WorkerBanner({
           </span>
         </div>
       )}
-      {!held && entry !== undefined && !FINISHED_WORKER.has(entry.state) && (
-        <TakeOverLine threadId={thread.id} />
-      )}
+      {!held && entry !== undefined && !FINISHED_WORKER.has(entry.state) && <TakeOverLine />}
       {routine !== undefined && (
         // Where it came from, quietly: a routine's run started it, not a message from anyone.
         <p
@@ -259,6 +241,7 @@ export function OrchestratorChips({
         handoff.suggestedAtPct !== undefined && (
           <ContextChip
             pct={handoff.suggestedAtPct}
+            inTitlebar={inTitlebar}
             onAct={() => useHandoffStore.getState().confirm(workspaceId)}
           />
         )
@@ -281,21 +264,40 @@ export function OrchestratorChips({
         </Hint>
       )}
       {/* Memory is the orchestrator's own, so it stays a glyph beside its title in the title bar
-          too, a toolbar's size there; the bar's "…" lists it as well, in words. */}
+          too, there one of the bar's icon buttons (its size, stroke, muted colour and hover fill);
+          the bar's "…" lists it as well, in words. */}
       <Hint
         label="Memory"
         side="bottom"
         render={
-          <Link
-            to="/w/$workspaceId/memory"
-            params={{ workspaceId }}
-            aria-label="Memory"
-            data-testid="orchestrator-memory"
-            className={HEADER_LINK}
-          />
+          inTitlebar ? (
+            // A link, as below, drawn as the bar's icon buttons are.
+            <Link
+              to="/w/$workspaceId/memory"
+              params={{ workspaceId }}
+              aria-label="Memory"
+              data-testid="orchestrator-memory"
+              // Merged as `Button` merges them, so the toolbar glyph size wins over the base's.
+              className={cn(
+                buttonVariants({
+                  variant: "ghost",
+                  size: "icon-sm",
+                  className: "text-muted-foreground",
+                }),
+              )}
+            />
+          ) : (
+            <Link
+              to="/w/$workspaceId/memory"
+              params={{ workspaceId }}
+              aria-label="Memory"
+              data-testid="orchestrator-memory"
+              className={HEADER_LINK}
+            />
+          )
         }
       >
-        <Brain aria-hidden className={inTitlebar ? "size-icon-bar" : "size-icon-row"} />
+        <Brain aria-hidden className={inTitlebar ? undefined : "size-icon-row"} />
       </Hint>
       {/* In the title bar, the workspace's settings are the bar's "…". */}
       {!inTitlebar && (

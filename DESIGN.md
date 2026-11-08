@@ -53,8 +53,11 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     Everything else stays neutral: the plan strip, the title bar, a label's chip (named, never
     tinted). The needs-you entry counts errors among what needs you but never tints them: its
     amber dot and words are for what asks ("1 question" amber, "· 1 error" muted), errors alone
-    leave it neutral, and in the title bar the chip itself is neutral, its dot and the asks' words
-    the bar's one amber mark; the compact rail's count (its number, in a neutral outline) and the
+    leave it neutral. Its words are the pill's alone (the sidebar's, Settings' strip's, Quiet's):
+    with the sidebar hidden the title bar's way in is the Inbox, an icon button in the attention
+    group's first slot, one size whatever waits, its corner dot amber while something asks (the
+    bar's one amber mark), neutral for errors alone, and the pill's words on hover, never a word
+    chip that jumps into the bar or a number on the glyph; the compact rail's count (its number, in a neutral outline) and the
     Board's waiting chip turn amber only while something asks too. A retry that ran through says what was done and how it went
     ("Retried at 14:11 · succeeded"), its failure folded under Details.
   - `warning` is for a caution on a setting the user chose: Bypass (amber with its lock, on
@@ -159,7 +162,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     thread's role glyph, Open beside); colour on a glyph is a status it means, never decoration.
   - The open tab, view or toggle shows a background or an underline, never colour alone.
   - One meaning per glyph, and one glyph per meaning: the Inbox (everything that needs you) is
-    `Inbox`, a needs-you mark or count `Hand`, review `Eye`, take over `HandGrab`, a question `MessageCircleQuestion`, an approval
+    `Inbox`, a needs-you mark or count `Hand`, review `Eye`, take over `HandGrab`, a setup problem
+    `Wrench` (the banner's lead and its folded title-bar button, never a warning sign with a count
+    beside the needs-you pill's), a question `MessageCircleQuestion`, an approval
     `ShieldQuestion`, a plan `ListChecks`, effort the gauge, usage and limits
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
     Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`, History `History`, a wait
@@ -237,23 +242,26 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   back as it was. There is no second list in a dialog, and while the tab is open the sidebar folds
   its workspace's workers to its line ("7 workers · in Workers"), its chevron leading
   to the tab.
-- **An explanation shows once, then folds to a mark.** What Take over changes is a line under a
-  worker's header the first time it is offered; after, it is an ⓘ beside Take over that says it on
-  hover or focus, so the line never stacks over every worker view.
+- **An explanation shows once, then folds into its control.** What Take over changes is a line
+  under a worker's header the first time it is offered; after, Take over's own hint says it, with
+  no ⓘ beside it to say it again, so the line never stacks over every worker view.
 - **Icon-only chrome names itself on hover:** the title bar's and the overview header's icons use
   the instant tooltip (`Hint`), never a native title, with the shortcut where there is one. A hint
   opens when the pointer moves onto its trigger, never for one that appears under a resting
   pointer, and opens on the side away from what sits next to it (a panel's tabs above, over the
   panel's empty top, not over the notice under them).
 - **The title bar is icon-only and few:** the workspace, Chat · Board and the thread's title (an
-  orchestrator's with its Memory glyph), then
-  what wants you (a setup problem folded from its banner, its glyph with a count, a paused workspace, usage, the bell), one "…" with everything else in words and
+  orchestrator's is its Memory glyph alone: the switcher and Chat already name it, so no role
+  glyph), then
+  what wants you (the Inbox while the sidebar is hidden, a setup problem folded from its banner as its glyph alone, a paused workspace, usage, the bell), one "…" with everything else in words and
   shortcuts, and the panels' group at the end (a worker's Open beside, then the panel's toggle). The usage meter
   is an icon button like the bar's others, usage's glyph alone, its reading in its hover and name. A dot on
   its corner is the one hint of a limit: a warning ring from 90%, filled amber once past the window on
   credits, red once spent; no words, and nothing moves. It
   follows one rule (on a thread its agent's closest limit, unless another's passes 90%; elsewhere the highest),
-  and its hover and popover name which ("This thread: …", "Highest: …"). A popover from the bar drops clear of a
+  and its hover and popover name which ("This thread: …", "Highest: …"). Every glyph in the bar is
+  one of its icon buttons, `icon-sm` with the toolbar glyph (18 px, one stroke), `fg-muted`, the
+  `bg-accent` hover fill, and its instant hint; a pane header's own glyphs keep the row size. A popover from the bar drops clear of a
   card that asks for a decision. The overview's header holds its own two toggles; Settings sits beside History at
   its foot. A new control goes in the "…" unless it is needed at a glance. A
   thread's title comes before its secondary buttons: the bar folds a worker's actions into "…"
@@ -273,8 +281,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   when ready") are quiet meta, a line of `text-meta` in `fg-muted` at regular weight behind its
   chevron, never a card; only an ask (amber) or a failure (red) colours one, and a call still
   running, waiting on you or failed keeps its card. One 12 px step separates every block of the
-  stream, a reply from an update the same as an update from the next reply: a message's Copy,
-  rewind and time float on hover (beside a bubble's top, over the end of a reply's last line)
+  stream, a reply from an update the same as an update from the next reply: a message's Copy, its
+  "…" and its time float on hover (beside a bubble's top, over the end of a reply's last line)
   instead of reserving a row under it. They float only with a pointer that hovers and a message at
   least 40 rem wide (`float-actions`); on touch, where they always show, and in a narrow column
   they keep their row.

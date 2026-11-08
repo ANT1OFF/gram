@@ -2,7 +2,7 @@ import { Menu } from "@base-ui/react/menu";
 import { Popover } from "@base-ui/react/popover";
 import type { MessageId, GramUIMessage, ThreadId, ThreadStatus } from "@gram/contracts";
 import { Copy, Ellipsis, FolderGit2, GitFork, History, Inbox, Pencil } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage, rewindErrorMessage } from "@/api/errors";
@@ -82,10 +82,12 @@ const FLOAT_REPLY = "float-actions:right-0 float-actions:bottom-0";
 const FLOAT_USER = "float-actions:top-0 float-actions:right-full float-actions:mr-2";
 
 /**
- * Copy, Add to Waiting on you, rewind / edit and, on replies, fork actions under a message, and
- * when it arrived, shown on hover or keyboard focus. `turnEnd`: the reply that ends a finished
- * turn, which can copy the whole turn. `floating`: over the message where there is room and a
- * hovering pointer (`FLOATING`), the reply's at its end, the user's beside its bubble.
+ * Copy and one "…" under a message, and when it arrived, shown on hover or keyboard focus. The "…"
+ * holds the rest, each named with a line on what it does or why it can't now: Copy turn (`turnEnd`:
+ * the reply that ends a finished turn), Add to Waiting on you, Rewind to here or Edit from here,
+ * and on replies Fork from here and Fork into worktree…. `floating`: over the message where there
+ * is room and a hovering pointer (`FLOATING`), the reply's at its end, the user's beside its
+ * bubble.
  */
 export function MessageActions({
   threadId,
@@ -108,19 +110,6 @@ export function MessageActions({
     floating && FLOATING,
     floating && (isUser ? FLOAT_USER : FLOAT_REPLY),
   );
-  if (readOnly) {
-    return (
-      <div data-testid="message-actions" data-floating={floating || undefined} className={place}>
-        {isUser && <SentAt message={message} />}
-        <CopyAction
-          testId="message-copy"
-          label="Copy message"
-          text={() => messageMarkdown(message)}
-        />
-        {!isUser && <SentAt message={message} />}
-      </div>
-    );
-  }
   return (
     <div data-testid="message-actions" data-floating={floating || undefined} className={place}>
       {/* On the side towards the conversation, so the buttons keep their place at the edge. */}
@@ -130,15 +119,7 @@ export function MessageActions({
         label="Copy message"
         text={() => messageMarkdown(message)}
       />
-      <WaitAction threadId={threadId} message={message} />
-      <RewindAction threadId={threadId} message={message} />
-      {message.role === "assistant" ? (
-        <ForkActions threadId={threadId} message={message} turnEnd={turnEnd} />
-      ) : turnEnd ? (
-        <MoreActions>
-          <TurnCopyAction threadId={threadId} message={message} />
-        </MoreActions>
-      ) : null}
+      {!readOnly && <MessageMenu threadId={threadId} message={message} turnEnd={turnEnd} />}
       {!isUser && <SentAt message={message} />}
     </div>
   );
@@ -163,18 +144,170 @@ function SentAt({ message }: { message: GramUIMessage }) {
   );
 }
 
+/** A menu item's glyph, its name, and a line under it: what it does, or why it can't now. */
+function ItemText({ icon, label, line }: { icon: ReactNode; label: string; line: string }) {
+  return (
+    <>
+      {icon}
+      <span>
+        <span className="block">{label}</span>
+        <span className="block text-meta text-muted-foreground">{line}</span>
+      </span>
+    </>
+  );
+}
+
 /**
- * "Add to Waiting on you": keeps the message in the thread's tray, as a
- * draft whose Copy takes its quoted or fenced block, titled by its first line. Shown done while an
- * open item already points at it.
+ * The "…" beside Copy, and what its items open: the rewind or edit confirmation, anchored to the
+ * "…" and handing focus back to it, and the worktree fork's dialog.
  */
-function WaitAction({ threadId, message }: { threadId: ThreadId; message: GramUIMessage }) {
+function MessageMenu({
+  threadId,
+  message,
+  turnEnd,
+}: {
+  threadId: ThreadId;
+  message: GramUIMessage;
+  turnEnd: boolean;
+}) {
+  const more = useRef<HTMLButtonElement>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [dialog, setDialog] = useState<{ notice?: string }>();
+  const wait = useWait(threadId, message);
+  const rewind = useRewind(threadId, message);
+  const fork = useForkFromHere(threadId, message, setDialog);
+  const reply = message.role === "assistant";
+  return (
+    <>
+      <Menu.Root>
+        <Hint
+          label="More message actions"
+          render={
+            <Menu.Trigger
+              ref={more}
+              render={<Button variant="ghost" size="icon-sm" />}
+              data-testid="message-more"
+              aria-label="More message actions"
+              className={ACTION}
+            />
+          }
+        >
+          <Ellipsis aria-hidden className="size-icon-row" />
+        </Hint>
+        <Menu.Portal>
+          <Menu.Positioner align="start" sideOffset={4} className="isolate z-50 outline-none">
+            <Menu.Popup className="min-w-56 max-w-[calc(100vw-1rem)] rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none">
+              {turnEnd && <TurnCopyAction threadId={threadId} message={message} />}
+              <Menu.Item
+                data-testid="message-wait"
+                aria-label={wait.label}
+                aria-description={wait.line}
+                disabled={wait.disabled}
+                onClick={() => void wait.add()}
+                className={MENU_ITEM}
+              >
+                <ItemText
+                  icon={
+                    <Inbox
+                      aria-hidden
+                      className={cn("size-icon-row", wait.kept && "text-status-needs-mark")}
+                    />
+                  }
+                  label={wait.label}
+                  line={wait.line}
+                />
+              </Menu.Item>
+              {rewind !== undefined && (
+                <Menu.Item
+                  data-testid={rewind.isUser ? "message-edit" : "message-rewind"}
+                  aria-label={rewind.label}
+                  aria-description={rewind.line}
+                  disabled={rewind.disabledReason !== undefined}
+                  onClick={() => setConfirming(true)}
+                  className={MENU_ITEM}
+                >
+                  <ItemText
+                    icon={<rewind.Icon aria-hidden className="size-icon-row" />}
+                    label={rewind.label}
+                    line={rewind.line}
+                  />
+                </Menu.Item>
+              )}
+              {reply && (
+                <>
+                  <Menu.Item
+                    data-testid="message-fork"
+                    aria-label="Fork from here"
+                    aria-description={fork.forkLine}
+                    disabled={fork.forkReason !== undefined}
+                    onClick={() => void fork.forkHere()}
+                    className={MENU_ITEM}
+                  >
+                    <ItemText
+                      icon={<GitFork aria-hidden className="size-icon-row" />}
+                      label="Fork from here"
+                      line={fork.forkLine}
+                    />
+                  </Menu.Item>
+                  <Menu.Item
+                    data-testid="message-fork-worktree"
+                    aria-label="Fork into worktree…"
+                    aria-description={fork.worktreeLine}
+                    disabled={fork.worktreeReason !== undefined}
+                    onClick={() => setDialog({})}
+                    className={MENU_ITEM}
+                  >
+                    <ItemText
+                      icon={<FolderGit2 aria-hidden className="size-icon-row" />}
+                      label="Fork into worktree…"
+                      line={fork.worktreeLine}
+                    />
+                  </Menu.Item>
+                </>
+              )}
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
+      {rewind !== undefined && (
+        <RewindConfirm
+          rewind={rewind}
+          anchor={more}
+          open={confirming}
+          onOpenChange={setConfirming}
+        />
+      )}
+      {fork.error && (
+        <p role="alert" className="text-meta text-destructive">
+          {fork.error}
+        </p>
+      )}
+      {dialog && (
+        <ForkDialog
+          threadId={threadId}
+          fromMessageId={message.id as MessageId}
+          notice={dialog.notice}
+          open
+          onOpenChange={(open) => {
+            if (!open) setDialog(undefined);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * "Add to Waiting on you": keeps the message in the thread's tray, as a draft whose Copy takes its
+ * quoted or fenced block, titled by its first line. Shown done while an open item already points
+ * at it.
+ */
+function useWait(threadId: ThreadId, message: GramUIMessage) {
   const api = useApi();
   const kept = useThreadsStore(
     (s) => s.byId[threadId]?.waits?.some((item) => item.messageId === message.id) === true,
   );
   const [pending, setPending] = useState(false);
-  const label = kept ? "Waiting on you" : "Add to Waiting on you";
   const add = async () => {
     setPending(true);
     try {
@@ -191,26 +324,13 @@ function WaitAction({ threadId, message }: { threadId: ThreadId; message: GramUI
     }
   };
   const disabledReason = kept ? "Already added" : pending ? "Adding message…" : undefined;
-  return (
-    <Hint
-      label={disabledReason ? `${label}\n${disabledReason}` : label}
-      render={
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          data-testid="message-wait"
-          aria-label={label}
-          aria-description={disabledReason}
-          disabled={kept || pending}
-          focusableWhenDisabled
-          onClick={() => void add()}
-          className={ACTION}
-        />
-      }
-    >
-      <Inbox aria-hidden className={cn("size-icon-row", kept && "text-status-needs-mark")} />
-    </Hint>
-  );
+  return {
+    kept,
+    label: kept ? "Waiting on you" : "Add to Waiting on you",
+    line: disabledReason ?? "Keep it in this thread's tray to come back to",
+    disabled: disabledReason !== undefined,
+    add,
+  };
 }
 
 /** Primary message copy, or a secondary menu item with the same copy feedback. */
@@ -294,26 +414,20 @@ const rewindFailure = (error: unknown) =>
     ? "Files can't be restored to this message. Rewind without “Restore files too”."
     : rewindErrorMessage(error);
 
+type Rewind = NonNullable<ReturnType<typeof useRewind>>;
+
 /**
  * "Rewind to here" (assistant) or "Edit from here" (user), confirmed in a popover with an optional
- * "Restore files too". Hidden when the agent can't rewind; disabled while a turn runs.
+ * "Restore files too". Undefined when the agent can't rewind; disabled while a turn runs.
  */
-function RewindAction({ threadId, message }: { threadId: ThreadId; message: GramUIMessage }) {
-  const api = useApi();
+function useRewind(threadId: ThreadId, message: GramUIMessage) {
   const status = useThreadsStore((s) => s.byId[threadId]?.status);
   const rewindSupport = useThreadsStore((s) => s.byId[threadId]?.capabilities?.rewind);
-  const [open, setOpen] = useState(false);
-  const [files, setFiles] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string>();
-
   // Capabilities reach the store with the next snapshot, not with `thread.upsert`, so a thread created
   // this session has none yet. Offer history only until we know files can be restored too.
   const support = rewindSupport ?? "history";
-  if (support === "none") return null;
-
+  if (support === "none") return undefined;
   const isUser = message.role === "user";
-  const label = isUser ? "Edit from here" : "Rewind to here";
   const busy = status !== undefined && BUSY.has(status);
   // User targets resume from the reply before them, which the server resolves.
   const disabledReason = busy
@@ -321,6 +435,40 @@ function RewindAction({ threadId, message }: { threadId: ThreadId; message: Gram
     : isUser || hasAgentIds(message)
       ? undefined
       : "This reply can't be rewound to yet";
+  return {
+    threadId,
+    message,
+    isUser,
+    busy,
+    support,
+    disabledReason,
+    label: isUser ? "Edit from here" : "Rewind to here",
+    line:
+      disabledReason ??
+      (isUser
+        ? "Edit this message and replace the conversation after it"
+        : "Remove the conversation after this reply"),
+    Icon: isUser ? Pencil : History,
+  };
+}
+
+/** The rewind or edit's confirmation, under the "…" it was chosen from, which focus returns to. */
+function RewindConfirm({
+  rewind,
+  anchor,
+  open,
+  onOpenChange,
+}: {
+  rewind: Rewind;
+  anchor: RefObject<HTMLButtonElement | null>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const api = useApi();
+  const [files, setFiles] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string>();
+  const { threadId, message, isUser, support, busy } = rewind;
   const restoreFiles = support === "historyAndFiles" && files;
   const messageId = message.id as MessageId;
 
@@ -330,14 +478,14 @@ function RewindAction({ threadId, message }: { threadId: ThreadId; message: Gram
         messageId,
         files: restoreFiles,
       });
-      setOpen(false);
+      onOpenChange(false);
       return;
     }
     setPending(true);
     setError(undefined);
     try {
       await api.rewind(threadId, messageId, restoreFiles);
-      setOpen(false);
+      onOpenChange(false);
     } catch (e) {
       setError(rewindFailure(e));
     } finally {
@@ -345,39 +493,24 @@ function RewindAction({ threadId, message }: { threadId: ThreadId; message: Gram
     }
   };
 
-  const Icon = isUser ? Pencil : History;
-
   return (
     <Popover.Root
       open={open}
       onOpenChange={(next) => {
-        setOpen(next);
+        onOpenChange(next);
         if (!next) setError(undefined);
       }}
     >
-      <Hint
-        label={
-          disabledReason
-            ? `${label}\n${disabledReason}`
-            : `${label}\n${isUser ? "Edit this message and replace the conversation after it" : "Remove the conversation after this reply"}`
-        }
-        render={
-          <Popover.Trigger
-            render={<Button variant="ghost" size="icon-sm" focusableWhenDisabled />}
-            disabled={disabledReason !== undefined}
-            data-testid={isUser ? "message-edit" : "message-rewind"}
-            aria-label={label}
-            aria-description={disabledReason}
-            className={ACTION}
-          />
-        }
-      >
-        <Icon aria-hidden className="size-icon-row" />
-      </Hint>
       <Popover.Portal>
-        <Popover.Positioner side="bottom" align={isUser ? "end" : "start"} sideOffset={4}>
+        <Popover.Positioner
+          anchor={anchor}
+          side="bottom"
+          align={isUser ? "end" : "start"}
+          sideOffset={4}
+        >
           <Popover.Popup
             data-testid="rewind-confirm"
+            finalFocus={anchor}
             className="z-50 flex w-64 flex-col gap-2 rounded-(--radius-lg) border border-edge bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised) transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <Popover.Title className="font-medium">
@@ -419,120 +552,32 @@ function RewindAction({ threadId, message }: { threadId: ThreadId; message: Gram
 }
 
 /**
- * "Fork from here" and "Fork into worktree…" on a reply; disabled with a tooltip while forking isn't
- * possible. A refused fork into the source checkout continues in the worktree dialog.
+ * "Fork from here" and "Fork into worktree…" on a reply, each with why it can't while forking isn't
+ * possible. A refused fork into the source checkout continues in the worktree dialog (`openDialog`).
  */
-function ForkActions({
-  threadId,
-  message,
-  turnEnd,
-}: {
-  threadId: ThreadId;
-  message: GramUIMessage;
-  turnEnd: boolean;
-}) {
+function useForkFromHere(
+  threadId: ThreadId,
+  message: GramUIMessage,
+  openDialog: (dialog: { notice?: string }) => void,
+) {
   const { available, reason } = useForkAvailability(threadId);
   const { fork, pending, error } = useForkThread(threadId);
-  const [dialog, setDialog] = useState<{ notice?: string }>();
   const disabledReason =
     reason ?? (hasAgentIds(message) ? undefined : "This reply can't be forked from yet");
-  const messageId = message.id as MessageId;
-
   const forkHere = async () => {
-    const result = await fork({ fromMessageId: messageId });
-    if (result === "needsWorktree") setDialog({ notice: WORKTREE_NOTICE });
+    const result = await fork({ fromMessageId: message.id as MessageId });
+    if (result === "needsWorktree") openDialog({ notice: WORKTREE_NOTICE });
   };
-
-  const forkReason = disabledReason ?? (pending ? "Forking thread…" : undefined);
-  return (
-    <>
-      <Hint
-        label={
-          forkReason
-            ? `Fork from here\n${forkReason}`
-            : "Fork from here\nStart a new thread with the conversation up to this reply"
-        }
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            data-testid="message-fork"
-            aria-label="Fork from here"
-            aria-description={forkReason}
-            disabled={!available || disabledReason !== undefined || pending}
-            focusableWhenDisabled
-            onClick={() => void forkHere()}
-            className={ACTION}
-          />
-        }
-      >
-        <GitFork aria-hidden className="size-icon-row" />
-      </Hint>
-      <MoreActions>
-        {turnEnd && <TurnCopyAction threadId={threadId} message={message} />}
-        <Menu.Item
-          data-testid="message-fork-worktree"
-          aria-label="Fork into worktree…"
-          aria-description={disabledReason ?? "Continue from this reply in a new worktree"}
-          disabled={!available || disabledReason !== undefined}
-          onClick={() => setDialog({})}
-          className={MENU_ITEM}
-        >
-          <FolderGit2 aria-hidden className="size-icon-row" />
-          <span>
-            <span className="block">Fork into worktree…</span>
-            <span className="block text-meta text-muted-foreground">
-              {disabledReason ?? "Continue from this reply in a new worktree"}
-            </span>
-          </span>
-        </Menu.Item>
-      </MoreActions>
-      {error && (
-        <p role="alert" className="text-meta text-destructive">
-          {error}
-        </p>
-      )}
-      {dialog && (
-        <ForkDialog
-          threadId={threadId}
-          fromMessageId={messageId}
-          notice={dialog.notice}
-          open
-          onOpenChange={(open) => {
-            if (!open) setDialog(undefined);
-          }}
-        />
-      )}
-    </>
-  );
-}
-
-/** Rare actions keep their descriptions in a compact menu, including on touch screens. */
-function MoreActions({ children }: { children: ReactNode }) {
-  return (
-    <Menu.Root>
-      <Hint
-        label="More message actions"
-        render={
-          <Menu.Trigger
-            render={<Button variant="ghost" size="icon-sm" />}
-            data-testid="message-more"
-            aria-label="More message actions"
-            className={ACTION}
-          />
-        }
-      >
-        <Ellipsis aria-hidden className="size-icon-row" />
-      </Hint>
-      <Menu.Portal>
-        <Menu.Positioner align="start" sideOffset={4} className="isolate z-50 outline-none">
-          <Menu.Popup className="min-w-56 max-w-[calc(100vw-1rem)] rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none">
-            {children}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
-  );
+  const blocked = available ? disabledReason : (disabledReason ?? "Forking isn't available");
+  const forkReason = blocked ?? (pending ? "Forking thread…" : undefined);
+  return {
+    forkHere,
+    error,
+    forkReason,
+    forkLine: forkReason ?? "Start a new thread with the conversation up to this reply",
+    worktreeReason: blocked,
+    worktreeLine: blocked ?? "Continue from this reply in a new worktree",
+  };
 }
 
 function TurnCopyAction({ threadId, message }: { threadId: ThreadId; message: GramUIMessage }) {

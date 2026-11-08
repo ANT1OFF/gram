@@ -196,9 +196,11 @@ describe("LaunchChecksBanner", () => {
     );
     const chip = await screen.findByTestId("launch-issues-chip");
     expect(screen.queryByTestId("launch-checks-banner")).toBeNull();
-    // A glyph and its count, like the rest of the title bar's icons: its name and hover say how
-    // many and what they are.
-    expect(chip.textContent).toBe("2");
+    // Round 15: "⚠ 2" read as a second count of what needs you. Setup's glyph alone, like the
+    // rest of the title bar's icons, no number: its name and hover say how many and what they are.
+    expect(chip.textContent).toBe("");
+    expect(chip.dataset["count"]).toBe("2");
+    expect(chip.querySelector(".lucide-wrench")).not.toBeNull();
     expect(chip.getAttribute("aria-label")).toBe(
       "2 setup problems: Claude Code isn't signed in. Run claude in a terminal to sign in. gh isn't installed. PR badges and reviews are off. Show them",
     );

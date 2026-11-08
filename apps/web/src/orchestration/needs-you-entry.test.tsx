@@ -81,7 +81,10 @@ describe("needsYouPillWords", () => {
 });
 
 describe("the attention entry", () => {
-  it("says its kinds in every place it shows", () => {
+  // Round 15: the title bar's "1 error · 1 question" chip, the sidebar's pill moved into the bar as
+  // the sidebar hid, read as the indicator jumping about and repeating itself. The words are the
+  // pill's alone; the bar's entry is one of its icon buttons, in a slot that never changes size.
+  it("says its kinds in every place it shows: the pill in words, the title bar in its name", () => {
     state.parts = ["1 question", "1 error"];
     render(
       <>
@@ -89,11 +92,14 @@ describe("the attention entry", () => {
         <InboxButton />
       </>,
     );
+    expect(screen.getByTestId("overview-needs-you").textContent).toBe("1 question · 1 error");
     for (const id of ["overview-needs-you", "inbox-button"]) {
-      const entry = screen.getByTestId(id);
-      expect(entry.textContent).toBe("1 question · 1 error");
-      expect(entry.getAttribute("aria-label")).toBe("2 need you: 1 question, 1 error (⌘⇧I)");
+      expect(screen.getByTestId(id).getAttribute("aria-label")).toBe(
+        "2 need you: 1 question, 1 error (⌘⇧I)",
+      );
     }
+    // Icon-only in the bar: no words, no number.
+    expect(screen.getByTestId("inbox-button").textContent).toBe("");
   });
 
   it("tints only what asks: an error's words stay muted, and errors alone draw no amber", () => {
@@ -106,13 +112,14 @@ describe("the attention entry", () => {
         <InboxButton />
       </>,
     );
+    const row = screen.getByTestId("row");
     const chip = screen.getByTestId("inbox-button");
     expect(chip.className).not.toMatch(/border-status-needs/);
-    for (const entry of [screen.getByTestId("row"), chip]) {
-      expect(entry.querySelector(".bg-status-needs-mark")).not.toBeNull();
-      expect(within(entry).getByText("1 question").className).toBe("text-status-needs");
-      expect(within(entry).getByText("1 error").className).toBe("text-muted-foreground");
-    }
+    expect(row.querySelector(".bg-status-needs-mark")).not.toBeNull();
+    expect(within(row).getByText("1 question").className).toBe("text-status-needs");
+    expect(within(row).getByText("1 error").className).toBe("text-muted-foreground");
+    // The bar's one amber mark is the dot on its corner, while something asks.
+    expect(within(chip).getByTestId("inbox-button-dot").className).toMatch(/bg-status-needs-mark/);
     cleanup();
 
     state.count = 1;
@@ -123,10 +130,12 @@ describe("the attention entry", () => {
         <InboxButton />
       </>,
     );
+    expect(screen.getByTestId("row").textContent).toBe("1 error");
     for (const entry of [screen.getByTestId("row"), screen.getByTestId("inbox-button")]) {
-      expect(entry.textContent).toBe("1 error");
       expect(entry.innerHTML).not.toMatch(/status-needs/);
     }
+    // Errors alone still mark the bar's Inbox, neutrally.
+    expect(screen.getByTestId("inbox-button-dot").className).toMatch(/bg-foreground/);
   });
 
   it("reads the same in the sidebar, the title bar and Quiet, and opens the newest ask", () => {
@@ -137,15 +146,31 @@ describe("the attention entry", () => {
         <NeedsYouEntry variant="chip" data-testid="quiet-asks" />
       </>,
     );
+    expect(screen.getByTestId("overview-needs-you").textContent).toBe("2 need you");
+    expect(screen.getByTestId("quiet-asks").textContent).toBe("2 need you");
+    expect(screen.getByTestId("inbox-button").getAttribute("aria-label")).toBe("2 need you (⌘⇧I)");
     for (const id of ["overview-needs-you", "inbox-button", "quiet-asks"]) {
       const entry = screen.getByTestId(id);
-      expect(entry.textContent).toBe("2 need you");
       expect(entry.dataset["count"]).toBe("2");
       fireEvent.click(entry);
     }
     expect(openAsks).toHaveBeenCalledTimes(3);
+    expect(open).not.toHaveBeenCalled();
     // No icon with a number on it, no "ask", no "?2".
     expect(document.body.textContent).not.toMatch(/\basks?\b|\?\d/);
+  });
+
+  it("keeps the bar's slot one size whatever waits: the same icon button, with or without a dot", () => {
+    render(<InboxButton />);
+    const waiting = screen.getByTestId("inbox-button");
+    const waitingClass = waiting.className;
+    expect(within(waiting).getByTestId("inbox-button-dot")).toBeTruthy();
+    cleanup();
+    state.count = 0;
+    render(<InboxButton />);
+    const quiet = screen.getByTestId("inbox-button");
+    expect(quiet.className).toBe(waitingClass);
+    expect(within(quiet).queryByTestId("inbox-button-dot")).toBeNull();
   });
 
   it("leaves the bars a quiet Inbox icon, and the sidebar its grey words, with nothing waiting", () => {
@@ -161,5 +186,7 @@ describe("the attention entry", () => {
     expect(screen.getByTestId("inbox-button").textContent).toBe("");
     expect(screen.getByTestId("inbox-button").getAttribute("aria-label")).toBe("Inbox (⌘⇧I)");
     expect(screen.queryByTestId("quiet-asks")).toBeNull();
+    fireEvent.click(screen.getByTestId("inbox-button"));
+    expect(open).toHaveBeenCalledTimes(1);
   });
 });

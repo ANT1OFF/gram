@@ -119,8 +119,10 @@ test("launch checks show what's missing, link to details and dismiss for the ses
   await expect(chip).toHaveAccessibleName(
     /^2 setup problems: Claude Code isn't signed in\..* Show them$/,
   );
-  // Never an unexplained glyph: its count beside it, and its hover names the problems.
-  await expect(chip.getByTestId("launch-issues-count")).toHaveText("2");
+  // Never an unexplained glyph, and never a bare number beside the needs-you pill's: setup's glyph
+  // alone, the count in its name and hover, which names the problems the moment it is hovered.
+  await expect(chip).toHaveText("");
+  await expect(chip).toHaveAttribute("data-count", "2");
   await chip.hover();
   await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(
     "2 setup problems: Claude Code isn't signed in.",

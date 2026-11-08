@@ -9,7 +9,8 @@ import { useNeedsYouPill } from "./use-needs-you";
 // What needs you has one way in and one wording, an amber dot before it, wherever it shows: its
 // kinds, "1 question · 1 error", so a count never stands for more than the cards that show it. It
 // sits at the top of the column left of the chat: the open sidebar's pill, the same pill over
-// Settings' sections, the compact rail's count; with no column there, the title bar's first chip.
+// Settings' sections, the compact rail's count; with no column there, the title bar's
+// Inbox button says it on hover, its corner dot the only mark (`InboxButton`).
 // Quiet's strip draws it at its foot. The rail, with room for a number only, says the words to a
 // screen reader and on hover.
 
@@ -19,7 +20,7 @@ export const needsYouWords = (count: number): string =>
 
 /**
  * How many kinds each form names before it says the count alone, its hover the kinds: the
- * sidebar's row, a column wide, two; a chip in a bar, with the bar's width, three.
+ * sidebar's row, a column wide, two; a chip in Quiet's strip, three (the title bar says them on its Inbox's hover).
  */
 const KINDS_SHOWN = { row: 2, chip: 3 } as const;
 
@@ -46,8 +47,8 @@ export const needsYouSpoken = (count: number, kinds: readonly string[]): string 
 
 /**
  * The entry: its dot and words, opening the Inbox at the newest ask in view. `row` is the sidebar's
- * full-width pill; `chip` is its inline form, for a bar. With nothing waiting a row stays as quiet
- * grey words, so the column doesn't jump, and a chip draws nothing: in a bar its absence says it.
+ * full-width pill; `chip` is its inline form, for Quiet's strip. With nothing waiting a row stays as quiet
+ * grey words, so the column doesn't jump, and a chip draws nothing: in a strip its absence says it.
  */
 export function NeedsYouEntry({
   variant,
