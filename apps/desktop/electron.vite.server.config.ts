@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { defineConfig } from "electron-vite";
 import { bundledPackages } from "../../tools/notices/bundled-packages.mjs";
-import { commandWorkerPlugin } from "./proc-worker-build.ts";
+import { commandWorkerPlugin, hostProcessPlugin } from "./proc-worker-build.ts";
 import { shippedBuild, shippedOutput } from "./shipped-code.ts";
 
 // The server runs in a utilityProcess, so it gets its own build. Sharing one build with main let
@@ -15,6 +15,7 @@ export default defineConfig({
   main: {
     plugins: [
       commandWorkerPlugin(),
+      hostProcessPlugin(),
       bundledPackages("server"),
       {
         // The terminal emulator is WebAssembly the server reads from disk. Unbundled it comes out of

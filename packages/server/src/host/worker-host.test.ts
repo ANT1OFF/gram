@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { HostId, LOCAL_HOST_ID } from "@gram/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import { GitStateRuntime, ProcLive, Worktrees } from "@gram/git";
@@ -71,6 +74,7 @@ describe("WorkerHosts", () => {
       expect(local.terminals).toBe(terminals);
       expect(typeof local.files.list).toBe("function");
       expect(typeof local.ports.scan).toBe("object");
+      expect(local.process).toBeUndefined();
     }).pipe(Effect.provide(WorkerHosts.layerLocal.pipe(Layer.provide(Machine)))),
   );
 
@@ -90,5 +94,48 @@ describe("WorkerHosts", () => {
       const scan = yield* Effect.exit(local.ports.scan);
       expect(Exit.isFailure(scan)).toBe(true);
     }).pipe(Effect.provide(Local)),
+  );
+
+  it.live(
+    "with the host process, this machine's folders are read through it",
+    () =>
+      Effect.gen(function* () {
+        const dir = mkdtempSync(join(tmpdir(), "gram-worker-host-"));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+        writeFileSync(join(dir, "through-the-host.txt"), "x\n");
+        const { local } = yield* WorkerHosts;
+        const listing = yield* local.files.list(dir, { showHidden: false, limit: 10 });
+        expect(listing.entries.map((entry) => entry.name)).toEqual(["through-the-host.txt"]);
+        expect(local.process?.pid).toBeGreaterThan(0);
+        expect(local.process?.pid).not.toBe(process.pid);
+        expect(local.worktrees).toBe(worktrees);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          WorkerHosts.layerLocalWith({ hostProcess: true }).pipe(Layer.provide(Machine)),
+        ),
+      ),
+    30_000,
+  );
+
+  it.live(
+    "a host process that stops hands this machine's folder reads back to the server",
+    () =>
+      Effect.gen(function* () {
+        const dir = mkdtempSync(join(tmpdir(), "gram-worker-host-"));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+        writeFileSync(join(dir, "still-here.txt"), "x\n");
+        const { local } = yield* WorkerHosts;
+        process.kill(local.process!.pid, "SIGKILL");
+        yield* Effect.sleep("300 millis");
+        const listing = yield* local.files.list(dir, { showHidden: false, limit: 10 });
+        expect(listing.entries.map((entry) => entry.name)).toEqual(["still-here.txt"]);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          WorkerHosts.layerLocalWith({ hostProcess: true }).pipe(Layer.provide(Machine)),
+        ),
+      ),
+    30_000,
   );
 });
