@@ -42,7 +42,7 @@ import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { OrchestratorAppToolsLive } from "../orchestration/tools.ts";
-import { ServerConfig } from "../config.ts";
+import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { TerminalGate } from "../terminal/gate.ts";
 import { HostTerminals } from "../terminal/host-terminals.ts";
@@ -492,7 +492,7 @@ export const ServerLayer: Layer.Layer<
   AgentHosts | ServerConfig | GitPlatform | TurnHooks
 > = Layer.unwrap(
   Effect.gen(function* () {
-    const { port } = yield* ServerConfig;
+    const { port, listenHost } = yield* ServerConfig;
     return HttpRouter.serve(Layer.mergeAll(RpcRoutes, StaticRoutes, McpRoute, AuthMiddleware), {
       disableListenLog: true,
       disableLogger: true,
@@ -504,7 +504,7 @@ export const ServerLayer: Layer.Layer<
       Layer.provideMerge(LaunchToken.layer),
       Layer.provideMerge(
         NodeHttpServer.layer(createHttpListener, {
-          host: "127.0.0.1",
+          host: listenHost ?? LOOPBACK_HOST,
           port,
           // Close request/WebSocket scopes before awaiting the listener's final close. The
           // preemptive grace timeout interrupts a cached close effect; its later finalizer then

@@ -77,6 +77,9 @@ For opt-in phone access to the existing server over private Tailscale HTTPS, fol
 [private mobile browser access](REMOTE_ACCESS.md). Pairing and remote authentication
 are separate from the desktop boot token.
 
+To run the server and web app in a Linux container, for example on Windows with Docker Desktop,
+follow [Gram in Docker](DOCKER.md).
+
 ## Browser and native prerequisites
 
 Install Playwright Chromium from the web workspace; Linux also needs its system
