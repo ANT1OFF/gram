@@ -37,6 +37,7 @@ import { DreamFiles } from "../orchestration/dream-files.ts";
 import { DreamsLive } from "../orchestration/dreams.ts";
 import { OrchestrationMemory } from "../orchestration/memory.ts";
 import { OrchestrationLive } from "../orchestration/service.ts";
+import { RoutineEventSourcesLive } from "../routines/events.ts";
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
@@ -363,7 +364,19 @@ export const ServerCore = Layer.unwrap(
           Layer.provideMerge(MergeWhenReadyLive),
           Layer.provideMerge(IssueReporter.layer),
           Layer.provideMerge(
-            Layer.mergeAll(DreamsLive, RoutinesLive, ThreadArchiverLive, WorktreeSweepLive),
+            Layer.mergeAll(
+              DreamsLive,
+              // Event routines read GitHub's branches and releases through their own readers.
+              RoutinesLive.pipe(
+                Layer.provide(
+                  RoutineEventSourcesLive.pipe(
+                    Layer.provide(Layer.mergeAll(BranchHeadsLive, UpstreamReleasesLive)),
+                  ),
+                ),
+              ),
+              ThreadArchiverLive,
+              WorktreeSweepLive,
+            ),
           ),
           Layer.provideMerge(Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer)),
           Layer.provideMerge(OrchestrationLive),

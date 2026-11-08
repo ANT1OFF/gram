@@ -4,7 +4,7 @@ import {
   ROUTINE_MAX_INTERVAL_HOURS,
   ROUTINE_MIN_INTERVAL_HOURS,
   ROUTINE_NAME_MAX,
-  routineScheduleText,
+  routineWhenText,
   type OrchestratorCharter,
   type Project,
   type RoutineState,
@@ -36,12 +36,14 @@ import { inputCls, OptionGroup } from "./fields";
 import { RowMenuButton, type RowAction } from "./row-menu";
 import {
   emptyRoutineForm,
+  EVENT_OPTIONS,
   EVERY_OPTIONS,
   formOfRoutine,
   lastRunText,
   modelLabel,
   nextRunText,
   routineOfForm,
+  WHEN_OPTIONS,
   withRoutines,
   type RoutineForm,
 } from "./routines-model";
@@ -66,7 +68,7 @@ export function RoutinesSection({
   projects,
   changes,
   label = "Routines",
-  description = "Briefs that start a worker or wake the orchestrator on a schedule.",
+  description = "Briefs that start a worker or wake the orchestrator on a schedule, or when something happens.",
 }: {
   state: WorkspaceState;
   projects: readonly Project[];
@@ -92,8 +94,20 @@ export function RoutinesSection({
     <SettingsGroup
       label={label}
       description={description}
-      learnMore="A run missed while Gram was closed runs once on the next start. While the worker from a routine's last run is still live, its next run is skipped. Pausing the workspace pauses its routines; a run that came due meanwhile runs once on the resume. Their workers are the orchestrator's, under the same autonomy, worker cap and approvals. The orchestrator can add and change routines too; a worker can only ask you to approve one."
-      keywords={["routine", "schedule", "recurring", "cron", "daily", "weekly", "nightly"]}
+      learnMore="A run missed while Gram was closed runs once on the next start. While the worker from a routine's last run is still live, its next run is skipped. A routine that runs when something happens checks GitHub or the package's registry every few minutes through your own gh and npm; each event runs it once, events that come together run it once, and it waits 15 minutes between runs. Pausing the workspace pauses its routines; a run that came due meanwhile runs once on the resume. Their workers are the orchestrator's, under the same autonomy, worker cap and approvals. The orchestrator can add and change routines too; a worker can only ask you to approve one."
+      keywords={[
+        "routine",
+        "schedule",
+        "recurring",
+        "cron",
+        "daily",
+        "weekly",
+        "nightly",
+        "event",
+        "trigger",
+        "review",
+        "release",
+      ]}
       testId="workspace-routines"
       action={
         !adding && (
@@ -151,9 +165,9 @@ function targetText(
   return `Worker in ${project}${model}`;
 }
 
-/** "Daily at 09:00": the schedule's words, with a capital to start a line. */
+/** "Every day at 09:00", "When CI fails on main": when it runs, with a capital to start a line. */
 const scheduleLine = (routine: WorkspaceRoutine) => {
-  const words = routineScheduleText(routine.schedule);
+  const words = routineWhenText(routine);
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
@@ -232,7 +246,11 @@ function RoutineRow({
       <div className="flex min-w-0 items-start gap-3">
         <Switch
           className="mt-0.5"
-          aria-label={`Run ${routine.name} on its schedule`}
+          aria-label={
+            routine.on === undefined
+              ? `Run ${routine.name} on its schedule`
+              : `Run ${routine.name} when it happens`
+          }
           checked={routine.off !== true}
           disabled={busy}
           onCheckedChange={(on) => {
@@ -334,6 +352,143 @@ function RoutineRow({
   );
 }
 
+const SOURCE_ITEMS = [
+  { value: "npm", label: "npm" },
+  { value: "github", label: "GitHub" },
+];
+
+/**
+ * An event routine's event and its few fields: a repository to narrow review requests to, a
+ * branch for CI, a package and how old its release must be. A PR or CI routine watches the
+ * repository its worker runs in, which the form picks below.
+ */
+function EventFields({
+  form,
+  set,
+  ids,
+}: {
+  form: RoutineForm;
+  set: (patch: Partial<RoutineForm>) => void;
+  ids: {
+    readonly repo: string;
+    readonly branch: string;
+    readonly pkg: string;
+    readonly days: string;
+  };
+}) {
+  return (
+    <div className="flex flex-col gap-2" data-testid="routine-event">
+      <Select
+        value={form.event}
+        items={EVENT_OPTIONS}
+        onValueChange={(event) => {
+          if (event !== null) set({ event });
+        }}
+      >
+        <SelectTrigger aria-label="Event" className="w-full sm:w-80">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {EVENT_OPTIONS.map((event) => (
+            <SelectItem key={event.value} value={event.value}>
+              {event.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {form.event === "reviewRequested" && (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <label htmlFor={ids.repo} className="text-meta text-muted-foreground">
+            in
+          </label>
+          <input
+            id={ids.repo}
+            aria-label="Repository to watch"
+            className={cn(inputCls, "w-56 font-mono")}
+            value={form.repo}
+            placeholder="any repository"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => set({ repo: event.target.value })}
+          />
+          <span className="text-meta text-muted-foreground">
+            Needs review requests on in Notifications
+          </span>
+        </span>
+      )}
+      {form.event === "prReady" && (
+        <span className="text-meta text-muted-foreground">
+          In its repository, opened ready or out of draft; bots' aside
+        </span>
+      )}
+      {form.event === "ciFailed" && (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <label htmlFor={ids.branch} className="text-meta text-muted-foreground">
+            on
+          </label>
+          <input
+            id={ids.branch}
+            aria-label="Branch"
+            className={cn(inputCls, "w-44 font-mono")}
+            value={form.branch}
+            placeholder="default branch"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => set({ branch: event.target.value })}
+          />
+          <span className="text-meta text-muted-foreground">of its repository</span>
+        </span>
+      )}
+      {form.event === "releasePublished" && (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <Select
+            value={form.source}
+            items={SOURCE_ITEMS}
+            onValueChange={(source) => {
+              if (source === "npm" || source === "github") set({ source });
+            }}
+          >
+            <SelectTrigger aria-label="Registry" className="w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SOURCE_ITEMS.map((source) => (
+                <SelectItem key={source.value} value={source.value}>
+                  {source.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <input
+            id={ids.pkg}
+            aria-label="Package"
+            className={cn(inputCls, "w-52 font-mono")}
+            value={form.packageName}
+            placeholder={form.source === "npm" ? "package" : "owner/name"}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => set({ packageName: event.target.value })}
+          />
+          <label htmlFor={ids.days} className="text-meta text-muted-foreground">
+            once
+          </label>
+          <input
+            id={ids.days}
+            aria-label="Days old"
+            type="number"
+            min={0}
+            max={90}
+            className={cn(inputCls, "w-16")}
+            value={form.minAgeDays}
+            onChange={(event) => set({ minAgeDays: event.target.value })}
+          />
+          <span className="text-meta text-muted-foreground">days old</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** The weekdays the Day picker lists, Monday first, as the week reads. */
 const DAY_ITEMS = [1, 2, 3, 4, 5, 6, 0].map((day) => ({
   value: String(day),
@@ -366,7 +521,16 @@ function RoutineEditor({
   save: (next: OrchestratorCharter, title: string) => Promise<void>;
   onDone: () => void;
 }) {
-  const ids = { name: useId(), brief: useId(), time: useId(), hours: useId() };
+  const ids = {
+    name: useId(),
+    brief: useId(),
+    time: useId(),
+    hours: useId(),
+    repo: useId(),
+    branch: useId(),
+    pkg: useId(),
+    days: useId(),
+  };
   const [form, setForm] = useState<RoutineForm>(() =>
     routine === undefined ? emptyRoutineForm() : formOfRoutine(routine),
   );
@@ -474,70 +638,82 @@ function RoutineEditor({
             />
           </div>
           <div className="flex flex-col gap-2">
-            <span className={LABEL}>Runs</span>
+            <span className={LABEL}>When</span>
             <OptionGroup
-              label="Runs"
-              options={EVERY_OPTIONS}
-              value={form.every}
-              onChange={(every) => set({ every })}
+              label="When"
+              options={WHEN_OPTIONS}
+              value={form.when}
+              onChange={(when) => set({ when })}
             />
-            <div className="flex flex-wrap items-center gap-2">
-              {form.every === "week" && (
-                <Select
-                  value={String(form.day)}
-                  items={DAY_ITEMS}
-                  onValueChange={(day) => {
-                    if (day !== null) set({ day: Number(day) });
-                  }}
-                >
-                  <SelectTrigger aria-label="Day" className="w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DAY_ITEMS.map((day) => (
-                      <SelectItem key={day.value} value={day.value}>
-                        {day.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              {form.every !== "hours" ? (
-                <span className="flex items-center gap-1.5">
-                  <label htmlFor={ids.time} className="text-meta text-muted-foreground">
-                    at
-                  </label>
-                  <input
-                    id={ids.time}
-                    aria-label="Time"
-                    className={cn(inputCls, "w-20 font-mono")}
-                    value={form.at}
-                    placeholder="09:00"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    onChange={(event) => set({ at: event.target.value })}
-                  />
-                  <span className="text-meta text-muted-foreground">local time, 24-hour</span>
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  <label htmlFor={ids.hours} className="text-meta text-muted-foreground">
-                    every
-                  </label>
-                  <input
-                    id={ids.hours}
-                    aria-label="Hours"
-                    type="number"
-                    min={ROUTINE_MIN_INTERVAL_HOURS}
-                    max={ROUTINE_MAX_INTERVAL_HOURS}
-                    className={cn(inputCls, "w-20")}
-                    value={form.hours}
-                    onChange={(event) => set({ hours: event.target.value })}
-                  />
-                  <span className="text-meta text-muted-foreground">hours</span>
-                </span>
-              )}
-            </div>
+            {form.when === "event" ? (
+              <EventFields form={form} set={set} ids={ids} />
+            ) : (
+              <>
+                <OptionGroup
+                  label="Runs"
+                  options={EVERY_OPTIONS}
+                  value={form.every}
+                  onChange={(every) => set({ every })}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  {form.every === "week" && (
+                    <Select
+                      value={String(form.day)}
+                      items={DAY_ITEMS}
+                      onValueChange={(day) => {
+                        if (day !== null) set({ day: Number(day) });
+                      }}
+                    >
+                      <SelectTrigger aria-label="Day" className="w-36">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DAY_ITEMS.map((day) => (
+                          <SelectItem key={day.value} value={day.value}>
+                            {day.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {form.every !== "hours" ? (
+                    <span className="flex items-center gap-1.5">
+                      <label htmlFor={ids.time} className="text-meta text-muted-foreground">
+                        at
+                      </label>
+                      <input
+                        id={ids.time}
+                        aria-label="Time"
+                        className={cn(inputCls, "w-20 font-mono")}
+                        value={form.at}
+                        placeholder="09:00"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        onChange={(event) => set({ at: event.target.value })}
+                      />
+                      <span className="text-meta text-muted-foreground">local time, 24-hour</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5">
+                      <label htmlFor={ids.hours} className="text-meta text-muted-foreground">
+                        every
+                      </label>
+                      <input
+                        id={ids.hours}
+                        aria-label="Hours"
+                        type="number"
+                        min={ROUTINE_MIN_INTERVAL_HOURS}
+                        max={ROUTINE_MAX_INTERVAL_HOURS}
+                        className={cn(inputCls, "w-20")}
+                        value={form.hours}
+                        onChange={(event) => set({ hours: event.target.value })}
+                      />
+                      <span className="text-meta text-muted-foreground">hours</span>
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             <span className={LABEL}>Each run</span>

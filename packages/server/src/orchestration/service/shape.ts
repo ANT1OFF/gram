@@ -63,6 +63,8 @@ export interface RoutineRef {
   readonly manual?: true | undefined;
   readonly generation?: number | undefined;
   readonly scheduleKey?: string | undefined;
+  /** An event routine's run: the events it delivers, as its brief says them (fenced). */
+  readonly event?: string | undefined;
 }
 
 /**

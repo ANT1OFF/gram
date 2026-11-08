@@ -132,3 +132,97 @@ describe("run lines", () => {
     );
   });
 });
+
+describe("event routines in the form", () => {
+  const now = new Date(2026, 10, 5, 12, 0).getTime();
+  const base = {
+    ...emptyRoutineForm(),
+    name: "Review",
+    brief: "Review it.",
+    when: "event" as const,
+  };
+
+  it("makes each event with its few fields, and reads them back", () => {
+    const cases: readonly (readonly [Partial<typeof base>, WorkspaceRoutine["on"]])[] = [
+      [{ event: "prReady" }, { event: "prReady" }],
+      [
+        { event: "reviewRequested", repo: " o/r " },
+        { event: "reviewRequested", repo: "o/r" },
+      ],
+      [{ event: "reviewRequested" }, { event: "reviewRequested" }],
+      [
+        { event: "ciFailed", branch: "release/1.x" },
+        { event: "ciFailed", branch: "release/1.x" },
+      ],
+      [{ event: "ciFailed" }, { event: "ciFailed" }],
+      [
+        { event: "releasePublished", source: "github", packageName: "o/tool", minAgeDays: "0" },
+        { event: "releasePublished", source: "github", name: "o/tool", minAgeDays: 0 },
+      ],
+    ];
+    for (const [patch, on] of cases) {
+      const made = routineOfForm({ ...base, ...patch }, none);
+      expect(made).toEqual({ routine: { name: "Review", brief: "Review it.", on } });
+      if ("routine" in made) {
+        const back = formOfRoutine(made.routine);
+        expect(back.when).toBe("event");
+        expect(routineOfForm(back, none)).toEqual(made);
+      }
+    }
+  });
+
+  it("refuses a bad repository, branch, package or wait", () => {
+    expect(routineOfForm({ ...base, event: "reviewRequested", repo: "nope" }, none)).toHaveProperty(
+      "error",
+    );
+    expect(routineOfForm({ ...base, event: "ciFailed", branch: "a..b" }, none)).toHaveProperty(
+      "error",
+    );
+    expect(routineOfForm({ ...base, event: "releasePublished", packageName: "" }, none)).toEqual({
+      error: "Name the npm package.",
+    });
+    expect(
+      routineOfForm(
+        { ...base, event: "releasePublished", packageName: "x", minAgeDays: "91" },
+        none,
+      ),
+    ).toEqual({ error: "Wait 0 to 90 whole days." });
+  });
+
+  it("switches a schedule for an event and back", () => {
+    const made = routineOfForm(
+      { ...formOfRoutine(triage), when: "event", event: "prReady" },
+      {
+        ...none,
+        editing: triage,
+      },
+    );
+    expect(made).toMatchObject({ routine: { id: "r1", on: { event: "prReady" } } });
+    expect("routine" in made ? made.routine.schedule : "refused").toBeUndefined();
+  });
+
+  it("says whether it is watching, what waits, or why it can't look", () => {
+    const review: WorkspaceRoutine = { name: "Review", brief: "Review.", on: { event: "prReady" } };
+    expect(nextRunText(review, {}, now)).toBe("Starts watching");
+    expect(nextRunText(review, { trigger: { seeded: true, lookedAt: now - 60_000 } }, now)).toBe(
+      "Watching, checked 11:59",
+    );
+    expect(
+      nextRunText(
+        review,
+        { trigger: { pending: [{ key: "k", at: 0, ref: "o/r#1" }], dropped: 2 } },
+        now,
+      ),
+    ).toBe("3 events waiting");
+    expect(
+      nextRunText(
+        review,
+        { trigger: { problem: "Its project has no GitHub origin to watch." } },
+        now,
+      ),
+    ).toBe("Its project has no GitHub origin to watch.");
+    expect(lastRunText({ at: now, outcome: "started", events: 2 }, now)).toBe(
+      "Last ran 12:00 for 2 events, started a worker",
+    );
+  });
+});

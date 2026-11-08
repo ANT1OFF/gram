@@ -4,7 +4,7 @@
 import {
   autonomyOf,
   briefFooterOf,
-  routineScheduleText,
+  routineWhenText,
   serializeDigest,
   prioritizeDigestReports,
   DIGEST_REPORTS_MAX,
@@ -93,7 +93,7 @@ const routineLines = (charter: OrchestratorCharter): ReadonlyArray<string> => {
         `routines, each starting a fresh worker of yours (or, marked so, putting its brief in your digest) on its schedule; a digest notes each run, and routine_create and routine_update change them: ${on
           .map(
             (routine) =>
-              `"${routine.name}" ${routineScheduleText(routine.schedule)}${routine.target === "orchestrator" ? " (to you)" : ""}`,
+              `"${routine.name}" ${routineWhenText(routine)}${routine.target === "orchestrator" ? " (to you)" : ""}`,
           )
           .join("; ")}`,
       ];

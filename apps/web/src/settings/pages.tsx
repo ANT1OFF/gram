@@ -435,7 +435,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     path: "/settings/routines",
     group: "workspaces",
     description:
-      "Every workspace's briefs that start a worker or wake the orchestrator on a schedule.",
+      "Every workspace's briefs that start a worker or wake the orchestrator on a schedule, or when something happens.",
     keywords: [
       "routine",
       "schedule",

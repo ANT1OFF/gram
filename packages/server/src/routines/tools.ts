@@ -2,7 +2,7 @@
  * The routine tools, `routine_create` and `routine_update` (which also removes one), which change the
  * routines in the workspace's charter through its one write path (`Orchestration.editCharter`). A
  * routine is a standing change to the charter: it starts work later with nobody there. So adding one,
- * turning one back on, or widening one (its schedule, brief, project, model or target) always asks
+ * turning one back on, or widening one (its schedule or event, brief, project, model or target) always asks
  * the user, from an orchestrator as from a worker, on a card for that one call that shows the
  * routine in full, at every autonomy and in every mode (a forced card: `bypassPermissions` and Full
  * autonomy don't lift it). Turning one off or removing one only takes autonomy away, so the
@@ -15,10 +15,12 @@
 import {
   AppToolError,
   parseRoutineSchedule,
+  parseRoutineTrigger,
   RoutineBrief,
   RoutineName,
   routineNameKey,
-  routineScheduleText,
+  routineWhenKey,
+  routineWhenText,
   ROUTINES_MAX,
   WorkspaceRoutines,
   type ModelRef,
@@ -51,10 +53,28 @@ const TargetKind = Schema.Literals(["worker", "orchestrator"]);
 
 const decodeRoutines = Schema.decodeUnknownResult(WorkspaceRoutines);
 
-/** A routine's row in a tool's result: its schedule in words, where it runs, and its next run. */
+/** A tool call's `schedule` or `on`, exactly one, parsed. */
+const whenOf = (input: {
+  readonly schedule?: string | undefined;
+  readonly on?: string | undefined;
+}):
+  | { readonly schedule: WorkspaceRoutine["schedule"] & object }
+  | { readonly on: WorkspaceRoutine["on"] & object }
+  | { readonly error: string } => {
+  if ((input.schedule === undefined) === (input.on === undefined)) {
+    return { error: "Give a `schedule` or an `on` event, exactly one." };
+  }
+  return input.schedule !== undefined
+    ? parseRoutineSchedule(input.schedule)
+    : parseRoutineTrigger(input.on!);
+};
+
+/** A routine's row in a tool's result: when it runs in words, where it runs, and its next run. */
 const shown = (routine: WorkspaceRoutine, nextRunAt: number | undefined) => ({
   name: routine.name,
-  schedule: routineScheduleText(routine.schedule),
+  ...(routine.on === undefined
+    ? { schedule: routineWhenText(routine) }
+    : { on: routineWhenText(routine) }),
   ...(routine.target === "orchestrator"
     ? { target: "orchestrator" }
     : {
@@ -88,7 +108,7 @@ const modelOf = (tool: string, charter: OrchestratorCharter, named: string) =>
 /** A routine whole, as a card shows it: its schedule, where it runs, whether it is off, and its brief. */
 const routineText = (routine: WorkspaceRoutine): string =>
   [
-    `"${routine.name}", ${routineScheduleText(routine.schedule)}`,
+    `"${routine.name}", ${routineWhenText(routine)}`,
     routine.target === "orchestrator" ? "to the orchestrator" : "starts a worker",
     ...(routine.project === undefined ? [] : [`in project ${routine.project}`]),
     ...(routine.model === undefined ? [] : [`on ${workerModelLabel(routine.model)}`]),
@@ -212,10 +232,11 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
           .pipe(Effect.orElseSucceed(() => []))).find((each) => each.id === routine.id);
         // The engine reckons it once it hears of the change; until then, as it will.
         const now = yield* Clock.currentTimeMillis;
+        // An event routine has no next run to name: it runs when the event comes.
         const nextRunAt =
-          routine.off === true
+          routine.off === true || routine.schedule === undefined
             ? undefined
-            : status?.state.scheduleKey === JSON.stringify(routine.schedule)
+            : status?.state.scheduleKey === routineWhenKey(routine)
               ? status.state.nextRunAt
               : nextRunAfter(routine.schedule, now, localZone());
         return shown(routine, nextRunAt);
@@ -226,13 +247,14 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         name: "routine_create",
         class: "self",
         description:
-          'Save a routine: a brief on a schedule ("daily HH:MM", "weekdays HH:MM", "weekly mon HH:MM", "every N hours"; local). `target` "worker" starts a worker in `project` on `model` with `brief`, which must stand alone; "orchestrator" puts it in your digest. Missed runs run once; a run is skipped while the last worker is live. Always asks the user.',
+          'Save a routine: a brief on a `schedule` ("daily HH:MM", "weekdays HH:MM", "weekly mon HH:MM", "every N hours"; local) or `on` an event ("review requested [owner/repo]", "pr ready", "ci failed [branch]", "release npm|github NAME [min-age DAYS]"). "worker" runs in `project` on `model`; "orchestrator" briefs you. Asks the user.',
       },
       audience: ["orchestrator", "worker"],
       input: Schema.Struct({
         name: RoutineName,
         brief: RoutineBrief,
-        schedule: Schema.String,
+        schedule: Schema.optionalKey(Schema.String),
+        on: Schema.optionalKey(Schema.String),
         target: TargetKind,
         project: Schema.optionalKey(Schema.String),
         model: Schema.optionalKey(Schema.String),
@@ -241,13 +263,13 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
       needsApproval: () => Effect.succeed(true),
       describe: (caller, input) =>
         Effect.succeed(
-          `Save the routine "${input.name}" (${input.schedule}), which ${input.target === "orchestrator" ? "wakes the orchestrator" : `starts a worker in ${input.project ?? "the home repository"}`} each time${input.model === undefined ? "" : ` on ${input.model}`}, with this brief in full:\n\n${input.brief}\n\n[asked by thread ${caller}]`,
+          `Save the routine "${input.name}" (${input.schedule ?? `on ${input.on ?? "nothing"}`}), which ${input.target === "orchestrator" ? "wakes the orchestrator" : `starts a worker in ${input.project ?? "the home repository"}`} each time${input.model === undefined ? "" : ` on ${input.model}`}, with this brief in full:\n\n${input.brief}\n\n[asked by thread ${caller}]`,
         ),
       handle: (caller, input) =>
         Effect.gen(function* () {
           const tool = "routine_create";
           const state = yield* callerWorkspace(tool, caller);
-          const parsed = parseRoutineSchedule(input.schedule);
+          const parsed = whenOf(input);
           if ("error" in parsed) return yield* toolError(tool, parsed.error);
           const project =
             input.target === "orchestrator" || input.project === undefined
@@ -260,7 +282,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
           const routine: WorkspaceRoutine = {
             name: input.name.trim(),
             brief: input.brief,
-            schedule: parsed.schedule,
+            ...parsed,
             ...(input.target === "orchestrator" ? { target: "orchestrator" as const } : {}),
             ...(project === undefined ? {} : { project }),
             ...(model === undefined ? {} : { model }),
@@ -287,6 +309,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         name: Schema.optionalKey(RoutineName),
         brief: Schema.optionalKey(RoutineBrief),
         schedule: Schema.optionalKey(Schema.String),
+        on: Schema.optionalKey(Schema.String),
         target: Schema.optionalKey(TargetKind),
         project: Schema.optionalKey(Schema.String),
         model: Schema.optionalKey(Schema.String),
@@ -310,7 +333,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
             return { workspaceId: state.workspace.id, id: before.id, before, after: undefined };
           }
           const parsed =
-            input.schedule === undefined ? undefined : parseRoutineSchedule(input.schedule);
+            input.schedule === undefined && input.on === undefined ? undefined : whenOf(input);
           if (parsed !== undefined && "error" in parsed) {
             return yield* toolError(tool, parsed.error);
           }
@@ -320,7 +343,10 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
             input.model === undefined
               ? undefined
               : yield* modelOf(tool, state.charter, input.model);
-          const { target: _target, off: _off, project: _project, model: _model, ...rest } = before;
+          const { target: _target, off: _off, project: _project, model: _model, ...kept } = before;
+          // A new schedule or event replaces whichever it ran on.
+          const { schedule: _schedule, on: _on, ...unwhen } = kept;
+          const rest = parsed === undefined ? kept : unwhen;
           const target =
             input.target ?? (before.target === "orchestrator" ? "orchestrator" : "worker");
           const off = input.off ?? before.off === true;
@@ -330,7 +356,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
             ...rest,
             ...(input.name === undefined ? {} : { name: input.name.trim() }),
             ...(input.brief === undefined ? {} : { brief: input.brief }),
-            ...(parsed === undefined ? {} : { schedule: parsed.schedule }),
+            ...parsed,
             ...(target === "orchestrator" ? { target: "orchestrator" as const } : {}),
             ...(target === "worker" && keptProject !== undefined ? { project: keptProject } : {}),
             ...(target === "worker" && keptModel !== undefined ? { model: keptModel } : {}),
