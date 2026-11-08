@@ -207,6 +207,11 @@ sockets already upgraded; quitting the server does. To invalidate saved pairings
 described above. Leave unrelated Serve listeners, databases, credentials and installed
 applications alone.
 
+## Other machines
+
+The same tailnet address lets another Mac or Linux machine join and run Gram's work. See
+[other machines](MACHINES.md).
+
 ## Tests
 
 `bun run test packages/server/src/http/auth-target.test.ts packages/server/src/http/remote-access.test.ts packages/server/src/http/remote-control.test.ts packages/server/src/http/remote-sessions.test.ts packages/server/src/http/auth.test.ts packages/server/src/http/server.test.ts packages/server/src/config.test.ts`

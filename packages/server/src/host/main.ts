@@ -1,6 +1,8 @@
-// `gram-host`: this machine's worker host as its own process. The server starts it with the host
-// stream on file descriptor 3 and talks the host protocol over it; nothing here listens on a
-// network. When the server goes, the stream closes and the host exits.
+// `gram-host`: a machine's worker host as its own process. With no arguments the server starts it
+// with the host stream on file descriptor 3 and talks the host protocol over it; when the server
+// goes, the stream closes and the host exits. With a command (`join`, `run`, `service`, `status`,
+// `leave`) it is another machine's host, which dials the main Gram over the tailnet. Nothing here
+// listens on a network either way.
 
 import { Socket as NetSocket } from "node:net";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -17,7 +19,10 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
-import { HOST_CAPABILITIES, serveHost } from "./protocol.ts";
+import { HOST_CAPABILITIES, type HostService, serveHost } from "./protocol.ts";
+import { runCli } from "./cli.ts";
+import type { HostId } from "@gram/contracts";
+import type * as Scope from "effect/Scope";
 
 // The server starts the host as plain Node under Electron; what the host runs (git, ps, an editor
 // git opens) must not inherit that.
@@ -52,29 +57,40 @@ const HostAgents: Layer.Layer<AgentHosts> =
         }),
       ).pipe(Layer.provide(ClaudeHostLive()));
 
-const program = Effect.gen(function* () {
-  const proc = yield* Proc;
+/** What the host serves as `hostId`, its terminals and sessions closed with the scope. */
+const hostService = (
+  hostId: HostId,
+): Effect.Effect<HostService, never, Scope.Scope | Proc | Worktrees | AgentHosts> =>
+  Effect.gen(function* () {
+    const proc = yield* Proc;
+    return {
+      hello: {
+        protocol: HOST_PROTOCOL_VERSION,
+        hostId,
+        capabilities: HOST_CAPABILITIES,
+        platform: process.platform,
+        pid: process.pid,
+      },
+      files: filesOn(proc),
+      worktrees: yield* Worktrees,
+      git: gitOn(proc),
+      terminals: yield* terminalsOnHost,
+      sessions: yield* sessionsOnHost((yield* AgentHosts).get),
+      scan: liveScan.pipe(Effect.provideService(Proc, proc)),
+    };
+  });
+
+const HostLayer = Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)), HostAgents);
+
+/** This machine's host, for the server that started it. */
+const child = Effect.gen(function* () {
   const socket = yield* NodeSocket.fromDuplex(
     Effect.sync(() => new NetSocket({ fd: HOST_STREAM_FD, readable: true, writable: true })),
   );
-  yield* serveHost(socket, {
-    hello: {
-      protocol: HOST_PROTOCOL_VERSION,
-      hostId: LOCAL_HOST_ID,
-      capabilities: HOST_CAPABILITIES,
-      platform: process.platform,
-      pid: process.pid,
-    },
-    files: filesOn(proc),
-    worktrees: yield* Worktrees,
-    git: gitOn(proc),
-    terminals: yield* terminalsOnHost,
-    sessions: yield* sessionsOnHost((yield* AgentHosts).get),
-    scan: liveScan.pipe(Effect.provideService(Proc, proc)),
-  });
-}).pipe(
-  Effect.scoped,
-  Effect.provide(Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)), HostAgents)),
-);
+  yield* serveHost(socket, yield* hostService(LOCAL_HOST_ID));
+}).pipe(Effect.scoped, Effect.provide(HostLayer));
 
-NodeRuntime.runMain(program);
+const args = process.argv.slice(2);
+NodeRuntime.runMain(
+  args.length === 0 ? child : runCli(args, { service: hostService, layer: HostLayer }),
+);

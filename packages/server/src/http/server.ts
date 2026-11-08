@@ -5,6 +5,7 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { GramRpcs } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as ByteSize from "effect/ByteSize";
 import * as Layer from "effect/Layer";
 import { mkdirSync } from "node:fs";
@@ -105,6 +106,13 @@ import {
 } from "./remote-access.ts";
 import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./remote-routes.ts";
 import { RemoteControl } from "./remote-control.ts";
+import {
+  HOST_PATHS,
+  hostRoute,
+  MACHINE_MANAGEMENT_PATHS,
+  machineManagement,
+} from "./machine-routes.ts";
+import { RemoteHosts } from "../host/remote-hosts.ts";
 import { authTarget } from "./auth-target.ts";
 import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } from "./auth.ts";
 
@@ -131,6 +139,8 @@ export const AuthMiddleware = HttpRouter.middleware(
     const mcpTokens = yield* McpTokens;
     const port = serverPort(server);
     const control = yield* RemoteControl;
+    // Absent only in tests that serve the middleware alone: no machine can join or dial in then.
+    const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
       "cache-control": "no-store",
@@ -204,6 +214,13 @@ export const AuthMiddleware = HttpRouter.middleware(
           );
           return secureResponse(response);
         }
+        // A joined machine's host joining or dialling in: its own proof, never a browser's cookie.
+        if (isRemote && path !== undefined && HOST_PATHS.has(path))
+          return secureResponse(
+            remoteHosts === undefined
+              ? HttpServerResponse.text("forbidden", { status: 403 })
+              : yield* hostRoute(remoteHosts, remote, path),
+          );
         const decision = isRemote
           ? remote.authorize(authRequest)
           : authorize(
@@ -221,9 +238,13 @@ export const AuthMiddleware = HttpRouter.middleware(
             response =
               path !== undefined && REMOTE_MANAGEMENT_PATHS.has(path)
                 ? yield* remoteManagement(control, path, isRemote ? remote : undefined)
-                : isRemote && path === "/ws"
-                  ? yield* closedOnRevoke(remote, remote.sessionOf(authRequest), httpEffect)
-                  : yield* httpEffect;
+                : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
+                  ? isRemote || remoteHosts === undefined
+                    ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
+                    : yield* machineManagement(remoteHosts, control.current(), path)
+                  : isRemote && path === "/ws"
+                    ? yield* closedOnRevoke(remote, remote.sessionOf(authRequest), httpEffect)
+                    : yield* httpEffect;
             break;
           case "boot":
             response = yield* HttpServerResponse.redirect("/", { status: 302 }).pipe(
@@ -500,6 +521,7 @@ export const ServerLayer: Layer.Layer<
       Layer.merge(LoopStallLog),
       Layer.provideMerge(ServerCore),
       Layer.provide(RemoteControl.layer),
+      Layer.provideMerge(RemoteHosts.layer),
       Layer.provideMerge(McpTokens.layer),
       Layer.provideMerge(LaunchToken.layer),
       Layer.provideMerge(
