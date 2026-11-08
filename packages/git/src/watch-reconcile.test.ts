@@ -8,7 +8,10 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { vi } from "vitest";
 import { Proc } from "./proc.ts";
-import { RECONCILE_MS, watchGitState, type GitStateChange } from "./watch.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { RECONCILE_MAX_MS, RECONCILE_MS, watchGitState, type GitStateChange } from "./watch.ts";
 
 const model = vi.hoisted(() => ({
   head: "initial",
@@ -17,6 +20,8 @@ const model = vi.hoisted(() => ({
   reads: 0,
   interrupted: 0,
   release: vi.fn(),
+  /** The checkout's git dir; a missing one stamps the same every time. */
+  gitDir: "/repo/.git",
 }));
 
 // A successful native subscription which delivers no events: FSEvents has no readiness fence,
@@ -29,7 +34,8 @@ vi.mock("@parcel/watcher", () => ({
 vi.mock("./exec.ts", async () => {
   const fx = await import("effect/Effect");
   return {
-    tryRepoRoots: () => fx.succeed({ top: "/repo", common: "/repo/.git", gitDir: "/repo/.git" }),
+    tryRepoRoots: () =>
+      fx.sync(() => ({ top: "/repo", common: model.gitDir, gitDir: model.gitDir })),
   };
 });
 vi.mock("./git-state.ts", async () => {
@@ -79,6 +85,7 @@ afterEach(() => {
   model.delay = 0;
   model.reads = 0;
   model.interrupted = 0;
+  model.gitDir = "/repo/.git";
   model.release.mockClear();
 });
 
@@ -128,5 +135,36 @@ describe("macOS watcher reconciliation", () => {
       expect((yield* latest(changes))?.state.head).toBe("committed");
       expect(model.interrupted).toBe(0);
     }).pipe(Effect.scoped, provide),
+  );
+  it.effect(
+    "backs off full reads of an idle checkout, and reads at once when its git dir moves",
+    () =>
+      Effect.gen(function* () {
+        const dir = mkdtempSync(join(tmpdir(), "gram-reconcile-"));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+        writeFileSync(join(dir, "HEAD"), "ref: refs/heads/main\n");
+        model.gitDir = dir;
+        const { changes } = yield* start;
+        expect(model.reads).toBe(1);
+        // Nothing changes: full reads after 1, 3, 7 and 15 ticks, then every RECONCILE_MAX_MS.
+        const tick = TestClock.adjust(RECONCILE_MS);
+        const readsAt: Array<number> = [];
+        for (let at = 1; at <= 31; at++) {
+          const before = model.reads;
+          yield* tick;
+          if (model.reads > before) readsAt.push(at);
+        }
+        expect(readsAt).toEqual([1, 3, 7, 15, 31]);
+        expect(RECONCILE_MAX_MS / RECONCILE_MS).toBe(16);
+        // A commit moves the branch ref and HEAD's stamp: the next tick reads, backed off or not.
+        model.head = "committed";
+        writeFileSync(join(dir, "HEAD"), "ref: refs/heads/other\n");
+        yield* tick;
+        expect(model.reads).toBe(7);
+        expect((yield* latest(changes))?.state.head).toBe("committed");
+        // The change starts the short wait again.
+        yield* tick;
+        expect(model.reads).toBe(8);
+      }).pipe(Effect.scoped, provide),
   );
 });
