@@ -43,10 +43,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       const page = await browser.newPage();
       await page.goto(server.origin, { timeout: WARM_UP_TIMEOUT_MS });
       await page.getByTestId("app-shell").waitFor({ timeout: WARM_UP_TIMEOUT_MS });
-      // A thread too: its route is a split chunk Vite only builds on first visit, which under
-      // load took longer than a shot's wait, so the first shot to open a thread found none.
+      // A thread and Settings too: each route is a split chunk Vite only builds on first visit,
+      // which under load took longer than a shot's wait, so the first shot to open one found none.
       await page.goto(`${server.origin}/t/t-deps`, { timeout: WARM_UP_TIMEOUT_MS });
       await page.getByTestId("thread-view").waitFor({ timeout: WARM_UP_TIMEOUT_MS });
+      await page.goto(`${server.origin}/settings/general`, { timeout: WARM_UP_TIMEOUT_MS });
+      await page.getByTestId("general-settings").waitFor({ timeout: WARM_UP_TIMEOUT_MS });
     } finally {
       await browser.close();
     }
