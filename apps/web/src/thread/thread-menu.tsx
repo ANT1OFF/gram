@@ -1,6 +1,6 @@
 import { Menu } from "@base-ui/react/menu";
 import type { ThreadId } from "@gram/contracts";
-import { ArrowLeftRight, Ellipsis, GitFork, SquareArrowOutUpRight } from "lucide-react";
+import { ArrowLeftRight, Check, Ellipsis, GitFork, SquareArrowOutUpRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { useOpenInEditor, useOpensLocally } from "@/editor/use-open-in-editor";
 import { MENU_ITEM, MENU_POPUP } from "@/lib/selection";
 import { lazyPart } from "@/lib/lazy-part";
 import { switchOpenLabel } from "@/orchestration/switch-label";
+import { useAllActivity } from "@/stores/all-activity";
 import { useThreadsStore } from "@/stores/threads";
 
 import { ThreadMenuItems } from "./thread-action-items";
@@ -119,8 +120,44 @@ export function useThreadMenu(threadId: ThreadId): {
 }
 
 /**
+ * "Show all activity", an orchestrator chat's view option: off, what changed nothing for the user
+ * folds into its update; checked, every digest and reply as it was sent. It lives with the thread's
+ * other view options (the title bar's View, a pane's "…"), not as a switch over the chat. Nothing on
+ * any other thread.
+ */
+export function AllActivityItem({
+  threadId,
+  className,
+}: {
+  threadId: ThreadId;
+  className: string;
+}) {
+  const orchestrator = useThreadsStore((s) => s.byId[threadId]?.thread.role === "orchestrator");
+  const on = useAllActivity((s) => s.shown.has(threadId));
+  if (!orchestrator) return null;
+  return (
+    <Menu.CheckboxItem
+      data-testid="menu-all-activity"
+      // One toggle, so the menu closes on it and the chat shows the change at once.
+      closeOnClick
+      className={className}
+      checked={on}
+      onCheckedChange={(checked) => useAllActivity.getState().set(threadId, checked)}
+    >
+      <span className="flex size-icon-row shrink-0 items-center justify-center">
+        <Menu.CheckboxItemIndicator>
+          <Check aria-hidden className="size-icon-row" />
+        </Menu.CheckboxItemIndicator>
+      </span>
+      Show all activity
+    </Menu.CheckboxItem>
+  );
+}
+
+/**
  * The pane header's "…" menu: an orchestrator's switch first, then opening the folder in the
- * editor, forking the thread, its own verbs and More…, which has the rest: the branch to copy and
+ * editor, forking the thread, its own verbs and More…, then an orchestrator chat's Show all
+ * activity (the title bar keeps it under View). More… has the rest: the branch to copy and
  * push (the agents' working detail, kept out of the bar and its menu), the worker's or
  * orchestrator's links, other windows, revealing the folder, forking into a worktree. A thread the
  * title bar carries has these in the bar's one "…" instead.
@@ -149,6 +186,7 @@ export function ThreadMenu({ threadId, label }: { threadId: ThreadId; label?: st
           <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
             <Menu.Popup data-testid="thread-menu" className={MENU_POPUP}>
               {items(MENU_ITEM)}
+              <AllActivityItem threadId={threadId} className={MENU_ITEM} />
             </Menu.Popup>
           </Menu.Positioner>
         </Menu.Portal>

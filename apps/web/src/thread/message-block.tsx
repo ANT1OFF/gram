@@ -253,6 +253,10 @@ export const MessageBlock = memo(function MessageBlock({
   // per message, leaves selection alone, and a hint of the message's own (a path) replaces it.
   const createdAt = message.metadata?.createdAt;
   const sentAt = createdAt === undefined ? undefined : formatMessageTime(createdAt);
+  // In the orchestrator's chat a message's actions float over it rather than reserve a row under
+  // it, where it has room and the pointer hovers (`float-actions`), so the step from a reply to the
+  // update after it is the step from the update to the next reply.
+  const floating = useOrchestratorStreamContext() !== undefined && topLevel;
 
   if (message.role === "user") {
     const notice = message.parts.find((p) => p.type === "data-review-notice");
@@ -298,32 +302,50 @@ export const MessageBlock = memo(function MessageBlock({
         </Message>
       );
     }
+    // A plain bubble's actions float beside it where the message has room and the pointer hovers
+    // (`float-actions`), in room kept at its start so the row never cuts them off; narrower or on
+    // touch they are the row under the bubble. A notice's card keeps them in a row under it.
+    const besideBubble = floating && !notice && !humanReview && !digest;
+    const bubble = (
+      // Around the bubble or card alone, not the row's width beside it or the actions.
+      <div
+        data-testid="message-time"
+        title={topLevel ? undefined : sentAt}
+        className={
+          besideBubble ? "relative ml-auto flex w-fit max-w-full flex-col gap-2" : "contents"
+        }
+      >
+        {notice ? (
+          <ReviewNoticeCard notice={notice.data} text={messageText(message)} />
+        ) : humanReview ? (
+          <HumanReviewNoticeCard notice={humanReview.data} text={messageText(message)} />
+        ) : digest ? (
+          <OrchestrationDigestCard
+            digest={digest.data}
+            text={messageText(message)}
+            createdAt={message.metadata?.createdAt}
+          />
+        ) : (
+          <MessageContent className="whitespace-pre-wrap">
+            {messageText(message)}
+            {attached}
+          </MessageContent>
+        )}
+        {besideBubble && <MessageActions threadId={threadId} message={message} floating />}
+      </div>
+    );
     return (
-      <Message from="user" data-testid="message-user">
-        {/* Around the bubble or card alone, not the row's width beside it or the actions. */}
-        <div data-testid="message-time" title={topLevel ? undefined : sentAt} className="contents">
-          {notice ? (
-            <ReviewNoticeCard notice={notice.data} text={messageText(message)} />
-          ) : humanReview ? (
-            <HumanReviewNoticeCard notice={humanReview.data} text={messageText(message)} />
-          ) : digest ? (
-            <OrchestrationDigestCard
-              digest={digest.data}
-              text={messageText(message)}
-              createdAt={message.metadata?.createdAt}
-            />
-          ) : (
-            <MessageContent className="whitespace-pre-wrap">
-              {messageText(message)}
-              {attached}
-            </MessageContent>
-          )}
-        </div>
+      <Message
+        from="user"
+        data-testid="message-user"
+        className={besideBubble ? "@container/message" : undefined}
+      >
+        {besideBubble ? <div className="flex flex-col float-actions:pl-48">{bubble}</div> : bubble}
         {waitChips.map((part) => (
           <WaitChip key={part.id} wait={part.data} />
         ))}
         {waitNote && <WaitNoteLine note={waitNote.data} />}
-        {topLevel && <MessageActions threadId={threadId} message={message} />}
+        {topLevel && !besideBubble && <MessageActions threadId={threadId} message={message} />}
       </Message>
     );
   }
@@ -353,7 +375,7 @@ export const MessageBlock = memo(function MessageBlock({
       from="assistant"
       data-testid="message-assistant"
       data-streaming={streaming ? "true" : undefined}
-      className="max-w-full"
+      className={floating ? "@container/message relative max-w-full" : "max-w-full"}
     >
       {fold?.row && (
         <TurnFoldRow
@@ -473,7 +495,12 @@ export const MessageBlock = memo(function MessageBlock({
         <TurnFilesChip threadId={threadId} turnId={turnEnd} undo={turnUndo} />
       )}
       {actions && (
-        <MessageActions threadId={threadId} message={message} turnEnd={turnEnd !== undefined} />
+        <MessageActions
+          threadId={threadId}
+          message={message}
+          turnEnd={turnEnd !== undefined}
+          floating={floating}
+        />
       )}
       {fold !== undefined &&
         [...fold.under].map((i) => {

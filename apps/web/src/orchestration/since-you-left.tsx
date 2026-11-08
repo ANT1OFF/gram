@@ -48,10 +48,11 @@ function Named({ lines }: { lines: readonly StreamLine[] }) {
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 /**
- * "Since you left · 2 merged", one chip in the orchestrator's status row when you come back to
+ * "Since you left · 2 merged", the one line over the orchestrator's chat when you come back to
  * it: what merged and what failed (and came back) while you were away, with the time range and
- * each PR on request. The live state (running, waiting on you) is the row's own; this keeps only
- * the summary of the absence. Folded from the digests the orchestrator was given while you were
+ * each PR on request. The live state (running, in review, waiting on you) is the sidebar's and the
+ * Board's; this keeps only the summary of the absence, and without one it draws nothing, so the
+ * line over the chat is gone. Folded from the digests the orchestrator was given while you were
  * away, the same facts as its own `away` digest, decided once as the view opens. It is one fold
  * on the line, no × beside it: its Dismiss is in what it opens, and dismissed, it stays gone for
  * that absence. Reading it changes nothing.
@@ -94,7 +95,6 @@ export function SinceYouLeft({
     <section
       aria-label="Since you left"
       data-testid="since-you-left"
-      // Whole or not at all: the status strip drops it from its end rather than cut its words.
       className="flex shrink-0 items-center"
     >
       <Popover.Root>
@@ -103,7 +103,7 @@ export function SinceYouLeft({
           aria-label={`Since you left: ${words}. Show what happened`}
           className="flex h-7 items-center gap-1 rounded-sm px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {/* Always said: without it, "2 merged" would read like the strip's "merged today". */}
+          {/* Always said: without it, "2 merged" would read like a count of the day's merges. */}
           <span className="shrink-0">Since you left</span>
           {merged > 0 && (
             <span data-testid="since-merged" className="shrink-0">

@@ -3,6 +3,11 @@ import type { SubagentUsageData, GramUIMessage } from "@gram/contracts";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import {
+  OrchestratorStreamProvider,
+  type OrchestratorStream,
+} from "@/orchestration/stream-context";
+
 import type { AnyToolPart } from "./parts";
 import { ToolCard } from "./tool-cards";
 import { revealCard } from "./transcript";
@@ -362,5 +367,63 @@ describe("revealCard", () => {
     expect(revealCard(container, ["outer", "inner"])).toBe(true);
     expect(document.activeElement).toBe(screen.getByRole("button", { name: /Inner run/ }));
     expect(revealCard(container, ["gone"])).toBe(false);
+  });
+});
+
+/** A dynamic tool call by name, in a state. */
+const part = (toolName: string, state: string, extra: Record<string, unknown> = {}) =>
+  ({
+    type: "dynamic-tool",
+    toolName,
+    toolCallId: `${toolName}:${state}`,
+    state,
+    input: {},
+    ...extra,
+  }) as unknown as AnyToolPart;
+
+describe("Gram's own events in the orchestrator's chat", () => {
+  const stream: OrchestratorStream = {
+    plan: { messages: [], extras: new Map(), digests: [], foldedInto: new Map() },
+    cards: new Map(),
+    workers: [],
+  };
+  const inChat = (tool: AnyToolPart, orchestrator = true) => {
+    const row = (
+      <ToolCard
+        part={tool}
+        subagents={new Map()}
+        subagentUsage={new Map()}
+        streamingIds={new Set()}
+        renderSubagent={() => null}
+      />
+    );
+    return render(
+      orchestrator ? (
+        <OrchestratorStreamProvider stream={stream}>{row}</OrchestratorStreamProvider>
+      ) : (
+        row
+      ),
+    );
+  };
+
+  it("draws a finished Gram call as a quiet meta line, not a card", () => {
+    inChat(part("mcp__gram__spawn_worker", "output-available", { output: {} }));
+    const row = screen.getByTestId("tool-card");
+    expect(row.dataset["quiet"]).toBe("true");
+    expect(row.textContent).toContain("Started a worker");
+  });
+
+  it("keeps the card for a call still running or failed, and for another server's tool", () => {
+    inChat(part("mcp__gram__merge_when_ready", "input-available"));
+    inChat(part("mcp__gram__merge_when_ready", "output-error", { errorText: "blocked" }));
+    inChat(part("mcp__claude_ai_Linear__list_issues", "output-available", { output: {} }));
+    const rows = screen.getAllByTestId("tool-card");
+    expect(rows).toHaveLength(3);
+    for (const row of rows) expect(row.dataset["quiet"]).toBeUndefined();
+  });
+
+  it("keeps the card outside the orchestrator's chat", () => {
+    inChat(part("mcp__gram__spawn_worker", "output-available", { output: {} }), false);
+    expect(screen.getByTestId("tool-card").dataset["quiet"]).toBeUndefined();
   });
 });

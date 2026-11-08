@@ -67,7 +67,7 @@ const start = async (page: Page, settings: Record<string, unknown> = {}) => {
   });
   // In the app, as a user would: the workspace's row in the overview, then the sidebar's pill into the Inbox.
   await openOrchestrator(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("status-header")).toBeVisible();
+  await expect(page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`)).toBeVisible();
   await page.getByTestId("overview-needs-you").click();
   await expect(page.getByTestId("inbox")).toBeVisible();
   return made;
@@ -438,8 +438,7 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   const badge = async (id: string) =>
     Number((await workspace(id).getByTestId("overview-workspace-asks").textContent()) ?? "0");
   // The orchestrator's header doesn't repeat what needs you: the pill and the badges count it.
-  await expect(page.getByTestId("status-header")).toBeVisible();
-  await expect(page.getByTestId("status-waiting")).toHaveCount(0);
+  await expect(page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`)).toBeVisible();
   const needsYou = page.getByTestId("overview-needs-you");
   const all = Number(await needsYou.getAttribute("data-count"));
   await expect(needsYou).toHaveAccessibleName(new RegExp(`^${all} need you: `));
@@ -491,13 +490,14 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   }
   await page.keyboard.press("Escape");
 
-  // Away on a solo thread, the workspace's row brings back its orchestrator and its header.
+  // Away on a solo thread, the workspace's row brings back its orchestrator's chat.
   await threadRow(page, "t-flaky").click();
   await expect(page).toHaveURL(/\/t\/t-flaky$/);
   await expect(page.getByTestId("status-header")).toHaveCount(0);
+  await expect(page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`)).toBeHidden();
   await workspace(made.workspaceId).getByRole("button").first().click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  await expect(page.getByTestId("status-header")).toBeVisible();
+  await expect(page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`)).toBeVisible();
 });
 
 test("Send answer turns the worker's row, card and chip to answered with the count, not asks you", async ({
