@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.13.0](https://github.com/ANT1OFF/gram/compare/v1.12.0...v1.13.0) (2026-11-08)
+
+
+### Features
+
+* a machine id on checkouts and workers, and a hosts migration ([#267](https://github.com/ANT1OFF/gram/issues/267)) ([2f17442](https://github.com/ANT1OFF/gram/commit/2f17442fdc6c08c539414fdb4afa3c041841a27e))
+* **composer:** icons with their words on hover; Stop as an icon in Send's place ([#280](https://github.com/ANT1OFF/gram/issues/280)) ([88103dd](https://github.com/ANT1OFF/gram/commit/88103dde0cab04dde00b50b43f9fe31f7ff2928f))
+* number each session's agent events and confirm each one once handled ([#273](https://github.com/ANT1OFF/gram/issues/273)) ([bfbfca0](https://github.com/ANT1OFF/gram/commit/bfbfca065d05774921618076b11d9af9ff9668a0))
+* **server:** phone access switched from settings, with paired-browser list and live revoke ([#276](https://github.com/ANT1OFF/gram/issues/276)) ([6112f08](https://github.com/ANT1OFF/gram/commit/6112f08504aea5a353c707d45d887430d19f307f))
+* **web:** group the sidebar by state in three sections with one header style and one-line rows ([#281](https://github.com/ANT1OFF/gram/issues/281)) ([d64000a](https://github.com/ANT1OFF/gram/commit/d64000aee733eec467559533e67f042ffec8a1a7))
+* **web:** say Focus and Memory updates where people read Quiet and Dreams ([#277](https://github.com/ANT1OFF/gram/issues/277)) ([5d34671](https://github.com/ANT1OFF/gram/commit/5d346714c8ab95dc6b47c7dace2e313e66dd09b1))
+* **web:** Settings → Machines → Phones and browsers ([#278](https://github.com/ANT1OFF/gram/issues/278)) ([fcc65ab](https://github.com/ANT1OFF/gram/commit/fcc65abd88d91a233bc92310e2f768d436992ae2))
+
+
+### Bug Fixes
+
+* one quiet line for a run of orchestrator updates, flat merged features ([#284](https://github.com/ANT1OFF/gram/issues/284)) ([24b7a5b](https://github.com/ANT1OFF/gram/commit/24b7a5b64094c064b7543aac0fbcd9f182af3f77))
+* treat a newer Codex prerelease as newer in the runtime verdict ([#275](https://github.com/ANT1OFF/gram/issues/275)) ([9854e55](https://github.com/ANT1OFF/gram/commit/9854e55f0c1f1594797e1d324bf2e6597679eb2e))
+* **web:** one needs-you mark, fewer title-bar glyphs, Copy and … under messages ([#279](https://github.com/ANT1OFF/gram/issues/279)) ([c7c1a6c](https://github.com/ANT1OFF/gram/commit/c7c1a6ceb435079cf2293ba0d3040739639544dc))
+
+
+### Performance Improvements
+
+* **git:** back off macOS watcher reconcile reads on idle checkouts ([#269](https://github.com/ANT1OFF/gram/issues/269)) ([bfd8d2c](https://github.com/ANT1OFF/gram/commit/bfd8d2c5748cf2acc35281197726be7680b99fda))
+* **server:** number checkout changes and stop polling watched panes ([#272](https://github.com/ANT1OFF/gram/issues/272)) ([66fbaef](https://github.com/ANT1OFF/gram/commit/66fbaef2d09a57bcc1f8f824dafc31a8288bb83f))
+* **server:** run the server's SQLite connection on a writer thread ([#268](https://github.com/ANT1OFF/gram/issues/268)) ([3ba80cc](https://github.com/ANT1OFF/gram/commit/3ba80ccd58f58b97870d7538712fb3f0666636d2))
+
 ## [1.12.0](https://github.com/ANT1OFF/gram/compare/v1.11.1...v1.12.0) (2026-11-08)
 
 
