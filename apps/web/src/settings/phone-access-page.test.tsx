@@ -30,7 +30,7 @@ describe("phone access page", () => {
     render(<QrCode text="https://mac.tail-example.ts.net:9443/remote/connect#pair=x" label="QR" />);
     const svg = screen.getByRole("img", { name: "QR" });
     const [ground, modules] = svg.children;
-    expect(ground?.getAttribute("fill")).toBe("#fff");
+    expect(ground?.getAttribute("fill")).toBe("white");
     expect(modules?.getAttribute("d")).toMatch(/^M4 4h1v1h-1z/);
   });
 });

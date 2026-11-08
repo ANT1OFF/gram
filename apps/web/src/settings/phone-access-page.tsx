@@ -448,8 +448,9 @@ export function QrCode({ text, label }: { text: string; label: string }) {
       className="size-56 rounded-md"
       data-testid="phone-access-qr"
     >
-      <rect width={full} height={full} fill="#fff" />
-      <path d={path} fill="#000" />
+      {/* Not palette colours: a camera reads dark modules on a light ground, whatever the theme. */}
+      <rect width={full} height={full} fill="white" />
+      <path d={path} fill="black" />
     </svg>
   );
 }
