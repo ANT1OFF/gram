@@ -38,10 +38,12 @@ describe("automatic Dream setting", () => {
   it("defaults off and enables an editable threshold of ten without adoption authority", () => {
     const f = mount();
     expect(
-      screen.getByRole("switch", { name: "Dream automatically" }).getAttribute("aria-checked"),
+      screen
+        .getByRole("switch", { name: "Update memory automatically" })
+        .getAttribute("aria-checked"),
     ).toBe("false");
     expect(screen.queryByRole("spinbutton")).toBeNull();
-    fireEvent.click(screen.getByRole("switch", { name: "Dream automatically" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Update memory automatically" }));
     expect(f.onChange).toHaveBeenCalledWith({ ...DEFAULT_CHARTER, automaticDreamThreshold: 10 });
     expect(f.automaticDreamStatus).not.toHaveBeenCalled();
   });
@@ -51,7 +53,9 @@ describe("automatic Dream setting", () => {
     expect(
       screen.getByText(/Turning this on or changing the threshold starts a fresh count/),
     ).toBeTruthy();
-    const input = screen.getByRole("spinbutton", { name: "Completed threads before Dream" });
+    const input = screen.getByRole("spinbutton", {
+      name: "Threads per memory update",
+    });
     for (const value of ["0", "1.5", "1001"]) {
       fireEvent.change(input, { target: { value } });
       fireEvent.blur(input);
@@ -61,13 +65,13 @@ describe("automatic Dream setting", () => {
     fireEvent.change(input, { target: { value: "25" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(f.onChange).toHaveBeenCalledWith({ ...DEFAULT_CHARTER, automaticDreamThreshold: 25 });
-    fireEvent.click(screen.getByRole("switch", { name: "Dream automatically" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Update memory automatically" }));
     expect(f.onChange).toHaveBeenLastCalledWith(DEFAULT_CHARTER);
   });
   it("prevents settings edits while a charter save is running", () => {
     const f = mount(10, true);
     expect((screen.getByRole("spinbutton") as HTMLInputElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("switch", { name: "Dream automatically" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Update memory automatically" }));
     expect(f.onChange).not.toHaveBeenCalled();
   });
 });

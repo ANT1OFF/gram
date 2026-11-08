@@ -76,7 +76,7 @@ const seedDreamAccount = (page: Page, selected: boolean) =>
 
 // Matches the current Claude transport policy; this remains an invented UI observation.
 const CLAUDE_DREAM_POLICY =
-  "Bounded Dream file tools: snapshot inputs are read-only; candidate output and notes are writable. Native tools are disabled. Requires macOS or Linux with /usr/bin/python3.";
+  "Bounded memory update file tools: snapshot inputs are read-only; candidate output and notes are writable. Native tools are disabled. Requires macOS or Linux with /usr/bin/python3.";
 
 /** Only the start-flow happy paths opt in to this invented, selected-harness observation. */
 const openMemoryWithDreamHarness = async (page: Page) => {
@@ -392,7 +392,7 @@ for (const selected of [false, true]) {
         flow.getByRole("radio", { name: "Your default: Claude Code · Claude Opus", exact: true }),
       ).toBeChecked();
       await expect(flow.getByTestId("harness-preflight-reason")).toContainText(
-        "Unverified: This fixture has no qualified Dream observation.",
+        "Unverified: This fixture has no qualified memory update observation.",
       );
     } else {
       await expect(
@@ -420,7 +420,10 @@ for (const selected of [false, true]) {
         async () =>
           (await window.gramMock!.agentSupport({ agent: "claude", model: "opus" })).support.dream,
       ),
-    ).toEqual({ state: "unknown", reason: "This fixture has no qualified Dream observation." });
+    ).toEqual({
+      state: "unknown",
+      reason: "This fixture has no qualified memory update observation.",
+    });
   });
 }
 
@@ -507,7 +510,7 @@ test("an import is previewed before it starts, runs as a thread, and is offered 
   await expect(flow.getByRole("radio", { name: "Let me review it first" })).toBeChecked();
   await expect(flow.getByTestId("dream-mode-note")).toHaveText("");
   await expect(flow.getByTestId("dream-runs-rule")).toContainText("in the agent's sandbox");
-  await expect(flow).toContainText("A dream runs on Claude Code, Codex.");
+  await expect(flow).toContainText("A memory update runs on Claude Code, Codex.");
 
   const started = page.evaluate(
     () =>
@@ -530,7 +533,7 @@ test("an import is previewed before it starts, runs as a thread, and is offered 
   await expectDreamHarnessObservation(page);
   // It runs as a thread of its own, which is where starting it lands.
   await expect(page).toHaveURL(/\/t\//);
-  await expect(page.getByTestId("pane-role")).toHaveText("Dream");
+  await expect(page.getByTestId("pane-role")).toHaveText("Memory update");
 
   // A workspace whose memory is empty is offered an import, on its Memory view and its orchestrator.
   const bare = await page.evaluate(async () => {
@@ -568,7 +571,7 @@ test("a dream says what it would read and what waits for the next, within a budg
     "Backlog: 1 thread (~40k tokens) past the budget of ~200k tokens, left for the next update.",
   );
   await expect(flow.getByTestId("dream-preview-notes")).toContainText(
-    "1 thread left for the next dream",
+    "1 thread left for the next memory update",
   );
 
   // Out of range counts nothing and starts nothing; a bigger budget takes the backlog in.
@@ -660,7 +663,7 @@ test("a dream is adopted only once its conflict has a side, and a moved memory m
       return Promise.reject(
         Object.assign(
           new Error(
-            "Memory was adopted or restored since this review (it is version 0002 now). Review the dream again.",
+            "Memory was adopted or restored since this review (it is version 0002 now). Review the memory update again.",
           ),
           { _tag: "InvalidState" },
         ),

@@ -1,7 +1,7 @@
 import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
 import { Menu } from "@base-ui/react/menu";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, HandGrab, Info, SquareSplitHorizontal } from "lucide-react";
+import { ChevronRight, HandGrab, SquareSplitHorizontal } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { Term } from "@/components/term";
@@ -16,9 +16,7 @@ import { EXPLAIN } from "@/lib/explain";
 import { seeTerm } from "@/lib/first-use";
 import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
-import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
-import { WORKER_TAKE_OVER_LINE } from "@/thread/orchestration-model";
 import { RoleGlyph } from "@/thread/role-chip";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { Foldable } from "@/shell/foldable";
@@ -30,7 +28,7 @@ import { openFeatureSheet } from "./feature-sheet-store";
 import { orchestratorRowTitle } from "./tree-model";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { prWaitWords } from "./waiting-on";
-import { FINISHED_WORKER, goToThread, useTakeOverLine } from "./worker-banner";
+import { FINISHED_WORKER, goToThread } from "./worker-banner";
 import { showWorkersTab } from "./workers-tab";
 import { workerEntryOf, workerRow } from "./workers-model";
 
@@ -348,38 +346,6 @@ export function useSendTakesControl(thread: Thread): boolean {
   return entry !== undefined && entry.userIntervened !== true && !FINISHED_WORKER.has(entry.state);
 }
 
-/**
- * What Take over changes, once its first-time line under the header has been seen: a small ⓘ
- * beside Take over that says it on hover or focus, rather than the line stacking over every worker
- * view. Never beside the line itself: while it shows for this worker, the ⓘ stays away.
- */
-function TakeOverInfo({ threadId, inTitlebar }: { threadId: ThreadId; inTitlebar: boolean }) {
-  const seen = useServerSettings((s) => s.settings?.onboarding.takeOverHintSeen === true);
-  const lineShown = useTakeOverLine((s) => s.shownFor === threadId);
-  if (!seen || lineShown) return null;
-  return (
-    <Hint
-      label={WORKER_TAKE_OVER_LINE}
-      side="bottom"
-      render={
-        <span
-          // Focusable, so the words reach the keyboard as well as the pointer.
-          tabIndex={0}
-          role="img"
-          aria-label={`About Take over: ${WORKER_TAKE_OVER_LINE}`}
-          data-testid="worker-take-over-info"
-          className={cn(
-            "inline-flex size-7 shrink-0 cursor-help items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-            !inTitlebar && "-ml-1",
-          )}
-        />
-      }
-    >
-      <Info aria-hidden className={inTitlebar ? "size-icon-bar" : "size-icon-row"} />
-    </Hint>
-  );
-}
-
 /** What a worker's own actions can do now: dock beside its orchestrator, or be taken over. */
 function useWorkerActions(thread: Thread) {
   const { entry } = useWorkerFacts(thread);
@@ -467,9 +433,6 @@ export function WorkerActions({
             <Term term="takeOver">Take over</Term>
           </Hint>
         )
-      )}
-      {!actions.held && actions.takeOver !== undefined && (
-        <TakeOverInfo threadId={thread.id} inTitlebar={inTitlebar} />
       )}
     </>
   );

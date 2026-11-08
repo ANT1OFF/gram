@@ -1,3 +1,5 @@
+import { createElement } from "react";
+
 import {
   modelSpeeds,
   type AgentKind,
@@ -11,22 +13,17 @@ import { agentLabel } from "@/agents/agent-display";
 import { modeWarning } from "@/thread/mode-warning";
 
 import type { ChoiceOption, ChoiceSection } from "./choices";
-import { compactModelName, DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION, MODE_OPTIONS } from "./options";
+import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION, MODE_ICONS, MODE_OPTIONS } from "./options";
+import { SpeedGlyph } from "./picker-glyphs";
 import type { PickerOption } from "./picker";
-import {
-  speedCompactWord,
-  speedOptions,
-  speedReport,
-  speedUsage,
-  speedValueWord,
-} from "./speed-field";
+import { speedOptions, speedReport, speedUsage, speedValueWord } from "./speed-field";
 
 // The four sections of the composer's choices, in its one order (model · effort · mode · speed),
-// the same in a thread's composer and in `/new`. Each says its value in words, and on the chip
-// unless it is at its default: an effort left to the model and a speed that isn't Fast drop out,
-// their name and tooltip still saying "Effort: Model default" and "Speed: Standard".
+// the same in a thread's composer and in `/new`. Each says its value in words in the chip's name,
+// tooltip and popover; on the chip itself only a value that matters for safety or cost and is off
+// its default draws a glyph beside the agent's mark: Bypass's open lock, Fast's bolt.
 
-/** The model: its name on the chip, "Claude Opus", or in three to six letters, "Opus". */
+/** The model, said by the chip's name and tooltip; the agent's mark stands for it on the chip. */
 export function modelSection({
   value,
   options,
@@ -50,7 +47,6 @@ export function modelSection({
     id: "model",
     label: "Model",
     named,
-    chip: { full: named, compact: chosen?.compact ?? compactModelName(named) },
     warning,
     shortcut,
     value,
@@ -90,10 +86,6 @@ export function effortSection({
     id: "effort",
     label: "Effort",
     named,
-    chip:
-      value === undefined || value === DEFAULT_EFFORT
-        ? undefined
-        : { full: named, compact: chosen?.compact ?? named },
     shortcut,
     value: value ?? DEFAULT_EFFORT,
     options,
@@ -101,7 +93,10 @@ export function effortSection({
   };
 }
 
-/** The permission mode, always on the chip: what the agent may do without asking matters. */
+/**
+ * The permission mode. One that never asks (Bypass) draws its glyph on the chip in the warning
+ * colour: what the agent may do without asking matters.
+ */
 export function modeSection({
   value,
   onChange,
@@ -113,12 +108,20 @@ export function modeSection({
 }): ChoiceSection {
   const chosen = MODE_OPTIONS.find((option) => option.value === value);
   const named = chosen?.label ?? value ?? "Ask";
+  const warning = modeWarning(value);
+  const Glyph = value === undefined ? undefined : MODE_ICONS[value];
   return {
     id: "mode",
     label: "Mode",
     named,
-    chip: value === undefined ? undefined : { full: named, compact: chosen?.compact ?? named },
-    warning: modeWarning(value),
+    glyph:
+      warning === undefined || Glyph === undefined
+        ? undefined
+        : createElement(Glyph, {
+            "aria-hidden": true,
+            className: "size-icon-chip text-warning",
+          }),
+    warning,
     shortcut,
     value,
     options: MODE_OPTIONS,
@@ -127,8 +130,8 @@ export function modeSection({
 }
 
 /**
- * The speed, for an agent with more than one: on the chip only when Fast, with what Fast costs and
- * what the CLI last reported under its list.
+ * The speed, for an agent with more than one: its bolt on the chip only when Fast, with what Fast
+ * costs and what the CLI last reported under its list.
  */
 export function speedSection({
   agent,
@@ -163,7 +166,10 @@ export function speedSection({
     id: "speed",
     label: "Speed",
     named,
-    chip: value === "fast" ? { full: named, compact: speedCompactWord(value) } : undefined,
+    glyph:
+      value === "fast"
+        ? createElement(SpeedGlyph, { speed: value, className: "size-icon-chip" })
+        : undefined,
     value: value ?? "default",
     options,
     onChange: (next) => {

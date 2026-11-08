@@ -306,7 +306,7 @@ describe("palette commands", () => {
     const sections = paletteSections();
     expect(Object.keys(sections)).toEqual(["Go to", "Threads", "Workers"]);
     // Workers, Memory and Quiet are first-class, not only in the title bar's "…".
-    expect(sections["Go to"]!.slice(0, 3)).toEqual(["Workers", "Memory", "Quiet"]);
+    expect(sections["Go to"]!.slice(0, 3)).toEqual(["Workers", "Memory", "Focus"]);
     expect(Object.keys(sections)).not.toContain("Commands");
   });
 });

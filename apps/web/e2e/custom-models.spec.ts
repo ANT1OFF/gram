@@ -23,7 +23,7 @@ test("a model added in Settings is offered on /new, and a removed one is not", a
   const form = page.getByRole("form", { name: "New thread" });
   await form.getByTestId("composer-choices").click();
   await page.getByRole("option", { name: "Preview, 1M context" }).click();
-  await expect(form.getByTestId("composer-choices")).toHaveText(/Preview, 1M context/);
+  await expect(form.getByTestId("composer-choices")).toHaveAccessibleName(/Preview, 1M context/);
   // A model added by id is assumed to take an effort, unless its row says otherwise.
   await expect(form.getByTestId("composer-choices")).toHaveAccessibleName(
     / · Effort: Model default · /,
@@ -74,7 +74,7 @@ test("the model picker offers what the Claude account lists, and Mythos once it'
   await page.clock.fastForward("05:01");
   await picker.click();
   await page.getByRole("option", { name: "Mythos" }).click();
-  await expect(picker).toHaveText(/Mythos/);
+  await expect(picker).toHaveAccessibleName(/Mythos/);
 });
 
 test("a thread on a model its Claude account no longer lists says so", async ({ page }) => {
@@ -84,7 +84,7 @@ test("a thread on a model its Claude account no longer lists says so", async ({ 
   await composer.fill("/model claude-mythos-5-1");
   await composer.press("Enter");
   const picker = page.getByTestId("composer-toolbar").getByTestId("composer-choices");
-  await expect(picker).toHaveText(/claude-mythos-5-1/);
+  await expect(picker).toHaveAccessibleName(/claude-mythos-5-1/);
   await expect(picker).toHaveAttribute("data-warning", "true");
   // Said the moment it's hovered, as every toolbar picker says its warning.
   await picker.hover();

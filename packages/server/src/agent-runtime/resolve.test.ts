@@ -178,8 +178,22 @@ describe("agent runtime policy", () => {
     expect(judgeAgainstBaseline("codex", CODEX).verdict).toBe("supported");
     expect(judgeAgainstBaseline("codex", patch(CODEX, 5)).verdict).toBe("supported");
     expect(judgeAgainstBaseline("codex", minor(CODEX, -1)).verdict).toBe("unsupported");
-    expect(judgeAgainstBaseline("codex", minor(CODEX, 1)).verdict).toBe("unknown");
-    expect(judgeAgainstBaseline("codex", `${minor(CODEX, 1)}-alpha.2`).verdict).toBe("unknown");
+    expect(judgeAgainstBaseline("codex", minor(CODEX, 1))).toMatchObject({
+      verdict: "supported",
+      reason: expect.stringContaining("some features may misbehave"),
+    });
+    for (const version of [
+      `${patch(CODEX, 1)}-alpha.2`,
+      `${minor(CODEX, 1)}-alpha.2`,
+      "1.0.0-alpha.2",
+    ])
+      expect(judgeAgainstBaseline("codex", version)).toMatchObject({
+        verdict: "supported",
+        reason: expect.stringContaining(`Codex ${version} differs from ${CODEX}`),
+      });
+    for (const version of [`${CODEX}-alpha.2`, `${minor(CODEX, -1)}-alpha.2`])
+      expect(judgeAgainstBaseline("codex", version).verdict).toBe("unknown");
+    expect(judgeAgainstBaseline("claude", `${patch(CLAUDE, 1)}-alpha.2`).verdict).toBe("unknown");
     // Claude's SDK pairs a CLI line, and allows ten patches past it.
     expect(BASELINES.claude.cliVersion).toMatch(/^2\.1\.\d+$/);
     expect(judgeAgainstBaseline("claude", patch(CLAUDE, -1)).verdict).toBe("graceful");
@@ -343,7 +357,7 @@ describe("agent runtime policy", () => {
 
 describe("updating the user's own CLI", () => {
   it.effect(
-    "identifies standalone Codex and offers its updater only for an eligible qualified latest",
+    "identifies standalone Codex and offers its updater only for an eligible accepted latest",
     () =>
       Effect.gen(function* () {
         const path = "/Users/me/.local/bin/codex";
@@ -354,13 +368,12 @@ describe("updating the user's own CLI", () => {
         expect(baselineOnly.installation).toMatchObject({ installer: "native", realPath: real });
         expect(baselineOnly.installation?.updateNote).toContain("cannot pin a version");
         expect(baselineOnly.installSteps).toEqual([]);
-        // Neither an unqualified newer line nor a release still waiting may run a latest-only update.
-        for (const releases of [
-          released("codex", minor(CODEX, 1), 48),
-          released("codex", CODEX, 1),
-        ])
+        // Releases inside the 24-hour wait cannot run a latest-only update.
+        for (const releases of [released("codex", minor(CODEX, 1), 1), released("codex", CODEX, 1)])
           expect((yield* run({ ...own, releases }))["codex"]!.installSteps).toEqual([]);
-        const ready = (yield* run({ ...own, releases: released("codex", CODEX, 48) }))["codex"]!;
+        const ready = (yield* run({ ...own, releases: released("codex", minor(CODEX, 1), 48) }))[
+          "codex"
+        ]!;
         expect(ready.installSteps).toEqual([
           { installer: "native", command: "codex update", exact: false, run: ["codex", "update"] },
         ]);
@@ -788,6 +801,21 @@ describe("resolveAgentRuntimes", () => {
     }),
   );
 
+  it.effect("keeps the warning for an accepted newer installed Codex", () =>
+    Effect.gen(function* () {
+      for (const version of [minor(CODEX, 1), `${minor(CODEX, 1)}-alpha.2`]) {
+        const row = (yield* run({
+          checks: checks([{ tool: "codex", found: true, path: "/synthetic/codex", version }]),
+        }))["codex"]!;
+        expect(row).toMatchObject({
+          verdict: "supported",
+          reason: expect.stringContaining(`Codex ${version} differs from ${CODEX}`),
+          installSteps: [],
+        });
+      }
+    }),
+  );
+
   it.effect("offers no steps where the hosted runtime pins the CLIs, and still judges them", () =>
     Effect.gen(function* () {
       const all = yield* run({ pinnedCli: true });
@@ -814,14 +842,28 @@ describe("resolveAgentRuntimes", () => {
         `npm i -g @openai/codex@${patch(CODEX, 2)}`,
       );
 
-      // A newer line is news, but nothing to install until it's qualified.
+      // Newer Codex lines are accepted after the same release-age wait.
       const line = yield* run({ releases: released("codex", minor(CODEX, 1), 48) });
-      expect(line["codex"]!.newer).toMatchObject({ eligible: true, verdict: "unknown" });
-      expect(line["codex"]!.installSteps).toEqual([]);
+      expect(line["codex"]!.newer).toMatchObject({ eligible: true, verdict: "supported" });
+      expect(line["codex"]!.installSteps[0]?.command).toBe(
+        `npm i -g @openai/codex@${minor(CODEX, 1)}`,
+      );
 
       // Nothing older than or equal to what's installed counts as newer.
       const same = yield* run({ releases: released("codex", CODEX, 48) });
       expect(same["codex"]).not.toHaveProperty("newer");
+    }),
+  );
+
+  it.effect("keeps prerelease registry releases out of stable standalone updates", () =>
+    Effect.gen(function* () {
+      const row = (yield* run({
+        checks: checks([{ tool: "codex", found: true, path: "/synthetic/codex", version: CODEX }]),
+        realpath: () => `/synthetic/.codex/packages/standalone/current/bin/codex`,
+        releases: released("codex", `${minor(CODEX, 1)}-alpha.2`, 48),
+      }))["codex"]!;
+      expect(row).not.toHaveProperty("newer");
+      expect(row.installSteps).toEqual([]);
     }),
   );
 

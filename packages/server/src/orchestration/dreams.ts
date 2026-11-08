@@ -711,7 +711,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             backlog.threads === 0
               ? []
               : [
-                  `${backlogText(backlog)} left for the next dream, past this one's budget of ${tokensText(budgetTokens)}. Their watermarks stay where they are, so the next dream reads them.`,
+                  `${backlogText(backlog)} left for the next memory update, past this one's budget of ${tokensText(budgetTokens)}. Their watermarks stay where they are, so the next memory update reads them.`,
                 ];
           return { sessions, plan, notes };
         });
@@ -756,7 +756,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
               }
               if (!inWorkspace.has(thread.projectId) || thread.role === "dream") {
                 return yield* refuse(
-                  `${thread.title} is not a thread of ${state.workspace.name}'s projects, so a dream there doesn't read it.`,
+                  `${thread.title} is not a thread of ${state.workspace.name}'s projects, so a memory update there doesn't read it.`,
                 );
               }
               const one = yield* unreadOfThread(thread, undefined, state.workspace.id);
@@ -802,15 +802,15 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             .filter((one) => (one.left ?? 0) > 0).length;
           if (cut > 0) {
             notes.push(
-              `${plural(cut, "thread")} had more new messages than one file holds: the oldest of them were read, and their watermarks stop there, so the next dream reads on.`,
+              `${plural(cut, "thread")} had more new messages than one file holds: the oldest of them were read, and their watermarks stop there, so the next memory update reads on.`,
             );
           }
           const left = newestFirst.slice(DREAM_SESSIONS_MAX);
           if (left.length > 0) {
             notes.push(
               left.every((one) => one.read !== undefined)
-                ? `${plural(left.length, "older thread")} with new messages left for the next dream: one reads at most ${DREAM_SESSIONS_MAX}, and their watermarks stay where they are.`
-                : `${plural(left.length, "older session")} left out: a dream reads at most ${DREAM_SESSIONS_MAX}.`,
+                ? `${plural(left.length, "older thread")} with new messages left for the next memory update: one reads at most ${DREAM_SESSIONS_MAX}, and their watermarks stay where they are.`
+                : `${plural(left.length, "older session")} left out: a memory update reads at most ${DREAM_SESSIONS_MAX}.`,
             );
           }
           return {
@@ -891,7 +891,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           );
           yield* announce(ended, [], undefined, {
             kind: canceled ? "info" : "error",
-            title: canceled ? "Dream cancelled" : `Dream failed: ${why}`,
+            title: canceled ? "Memory update cancelled" : `Memory update failed: ${why}`,
           });
           return ended;
         });
@@ -979,10 +979,10 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             kind: ended.adoptionFailure === undefined ? "done" : "error",
             title:
               ended.mode !== "auto"
-                ? "Dream finished — review it"
+                ? "Memory update finished — review it"
                 : ended.adoptedVersion !== undefined
-                  ? "Dream automatically adopted"
-                  : "Dream automatic adoption stopped",
+                  ? "Memory update automatically adopted"
+                  : "Memory update automatic adoption stopped",
           });
         });
 
@@ -1118,12 +1118,12 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           const { workspace } = state;
           if ((yield* store.listDreams(workspace.id)).some((d) => d.status === "running")) {
             return yield* refuse(
-              `A dream is already running for ${workspace.name}. Wait for it, or cancel it first.`,
+              `A memory update is already running for ${workspace.name}. Wait for it, or cancel it first.`,
             );
           }
           if (input.model !== undefined && !admittedForRole(input.model.agent, "dream")) {
             return yield* refuse(
-              `A dream runs on ${ADMITTED.dream.join(" or ")}; ${input.model.agent} isn't admitted for one. Pick a model of one of those.`,
+              `A memory update runs on ${ADMITTED.dream.join(" or ")}; ${input.model.agent} isn't admitted for one. Pick a model of one of those.`,
             );
           }
           const model = input.model ?? (yield* defaultDreamModel(settings, hosts));
@@ -1143,7 +1143,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           if (sessions.length === 0 && current.files.length === 0) {
             return yield* refuse(
               input.kind === "import"
-                ? "No past session was found to import, so there is nothing for a dream to read."
+                ? "No past session was found to import, so there is nothing for a memory update to read."
                 : "There is no memory and no transcript yet, so there is nothing to consolidate.",
             );
           }
@@ -1212,8 +1212,8 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                       message:
                         blocked ??
                         (!available
-                          ? "Waiting for the selected Dream model to become available. Check Settings → Agents."
-                          : "Automatic Dream settings changed before launch."),
+                          ? "Waiting for the selected memory update model to become available. Check Settings → Agents."
+                          : "Automatic memory update settings changed before launch."),
                     });
                   }
                 }
@@ -1231,7 +1231,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                     id: threadId,
                     projectRoot: home.root,
                     checkout: { kind: "main", path: outputDir },
-                    title: `${input.kind === "import" ? "Import" : "Dream"} · ${workspace.name}`,
+                    title: `${input.kind === "import" ? "Import" : "Memory update"} · ${workspace.name}`,
                     model,
                     // Keep normal sandbox and approvals. The runtime selects file-only
                     // tools or guided native permissions through the shared Dream decision.
@@ -1345,7 +1345,9 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
         Effect.gen(function* () {
           const dream = yield* Effect.flatMap(store.getDream(dreamId), verifiedRow);
           if (dream.status === "running" || dream.status === "pending") {
-            return yield* refuse("The dream is still running; there is nothing to review yet.");
+            return yield* refuse(
+              "The memory update is still running; there is nothing to review yet.",
+            );
           }
           const found = yield* reviewOf(dream).pipe(
             // A failed or cancelled dream's leftovers may be no memory at all. It is shown as it
@@ -1370,7 +1372,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
       const cancel: DreamsShape["cancel"] = (dreamId) =>
         Effect.gen(function* () {
           const dream = yield* store.getDream(dreamId);
-          if (dream.status !== "running") return yield* refuse("That dream isn't running.");
+          if (dream.status !== "running") return yield* refuse("That memory update isn't running.");
           return (
             (yield* cancelRunning(dream, "cancelled by the user")) ??
             (yield* store.getDream(dreamId))
@@ -1386,7 +1388,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           const dream = yield* store.getDream(dreamId);
           if (dream.adoptedVersion !== undefined) {
             return yield* refuse(
-              `That dream was already adopted as version ${dream.adoptedVersion}.`,
+              `That memory update was already adopted as version ${dream.adoptedVersion}.`,
             );
           }
           if (dream.mode === "auto" && (!automatic || dream.adoptionFailure !== undefined)) {
@@ -1399,15 +1401,15 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           if (dream.status !== "completed") {
             return yield* refuse(
               dream.status === "running"
-                ? "The dream is still running."
-                : "A dream that failed or was cancelled can't be adopted, only discarded.",
+                ? "The memory update is still running."
+                : "A memory update that failed or was cancelled can't be adopted, only discarded.",
             );
           }
           // Hashed again here as at completion: the folder has been the agent's to write since.
           const inputs = yield* files.verifyInputs(dream.workspaceId, dream.id);
           if (!inputs.ok) {
             return yield* refuse(
-              `The dream's inputs were changed after it finished (${inputs.changed.slice(0, 3).join(", ")}), so its output can't be trusted. Discard it.`,
+              `The memory update's inputs were changed after it finished (${inputs.changed.slice(0, 3).join(", ")}), so its output can't be trusted. Discard it.`,
             );
           }
           const found = yield* reviewOf(dream).pipe(
@@ -1420,23 +1422,25 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
               found.memoryVersion !== dream.inputs.memoryVersion ||
               found.memoryDigest !== dream.inputs.memoryDigest
             ) {
-              return yield* refuse("Memory changed since this automatic dream started.");
+              return yield* refuse("Memory changed since this automatic memory update started.");
             }
           }
           if (adoption.basedOn !== undefined && adoption.basedOn !== found.memoryVersion) {
             return yield* refuse(
-              `Memory was adopted or restored since this review (it is version ${found.memoryVersion || "none"} now). Review the dream again.`,
+              `Memory was adopted or restored since this review (it is version ${found.memoryVersion || "none"} now). Review the memory update again.`,
             );
           }
           if (adoption.memoryDigest !== undefined && adoption.memoryDigest !== found.memoryDigest) {
-            return yield* refuse("Memory files changed since this review. Review the dream again.");
+            return yield* refuse(
+              "Memory files changed since this review. Review the memory update again.",
+            );
           }
           if (
             adoption.outputDigest !== undefined &&
             adoption.outputDigest !== outputDigest(found.output)
           ) {
             return yield* refuse(
-              "The dream's output was changed since this review. Review the dream again.",
+              "The memory update's output was changed since this review. Review the memory update again.",
             );
           }
           const unmerged: Array<string> = [];
@@ -1454,13 +1458,13 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           }
           if (unmerged.length > 0) {
             return yield* refuse(
-              `There is no finished merge of ${unmerged.join(", ")} as memory and the dream's output hold it now. Merge it again, or choose a side.`,
+              `There is no finished merge of ${unmerged.join(", ")} as memory and the memory update's output hold it now. Merge it again, or choose a side.`,
             );
           }
           const set = adoptionSet(found.files, sides);
           if (!set.ok) {
             return yield* refuse(
-              `The orchestrator changed ${set.unresolved.join(", ")} after the dream started. Choose the dream's version or the current one for each.`,
+              `The orchestrator changed ${set.unresolved.join(", ")} after the memory update started. Choose the memory update's version or the current one for each.`,
             );
           }
           const state = yield* store.getWorkspace(dream.workspaceId);
@@ -1510,7 +1514,9 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                             (fresh.threadId !== dream.threadId ||
                               fresh.adoptionFailure !== undefined))
                         ) {
-                          return yield* refuse("The dream changed before adoption could commit.");
+                          return yield* refuse(
+                            "The memory update changed before adoption could commit.",
+                          );
                         }
                         if (automatic) {
                           const thread =
@@ -1526,7 +1532,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                             thread.checkout.path !== fresh.outputDir
                           ) {
                             return yield* refuse(
-                              "The automatic dream no longer owns its workspace thread and output folder.",
+                              "The automatic memory update no longer owns its workspace thread and output folder.",
                             );
                           }
                         }
@@ -1579,7 +1585,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           );
           yield* orchestration.addNote(
             dream.workspaceId,
-            `Your memory was consolidated: ${automatic ? "auto mode" : "the user"} adopted a dream as version ${adopted.adoptedVersion}. Re-read MEMORY.md before relying on what you remember of it.`,
+            `Your memory was consolidated: ${automatic ? "auto mode" : "the user"} adopted a memory update as version ${adopted.adoptedVersion}. Re-read MEMORY.md before relying on what you remember of it.`,
           );
           yield* dreamsChanged(dream.workspaceId);
           yield* hub.publish({ type: "orchestration.changed", workspaceId: dream.workspaceId });
@@ -1628,7 +1634,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           Effect.gen(function* () {
             const dream = yield* store.getDream(dreamId);
             if (dream.status === "running") {
-              return yield* refuse("The dream is still running. Cancel it first.");
+              return yield* refuse("The memory update is still running. Cancel it first.");
             }
             // Its thread's cwd is the folder about to go, so the thread goes first.
             if (dream.threadId !== undefined) {
@@ -1694,11 +1700,11 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           const dream = yield* store.getDream(dreamId);
           if (dream.adoptedVersion !== undefined) {
             return yield* refuse(
-              `That dream was already adopted as version ${dream.adoptedVersion}.`,
+              `That memory update was already adopted as version ${dream.adoptedVersion}.`,
             );
           }
           if (dream.status !== "completed") {
-            return yield* refuse("Only a completed dream's conflicts can be merged.");
+            return yield* refuse("Only a completed memory update's conflicts can be merged.");
           }
           const found = yield* reviewOf(dream).pipe(
             Effect.catchTag("DreamOutputRefused", (refused) =>
@@ -1707,11 +1713,11 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           );
           const file = found.files.find((candidate) => candidate.path === path);
           if (file?.status !== "conflict") {
-            return yield* refuse(`${path} isn't a conflict of this dream's review.`);
+            return yield* refuse(`${path} isn't a conflict of this memory update's review.`);
           }
           if (file.after === undefined || file.current === undefined) {
             return yield* refuse(
-              `${file.after === undefined ? "The dream" : "The orchestrator"} removed ${path}, so there are not two versions to merge. Take the dream's or keep memory's.`,
+              `${file.after === undefined ? "The memory update" : "The orchestrator"} removed ${path}, so there are not two versions to merge. Take the memory update's or keep memory's.`,
             );
           }
           if (file.merge?.status === "running") return file.merge;
@@ -1763,7 +1769,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             yield* store.putDream(interrupted);
             yield* announce(interrupted, [], undefined, {
               kind: "error",
-              title: "Dream automatic adoption interrupted",
+              title: "Memory update automatic adoption interrupted",
             });
           }
         }

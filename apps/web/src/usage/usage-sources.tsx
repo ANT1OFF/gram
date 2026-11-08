@@ -119,10 +119,10 @@ function Coverage({ data }: { data: UsageOverview }) {
           </p>
           <p className="mt-2">
             Gram turns use their final saved usage snapshot. Retained open and closed conversations,
-            workers and Dream conversations are included. Available local CLI history can add older
-            requests. Exact provider, original session and native request identities prevent matched
-            records from being added twice. Nested subagent and inherited fork usage are excluded
-            when identifiable. Models come from actual assistant or turn metadata; the
+            workers and memory update conversations are included. Available local CLI history can
+            add older requests. Exact provider, original session and native request identities
+            prevent matched records from being added twice. Nested subagent and inherited fork usage
+            are excluded when identifiable. Models come from actual assistant or turn metadata; the
             conversation’s current selection is never used. Claude Code and Codex recordings can
             omit main-lane model metadata.
           </p>

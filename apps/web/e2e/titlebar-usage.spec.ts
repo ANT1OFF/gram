@@ -203,12 +203,16 @@ test("an orchestrator's title bar has Memory beside Chat · Board", async ({ pag
     async () => (await window.gramMock!.listWorkspaces())[0]!.workspace.id,
   );
   const bar = page.getByTestId("shell-titlebar");
-  await expect(bar.getByTestId("pane-role")).toBeVisible();
+  // Round 15: the orchestrator's bare org-chart glyph beside Chat · Board said only what the
+  // switcher and Chat already say. Its role is in the heading's name, for a screen reader alone.
+  await expect(bar.getByTestId("pane-role")).toHaveText("Orchestrator");
+  await expect(bar.getByTestId("pane-role").locator("svg")).toHaveCount(0);
+  await expect(bar.getByRole("heading", { name: /^Orchestrator: / })).toBeAttached();
   // An icon with its name on hover, like the bar's other icons.
   const memory = bar.getByRole("link", { name: "Memory", exact: true });
   await expect(memory).toBeVisible();
   await expect(memory).toHaveText("");
-  // To the right of the views and the orchestrator's glyph.
+  // To the right of the views.
   const views = (await bar.getByTestId("view-switcher").boundingBox())!;
   const box = (await memory.boundingBox())!;
   expect(box.x).toBeGreaterThan(views.x + views.width);
@@ -216,6 +220,51 @@ test("an orchestrator's title bar has Memory beside Chat · Board", async ({ pag
   await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText("Memory");
   await memory.click();
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceId}/memory$`));
+});
+
+test("every icon in the title bar is one size and stroke, and names itself the moment it is hovered", async ({
+  page,
+}) => {
+  await seed(page, { "gram.mock.orchestration": "board" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/t\/t-mock-\d+$/);
+  // The sidebar hidden, so the bar carries its Settings and Inbox too.
+  await page.keyboard.press("ControlOrMeta+b");
+  const bar = page.getByTestId("shell-titlebar");
+  await expect(bar.getByTestId("inbox-button")).toBeVisible();
+  await expect(bar.getByTestId("orchestrator-memory")).toBeVisible();
+  // Every control in the bar that is a glyph alone: no words of its own.
+  const icons = bar.locator("button:visible, a:visible").filter({ hasNotText: /\S/ });
+  const count = await icons.count();
+  expect(count).toBeGreaterThanOrEqual(6);
+  const tooltip = page.locator('[data-slot="tooltip-content"][data-open]');
+  for (let i = 0; i < count; i++) {
+    const icon = icons.nth(i);
+    const name = (await icon.getAttribute("aria-label")) ?? "";
+    expect(name, `icon ${i} has a name`).not.toBe("");
+    const box = (await icon.boundingBox())!;
+    expect([box.width, box.height], name).toEqual([28, 28]);
+    const glyph = icon.locator("svg").first();
+    const size = (await glyph.boundingBox())!;
+    expect([size.width, size.height], name).toEqual([18, 18]);
+    expect(
+      await glyph.evaluate((svg) => getComputedStyle(svg).strokeWidth),
+      `${name}: one stroke`,
+    ).toBe(
+      await icons
+        .first()
+        .locator("svg")
+        .first()
+        .evaluate((svg) => getComputedStyle(svg).strokeWidth),
+    );
+    // Its words at once, with no native title's wait.
+    expect(await icon.getAttribute("title"), name).toBeNull();
+    await page.mouse.move(0, 400);
+    await icon.hover();
+    await expect(tooltip, name).toBeVisible({ timeout: 1000 });
+    await expect(tooltip, name).not.toHaveText("");
+  }
 });
 
 test("the meter waits for a limit, hints from 90% once, and ignores gateways", async ({ page }) => {

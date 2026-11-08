@@ -10,7 +10,11 @@ import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { HelperTransportError, type HelperAdapter, type HelperReply } from "../helper.ts";
-import { CODEX_HELPER_FEATURES, CODEX_HELPER_SUBSCRIPTION_BASE_URL } from "./helper-policy.ts";
+import {
+  CODEX_HELPER_FEATURES,
+  CODEX_HELPER_SUBSCRIPTION_BASE_URL,
+  CODEX_HELPER_VERSION,
+} from "./helper-policy.ts";
 import type { ModelListResponse } from "./protocol/v2/ModelListResponse.ts";
 import type { ListMcpServerStatusResponse } from "./protocol/v2/ListMcpServerStatusResponse.ts";
 import type { TurnStartResponse } from "./protocol/v2/TurnStartResponse.ts";
@@ -30,7 +34,7 @@ const failed = (failure: HelperTransportError["failure"]) => new HelperTransport
 const classify = (error: unknown): HelperTransportError => {
   if (error instanceof HelperTransportError) return error;
   const message = error instanceof Error ? error.message : "";
-  if (message.startsWith("Codex guided helpers require the pinned CLI"))
+  if (message.startsWith("Codex guided helpers require CLI"))
     return new HelperTransportError({ failure: "unavailable", detail: message });
   return failed(
     /unauthorized|authentication|not.logged.in|login expired/i.test(message)
@@ -106,8 +110,7 @@ const helperConfig = (server: CodexServer, cwd: string) =>
     if (config.openai_base_url !== CODEX_HELPER_SUBSCRIPTION_BASE_URL)
       return yield* new HelperTransportError({
         failure: "restriction",
-        detail:
-          "Codex did not verify the ChatGPT subscription endpoint. Check the selected 0.166.0 runtime and refresh. Custom endpoints require explicit gateway helper configuration and separate permission. No helper context was sent.",
+        detail: `Codex did not verify the ChatGPT subscription endpoint. Check the selected ${CODEX_HELPER_VERSION} or newer runtime and refresh. Custom endpoints require explicit gateway helper configuration and separate permission. No helper context was sent.`,
       });
     if (
       config.model_provider !== "openai" ||
@@ -139,21 +142,23 @@ export const makeCodexHelper = (
       );
       return yield* Context.get(context, CodexServers).acquire(undefined, "user");
     });
+  const inspect = bounded(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const cwd = yield* Effect.acquireRelease(
+          Effect.tryPromise(() => mkdtemp(join(tmpdir(), "gram-codex-helper-"))),
+          (root) => Effect.promise(() => rm(root, { recursive: true, force: true })),
+        );
+        const server = yield* ownedServer(cwd);
+        yield* helperConfig(server, cwd);
+        return { models: yield* discovery(server), warnings: server.warnings };
+      }),
+    ),
+  );
   return {
     mode: "guided",
-    models: bounded(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const cwd = yield* Effect.acquireRelease(
-            Effect.tryPromise(() => mkdtemp(join(tmpdir(), "gram-codex-helper-"))),
-            (root) => Effect.promise(() => rm(root, { recursive: true, force: true })),
-          );
-          const server = yield* ownedServer(cwd);
-          yield* helperConfig(server, cwd);
-          return yield* discovery(server);
-        }),
-      ),
-    ),
+    inspect,
+    models: inspect.pipe(Effect.map((result) => result.models)),
     generate: (call) =>
       bounded(
         Effect.scoped(

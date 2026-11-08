@@ -769,13 +769,13 @@ export function DreamReportCard({
   const changed = report.files.filter((file) => file.status !== "unchanged");
   return (
     <article
-      aria-label="Dream report"
+      aria-label="Memory update report"
       data-testid="dream-report"
       className={cn(CARD, "my-2 flex flex-col gap-2")}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <MoonStar aria-hidden className="size-icon-row text-muted-foreground" />
-        <h3 className="font-medium">Dream</h3>
+        <h3 className="font-medium">Memory update</h3>
         <StatePill state={dreamStatus(report)} testId="dream-report-status" />
         <span className="text-meta text-muted-foreground">{reviewSummary(report.files)}</span>
       </header>

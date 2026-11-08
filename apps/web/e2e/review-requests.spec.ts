@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { openReviewsTab, reviewsInPanel } from "./reviews-panel";
 
-// The review requests and the user's open PRs: a compact row each in the overview's Pull requests
+// The review requests and the user's open PRs: a compact row each in the overview's At rest
 // section (folded until opened) under the default placement, and the full lists, with their menus,
 // cards and groups, in the right panel's Reviews tab.
 
@@ -10,7 +10,10 @@ const pullRequests = (page: Page) => page.getByTestId("overview-section-pullRequ
 const overviewRows = (page: Page, kind: "review" | "yours") =>
   pullRequests(page).locator(`[data-testid="overview-pr"][data-kind="${kind}"]`);
 const unfoldPullRequests = async (page: Page) => {
-  const title = pullRequests(page).getByRole("heading").getByRole("button");
+  const title = page
+    .getByTestId("overview-section-rest")
+    .getByRole("heading", { level: 2 })
+    .getByRole("button");
   if ((await title.getAttribute("aria-expanded")) === "false") await title.click();
   await expect(title).toHaveAttribute("aria-expanded", "true");
 };
@@ -24,7 +27,7 @@ test("review requests list in the overview, notify when new and open on GitHub",
   await expect(requests).toHaveCount(2);
   await expect(requests.and(page.locator('[data-pr="example/api#530"]'))).toHaveAttribute(
     "title",
-    /^Review requests · api#530 · jordan\n/,
+    /\nReview requests · api#530 · jordan\n/,
   );
 
   await page.evaluate(() =>

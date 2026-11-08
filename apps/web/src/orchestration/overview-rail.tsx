@@ -8,6 +8,7 @@ import {
 } from "@gram/contracts";
 import { MessageSquare, PanelLeftClose, UnfoldHorizontal } from "lucide-react";
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -376,7 +377,14 @@ function SoloTile() {
 const plain = (event: KeyboardEvent) => !event.altKey && !event.metaKey && !event.ctrlKey;
 
 /**
- * A tile and its flyout, open while the tile is hovered or focused and while the pointer or the
+ * The open flyout's close: one opening closes the last at once, so a pointer moving down the rail
+ * swaps one tile's name for the next rather than stacking two while the first's close delay runs.
+ */
+let closeOpenFlyout: (() => void) | undefined;
+
+/**
+ * A tile and its flyout, open the moment the tile is hovered or focused, so a monogram says whose it
+ * is at once (the flyout heads with the whole name), and while the pointer or the
  * focus is in it. → goes in to its first row, ↑↓ Home End move between its rows, and ← or Esc
  * close it with the focus back on the tile. A pick in it (open, peek, open beside, a solo
  * thread) closes it, the focus on its tile first, so whatever the pick opens comes back to the tile.
@@ -396,6 +404,15 @@ function Flyout({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    closeOpenFlyout?.();
+    closeOpenFlyout = close;
+    return () => {
+      if (closeOpenFlyout === close) closeOpenFlyout = undefined;
+    };
+  }, [open]);
   const tileRef = useRef<HTMLElement | null>(null);
   const popup = useRef<HTMLDivElement>(null);
   // The focus handed back to the tile opens nothing until the tile has lost it again.
@@ -459,7 +476,7 @@ function Flyout({
       }}
     >
       <PreviewCard.Trigger
-        delay={150}
+        delay={0}
         closeDelay={150}
         ref={(element: HTMLElement | null) => {
           tileRef.current = element;
@@ -502,11 +519,11 @@ function Flyout({
             data-surface="overlay"
             onKeyDown={onFlyoutKey}
             onClick={onPick}
-            // 22 rem: room for a worker's status words and two PR chips side by side at the meta
-            // size, as a card would say them.
+            // 24 rem: room for a worker's title and two PR chips side by side on its one line, as a
+            // card would say them.
             className={cn(
               CARD_SURFACE,
-              "flex max-h-[min(32rem,var(--available-height))] w-88 flex-col gap-px overflow-y-auto p-2 text-body",
+              "flex max-h-[min(32rem,var(--available-height))] w-96 flex-col gap-px overflow-y-auto p-2 text-body",
             )}
           >
             {children}

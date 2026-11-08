@@ -11,10 +11,9 @@ import { useRef } from "react";
 import { Swap } from "@/motion";
 
 import { aboveComposer } from "./above-composer";
-import { PickerTrigger, usePickConfirm } from "./picker-trigger";
+import { PickerTrigger, usePickConfirm, type LabelSize } from "./picker-trigger";
 import { SpeedGlyph } from "./picker-glyphs";
 import { GHOST_TRIGGER } from "./styles";
-import type { LabelSize } from "./toolbar-layout";
 
 export const speedOptions = (
   models: readonly AgentModel[] | undefined,

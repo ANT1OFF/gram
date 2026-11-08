@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sidebar groups directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .sg {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        height: 100%;
+        min-height: inherit;
+        padding: 8px;
+        background: var(--surface-1);
+        color: var(--fg);
+        font-family: var(--font-ui);
+        font-size: 14px;
+        line-height: 20px;
+      }
+      .sg-pill {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border-subtle);
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .sg-pill .needs {
+        color: var(--status-needs);
+      }
+      .sg-pill .dot {
+        background: var(--status-needs-mark);
+      }
+      .sg-search {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 32px;
+        padding: 0 6px 0 4px;
+        color: var(--fg-muted);
+      }
+      .sg-search .icon {
+        width: 16px;
+        height: 16px;
+      }
+      .sg-search kbd {
+        margin-left: auto;
+        font: inherit;
+        font-size: 13px;
+      }
+      .sg-sec {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      /* One header look: chevron on the marks' column, muted 13 px words, count in the right column. */
+      .sg-head {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) 24px;
+        align-items: center;
+        gap: 8px;
+        height: 24px;
+        padding: 0 6px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .sg-head .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .sg-head.folded .icon {
+        transform: rotate(-90deg);
+      }
+      .sg-head .n {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .sg-sub {
+        padding: 4px 6px 0 24px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        display: flex;
+        justify-content: space-between;
+      }
+      .sg-row {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        min-height: 36px;
+        padding: 0 6px;
+        border-radius: 8px;
+      }
+      .sg-row.here {
+        background: var(--surface-hover);
+      }
+      .sg-row .t {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sg-row .ws {
+        font-weight: 500;
+      }
+      .sg-row .tail {
+        font-size: 13px;
+        color: var(--fg-muted);
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      .sg-row .tail.ask {
+        color: var(--status-needs);
+      }
+      .sg-row .count {
+        min-width: 18px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        padding: 0 6px;
+        font-size: 12px;
+        line-height: 16px;
+        color: var(--status-needs);
+        text-align: center;
+      }
+      .sg-workers {
+        margin-left: 12px;
+        padding-left: 8px;
+        border-left: 1px solid var(--border-subtle);
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        justify-self: center;
+      }
+      .dot.run {
+        background: var(--status-working);
+      }
+      .dot.ask {
+        background: var(--status-needs-mark);
+      }
+      .dot.wait {
+        border: 1.5px solid var(--status-working);
+      }
+      .dot.idle {
+        background: var(--status-idle);
+      }
+      .dot.merged {
+        background: var(--merged);
+      }
+      .sg-foot {
+        margin-top: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 40px;
+        padding: 0 6px 0 4px;
+        border-top: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+      }
+      .sg-foot .icon {
+        width: 16px;
+        height: 16px;
+      }
+      .sg-note {
+        font-size: 13px;
+        color: var(--fg-muted);
+        padding: 0 6px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        How few groups can the overview sidebar have, and with one header style and one row height?
+        Both boards show tour 02's data: Gram open with four workers, billing-api asking, two idle
+        workspaces, nine solo threads, six PRs and eleven done. Pick one by name.
+      </p>
+
+      <section class="board" data-name="A One style" data-size="288x760">
+        <div class="board-frame">
+          <div class="sg">
+            <div class="sg-pill">
+              <span class="dot ask"></span><span>1 error ·</span
+              ><span class="needs">1 question</span>
+            </div>
+            <div class="sg-search"><i data-icon="search"></i>Search<kbd>Ctrl+K</kbd></div>
+            <div class="sg-sec">
+              <div class="sg-head">
+                <i data-icon="down"></i>Orchestrators<span class="n">4</span>
+              </div>
+              <div class="sg-row here">
+                <span class="dot run"></span><span class="t ws">Gram</span
+                ><span class="tail">3 of 4 working</span>
+              </div>
+              <div class="sg-workers">
+                <div class="sg-row">
+                  <span class="dot run"></span><span class="t">Inline comments in the diff</span
+                  ><span></span>
+                </div>
+                <div class="sg-row">
+                  <span class="dot run"></span><span class="t">Faster cold start</span><span></span>
+                </div>
+                <div class="sg-row">
+                  <span class="dot run"></span><span class="t">Keyboard shortcut sheet</span
+                  ><span></span>
+                </div>
+                <div class="sg-row">
+                  <span class="dot wait"></span><span class="t">Search in Settings</span
+                  ><span class="tail">checks</span>
+                </div>
+              </div>
+              <div class="sg-row">
+                <span class="dot idle"></span><span class="t ws">billing-api</span
+                ><span class="count">1</span>
+              </div>
+              <div class="sg-workers">
+                <div class="sg-row">
+                  <span class="dot ask"></span><span class="t">Idempotent refund webhooks</span
+                  ><span class="tail ask">asks you</span>
+                </div>
+              </div>
+            </div>
+            <div class="sg-head folded"><i data-icon="down"></i>Idle<span class="n">2</span></div>
+            <div class="sg-head folded">
+              <i data-icon="down"></i>Solo threads<span class="n">9</span>
+            </div>
+            <div class="sg-head folded">
+              <i data-icon="down"></i>Pull requests<span class="n">6</span>
+            </div>
+            <div class="sg-head folded"><i data-icon="down"></i>Done<span class="n">11</span></div>
+            <div class="sg-foot"><i data-icon="clock"></i>History</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="B Fewer groups" data-size="288x760">
+        <div class="board-frame">
+          <div class="sg">
+            <div class="sg-pill">
+              <span class="dot ask"></span><span>1 error ·</span
+              ><span class="needs">1 question</span>
+            </div>
+            <div class="sg-search"><i data-icon="search"></i>Search<kbd>Ctrl+K</kbd></div>
+            <div class="sg-sec">
+              <div class="sg-head">
+                <i data-icon="down"></i>Orchestrators<span class="n">2</span>
+              </div>
+              <div class="sg-row here">
+                <span class="dot run"></span><span class="t ws">Gram</span
+                ><span class="tail">3 of 4 working</span>
+              </div>
+              <div class="sg-workers">
+                <div class="sg-row">
+                  <span class="dot run"></span><span class="t">Inline comments in the diff</span
+                  ><span></span>
+                </div>
+                <div class="sg-row">
+                  <span class="dot run"></span><span class="t">Faster cold start</span><span></span>
+                </div>
+                <div class="sg-row">
+                  <span class="dot run"></span><span class="t">Keyboard shortcut sheet</span
+                  ><span></span>
+                </div>
+                <div class="sg-row">
+                  <span class="dot wait"></span><span class="t">Search in Settings</span
+                  ><span class="tail">checks</span>
+                </div>
+              </div>
+              <div class="sg-row">
+                <span class="dot idle"></span><span class="t ws">billing-api</span
+                ><span class="count">1</span>
+              </div>
+              <div class="sg-workers">
+                <div class="sg-row">
+                  <span class="dot ask"></span><span class="t">Idempotent refund webhooks</span
+                  ><span class="tail ask">asks you</span>
+                </div>
+              </div>
+            </div>
+            <div class="sg-head folded">
+              <i data-icon="down"></i>Solo threads<span class="n">9</span>
+            </div>
+            <div class="sg-sec">
+              <div class="sg-head"><i data-icon="down"></i>At rest<span class="n">19</span></div>
+              <div class="sg-sub"><span>Idle workspaces</span><span>2</span></div>
+              <div class="sg-row">
+                <span class="dot idle"></span><span class="t ws">infra</span
+                ><span class="tail">Idle</span>
+              </div>
+              <div class="sg-row">
+                <span class="dot idle"></span><span class="t ws">website</span
+                ><span class="tail">Idle</span>
+              </div>
+              <div class="sg-sub"><span>Pull requests</span><span>6</span></div>
+              <div class="sg-row">
+                <i data-icon="pr"></i><span class="t">Bump vitest to 5</span
+                ><span class="tail">gram#150</span>
+              </div>
+              <div class="sg-note">… five more</div>
+              <div class="sg-sub"><span>Done</span><span>11</span></div>
+              <div class="sg-row">
+                <span class="dot merged"></span><span class="t">Retry failed uploads</span
+                ><span class="tail">10m</span>
+              </div>
+              <div class="sg-note">… 10 more in History</div>
+            </div>
+            <div class="sg-foot"><i data-icon="clock"></i>History</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

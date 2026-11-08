@@ -313,7 +313,7 @@ function HarnessNotes({
               </section>
             ))}
             <section data-testid="harness-note-dreams">
-              <h4 className="font-medium">Dream</h4>
+              <h4 className="font-medium">Memory updates</h4>
               <p className="pt-1 text-muted-foreground">{DREAM_HARNESS_NOTE}</p>
             </section>
           </Popover.Popup>

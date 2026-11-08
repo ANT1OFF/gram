@@ -10,9 +10,8 @@ import { PulseOnce, Swap } from "@/motion";
 import { aboveComposer } from "./above-composer";
 import { matchesModel, modelGroups, type ModelGroup } from "./models";
 import type { PickerOption } from "./picker";
-import { labelSize, usePickConfirm, ValueWords } from "./picker-trigger";
+import { labelSize, usePickConfirm, ValueWords, type LabelSize } from "./picker-trigger";
 import { compactModelName } from "./options";
-import type { LabelSize } from "./toolbar-layout";
 import { GHOST_TRIGGER } from "./styles";
 
 type Option = PickerOption<string>;
@@ -110,7 +109,7 @@ export function ModelCombobox({
         compact={field ? undefined : (selected?.compact ?? compactModelName(shown))}
         labelled={labelled}
       />
-      {/* Short of room it goes, leaving the space to the name (`useToolbarLayout`). */}
+      {/* Only beside the name in full, or in a form's field. */}
       {(whole || field) && (
         <ChevronDownIcon aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
       )}

@@ -390,7 +390,7 @@ const capProblem = (path: string, bytes: number): string | undefined => {
   return (
     `${path} would be ${kb(bytes)} (${bytes} bytes); the cap for ${what} is ${kb(cap)}. ` +
     "Consolidate it: fold old entries together or move detail to another file. " +
-    "If memory as a whole has outgrown its caps, ask the user to run a dream."
+    "If memory as a whole has outgrown its caps, ask the user to start a memory update."
   );
 };
 
@@ -1099,7 +1099,7 @@ const make = (root: string): OrchestrationMemoryShape => {
         if (count >= MEMORY_MAX_FILES) {
           return yield* refuse(
             `Memory already holds ${count} files; the cap is ${MEMORY_MAX_FILES}. ` +
-              "Consolidate: fold a file into another and delete it, or ask the user to run a dream.",
+              "Consolidate: fold a file into another and delete it, or ask the user to start a memory update.",
           );
         }
       }

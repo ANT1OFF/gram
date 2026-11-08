@@ -16,14 +16,14 @@ export const SOURCE_LABEL: Readonly<Record<RuntimeSource, string>> = {
   bundled: "bundled",
 };
 
-/** How a row's version fares, at a glance: nothing for supported, an icon for the rest. */
+/** How a row's version fares, at a glance: an icon for warnings or refusals. */
 export type VerdictTone = "ok" | "warning" | "error" | "unknown";
 
 export function verdictTone(runtime: AgentRuntime): VerdictTone {
   if (runtime.resolved === undefined) return "ok";
   switch (runtime.verdict) {
     case "supported":
-      return "ok";
+      return runtime.reason === undefined ? "ok" : "warning";
     case "graceful":
       return "warning";
     case "unsupported":
