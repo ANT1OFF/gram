@@ -1372,7 +1372,7 @@ describe("CodexHost confined sessions", () => {
           openSession({ dreamFilesOnly: true, confineWrites: true }).pipe(Effect.provide(h.layer)),
         );
         expect(error).toMatchObject({ _tag: "AgentUnavailable", reason: "startup-failed" });
-        expect(error.message).toContain("Codex Dream is unavailable");
+        expect(error.message).toContain("Codex memory updates are unavailable");
         expect(error.message).toContain("Choose Claude Code.");
         expect(h.calls).toEqual([]);
       }),
@@ -1386,7 +1386,7 @@ describe("CodexHost confined sessions", () => {
           Effect.provide(h.layer),
         ),
       );
-      expect(error.message).toContain("bounded Dream file bridge");
+      expect(error.message).toContain("bounded memory update file bridge");
       expect(h.acquired).toEqual([]);
     }),
   );
@@ -1434,7 +1434,7 @@ describe("CodexHost confined sessions", () => {
               mcp: { url: "http://127.0.0.1:4317/mcp", headers: {} },
             }).pipe(Effect.provide(h.layer)),
           );
-          expect(error.message).toContain("Codex Dream is pinned");
+          expect(error.message).toContain("Codex memory updates are pinned");
           expect(h.calls).toEqual([]);
           yield* openSession().pipe(Effect.provide(h.layer));
           expect(h.calls.some(([method]) => method === "thread/start")).toBe(true);

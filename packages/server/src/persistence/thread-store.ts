@@ -2766,7 +2766,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 SELECT thread_id FROM dreams WHERE workspace_id = ${id})`;
               if (dreaming !== undefined) {
                 return yield* new InvalidState({
-                  message: `A dream thread of ${state.workspace.name} is still open. Try removing it again.`,
+                  message: `A memory update thread of ${state.workspace.name} is still open. Try removing it again.`,
                   threadId: dreaming.id as ThreadId,
                 });
               }
@@ -2907,7 +2907,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                       new NotFound({
                         entity: "dream",
                         id,
-                        message: "That dream no longer exists.",
+                        message: "That memory update no longer exists.",
                       }),
                     )
                   : Effect.succeed(dream),

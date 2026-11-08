@@ -10,7 +10,10 @@ export const agentSupportMock = (): AgentSupportApi => ({
       session: { state: "supported", evidence: "Synthetic UI session fixture" },
       orchestrator: { state: "supported", evidence: "Synthetic UI orchestrator fixture" },
       worker: { state: "supported", evidence: "Synthetic UI worker fixture" },
-      dream: { state: "unknown", reason: "This fixture has no qualified Dream observation." },
+      dream: {
+        state: "unknown",
+        reason: "This fixture has no qualified memory update observation.",
+      },
       browser: {
         state: "unknown",
         reason: "Preview browser support has not been checked in this fixture.",

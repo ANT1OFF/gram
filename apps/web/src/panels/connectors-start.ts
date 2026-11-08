@@ -47,7 +47,7 @@ export const startHold = (facts: StartFacts): StartHold | undefined => {
     return { reason: "Unarchive the thread to see its connectors live.", button: false };
   }
   if (facts.dream) {
-    return { reason: "A dream's session runs only for its pass.", button: false };
+    return { reason: "A memory update's session is open only while it runs.", button: false };
   }
   // Opening would send it: that is the user's message to send, not this tab's.
   if (facts.queued) {

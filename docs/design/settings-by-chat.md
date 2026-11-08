@@ -39,7 +39,7 @@ Input: `{ workspaceId?: string, projectId?: string }`. The result:
   and update opt-ins). For the rest, such as folders, commands, connectors and gateways, only
   the key's name is returned, without a value.
 - `workspace` (when the caller has one): its name and id, then the same rows for the charter:
-  max concurrent workers, the pause threshold, the merge review policy, the automatic Dream
+  max concurrent workers, the pause threshold, the merge review policy, the automatic memory update
   threshold, the orchestrator's model and effort, and `workerModels`, which lists
   `agent:model`, `useFor`, `default` and availability (`unavailable`, the same reason
   `list_workers` gives).
@@ -182,7 +182,7 @@ as a diff table, open from the start.
 - **The paths are the Settings UI's own.**
   - App keys go through the writer behind `settings.set` (`settings/writer.ts`, shared by the
     RPC and the tool). Its post-commit effects, the same as the UI's, are the log level, the
-    update prefs mirror, Dreams and the orchestration lifecycle. It then publishes
+    update prefs mirror, automatic memory updates and the orchestration lifecycle. It then publishes
     `settings.changed`, and every window pulls the server's settings.
   - Charter keys go through `Orchestration.changeCharter`. That is `setCharter`'s own write
     path, with its checks under the same lock, its roster note to the orchestrator and its
@@ -377,7 +377,7 @@ exception: it is tier 1, because it stays within the autonomy the user set.
     changes the orchestrator that directs it, and so widens its own authority.
   - A worker that needs a change says so with `report` or `message_orchestrator`. The
     orchestrator proposes it, in the thread the user watches.
-- **Dreams** get neither tool.
+- **Memory updates** get neither tool.
 
 ## Audit
 

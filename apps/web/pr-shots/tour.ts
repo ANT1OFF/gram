@@ -308,7 +308,7 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "quiet",
-    title: "Quiet: the workspaces at rest, workers running or waiting, with nothing to answer here",
+    title: "Focus: the workspaces at rest, workers running or waiting, with nothing to answer here",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await page.getByTestId("titlebar-overflow").click();
@@ -357,7 +357,7 @@ const scenes: readonly Shot[] = [
   {
     name: "dreams",
     title:
-      "Memory → Draft memory update: the Dreams action, when the update is saved, and seeded running, completed and failed runs",
+      "Memory → Draft memory update: the memory update action, when the update is saved, and seeded running, completed and failed runs",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await openMemory(page);

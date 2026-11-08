@@ -461,7 +461,7 @@ export function PaletteBody({
           {
             id: "go:memory",
             label: "Memory",
-            keywords: "workspace memory dreams notes remember",
+            keywords: "workspace memory updates dreams notes remember",
             run: go(
               "go:memory",
               () =>
@@ -474,9 +474,9 @@ export function PaletteBody({
         ]),
     {
       id: "go:quiet",
-      label: "Quiet",
+      label: "Focus",
       ...shortcut("view.quiet"),
-      keywords: "quiet calm hide activity",
+      keywords: "focus quiet calm hide activity",
       run: go("go:quiet", () => useViewStore.getState().setQuiet(true)),
     },
     {
@@ -813,8 +813,9 @@ export function PaletteBody({
     },
     {
       id: "action:focus",
-      label: "Focus mode",
+      label: "Hide side panels",
       ...shortcut("focus.toggle"),
+      keywords: "focus mode sidebar panel zen",
       run: () => useLayoutStore.getState().toggleFocusMode(),
     },
     {

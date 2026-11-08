@@ -276,7 +276,7 @@ export function QuietView({ workspaceId }: ViewProps) {
                 {quietSummary(strip)}
               </p>
               <p data-testid="quiet-about" className="mt-2 text-meta text-muted-foreground">
-                Quiet shows only what needs you, one card at a time. Esc leaves it.
+                Focus shows only what needs you, one card at a time. Esc leaves it.
               </p>
             </div>
           ) : (

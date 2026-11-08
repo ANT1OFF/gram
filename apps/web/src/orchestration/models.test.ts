@@ -826,8 +826,8 @@ describe("workspace tree", () => {
     expect(kept.happens).toEqual([
       "The orchestrator stops and its thread closes.",
       "Its 3 workers stay open as ordinary threads, answering to no one.",
-      "Its dream pass stops and closes, since a dream can't be reviewed without its workspace.",
-      "Its charter, stages, groups, worker reports, dreams and history are deleted. This can't be undone.",
+      "Its memory update stops and closes, since a memory update can't be reviewed without its workspace.",
+      "Its charter, stages, groups, worker reports, memory updates and history are deleted. This can't be undone.",
     ]);
     expect(kept.kept[0]).toBe("The workers' worktrees and branches stay on disk, commits and all.");
     expect(kept.kept.join(" ")).toContain("memory, open questions included, stays");
@@ -837,7 +837,7 @@ describe("workspace tree", () => {
     const vacant = workspaceRemoval(vacantWorkspace, [a]);
     expect(workersText(vacant)).toBeUndefined();
     expect(removalLines(vacant, false).happens).toEqual([
-      "Its charter, stages, groups, worker reports, dreams and history are deleted. This can't be undone.",
+      "Its charter, stages, groups, worker reports, memory updates and history are deleted. This can't be undone.",
     ]);
     const one = workspaceRemoval(workspace, [orchestrator, a]);
     expect(removalLines(one, true).happens[1]).toBe("Its worker stops and closes.");

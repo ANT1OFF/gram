@@ -2426,7 +2426,7 @@ export const joinRefusal = (input: {
     return "An orchestrator can't be added to a workspace or moved between them: it is its workspace's for as long as it lives. Close it and open one where it's wanted.";
   }
   if (thread.role === "dream")
-    return "A memory dream belongs to its workspace and can't join another.";
+    return "A memory update belongs to its workspace and can't join another.";
   if (thread.spawnedBy?.threadId === input.holder && thread.workspaceId === input.workspaceId) {
     return "It is already a worker of this workspace.";
   }

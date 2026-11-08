@@ -3734,7 +3734,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "titlebar-layout",
-    title: 'The title bar\'s "…" open: Quiet, focus mode and the six layout presets',
+    title: 'The title bar\'s "…" open: Focus, Hide side panels and the six layout presets',
     open: async (page) => {
       await openThread(page);
       await page.getByTestId("titlebar-overflow").click();
@@ -3988,7 +3988,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "views-layout-picker",
-    title: 'The title bar\'s "…" open: Quiet, focus mode and the six layout presets',
+    title: 'The title bar\'s "…" open: Focus, Hide side panels and the six layout presets',
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateAsks());
       await page.getByTestId("titlebar-overflow").click();
