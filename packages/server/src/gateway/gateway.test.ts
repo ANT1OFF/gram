@@ -40,6 +40,7 @@ import {
   heuristicTitle,
   isCommand,
   openingOf,
+  OPENING_WINDOW,
   runTitleWatcher,
   titlePhase,
   type TitleMoment,
@@ -742,6 +743,78 @@ describe("title watcher", () => {
       expect(hasDefaultTitle(thread({ title: long.slice(0, 60) }), long)).toBe(true);
       expect(hasDefaultTitle(thread({ title: heuristicTitle(long) }), long)).toBe(true);
       expect(heuristicTitle(long)).toBe("Add retry coverage for the queue consumer");
+    }),
+  );
+});
+
+describe("title watcher on a long thread", () => {
+  const THREAD = "thread-long" as ThreadId;
+  const prompt =
+    "please add a gateway settings page where a profile's key and models can be managed";
+
+  /** Runs the watcher over `phases` and reports each `messages` read's limit. */
+  const watch = (
+    history: ReadonlyArray<GramUIMessage>,
+    turns: number,
+    phases: ReadonlyArray<TitleMoment["phase"]>,
+  ) =>
+    Effect.gen(function* () {
+      const reads: Array<number> = [];
+      const asked: Array<{ readonly prompt: string; readonly reply?: string }> = [];
+      const moments = yield* Queue.unbounded<TitleMoment, Cause.Done>();
+      yield* Queue.offerAll(
+        moments,
+        phases.map((phase) => ({ threadId: THREAD, phase })),
+      );
+      yield* Queue.end(moments);
+      yield* runTitleWatcher({
+        helper: {
+          title: (_threadId, input) => Effect.sync(() => (asked.push(input), Option.none())),
+        },
+        moments: Stream.fromQueue(moments),
+        getThread: () =>
+          Effect.succeed({ id: THREAD, title: heuristicTitle(prompt), userNamed: false } as Thread),
+        turnCount: () => Effect.succeed(turns),
+        messages: (_threadId, limit) =>
+          Effect.sync(() => (reads.push(limit), history.slice(0, limit))),
+        commands: () => Effect.succeed(COMMANDS),
+        updateThread: () => Effect.void,
+      });
+      return { reads, asked };
+    });
+
+  const long = Array.from({ length: 400 }, (_, i) =>
+    text(`m${i}`, i % 2 === 0 ? "user" : "assistant", i === 0 ? prompt : `turn ${i}`, `t${i >> 1}`),
+  );
+
+  it.effect("reads only its opening, and only once, once it is past its first turn", () =>
+    Effect.gen(function* () {
+      const { reads, asked } = yield* watch(long, 200, [
+        "started",
+        "started",
+        "settled",
+        "started",
+        "settled",
+      ]);
+      expect(reads).toEqual([OPENING_WINDOW]);
+      expect(asked).toEqual([]);
+    }),
+  );
+
+  it.effect("reads past the window only for an opening that lies beyond it", () =>
+    Effect.gen(function* () {
+      // Commands fill the window; the prompt and its reply come after.
+      const commands = Array.from({ length: OPENING_WINDOW }, (_, i) =>
+        text(`c${i}`, "user", "/model", `c${i}`),
+      );
+      const history = [
+        ...commands,
+        text("p", "user", prompt, "p"),
+        text("r", "assistant", "Sure."),
+      ];
+      const { reads, asked } = yield* watch(history, OPENING_WINDOW + 1, ["settled"]);
+      expect(reads).toEqual([OPENING_WINDOW, Number.MAX_SAFE_INTEGER]);
+      expect(asked).toEqual([{ prompt, reply: "Sure." }]);
     }),
   );
 });

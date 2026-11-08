@@ -238,6 +238,8 @@ describe.skipIf(!PERF)("synthetic large SQLite workload", () => {
                 );
                 yield* measure("orchestratorUserMessages", store.listUserMessages(threadId(0)));
                 yield* measure("orchestratorLastTen", store.lastMessages(threadId(0), 10));
+                // What the title watcher reads of a thread on each of its turn's status moments.
+                yield* measure("titleOpening", store.firstMessages(threadId(0), 64));
                 for (const stream of streams) yield* Fiber.join(stream);
                 yield* waitReal(
                   "all synthetic turns idle",

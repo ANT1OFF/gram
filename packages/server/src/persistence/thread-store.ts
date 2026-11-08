@@ -442,6 +442,8 @@ export interface ThreadStoreShape {
     threadId: ThreadId,
     types: ReadonlyArray<GramUIMessage["parts"][number]["type"]>,
   ): Effect.Effect<ReadonlyArray<GramUIMessage>>;
+  /** The thread's first `count` messages, in order, reading none after them. */
+  firstMessages(threadId: ThreadId, count: number): Effect.Effect<ReadonlyArray<GramUIMessage>>;
   /** The thread's last `count` messages, in order, reading none before them. */
   lastMessages(threadId: ThreadId, count: number): Effect.Effect<ReadonlyArray<GramUIMessage>>;
   /** How many messages the thread has, reading none of them. */
@@ -2129,6 +2131,14 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             // The needle can also sit inside a tool's input or output; the parts decide.
             Effect.map((messages) =>
               messages.filter((message) => message.parts.some((part) => types.includes(part.type))),
+            ),
+          ),
+        firstMessages: (threadId, count) =>
+          run(
+            sql<{ id: string; message: string }>`SELECT id, message FROM messages
+              WHERE thread_id = ${threadId} ORDER BY seq
+              LIMIT ${Math.max(0, Math.floor(Math.min(count, Number.MAX_SAFE_INTEGER)))}`.pipe(
+              Effect.flatMap((rows) => messageRows("messages", threadId, rows)),
             ),
           ),
         lastMessages: (threadId, count) =>
