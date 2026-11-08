@@ -63,33 +63,54 @@ export async function copyMarkdown(text: string, options: { toast?: boolean } = 
   }
 }
 
+/** Under the message, in its own row: the default, where a transcript is read turn by turn. */
+const IN_FLOW =
+  "-mt-1 flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 focus-within:opacity-100 has-data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100";
+
+/**
+ * On a raised strip over the message, taking no room of its own: the orchestrator's chat, where a
+ * reserved row under every message would set its replies further from what follows than an update
+ * is from them, and the rhythm would be uneven. Only where `float-actions` holds (a pointer that
+ * hovers, a message at least 40 rem wide, its `@container/message`); on touch or in a narrow
+ * column the strip is the in-flow row, always shown on touch. The message is positioned.
+ */
+const FLOATING =
+  "float-actions:absolute float-actions:z-10 float-actions:mt-0 float-actions:flex-nowrap float-actions:whitespace-nowrap float-actions:rounded-(--radius-sm) float-actions:border float-actions:border-edge float-actions:bg-popover float-actions:p-0.5 float-actions:shadow-overlay";
+
+/** A reply's strip sits at its end, over the last line's end; a user's beside its bubble's top. */
+const FLOAT_REPLY = "float-actions:right-0 float-actions:bottom-0";
+const FLOAT_USER = "float-actions:top-0 float-actions:right-full float-actions:mr-2";
+
 /**
  * Copy, Add to Waiting on you, rewind / edit and, on replies, fork actions under a message, and
  * when it arrived, shown on hover or keyboard focus. `turnEnd`: the reply that ends a finished
- * turn, which can copy the whole turn.
+ * turn, which can copy the whole turn. `floating`: over the message where there is room and a
+ * hovering pointer (`FLOATING`), the reply's at its end, the user's beside its bubble.
  */
 export function MessageActions({
   threadId,
   message,
   turnEnd = false,
+  floating = false,
 }: {
   threadId: ThreadId;
   message: GramUIMessage;
   turnEnd?: boolean;
+  floating?: boolean;
 }) {
   // Another thread's message sits on the agents' side, so its actions do too.
   const isUser =
     message.role === "user" && !message.parts.some((part) => part.type === "data-thread-origin");
   const readOnly = useReadOnlyTranscript();
+  const place = cn(
+    IN_FLOW,
+    isUser ? "justify-end" : "justify-start",
+    floating && FLOATING,
+    floating && (isUser ? FLOAT_USER : FLOAT_REPLY),
+  );
   if (readOnly) {
     return (
-      <div
-        data-testid="message-actions"
-        className={cn(
-          "-mt-1 flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100",
-          isUser ? "justify-end" : "justify-start",
-        )}
-      >
+      <div data-testid="message-actions" data-floating={floating || undefined} className={place}>
         {isUser && <SentAt message={message} />}
         <CopyAction
           testId="message-copy"
@@ -101,13 +122,7 @@ export function MessageActions({
     );
   }
   return (
-    <div
-      data-testid="message-actions"
-      className={cn(
-        "-mt-1 flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 focus-within:opacity-100 has-data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100",
-        isUser ? "justify-end" : "justify-start",
-      )}
-    >
+    <div data-testid="message-actions" data-floating={floating || undefined} className={place}>
       {/* On the side towards the conversation, so the buttons keep their place at the edge. */}
       {isUser && <SentAt message={message} />}
       <CopyAction

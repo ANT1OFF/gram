@@ -14,6 +14,10 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { mockReviewNotice } from "@/api/mock-babysit";
 import { formatMessageTime, notificationTime } from "@/lib/time";
 import { renderWithRouter as renderWithApi } from "@/panels/test-utils";
+import {
+  OrchestratorStreamProvider,
+  type OrchestratorStream,
+} from "@/orchestration/stream-context";
 import type * as Feeds from "@/stores/feeds";
 import { createMessageFold } from "@/stores/message-fold";
 import { useLayoutStore } from "@/stores/layout";
@@ -1419,5 +1423,69 @@ describe("MessageBlock for another thread's message", () => {
     expect(screen.queryByTestId("message-origin")).toBeNull();
     expect(screen.queryByTestId("message-from-thread")).toBeNull();
     expect(screen.getByTestId("message-actions").className).toContain("justify-end");
+  });
+});
+
+describe("MessageBlock actions in the orchestrator's chat", () => {
+  const stream: OrchestratorStream = {
+    plan: { messages: [], extras: new Map(), digests: [], foldedInto: new Map() },
+    cards: new Map(),
+    workers: [],
+  };
+  const inChat = (message: GramUIMessage) =>
+    renderWithApi(
+      <OrchestratorStreamProvider stream={stream}>
+        <MessageBlock
+          threadId={T}
+          message={message}
+          streamingIds={new Set()}
+          subagents={new Map()}
+          subagentUsage={new Map()}
+        />
+      </OrchestratorStreamProvider>,
+      {} as never,
+    );
+  const said: GramUIMessage = {
+    id: "u-float",
+    role: "user",
+    metadata: { createdAt: 1_700_000_000_000 },
+    parts: [{ type: "text", text: "Add the shortcut sheet too." }],
+  };
+  const answered = {
+    ...assistantWith({ type: "text", text: "Started it." }),
+    metadata: { createdAt: 1_700_000_060_000 },
+  } as GramUIMessage;
+
+  it("float over a reply and beside a bubble there, and keep their row elsewhere", () => {
+    inChat(said);
+    const user = screen.getByTestId("message-actions");
+    expect(user.dataset["floating"]).toBe("true");
+    // Where there is no room or no hovering pointer, the same strip is the in-flow row.
+    expect(user.className).toContain("justify-end");
+    expect(user.className).toContain("float-actions:right-full");
+    cleanup();
+
+    inChat(answered);
+    const strip = screen.getByTestId("message-actions");
+    expect(strip.dataset["floating"]).toBe("true");
+    expect(strip.className).toContain("float-actions:bottom-0");
+    cleanup();
+
+    render(answered, undefined);
+    expect(screen.getByTestId("message-actions").dataset["floating"]).toBeUndefined();
+  });
+
+  it("keep a notice's actions in their row under its card", () => {
+    const notice = mockReviewNotice(412);
+    inChat({
+      id: "n-float",
+      role: "user",
+      metadata: { createdAt: 1_700_000_000_000 },
+      parts: [
+        { type: "text", text: serializeReviewNotice(notice) },
+        { type: "data-review-notice", data: notice },
+      ],
+    });
+    expect(screen.getByTestId("message-actions").dataset["floating"]).toBeUndefined();
   });
 });

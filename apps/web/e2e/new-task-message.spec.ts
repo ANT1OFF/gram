@@ -21,7 +21,7 @@ const home = async (page: Page) => {
   const made = await page.evaluate(() => window.gramMock!.simulateOneThread());
   await pressFirstWorkspaceKey(page);
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  await expect(page.getByTestId("status-header")).toBeVisible();
+  await expect(page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`)).toBeVisible();
   return made;
 };
 

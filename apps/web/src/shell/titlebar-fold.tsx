@@ -44,7 +44,7 @@ import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { GRID_PRESETS, PRESET_LABELS, useLayoutStore, type BoardLayout } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { pauseClock } from "@/thread/orchestration-model";
-import { useThreadMenu } from "@/thread/thread-menu";
+import { AllActivityItem, useThreadMenu } from "@/thread/thread-menu";
 import { useViewStore } from "@/views/view-store";
 import { useViewWorkspace } from "@/views/view-workspace";
 
@@ -401,7 +401,8 @@ function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: 
 }
 
 /**
- * The window's own, in a submenu: the carried thread's Contents, Quiet, focus mode, History, then
+ * The window's own, in a submenu: the carried thread's Contents and, on an orchestrator's
+ * chat, Show all activity, then Quiet, focus mode, History, then
  * Board's layout when folded and the grid's layout, each picked with a check.
  */
 function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
@@ -420,6 +421,7 @@ function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
       icon={<PanelsTopLeft aria-hidden />}
     >
       {threadId !== undefined && <ContentsSubmenu threadId={threadId} />}
+      {threadId !== undefined && <AllActivityItem threadId={threadId} className={MENU_ITEM} />}
       <Menu.Item
         data-testid="folded-quiet"
         aria-description={EXPLAIN.quiet}

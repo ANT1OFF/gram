@@ -103,9 +103,12 @@ export const TASKS: readonly Task[] = [
     start: "Finished solo thread, composer available",
     goal: "Select Extra high effort",
     run: async (p, r) => {
-      await r.click(p.getByRole("combobox", { name: /^Effort:/ }));
+      await r.click(p.getByTestId("composer-choices"));
+      await r.click(p.getByTestId("choices-effort"));
       await r.click(p.getByRole("option", { name: "Extra high effort" }));
-      await expect(p.getByRole("combobox", { name: "Effort: Extra high" })).toBeVisible();
+      await expect(p.getByTestId("composer-choices")).toHaveAccessibleName(
+        / · Effort: Extra high \(.+\) · /,
+      );
     },
   },
   {

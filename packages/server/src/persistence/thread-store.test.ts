@@ -395,7 +395,9 @@ describe("ThreadStore", () => {
         yield* store.truncateMessagesFrom(id, "a4");
         expect(yield* handoffs()).toEqual([]);
 
-        // The last messages in order, how many there are, and whether any has a role, read alone.
+        // The first and last messages in order, how many there are, and whether any has a role.
+        expect((yield* store.firstMessages(id, 2)).map((m) => m.id)).toEqual(["u1", "a1"]);
+        expect(yield* store.firstMessages(id, Number.MAX_SAFE_INTEGER)).toHaveLength(6);
         expect((yield* store.lastMessages(id, 2)).map((m) => m.id)).toEqual(["u3", "a3"]);
         expect((yield* store.lastMessages(id, 50)).map((m) => m.id)).toEqual([
           "u1",

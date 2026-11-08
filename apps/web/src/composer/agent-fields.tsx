@@ -1,5 +1,6 @@
 import {
   AgentKind,
+  type AgentModel,
   type GatewayProfile,
   type ModelRef,
   type ProfileId,
@@ -10,11 +11,10 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { KeyRound } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
-import { Swap } from "@/motion";
 import {
   Select,
   SelectContent,
@@ -23,16 +23,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { aboveComposer } from "./above-composer";
+import { effortSection, speedSection } from "./choice-sections";
+import { ComposerChoices, type ChoiceSection } from "./choices";
 import { SpeedField } from "./speed-field";
-import { ModelSelect, type ModelPick } from "./model-select";
-import { PickerTrigger, usePickConfirm } from "./picker-trigger";
-import { EffortGauge, SpeedGlyph } from "./picker-glyphs";
+import { ModelSelect, useModelSection, type ModelPick } from "./model-select";
+import type { PickerOption } from "./picker";
+import { PickerTrigger } from "./picker-trigger";
 import { defaultModelId, effortOptions, useModels } from "./models";
 import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION } from "./options";
 import { GHOST_TRIGGER } from "./styles";
 import type { LabelSize } from "./toolbar-layout";
-import { UnavailableSlot } from "./unavailable-slot";
 
 /** What a new thread runs on; `profileId` only when the user explicitly selects a gateway. */
 export interface AgentChoice {
@@ -70,27 +70,6 @@ export function gatewayReady(choice: AgentChoice, profiles: readonly GatewayProf
   return profiles.some((profile) => profile.id === choice.profileId && profile.keyRef !== "");
 }
 
-/**
- * One of the prompt box's measured controls (`useToolbarLayout`), with the composer's separator
- * before it.
- */
-function Block({
-  id,
-  separator = false,
-  children,
-}: {
-  id: string;
-  separator?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div data-toolbar-block={id} className="flex shrink-0 items-center gap-1">
-      {separator && <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-border" />}
-      {children}
-    </div>
-  );
-}
-
 /** Stands in for the model picker while a gateway agent has no key to run with. */
 function AddKeyNote({ agent }: { agent: AgentKind }) {
   return (
@@ -104,6 +83,123 @@ function AddKeyNote({ agent }: { agent: AgentKind }) {
         Add your gateway key
       </Link>
     </p>
+  );
+}
+
+/** `value` on `model`, keeping its effort and Fast only where the new model offers them. */
+const onModel = (
+  value: AgentChoice,
+  models: readonly AgentModel[] | undefined,
+  model: string,
+): AgentChoice => {
+  const keep =
+    value.variant !== undefined &&
+    (models === undefined || effortOptions(models, model).some((o) => o.value === value.variant));
+  return withVariant(
+    {
+      ...value,
+      model,
+      ...(value.speed === "fast" && !modelSpeeds(models, model).includes("fast")
+        ? { speed: "standard" as const }
+        : {}),
+    },
+    keep ? value.variant : undefined,
+  );
+};
+
+/**
+ * The prompt box's choices: one chip and its popover, as in a thread's composer (`ComposerChoices`),
+ * with every agent's models in its Model section, picking another agent's switching to it. The agent
+ * picker before it carries the agent's mark.
+ */
+function PromptBoxChoices({
+  value,
+  onChange,
+  agents,
+  subscriptionOnly,
+  needsKey,
+  models,
+  shownModel,
+  efforts,
+  mode,
+  size,
+  onPicked,
+}: {
+  value: AgentChoice;
+  onChange: (next: AgentChoice) => void;
+  agents: readonly AgentKind[];
+  subscriptionOnly: boolean;
+  needsKey: boolean;
+  models: readonly AgentModel[] | undefined;
+  shownModel: string;
+  efforts: readonly PickerOption<string>[];
+  mode: ChoiceSection | undefined;
+  size: LabelSize;
+  onPicked: ((words: string) => void) | undefined;
+}) {
+  const model = useModelSection({
+    agent: value.agent,
+    profileId: value.profileId,
+    value: shownModel,
+    onChange: (next) => onChange(onModel(value, models, next)),
+    ...(subscriptionOnly
+      ? {}
+      : {
+          agents,
+          onPick: (pick: ModelPick) =>
+            onChange({
+              agent: pick.agent,
+              model: pick.model,
+              speed: "standard",
+              ...(pick.profileId === undefined ? {} : { profileId: pick.profileId }),
+            }),
+        }),
+  });
+  // With no key there is no model to run: the note beside says so, and only the mode is left.
+  // While the models load or fail, their status stands in the model's place, as it says why.
+  const sections: ChoiceSection[] = needsKey
+    ? mode === undefined
+      ? []
+      : [mode]
+    : [
+        ...(model.section === undefined ? [] : [model.section]),
+        effortSection({
+          efforts,
+          value: value.variant,
+          onChange: (next) =>
+            onChange(
+              withVariant(value, next === DEFAULT_EFFORT ? undefined : (next as ReasoningVariant)),
+            ),
+        }),
+        ...(mode === undefined ? [] : [mode]),
+        speedSection({
+          agent: value.agent,
+          models,
+          model: shownModel,
+          value: value.speed,
+          onChange: (speed) => onChange({ ...value, speed }),
+        }),
+      ];
+  return (
+    <>
+      {/* Measured as lead space, so the chip's words fit beside it rather than run under Send. */}
+      {!needsKey && model.status !== undefined && (
+        <div data-toolbar-lead className="flex shrink-0 items-center">
+          {model.status}
+        </div>
+      )}
+      {sections.length > 0 && (
+        <div data-toolbar-block="choices" className="flex min-w-0 shrink-0 items-center">
+          <ComposerChoices
+            sections={sections}
+            size={size}
+            onOpen={model.onOpen}
+            onClose={model.onClose}
+            onPicked={onPicked}
+          />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -121,27 +217,27 @@ export function AgentFields({
   subscriptionOnly = false,
   size,
   mode,
+  onPicked,
 }: {
   value: AgentChoice;
   onChange: (next: AgentChoice) => void;
   /** Only these agent kinds are offered, for a role not every agent may take; absent offers all. */
   allowed?: readonly AgentKind[] | undefined;
   /**
-   * Styled as composer toolbar controls for the `/new` hero's prompt box: speed and effort as their
-   * glyphs alone, named with their values, as in a thread's composer.
+   * The `/new` hero's prompt box: after the agent picker, model, effort, mode and speed are one
+   * choices chip, as in a thread's composer.
    */
   ghost?: boolean;
   /** Drafts resolve an empty choice; an unset saved setting may display it without saving. */
   initializeDefault?: boolean;
   /** For explicit CLI-only transitions; never offers gateway/account migration. */
   subscriptionOnly?: boolean;
-  /**
-   * In the prompt box, how each of model, effort and speed says its value as the row's room allows
-   * (`useToolbarLayout`): each is a measured block, in the composer's order.
-   */
+  /** In the prompt box, how the choices chip says its values as the row's room allows. */
   size?: ((id: string) => LabelSize) | undefined;
-  /** The prompt box's mode picker, in its place between effort and speed. */
-  mode?: ReactNode;
+  /** The prompt box's mode, its section between effort and speed. */
+  mode?: ChoiceSection | undefined;
+  /** In the prompt box, told each pick in words, to confirm it. */
+  onPicked?: ((words: string) => void) | undefined;
 }) {
   const trigger = ghost ? { size: "sm" as const, className: GHOST_TRIGGER } : {};
   const api = useApi();
@@ -165,12 +261,7 @@ export function AgentFields({
   const listedDefault = defaultModelId(models);
   const shownModel = value.model || listedDefault || "";
   const efforts = models && !needsKey ? effortOptions(models, shownModel) : [];
-  // The prompt box keeps the composer's slots: speed is there, as its glyph, even on the CLI's own.
-  const sized = (id: string): LabelSize => size?.(id) ?? (ghost ? "full" : "full");
   const effortItems = [DEFAULT_EFFORT_OPTION, ...efforts];
-  const effortShown = effortItems.find((o) => o.value === (value.variant ?? DEFAULT_EFFORT));
-  const effortConfirm = usePickConfirm(value.variant ?? DEFAULT_EFFORT);
-  const effortTrigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (initializeDefault && value.model === "" && listedDefault && !needsKey) {
       onChange({ ...value, model: listedDefault });
@@ -179,49 +270,6 @@ export function AgentFields({
 
   const agentItems = agents.map((agent) => ({ value: agent, label: agentLabel(agent) }));
   const profileItems = profiles.map((p) => ({ value: p.id, label: p.name }));
-
-  const modelSelect = (
-    <ModelSelect
-      agent={value.agent}
-      {...(value.profileId === undefined ? {} : { profileId: value.profileId })}
-      value={shownModel}
-      ghost={ghost}
-      // Its agent's mark is the picker beside it, so the name never gives way to nothing.
-      labelled={sized("model") === "icon" ? "short" : sized("model")}
-      // The prompt box lists every agent's models; picking another's switches to it, as the
-      // agent and gateway pickers do.
-      {...(ghost && !subscriptionOnly
-        ? {
-            agents,
-            onPick: (pick: ModelPick) =>
-              onChange({
-                agent: pick.agent,
-                model: pick.model,
-                speed: "standard",
-                ...(pick.profileId === undefined ? {} : { profileId: pick.profileId }),
-              }),
-          }
-        : {})}
-      onChange={(model) => {
-        const keep =
-          value.variant !== undefined &&
-          (models === undefined ||
-            effortOptions(models, model).some((o) => o.value === value.variant));
-        onChange(
-          withVariant(
-            {
-              ...value,
-              model,
-              ...(value.speed === "fast" && !modelSpeeds(models, model).includes("fast")
-                ? { speed: "standard" as const }
-                : {}),
-            },
-            keep ? value.variant : undefined,
-          ),
-        );
-      }}
-    />
-  );
 
   return (
     <>
@@ -307,86 +355,30 @@ export function AgentFields({
         </Select>
       )}
       {needsKey && <AddKeyNote agent={value.agent} />}
-      {!needsKey && (ghost ? <Block id="model">{modelSelect}</Block> : modelSelect)}
       {ghost ? (
-        <>
-          {!needsKey && (
-            <Block id="effort" separator={sized("effort") === "full"}>
-              {efforts.length > 0 ? (
-                <Select
-                  value={value.variant ?? DEFAULT_EFFORT}
-                  items={effortItems}
-                  onValueChange={(next) => {
-                    if (next === null) return;
-                    effortConfirm.pick(next);
-                    onChange(
-                      withVariant(
-                        value,
-                        next === DEFAULT_EFFORT ? undefined : (next as ReasoningVariant),
-                      ),
-                    );
-                  }}
-                >
-                  <PickerTrigger
-                    ref={effortTrigger}
-                    label="Effort"
-                    value={effortShown?.short ?? effortShown?.label ?? DEFAULT_EFFORT_OPTION.short}
-                    words={effortShown?.word}
-                    compact={effortShown?.compact}
-                    labelled={sized("effort")}
-                    field={!ghost}
-                    icon={
-                      ghost && (
-                        <Swap swapKey={value.variant ?? DEFAULT_EFFORT}>
-                          <EffortGauge variant={value.variant} className="size-icon-bar" />
-                        </Swap>
-                      )
-                    }
-                    confirm={ghost ? effortConfirm.landed : undefined}
-                    {...trigger}
-                  />
-                  <SelectContent anchor={() => aboveComposer(effortTrigger.current)}>
-                    {effortItems.map((o) => (
-                      <SelectItem key={o.value} value={o.value} description={o.description}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <UnavailableSlot label="Effort" reason="This model has no effort levels">
-                  <EffortGauge variant={undefined} className="size-icon-bar" />
-                </UnavailableSlot>
-              )}
-            </Block>
-          )}
-          {mode !== undefined && (
-            <Block id="mode" separator={sized("mode") === "full"}>
-              {mode}
-            </Block>
-          )}
-          {!needsKey && (
-            <Block id="speed" separator={sized("speed") === "full"}>
-              {supportsGateway ? (
-                <SpeedField
-                  agent={value.agent}
-                  model={shownModel}
-                  models={models}
-                  value={value.speed}
-                  onChange={(speed) => onChange({ ...value, speed })}
-                  ghost={ghost}
-                  labelled={sized("speed")}
-                />
-              ) : (
-                <UnavailableSlot label="Speed" reason={`${agentLabel(value.agent)} has one speed`}>
-                  <SpeedGlyph speed={undefined} className="size-icon-bar" />
-                </UnavailableSlot>
-              )}
-            </Block>
-          )}
-        </>
+        <PromptBoxChoices
+          value={value}
+          onChange={onChange}
+          agents={agents}
+          subscriptionOnly={subscriptionOnly}
+          needsKey={needsKey}
+          models={models}
+          shownModel={shownModel}
+          efforts={efforts}
+          mode={mode}
+          size={size?.("choices") ?? "full"}
+          onPicked={onPicked}
+        />
       ) : (
         <>
+          {!needsKey && (
+            <ModelSelect
+              agent={value.agent}
+              {...(value.profileId === undefined ? {} : { profileId: value.profileId })}
+              value={shownModel}
+              onChange={(model) => onChange(onModel(value, models, model))}
+            />
+          )}
           {supportsGateway && !needsKey && (
             <SpeedField
               agent={value.agent}
@@ -394,8 +386,6 @@ export function AgentFields({
               models={models}
               value={value.speed}
               onChange={(speed) => onChange({ ...value, speed })}
-              ghost={ghost}
-              labelled={!ghost}
             />
           )}
           {efforts.length > 0 && (
@@ -404,7 +394,6 @@ export function AgentFields({
               items={effortItems}
               onValueChange={(next) => {
                 if (next === null) return;
-                effortConfirm.pick(next);
                 onChange(
                   withVariant(
                     value,
@@ -415,18 +404,12 @@ export function AgentFields({
             >
               <PickerTrigger
                 label="Effort"
-                value={effortShown?.short ?? effortShown?.label ?? DEFAULT_EFFORT_OPTION.short}
-                labelled={false}
-                field={!ghost}
-                icon={
-                  ghost && (
-                    <Swap swapKey={value.variant ?? DEFAULT_EFFORT}>
-                      <EffortGauge variant={value.variant} className="size-icon-bar" />
-                    </Swap>
-                  )
+                value={
+                  effortItems.find((o) => o.value === (value.variant ?? DEFAULT_EFFORT))?.short ??
+                  DEFAULT_EFFORT_OPTION.short
                 }
-                confirm={ghost ? effortConfirm.landed : undefined}
-                {...trigger}
+                labelled={false}
+                field
               />
               <SelectContent>
                 {effortItems.map((o) => (

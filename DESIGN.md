@@ -139,16 +139,16 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   (2) is the stroke at 16 px; each size token takes the stroke that draws the same line
   (about 1.33 px, as heavy as Inter's stems beside it) at its size (globals.css), so a 14 px chip
   glyph is no thinner than an 18 px toolbar one. A glyph stands in for a word, never beside the
-  word it repeats: a button that says "Edit" or "Restore defaults", the status strip's counts and
+  word it repeats: a button that says "Edit" or "Restore defaults", a status line's counts and
   a picker that shows its words take no glyph, and a picker's glyph draws only once its words
-  give way. A mark that says something its words don't (the model picker's agent, a row's state
+  give way. A mark that says something its words don't (the composer choices chip's agent, a row's state
   dot) stays. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
   sidebar's header and the composer's toolbar), `size-icon-row` 16 px beside UI text (rows, cards,
   menus, docks, buttons, the panel's tabs, which keep their names and fold into More by width
   rather than turn into bare glyphs, the rarer ones always under More so Focus review keeps the same tabs, and its action, whose words give way to its glyph), and `size-icon-chip` 14 px beside meta text (a chip,
   a badge, a status line). An empty state's or a panel message's lead glyph is `size-icon-empty`
   24 px, at the same stroke, in the muted colour. A disclosure chevron is 14 px (`size-icon-chip`) wherever it sits:
-  the composer's toolbar counts it at that width while it isn't drawn. A glyph beside a line of
+  the composer's choices chip, which opens a popover, draws none. A glyph beside a line of
   text is centred on that line (`h-lh` on its box, or `mt-*` to its first line when the text
   wraps), never on the block.
   - An icon button is at least 28 px square (`icon-sm` for a toolbar, `icon-xs` in a row), with a
@@ -164,7 +164,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
     Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`, History `History`, a wait
     `Hourglass`. A row a chevron already folds needs no second glyph (an orchestrator's update is
-    its chevron and time, and no rule: a reply's 12 px block step sets it apart).
+    its chevron and time, and no rule: the transcript's 12 px block step sets it apart).
   - A control that acts on a choice names it: a sound's preview is one "Preview Chime" button
     beside the choice, never a row of bare play glyphs.
   - A button with words takes no glyph that says the same: no `Plus` beside "Add …" or "New …", no
@@ -199,30 +199,35 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     current value is its check.
   - Keyboard focus is the `focus-ring` outline (`--focus-ring`, `--focus-width`); a menu, list or
     dialog never rings as a whole.
-- **The composer's toolbar says its values:** one order in every composer (the orchestrator's
-  chat, a solo thread's and `/new`): model · effort · mode · speed, then "…". A control that
-  doesn't apply keeps its slot, greyed, with why on hover, so the rest never move up. Each names
-  what it picks before its value, in a lighter weight, so a value never reads as another
-  control's: "Claude Opus", "Effort: Extra high", "Mode: Plan", "Speed: Standard". Short of room the
-  value takes three to six letters ("Opus", "Effort: X-high", "Mode: Edits", "Speed: Std",
-  "Effort: Default"), and the words keep the room their glyph took; tighter, each keeps its value
-  alone beside its glyph ("X-high", "Std"), the glyph standing in for the dimension's word, so the
-  composer keeps one row; still short, the pickers take a row of their own above Send and Stop,
-  values kept. A picker never shows its dimension without its value, running or not. Only when
-  even values alone can't fit do they give way to glyphs, then fold into "…". Each trigger's tooltip and name say the value and its
-  shortcut ("Effort: Extra high (⌘⇧E)"), its open list checks the current value with a line on
-  what each costs, and a pick is confirmed in words for a moment. Every target on the row is 32 px
-  tall, and words keep 48 px clear of Send and Stop. Stop is a solid pill reading "Stop" beside
-  its square, the square inside the running ring, right-aligned where Send sits, its key a key cap
-  inside it while its pane has focus. While the turn only waits on your answer, Stop steps back to
-  the danger tint (no ring), still distinct from Send and from a faint outline. Into a worker the
-  orchestrator still directs, a message takes it over: the placeholder says "Message worker —
-  takes control…", Send's name says it, and with a draft the line beside Send says "Sending takes
-  control from the orchestrator". A default says whose it is in its name and tooltip
-  ("Effort: Model default", "Speed: CLI default"); the chip, after its dimension, says "Default"
-  ("Effort: Default"), never a bare "Default" with nothing before it. Beside Send the context meter says "Context 36%"
-  over its bar, the number alone in a composer under 36 rem, and its popover says what it
-  measures. A picker's list opens above the whole composer, never over the draft.
+- **The composer's toolbar says its values in one chip:** every composer (the orchestrator's chat,
+  a solo thread's and `/new`) has one choices chip for model · effort · mode · speed, in that order:
+  the agent's mark, then the values in short words, "Opus · High · Auto". A value at its default
+  drops out (an effort left to the model, a speed that isn't Fast), so the chip says what was set;
+  the mode always shows. In `/new` the agent picker before it carries the mark. Short of room the
+  values take three to six letters ("Opus · X-high · Edits"), then the model's alone; still short,
+  the chip takes a row of its own above Send and Stop, and only when not even that fits does the
+  mark stand alone, never while a word fits. A caution keeps its colour on its
+  own word (Bypass). The chip's name and tooltip say every value and its shortcut, a default
+  saying whose it is, one line each on hover: "Claude · Claude Opus (⌘⇧M)", "Effort: Model default
+  (⌘⇧E)", "Mode: Auto (⌘⇧A)", "Speed: CLI default". Nothing folds into "…".
+  - The chip opens one popover above the whole composer, never over the draft, with a section per
+    dimension in the same order: a heading with its value and shortcut, one section open at a time,
+    its list checking the current value with a line on what each costs (the model's searches, with
+    favourites; speed's says what Fast costs). A dimension that doesn't apply keeps its section,
+    greyed, "Not available", with why on hover and once opened, so the rest never move. Each
+    dimension's shortcut opens the popover on its section, a pick closes it, and the pick is
+    confirmed in words for a moment ("Effort set to High").
+  - Every target on the row is 32 px tall, and words keep 48 px clear of Send and Stop. Stop is a
+    solid pill reading "Stop" beside its square, the square inside the running ring, right-aligned
+    where Send sits, its key a key cap inside it while its pane has focus. While the turn only
+    waits on your answer, Stop steps back to the danger tint (no ring), still distinct from Send
+    and from a faint outline. Into a worker the orchestrator still directs, a message takes it
+    over, said once in plain words where it happens: the placeholder only names where the message
+    goes ("Message this worker…"), Send's name and tooltip say "Send and take over from the
+    orchestrator", and with a draft the line beside Send says "Sending takes over from the
+    orchestrator". Beside Send the
+    context meter says "Context 36%" over its bar, the number alone in a composer under 36 rem,
+    and its popover says what it measures.
 - **The Inbox docks beside the chat only where the chat keeps its reading column** (760 px) beside
   it; in a narrower window (under about 1,600 px with the overview open) it opens over the work as
   a dialog, the same list and keys, rather than squeeze the chat to a strip.
@@ -256,11 +261,23 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   of the workspace and its views, and no overview beside it.
 - **A status strip keeps its words:** short of room it drops whole items from its end, never their
   words, so a count never stands alone and no two read the same.
-- **One band above the transcript, one below.** The orchestrator's chat has one quiet muted line
-  over it, with no rule under it: the counts, then "Since you left" as a fold (its Dismiss inside,
-  no ×), then Show all activity at its end; "New" is the transcript's own line, over the first
-  message you haven't seen. A worker's PR and CI are the strip above its composer, and Take over
-  stays the title bar's (the strip adds no second one).
+- **One band above the transcript, one below, and only what nothing else says.** Over the
+  orchestrator's chat is "Since you left" as a fold (its Dismiss inside, no ×), one quiet muted
+  line with no rule under it, and nothing else: running, review and merged counts are the
+  sidebar's and the Board's, and Show all activity is a view option (the title bar's "…" under
+  View, a pane's "…"). With no absence to sum up the line is gone, with no empty band. "New" is
+  the transcript's own line, over the first message you haven't seen. A worker's PR and CI are
+  the strip above its composer, and Take over stays the title bar's (the strip adds no second one).
+- **The orchestrator's reply is the strongest thing in its chat.** An update ("09:52 Update · 2
+  merged · More") and an event Gram's own tools report there ("Started a worker", "Queued to merge
+  when ready") are quiet meta, a line of `text-meta` in `fg-muted` at regular weight behind its
+  chevron, never a card; only an ask (amber) or a failure (red) colours one, and a call still
+  running, waiting on you or failed keeps its card. One 12 px step separates every block of the
+  stream, a reply from an update the same as an update from the next reply: a message's Copy,
+  rewind and time float on hover (beside a bubble's top, over the end of a reply's last line)
+  instead of reserving a row under it. They float only with a pointer that hovers and a message at
+  least 40 rem wide (`float-actions`); on touch, where they always show, and in a narrow column
+  they keep their row.
 - **Motion is short and springy:** 220 to 320 ms with the theme's ease-out, springs for presses
   and arrivals, and none under reduced motion.
 

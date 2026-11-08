@@ -104,12 +104,11 @@ export const DEFAULT_EFFORT = "default";
 export const DEFAULT_EFFORT_OPTION = {
   value: DEFAULT_EFFORT,
   label: "Default effort",
-  // Says whose default it is, not just that it is one: the model picks its own level. Its name and
-  // tooltip say "Effort: Model default"; the chip, "Effort: Default", as the dimension before it
-  // already says what the default is of and "Model default" in full pushed Speed off the row at a
-  // real window's width. Short of room it stays "Effort: Default", and tighter, "Default" beside
-  // the gauge: never the dimension alone, and never "Model", which beside the model picker read as
-  // a second one.
+  // Says whose default it is, not just that it is one: the model picks its own level. The
+  // composer's choices chip leaves it out of its words, its name, tooltip and section heading
+  // saying "Effort: Model default". A picker that says its dimension says "Effort: Default", and
+  // tighter "Default" beside the gauge: never the dimension alone, and never "Model", which beside
+  // a model's name read as a second one.
   short: "Model default",
   word: "Default",
   compact: "Default",

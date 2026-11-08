@@ -71,9 +71,7 @@ test("picks the worker's agent and model by keyboard, and starts the worker on t
   await page.getByRole("button", { name: /Start (workspace and )?task/ }).click();
   await expect(page).toHaveURL(/\/t\//);
   // The thread runs on what was picked, as its header and composer say.
-  await expect(page.getByRole("combobox", { name: "Model", exact: true }).first()).toContainText(
-    "gpt-6.1-sol",
-  );
+  await expect(page.getByTestId("composer-choices").first()).toContainText("gpt-6.1-sol");
 });
 
 test("keeps the worker picker inside a narrow window", async ({ page }) => {

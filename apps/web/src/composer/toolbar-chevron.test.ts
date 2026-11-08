@@ -21,14 +21,12 @@ it("draws the toolbar triggers' chevrons at the size the layout counts", () => {
 });
 
 // The same for a picker's glyph, which goes in short: every glyph a toolbar picker draws beside
-// its words is the size `GLYPH` counts.
+// its words is the size `GLYPH` counts, and the choices chip's agent mark is a toolbar glyph too.
 it("draws the toolbar pickers' glyphs at the size the layout counts", () => {
   expect(GLYPH).toBe(18 + 6);
   const glyphs: Record<string, RegExp> = {
-    "./composer.tsx": /const (?:mode|effort)Icon = <[^>]*className="([^"]*)"/g,
-    "./agent-fields.tsx": /<(?:EffortGauge|SpeedGlyph)[^>]*className="([^"]*)"/g,
+    "./composer.tsx": /mark=\{model && <AgentIcon[^>]*className="([^"]*)"/g,
     "./speed-field.tsx": /<SpeedGlyph[^>]*className="([^"]*)"/g,
-    "./new-thread-draft.tsx": /<ModeIcon[^>]*className="([^"]*)"/g,
   };
   for (const [file, pattern] of Object.entries(glyphs)) {
     const drawn = [...source(file).matchAll(pattern)].map((match) => match[1]);

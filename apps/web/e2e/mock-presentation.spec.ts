@@ -147,7 +147,7 @@ const start = async (page: Page, visuals: boolean, mode: "dark" | "light" = "dar
     },
   );
   await openOrchestratorTile(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("status-header")).toBeVisible();
+  await expect(page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`)).toBeVisible();
   return made;
 };
 

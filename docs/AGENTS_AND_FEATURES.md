@@ -335,22 +335,22 @@ archived workers, groups and their stage notes by default, including with
 `detail: true`. Use `includeArchived: true` (or `state: ["archived"]`) to inspect
 that history. Current questions, failures, blockers and PR changes stay visible.
 
-The orchestrator's chat opens on a status header: one compact row of live counts.
-**Running** opens Workers, **In review** opens the Board and **Merged today** opens
-History; hovering a count names its workers. What needs you is not repeated in the
-header: the sidebar's pill is the one count across every workspace, and each
+The orchestrator's chat has no row of counts over it: what runs, what is in review
+and what merged are the sidebar's and the Board's. What needs you is not repeated
+there either: the sidebar's pill is the one count across every workspace, and each
 workspace's line carries its own share as a badge. Hovering the pill says how much is
 here and how much is in each other workspace, by kind, and clicking it opens the Inbox
 on the newest ask here, or anywhere when nothing here asks. With the sidebar hidden,
 the title bar's Inbox button wears the count instead. Opened from the title bar or ⌘⇧I, the Inbox returns to
 the item you left, or to the newest of the kind you last looked at. When you come
-back after merges or failures, **Since you left** sits in the same row: click it
-for the time range and each pull request, or dismiss it for that absence. The
+back after merges or failures, **Since you left** is one quiet line over the chat:
+click it for the time range and each pull request, or dismiss it for that absence,
+and the line goes. The
 subscription limit lives in the title bar only. Digests that changed nothing for you fold into one update line, together
 with the orchestrator's replies to them. These always stand on their own:
 merges, deliveries, failures, questions, boot and away digests, and replies that
-ask you something. **Show all activity** in the header shows everything, and so
-does finding a folded reply with ⌘F. Only the view changes: the orchestrator
+ask you something. **Show all activity** (the title bar's "…", under View) shows
+everything, and so does finding a folded reply with ⌘F. Only the view changes: the orchestrator
 still receives every digest.
 
 Workers may add `evidence: { headSha, gate, pr?, nextStep }` to `report`. These
