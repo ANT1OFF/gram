@@ -332,7 +332,8 @@ export function FeatureCardView({
  */
 function MergedFeatureLine({ card }: { card: FeatureCard }) {
   return (
-    <p
+    <div
+      role="group"
       aria-label={`Feature ${card.feature}, merged`}
       data-testid="feature-card"
       data-flat="true"
@@ -365,7 +366,7 @@ function MergedFeatureLine({ card }: { card: FeatureCard }) {
         </span>
       ))}
       {card.workers.every((worker) => worker.prs.length === 0) && <span>merged</span>}
-    </p>
+    </div>
   );
 }
 

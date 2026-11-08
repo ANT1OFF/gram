@@ -134,6 +134,28 @@ test("Jump to latest shows only with something below the view", async ({ page })
   await expect(jump).toHaveCount(0);
 });
 
+test("a key that works a control at the end leaves no Jump to latest", async ({ page }) => {
+  await openRealistic(page);
+  await page.evaluate(() => window.gramMock!.simulateDigestStream());
+  const transcript = page.getByTestId("transcript");
+  const toggle = page
+    .getByTestId("update-run")
+    .filter({ has: page.getByTestId("update-run-words").getByText(/^Updates/) })
+    .getByTestId("update-run-toggle");
+  await expect(toggle).toBeVisible();
+  const gap = () => transcript.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+  await expect.poll(gap).toBe(0);
+  const jump = page.getByRole("button", { name: "Jump to latest", exact: true });
+  // Space opens the run and closes it again: a control worked, not the reader scrolling away.
+  await toggle.focus();
+  await page.keyboard.press("Space");
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Space");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect.poll(gap).toBe(0);
+  await expect(jump).toHaveCount(0);
+});
+
 test("a files card keeps its actions inside its edge in a narrow pane", async ({ page }) => {
   await page.addInitScript(() => {
     const key = "gram.mock.settings";

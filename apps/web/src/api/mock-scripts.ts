@@ -428,6 +428,13 @@ const seedRequests: Record<string, PendingRequest[]> = {
   "t-plan": [PLAN_REQUEST],
 };
 
+/** t-question's reply once its question is answered, with what was picked. */
+const questionAnsweredText = (picked: string) => `Got it (${picked}). Wiring up the picker now.`;
+
+/** t-plan's reply once its plan is approved, in the mode it was approved in. */
+const planApprovedText = (mode: string) =>
+  `Plan approved. Starting with step 1 in \`${mode}\` mode.`;
+
 /**
  * What a seeded thread's transcript ends with once its question or plan is answered (`calmSeeds`,
  * the realistic scenario's earlier day): the reply the answer brought, as `questionAnswered` and
@@ -437,13 +444,9 @@ const seedRequests: Record<string, PendingRequest[]> = {
 export function answeredSeedMessages(threadId: string): GramUIMessage[] {
   switch (threadId) {
     case "t-question":
-      return [
-        assistantMessage("m-q3", "Got it (date-fns · en-GB, nb-NO). Wiring up the picker now."),
-      ];
+      return [assistantMessage("m-q3", questionAnsweredText("date-fns · en-GB, nb-NO"))];
     case "t-plan":
-      return [
-        assistantMessage("m-p3", "Plan approved. Starting with step 1 in `acceptEdits` mode."),
-      ];
+      return [assistantMessage("m-p3", planApprovedText("acceptEdits"))];
     default:
       return [];
   }
@@ -785,7 +788,7 @@ export const questionAnswered = (answer: RequestAnswer, ids: () => string): Step
   return [
     status("running", "Thinking…"),
     ...start(m),
-    ...text(m, "t1", `Got it (${picked}). Wiring up the picker now.`),
+    ...text(m, "t1", questionAnsweredText(picked)),
     ...finish(m),
   ];
 };
@@ -800,7 +803,7 @@ export const planAnswered = (answer: RequestAnswer, ids: () => string): Step[] =
       m,
       "t1",
       approved
-        ? `Plan approved. Starting with step 1 in \`${answer.kind === "plan" ? (answer.mode ?? "acceptEdits") : ""}\` mode.`
+        ? planApprovedText(answer.kind === "plan" ? (answer.mode ?? "acceptEdits") : "")
         : "Understood, I'll revise the plan.",
     ),
     ...finish(m),
