@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
-import { HOST_PROTOCOL_VERSION, type HostHello, LOCAL_HOST_ID } from "@gram/contracts";
+import { HOST_PROTOCOL_VERSION, type HostHello, HostId, LOCAL_HOST_ID } from "@gram/contracts";
 import { Proc, ProcLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { filesOn } from "./files.ts";
@@ -122,6 +122,13 @@ describe("host protocol", () => {
     Effect.gen(function* () {
       const error = yield* connected({ capabilities: ["files"] }).pipe(Effect.flip);
       expect(error.message).toContain("doesn't serve ports");
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.effect("refuses a host that answers as another machine", () =>
+    Effect.gen(function* () {
+      const error = yield* connected({ hostId: HostId.make("tower") }).pipe(Effect.flip);
+      expect(error.message).toContain('answered as "tower"');
     }).pipe(Effect.scoped, Effect.provide(ProcLive)),
   );
 });

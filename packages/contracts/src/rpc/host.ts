@@ -52,11 +52,13 @@ export const HostPortScan = Schema.Struct({
 });
 export type HostPortScan = typeof HostPortScan.Type;
 
-const fileErrors = Schema.Union([NotFound, InvalidState, HostFailed]);
+const listErrors = Schema.Union([NotFound, InvalidState, HostFailed]);
+const readErrors = Schema.Union([InvalidState, HostFailed]);
 
 /**
  * What a control plane asks of a worker host. The caller has already decided a path is one it may
- * read; the host only reads it. Paths are the host's own.
+ * read; the host only reads it. Paths are the host's own. That holds while the only caller is the
+ * host's own parent over a private pipe: a host reached over a network checks paths itself.
  */
 export const HostRpcs = RpcGroup.make(
   /** The first call on a connection: the host's version, id and capabilities. */
@@ -65,7 +67,7 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.files.list", {
     payload: { path: Schema.String, showHidden: Schema.Boolean, limit: PositiveInt },
     success: FsListing,
-    error: fileErrors,
+    error: listErrors,
   }),
   /** Lines matching `query` under `root`. */
   Rpc.make("host.files.search", {
@@ -78,13 +80,13 @@ export const HostRpcs = RpcGroup.make(
       limit: PositiveInt,
     },
     success: FsSearchResult,
-    error: fileErrors,
+    error: readErrors,
   }),
   /** Every file name under `root`, capped. */
   Rpc.make("host.files.names", {
     payload: { root: Schema.String },
     success: FsFilesResult,
-    error: fileErrors,
+    error: readErrors,
   }),
   /** One sweep of the host's listening ports and processes. */
   Rpc.make("host.ports.scan", { success: HostPortScan, error: HostFailed }),

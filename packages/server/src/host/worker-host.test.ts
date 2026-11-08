@@ -117,4 +117,25 @@ describe("WorkerHosts", () => {
       ),
     30_000,
   );
+
+  it.live(
+    "a host process that stops hands this machine's folder reads back to the server",
+    () =>
+      Effect.gen(function* () {
+        const dir = mkdtempSync(join(tmpdir(), "gram-worker-host-"));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+        writeFileSync(join(dir, "still-here.txt"), "x\n");
+        const { local } = yield* WorkerHosts;
+        process.kill(local.process!.pid, "SIGKILL");
+        yield* Effect.sleep("300 millis");
+        const listing = yield* local.files.list(dir, { showHidden: false, limit: 10 });
+        expect(listing.entries.map((entry) => entry.name)).toEqual(["still-here.txt"]);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          WorkerHosts.layerLocalWith({ hostProcess: true }).pipe(Layer.provide(Machine)),
+        ),
+      ),
+    30_000,
+  );
 });

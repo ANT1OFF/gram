@@ -12,6 +12,10 @@ import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { HOST_CAPABILITIES, serveHost } from "./protocol.ts";
 
+// The server starts the host as plain Node under Electron; what the host runs (git, ps, an editor
+// git opens) must not inherit that.
+delete process.env["ELECTRON_RUN_AS_NODE"];
+
 /** The descriptor the server hands the host stream on. */
 export const HOST_STREAM_FD = 3;
 
