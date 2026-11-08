@@ -505,7 +505,7 @@ test("an import is previewed before it starts, runs as a thread, and is offered 
   // the Dreams view itself keeps to a line and its two buttons.
   await expect(dreams.getByTestId("dream-summary")).toHaveCount(0);
   await expect(flow.getByRole("radio", { name: "Let me review it first" })).toBeChecked();
-  await expect(flow.getByTestId("dream-mode-note")).toHaveCount(0);
+  await expect(flow.getByTestId("dream-mode-note")).toHaveText("");
   await expect(flow.getByTestId("dream-runs-rule")).toContainText("in the agent's sandbox");
   await expect(flow).toContainText("A dream runs on Claude Code, Codex.");
 

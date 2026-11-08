@@ -421,7 +421,7 @@ describe("DiffPanel", () => {
 
     // Once the panel has room, Split no longer says it needs it.
     expect(screen.getByRole("menuitemradio", { name: "Split" }).textContent).toBe("Split");
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Unified", exact: true }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Unified" }));
     expect(useLayoutStore.getState().diffLayout).toBe("unified");
     expect(panel.dataset["layout"]).toBe("unified");
     vi.unstubAllGlobals();

@@ -487,13 +487,16 @@ function StartFlow({
           When this update is ready
         </span>
         <ModeChoice mode={mode} labelledBy={modeLabel} onChange={setMode} />
-        {mode === "auto" && (
-          <p role="status" data-testid="dream-mode-note" className="text-muted-foreground">
-            Saved without another review or approval. If memory changed meanwhile, or the draft is
-            invalid or can't be stored, nothing is saved. Earlier versions stay under History to
-            restore.
-          </p>
-        )}
+        {/* Always mounted, so a screen reader hears the note when Auto is picked. */}
+        <p
+          role="status"
+          data-testid="dream-mode-note"
+          className="text-muted-foreground empty:hidden"
+        >
+          {mode === "auto"
+            ? "Saved without another review or approval. If memory changed meanwhile, or the draft is invalid or can't be stored, nothing is saved. Earlier versions stay under History to restore."
+            : ""}
+        </p>
       </div>
 
       <label htmlFor={instructionsId} className="flex flex-col gap-1">
@@ -1246,8 +1249,8 @@ function DreamRow({
 }
 
 /**
- * Whether the next run's result waits for your review or is adopted once it validates: a choice
- * for that run alone, on one line in the summary beside the actions that start one.
+ * Whether the run's result waits for your review or is adopted once it validates: a choice for
+ * that run alone, on one line in the start form beside its other choices (model, steering).
  */
 function ModeChoice({
   mode,
@@ -1255,7 +1258,7 @@ function ModeChoice({
   onChange,
 }: {
   mode: DreamMode;
-  /** The summary's term for it, "When this update is ready". */
+  /** The start form's label for it, "When this update is ready". */
   labelledBy: string;
   onChange: (mode: DreamMode) => void;
 }) {
@@ -1446,6 +1449,12 @@ export function DreamsSection({
             Draft from past sessions
           </Button>
         </div>
+        {/* Said in words too: a disabled button's hover reaches no keyboard or screen reader. */}
+        {running && (
+          <p data-testid="dream-busy" className="text-body text-description">
+            A run is under way; the next can start once it ends or you cancel it below.
+          </p>
+        )}
       </div>
       {suggestion !== undefined && starting === undefined && (
         <p

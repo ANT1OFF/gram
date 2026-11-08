@@ -462,7 +462,10 @@ function DiffViewControls({
         <Menu.Trigger
           data-testid="diff-view-menu"
           aria-label="View options"
-          className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "px-2")}
+          className={cn(
+            buttonVariants({ variant: "ghost", size: "sm" }),
+            "px-2 data-popup-open:bg-accent data-popup-open:text-foreground",
+          )}
         >
           View
           <ChevronDown aria-hidden className="size-icon-chip text-muted-foreground" />
