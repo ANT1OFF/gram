@@ -1,4 +1,4 @@
-import { Thread, type ThreadId } from "@gram/contracts";
+import { type HostId, Thread, type ThreadId } from "@gram/contracts";
 import { SqliteMigrator } from "@effect/sql-sqlite-node";
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { describe, expect, it } from "@effect/vitest";
@@ -53,6 +53,7 @@ describe("migration ordering gate", () => {
         [4, "merge_fences"],
         [5, "usage_limit_history"],
         [6, "message_parts"],
+        [7, "hosts"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -140,8 +141,10 @@ describe("the baseline", () => {
         "index messages_thread_seq",
         "index messages_turn",
         "index orchestration_events_workspace",
+        "index session_leases_host",
         "index thread_outputs_at",
         "index thread_wakes_thread",
+        "index threads_host",
         "index turns_started",
         "index turns_thread",
         "index turns_thread_usage",
@@ -163,6 +166,7 @@ describe("the baseline", () => {
         "table helper_events",
         "table helper_outputs",
         "table helper_usage",
+        "table hosts",
         "table labels",
         "table local_checks",
         "table merge_fences",
@@ -179,6 +183,7 @@ describe("the baseline", () => {
         "table queue_items",
         "table requests",
         "table schema_migrations",
+        "table session_leases",
         "table settings",
         "table settings_audit",
         "table tasks",
@@ -220,6 +225,7 @@ describe("the baseline", () => {
         [4, "merge_fences"],
         [5, "usage_limit_history"],
         [6, "message_parts"],
+        [7, "hosts"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -246,6 +252,7 @@ describe("the baseline", () => {
           "merge_fences",
           "usage_limit_history",
           "message_parts",
+          "hosts",
         ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
@@ -283,6 +290,7 @@ describe("the baseline", () => {
             [4, "merge_fences"],
             [5, "usage_limit_history"],
             [6, "message_parts"],
+            [7, "hosts"],
           ]);
           // A closed thread has no live row, but must retain its permanent safety identity.
           if (reopen === 0) {
@@ -443,10 +451,11 @@ describe("the baseline", () => {
       for (let reopen = 0; reopen < 2; reopen++) {
         yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          expect((yield* applied).map((row) => row.name).slice(-3)).toEqual([
+          expect((yield* applied).map((row) => row.name).slice(-4)).toEqual([
             "merge_fences",
             "usage_limit_history",
             "message_parts",
+            "hosts",
           ]);
           expect(yield* sql`SELECT key, data FROM usage_limits`).toEqual([
             { key: "codex//five_hour", data: '{"synthetic":true}' },
@@ -517,7 +526,7 @@ describe("the baseline", () => {
       for (let reopen = 0; reopen < 2; reopen++) {
         yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          expect((yield* applied).at(-1)?.name).toBe("message_parts");
+          expect((yield* applied).map((row) => row.name)).toContain("message_parts");
           expect(
             yield* sql`SELECT m.id, p.type FROM message_parts p
               JOIN messages m ON m.rowid = p.message_rowid ORDER BY m.seq, p.type`,
@@ -539,9 +548,15 @@ describe("the baseline", () => {
           Layer.provideMerge(SqliteClient.layer({ filename: file })),
         );
       yield* Effect.void.pipe(Effect.provide(open(migrations)));
+      // The next free id, whatever the registry has grown to, so this outlives each new migration.
+      const shipped = Object.keys(migrations).map((key) => {
+        const [id, ...name] = key.split("_");
+        return [Number(id), name.join("_")] as const;
+      });
+      const nextId = shipped.length + 1;
       const next = {
         ...migrations,
-        "0007_example": Effect.gen(function* () {
+        [`${String(nextId).padStart(4, "0")}_example`]: Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`ALTER TABLE projects ADD COLUMN example TEXT`;
         }),
@@ -554,16 +569,79 @@ describe("the baseline", () => {
           }>`SELECT name FROM pragma_table_info('projects')`;
           expect(columns.map((c) => c.name)).toContain("example");
           expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
-            [1, "baseline"],
-            [2, "merge_freezes"],
-            [3, "message_receipts"],
-            [4, "merge_fences"],
-            [5, "usage_limit_history"],
-            [6, "message_parts"],
-            [7, "example"],
+            ...shipped,
+            [nextId, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
       }
     }),
+  );
+  it.effect(
+    "upgrades the database before hosts: every thread is on this machine: every thread is on this machine",
+    () =>
+      Effect.gen(function* () {
+        const file = join(yield* tempDir, "previous-to-hosts.db");
+        const entries = Object.entries(migrations);
+        // By name, not position: later migrations append after it.
+        const index = entries.findIndex(([key]) => /^\d+_hosts$/.test(key));
+        expect(index).toBeGreaterThan(0);
+        const previous = Object.fromEntries(entries.slice(0, index));
+        const open = (record: Parameters<typeof migratorOptions>[0]) =>
+          SqliteMigrator.layer(migratorOptions(record)).pipe(
+            Layer.provideMerge(SqliteClient.layer({ filename: file })),
+          );
+        const prior = Schema.decodeUnknownSync(Thread)({
+          id: "prior-thread",
+          projectId: "hosts-project",
+          title: "written before hosts",
+          userNamed: false,
+          model: { agent: "claude", model: "synthetic" },
+          mode: "default",
+          checkout: { kind: "main", path: "/invented/before-hosts" },
+          labels: [],
+          pinned: false,
+          parked: false,
+          unread: false,
+          createdAt: 1,
+          lastActivityAt: 1,
+        });
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect((yield* tableNames).has("hosts")).toBe(false);
+          yield* sql`INSERT INTO projects (id, root, name) VALUES ('hosts-project', '/invented/before-hosts', 'kept')`;
+          yield* sql`INSERT INTO threads (id, project_id, created_at, last_activity_at, data)
+          VALUES (${prior.id}, 'hosts-project', 1, 1, ${JSON.stringify(prior)})`;
+        }).pipe(Effect.provide(open(previous)));
+        for (let reopen = 0; reopen < 2; reopen++) {
+          yield* Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            expect((yield* applied).at(-1)?.name).toBe(entries.at(-1)![0].replace(/^\d+_/, ""));
+            expect(yield* sql`SELECT id, host_id FROM threads ORDER BY id`).toEqual(
+              reopen === 0
+                ? [{ id: "prior-thread", host_id: "local" }]
+                : [
+                    { id: "prior-thread", host_id: "local" },
+                    { id: "remote-thread", host_id: "tower" },
+                  ],
+            );
+            const store = yield* ThreadStore;
+            const read = yield* store.getThread(prior.id);
+            expect(read.checkout).toEqual({ kind: "main", path: "/invented/before-hosts" });
+            if (reopen === 0) {
+              // A checkout on another machine projects its host into the column; one with none stays local.
+              yield* store.insertThread({
+                ...prior,
+                id: "remote-thread" as ThreadId,
+                checkout: { kind: "main", path: "/invented/on-tower", hostId: "tower" as HostId },
+              });
+              yield* sql`INSERT INTO session_leases (thread_id, host_id, epoch, leased_at)
+              VALUES ('remote-thread', 'tower', 1, 1)`;
+            }
+            expect(
+              yield* sql`SELECT thread_id, host_id, epoch FROM session_leases ORDER BY thread_id`,
+            ).toEqual([{ thread_id: "remote-thread", host_id: "tower", epoch: 1 }]);
+          }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+        }
+      }),
   );
 });
