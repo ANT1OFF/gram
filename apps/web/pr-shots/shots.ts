@@ -1280,7 +1280,7 @@ const SNOOZE_SHOTS: readonly Shot[] = [
   {
     name: "sidebar-realistic-900",
     title:
-      "The realistic morning at 900 px, where the overview is its compact rail: a glyph per workspace and for the solo threads, never letters cut from a name",
+      "The realistic morning at 900 px, where the overview is its compact rail: a monogram per workspace, a glyph for the solo threads",
     open: async (page) => {
       await openRealisticMorning(page);
       await page.setViewportSize({ width: 900, height: 900 });

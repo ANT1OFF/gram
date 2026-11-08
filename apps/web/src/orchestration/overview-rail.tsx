@@ -6,7 +6,7 @@ import {
   type WorkspaceId,
   type WorkspaceState,
 } from "@gram/contracts";
-import { MessageSquare, Network, PanelLeftClose, UnfoldHorizontal } from "lucide-react";
+import { MessageSquare, PanelLeftClose, UnfoldHorizontal } from "lucide-react";
 import {
   useMemo,
   useRef,
@@ -67,6 +67,7 @@ import { needsYouScope, needsYouSpoken } from "./needs-you-entry";
 import { asksAmong } from "./needs-you-items";
 import { useNeedsYouCounts, useNeedsYouPill } from "./use-needs-you";
 import { ledgerSlotsText } from "./overview-extras-model";
+import { monograms } from "./rail-monogram";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
 import { useWorkspaces } from "./use-orchestration";
 
@@ -176,11 +177,12 @@ function RailNeedsYou() {
       title={`${withHint(action, hint)}\n${scope}`}
       onClick={openAsks}
       className={cn(
-        "h-5 min-w-7 shrink-0 rounded-full px-1.5 text-caption leading-5 font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        // Amber only while something asks: errors alone keep the quiet pill (one alarm each).
+        "h-5 min-w-7 shrink-0 rounded-full border px-1.5 text-caption leading-4.5 font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        // A neutral outline, as the open sidebar's pill: only the count is amber, and only while
+        // something asks. Errors alone keep the quiet pill (one alarm each).
         asks
-          ? "bg-status-needs text-background hover:bg-status-needs/85"
-          : "bg-sidebar-block text-muted-foreground hover:bg-sidebar-row-hover",
+          ? "border-sidebar-block-border text-status-needs hover:bg-sidebar-row-hover"
+          : "border-transparent bg-sidebar-block text-muted-foreground hover:bg-sidebar-row-hover",
       )}
     >
       {count}
@@ -189,9 +191,10 @@ function RailNeedsYou() {
 }
 
 /**
- * A tile: the glyph its kind has everywhere in Gram (a workspace's orchestrator, a thread), never
- * letters cut from its name ("BA" for billing-api reads as a code). Its flyout, open on hover or
- * focus, heads with the whole name, and its accessible name says it too.
+ * A tile: a workspace's monogram, one letter of its name ("B" for billing-api), two only where
+ * another workspace starts with the same one (`monograms`), in the tile's own text; the solo
+ * threads' tile keeps a thread's glyph. Its flyout, open on hover or focus, heads with the whole
+ * name, and its accessible name says it too.
  */
 const TILE =
   "relative grid size-9 shrink-0 place-items-center rounded-xs border border-sidebar-block-border bg-sidebar-block text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-current:border-foreground/35 aria-current:bg-sidebar-row-active aria-current:text-foreground";
@@ -219,11 +222,13 @@ function WorkspaceTiles() {
     () => new Map(asks.map((each) => [each.workspaceId as string, askingOf(each.asks)] as const)),
     [asks],
   );
-  return workspaces.map((state) => {
+  const marks = monograms(workspaces.map((state) => state.workspace.name));
+  return workspaces.map((state, index) => {
     const id = state.workspace.id;
     return (
       <WorkspaceTile
         key={id}
+        mark={marks[index] ?? ""}
         state={state}
         here={id === current?.workspace.id}
         asks={byWorkspace.get(id) ?? 0}
@@ -238,6 +243,7 @@ function WorkspaceTiles() {
 const NO_ASKING: ReadonlySet<ThreadId> = new Set();
 
 function WorkspaceTile({
+  mark,
   state,
   here,
   asks,
@@ -245,6 +251,8 @@ function WorkspaceTile({
   ledger,
   word,
 }: {
+  /** Its monogram (`monograms`). */
+  mark: string;
   state: WorkspaceState;
   here: boolean;
   asks: number;
@@ -286,7 +294,13 @@ function WorkspaceTile({
               ringing ? "gram-ring-breathe border-status-working/55" : "border-transparent",
             )}
           />
-          <Network aria-hidden data-testid="overview-tile-glyph" className="size-icon-row" />
+          <span
+            aria-hidden
+            data-testid="overview-tile-mark"
+            className="text-body-strong leading-none tracking-normal"
+          >
+            {mark}
+          </span>
           {asks > 0 && (
             <span
               aria-hidden
