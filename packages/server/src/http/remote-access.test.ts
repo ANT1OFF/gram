@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   createRemoteAccess,
+  deviceLabel,
   PAIR_LIFETIME_MS,
   remoteCookieName,
   remoteOrigin,
+  SESSION_LIFETIME_MS,
   pairingDocument,
   pairingCsp,
 } from "./remote-access.ts";
@@ -169,5 +171,112 @@ describe("private browser access", () => {
     );
     expect(pairingDocument).not.toContain("src=");
     expect(pairingCsp).toContain("script-src 'sha256-");
+  });
+
+  it("names a browser from a fixed vocabulary, never echoing the user agent", () => {
+    const cases: Array<[string | undefined, string]> = [
+      [
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+        "iPhone · Safari",
+      ],
+      [
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0 Mobile/15E148 Safari/604.1",
+        "iPhone · Chrome",
+      ],
+      [
+        "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36",
+        "Android · Chrome",
+      ],
+      [
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:131.0) Gecko/20100101 Firefox/131.0",
+        "Mac · Firefox",
+      ],
+      [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 Edg/130.0",
+        "Windows · Edge",
+      ],
+      ["<script>alert(1)</script>", "Browser"],
+      [undefined, "Browser"],
+    ];
+    for (const [ua, label] of cases) expect(deviceLabel(ua)).toBe(label);
+  });
+
+  it("lists paired browsers, follows the newest link, and removes one or all", () => {
+    let now = 10 * 60 * 60_000 + 5;
+    const access = createRemoteAccess(ORIGIN, PORT, () => now);
+    expect(access.pairing()).toBeUndefined();
+    const link = access.mint();
+    expect(access.pairing()).toEqual({ state: "waiting", expiresAt: link.expiresAt });
+    const phone = claim(access, codeOf(link.url), {
+      headers: { host: HOST, origin: ORIGIN, "user-agent": "Mozilla/5.0 (iPhone) Safari/604.1" },
+    })!;
+    const [device] = access.devices();
+    expect(device).toEqual({
+      id: expect.stringMatching(/^[a-f0-9]{16}$/),
+      label: "iPhone · Safari",
+      pairedAt: now,
+      expiresAt: now + SESSION_LIFETIME_MS,
+    });
+    expect(access.pairing()).toEqual({ state: "paired", device: device!.id });
+    const tablet = claim(access, codeOf(access.mint().url))!;
+    expect(access.devices()).toHaveLength(2);
+    // Last seen moves in whole hours.
+    now += 90 * 60_000;
+    expect(access.authorize(request({ cookies: { [access.cookieName]: phone } }))).toEqual({
+      kind: "pass",
+    });
+    expect(access.devices()[0]!.lastSeenAt).toBe(11 * 60 * 60_000);
+    access.mint();
+    now += 15 * 60_000;
+    expect(access.pairing()).toEqual({ state: "expired" });
+
+    expect(access.revoke("0000000000000000")).toBe(false);
+    expect(access.revoke(device!.id)).toBe(true);
+    expect(access.authorize(request({ cookies: { [access.cookieName]: phone } }))).toMatchObject({
+      status: 401,
+    });
+    expect(access.authorize(request({ cookies: { [access.cookieName]: tablet } }))).toEqual({
+      kind: "pass",
+    });
+    access.revokeAll();
+    expect(access.devices()).toEqual([]);
+    expect(access.authorize(request({ cookies: { [access.cookieName]: tablet } }))).toMatchObject({
+      status: 401,
+    });
+  });
+
+  it("closes a removed browser's connections, and every connection when access turns off", () => {
+    const access = createRemoteAccess(ORIGIN, PORT);
+    const phone = claim(access, codeOf(access.mint().url))!;
+    const laptop = claim(access, codeOf(access.mint().url))!;
+    const sessionOf = (token: string) =>
+      access.sessionOf(request({ cookies: { [access.cookieName]: token } }))!;
+    const closed: string[] = [];
+    access.onDisconnect(sessionOf(phone), () => closed.push("phone 1"));
+    access.onDisconnect(sessionOf(phone), () => closed.push("phone 2"));
+    const off = access.onDisconnect(sessionOf(laptop), () => closed.push("laptop ended"));
+    access.onDisconnect(sessionOf(laptop), () => closed.push("laptop"));
+    off();
+    access.revoke(access.deviceIdOf(sessionOf(phone)));
+    expect(closed).toEqual(["phone 1", "phone 2"]);
+    access.disconnectAll();
+    expect(closed).toEqual(["phone 1", "phone 2", "laptop"]);
+    // Turning off keeps the pairing.
+    expect(access.authorize(request({ cookies: { [access.cookieName]: laptop } }))).toEqual({
+      kind: "pass",
+    });
+  });
+
+  it("refuses remote management that only the local app may do", () => {
+    const access = createRemoteAccess(ORIGIN, PORT);
+    const cookies = { [access.cookieName]: claim(access, codeOf(access.mint().url))! };
+    for (const url of ["/remote/pair", "/remote/enable", "/remote/disable"])
+      expect(access.authorize(request({ method: "POST", url, cookies }))).toMatchObject({
+        status: 403,
+      });
+    for (const url of ["/remote/status", "/remote/revoke"])
+      expect(access.authorize(request({ method: "POST", url, cookies }))).toEqual({
+        kind: "pass",
+      });
   });
 });

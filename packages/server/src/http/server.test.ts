@@ -128,6 +128,41 @@ const upgradeStatus = (port: number, headers: Record<string, string>, path = "/w
       }),
   );
 
+/** A remote `/ws` upgrade held open, with a promise for when the server closes it. */
+const openSocket = (port: number, headers: Record<string, string>, path = "/ws") =>
+  Effect.promise(
+    () =>
+      new Promise<{ closed: Promise<void>; isOpen: () => boolean }>((resolve, reject) => {
+        const req = httpRequest({
+          host: "127.0.0.1",
+          port,
+          path,
+          agent: false,
+          headers: {
+            connection: "Upgrade",
+            upgrade: "websocket",
+            "sec-websocket-version": "13",
+            "sec-websocket-key": randomBytes(16).toString("base64"),
+            ...headers,
+          },
+        });
+        req.on("upgrade", (_res, socket) => {
+          let open = true;
+          socket.resume();
+          const closed = new Promise<void>((done) =>
+            socket.once("close", () => {
+              open = false;
+              done();
+            }),
+          );
+          resolve({ closed, isOpen: () => open });
+        });
+        req.on("response", (res) => reject(new Error(`upgrade refused: ${res.statusCode}`)));
+        req.on("error", reject);
+        req.end();
+      }),
+  );
+
 const remoteDataDir = mkdtempSync(join(tmpdir(), "gram-remote-http-"));
 afterAll(() => rmSync(remoteDataDir, { recursive: true, force: true }));
 const webRoot = mkdtempSync(join(tmpdir(), "gram-web-"));
@@ -996,6 +1031,119 @@ layer(testServer("https://device.tail123.ts.net:9443"), { excludeTestServices: t
             })).status,
           ).toBe(403);
         }),
+    );
+
+    it.effect(
+      "lists and removes paired browsers locally, closing a removed browser's open socket",
+      () =>
+        Effect.gen(function* () {
+          const { port } = yield* serverInfo;
+          const origin = "https://device.tail123.ts.net:9443";
+          const host = "device.tail123.ts.net:9443";
+          const local = { cookie: yield* bootCookie, origin: `http://127.0.0.1:${port}` };
+          const post = (path: string, headers: Record<string, string>, body?: unknown) =>
+            raw(port, {
+              path,
+              method: "POST",
+              headers,
+              ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+            });
+          const pair = (userAgent: string) =>
+            Effect.gen(function* () {
+              const mint = yield* post("/remote/pair", local);
+              const code = new URLSearchParams(
+                new URL(JSON.parse(mint.body).url).hash.slice(1),
+              ).get("pair")!;
+              const claimed = yield* raw(port, {
+                path: "/remote/claim",
+                method: "POST",
+                body: code,
+                headers: { host, origin, "content-type": "text/plain", "user-agent": userAgent },
+              });
+              return claimed.headers["set-cookie"]![0]!.split(";")[0]!;
+            });
+          yield* post("/remote/revoke", local, { all: true });
+          const phone = yield* pair("Mozilla/5.0 (iPhone) Safari/604.1");
+          const laptop = yield* pair("Mozilla/5.0 (Macintosh) Firefox/131.0");
+          const status = JSON.parse((yield* post("/remote/status", local)).body);
+          expect(status).toMatchObject({ mode: "env", origin, port: 9443 });
+          expect(status.pairing).toEqual({ state: "paired", device: expect.any(String) });
+          expect(status.devices.map((d: { label: string }) => d.label)).toEqual([
+            "iPhone · Safari",
+            "Mac · Firefox",
+          ]);
+          const [phoneId, laptopId] = status.devices.map((d: { id: string }) => d.id);
+
+          // Management needs the local launch cookie and an Origin; a paired browser gets less.
+          expect((yield* post("/remote/status", { cookie: local.cookie })).status).toBe(403);
+          expect((yield* post("/remote/status", { origin: local.origin })).status).toBe(401);
+          expect((yield* raw(port, { path: "/remote/status", headers: local })).status).toBe(403);
+          const remote = (cookie: string) => ({ host, origin, cookie });
+          const seen = JSON.parse((yield* post("/remote/status", remote(phone))).body);
+          expect(seen.current).toBe(phoneId);
+          expect(seen.pairing).toBeUndefined();
+          for (const path of ["/remote/pair", "/remote/enable", "/remote/disable"])
+            expect((yield* post(path, remote(phone))).status).toBe(403);
+          expect((yield* post("/remote/revoke", remote(phone), { id: laptopId })).status).toBe(403);
+          expect((yield* post("/remote/revoke", remote(phone), { all: true })).status).toBe(403);
+          expect((yield* post("/remote/enable", local)).status).toBe(409);
+
+          // Removing the phone closes its open socket at once and refuses it from then on.
+          const socket = yield* openSocket(port, { ...remote(phone) });
+          const other = yield* openSocket(port, { ...remote(laptop) });
+          expect((yield* post("/remote/revoke", local, { id: "0000000000000000" })).status).toBe(
+            404,
+          );
+          const after = JSON.parse((yield* post("/remote/revoke", local, { id: phoneId })).body);
+          expect(after.devices.map((d: { id: string }) => d.id)).toEqual([laptopId]);
+          yield* Effect.promise(() => socket.closed);
+          expect(other.isOpen()).toBe(true);
+          expect(yield* upgradeStatus(port, remote(phone))).toBe(401);
+          expect(yield* upgradeStatus(port, remote(laptop))).toBe(101);
+
+          // A paired browser may sign itself out.
+          const signOut = yield* post("/remote/revoke", remote(laptop), { id: laptopId });
+          expect(signOut.status).toBe(200);
+          expect(signOut.headers["set-cookie"]?.[0]).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/);
+          yield* Effect.promise(() => other.closed);
+          expect(JSON.parse((yield* post("/remote/status", local)).body).devices).toEqual([]);
+        }),
+    );
+
+    it.effect("refuses a ninth pairing link with a reason instead of minting one", () =>
+      Effect.gen(function* () {
+        const { port } = yield* serverInfo;
+        const origin = "https://device.tail123.ts.net:9443";
+        const host = "device.tail123.ts.net:9443";
+        const local = { cookie: yield* bootCookie, origin: `http://127.0.0.1:${port}` };
+        yield* raw(port, {
+          path: "/remote/revoke",
+          method: "POST",
+          headers: local,
+          body: JSON.stringify({ all: true }),
+        });
+        for (let i = 0; i < 8; i++) {
+          const mint = yield* raw(port, { path: "/remote/pair", method: "POST", headers: local });
+          const code = new URLSearchParams(new URL(JSON.parse(mint.body).url).hash.slice(1)).get(
+            "pair",
+          )!;
+          yield* raw(port, {
+            path: "/remote/claim",
+            method: "POST",
+            body: code,
+            headers: { host, origin, "content-type": "text/plain" },
+          });
+        }
+        const full = yield* raw(port, { path: "/remote/pair", method: "POST", headers: local });
+        expect(full.status).toBe(409);
+        expect(JSON.parse(full.body)).toEqual({ reason: "full", max: 8 });
+        yield* raw(port, {
+          path: "/remote/revoke",
+          method: "POST",
+          headers: local,
+          body: JSON.stringify({ all: true }),
+        });
+      }),
     );
   },
 );

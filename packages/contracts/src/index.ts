@@ -116,3 +116,5 @@ export * from "./browser-inspection.ts";
 export * from "./palette-filters.ts";
 
 export * from "./ci-fix-ownership.ts";
+
+export * from "./remote-access.ts";
