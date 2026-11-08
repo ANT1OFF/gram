@@ -38,6 +38,15 @@ export const hostHome = (env: NodeJS.ProcessEnv = process.env, home = homedir())
   return join(xdg !== undefined && xdg.startsWith("/") ? xdg : join(home, ".config"), "gram-host");
 };
 
+/**
+ * Where the host keeps its clones of the repositories workers placed on it work in:
+ * `GRAM_HOST_REPOS` when set, otherwise `repos` in the host's own folder.
+ */
+export const hostRepos = (env: NodeJS.ProcessEnv = process.env, home = homedir()): string => {
+  const set = env["GRAM_HOST_REPOS"];
+  return set !== undefined && set !== "" ? set : join(hostHome(env, home), "repos");
+};
+
 const CONFIG = "host.json";
 const KEY = "host-key.pem";
 

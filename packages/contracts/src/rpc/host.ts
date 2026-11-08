@@ -32,7 +32,7 @@ import { PositiveInt } from "./shared.ts";
  * The host protocol's version. A control plane and a host that disagree on it don't talk: the
  * hello says so, and the control plane treats the host as unavailable.
  */
-export const HOST_PROTOCOL_VERSION = 1;
+export const HOST_PROTOCOL_VERSION = 2;
 
 /** What a host can do, named so a control plane uses only what a host advertised. */
 export const HostCapability = Schema.Literals([
@@ -42,6 +42,7 @@ export const HostCapability = Schema.Literals([
   "git",
   "terminals",
   "sessions",
+  "repos",
 ]);
 export type HostCapability = typeof HostCapability.Type;
 
@@ -290,6 +291,15 @@ export const HostRpcs = RpcGroup.make(
   }),
   /** One sweep of the host's listening ports and processes. */
   Rpc.make("host.ports.scan", { success: HostPortScan, error: HostFailed }),
+  /**
+   * The host's own clone of the repository at `url`, in the folder it keeps clones in: cloned when
+   * it has none, fetched when it has. What a worker placed on this machine makes its worktree from.
+   */
+  Rpc.make("host.repos.ensure", {
+    payload: { url: Schema.String },
+    success: Schema.Struct({ path: Schema.String }),
+    error: worktreeErrors,
+  }),
   /** A repo's worktrees, those open in a thread marked. */
   Rpc.make("host.worktrees.list", {
     payload: { repoPath: Schema.String, openCheckouts },
@@ -365,8 +375,8 @@ export const HostRpcs = RpcGroup.make(
     stream: true,
   }),
   /**
-   * A shell in `cwd`, already chosen by the control plane, with the settings it read: the host has
-   * none of its own.
+   * A shell in `cwd`, already chosen by the control plane, with the settings it read. Without
+   * `path`, as for another machine, the shell is the host's own default on its own PATH.
    */
   Rpc.make("host.terminals.open", {
     payload: {
@@ -378,7 +388,7 @@ export const HostRpcs = RpcGroup.make(
       command: Schema.optionalKey(Schema.String),
       script: Schema.optionalKey(Schema.String),
       settingsShell: Schema.optionalKey(Schema.String),
-      path: Schema.String,
+      path: Schema.optionalKey(Schema.String),
     },
     success: TerminalOpened,
     error: terminalErrors,

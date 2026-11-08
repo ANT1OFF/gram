@@ -12,6 +12,11 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { filesOn, type HostFiles } from "./files.ts";
 import { LocalHostProcess } from "./local-process.ts";
+import { RemoteHosts } from "./remote-hosts.ts";
+import { machineHosts } from "./remote-worker-host.ts";
+import { EventHub } from "../events/event-hub.ts";
+import { ThreadStore } from "../persistence/thread-store.ts";
+import { TerminalGate } from "../terminal/gate.ts";
 
 export type { HostFiles } from "./files.ts";
 import { liveScan, type PortScan } from "../ports/scan.ts";
@@ -83,21 +88,47 @@ export interface WorkerHostsShape {
   of(record: { readonly hostId?: HostId | undefined }): Effect.Effect<WorkerHost, HostUnavailable>;
 }
 
-/** The machines this server can place work on. Only this one, until machines can be paired. */
+/**
+ * The joined machines' worker hosts, when this server has joined machines (`RemoteHosts`) and the
+ * services their hosts are built on; absent in test layers without them.
+ */
+const joinedMachines = Effect.gen(function* () {
+  const remote = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
+  const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
+  const hub = Option.getOrUndefined(yield* Effect.serviceOption(EventHub));
+  const proc = Option.getOrUndefined(yield* Effect.serviceOption(Proc));
+  if (remote === undefined || store === undefined || hub === undefined || proc === undefined)
+    return undefined;
+  return yield* machineHosts(remote, {
+    store,
+    hub,
+    proc,
+    agents: yield* AgentHosts,
+    gate: Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate)),
+  });
+});
+
+/** The machines this server can place work on: this one, and the machines joined to it. */
 export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>()(
   "@gram/server/WorkerHosts",
 ) {
   /** The hosts given, `local` among them; any other id is unavailable. */
-  static readonly fromHosts = (local: WorkerHost, others: ReadonlyArray<WorkerHost> = []) => {
+  static readonly fromHosts = (
+    local: WorkerHost,
+    others: ReadonlyArray<WorkerHost> = [],
+    /** The joined machines' hosts, for an id that isn't among `others`. */
+    machines?: (id: HostId) => Effect.Effect<WorkerHost, HostUnavailable>,
+  ) => {
     const byId = new Map<HostId, WorkerHost>([
       [local.id, local],
       ...others.map((h) => [h.id, h] as const),
     ]);
     const get = (id: HostId) => {
       const host = byId.get(id);
-      return host === undefined
+      if (host !== undefined) return Effect.succeed(host);
+      return machines === undefined
         ? Effect.fail(new HostUnavailable({ hostId: id, message: `No machine "${id}" is paired.` }))
-        : Effect.succeed(host);
+        : machines(id);
     };
     return WorkerHosts.of({ local, get, of: (record) => get(hostOf(record)) });
   };
@@ -115,17 +146,22 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     WorkerHosts,
     Effect.gen(function* () {
       const { parts } = yield* LocalHostProcess;
-      return WorkerHosts.fromHosts({
-        id: LOCAL_HOST_ID,
-        sessions: yield* AgentHosts,
-        checkouts: yield* CheckoutService,
-        worktrees: parts.worktrees,
-        git: parts.git,
-        files: parts.files,
-        terminals: yield* HostTerminals,
-        ports: { scan: parts.scan },
-        process: parts.hello,
-      });
+      const machines = yield* joinedMachines;
+      return WorkerHosts.fromHosts(
+        {
+          id: LOCAL_HOST_ID,
+          sessions: yield* AgentHosts,
+          checkouts: yield* CheckoutService,
+          worktrees: parts.worktrees,
+          git: parts.git,
+          files: parts.files,
+          terminals: yield* HostTerminals,
+          ports: { scan: parts.scan },
+          process: parts.hello,
+        },
+        [],
+        machines,
+      );
     }),
   );
 
