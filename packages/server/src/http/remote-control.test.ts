@@ -325,4 +325,51 @@ describe("phone access switched from Settings", () => {
       expect(tailnet.listeners.get(9443)?.paths).toEqual(["/files"]);
     }),
   );
+
+  it.effect("says so, and stays on, when Tailscale won't remove Gram's listener", () =>
+    Effect.gen(function* () {
+      const tailnet = fakeTailscale();
+      const base = tailnet.shape;
+      let refuseOff = false;
+      const shape: TailscaleShape = {
+        run: (args) =>
+          refuseOff && args.at(-1) === "off"
+            ? Effect.succeed({ code: 1, stdout: "", stderr: "busy" })
+            : base.run(args),
+      };
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        yield* remote.enable(9443);
+        refuseOff = true;
+        const error = yield* Effect.flip(remote.disable);
+        expect(error.message).toContain("didn't remove");
+        expect(yield* remote.status).toMatchObject({ mode: "on", problem: error.message });
+        expect(remote.current()).toBeUndefined();
+        refuseOff = false;
+      }).pipe(Effect.provide(control(shape, dataDir())));
+    }),
+  );
+
+  it.effect("removes its old listener before moving to another port", () =>
+    Effect.gen(function* () {
+      const tailnet = fakeTailscale();
+      const dir = dataDir();
+      yield* Effect.gen(function* () {
+        yield* (yield* RemoteControl).enable(9443);
+      }).pipe(Effect.provide(control(tailnet.shape, dir)));
+      // A start that failed left it behind, pointing at the old run.
+      tailnet.listeners.set(9443, { proxy: `http://127.0.0.1:${LOOPBACK}` });
+      tailnet.listeners.set(9444, { proxy: "http://127.0.0.1:1" });
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        yield* settled;
+        // Startup took it back; turn off and move.
+        yield* remote.disable;
+        tailnet.listeners.set(9443, { proxy: "http://127.0.0.1:5555" });
+        expect((yield* remote.enable(9445)).port).toBe(9445);
+      }).pipe(Effect.provide(control(tailnet.shape, dir, 5555)));
+      expect(tailnet.listeners.has(9443)).toBe(false);
+      expect(tailnet.listeners.get(9444)?.proxy).toBe("http://127.0.0.1:1");
+    }),
+  );
 });
