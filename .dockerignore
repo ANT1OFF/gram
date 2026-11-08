@@ -1,7 +1,30 @@
+# What the image never takes from the checkout: build output, and everything .gitignore keeps out
+# for holding secrets or test runs (env files, keys, core dumps, logs, archives).
 .git
 **/node_modules
 **/dist
+**/dist-e2e
 **/out
+**/release
 **/.turbo
+**/.vite
 **/coverage
-apps/desktop/release
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.crt
+**/core.[0-9]*
+**/*.log
+**/*.zip
+**/*.tgz
+**/test-results*
+**/playwright-report*
+**/playwright-results.json
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+docs/design/mocks/*/shots

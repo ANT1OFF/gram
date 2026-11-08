@@ -1,12 +1,15 @@
 # Gram's server in a Linux container. The web app opens at the boot URL the server prints
-# (`docker compose -f docker/compose.yaml logs gram`), on this machine only.
+# (see docs/DOCKER.md), on this machine only.
+# Its own project name, so another project's `down -v` can't take the gram-home volume.
+name: gram
 services:
   gram:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     # This machine's loopback only, on the same port the server listens on, so the boot URL works
-    # as printed. Nothing else on the network reaches it.
+    # as printed. Nothing else on the network reaches it. To use another port, change both sides
+    # and GRAM_PORT together: a Host that doesn't match is refused.
     ports:
       - "127.0.0.1:4317:4317"
     volumes:

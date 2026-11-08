@@ -12,7 +12,7 @@ The image is built from source; no published image exists yet.
 
 ```sh
 docker compose -f docker/compose.yaml up --build -d
-docker compose -f docker/compose.yaml logs gram | grep '^boot '
+docker compose -f docker/compose.yaml logs --no-log-prefix gram | grep '^boot ' | tail -1
 ```
 
 Open the `boot http://127.0.0.1:4317/?boot=…` address the server printed. It signs this browser in.
@@ -33,12 +33,13 @@ docker compose -f docker/compose.yaml exec gram claude
 ```
 
 Run `/login` there and follow the link. Then choose **Check again** in Gram. Codex is in the image
-only when it was built with `--build-arg CODEX_VERSION=<version>`; sign in with
-`docker compose -f docker/compose.yaml exec gram codex login`.
+only when it was built with `--build-arg CODEX_VERSION=<version>`. Its browser login returns to a
+port inside the container, so use its device code instead:
+`docker compose -f docker/compose.yaml exec gram codex login --device-auth`.
 
-The GitHub CLI, for pull requests and their checks, is in the image only when it was built with
-`--build-arg GH_VERSION=<version>`. Sign in with
-`docker compose -f docker/compose.yaml exec gram gh auth login`.
+The GitHub CLI is in the image (`--build-arg GH_VERSION=` leaves it out); **Clone from GitHub**,
+pull requests and their checks need it. Sign in with
+`docker compose -f docker/compose.yaml exec gram gh auth login` and choose the one-time code.
 
 ## Your code
 
@@ -50,15 +51,20 @@ are much slower across that boundary.
 ## What it changes
 
 - The image sets `GRAM_CONTAINER=1` and `GRAM_LISTEN_HOST=0.0.0.0`, so the server listens on the
-  container's own network, which only the port mapping reaches. Outside a container the server
-  ignores `GRAM_LISTEN_HOST` and listens on loopback. Every request still needs a loopback `Host`
-  and the launch cookie.
+  container's own network, which only the port mapping reaches. Without `GRAM_CONTAINER=1` the
+  server ignores `GRAM_LISTEN_HOST` and listens on loopback, and the desktop app drops both. Every
+  request still needs a loopback `Host` and the launch cookie.
+- To use another port, change the mapping's two sides and `GRAM_PORT` together. A `Host` that
+  doesn't match the server's port is refused.
 - Phone access, the desktop app's tray and native notifications aren't part of the container.
+- Sign-ins that return to `localhost`, such as connectors' and Codex's browser login, can't reach
+  the container. Previews of an agent's dev server run on the container's loopback and don't open
+  from your browser yet.
 
-| Build argument        | Default                       | What it sets                               |
-| --------------------- | ----------------------------- | ------------------------------------------ |
-| `CLAUDE_CODE_VERSION` | the version in the Dockerfile | Claude Code from npm                       |
-| `CODEX_VERSION`       | unset                         | Codex from npm, when set                   |
-| `GH_VERSION`          | unset                         | The GitHub CLI's release tarball, when set |
-| `NODE_IMAGE`          | `node:26.12.0-bookworm-slim`  | The image it runs on                       |
-| `BUILD_IMAGE`         | `node:26.12.0-bookworm`       | The image it builds in                     |
+| Build argument        | Default                       | What it sets                                  |
+| --------------------- | ----------------------------- | --------------------------------------------- |
+| `CLAUDE_CODE_VERSION` | the version in the Dockerfile | Claude Code from npm                          |
+| `CODEX_VERSION`       | unset                         | Codex from npm, when set                      |
+| `GH_VERSION`          | `2.80.0`                      | The GitHub CLI's release; empty leaves it out |
+| `NODE_IMAGE`          | `node:26.12.0-bookworm-slim`  | The image it runs on                          |
+| `BUILD_IMAGE`         | `node:26.12.0-bookworm`       | The image it builds in                        |

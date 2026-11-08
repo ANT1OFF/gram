@@ -19,17 +19,23 @@ RUN bun run --filter @gram/web build
 
 FROM ${NODE_IMAGE}
 # What threads use beside the agents: git for checkouts, ripgrep for search, ssh for remotes,
-# procps for the port chips, tini to reap what the agents leave.
+# lsof and procps for the port chips and busy terminals, tini to reap what the agents leave.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client procps ripgrep tini \
+  && apt-get install -y --no-install-recommends ca-certificates curl git lsof openssh-client procps ripgrep tini \
   && rm -rf /var/lib/apt/lists/*
-# The GitHub CLI, for pull requests and their checks, only when GH_VERSION is set (for example
-# `--build-arg GH_VERSION=2.80.0`): its release tarball for this architecture.
-ARG GH_VERSION=
+# The GitHub CLI, for Clone from GitHub, pull requests and their checks: its release tarball for
+# this architecture, checked against the release's checksums. An empty GH_VERSION leaves it out.
+ARG GH_VERSION=2.80.0
 RUN if [ -n "${GH_VERSION}" ]; then \
-    arch="$(dpkg --print-architecture)" \
-    && curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${arch}.tar.gz" \
-      | tar -xz -C /usr/local --strip-components=1 "gh_${GH_VERSION}_linux_${arch}/bin/gh"; \
+    set -e; \
+    arch="$(dpkg --print-architecture)"; \
+    name="gh_${GH_VERSION}_linux_${arch}"; \
+    base="https://github.com/cli/cli/releases/download/v${GH_VERSION}"; \
+    cd /tmp; \
+    curl -fsSLO "${base}/${name}.tar.gz"; \
+    curl -fsSL "${base}/gh_${GH_VERSION}_checksums.txt" | grep " ${name}.tar.gz\$" | sha256sum -c -; \
+    tar -xzf "${name}.tar.gz" -C /usr/local --strip-components=1 "${name}/bin/gh"; \
+    rm "${name}.tar.gz"; \
   fi
 # The agents Gram runs, from npm. Codex only when CODEX_VERSION is set.
 ARG CLAUDE_CODE_VERSION=2.1.319
@@ -38,7 +44,8 @@ RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
   && if [ -n "${CODEX_VERSION}" ]; then npm install -g "@openai/codex@${CODEX_VERSION}"; fi \
   && npm cache clean --force
 RUN useradd --create-home --uid 10001 gram
-COPY --from=build --chown=gram:gram /opt/gram /opt/gram
+# Owned by root: the agents run as gram and can't rewrite the server they run under.
+COPY --from=build /opt/gram /opt/gram
 USER gram
 WORKDIR /home/gram
 # All interfaces inside the container only (`GRAM_CONTAINER`); the port mapping decides who reaches
