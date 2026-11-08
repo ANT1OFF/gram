@@ -10,8 +10,6 @@ import { effortSection, modelSection, modeSection, speedSection } from "./choice
 import { ComposerChoices, type ChoiceSection } from "./choices";
 import { askModelPicker, onModelPickerAsked, useModelPickerRequests } from "./model-picker-request";
 import { EFFORT_OPTIONS } from "./options";
-import type { LabelSize } from "./toolbar-layout";
-import { useToolbarLayout } from "./use-toolbar-layout";
 
 afterEach(() => {
   cleanup();
@@ -74,24 +72,43 @@ const sections = ({
 ];
 
 const chip = () => screen.getByTestId("composer-choices");
-const shown = (selector: string) => chip().querySelector(selector);
-const visible = (selector: string) => !shown(selector)?.className.includes("sr-only");
+const glyphs = () =>
+  [...chip().querySelectorAll<HTMLElement>("[data-chip-glyph]")].map(
+    (el) => el.dataset["chipGlyph"],
+  );
 
 describe("the choices chip", () => {
-  it("says the model, then effort, mode and a speed that isn't the default, in short words", () => {
-    render(<ComposerChoices sections={sections({ effort: "high", speed: "fast" })} />);
-    expect(shown("[data-toolbar-label]")?.textContent).toBe("Claude Opus · High · Auto · Fast");
-    expect(shown("[data-toolbar-compact]")?.textContent).toBe("Opus · High · Auto · Fast");
-    expect(shown("[data-toolbar-value]")?.textContent).toBe("Opus");
-    expect(visible("[data-toolbar-label]")).toBe(true);
+  it("shows no word: the agent's mark alone while nothing set matters for safety or cost", () => {
+    render(
+      <ComposerChoices
+        sections={sections({ effort: "high", mode: "plan", speed: "standard" })}
+        mark={<svg data-testid="mark" />}
+      />,
+    );
+    expect(chip().textContent).toBe("");
+    expect(within(chip()).getByTestId("mark")).toBeTruthy();
+    expect(glyphs()).toEqual([]);
+    // Its name says every value and its shortcut, the defaults' too.
+    expect(chip().getAttribute("aria-label")).toMatch(
+      /^Claude Opus \(.+M\) · Effort: High \(.+E\) · Mode: Plan \(.+A\) · Speed: Standard$/,
+    );
   });
 
-  it("leaves defaults out of its words, its name still saying every value and shortcut", () => {
-    render(<ComposerChoices sections={sections({ speed: "standard" })} />);
-    expect(shown("[data-toolbar-label]")?.textContent).toBe("Claude Opus · Auto");
-    expect(chip().getAttribute("aria-label")).toMatch(
-      /^Claude Opus \(.+M\) · Effort: Model default \(.+E\) · Mode: Auto \(.+A\) · Speed: Standard$/,
+  it("adds Bypass's lock in the warning colour and Fast's bolt beside the mark", () => {
+    render(
+      <ComposerChoices
+        sections={sections({ mode: "bypassPermissions", speed: "fast" })}
+        mark={<svg data-testid="mark" />}
+      />,
     );
+    expect(chip().textContent).toBe("");
+    expect(glyphs()).toEqual(["mode", "speed"]);
+    const lock = chip().querySelector('[data-chip-glyph="mode"] svg');
+    expect(lock?.getAttribute("class")).toContain("text-warning");
+    expect(chip().querySelector('[data-testid="speed-glyph"]')?.getAttribute("data-speed")).toBe(
+      "fast",
+    );
+    expect(chip().getAttribute("aria-label")).toMatch(/ · Mode: Bypass \(.+A\) · Speed: Fast$/);
   });
 
   it("names its agent and every value in its tooltip, one line each", async () => {
@@ -113,99 +130,40 @@ describe("the choices chip", () => {
       "Speed: CLI default",
       "Bypass permissions: tools run without asking for approval.",
     ]);
-    // Bypass keeps its caution colour on the chip, on its own words.
     expect(chip().getAttribute("data-warning")).toBe("true");
-    expect(within(shown("[data-toolbar-label]") as HTMLElement).getByText("Bypass").className).toBe(
-      "text-warning",
-    );
   });
 
-  it.each<[LabelSize, string]>([
-    ["full", "[data-toolbar-label]"],
-    ["short", "[data-toolbar-compact]"],
-    ["value", "[data-toolbar-value]"],
-  ])("at %s shows only those words", (size, selector) => {
-    render(<ComposerChoices sections={sections({ effort: "high" })} size={size} />);
-    for (const each of ["[data-toolbar-label]", "[data-toolbar-compact]", "[data-toolbar-value]"])
-      expect(visible(each), each).toBe(each === selector);
+  it("is never an empty pill: without a mark, the sliders glyph stands in", () => {
+    render(<ComposerChoices sections={sections()} />);
+    expect(chip().textContent).toBe("");
+    expect(within(chip()).getByTestId("choices-glyph")).toBeTruthy();
   });
 
-  it("gives way to its mark only at the narrowest, and keeps the model without one", () => {
-    const view = render(
-      <ComposerChoices sections={sections()} size="icon" mark={<svg data-testid="mark" />} />,
-    );
-    // Every word is still there to be measured, and none of it shows.
-    for (const each of ["[data-toolbar-label]", "[data-toolbar-compact]", "[data-toolbar-value]"]) {
-      expect(shown(each), each).not.toBeNull();
-      expect(visible(each), each).toBe(false);
-    }
-    expect(screen.getByTestId("mark")).toBeTruthy();
-    view.rerender(<ComposerChoices sections={sections()} size="icon" />);
-    expect(visible("[data-toolbar-value]")).toBe(true);
-  });
-
-  it("is never an empty pill: with no value to show yet, the first section's words stand in", () => {
-    const loading = sections().map((section) => ({ ...section, chip: undefined }));
-    render(<ComposerChoices sections={loading} />);
-    expect(shown("[data-toolbar-label]")?.textContent).toBe("Claude Opus");
-  });
-
-  it("settles at its mark in a toolbar too narrow for a word, measuring its hidden words", async () => {
-    const spies = [
-      vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
-        this: HTMLElement,
-      ) {
-        return this.dataset["testid"] === "narrow-toolbar" ? 30 : 0;
-      }),
-      vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
-        this: HTMLElement,
-      ) {
-        if (!this.matches("[data-toolbar-block]")) return 0;
-        const words = [
-          ...this.querySelectorAll(
-            "[data-toolbar-label], [data-toolbar-compact], [data-toolbar-value]",
-          ),
-        ].filter((el) => !hidden(el));
-        return 16 + words.reduce((sum, el) => sum + letters(el), 0);
-      }),
-      vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (
-        this: HTMLElement,
-      ) {
-        return letters(this);
-      }),
-    ];
+  // #263's chip folded its words by the measured width of the row, and a glyph a few px off what
+  // the measure expected flipped it between two layouts until React stopped it ("Maximum update
+  // depth exceeded"). Glyphs alone are one width at any width: nothing measures, so nothing loops.
+  it("renders the same in a toolbar too narrow for it, settling at once", async () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      render(<Narrow />);
-      await waitFor(() => expect(visible("[data-toolbar-label]")).toBe(false));
-      // Settled: a few more frames and it is still the mark, with no update loop on the way.
+      const view = render(
+        <div style={{ width: "30px" }}>
+          <ComposerChoices sections={sections({ speed: "fast" })} mark={<svg />} />
+        </div>,
+      );
+      const first = chip().innerHTML;
       await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
-      for (const each of ["[data-toolbar-label]", "[data-toolbar-compact]", "[data-toolbar-value]"])
-        expect(visible(each), each).toBe(false);
+      view.rerender(
+        <div style={{ width: "300px" }}>
+          <ComposerChoices sections={sections({ speed: "fast" })} mark={<svg />} />
+        </div>,
+      );
+      expect(chip().innerHTML).toBe(first);
       expect(errors).not.toHaveBeenCalledWith(expect.stringMatching(/Maximum update depth/));
     } finally {
-      for (const spy of spies) spy.mockRestore();
       errors.mockRestore();
     }
   });
 });
-
-// happy-dom lays nothing out: a 30 px toolbar, the mark 16 px, each letter of a word 7 px.
-const letters = (el: Element) => (el.textContent ?? "").length * 7;
-const hidden = (el: Element) => el.className.includes("sr-only");
-const NARROW_BLOCKS = [{ id: "choices", foldable: false }];
-
-/** The chip in a toolbar measured by the real `useToolbarLayout`. */
-function Narrow() {
-  const { ref, size } = useToolbarLayout(NARROW_BLOCKS);
-  return (
-    <div ref={ref} data-testid="narrow-toolbar" style={{ padding: "0px", columnGap: "0px" }}>
-      <div data-toolbar-block="choices">
-        <ComposerChoices sections={sections()} size={size("choices")} mark={<svg />} />
-      </div>
-    </div>
-  );
-}
 
 describe("the choices popover", () => {
   it("opens on its Model section, and each section's list checks its value and says what each costs", async () => {

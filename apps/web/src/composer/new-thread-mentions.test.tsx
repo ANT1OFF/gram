@@ -61,17 +61,20 @@ describe("New thread draft @ mentions", () => {
     });
     expect(await screen.findByRole("form", { name: "New thread" })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Agent" }).textContent).toContain("Codex");
-    // The choices chip says the saved mode and speed, as in a thread's composer: Fast is no
-    // default, so it shows, and Bypass keeps its tint.
+    // The choices chip says the saved mode and speed, as in a thread's composer: Bypass's lock in
+    // its caution tint and Fast's bolt beside the mark, their words in its name.
     const chip = screen.getByTestId("composer-choices");
     const name = chip.getAttribute("aria-label") ?? "";
     expect(name).toContain("Mode: Bypass");
     expect(name).toContain("Speed: Fast");
     expect(chip.getAttribute("data-warning")).toBe("true");
-    const words = chip.querySelector("[data-toolbar-label]")!;
-    expect(words.className).not.toContain("sr-only");
-    expect(words.textContent).toMatch(/· Bypass · Fast$/);
-    expect(screen.getByText("Bypass", { selector: "[data-toolbar-label] span" }).className).toBe(
+    expect(chip.textContent).toBe("");
+    expect(
+      [...chip.querySelectorAll<HTMLElement>("[data-chip-glyph]")].map(
+        (el) => el.dataset["chipGlyph"],
+      ),
+    ).toEqual(["mode", "speed"]);
+    expect(chip.querySelector('[data-chip-glyph="mode"] svg')?.getAttribute("class")).toContain(
       "text-warning",
     );
   });
