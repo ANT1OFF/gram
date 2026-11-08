@@ -71,6 +71,7 @@ import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { PreviewFiles } from "../preview/files.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
+import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
@@ -429,8 +430,8 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           // The machines work runs on: only this one for now, over its agents, checkouts, git,
-          // files, terminals and port scan. One host process serves both the worker host and the
-          // worktrees the checkouts make.
+          // files, terminals and port scan. One host process serves the worker host, the worktrees
+          // the checkouts make, and the Claude sessions it can run.
           Layer.provideMerge(
             WorkerHosts.layerLocalOn.pipe(
               Layer.provideMerge(
@@ -438,6 +439,7 @@ export const ServerCore = Layer.unwrap(
                   GitCheckoutLive.pipe(Layer.provide(LocalHostProcess.worktrees)),
                   ClaudeAiSeenLive,
                   HostTerminals.layer,
+                  AgentHostsThroughHost,
                 ),
               ),
               Layer.provideMerge(LocalHostProcess.layer),
