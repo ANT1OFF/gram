@@ -32,6 +32,8 @@ import { sqliteProbe } from "./sqlite-probe.ts";
 
 const PERF = process.env["GRAM_PERF_SQLITE"] === "1";
 const SCOPES = process.env["GRAM_PERF_SQLITE_SCOPES"] === "1";
+/** As the server runs: the main connection on its writer worker. `0` measures it on the loop. */
+const WRITER_OFF_LOOP = process.env["GRAM_PERF_SQLITE_WRITER"] !== "0";
 const OUT = process.env["GRAM_PERF_SQLITE_OUT"] ?? join(tmpdir(), "gram-perf-sqlite.json");
 const walBytes = (file: string) => (existsSync(`${file}-wal`) ? statSync(`${file}-wal`).size : 0);
 
@@ -68,7 +70,9 @@ describe.skipIf(!PERF)("synthetic large SQLite workload", () => {
           const bootStart = performance.now();
           yield* Effect.scoped(
             Effect.gen(function* () {
-              const context = yield* Layer.build(serverLayer(world));
+              const context = yield* Layer.build(
+                serverLayer(world, {}, undefined, { writerOffLoop: WRITER_OFF_LOOP }),
+              );
               yield* Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
                 const store = yield* ThreadStore;
@@ -302,6 +306,7 @@ describe.skipIf(!PERF)("synthetic large SQLite workload", () => {
           `${JSON.stringify(
             {
               fixture: FIXTURE,
+              writerOffLoop: WRITER_OFF_LOOP,
               smoke: SMOKE,
               scopeProbe: SCOPES,
               fixtureMs,

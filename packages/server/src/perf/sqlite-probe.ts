@@ -1,4 +1,5 @@
 import { StatementSync, type SQLInputValue } from "node:sqlite";
+import { statementObservers, type ObservedStatement } from "../persistence/writer-worker.ts";
 
 export const spread = (values: readonly number[]) => {
   const sorted = values.toSorted((a, b) => a - b);
@@ -13,10 +14,21 @@ interface Call {
   ms: number;
 }
 
-/** Test-process-only instrumentation; captures no expanded SQL or result values. */
+/**
+ * Test-process-only instrumentation; captures no expanded SQL or result values. Statements on this
+ * thread are timed here; the writer worker's (`writer-worker.ts`) report SQLite's own time there.
+ */
 export const sqliteProbe = () => {
   const original = StatementSync.prototype.all;
   let calls: Call[] | undefined;
+  const observe = (statement: ObservedStatement) => {
+    calls?.push({
+      sql: statement.sql,
+      bindings: statement.params as SQLInputValue[],
+      ms: statement.ms,
+    });
+  };
+  statementObservers.add(observe);
   StatementSync.prototype.all = function (...bindings) {
     const start = performance.now();
     try {
@@ -68,6 +80,7 @@ export const sqliteProbe = () => {
     },
     restore: () => {
       StatementSync.prototype.all = original;
+      statementObservers.delete(observe);
     },
   };
 };

@@ -86,6 +86,7 @@ const withController = (
       Effect.provide(
         ThreadStore.layerSqlite(join(dir, "recovery.db"), {
           checkpointOffLoop: true,
+          writerOffLoop: true,
           checkpointer: {
             staleMs: 60_000,
             spawn: () => {

@@ -13,6 +13,7 @@ import {
   SqlError,
   ConnectionError,
 } from "../platform/unstable.ts";
+import * as WriterWorker from "./writer-worker.ts";
 
 const discardConnection = Symbol("discard durable SQLite connection");
 type OwnedConnection = SqlConnection & { readonly [discardConnection]: () => void };
@@ -20,15 +21,25 @@ interface Generation {
   readonly scope: Scope.Closeable;
   connection: OwnedConnection;
   poisoned: boolean;
+  /** Whether the connection's worker thread has stopped (`writer-worker.ts`); never, on the loop. */
+  readonly stopped: () => boolean;
 }
 
 /**
  * Own the connection that durableCommit can discard. All borrowers share the gate; a poisoned
  * generation is closed before releasing it, and the next borrower opens a new NORMAL connection.
  * Statement borrowing stays scope-free; transactions and explicit reservations own a scoped lease.
+ *
+ * With `offLoop`, the connection lives on a worker thread (`writer-worker.ts`); a generation whose
+ * worker stopped is replaced the same way as a poisoned one.
  */
 export const durableSqliteLayer = (
-  options: Pick<SqliteClient.SqliteClientConfig, "filename" | "readonly" | "busyTimeout">,
+  options:
+    | (Pick<SqliteClient.SqliteClientConfig, "filename" | "readonly" | "busyTimeout"> & {
+        readonly offLoop?: false | undefined;
+      })
+    // The writer worker opens read-write with its own busy timeout.
+    | (Pick<SqliteClient.SqliteClientConfig, "filename"> & { readonly offLoop: true }),
   initialize?: (sql: SqlClient.SqlClient) => Effect.Effect<void, SqlError>,
 ): Layer.Layer<SqlClient.SqlClient, SqlError> =>
   Layer.effect(
@@ -49,7 +60,11 @@ export const durableSqliteLayer = (
           return closeCurrent;
         }),
       );
-      const closePoisoned = Effect.suspend(() => (current?.poisoned ? closeCurrent : Effect.void));
+      const closePoisoned = Effect.suspend(() =>
+        current !== undefined && (current.poisoned || current.stopped())
+          ? closeCurrent
+          : Effect.void,
+      );
       const available = Effect.suspend(() => {
         if (closed)
           return Effect.fail(
@@ -61,18 +76,30 @@ export const durableSqliteLayer = (
               }),
             }),
           );
-        if (current !== undefined) return Effect.succeed(current);
+        if (current !== undefined && !current.stopped()) return Effect.succeed(current);
         return Effect.gen(function* () {
+          // A generation whose worker stopped while idle: close its scope before replacing it.
+          yield* closeCurrent;
           const scope = yield* Scope.make();
           return yield* Effect.gen(function* () {
-            const context = yield* Layer.buildWithScope(SqliteClient.layer(options), scope);
+            const context = yield* Layer.buildWithScope(
+              options.offLoop === true
+                ? WriterWorker.layer({ filename: options.filename })
+                : SqliteClient.layer(options),
+              scope,
+            );
             const sql = Context.get(context, SqlClient.SqlClient);
+            const stopped =
+              WriterWorker.writerStopped in sql
+                ? (sql as WriterWorker.WriterClient)[WriterWorker.writerStopped]
+                : () => false;
             yield* sql`PRAGMA synchronous = NORMAL`;
             if (initialize !== undefined) yield* initialize(sql);
             const raw = yield* sql.reserve.pipe(Scope.provide(scope));
             const generation: Generation = {
               scope,
               poisoned: false,
+              stopped,
               connection: Object.assign({}, raw, {
                 [discardConnection]: () => {
                   generation.poisoned = true;
@@ -113,7 +140,8 @@ export const durableSqliteLayer = (
           ),
         compiler: SqlStatement.makeCompilerSqlite(),
         spanAttributes: [["db.system.name", "sqlite"]],
-        beginTransaction: options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
+        beginTransaction:
+          options.offLoop !== true && options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
         releaseSavepoint: (name) => `RELEASE SAVEPOINT ${name}`,
         onCommitFailure: (conn) =>
           conn.executeUnprepared("ROLLBACK", [], undefined).pipe(Effect.asVoid),

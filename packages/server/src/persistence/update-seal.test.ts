@@ -37,7 +37,7 @@ const open = (file: string) =>
   Effect.gen(function* () {
     const scope = yield* Scope.make();
     const context = yield* Layer.buildWithScope(
-      ThreadStore.layerSqlite(file, { checkpointOffLoop: true }),
+      ThreadStore.layerSqlite(file, { checkpointOffLoop: true, writerOffLoop: true }),
       scope,
     );
     const sql = yield* SqlClient.SqlClient.pipe(Effect.provideContext(context));
@@ -79,24 +79,26 @@ describe("update database seal", () => {
         const file = databaseFile();
         const scope = yield* Scope.make();
         const context = yield* Layer.buildWithScope(
-          ThreadStore.layerSqlite(file, { checkpointOffLoop: true }),
+          ThreadStore.layerSqlite(file, { checkpointOffLoop: true, writerOffLoop: true }),
           scope,
         );
         const sql = yield* SqlClient.SqlClient.pipe(Effect.provideContext(context));
         yield* sql`CREATE TABLE IF NOT EXISTS seal_probe (id INTEGER PRIMARY KEY, data TEXT)`;
         yield* insert(sql, 200);
-        // Long enough on the worker's own connection (about 0.7 s) to outlast the seal's lock wait.
+        // Long enough on the worker's own connection (about 0.35 s) to outlast the seal's lock wait,
+        // and short enough to finish inside the worker's 2 s stop bound on a loaded macOS runner: a
+        // read stopped past it reruns on the writer, which then holds the seal past its own wait.
         const read = yield* Effect.forkScoped(
           readOffLoop<{ n: number }>(
             `SELECT count(*) AS n FROM seal_probe a, seal_probe b, seal_probe c,
-              (${Array.from({ length: 10 }, (_, i) => `SELECT ${i}`).join(" UNION ALL ")})`,
+              (${Array.from({ length: 5 }, (_, i) => `SELECT ${i}`).join(" UNION ALL ")})`,
             [],
           ).pipe(Effect.provideContext(context)),
         );
         yield* Effect.sleep("50 millis");
         expect(yield* sealForUpdate).toBe(true);
         expect(walBytes(file)).toBe(0);
-        expect(yield* Fiber.join(read)).toEqual([{ n: 10 * 200 ** 3 }]);
+        expect(yield* Fiber.join(read)).toEqual([{ n: 5 * 200 ** 3 }]);
         const closed = yield* Scope.close(scope, Exit.void).pipe(Effect.timeoutOption(10_000));
         expect(Option.isSome(closed)).toBe(true);
       }),

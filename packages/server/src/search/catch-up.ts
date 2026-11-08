@@ -53,7 +53,9 @@ export const catchUpSearch = (retry: Schedule.Schedule<unknown, SqlError> = LOCK
 export const SearchCatchUp: Layer.Layer<never, never, SqlClient.SqlClient> = Layer.effectDiscard(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    // Started at once: with nothing behind, the sweep has read so and ended before the store opens.
+    // Started at once. On the loop, with nothing behind, it has read so before the store opens; on
+    // the writer thread it runs beside the opening, which is as safe: clearing a mark re-indexes the
+    // row as it stands.
     yield* Effect.forkScoped(
       catchUpSearch().pipe(
         Effect.provideService(SqlClient.SqlClient, sql),

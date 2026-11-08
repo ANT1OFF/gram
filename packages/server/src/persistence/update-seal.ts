@@ -22,7 +22,7 @@ import { SqlClient } from "../platform/unstable.ts";
 
 /** How long the seal waits for the writer before it; past it, the database essential fails. */
 export const SEAL_TIMEOUT_MS = 1_000;
-/** SQLite's own lock waits during the seal, which block the event loop while they last. */
+/** SQLite's own lock waits during the seal (on the writer thread, or the loop without one). */
 const SEAL_BUSY_TIMEOUT_MS = 250;
 /** The client's busy timeout (`SqliteClient`'s default), restored when a seal fails. */
 const CLIENT_BUSY_TIMEOUT_MS = 5_000;
