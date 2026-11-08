@@ -92,6 +92,8 @@ import { WorkspaceOutputs } from "../outputs/workspace-outputs.ts";
 import {
   pairingCsp,
   pairingDocument,
+  unpairedCsp,
+  unpairedDocument,
   SESSION_LIFETIME_MS,
   REMOTE_CONNECT_PATH,
   REMOTE_CLAIM_PATH,
@@ -235,6 +237,20 @@ export const AuthMiddleware = HttpRouter.middleware(
                 : yield* httpEffect;
             break;
           case "reject":
+            // A phone opening Gram unpaired, or after it was removed, gets a page saying so.
+            if (
+              isRemote &&
+              decision.status === 401 &&
+              request.method === "GET" &&
+              (request.headers["accept"] ?? "").includes("text/html")
+            )
+              return HttpServerResponse.setHeaders(
+                HttpServerResponse.text(unpairedDocument, {
+                  status: 401,
+                  contentType: "text/html; charset=utf-8",
+                }),
+                { ...securityHeaders, "content-security-policy": unpairedCsp },
+              );
             response = HttpServerResponse.text(decision.message, { status: decision.status });
             break;
         }

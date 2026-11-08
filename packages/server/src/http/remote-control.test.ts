@@ -30,6 +30,8 @@ const dataDir = () => {
 interface Listener {
   proxy: string;
   funnel?: boolean;
+  /** Extra path handlers beside `/`. */
+  paths?: string[];
 }
 
 const ok = (stdout: string): TailscaleRun => ({ code: 0, stdout, stderr: "" });
@@ -71,7 +73,14 @@ const fakeTailscale = (
                 Web: Object.fromEntries(
                   [...listeners].map(([p, l]) => [
                     `${DNS}:${p}`,
-                    { Handlers: { "/": { Proxy: l.proxy } } },
+                    {
+                      Handlers: {
+                        "/": { Proxy: l.proxy },
+                        ...Object.fromEntries(
+                          (l.paths ?? []).map((path) => [path, { Path: "/srv" }]),
+                        ),
+                      },
+                    },
                   ]),
                 ),
                 AllowFunnel: Object.fromEntries(
@@ -262,6 +271,58 @@ describe("phone access switched from Settings", () => {
         expect(remote.current()?.cookieName).toBe(`__Host-gram_remote_${LOOPBACK}`);
       }).pipe(Effect.provide(control(tailnet.shape, dataDir(), LOOPBACK, origin)));
       expect(tailnet.calls).toEqual([]);
+    }),
+  );
+
+  it.effect("leaves alone a listener the user put on Gram's saved port after Gram quit", () =>
+    Effect.gen(function* () {
+      const tailnet = fakeTailscale();
+      const dir = dataDir();
+      yield* Effect.gen(function* () {
+        yield* (yield* RemoteControl).enable(9443);
+      }).pipe(Effect.provide(control(tailnet.shape, dir)));
+      // Same shape as Gram's own target, but not the one Gram wrote.
+      tailnet.listeners.set(9443, { proxy: "http://127.0.0.1:3000" });
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        yield* settled;
+        expect(remote.current()).toBeUndefined();
+        expect((yield* remote.status).problem).toBe(
+          "Another Tailscale Serve listener uses port 9443",
+        );
+        yield* remote.disable;
+      }).pipe(Effect.provide(control(tailnet.shape, dir, 5555)));
+      expect(tailnet.listeners.get(9443)?.proxy).toBe("http://127.0.0.1:3000");
+      expect(tailnet.calls.filter((call) => call.startsWith("serve --bg"))).toHaveLength(1);
+    }),
+  );
+
+  it.effect("puts the setting back when Tailscale refuses to turn on", () =>
+    Effect.gen(function* () {
+      const tailnet = fakeTailscale({ refuseServe: "error" });
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        yield* Effect.flip(remote.enable());
+        expect(yield* remote.status).toMatchObject({ mode: "off" });
+      }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+    }),
+  );
+
+  it.effect("treats Gram's target with another path handler added as the user's listener", () =>
+    Effect.gen(function* () {
+      const tailnet = fakeTailscale();
+      const dir = dataDir();
+      yield* Effect.gen(function* () {
+        yield* (yield* RemoteControl).enable(9443);
+      }).pipe(Effect.provide(control(tailnet.shape, dir)));
+      tailnet.listeners.set(9443, { proxy: `http://127.0.0.1:${LOOPBACK}`, paths: ["/files"] });
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        yield* settled;
+        expect(remote.current()).toBeUndefined();
+        yield* remote.disable;
+      }).pipe(Effect.provide(control(tailnet.shape, dir, 5555)));
+      expect(tailnet.listeners.get(9443)?.paths).toEqual(["/files"]);
     }),
   );
 });

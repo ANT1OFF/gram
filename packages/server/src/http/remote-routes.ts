@@ -25,6 +25,18 @@ export const REMOTE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
 const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 const refuse = (message: string, status = 403) => HttpServerResponse.text(message, { status });
 
+const UNSAVED = "Removed, but it couldn't be saved, so it comes back when Gram restarts";
+
+/** Runs a removal, which takes effect at once; false when saving it failed. */
+const keepRemoval = (removal: () => unknown): boolean => {
+  try {
+    removal();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /** A small JSON object body, or undefined for anything else. */
 const smallJson = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
@@ -76,8 +88,10 @@ export const remoteManagement = (
       if (path === REMOTE_REVOKE_PATH) {
         const body = yield* smallJson;
         if (body?.["id"] !== own) return refuse("forbidden: remove other browsers locally");
-        remote.revoke(own);
-        return yield* HttpServerResponse.text("removed").pipe(
+        const saved = keepRemoval(() => remote.revoke(own));
+        return yield* HttpServerResponse.text(saved ? "removed" : UNSAVED, {
+          status: saved ? 200 : 500,
+        }).pipe(
           HttpServerResponse.expireCookie(remote.cookieName, {
             secure: true,
             httpOnly: true,
@@ -124,10 +138,16 @@ export const remoteManagement = (
       case REMOTE_REVOKE_PATH: {
         const body = yield* smallJson;
         if (current === undefined) return refuse("phone access is off", 409);
-        if (body?.["all"] === true) current.revokeAll();
-        else if (typeof body?.["id"] !== "string" || !current.revoke(body["id"]))
+        const id = body?.["id"];
+        if (
+          body?.["all"] !== true &&
+          (typeof id !== "string" || !current.devices().some((d) => d.id === id))
+        )
           return refuse("no such browser", 404);
-        return json(yield* control.status);
+        const saved = keepRemoval(() =>
+          body?.["all"] === true ? current.revokeAll() : current.revoke(String(id)),
+        );
+        return saved ? json(yield* control.status) : json({ message: UNSAVED }, 500);
       }
       default:
         return refuse("forbidden");

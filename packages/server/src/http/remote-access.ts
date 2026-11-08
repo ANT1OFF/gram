@@ -54,6 +54,12 @@ else { document.body.textContent = "Pairing refused. Use a fresh link, or your e
 export const pairingDocument = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gram pairing</title><body><script>${bridgeScript}</script></body>`;
 export const pairingCsp = `default-src 'none'; script-src 'sha256-${createHash("sha256").update(bridgeScript).digest("base64")}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`;
 
+/** What a browser that isn't paired, or was removed, sees: no script, no assets, no data. */
+export const unpairedDocument = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gram</title><style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:48px 24px;max-width:28rem;color:#222;background:#fff}@media (prefers-color-scheme:dark){body{color:#ddd;background:#161616}}h1{font-size:20px;margin:0 0 8px}p{margin:0;opacity:.75}</style><h1>This browser isn't paired with Gram</h1><p>It was never paired, or it was removed from Gram's settings on your computer. To use it, pair it again from Settings → Machines → Phones and browsers there.</p>`;
+export const unpairedCsp = `default-src 'none'; style-src 'sha256-${createHash("sha256")
+  .update(/<style>(.*)<\/style>/.exec(unpairedDocument)![1]!)
+  .digest("base64")}'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`;
+
 /** Where the current pairing link stands, for the local dialog that shows its QR code. */
 export type PairingState =
   | { readonly state: "waiting"; readonly expiresAt: number }
@@ -146,6 +152,11 @@ export const createRemoteAccess = (
       for (const close of closers ?? []) close();
     }
   };
+  const forget = (gone: ReadonlyArray<RemoteSession>) => {
+    sessions = sessions.filter((session) => !gone.includes(session));
+    disconnect(gone.map((session) => session.hash));
+    store?.write(sessions);
+  };
   const touch = (session: RemoteSession) => {
     const seen = now() - (now() % LAST_SEEN_STEP_MS);
     if (session.lastSeenAt !== undefined && session.lastSeenAt >= seen) return;
@@ -219,18 +230,17 @@ export const createRemoteAccess = (
       })),
     deviceIdOf: deviceId,
     /** Signs one browser out at once: its session goes and its open connections close. */
+    /**
+     * Signs one browser out at once: its session goes and its open connections close. Memory is
+     * changed first, so a removal holds even when saving it throws (until a restart re-reads it).
+     */
     revoke: (id: string): boolean => {
       const gone = sessions.filter((session) => deviceId(session) === id);
       if (gone.length === 0) return false;
-      save(sessions.filter((session) => !gone.includes(session)));
-      disconnect(gone.map((session) => session.hash));
+      forget(gone);
       return true;
     },
-    revokeAll: () => {
-      const gone = sessions;
-      save([]);
-      disconnect(gone.map((session) => session.hash));
-    },
+    revokeAll: () => forget(sessions),
     /** Closes every open remote connection, keeping the pairings (turning access off). */
     disconnectAll: () => disconnect([...connections.keys()]),
     /** Registers `close` for as long as a connection of `session` stays open. */

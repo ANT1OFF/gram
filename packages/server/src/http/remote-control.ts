@@ -115,6 +115,8 @@ const tailnetName = (name: string) => {
   }
 };
 
+const portOf = (origin: string) => Number(new URL(origin).port || 443);
+
 export const originFor = (dnsName: string, port: number): string =>
   port === 443 ? `https://${dnsName}` : `https://${dnsName}:${port}`;
 
@@ -123,6 +125,8 @@ export interface ServeListener {
   readonly port: number;
   /** The `/` handler's proxy target, when it is a proxy. */
   readonly proxy: string | undefined;
+  /** How many path handlers the listener has; Gram's has only `/`. */
+  readonly handlers: number;
   readonly funnel: boolean;
 }
 
@@ -140,11 +144,12 @@ export const serveListeners = (
       const funnel = record(status["AllowFunnel"]);
       return Object.keys(tcp).map((key): ServeListener => {
         const port = Number(key);
-        const handler = record(record(record(web[`${dnsName}:${port}`])["Handlers"])["/"]);
-        const proxy = handler["Proxy"];
+        const handlers = record(record(web[`${dnsName}:${port}`])["Handlers"]);
+        const proxy = record(handlers["/"])["Proxy"];
         return {
           port,
-          proxy: typeof proxy === "string" ? proxy : undefined,
+          proxy: typeof proxy === "string" ? proxy.replace(/\/$/, "") : undefined,
+          handlers: Object.keys(handlers).length,
           funnel: funnel[`${dnsName}:${port}`] === true,
         };
       });
@@ -154,7 +159,7 @@ export const serveListeners = (
 
 /** The ports Gram tries, in order, when it picks one itself. */
 export const SERVE_PORTS = [9443, 9444, 9445, 9446, 8443] as const;
-const GRAM_PROXY = /^http:\/\/127\.0\.0\.1:\d{1,5}\/?$/;
+const GRAM_TARGET = /^http:\/\/127\.0\.0\.1:\d{1,5}$/;
 
 export class RemoteRefused extends Data.TaggedError("RemoteRefused")<{
   readonly message: string;
@@ -163,6 +168,11 @@ export class RemoteRefused extends Data.TaggedError("RemoteRefused")<{
 interface ServeSetting {
   readonly enabled: boolean;
   readonly port: number;
+  /**
+   * The exact target Gram last pointed its listener at. Only a listener on `port` with this one
+   * `/` proxy and no other handler is Gram's; any other is the user's and is never touched.
+   */
+  readonly target?: string;
 }
 
 /** `<dataDir>/remote-access/serve.json`: whether Settings turned phone access on, and its port. */
@@ -178,10 +188,16 @@ const serveSettingFile = (dataDir: string) => {
         typeof saved["enabled"] !== "boolean" ||
         !Number.isInteger(saved["port"]) ||
         Number(saved["port"]) < 1 ||
-        Number(saved["port"]) > 65535
+        Number(saved["port"]) > 65535 ||
+        (saved["target"] !== undefined &&
+          !(typeof saved["target"] === "string" && GRAM_TARGET.test(saved["target"])))
       )
         throw new Error("Remote access storage is invalid");
-      return { enabled: saved["enabled"], port: Number(saved["port"]) };
+      return {
+        enabled: saved["enabled"],
+        port: Number(saved["port"]),
+        ...(typeof saved["target"] === "string" ? { target: saved["target"] } : {}),
+      };
     },
     write: (setting: ServeSetting) => file.write({ version: 1, ...setting }),
   };
@@ -282,28 +298,46 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
           }
         };
         const target = `http://127.0.0.1:${loopback}`;
+        /** The listener this run added and hasn't removed yet, for the shutdown finalizer. */
+        let applied: number | undefined;
+        const save = (setting: ServeSetting) =>
+          Effect.try({
+            try: () => settings.write(setting),
+            catch: () => new RemoteRefused({ message: "Couldn't save the setting" }),
+          });
+        const ours = (listener: ServeListener | undefined, owned: string | undefined) =>
+          listener !== undefined &&
+          listener.handlers === 1 &&
+          listener.proxy !== undefined &&
+          (listener.proxy === target || listener.proxy === owned);
 
-        /** Adds or re-points Gram's listener on `port`; refuses a port anything else holds. */
-        const serve = (dnsName: string, port: number, ownedPort: number | undefined) =>
+        /**
+         * Adds or re-points Gram's listener on `port`, refusing a port anything else holds. The
+         * target is saved before Tailscale is asked, so a listener Gram added is always one it
+         * can recognise later, even after a crash.
+         */
+        const serve = (dnsName: string, port: number, saved: ServeSetting | undefined) =>
           Effect.gen(function* () {
             const listeners = yield* serveListeners(tailscale, dnsName);
             if (listeners === undefined) return yield* refused("Tailscale Serve didn't answer");
             const held = listeners.find((listener) => listener.port === port);
             if (held?.funnel) return yield* refused(`Port ${port} is shared publicly with Funnel`);
-            if (
-              held !== undefined &&
-              !(ownedPort === port && held.proxy !== undefined && GRAM_PROXY.test(held.proxy))
-            )
+            const owned = saved?.port === port ? saved.target : undefined;
+            if (held !== undefined && !ours(held, owned))
               return yield* refused(`Another Tailscale Serve listener uses port ${port}`);
-            if (held?.proxy?.replace(/\/$/, "") === target) return;
-            const result = yield* tailscale
-              .run(["serve", "--bg", `--https=${port}`, target])
-              .pipe(
-                Effect.catchTag("TailscaleMissing", () =>
-                  refused(stateMessage({ state: "missing" })),
-                ),
-              );
+            yield* save({ enabled: true, port, target });
+            if (held?.proxy === target) {
+              applied = port;
+              return;
+            }
+            const result = yield* tailscale.run(["serve", "--bg", `--https=${port}`, target]).pipe(
+              Effect.catchTag("TailscaleMissing", () =>
+                refused(stateMessage({ state: "missing" })),
+              ),
+              Effect.tapError(() => restore(saved)),
+            );
             if (result.code !== 0) {
+              yield* restore(saved);
               const consent = /https:\/\/login\.tailscale\.com\/\S+/.exec(
                 `${result.stdout}\n${result.stderr}`,
               )?.[0];
@@ -313,6 +347,35 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
                   : `Allow Tailscale Serve for this tailnet at ${consent}`,
               );
             }
+            applied = port;
+          });
+        /** Puts back the setting a refused turn-on replaced, keeping what it already owned. */
+        const restore = (saved: ServeSetting | undefined) =>
+          Effect.sync(() => {
+            try {
+              settings.write(saved ?? { enabled: false, port: SERVE_PORTS[0] });
+            } catch {
+              /* The target written stays recorded, which only lets Gram recognise its own. */
+            }
+          });
+
+        /** Removes Gram's listener on `port`, only while it is still Gram's alone. */
+        const unserve = (port: number, owned: string | undefined) =>
+          Effect.gen(function* () {
+            const state = yield* probe(true);
+            if (state.state !== "ready" && state.state !== "no-https") return;
+            const listeners = yield* serveListeners(tailscale, state.dnsName);
+            if (
+              !ours(
+                listeners?.find((listener) => listener.port === port),
+                owned,
+              )
+            )
+              return;
+            yield* tailscale
+              .run(["serve", `--https=${port}`, "off"])
+              .pipe(Effect.catchTag("TailscaleMissing", () => Effect.void));
+            if (applied === port) applied = undefined;
           });
 
         const open = (dnsName: string, port: number) => {
@@ -340,9 +403,7 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
           const state = yield* probe();
           const saved = readSetting();
           const port =
-            access !== undefined
-              ? Number(new URL(access.origin).port || 443)
-              : (saved?.port ?? SERVE_PORTS[0]);
+            access !== undefined ? portOf(access.origin) : (saved?.port ?? SERVE_PORTS[0]);
           return {
             mode: access !== undefined || saved?.enabled === true ? "on" : "off",
             tailscale: state,
@@ -353,6 +414,34 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
             ...(problem === undefined ? {} : { problem }),
           } satisfies RemoteAccessStatus;
         });
+
+        // A dead loopback port could be reused by another program, which Serve would then share
+        // with the tailnet. Take the listener down with the server; startup puts it back. Added
+        // before the startup fiber, so that fiber is interrupted before this waits for the lock.
+        yield* Effect.addFinalizer(() =>
+          lock
+            .withPermits(1)(
+              Effect.suspend(() => {
+                access?.disconnectAll();
+                const port = applied;
+                if (port === undefined) return Effect.void;
+                return Effect.gen(function* () {
+                  const state = yield* probe();
+                  if (state.state !== "ready" && state.state !== "no-https") return;
+                  const listeners = yield* serveListeners(tailscale, state.dnsName);
+                  if (
+                    !ours(
+                      listeners?.find((listener) => listener.port === port),
+                      undefined,
+                    )
+                  )
+                    return;
+                  yield* tailscale.run(["serve", `--https=${port}`, "off"]);
+                });
+              }),
+            )
+            .pipe(Effect.timeout(3000), Effect.ignore),
+        );
 
         // Re-point a listener Settings turned on to this run's port, off the boot path.
         yield* lock
@@ -365,7 +454,7 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
                 problem = stateMessage(state);
                 return;
               }
-              yield* serve(state.dnsName, saved.port, saved.port);
+              yield* serve(state.dnsName, saved.port, saved);
               open(state.dnsName, saved.port);
             }).pipe(
               Effect.catchTag("RemoteRefused", (error) =>
@@ -377,19 +466,6 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
           )
           .pipe(Effect.forkScoped);
 
-        // A dead loopback port could be reused by another program, which Serve would then share
-        // with the tailnet. Take the listener down with the server; startup puts it back.
-        yield* Effect.addFinalizer(() =>
-          Effect.suspend(() => {
-            if (access === undefined) return Effect.void;
-            access.disconnectAll();
-            const port = Number(new URL(access.origin).port || 443);
-            return tailscale
-              .run(["serve", `--https=${port}`, "off"])
-              .pipe(Effect.timeout(3000), Effect.ignore);
-          }),
-        );
-
         return RemoteControl.of({
           current: () => access,
           status: statusNow,
@@ -400,15 +476,9 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
                 if (state.state !== "ready") return yield* refused(stateMessage(state));
                 const saved = readSetting();
                 const port = yield* pickPort(state.dnsName, requested, saved);
-                const owned =
-                  access !== undefined || saved?.enabled === true ? saved?.port : undefined;
-                if (access !== undefined && saved?.port !== port)
+                if (access !== undefined && portOf(access.origin) !== port)
                   return yield* refused("Turn phone access off before changing its port");
-                yield* serve(state.dnsName, port, owned);
-                yield* Effect.try({
-                  try: () => settings.write({ enabled: true, port }),
-                  catch: () => new RemoteRefused({ message: "Couldn't save the setting" }),
-                });
+                yield* serve(state.dnsName, port, saved);
                 if (access === undefined) open(state.dnsName, port);
                 problem = undefined;
                 return yield* statusNow;
@@ -421,26 +491,20 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
               access = undefined;
               problem = undefined;
               current?.disconnectAll();
+              const port = current !== undefined ? portOf(current.origin) : saved?.port;
+              // Off first: a setting that fails to save must not leave the listener up.
+              if (port !== undefined && (current !== undefined || saved?.enabled === true))
+                yield* unserve(port, saved?.port === port ? saved.target : undefined);
               if (saved !== undefined)
-                yield* Effect.try({
-                  try: () => settings.write({ enabled: false, port: saved.port }),
-                  catch: () => new RemoteRefused({ message: "Couldn't save the setting" }),
-                });
-              const port =
-                current !== undefined ? Number(new URL(current.origin).port || 443) : saved?.port;
-              if (port !== undefined && (current !== undefined || saved?.enabled === true)) {
-                const state = yield* probe(true);
-                const listeners =
-                  state.state === "ready" || state.state === "no-https"
-                    ? yield* serveListeners(tailscale, state.dnsName)
-                    : undefined;
-                const held = listeners?.find((listener) => listener.port === port);
-                // Only ever remove the listener Gram added.
-                if (held?.proxy !== undefined && GRAM_PROXY.test(held.proxy))
-                  yield* tailscale
-                    .run(["serve", `--https=${port}`, "off"])
-                    .pipe(Effect.catchTag("TailscaleMissing", () => Effect.void));
-              }
+                yield* save({ ...saved, enabled: false }).pipe(
+                  Effect.mapError(
+                    () =>
+                      new RemoteRefused({
+                        message:
+                          "Turned off, but the setting couldn't be saved, so it turns back on when Gram restarts",
+                      }),
+                  ),
+                );
               return yield* statusNow;
             }),
           ),

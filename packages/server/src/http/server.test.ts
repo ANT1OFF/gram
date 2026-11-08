@@ -1099,6 +1099,16 @@ layer(testServer("https://device.tail123.ts.net:9443"), { excludeTestServices: t
           yield* Effect.promise(() => socket.closed);
           expect(other.isOpen()).toBe(true);
           expect(yield* upgradeStatus(port, remote(phone))).toBe(401);
+          const page = yield* raw(port, {
+            path: "/t/synthetic",
+            headers: { host, cookie: phone, accept: "text/html" },
+          });
+          expect(page.status).toBe(401);
+          expect(page.body).toContain("This browser isn't paired with Gram");
+          expect(page.body).not.toContain("<script");
+          expect(page.headers["content-security-policy"]).toMatch(
+            /^default-src 'none'; style-src 'sha256-/,
+          );
           expect(yield* upgradeStatus(port, remote(laptop))).toBe(101);
 
           // A paired browser may sign itself out.

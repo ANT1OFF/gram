@@ -279,4 +279,28 @@ describe("private browser access", () => {
         kind: "pass",
       });
   });
+
+  it("keeps a removal in force when saving it fails", () => {
+    let refuse = false;
+    const store = {
+      read: () => [],
+      write: () => {
+        if (refuse) throw new Error("write refused");
+      },
+    };
+    const access = createRemoteAccess(ORIGIN, PORT, Date.now, store);
+    const phone = claim(access, codeOf(access.mint().url))!;
+    const session = access.sessionOf(request({ cookies: { [access.cookieName]: phone } }))!;
+    let closed = false;
+    access.onDisconnect(session, () => {
+      closed = true;
+    });
+    refuse = true;
+    expect(() => access.revoke(access.deviceIdOf(session))).toThrow("write refused");
+    expect(closed).toBe(true);
+    expect(access.devices()).toEqual([]);
+    expect(access.authorize(request({ cookies: { [access.cookieName]: phone } }))).toMatchObject({
+      status: 401,
+    });
+  });
 });

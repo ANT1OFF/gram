@@ -31,15 +31,14 @@ Without `GRAM_REMOTE_ORIGIN`, the local app switches access through the Tailscal
   9446 and 8443 that `tailscale serve status --json` shows free. A port that another listener
   holds, or that Funnel shares, is refused. Gram never runs Funnel, `serve reset`, or anything
   that touches another listener.
-- The setting is `<dataDir>/remote-access/serve.json` (`version`, `enabled`, `port`), private
+- The setting is `<dataDir>/remote-access/serve.json` (`version`, `enabled`, `port`, `target`), private
   like the pairings. The origin is `https://<name>.ts.net:<port>` (no port for 443).
 - Each launch gets a new loopback port, so Gram removes its listener when the server stops and
   adds it back, pointed at the new port, when it starts. A crash leaves a listener pointing at a
   dead loopback port until the next start re-points it; another program that later takes that
   port would be reachable from the tailnet meanwhile, so turn access off before uninstalling.
-  Startup only re-points a listener on the saved port whose target is a `http://127.0.0.1:<port>`
-  proxy; anything else there leaves access off with a problem the status reports.
-- Turning off removes that listener (only if it is still a loopback proxy), closes every open
+  Gram saves the exact target it points its listener at before asking Tailscale, and only a listener with that one `/` proxy and no other handler counts as Gram's; startup re-points only that one, and anything else on the saved port leaves access off with a problem the status reports.
+- Turning off removes that listener (only while it is still Gram's alone), even when saving the setting fails, closes every open
   remote connection and keeps the pairings. The remote cookie is named after the Serve port, so
   pairings survive restarts on a new loopback port.
 
@@ -128,7 +127,7 @@ Each browser has an id (the first 16 hex digits of its session hash), a name suc
 "iPhone · Safari" picked from a fixed list by its user agent at pairing (the user agent itself
 is never stored), when it paired, the hour it was last seen and when it expires.
 
-Removing a browser deletes its session hash at once, so its next request gets 401, and closes
+Removing a browser deletes its session hash at once (in memory first, so it holds even if saving fails; the answer is then a 500 saying it comes back at restart), so its next request gets 401, and closes
 its open WebSocket connections. Removing all does the same for every browser. These need the
 server running; with it stopped you can still back up the data directory and remove only
 `<dataDir>/remote-access/`, then restart and pair again. Never reset storage while a server is
