@@ -1457,6 +1457,27 @@ const STATE_TRUTH_SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "question-other",
+    title:
+      'A question in the Inbox: its choices, then "Other…" with the user\'s own words typed and picked, Send answer ready (before: choices only, own words behind a button)',
+    open: async (page) => {
+      await openRealisticPanel(page);
+      await page.getByTestId("overview-needs-you").click();
+      await page
+        .getByTestId("inbox-item")
+        .filter({ hasText: "A refund webhook that keeps failing" })
+        .click();
+      const item = page.getByTestId("inbox-detail").getByTestId("ask-item");
+      await item.getByTestId("ask-option").first().waitFor();
+      const other = item.getByTestId("ask-option-other-input");
+      if ((await other.count()) > 0) {
+        await other.fill("48 hours, then page support");
+      }
+      await page.mouse.move(1700, 1080);
+      await page.waitForTimeout(400);
+    },
+  },
+  {
     name: "state-starting-worker",
     title:
       "The board scenario's worker spawned and not begun: Starting in the sidebar and under Running in the Workers panel (before: Stopped)",

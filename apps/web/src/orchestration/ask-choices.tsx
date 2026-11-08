@@ -1,5 +1,12 @@
 import { Send } from "lucide-react";
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import { RecommendedTag } from "@/components/recommended-tag";
 import { Button } from "@/components/ui/button";
@@ -122,6 +129,100 @@ function RadioMark({ checked }: { checked: boolean }) {
   );
 }
 
+/** "Other…": an answer in the user's own words, offered after a question's choices. */
+export interface OtherAnswer {
+  /** What is typed so far. */
+  readonly value: string;
+  readonly onChange: (text: string) => void;
+  /** Enter in the field: send what is typed. */
+  readonly onSend: () => void;
+  readonly inputRef?: ((element: HTMLInputElement | null) => void) | undefined;
+  /** The question, for the field's name. */
+  readonly question: string;
+}
+
+/**
+ * The last of a question's choices: a radio like the others, with a field for the user's own words.
+ * Typing in it, or focusing it, picks it; Enter sends what is typed.
+ */
+function OtherChoice({
+  other,
+  index,
+  checked,
+  hint,
+  size,
+  testId,
+  onPick,
+}: {
+  other: OtherAnswer;
+  index: number;
+  checked: boolean;
+  hint: string | undefined;
+  size: "sm" | "default";
+  testId: string;
+  onPick: (index: number) => void;
+}) {
+  const field = useRef<HTMLInputElement | null>(null);
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter" || event.shiftKey || event.altKey || event.nativeEvent.isComposing)
+      return;
+    event.preventDefault();
+    // Handled here, so the surface's own ⌘⏎ doesn't send it a second time.
+    event.stopPropagation();
+    if (other.value.trim() !== "") other.onSend();
+  };
+  return (
+    <div
+      data-testid={`${testId}-other`}
+      data-picked={checked || undefined}
+      className={cn(
+        "flex w-full min-w-0 items-start gap-2 rounded-(--radius-md) border px-2.5 transition-colors duration-(--dur-fast) focus-within:ring-2 focus-within:ring-ring @2xl:col-span-2",
+        size === "sm" ? "py-1" : "py-1.5",
+        checked ? "border-primary bg-primary/8" : "border-edge-action hover:bg-muted",
+      )}
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={checked}
+        aria-label="Other"
+        data-choice-index={index}
+        className="flex shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => {
+          onPick(index);
+          field.current?.focus();
+        }}
+      >
+        <RadioMark checked={checked} />
+      </button>
+      <input
+        ref={(element) => {
+          field.current = element;
+          other.inputRef?.(element);
+        }}
+        type="text"
+        data-testid={`${testId}-other-input`}
+        aria-label={`Other answer: ${other.question}`}
+        placeholder="Other…"
+        value={other.value}
+        onFocus={() => {
+          if (!checked) onPick(index);
+        }}
+        onChange={(event) => {
+          other.onChange(event.target.value);
+          if (!checked) onPick(index);
+        }}
+        onKeyDown={onKeyDown}
+        className={cn(
+          "min-w-0 flex-1 bg-transparent leading-[inherit] outline-none placeholder:text-muted-foreground",
+          size === "sm" ? "text-body" : "text-reading",
+        )}
+      />
+      {hint !== undefined && <Kbd className="mt-0.5 shrink-0">{hint}</Kbd>}
+    </div>
+  );
+}
+
 /**
  * Send answer: what sends a picked choice, on every surface. `hint` is the key that presses it
  * (⌘⏎), shown when keys reach it. While it can't send, `title` says why in words beside it ("Pick
@@ -192,7 +293,8 @@ export function SendAnswer({
  * are buttons that act on a click. A few short ones sit in a wrapping row; many, long or described
  * ones in a list, one a line with its description under it. `hintOf` gives the key that picks
  * each, when keys reach the ask. The asker's own pick carries a Recommended tag, never a look of
- * being chosen.
+ * being chosen. With `other`, a question's choices end with "Other…", picked as the index after
+ * the last option, and are always a list.
  */
 export function AskChoices({
   options,
@@ -205,6 +307,7 @@ export function AskChoices({
   rest = "outline",
   className,
   children,
+  other,
 }: {
   options: readonly AskOption[];
   hintOf: (index: number) => string | undefined;
@@ -221,10 +324,14 @@ export function AskChoices({
   className?: string;
   /** What follows the choices in their row or under their list: Send answer. */
   children?: ReactNode;
+  /** A question's answer in the user's own words, offered after its choices. */
+  other?: OtherAnswer | undefined;
 }) {
   if (options.length === 0) return null;
-  const layout = choiceLayout(options);
-  if (answerRule(options) === "pick" && onPick !== undefined) {
+  const pickRule = answerRule(options) === "pick" && onPick !== undefined;
+  // A field for words sits on a line of its own, so the choices before it do too.
+  const layout = pickRule && other !== undefined ? "list" : choiceLayout(options);
+  if (pickRule) {
     return (
       <div
         data-testid="ask-choices"
@@ -293,6 +400,17 @@ export function AskChoices({
               </button>
             );
           })}
+          {other !== undefined && (
+            <OtherChoice
+              other={other}
+              index={options.length}
+              checked={picked === options.length}
+              hint={hintOf(options.length)}
+              size={size}
+              testId={testId}
+              onPick={onPick}
+            />
+          )}
         </div>
         {layout === "row"
           ? children
