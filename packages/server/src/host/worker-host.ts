@@ -136,7 +136,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     AgentHosts | CheckoutService | Worktrees | GitStateRuntime | Proc | HostTerminals
   > = WorkerHosts.layerLocalOn.pipe(Layer.provide(LocalHostProcess.layer));
 
-  /** This machine, its host process on or off whatever the environment says. */
+  /** This machine with a host process of its own, on as `hostProcess` says, whatever the environment says. */
   static readonly layerLocalWith = (options: {
     readonly hostProcess: boolean;
   }): Layer.Layer<
