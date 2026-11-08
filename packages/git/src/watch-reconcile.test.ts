@@ -22,13 +22,18 @@ const model = vi.hoisted(() => ({
   release: vi.fn(),
   /** The checkout's git dir; a missing one stamps the same every time. */
   gitDir: "/repo/.git",
+  /** Each native subscription's callback, to report an error through. */
+  callbacks: [] as Array<(error: Error | null, events: unknown[]) => void>,
 }));
 
 // A successful native subscription which delivers no events: FSEvents has no readiness fence,
 // and can delay/drop the only event for a write or commit. No Git, provider or host config is used.
 vi.mock("@parcel/watcher", () => ({
   default: {
-    subscribe: async () => ({ unsubscribe: async () => model.release() }),
+    subscribe: async (_dir: string, callback: (error: Error | null, events: unknown[]) => void) => {
+      model.callbacks.push(callback);
+      return { unsubscribe: async () => model.release() };
+    },
   },
 }));
 vi.mock("./exec.ts", async () => {
@@ -72,9 +77,8 @@ const start = Effect.gen(function* () {
   );
   const initial = yield* Queue.take(changes);
   expect(initial.state).toMatchObject({ head: "initial", changedFiles: 0 });
-  // Its first change; the mocked native watch subscribed both its roots.
-  expect(initial).toMatchObject({ seq: 1, live: true });
-  return { changes, fiber };
+  expect(initial.seq).toBe(1);
+  return { changes, fiber, initial };
 });
 const latest = (changes: Queue.Queue<GitStateChange>) =>
   Queue.poll(changes).pipe(Effect.map(Option.getOrUndefined));
@@ -89,6 +93,7 @@ afterEach(() => {
   model.reads = 0;
   model.interrupted = 0;
   model.gitDir = "/repo/.git";
+  model.callbacks = [];
   model.release.mockClear();
 });
 
@@ -118,10 +123,19 @@ describe("macOS watcher reconciliation", () => {
       }).pipe(Effect.scoped, provide),
   );
 
+  it.effect("never calls a macOS watch live, since FSEvents can drop an event", () =>
+    Effect.gen(function* () {
+      const { initial } = yield* start;
+      expect(initial.live).toBe(false);
+    }).pipe(Effect.scoped, provide),
+  );
+
   it.effect("keeps other platforms driven by native events", () =>
     Effect.gen(function* () {
       Object.defineProperty(process, "platform", { value: "linux" });
-      const { changes } = yield* start;
+      const { changes, initial } = yield* start;
+      // The mocked native watch subscribed both its roots.
+      expect(initial.live).toBe(true);
       model.head = "committed";
       yield* TestClock.adjust(3 * RECONCILE_MS);
       expect(yield* latest(changes)).toBeUndefined();
@@ -169,5 +183,22 @@ describe("macOS watcher reconciliation", () => {
         yield* tick;
         expect(model.reads).toBe(8);
       }).pipe(Effect.scoped, provide),
+  );
+  it.effect("stops calling a watch live once it reports lost events, and says so", () =>
+    Effect.gen(function* () {
+      Object.defineProperty(process, "platform", { value: "linux" });
+      const { changes, initial } = yield* start;
+      expect(initial.live).toBe(true);
+      for (const callback of model.callbacks) callback(new Error("overflow"), []);
+      // The recompute, after the debounce's real timer, finds the same state and sends it for the
+      // lost watch alone.
+      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 600)));
+      for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+      expect(yield* latest(changes)).toMatchObject({
+        seq: 2,
+        live: false,
+        state: { head: "initial" },
+      });
+    }).pipe(Effect.scoped, provide),
   );
 });

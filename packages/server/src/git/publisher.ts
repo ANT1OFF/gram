@@ -1304,8 +1304,8 @@ export const GitStatePublisherLive = Layer.effect(
         for (const key of watched) {
           if (wanted.has(key)) continue;
           watched.delete(key);
-          liveWatched.delete(key);
           yield* FiberMap.remove(watchers, key);
+          liveWatched.delete(key);
           if (!kept.has(key)) yield* forget(key);
         }
         for (const key of sweptOnly) {
@@ -1331,6 +1331,8 @@ export const GitStatePublisherLive = Layer.effect(
                   }),
                 ),
               ),
+              // However the watcher ends, its checkout is polled as an unwatched one again.
+              Effect.ensuring(Effect.sync(() => liveWatched.delete(key))),
             ),
           );
         }
@@ -1542,10 +1544,12 @@ export const GitStatePublisherLive = Layer.effect(
             const parked = entry.threads.every((t) => t.parked);
             const attention = parked ? "listed" : yield* attentionOf(entry.threads);
             // Its last read is due again, or it has none: what that read showed may have changed.
+            const live = liveWatched.has(key);
             const localDue =
               catchUp ||
-              sweeps - (localReadAt.get(key) ?? -Infinity) >=
-                localEvery(attention, liveWatched.has(key));
+              sweeps - (localReadAt.get(key) ?? -Infinity) >= localEvery(attention, live) ||
+              // Only the sweep's read sees a folder deleted: its watcher's reads just fail.
+              (live && !(yield* folderExists(entry.path)));
             if (quotaHeld) return { entry, parked, localDue, tier: "local" as const };
             const state = states.get(key);
             const burst = now < (expectingUntil.get(key) ?? 0);

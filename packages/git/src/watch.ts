@@ -324,7 +324,8 @@ export const cooldownDelay = (
  * One checkout's state as its watcher saw it change: the change stream a host pushes. `seq` counts
  * the checkout's changes in this stream from 1 (its initial state), so a consumer can tell it missed
  * one; `live` says whether native watches cover the checkout, both its git dir and its working
- * tree. A checkout that isn't live is only as fresh as its reads; one that is reports every change
+ * tree, and have lost nothing so far (never on macOS, whose FSEvents can drop an event). A change
+ * that only turns `live` off is still sent. A checkout that isn't live is only as fresh as its reads; one that is reports every change
  * as it lands, and a consumer can stop polling it.
  */
 export interface GitStateChange {
@@ -408,15 +409,19 @@ export const watchGitState = (
       const seqs = new Map<string, number>();
       /** Paths whose git dir and working-tree roots both subscribed; filled before the first read. */
       const live = new Set<string>();
+      /** What each path's last change said of `live`, so losing its watch is a change too. */
+      const sentLive = new Map<string, boolean>();
       const recompute = (path: string) =>
         localGitState(path).pipe(
           Effect.map((state) => {
-            if (sameState(last.get(path), state)) return;
+            const isLive = live.has(path);
+            if (sameState(last.get(path), state) && sentLive.get(path) === isLive) return;
             last.set(path, state);
+            sentLive.set(path, isLive);
             resetBackoff(path);
             const seq = (seqs.get(path) ?? 0) + 1;
             seqs.set(path, seq);
-            Queue.offerUnsafe(queue, { path, seq, live: live.has(path), state });
+            Queue.offerUnsafe(queue, { path, seq, live: isLive, state });
           }),
           Effect.ignore,
         );
@@ -465,7 +470,10 @@ export const watchGitState = (
       const onEvents: RootListener = (eventPaths) => {
         const classification: Classification = { hit: new Set(), internal: new Set() };
         if (eventPaths === undefined) {
-          // Events were lost; per-path attribution is meaningless, so recompute everything.
+          // Events were lost; per-path attribution is meaningless, so recompute everything. A watch
+          // that lost events, or failed, can't be trusted to report the next change: none is live
+          // from here on, and the recompute tells the consumer so.
+          live.clear();
           for (const checkout of checkouts) {
             classification.hit.add(checkout.path);
             classification.internal.add(checkout.path);
@@ -506,8 +514,14 @@ export const watchGitState = (
         );
         if (subscribed._tag === "Some") watchedRoots.add(dir);
       }
+      // FSEvents can stay silent after a write even once subscribed (hence the reconcile below), so a
+      // macOS watch never counts as live: the consumer keeps reading what it shows.
       for (const checkout of checkouts) {
-        if (watchedRoots.has(checkout.common) && watchedRoots.has(checkout.top))
+        if (
+          process.platform !== "darwin" &&
+          watchedRoots.has(checkout.common) &&
+          watchedRoots.has(checkout.top)
+        )
           live.add(checkout.path);
       }
       // Subscribe before the initial read to close the ordinary setup/read race.
