@@ -12,6 +12,17 @@ describe("ServerConfig.fromEnv", () => {
     expect(() => ServerConfig.fromEnv({ GRAM_REMOTE_ORIGIN: "" })).toThrow("GRAM_REMOTE_ORIGIN");
   });
 
+  it("listens beyond loopback only inside a container, and only on all interfaces", () => {
+    expect(ServerConfig.fromEnv({})).not.toHaveProperty("listenHost");
+    expect(ServerConfig.fromEnv({ GRAM_LISTEN_HOST: "0.0.0.0" })).not.toHaveProperty("listenHost");
+    expect(
+      ServerConfig.fromEnv({ GRAM_CONTAINER: "1", GRAM_LISTEN_HOST: "0.0.0.0" }).listenHost,
+    ).toBe("0.0.0.0");
+    expect(
+      ServerConfig.fromEnv({ GRAM_CONTAINER: "1", GRAM_LISTEN_HOST: "192.168.1.5" }),
+    ).not.toHaveProperty("listenHost");
+  });
+
   it("flags the fake agent only for GRAM_FAKE_AGENT=1", () => {
     expect(ServerConfig.fromEnv({ GRAM_FAKE_AGENT: "1" }).fakeAgent).toBe(true);
     expect(ServerConfig.fromEnv({ GRAM_FAKE_AGENT: "0" })).not.toHaveProperty("fakeAgent");

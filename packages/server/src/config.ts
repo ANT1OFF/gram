@@ -18,6 +18,12 @@ export interface ServerConfigShape {
   readonly databaseFile?: string;
   /** `0` picks a free port. */
   readonly port: number;
+  /**
+   * The address the server listens on: loopback, unless it runs in a container
+   * (`GRAM_CONTAINER=1`), where `GRAM_LISTEN_HOST=0.0.0.0` lets the container's port mapping reach
+   * it. Requests still need a loopback `Host` and the launch cookie either way.
+   */
+  readonly listenHost?: string;
   /** Built web app to serve; absent in dev, where Vite serves the renderer. */
   readonly webRoot: string | undefined;
   /** Extra `Origin`s allowed past the loopback allowlist (dev tooling only). */
@@ -70,6 +76,18 @@ export const refuseUnavailable = (feature: RuntimeFeatureId): Effect.Effect<void
     ? Effect.void
     : Effect.fail(new InvalidState({ message: featureRefusal(feature) }));
 
+/** Loopback, the only address a server outside a container listens on. */
+export const LOOPBACK_HOST = "127.0.0.1";
+
+/**
+ * `GRAM_LISTEN_HOST`, honoured only inside a container (`GRAM_CONTAINER=1`, which the image sets)
+ * and only as all interfaces, which the container's own network keeps off the machine's: a port
+ * mapped to the host's loopback is the only way in. Anywhere else, or any other value, listens on
+ * loopback.
+ */
+export const listenHostFrom = (env: Record<string, string | undefined>): string | undefined =>
+  env["GRAM_CONTAINER"] === "1" && env["GRAM_LISTEN_HOST"] === "0.0.0.0" ? "0.0.0.0" : undefined;
+
 export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShape>()(
   "@gram/server/ServerConfig",
 ) {
@@ -85,12 +103,14 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     const appVersion = env["GRAM_APP_VERSION"] || env["npm_package_version"];
     const appBuild = env["GRAM_APP_BUILD"];
     const debounceMs = Number(env["GRAM_ORCHESTRATION_DEBOUNCE_MS"]);
+    const listenHost = listenHostFrom(env);
     return {
       dataDir: defaultDataDir(env),
       ...(env["GRAM_REMOTE_ORIGIN"] !== undefined
         ? { remoteOrigin: remoteOrigin(env["GRAM_REMOTE_ORIGIN"])! }
         : {}),
       port: Number.isInteger(port) && port >= 0 && port < 65536 ? port : 0,
+      ...(listenHost === undefined ? {} : { listenHost }),
       webRoot: env["GRAM_WEB_ROOT"] || undefined,
       extraOrigins: (env["GRAM_ALLOWED_ORIGINS"] ?? "")
         .split(",")

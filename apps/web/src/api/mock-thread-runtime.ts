@@ -15,10 +15,12 @@ import type {
   ThreadId,
   ThreadIdentity,
   ThreadSummary,
+  UsageSummary,
   UserInput,
 } from "@gram/contracts";
 import type { ThreadFeed } from "@/stores/thread-feed";
 import type { Channel } from "./channel";
+import type { MockToolClock } from "./mock-tool-times";
 import type { createMockOrchestration } from "./mock-orchestration";
 import type { createMockDreams } from "./mock-dreams";
 import type { createComposerMock } from "./composer/mock";
@@ -56,6 +58,10 @@ export interface ThreadRuntime {
   heldAt?: string | undefined;
   /** `restartSession` came mid-turn: the session restarts once the turn ends. */
   restartAfterTurn: boolean;
+  /** When its scripted tool calls ran, as the server stamps `toolTimes`. */
+  toolClock: MockToolClock;
+  /** The running turn's last usage report, which its reply is stamped with as the turn ends. */
+  turnUsage?: UsageSummary | undefined;
 }
 
 /** What each agent's session reports it runs, as the real adapters list them. */

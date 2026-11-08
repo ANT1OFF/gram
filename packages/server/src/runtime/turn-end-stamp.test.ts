@@ -115,6 +115,49 @@ describe("turn end stamp", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect("stamps the turn's tokens and context on its reply, but not the thread's dollars", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const { thread } = yield* warmThreadWithFeed;
+
+      yield* runtimes.send(thread.id, { text: "hello" });
+      const session = yield* sessionOf(thread.id, 1);
+      const messageId = "reply" as MessageId;
+      yield* session.emit(
+        ...(openReply(messageId, "done") as never[]),
+        {
+          type: "usage",
+          tokens: {
+            inputTokens: 120,
+            outputTokens: 840,
+            cacheReadTokens: 41_000,
+            cacheWriteTokens: 2_300,
+          },
+          contextWindow: 200_000,
+          contextTokens: 43_420,
+          costUsd: 0.12,
+        },
+        { type: "chunk", messageId, chunk: { type: "finish" } },
+        { type: "turnEnd", reason: "completed" },
+        { type: "status", status: "idle" },
+      );
+      yield* turnEnded(thread.id, 1);
+
+      const reply = yield* store.getMessage(thread.id, messageId);
+      expect(reply?.metadata?.usage).toEqual({
+        tokens: {
+          inputTokens: 120,
+          outputTokens: 840,
+          cacheReadTokens: 41_000,
+          cacheWriteTokens: 2_300,
+        },
+        contextWindow: 200_000,
+        contextTokens: 43_420,
+      });
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("says a stopped turn was interrupted", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;

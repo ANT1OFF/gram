@@ -14,3 +14,14 @@ test("a packaged --smoke run keeps the fake, as the release's packaged check nee
 test("an unpackaged build keeps the fake, for dev and e2e", () => {
   expect(inheritedServerEnv(env, { packaged: false, smoke: false })).toEqual(env);
 });
+
+test("every build drops the container's listen variables, so the desktop stays on loopback", () => {
+  const container = { GRAM_CONTAINER: "1", GRAM_LISTEN_HOST: "0.0.0.0", PATH: "/usr/bin" };
+  for (const options of [
+    { packaged: true, smoke: false },
+    { packaged: true, smoke: true },
+    { packaged: false, smoke: false },
+  ]) {
+    expect(inheritedServerEnv(container, options)).toEqual({ PATH: "/usr/bin" });
+  }
+});

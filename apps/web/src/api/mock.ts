@@ -198,6 +198,7 @@ import { createWorktreesMock, PENDING_RULES } from "./worktrees/mock";
 import type { DataPart, MockWorld } from "./mock-world";
 import { isMockRepo, MockInvalidState, mockProject, resolveMockFolder } from "./mock-fs";
 import { MockPreview } from "./mock-preview";
+import { mockToolClock, mockToolTime } from "./mock-tool-times";
 import {
   mockAgents,
   mockSessionExpired,
@@ -574,6 +575,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       steer: undefined,
       interrupted: false,
       restartAfterTurn: false,
+      toolClock: mockToolClock(),
     };
     this.#threads.set(summary.thread.id, runtime);
     return runtime;
@@ -717,6 +719,16 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
           log.push(event);
           runtime.inflight.set(step.messageId, log);
           this.#feed(runtime, event);
+          const timed = mockToolTime(runtime.toolClock, step.messageId, step.chunk, Date.now());
+          if (timed !== undefined) {
+            const stamp: ThreadFeedEvent = {
+              type: "chunk",
+              messageId: step.messageId as never,
+              chunk: timed,
+            };
+            log.push(stamp);
+            this.#feed(runtime, stamp);
+          }
           if (step.chunk.type === "finish" || step.chunk.type === "abort") {
             void runtime.fold.whenSettled().then(() => runtime.inflight.delete(step.messageId));
           }
@@ -754,6 +766,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
         }
         case "usage":
           runtime.summary = { ...runtime.summary, usage: step.usage };
+          runtime.turnUsage = step.usage;
           this.#emit({
             type: "thread.usage",
             threadId: runtime.summary.thread.id,
@@ -913,9 +926,22 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       .messages.findLast(
         (m) => m.role === "assistant" && m.metadata?.parentToolUseId === undefined,
       );
+    const usage = runtime.turnUsage;
+    runtime.turnUsage = undefined;
     if (reply === undefined) return;
     const turnEnd = { at: Date.now(), reason };
-    this.#putMessage(runtime, { ...reply, metadata: { ...reply.metadata, turnEnd } });
+    // The reply keeps the turn's tokens and context, never the thread's dollars.
+    const kept =
+      usage === undefined
+        ? {}
+        : {
+            usage: {
+              tokens: usage.tokens,
+              ...(usage.contextWindow === undefined ? {} : { contextWindow: usage.contextWindow }),
+              ...(usage.contextTokens === undefined ? {} : { contextTokens: usage.contextTokens }),
+            },
+          };
+    this.#putMessage(runtime, { ...reply, metadata: { ...reply.metadata, turnEnd, ...kept } });
   }
 
   async #continue(threadId: ThreadId, steps: Step[]) {

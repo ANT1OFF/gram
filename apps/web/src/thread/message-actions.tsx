@@ -18,6 +18,7 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { messageMarkdown, turnMarkdown, turnMessages } from "./copy-markdown";
 import { ForkDialog } from "./fork-dialog";
+import { ReplyTokens } from "./reply-tokens";
 import { useForkAvailability, useForkThread, WORKTREE_NOTICE } from "./use-fork";
 import { useReadOnlyTranscript } from "./read-only-transcript";
 
@@ -82,7 +83,8 @@ const FLOAT_REPLY = "float-actions:right-0 float-actions:bottom-0";
 const FLOAT_USER = "float-actions:top-0 float-actions:right-full float-actions:mr-2";
 
 /**
- * Copy and one "…" under a message, and when it arrived, shown on hover or keyboard focus. The "…"
+ * Copy and one "…" under a message, when it arrived and, on the reply that ends a turn, the tokens
+ * the turn used (`ReplyTokens`), shown on hover or keyboard focus. The "…"
  * holds the rest, each named with a line on what it does or why it can't now: Copy turn (`turnEnd`:
  * the reply that ends a finished turn), Add to Waiting on you, Rewind to here or Edit from here,
  * and on replies Fork from here and Fork into worktree…. `floating`: over the message where there
@@ -121,6 +123,7 @@ export function MessageActions({
       />
       {!readOnly && <MessageMenu threadId={threadId} message={message} turnEnd={turnEnd} />}
       {!isUser && <SentAt message={message} />}
+      {!isUser && <ReplyTokens message={message} />}
     </div>
   );
 }

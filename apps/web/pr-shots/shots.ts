@@ -1457,6 +1457,27 @@ const STATE_TRUTH_SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "question-other",
+    title:
+      'A question in the Inbox: its choices, then "Other…" with the user\'s own words typed and picked, Send answer ready (before: choices only, own words behind a button)',
+    open: async (page) => {
+      await openRealisticPanel(page);
+      await page.getByTestId("overview-needs-you").click();
+      await page
+        .getByTestId("inbox-item")
+        .filter({ hasText: "A refund webhook that keeps failing" })
+        .click();
+      const item = page.getByTestId("inbox-detail").getByTestId("ask-item");
+      await item.getByTestId("ask-option").first().waitFor();
+      const other = item.getByTestId("ask-option-other-input");
+      if ((await other.count()) > 0) {
+        await other.fill("48 hours, then page support");
+      }
+      await page.mouse.move(1700, 1080);
+      await page.waitForTimeout(400);
+    },
+  },
+  {
     name: "state-starting-worker",
     title:
       "The board scenario's worker spawned and not begun: Starting in the sidebar and under Running in the Workers panel (before: Stopped)",
@@ -1985,6 +2006,40 @@ export const SHOTS: readonly Shot[] = [
       await page.getByTestId("approval-allow").click();
       await page.getByText("Done. Summary:").waitFor({ timeout: 30_000 });
       await page.getByRole("button", { name: "Stop", exact: true }).waitFor({ state: "hidden" });
+    },
+  },
+  {
+    name: "reply-tokens",
+    title:
+      "A finished turn's reply with its token line on hover, open on what makes it up and the context after it",
+    open: async (page) => {
+      await openFlakyAtApproval(page);
+      await elapse(page, FLAKY_DONE_MS);
+      await page.getByTestId("approval-allow").click();
+      await page.getByText("Done. Summary:").waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Stop", exact: true }).waitFor({ state: "hidden" });
+      const reply = page.getByTestId("message-actions").last();
+      await reply.scrollIntoViewIfNeeded();
+      await reply.hover();
+      await reply.getByTestId("reply-tokens").hover();
+      await page.getByTestId("reply-tokens-detail").waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
+  {
+    name: "turn-timeline",
+    title:
+      "A finished turn's run timeline, opened from the chart button beside its fold row: each tool call as a bar on the turn's time axis",
+    open: async (page) => {
+      await openFlakyAtApproval(page);
+      await elapse(page, FLAKY_DONE_MS);
+      await page.getByTestId("approval-allow").click();
+      await page.getByText("Done. Summary:").waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Stop", exact: true }).waitFor({ state: "hidden" });
+      await page.getByTestId("turn-timeline-open").last().click();
+      await page.getByTestId("turn-timeline").waitFor();
+      await page.mouse.move(1400, 1300);
+      await page.waitForTimeout(300);
     },
   },
   {

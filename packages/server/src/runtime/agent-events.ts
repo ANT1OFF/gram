@@ -29,6 +29,8 @@ import {
   type ServerEvent,
   type BackgroundTask,
   type BackgroundOutput,
+  type GramUIMessageChunk,
+  type MessageId,
   type ThreadId,
 } from "@gram/contracts";
 import { BACKGROUND_SETTLE } from "./session-restarts.ts";
@@ -269,6 +271,44 @@ export const makeAgentEvents = ({
       }),
     );
 
+  /**
+   * Notes when a tool call starts and ends on the message it streams in, as `toolTimes` metadata the
+   * run timeline reads: the whole map again each time, which merges over the one before. Only while
+   * the message is open, since a chunk after its finish would read as it streaming again; a late
+   * output keeps no end.
+   */
+  const stampToolTime = (rt: Runtime, messageId: MessageId, chunk: GramUIMessageChunk) =>
+    Effect.gen(function* () {
+      if (chunk.type === "finish" || chunk.type === "abort") {
+        rt.toolTimes.delete(messageId);
+        return;
+      }
+      const started = chunk.type === "tool-input-start" || chunk.type === "tool-input-available";
+      const ended =
+        (chunk.type === "tool-output-available" && chunk.preliminary !== true) ||
+        chunk.type === "tool-output-error" ||
+        chunk.type === "tool-output-denied" ||
+        chunk.type === "tool-input-error";
+      if (!started && !ended) return;
+      const lane = rt.open.get(messageId);
+      if (lane === undefined || lane.finished) return;
+      const { toolCallId } = chunk;
+      const times = rt.toolTimes.get(messageId) ?? {};
+      const was = times[toolCallId];
+      if (started && was !== undefined) return;
+      if (ended && (was === undefined || was.endedAt !== undefined)) return;
+      const now = yield* Clock.currentTimeMillis;
+      const next = {
+        ...times,
+        [toolCallId]: started ? { startedAt: now } : { startedAt: was!.startedAt, endedAt: now },
+      };
+      rt.toolTimes.set(messageId, next);
+      yield* appendChunk(rt, messageId, {
+        type: "message-metadata",
+        messageMetadata: { toolTimes: next },
+      });
+    });
+
   /** Called with the runtime lock held. */
   const applyEvent = (rt: Runtime, event: AgentEvent) =>
     Effect.gen(function* () {
@@ -380,6 +420,7 @@ export const makeAgentEvents = ({
             }
           }
           yield* appendChunk(rt, event.messageId, idleCompactionMarker(rt, chunk));
+          yield* stampToolTime(rt, event.messageId, chunk);
           // A background subagent from an earlier turn streams on its own lane whatever this turn
           // was sent, so only the turn's own reply shows the agent has the input.
           if (

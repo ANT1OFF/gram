@@ -25,11 +25,19 @@ import { AskChoices, Kbd, MoreText, optionHint, SendAnswer } from "@/orchestrati
 import {
   answerRule,
   choiceLayout,
-  replyAnswer,
+  otherIndex,
+  replyAction,
+  replyId,
   type Ask,
   type AskOption,
 } from "@/orchestration/ask-model";
-import { AskDetails, ReplyField, useOpenThread, useWorkspaceAsks } from "@/orchestration/ask-stack";
+import {
+  AskDetails,
+  ReplyField,
+  useOpenThread,
+  useOtherText,
+  useWorkspaceAsks,
+} from "@/orchestration/ask-stack";
 import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import { NeedsYouEntry } from "@/orchestration/needs-you-entry";
@@ -158,14 +166,11 @@ export function QuietView({ workspaceId }: ViewProps) {
     send(each.ask, option.done, action);
   };
   const reply = (ask: Ask, text: string) => {
-    if (ask.freeForm === undefined) return;
-    send(
-      ask,
-      "Replied",
-      ask.memory === undefined
-        ? { kind: "answer", answer: replyAnswer(ask.freeForm.question, text) }
-        : { kind: "memory", answer: text },
-    );
+    const action = replyAction(ask, text);
+    if (action === undefined) return;
+    setPick(undefined);
+    useAskStackStore.getState().setReply(replyId(ask), "");
+    send(ask, "Replied", action);
   };
   const undo = (key?: string) => {
     const answer = takeBack(key);
@@ -241,6 +246,18 @@ export function QuietView({ workspaceId }: ViewProps) {
       return;
     }
     const at = number ?? picked;
+    if (at !== undefined && at === otherIndex(card.ask)) {
+      // "Other…": its number picks it and puts the cursor in its field, ⌘⏎ sends what is typed.
+      take();
+      if (!sending) {
+        setPick({ key: card.ask.key, index: at });
+        replyRef.current?.focus();
+        return;
+      }
+      const text = (useAskStackStore.getState().replies[replyId(card.ask)] ?? "").trim();
+      if (text !== "") reply(card.ask, text);
+      return;
+    }
     const option = at === undefined ? undefined : card.ask.options[at];
     if (option === undefined || at === undefined) return;
     take();
@@ -374,6 +391,12 @@ function QuietCard({
   // A question's choices sit above the footer with Send answer; a short row of verbs sits in it.
   const listed = rule === "pick" || choiceLayout(ask.options) === "list";
   const pickedOption = picked === undefined ? undefined : ask.options[picked];
+  const [otherText, setOtherText] = useOtherText(ask);
+  const otherPicked = picked !== undefined && picked === otherIndex(ask);
+  const canSend = pickedOption !== undefined || (otherPicked && otherText.trim() !== "");
+  const sendOther = () => {
+    if (otherText.trim() !== "") onReply(otherText.trim());
+  };
   const hintOf = (index: number) =>
     rule === "act" && index === picked
       ? formatKeys("mod+enter")
@@ -473,6 +496,17 @@ function QuietCard({
           onChoose={onChoose}
           picked={picked}
           onPick={onPick}
+          other={
+            ask.other === undefined
+              ? undefined
+              : {
+                  value: otherText,
+                  onChange: setOtherText,
+                  onSend: sendOther,
+                  inputRef: replyRef,
+                  question: ask.other.question,
+                }
+          }
           testId="quiet-option"
           size="default"
         />
@@ -481,11 +515,12 @@ function QuietCard({
         {rule === "pick" && (
           <SendAnswer
             testId="quiet-send"
-            disabled={pickedOption === undefined}
-            title={pickedOption === undefined ? "Pick an answer" : undefined}
+            disabled={!canSend}
+            title={canSend ? undefined : otherPicked ? "Type an answer" : "Pick an answer"}
             hint={formatKeys("mod+enter")}
             onSend={() => {
-              if (pickedOption !== undefined) onChoose(pickedOption);
+              if (otherPicked) sendOther();
+              else if (pickedOption !== undefined) onChoose(pickedOption);
             }}
           />
         )}

@@ -13,8 +13,11 @@ import {
   asksOf,
   choiceLayout,
   memoryAskOf,
+  otherIndex,
+  replyAction,
   replyChips,
   stepIndex,
+  workerAskOf,
 } from "./ask-model";
 import { groupInbox, type InboxEntry } from "./inbox-model";
 
@@ -132,6 +135,53 @@ describe("the ask stack's asks", () => {
       question: "Keep both, or uv only?",
       request: { threadId: "a", requestId: "q" },
     });
+  });
+
+  it("offers Other… after a question's choices, and sends its words as that question's answer", () => {
+    const choice = askOf(
+      groupInbox([entry("a", "docs", question("q", ["uv only", "Keep both"]))])[0]!,
+    );
+    expect(choice.other).toEqual({ question: "Keep both, or uv only?" });
+    expect(otherIndex(choice)).toBe(2);
+    expect(replyAction(choice, "pip, pinned")).toEqual({
+      kind: "answer",
+      answer: { kind: "question", answers: { "Keep both, or uv only?": ["pip, pinned"] } },
+    });
+    const memory = memoryAskOf("w" as WorkspaceId, {
+      id: "Q1",
+      text: "Retry or drop?",
+      detail: undefined,
+      open: true,
+      options: [{ label: "Retry" }, { label: "Drop" }],
+    });
+    expect(otherIndex(memory)).toBe(2);
+    expect(replyAction(memory, "Retry twice, then drop")).toEqual({
+      kind: "memory",
+      answer: "Retry twice, then drop",
+    });
+    const worker = workerAskOf("w" as WorkspaceId, {
+      id: "WQ1",
+      workspaceId: "w" as WorkspaceId,
+      threadId: "t" as ThreadId,
+      feature: "cart",
+      title: "Cart API",
+      question: "404 or 410?",
+      askedAt: 1,
+      triageUntil: 2,
+      stage: "forwarded",
+      options: [{ label: "404" }, { label: "410" }],
+    });
+    expect(replyAction(worker, "410, with a body")).toEqual({
+      kind: "worker",
+      answer: "410, with a body",
+    });
+    // An ask with no choices answers in its reply field; an approval takes no words at all.
+    const free = askOf(groupInbox([entry("a", "docs", question("q", []))])[0]!);
+    expect(otherIndex(free)).toBeUndefined();
+    expect(replyAction(free, "uv")).toMatchObject({ kind: "answer" });
+    const allow = askOf(groupInbox([entry("a", "docs", push("r1"))])[0]!);
+    expect(otherIndex(allow)).toBeUndefined();
+    expect(replyAction(allow, "yes")).toBeUndefined();
   });
 
   it("opens what needs more than a pick, and never approves a plan in one key", () => {

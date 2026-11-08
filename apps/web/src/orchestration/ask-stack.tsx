@@ -26,6 +26,8 @@ import {
   type Ask,
   type AskMember,
   choiceLayout,
+  otherIndex,
+  replyId,
   type AskOption,
 } from "./ask-model";
 import { useAskStackStore } from "./ask-stack-store";
@@ -93,6 +95,16 @@ export function useOpenThread() {
   };
 }
 
+/**
+ * What is typed in an ask's "Other…" field, kept with its reply outside the ask, so stepping away
+ * or undoing doesn't lose it.
+ */
+export function useOtherText(ask: Ask): readonly [string, (text: string) => void] {
+  const id = replyId(ask);
+  const text = useAskStackStore((s) => s.replies[id] ?? "");
+  return [text, (value: string) => useAskStackStore.getState().setReply(id, value)];
+}
+
 /** The reply field of a question answered in words, with the helper's drafts as chips. */
 export function ReplyField({
   ask,
@@ -109,7 +121,7 @@ export function ReplyField({
   hint?: string | undefined;
 }) {
   const api = useApi();
-  const id = ask.ids[0] ?? ask.key;
+  const id = replyId(ask);
   // Kept outside the ask, so stepping away or undoing doesn't lose what was typed.
   const text = useAskStackStore((s) => s.replies[id] ?? "");
   const setText = (value: string) => useAskStackStore.getState().setReply(id, value);
@@ -314,6 +326,12 @@ export function AskItem({
   const pick = answerRule(ask.options) === "pick";
   const sendHint = current && hints !== undefined ? formatKeys(SEND_KEYS) : undefined;
   const pickedOption = picked === undefined ? undefined : ask.options[picked];
+  const [otherText, setOtherText] = useOtherText(ask);
+  const otherPicked = picked !== undefined && picked === otherIndex(ask);
+  const canSend = pickedOption !== undefined || (otherPicked && otherText.trim() !== "");
+  const sendOther = () => {
+    if (otherText.trim() !== "") onReply(otherText.trim());
+  };
   return (
     <m.div
       initial={rise ? { y: 14 } : false}
@@ -410,6 +428,17 @@ export function AskItem({
           onChoose={onChoose}
           picked={picked}
           onPick={onPick}
+          other={
+            ask.other === undefined
+              ? undefined
+              : {
+                  value: otherText,
+                  onChange: setOtherText,
+                  onSend: sendOther,
+                  inputRef: replyRef,
+                  question: ask.other.question,
+                }
+          }
           testId="ask-option"
           rest="ghost"
           // Choices go under the question, with Send answer after them; a row of verbs sits to
@@ -423,11 +452,12 @@ export function AskItem({
           {pick && (
             <SendAnswer
               testId="ask-send"
-              disabled={pickedOption === undefined}
-              title={pickedOption === undefined ? "Pick an answer" : undefined}
+              disabled={!canSend}
+              title={canSend ? undefined : otherPicked ? "Type an answer" : "Pick an answer"}
               hint={sendHint}
               onSend={() => {
-                if (pickedOption !== undefined) onChoose(pickedOption);
+                if (otherPicked) sendOther();
+                else if (pickedOption !== undefined) onChoose(pickedOption);
               }}
             />
           )}

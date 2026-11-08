@@ -40,6 +40,15 @@ export const TurnEnd = Schema.Struct({
 });
 export type TurnEnd = typeof TurnEnd.Type;
 
+/** When a tool call ran, by the server's clock: from its first chunk to its final output. */
+export const ToolTime = Schema.Struct({
+  /** Epoch ms the call's input began to stream. */
+  startedAt: Schema.Number,
+  /** Epoch ms its final output, error or denial arrived; absent while it runs. */
+  endedAt: Schema.optionalKey(Schema.Number),
+});
+export type ToolTime = typeof ToolTime.Type;
+
 export const MessageMetadataSchema = Schema.Struct({
   turnId: Schema.optionalKey(TurnId),
   /** Epoch ms. */
@@ -59,6 +68,12 @@ export const MessageMetadataSchema = Schema.Struct({
   usage: Schema.optionalKey(UsageSummary),
   /** On a turn's last reply, once the turn is over; absent from turns older than this field. */
   turnEnd: Schema.optionalKey(TurnEnd),
+  /**
+   * When each of this message's tool calls ran, by tool call id, which the run timeline draws.
+   * Absent from messages older than this field, and from a call whose output came after the
+   * message finished.
+   */
+  toolTimes: Schema.optionalKey(Schema.Record(Schema.String, ToolTime)),
   /** Set on subagent transcript messages nested under a Task tool card. */
   parentToolUseId: Schema.optionalKey(Schema.String),
   /**
