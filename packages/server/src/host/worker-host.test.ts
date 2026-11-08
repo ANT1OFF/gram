@@ -3,15 +3,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostId, LOCAL_HOST_ID } from "@gram/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import type { GitState } from "@gram/contracts";
 import { GitStateRuntime, ProcLive, Worktrees } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { CheckoutService } from "../runtime/hooks.ts";
 import { HostTerminals } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
+import { makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
+import { LocalHostProcess } from "./local-process.ts";
 import { type WorkerHost, WorkerHosts } from "./worker-host.ts";
 
 const Agents = Layer.mergeAll(AgentHosts.layerNone, CheckoutService.layerNoGit);
@@ -28,6 +32,31 @@ const Machine = Layer.mergeAll(
   Layer.succeed(HostTerminals, terminals),
   ProcLive,
 );
+
+const SERVER_LIST = { repoTop: "/in-server", worktrees: [] };
+const SERVER_STATE = { repo: false } as unknown as GitState;
+/** The server's own worktrees and git state, telling a read the server did from one the host did. */
+const InServer = Layer.mergeAll(
+  Agents,
+  Layer.succeed(Worktrees, {
+    ...worktrees,
+    list: () => Effect.succeed(SERVER_LIST),
+  } as Worktrees["Service"]),
+  Layer.succeed(GitStateRuntime, {
+    local: () => Effect.succeed(SERVER_STATE),
+    present: () => Effect.succeed(true),
+    // The network tier stays here, built on the local read it was given.
+    snapshot: (_cwd, options) =>
+      Effect.succeed({ ...(options.local ?? SERVER_STATE), origin: "acme/widgets" }),
+    watch: (paths) =>
+      Stream.fromIterable(
+        paths.map((path) => ({ path, seq: 1, live: false, state: SERVER_STATE })),
+      ),
+  } as GitStateRuntime["Service"]),
+  Layer.succeed(HostTerminals, terminals),
+  ProcLive,
+);
+const ThroughHost = WorkerHosts.layerLocalWith({ hostProcess: true }).pipe(Layer.provide(InServer));
 
 describe("WorkerHosts", () => {
   it.effect("the local host is this machine's agents and checkouts, under `local`", () =>
@@ -97,29 +126,57 @@ describe("WorkerHosts", () => {
   );
 
   it.live(
-    "with the host process, this machine's folders are read through it",
+    "with the host process, this machine's folders, worktrees and git state go through it",
     () =>
       Effect.gen(function* () {
-        const dir = mkdtempSync(join(tmpdir(), "gram-worker-host-"));
-        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
-        writeFileSync(join(dir, "through-the-host.txt"), "x\n");
+        const tmp = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(tmp)));
+        const repo = makeRepo(tmp);
+        writeFileSync(join(repo, "through-the-host.txt"), "x\n");
         const { local } = yield* WorkerHosts;
-        const listing = yield* local.files.list(dir, { showHidden: false, limit: 10 });
-        expect(listing.entries.map((entry) => entry.name)).toEqual(["through-the-host.txt"]);
         expect(local.process?.pid).toBeGreaterThan(0);
         expect(local.process?.pid).not.toBe(process.pid);
-        expect(local.worktrees).toBe(worktrees);
-      }).pipe(
-        Effect.scoped,
-        Effect.provide(
-          WorkerHosts.layerLocalWith({ hostProcess: true }).pipe(Layer.provide(Machine)),
-        ),
-      ),
+        const listing = yield* local.files.list(repo, { showHidden: false, limit: 10 });
+        expect(listing.entries.map((entry) => entry.name)).toContain("through-the-host.txt");
+        const worktreeList = yield* local.worktrees.list(repo, { openCheckouts: [] });
+        expect(worktreeList.worktrees).toMatchObject([{ isMain: true, branch: "main" }]);
+        // A list that needs the server's activity lookup stays in the server.
+        const withActivity = yield* local.worktrees.list(repo, {
+          openCheckouts: [],
+          lastActivity: () => 0,
+        });
+        expect(withActivity).toBe(SERVER_LIST);
+        expect(yield* local.git.local(repo)).toMatchObject({ repo: true, changedFiles: 1 });
+        const snapshot = yield* local.git.snapshot(repo, { remote: true });
+        expect(snapshot).toMatchObject({ repo: true, branch: "main", origin: "acme/widgets" });
+      }).pipe(Effect.scoped, Effect.provide(ThroughHost)),
     30_000,
   );
 
   it.live(
-    "a host process that stops hands this machine's folder reads back to the server",
+    "a snapshot that reuses the local read builds on what the host's watcher last saw",
+    () =>
+      Effect.gen(function* () {
+        const tmp = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(tmp)));
+        const repo = makeRepo(tmp);
+        const { local } = yield* WorkerHosts;
+        const [seen] = yield* local.git
+          .watch([repo], { debounceMs: 50, cooldownMs: 100 })
+          .pipe(Stream.take(1), Stream.runCollect, Effect.timeout("20 seconds"));
+        expect(seen?.state).toMatchObject({ repo: true, changedFiles: 0 });
+        // Changed after the watch stopped, so only a fresh read sees it.
+        writeFileSync(join(repo, "after-the-watch.txt"), "x\n");
+        const reused = yield* local.git.snapshot(repo, { remote: false, reuseLocal: true });
+        expect(reused).toMatchObject({ changedFiles: 0, origin: "acme/widgets" });
+        const fresh = yield* local.git.snapshot(repo, { remote: false });
+        expect(fresh).toMatchObject({ changedFiles: 1, origin: "acme/widgets" });
+      }).pipe(Effect.scoped, Effect.provide(ThroughHost)),
+    30_000,
+  );
+
+  it.live(
+    "a host process that stops hands this machine's work back to the server",
     () =>
       Effect.gen(function* () {
         const dir = mkdtempSync(join(tmpdir(), "gram-worker-host-"));
@@ -130,10 +187,64 @@ describe("WorkerHosts", () => {
         yield* Effect.sleep("300 millis");
         const listing = yield* local.files.list(dir, { showHidden: false, limit: 10 });
         expect(listing.entries.map((entry) => entry.name)).toEqual(["still-here.txt"]);
+        expect(yield* local.worktrees.list(dir, { openCheckouts: [] })).toBe(SERVER_LIST);
+        expect(yield* local.git.local(dir)).toBe(SERVER_STATE);
+        const changes = yield* Stream.runCollect(local.git.watch([dir]));
+        expect(changes).toEqual([{ path: dir, seq: 1, live: false, state: SERVER_STATE }]);
+      }).pipe(Effect.scoped, Effect.provide(ThroughHost)),
+    30_000,
+  );
+
+  it.live(
+    "a watch the host process was serving restarts in the server when it stops",
+    () =>
+      Effect.gen(function* () {
+        const tmp = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(tmp)));
+        const repo = makeRepo(tmp);
+        const { local } = yield* WorkerHosts;
+        const seen: Array<GitState> = [];
+        const watching = local.git.watch([repo], { debounceMs: 50, cooldownMs: 100 }).pipe(
+          Stream.tap((change) =>
+            Effect.sync(() => {
+              seen.push(change.state);
+              if (seen.length === 1) process.kill(local.process!.pid, "SIGKILL");
+            }),
+          ),
+          Stream.runDrain,
+        );
+        yield* watching.pipe(Effect.timeout("20 seconds"));
+        expect(seen[0]).toMatchObject({ repo: true, branch: "main" });
+        expect(seen.at(-1)).toBe(SERVER_STATE);
+      }).pipe(Effect.scoped, Effect.provide(ThroughHost)),
+    30_000,
+  );
+
+  it.live(
+    "the checkouts' worktrees and the worker host share one host process",
+    () =>
+      Effect.gen(function* () {
+        const tmp = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(tmp)));
+        const repo = makeRepo(tmp);
+        const { local } = yield* WorkerHosts;
+        const { connection } = yield* LocalHostProcess;
+        expect(connection?.hello.pid).toBe(local.process?.pid);
+        // The server's own `Worktrees` here can only list, so a worktree made is the host's.
+        const worktreesForCheckouts = yield* Worktrees;
+        const created = yield* worktreesForCheckouts.create({
+          repoPath: repo,
+          branch: "made-by-the-host",
+          openCheckouts: [],
+        });
+        expect(created).toMatchObject({ reused: false, checkout: { branch: "made-by-the-host" } });
       }).pipe(
         Effect.scoped,
         Effect.provide(
-          WorkerHosts.layerLocalWith({ hostProcess: true }).pipe(Layer.provide(Machine)),
+          Layer.mergeAll(WorkerHosts.layerLocalOn, LocalHostProcess.worktrees).pipe(
+            Layer.provideMerge(LocalHostProcess.layerWith({ hostProcess: true })),
+            Layer.provide(InServer),
+          ),
         ),
       ),
     30_000,

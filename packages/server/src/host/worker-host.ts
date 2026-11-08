@@ -9,12 +9,9 @@ import { GitStateRuntime, Proc, Worktrees } from "@gram/git";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Cause from "effect/Cause";
-import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
-import * as Scope from "effect/Scope";
-import { spawnLocalHost } from "./child.ts";
 import { filesOn, type HostFiles } from "./files.ts";
+import { LocalHostProcess } from "./local-process.ts";
 
 export type { HostFiles } from "./files.ts";
 import { liveScan, type PortScan } from "../ports/scan.ts";
@@ -86,53 +83,6 @@ export interface WorkerHostsShape {
   of(record: { readonly hostId?: HostId | undefined }): Effect.Effect<WorkerHost, HostUnavailable>;
 }
 
-interface MachineParts {
-  readonly files: HostFiles;
-  readonly scan: HostPorts["scan"];
-  readonly hello?: HostHello;
-}
-
-/**
- * This machine's folders and port scan through the host process, in a scope of its own: a host
- * that doesn't start or answer is closed at once and the server keeps `inServer`. One that
- * stops later hands its reads back to `inServer` from then on, rather than failing them.
- */
-const throughHostProcess = (inServer: MachineParts) =>
-  Effect.gen(function* () {
-    const scope = yield* Scope.fork(yield* Effect.scope);
-    const started = yield* spawnLocalHost.pipe(Scope.provide(scope), Effect.exit);
-    if (Exit.isFailure(started)) {
-      yield* Scope.close(scope, Exit.void);
-      const reason = Cause.squash(started.cause);
-      yield* Effect.logWarning("worker host: its process didn't start; it runs in the server").pipe(
-        Effect.annotateLogs({ reason: reason instanceof Error ? reason.message : String(reason) }),
-      );
-      return inServer;
-    }
-    const host = started.value;
-    yield* Effect.logInfo("worker host: running as its own process").pipe(
-      Effect.annotateLogs({ pid: host.hello.pid }),
-    );
-    const either =
-      <Args extends ReadonlyArray<unknown>, A, E>(
-        viaHost: (...args: Args) => Effect.Effect<A, E>,
-        local: (...args: Args) => Effect.Effect<A, E>,
-      ) =>
-      (...args: Args): Effect.Effect<A, E> =>
-        // Chosen when the read runs, so an effect built before the host went still falls back.
-        Effect.suspend(() => (host.gone() ? local(...args) : viaHost(...args)));
-    const parts: MachineParts = {
-      files: {
-        list: either(host.files.list, inServer.files.list),
-        search: either(host.files.search, inServer.files.search),
-        names: either(host.files.names, inServer.files.names),
-      },
-      scan: Effect.suspend(() => (host.gone() ? inServer.scan : host.scan)),
-      hello: host.hello,
-    };
-    return parts;
-  });
-
 /** The machines this server can place work on. Only this one, until machines can be paired. */
 export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>()(
   "@gram/server/WorkerHosts",
@@ -152,50 +102,48 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     return WorkerHosts.of({ local, get, of: (record) => get(hostOf(record)) });
   };
 
-  /** This machine only, built from the services already in the server. */
+  /**
+   * This machine only, built from the services already in the server, its folders, worktrees, git
+   * state and port scan through `LocalHostProcess`. Terminals and agent sessions stay in the server
+   * for now.
+   */
+  static readonly layerLocalOn: Layer.Layer<
+    WorkerHosts,
+    never,
+    AgentHosts | CheckoutService | LocalHostProcess | HostTerminals
+  > = Layer.effect(
+    WorkerHosts,
+    Effect.gen(function* () {
+      const { parts } = yield* LocalHostProcess;
+      return WorkerHosts.fromHosts({
+        id: LOCAL_HOST_ID,
+        sessions: yield* AgentHosts,
+        checkouts: yield* CheckoutService,
+        worktrees: parts.worktrees,
+        git: parts.git,
+        files: parts.files,
+        terminals: yield* HostTerminals,
+        ports: { scan: parts.scan },
+        process: parts.hello,
+      });
+    }),
+  );
+
+  /** This machine with a host process of its own, on when `GRAM_HOST_PROCESS=1`. */
   static readonly layerLocal: Layer.Layer<
     WorkerHosts,
     never,
     AgentHosts | CheckoutService | Worktrees | GitStateRuntime | Proc | HostTerminals
-  > = Layer.suspend(() =>
-    WorkerHosts.layerLocalWith({ hostProcess: process.env["GRAM_HOST_PROCESS"] === "1" }),
-  );
+  > = WorkerHosts.layerLocalOn.pipe(Layer.provide(LocalHostProcess.layer));
 
-  /**
-   * This machine, with `hostProcess` reading its folders and scanning its ports through the host
-   * running as its own process (`gram-host`), over the host protocol. A host process that can't
-   * start, or answers on another protocol version, leaves those parts in the server, as without
-   * it. Its other parts move to the host process one at a time.
-   */
+  /** This machine with a host process of its own, on as `hostProcess` says, whatever the environment says. */
   static readonly layerLocalWith = (options: {
     readonly hostProcess: boolean;
   }): Layer.Layer<
     WorkerHosts,
     never,
     AgentHosts | CheckoutService | Worktrees | GitStateRuntime | Proc | HostTerminals
-  > =>
-    Layer.effect(
-      WorkerHosts,
-      Effect.gen(function* () {
-        const proc = yield* Proc;
-        const inServer: MachineParts = {
-          files: filesOn(proc),
-          scan: liveScan.pipe(Effect.provideService(Proc, proc)),
-        };
-        const machine = options.hostProcess ? yield* throughHostProcess(inServer) : inServer;
-        return WorkerHosts.fromHosts({
-          id: LOCAL_HOST_ID,
-          sessions: yield* AgentHosts,
-          checkouts: yield* CheckoutService,
-          worktrees: yield* Worktrees,
-          git: yield* GitStateRuntime,
-          files: machine.files,
-          terminals: yield* HostTerminals,
-          ports: { scan: machine.scan },
-          process: machine.hello,
-        });
-      }),
-    );
+  > => WorkerHosts.layerLocalOn.pipe(Layer.provide(LocalHostProcess.layerWith(options)));
 
   /**
    * This machine for tests that run agents without the rest of the server: the parts a test layer

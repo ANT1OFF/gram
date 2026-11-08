@@ -70,6 +70,7 @@ import { LoopStallLog } from "../logging/loop-stalls.ts";
 import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { PreviewFiles } from "../preview/files.ts";
+import { LocalHostProcess } from "../host/local-process.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
@@ -428,12 +429,18 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           // The machines work runs on: only this one for now, over its agents, checkouts, git,
-          // files, terminals and port scan.
+          // files, terminals and port scan. One host process serves both the worker host and the
+          // worktrees the checkouts make.
           Layer.provideMerge(
-            WorkerHosts.layerLocal.pipe(
+            WorkerHosts.layerLocalOn.pipe(
               Layer.provideMerge(
-                Layer.mergeAll(GitCheckoutLive, ClaudeAiSeenLive, HostTerminals.layer),
+                Layer.mergeAll(
+                  GitCheckoutLive.pipe(Layer.provide(LocalHostProcess.worktrees)),
+                  ClaudeAiSeenLive,
+                  HostTerminals.layer,
+                ),
               ),
+              Layer.provideMerge(LocalHostProcess.layer),
             ),
           ),
           Layer.provideMerge(
