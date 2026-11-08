@@ -71,6 +71,7 @@ import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { PreviewFiles } from "../preview/files.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
+import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
@@ -102,16 +103,28 @@ import {
   REMOTE_CONNECT_PATH,
   REMOTE_CLAIM_PATH,
 } from "./remote-access.ts";
-import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./remote-routes.ts";
+import {
+  closedOnRevoke,
+  REMOTE_MANAGEMENT_PATHS,
+  remoteManagement,
+} from "./remote-routes.ts";
 import { RemoteControl } from "./remote-control.ts";
 import { authTarget } from "./auth-target.ts";
-import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } from "./auth.ts";
+import {
+  authorize,
+  contentSecurityPolicy,
+  makeLaunchToken,
+  tokenCookieName,
+} from "./auth.ts";
 
 /** The per-launch secret carried by the boot URL. */
-export class LaunchToken extends Context.Service<LaunchToken, { readonly token: string }>()(
-  "@gram/server/LaunchToken",
-) {
-  static readonly layer = Layer.sync(LaunchToken, () => ({ token: makeLaunchToken() }));
+export class LaunchToken extends Context.Service<
+  LaunchToken,
+  { readonly token: string }
+>()("@gram/server/LaunchToken") {
+  static readonly layer = Layer.sync(LaunchToken, () => ({
+    token: makeLaunchToken(),
+  }));
 }
 
 export const serverPort = (server: HttpServer.HttpServer["Service"]): number =>
@@ -148,33 +161,57 @@ export const AuthMiddleware = HttpRouter.middleware(
         const target = authTarget(request.url);
         const path = target?.path;
         const remote = control.current();
-        const isRemote = remote !== undefined && request.headers["host"] === remote.host;
-        const secureResponse = (response: HttpServerResponse.HttpServerResponse) =>
+        const isRemote =
+          remote !== undefined && request.headers["host"] === remote.host;
+        const secureResponse = (
+          response: HttpServerResponse.HttpServerResponse,
+        ) =>
           HttpServerResponse.setHeaders(response, {
             ...securityHeaders,
             ...(isRemote
-              ? { "content-security-policy": contentSecurityPolicy(port, remote.origin) }
+              ? {
+                  "content-security-policy": contentSecurityPolicy(
+                    port,
+                    remote.origin,
+                  ),
+                }
               : {}),
           });
         if (request.headers["tailscale-funnel-request"] !== undefined)
           return secureResponse(
-            HttpServerResponse.text("forbidden: private access only", { status: 403 }),
+            HttpServerResponse.text("forbidden: private access only", {
+              status: 403,
+            }),
           );
-        if (target === undefined || (isRemote && target.searchParams.has("boot")))
+        if (
+          target === undefined ||
+          (isRemote && target.searchParams.has("boot"))
+        )
           return secureResponse(
-            HttpServerResponse.text("forbidden: request target", { status: 403 }),
+            HttpServerResponse.text("forbidden: request target", {
+              status: 403,
+            }),
           );
         // Remote bootstrap has no app assets and exposes no data. The secret is a fragment.
-        if (isRemote && path === REMOTE_CONNECT_PATH && request.method === "GET") {
+        if (
+          isRemote &&
+          path === REMOTE_CONNECT_PATH &&
+          request.method === "GET"
+        ) {
           if (
             request.headers["origin"] !== undefined &&
             request.headers["origin"] !== remote.origin
           )
-            return secureResponse(HttpServerResponse.text("forbidden", { status: 403 }));
-          return HttpServerResponse.setHeaders(HttpServerResponse.html(pairingDocument), {
-            ...securityHeaders,
-            "content-security-policy": pairingCsp,
-          });
+            return secureResponse(
+              HttpServerResponse.text("forbidden", { status: 403 }),
+            );
+          return HttpServerResponse.setHeaders(
+            HttpServerResponse.html(pairingDocument),
+            {
+              ...securityHeaders,
+              "content-security-policy": pairingCsp,
+            },
+          );
         }
         if (isRemote && path === REMOTE_CLAIM_PATH) {
           if (
@@ -183,14 +220,22 @@ export const AuthMiddleware = HttpRouter.middleware(
             request.headers["content-type"] !== "text/plain" ||
             Number(request.headers["content-length"]) > 64
           )
-            return secureResponse(HttpServerResponse.text("forbidden", { status: 403 }));
+            return secureResponse(
+              HttpServerResponse.text("forbidden", { status: 403 }),
+            );
           const code = yield* request.text.pipe(
-            Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(64)),
+            Effect.provideService(
+              HttpServerRequest.MaxBodySize,
+              ByteSize.bytes(64),
+            ),
             Effect.catch(() => Effect.succeed("")),
           );
-          const session = code.length === 64 ? remote.claim(authRequest, code) : undefined;
+          const session =
+            code.length === 64 ? remote.claim(authRequest, code) : undefined;
           if (session === undefined)
-            return secureResponse(HttpServerResponse.text("pairing refused", { status: 403 }));
+            return secureResponse(
+              HttpServerResponse.text("pairing refused", { status: 403 }),
+            );
           const response = yield* HttpServerResponse.text("paired").pipe(
             HttpServerResponse.setCookie(remote.cookieName, session, {
               maxAge: SESSION_LIFETIME_MS,
@@ -219,13 +264,23 @@ export const AuthMiddleware = HttpRouter.middleware(
           case "pass":
             response =
               path !== undefined && REMOTE_MANAGEMENT_PATHS.has(path)
-                ? yield* remoteManagement(control, path, isRemote ? remote : undefined)
+                ? yield* remoteManagement(
+                    control,
+                    path,
+                    isRemote ? remote : undefined,
+                  )
                 : isRemote && path === "/ws"
-                  ? yield* closedOnRevoke(remote, remote.sessionOf(authRequest), httpEffect)
+                  ? yield* closedOnRevoke(
+                      remote,
+                      remote.sessionOf(authRequest),
+                      httpEffect,
+                    )
                   : yield* httpEffect;
             break;
           case "boot":
-            response = yield* HttpServerResponse.redirect("/", { status: 302 }).pipe(
+            response = yield* HttpServerResponse.redirect("/", {
+              status: 302,
+            }).pipe(
               HttpServerResponse.setCookie(tokenCookieName(port), token, {
                 httpOnly: true,
                 sameSite: "strict",
@@ -237,7 +292,10 @@ export const AuthMiddleware = HttpRouter.middleware(
           case "bearer":
             response =
               (yield* mcpTokens.threadFor(decision.token)) === undefined
-                ? HttpServerResponse.text("unauthorized: invalid bearer token", { status: 401 })
+                ? HttpServerResponse.text(
+                    "unauthorized: invalid bearer token",
+                    { status: 401 },
+                  )
                 : yield* httpEffect;
             break;
           case "reject":
@@ -255,7 +313,9 @@ export const AuthMiddleware = HttpRouter.middleware(
                 }),
                 { ...securityHeaders, "content-security-policy": unpairedCsp },
               );
-            response = HttpServerResponse.text(decision.message, { status: decision.status });
+            response = HttpServerResponse.text(decision.message, {
+              status: decision.status,
+            });
             break;
         }
         return secureResponse(response);
@@ -305,11 +365,15 @@ const StaticRoutes = Layer.unwrap(
       ? HttpRouter.add(
           "GET",
           "/*",
-          HttpServerResponse.text("Gram server: no web root configured", { status: 404 }),
+          HttpServerResponse.text("Gram server: no web root configured", {
+            status: 404,
+          }),
         )
-      : HttpStaticServer.layer({ root: webRoot, index: "index.html", spa: true }).pipe(
-          Layer.provide(GuardedHttpPlatform),
-        );
+      : HttpStaticServer.layer({
+          root: webRoot,
+          index: "index.html",
+          spa: true,
+        }).pipe(Layer.provide(GuardedHttpPlatform));
   }),
 );
 
@@ -322,7 +386,10 @@ export const rpcRoutes = <Rpcs extends Rpc.Any, E, R>(
   group: RpcGroup.RpcGroup<Rpcs>,
   handlers: Layer.Layer<Rpc.ToHandler<Rpcs>, E, R>,
 ) =>
-  RpcServer.layer(group, { disableTracing: true, disableFatalDefects: true }).pipe(
+  RpcServer.layer(group, {
+    disableTracing: true,
+    disableFatalDefects: true,
+  }).pipe(
     Layer.provide(handlers),
     Layer.provide(RpcServer.layerProtocolWebsocket({ path: "/ws" })),
     Layer.provide(RpcSerialization.layerJson),
@@ -334,8 +401,10 @@ const RpcRoutes = rpcRoutes(GramRpcs, RpcHandlersLayer);
 export const ServerCore = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig;
-    const databaseFile = config.databaseFile ?? (yield* serverDatabaseFile(config.dataDir));
-    if (databaseFile !== ":memory:") mkdirSync(config.dataDir, { recursive: true });
+    const databaseFile =
+      config.databaseFile ?? (yield* serverDatabaseFile(config.dataDir));
+    if (databaseFile !== ":memory:")
+      mkdirSync(config.dataDir, { recursive: true });
     // The git app tools read the publisher and babysit observes it; the publisher and port chips
     // depend on the runtimes; the runtimes depend on checkouts. Orchestration sits under the app
     // tools because the cross-thread ones ask it whether a call is delegated, and over the launch
@@ -371,7 +440,9 @@ export const ServerCore = Layer.unwrap(
               RoutinesLive.pipe(
                 Layer.provide(
                   RoutineEventSourcesLive.pipe(
-                    Layer.provide(Layer.mergeAll(BranchHeadsLive, UpstreamReleasesLive)),
+                    Layer.provide(
+                      Layer.mergeAll(BranchHeadsLive, UpstreamReleasesLive),
+                    ),
                   ),
                 ),
               ),
@@ -379,11 +450,15 @@ export const ServerCore = Layer.unwrap(
               WorktreeSweepLive,
             ),
           ),
-          Layer.provideMerge(Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer)),
+          Layer.provideMerge(
+            Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer),
+          ),
           Layer.provideMerge(OrchestrationLive),
           // Gram's own full checks, which the solo merge policy accepts in place of CI, under the
           // orchestration whose ledger shows them.
-          Layer.provideMerge(LocalChecksLive.pipe(Layer.provide(LocalCheckRunner.layer))),
+          Layer.provideMerge(
+            LocalChecksLive.pipe(Layer.provide(LocalCheckRunner.layer)),
+          ),
           Layer.provideMerge(OrchestrationMemory.layer),
           Layer.provideMerge(
             Layer.mergeAll(
@@ -411,16 +486,24 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           // Below the condition wakes, whose `versionChanged` reads a CLI's version off its runs.
-          Layer.provideMerge(Layer.mergeAll(GitStatePublisherLive, LaunchChecksCache.layer)),
+          Layer.provideMerge(
+            Layer.mergeAll(GitStatePublisherLive, LaunchChecksCache.layer),
+          ),
           Layer.provideMerge(ReviewRequestsLive),
-          Layer.provideMerge(Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer)),
+          Layer.provideMerge(
+            Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer),
+          ),
           Layer.provideMerge(ThreadVisibility.layer),
           Layer.provideMerge(ThreadPorts.layer),
           // The outputs service observes the runtimes for files their threads produce; the browser
           // tools record evidence there too.
           // The docs a workspace's threads publish (`publish_doc`), kept in Gram's state.
           Layer.provideMerge(
-            Layer.mergeAll(AppToolRegistry.layer, WorkspaceOutputs.layer, Docs.layer),
+            Layer.mergeAll(
+              AppToolRegistry.layer,
+              WorkspaceOutputs.layer,
+              Docs.layer,
+            ),
           ),
           // The runtimes read the limit readings, which a limit wait falls back on for its reset.
           Layer.provideMerge(
@@ -429,15 +512,18 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           // The machines work runs on: only this one for now, over its agents, checkouts, git,
-          // files, terminals and port scan. One host process serves both the worker host and the
-          // worktrees the checkouts make.
+          // files, terminals and port scan. One host process serves the worker host, the worktrees
+          // the checkouts make, and the Claude sessions it can run.
           Layer.provideMerge(
             WorkerHosts.layerLocalOn.pipe(
               Layer.provideMerge(
                 Layer.mergeAll(
-                  GitCheckoutLive.pipe(Layer.provide(LocalHostProcess.worktrees)),
+                  GitCheckoutLive.pipe(
+                    Layer.provide(LocalHostProcess.worktrees),
+                  ),
                   ClaudeAiSeenLive,
                   HostTerminals.layer,
+                  AgentHostsThroughHost,
                 ),
               ),
               Layer.provideMerge(LocalHostProcess.layer),
@@ -465,7 +551,9 @@ export const ServerCore = Layer.unwrap(
 );
 
 // Pinned ws implements closeTimeout; its bundled @types/ws has not declared it yet.
-const websocketOptions: NodeHttpServer.Options["websocket"] & { readonly closeTimeout: number } = {
+const websocketOptions: NodeHttpServer.Options["websocket"] & {
+  readonly closeTimeout: number;
+} = {
   closeTimeout: 1_000,
 };
 
@@ -485,16 +573,24 @@ const createHttpListener = () => {
 
 /** The HTTP + WebSocket server on 127.0.0.1, with the core services it serves. */
 export const ServerLayer: Layer.Layer<
-  HttpServer.HttpServer | LaunchToken | McpTokens | ThreadRuntimes | ThreadStore | EventHub,
+  | HttpServer.HttpServer
+  | LaunchToken
+  | McpTokens
+  | ThreadRuntimes
+  | ThreadStore
+  | EventHub,
   unknown,
   AgentHosts | ServerConfig | GitPlatform | TurnHooks
 > = Layer.unwrap(
   Effect.gen(function* () {
     const { port } = yield* ServerConfig;
-    return HttpRouter.serve(Layer.mergeAll(RpcRoutes, StaticRoutes, McpRoute, AuthMiddleware), {
-      disableListenLog: true,
-      disableLogger: true,
-    }).pipe(
+    return HttpRouter.serve(
+      Layer.mergeAll(RpcRoutes, StaticRoutes, McpRoute, AuthMiddleware),
+      {
+        disableListenLog: true,
+        disableLogger: true,
+      },
+    ).pipe(
       Layer.merge(LoopStallLog),
       Layer.provideMerge(ServerCore),
       Layer.provide(RemoteControl.layer),

@@ -1,13 +1,29 @@
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
-import { InvalidState, NotFound } from "../errors.ts";
+import { AgentEvent } from "../agent.ts";
+import { Connector } from "../connectors.ts";
+import {
+  AgentUnavailable,
+  AnswerUndelivered,
+  InterruptHung,
+  InvalidState,
+  ModeRefused,
+  NotFound,
+} from "../errors.ts";
 import { FsFilesResult } from "../fs-files.ts";
 import { FsSearchResult } from "../fs-search.ts";
-import { Checkout } from "../domain.ts";
+import {
+  AgentKind,
+  Checkout,
+  ModelRef,
+  PermissionMode,
+  RequestAnswer,
+  UserInput,
+} from "../domain.ts";
 import { FsListing } from "../fs.ts";
 import { GitState } from "../git.ts";
-import { HostId, TerminalId, ThreadId } from "../ids.ts";
+import { HostId, ProfileId, RequestId, TerminalId, ThreadId } from "../ids.ts";
 import { TerminalEvent, TerminalInfo, TerminalOpened } from "../terminal.ts";
 import { WorktreeList } from "../worktrees.ts";
 import { PositiveInt } from "./shared.ts";
@@ -19,7 +35,14 @@ import { PositiveInt } from "./shared.ts";
 export const HOST_PROTOCOL_VERSION = 1;
 
 /** What a host can do, named so a control plane uses only what a host advertised. */
-export const HostCapability = Schema.Literals(["files", "ports", "worktrees", "git", "terminals"]);
+export const HostCapability = Schema.Literals([
+  "files",
+  "ports",
+  "worktrees",
+  "git",
+  "terminals",
+  "sessions",
+]);
 export type HostCapability = typeof HostCapability.Type;
 
 /** The host's answer to `host.hello`: who it is and what it can do. */
@@ -134,6 +157,97 @@ export const HostTerminalRoot = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("remove"), pid: Schema.Int }),
 ]);
 
+/**
+ * An agent session to open on the host, named by the control plane (`handle`) so it can close one
+ * whose open it gave up on. Only what crosses as data: the thread's app tools reach the agent over
+ * the control plane's MCP endpoint, never in-process.
+ */
+export const HostSessionOpen = Schema.Struct({
+  handle: Schema.String,
+  agent: AgentKind,
+  threadId: ThreadId,
+  cwd: Schema.String,
+  resumeId: Schema.optionalKey(Schema.String),
+  fork: Schema.optionalKey(Schema.Boolean),
+  resumeAt: Schema.optionalKey(Schema.String),
+  sessionId: Schema.optionalKey(Schema.String),
+  model: Schema.optionalKey(ModelRef),
+  permissionMode: Schema.optionalKey(PermissionMode),
+  mcp: Schema.optionalKey(
+    Schema.Struct({
+      url: Schema.String,
+      headers: Schema.Record(Schema.String, Schema.String),
+    }),
+  ),
+  additionalDirectories: Schema.optionalKey(Schema.Array(Schema.String)),
+  audience: Schema.optionalKey(
+    Schema.Literals(["plain", "orchestrator", "worker", "dream"]),
+  ),
+  instructions: Schema.optionalKey(Schema.String),
+  outwardGate: Schema.optionalKey(
+    Schema.Union([Schema.Boolean, Schema.Literals(["all", "irreversible"])]),
+  ),
+  confineWrites: Schema.optionalKey(Schema.Boolean),
+  pinCwd: Schema.optionalKey(Schema.Boolean),
+  mcpAllowlist: Schema.optionalKey(Schema.Array(Schema.String)),
+  mcpDenylist: Schema.optionalKey(Schema.Array(Schema.String)),
+  mcpNoneWithoutToolSearch: Schema.optionalKey(Schema.Boolean),
+  noBlockingAsk: Schema.optionalKey(Schema.Boolean),
+  peerMessaging: Schema.optionalKey(Schema.Boolean),
+});
+export type HostSessionOpen = typeof HostSessionOpen.Type;
+
+/** Which of a session's optional controls the host's agent offers, and its connectors' lists. */
+export const HostSessionOpened = Schema.Struct({
+  closeToolGate: Schema.Boolean,
+  stopBackgroundTasks: Schema.Boolean,
+  stopTask: Schema.Boolean,
+  addDirectories: Schema.Boolean,
+  processId: Schema.Boolean,
+  connectors: Schema.optionalKey(
+    Schema.Struct({
+      authenticate: Schema.Boolean,
+      allowlist: Schema.optionalKey(Schema.Array(Schema.String)),
+      denylist: Schema.optionalKey(Schema.Array(Schema.String)),
+      claudeAiUnavailable: Schema.optionalKey(Schema.String),
+    }),
+  ),
+});
+export type HostSessionOpened = typeof HostSessionOpened.Type;
+
+/** An agent event, numbered in the order its session emitted it, from 1. */
+export const HostSessionEvent = Schema.Struct({
+  seq: Schema.Int,
+  event: AgentEvent,
+});
+
+/** One report of a session's MCP servers. */
+export const HostConnectorsSeen = Schema.Struct({
+  detailed: Schema.Boolean,
+  whole: Schema.Boolean,
+  connectors: Schema.Array(Connector),
+});
+
+/** A started OAuth sign-in: the page to open, or `started` when the agent opened it itself. */
+export const HostSignInStart = Schema.Union([
+  Schema.Struct({ authorizationUrl: Schema.String }),
+  Schema.Literal("started"),
+]);
+
+/** What the host's agents keep across sessions, dropped so the next session reads it afresh. */
+export const HostAgentReload = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("runtime") }),
+  Schema.Struct({
+    kind: Schema.Literal("config"),
+    profileId: Schema.optionalKey(ProfileId),
+  }),
+  Schema.Struct({ kind: Schema.Literal("allConfig") }),
+]);
+export type HostAgentReload = typeof HostAgentReload.Type;
+
+const session = { handle: Schema.String };
+const sessionErrors = Schema.Union([AgentUnavailable, HostFailed]);
+
 const terminalErrors = Schema.Union([NotFound, InvalidState, HostFailed]);
 
 const worktreeErrors = Schema.Union([HostWorktreeFailed, HostFailed]);
@@ -153,7 +267,11 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.hello", { success: HostHello }),
   /** A folder's entries for the Files panel. */
   Rpc.make("host.files.list", {
-    payload: { path: Schema.String, showHidden: Schema.Boolean, limit: PositiveInt },
+    payload: {
+      path: Schema.String,
+      showHidden: Schema.Boolean,
+      limit: PositiveInt,
+    },
     success: FsListing,
     error: listErrors,
   }),
@@ -240,7 +358,10 @@ export const HostRpcs = RpcGroup.make(
     error: commandErrors,
   }),
   /** Whether a checkout's folder is there; false only when it is definitely gone. */
-  Rpc.make("host.git.present", { payload: { cwd: Schema.String }, success: Schema.Boolean }),
+  Rpc.make("host.git.present", {
+    payload: { cwd: Schema.String },
+    success: Schema.Boolean,
+  }),
   /** Each checkout's git state as it changes, until the caller stops listening. */
   Rpc.make("host.git.watch", {
     payload: {
@@ -301,4 +422,109 @@ export const HostRpcs = RpcGroup.make(
   }),
   /** Threads' shells as they start and end, until the caller stops listening. */
   Rpc.make("host.terminals.roots", { success: HostTerminalRoot, stream: true }),
+
+  /**
+   * Opens an agent session on the host under the control plane's `handle`. A close for the handle
+   * that comes first, or while it opens, leaves the session closed.
+   */
+  Rpc.make("host.sessions.open", {
+    payload: HostSessionOpen,
+    success: HostSessionOpened,
+    error: sessionErrors,
+  }),
+  /**
+   * The session's events after `afterSeq`: those the host still keeps, then each as it comes. Ends
+   * once the session's events have ended and every one was sent.
+   */
+  Rpc.make("host.sessions.events", {
+    payload: { ...session, afterSeq: Schema.Int },
+    success: HostSessionEvent,
+    error: HostFailed,
+    stream: true,
+  }),
+  /** Confirms every event up to `seq`, which the host then lets go. */
+  Rpc.make("host.sessions.ack", { payload: { ...session, seq: Schema.Int } }),
+  /** The last report of the session's MCP servers, then each new one. */
+  Rpc.make("host.sessions.connectorsSeen", {
+    payload: session,
+    success: HostConnectorsSeen,
+    stream: true,
+  }),
+  Rpc.make("host.sessions.send", {
+    payload: {
+      ...session,
+      input: UserInput,
+      messageId: Schema.optionalKey(Schema.String),
+    },
+    error: HostFailed,
+  }),
+  Rpc.make("host.sessions.steer", {
+    payload: { ...session, input: UserInput },
+    error: HostFailed,
+  }),
+  Rpc.make("host.sessions.interrupt", {
+    payload: session,
+    error: Schema.Union([InterruptHung, HostFailed]),
+  }),
+  Rpc.make("host.sessions.closeToolGate", {
+    payload: session,
+    error: HostFailed,
+  }),
+  Rpc.make("host.sessions.stopBackgroundTasks", {
+    payload: session,
+    success: Schema.Int,
+    error: HostFailed,
+  }),
+  Rpc.make("host.sessions.stopTask", {
+    payload: { ...session, taskId: Schema.String },
+    success: Schema.Boolean,
+    error: HostFailed,
+  }),
+  Rpc.make("host.sessions.respond", {
+    payload: { ...session, requestId: RequestId, answer: RequestAnswer },
+    error: Schema.Union([AnswerUndelivered, HostFailed]),
+  }),
+  Rpc.make("host.sessions.setMode", {
+    payload: { ...session, mode: PermissionMode },
+    error: Schema.Union([ModeRefused, HostFailed]),
+  }),
+  Rpc.make("host.sessions.setModel", {
+    payload: { ...session, model: ModelRef },
+    error: HostFailed,
+  }),
+  Rpc.make("host.sessions.addDirectories", {
+    payload: { ...session, paths: Schema.Array(Schema.String) },
+    success: Schema.Boolean,
+    error: HostFailed,
+  }),
+  Rpc.make("host.sessions.processId", {
+    payload: session,
+    success: Schema.NullOr(Schema.Int),
+    error: HostFailed,
+  }),
+  Rpc.make("host.sessions.connectorsStatus", {
+    payload: session,
+    success: Schema.Array(Connector),
+    error: sessionErrors,
+  }),
+  Rpc.make("host.sessions.connectorsReconnect", {
+    payload: { ...session, name: Schema.String },
+    error: sessionErrors,
+  }),
+  Rpc.make("host.sessions.connectorsSetEnabled", {
+    payload: { ...session, name: Schema.String, enabled: Schema.Boolean },
+    success: Schema.Literals(["applied", "restart"]),
+    error: sessionErrors,
+  }),
+  Rpc.make("host.sessions.connectorsAuthenticate", {
+    payload: { ...session, name: Schema.String },
+    success: HostSignInStart,
+    error: sessionErrors,
+  }),
+  /** Ends the session and waits for its agent to stop. Unknown handles are already closed. */
+  Rpc.make("host.sessions.close", { payload: session }),
+  /** Drops what the host's agents keep across sessions (`AgentHost.reloadConfig` and kin). */
+  Rpc.make("host.sessions.reload", {
+    payload: { agent: AgentKind, reload: HostAgentReload },
+  }),
 );

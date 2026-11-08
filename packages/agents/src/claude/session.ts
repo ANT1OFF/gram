@@ -53,7 +53,12 @@ import {
   protectChildForSwitch,
   stopChildForSwitch,
 } from "../child-process.ts";
-import type { AgentHost, AgentSession, ConnectorStatus, OpenSessionOptions } from "../host.ts";
+import type {
+  AgentHost,
+  AgentSession,
+  ConnectorStatus,
+  OpenSessionOptions,
+} from "../host.ts";
 import { narrowsMcp, reportedLists, type McpLists } from "../mcp-lists.ts";
 import { gateAsks, gateLevel } from "../outward.ts";
 import { PAUSE_STOP_TEXT } from "../pause.ts";
@@ -63,7 +68,11 @@ import {
   appToolName,
   buildAppToolServer,
 } from "./apptools.ts";
-import { expectedCliVersion, restoresSessionCost, supportsFastControl } from "./binary.ts";
+import {
+  expectedCliVersion,
+  restoresSessionCost,
+  supportsFastControl,
+} from "./binary.ts";
 import {
   makeConnectors,
   nextLapsedConnectors,
@@ -89,10 +98,18 @@ import {
 } from "./gateway-env.ts";
 import { AsyncPushQueue } from "./input-queue.ts";
 import { advertisedRate } from "./cost-estimate.ts";
-import { identityFromInitialization, makeMapper, type TaskOutputRead } from "./mapper.ts";
+import {
+  identityFromInitialization,
+  makeMapper,
+  type TaskOutputRead,
+} from "./mapper.ts";
 import { addTokens } from "./usage.ts";
 import { toAgentModel, userModelSwitch } from "./models.ts";
-import { outwardBashKind, resolveRequest, toPendingRequest } from "./permissions.ts";
+import {
+  outwardBashKind,
+  resolveRequest,
+  toPendingRequest,
+} from "./permissions.ts";
 import { ClaudeSdk } from "./sdk.ts";
 import {
   savedSessionCost,
@@ -123,7 +140,9 @@ export const BLOCKING_ASK_TOOL = "AskUserQuestion";
  * and two local servers), where `managedSettings` is dropped whenever the organisation has a
  * managed tier. Gram's own in-process server needs no entry.
  */
-const mcpServerEntry = (entry: string): { serverName: string } | { serverUrl: string } =>
+const mcpServerEntry = (
+  entry: string,
+): { serverName: string } | { serverUrl: string } =>
   entry.includes("://") ? { serverUrl: entry } : { serverName: entry };
 
 /**
@@ -131,7 +150,9 @@ const mcpServerEntry = (entry: string): { serverName: string } | { serverUrl: st
  * `.claude` in the home it is given, `HOME` or, on Windows, where `os.homedir()` looks without one,
  * `USERPROFILE`; `undefined` with none, so nothing else is read.
  */
-export const claudeSettingsDir = (env: Readonly<Record<string, string | undefined>>) => {
+export const claudeSettingsDir = (
+  env: Readonly<Record<string, string | undefined>>,
+) => {
   const home = env["HOME"] || env["USERPROFILE"];
   return env["CLAUDE_CONFIG_DIR"] || (home ? join(home, ".claude") : undefined);
 };
@@ -168,7 +189,10 @@ const otherAllowlists = async (
   userDir: string | undefined,
   sources: ReadonlyArray<SettingSource> | undefined,
 ): Promise<ReadonlyArray<unknown>> => {
-  const files: ReadonlyArray<{ readonly source: SettingSource; readonly path: string }> = [
+  const files: ReadonlyArray<{
+    readonly source: SettingSource;
+    readonly path: string;
+  }> = [
     ...(userDir === undefined
       ? []
       : [{ source: "user" as const, path: join(userDir, "settings.json") }]),
@@ -181,7 +205,8 @@ const otherAllowlists = async (
     const text = await readFile(path, "utf8").catch(() => undefined);
     if (text === undefined) continue;
     try {
-      const listed = (JSON.parse(text) as { allowedMcpServers?: unknown }).allowedMcpServers;
+      const listed = (JSON.parse(text) as { allowedMcpServers?: unknown })
+        .allowedMcpServers;
       if (Array.isArray(listed)) found.push(...listed);
     } catch {
       // Claude Code drops a settings file it can't parse, and its allowlist with it.
@@ -280,14 +305,19 @@ export const promptText = (input: UserInput): string => {
   const mentions = (input.attachments ?? []).map((a) =>
     /\s/.test(a.path) ? `@"${a.path}"` : `@${a.path}`,
   );
-  return mentions.length ? `${input.text}\n\n${mentions.join(" ")}` : input.text;
+  return mentions.length
+    ? `${input.text}\n\n${mentions.join(" ")}`
+    : input.text;
 };
 
 /** `ModelRef.variant` as SDK effort. `none` sends no effort, so the model's default applies. */
 const effortOf = (model: ModelRef | undefined): EffortLevel | undefined =>
-  model?.variant === undefined || model.variant === "none" ? undefined : model.variant;
+  model?.variant === undefined || model.variant === "none"
+    ? undefined
+    : model.variant;
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const isUuid = (id: string): id is UUID => UUID_PATTERN.test(id);
 
@@ -341,7 +371,8 @@ const APP_TOOL_ALLOWED = {
   hookSpecificOutput: {
     hookEventName: "PreToolUse" as const,
     permissionDecision: "allow" as const,
-    permissionDecisionReason: "Gram's approval gate decides about its own tools.",
+    permissionDecisionReason:
+      "Gram's approval gate decides about its own tools.",
   },
 };
 
@@ -363,7 +394,11 @@ const PEER_ADDRESS = /^(?:uds|bridge|did):/;
  * always would. `SendMessage` would by an explicit address, and by any name once the switch is
  * seen not to hold, since a peer's name then looks like a subagent's.
  */
-const reachesPeer = (toolName: string, toolInput: unknown, switchFailed: boolean): boolean => {
+const reachesPeer = (
+  toolName: string,
+  toolInput: unknown,
+  switchFailed: boolean,
+): boolean => {
   if (toolName === "ListAgents") return true;
   if (toolName !== "SendMessage") return false;
   if (switchFailed) return true;
@@ -381,7 +416,10 @@ const PEER_DENIED = {
   },
 };
 
-const CANCELLED: PermissionResult = { behavior: "deny", message: "The request was cancelled." };
+const CANCELLED: PermissionResult = {
+  behavior: "deny",
+  message: "The request was cancelled.",
+};
 
 /** Why a call is refused while the tool gate is closed (`AgentSession.closeToolGate`). */
 export const TOOL_GATE_REASON = PAUSE_STOP_TEXT;
@@ -465,7 +503,9 @@ type ShellRead =
  * in SDK 0.3.296's `sdk.d.ts`, "a host polls it while the task runs"). The SDK's `sdk.mjs` has the
  * method, but its `Query` type leaves it out, so it is looked up rather than called.
  */
-const taskOutputReader = (q: object): ((taskId: string) => Promise<unknown>) | undefined => {
+const taskOutputReader = (
+  q: object,
+): ((taskId: string) => Promise<unknown>) | undefined => {
   const method: unknown = Reflect.get(q, "getTaskOutput");
   return typeof method === "function"
     ? (taskId) => Promise.resolve(method.call(q, taskId) as unknown)
@@ -511,11 +551,16 @@ export const makeClaudeHost = (
     >();
     const openSession = Effect.fnUntraced(function* (o: OpenSessionOptions) {
       if (o.dreamFilesOnly === true) o = { ...o, confineWrites: true };
-      if (o.dreamFilesOnly === true && o.audience === "dream" && o.appTools === undefined)
+      if (
+        o.dreamFilesOnly === true &&
+        o.audience === "dream" &&
+        o.appTools === undefined
+      )
         return yield* new AgentUnavailable({
           agent: "claude",
           reason: "startup-failed",
-          message: "Memory update file bridge is unavailable; no session was started",
+          message:
+            "Memory update file bridge is unavailable; no session was started",
         });
       const prepared = yield* environment.prepare;
       // A thread on a gateway profile runs `claude` against the gateway with the user's key, so the
@@ -552,17 +597,25 @@ export const makeClaudeHost = (
               gatewayModelEnv(gateway.profile.models, o.model?.model),
             );
       // Without tool search every schema of every server would sit in the context all session.
-      const noToolSearch = o.mcpNoneWithoutToolSearch === true && !toolSearchOn(childEnv);
-      const lists: OpenSessionOptions = noToolSearch ? { ...o, mcpAllowlist: [] } : o;
+      const noToolSearch =
+        o.mcpNoneWithoutToolSearch === true && !toolSearchOn(childEnv);
+      const lists: OpenSessionOptions = noToolSearch
+        ? { ...o, mcpAllowlist: [] }
+        : o;
       // Narrowed by either list, the session's listing is a part of the account's catalogue.
-      const whole = gateway === undefined && o.confineWrites !== true && !narrowsMcp(lists);
-      const seen = (detailed: boolean, connectors: ReadonlyArray<ConnectorStatus>) =>
-        o.onConnectorsSeen?.({ detailed, whole, connectors });
+      const whole =
+        gateway === undefined && o.confineWrites !== true && !narrowsMcp(lists);
+      const seen = (
+        detailed: boolean,
+        connectors: ReadonlyArray<ConnectorStatus>,
+      ) => o.onConnectorsSeen?.({ detailed, whole, connectors });
       // Claude Code's Bash keeps the directory a `cd` left it in for the rest of the session; this
       // puts it back in the project folder after every command.
       const env = {
         ...(o.peerMessaging === true ? withPeerMessaging(childEnv) : childEnv),
-        ...(o.pinCwd === true ? { CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1" } : {}),
+        ...(o.pinCwd === true
+          ? { CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1" }
+          : {}),
         ...(o.confineWrites === true ? CONFINED_MCP.env : {}),
       };
       // Another source's allowlist would widen the session's, so what it adds is denied
@@ -572,7 +625,11 @@ export const makeClaudeHost = (
           ? widenedEntries(
               lists.mcpAllowlist,
               yield* Effect.promise(() =>
-                otherAllowlists(o.cwd, claudeSettingsDir(env), config.settingSources),
+                otherAllowlists(
+                  o.cwd,
+                  claudeSettingsDir(env),
+                  config.settingSources,
+                ),
               ),
             )
           : [];
@@ -582,7 +639,8 @@ export const makeClaudeHost = (
         ...new Set([
           ...(o.confineWrites === true ? CONFINED_DISALLOWED : []),
           ...(o.noBlockingAsk === true ? [BLOCKING_ASK_TOOL] : []),
-          ...(gateway !== undefined && withoutWebSearch(gateway.profile.models, o.model?.model)
+          ...(gateway !== undefined &&
+          withoutWebSearch(gateway.profile.models, o.model?.model)
             ? ["WebSearch"]
             : []),
         ]),
@@ -592,7 +650,8 @@ export const makeClaudeHost = (
       const emit = (event: AgentEvent): void => {
         Queue.offerUnsafe(events, event);
       };
-      const rates = learnedRates.get(profileId ?? "") ?? new Map<string, number>();
+      const rates =
+        learnedRates.get(profileId ?? "") ?? new Map<string, number>();
       learnedRates.set(profileId ?? "", rates);
       // Claude Code carries a resumed or forked session's cost on from its transcript, and the
       // server adds a thread's sessions up, so the mapper takes the carried total back off.
@@ -603,9 +662,13 @@ export const makeClaudeHost = (
           ? expectedCliVersion(sdk.version)
           : prepared.cliVersion;
       const carriedCost =
-        resumeId === undefined || readTranscript === undefined || !restoresSessionCost(runningCli)
+        resumeId === undefined ||
+        readTranscript === undefined ||
+        !restoresSessionCost(runningCli)
           ? 0
-          : yield* Effect.tryPromise(() => savedSessionCost(readTranscript, resumeId, o.cwd)).pipe(
+          : yield* Effect.tryPromise(() =>
+              savedSessionCost(readTranscript, resumeId, o.cwd),
+            ).pipe(
               // An unreadable transcript is one the CLI can't resume from either.
               Effect.orElseSucceed(() => 0),
             );
@@ -641,6 +704,10 @@ export const makeClaudeHost = (
       const appServer = o.appTools
         ? buildAppToolServer(o.threadId, o.appTools, sdk, o.audience)
         : undefined;
+      // A session opened away from the server (in the host process) has no registry here: its app
+      // tools come over the server's MCP endpoint, whose transport carries the same approval gate.
+      const remoteAppTools =
+        appServer === undefined && o.appTools === undefined ? o.mcp : undefined;
       let endedReason: string | undefined;
       let effort = effortOf(o.model);
       let speed = o.model?.speed;
@@ -650,7 +717,10 @@ export const makeClaudeHost = (
           o.model.profileId === undefined ? yield* listModels : [],
         );
         if (problem !== undefined)
-          return yield* new AgentUnavailable({ agent: "claude", message: problem });
+          return yield* new AgentUnavailable({
+            agent: "claude",
+            message: problem,
+          });
       }
       const reportSpeed = (report: {
         fast_mode_state?: string;
@@ -669,9 +739,14 @@ export const makeClaudeHost = (
                   ? "standard"
                   : "unknown",
             ...(report.fast_mode_disabled_reason !== undefined
-              ? { detail: `Claude Fast unavailable: ${report.fast_mode_disabled_reason}` }
+              ? {
+                  detail: `Claude Fast unavailable: ${report.fast_mode_disabled_reason}`,
+                }
               : state === "cooldown"
-                ? { detail: "Claude Fast is cooling down; requests use Standard." }
+                ? {
+                    detail:
+                      "Claude Fast is cooling down; requests use Standard.",
+                  }
                 : {}),
           },
         });
@@ -680,9 +755,14 @@ export const makeClaudeHost = (
       // Where the main agent is working, so the thread can follow it into another worktree: after a
       // tool call that moved it, and at every turn end. Subagent excursions don't count.
       let reportedCwd = o.cwd;
-      const reportCwd: HookCallbackMatcher["hooks"][number] = async (hookInput) => {
+      const reportCwd: HookCallbackMatcher["hooks"][number] = async (
+        hookInput,
+      ) => {
         if (hookInput.agent_id !== undefined) return {};
-        if (hookInput.hook_event_name === "Stop" || hookInput.cwd !== reportedCwd) {
+        if (
+          hookInput.hook_event_name === "Stop" ||
+          hookInput.cwd !== reportedCwd
+        ) {
           reportedCwd = hookInput.cwd;
           emit({ type: "cwd", cwd: hookInput.cwd });
         }
@@ -691,10 +771,15 @@ export const makeClaudeHost = (
 
       // A `/model` typed into the thread switches the session without going through `setModel`, so
       // the thread would keep naming the model it was opened with.
-      const reportModel: HookCallbackMatcher["hooks"][number] = async (hookInput) => {
+      const reportModel: HookCallbackMatcher["hooks"][number] = async (
+        hookInput,
+      ) => {
         // Every main-loop switch, our own `setModel` and a fallback included: the context meter
         // picks the running model's `modelUsage` entry by the variant tag only this id carries.
-        if (hookInput.hook_event_name === "PostModelSwitch" && hookInput.agent_id === undefined) {
+        if (
+          hookInput.hook_event_name === "PostModelSwitch" &&
+          hookInput.agent_id === undefined
+        ) {
           mapper.setSessionModel(hookInput.to_model);
         }
         const model = userModelSwitch(hookInput);
@@ -703,15 +788,26 @@ export const makeClaudeHost = (
       };
 
       // The summary a compaction leaves the main agent with, for the transcript's marker.
-      const reportCompaction: HookCallbackMatcher["hooks"][number] = async (hookInput) => {
-        if (hookInput.hook_event_name === "PostCompact" && hookInput.agent_id === undefined) {
-          for (const event of mapper.compacted(hookInput.compact_summary)) emit(event);
+      const reportCompaction: HookCallbackMatcher["hooks"][number] = async (
+        hookInput,
+      ) => {
+        if (
+          hookInput.hook_event_name === "PostCompact" &&
+          hookInput.agent_id === undefined
+        ) {
+          for (const event of mapper.compacted(hookInput.compact_summary))
+            emit(event);
         }
         return {};
       };
       // Who started the compaction under way, which its `compacting` status doesn't say.
-      const reportCompacting: HookCallbackMatcher["hooks"][number] = async (hookInput) => {
-        if (hookInput.hook_event_name === "PreCompact" && hookInput.agent_id === undefined) {
+      const reportCompacting: HookCallbackMatcher["hooks"][number] = async (
+        hookInput,
+      ) => {
+        if (
+          hookInput.hook_event_name === "PreCompact" &&
+          hookInput.agent_id === undefined
+        ) {
           for (const event of mapper.compacting(hookInput.trigger)) emit(event);
         }
         return {};
@@ -739,7 +835,11 @@ export const makeClaudeHost = (
       const level = gateLevel(o.outwardGate);
       const gateAsksAbout = (toolName: string, toolInput: unknown): boolean =>
         gateAsks(level, outwardBashKind(toolName, toolInput));
-      const isAppTool = (toolName: string): boolean => appServer?.names.has(toolName) ?? false;
+      const isAppTool = (toolName: string): boolean =>
+        appServer !== undefined
+          ? appServer.names.has(toolName)
+          : remoteAppTools !== undefined &&
+            toolName.startsWith(appToolName(""));
       // A hook, not a deny rule: a rule would take the tool from the main agent too.
       const mainAgentOnly = new Set([...MAIN_AGENT_APP_TOOLS].map(appToolName));
       const toolGate = makeToolGate();
@@ -747,20 +847,30 @@ export const makeClaudeHost = (
       // it would still list `ListAgents` at init, and from then on every send is refused here.
       const peerAllowed = o.peerMessaging === true;
       const peerSwitchSet =
-        (env as Record<string, string | undefined>)[PEER_MESSAGING_SWITCH] === "0";
+        (env as Record<string, string | undefined>)[PEER_MESSAGING_SWITCH] ===
+        "0";
       let peerSwitchFailed = false;
-      const gateCalls: HookCallbackMatcher["hooks"][number] = async (hookInput, toolUseId) => {
+      const gateCalls: HookCallbackMatcher["hooks"][number] = async (
+        hookInput,
+        toolUseId,
+      ) => {
         if (hookInput.hook_event_name !== "PreToolUse") return {};
         // Before every other answer: a closed gate refuses even Gram's own tools.
-        if (!toolGate.admit(toolUseId ?? hookInput.tool_use_id)) return GATE_CLOSED;
+        if (!toolGate.admit(toolUseId ?? hookInput.tool_use_id))
+          return GATE_CLOSED;
         if (isAppTool(hookInput.tool_name)) {
-          return hookInput.agent_id !== undefined && mainAgentOnly.has(hookInput.tool_name)
+          return hookInput.agent_id !== undefined &&
+            mainAgentOnly.has(hookInput.tool_name)
             ? SUBAGENT_DENIED
             : APP_TOOL_ALLOWED;
         }
         if (
           !peerAllowed &&
-          reachesPeer(hookInput.tool_name, hookInput.tool_input, peerSwitchFailed)
+          reachesPeer(
+            hookInput.tool_name,
+            hookInput.tool_input,
+            peerSwitchFailed,
+          )
         ) {
           toolGate.finished(toolUseId ?? hookInput.tool_use_id);
           return PEER_DENIED;
@@ -771,18 +881,28 @@ export const makeClaudeHost = (
             hookSpecificOutput: {
               hookEventName: "PreToolUse",
               permissionDecision: "deny",
-              permissionDecisionReason: "Dream may use only its bounded file bridge",
+              permissionDecisionReason:
+                "Dream may use only its bounded file bridge",
             },
           };
         }
         if (gateAsksAbout(hookInput.tool_name, hookInput.tool_input)) {
-          return askFirst(level === "all" ? OUTWARD_GATE_REASON : IRREVERSIBLE_GATE_REASON);
+          return askFirst(
+            level === "all" ? OUTWARD_GATE_REASON : IRREVERSIBLE_GATE_REASON,
+          );
         }
         return {};
       };
-      const gated = level !== undefined || appServer !== undefined || o.dreamFilesOnly === true;
+      const gated =
+        level !== undefined ||
+        appServer !== undefined ||
+        remoteAppTools !== undefined ||
+        o.dreamFilesOnly === true;
       // An admitted call ends here however it ends: run, failed, or refused by a rule or a card.
-      const toolEnded: HookCallbackMatcher["hooks"][number] = async (hookInput, toolUseId) => {
+      const toolEnded: HookCallbackMatcher["hooks"][number] = async (
+        hookInput,
+        toolUseId,
+      ) => {
         if (
           hookInput.hook_event_name === "PostToolUse" ||
           hookInput.hook_event_name === "PostToolUseFailure" ||
@@ -795,17 +915,26 @@ export const makeClaudeHost = (
 
       /** Set once the scope closes, so a card still being raised is denied instead. */
       let closed = false;
-      const canUseTool: CanUseTool = (toolName, toolInput, { signal, ...options }) =>
+      const canUseTool: CanUseTool = (
+        toolName,
+        toolInput,
+        { signal, ...options },
+      ) =>
         new Promise<PermissionResult>((resolve) => {
           if (signal.aborted) return resolve(CANCELLED);
           // Reached only if an "ask" rule outranks the hook's "allow"; the tool's gate still asks.
-          if (isAppTool(toolName)) return resolve({ behavior: "allow", updatedInput: toolInput });
+          if (isAppTool(toolName))
+            return resolve({ behavior: "allow", updatedInput: toolInput });
           if (o.dreamFilesOnly === true)
             return resolve({
               behavior: "deny",
               message: "Dream may use only its bounded file bridge",
             });
-          if (closed) return resolve({ behavior: "deny", message: "The session was closed." });
+          if (closed)
+            return resolve({
+              behavior: "deny",
+              message: "The session was closed.",
+            });
           const request = toPendingRequest(
             toolName,
             toolInput,
@@ -826,13 +955,18 @@ export const makeClaudeHost = (
           emit({ type: "request", request });
           emit({
             type: "status",
-            status: request.kind === "approval" ? "awaitingApproval" : "awaitingInput",
+            status:
+              request.kind === "approval"
+                ? "awaitingApproval"
+                : "awaitingInput",
           });
         });
 
       // Our own id for new sessions and forks, so identity is known before the first turn.
       const agentSessionId =
-        o.resumeId !== undefined && o.fork !== true ? o.resumeId : (o.sessionId ?? newId());
+        o.resumeId !== undefined && o.fork !== true
+          ? o.resumeId
+          : (o.sessionId ?? newId());
       let processId: number | undefined;
       let ownedChild: ChildProcess | undefined;
       let acceptSwitchStartup: (() => void) | undefined;
@@ -850,7 +984,10 @@ export const makeClaudeHost = (
         if (message.type === "result") {
           resultFailed = message.is_error;
           turnRunning = continues;
-        } else if (message.type === "system" && message.subtype === "session_state_changed") {
+        } else if (
+          message.type === "system" &&
+          message.subtype === "session_state_changed"
+        ) {
           if (message.state === "idle") turnRunning = false;
           else if (!turnRunning) turnStarts();
         }
@@ -860,17 +997,29 @@ export const makeClaudeHost = (
       let readToTurnEnd: (() => Promise<void>) | undefined;
       const executable = prepared.sdkExecutable;
       const options: Options = {
-        ...(executable === undefined ? {} : { pathToClaudeCodeExecutable: executable }),
+        ...(executable === undefined
+          ? {}
+          : { pathToClaudeCodeExecutable: executable }),
         env,
         cwd: o.cwd,
         // The SDK's default spawn, plus the child's pid for port chips. A custom spawn takes over
         // stderr, so it's forwarded to `stderr` below.
-        spawnClaudeCodeProcess: ({ command, args, cwd, env: spawnEnv, signal }) => {
+        spawnClaudeCodeProcess: ({
+          command,
+          args,
+          cwd,
+          env: spawnEnv,
+          signal,
+        }) => {
           const attempt =
-            o.switchStartup === undefined ? undefined : switchAttempts.get(o.switchStartup);
+            o.switchStartup === undefined
+              ? undefined
+              : switchAttempts.get(o.switchStartup);
           if (attempt !== undefined) {
             if (!attempt.allowSpawn || attempt.spawned)
-              throw new Error("This switch attempt no longer permits a child to start.");
+              throw new Error(
+                "This switch attempt no longer permits a child to start.",
+              );
             // Before spawn: an exception from spawn is unknown ownership, never fabricated no-child proof.
             attempt.spawned = true;
           }
@@ -889,8 +1038,11 @@ export const makeClaudeHost = (
           );
           if (o.switchStartup !== undefined)
             child.once("exit", () => releasedSwitches.add(o.switchStartup!));
-          if (o.switchStartup) acceptSwitchStartup = protectChildForSwitch(child);
-          child.stderr.setEncoding("utf8").on("data", (data: string) => options.stderr?.(data));
+          if (o.switchStartup)
+            acceptSwitchStartup = protectChildForSwitch(child);
+          child.stderr
+            .setEncoding("utf8")
+            .on("data", (data: string) => options.stderr?.(data));
           return child;
         },
         includePartialMessages: true,
@@ -938,18 +1090,36 @@ export const makeClaudeHost = (
         ...(o.resumeId === undefined
           ? { sessionId: agentSessionId }
           : o.fork === true
-            ? { resume: o.resumeId, forkSession: true, sessionId: agentSessionId }
+            ? {
+                resume: o.resumeId,
+                forkSession: true,
+                sessionId: agentSessionId,
+              }
             : { resume: o.resumeId }),
         ...(o.resumeId !== undefined && o.resumeAt !== undefined
           ? { resumeSessionAt: o.resumeAt }
           : {}),
-        ...(appServer === undefined ? {} : { mcpServers: { [APP_TOOL_SERVER]: appServer.config } }),
+        ...(appServer !== undefined
+          ? { mcpServers: { [APP_TOOL_SERVER]: appServer.config } }
+          : remoteAppTools !== undefined
+            ? {
+                mcpServers: {
+                  [APP_TOOL_SERVER]: {
+                    type: "http" as const,
+                    url: remoteAppTools.url,
+                    headers: { ...remoteAppTools.headers },
+                  },
+                },
+              }
+            : {}),
         ...(o.additionalDirectories === undefined
           ? {}
           : { additionalDirectories: [...o.additionalDirectories] }),
         ...(o.dreamFilesOnly === true ? { tools: [] } : {}),
         ...(disallowedTools.length === 0 ? {} : { disallowedTools }),
-        ...(o.confineWrites === true ? { strictMcpConfig: CONFINED_MCP.strictMcpConfig } : {}),
+        ...(o.confineWrites === true
+          ? { strictMcpConfig: CONFINED_MCP.strictMcpConfig }
+          : {}),
         settings: {
           // Confinement outranks an allowlist: an exception for a confined session is its own
           // decision.
@@ -984,10 +1154,9 @@ export const makeClaudeHost = (
           const child = ownedChild;
           if (!initialized || child === undefined || !isRunning(child)) return;
           if (turnRunning) {
-            yield* Effect.tryPromise(() => query.interrupt().then(() => readToTurnEnd?.())).pipe(
-              Effect.ignore,
-              Effect.timeoutOption(CLOSE_INTERRUPT_MS),
-            );
+            yield* Effect.tryPromise(() =>
+              query.interrupt().then(() => readToTurnEnd?.()),
+            ).pipe(Effect.ignore, Effect.timeoutOption(CLOSE_INTERRUPT_MS));
           }
           yield* Effect.promise(() => endInputAndWait(child, CLOSE_EXIT_MS));
         });
@@ -998,7 +1167,10 @@ export const makeClaudeHost = (
           Effect.gen(function* () {
             closed = true;
             for (const p of pending.values()) {
-              p.settle({ behavior: "deny", message: "The session was closed." });
+              p.settle({
+                behavior: "deny",
+                message: "The session was closed.",
+              });
             }
             input.end();
             yield* stopCli(query);
@@ -1007,16 +1179,20 @@ export const makeClaudeHost = (
           }),
       );
 
-      const init = yield* Effect.tryPromise(() => q.initializationResult()).pipe(
+      const init = yield* Effect.tryPromise(() =>
+        q.initializationResult(),
+      ).pipe(
         Effect.timeoutOrElse({
           duration: startupTimeoutMs,
-          orElse: () => Effect.fail(new Error(`no response within ${startupTimeoutMs} ms`)),
+          orElse: () =>
+            Effect.fail(new Error(`no response within ${startupTimeoutMs} ms`)),
         }),
         Effect.mapError((error) => {
           // A spawn in a folder that is gone fails with ENOENT, which the SDK words as its binary
           // failing to launch: a merged worker's worktree, removed after its PR landed.
           const cwdGone =
-            /failed to launch|ENOENT/.test(describeError(error)) && !existsSync(o.cwd);
+            /failed to launch|ENOENT/.test(describeError(error)) &&
+            !existsSync(o.cwd);
           const detail = cwdGone
             ? `the thread's folder no longer exists: ${o.cwd}`
             : `${describeError(error)}${stderr.length ? `\n${stderr.join("\n")}` : ""}`;
@@ -1043,7 +1219,9 @@ export const makeClaudeHost = (
       mapper.setCommands(init.commands);
       const advertise = (picked: string): void =>
         mapper.setAdvertisedRate(
-          advertisedRate(init.models.find((m) => m.value === picked)?.description),
+          advertisedRate(
+            init.models.find((m) => m.value === picked)?.description,
+          ),
         );
       advertise(o.model?.model ?? "default");
       emit(identity);
@@ -1057,7 +1235,8 @@ export const makeClaudeHost = (
       // That result ends an SDK iteration, not the logical turn the runtime is still following.
       let steers = 0;
       let continuingSteer = false;
-      if (init.fast_mode_state !== undefined || speed !== undefined) reportSpeed(init);
+      if (init.fast_mode_state !== undefined || speed !== undefined)
+        reportSpeed(init);
 
       let continuationDeadline: number | undefined;
       let carriedTokens: TokenUsage | undefined;
@@ -1084,7 +1263,10 @@ export const makeClaudeHost = (
           backgroundTasks.clear();
           for (const task of message.tasks)
             if (task.ambient !== true) backgroundTasks.add(task.task_id);
-        } else if (message.subtype === "task_started" && message.is_backgrounded === true) {
+        } else if (
+          message.subtype === "task_started" &&
+          message.is_backgrounded === true
+        ) {
           backgroundTasks.add(message.task_id);
         } else if (message.subtype === "task_notification") {
           backgroundTasks.delete(message.task_id);
@@ -1092,7 +1274,10 @@ export const makeClaudeHost = (
       };
 
       const onMessage = (message: SDKMessage): void => {
-        if ("fast_mode_state" in message || "fast_mode_disabled_reason" in message)
+        if (
+          "fast_mode_state" in message ||
+          "fast_mode_disabled_reason" in message
+        )
           reportSpeed(message);
         if (
           message.type === "system" &&
@@ -1135,7 +1320,8 @@ export const makeClaudeHost = (
           observeConnectors(message.mcp_servers);
           seen(false, message.mcp_servers.flatMap(initServer));
         }
-        const terminal = message.type === "result" ? message.terminal_reason : undefined;
+        const terminal =
+          message.type === "result" ? message.terminal_reason : undefined;
         const continues =
           (steers > 0 || continuingSteer) &&
           (terminal === "aborted_tools" || terminal === "aborted_streaming");
@@ -1162,7 +1348,11 @@ export const makeClaudeHost = (
             }
             continue;
           }
-          if ((steers > 0 || continuingSteer) && event.type === "status" && event.status === "idle")
+          if (
+            (steers > 0 || continuingSteer) &&
+            event.type === "status" &&
+            event.status === "idle"
+          )
             continue;
           if (event.type === "turnEnd") toolGate.turnEnded();
           if (
@@ -1180,7 +1370,9 @@ export const makeClaudeHost = (
             emit({
               ...event,
               tokens:
-                carriedTokens === undefined ? event.tokens : addTokens(carriedTokens, event.tokens),
+                carriedTokens === undefined
+                  ? event.tokens
+                  : addTokens(carriedTokens, event.tokens),
             });
           } else {
             emit(event);
@@ -1207,7 +1399,10 @@ export const makeClaudeHost = (
       };
       // Interrupting this must not wait for `next()`: it only settles once the query closes, and
       // the scope closes the query after interrupting the pump.
-      const nextMessage = Effect.callback<IteratorResult<SDKMessage, void>, unknown>((resume) => {
+      const nextMessage = Effect.callback<
+        IteratorResult<SDKMessage, void>,
+        unknown
+      >((resume) => {
         pendingNext ??= iterator.next();
         pendingNext.then(
           (result) => resume(Effect.succeed(result)),
@@ -1229,7 +1424,8 @@ export const makeClaudeHost = (
                 Effect.timeoutOrElse({
                   duration: Math.max(
                     0,
-                    (continuationDeadline ?? 0) - (yield* Clock.currentTimeMillis),
+                    (continuationDeadline ?? 0) -
+                      (yield* Clock.currentTimeMillis),
                   ),
                   orElse: () => Effect.succeed(undefined),
                 }),
@@ -1242,9 +1438,9 @@ export const makeClaudeHost = (
             resetUsage();
             mapper.continued();
             emit({ type: "turnEnd", reason: "interrupted" });
-            yield* Effect.logWarning("Claude steering continuation did not arrive").pipe(
-              Effect.annotateLogs({ threadId: o.threadId }),
-            );
+            yield* Effect.logWarning(
+              "Claude steering continuation did not arrive",
+            ).pipe(Effect.annotateLogs({ threadId: o.threadId }));
             continue;
           }
           if (next.done === true) return;
@@ -1316,13 +1512,16 @@ export const makeClaudeHost = (
                 unreadable.add(taskId);
                 return;
               }
-              for (const event of mapper.shellOutput(taskId, read.value)) emit(event);
+              for (const event of mapper.shellOutput(taskId, read.value))
+                emit(event);
             }),
           );
         const readShells = Effect.gen(function* () {
           while (true) {
             yield* Effect.sleep(SHELL_OUTPUT_POLL_MS);
-            const shells = mapper.runningShells().filter((s) => !unreadable.has(s.taskId));
+            const shells = mapper
+              .runningShells()
+              .filter((s) => !unreadable.has(s.taskId));
             if (shells.length === 0) continue;
             yield* Effect.forEach(shells, (shell) => readShell(shell.taskId), {
               concurrency: "unbounded",
@@ -1336,7 +1535,8 @@ export const makeClaudeHost = (
       const setMode = (mode: PermissionMode) =>
         Effect.tryPromise({
           try: () => q.setPermissionMode(mode),
-          catch: (error) => new ModeRefused({ mode, message: describeError(error) }),
+          catch: (error) =>
+            new ModeRefused({ mode, message: describeError(error) }),
         });
 
       const session: AgentSession = {
@@ -1356,7 +1556,9 @@ export const makeClaudeHost = (
               message:
                 "This Claude Code session cannot prove a graceful child exit. No replacement was started.",
             });
-          const exited = yield* Effect.promise(() => stopChildForSwitch(ownedChild!));
+          const exited = yield* Effect.promise(() =>
+            stopChildForSwitch(ownedChild!),
+          );
           if (!exited)
             return yield* new AgentUnavailable({
               agent: "claude",
@@ -1385,7 +1587,9 @@ export const makeClaudeHost = (
         send: (message, sendOptions) => {
           const messageId = sendOptions?.messageId;
           if (messageId !== undefined && !isUuid(messageId)) {
-            return Effect.die(new Error(`send: messageId must be a UUID, got "${messageId}"`));
+            return Effect.die(
+              new Error(`send: messageId must be a UUID, got "${messageId}"`),
+            );
           }
           return Effect.sync(() => {
             // The next reply answers this send, not a background subagent's report.
@@ -1426,7 +1630,9 @@ export const makeClaudeHost = (
                 Effect.orElseSucceed(() => false),
               )
             : Effect.succeed(false),
-        ...(gated ? { closeToolGate: Effect.sync(() => void toolGate.close()) } : {}),
+        ...(gated
+          ? { closeToolGate: Effect.sync(() => void toolGate.close()) }
+          : {}),
         interrupt: Effect.sync(() => {
           steers = 0;
           continuingSteer = false;
@@ -1436,14 +1642,20 @@ export const makeClaudeHost = (
           Effect.ignore,
           Effect.timeoutOrElse({
             duration: interruptTimeoutMs,
-            orElse: () => Effect.fail(new InterruptHung({ timeoutMs: interruptTimeoutMs })),
+            orElse: () =>
+              Effect.fail(new InterruptHung({ timeoutMs: interruptTimeoutMs })),
           }),
         ),
         respond: (requestId, answer) =>
           Effect.gen(function* () {
             const p = pending.get(requestId);
             if (p === undefined) return;
-            const resolution = resolveRequest(p.request, p.input, answer, config.settingSources);
+            const resolution = resolveRequest(
+              p.request,
+              p.input,
+              answer,
+              config.settingSources,
+            );
             const mode = resolution.setMode;
             // Switch before returning from `canUseTool`, so the next tool call sees the new mode.
             // A refused mode must not strand the answer: the request settles either way, and the
@@ -1495,7 +1707,8 @@ export const makeClaudeHost = (
                 type: "speed",
                 state: {
                   speed: "unknown",
-                  detail: "Speed selection applies to the next request; awaiting the CLI report.",
+                  detail:
+                    "Speed selection applies to the next request; awaiting the CLI report.",
                 },
               });
             }
@@ -1510,7 +1723,8 @@ export const makeClaudeHost = (
                 type: "speed",
                 state: {
                   speed: "unknown",
-                  detail: "Speed selection applies to the next request; awaiting the CLI report.",
+                  detail:
+                    "Speed selection applies to the next request; awaiting the CLI report.",
                 },
               });
             }
@@ -1533,11 +1747,15 @@ export const makeClaudeHost = (
             },
           }),
           // What the options above let in: none when confined, else the lists there are.
-          ...(o.confineWrites === true ? { allowlist: [] } : reportedLists(lists)),
+          ...(o.confineWrites === true
+            ? { allowlist: [] }
+            : reportedLists(lists)),
         },
         addDirectories: (paths) =>
           Effect.tryPromise(() =>
-            q.applyFlagSettings({ permissions: { additionalDirectories: [...paths] } }),
+            q.applyFlagSettings({
+              permissions: { additionalDirectories: [...paths] },
+            }),
           ).pipe(
             Effect.as(true),
             Effect.orElseSucceed(() => false),
@@ -1565,13 +1783,17 @@ export const makeClaudeHost = (
         return Effect.addFinalizer(() => close).pipe(
           Effect.andThen(
             openSession(o).pipe(
-              Effect.onExit((exit) => (Exit.isFailure(exit) ? close : Effect.void)),
+              Effect.onExit((exit) =>
+                Exit.isFailure(exit) ? close : Effect.void,
+              ),
             ),
           ),
         );
       });
 
-    let models: { readonly list: ReadonlyArray<AgentModel>; readonly at: number } | undefined;
+    let models:
+      | { readonly list: ReadonlyArray<AgentModel>; readonly at: number }
+      | undefined;
     // Bumped by each reset, so a listing that began before one can't store what it got after.
     let modelsGeneration = 0;
     const modelsLock = yield* Semaphore.make(1);
@@ -1604,7 +1826,8 @@ export const makeClaudeHost = (
       ).pipe(
         Effect.timeoutOrElse({
           duration: startupTimeoutMs,
-          orElse: () => Effect.fail(new Error(`no response within ${startupTimeoutMs} ms`)),
+          orElse: () =>
+            Effect.fail(new Error(`no response within ${startupTimeoutMs} ms`)),
         }),
         Effect.mapError(
           (error) =>
@@ -1627,7 +1850,8 @@ export const makeClaudeHost = (
             : { ...info, supportsFastMode: false },
         ),
       );
-      if (generation === modelsGeneration) models = { list, at: yield* Clock.currentTimeMillis };
+      if (generation === modelsGeneration)
+        models = { list, at: yield* Clock.currentTimeMillis };
       return list;
     });
     // What the account offers changes under a running server (a model granted, or withdrawn), so a
@@ -1636,7 +1860,8 @@ export const makeClaudeHost = (
     const listModels = modelsLock.withPermits(1)(
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
-        if (models !== undefined && now - models.at < MODELS_TTL_MS) return models.list;
+        if (models !== undefined && now - models.at < MODELS_TTL_MS)
+          return models.list;
         const last = models;
         return yield* last === undefined
           ? fetchModels
@@ -1664,7 +1889,9 @@ export const makeClaudeHost = (
     return {
       kind: "claude",
       supportsWorkspaceSwitch: process.platform !== "win32",
-      checkWorkspaceSwitch: environment.prepare.pipe(Effect.flatMap(environment.checkAuth)),
+      checkWorkspaceSwitch: environment.prepare.pipe(
+        Effect.flatMap(environment.checkAuth),
+      ),
       switchAttemptReceipt: (id) =>
         Effect.sync(() =>
           releasedSwitches.has(id)
@@ -1674,15 +1901,22 @@ export const makeClaudeHost = (
               : undefined,
         ),
       switchAttemptReleased: (id) =>
-        Effect.sync(() => releasedSwitches.has(id) || switchAttempts.get(id)?.notStarted === true),
+        Effect.sync(
+          () =>
+            releasedSwitches.has(id) ||
+            switchAttempts.get(id)?.notStarted === true,
+        ),
       capabilities: CLAUDE_CAPABILITIES,
       open,
       // Each session runs its own process, so only sessions opened from now on start the new one.
       // A new CLI, or settings re-read, may offer other models, so the next listing asks afresh.
-      invalidateRuntime: environment.invalidate.pipe(Effect.andThen(forgetModels)),
+      invalidateRuntime: environment.invalidate.pipe(
+        Effect.andThen(forgetModels),
+      ),
       // The new process reads settings, MCP config, claude.ai connectors and CLAUDE.md itself; only
       // the executable and the login shell's environment are kept, and re-read here.
-      reloadConfig: () => environment.invalidate.pipe(Effect.andThen(forgetModels)),
+      reloadConfig: () =>
+        environment.invalidate.pipe(Effect.andThen(forgetModels)),
       listModels: () => listModels,
       readSubscriptionLimits: Effect.gen(function* () {
         const prepared = yield* environment.prepare;
@@ -1708,7 +1942,9 @@ export const makeClaudeHost = (
           ),
           (q) =>
             Effect.tryPromise(() =>
-              q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }),
+              q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({
+                skipBehaviors: true,
+              }),
             ),
           (q) => Effect.sync(() => q.close()),
         ).pipe(
@@ -1733,7 +1969,9 @@ export const makeClaudeHost = (
             listSessions: ({ cwd, limit }) =>
               Effect.tryPromise({
                 try: () =>
-                  sdkListSessions(limit === undefined ? { dir: cwd } : { dir: cwd, limit }),
+                  sdkListSessions(
+                    limit === undefined ? { dir: cwd } : { dir: cwd, limit },
+                  ),
                 catch: (error) =>
                   new AgentUnavailable({
                     agent: "claude",
@@ -1750,7 +1988,8 @@ export const makeClaudeHost = (
                 try: async () => {
                   // Only a session this folder's listing shows, never another project's transcript.
                   const listed = await sdkListSessions({ dir: cwd });
-                  if (!listed.some((info) => info.sessionId === agentSessionId)) return false;
+                  if (!listed.some((info) => info.sessionId === agentSessionId))
+                    return false;
                   await sdkDeleteSession(agentSessionId, { dir: cwd });
                   return true;
                 },

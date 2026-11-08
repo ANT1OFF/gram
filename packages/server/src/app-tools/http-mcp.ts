@@ -13,6 +13,7 @@ import {
   type RequestId,
 } from "@modelcontextprotocol/sdk/types.js";
 import { appToolResultContent, type AppTool } from "@gram/agents";
+import { CORE_APP_TOOLS } from "@gram/agents/claude";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -25,11 +26,15 @@ import { AppToolRegistry } from "./registry.ts";
 export const toolInputSchema = (tool: AppTool): Tool["inputSchema"] => {
   const doc = Schema.toJsonSchemaDocument(tool.input);
   if (doc.schema["type"] !== "object") {
-    throw new Error(`App tool ${tool.descriptor.name} input must be an object schema`);
+    throw new Error(
+      `App tool ${tool.descriptor.name} input must be an object schema`,
+    );
   }
   return {
     ...doc.schema,
-    ...(Object.keys(doc.definitions).length === 0 ? {} : { $defs: doc.definitions }),
+    ...(Object.keys(doc.definitions).length === 0
+      ? {}
+      : { $defs: doc.definitions }),
   } as Tool["inputSchema"];
 };
 
@@ -39,9 +44,14 @@ const textResult = (text: string, isError = false): CallToolResult =>
     : { content: [{ type: "text", text }] };
 
 /** Runs the tool (which decodes its own input) and renders the outcome. Fails only on defects. */
-export const callAppTool = (tool: AppTool, args: unknown): Effect.Effect<CallToolResult> =>
+export const callAppTool = (
+  tool: AppTool,
+  args: unknown,
+): Effect.Effect<CallToolResult> =>
   tool.run(args).pipe(
-    Effect.map((output): CallToolResult => ({ content: appToolResultContent(output) })),
+    Effect.map((output): CallToolResult => ({
+      content: appToolResultContent(output),
+    })),
     Effect.catchTag("AppToolError", (error) =>
       Effect.succeed({
         ...textResult(error.message, true),
@@ -67,19 +77,33 @@ interface McpCalls {
   readonly authorization: AbortSignal;
 }
 
-export const makeMcpServer = (tools: () => ReadonlyArray<AppTool>, calls?: McpCalls): Server => {
-  const server = new Server({ name: "gram", version: "1.0.0" }, { capabilities: { tools: {} } });
+export const makeMcpServer = (
+  tools: () => ReadonlyArray<AppTool>,
+  calls?: McpCalls,
+): Server => {
+  const server = new Server(
+    { name: "gram", version: "1.0.0" },
+    { capabilities: { tools: {} } },
+  );
   server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: tools().map((tool) => ({
       name: tool.descriptor.name,
       description: tool.descriptor.description,
       inputSchema: toolInputSchema(tool),
+      // Claude Code loads these up front rather than behind its tool search, as it does the same
+      // tools served in-process; other agents ignore the hint.
+      ...(CORE_APP_TOOLS.has(tool.descriptor.name)
+        ? { _meta: { "anthropic/alwaysLoad": true } }
+        : {}),
     })),
   }));
   server.setRequestHandler(CallToolRequestSchema, (request, extra) => {
     const tool = tools().find((t) => t.descriptor.name === request.params.name);
     if (tool === undefined) {
-      throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${request.params.name}`);
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Unknown tool: ${request.params.name}`,
+      );
     }
     const controller = calls?.start(extra.requestId);
     const signal =
@@ -91,18 +115,23 @@ export const makeMcpServer = (tools: () => ReadonlyArray<AppTool>, calls?: McpCa
             calls.disconnected,
             calls.authorization,
           ]);
-    return Effect.runPromise(callAppTool(tool, request.params.arguments ?? {}), { signal }).finally(
-      () => {
-        if (controller !== undefined) calls?.finish(extra.requestId, controller);
-      },
-    );
+    return Effect.runPromise(
+      callAppTool(tool, request.params.arguments ?? {}),
+      { signal },
+    ).finally(() => {
+      if (controller !== undefined) calls?.finish(extra.requestId, controller);
+    });
   });
   // Stateless HTTP creates a different SDK Server for the cancellation POST. Route the standard
   // notification to its authenticated thread's active call instead of that new empty server.
   if (calls !== undefined)
-    server.setNotificationHandler(CancelledNotificationSchema, (notification) => {
-      if (notification.params.requestId !== undefined) calls.cancel(notification.params.requestId);
-    });
+    server.setNotificationHandler(
+      CancelledNotificationSchema,
+      (notification) => {
+        if (notification.params.requestId !== undefined)
+          calls.cancel(notification.params.requestId);
+      },
+    );
   return server;
 };
 
@@ -129,9 +158,15 @@ export const McpRoute = Layer.unwrap(
       Effect.gen(function* () {
         if (request.method !== "POST") return methodNotAllowed;
         const token = bearerToken(request.headers);
-        const identity = token === undefined ? undefined : yield* tokens.authorizationFor(token);
+        const identity =
+          token === undefined
+            ? undefined
+            : yield* tokens.authorizationFor(token);
         if (identity === undefined) {
-          return HttpServerResponse.text("unauthorized: bearer token required", { status: 401 });
+          return HttpServerResponse.text(
+            "unauthorized: bearer token required",
+            { status: 401 },
+          );
         }
         const { threadId, signal: authorization } = identity;
         // Asked per request: a thread's role can change while its agent keeps the same token.
@@ -142,36 +177,52 @@ export const McpRoute = Layer.unwrap(
           if (!response.writableEnded) disconnected.abort();
         };
         response.once("close", onClose);
-        const server = makeMcpServer(() => registry.forTransport(threadId, audience), {
-          disconnected: disconnected.signal,
-          authorization,
-          start: (id) => {
-            if (authorization.aborted)
-              throw new McpError(ErrorCode.InvalidRequest, "Authorization revoked.");
-            const active = running.get(authorization) ?? new Map<RequestId, AbortController>();
-            if (active.has(id))
-              throw new McpError(ErrorCode.InvalidRequest, "Duplicate active request id.");
-            const controller = new AbortController();
-            active.set(id, controller);
-            running.set(authorization, active);
-            return controller;
+        const server = makeMcpServer(
+          () => registry.forTransport(threadId, audience),
+          {
+            disconnected: disconnected.signal,
+            authorization,
+            start: (id) => {
+              if (authorization.aborted)
+                throw new McpError(
+                  ErrorCode.InvalidRequest,
+                  "Authorization revoked.",
+                );
+              const active =
+                running.get(authorization) ??
+                new Map<RequestId, AbortController>();
+              if (active.has(id))
+                throw new McpError(
+                  ErrorCode.InvalidRequest,
+                  "Duplicate active request id.",
+                );
+              const controller = new AbortController();
+              active.set(id, controller);
+              running.set(authorization, active);
+              return controller;
+            },
+            finish: (id, controller) => {
+              const active = running.get(authorization);
+              if (active?.get(id) !== controller) return;
+              active.delete(id);
+              if (active.size === 0) running.delete(authorization);
+            },
+            cancel: (id) => running.get(authorization)?.get(id)?.abort(),
           },
-          finish: (id, controller) => {
-            const active = running.get(authorization);
-            if (active?.get(id) !== controller) return;
-            active.delete(id);
-            if (active.size === 0) running.delete(authorization);
-          },
-          cancel: (id) => running.get(authorization)?.get(id)?.abort(),
-        });
+        );
         // No `sessionIdGenerator`: stateless, so each request needs its own transport.
-        const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
+        const transport = new StreamableHTTPServerTransport({
+          enableJsonResponse: true,
+        });
         yield* Effect.acquireUseRelease(
           // The SDK's optional members don't satisfy `exactOptionalPropertyTypes`.
           Effect.promise(() => server.connect(transport as Transport)),
           () =>
             Effect.promise(() =>
-              transport.handleRequest(NodeHttpServerRequest.toIncomingMessage(request), response),
+              transport.handleRequest(
+                NodeHttpServerRequest.toIncomingMessage(request),
+                response,
+              ),
             ),
           () =>
             Effect.promise(async () => {

@@ -33,12 +33,17 @@ describe("app tool prompt prefix", () => {
         })),
       );
     expect(serialized(first)).toBe(serialized(second));
-    expect(first.map((tool) => tool.descriptor.name)).toEqual(["zeta", "alpha"]);
-    expect(second.map((tool) => tool.descriptor.name)).toEqual(["alpha", "zeta"]);
-    expect(bindAppTools(first, threadId).map((tool) => tool.descriptor.name)).toEqual([
+    expect(first.map((tool) => tool.descriptor.name)).toEqual([
+      "zeta",
+      "alpha",
+    ]);
+    expect(second.map((tool) => tool.descriptor.name)).toEqual([
       "alpha",
       "zeta",
     ]);
+    expect(
+      bindAppTools(first, threadId).map((tool) => tool.descriptor.name),
+    ).toEqual(["alpha", "zeta"]);
   });
 
   it("preserves a synthetic warm prefix on MCP re-listing and still gates outward calls", async () => {
@@ -58,8 +63,12 @@ describe("app tool prompt prefix", () => {
     };
     let offered = bindAppTools(source, threadId, gate);
     const server = makeMcpServer(() => offered);
-    const client = new Client({ name: "synthetic-prefix-audit", version: "1.0.0" });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({
+      name: "synthetic-prefix-audit",
+      version: "1.0.0",
+    });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
     try {
@@ -75,20 +84,59 @@ describe("app tool prompt prefix", () => {
         cache_creation_input_tokens: 0,
       });
       expect(after).toBe(before);
-      expect(JSON.parse(after).map((tool: { name: string }) => tool.name)).toEqual([
-        "alpha",
-        "zeta",
-      ]);
+      expect(
+        JSON.parse(after).map((tool: { name: string }) => tool.name),
+      ).toEqual(["alpha", "zeta"]);
       for (const name of ["alpha", "zeta"]) {
-        const result = await client.callTool({ name, arguments: { text: "invented input" } });
+        const result = await client.callTool({
+          name,
+          arguments: { text: "invented input" },
+        });
         expect(result.content).toEqual([
           {
             type: "text",
-            text: JSON.stringify({ thread: threadId, name, text: "invented input" }),
+            text: JSON.stringify({
+              thread: threadId,
+              name,
+              text: "invented input",
+            }),
           },
         ]);
       }
       expect(approved).toEqual(["zeta"]);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("marks the core tools for Claude Code to load up front, as served in-process", async () => {
+    const tools = ["set_title", "list_threads"].map((name) =>
+      defineAppTool({
+        descriptor: {
+          name,
+          class: "self",
+          description: "Synthetic load fixture",
+        },
+        input: Schema.Struct({ text: Schema.String }),
+        handle: () => Effect.succeed("ok"),
+      }),
+    );
+    const server = makeMcpServer(() => bindAppTools(tools, threadId));
+    const client = new Client({
+      name: "synthetic-load-audit",
+      version: "1.0.0",
+    });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const listed = (await client.listTools()).tools;
+      expect(listed.map((tool) => [tool.name, tool["_meta"]])).toEqual([
+        ["list_threads", undefined],
+        ["set_title", { "anthropic/alwaysLoad": true }],
+      ]);
     } finally {
       await client.close();
       await server.close();
