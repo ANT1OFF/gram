@@ -34,6 +34,7 @@ import {
   type Thread,
   type TurnEndReason,
   type ThreadId,
+  type UsageSummary,
 } from "@gram/contracts";
 import {
   unavailableMessage,
@@ -458,7 +459,11 @@ export const makeTurnLifecycle = ({
       if (turn.reply !== undefined) {
         const end = { at: endedAt, reason: limited ? ("interrupted" as const) : reason };
         // A label on the transcript, so nothing past this point may wait on it.
-        yield* guarded(rt.threadId, "turn end stamp", stampTurnEnd(rt, turn.reply, end));
+        yield* guarded(
+          rt.threadId,
+          "turn end stamp",
+          stampTurnEnd(rt, turn.reply, end, replyUsage(turn.usage)),
+        );
       }
       yield* Deferred.succeed(turn.done, undefined);
       // Requests belong to the turn: once it ends nothing will answer them, whether or not the agent
@@ -610,3 +615,14 @@ export const makeTurnLifecycle = ({
 
 /** What `makeTurnLifecycle` gives the rest of `ThreadRuntimes`. */
 export type TurnLifecycle = ReturnType<typeof makeTurnLifecycle>;
+
+/**
+ * What a turn's reply keeps of its usage: the tokens the turn used and the context it left, which
+ * the reply's token line reads. Not the dollars, which are the whole thread's so far, nor when its
+ * cache was last written, which only the idle compaction reads from the thread.
+ */
+export const replyUsage = (usage: UsageSummary | undefined): UsageSummary | undefined => {
+  if (usage === undefined) return undefined;
+  const { costUsd: _cost, costEstimated: _estimated, lastRequestAt: _lastRequest, ...kept } = usage;
+  return kept;
+};
