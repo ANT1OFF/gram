@@ -2,7 +2,9 @@ import { Dialog } from "@base-ui/react/dialog";
 
 import { lazyPart } from "@/lib/lazy-part";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
+import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout";
+import { PHONE_SHEET } from "@/thread/dialog-shell";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
 /** What the palette shows, with the commands, searches and stores it reaches into. */
@@ -43,7 +45,10 @@ export function CommandPalette() {
             if (useThreadDialogs.getState().dialog !== undefined) return false;
             return returnFocusTo(opener)();
           }}
-          className="fixed top-[15%] left-1/2 z-50 flex max-h-[70vh] w-[min(36rem,90vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className={cn(
+            "fixed top-[15%] left-1/2 z-50 flex max-h-[70vh] w-[min(36rem,90vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
+            PHONE_SHEET,
+          )}
         >
           {open && (
             <body.PaletteBody

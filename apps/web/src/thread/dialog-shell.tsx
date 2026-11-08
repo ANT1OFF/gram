@@ -1,8 +1,64 @@
 import { Dialog } from "@base-ui/react/dialog";
+import { X } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
+
+/**
+ * On a phone (below `sm`), a big dialog's popup (the Inbox, History, the palette) as a full-screen
+ * sheet: the whole window, square, its rows 48 px and every button a 44 px target. Added after the
+ * popup's own classes; every class is `max-sm:`, so wider windows keep the dialog as it was.
+ */
+export const PHONE_SHEET = cn(
+  "max-sm:inset-0 max-sm:top-0 max-sm:left-0 max-sm:h-dvh max-sm:max-h-none max-sm:w-full max-sm:translate-x-0",
+  "max-sm:rounded-none max-sm:border-0 max-sm:bg-background max-sm:shadow-none",
+  "max-sm:pt-[env(safe-area-inset-top)] max-sm:pb-[env(safe-area-inset-bottom)]",
+  "max-sm:data-[ending-style]:scale-100 max-sm:data-[starting-style]:scale-100",
+  "max-sm:[&_[role=option]]:min-h-12 max-sm:[&_button]:min-h-11 max-sm:[&_button]:min-w-11",
+);
+
+/**
+ * A phone sheet's header: its title and a 44 px Close, 52 px tall, with what else it needs (its
+ * `children`) between them. The sheet's one title, so it is the dialog's.
+ */
+export function PhoneSheetHeader({
+  title,
+  closeLabel = "Close",
+  testId = "sheet-close",
+  children,
+}: {
+  title: ReactNode;
+  closeLabel?: string;
+  testId?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <header
+      data-testid="sheet-header"
+      className="flex h-13 shrink-0 items-center gap-1 border-b border-border bg-surface-1 pr-1 pl-4"
+    >
+      <Dialog.Title className="min-w-0 flex-1 truncate font-heading text-title">
+        {title}
+      </Dialog.Title>
+      {children}
+      <Dialog.Close
+        render={
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={closeLabel}
+            data-testid={testId}
+            className="size-11"
+          />
+        }
+      >
+        <X aria-hidden className="size-icon-bar" />
+      </Dialog.Close>
+    </header>
+  );
+}
 
 /**
  * A centred modal with the app's dialog chrome; closing (Esc, backdrop, Cancel) calls `onClose`.
