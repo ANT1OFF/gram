@@ -15,7 +15,6 @@ import {
   currentUpstream,
   fetchOriginBranch,
   git,
-  GitStateRuntime,
   gitDiff,
   lastFetchedAt,
   localBaseRef,
@@ -28,7 +27,6 @@ import {
   samePath,
   tryRepoTop,
   whitespaceArgs,
-  Worktrees,
 } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -65,6 +63,7 @@ import {
   toPrDetail,
   untrackedPaths,
 } from "../../git/mapping.ts";
+import { WorkerHosts } from "../../host/worker-host.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { heldCheckoutPaths, usedCheckoutPaths } from "../../runtime/create-in-checkout.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
@@ -85,13 +84,13 @@ export const gitHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const runtimes = yield* ThreadRuntimes;
   const proc = yield* Proc;
-  const worktrees = yield* Worktrees;
+  // This machine's worktrees and git state, through its host.
+  const { worktrees, git: gitState } = (yield* WorkerHosts).local;
   const pr = yield* Pr;
   const checkpoints = yield* Checkpoints;
   const publisher = yield* GitStatePublisher;
   const refreshes = yield* GitRefresh;
   const reviews = yield* PrReviews;
-  const gitState = yield* GitStateRuntime;
   const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
   const cachedDetail = makePrDetailCache(pr.detail);
   const provide = Effect.provideService(Proc, proc);

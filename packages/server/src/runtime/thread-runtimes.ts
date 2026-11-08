@@ -137,12 +137,15 @@ export class ThreadRuntimes extends Context.Service<ThreadRuntimes, ThreadRuntim
     Layer.provideMerge(Layer.mergeAll(ThreadPlans.layer, ThreadWaits.layer, TurnActivity.layer)),
   );
 
-  /** `layer` on this machine's host alone, built from the agent hosts and checkout service. */
+  /**
+   * `layer` on this machine's host alone, for tests: built from the agent hosts and checkout
+   * service, and whichever of the host's other parts the test layer provides.
+   */
   static readonly layerOnLocalHost: Layer.Layer<
-    ThreadRuntimes | ThreadPlans | ThreadWaits | TurnActivity,
+    ThreadRuntimes | ThreadPlans | ThreadWaits | TurnActivity | WorkerHosts,
     never,
     ThreadStore | EventHub | AgentHosts | ServerConfig | TurnHooks | CheckoutService
-  > = ThreadRuntimes.layer.pipe(Layer.provide(WorkerHosts.layerLocal));
+  > = ThreadRuntimes.layer.pipe(Layer.provideMerge(WorkerHosts.layerLocalForTests));
 }
 
 /** One send of the input in flight: its runtime, and whether its message is in the feed. */
