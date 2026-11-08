@@ -8,7 +8,7 @@ settings; the other machine runs `gram-host`, which dials it over Tailscale. The
 opens no port of its own.
 
 This is the first part of multi-machine support. A machine can join, be confirmed and stay
-connected. Placing a worker on it comes with the Machines page and the machine picker.
+connected; Settings → Machines lists it. Placing a worker on it comes with the machine picker.
 
 ## What you need
 
@@ -20,8 +20,8 @@ connected. Placing a worker on it comes with the Machines page and the machine p
 
 ## Join a machine
 
-1. On the main machine, make a join link: Settings → Machines → Add a machine (the local
-   `POST /machines/join-link` endpoint). It lasts 15 minutes and works once.
+1. On the main machine, open Settings → Machines and choose **Add a machine**. It shows the
+   command to run and a join link that lasts 15 minutes and works once.
 2. On the new machine, run:
 
    ```sh
@@ -34,9 +34,10 @@ connected. Placing a worker on it comes with the Machines page and the machine p
    `--name <name>` sets the name it joins with (its host name by default), and `--no-service`
    leaves out the background service.
 
-3. It prints the machine's fingerprint. Check it against the one the main machine shows for the
-   new machine, and confirm it there (`POST /machines/confirm`). Until it is confirmed the main
-   Gram refuses its dials, so a stolen link can't add a stranger's machine unnoticed.
+3. It prints the machine's fingerprint. Once it joins, Settings → Machines lists it as waiting:
+   choose **Confirm**, check the fingerprint matches, and choose **They match**. Until it is
+   confirmed the main Gram refuses its dials, so a stolen link can't add a stranger's machine
+   unnoticed.
 
 The link carries its code in the fragment (`#code=…`), so it never reaches a server or proxy log.
 Treat it as a password until it is used or expires.
@@ -77,7 +78,7 @@ the host's folder; on Linux use `journalctl --user -u gram-host`.
   name (which Tailscale Serve forwards over loopback), and refuse any request with an `Origin`, so
   no web page can reach them. They take no browser cookie, and a browser's cookie grants nothing
   there. Without the join code or a joined machine's key they grant nothing either.
-- **Removing a machine** (`POST /machines/remove`) forgets its key and closes its connection at
+- **Removing a machine** (Settings → Machines → Remove) forgets its key and closes its connection at
   once, including one still connecting. Turning access over Tailscale off, or onto another
   address, closes every joined machine's connection; the machines stay joined and dial in again
   once it is back. Up to 16 machines can be joined.
