@@ -10,6 +10,7 @@ import {
   NotFound,
   type Thread,
   type ThreadId,
+  ThreadNotFound,
   WorktreeDirty,
 } from "@gram/contracts";
 import { git, type GitStateRuntime, Proc, type ProcShape, type Worktrees } from "@gram/git";
@@ -29,6 +30,7 @@ import { terminalsThroughHost } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
 import type { HostConnection } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
+import { cloneFolderOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
 /** A joined machine as its worker host is named and reached. */
@@ -80,13 +82,18 @@ export const machineCheckouts = (
       Effect.mapError((error) => new GitError({ message: error.message })),
       Effect.flatMap((out) => {
         const url = out.stdout.trim();
-        return out.status === 0 && url !== ""
-          ? Effect.succeed(url)
-          : Effect.fail(
-              new InvalidState({
-                message: `A worker on ${machine.name} needs the project's origin remote, and ${projectRoot} has none.`,
-              }),
-            );
+        if (out.status === 0 && url !== "") {
+          // Checked here too, so a token in the URL never leaves this machine.
+          const filed = cloneFolderOf(url);
+          return "error" in filed
+            ? Effect.fail(new InvalidState({ message: filed.error }))
+            : Effect.succeed(url);
+        }
+        return Effect.fail(
+          new InvalidState({
+            message: `A worker on ${machine.name} needs the project's origin remote, and ${projectRoot} has none.`,
+          }),
+        );
       }),
     );
 
@@ -115,7 +122,13 @@ export const machineCheckouts = (
         const url = yield* originOf(projectRoot);
         const { path: repoPath } = yield* connection.repos
           .ensure(url)
-          .pipe(Effect.mapError((error) => new GitError({ message: error.message })));
+          .pipe(
+            Effect.mapError((error) =>
+              error.reason === "failed"
+                ? new GitError({ message: error.message })
+                : new InvalidState({ message: error.message }),
+            ),
+          );
         const created = yield* connection.worktrees
           .create({
             repoPath,
@@ -278,8 +291,16 @@ export const machineWorkerHost = (
       noTerminals(machine),
       {
         ...(gate === undefined ? {} : { held: gate.held }),
+        // Only a thread placed on this machine has a folder here.
         threadFolder: (threadId: ThreadId) =>
-          store.getThread(threadId).pipe(Effect.map((thread) => effectiveCheckout(thread).path)),
+          store.getThread(threadId).pipe(
+            Effect.flatMap((thread) => {
+              const checkout = effectiveCheckout(thread);
+              return hostOf(checkout) === machine.id
+                ? Effect.succeed(checkout.path)
+                : Effect.fail(new ThreadNotFound({ threadId }));
+            }),
+          ),
         // Every shell on another machine opens in a worker's folder there.
         defaultFolder: Effect.succeed(undefined),
         settingsShell: Effect.succeed(undefined),
@@ -320,7 +341,9 @@ export const machineWorkerHost = (
 
 /**
  * The worker hosts of the machines joined to this Gram, each built once per connection: a machine
- * that dials in again gets a new one, and the old one's terminals and watches close. A machine
+ * that dials in again gets a new one, and the old one's terminals and watches close, as they do
+ * once its connection ends. A host is only good while its connection lasts, so callers look one up
+ * for each piece of work rather than keep it. A machine
  * that isn't joined, confirmed and dialled in now is `HostUnavailable`.
  */
 export const machineHosts = (
@@ -354,6 +377,15 @@ export const machineHosts = (
             Scope.provide(scope),
           );
           built.set(id, { connection, host, scope });
+          // Once the machine's connection ends, its terminals and watches here end with it.
+          yield* Effect.forkIn(
+            Effect.gen(function* () {
+              while (!connection.gone()) yield* Effect.sleep("2 seconds");
+              if (built.get(id)?.connection === connection) built.delete(id);
+              yield* Scope.close(scope, Exit.void);
+            }),
+            root,
+          );
           return host;
         }),
       );

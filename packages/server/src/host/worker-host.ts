@@ -82,7 +82,10 @@ export interface WorkerHost {
 export interface WorkerHostsShape {
   /** This machine's host, always present. */
   readonly local: WorkerHost;
-  /** The host by id; `HostUnavailable` for one that isn't paired or isn't connected now. */
+  /**
+   * The host by id; `HostUnavailable` for one that isn't paired or isn't connected now. Another
+   * machine's host lasts only as long as its connection, so look it up for each piece of work.
+   */
   get(id: HostId): Effect.Effect<WorkerHost, HostUnavailable>;
   /** The host a record (a checkout, a worker) is on, where an absent `hostId` is this machine. */
   of(record: { readonly hostId?: HostId | undefined }): Effect.Effect<WorkerHost, HostUnavailable>;

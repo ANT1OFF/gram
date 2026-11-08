@@ -144,6 +144,20 @@ describe("a joined machine's worker host", () => {
           .pipe(Effect.flip);
         expect(current).toMatchObject({ _tag: "InvalidState" });
 
+        // A token in the project's remote never crosses to the machine.
+        execFileSync("git", [
+          "-C",
+          root,
+          "remote",
+          "set-url",
+          "origin",
+          "https://u:t@git.example.test/acme/widgets.git",
+        ]);
+        const tokened = yield* host.checkouts
+          .prepare({ kind: "newWorktree", branch: "feature/other" }, [], root)
+          .pipe(Effect.flip);
+        expect(tokened).toMatchObject({ _tag: "InvalidState" });
+
         write(join(checkout.path, "wip.txt"), "uncommitted\n");
         const worker = thread(checkout);
         const dirty = yield* host.checkouts

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import { Proc, ProcLive } from "@gram/git";
@@ -39,6 +39,10 @@ describe("cloneFolderOf", () => {
     expect(cloneFolderOf("ssh://git@GitHub.com:22/acme/widgets")).toEqual({
       folder: join("github.com", "acme", "widgets"),
     });
+    // Always three levels, so no clone is inside another's folder.
+    expect(cloneFolderOf("https://gitlab.com/group/sub/widgets.git")).toEqual({
+      folder: join("gitlab.com", "group", "sub+widgets"),
+    });
   });
 
   it("refuses what it shouldn't clone or can't file safely", () => {
@@ -51,6 +55,9 @@ describe("cloneFolderOf", () => {
       "https://github.com/acme/../widgets.git",
       "https://github.com/widgets",
       "git://github.com/acme/widgets.git",
+      "https://github.com/acme/a%zz",
+      "https://github.com/acme/widgets/.git/hooks",
+      "https://github.com/acme/.hidden",
     ])
       expect(cloneFolderOf(url), url).toHaveProperty("error");
   });
@@ -88,6 +95,37 @@ describe("reposOn", () => {
         .ensure(URL)
         .pipe(Effect.flip);
       expect(error).toMatchObject({ _tag: "WorktreeError", reason: "conflict" });
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.effect("never clones through a link out of its folder", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const { env } = localRemote(dir);
+      const root = join(dir, "repos");
+      const elsewhere = join(dir, "elsewhere");
+      mkdirSync(elsewhere);
+      mkdirSync(join(root, "git.example.test"), { recursive: true });
+      symlinkSync(elsewhere, join(root, "git.example.test", "acme"));
+      const error = yield* reposOn(yield* Proc, root, env)
+        .ensure(URL)
+        .pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "WorktreeError", reason: "conflict" });
+      expect(readdirSync(elsewhere)).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.effect("keeps one clone for each way of writing its remote", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const { env } = localRemote(dir);
+      const root = join(dir, "repos");
+      const repos = reposOn(yield* Proc, root, env);
+      const first = yield* repos.ensure(URL);
+      const again = yield* repos.ensure("git@git.example.test:acme/widgets");
+      expect(again.path).toBe(first.path);
     }).pipe(Effect.scoped, Effect.provide(ProcLive)),
   );
 

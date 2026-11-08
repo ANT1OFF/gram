@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, lstatSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
 import { git, Proc, type ProcShape, realPathSync, WorktreeError } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
@@ -21,7 +21,8 @@ const GIT_ENV = {
 const SEGMENT = /^[A-Za-z0-9._-]{1,100}$/;
 
 /**
- * A remote's URL as the folder the host keeps its clone in, `<host>/<owner>/<name>`, or why it
+ * A remote's URL as the folder the host keeps its clone in, `<host>/<owner>/<name>`, the same for
+ * each way of writing one remote (`https`, `ssh`, with or without `.git`), or why it
  * isn't one the host clones: `https://` without credentials in it, `ssh://`, or `user@host:path`.
  */
 export const cloneFolderOf = (
@@ -48,7 +49,11 @@ export const cloneFolderOf = (
       };
     if (parsed.search !== "" || parsed.hash !== "") return refuse;
     host = parsed.hostname;
-    path = decodeURIComponent(parsed.pathname);
+    try {
+      path = decodeURIComponent(parsed.pathname);
+    } catch {
+      return refuse;
+    }
   } else if (scp !== null) {
     host = scp[1]!;
     path = scp[2]!;
@@ -56,13 +61,17 @@ export const cloneFolderOf = (
   const segments = [host.toLowerCase(), ...path.replace(/\.git\/?$/, "").split("/")].filter(
     (segment) => segment !== "",
   );
+  // No segment that is hidden or names a folder, such as `.git`, inside a clone.
   if (
     segments.length < 3 ||
     segments.length > 6 ||
-    !segments.every((segment) => SEGMENT.test(segment) && segment !== "." && segment !== "..")
+    !segments.every((segment) => SEGMENT.test(segment) && !segment.startsWith("."))
   )
     return refuse;
-  return { folder: join(...segments) };
+  // Always three levels deep, a group's subgroups joined into the name, so no clone's folder is
+  // ever inside another's: `gitlab.com/group/sub/repo` is `gitlab.com/group/sub+repo`.
+  const [first, owner, ...name] = segments;
+  return { folder: join(first!, owner!, name.join("+")) };
 };
 
 const failed = (message: string) =>
@@ -91,14 +100,35 @@ export const reposOn = (
         new WorktreeError({ reason: "invalidRequest", message: target.error, dirty: false }),
       );
     const dest = join(root, target.folder);
+    /**
+     * Every folder from `root` down to the clone is a real folder of its own, never a link, so a
+     * clone can't be made, or answered, anywhere outside `root`.
+     */
+    const contained = Effect.sync(() => {
+      let at = root;
+      for (const part of target.folder.split(sep)) {
+        at = join(at, part);
+        const stat = lstatSync(at, { throwIfNoEntry: false });
+        if (stat === undefined) return true;
+        if (stat.isSymbolicLink() || !stat.isDirectory()) return false;
+      }
+      return true;
+    });
+    const outside = new WorktreeError({
+      reason: "conflict",
+      message: `${dest} isn't a folder of its own under ${root}, so nothing is cloned there.`,
+      dirty: false,
+    });
     return lock.withLock(
       dest,
       Effect.gen(function* () {
+        if (!(yield* contained)) return yield* outside;
         if (existsSync(dest)) {
           const origin = yield* on(git(dest, ["remote", "get-url", "origin"])).pipe(
             Effect.mapError((error) => failed(error.message)),
           );
-          if (origin.status !== 0 || origin.stdout.trim() !== url)
+          const kept = origin.status === 0 ? cloneFolderOf(origin.stdout.trim()) : undefined;
+          if (kept === undefined || !("folder" in kept) || kept.folder !== target.folder)
             return yield* new WorktreeError({
               reason: "conflict",
               message: `${dest} is there but isn't a clone of ${url}.`,
@@ -129,6 +159,7 @@ export const reposOn = (
           ).pipe(Effect.mapError((error) => failed(error.message)));
           if (cloned.status !== 0)
             return yield* failed(`Couldn't clone ${url}: ${cloned.stderr.trim()}`);
+          if (!(yield* contained)) return yield* outside;
           renameSync(partial, dest);
         });
         // A clone that failed, overran or was given up leaves no half-made folder behind.
