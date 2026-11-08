@@ -427,6 +427,7 @@ export const ServerCore = Layer.unwrap(
           Layer.provideMerge(
             ThreadStore.layerSqlite(databaseFile, {
               checkpointOffLoop: databaseFile !== ":memory:",
+              writerOffLoop: databaseFile !== ":memory:",
             }),
           ),
         )

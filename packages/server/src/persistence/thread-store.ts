@@ -3301,12 +3301,15 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
    * A migrated SQLite database at `filename` (`:memory:` in tests). The server's database checkpoints its
    * WAL on a worker (`wal-checkpointer.ts`); the tests' leave that to SQLite, on the event loop.
    * Ordinary commits use NORMAL (no sync per streamed update); safety reservations use FULL.
-   * The owned client replaces a connection whose durable-transaction cleanup failed.
+   * The owned client replaces a connection whose durable-transaction cleanup failed. With
+   * `writerOffLoop`, that connection runs on its own worker thread (`writer-worker.ts`), so no
+   * statement on it holds the event loop.
    */
   static readonly layerSqlite = (
     filename: string,
     options: {
       readonly checkpointOffLoop?: boolean | undefined;
+      readonly writerOffLoop?: boolean | undefined;
       readonly checkpointer?:
         | Omit<WalCheckpointer.CheckpointerOptions, "connectionPolicy">
         | undefined;
@@ -3332,7 +3335,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             : Layer.empty,
         ),
         Layer.provideMerge(seal?.over ?? Layer.empty),
-        Layer.provideMerge(durableSqliteLayer({ filename }, initialize)),
+        Layer.provideMerge(
+          durableSqliteLayer({ filename, offLoop: options.writerOffLoop === true }, initialize),
+        ),
         Layer.provideMerge(seal?.under ?? Layer.empty),
       );
     });

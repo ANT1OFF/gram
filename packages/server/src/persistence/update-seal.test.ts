@@ -37,7 +37,7 @@ const open = (file: string) =>
   Effect.gen(function* () {
     const scope = yield* Scope.make();
     const context = yield* Layer.buildWithScope(
-      ThreadStore.layerSqlite(file, { checkpointOffLoop: true }),
+      ThreadStore.layerSqlite(file, { checkpointOffLoop: true, writerOffLoop: true }),
       scope,
     );
     const sql = yield* SqlClient.SqlClient.pipe(Effect.provideContext(context));
@@ -79,7 +79,7 @@ describe("update database seal", () => {
         const file = databaseFile();
         const scope = yield* Scope.make();
         const context = yield* Layer.buildWithScope(
-          ThreadStore.layerSqlite(file, { checkpointOffLoop: true }),
+          ThreadStore.layerSqlite(file, { checkpointOffLoop: true, writerOffLoop: true }),
           scope,
         );
         const sql = yield* SqlClient.SqlClient.pipe(Effect.provideContext(context));

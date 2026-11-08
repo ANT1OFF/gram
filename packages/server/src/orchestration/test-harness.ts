@@ -466,6 +466,7 @@ export const serverLayer = (
   world: World,
   config: Partial<ServerConfigShape> = {},
   agents: Layer.Layer<AgentHosts | FakeAgentControl> = FakeAgentAdapter,
+  store: Parameters<typeof ThreadStore.layerSqlite>[1] = {},
 ) =>
   Layer.mergeAll(
     OrchestrationAppToolsLive,
@@ -492,7 +493,7 @@ export const serverLayer = (
     ),
     Layer.provideMerge(GitCheckoutLive),
     Layer.provideMerge(hubOf(world)),
-    Layer.provideMerge(ThreadStore.layerSqlite(nodePath.join(world.dir, "gram.db"))),
+    Layer.provideMerge(ThreadStore.layerSqlite(nodePath.join(world.dir, "gram.db"), store)),
     Layer.provideMerge(agents),
     Layer.provideMerge(TurnHooks.layerNoop),
     Layer.provideMerge(
