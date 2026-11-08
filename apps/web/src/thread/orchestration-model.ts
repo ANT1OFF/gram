@@ -42,7 +42,7 @@ export const roleLabel = (role: ThreadRoleInfo): string => {
     case "orchestrator":
       return "Orchestrator";
     case "dream":
-      return "Dream";
+      return "Memory update";
     case "worker":
       return `Worker · ${role.feature}`;
   }
@@ -57,7 +57,7 @@ export const roleDescription = (
     case "orchestrator":
       return "Orchestrator: dispatches worker threads and is woken when they need attention";
     case "dream":
-      return "Dream: a pass over an orchestrator's memory";
+      return "Memory update: a pass over an orchestrator's memory";
     case "worker":
       return orchestratorTitle === undefined
         ? `Worker for “${role.feature}”, spawned by an orchestrator`

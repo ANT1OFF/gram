@@ -261,7 +261,7 @@ function StartFlow({
               onChange={(event) => setPerRepoText(event.target.value)}
             />
             <span className={perRepo === undefined ? "text-destructive" : "text-muted-foreground"}>
-              1 to {PER_REPO_MAX}; one dream reads {PER_REPO_MAX} at most.
+              1 to {PER_REPO_MAX}; one memory update reads {PER_REPO_MAX} at most.
             </span>
           </div>
           <label className="flex max-w-xs items-start gap-2">
@@ -299,7 +299,7 @@ function StartFlow({
           />
           <span className={budget === undefined ? "text-destructive" : "text-muted-foreground"}>
             {DREAM_BUDGET_TOKENS_MIN / 1000} to {DREAM_BUDGET_TOKENS_MAX / 1000}. What doesn't fit
-            waits for the next dream; nothing is skipped.
+            waits for the next memory update; nothing is skipped.
           </span>
         </div>
       )}
@@ -468,9 +468,9 @@ function StartFlow({
             <AgentFields value={choice} onChange={setChoice} allowed={ADMITTED_AGENTS} />
           </div>
           <p className="pt-1 text-muted-foreground">
-            A dream runs on {ADMITTED_AGENTS.map(agentLabel).join(", ")}. The transcripts are read
-            by the model you pick: through your gateway for a gateway profile, else where your
-            sessions already went.
+            A memory update runs on {ADMITTED_AGENTS.map(agentLabel).join(", ")}. The transcripts
+            are read by the model you pick: through your gateway for a gateway profile, else where
+            your sessions already went.
           </p>
         </ExpandPresence>
         <HarnessPreflightNote
@@ -1399,7 +1399,7 @@ export function DreamsSection({
     // one centred measure on a wide pane; a review open widens it for its diffs.
     <section
       ref={ref}
-      aria-label="Dreams"
+      aria-label="Memory updates"
       data-testid="dreams"
       className={cn(
         "thread-column flex flex-col gap-5",
@@ -1488,8 +1488,8 @@ export function DreamsSection({
         <PanelMessage loading>Loading memory updates…</PanelMessage>
       ) : dreams.data.length === 0 ? (
         <p className="text-body text-description">
-          No updates drafted yet. Draft memory update rereads finished threads and drafts changes
-          for you to review.
+          No memory updates yet. Draft memory update rereads finished threads and drafts changes for
+          you to review.
         </p>
       ) : (
         rest.length > 0 && (

@@ -13,9 +13,9 @@ const OPTIONAL_FEATURES: ReadonlyArray<readonly [HarnessFeature, string]> = [
   ["browser", "Preview browser tools"],
   ["compaction", "Manual compaction"],
   ["imageInput", "Image input"],
-  ["dream", "Dream"],
-  ["dreamFiles", "Dream with enforced file-only access"],
-  ["dreamGuided", "Dream with normal permissions"],
+  ["dream", "Memory updates"],
+  ["dreamFiles", "Memory updates with enforced file-only access"],
+  ["dreamGuided", "Memory updates with normal permissions"],
 ];
 
 /** Optional capabilities describe only their own evidence and never disable ordinary sessions. */

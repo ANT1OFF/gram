@@ -26,8 +26,8 @@ export const installedDreamSupport = (
         implementation.mode === "guided"
           ? {
               state: "unsupported",
-              evidence: "The current transport's implementation Dream mode",
-              reason: `The current Dream transport provides guided normal permissions rather than enforced file-only access. ${implementation.reason}`,
+              evidence: "The current transport's implementation memory update mode",
+              reason: `The current memory update transport provides guided normal permissions rather than enforced file-only access. ${implementation.reason}`,
             }
           : support,
     };
@@ -36,18 +36,18 @@ export const installedDreamSupport = (
     const support: FeatureSupport = {
       state: "unsupported",
       reason: decision.reason,
-      evidence: "The selected transport's Dream decision",
+      evidence: "The selected transport's memory update decision",
     };
     return { dream: support, dreamFiles: support, dreamGuided: support };
   }
   const supported: FeatureSupport = { state: "supported", evidence: decision.reason };
   const otherMode: FeatureSupport = {
     state: "unsupported",
-    evidence: "The selected transport's installed Dream mode",
+    evidence: "The selected transport's installed memory update mode",
     reason:
       decision.mode === "guided"
-        ? `This Dream uses normal permissions; enforced file-only access is not provided. ${decision.reason}`
-        : `This Dream uses the confined file bridge rather than normal native permissions. ${decision.reason}`,
+        ? `This memory update uses normal permissions; enforced file-only access is not provided. ${decision.reason}`
+        : `This memory update uses the confined file bridge rather than normal native permissions. ${decision.reason}`,
   };
   return {
     dream: supported,

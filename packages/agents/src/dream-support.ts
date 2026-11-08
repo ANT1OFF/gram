@@ -24,7 +24,7 @@ export const dreamSupportFor = (agent: AgentKind, evidence: DreamSupportEvidence
       return {
         mode: "confined",
         reason:
-          "Bounded Dream file tools: snapshot inputs are read-only; candidate output and notes are writable. Native tools are disabled. Requires macOS or Linux with /usr/bin/python3.",
+          "Bounded memory update file tools: snapshot inputs are read-only; candidate output and notes are writable. Native tools are disabled. Requires macOS or Linux with /usr/bin/python3.",
       };
     case "codex":
       if (
@@ -34,7 +34,7 @@ export const dreamSupportFor = (agent: AgentKind, evidence: DreamSupportEvidence
         return {
           mode: "unknown",
           verifiedCliVersion: VERIFIED_CODEX_DREAM_VERSION,
-          reason: `Codex Dream requires CLI ${VERIFIED_CODEX_DREAM_VERSION} or newer; ${evidence.cliVersion === undefined ? "the installed version could not be determined" : `installed CLI ${evidence.cliVersion} is older or could not be read`}. Select the pinned runtime or another supported Dream harness. Ordinary Codex chats remain available.`,
+          reason: `Codex memory updates require CLI ${VERIFIED_CODEX_DREAM_VERSION} or newer; ${evidence.cliVersion === undefined ? "the installed version could not be determined" : `installed CLI ${evidence.cliVersion} is older or could not be read`}. Select the pinned runtime or another harness that supports memory updates. Ordinary Codex chats remain available.`,
         };
       }
       return {
@@ -44,13 +44,13 @@ export const dreamSupportFor = (agent: AgentKind, evidence: DreamSupportEvidence
           evidence.kind === "installed" && evidence.cliVersion !== undefined
             ? codexVersionWarning(evidence.cliVersion, VERIFIED_CODEX_DREAM_VERSION)
             : undefined,
-          "Gram starts Dream with normal Codex permissions: workspace-write sandbox and on-request approvals. Instructions guide snapshot reads and candidate writes; native tools can read or change other permitted files. Gram validates the candidate before applying it through the user's selected per-run Review or Auto mode.",
+          "Gram starts a memory update with normal Codex permissions: workspace-write sandbox and on-request approvals. Instructions guide snapshot reads and candidate writes; native tools can read or change other permitted files. Gram validates the candidate before applying it through the user's selected per-run Review or Auto mode.",
         ]
           .filter(Boolean)
           .join(" "),
       };
     // A kind this build doesn't name gets no Dream, whatever reached it.
     default:
-      return { mode: "unsupported", reason: "Gram has no Dream mode for this agent." };
+      return { mode: "unsupported", reason: "Gram has no memory update mode for this agent." };
   }
 };

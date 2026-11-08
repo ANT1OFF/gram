@@ -131,7 +131,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   leans toward the sidebar in a wide pane (`--thread-lean`, 0.5 centres it). Its prose (a
   paragraph, a list, a quote) stops at `--reading-measure` (70 ch of its own size, about 85
   characters) and leads at 22/14, while code, tables and cards take the column's full width. Memory's rendered
-  files and its draft review (Dreams) use it too, the review widening to `--settings-column-wide`
+  files and its draft review (Memory updates) use it too, the review widening to `--settings-column-wide`
   while a diff is open; Settings' pages take `settings-column` (60 rem, leaning `--settings-lean`).
   The sidebar keeps the width the user gives it, and its edge shows a grip while the pointer is
   over the column.
@@ -162,7 +162,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     `Inbox`, a needs-you mark or count `Hand`, review `Eye`, take over `HandGrab`, a question `MessageCircleQuestion`, an approval
     `ShieldQuestion`, a plan `ListChecks`, effort the gauge, usage and limits
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
-    Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`, History `History`, a wait
+    Memory updates `MoonStar`, Focus `Moon`, Terminal `SquareTerminal`, History `History`, a wait
     `Hourglass`. A row a chevron already folds needs no second glyph (an orchestrator's update is
     its chevron and time, and no rule: the transcript's 12 px block step sets it apart).
   - A control that acts on a choice names it: a sound's preview is one "Preview Chime" button
@@ -176,7 +176,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
 - **Buttons have three styles** (`Button`, or `buttonVariants` on a link or a menu's trigger),
   never a hand-rolled bordered button:
   - **Filled primary** (`default`): the one action the view exists for, at most one per view
-    ("Draft memory update" in Dreams, "Allow once" on an approval). A destructive confirm takes the
+    ("Draft memory update" in Memory updates, "Allow once" on an approval). A destructive confirm takes the
     danger tone (`destructive`) in that place.
   - **Outline secondary** (`outline`): every other worded action that stands on its own: "Take
     over", "View changes", "Review", "Watch it run", "Always allow…". A list row's one lead action

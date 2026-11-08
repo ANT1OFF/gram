@@ -109,7 +109,7 @@ export function QuietLayer() {
           className="text-muted-foreground [-webkit-app-region:no-drag]"
           onClick={() => useViewStore.getState().setQuiet(false)}
         >
-          Leave quiet
+          Leave Focus
           {hint && <kbd className="font-sans text-caption opacity-70">{hint}</kbd>}
         </Button>
       </div>
@@ -239,14 +239,14 @@ export function useViewShortcuts(): void {
   useShortcut({
     id: "view.quiet",
     keys: "mod+alt+4",
-    label: "Quiet",
+    label: "Focus",
     group: "Navigation",
     run: () => useViewStore.getState().toggleQuiet(),
   });
   useShortcut({
     id: "quiet.leave",
     keys: "escape",
-    label: "Leave quiet",
+    label: "Leave Focus",
     group: "Navigation",
     // Ahead of Escape's unscoped uses, which belong to the window under it.
     focusScope: () => useViewStore.getState().quiet,

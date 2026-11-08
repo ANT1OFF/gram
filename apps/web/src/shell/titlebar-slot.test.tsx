@@ -135,8 +135,8 @@ describe("a thread's header in the title bar", () => {
     // The window's.
     fireEvent.click(within(folded).getByTestId("menu-view"));
     const view = await screen.findByTestId("titlebar-menu-view");
-    expect(within(view).getByRole("menuitem", { name: /^Quiet/ })).toBeTruthy();
-    expect(within(view).getByRole("menuitem", { name: /^Focus mode/ })).toBeTruthy();
+    expect(within(view).getByRole("menuitem", { name: /^Focus/ })).toBeTruthy();
+    expect(within(view).getByRole("menuitem", { name: /^Hide side panels/ })).toBeTruthy();
     expect(within(view).getByRole("menuitem", { name: /^History/ })).toBeTruthy();
     expect(within(view).getAllByRole("menuitemradio")).toHaveLength(6);
   });

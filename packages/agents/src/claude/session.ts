@@ -515,7 +515,7 @@ export const makeClaudeHost = (
         return yield* new AgentUnavailable({
           agent: "claude",
           reason: "startup-failed",
-          message: "Dream file bridge is unavailable; no session was started",
+          message: "Memory update file bridge is unavailable; no session was started",
         });
       const prepared = yield* environment.prepare;
       // A thread on a gateway profile runs `claude` against the gateway with the user's key, so the

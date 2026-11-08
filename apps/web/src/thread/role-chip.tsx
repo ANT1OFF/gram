@@ -21,7 +21,7 @@ export const ROLE_ICON: Record<ThreadRoleInfo["kind"], LucideIcon> = {
 const ROLE_NAME: Record<ThreadRoleInfo["kind"], string> = {
   orchestrator: "Orchestrator",
   worker: "Worker",
-  dream: "Dream",
+  dream: "Memory update",
 };
 
 /**

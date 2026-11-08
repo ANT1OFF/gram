@@ -41,8 +41,8 @@ CLI/session owners and its [offline scenario guidance](../packages/agents/script
   membership, startup admission, ledger/outbox, dispatch, holds and dependencies.
   [Agent support](../packages/server/src/agent-support) supplies read-only readiness;
   it cannot grant permissions or substitute a different saved provider/profile.
-- [Dream](../packages/server/src/orchestration/dreams.ts) owns candidate/review/adoption and file-commit
-  freshness, drain and recovery. Its capability is separate from ordinary sessions
+- [Memory updates](../packages/server/src/orchestration/dreams.ts) own candidate/review/adoption and file-commit
+  freshness, drain and recovery. Their capability is separate from ordinary sessions
   and [helper consent](AGENTS_AND_FEATURES.md#ai-helpers-and-context-consent).
 - [Docs](../packages/server/src/docs/docs.ts) owns a workspace's published docs (`publish_doc`,
   `read_doc`, the Docs tab): one `<id>.doc` record each (a metadata line, then the Markdown) under

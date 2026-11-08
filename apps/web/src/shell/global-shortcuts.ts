@@ -337,7 +337,7 @@ export function useGlobalShortcuts() {
   useShortcut({
     id: "focus.toggle",
     keys: "mod+shift+.",
-    label: "Focus mode",
+    label: "Hide side panels",
     group: "App",
     run: () => useLayoutStore.getState().toggleFocusMode(),
   });
