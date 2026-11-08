@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.12.0](https://github.com/ANT1OFF/gram/compare/v1.11.1...v1.12.0) (2026-11-08)
+
+
+### Features
+
+* calm the sidebar: one-line titles, agent marks only when mixed, one way to History ([#257](https://github.com/ANT1OFF/gram/issues/257)) ([a7686ed](https://github.com/ANT1OFF/gram/commit/a7686ed33bf5aadc52e84860ba0ff9e8cef7ba17))
+* one choices chip for the composer's model, effort, mode and speed ([#263](https://github.com/ANT1OFF/gram/issues/263)) ([528328c](https://github.com/ANT1OFF/gram/commit/528328c4416e600227ae6e4666dc85fb616a2efe))
+* one worker list, the Workers tab, with status lines and ⌘J ([#252](https://github.com/ANT1OFF/gram/issues/252)) ([8724312](https://github.com/ANT1OFF/gram/commit/8724312372d83492cf58d0513b367ba580c4d47d))
+* **sidebar:** monogram rail tiles, an Idle fold, a neutral needs-you pill and one-line working rows ([#259](https://github.com/ANT1OFF/gram/issues/259)) ([b85224e](https://github.com/ANT1OFF/gram/commit/b85224ef6974a8d74c6d1040318e4ba471c58eb7))
+
+
+### Bug Fixes
+
+* accept newer Codex CLI versions with a warning ([#271](https://github.com/ANT1OFF/gram/issues/271)) ([13eb314](https://github.com/ANT1OFF/gram/commit/13eb314a0061f22f1924468f1d194802c63a1f44))
+* one amber, quiet bars and PR chips, and no glyph beside the word it repeats ([#256](https://github.com/ANT1OFF/gram/issues/256)) ([d00249b](https://github.com/ANT1OFF/gram/commit/d00249bf827ec1e88a011ad50a0be4e3d229c9bd))
+* one quiet band above the orchestrator's chat and the worker's composer, a still pending ring ([#255](https://github.com/ANT1OFF/gram/issues/255)) ([738733f](https://github.com/ANT1OFF/gram/commit/738733f618e72d77814c38e41554492ff6548df9))
+* quiet the orchestrator chat so its reply leads ([#261](https://github.com/ANT1OFF/gram/issues/261)) ([cc00253](https://github.com/ANT1OFF/gram/commit/cc0025359595a93420b36e049b06ba2d764ad8c3))
+* read Codex output lines in one pass and keep split characters whole ([#248](https://github.com/ANT1OFF/gram/issues/248)) ([c5d200e](https://github.com/ANT1OFF/gram/commit/c5d200e40adfa12235fa1f1b837b0275d48ad14f))
+* **web:** one button language, a View menu for the diff, a full-width Board and a shorter Dreams view ([#260](https://github.com/ANT1OFF/gram/issues/260)) ([4e80999](https://github.com/ANT1OFF/gram/commit/4e80999c074cea440cccdaaf6fa602a01c2c9273))
+
+
+### Performance Improvements
+
+* keep each checkout's HEAD for the PR lookup while its ref files are unchanged ([#258](https://github.com/ANT1OFF/gram/issues/258)) ([ad4377d](https://github.com/ANT1OFF/gram/commit/ad4377d4b8cd2bad2bc3ca1b701539ec6f673f75))
+* keep origin tips and origin/HEAD while their ref files are unchanged ([#251](https://github.com/ANT1OFF/gram/issues/251)) ([64a3964](https://github.com/ANT1OFF/gram/commit/64a39640fcdaaa6a10dcf0f9bc61280807a1a831))
+* read only a fork's last messages to resume it, and only prompts for list_checkpoints ([#265](https://github.com/ANT1OFF/gram/issues/265)) ([c2a5881](https://github.com/ANT1OFF/gram/commit/c2a588117f5d19e5de4d64880b37f0d30d7d784b))
+* read only a thread's opening for its title, and once it is past its first turn not at all ([#264](https://github.com/ANT1OFF/gram/issues/264)) ([28d8dce](https://github.com/ANT1OFF/gram/commit/28d8dce7864d78d083d09d3287c62bda84ede7c4))
+* read only the messages a check needs, not the whole thread ([#247](https://github.com/ANT1OFF/gram/issues/247)) ([17309c6](https://github.com/ANT1OFF/gram/commit/17309c6bd3d1c79983f228735f5b1a7931a644ff))
+* remember ahead/behind counts and trial merges by commit ([#249](https://github.com/ANT1OFF/gram/issues/249)) ([a9ee109](https://github.com/ANT1OFF/gram/commit/a9ee1090457ccf62cc762ec2916dc687f3f1e908))
+* run search and the usage overview on a read-only SQLite worker ([#250](https://github.com/ANT1OFF/gram/issues/250)) ([07294b1](https://github.com/ANT1OFF/gram/commit/07294b159d1341a2b33e2be7c3ec7ef1b9a7caee))
+* **server:** index message part types so part reads skip the history scan ([#266](https://github.com/ANT1OFF/gram/issues/266)) ([6268775](https://github.com/ANT1OFF/gram/commit/6268775dc1f2eeddc20a4571e798633680483760))
+* **web:** render only the rail marks whose current state changes on scroll ([#253](https://github.com/ANT1OFF/gram/issues/253)) ([ac2741b](https://github.com/ANT1OFF/gram/commit/ac2741ba2c2aaf435249e9b68feb045eda27631a))
+
 ## [1.11.1](https://github.com/ANT1OFF/gram/compare/v1.11.0...v1.11.1) (2026-11-07)
 
 
