@@ -170,7 +170,7 @@ test("an imported session resumes into a thread from History, with the keyboard"
   await expect(rows(page)).toHaveCount(0);
 });
 
-test("⌘⇧H toggles History, the palette has it, and ⌘J leads to its finished workers", async ({
+test("⌘⇧H toggles History, the palette has it, and ⌘J lists today's finished workers too", async ({
   page,
 }) => {
   const made = await start(page);
@@ -191,16 +191,17 @@ test("⌘⇧H toggles History, the palette has it, and ⌘J leads to its finishe
   await page.keyboard.press("Escape");
   await expect(history(page)).toBeHidden();
 
-  // ⌘J lists the workers on now; the finished ones are a click away, in History on Workers.
+  // ⌘J's Workers tab lists today's finished workers under Done too.
   await page.keyboard.press("ControlOrMeta+KeyJ");
-  const list = page.getByTestId("workers-list");
+  const list = page.getByTestId("workers-panel");
   await expect(list).toBeVisible();
-  await expect(list.getByTestId("workers-section-done")).toHaveCount(0);
-  await list.getByTestId("workers-history").click();
-  await expect(list).toBeHidden();
-  await expect(history(page)).toBeVisible();
-  await expect(chip(page, "Workers")).toHaveAttribute("aria-checked", "true");
-  await expect(row(page, made.doneToday)).toBeVisible();
+  await list
+    .getByTestId("workers-group-done")
+    .getByRole("button", { name: /^Done,/ })
+    .click();
+  await expect(
+    list.locator(`[data-testid="workers-panel-row"][data-thread-id="${made.doneToday}"]`),
+  ).toBeVisible();
 });
 
 test("History shows thirty rows, Show more pages on through every finished worker the server keeps", async ({

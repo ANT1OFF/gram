@@ -128,9 +128,10 @@ describe("DiffPanel", () => {
     expect(summary.dataset["files"]).toBe(String(screen.getAllByTestId("diff-file").length));
     expect(summary.textContent).toMatch(/files\+.*−/);
 
-    // The display choices sit in the toolbar, as toggles that say whether they are on.
-    const ignore = screen.getByRole("button", { name: "Hide whitespace changes" });
-    expect(ignore.getAttribute("aria-pressed")).toBe("false");
+    // The display choices sit behind the toolbar's one View menu, checked while on.
+    fireEvent.click(screen.getByRole("button", { name: "View options" }));
+    const ignore = await screen.findByRole("menuitemcheckbox", { name: "Hide whitespace changes" });
+    expect(ignore.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(ignore);
     await waitFor(() =>
       expect(gitDiff).toHaveBeenLastCalledWith(
@@ -148,9 +149,10 @@ describe("DiffPanel", () => {
     await waitFor(() => expect(clock.querySelectorAll('tr[data-kind="add"]')).toHaveLength(1));
     expect(clock.querySelectorAll('tr[data-kind="del"]')).toHaveLength(1);
 
-    const wrap = screen.getByRole("button", { name: "Wrap lines" });
+    // A checked item leaves the menu open, so the next choice is a click away.
+    const wrap = await screen.findByRole("menuitemcheckbox", { name: "Wrap lines" });
     fireEvent.click(wrap);
-    await waitFor(() => expect(wrap.getAttribute("aria-pressed")).toBe("true"));
+    await waitFor(() => expect(wrap.getAttribute("aria-checked")).toBe("true"));
     expect(useLayoutStore.getState().diffWrap).toBe(true);
   });
 
@@ -403,7 +405,10 @@ describe("DiffPanel", () => {
     const panel = screen.getByTestId("diff-panel");
     expect(panel.dataset["layout"]).toBe("unified");
     // Split stays the choice, shown unified until the panel has room for it.
-    expect(screen.getByRole("radio", { name: "Split" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "View options" }));
+    const split = await screen.findByRole("menuitemradio", { name: /^Split/ });
+    expect(split.getAttribute("aria-checked")).toBe("true");
+    expect(split.textContent).toContain("Needs a wider panel");
 
     width = 700;
     act(() => observers.forEach((report) => report()));
@@ -414,7 +419,9 @@ describe("DiffPanel", () => {
     expect(panel.dataset["layout"]).toBe("split");
     expect(screen.getByTestId("patch").dataset["layout"]).toBe("split");
 
-    fireEvent.click(screen.getByRole("radio", { name: "Unified" }));
+    // Once the panel has room, Split no longer says it needs it.
+    expect(screen.getByRole("menuitemradio", { name: "Split" }).textContent).toBe("Split");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Unified" }));
     expect(useLayoutStore.getState().diffLayout).toBe("unified");
     expect(panel.dataset["layout"]).toBe("unified");
     vi.unstubAllGlobals();

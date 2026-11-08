@@ -450,21 +450,25 @@ scenario("scroll: diff", async ({ browser }) => {
   });
 });
 
-scenario("⌘J Workers list", async ({ browser }) => {
+scenario("⌘J Workers tab", async ({ browser }) => {
   await repeat(browser, async ({ page, made }) => {
     await goInApp(page, `/t/${made.orchestratorThreadId}`);
     await transcriptPainted(page)();
-    const list = page.getByTestId("workers-list");
+    const list = page.getByTestId("workers-panel");
     const opened = await timeTo(
       page,
       () => page.keyboard.press("ControlOrMeta+KeyJ"),
       () => expect(list).toBeVisible({ timeout: 30_000 }),
     );
     record("⌘J, 40 workers: open until painted", opened);
-    record("⌘J, 40 workers: rows drawn", await list.getByTestId("worker-row").count(), "rows");
+    record(
+      "⌘J, 40 workers: rows drawn",
+      await list.getByTestId("workers-panel-row").count(),
+      "rows",
+    );
     await page.waitForTimeout(500);
     await list.hover();
-    await jank(page, "scroll ⌘J list", async () => {
+    await jank(page, "scroll ⌘J tab", async () => {
       await wheel(page, 20, 400);
       await wheel(page, 20, -400);
     });

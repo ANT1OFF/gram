@@ -36,7 +36,7 @@ import { cn } from "@/lib/utils";
 import { DISCOVER_QUEUED, DISCOVER_SENT } from "@/orchestration/board-model";
 import { useDiscover, useTidyUp } from "@/orchestration/use-board-actions";
 import { WorkerMenuItems } from "@/orchestration/worker-header";
-import { useWorkersListStore, useWorkersNow } from "@/orchestration/workers-list";
+import { showWorkersTab, useWorkersNow } from "@/orchestration/workers-tab";
 import { useWorkspacePause } from "@/orchestration/workspace-pause-button";
 import { RunScriptMenuItems } from "@/scripts/run-script-menu";
 import { useProjectScripts } from "@/scripts/use-project-scripts";
@@ -348,15 +348,11 @@ export function PauseItem({ state }: { state: WorkspaceState }) {
   );
 }
 
-/** Workers, ⌘J's list of the workspace's workers, with how many are on now. */
+/** Workers, the right panel's tab of the workspace's workers (⌘J), with how many are on now. */
 function WorkersItem() {
   const { count } = useWorkersNow();
   return (
-    <Menu.Item
-      data-testid="folded-workers"
-      className={MENU_ITEM}
-      onClick={() => useWorkersListStore.getState().toggle()}
-    >
+    <Menu.Item data-testid="folded-workers" className={MENU_ITEM} onClick={showWorkersTab}>
       <Workflow aria-hidden />
       Workers
       {count > 0 && (

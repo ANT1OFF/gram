@@ -5,7 +5,6 @@ import { LinkQuestion } from "@/links/link-dialog";
 import { FeatureSheet } from "@/orchestration/feature-sheet-dialog";
 import { FreshSessionDialog } from "@/orchestration/fresh-session";
 import { PeekSheet } from "@/orchestration/peek-sheet";
-import { WorkersList } from "@/orchestration/workers-list";
 import { CommandPalette } from "@/palette/command-palette";
 import { ReportIssueDialog } from "@/report-issue/report-issue-dialog";
 import { WorkspaceSheet } from "@/settings/workspace-sheet";
@@ -29,7 +28,6 @@ export function AppOverlays() {
       <ThreadDialogs />
       <FreshSessionDialog />
       <ThreadSwitcher />
-      <WorkersList />
       <HistoryView />
       <InboxView />
       <WorkspaceSheet />

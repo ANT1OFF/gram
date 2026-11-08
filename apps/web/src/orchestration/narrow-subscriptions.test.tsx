@@ -15,7 +15,7 @@ import { useRailFacts } from "./feature-sheet";
 import { resetDerivedAsks } from "./needs-you-store";
 import { NeedsYouSource, useNeedsYouCounts } from "./use-needs-you";
 import { useWorkspaces } from "./use-orchestration";
-import { useWorkersNow } from "./workers-list";
+import { useWorkersNow } from "./workers-tab";
 
 // The always-mounted views that derive a little from the whole thread map re-render only when what
 // they derive changes, not on every change to any thread: the Workers count the title bar's "…"

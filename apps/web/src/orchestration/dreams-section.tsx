@@ -98,15 +98,15 @@ const dateRange = (oldest: number | undefined, newest: number | undefined): stri
 function StartFlow({
   state,
   kind,
-  mode,
   onClose,
 }: {
   state: WorkspaceState;
   kind: DreamKind;
-  /** Review or Auto, picked beside the action that opened this. */
-  mode: DreamMode;
   onClose: () => void;
 }) {
+  // Review or Auto, for this run alone: one of the run's choices, picked here with the others.
+  const [mode, setMode] = useState<DreamMode>("review");
+  const modeLabel = useId();
   const api = useApi();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -214,6 +214,10 @@ function StartFlow({
             {importing
               ? "Drafts memory from your past sessions in this workspace's repos. It runs as a thread you can watch and stop."
               : "Reads what this workspace's threads said since memory was last updated and drafts tidier memory, with a source for each change."}
+          </p>
+          <p data-testid="dream-runs-rule" className="text-muted-foreground">
+            One run at a time, in the agent's sandbox; it asks before anything it would normally ask
+            about.
           </p>
         </div>
         <Button size="icon-xs" variant="ghost" aria-label="Close" onClick={onClose}>
@@ -478,6 +482,23 @@ function StartFlow({
         />
       </div>
 
+      <div className="flex flex-col gap-1.5">
+        <span id={modeLabel} className="font-medium">
+          When this update is ready
+        </span>
+        <ModeChoice mode={mode} labelledBy={modeLabel} onChange={setMode} />
+        {/* Always mounted, so a screen reader hears the note when Auto is picked. */}
+        <p
+          role="status"
+          data-testid="dream-mode-note"
+          className="text-muted-foreground empty:hidden"
+        >
+          {mode === "auto"
+            ? "Saved without another review or approval. If memory changed meanwhile, or the draft is invalid or can't be stored, nothing is saved. Earlier versions stay under History to restore."
+            : ""}
+        </p>
+      </div>
+
       <label htmlFor={instructionsId} className="flex flex-col gap-1">
         <span className="font-medium">Steering (optional)</span>
         <textarea
@@ -505,17 +526,6 @@ function StartFlow({
         >
           Start drafting
         </Button>
-        <span
-          data-testid="dream-start-mode"
-          className={cn(
-            "rounded-sm border px-1.5 py-px",
-            mode === "auto"
-              ? "border-border-strong text-foreground"
-              : "border-border text-muted-foreground",
-          )}
-        >
-          {mode === "auto" ? "Saved if it checks out" : "Waits for your review"}
-        </span>
         <Button size="sm" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
@@ -1069,7 +1079,8 @@ function Review({
 
 /**
  * One run as a card: its state and when, then what it read and what ran it on one line, and one
- * primary next action (review it, watch it, or open its thread), the rest quieter.
+ * lead action (review it, watch it, or open its thread) as an outline button, the rest ghost: the
+ * view's one filled button is its Draft memory update (DESIGN.md, Buttons).
  */
 function DreamRow({
   dream,
@@ -1166,7 +1177,7 @@ function DreamRow({
         {actions.review && (
           <Button
             size="sm"
-            variant={dream.adoptedVersion === undefined ? "default" : "outline"}
+            variant="outline"
             data-testid="dream-review-open"
             aria-expanded={reviewing}
             onClick={onReview}
@@ -1184,8 +1195,7 @@ function DreamRow({
             className={cn(
               buttonVariants({
                 size: "sm",
-                variant:
-                  primary === "watch" ? "default" : primary === "thread" ? "outline" : "ghost",
+                variant: primary === "watch" || primary === "thread" ? "outline" : "ghost",
               }),
             )}
           >
@@ -1239,8 +1249,8 @@ function DreamRow({
 }
 
 /**
- * Whether the next run's result waits for your review or is adopted once it validates: a choice
- * for that run alone, on one line in the summary beside the actions that start one.
+ * Whether the run's result waits for your review or is adopted once it validates: a choice for
+ * that run alone, on one line in the start form beside its other choices (model, steering).
  */
 function ModeChoice({
   mode,
@@ -1248,7 +1258,7 @@ function ModeChoice({
   onChange,
 }: {
   mode: DreamMode;
-  /** The summary's term for it, "When this update is ready". */
+  /** The start form's label for it, "When this update is ready". */
   labelledBy: string;
   onChange: (mode: DreamMode) => void;
 }) {
@@ -1373,11 +1383,8 @@ export function DreamsSection({
     (dream) => dream.status === "running" || dream.status === "pending",
   );
   const suggestion = backlogSuggestion(dreams.data ?? []);
-  // Review or Auto for the next run, chosen beside its action.
-  const [mode, setMode] = useState<DreamMode>("review");
 
   const { ready, rest } = orderDreams(dreams.data ?? []);
-  const modeLabel = useId();
   const reviewOf = (dream: DreamId) => (
     <Review
       key={dream}
@@ -1411,43 +1418,13 @@ export function DreamsSection({
           review={reviewOf}
         />
       )}
-      <div
-        data-testid="dream-form"
-        className="flex flex-col gap-3 rounded-(--radius-md) border border-edge bg-card px-4 py-3.5"
-      >
-        <h2 className="text-body-strong">Draft memory update</h2>
+      {/* How to start one, in a line and two buttons: how the next run is adopted, and how it runs,
+          are the start form's, where that run's other choices are. */}
+      <div data-testid="dream-form" className="flex flex-col gap-2">
         <p className="max-w-(--description-measure) text-body text-pretty text-description">
-          Gram rereads finished threads and drafts changes to memory, each with its source. Memory
-          changes only when a draft is adopted.
+          Rereads finished threads and drafts changes, each with its source. Memory changes only
+          when you adopt one.
         </p>
-        {/* Scope and adoption, once for every run: where it lands, how it is adopted, how it runs. */}
-        <dl
-          data-testid="dream-summary"
-          className="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5 text-body"
-        >
-          <dt className="text-muted-foreground">Updates</dt>
-          <dd className="min-w-0">{state.workspace.name} memory</dd>
-          <dt id={modeLabel} className="text-muted-foreground">
-            When this update is ready
-          </dt>
-          <dd className="flex min-w-0 flex-col gap-1">
-            <ModeChoice mode={mode} labelledBy={modeLabel} onChange={setMode} />
-            <p
-              role="status"
-              data-testid="dream-mode-note"
-              className="max-w-(--description-measure) text-pretty text-description"
-            >
-              {mode === "auto"
-                ? "Saved without another review or approval. If memory changed meanwhile, or the draft is invalid or can't be stored, nothing is saved. Earlier versions stay under History to restore."
-                : "Memory changes only after you review the draft and adopt it."}
-            </p>
-          </dd>
-          <dt className="text-muted-foreground">Runs</dt>
-          <dd data-testid="dream-runs-rule" className="min-w-0 text-description">
-            One at a time, in the agent's sandbox; it asks before anything it would normally ask
-            about.
-          </dd>
-        </dl>
         <div data-testid="dream-actions" className="flex flex-wrap gap-2">
           <Button
             size="sm"
@@ -1472,6 +1449,7 @@ export function DreamsSection({
             Draft from past sessions
           </Button>
         </div>
+        {/* Said in words too: a disabled button's hover reaches no keyboard or screen reader. */}
         {running && (
           <p data-testid="dream-busy" className="text-body text-description">
             A run is under way; the next can start once it ends or you cancel it below.
@@ -1500,7 +1478,6 @@ export function DreamsSection({
             key={starting}
             state={state}
             kind={starting}
-            mode={mode}
             onClose={() => onStartingChange(undefined)}
           />
         )}
