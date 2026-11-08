@@ -23,6 +23,7 @@ import {
   type CompactionActivity,
   type AgentStatus,
   type GramUIMessageChunk,
+  type ToolTime,
   NotFound,
   type GramUIMessage,
   type ServerEvent,
@@ -241,6 +242,8 @@ export interface Runtime {
   lastProgressAt: number;
   lastTool: string | undefined;
   readonly runningTools: Set<string>;
+  /** Each open message's tool calls' times so far (`MessageMetadata.toolTimes`), by message. */
+  readonly toolTimes: Map<MessageId, Record<string, ToolTime>>;
   quiet: WorkerQuiet | undefined;
   /** The compaction the agent reports under way, which `thread.status` carries while it lasts. */
   compaction: CompactionActivity | undefined;

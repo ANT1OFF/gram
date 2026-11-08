@@ -490,10 +490,12 @@ it.effect(
         if (c.type === "tool-output-available") {
           return { ...c, output: { stdout: tail, stderr: "", interrupted: false } };
         }
-        // The turn is over and this reply is held: a reconnect learns how it ended from its finish.
+        // The turn is over and this reply is held: a reconnect learns how it ended from its finish,
+        // and when its command started (it has not ended: its output is still preliminary).
         if (c.type !== "finish") return c;
         const turnEnd = { at: 0, reason: "completed" as const };
-        return { ...c, messageMetadata: { ...c.messageMetadata, turnEnd } };
+        const toolTimes = { "command-1": { startedAt: 0 } };
+        return { ...c, messageMetadata: { ...c.messageMetadata, toolTimes, turnEnd } };
       });
       expect(
         replay.inFlight.map(({ event }) => {

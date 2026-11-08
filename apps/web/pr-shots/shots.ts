@@ -2027,6 +2027,22 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "turn-timeline",
+    title:
+      "A finished turn's run timeline, opened from the chart button beside its fold row: each tool call as a bar on the turn's time axis",
+    open: async (page) => {
+      await openFlakyAtApproval(page);
+      await elapse(page, FLAKY_DONE_MS);
+      await page.getByTestId("approval-allow").click();
+      await page.getByText("Done. Summary:").waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Stop", exact: true }).waitFor({ state: "hidden" });
+      await page.getByTestId("turn-timeline-open").last().click();
+      await page.getByTestId("turn-timeline").waitFor();
+      await page.mouse.move(1400, 1300);
+      await page.waitForTimeout(300);
+    },
+  },
+  {
     name: "new-entry-header",
     title: "The overview header with its New control, at the 180 px minimum width",
     open: async (page) => {

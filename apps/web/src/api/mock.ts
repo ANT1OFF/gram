@@ -198,6 +198,7 @@ import { createWorktreesMock, PENDING_RULES } from "./worktrees/mock";
 import type { DataPart, MockWorld } from "./mock-world";
 import { isMockRepo, MockInvalidState, mockProject, resolveMockFolder } from "./mock-fs";
 import { MockPreview } from "./mock-preview";
+import { mockToolClock, mockToolTime } from "./mock-tool-times";
 import {
   mockAgents,
   mockSessionExpired,
@@ -574,6 +575,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       steer: undefined,
       interrupted: false,
       restartAfterTurn: false,
+      toolClock: mockToolClock(),
     };
     this.#threads.set(summary.thread.id, runtime);
     return runtime;
@@ -717,6 +719,16 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
           log.push(event);
           runtime.inflight.set(step.messageId, log);
           this.#feed(runtime, event);
+          const timed = mockToolTime(runtime.toolClock, step.messageId, step.chunk, Date.now());
+          if (timed !== undefined) {
+            const stamp: ThreadFeedEvent = {
+              type: "chunk",
+              messageId: step.messageId as never,
+              chunk: timed,
+            };
+            log.push(stamp);
+            this.#feed(runtime, stamp);
+          }
           if (step.chunk.type === "finish" || step.chunk.type === "abort") {
             void runtime.fold.whenSettled().then(() => runtime.inflight.delete(step.messageId));
           }
