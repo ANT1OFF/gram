@@ -109,6 +109,7 @@ import {
 import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./remote-routes.ts";
 import { RemoteControl } from "./remote-control.ts";
 import {
+  claudeTokenCaptureFor,
   HOST_PATHS,
   hostRoute,
   MACHINE_MANAGEMENT_PATHS,
@@ -145,6 +146,8 @@ export const AuthMiddleware = HttpRouter.middleware(
     const control = yield* RemoteControl;
     // Absent only in tests that serve the middleware alone: no machine can join or dial in then.
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
+    const tokenCapture =
+      remoteHosts === undefined ? undefined : yield* claudeTokenCaptureFor(remoteHosts);
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
@@ -285,6 +288,8 @@ export const AuthMiddleware = HttpRouter.middleware(
                         config.appBuild !== undefined && /^[a-f0-9]{40}$/.test(config.appBuild)
                           ? config.appVersion
                           : undefined,
+                        undefined,
+                        tokenCapture,
                       )
                   : isRemote && path === "/ws"
                     ? yield* closedOnRevoke(remote, remote.sessionOf(authRequest), httpEffect)

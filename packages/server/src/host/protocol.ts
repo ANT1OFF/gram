@@ -39,9 +39,11 @@ import {
   WorktreeError,
   type Worktrees,
 } from "@gram/git";
+import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Redacted from "effect/Redacted";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -79,6 +81,16 @@ export interface HostWorktrees {
   readonly pendingPermissions: Worktrees["Service"]["pendingPermissions"];
 }
 
+/**
+ * The Claude token a joined machine keeps: one the user ran `claude setup-token` for on the main
+ * machine and consented to send here. Its failures never carry the token.
+ */
+export interface HostClaudeToken {
+  readonly setToken: (token: Redacted.Redacted<string>) => Effect.Effect<void, HostFailed>;
+  /** True when there was one to delete. */
+  readonly forgetToken: Effect.Effect<boolean, HostFailed>;
+}
+
 /** What a host serves: its folders, worktrees, git state and port scan, and who it says it is. */
 export interface HostService {
   readonly hello: HostHello;
@@ -90,7 +102,12 @@ export interface HostService {
   readonly terminals: HostTerminalsService;
   readonly sessions: HostSessionsService;
   readonly scan: Effect.Effect<PortScan, unknown>;
+  /** A joined machine's; the main machine's own host keeps no token. */
+  readonly claude?: HostClaudeToken;
 }
+
+/** What a host without a token store answers. */
+const NO_TOKEN_STORE = "This machine's host doesn't keep a Claude token.";
 
 /** The capabilities this build's host serves. */
 export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
@@ -270,6 +287,12 @@ const handlersFor = (host: HostService) => {
         ),
       "host.sessions.close": ({ handle }) => host.sessions.close(handle),
       "host.sessions.reload": ({ agent, reload }) => host.sessions.reload(agent, reload),
+      "host.claude.setToken": ({ token }) =>
+        host.claude === undefined
+          ? Effect.fail(new HostFailed({ message: NO_TOKEN_STORE }))
+          : host.claude.setToken(token),
+      "host.claude.forgetToken": () =>
+        host.claude === undefined ? Effect.succeed(false) : host.claude.forgetToken,
     }),
   );
   function withSession<A, E>(
@@ -434,9 +457,21 @@ export interface HostConnection {
   readonly terminals: HostTerminalsConnection;
   readonly sessions: HostSessionsConnection;
   readonly scan: Effect.Effect<PortScan, unknown>;
+  /**
+   * The machine's Claude token. A host built before these calls, or one that doesn't answer,
+   * fails with `HostFailed` saying so; no failure carries the token.
+   */
+  readonly claude: HostClaudeToken;
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
 }
+
+/** What a token call says when the host didn't answer it, the token left out. */
+export const HOST_TOKEN_UNANSWERED =
+  "This machine's gram-host didn't take the token. It may be older than this Gram: update it there and try again.";
+
+/** How long a token call waits for the host. */
+const TOKEN_CALL_TIMEOUT = "20 seconds";
 
 /** What the Files panel shows when the host doesn't answer; the detail goes to the log. */
 export const HOST_NOT_ANSWERING = "This machine's host isn't answering.";
@@ -868,9 +903,44 @@ export const connectHost = (
       reload: (agent, reload) =>
         guarded(client["host.sessions.reload"]({ agent, reload })).pipe(Effect.ignore),
     };
+    /**
+     * A token call: the host's own refusal passes as it is; anything else (an older host's
+     * unknown-request defect, a broken stream, no answer in time) reads as `HOST_TOKEN_UNANSWERED`.
+     * Only the error's tag is logged, never its text, which could quote the request.
+     */
+    const tokenCall = <A, E extends { readonly _tag: string }>(
+      call: Effect.Effect<A, E>,
+    ): Effect.Effect<A, HostFailed> =>
+      guarded(call).pipe(
+        Effect.timeoutOrElse({
+          duration: TOKEN_CALL_TIMEOUT,
+          orElse: () => Effect.fail(new HostFailed({ message: HOST_TOKEN_UNANSWERED })),
+        }),
+        Effect.catchCause((cause) => {
+          const failure = cause.reasons.find(Cause.isFailReason)?.error;
+          if (failure instanceof HostFailed) return Effect.fail(failure);
+          if (cause.reasons.some(Cause.isInterruptReason) && failure === undefined)
+            return Effect.failCause(cause as Cause.Cause<never>);
+          return Effect.logWarning("worker host: a token call wasn't answered").pipe(
+            Effect.annotateLogs({
+              hostId: options.hostId,
+              kind:
+                failure === undefined
+                  ? "defect"
+                  : ((failure as { readonly _tag?: string })._tag ?? "failure"),
+            }),
+            Effect.andThen(Effect.fail(new HostFailed({ message: HOST_TOKEN_UNANSWERED }))),
+          );
+        }),
+      );
+    const claude: HostClaudeToken = {
+      setToken: (token) => tokenCall(client["host.claude.setToken"]({ token })),
+      forgetToken: tokenCall(client["host.claude.forgetToken"]()),
+    };
     return {
       hello,
       files,
+      claude,
       repos: { ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })) },
       worktrees,
       git,

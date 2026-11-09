@@ -130,4 +130,24 @@ describe("joined machines", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("records when a machine took a Claude token, a time and nothing else, across a restart", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-machines-"));
+    try {
+      const machines = createPairedMachines(fileMachineStore(dir), () => 5_000);
+      const code = codeOf(machines.mint(ORIGIN).url);
+      const key = generateHostKey();
+      const joined = machines.join(ORIGIN, { code, name: "box", platform: "linux", ...key });
+      if (joined.kind !== "joined") throw new Error("didn't join");
+      machines.tokenSent(joined.machine.id, true);
+      const again = createPairedMachines(fileMachineStore(dir));
+      expect(again.get(joined.machine.id)?.claudeTokenSetAt).toBe(5_000);
+      again.tokenSent(joined.machine.id, false);
+      expect(createPairedMachines(fileMachineStore(dir)).get(joined.machine.id)).not.toHaveProperty(
+        "claudeTokenSetAt",
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

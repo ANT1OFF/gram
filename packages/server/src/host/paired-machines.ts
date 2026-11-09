@@ -30,6 +30,11 @@ export interface PairedMachine {
   readonly joinedAt: number;
   /** Set when a person on this machine confirmed its fingerprint; until then it gets no work. */
   readonly confirmedAt?: number;
+  /**
+   * When this Gram last sent the machine a Claude token from `claude setup-token`, with the
+   * user's consent; cleared once the machine deletes it. A time only: the token is never kept here.
+   */
+  readonly claudeTokenSetAt?: number;
 }
 
 export interface PairedMachineStore {
@@ -68,7 +73,8 @@ const isMachine = (value: unknown): value is PairedMachine => {
     typeof m["platform"] === "string" &&
     PLATFORM.test(m["platform"]) &&
     Number.isSafeInteger(m["joinedAt"]) &&
-    (m["confirmedAt"] === undefined || Number.isSafeInteger(m["confirmedAt"]))
+    (m["confirmedAt"] === undefined || Number.isSafeInteger(m["confirmedAt"])) &&
+    (m["claudeTokenSetAt"] === undefined || Number.isSafeInteger(m["claudeTokenSetAt"]))
   );
 };
 
@@ -211,6 +217,14 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
       save(machines.map((m) => (m === machine ? confirmed : m)));
       return confirmed;
     },
+    /** Records that the machine took a Claude token now, or (`false`) that it deleted it. */
+    tokenSent: (id: string, sent: boolean): void => {
+      const machine = byId(id);
+      if (machine === undefined) return;
+      const { claudeTokenSetAt: _was, ...rest } = machine;
+      const next: PairedMachine = sent ? { ...rest, claudeTokenSetAt: now() } : rest;
+      save(machines.map((m) => (m === machine ? next : m)));
+    },
     /** Forgets the machine and its key; the caller closes its connection. */
     remove: (id: string): boolean => {
       if (byId(id) === undefined) return false;
@@ -264,4 +278,5 @@ export const machineView = (
   joinedAt: machine.joinedAt,
   confirmed: machine.confirmedAt !== undefined,
   ...(online === undefined ? {} : { onlineSince: online.since }),
+  ...(machine.claudeTokenSetAt === undefined ? {} : { claudeTokenSetAt: machine.claudeTokenSetAt }),
 });

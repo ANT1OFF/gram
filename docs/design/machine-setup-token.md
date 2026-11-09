@@ -61,7 +61,7 @@ a dialog before anything runs:
 > - **Forget token** or **Remove** in Settings → Machines deletes it from the machine.
 > - Deleting it doesn't revoke it. To revoke it, go to claude.ai → Settings → Claude Code.
 >
-> ☑ *machine-a* (the one whose row was clicked) ☐ *machine-b* … (other machines that are online)
+> ☑ _machine-a_ (the one whose row was clicked) ☐ _machine-b_ … (other machines that are online)
 >
 > [Cancel] [Run setup-token]
 
@@ -86,8 +86,10 @@ convenience. Running setup-token again for a new machine costs one browser appro
 ## Capture and transport
 
 - **Capture.** The server starts `claude setup-token` in a pseudo-terminal on the main machine.
-  It uses the same Claude Code binary and login-shell environment as Gram's sessions, without
-  `CLAUDE_CODE_OAUTH_TOKEN`. The terminal is 400 columns wide, so the token prints on one line.
+  It runs in the user's login shell (`$SHELL -ilc 'exec claude setup-token'`), so it is their
+  own `claude` on their own PATH, as in a terminal they opened, without any
+  `CLAUDE_CODE_OAUTH_TOKEN` from Gram's environment. The terminal is 1000 columns wide, so the
+  token and the sign-in link each print on one line.
   The server strips ANSI from the output and looks for three things: the authorization link, the
   code prompt, and a token (`sk-ant-oat<NN>-…`). It keeps at most 64 KiB of output in memory.
   Once it finds a token, it stops the process and throws the buffer away. The token is held as an
@@ -131,15 +133,15 @@ convenience. Running setup-token again for a new machine costs one browser appro
 
 ## Threat model
 
-| Threat | What happens | Mitigation |
-| --- | --- | --- |
-| A joined machine is compromised | Its user can read the token and use the subscription for up to a year, from anywhere. | Consent is per machine and names this risk. Revoke at claude.ai. The token only makes model requests: it can't reach connectors or Remote Control. |
-| A join link is stolen | A machine that joins with it still waits for the user to confirm its fingerprint, and only confirmed, online machines can be picked. | Existing join confirmation. The token is never queued for a machine. |
-| The token leaks into logs | The token is `Redacted` in the RPC schema. No log or error includes received text. Diagnostics masks `sk-ant-oat…`. | Redaction test. |
-| The token leaks in a crash dump | It sits in the main server's memory only for the run, and in each `claude` process's environment on the joined machine, which only that user can read. | The reference is dropped after sending. No file on the main machine. |
-| Another page drives the flow | The `/machines/*` routes answer only the local app (same-origin POST with an Origin, never a paired phone or a machine). | Same guard as Add a machine. |
-| The token lives a long time | It lasts one year. Deleting it on a machine doesn't revoke it. | The dialog and Forget token both point to revocation at claude.ai. |
-| The machine had its own sign-in | The token outranks `/login`, so its sessions bill the subscription the token belongs to. | The dialog says so. Forget token restores the machine's own sign-in. |
+| Threat                          | What happens                                                                                                                                           | Mitigation                                                                                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A joined machine is compromised | Its user can read the token and use the subscription for up to a year, from anywhere.                                                                  | Consent is per machine and names this risk. Revoke at claude.ai. The token only makes model requests: it can't reach connectors or Remote Control. |
+| A join link is stolen           | A machine that joins with it still waits for the user to confirm its fingerprint, and only confirmed, online machines can be picked.                   | Existing join confirmation. The token is never queued for a machine.                                                                               |
+| The token leaks into logs       | The token is `Redacted` in the RPC schema. No log or error includes received text. Diagnostics masks `sk-ant-oat…`.                                    | Redaction test.                                                                                                                                    |
+| The token leaks in a crash dump | It sits in the main server's memory only for the run, and in each `claude` process's environment on the joined machine, which only that user can read. | The reference is dropped after sending. No file on the main machine.                                                                               |
+| Another page drives the flow    | The `/machines/*` routes answer only the local app (same-origin POST with an Origin, never a paired phone or a machine).                               | Same guard as Add a machine.                                                                                                                       |
+| The token lives a long time     | It lasts one year. Deleting it on a machine doesn't revoke it.                                                                                         | The dialog and Forget token both point to revocation at claude.ai.                                                                                 |
+| The machine had its own sign-in | The token outranks `/login`, so its sessions bill the subscription the token belongs to.                                                               | The dialog says so. Forget token restores the machine's own sign-in.                                                                               |
 
 ## Out of scope
 

@@ -15,13 +15,19 @@ import * as Layer from "effect/Layer";
 import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
-import { hostRepos } from "./host-config.ts";
+import { claudeTokenIn } from "./claude-token.ts";
+import { hostHome, hostRepos, readClaudeToken } from "./host-config.ts";
 import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
-import { HOST_CAPABILITIES, type HostService, serveHost } from "./protocol.ts";
+import {
+  HOST_CAPABILITIES,
+  type HostClaudeToken,
+  type HostService,
+  serveHost,
+} from "./protocol.ts";
 import { runCli } from "./cli.ts";
 import type { HostId } from "@gram/contracts";
 import type * as Scope from "effect/Scope";
@@ -34,11 +40,12 @@ delete process.env["ELECTRON_RUN_AS_NODE"];
 export const HOST_STREAM_FD = 3;
 
 /**
- * The agents whose sessions the host runs: Claude Code on the user's own login. A session through a
- * gateway profile, and every Codex session, still opens in the server, which keeps the keys and the
- * Codex homes. Under the fake agent the host runs the fake, as the server does.
+ * The agents whose sessions the host runs: Claude Code on the user's own login, or on the token
+ * `oauthToken` reads (a joined machine's, from `claude setup-token`). A session through a gateway
+ * profile, and every Codex session, still opens in the server, which keeps the keys and the Codex
+ * homes. Under the fake agent the host runs the fake, as the server does.
  */
-const HostAgents: Layer.Layer<AgentHosts> =
+const hostAgents = (oauthToken?: () => string | undefined): Layer.Layer<AgentHosts> =>
   process.env["GRAM_FAKE_AGENT"] === "1"
     ? makeFakeAgentAdapter()
     : Layer.effect(
@@ -57,11 +64,16 @@ const HostAgents: Layer.Layer<AgentHosts> =
                   ),
           });
         }),
-      ).pipe(Layer.provide(ClaudeHostLive()));
+      ).pipe(
+        Layer.provide(
+          ClaudeHostLive(oauthToken === undefined ? {} : { environment: { oauthToken } }),
+        ),
+      );
 
 /** What the host serves as `hostId`, its terminals and sessions closed with the scope. */
 const hostService = (
   hostId: HostId,
+  claude?: HostClaudeToken,
 ): Effect.Effect<HostService, never, Scope.Scope | Proc | Worktrees | AgentHosts> =>
   Effect.gen(function* () {
     const proc = yield* Proc;
@@ -80,10 +92,12 @@ const hostService = (
       terminals: yield* terminalsOnHost,
       sessions: yield* sessionsOnHost((yield* AgentHosts).get),
       scan: liveScan.pipe(Effect.provideService(Proc, proc)),
+      ...(claude === undefined ? {} : { claude }),
     };
   });
 
-const HostLayer = Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)), HostAgents);
+const hostLayer = (oauthToken?: () => string | undefined) =>
+  Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)), hostAgents(oauthToken));
 
 /** This machine's host, for the server that started it. */
 const child = Effect.gen(function* () {
@@ -91,9 +105,19 @@ const child = Effect.gen(function* () {
     Effect.sync(() => new NetSocket({ fd: HOST_STREAM_FD, readable: true, writable: true })),
   );
   yield* serveHost(socket, yield* hostService(LOCAL_HOST_ID));
-}).pipe(Effect.scoped, Effect.provide(HostLayer));
+}).pipe(Effect.scoped, Effect.provide(hostLayer()));
 
 const args = process.argv.slice(2);
+/**
+ * A joined machine's host reads its token from its own folder at each session, so one set or
+ * forgotten applies to the next; one it can't read leaves Claude on the machine's own sign-in.
+ */
+const joinedHome = hostHome();
 NodeRuntime.runMain(
-  args.length === 0 ? child : runCli(args, { service: hostService, layer: HostLayer }),
+  args.length === 0
+    ? child
+    : runCli(args, {
+        service: (hostId) => hostService(hostId, claudeTokenIn(joinedHome)),
+        layer: hostLayer(() => readClaudeToken(joinedHome)),
+      }),
 );

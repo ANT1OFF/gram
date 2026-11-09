@@ -11,6 +11,8 @@ export {
   ClaudeEnvironment,
   ClaudeEnvironmentLive,
   nodeFs,
+  OAUTH_TOKEN_VAR,
+  withOAuthToken,
   type ClaudeEnvironmentConfig,
   type PreparedClaude,
 } from "./environment.ts";

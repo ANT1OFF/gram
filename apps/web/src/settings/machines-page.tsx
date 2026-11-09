@@ -27,6 +27,7 @@ import {
   SshJoinError,
   type MachinesStatus,
 } from "./machines-api";
+import { REVOKE_AT, TokenDialog } from "./machine-token-dialog";
 import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
 
 export { MACHINES_KEY } from "./machines-api";
@@ -61,7 +62,10 @@ export function machineState(machine: JoinedMachine, now = Date.now()): string {
     : `${joined} · online for ${agoText(machine.onlineSince, now, { long: true }).replace(/ ago$/, "")}`;
 }
 
-type Pending = { readonly kind: "confirm" | "remove"; readonly machine: JoinedMachine };
+type Pending = {
+  readonly kind: "confirm" | "remove" | "token" | "forget";
+  readonly machine: JoinedMachine;
+};
 
 /**
  * Settings → Machines: the other computers joined to this Gram, which run its work over the
@@ -73,6 +77,7 @@ export function MachinesPage() {
   const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState<Pending>();
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const status = useQuery({
     queryKey: MACHINES_KEY,
     queryFn: machinesApi.list,
@@ -82,8 +87,14 @@ export function MachinesPage() {
   });
   const act = async (run: () => Promise<MachinesStatus>) => {
     setError(undefined);
+    setNotice(undefined);
     try {
-      queryClient.setQueryData(MACHINES_KEY, await run());
+      const next = await run();
+      queryClient.setQueryData(MACHINES_KEY, next);
+      if (next.tokenLeft === true)
+        setNotice(
+          `It was offline, so the Claude token sent to it is still there. Run gram-host leave on it, or revoke the token at ${REVOKE_AT}.`,
+        );
     } catch (e) {
       setError(message(e));
       void queryClient.invalidateQueries({ queryKey: MACHINES_KEY });
@@ -136,6 +147,8 @@ export function MachinesPage() {
               now={status.dataUpdatedAt}
               onConfirm={() => setPending({ kind: "confirm", machine })}
               onRemove={() => setPending({ kind: "remove", machine })}
+              onToken={() => setPending({ kind: "token", machine })}
+              onForget={() => setPending({ kind: "forget", machine })}
             />
           ))}
         </div>
@@ -143,6 +156,15 @@ export function MachinesPage() {
       {error !== undefined && (
         <p role="alert" className="px-1 text-meta text-destructive" data-testid="machines-error">
           {error}
+        </p>
+      )}
+      {notice !== undefined && (
+        <p
+          role="status"
+          className="px-1 text-meta text-muted-foreground"
+          data-testid="machines-notice"
+        >
+          {notice}
         </p>
       )}
       {machines.length > 0 && (
@@ -174,6 +196,26 @@ export function MachinesPage() {
           }}
         />
       )}
+      {pending?.kind === "token" && (
+        <TokenDialog
+          machine={pending.machine}
+          machines={machines}
+          onClose={() => {
+            setPending(undefined);
+            void queryClient.invalidateQueries({ queryKey: MACHINES_KEY });
+          }}
+        />
+      )}
+      {pending?.kind === "forget" && (
+        <ForgetTokenDialog
+          machine={pending.machine}
+          onCancel={() => setPending(undefined)}
+          onConfirm={async () => {
+            await act(() => machinesApi.claudeToken.forget(pending.machine.id));
+            setPending(undefined);
+          }}
+        />
+      )}
       {pending?.kind === "remove" && (
         <RemoveDialog
           machine={pending.machine}
@@ -193,11 +235,15 @@ function MachineRow({
   now,
   onConfirm,
   onRemove,
+  onToken,
+  onForget,
 }: {
   machine: JoinedMachine;
   now: number;
   onConfirm: () => void;
   onRemove: () => void;
+  onToken: () => void;
+  onForget: () => void;
 }) {
   const online = machine.confirmed && machine.onlineSince !== undefined;
   return (
@@ -218,6 +264,11 @@ function MachineRow({
           )}
         </span>
         <span className="text-meta text-muted-foreground">{machineState(machine, now)}</span>
+        {machine.claudeTokenSetAt !== undefined && (
+          <span className="text-meta text-muted-foreground" data-testid="machines-token-line">
+            Claude: token from this Mac, sent {formatDay(machine.claudeTokenSetAt, now)}
+          </span>
+        )}
         <span className="font-mono text-meta text-muted-foreground" title="Key fingerprint">
           {machine.fingerprint}
         </span>
@@ -226,6 +277,23 @@ function MachineRow({
         {!machine.confirmed && (
           <Button size="sm" onClick={onConfirm}>
             Confirm
+          </Button>
+        )}
+        {online && machine.claudeTokenSetAt === undefined && (
+          <Button size="sm" variant="ghost" onClick={onToken} data-testid="machines-token">
+            Use a token from this Mac
+          </Button>
+        )}
+        {machine.claudeTokenSetAt !== undefined && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!online}
+            title={online ? undefined : "It's offline"}
+            onClick={onForget}
+            data-testid="machines-token-forget"
+          >
+            Forget token
           </Button>
         )}
         <Button size="sm" variant="ghost" onClick={onRemove}>
@@ -691,6 +759,18 @@ function RemoveDialog({
         Gram forgets its key and disconnects it at once. To use it again, add it again and run{" "}
         <code className="font-mono">{STATUS_COMMAND.replace(/status$/, "leave")}</code> there first.
       </p>
+      {machine.claudeTokenSetAt !== undefined &&
+        (machine.onlineSince === undefined ? (
+          <p className="text-meta text-destructive" data-testid="machines-remove-token">
+            It&apos;s offline, so the Claude token sent to it stays there until you run{" "}
+            <code className="font-mono">{STATUS_COMMAND.replace(/status$/, "leave")}</code> on it.
+            Revoke it at {REVOKE_AT} too.
+          </p>
+        ) : (
+          <p className="text-meta text-muted-foreground" data-testid="machines-remove-token">
+            It deletes the Claude token sent to it first. Revoke it at {REVOKE_AT} too.
+          </p>
+        ))}
       <div className="flex justify-end gap-2">
         <Dialog.Close render={<Button type="button" variant="ghost" size="sm" />}>
           Cancel
@@ -705,6 +785,50 @@ function RemoveDialog({
           }}
         >
           Remove
+        </Button>
+      </div>
+    </DialogShell>
+  );
+}
+
+function ForgetTokenDialog({
+  machine,
+  onCancel,
+  onConfirm,
+}: {
+  machine: JoinedMachine;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <DialogShell
+      testId="machines-token-forget-dialog"
+      title={`Forget the token on ${machine.name}?`}
+      onClose={onCancel}
+    >
+      <p className="text-muted-foreground">
+        {machine.name} deletes the Claude token and goes back to its own{" "}
+        <code className="font-mono">claude /login</code>, if it has one. Sessions already running
+        keep the sign-in they started with.
+      </p>
+      <p className="text-meta text-muted-foreground">
+        Deleting it doesn&apos;t revoke it. Revoke it at {REVOKE_AT}.
+      </p>
+      <div className="flex justify-end gap-2">
+        <Dialog.Close render={<Button type="button" variant="ghost" size="sm" />}>
+          Cancel
+        </Dialog.Close>
+        <Button
+          size="sm"
+          variant="destructive"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void onConfirm().finally(() => setBusy(false));
+          }}
+        >
+          Forget token
         </Button>
       </div>
     </DialogShell>

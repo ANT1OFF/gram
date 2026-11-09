@@ -56,7 +56,26 @@ export interface ClaudeEnvironmentConfig {
   readonly binaryPath?: string;
   readonly probeTimeoutMs?: number;
   readonly commandTimeoutMs?: number;
+  /**
+   * A long-lived token from `claude setup-token`, read at each `prepare` and set as
+   * `CLAUDE_CODE_OAUTH_TOKEN` in the child env only. A joined machine's host passes the one the
+   * user sent it; nothing else sets it. Undefined, or a reader that returns undefined, leaves the
+   * env as probed (`buildChildEnv` keeps an inherited token too: it is a subscription login).
+   */
+  readonly oauthToken?: () => string | undefined;
 }
+
+/** The variable Claude Code reads a `claude setup-token` token from. */
+export const OAUTH_TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN";
+
+/** `prepared` with `token` as its child env's OAuth token, when there is one. */
+export const withOAuthToken = (
+  prepared: PreparedClaude,
+  token: string | undefined,
+): PreparedClaude =>
+  token === undefined || token === ""
+    ? prepared
+    : { ...prepared, env: { ...prepared.env, [OAUTH_TOKEN_VAR]: token } };
 
 /**
  * Whether the Agent SDK can find the CLI it bundles for this platform. It looks from its own module,
@@ -177,8 +196,20 @@ export const ClaudeEnvironmentLive = (
         );
 
       const prepared = yield* resettableOnSuccess(prepare);
+      // Read after the cache, so a token set or forgotten applies to the next session.
+      const oauthToken = config.oauthToken;
       return {
-        prepare: prepared.get,
+        prepare:
+          oauthToken === undefined
+            ? prepared.get
+            : prepared.get.pipe(
+                Effect.flatMap((ready) =>
+                  Effect.try(() => withOAuthToken(ready, oauthToken())).pipe(
+                    // A token that can't be read leaves the machine on its own sign-in.
+                    Effect.orElseSucceed(() => ready),
+                  ),
+                ),
+              ),
         invalidate: prepared.reset,
         checkAuth,
       } satisfies ClaudeEnvironmentShape;
