@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/ANT1OFF/gram/compare/v1.15.0...v1.15.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* never resolve a joined machine's paths on this one ([24517b4](https://github.com/ANT1OFF/gram/commit/24517b4f738a980b65d86393b70740b96e3d2cd6))
+
 ## [1.15.0](https://github.com/ANT1OFF/gram/compare/v1.14.0...v1.15.0) (2026-11-09)
 
 
