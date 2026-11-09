@@ -182,12 +182,16 @@ that one:
    service (a transient `systemd-run --user` unit on Linux, a one-off launchd job on a Mac), moves
    the service and restarts it. The plan is kept in `update.json` in the host's folder, owner-only,
    under an id of its own; one update runs at a time, and one supervisor, which holds
-   `update.lock` while it works and acts only on its own plan.
-7. **The new host dials in.** Once its hello has passed, the main Gram asks it how its update went,
-   which confirms it. The supervisor then removes the app the host ran before (no other) and points
+   `update.lock` while it works, acts only on its own plan, and checks it still holds the lock
+   before each thing it does. A lock its holder left by dying is taken over; one that can't be
+   read is left alone.
+7. **The new host dials in.** It takes no work until its update is confirmed. Once its hello has
+   passed, the main Gram asks it how its update went, which confirms it and lets it take work. The supervisor then removes the app the host ran before (no other) and points
    `~/.local/bin/gram-host` at the new one. If the new host doesn't dial in and pass its hello
    within two minutes, the supervisor moves the service back to the previous app, removes the new
-   one, and the row says it rolled back and why. If moving the service back fails too, both apps
+   one, and the row says it rolled back and why. Confirming and giving up are decided one at a
+   time: once the supervisor has given up, a late confirmation confirms nothing, and the new host,
+   still closed to work, has taken none. If moving the service back fails too, both apps
    stay and the row says the update failed: rerun the installer there.
 
 Nothing there is cut off: the host restarts only once nothing runs and nothing new can start.
@@ -204,7 +208,8 @@ itself updates to it on its own, once it is idle. A machine that rolled back or 
 release isn't tried again on its own; its Update tries it again. This is on by default: turn off
 **Update machines automatically** under Settings → Machines to update only when you choose. The
 switch is kept beside the machines (`remote-access/machine-updates.json`), not in Settings, so only
-this computer's app changes it: not a paired phone, and not an agent.
+this computer's app changes it: not a paired phone, and not an agent. A switch file Gram can't read
+as its own (a link, a folder it can't look into, one that isn't private) counts as off.
 
 ### By the installer
 

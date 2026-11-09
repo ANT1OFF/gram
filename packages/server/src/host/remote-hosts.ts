@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { type HostHello, HostUnavailable, type HostId, type HostStatus } from "@gram/contracts";
 import * as Context from "effect/Context";
@@ -88,18 +88,39 @@ export interface AutomaticStore {
   readonly write: (on: boolean) => void;
 }
 
-/** The switch in `remote-access/machine-updates.json`, owner-only like the machines beside it. */
-const fileAutomaticStore = (dataDir: string): AutomaticStore => {
-  const file = privateJsonFile(dataDir, "machine-updates.json", 1024);
+/**
+ * The switch in `remote-access/machine-updates.json`, owner-only like the machines beside it. Only
+ * a file that is genuinely not there reads as never set (on): anything else that stops it being
+ * read (a folder it can't look into, a link, a file not its own or not a switch) throws, and
+ * `automaticUpdates` reads that as off. Never `existsSync`, which says "absent" for all of those.
+ */
+export const fileAutomaticStore = (dataDir: string): AutomaticStore => {
+  const name = "machine-updates.json";
+  const file = () => privateJsonFile(dataDir, name, 1024);
   return {
     read: () => {
-      const value = file.read() as { version?: unknown; automatic?: unknown } | undefined;
-      if (value === undefined) return undefined;
+      // Each step without following a link: the folder, then the file in it.
+      for (const [path, folder] of [
+        [join(dataDir, "remote-access"), true],
+        [join(dataDir, "remote-access", name), false],
+      ] as const) {
+        let stat;
+        try {
+          stat = lstatSync(path);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+          throw error;
+        }
+        if (folder ? !stat.isDirectory() : !stat.isFile())
+          throw new Error(`${path} isn't a ${folder ? "folder" : "file"} of its own.`);
+      }
+      const value = file().read() as { version?: unknown; automatic?: unknown } | undefined;
+      if (value === undefined) throw new Error(`${name} went away while it was read.`);
       if (value.version !== 1 || typeof value.automatic !== "boolean")
-        throw new Error("machine-updates.json isn't a machine updates file.");
+        throw new Error(`${name} isn't a machine updates file.`);
       return value.automatic;
     },
-    write: (on) => file.write({ version: 1, automatic: on }),
+    write: (on) => file().write({ version: 1, automatic: on }),
   };
 };
 
@@ -471,12 +492,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         },
         {
           release: releaseOfConfig(config),
-          automatic: lazyFileStore(
-            dataDir,
-            "machine-updates.json",
-            fileAutomaticStore,
-            () => undefined,
-          ),
+          automatic: fileAutomaticStore(dataDir),
         },
       );
     }),

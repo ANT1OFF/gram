@@ -8,8 +8,10 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import {
@@ -692,6 +694,206 @@ describe("review regressions", () => {
         () => undefined,
       ),
     ).not.toMatchObject({ message: expect.stringContaining("still under way") });
+  });
+});
+
+/** A pid no process has now: one that ran and ended. */
+const deadPid = () => {
+  const ended = spawnSync(process.execPath, ["-e", ""]);
+  return ended.pid!;
+};
+
+/**
+ * A supervisor of `plan` in a process of its own, as two would run on a machine. With `pause` it
+ * stops itself (SIGSTOP) the moment its lock is in place, before it reads anything.
+ */
+const supervisorProcess = (
+  fixture: { readonly home: string; readonly apps: string },
+  id: string,
+  pause: boolean,
+) => {
+  const moduleUrl = pathToFileURL(fileURLToPath(new URL("./self-update.ts", import.meta.url))).href;
+  const script = join(fixture.home, `supervisor-${pause ? "paused" : "free"}.mjs`);
+  writeFileSync(
+    script,
+    `import { superviseUpdate } from ${JSON.stringify(moduleUrl)};
+import { writeSync } from "node:fs";
+const outcome = await superviseUpdate({
+  home: process.argv[2], apps: process.argv[3], now: () => 0, sleep: async () => {}, log: () => {},
+  install: async () => { writeSync(1, "INSTALL\\n"); await new Promise(() => {}); },
+}, process.argv[4]);
+writeSync(1, "DONE " + JSON.stringify(outcome ?? null) + "\\n");
+process.exit(0);
+`,
+  );
+  // Stops right after the lock is published: when it is linked into place, or (as c0a36524 made
+  // it) created with O_EXCL and not yet written.
+  const preload = join(fixture.home, "pause-at-lock.mjs");
+  writeFileSync(
+    preload,
+    `import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const stop = () => { fs.writeSync(1, "LOCKED\\n"); process.kill(process.pid, "SIGSTOP"); };
+const open = fs.openSync;
+fs.openSync = function (path, flags, ...rest) {
+  const fd = open.call(this, path, flags, ...rest);
+  if (String(path).endsWith("/update.lock") && typeof flags === "number" && (flags & fs.constants.O_EXCL)) stop();
+  return fd;
+};
+const link = fs.linkSync;
+fs.linkSync = function (from, to) {
+  link.call(this, from, to);
+  if (String(to).endsWith("/update.lock")) stop();
+};
+syncBuiltinESMExports();
+`,
+  );
+  const child = spawn(
+    process.execPath,
+    [...(pause ? ["--import", preload] : []), script, fixture.home, fixture.apps, id],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  let out = "";
+  let err = "";
+  child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
+  child.stderr.on("data", (chunk: Buffer) => (err += chunk.toString()));
+  const waitFor = (word: string) =>
+    new Promise<void>((resolve, reject) => {
+      const started = Date.now();
+      const poll = setInterval(() => {
+        if (out.includes(word)) {
+          clearInterval(poll);
+          resolve();
+        } else if (Date.now() - started > 10_000) {
+          clearInterval(poll);
+          reject(new Error(`no ${word}: ${out} ${err}`));
+        }
+      }, 10);
+    });
+  const stop = () =>
+    new Promise<void>((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) return resolve();
+      child.once("exit", () => resolve());
+      child.kill("SIGCONT");
+      child.kill("SIGKILL");
+    });
+  return { child, waitFor, output: () => out, stop };
+};
+
+// Each of these failed on e846c852, in the independent re-review's reproductions.
+describe("re-review regressions", () => {
+  it("lets one of two supervisor processes act, even one that finds the lock just taken", async () => {
+    const fixture = setup();
+    await steps(fixture.updater);
+    const id = fixture.handed[0]!.id;
+    const first = supervisorProcess(fixture, id, true);
+    try {
+      await first.waitFor("LOCKED");
+      // The second starts while the first holds the lock, stopped before it did anything.
+      const late = supervisorProcess(fixture, id, false);
+      try {
+        // It either finishes, leaving the lock alone, or enters the service move beside the first.
+        await Promise.race([late.waitFor("DONE"), late.waitFor("INSTALL")]);
+        expect(late.output()).not.toContain("INSTALL");
+        expect(late.output()).toContain("DONE null");
+      } finally {
+        await late.stop();
+      }
+      first.child.kill("SIGCONT");
+      await first.waitFor("INSTALL");
+    } finally {
+      await first.stop();
+    }
+  }, 30_000);
+
+  it("leaves alone a lock it can't read, and takes over one whose holder died", async () => {
+    const fixture = setup();
+    await steps(fixture.updater);
+    const id = fixture.handed[0]!.id;
+    const lock = join(fixture.home, LOCK_FILE);
+    writeFileSync(lock, "{", { mode: 0o600 });
+    const unreadable = supervising(fixture);
+    expect(await superviseUpdate(unreadable.deps, id)).toBeUndefined();
+    expect(unreadable.installed).toEqual([]);
+    expect(readFileSync(lock, "utf8")).toBe("{");
+    writeFileSync(lock, JSON.stringify({ id, pid: deadPid(), nonce: "gone" }));
+    const newHost = makeSelfUpdate({ ...fixture.deps, release: NEW, admission: makeAdmission() });
+    const taker = supervising(fixture, { sleep: async () => void (await newHost.check()) });
+    expect(await superviseUpdate(taker.deps, id)).toMatchObject({ outcome: "updated" });
+    expect(existsSync(lock)).toBe(false);
+  });
+
+  it("stops before moving the service back once it has lost its lock", async () => {
+    const fixture = setup();
+    await steps(fixture.updater);
+    const plan = fixture.handed[0]!;
+    const lock = join(fixture.home, LOCK_FILE);
+    const supervisor = supervising(fixture, {
+      confirmMs: 0,
+      install: async () => {
+        // Another supervisor took the lock over while this one moved the service.
+        writeFileSync(lock, JSON.stringify({ id: plan.id, pid: process.pid, nonce: "other" }));
+      },
+    });
+    expect(await superviseUpdate(supervisor.deps, plan.id)).toBeUndefined();
+    expect(supervisor.installed).toEqual([plan.next]);
+    expect(readFileSyncDir(fixture.apps)).toEqual([OLD, NEW]);
+  });
+
+  it("keeps the new host from taking work until it is confirmed, and confirms nothing once it is given up", async () => {
+    const fixture = setup();
+    await steps(fixture.updater);
+    const plan = fixture.handed[0]!;
+    // The new host, started by the move: closed until its update is confirmed.
+    const gate = makeAdmission();
+    const newHost = makeSelfUpdate({ ...fixture.deps, release: NEW, admission: gate });
+    expect(gate.closed()).toBe(true);
+    let admitted = false;
+    let lateCheck: unknown;
+    const supervisor = supervising(fixture, {
+      confirmMs: 0,
+      install: async (command) => {
+        if (command.program[0] !== plan.previous.program[0]) return;
+        // The main dials in at last while the service moves back.
+        lateCheck = await newHost.check();
+        await Effect.runPromise(
+          gate
+            .admit(
+              Effect.sync(() => (admitted = true)),
+              () => UPDATING,
+            )
+            .pipe(Effect.ignore),
+        );
+      },
+    });
+    expect(await superviseUpdate(supervisor.deps, plan.id)).toMatchObject({
+      outcome: "rolledBack",
+    });
+    expect(admitted).toBe(false);
+    expect(lateCheck).not.toMatchObject({ last: { outcome: "updated" } });
+    expect(gate.closed()).toBe(true);
+  });
+
+  it("opens the new host to work once it is confirmed, and the supervisor keeps it", async () => {
+    const fixture = setup();
+    await steps(fixture.updater);
+    const plan = fixture.handed[0]!;
+    const gate = makeAdmission();
+    const newHost = makeSelfUpdate({ ...fixture.deps, release: NEW, admission: gate });
+    expect(gate.closed()).toBe(true);
+    // Confirmed just as the wait ends: the supervisor's decision finds it, and never moves back.
+    const supervisor = supervising(fixture, {
+      confirmMs: 0,
+      install: async () => {
+        expect((await newHost.check()).last).toMatchObject({ outcome: "updated" });
+        expect(gate.closed()).toBe(false);
+      },
+    });
+    expect(await superviseUpdate(supervisor.deps, plan.id)).toMatchObject({
+      outcome: "updated",
+    });
+    expect(supervisor.installed).toEqual([plan.next]);
+    expect(readFileSyncDir(fixture.apps)).toEqual([NEW]);
   });
 });
 

@@ -24,6 +24,8 @@ import {
   existsSync,
   fstatSync,
   fsyncSync,
+  linkSync,
+  lstatSync,
   mkdtempSync,
   openSync,
   readFileSync,
@@ -154,8 +156,12 @@ export interface UpdatePlan {
   readonly from?: string;
   readonly previous: ServiceCommand;
   readonly next: ServiceCommand;
-  /** `switching` until the new host is asked `host.update.check`, then `confirmed`, then `done`. */
-  readonly phase: "switching" | "confirmed" | "done";
+  /**
+   * `switching` until the new host is asked `host.update.check`, then `confirmed`; or
+   * `rollingBack` once its supervisor gave up on it, which no late confirmation undoes; then
+   * `done`. Each move between them is made under `PLAN_LOCK_FILE`.
+   */
+  readonly phase: "switching" | "confirmed" | "rollingBack" | "done";
   readonly startedAt: number;
   /** Once it is done: how it went. */
   readonly outcome?: HostUpdateOutcome;
@@ -172,6 +178,8 @@ export const PLAN_ID = /^[a-f0-9]{16}$/;
 export const STALE_MS = CONFIRM_MS + 60_000;
 /** The supervisor's lock, in the host's folder: only one supervisor acts at a time. */
 export const LOCK_FILE = "update.lock";
+/** Held for each move of the plan's phase, so a confirmation and a rollback can't cross. */
+export const PLAN_LOCK_FILE = "update.plan.lock";
 
 const readPlan = (home: string): UpdatePlan | undefined => {
   let fd: number;
@@ -191,7 +199,10 @@ const readPlan = (home: string): UpdatePlan | undefined => {
       PLAN_ID.test(value.id) &&
       typeof value.release === "string" &&
       RELEASE.test(value.release) &&
-      (value.phase === "switching" || value.phase === "confirmed" || value.phase === "done")
+      (value.phase === "switching" ||
+        value.phase === "confirmed" ||
+        value.phase === "rollingBack" ||
+        value.phase === "done")
       ? (value as UpdatePlan)
       : undefined;
   } catch {
@@ -224,46 +235,137 @@ const alive = (pid: number) => {
   }
 };
 
-/** The pid of the supervisor holding the lock, while it runs; undefined when none does. */
-export const lockHolder = (home: string): number | undefined => {
+/** A lock as its file holds it: who took it, and a nonce of its own that fences it. */
+export interface Lock {
+  readonly id: string;
+  readonly pid: number;
+  readonly nonce: string;
+}
+
+const lockBody = (path: string): Lock | undefined => {
   try {
-    const value = JSON.parse(readFileSync(join(home, LOCK_FILE), "utf8")) as { pid?: unknown };
-    return typeof value.pid === "number" && alive(value.pid) ? value.pid : undefined;
+    const value = JSON.parse(readFileSync(path, "utf8")) as Partial<Lock> | null;
+    return value !== null &&
+      typeof value.id === "string" &&
+      typeof value.pid === "number" &&
+      typeof value.nonce === "string"
+      ? (value as Lock)
+      : undefined;
   } catch {
     return undefined;
   }
 };
 
-/** Takes the supervisor's lock for update `id`: false while another live supervisor holds it. */
-const takeLock = (home: string, id: string): boolean => {
-  const path = join(home, LOCK_FILE);
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const fd = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
-      try {
-        writeSync(fd, JSON.stringify({ id, pid: process.pid }));
-        fsyncSync(fd);
-      } finally {
-        closeSync(fd);
-      }
-      return true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (lockHolder(home) !== undefined) return false;
-      // Left by a supervisor that died: taken over.
-      rmSync(path, { force: true });
-    }
+/**
+ * What the lock file at `path` says: none; held by a live process; or stale, its holder dead. One
+ * that can't be read counts as held (it is never half-written, so it is something else), until it
+ * is older than `STALE_MS`.
+ */
+const lockState = (
+  path: string,
+): { readonly kind: "absent" } | { readonly kind: "held" | "stale"; readonly body?: Lock } => {
+  let modified: number;
+  try {
+    modified = lstatSync(path).mtimeMs;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "absent" };
+    return { kind: "held" };
   }
-  return false;
+  const body = lockBody(path);
+  if (body === undefined) return { kind: Date.now() - modified > STALE_MS ? "stale" : "held" };
+  return { kind: alive(body.pid) ? "held" : "stale", body };
 };
 
-const releaseLock = (home: string, id: string) => {
+/**
+ * Publishes `body` as the lock at `path`, whole: written to a file of its own first, then linked
+ * into place, which fails if the name is taken. No reader ever sees it half-written.
+ */
+const publishLock = (path: string, body: Lock): boolean => {
+  const temporary = `${path}.${body.nonce}.tmp`;
+  const fd = openSync(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
   try {
-    const value = JSON.parse(readFileSync(join(home, LOCK_FILE), "utf8")) as { id?: unknown };
-    if (value.id === id) rmSync(join(home, LOCK_FILE), { force: true });
-  } catch {
-    // Gone already.
+    writeSync(fd, JSON.stringify(body));
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
   }
+  try {
+    linkSync(temporary, path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+};
+
+/**
+ * Takes the lock at `path` for `id`, or undefined while another live process holds it. A stale
+ * lock is taken over fenced: it is renamed aside, and only if what was moved is the very lock found
+ * stale (by its nonce) is it dropped; a live lock published meanwhile is put back. Its holder
+ * checks it still owns the lock (`ownsLock`) before each thing it does, so even one that lost it
+ * acts no further.
+ */
+export const takeLock = (path: string, id: string): Lock | undefined => {
+  const mine: Lock = { id, pid: process.pid, nonce: randomBytes(12).toString("hex") };
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (publishLock(path, mine)) return mine;
+    const found = lockState(path);
+    if (found.kind === "absent") continue;
+    if (found.kind === "held") return undefined;
+    const aside = `${path}.stale-${mine.nonce}-${attempt}`;
+    try {
+      renameSync(path, aside);
+    } catch {
+      continue;
+    }
+    const moved = lockBody(aside);
+    if (moved?.nonce === found.body?.nonce) {
+      rmSync(aside, { force: true });
+      continue;
+    }
+    // Moved a lock taken since it was found stale: back it goes, and this one doesn't take it.
+    try {
+      linkSync(aside, path);
+    } catch {
+      // Taken again meanwhile: its holder sees it lost the lock before it acts.
+    }
+    rmSync(aside, { force: true });
+    return undefined;
+  }
+  return undefined;
+};
+
+/** Whether `lock` is still the lock at `path`. */
+export const ownsLock = (path: string, lock: Lock): boolean => lockBody(path)?.nonce === lock.nonce;
+
+const dropLock = (path: string, lock: Lock) => {
+  if (ownsLock(path, lock)) rmSync(path, { force: true });
+};
+
+/** Whether a live supervisor holds the update's lock, or one that can't be read may. */
+export const supervisorRunning = (home: string): boolean =>
+  lockState(join(home, LOCK_FILE)).kind === "held";
+
+/**
+ * Runs `move` with the plan lock held: the one place the plan's phase changes. Waits a few
+ * seconds for it; a lock held longer than that counts as a failure to move.
+ */
+const withPlanLock = async <A>(home: string, move: () => A): Promise<A> => {
+  const path = join(home, PLAN_LOCK_FILE);
+  for (let tries = 0; tries < 250; tries += 1) {
+    const lock = takeLock(path, "plan");
+    if (lock !== undefined) {
+      try {
+        return move();
+      } finally {
+        dropLock(path, lock);
+      }
+    }
+    await wait(20);
+  }
+  throw new Error("The update's plan stayed locked.");
 };
 
 /** The app folder in `apps` that `command` runs from, or undefined for one elsewhere. */
@@ -418,6 +520,16 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
   /** Set from the moment a start is taken until it is refused, or the service stops after it. */
   let running = false;
+  /**
+   * A host started on the release an unfinished update moves to takes no work until that update
+   * is confirmed: its supervisor may still give up on it and move the service back.
+   */
+  const starting = readPlan(deps.home);
+  let awaitingConfirmation =
+    starting !== undefined &&
+    starting.release === deps.release &&
+    (starting.phase === "switching" || starting.phase === "rollingBack");
+  if (awaitingConfirmation) deps.admission.close();
 
   /** Moves a staged, tested app into `apps/<release>`, and answers where its host is. */
   const prepare = async (
@@ -486,7 +598,7 @@ export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
       const pending = readPlan(deps.home);
       if (pending !== undefined && pending.phase !== "done")
         return refusal("failed", `An update to ${pending.release} is still under way.`);
-      if (lockHolder(deps.home) !== undefined)
+      if (supervisorRunning(deps.home))
         return refusal("failed", "An update's supervisor is still running.");
       const before = await deps.busy();
       if (isBusy(before)) return refusal("busy", `It is busy: ${busyText(before)}.`, before);
@@ -557,12 +669,24 @@ export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
     const busy = await deps.busy();
     let plan = readPlan(deps.home);
     if (plan?.phase === "switching" && plan.release === deps.release) {
-      plan = { ...plan, phase: "confirmed" };
       try {
-        writePlan(deps.home, plan);
+        // Under the plan lock: a supervisor that already gave up on it has marked it rolling
+        // back, and then this confirms nothing.
+        plan = await withPlanLock(deps.home, () => {
+          const now = readPlan(deps.home);
+          if (now?.phase !== "switching" || now.release !== deps.release) return now;
+          const confirmed: UpdatePlan = { ...now, phase: "confirmed" };
+          writePlan(deps.home, confirmed);
+          return confirmed;
+        });
       } catch {
         // The supervisor rolls back; nothing else is lost.
       }
+    }
+    // Confirmed, so its supervisor won't move the service back: it takes work now.
+    if (awaitingConfirmation && plan?.phase === "confirmed") {
+      awaitingConfirmation = false;
+      deps.admission.open();
     }
     const last: HostUpdateOutcome | undefined =
       plan?.outcome ??
@@ -611,19 +735,34 @@ export const superviseUpdate = async (
   id: string,
   mode: SupervisorMode = "switch",
 ): Promise<HostUpdateOutcome | undefined> => {
-  if (!takeLock(deps.home, id)) {
+  const lockPath = join(deps.home, LOCK_FILE);
+  const lock = takeLock(lockPath, id);
+  if (lock === undefined) {
     deps.log("gram-host: another update's supervisor is running; this one leaves it alone.");
     return undefined;
   }
+  /** Before each thing it does: one that lost its lock stops there. */
+  const stillOwns = () => {
+    if (ownsLock(lockPath, lock)) return true;
+    deps.log("gram-host: this update's supervisor lost its lock, so it stops here.");
+    return false;
+  };
   try {
     const plan = readPlan(deps.home);
-    if (plan === undefined || plan.id !== id || plan.phase !== "switching") {
+    // A rollback picks up a plan left rolling back by a supervisor that died mid-way.
+    if (
+      plan === undefined ||
+      plan.id !== id ||
+      !(plan.phase === "switching" || (mode === "rollback" && plan.phase === "rollingBack"))
+    ) {
       deps.log("gram-host: no update is waiting under that id.");
       return undefined;
     }
-    const finish = (outcome: HostUpdateOutcome) => {
-      const now = readPlan(deps.home);
-      if (now?.id === plan.id) writePlan(deps.home, { ...now, phase: "done", outcome });
+    const finish = async (outcome: HostUpdateOutcome) => {
+      await withPlanLock(deps.home, () => {
+        const now = readPlan(deps.home);
+        if (now?.id === plan.id) writePlan(deps.home, { ...now, phase: "done", outcome });
+      });
       deps.log(
         `gram-host: update to ${plan.release}: ${outcome.outcome}${outcome.message === undefined ? "" : ` (${outcome.message})`}`,
       );
@@ -632,46 +771,9 @@ export const superviseUpdate = async (
     const nextApp = join(deps.apps, plan.release);
     const previousApp = appFolderOf(deps.apps, plan.previous);
     const back = plan.from === undefined ? "the app it ran" : plan.from;
-    const rollBack = async (message: string): Promise<HostUpdateOutcome> => {
-      // Nothing to go back to: the new app stays, whatever the service names.
-      if (!existsSync(plan.previous.program[0] ?? ""))
-        return finish({
-          release: plan.release,
-          outcome: "failed",
-          message: `${message} The app it ran before is gone, so nothing was moved back; rerun the installer there.`,
-          at: deps.now(),
-        });
-      try {
-        await deps.install(plan.previous);
-      } catch (error) {
-        // The service may still name the new app: both stay, and it says so.
-        return finish({
-          release: plan.release,
-          outcome: "failed",
-          message: `${message} Moving the service back to ${back} failed too (${String(error).slice(0, 160)}), so both apps are kept; rerun the installer there.`,
-          at: deps.now(),
-        });
-      }
-      if (previousApp !== nextApp) rmSync(nextApp, { recursive: true, force: true });
-      return finish({ release: plan.release, outcome: "rolledBack", message, at: deps.now() });
-    };
-    if (mode === "rollback")
-      return await rollBack(
-        `The machine restarted before Gram ${plan.release} dialled in, so it went back to ${back}.`,
-      );
-    try {
-      await deps.install(plan.next);
-    } catch (error) {
-      return await rollBack(
-        `The service couldn't move to Gram ${plan.release}: ${String(error).slice(0, 200)}`,
-      );
-    }
-    const deadline = deps.now() + (deps.confirmMs ?? CONFIRM_MS);
-    while (deps.now() < deadline) {
-      await deps.sleep(2_000);
-      const now = readPlan(deps.home);
-      if (now?.id !== plan.id || now.phase !== "confirmed") continue;
-      // Confirmed: the new host dialled in and passed its hello. The app it ran before goes.
+    /** The new host confirmed it: the app it ran before goes. */
+    const succeed = async (): Promise<HostUpdateOutcome | undefined> => {
+      if (!stillOwns()) return undefined;
       if (previousApp !== undefined && previousApp !== nextApp)
         rmSync(previousApp, { recursive: true, force: true });
       if (deps.shim !== undefined) {
@@ -687,12 +789,70 @@ export const superviseUpdate = async (
         }
       }
       return finish({ release: plan.release, outcome: "updated", at: deps.now() });
+    };
+    /**
+     * Moves the service back, unless the new host was confirmed first. The choice is made under
+     * the plan lock: once the plan reads rolling back, no confirmation lands, and the new host,
+     * which takes no work until it is confirmed, has taken none.
+     */
+    const rollBack = async (message: string): Promise<HostUpdateOutcome | undefined> => {
+      const decided = await withPlanLock(deps.home, () => {
+        const now = readPlan(deps.home);
+        if (now?.id !== plan.id) return "gone" as const;
+        if (now.phase === "confirmed") return "confirmed" as const;
+        if (now.phase === "switching") writePlan(deps.home, { ...now, phase: "rollingBack" });
+        return "rollingBack" as const;
+      });
+      if (decided === "gone") return undefined;
+      if (decided === "confirmed") return succeed();
+      // Nothing to go back to: the new app stays, whatever the service names.
+      if (!existsSync(plan.previous.program[0] ?? ""))
+        return finish({
+          release: plan.release,
+          outcome: "failed",
+          message: `${message} The app it ran before is gone, so nothing was moved back; rerun the installer there.`,
+          at: deps.now(),
+        });
+      if (!stillOwns()) return undefined;
+      try {
+        await deps.install(plan.previous);
+      } catch (error) {
+        // The service may still name the new app: both stay, and it says so.
+        return finish({
+          release: plan.release,
+          outcome: "failed",
+          message: `${message} Moving the service back to ${back} failed too (${String(error).slice(0, 160)}), so both apps are kept; rerun the installer there.`,
+          at: deps.now(),
+        });
+      }
+      if (!stillOwns()) return undefined;
+      if (previousApp !== nextApp) rmSync(nextApp, { recursive: true, force: true });
+      return finish({ release: plan.release, outcome: "rolledBack", message, at: deps.now() });
+    };
+    if (mode === "rollback")
+      return await rollBack(
+        `The machine restarted before Gram ${plan.release} dialled in, so it went back to ${back}.`,
+      );
+    if (!stillOwns()) return undefined;
+    try {
+      await deps.install(plan.next);
+    } catch (error) {
+      return await rollBack(
+        `The service couldn't move to Gram ${plan.release}: ${String(error).slice(0, 200)}`,
+      );
+    }
+    const deadline = deps.now() + (deps.confirmMs ?? CONFIRM_MS);
+    while (deps.now() < deadline) {
+      await deps.sleep(2_000);
+      const now = readPlan(deps.home);
+      // Confirmed: the new host dialled in and passed its hello.
+      if (now?.id === plan.id && now.phase === "confirmed") return await succeed();
     }
     return await rollBack(
       `Gram ${plan.release} didn't dial in within ${Math.round((deps.confirmMs ?? CONFIRM_MS) / 60_000)} minutes.`,
     );
   } finally {
-    releaseLock(deps.home, id);
+    dropLock(lockPath, lock);
   }
 };
 
@@ -708,15 +868,19 @@ export const recoverUpdate = async (deps: {
   readonly handOver: (plan: UpdatePlan, mode: SupervisorMode) => Promise<void>;
 }): Promise<"rollback" | "finished" | undefined> => {
   const plan = readPlan(deps.home);
-  if (plan === undefined || plan.phase === "done" || lockHolder(deps.home) !== undefined)
-    return undefined;
+  if (plan === undefined || plan.phase === "done" || supervisorRunning(deps.home)) return undefined;
   if (plan.phase === "confirmed") {
-    writePlan(deps.home, {
-      ...plan,
-      phase: "done",
-      outcome: { release: plan.release, outcome: "updated", at: deps.now() },
+    const finished = await withPlanLock(deps.home, () => {
+      const now = readPlan(deps.home);
+      if (now?.id !== plan.id || now.phase !== "confirmed") return false;
+      writePlan(deps.home, {
+        ...now,
+        phase: "done",
+        outcome: { release: now.release, outcome: "updated", at: deps.now() },
+      });
+      return true;
     });
-    return "finished";
+    return finished ? "finished" : undefined;
   }
   if (deps.now() - plan.startedAt < STALE_MS) return undefined;
   // This host is the new release, up and asked nothing yet: it waits for its check instead.
@@ -855,7 +1019,7 @@ export const handOverToSupervisor =
   (platform: NodeJS.Platform) =>
   async (plan: UpdatePlan, mode: SupervisorMode): Promise<void> => {
     // Never a second supervisor beside one still running.
-    if (lockHolder(plan.previous.home) !== undefined)
+    if (supervisorRunning(plan.previous.home))
       throw new Error("An update's supervisor is still running.");
     const command = supervisorCommand(plan.previous, plan.id, mode);
     if (platform === "darwin") {
