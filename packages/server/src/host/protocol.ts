@@ -14,6 +14,7 @@ import {
   AgentUnavailable,
   AnswerUndelivered,
   type HostAgentReload,
+  type HostStatus,
   type HostSessionOpen,
   type HostSessionOpened,
   HOST_PROTOCOL_VERSION,
@@ -92,6 +93,8 @@ export interface HostService {
   readonly terminals: HostTerminalsService;
   readonly sessions: HostSessionsService;
   readonly scan: Effect.Effect<PortScan, unknown>;
+  /** What it can run, checked afresh: its Claude sign-in and its tools. */
+  readonly status?: Effect.Effect<HostStatus>;
 }
 
 /** The capabilities a host must serve for this build to use it. */
@@ -182,6 +185,11 @@ const handlersFor = (host: HostService) => {
       "host.files.search": ({ root, query, regex, caseSensitive, offset, limit }) =>
         host.files.search(root, query, { regex, caseSensitive, offset, limit }),
       "host.files.names": ({ root }) => host.files.names(root),
+      // Never a defect: one from a handler breaks the whole connection, not just this call.
+      "host.status": () =>
+        (host.status ?? Effect.succeed(UNKNOWN_STATUS)).pipe(
+          Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
+        ),
       "host.ports.scan": () =>
         host.scan.pipe(
           Effect.map(scanToWire),
@@ -458,6 +466,11 @@ export interface HostConnection {
   readonly terminals: HostTerminalsConnection;
   readonly sessions: HostSessionsConnection;
   readonly scan: Effect.Effect<PortScan, unknown>;
+  /**
+   * What the machine can run as its host reads it now: unknown, with no tools, when the host
+   * doesn't answer, is too old to know the call, or has gone.
+   */
+  readonly status?: Effect.Effect<HostStatus>;
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
 }
@@ -528,6 +541,12 @@ const keepInvalid = <E extends { readonly _tag: string; readonly message?: strin
 const none = (error: unknown): error is never => error === none;
 const isAgentUnavailable = (error: unknown): error is AgentUnavailable =>
   error instanceof AgentUnavailable;
+
+/** How long a host's status (its `claude auth status`, its tools) gets before it reads as unknown. */
+const STATUS_TIMEOUT = "30 seconds";
+
+/** A host that can't say what it can run. */
+export const UNKNOWN_STATUS: HostStatus = { claudeSignIn: "unknown", tools: [] };
 
 /** How long a host gets to say hello before it counts as not answering. */
 const HELLO_TIMEOUT = "5 seconds";
@@ -912,6 +931,14 @@ export const connectHost = (
       terminals,
       sessions,
       scan: guarded(client["host.ports.scan"]()).pipe(Effect.map(scanFromWire)),
+      // An older host's unknown-request defect is a failed call, not a broken stream.
+      status: guarded(client["host.status"]()).pipe(
+        Effect.timeoutOrElse({
+          duration: STATUS_TIMEOUT,
+          orElse: () => Effect.succeed(UNKNOWN_STATUS),
+        }),
+        Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
+      ),
       gone: () => ended,
     };
   });

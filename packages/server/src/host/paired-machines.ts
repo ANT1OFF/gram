@@ -1,5 +1,5 @@
 import type { KeyObject } from "node:crypto";
-import type { HostId } from "@gram/contracts";
+import type { HostId, HostStatus } from "@gram/contracts";
 import { makeLaunchToken, tokensEqual } from "../http/auth.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
 import {
@@ -255,7 +255,12 @@ export type PairedMachines = ReturnType<typeof createPairedMachines>;
 /** A machine as the settings page lists it: no key, its fingerprint instead. */
 export const machineView = (
   machine: PairedMachine,
-  online: { readonly since: number } | undefined,
+  online:
+    | {
+        readonly since: number;
+        readonly status?: { readonly status: HostStatus; readonly at: number } | undefined;
+      }
+    | undefined,
 ) => ({
   id: machine.id,
   name: machine.name,
@@ -264,4 +269,13 @@ export const machineView = (
   joinedAt: machine.joinedAt,
   confirmed: machine.confirmedAt !== undefined,
   ...(online === undefined ? {} : { onlineSince: online.since }),
+  // Only while it is online: what its `claude auth status` said (the classification alone) and
+  // which of its tools it found.
+  ...(online?.status === undefined
+    ? {}
+    : {
+        claudeSignIn: online.status.status.claudeSignIn,
+        claudeSignInCheckedAt: online.status.at,
+        tools: online.status.status.tools,
+      }),
 });

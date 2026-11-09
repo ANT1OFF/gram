@@ -8,6 +8,7 @@ import {
   type TerminalId,
   type TerminalInfo,
   type TerminalOpened,
+  type HostId,
   type ThreadId,
   type ThreadNotFound,
 } from "@gram/contracts";
@@ -37,6 +38,8 @@ export interface OpenTerminal {
   readonly command?: string;
   /** The project script `command` comes from, by name, for the tab. */
   readonly script?: string;
+  /** The machine to open it on, for a terminal of no thread; a thread's goes where it runs. */
+  readonly hostId?: HostId;
 }
 
 export interface TerminalsDeps {
