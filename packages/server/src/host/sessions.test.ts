@@ -12,6 +12,7 @@ import {
   type ProfileId,
   type RequestId,
   type ThreadId,
+  type UserInput,
 } from "@gram/contracts";
 import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import type * as Cause from "effect/Cause";
@@ -28,7 +29,11 @@ import {
   agentHostThroughHost,
   HOST_STOPPED_ENDED,
 } from "../runtime/host-agent-sessions.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import { reposOn } from "./repos.ts";
 import { gitOn } from "./git.ts";
 import { followingSessions } from "./following-sessions.ts";
@@ -50,6 +55,8 @@ const CAPABILITIES = {
 const scriptedAgent = (kind: AgentKind, where: string) =>
   Effect.gen(function* () {
     const calls: Array<string> = [];
+    /** Every input the agent was sent or steered with, as it arrived. */
+    const inputs: Array<UserInput> = [];
     const opened: Array<OpenSessionOptions> = [];
     const closed: Array<string> = [];
     const events = yield* Queue.unbounded<AgentEvent, Cause.Done>();
@@ -72,8 +79,16 @@ const scriptedAgent = (kind: AgentKind, where: string) =>
           });
           const session: AgentSession = {
             events: Stream.fromQueue(events),
-            send: (input) => Effect.sync(() => void calls.push(`send ${input.text}`)),
-            steer: (input) => Effect.sync(() => void calls.push(`steer ${input.text}`)),
+            send: (input) =>
+              Effect.sync(() => {
+                inputs.push(input);
+                calls.push(`send ${input.text}`);
+              }),
+            steer: (input) =>
+              Effect.sync(() => {
+                inputs.push(input);
+                calls.push(`steer ${input.text}`);
+              }),
             interrupt: Effect.sync(() => void calls.push("interrupt")),
             respond: (requestId) => Effect.sync(() => void calls.push(`respond ${requestId}`)),
             setMode: (mode) => Effect.sync(() => void calls.push(`mode ${mode}`)),
@@ -90,7 +105,7 @@ const scriptedAgent = (kind: AgentKind, where: string) =>
           return session;
         }),
     };
-    return { host, calls, opened, closed, events, gate };
+    return { host, calls, inputs, opened, closed, events, gate };
   });
 
 /** A host process's sessions over a real stream, and the server's agent routed through it. */
@@ -111,6 +126,8 @@ const routed = Effect.gen(function* () {
         pid: 1,
       },
       files: filesOn(yield* Proc),
+      reads: fileReadsOn(yield* Proc),
+      attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
       repos: reposOn(yield* Proc, REPOS),
       worktrees: yield* Worktrees,
       git: gitOn(yield* Proc),
@@ -342,6 +359,8 @@ describe("a host's session events", () => {
 const redialling = Effect.gen(function* () {
   const onHost = yield* scriptedAgent("claude", "host");
   const inServer = yield* scriptedAgent("claude", "server");
+  /** Where the machine keeps what users attach to its sessions. */
+  const attachedOnMachine = mkdtempSync(join(tmpdir(), "gram-host-attached-"));
   const service = {
     hello: {
       protocol: HOST_PROTOCOL_VERSION,
@@ -351,6 +370,8 @@ const redialling = Effect.gen(function* () {
       pid: 7,
     },
     files: filesOn(yield* Proc),
+    reads: fileReadsOn(yield* Proc),
+    attachments: yield* attachmentsOnHost(attachedOnMachine),
     repos: reposOn(yield* Proc, REPOS),
     worktrees: yield* Worktrees,
     git: gitOn(yield* Proc),
@@ -387,8 +408,17 @@ const redialling = Effect.gen(function* () {
       inServer.host,
       "box",
       () => "http://gram.test",
+      () =>
+        current.pipe(
+          Effect.mapError(() => "box is offline"),
+          Effect.flatMap((connection) =>
+            connection.attachments === undefined
+              ? Effect.fail("box holds no attachments")
+              : Effect.succeed(connection.attachments),
+          ),
+        ),
     );
-  return { onHost, dial, first, agent, sessions: service.sessions };
+  return { onHost, dial, first, agent, sessions: service.sessions, attachedOnMachine };
 });
 
 const notice = (message: string): AgentEvent => ({ type: "notice", level: "info", message });
@@ -446,6 +476,49 @@ describe("a joined machine's sessions across a dropped connection", () => {
       const events = yield* Fiber.join(collected);
       expect(said(events)).toEqual(["before", "ended"]);
       expect(events.at(-1)).toEqual(HOST_STOPPED_ENDED);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
+
+describe("a joined machine's session sent an attachment", () => {
+  it.live("reads a copy kept on that machine, never this machine's path", () =>
+    Effect.gen(function* () {
+      const { onHost, agent, attachedOnMachine } = yield* redialling;
+      // The upload as this machine stores it: a path the other machine doesn't have.
+      const here = mkdtempSync(join(tmpdir(), "gram-main-attachments-"));
+      const uploaded = join(here, "1a2b3c4d-notes.txt");
+      writeFileSync(uploaded, "synthetic attachment body");
+      const session = yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+      yield* session.send({
+        text: "look at this",
+        attachments: [{ path: uploaded, name: "notes.txt", mediaType: "text/plain" }],
+      });
+      const sent = onHost.inputs.at(-1)!;
+      // Before this change the agent got `uploaded` itself, which on that machine is missing.
+      expect(sent.text).toBe("look at this");
+      expect(sent.attachments).toHaveLength(1);
+      const there = sent.attachments![0]!;
+      expect(there.path).not.toBe(uploaded);
+      expect(there.path.startsWith(join(attachedOnMachine, THREAD))).toBe(true);
+      expect(there.name).toBe("notes.txt");
+      expect(readFileSync(there.path, "utf8")).toBe("synthetic attachment body");
+      // Nothing half-written stays beside it.
+      expect(readdirSync(join(attachedOnMachine, THREAD))).toEqual([basename(there.path)]);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("leaves out what can't be copied, and the prompt says what didn't arrive", () =>
+    Effect.gen(function* () {
+      const { onHost, agent } = yield* redialling;
+      const session = yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+      const gone = join(mkdtempSync(join(tmpdir(), "gram-main-attachments-")), "gone.png");
+      yield* session.steer({ text: "and this", attachments: [{ path: gone, name: "gone.png" }] });
+      const sent = onHost.inputs.at(-1)!;
+      expect(sent.attachments).toBeUndefined();
+      expect(sent.text).toContain("and this");
+      expect(sent.text).toContain("couldn't copy this attachment to box");
+      expect(sent.text).toContain("gone.png");
+      expect(sent.text).not.toContain(gone);
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 });

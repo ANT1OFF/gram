@@ -29,6 +29,7 @@ import type { TerminalGate } from "../terminal/gate.ts";
 import { terminalsThroughHost } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
 import { followingSessions } from "./following-sessions.ts";
+import type { AttachmentsOnMachine } from "./carry-attachments.ts";
 import type { HostConnection } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { cloneFolderOf } from "./repos.ts";
@@ -322,6 +323,14 @@ export const machineWorkerHost = (
           .pipe(Stream.map((event) => event.threadId)),
       },
     );
+    // A removed thread's attachments there go with it; a thread on no machine finds nothing.
+    const attachments = connection.attachments;
+    if (attachments !== undefined) {
+      yield* hub.internalEvents(isThreadRemoved, `attachment cleanup on ${machine.id}`).pipe(
+        Stream.runForEach((event) => attachments.remove(event.threadId)),
+        Effect.forkScoped,
+      );
+    }
     const wrapped = new WeakMap<object, ReturnType<typeof agentHostOnMachine>>();
     // A session outlives the dial it opened on: a dropped connection that comes back picks it up.
     const sessions =
@@ -341,6 +350,7 @@ export const machineWorkerHost = (
               agent,
               machine.name,
               machine.origin ?? (() => undefined),
+              currentAttachments(machine, connection),
             );
             wrapped.set(agent, through);
             return through;
@@ -353,8 +363,29 @@ export const machineWorkerHost = (
       terminals,
       ports: { scan: connection.scan },
       process: connection.hello,
+      name: machine.name,
+      reads: connection.reads,
+      attachments: connection.attachments,
     };
   });
+
+/**
+ * The machine's attachments store on its connection at the time of each call, since a session
+ * outlives the dial it opened on; why not while it is offline or on a build without one.
+ */
+const currentAttachments =
+  (machine: Machine, opened: HostConnection): AttachmentsOnMachine =>
+  () =>
+    (machine.connection ?? Effect.succeed(opened)).pipe(
+      Effect.mapError(() => `${machine.name} is offline`),
+      Effect.flatMap((connection) =>
+        connection.attachments === undefined
+          ? Effect.fail(
+              `gram-host on ${machine.name} is older than this Gram; run the install command there again to update it`,
+            )
+          : Effect.succeed(connection.attachments),
+      ),
+    );
 
 /**
  * The worker hosts of the machines joined to this Gram, each built once per connection: a machine

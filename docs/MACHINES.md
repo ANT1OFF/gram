@@ -12,7 +12,8 @@ in a new worktree can be placed on it, and its session, checkout, git state and 
 there. Pick the machine under **Machine** when you start a new thread in a new worktree (it shows
 once a machine is confirmed), or ask the orchestrator to put a worker there: `spawn_worker` takes
 the machine's name. The Workers tab tags each worker that runs on another machine. Its Files
-panel, turn checkpoints, PR badge and port chips don't reach that machine yet.
+panel, file previews and attachments work on that machine ([its files](#its-files-and-attachments));
+its turn checkpoints, PR badge and port chips don't reach that machine yet.
 
 ## What you need
 
@@ -98,6 +99,33 @@ or `gram-host service install`.
 - A joined machine's terminals open with its own default shell on its own PATH.
 - While the machine is offline its workers don't start and their folders aren't marked missing;
   nothing falls back to running on this machine.
+
+## Its files and attachments
+
+A thread on another machine has its files there, and Gram reads them there: nothing about its
+folders is looked up on this machine, even where the same path happens to exist here.
+
+- **Files panel and previews.** Listing, search, `@` mentions, file previews, images, Markdown
+  previews, the transcript's file links and dictation's project words go to the machine's host.
+  The host scopes each path to the thread's folders itself, so a path that leads out of them,
+  through `..` or a link, is refused there, and a file that may hold credentials is never
+  previewed. A path outside the folders is read only when the thread's own messages name it, as on
+  this machine; the transcript that decides it stays here.
+- **Not yet:** an HTML preview (its page loads the files beside it from this machine) and opening a
+  file in your editor or file manager, which start on this machine. Gram says so, naming the
+  machine, rather than opening a file here.
+- **`send_file`.** A file an agent there sends is read on its machine (a regular file of at most
+  20 MB, never one that may hold credentials) and copied into the thread's attachments on this
+  machine, which the card shows and deletes with the thread.
+- **Attachments.** A file you attach to a message for a worker there is copied to that machine
+  before the message goes, into `attachments` in the host's folder, one folder per thread, and the
+  agent reads that copy. A file that can't be copied (the machine went offline, the file is gone,
+  it is over 20 MB or may hold credentials) is left out, and the message tells the agent what
+  didn't arrive. A thread's folder there goes when the thread is removed while the machine is
+  connected, and otherwise once nothing has been added to it for a week.
+- A machine whose `gram-host` is from an older Gram still runs its workers, but its files and
+  attachments are refused with a note to update it: run the install command from
+  [Join a machine](#join-a-machine) there again.
 
 ## Add a machine over SSH
 

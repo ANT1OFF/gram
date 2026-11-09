@@ -8,6 +8,7 @@ import {
   type HostFailed,
   type HostSessionOpen,
   ModeRefused,
+  type UserInput,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -15,6 +16,7 @@ import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
+import { type AttachmentsOnMachine, carryAttachments } from "../host/carry-attachments.ts";
 import type { HostSessionsConnection } from "../host/protocol.ts";
 import { AgentHosts } from "./agent-hosts.ts";
 
@@ -89,7 +91,13 @@ const logFailed = (call: string) => (error: HostFailed) =>
  * ones received are confirmed to the host, which keeps the rest for a stream that picks up again
  * (as a reconnecting host's will). A host that goes ends the session with an `ended` event.
  */
-const openOnHost = (host: HostSessionsConnection, agent: AgentKind, o: OpenSessionOptions) =>
+const openOnHost = (
+  host: HostSessionsConnection,
+  agent: AgentKind,
+  o: OpenSessionOptions,
+  /** The input as the host's machine reads it; this machine's own host reads it as it is. */
+  carry: (input: UserInput) => Effect.Effect<UserInput> = Effect.succeed,
+) =>
   Effect.gen(function* () {
     const handle = randomUUID();
     // Added first, so a session whose open was given up on is closed on the host too.
@@ -175,8 +183,15 @@ const openOnHost = (host: HostSessionsConnection, agent: AgentKind, o: OpenSessi
     const session: AgentSession = {
       events,
       send: (input, sendOptions) =>
-        host.send(handle, input, sendOptions).pipe(Effect.catch(logFailed("send"))),
-      steer: (input) => host.steer(handle, input).pipe(Effect.catch(logFailed("steer"))),
+        carry(input).pipe(
+          Effect.flatMap((carried) => host.send(handle, carried, sendOptions)),
+          Effect.catch(logFailed("send")),
+        ),
+      steer: (input) =>
+        carry(input).pipe(
+          Effect.flatMap((carried) => host.steer(handle, carried)),
+          Effect.catch(logFailed("steer")),
+        ),
       // A host that went has no turn left to stop.
       interrupt: host.interrupt(handle).pipe(Effect.catchTag("HostFailed", logFailed("interrupt"))),
       respond: (requestId, answer) =>
@@ -340,6 +355,8 @@ export const agentHostOnMachine = (
   machineName: string,
   /** The tailnet address the machine reaches this Gram at, for its sessions' app tools. */
   origin: () => string | undefined,
+  /** Where the machine keeps what users attach, for each session's sends to carry them there. */
+  attachments: AttachmentsOnMachine = () => Effect.fail(`${machineName} holds no attachments`),
 ): AgentHost => {
   const kind = inServer.kind;
   /**
@@ -383,7 +400,9 @@ export const agentHostOnMachine = (
                         message: `${machineName} is offline; its workers start once it's back.`,
                       }),
                     )
-                  : openOnHost(host, kind, reaching);
+                  : openOnHost(host, kind, reaching, (input) =>
+                      carryAttachments(options.threadId, input, machineName, attachments),
+                    );
               }),
       ),
   };

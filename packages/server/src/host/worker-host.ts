@@ -11,6 +11,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import type { HostAttachments, HostFileReads } from "./file-reads.ts";
 import { filesOn, type HostFiles } from "./files.ts";
 import { LocalHostProcess } from "./local-process.ts";
 import { RemoteHosts } from "./remote-hosts.ts";
@@ -79,6 +80,15 @@ export interface WorkerHost {
   readonly ports: HostMachine["ports"];
   /** The host process's hello, when this machine's host runs as its own process. */
   readonly process?: HostHello | undefined;
+  /** The machine's name as the user gave it; absent for this machine. */
+  readonly name?: string | undefined;
+  /**
+   * Another machine's files read for its threads, scoped there. Absent for this machine, whose
+   * threads' files the server reads itself, and for a host whose build doesn't serve them.
+   */
+  readonly reads?: HostFileReads | undefined;
+  /** Another machine's store for the files users attach to its sessions; absent as `reads` is. */
+  readonly attachments?: HostAttachments | undefined;
 }
 
 export interface WorkerHostsShape {
