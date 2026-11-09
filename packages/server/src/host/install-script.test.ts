@@ -318,7 +318,9 @@ describe("the installer run over SSH", () => {
     expect(() =>
       installScript(ORIGIN, "1.14.0", { link: "https://evil.example/host/join#code=x" }),
     ).toThrow();
-    expect(() => installScript(ORIGIN, "1.14.0", { link: `${ORIGIN}/host/join#code=a'b` })).toThrow();
+    expect(() =>
+      installScript(ORIGIN, "1.14.0", { link: `${ORIGIN}/host/join#code=a'b` }),
+    ).toThrow();
     const script = installScript(ORIGIN, "1.14.0", { link: LINK });
     expect(script).toContain(`LINK='${LINK}'`);
     execFileSync("sh", ["-n"], { input: script });
