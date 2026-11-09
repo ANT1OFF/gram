@@ -18,7 +18,7 @@ import { logDefects, type Handlers } from "./common.ts";
 const terminalHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   // This machine's terminals; a thread on another machine will reach that machine's instead.
-  const { terminals } = (yield* WorkerHosts).local;
+  const { terminals } = (yield* WorkerHosts).placed;
 
   // The agent tool that reads a terminal registers with the handlers, as it always has.
   yield* (yield* AppToolRegistry).register([readTerminalTool(terminals)]);

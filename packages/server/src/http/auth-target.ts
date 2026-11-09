@@ -12,6 +12,10 @@ const protectedPaths = [
   "/remote/enable",
   "/remote/disable",
   "/remote/revoke",
+  // A joined machine's join, dial and app tools.
+  "/host/join",
+  "/host/connect",
+  "/host/mcp",
 ] as const;
 const protectedRoutes = FindMyWay.make<string>();
 for (const path of protectedPaths) protectedRoutes.all(path, path);

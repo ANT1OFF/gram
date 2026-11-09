@@ -1,6 +1,7 @@
 import { Checkpoints, Proc, samePath, seedWorktreePermissions } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { effectiveCheckout, isLocalHost } from "@gram/contracts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { GitRefresh } from "./platform.ts";
 import { resolveWorktreeMove } from "./worktree-move.ts";
@@ -42,7 +43,10 @@ export const GitTurnHooksLive = Layer.effect(
       // A worktree the agent entered on its own gets the repo root's permission rules, as ones we
       // create do.
       resolveCwd: (thread, cwd, follow) =>
-        resolveWorktreeMove(thread, cwd, follow).pipe(
+        (isLocalHost(effectiveCheckout(thread))
+          ? resolveWorktreeMove(thread, cwd, follow)
+          : Effect.succeed(undefined)
+        ).pipe(
           Effect.tap((next) =>
             next == null || next.repoRoot === undefined || samePath(next.repoRoot, next.path)
               ? Effect.void

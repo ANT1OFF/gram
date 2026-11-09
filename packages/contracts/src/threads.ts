@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { MessageId, RequestId, ThreadId } from "./ids.ts";
+import { HostId, MessageId, RequestId, ThreadId } from "./ids.ts";
 import { UIMessageSchema } from "./ui-message.ts";
 
 /** How one answer of `thread.respondMany` went. */
@@ -18,6 +18,11 @@ export const CheckoutRequest = Schema.Union([
     kind: Schema.Literal("newWorktree"),
     branch: Schema.String,
     base: Schema.optionalKey(Schema.String),
+    /**
+     * The joined machine the worktree is made on, from its own clone of the project's repository;
+     * absent for this machine.
+     */
+    hostId: Schema.optionalKey(HostId),
   }),
   Schema.Struct({ kind: Schema.Literal("existingWorktree"), path: Schema.String }),
 ]);

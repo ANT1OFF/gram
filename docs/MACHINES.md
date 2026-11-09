@@ -7,8 +7,10 @@ ports and Claude sessions. The machine you already use keeps Gram's threads, dec
 settings; the other machine runs `gram-host`, which dials it over Tailscale. The joined machine
 opens no port of its own.
 
-This is the first part of multi-machine support. A machine can join, be confirmed and stay
-connected; Settings → Machines lists it. Placing a worker on it comes with the machine picker.
+A machine can join, be confirmed and stay connected; Settings → Machines lists it. A new thread
+in a new worktree can be placed on it, and its session, checkout, git state and terminals then run
+there. Its Files panel, turn checkpoints, PR badge and port chips don't reach that machine yet. Choosing the machine in the composer, and from the orchestrator's
+`spawn_worker`, comes next.
 
 ## What you need
 
@@ -96,6 +98,10 @@ or `gram-host service install`.
   name (which Tailscale Serve forwards over loopback), and refuse any request with an `Origin`, so
   no web page can reach them. They take no browser cookie, and a browser's cookie grants nothing
   there. Without the join code or a joined machine's key they grant nothing either.
+- **App tools over the tailnet.** A session on a joined machine reaches its thread's app tools at
+  `/host/mcp` on the main Gram's tailnet address, with that thread's own token. It is let through
+  only for a thread placed on a joined machine that is online now, and never with an `Origin`.
+  Threads on this machine keep to the loopback endpoint.
 - **Removing a machine** (Settings → Machines → Remove) forgets its key and closes its connection at
   once, including one still connecting. Turning access over Tailscale off, or onto another
   address, closes every joined machine's connection; the machines stay joined and dial in again

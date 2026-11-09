@@ -18,7 +18,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { bearerToken, MCP_PATH } from "../http/auth.ts";
-import { HttpRouter, HttpServerResponse } from "../platform/unstable.ts";
+import { HOST_MCP_PATH } from "../host/machine-keys.ts";
+import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { McpTokens } from "./mcp-tokens.ts";
 import { AppToolRegistry } from "./registry.ts";
 
@@ -131,7 +132,7 @@ export const McpRoute = Layer.unwrap(
     const tokens = yield* McpTokens;
     const registry = yield* AppToolRegistry;
     const running = new Map<AbortSignal, Map<RequestId, AbortController>>();
-    return HttpRouter.add("*", MCP_PATH, (request) =>
+    const handle = (request: HttpServerRequest.HttpServerRequest) =>
       Effect.gen(function* () {
         if (request.method !== "POST") return methodNotAllowed;
         const token = bearerToken(request.headers);
@@ -187,7 +188,12 @@ export const McpRoute = Layer.unwrap(
         );
         // The transport has ended the Node response; NodeHttpServer skips writing once it has.
         return HttpServerResponse.empty();
-      }),
+      });
+    // The same endpoint for a session on a joined machine, over the tailnet; the auth middleware
+    // lets a request through there only for a thread placed on that machine while it is online.
+    return Layer.mergeAll(
+      HttpRouter.add("*", MCP_PATH, handle),
+      HttpRouter.add("*", HOST_MCP_PATH, handle),
     );
   }),
 );

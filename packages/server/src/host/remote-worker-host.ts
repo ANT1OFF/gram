@@ -37,6 +37,8 @@ import type { WorkerHost } from "./worker-host.ts";
 export interface Machine {
   readonly id: HostId;
   readonly name: string;
+  /** The tailnet address it dialled, where its sessions reach their app tools; absent offline. */
+  readonly origin?: () => string | undefined;
 }
 
 const offline = (machine: Machine) => `${machine.name} is offline.`;
@@ -51,6 +53,12 @@ const noTerminals = (machine: Machine): Terminals => ({
   subscribe: (terminalId) => Stream.fail(new NotFound({ entity: "terminal", id: terminalId })),
   snapshot: () => Effect.succeed([]),
 });
+
+/** The thread's checkouts that are on `machine`: its own, and any other repo's there. */
+const ownCheckouts = (thread: Thread, machine: Machine) =>
+  [thread.checkout, ...(thread.extraCheckouts ?? [])].filter(
+    (checkout) => hostOf(checkout) === machine.id,
+  );
 
 const repoOf = (checkout: Checkout) => checkout.repoRoot ?? checkout.path;
 
@@ -154,7 +162,7 @@ export const machineCheckouts = (
     checkRelease: (thread, options) =>
       options.removeWorktree === undefined || options.removeWorktree?.force === true
         ? Effect.void
-        : Effect.forEach([thread.checkout, ...(thread.extraCheckouts ?? [])], refuseDirty, {
+        : Effect.forEach(ownCheckouts(thread, machine), refuseDirty, {
             discard: true,
           }),
     release: (thread, options) =>
@@ -162,10 +170,7 @@ export const machineCheckouts = (
         const removal = options.removeWorktree;
         if (removal === undefined) return;
         const used = yield* others(thread);
-        for (const [index, target] of [
-          thread.checkout,
-          ...(thread.extraCheckouts ?? []),
-        ].entries()) {
+        for (const [index, target] of ownCheckouts(thread, machine).entries()) {
           if (target.kind !== "worktree") continue;
           if (!removal.force) yield* refuseDirty(target);
           yield* connection.worktrees
@@ -324,6 +329,7 @@ export const machineWorkerHost = (
               connection.gone,
               agent,
               machine.name,
+              machine.origin ?? (() => undefined),
             );
             wrapped.set(agent, through);
             return through;
@@ -372,7 +378,11 @@ export const machineHosts = (
             yield* Scope.close(kept.scope, Exit.void);
           }
           const scope = yield* Scope.fork(root);
-          const machine = { id, name: remote.machines.get(id)?.name ?? id };
+          const machine = {
+            id,
+            name: remote.machines.get(id)?.name ?? id,
+            origin: () => remote.origin(id),
+          };
           const host = yield* machineWorkerHost(machine, connection, deps).pipe(
             Scope.provide(scope),
           );

@@ -4,6 +4,7 @@
 import {
   anyPrOpen,
   effectiveCheckout,
+  isLocalHost,
   MAX_FAILING_CHECK_NAMES,
   requiredChecksOf,
   reviewBotsOf,
@@ -341,8 +342,8 @@ export const GitStatePublisherLive = Layer.effect(
     const store = yield* ThreadStore;
     const hub = yield* EventHub;
     const runtimes = yield* ThreadRuntimes;
-    // The checkouts' git state and worktrees are this machine's, read through its host.
-    const { git: gitState, worktrees } = (yield* WorkerHosts).local;
+    // Each checkout's git state and worktrees, read on the machine it is on.
+    const { git: gitState, worktrees } = (yield* WorkerHosts).placed;
     const pr = yield* Pr;
     const config = yield* GitServerConfig;
     const refreshes = yield* GitRefresh;
@@ -1372,7 +1373,8 @@ export const GitStatePublisherLive = Layer.effect(
     const publishElsewhere = (threads: ReadonlyArray<Thread>) =>
       Effect.gen(function* () {
         const found = yield* discoverPrsElsewhere(
-          threads,
+          // Its git runs here, so only this machine's checkouts.
+          threads.filter((thread) => isLocalHost(effectiveCheckout(thread))),
           (key) => states.get(key),
           () => {
             elsewhereRead = undefined;

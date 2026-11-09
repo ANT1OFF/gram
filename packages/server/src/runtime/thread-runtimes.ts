@@ -4,7 +4,9 @@ import {
   type QueueItemId,
   type ThreadId,
   type TurnId,
+  effectiveCheckout,
   fastSelectionProblem,
+  isLocalHost,
   InterruptHung,
   InvalidState,
   NotFound,
@@ -45,7 +47,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { ActivityTracker } from "./activity.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
-import { type CheckoutService, TurnHooks } from "./hooks.ts";
+import { type CheckoutService, TurnHooks, type TurnHooksShape } from "./hooks.ts";
 import type { EarlyReleases, ReleaseWave } from "./limit-wait.ts";
 import { makeRateLimitGate } from "./rate-limits.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
@@ -160,17 +162,48 @@ interface Handover<E> {
   readonly started: Exit.Exit<void, E>;
 }
 
+/**
+ * The turn hooks, with a thread on another machine's turns taking no checkpoints here: this
+ * machine's git can't reach its checkout, and a folder of the same name here isn't it. Its turn
+ * end still asks for a git-state refresh, which reads the machine's checkout there.
+ */
+const turnsHere = (
+  hooks: TurnHooksShape,
+  store: Pick<ThreadStore["Service"], "getThread">,
+): TurnHooksShape => {
+  const here = (threadId: ThreadId) =>
+    store.getThread(threadId).pipe(
+      Effect.map((thread) => isLocalHost(effectiveCheckout(thread))),
+      Effect.orElseSucceed(() => true),
+    );
+  return {
+    ...hooks,
+    onTurnStart: (threadId, turnId, cwd) =>
+      Effect.flatMap(here(threadId), (local) =>
+        local ? hooks.onTurnStart(threadId, turnId, cwd) : Effect.void,
+      ),
+    onTurnEnd: (threadId, turnId, cwd, reason, touchedRemote) =>
+      Effect.flatMap(here(threadId), (local) =>
+        local
+          ? hooks.onTurnEnd(threadId, turnId, cwd, reason, touchedRemote)
+          : // No checkpoint, but its git state (read on its machine) is still refreshed.
+            touchedRemote
+            ? hooks.onRemoteCommand(threadId, cwd)
+            : hooks.onFilesChanged(threadId, cwd),
+      ),
+  };
+};
+
 const make = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const hub = yield* EventHub;
   const plans = yield* ThreadPlans;
   const waits = yield* ThreadWaits;
   const turnActivity = yield* TurnActivity;
-  // This machine's host. A session and its checkout reach the machine only through it, so a thread
-  // on another machine can later take that machine's host instead.
-  const { sessions: hosts, checkouts } = (yield* WorkerHosts).local;
+  // Each thread's machine: its session and its checkout go to the machine it is placed on.
+  const { sessions: hosts, checkouts } = (yield* WorkerHosts).placed;
   const config = yield* ServerConfig;
-  const hooks = yield* TurnHooks;
+  const hooks = turnsHere(yield* TurnHooks, store);
   const sessions = yield* FiberMap.make<ThreadId>();
   /** Set by `shutdown`, for good: the process is about to exit. */
   let shuttingDown = false;
