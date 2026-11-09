@@ -166,30 +166,45 @@ that one:
    is idle: 1 running turn."), and Gram asks again every 30 seconds.
 2. **It downloads that release from Gram's own GitHub releases** (macOS on Apple silicon, Linux on
    x64), the same files the installer uses. The address is fixed in gram-host; the main Gram names
-   only the release number, never a URL, and the host takes only a release newer than its own.
+   only the release number, never a URL, and the host takes only a release newer than its own, in
+   semver order (`1.17.0-rc.2` before `1.17.0-rc.10`, both before `1.17.0`).
 3. **It checks the download against the release's `SHA256SUMS.txt`** before anything in it runs. A
    download that doesn't match is deleted and nothing is installed.
 4. **It unpacks the app into a staging folder** beside the one it runs, tests that its gram-host
    starts (`gram-host --help`), and only then moves it into place, in `apps/<release>`. The app it
    runs now stays.
-5. **It hands its service to the new app.** A supervisor, run from the current app outside the
+5. **It stops taking new work, and looks once more.** From here the host refuses to open a session
+   or hand one a message, open or type into a terminal, clone, make a worktree or run a check
+   ("This machine is updating Gram. Try again in a moment."), and work it took just before counts
+   as running. If anything runs, it takes work again and waits; it keeps the unpacked app, so the
+   next try doesn't download again.
+6. **It hands its service to the new app.** A supervisor, run from the current app outside the
    service (a transient `systemd-run --user` unit on Linux, a one-off launchd job on a Mac), moves
-   the service and restarts it. The plan is kept in `update.json` in the host's folder, owner-only.
-6. **The new host dials in.** Once its hello has passed, the main Gram asks it how its update went,
-   which confirms it. The supervisor then removes the previous app and points `~/.local/bin/gram-host`
-   at the new one. If the new host doesn't dial in and pass its hello within two minutes, the
-   supervisor moves the service back to the previous app, removes the new one, and the row says it
-   rolled back and why.
+   the service and restarts it. The plan is kept in `update.json` in the host's folder, owner-only,
+   under an id of its own; one update runs at a time, and one supervisor, which holds
+   `update.lock` while it works and acts only on its own plan.
+7. **The new host dials in.** Once its hello has passed, the main Gram asks it how its update went,
+   which confirms it. The supervisor then removes the app the host ran before (no other) and points
+   `~/.local/bin/gram-host` at the new one. If the new host doesn't dial in and pass its hello
+   within two minutes, the supervisor moves the service back to the previous app, removes the new
+   one, and the row says it rolled back and why. If moving the service back fails too, both apps
+   stay and the row says the update failed: rerun the installer there.
 
-Nothing there is cut off: the host restarts only while nothing runs, and it checks again just
-before it hands over, since a download takes minutes. A machine that got busy meanwhile keeps the
-unpacked app and hands over once it is idle, without downloading again.
+Nothing there is cut off: the host restarts only once nothing runs and nothing new can start.
+
+**If the machine restarts mid-update.** A reboot takes the supervisor with it. When gram-host next
+starts, it looks for an unfinished update: one confirmed is recorded as done; one never confirmed,
+once its two minutes (and one more for the supervisor to start) have passed, gets a new supervisor
+that only moves the service back. That needs the app the service runs then to start at all; it
+passed its `--help` test before the switch, but if it can't start, the machine stays down until the
+installer runs there.
 
 **Automatic updates.** When this Gram moves to a new release, each joined machine that can update
 itself updates to it on its own, once it is idle. A machine that rolled back or failed on that
 release isn't tried again on its own; its Update tries it again. This is on by default: turn off
-**Update machines automatically** under Settings → Machines to update only when you choose.
-Agents can't change it with `settings_propose`.
+**Update machines automatically** under Settings → Machines to update only when you choose. The
+switch is kept beside the machines (`remote-access/machine-updates.json`), not in Settings, so only
+this computer's app changes it: not a paired phone, and not an agent.
 
 ### By the installer
 

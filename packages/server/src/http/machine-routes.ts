@@ -55,6 +55,8 @@ export const TOKEN_CONSENT = "send-claude-token-to-these-machines";
 export const MACHINES_UPDATE_PATH = "/machines/update";
 /** Updates every joined machine that can update itself and runs an earlier release. */
 export const MACHINES_UPDATE_ALL_PATH = "/machines/update-all";
+/** Turns joined machines updating on their own on or off. Local app only, like every route here. */
+export const MACHINES_AUTOMATIC_UPDATES_PATH = "/machines/automatic-updates";
 /** Asks a machine for its Claude Code sign-in again, as after its Sign in terminal ends. */
 export const MACHINES_CHECK_SIGN_IN_PATH = "/machines/check-sign-in";
 
@@ -73,6 +75,7 @@ export const MACHINE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
   MACHINES_TOKEN_FORGET_PATH,
   MACHINES_UPDATE_PATH,
   MACHINES_UPDATE_ALL_PATH,
+  MACHINES_AUTOMATIC_UPDATES_PATH,
   MACHINES_CHECK_SIGN_IN_PATH,
 ]);
 
@@ -280,6 +283,7 @@ const machinesStatus = (
     protocol: HOST_PROTOCOL_VERSION,
     ...(release === undefined ? {} : { release }),
     ...(remote === undefined ? {} : { updateCommand: updateCommand(remote.origin) }),
+    automaticUpdates: hosts.automaticUpdates(),
   };
 };
 
@@ -389,6 +393,16 @@ export const machineManagement = (
               }),
           output,
         });
+      }
+      case MACHINES_AUTOMATIC_UPDATES_PATH: {
+        const enabled = (yield* jsonBody(64))?.["enabled"];
+        if (typeof enabled !== "boolean") return json({ message: "Say on or off." }, 400);
+        try {
+          hosts.setAutomaticUpdates(enabled);
+        } catch {
+          return json({ message: "The change couldn't be saved." }, 500);
+        }
+        return json(machinesStatus(hosts, remote, appVersion));
       }
       case MACHINES_UPDATE_ALL_PATH: {
         // Only this Gram's own release, over each machine's own connection; one too old to update

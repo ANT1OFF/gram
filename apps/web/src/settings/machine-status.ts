@@ -22,22 +22,41 @@ const minutes = (ms: number) => Math.max(1, Math.round(Math.abs(ms) / 60_000));
 
 /** Negative when release `a` is earlier than `b`, as the server orders them. */
 const splitRelease = (release: string) => {
-  const [core = "", pre] = release.split("-", 2);
-  return { numbers: core.split(".").map(Number), pre };
+  const at = release.indexOf("-");
+  return {
+    numbers: (at === -1 ? release : release.slice(0, at)).split(".").map(Number),
+    pre: at === -1 ? undefined : release.slice(at + 1).split("."),
+  };
 };
 
+const NUMERIC = /^\d+$/;
+
+/**
+ * Negative when release `a` is earlier than `b`, as the server and semver order them: a
+ * prerelease before its release, numeric identifiers by value (`rc.2` before `rc.10`).
+ */
 export const compareReleases = (a: string, b: string): number => {
-  const split = splitRelease;
-  const x = split(a);
-  const y = split(b);
+  const x = splitRelease(a);
+  const y = splitRelease(b);
   for (let i = 0; i < 3; i += 1) {
     const d = (x.numbers[i] ?? 0) - (y.numbers[i] ?? 0);
     if (d !== 0) return d;
   }
-  if (x.pre === y.pre) return 0;
-  if (x.pre === undefined) return 1;
-  if (y.pre === undefined) return -1;
-  return x.pre < y.pre ? -1 : 1;
+  if (x.pre === undefined || y.pre === undefined)
+    return x.pre === y.pre ? 0 : x.pre === undefined ? 1 : -1;
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i += 1) {
+    const p = x.pre[i];
+    const q = y.pre[i];
+    if (p === undefined) return -1;
+    if (q === undefined) return 1;
+    if (p === q) continue;
+    const pn = NUMERIC.test(p);
+    const qn = NUMERIC.test(q);
+    if (pn && qn) return Number(p) - Number(q);
+    if (pn !== qn) return pn ? -1 : 1;
+    return p < q ? -1 : 1;
+  }
+  return 0;
 };
 
 /** Whether `machine` runs an earlier release than this Gram's (or one too old to say). */

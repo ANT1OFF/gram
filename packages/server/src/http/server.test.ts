@@ -1,4 +1,5 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import { NodeWS } from "@effect/platform-node/NodeSocket";
 import { afterAll, describe, expect, it as test, layer, vi } from "@effect/vitest";
 import { DEFAULT_SETTINGS, GramRpcs, type ThreadId } from "@gram/contracts";
 import * as Cause from "effect/Cause";
@@ -1153,6 +1154,77 @@ layer(testServer("https://device.tail123.ts.net:9443"), { excludeTestServices: t
           headers: local,
           body: JSON.stringify({ all: true }),
         });
+      }),
+    );
+
+    // Failed on c0a36524 in the independent review: the switch was a setting, and a paired phone's
+    // `settings.set` turned it back on, though every `/machines/*` route refused the phone.
+    it.effect("keeps automatic machine updates out of a paired phone's reach", () =>
+      Effect.gen(function* () {
+        const { port } = yield* serverInfo;
+        const localCookie = yield* bootCookie;
+        const local = { cookie: localCookie, origin: `http://127.0.0.1:${port}` };
+        const mint = yield* raw(port, { path: "/remote/pair", method: "POST", headers: local });
+        const code = new URLSearchParams(new URL(JSON.parse(mint.body).url).hash.slice(1)).get(
+          "pair",
+        )!;
+        const origin = "https://device.tail123.ts.net:9443";
+        const host = "device.tail123.ts.net:9443";
+        const claimed = yield* raw(port, {
+          path: "/remote/claim",
+          method: "POST",
+          body: code,
+          headers: { host, origin, "content-type": "text/plain" },
+        });
+        const cookie = claimed.headers["set-cookie"]![0]!.split(";")[0]!;
+        const json = { "content-type": "application/json" };
+        // The phone reaches none of the routes that update machines or switch it.
+        for (const path of [
+          "/machines/update",
+          "/machines/update-all",
+          "/machines/automatic-updates",
+        ])
+          expect(
+            (yield* raw(port, {
+              path,
+              method: "POST",
+              headers: { host, origin, cookie, ...json },
+              body: JSON.stringify({ enabled: true }),
+            })).status,
+          ).toBe(403);
+        // The local app turns automatic updates off.
+        const off = yield* raw(port, {
+          path: "/machines/automatic-updates",
+          method: "POST",
+          headers: { ...local, ...json },
+          body: JSON.stringify({ enabled: false }),
+        });
+        expect(off.status).toBe(200);
+        expect(JSON.parse(off.body).automaticUpdates).toBe(false);
+        // The phone's own settings write can't turn them back on: no setting holds the switch.
+        const phone = yield* Layer.build(
+          RpcClient.layerProtocolSocket().pipe(
+            Layer.provide(Socket.layerWebSocket(`ws://127.0.0.1:${port}/ws`)),
+            Layer.provide(
+              Layer.succeed(Socket.WebSocketConstructor)(
+                (url) =>
+                  new (NodeWS.WebSocket as unknown as new (
+                    url: string,
+                    init: { headers: Record<string, string> },
+                  ) => globalThis.WebSocket)(url, { headers: { host, origin, cookie } }),
+              ),
+            ),
+            Layer.provide(RpcSerialization.layerJson),
+          ),
+        );
+        const phoneClient = yield* RpcClient.make(GramRpcs).pipe(Effect.provideContext(phone));
+        // It is answered (the phone's socket works), and the unknown key changes nothing.
+        const after = yield* phoneClient["settings.set"]({
+          patch: { updates: { machines: true } } as never,
+        });
+        expect(after.updates).not.toHaveProperty("machines");
+        const listed = yield* raw(port, { path: "/machines/list", method: "POST", headers: local });
+        expect(JSON.parse(listed.body).automaticUpdates).toBe(false);
       }),
     );
   },

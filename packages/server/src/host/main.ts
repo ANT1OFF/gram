@@ -38,6 +38,7 @@ import { foregroundOf } from "../ports/pure.ts";
 import { runCli } from "./cli.ts";
 import type { HostBusy, HostId } from "@gram/contracts";
 import { selfUpdater } from "./self-update-host.ts";
+import { type Admission, makeAdmission } from "./admission.ts";
 import type * as Scope from "effect/Scope";
 
 // The server starts the host as plain Node under Electron; what the host runs (git, ps, an editor
@@ -96,7 +97,7 @@ export type BusyOf = Effect.Effect<HostBusy>;
 const hostService = (
   hostId: HostId,
   claude?: HostClaudeToken,
-  update?: (busy: BusyOf) => HostUpdater | undefined,
+  update?: (busy: BusyOf, admission: Admission) => HostUpdater | undefined,
 ): Effect.Effect<HostService, never, Scope.Scope | Proc | Worktrees | AgentHosts> =>
   Effect.gen(function* () {
     const proc = yield* Proc;
@@ -133,7 +134,8 @@ const hostService = (
         checks: checks.running?.() ?? 0,
       };
     });
-    const updater = update?.(busy);
+    const admission = makeAdmission();
+    const updater = update?.(busy, admission);
     return {
       hello: {
         protocol: HOST_PROTOCOL_VERSION,
@@ -168,7 +170,7 @@ const hostService = (
         ),
       ),
       checks,
-      ...(updater === undefined ? {} : { update: updater }),
+      ...(updater === undefined ? {} : { update: updater, admission }),
     };
   });
 
@@ -194,9 +196,10 @@ NodeRuntime.runMain(
     ? child
     : runCli(args, {
         service: (hostId, home) =>
-          hostService(hostId, claudeTokenIn(joinedHome), (busy) =>
-            selfUpdater(RELEASE, home, busy),
+          hostService(hostId, claudeTokenIn(joinedHome), (busy, admission) =>
+            selfUpdater(RELEASE, home, busy, admission),
           ),
         layer: hostLayer(() => readClaudeToken(joinedHome)),
+        release: RELEASE,
       }),
 );

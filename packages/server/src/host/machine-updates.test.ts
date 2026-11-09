@@ -217,4 +217,74 @@ describe("updating joined machines", () => {
       expect(setup(fakeMachine(MINE)).updates.request(ID)).toEqual({ kind: "current" });
     }),
   );
+
+  // Failed on c0a36524 in the independent review: the reconnect dropped the deadline, and nothing
+  // asked again, so the row read "restarting" for good.
+  it.effect(
+    "asks again when the previous host dials back before its rollback is written down",
+    () =>
+      Effect.gen(function* () {
+        const machine = fakeMachine("1.16.0");
+        const { updates, settle, advance, reconnect } = setup(machine);
+        yield* updates.connected(ID, machine.connection);
+        yield* settle;
+        expect(updates.stateOf(ID)?.phase).toBe("restarting");
+        // The supervisor restarts the previous host before it records why.
+        const back = fakeMachine("1.16.0");
+        reconnect(back.connection);
+        yield* updates.connected(ID, back.connection);
+        expect(updates.stateOf(ID)?.phase).toBe("restarting");
+        back.state.check = {
+          last: { release: MINE, outcome: "rolledBack", message: "It didn't dial in.", at: 100 },
+        };
+        yield* updates.sweep;
+        yield* settle;
+        expect(updates.stateOf(ID)).toEqual({
+          phase: "rolledBack",
+          release: MINE,
+          message: "It didn't dial in.",
+          at: 100,
+        });
+        // Not tried again on its own.
+        advance(RETURN_MS * 10);
+        yield* updates.sweep;
+        yield* settle;
+        expect(back.asked).toEqual([]);
+      }),
+  );
+
+  it.effect("marks it failed at the deadline when the previous host never says why", () =>
+    Effect.gen(function* () {
+      const machine = fakeMachine("1.16.0");
+      const { updates, settle, advance, reconnect } = setup(machine);
+      yield* updates.connected(ID, machine.connection);
+      yield* settle;
+      const back = fakeMachine("1.16.0");
+      reconnect(back.connection);
+      yield* updates.connected(ID, back.connection);
+      advance(RETURN_MS + 1);
+      yield* updates.sweep;
+      yield* settle;
+      expect(updates.stateOf(ID)).toMatchObject({ phase: "failed", release: MINE });
+    }),
+  );
+
+  it.effect("shows a recovery that failed as failed, not rolled back", () =>
+    Effect.gen(function* () {
+      const machine = fakeMachine("1.16.0");
+      machine.state.check = {
+        last: { release: MINE, outcome: "failed", message: "Both apps are kept.", at: 7 },
+      };
+      const { updates, settle } = setup(machine);
+      yield* updates.connected(ID, machine.connection);
+      yield* settle;
+      expect(updates.stateOf(ID)).toEqual({
+        phase: "failed",
+        release: MINE,
+        message: "Both apps are kept.",
+        at: 7,
+      });
+      expect(machine.asked).toEqual([]);
+    }),
+  );
 });

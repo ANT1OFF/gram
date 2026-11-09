@@ -2,7 +2,7 @@ import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
-import { GramRpcs, machineUpdatesOn } from "@gram/contracts";
+import { GramRpcs } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -149,9 +149,6 @@ export const AuthMiddleware = HttpRouter.middleware(
     const tokenCapture =
       remoteHosts === undefined ? undefined : yield* claudeTokenCaptureFor(remoteHosts);
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
-    // Joined machines update on their own unless Settings turns it off.
-    if (remoteHosts !== undefined && store !== undefined)
-      remoteHosts.automaticUpdates(store.getSettings.pipe(Effect.map(machineUpdatesOn)));
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
       "cache-control": "no-store",

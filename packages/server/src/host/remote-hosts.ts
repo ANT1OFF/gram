@@ -8,6 +8,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import { ServerConfig } from "../config.ts";
+import { privateJsonFile } from "../http/remote-sessions.ts";
 import type { Socket } from "../platform/unstable.ts";
 import {
   createPairedMachines,
@@ -81,6 +82,27 @@ const lazyFileStore = <R, W>(
   };
 };
 
+/** The automatic-updates switch, as kept: undefined until it is first set. */
+export interface AutomaticStore {
+  readonly read: () => boolean | undefined;
+  readonly write: (on: boolean) => void;
+}
+
+/** The switch in `remote-access/machine-updates.json`, owner-only like the machines beside it. */
+const fileAutomaticStore = (dataDir: string): AutomaticStore => {
+  const file = privateJsonFile(dataDir, "machine-updates.json", 1024);
+  return {
+    read: () => {
+      const value = file.read() as { version?: unknown; automatic?: unknown } | undefined;
+      if (value === undefined) return undefined;
+      if (value.version !== 1 || typeof value.automatic !== "boolean")
+        throw new Error("machine-updates.json isn't a machine updates file.");
+      return value.automatic;
+    },
+    write: (on) => file.write({ version: 1, automatic: on }),
+  };
+};
+
 /**
  * A dial the route let through, pinned to the access it was let through under: the machine's
  * generation and the tailnet address it dialled, taken before the WebSocket upgrade starts. It
@@ -123,8 +145,12 @@ export interface RemoteHostsShape {
    * `fallback` for a host too old to update itself, which the installer updates.
    */
   readonly update: (id: HostId) => UpdateRequest;
-  /** Reads whether joined machines update on their own (`updates.machines`); on until set. */
-  readonly automaticUpdates: (automatic: Effect.Effect<boolean>) => void;
+  /**
+   * Whether joined machines update on their own, on until turned off. Kept beside the machines,
+   * not in Settings, so only the local app's `/machines/*` routes change it: never a paired phone.
+   */
+  readonly automaticUpdates: () => boolean;
+  readonly setAutomaticUpdates: (on: boolean) => void;
   /** Forgets the machine and closes its connection; false when it wasn't joined. */
   readonly remove: (id: HostId) => boolean;
   /**
@@ -143,7 +169,12 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
     now: () => number = Date.now,
     nonces?: DialNonceStore,
     /** This Gram's release, which machines update to; undefined when it runs from source. */
-    options: { readonly release?: string | undefined; readonly retryMs?: number } = {},
+    options: {
+      readonly release?: string | undefined;
+      readonly retryMs?: number;
+      /** Where the automatic-updates switch is kept; in memory when left out. */
+      readonly automatic?: AutomaticStore;
+    } = {},
   ) =>
     Effect.gen(function* () {
       const machines = createPairedMachines(store, now, nonces);
@@ -154,7 +185,21 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       const runPromise = Effect.runPromiseWith(context);
       /** Updates and their checks, which outlive the dial or request that started them. */
       const runFork = yield* FiberSet.makeRuntime<never>();
-      let automatic: Effect.Effect<boolean> = Effect.succeed(true);
+      let automaticMemory: boolean | undefined;
+      const automaticStore: AutomaticStore = options.automatic ?? {
+        read: () => automaticMemory,
+        write: (on) => {
+          automaticMemory = on;
+        },
+      };
+      /** On unless turned off; a switch it can't read counts as off, so nothing installs unasked. */
+      const automaticOn = () => {
+        try {
+          return automaticStore.read() !== false;
+        } catch {
+          return false;
+        }
+      };
       const updates = makeMachineUpdates({
         release: options.release,
         connection: (id) => {
@@ -162,7 +207,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           return live === undefined || live.connection.gone() ? undefined : live.connection;
         },
         online: () => [...online.keys()],
-        automatic: Effect.suspend(() => automatic).pipe(Effect.orElseSucceed(() => true)),
+        automatic: Effect.sync(automaticOn),
         now,
         fork: (effect) => {
           runFork(effect);
@@ -381,9 +426,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         attach,
         checkSignIn,
         update: updates.request,
-        automaticUpdates: (next) => {
-          automatic = next;
-        },
+        automaticUpdates: automaticOn,
+        setAutomaticUpdates: (on) => automaticStore.write(on),
         remove: (id) => {
           bump(id);
           updates.forget(id);
@@ -425,7 +469,15 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           ...lazyFileStore(dataDir, "dial-nonces.json", fileNonceStore, () => NO_DIALS),
           lastSeen: () => dialNoncesLastSeen(dataDir),
         },
-        { release: releaseOfConfig(config) },
+        {
+          release: releaseOfConfig(config),
+          automatic: lazyFileStore(
+            dataDir,
+            "machine-updates.json",
+            fileAutomaticStore,
+            () => undefined,
+          ),
+        },
       );
     }),
   );

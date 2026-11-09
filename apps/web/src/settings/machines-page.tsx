@@ -43,10 +43,7 @@ import {
   machineUpdateLine,
   updating,
 } from "./machine-status";
-import { machineUpdatesOn, type Settings } from "@gram/contracts";
-import { useServerSettings } from "@/settings-sync/store";
 import { Toggle } from "./fields";
-import { useSaveSettings } from "./use-save-settings";
 import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
 
 export { MACHINES_KEY } from "./machines-api";
@@ -107,7 +104,6 @@ export function MachinesPage() {
     refetchInterval: (query) =>
       adding || query.state.data?.machines.some(updating) === true ? 1500 : 10_000,
   });
-  const settings = useServerSettings((s) => s.settings);
   const act = async (run: () => Promise<MachinesStatus>) => {
     setError(undefined);
     setNotice(undefined);
@@ -232,8 +228,11 @@ export function MachinesPage() {
           it at once.
         </p>
       )}
-      {machines.length > 0 && settings !== undefined && (
-        <MachineUpdatesToggle settings={settings} />
+      {machines.length > 0 && (
+        <MachineUpdatesToggle
+          on={status.data.automaticUpdates !== false}
+          onChange={(enabled) => act(() => machinesApi.setAutomaticUpdates(enabled))}
+        />
       )}
       {adding && (
         <AddDialog
@@ -304,24 +303,25 @@ export function MachinesPage() {
   );
 }
 
-/** Settings → Machines' switch for updating joined machines on their own, on until turned off. */
-function MachineUpdatesToggle({ settings }: { settings: Settings }) {
-  const saveSettings = useSaveSettings();
-  const [error, setError] = useState<string>();
+/**
+ * Settings → Machines' switch for updating joined machines on their own, on until turned off. It
+ * goes through the machines' own local-only route, never Settings, so a paired phone can't flip it.
+ */
+function MachineUpdatesToggle({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (enabled: boolean) => Promise<void>;
+}) {
   return (
     <div className={SETTINGS_CARD}>
       <Toggle
         label="Update machines automatically"
-        description="When Gram updates, each joined machine moves to the same release once it has no running turn or busy terminal."
+        description="When Gram updates, each joined machine moves to the same release once it has no running turn, check or busy terminal."
         keywords={["update", "upgrade", "release", "gram-host", "automatic"]}
-        checked={machineUpdatesOn(settings)}
-        error={error}
-        onChange={(machines) => {
-          setError(undefined);
-          saveSettings({ updates: { machines } }).catch((e: unknown) =>
-            setError(e instanceof Error ? e.message : "Couldn't save the setting"),
-          );
-        }}
+        checked={on}
+        onChange={(enabled) => void onChange(enabled)}
       />
     </div>
   );

@@ -81,6 +81,12 @@ const releaseOf = (connection: HostConnection): string | undefined =>
     ? connection.hello.release
     : undefined;
 
+/** How the machine's last update went, as its host says; undefined when it can't say. */
+const checkOf = (connection: HostConnection) =>
+  connection.update === undefined
+    ? Effect.succeed(undefined)
+    : connection.update.check.pipe(Effect.orElseSucceed(() => undefined));
+
 export const makeMachineUpdates = (deps: MachineUpdatesDeps) => {
   const states = new Map<HostId, MachineUpdate>();
   /** Machines whose update was asked for here: they update once idle even with automatic off. */
@@ -221,62 +227,78 @@ export const makeMachineUpdates = (deps: MachineUpdatesDeps) => {
    * A machine came online: how its last update went (asked through `host.update.check`, which also
    * confirms an update that brought it back on a new release), then whether it updates now.
    */
+  /**
+   * A machine that handed its service over, asked how that went: back on the new release is
+   * updated; an outcome its host recorded for that release (rolled back, or failed) ends it too.
+   * Otherwise it is still under way, and its deadline stands: the host that dialled in may be the
+   * previous one, back before its supervisor wrote down why.
+   */
+  const settleReturn = (
+    id: HostId,
+    connection: HostConnection,
+    check: HostUpdateCheck | undefined,
+  ) => {
+    const state = states.get(id);
+    if (state === undefined || (state.phase !== "restarting" && state.phase !== "switching"))
+      return;
+    if (releaseOf(connection) === state.release) {
+      returns.delete(id);
+      requested.delete(id);
+      set(id, { phase: "updated", release: state.release, at: deps.now() });
+      return;
+    }
+    const last = check?.last;
+    if (last === undefined || last.release !== state.release || last.outcome === "updated") return;
+    returns.delete(id);
+    const message = last.message ?? "The new release didn't start, so it went back.";
+    failed(id, state.release, message);
+    if (last.outcome === "rolledBack")
+      set(id, { phase: "rolledBack", release: state.release, message, at: last.at });
+  };
+
+  /**
+   * A machine came online: how its last update went (asked through `host.update.check`, which also
+   * confirms an update that brought it back on a new release), then whether it updates now.
+   */
   const connected = (id: HostId, connection: HostConnection) =>
     Effect.gen(function* () {
-      const update = connection.update;
       const state = states.get(id);
-      const theirs = releaseOf(connection);
-      let check: HostUpdateCheck | undefined;
-      if (update !== undefined) {
-        check = yield* update.check.pipe(Effect.orElseSucceed(() => undefined));
-      }
+      const check = yield* checkOf(connection);
       const last = check?.last;
       if (state !== undefined && (state.phase === "restarting" || state.phase === "switching")) {
-        returns.delete(id);
-        if (theirs === state.release) {
-          requested.delete(id);
-          set(id, { phase: "updated", release: state.release, at: deps.now() });
-        } else if (
-          last !== undefined &&
-          last.release === state.release &&
-          last.outcome !== "updated"
-        ) {
-          failed(
-            id,
-            state.release,
-            last.message ?? "The new release didn't start, so it went back.",
-          );
-          set(id, {
-            phase: "rolledBack",
-            release: state.release,
-            message: last.message ?? "The new release didn't start, so it went back.",
-            at: last.at,
-          });
-        }
+        settleReturn(id, connection, check);
       } else if (
         state === undefined &&
         last !== undefined &&
         last.outcome !== "updated" &&
         last.release === deps.release
       ) {
-        // Rolled back before this Gram started: shown, and not tried again on its own.
+        // Ended before this Gram started: shown, and not tried again on its own.
+        const message = last.message ?? "The new release didn't start, so it went back.";
         refusedReleases.set(id, last.release);
-        set(id, {
-          phase: "rolledBack",
-          release: last.release,
-          message: last.message ?? "The new release didn't start, so it went back.",
-          at: last.at,
-        });
+        set(
+          id,
+          last.outcome === "rolledBack"
+            ? { phase: "rolledBack", release: last.release, message, at: last.at }
+            : { phase: "failed", release: last.release, message, at: last.at },
+        );
       }
       if (due(id, connection, yield* deps.automatic)) begin(id, connection);
     });
 
   /**
-   * Every `RETRY_MS`: machines waiting to be idle, or behind with automatic updates on, are asked
-   * again, and one that handed its service over and didn't come back in time is marked failed.
+   * Every `RETRY_MS`: a machine still coming back from its update is asked again how it went;
+   * machines waiting to be idle, or behind with automatic updates on, are asked again; and one that
+   * handed its service over and didn't come back in time is marked failed.
    */
   const sweep = Effect.gen(function* () {
     const automatic = yield* deps.automatic;
+    for (const id of deps.online()) {
+      const connection = deps.connection(id);
+      const phase = states.get(id)?.phase;
+      if (connection !== undefined && (phase === "restarting" || phase === "switching"))
+        settleReturn(id, connection, yield* checkOf(connection));
+    }
     const now = deps.now();
     for (const [id, until] of returns) {
       if (now < until) continue;

@@ -34,7 +34,7 @@ import {
   uninstallService,
 } from "./service.ts";
 import { createPublicKey } from "node:crypto";
-import { superviseHere } from "./self-update-host.ts";
+import { recoverHere, superviseHere } from "./self-update-host.ts";
 
 const USAGE = `gram-host: run this machine's work for a Gram on another machine, over Tailscale.
 
@@ -224,6 +224,8 @@ export const runCli = <R>(
       home: string,
     ) => Effect.Effect<HostService, never, Scope.Scope | R>;
     readonly layer: Layer.Layer<R>;
+    /** The release this host runs, for recovering an unfinished update. */
+    readonly release?: string | undefined;
   },
 ): Effect.Effect<void> =>
   Effect.suspend((): Effect.Effect<void> => {
@@ -235,10 +237,17 @@ export const runCli = <R>(
       case "run": {
         const found = joined(home);
         if (found === undefined) return fail("This machine hasn't joined a Gram: gram-host join.");
-        return dialForever(
-          { origin: found.config.origin, hostId: found.config.hostId, key: found.key },
-          host.service(HostIdSchema.make(found.config.hostId), home),
-        ).pipe(Effect.provide(host.layer));
+        // An update a reboot or crash left unfinished is rolled back or finished alongside.
+        return Effect.forkScoped(recoverHere(home, host.release)).pipe(
+          Effect.andThen(
+            dialForever(
+              { origin: found.config.origin, hostId: found.config.hostId, key: found.key },
+              host.service(HostIdSchema.make(found.config.hostId), home),
+            ),
+          ),
+          Effect.scoped,
+          Effect.provide(host.layer),
+        );
       }
       case "service": {
         const platform = servicePlatform();
@@ -277,7 +286,7 @@ export const runCli = <R>(
         });
       // Started by the host itself when it updates (`self-update.ts`), outside its own service.
       case "update-supervise":
-        return superviseHere(home);
+        return superviseHere(home, rest);
       case "leave": {
         const platform = servicePlatform();
         return leave(

@@ -26,7 +26,6 @@ import {
   fsyncSync,
   mkdtempSync,
   openSync,
-  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -41,7 +40,8 @@ import type {
   HostUpdateOutcome,
   HostUpdateProgress,
 } from "@gram/contracts";
-import { isInside } from "@gram/git";
+import { relativeInside } from "@gram/git";
+import type { Admission } from "./admission.ts";
 import { RELEASES } from "./install-script.ts";
 import { LAUNCHD_LABEL, type ServiceCommand } from "./service.ts";
 
@@ -59,13 +59,23 @@ export const UPDATE_FILE = "update.json";
 /** The launchd job the supervisor runs as on a Mac. */
 export const SUPERVISOR_LABEL = `${LAUNCHD_LABEL}.update`;
 
-/** A release's parts, for ordering: the numbers, and a prerelease tag that sorts before none. */
+/** A release's parts, for ordering: its numbers, and its prerelease identifiers, if any. */
 const parts = (release: string) => {
-  const [core = "", pre] = release.split("-", 2);
-  return { numbers: core.split(".").map(Number), pre };
+  const at = release.indexOf("-");
+  const core = at === -1 ? release : release.slice(0, at);
+  return {
+    numbers: core.split(".").map(Number),
+    pre: at === -1 ? undefined : release.slice(at + 1).split("."),
+  };
 };
 
-/** Negative when `a` is an earlier release than `b`, positive when later, 0 when the same. */
+const NUMERIC = /^\d+$/;
+
+/**
+ * Negative when `a` is an earlier release than `b`, positive when later, 0 when the same, as
+ * semver orders them: a prerelease before its release, and its identifiers one by one, numeric
+ * ones by value and before any that aren't (`rc.2` before `rc.10`).
+ */
 export const compareReleases = (a: string, b: string): number => {
   const x = parts(a);
   const y = parts(b);
@@ -73,10 +83,21 @@ export const compareReleases = (a: string, b: string): number => {
     const d = (x.numbers[i] ?? 0) - (y.numbers[i] ?? 0);
     if (d !== 0) return d;
   }
-  if (x.pre === y.pre) return 0;
-  if (x.pre === undefined) return 1;
-  if (y.pre === undefined) return -1;
-  return x.pre < y.pre ? -1 : 1;
+  if (x.pre === undefined || y.pre === undefined)
+    return x.pre === y.pre ? 0 : x.pre === undefined ? 1 : -1;
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i += 1) {
+    const p = x.pre[i];
+    const q = y.pre[i];
+    if (p === undefined) return -1;
+    if (q === undefined) return 1;
+    if (p === q) continue;
+    const pn = NUMERIC.test(p);
+    const qn = NUMERIC.test(q);
+    if (pn && qn) return Number(p) - Number(q);
+    if (pn !== qn) return pn ? -1 : 1;
+    return p < q ? -1 : 1;
+  }
+  return 0;
 };
 
 /** The release's download for this platform, or undefined where Gram makes none. */
@@ -126,17 +147,31 @@ export const appsFolder = (
 /** What the host keeps across the restart, owner-only in its folder. */
 export interface UpdatePlan {
   readonly version: 1;
+  /** This update's own id: its supervisor, confirmation and outcome act on this plan only. */
+  readonly id: string;
   readonly release: string;
   /** The release it ran when it started; what a rollback goes back to. */
   readonly from?: string;
   readonly previous: ServiceCommand;
   readonly next: ServiceCommand;
-  /** `switching` until the new host is asked `host.update.check`, then `confirmed`. */
+  /** `switching` until the new host is asked `host.update.check`, then `confirmed`, then `done`. */
   readonly phase: "switching" | "confirmed" | "done";
   readonly startedAt: number;
   /** Once it is done: how it went. */
   readonly outcome?: HostUpdateOutcome;
 }
+
+/** An update's id, as its supervisor is started with it. */
+export const PLAN_ID = /^[a-f0-9]{16}$/;
+
+/**
+ * How long an unfinished plan may go without a live supervisor before the host, starting again,
+ * recovers it (a reboot or a crash took the supervisor): past the wait for confirmation, with room
+ * for the supervisor to start.
+ */
+export const STALE_MS = CONFIRM_MS + 60_000;
+/** The supervisor's lock, in the host's folder: only one supervisor acts at a time. */
+export const LOCK_FILE = "update.lock";
 
 const readPlan = (home: string): UpdatePlan | undefined => {
   let fd: number;
@@ -152,9 +187,11 @@ const readPlan = (home: string): UpdatePlan | undefined => {
     const value = JSON.parse(readFileSync(fd, "utf8")) as Partial<UpdatePlan> | null;
     return value !== null &&
       value.version === 1 &&
+      typeof value.id === "string" &&
+      PLAN_ID.test(value.id) &&
       typeof value.release === "string" &&
       RELEASE.test(value.release) &&
-      typeof value.phase === "string"
+      (value.phase === "switching" || value.phase === "confirmed" || value.phase === "done")
       ? (value as UpdatePlan)
       : undefined;
   } catch {
@@ -175,6 +212,67 @@ const writePlan = (home: string, plan: UpdatePlan) => {
     closeSync(fd);
   }
   renameSync(temporary, path);
+};
+
+/** Whether the process `pid` is still running (one of another user counts as running). */
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
+/** The pid of the supervisor holding the lock, while it runs; undefined when none does. */
+export const lockHolder = (home: string): number | undefined => {
+  try {
+    const value = JSON.parse(readFileSync(join(home, LOCK_FILE), "utf8")) as { pid?: unknown };
+    return typeof value.pid === "number" && alive(value.pid) ? value.pid : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** Takes the supervisor's lock for update `id`: false while another live supervisor holds it. */
+const takeLock = (home: string, id: string): boolean => {
+  const path = join(home, LOCK_FILE);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const fd = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+      try {
+        writeSync(fd, JSON.stringify({ id, pid: process.pid }));
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (lockHolder(home) !== undefined) return false;
+      // Left by a supervisor that died: taken over.
+      rmSync(path, { force: true });
+    }
+  }
+  return false;
+};
+
+const releaseLock = (home: string, id: string) => {
+  try {
+    const value = JSON.parse(readFileSync(join(home, LOCK_FILE), "utf8")) as { id?: unknown };
+    if (value.id === id) rmSync(join(home, LOCK_FILE), { force: true });
+  } catch {
+    // Gone already.
+  }
+};
+
+/** The app folder in `apps` that `command` runs from, or undefined for one elsewhere. */
+const appFolderOf = (apps: string, command: ServiceCommand): string | undefined => {
+  const inside = relativeInside(apps, command.program[0] ?? "");
+  const first = inside?.split(/[\\/]/)[0];
+  return first === undefined || first === "" || first.startsWith(".")
+    ? undefined
+    : join(apps, first);
 };
 
 /** Why an update didn't start, as `HostUpdateRefused` carries it. */
@@ -208,6 +306,9 @@ export const busyText = (busy: HostBusy): string => {
     : `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
 };
 
+/** How the supervisor is started: to move the service, or only to move it back. */
+export type SupervisorMode = "switch" | "rollback";
+
 /** What the updater needs from its machine, each a seam for tests. */
 export interface SelfUpdateDeps {
   /** The release this host runs; undefined when it runs from source. */
@@ -222,13 +323,17 @@ export interface SelfUpdateDeps {
   readonly current: ServiceCommand | undefined;
   /** What is running that an update would cut off. */
   readonly busy: () => Promise<HostBusy>;
+  /** Whether the host takes new work; closed from the last look at what runs to the restart. */
+  readonly admission: Pick<Admission, "close" | "open" | "inflight">;
+  /** How long the closed gate settles before the last look, for work just admitted to show. */
+  readonly settleMs?: number;
   readonly fetch: typeof fetch;
   /** Unpacks the verified download `archive` into the empty folder `into`. */
   readonly unpack: (archive: string, into: string) => Promise<void>;
   /** Whether the app's host starts: `gram-host --help` under its own binary. */
   readonly probe: (bin: string, entry: string) => Promise<boolean>;
   /** Starts the supervisor outside this host's service, which then moves the service. */
-  readonly handOver: (plan: UpdatePlan) => Promise<void>;
+  readonly handOver: (plan: UpdatePlan, mode: SupervisorMode) => Promise<void>;
   readonly now: () => number;
 }
 
@@ -304,11 +409,14 @@ const nextCommand = (current: ServiceCommand, bin: string, entry: string): Servi
   program: [bin, entry, ...current.program.slice(2)],
 });
 
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /**
  * The host's updater: `check` for `host.update.check`, `start` for `host.update.start`. One
- * update runs at a time.
+ * update runs at a time: in this process, and across restarts while its plan is unfinished.
  */
 export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
+  /** Set from the moment a start is taken until it is refused, or the service stops after it. */
   let running = false;
 
   /** Moves a staged, tested app into `apps/<release>`, and answers where its host is. */
@@ -369,18 +477,33 @@ export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
         "unsupported",
         "gram-host isn't running as its background service here, so it can't move itself. Rerun the installer.",
       );
+    // Taken before the first wait, so a second start can't slip in behind this one.
     if (running) return refusal("failed", "An update is already running.");
-    const before = await deps.busy();
-    if (isBusy(before)) return refusal("busy", `It is busy: ${busyText(before)}.`, before);
     running = true;
+    let closed = false;
+    let handedOver = false;
     try {
+      const pending = readPlan(deps.home);
+      if (pending !== undefined && pending.phase !== "done")
+        return refusal("failed", `An update to ${pending.release} is still under way.`);
+      if (lockHolder(deps.home) !== undefined)
+        return refusal("failed", "An update's supervisor is still running.");
+      const before = await deps.busy();
+      if (isBusy(before)) return refusal("busy", `It is busy: ${busyText(before)}.`, before);
       const ready = await prepare(release, asset, progress);
-      // The download takes minutes, and work may have started meanwhile: the app stays ready.
-      const now = await deps.busy();
+      // The download takes minutes, and work may have started meanwhile. From here no new work is
+      // taken; work admitted just before counts until it has answered, and the app stays ready.
+      deps.admission.close();
+      closed = true;
+      await wait(deps.settleMs ?? 2_000);
+      const seen = await deps.busy();
+      const inflight = deps.admission.inflight();
+      const now = !isBusy(seen) && inflight > 0 ? { ...seen, turns: inflight } : seen;
       if (isBusy(now)) return refusal("busy", `It is busy: ${busyText(now)}.`, now);
       progress({ phase: "switching" });
       const plan: UpdatePlan = {
         version: 1,
+        id: randomBytes(8).toString("hex"),
         release,
         from: deps.release,
         previous: current,
@@ -389,7 +512,28 @@ export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
         startedAt: deps.now(),
       };
       writePlan(deps.home, plan);
-      await deps.handOver(plan);
+      try {
+        await deps.handOver(plan, "switch");
+      } catch (error) {
+        writePlan(deps.home, {
+          ...plan,
+          phase: "done",
+          outcome: {
+            release,
+            outcome: "failed",
+            message: `The update couldn't start: ${error instanceof Error ? error.message.slice(0, 200) : String(error)}`,
+            at: deps.now(),
+          },
+        });
+        throw error;
+      }
+      handedOver = true;
+      // The gate stays closed until the service stops this process. One that is still running
+      // well past the wait was left alone by its supervisor: it takes work again.
+      setTimeout(() => {
+        deps.admission.open();
+        running = false;
+      }, STALE_MS).unref?.();
       return undefined;
     } catch (error) {
       return refusal(
@@ -397,13 +541,16 @@ export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
         error instanceof Error ? error.message.slice(0, 300) : String(error),
       );
     } finally {
-      running = false;
+      if (!handedOver) {
+        if (closed) deps.admission.open();
+        running = false;
+      }
     }
   };
 
   /**
    * Whether it could update now and how its last update went. Asked once this host's hello has
-   * passed, so a plan that moved to this release is confirmed here: the supervisor sees it and lets
+   * passed, so a plan that moved to this release is confirmed here: its supervisor sees it and lets
    * the previous app go.
    */
   const check = async (): Promise<HostUpdateCheck> => {
@@ -454,75 +601,128 @@ const shimText = (command: ServiceCommand) => {
 };
 
 /**
- * The supervisor, `gram-host update-supervise`: it runs the app the host ran before the update,
- * outside the host's service, so moving the service doesn't stop it.
+ * The supervisor, `gram-host update-supervise <id>`: it runs the app the host ran before the
+ * update, outside the host's service, so moving the service doesn't stop it. It acts only on the
+ * plan with its id, only while it holds the lock, and only one at a time. With `rollback` it only
+ * moves the service back: a host that started again found the plan's supervisor gone.
  */
 export const superviseUpdate = async (
   deps: SuperviseDeps,
+  id: string,
+  mode: SupervisorMode = "switch",
 ): Promise<HostUpdateOutcome | undefined> => {
-  const plan = readPlan(deps.home);
-  if (plan === undefined || plan.phase !== "switching") {
-    deps.log("gram-host: no update is waiting.");
+  if (!takeLock(deps.home, id)) {
+    deps.log("gram-host: another update's supervisor is running; this one leaves it alone.");
     return undefined;
   }
-  const finish = (outcome: HostUpdateOutcome) => {
-    writePlan(deps.home, { ...(readPlan(deps.home) ?? plan), phase: "done", outcome });
-    deps.log(
-      `gram-host: update to ${plan.release}: ${outcome.outcome}${outcome.message === undefined ? "" : ` (${outcome.message})`}`,
-    );
-    return outcome;
-  };
-  const rollBack = async (message: string): Promise<HostUpdateOutcome> => {
-    try {
-      await deps.install(plan.previous);
-    } catch (error) {
-      deps.log(`gram-host: the rollback couldn't restart the service: ${String(error)}`);
-    }
-    // The app that didn't work goes; the one it ran before is still in place.
-    const failed = join(deps.apps, plan.release);
-    if (!plan.previous.program.some((word) => isInside(failed, word)))
-      rmSync(failed, { recursive: true, force: true });
-    return finish({ release: plan.release, outcome: "rolledBack", message, at: deps.now() });
-  };
   try {
-    await deps.install(plan.next);
-  } catch (error) {
-    return rollBack(
-      `The service couldn't move to Gram ${plan.release}: ${String(error).slice(0, 200)}`,
-    );
-  }
-  const deadline = deps.now() + (deps.confirmMs ?? CONFIRM_MS);
-  while (deps.now() < deadline) {
-    await deps.sleep(2_000);
-    if (readPlan(deps.home)?.phase !== "confirmed") continue;
-    // Confirmed: the new host dialled in and passed its hello. Every other app here goes.
-    const keep = join(deps.apps, plan.release);
-    try {
-      for (const name of readdirSync(deps.apps)) {
-        const path = join(deps.apps, name);
-        if (path !== keep && !name.startsWith(".update-"))
-          rmSync(path, { recursive: true, force: true });
-      }
-    } catch {
-      // Left for the next update or install to clear.
+    const plan = readPlan(deps.home);
+    if (plan === undefined || plan.id !== id || plan.phase !== "switching") {
+      deps.log("gram-host: no update is waiting under that id.");
+      return undefined;
     }
-    if (deps.shim !== undefined) {
+    const finish = (outcome: HostUpdateOutcome) => {
+      const now = readPlan(deps.home);
+      if (now?.id === plan.id) writePlan(deps.home, { ...now, phase: "done", outcome });
+      deps.log(
+        `gram-host: update to ${plan.release}: ${outcome.outcome}${outcome.message === undefined ? "" : ` (${outcome.message})`}`,
+      );
+      return outcome;
+    };
+    const nextApp = join(deps.apps, plan.release);
+    const previousApp = appFolderOf(deps.apps, plan.previous);
+    const back = plan.from === undefined ? "the app it ran" : plan.from;
+    const rollBack = async (message: string): Promise<HostUpdateOutcome> => {
+      // Nothing to go back to: the new app stays, whatever the service names.
+      if (!existsSync(plan.previous.program[0] ?? ""))
+        return finish({
+          release: plan.release,
+          outcome: "failed",
+          message: `${message} The app it ran before is gone, so nothing was moved back; rerun the installer there.`,
+          at: deps.now(),
+        });
       try {
-        if (readFileSync(deps.shim, "utf8").startsWith(SHIM_HEADER)) {
-          const temporary = `${deps.shim}.part`;
-          writeFileSync(temporary, shimText(plan.next), { mode: 0o755 });
-          chmodSync(temporary, 0o755);
-          renameSync(temporary, deps.shim);
-        }
-      } catch {
-        // No shim, or not the installer's: left as it is.
+        await deps.install(plan.previous);
+      } catch (error) {
+        // The service may still name the new app: both stay, and it says so.
+        return finish({
+          release: plan.release,
+          outcome: "failed",
+          message: `${message} Moving the service back to ${back} failed too (${String(error).slice(0, 160)}), so both apps are kept; rerun the installer there.`,
+          at: deps.now(),
+        });
       }
+      if (previousApp !== nextApp) rmSync(nextApp, { recursive: true, force: true });
+      return finish({ release: plan.release, outcome: "rolledBack", message, at: deps.now() });
+    };
+    if (mode === "rollback")
+      return await rollBack(
+        `The machine restarted before Gram ${plan.release} dialled in, so it went back to ${back}.`,
+      );
+    try {
+      await deps.install(plan.next);
+    } catch (error) {
+      return await rollBack(
+        `The service couldn't move to Gram ${plan.release}: ${String(error).slice(0, 200)}`,
+      );
     }
-    return finish({ release: plan.release, outcome: "updated", at: deps.now() });
+    const deadline = deps.now() + (deps.confirmMs ?? CONFIRM_MS);
+    while (deps.now() < deadline) {
+      await deps.sleep(2_000);
+      const now = readPlan(deps.home);
+      if (now?.id !== plan.id || now.phase !== "confirmed") continue;
+      // Confirmed: the new host dialled in and passed its hello. The app it ran before goes.
+      if (previousApp !== undefined && previousApp !== nextApp)
+        rmSync(previousApp, { recursive: true, force: true });
+      if (deps.shim !== undefined) {
+        try {
+          if (readFileSync(deps.shim, "utf8").startsWith(SHIM_HEADER)) {
+            const temporary = `${deps.shim}.part`;
+            writeFileSync(temporary, shimText(plan.next), { mode: 0o755 });
+            chmodSync(temporary, 0o755);
+            renameSync(temporary, deps.shim);
+          }
+        } catch {
+          // No shim, or not the installer's: left as it is.
+        }
+      }
+      return finish({ release: plan.release, outcome: "updated", at: deps.now() });
+    }
+    return await rollBack(
+      `Gram ${plan.release} didn't dial in within ${Math.round((deps.confirmMs ?? CONFIRM_MS) / 60_000)} minutes.`,
+    );
+  } finally {
+    releaseLock(deps.home, id);
   }
-  return rollBack(
-    `Gram ${plan.release} didn't dial in within ${Math.round((deps.confirmMs ?? CONFIRM_MS) / 60_000)} minutes.`,
-  );
+};
+
+/**
+ * What a host starting finds of an unfinished update whose supervisor is gone (a reboot or a
+ * crash took it): `rollback` for one never confirmed, past the wait, which it hands to a new
+ * supervisor; `finished` for one confirmed, which it records as updated; otherwise nothing.
+ */
+export const recoverUpdate = async (deps: {
+  readonly home: string;
+  readonly release: string | undefined;
+  readonly now: () => number;
+  readonly handOver: (plan: UpdatePlan, mode: SupervisorMode) => Promise<void>;
+}): Promise<"rollback" | "finished" | undefined> => {
+  const plan = readPlan(deps.home);
+  if (plan === undefined || plan.phase === "done" || lockHolder(deps.home) !== undefined)
+    return undefined;
+  if (plan.phase === "confirmed") {
+    writePlan(deps.home, {
+      ...plan,
+      phase: "done",
+      outcome: { release: plan.release, outcome: "updated", at: deps.now() },
+    });
+    return "finished";
+  }
+  if (deps.now() - plan.startedAt < STALE_MS) return undefined;
+  // This host is the new release, up and asked nothing yet: it waits for its check instead.
+  if (deps.release === plan.release && deps.now() - plan.startedAt < 2 * STALE_MS) return undefined;
+  await deps.handOver(plan, "rollback");
+  return "rollback";
 };
 
 /** Runs `file` and answers its exit code and the end of its output. */
@@ -629,10 +829,19 @@ ${env}
 };
 
 /** The supervisor's command: the app running now, as Node, with `update-supervise`. */
-export const supervisorCommand = (current: ServiceCommand): ServiceCommand => {
+export const supervisorCommand = (
+  current: ServiceCommand,
+  id: string,
+  mode: SupervisorMode = "switch",
+): ServiceCommand => {
   const { GRAM_HOST_SERVICE: _service, ...env } = current.env;
   return {
-    program: [...current.program.slice(0, 2), "update-supervise"],
+    program: [
+      ...current.program.slice(0, 2),
+      "update-supervise",
+      id,
+      ...(mode === "rollback" ? ["rollback"] : []),
+    ],
     env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
     home: current.home,
   };
@@ -644,12 +853,15 @@ export const supervisorCommand = (current: ServiceCommand): ServiceCommand => {
  */
 export const handOverToSupervisor =
   (platform: NodeJS.Platform) =>
-  async (plan: UpdatePlan): Promise<void> => {
-    const command = supervisorCommand(plan.previous);
+  async (plan: UpdatePlan, mode: SupervisorMode): Promise<void> => {
+    // Never a second supervisor beside one still running.
+    if (lockHolder(plan.previous.home) !== undefined)
+      throw new Error("An update's supervisor is still running.");
+    const command = supervisorCommand(plan.previous, plan.id, mode);
     if (platform === "darwin") {
       const file = join(command.home, "update-supervisor.plist");
       writeFileSync(file, supervisorPlist(command), { mode: 0o600 });
-      // One left loaded by an earlier update has run already.
+      // One left loaded by an earlier update has finished: its lock is free.
       await run("launchctl", ["bootout", `gui/${uid()}/${SUPERVISOR_LABEL}`]);
       const done = await run("launchctl", ["bootstrap", `gui/${uid()}`, file]);
       if (done.code !== 0) throw new Error(`Couldn't start the update: ${done.output.slice(-200)}`);
@@ -659,7 +871,7 @@ export const handOverToSupervisor =
       "--user",
       "--collect",
       "--quiet",
-      `--unit=gram-host-update-${plan.startedAt}`,
+      `--unit=gram-host-update-${plan.id}-${mode}`,
       ...Object.entries(command.env).map(([key, value]) => `--setenv=${key}=${value}`),
       "--",
       ...command.program,

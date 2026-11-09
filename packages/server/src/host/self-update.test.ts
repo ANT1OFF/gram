@@ -33,7 +33,11 @@ import {
   busyText,
   compareReleases,
   makeSelfUpdate,
+  LOCK_FILE,
+  recoverUpdate,
   releaseAsset,
+  STALE_MS,
+  type SupervisorMode,
   type SelfUpdateDeps,
   superviseUpdate,
   supervisorCommand,
@@ -41,6 +45,7 @@ import {
   type UpdatePlan,
 } from "./self-update.ts";
 import { hostUpdaterOf } from "./self-update-host.ts";
+import { makeAdmission, UPDATING } from "./admission.ts";
 import type { ServiceCommand } from "./service.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
@@ -108,7 +113,9 @@ const setup = (
   layOut(join(apps, OLD));
   const release = options.release ?? fakeRelease("the new app");
   const handed: UpdatePlan[] = [];
+  const modes: SupervisorMode[] = [];
   const unpacked: string[] = [];
+  const admission = makeAdmission();
   const deps: SelfUpdateDeps = {
     release: OLD,
     platform: "linux",
@@ -123,13 +130,26 @@ const setup = (
       layOut(into);
     },
     probe: async (bin) => (options.probe ?? true) && existsSync(bin),
-    handOver: async (plan) => {
+    handOver: async (plan, mode) => {
       handed.push(plan);
+      modes.push(mode);
     },
+    admission,
+    settleMs: 0,
     now: () => 1_000,
     ...options.overrides,
   };
-  return { home, apps, deps, handed, unpacked, release, updater: makeSelfUpdate(deps) };
+  return {
+    home,
+    apps,
+    deps,
+    handed,
+    modes,
+    admission,
+    unpacked,
+    release,
+    updater: makeSelfUpdate(deps),
+  };
 };
 
 /** The phases in order, a run of download steps as one. */
@@ -152,6 +172,12 @@ describe("releases", () => {
     expect(compareReleases("1.17.0-beta.1", "1.17.0")).toBeLessThan(0);
     expect(compareReleases("1.10.0", "1.9.0")).toBeGreaterThan(0);
     expect(compareReleases("1.17.0", "1.17.0")).toBe(0);
+    // Numeric prerelease identifiers by value, as semver and the release tooling order them.
+    expect(compareReleases("1.17.0-rc.2", "1.17.0-rc.10")).toBeLessThan(0);
+    expect(compareReleases("1.17.0-rc.10", "1.17.0-rc.2")).toBeGreaterThan(0);
+    expect(compareReleases("1.17.0-beta.11", "1.17.0-rc.1")).toBeLessThan(0);
+    expect(compareReleases("1.17.0-rc.1", "1.17.0-rc.1.1")).toBeLessThan(0);
+    expect(compareReleases("1.17.0-1", "1.17.0-alpha")).toBeLessThan(0);
   });
 
   it("names the release's own downloads, and none for a platform Gram doesn't make", () => {
@@ -205,11 +231,13 @@ describe("a host updating itself", () => {
       phase: "switching",
     });
     // The supervisor runs the app the host ran, outside the service.
-    expect(supervisorCommand(plan.previous).program).toEqual([
+    expect(supervisorCommand(plan.previous, plan.id).program).toEqual([
       ...plan.previous.program.slice(0, 2),
       "update-supervise",
+      plan.id,
     ]);
-    expect(supervisorCommand(plan.previous).env["GRAM_HOST_SERVICE"]).toBeUndefined();
+    expect(supervisorCommand(plan.previous, plan.id, "rollback").program.at(-1)).toBe("rollback");
+    expect(supervisorCommand(plan.previous, plan.id).env["GRAM_HOST_SERVICE"]).toBeUndefined();
   });
 
   it("installs nothing and runs nothing from a download that doesn't match its checksum", async () => {
@@ -340,23 +368,26 @@ describe("the update's supervisor", () => {
     // The new host: on the new release, it dials in and the main Gram asks it its check.
     const newHost = makeSelfUpdate({ ...setup().deps, home, apps, release: NEW });
     const time = clock();
-    const outcome = await superviseUpdate({
-      home,
-      apps,
-      shim,
-      install: async (command) => {
-        installed.push(command);
+    const outcome = await superviseUpdate(
+      {
+        home,
+        apps,
+        shim,
+        install: async (command) => {
+          installed.push(command);
+        },
+        now: time.now,
+        sleep: async (ms) => {
+          await time.sleep(ms);
+          if (time.now() >= 6_000) {
+            const check = await newHost.check();
+            expect(check.last).toMatchObject({ release: NEW, outcome: "updated" });
+          }
+        },
+        log: () => undefined,
       },
-      now: time.now,
-      sleep: async (ms) => {
-        await time.sleep(ms);
-        if (time.now() >= 6_000) {
-          const check = await newHost.check();
-          expect(check.last).toMatchObject({ release: NEW, outcome: "updated" });
-        }
-      },
-      log: () => undefined,
-    });
+      plan.id,
+    );
     expect(outcome).toMatchObject({ release: NEW, outcome: "updated" });
     expect(installed).toEqual([plan.next]);
     expect(readFileSyncDir(apps)).toEqual([NEW]);
@@ -373,16 +404,19 @@ describe("the update's supervisor", () => {
     const plan = handed[0]!;
     const installed: ServiceCommand[] = [];
     const time = clock();
-    const outcome = await superviseUpdate({
-      home,
-      apps,
-      install: async (command) => {
-        installed.push(command);
+    const outcome = await superviseUpdate(
+      {
+        home,
+        apps,
+        install: async (command) => {
+          installed.push(command);
+        },
+        now: time.now,
+        sleep: time.sleep,
+        log: () => undefined,
       },
-      now: time.now,
-      sleep: time.sleep,
-      log: () => undefined,
-    });
+      plan.id,
+    );
     expect(outcome).toMatchObject({
       release: NEW,
       outcome: "rolledBack",
@@ -401,17 +435,20 @@ describe("the update's supervisor", () => {
     expect((await steps(updater)).refused).toBeUndefined();
     const installed: ServiceCommand[] = [];
     const time = clock();
-    const outcome = await superviseUpdate({
-      home,
-      apps,
-      install: async (command) => {
-        installed.push(command);
-        if (installed.length === 1) throw new Error("systemctl --user restart failed (1)");
+    const outcome = await superviseUpdate(
+      {
+        home,
+        apps,
+        install: async (command) => {
+          installed.push(command);
+          if (installed.length === 1) throw new Error("systemctl --user restart failed (1)");
+        },
+        now: time.now,
+        sleep: time.sleep,
+        log: () => undefined,
       },
-      now: time.now,
-      sleep: time.sleep,
-      log: () => undefined,
-    });
+      handed[0]!.id,
+    );
     expect(outcome?.outcome).toBe("rolledBack");
     expect(installed).toEqual([handed[0]!.next, handed[0]!.previous]);
     expect(readFileSyncDir(apps)).toEqual([OLD]);
@@ -422,23 +459,247 @@ describe("the update's supervisor", () => {
     const time = clock();
     const installed: ServiceCommand[] = [];
     expect(
-      await superviseUpdate({
-        home,
-        apps: join(home, "apps"),
-        install: async (command) => {
-          installed.push(command);
+      await superviseUpdate(
+        {
+          home,
+          apps: join(home, "apps"),
+          install: async (command) => {
+            installed.push(command);
+          },
+          now: time.now,
+          sleep: time.sleep,
+          log: () => undefined,
         },
-        now: time.now,
-        sleep: time.sleep,
-        log: () => undefined,
-      }),
+        "0123456789abcdef",
+      ),
     ).toBeUndefined();
     expect(installed).toEqual([]);
   });
 });
 
+/** The supervisor's own seams over `fixture`, on a fake clock, recording what it installed. */
+const supervising = (
+  fixture: { readonly home: string; readonly apps: string },
+  options: {
+    readonly install?: (command: ServiceCommand) => Promise<void>;
+    readonly sleep?: (ms: number) => Promise<void>;
+    readonly confirmMs?: number;
+  } = {},
+) => {
+  const time = clock();
+  const installed: ServiceCommand[] = [];
+  return {
+    installed,
+    deps: {
+      home: fixture.home,
+      apps: fixture.apps,
+      install: async (command: ServiceCommand) => {
+        installed.push(command);
+        await options.install?.(command);
+      },
+      now: time.now,
+      sleep: async (ms: number) => {
+        await time.sleep(ms);
+        await options.sleep?.(ms);
+      },
+      ...(options.confirmMs === undefined ? {} : { confirmMs: options.confirmMs }),
+      log: () => undefined,
+    },
+  };
+};
+
+// Each of these failed on c0a36524, in the independent review's synthetic reproductions.
+describe("review regressions", () => {
+  it("closes admission before its last look at what runs, and keeps it closed through the handover", async () => {
+    let refusedAtHandover: unknown;
+    const fixture = setup({
+      overrides: {
+        handOver: async () => {
+          // Work that arrives while the supervisor is starting: refused, not started.
+          refusedAtHandover = await Effect.runPromise(
+            fixture.admission.admit(Effect.succeed("started"), () => UPDATING).pipe(Effect.flip),
+          );
+        },
+      },
+    });
+    expect((await steps(fixture.updater)).refused).toBeUndefined();
+    expect(refusedAtHandover).toBe(UPDATING);
+    // Still closed once handed over: the service stops this process next.
+    expect(fixture.admission.closed()).toBe(true);
+  });
+
+  it("counts work admitted just before the gate closed, and opens the gate again when it waits", async () => {
+    const fixture = setup();
+    let finish!: () => void;
+    // A delivery admitted before the gate closes, not yet answered and not yet a running turn.
+    const delivery = Effect.runPromise(
+      fixture.admission.admit(
+        Effect.promise(() => new Promise<void>((resolve) => (finish = resolve))),
+        () => UPDATING,
+      ),
+    );
+    const run = await steps(fixture.updater);
+    expect(run.refused).toMatchObject({ reason: "busy", busy: { turns: 1 } });
+    expect(fixture.handed).toEqual([]);
+    expect(fixture.admission.closed()).toBe(false);
+    finish();
+    await delivery;
+    // Once it has answered, the next try goes ahead without downloading again.
+    expect((await steps(fixture.updater)).refused).toBeUndefined();
+    expect(fixture.release.asked).toHaveLength(2);
+  });
+
+  it("takes one start at a time, and none while an update is under way", async () => {
+    const fixture = setup();
+    const results = await Promise.all([
+      fixture.updater.start(NEW, () => undefined),
+      fixture.updater.start(NEW, () => undefined),
+    ]);
+    expect(results.filter((result) => result === undefined)).toHaveLength(1);
+    expect(results).toContainEqual(expect.objectContaining({ reason: "failed" }));
+    expect(fixture.handed).toHaveLength(1);
+    // Another process (a host restarted meanwhile) sees the plan and leaves it alone too.
+    const again = makeSelfUpdate({ ...fixture.deps, admission: makeAdmission() });
+    expect(await again.start(NEW, () => undefined)).toMatchObject({
+      reason: "failed",
+      message: `An update to ${NEW} is still under way.`,
+    });
+    expect(fixture.handed).toHaveLength(1);
+  });
+
+  it("lets one supervisor act, on its own plan only, and keeps both apps through it", async () => {
+    const fixture = setup();
+    await steps(fixture.updater);
+    const plan = fixture.handed[0]!;
+    // A wrong id is no supervisor of this plan.
+    const stranger = supervising(fixture);
+    expect(await superviseUpdate(stranger.deps, "0123456789abcdef")).toBeUndefined();
+    expect(stranger.installed).toEqual([]);
+    // While the first holds the lock, a second started for the same plan leaves it alone.
+    let second: Promise<unknown> | undefined;
+    const secondSupervisor = supervising(fixture);
+    const newHost = makeSelfUpdate({ ...fixture.deps, release: NEW, admission: makeAdmission() });
+    const first = supervising(fixture, {
+      sleep: async () => {
+        second ??= superviseUpdate(secondSupervisor.deps, plan.id);
+        await newHost.check();
+      },
+    });
+    expect(await superviseUpdate(first.deps, plan.id)).toMatchObject({ outcome: "updated" });
+    expect(await second).toBeUndefined();
+    expect(secondSupervisor.installed).toEqual([]);
+    expect(readFileSyncDir(fixture.apps)).toEqual([NEW]);
+    expect(existsSync(join(fixture.home, LOCK_FILE))).toBe(false);
+  });
+
+  it("removes only the app it ran before, not one staged since", async () => {
+    const fixture = setup();
+    await steps(fixture.updater);
+    layOut(join(fixture.apps, "1.18.0"));
+    const newHost = makeSelfUpdate({ ...fixture.deps, release: NEW, admission: makeAdmission() });
+    const supervisor = supervising(fixture, { sleep: async () => void (await newHost.check()) });
+    expect(await superviseUpdate(supervisor.deps, fixture.handed[0]!.id)).toMatchObject({
+      outcome: "updated",
+    });
+    expect(readFileSyncDir(fixture.apps)).toEqual([NEW, "1.18.0"]);
+  });
+
+  it("keeps both apps and says it failed when moving the service back fails", async () => {
+    const fixture = setup();
+    await steps(fixture.updater);
+    const plan = fixture.handed[0]!;
+    let service = plan.previous;
+    const supervisor = supervising(fixture, {
+      confirmMs: 0,
+      install: async (command) => {
+        if (command.program[0] === plan.previous.program[0])
+          throw new Error("rollback cannot rewrite service file");
+        service = command;
+      },
+    });
+    const outcome = await superviseUpdate(supervisor.deps, plan.id);
+    expect(outcome).toMatchObject({ outcome: "failed" });
+    expect(outcome?.message).toContain("both apps are kept");
+    // The service still names the new app, and it is still there.
+    expect(service).toEqual(plan.next);
+    expect(existsSync(service.program[0]!)).toBe(true);
+    expect(readFileSyncDir(fixture.apps)).toEqual([OLD, NEW]);
+  });
+
+  it("never downgrades by prerelease order", async () => {
+    let fetches = 0;
+    const fixture = setup({
+      overrides: {
+        release: "1.17.0-rc.10",
+        fetch: async () => {
+          fetches += 1;
+          return new Response("missing", { status: 404 });
+        },
+      },
+    });
+    expect(await fixture.updater.start("1.17.0-rc.2", () => undefined)).toMatchObject({
+      reason: "invalid",
+    });
+    expect(fetches).toBe(0);
+  });
+
+  it("rolls back on its next start an update a reboot left without its supervisor", async () => {
+    const fixture = setup();
+    await steps(fixture.updater);
+    const plan = fixture.handed[0]!;
+    const handed: Array<[UpdatePlan, SupervisorMode]> = [];
+    const recover = (now: number, release = OLD) =>
+      recoverUpdate({
+        home: fixture.home,
+        release,
+        now: () => now,
+        handOver: async (each, mode) => void handed.push([each, mode]),
+      });
+    // Within its wait the supervisor may still be starting: left alone.
+    expect(await recover(plan.startedAt + 1_000)).toBeUndefined();
+    expect(await recover(plan.startedAt + STALE_MS + 1)).toBe("rollback");
+    expect(handed).toEqual([[plan, "rollback"]]);
+    // The supervisor it starts only moves the service back.
+    const supervisor = supervising(fixture);
+    expect(await superviseUpdate(supervisor.deps, plan.id, "rollback")).toMatchObject({
+      outcome: "rolledBack",
+    });
+    expect(supervisor.installed).toEqual([plan.previous]);
+    expect(readFileSyncDir(fixture.apps)).toEqual([OLD]);
+  });
+
+  it("finishes on its next start an update confirmed before a reboot", async () => {
+    const fixture = setup();
+    await steps(fixture.updater);
+    const plan = fixture.handed[0]!;
+    await makeSelfUpdate({ ...fixture.deps, release: NEW, admission: makeAdmission() }).check();
+    expect(
+      await recoverUpdate({
+        home: fixture.home,
+        release: NEW,
+        now: () => plan.startedAt + 10,
+        handOver: async () => undefined,
+      }),
+    ).toBe("finished");
+    expect(JSON.parse(readFileSync(join(fixture.home, UPDATE_FILE), "utf8"))).toMatchObject({
+      phase: "done",
+      outcome: { outcome: "updated" },
+    });
+    // And a later update can start.
+    expect(
+      await makeSelfUpdate({ ...fixture.deps, release: NEW, admission: makeAdmission() }).start(
+        "1.18.0",
+        () => undefined,
+      ),
+    ).not.toMatchObject({ message: expect.stringContaining("still under way") });
+  });
+});
+
 /** A fake host on one end of a stream that serves `update`, and the main Gram's connection. */
-const connected = (updater: ReturnType<typeof makeSelfUpdate>) =>
+const connected = (
+  updater: ReturnType<typeof makeSelfUpdate>,
+  admission?: ReturnType<typeof makeAdmission>,
+) =>
   Effect.gen(function* () {
     const { host, control } = yield* streamPair;
     const service: HostService = {
@@ -460,6 +721,7 @@ const connected = (updater: ReturnType<typeof makeSelfUpdate>) =>
       sessions: yield* sessionsOnHost(noAgents),
       scan: Effect.succeed({ listening: new Map(), children: new Map() }),
       update: hostUpdaterOf(updater),
+      ...(admission === undefined ? {} : { admission }),
     };
     yield* Effect.forkScoped(
       serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(host)), service),
@@ -469,6 +731,24 @@ const connected = (updater: ReturnType<typeof makeSelfUpdate>) =>
 
 describe("host.update over the wire", () => {
   const layer = WorktreesLive.pipe(Layer.provideMerge(ProcLive));
+
+  it.effect("refuses new work over the wire while an update has closed the gate", () =>
+    Effect.gen(function* () {
+      const fixture = setup();
+      const connection = yield* connected(fixture.updater, fixture.admission);
+      fixture.admission.close();
+      const clone = yield* connection.repos.ensure("https://example.com/a/b.git").pipe(Effect.flip);
+      expect(clone.message).toContain(UPDATING);
+      const shell = yield* connection.terminals
+        .open({ cwd: tmpdir(), cols: 80, rows: 24 }, undefined)
+        .pipe(Effect.flip);
+      expect(shell.message).toContain(UPDATING);
+      // Open again, the same call reaches the host's own answer instead.
+      fixture.admission.open();
+      const after = yield* connection.repos.ensure("https://example.com/a/b.git").pipe(Effect.flip);
+      expect(after.message).not.toContain(UPDATING);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
 
   it.effect("streams the update's steps, and a refusal as the host's own answer", () =>
     Effect.gen(function* () {

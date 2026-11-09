@@ -209,6 +209,8 @@ export interface MachinesStatus {
   readonly protocol?: number;
   /** What updates a joined machine when run there; set while access over Tailscale is on. */
   readonly updateCommand?: string;
+  /** Whether joined machines update to this Gram's release on their own; on unless turned off. */
+  readonly automaticUpdates?: boolean;
 }
 
 export interface JoinLink {
@@ -309,6 +311,7 @@ const status = async (response: Response, fallback: string): Promise<MachinesSta
     release?: unknown;
     protocol?: unknown;
     updateCommand?: unknown;
+    automaticUpdates?: unknown;
   };
   if (!Array.isArray(value.machines) || !value.machines.every(isMachine))
     throw new MachinesError(fallback);
@@ -320,6 +323,9 @@ const status = async (response: Response, fallback: string): Promise<MachinesSta
     ...(typeof value.release === "string" ? { release: value.release } : {}),
     ...(typeof value.protocol === "number" ? { protocol: value.protocol } : {}),
     ...(typeof value.updateCommand === "string" ? { updateCommand: value.updateCommand } : {}),
+    ...(typeof value.automaticUpdates === "boolean"
+      ? { automaticUpdates: value.automaticUpdates }
+      : {}),
   };
 };
 
@@ -437,6 +443,12 @@ export const machinesApi = {
    * Updates every machine whose host updates itself and runs an earlier release, each once it is
    * idle; the rows show how each goes.
    */
+  /** Turns joined machines updating on their own on or off; only this computer's app can. */
+  setAutomaticUpdates: async (enabled: boolean) =>
+    status(
+      await post("/machines/automatic-updates", { enabled }),
+      "Couldn't change automatic updates",
+    ),
   updateAll: async () => status(await post("/machines/update-all"), "Couldn't update the machines"),
   /**
    * Updates the machine to this Gram's release. A host that updates itself starts at once and its

@@ -98,7 +98,8 @@ const hostsOver = (
       : Effect.fail(new HostUnavailable({ hostId: id, message: "That machine is offline." })),
   origin: () => undefined,
   update: () => ({ kind: "fallback" }),
-  automaticUpdates: () => undefined,
+  automaticUpdates: () => true,
+  setAutomaticUpdates: () => undefined,
   list: () =>
     machines
       .list()
