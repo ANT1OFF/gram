@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.16.0](https://github.com/ANT1OFF/gram/compare/v1.15.1...v1.16.0) (2026-11-09)
+
+
+### Features
+
+* fold memory changes into the tool run around them ([#311](https://github.com/ANT1OFF/gram/issues/311)) ([1650037](https://github.com/ANT1OFF/gram/commit/1650037a7f9f150c254edb211cb7e5505765d869))
+
+
+### Bug Fixes
+
+* keep a joined machine's sessions running through a dropped connection ([81ed140](https://github.com/ANT1OFF/gram/commit/81ed140be95a531beb0ffa1c99c27f06a3d98d5d))
+* stop asking this disk about a joined machine's folders, and key checkouts once per sweep ([b20f7f6](https://github.com/ANT1OFF/gram/commit/b20f7f6d97891d900655dac55508acc67d2021e7))
+
 ## [1.15.1](https://github.com/ANT1OFF/gram/compare/v1.15.0...v1.15.1) (2026-11-09)
 
 
