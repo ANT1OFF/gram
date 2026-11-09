@@ -385,10 +385,22 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
+      - name: Identify packaging download versions
+        id: packaging-cache
+        run: node tools/packaging/cache.mjs --key
+      - name: Cache Electron and electron-builder downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: gram-packaging-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.packaging-cache.outputs.versions }}
       - run: bun install --frozen-lockfile
+      - name: Seed pinned Electron checksums for offline cache validation
+        run: node tools/packaging/cache.mjs --seed-checksums
       - run: bun run build:bundles
       - name: Package the unsigned app
-        run: bun run electron-builder --dir --publish never
+        run: node ../../tools/packaging/retry.mjs bun run electron-builder --dir --publish never
         working-directory: apps/desktop
       - run: bun run verify:package
         working-directory: apps/desktop
@@ -423,13 +435,25 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
+      - name: Identify packaging download versions
+        id: packaging-cache
+        run: node tools/packaging/cache.mjs --key
+      - name: Cache Electron and electron-builder downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: gram-packaging-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.packaging-cache.outputs.versions }}
       - run: bun install --frozen-lockfile
+      - name: Seed pinned Electron checksums for offline cache validation
+        run: node tools/packaging/cache.mjs --seed-checksums
       - run: bun run build:bundles
       - name: Compile node-pty against Electron's headers
         run: bun run rebuild:node-pty
         working-directory: apps/desktop
       - name: Package the AppImage and .deb
-        run: bun run electron-builder --linux --x64 --publish never
+        run: node ../../tools/packaging/retry.mjs bun run electron-builder --linux --x64 --publish never
         working-directory: apps/desktop
       - run: bun run verify:package
         working-directory: apps/desktop
