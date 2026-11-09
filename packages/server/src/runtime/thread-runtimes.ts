@@ -410,6 +410,9 @@ const make = Effect.gen(function* () {
             closing: false,
             reserved: false,
             endedReason: undefined,
+            restartedMachine: undefined,
+            machineRestart: undefined,
+            stopAsked: undefined,
             reopenOnIdle: false,
             restartMarker: undefined,
             pendingRestart: undefined,
@@ -1002,6 +1005,8 @@ const make = Effect.gen(function* () {
           if (rt.turn === undefined) return { background: rt.session };
           // Stop answers every open card: drop them now rather than when the turn winds down.
           yield* clearPendingRequests(rt, "stop-requested");
+          // A machine restart that cuts the turn short now doesn't carry it on.
+          rt.stopAsked = rt.turn.id;
           return { session: rt.session, turn: rt.turn };
         }),
       );
