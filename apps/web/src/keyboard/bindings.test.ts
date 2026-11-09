@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { bindingRows, normaliseKeys, shortcutHint, unknownOverrides } from "./bindings";
 import { effectiveKeys } from "./bindings-store";
@@ -25,6 +25,17 @@ describe("effective bindings", () => {
       formatKeys("mod+shift+b"),
     );
     expect(shortcutHint("not.a.shortcut", {})).toBe("");
+  });
+
+  it("shows no keys on a touch screen, which has none to press", () => {
+    vi.stubGlobal("window", {
+      matchMedia: (query: string) => ({ matches: query === "(pointer: coarse)", media: query }),
+    });
+    try {
+      expect(shortcutHint("sidebar.toggle", {})).toBe("");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("normalises modifier order", () => {

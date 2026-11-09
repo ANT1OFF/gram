@@ -18,7 +18,6 @@ import {
   MessageSquare,
   Moon,
   Network,
-  PanelRightOpen,
   PanelsTopLeft,
   Play,
   Rows3,
@@ -47,13 +46,7 @@ import { useWorkspacePause } from "@/orchestration/workspace-pause-button";
 import { RunScriptMenuItems } from "@/scripts/run-script-menu";
 import { useProjectScripts } from "@/scripts/use-project-scripts";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
-import {
-  fitShell,
-  GRID_PRESETS,
-  PRESET_LABELS,
-  useLayoutStore,
-  type BoardLayout,
-} from "@/stores/layout";
+import { GRID_PRESETS, PRESET_LABELS, useLayoutStore, type BoardLayout } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { pauseClock } from "@/thread/orchestration-model";
 import { AllActivityItem, useThreadMenu } from "@/thread/thread-menu";
@@ -606,10 +599,12 @@ function PhonePlaces() {
       {workspaces.length > 0 && (
         <Menu.RadioGroup
           data-testid="phone-menu-view"
+          aria-label="Chat or Board"
           value={checked}
           onValueChange={(next: AppView) => pickView(next)}
         >
-          <Menu.GroupLabel className={MENU_LABEL}>View</Menu.GroupLabel>
+          {/* No "View" label: the View submenu below is a different thing, and a checked Chat or
+              Board says what these are. */}
           <Menu.RadioItem value="chat" closeOnClick className={MENU_ITEM}>
             <MessageSquare aria-hidden />
             Chat
@@ -664,7 +659,6 @@ function PhonePlaces() {
 /** The window's own that a wide bar shows as icons: usage, the right panel and Settings. */
 function PhoneWindowItems() {
   const navigate = useNavigate();
-  const panelShown = useLayoutStore((s) => fitShell(s).panel !== "none");
   return (
     <>
       {SEPARATOR}
@@ -675,14 +669,6 @@ function PhoneWindowItems() {
       >
         <ChartNoAxesCombined aria-hidden />
         Usage
-      </Menu.Item>
-      <Menu.Item
-        data-testid="phone-menu-panel"
-        className={MENU_ITEM}
-        onClick={() => useLayoutStore.getState().togglePanel()}
-      >
-        <PanelRightOpen aria-hidden />
-        {panelShown ? "Hide side panel" : "Show side panel"}
       </Menu.Item>
       <Menu.Item
         data-testid="phone-menu-settings"

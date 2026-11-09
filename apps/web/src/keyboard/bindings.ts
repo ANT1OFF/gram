@@ -1,9 +1,15 @@
 import { effectiveKeys, type BindingOverrides } from "./bindings-store";
 import { catalogKeys, type ShortcutDefinition } from "./catalog";
+import { isTouch } from "@/lib/use-phone";
+
 import { formatKeys, matches, parseKeys } from "./registry";
 
-/** A shortcut's effective keys for hints and menus, from its catalog default; empty when turned off. */
+/**
+ * A shortcut's effective keys for hints and menus, from its catalog default; empty when turned off,
+ * and on a touch screen, which has no keys to press: a hint there is noise in a phone's narrow row.
+ */
 export function shortcutHint(id: string, overrides?: BindingOverrides): string {
+  if (isTouch()) return "";
   const keys = effectiveKeys(id, catalogKeys(id) ?? "", overrides);
   return keys ? formatKeys(keys) : "";
 }
