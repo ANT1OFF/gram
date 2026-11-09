@@ -8,6 +8,7 @@ import {
   HostFailed,
   type HostSessionOpen,
   ModeRefused,
+  type UserInput,
 } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -17,6 +18,7 @@ import * as Stream from "effect/Stream";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { REATTACH_WITHIN_MS } from "../host/following-sessions.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
+import { type AttachmentsOnMachine, carryAttachments } from "../host/carry-attachments.ts";
 import type { HostSessionsConnection } from "../host/protocol.ts";
 import { AgentHosts } from "./agent-hosts.ts";
 import { InputUndelivered } from "./undelivered.ts";
@@ -129,6 +131,8 @@ const openOnHost = (
   agent: AgentKind,
   o: OpenSessionOptions,
   machine?: string,
+  /** The input as the host's machine reads it; this machine's own host reads it as it is. */
+  carry: (input: UserInput) => Effect.Effect<UserInput> = Effect.succeed,
 ) =>
   Effect.gen(function* () {
     const handle = randomUUID();
@@ -236,14 +240,22 @@ const openOnHost = (
       events,
       // Each under an id of its own, so the host takes it once however often it is asked.
       send: (input, sendOptions) =>
-        whileOpen(
-          host.send(handle, input, {
-            ...sendOptions,
-            deliveryId: sendOptions?.messageId ?? randomUUID(),
-          }),
-        ).pipe(Effect.catch(undelivered)),
+        carry(input).pipe(
+          Effect.flatMap((carried) =>
+            whileOpen(
+              host.send(handle, carried, {
+                ...sendOptions,
+                deliveryId: sendOptions?.messageId ?? randomUUID(),
+              }),
+            ),
+          ),
+          Effect.catch(undelivered),
+        ),
       steer: (input) =>
-        whileOpen(host.steer(handle, input, { deliveryId: randomUUID() })).pipe(
+        carry(input).pipe(
+          Effect.flatMap((carried) =>
+            whileOpen(host.steer(handle, carried, { deliveryId: randomUUID() })),
+          ),
           Effect.catch(undelivered),
         ),
       // A host that went has no turn left to stop.
@@ -444,6 +456,8 @@ export const agentHostOnMachine = (
   origin: () => string | undefined,
   /** Told when a session there couldn't start for its sign-in, so the machine is asked again. */
   onSignInProblem?: () => void,
+  /** Where the machine keeps what users attach, for each session's sends to carry them there. */
+  attachments: AttachmentsOnMachine = () => Effect.fail(`${machineName} holds no attachments`),
 ): AgentHost => {
   const kind = inServer.kind;
   /** A start that failed there, named for the machine and logged here, where nothing else is. */
@@ -500,7 +514,9 @@ export const agentHostOnMachine = (
                         message: `${machineName} is offline; its workers start once it's back.`,
                       }),
                     )
-                  : openOnHost(host, kind, reaching, machineName).pipe(Effect.catch(failedThere));
+                  : openOnHost(host, kind, reaching, machineName, (input) =>
+                      carryAttachments(options.threadId, input, machineName, attachments),
+                    ).pipe(Effect.catch(failedThere));
               }),
       ),
   };

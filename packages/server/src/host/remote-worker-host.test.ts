@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it } from "@effect/vitest";
@@ -25,6 +26,7 @@ import { ProcessRoots, type PortScan, ThreadPorts } from "../ports/service.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { closeAtRest } from "../runtime/close-at-rest.ts";
 import { ThreadRuntimes, type ThreadRuntimesShape } from "../runtime/thread-runtimes.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
@@ -85,6 +87,8 @@ const machine = (
             pid: 7,
           },
           files: filesOn(proc),
+          reads: fileReadsOn(proc),
+          attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
           repos: reposOn(proc, repos, env),
           worktrees: cloneWorktrees(proc, yield* Worktrees, env),
           git: gitOn(proc),
