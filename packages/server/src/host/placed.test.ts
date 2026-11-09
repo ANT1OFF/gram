@@ -164,7 +164,7 @@ describe("placedHost", () => {
         LOCAL_PATH,
       );
       yield* placed.checkouts.prepare({ kind: "newWorktree", branch: "b" }, [], LOCAL_PATH);
-      yield* placed.checkouts.release(THREADS[0]!, {});
+      yield* placed.checkouts.release(THREADS[0]!, { removeWorktree: { force: true } });
       expect(calls).toEqual([`${MACHINE}:prepare`, "local:prepare", `${MACHINE}:release`]);
     }),
   );
@@ -208,6 +208,34 @@ describe("placedHost", () => {
         .prepare({ kind: "newWorktree", branch: "b", hostId: MACHINE }, [], LOCAL_PATH)
         .pipe(Effect.flip);
       expect(prepared._tag).toBe("InvalidState");
+      expect(calls).toEqual([]);
+    }),
+  );
+
+  it.effect("a folder inside a machine's checkout is that machine's too", () =>
+    Effect.gen(function* () {
+      const { calls, placed } = setup({ value: true });
+      yield* placed.git.local(`${REMOTE_PATH}/src/deep`);
+      yield* placed.git.local("/Users/me/elsewhere");
+      expect(calls).toEqual([
+        `${MACHINE}:git.local:${REMOTE_PATH}/src/deep`,
+        "local:git.local:/Users/me/elsewhere",
+      ]);
+    }),
+  );
+
+  it.effect("a thread on an offline machine still closes, keeping its worktree there", () =>
+    Effect.gen(function* () {
+      const { calls, placed } = setup({ value: false });
+      const remote = THREADS[0]!;
+      yield* placed.checkouts.checkRelease(remote, {});
+      yield* placed.checkouts.release(remote, {});
+      const refused = yield* placed.checkouts
+        .checkRelease(remote, { removeWorktree: { force: false } })
+        .pipe(Effect.flip);
+      expect(refused._tag).toBe("GitError");
+      // Past the point of no return: logged, and the close goes on.
+      yield* placed.checkouts.release(remote, { removeWorktree: { force: false } });
       expect(calls).toEqual([]);
     }),
   );

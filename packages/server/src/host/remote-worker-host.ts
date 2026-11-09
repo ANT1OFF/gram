@@ -54,6 +54,12 @@ const noTerminals = (machine: Machine): Terminals => ({
   snapshot: () => Effect.succeed([]),
 });
 
+/** The thread's checkouts that are on `machine`: its own, and any other repo's there. */
+const ownCheckouts = (thread: Thread, machine: Machine) =>
+  [thread.checkout, ...(thread.extraCheckouts ?? [])].filter(
+    (checkout) => hostOf(checkout) === machine.id,
+  );
+
 const repoOf = (checkout: Checkout) => checkout.repoRoot ?? checkout.path;
 
 /** The threads on `machine`, for the one-thread-per-worktree guard there. */
@@ -156,7 +162,7 @@ export const machineCheckouts = (
     checkRelease: (thread, options) =>
       options.removeWorktree === undefined || options.removeWorktree?.force === true
         ? Effect.void
-        : Effect.forEach([thread.checkout, ...(thread.extraCheckouts ?? [])], refuseDirty, {
+        : Effect.forEach(ownCheckouts(thread, machine), refuseDirty, {
             discard: true,
           }),
     release: (thread, options) =>
@@ -164,10 +170,7 @@ export const machineCheckouts = (
         const removal = options.removeWorktree;
         if (removal === undefined) return;
         const used = yield* others(thread);
-        for (const [index, target] of [
-          thread.checkout,
-          ...(thread.extraCheckouts ?? []),
-        ].entries()) {
+        for (const [index, target] of ownCheckouts(thread, machine).entries()) {
           if (target.kind !== "worktree") continue;
           if (!removal.force) yield* refuseDirty(target);
           yield* connection.worktrees

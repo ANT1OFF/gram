@@ -8,8 +8,8 @@ settings; the other machine runs `gram-host`, which dials it over Tailscale. The
 opens no port of its own.
 
 A machine can join, be confirmed and stay connected; Settings → Machines lists it. A new thread
-in a new worktree can be placed on it, and its session, checkout, git state, Files panel and
-terminals then run there. Choosing the machine in the composer, and from the orchestrator's
+in a new worktree can be placed on it, and its session, checkout, git state and terminals then run
+there. Its Files panel, turn checkpoints, PR badge and port chips don't reach that machine yet. Choosing the machine in the composer, and from the orchestrator's
 `spawn_worker`, comes next.
 
 ## What you need

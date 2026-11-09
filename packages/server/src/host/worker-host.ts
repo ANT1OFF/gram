@@ -3,6 +3,7 @@ import {
   type HostId,
   hostOf,
   HostUnavailable,
+  isLocalHost,
   LOCAL_HOST_ID,
 } from "@gram/contracts";
 import { GitStateRuntime, Proc, Worktrees } from "@gram/git";
@@ -109,13 +110,24 @@ const joinedMachines = Effect.gen(function* () {
   const proc = Option.getOrUndefined(yield* Effect.serviceOption(Proc));
   if (remote === undefined || store === undefined || hub === undefined || proc === undefined)
     return undefined;
-  return yield* machineHosts(remote, {
+  const get = yield* machineHosts(remote, {
     store,
     hub,
     proc,
     agents: yield* AgentHosts,
     gate: Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate)),
   });
+  // A thread placed on a machine since removed still routes there (and finds it unavailable).
+  const placedBefore = (yield* store.listThreads.pipe(Effect.orElseSucceed(() => []))).some(
+    (thread) =>
+      [thread.checkout, thread.currentCheckout, ...(thread.extraCheckouts ?? [])].some(
+        (checkout) => checkout !== undefined && !isLocalHost(checkout),
+      ),
+  );
+  return {
+    get,
+    any: () => placedBefore || remote.machines.list().length > 0,
+  };
 });
 
 /** The machines this server can place work on: this one, and the machines joined to it. */
@@ -130,6 +142,8 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     machines?: (id: HostId) => Effect.Effect<WorkerHost, HostUnavailable>,
     /** The threads, which say where each one's work is placed. */
     store?: Pick<ThreadStore["Service"], "listThreads" | "getThread">,
+    /** Whether any machine is joined now; with none, nothing is looked up to place a call. */
+    anyMachines?: () => boolean,
   ) => {
     const byId = new Map<HostId, WorkerHost>([
       [local.id, local],
@@ -147,7 +161,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
       local,
       get,
       of: (record) => get(hostOf(record)),
-      placed: store === undefined ? local : placedHost(hosts, store),
+      placed: store === undefined ? local : placedHost(hosts, store, anyMachines),
     });
   };
 
@@ -191,8 +205,9 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
           process: parts.hello,
         },
         [],
-        machines,
+        machines?.get,
         machines === undefined ? undefined : store,
+        machines?.any,
       );
     }),
   );

@@ -1,7 +1,7 @@
 // `add_worker_repo`: a worker gets a worktree in another
 // repository of its workspace, after the approval an outside one needs.
 
-import { AppToolError, MAX_EXTRA_PRS } from "@gram/contracts";
+import { AppToolError, isLocalHost, MAX_EXTRA_PRS } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -155,7 +155,15 @@ export const makeWorkerRepos = (kit: OrchestrationKit, deps: WorkerReposDeps) =>
             yield* checkoutKey(project.root),
             Effect.gen(function* () {
               const made = yield* creator
-                .prepare({ kind: "newWorktree", branch }, project.root)
+                // On the worker's own machine, beside its first worktree.
+                .prepare(
+                  {
+                    kind: "newWorktree",
+                    branch,
+                    ...(isLocalHost(target.checkout) ? {} : { hostId: target.checkout.hostId }),
+                  },
+                  project.root,
+                )
                 .pipe(
                   Effect.catchTag("CheckoutInUse", (e) =>
                     Effect.gen(function* () {

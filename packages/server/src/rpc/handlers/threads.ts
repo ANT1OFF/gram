@@ -3,6 +3,7 @@ import {
   effectiveCheckout,
   GitError,
   InvalidState,
+  isLocalHost,
   NotFound,
   plainWaitText,
   ThreadId,
@@ -177,7 +178,13 @@ export const threadHandlers = Effect.gen(function* () {
           Effect.fail(new InvalidState({ message: e.message })),
         ),
       );
-      if (request.kind === "newWorktree" && plan.turnId !== undefined) {
+      // Checkpoints are this machine's: a fork made or forked on another machine starts clean.
+      if (
+        request.kind === "newWorktree" &&
+        plan.turnId !== undefined &&
+        isLocalHost(checkout) &&
+        isLocalHost(source.checkout)
+      ) {
         const checkpoint = plan.role === "user" ? plan.turnId : endCheckpointId(plan.turnId);
         yield* checkpoints
           .restoreFiles(checkout.path, checkpointRef(source.id, checkpoint))

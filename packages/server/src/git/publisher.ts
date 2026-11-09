@@ -4,6 +4,7 @@
 import {
   anyPrOpen,
   effectiveCheckout,
+  isLocalHost,
   MAX_FAILING_CHECK_NAMES,
   requiredChecksOf,
   reviewBotsOf,
@@ -1372,7 +1373,8 @@ export const GitStatePublisherLive = Layer.effect(
     const publishElsewhere = (threads: ReadonlyArray<Thread>) =>
       Effect.gen(function* () {
         const found = yield* discoverPrsElsewhere(
-          threads,
+          // Its git runs here, so only this machine's checkouts.
+          threads.filter((thread) => isLocalHost(effectiveCheckout(thread))),
           (key) => states.get(key),
           () => {
             elsewhereRead = undefined;

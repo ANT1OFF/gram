@@ -6,6 +6,7 @@ import {
   type HostId,
   hostOf,
   InvalidState,
+  isLocalHost,
   LOCAL_HOST_ID,
   NotFound,
   type TerminalId,
@@ -20,6 +21,7 @@ import {
   WorktreeError,
   type Worktrees,
 } from "@gram/git";
+import { dirname } from "node:path";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import type { ThreadStore } from "../persistence/thread-store.ts";
@@ -75,26 +77,40 @@ const machinePaths = (threads: ReadonlyArray<Thread>) => {
 export const placedHost = (
   hosts: Pick<WorkerHostsShape, "local" | "get">,
   store: Pick<ThreadStore["Service"], "listThreads" | "getThread">,
+  /** Whether any machine is joined: with none, every call is this machine's, looked up for free. */
+  anyMachines: () => boolean = () => true,
 ): WorkerHost => {
   const local = hosts.local;
+  /** Set once a checkout is made on a machine here, which then stays routed after it is removed. */
+  let placedNow = false;
+  const routing = () => placedNow || anyMachines();
   const maps = new WeakMap<ReadonlyArray<Thread>, Map<string, HostId>>();
   const threads = store.listThreads;
-  /** The machine `path` is on. */
+  /** The machine `path` is on: the one its own folder, or the nearest folder above it, is on. */
   const hostIdOfPath = (path: string) =>
-    Effect.map(threads, (all) => {
-      let paths = maps.get(all);
-      if (paths === undefined) {
-        paths = machinePaths(all);
-        maps.set(all, paths);
-      }
-      return paths.get(samePathKey(path)) ?? LOCAL_HOST_ID;
-    });
+    routing()
+      ? Effect.map(threads, (all) => {
+          let paths = maps.get(all);
+          if (paths === undefined) {
+            paths = machinePaths(all);
+            maps.set(all, paths);
+          }
+          if (paths.size === 0) return LOCAL_HOST_ID;
+          for (let at = path; ; at = dirname(at)) {
+            const found = paths.get(samePathKey(at));
+            if (found !== undefined) return found;
+            if (dirname(at) === at) return LOCAL_HOST_ID;
+          }
+        })
+      : Effect.succeed(LOCAL_HOST_ID);
   const hostIdOfThread = (threadId: ThreadId) =>
-    store.getThread(threadId).pipe(
-      Effect.map((thread) => hostOf(effectiveCheckout(thread))),
-      // A thread that isn't stored (a dream, a helper) is this machine's.
-      Effect.orElseSucceed(() => LOCAL_HOST_ID),
-    );
+    routing()
+      ? store.getThread(threadId).pipe(
+          Effect.map((thread) => hostOf(effectiveCheckout(thread))),
+          // A thread that isn't stored (a dream, a helper) is this machine's.
+          Effect.orElseSucceed(() => LOCAL_HOST_ID),
+        )
+      : Effect.succeed(LOCAL_HOST_ID);
   /** The host `id` names, or the reason it can't be reached as `onOffline` words it. */
   const hostFor = <E>(id: HostId, onOffline: (message: string) => E) =>
     id === LOCAL_HOST_ID
@@ -143,7 +159,12 @@ export const placedHost = (
                   Effect.match({
                     onFailure: (): Stream.Stream<GitStateChange> =>
                       Stream.drain(Stream.fromEffect(Effect.sleep(REDIAL_CHECK))),
-                    onSuccess: (host) => host.git.watch(list, options),
+                    // Paced too, so a watch that ends at once can't spin.
+                    onSuccess: (host) =>
+                      Stream.concat(
+                        host.git.watch(list, options),
+                        Stream.drain(Stream.fromEffect(Effect.sleep(REDIAL_CHECK))),
+                      ),
                   }),
                 ),
               ),
@@ -196,16 +217,43 @@ export const placedHost = (
           request.kind === "newWorktree" ? (request.hostId ?? LOCAL_HOST_ID) : LOCAL_HOST_ID,
           invalid,
         ),
-        (host) => host.checkouts.prepare(request, openCheckouts, projectRoot),
+        (host) =>
+          host.checkouts.prepare(request, openCheckouts, projectRoot).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                if (host.id !== LOCAL_HOST_ID) placedNow = true;
+              }),
+            ),
+          ),
       ),
+    // A close that removes nothing needs no machine: a thread on one that is offline, or was
+    // removed, still closes. One that would remove its worktree there is refused while it's away.
     checkRelease: (thread, options) =>
-      Effect.flatMap(hostFor(hostOf(thread.checkout), gitOffline), (host) =>
-        host.checkouts.checkRelease(thread, options),
-      ),
+      isLocalHost(thread.checkout)
+        ? local.checkouts.checkRelease(thread, options)
+        : options.removeWorktree === undefined
+          ? Effect.void
+          : Effect.flatMap(hostFor(hostOf(thread.checkout), gitOffline), (host) =>
+              host.checkouts.checkRelease(thread, options),
+            ),
+    /**
+     * After the session stopped, past the point of no return: a machine that went offline since
+     * keeps the worktree, which is logged, rather than leave the thread half closed.
+     */
     release: (thread, options) =>
-      Effect.flatMap(hostFor(hostOf(thread.checkout), gitOffline), (host) =>
-        host.checkouts.release(thread, options),
-      ),
+      isLocalHost(thread.checkout)
+        ? local.checkouts.release(thread, options)
+        : options.removeWorktree === undefined
+          ? Effect.void
+          : hosts.get(hostOf(thread.checkout)).pipe(
+              Effect.matchEffect({
+                onFailure: (error) =>
+                  Effect.logWarning("kept a worktree on a machine that is offline").pipe(
+                    Effect.annotateLogs({ path: thread.checkout.path, reason: error.message }),
+                  ),
+                onSuccess: (host) => host.checkouts.release(thread, options),
+              }),
+            ),
     discard: (checkout) =>
       hostFor(hostOf(checkout), (message) => message).pipe(
         Effect.flatMap((host) => host.checkouts.discard(checkout)),
@@ -215,7 +263,10 @@ export const placedHost = (
           ),
         ),
       ),
-    present: (path) => git.present(path),
+    present: (path) =>
+      Effect.flatMap(hostIdOfPath(path), (id) =>
+        id === LOCAL_HOST_ID ? local.checkouts.present(path) : git.present(path),
+      ),
     restore: (thread, fromPr) =>
       onThreadOf(thread, invalid, (host) => host.checkouts.restore(thread, fromPr)),
   };
