@@ -10,7 +10,13 @@ import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Stream from "effect/Stream";
 import * as Fiber from "effect/Fiber";
-import { type Runtime, locked, feedLocked, replyOf } from "./runtime-state.ts";
+import { type Runtime, locked, feedLocked, replyOf, makeQueueItemId } from "./runtime-state.ts";
+import {
+  type AfterMachineRestart,
+  afterMachineRestart,
+  MACHINE_RESTART_KEY,
+  machineRestartText,
+} from "./machine-restart.ts";
 import { missingThreadFolder } from "../fs/folders.ts";
 import { AgentUnavailable, type Thread, type TurnId, type ThreadId } from "@gram/contracts";
 import { UNKNOWN_FAILURE } from "./thread-error.ts";
@@ -112,6 +118,84 @@ export const makeSessionLifecycle = ({
   markShutdownFailed,
   currentAppTools,
 }: SessionLifecycleDeps) => {
+  /** When each thread's work was carried on after a machine restart, this run, oldest first. */
+  const machineContinuations = new Map<ThreadId, ReadonlyArray<number>>();
+
+  /**
+   * Called with the lock held, as a session ends: what a restart of the joined machine it ran on
+   * leaves the thread to do (`afterMachineRestart`), or `undefined` for any other end.
+   */
+  const machineRestartPlan = (
+    rt: Runtime,
+    stopping: Runtime["stopping"],
+    exit: Exit.Exit<void, AgentUnavailable>,
+    turnCut: boolean,
+  ): Effect.Effect<AfterMachineRestart | undefined> =>
+    Effect.gen(function* () {
+      const machine = rt.restartedMachine;
+      rt.restartedMachine = undefined;
+      if (
+        machine === undefined ||
+        stopping !== undefined ||
+        Exit.isFailure(exit) ||
+        isShuttingDown() ||
+        rt.closing
+      )
+        return undefined;
+      const turn = rt.turn;
+      const waitingOnUser =
+        rt.status === "needsApproval" ||
+        rt.status === "needsInput" ||
+        (yield* store.listRequests(rt.threadId)).length > 0;
+      const { next, recent } = afterMachineRestart({
+        machine,
+        turnCut,
+        turnOpen: turn !== undefined,
+        stopAsked:
+          turn !== undefined && (rt.stopAsked === turn.id || rt.stopAtBoundary === turn.id),
+        queued: rt.queue.length > 0 || rt.deliveries.size > 0,
+        waitingOnUser,
+        recent: machineContinuations.get(rt.threadId) ?? [],
+        now: yield* Clock.currentTimeMillis,
+      });
+      machineContinuations.set(rt.threadId, recent);
+      yield* Effect.logInfo("a joined machine restarted under a session").pipe(
+        Effect.annotateLogs({ threadId: rt.threadId, outcome: next.kind }),
+      );
+      return next;
+    });
+
+  /**
+   * Opens the same conversation again on the machine that restarted, once the session that ended
+   * there is done, as `recover` does; the queue (the continuation note first, for a cut turn) goes
+   * once it is idle. Run in `recoveries`, so closing the thread cancels it.
+   */
+  const resumeAfterRestart = (
+    rt: Runtime,
+    ended: Option.Option<Fiber.Fiber<unknown, unknown>>,
+  ): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      if (Option.isSome(ended)) yield* Fiber.await(ended.value);
+      yield* locked(
+        rt,
+        Effect.gen(function* () {
+          if (rt.closing || rt.session !== undefined || rt.status !== "starting") return;
+          rt.reopenOnIdle = false;
+          const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
+          yield* openSession(rt, thread).pipe(
+            Effect.catchTag("AgentUnavailable", (e) =>
+              Effect.andThen(
+                Effect.sync(() => {
+                  rt.machineRestart = undefined;
+                }),
+                failUnavailable(rt, e),
+              ),
+            ),
+          );
+        }),
+      );
+    });
+
   /** `stopInMissingFolder` for a runtime. Takes the lock, so never run it while holding it. */
   const stopInMissing = (rt: Runtime) =>
     Effect.gen(function* () {
@@ -182,6 +266,9 @@ export const makeSessionLifecycle = ({
           rt.launch = undefined;
           yield* syncQueue(rt);
         }
+        // A turn whose input never reached the agent wasn't cut short: that input just goes again.
+        const turnCut =
+          rt.turn !== undefined && (rt.inFlight === undefined || rt.inFlight.turnId !== rt.turn.id);
         // Nor did one cut off on its way to the agent: it waits at the queue's head, as it was,
         // for this session's successor too, which nothing else would hand it to.
         if (rt.inFlight !== undefined) {
@@ -191,6 +278,10 @@ export const makeSessionLifecycle = ({
           rt.inFlight = undefined;
           yield* syncQueue(rt);
         }
+        // A joined machine that restarted under the session still has its conversation.
+        const restart = yield* machineRestartPlan(rt, stopping, exit, turnCut);
+        if (restart?.kind === "fail") rt.endedReason = restart.reason;
+        const carriesOn = restart?.kind === "continue" || restart?.kind === "rest";
         // The session's end takes its background tasks with it, and its connectors.
         yield* setBackground(rt, []);
         // Scope termination withdraws live process visibility, without claiming the process
@@ -234,6 +325,7 @@ export const makeSessionLifecycle = ({
         const interrupted = Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause);
         const exitError =
           stopping === undefined &&
+          !carriesOn &&
           !interrupted &&
           !isShuttingDown() &&
           Option.isNone(unavailable) &&
@@ -246,7 +338,11 @@ export const makeSessionLifecycle = ({
           yield* closeOpenMessages(rt);
         } else {
           if (rt.turn !== undefined) {
-            yield* finishTurn(rt, stopping === undefined ? "error" : "interrupted", "sessionExit");
+            yield* finishTurn(
+              rt,
+              stopping === undefined && !carriesOn ? "error" : "interrupted",
+              "sessionExit",
+            );
           }
           yield* closeLanes(rt);
           // Its subagents went with it, so none keeps the activity line up.
@@ -268,6 +364,29 @@ export const makeSessionLifecycle = ({
           case "rewind":
             return;
           case undefined: {
+            if (restart?.kind === "rest") {
+              rt.endedReason = undefined;
+              return yield* setStatus(rt, "cold");
+            }
+            if (restart?.kind === "continue") {
+              rt.endedReason = undefined;
+              if (restart.continued === "turn") {
+                const id = makeQueueItemId();
+                rt.queue.unshift({
+                  id,
+                  input: { text: machineRestartText(restart.machine), author: "server" },
+                });
+                // Gram's, not the user's word: a hold holds it, across a restart too.
+                rt.noticeKeys.set(id, MACHINE_RESTART_KEY);
+                yield* syncQueue(rt);
+              }
+              rt.machineRestart = { machine: restart.machine, continued: restart.continued };
+              // As in `recover`: sends queue while `starting`, and go out once the session is idle.
+              yield* setStatus(rt, "starting");
+              const ended = FiberMap.getUnsafe(sessions, rt.threadId);
+              yield* FiberMap.run(recoveries, rt.threadId, resumeAfterRestart(rt, ended));
+              return;
+            }
             const detail = Exit.isFailure(exit)
               ? Cause.pretty(exit.cause)
               : `agent session ended: ${rt.endedReason ?? "unknown reason"}`;
@@ -425,6 +544,15 @@ export const makeSessionLifecycle = ({
               yield* setPendingRestart(rt, undefined);
             }
             openCostSession(rt.cost);
+            if (rt.machineRestart !== undefined) {
+              const machineRestart = rt.machineRestart;
+              rt.machineRestart = undefined;
+              yield* appendDataPart(rt, {
+                type: "data-session-restart",
+                id: randomUUID(),
+                data: { at: yield* Clock.currentTimeMillis, machineRestart },
+              });
+            }
             if (rt.restartMarker !== undefined) {
               const reason = rt.restartMarker;
               rt.restartMarker = undefined;

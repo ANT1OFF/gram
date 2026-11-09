@@ -12,6 +12,7 @@ export default defineProject({
       "release-linux/*.test.mjs",
       "mock-kit/*.test.mjs",
       "check/*.test.mjs",
+      "packaging/*.test.mjs",
       "notices/*.test.mjs",
       "sherpa-onnx/*.test.mjs",
     ],
