@@ -3,7 +3,7 @@ import { useState, type PointerEvent, type ReactNode } from "react";
 import { formatDay, formatStamp } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-import { dayTicks, historyRuns, nearestPoint } from "./limit-history-model";
+import { dayTicks, fittingTicks, historyRuns, nearestPoint } from "./limit-history-model";
 
 const W = 600;
 const H = 96;
@@ -79,7 +79,7 @@ export function HistoryChart({
     )
     .join("");
   const days = (to - from) / 86_400_000;
-  const ticks = dayTicks(from, to, days > 10 ? 7 : 1);
+  const ticks = fittingTicks(dayTicks(from, to, days > 10 ? 7 : 1), (at) => x(at) / W);
   const onMove = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const at = from + ((event.clientX - rect.left) / Math.max(1, rect.width)) * span;

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useShortcut } from "@/keyboard/registry";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { useSettingsKeyboard } from "@/settings/leave-settings";
 import {
@@ -88,6 +89,7 @@ function SettingsLayout() {
   });
   const updateAvailable = useUpdateAvailable();
   const beforeSetup = useBeforeSetup();
+  const phone = usePhone();
   const navigate = useNavigate();
   const resultsRef = useRef<HTMLDivElement>(null);
   /** Opens the page of the first setting the search finds, with that setting marked. */
@@ -117,7 +119,8 @@ function SettingsLayout() {
           needsYou={
             // The overview's pill, in its place: what needs you sits at the top of the column left
             // of the page in every view, Settings too. Before setup the title bar's Inbox has it.
-            beforeSetup ? undefined : (
+            // A phone's header has the Inbox already, so the row would say it twice.
+            beforeSetup || phone ? undefined : (
               <NeedsYouEntry
                 variant="row"
                 data-testid="settings-needs-you"

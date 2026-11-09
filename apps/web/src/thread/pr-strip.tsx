@@ -354,7 +354,9 @@ function ReviewChip({
       data-state={status.kind}
       aria-label={status.label}
       title={`${status.label}\nOpen the review`}
-      className={cn(CHIP, FOCUS, "hover:bg-accent")}
+      // A phone's row has no room for its words, and a robot alone says nothing: the PR's own
+      // panel, a tap on the row away, has the review.
+      className={cn(CHIP, FOCUS, "hover:bg-accent phone:hidden")}
       onClick={() => openPrReview(threadId)}
     >
       {/* A pane in a grid has no room for the words; the icon's colour and the label still say it. */}
@@ -414,7 +416,8 @@ function RowClose({ label, run }: { label: string; run: () => Promise<unknown> }
       title={action.notice?.tone === "error" ? action.notice.text : label}
       disabled={action.pending}
       className={cn(
-        "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground disabled:opacity-50",
+        // Not on a phone: hiding a PR from the strip is desk work, and an eye beside CI was a riddle.
+        "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground disabled:opacity-50 phone:hidden",
         FOCUS,
       )}
       onClick={() =>
