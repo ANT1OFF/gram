@@ -88,8 +88,16 @@ const logFailed = (call: string) => (error: HostFailed) =>
  * A session opened in the host process, as the runtime holds it. Its events come numbered, and the
  * ones received are confirmed to the host, which keeps the rest for a stream that picks up again
  * (as a reconnecting host's will). A host that goes ends the session with an `ended` event.
+ *
+ * `onThisMachine` is false for another machine's host: its agent's process id is that machine's,
+ * so the session has none here, and the port chips never look for it in this machine's processes.
  */
-const openOnHost = (host: HostSessionsConnection, agent: AgentKind, o: OpenSessionOptions) =>
+const openOnHost = (
+  host: HostSessionsConnection,
+  agent: AgentKind,
+  o: OpenSessionOptions,
+  onThisMachine: boolean,
+) =>
   Effect.gen(function* () {
     const handle = randomUUID();
     // Added first, so a session whose open was given up on is closed on the host too.
@@ -228,7 +236,7 @@ const openOnHost = (host: HostSessionsConnection, agent: AgentKind, o: OpenSessi
                 .pipe(Effect.catch((e) => Effect.as(logFailed("addDirectories")(e), false))),
           }
         : {}),
-      ...(opened.processId
+      ...(opened.processId && onThisMachine
         ? {
             processId: host
               .processId(handle)
@@ -264,7 +272,7 @@ export const agentHostThroughHost = (
       Effect.suspend(() =>
         gone() || !opensOnHost(kind, options)
           ? inServer.open(options)
-          : openOnHost(host, kind, options).pipe(
+          : openOnHost(host, kind, options, true).pipe(
               // The host went before the session opened: the server opens it instead.
               Effect.catch((error) => (gone() ? inServer.open(options) : Effect.fail(error))),
             ),
@@ -383,7 +391,7 @@ export const agentHostOnMachine = (
                         message: `${machineName} is offline; its workers start once it's back.`,
                       }),
                     )
-                  : openOnHost(host, kind, reaching);
+                  : openOnHost(host, kind, reaching, false);
               }),
       ),
   };

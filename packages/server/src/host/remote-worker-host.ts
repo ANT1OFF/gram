@@ -8,6 +8,7 @@ import {
   type HostUnavailable,
   InvalidState,
   NotFound,
+  type TerminalId,
   type Thread,
   type ThreadId,
   ThreadNotFound,
@@ -28,6 +29,7 @@ import type { CheckoutServiceShape } from "../runtime/hooks.ts";
 import type { TerminalGate } from "../terminal/gate.ts";
 import { terminalsThroughHost } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
+import { foregroundOf } from "../ports/pure.ts";
 import { followingSessions } from "./following-sessions.ts";
 import type { HostConnection } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
@@ -48,6 +50,29 @@ export interface Machine {
 }
 
 const offline = (machine: Machine) => `${machine.name} is offline.`;
+
+/**
+ * Whether a terminal of a thread runs a command on the machine, by the machine's own scan and its
+ * shells' process ids there (`shells`, by terminal); undefined when that can't be told, so a close
+ * at rest leaves the thread open. Never this machine's processes: the ids are the other machine's.
+ */
+const terminalBusyOn =
+  (connection: HostConnection, shells: ReadonlyMap<TerminalId, number>) => (threadId: ThreadId) =>
+    Effect.gen(function* () {
+      const open = (yield* connection.terminals.list(threadId)).filter((t) => t.alive);
+      // An empty list from a machine that went meanwhile says nothing about its shells.
+      if (connection.gone()) return undefined;
+      if (open.length === 0) return false;
+      const swept = yield* connection.scan.pipe(Effect.orElseSucceed(() => undefined));
+      if (swept?.processes === undefined) return undefined;
+      for (const { terminalId } of open) {
+        const pid = shells.get(terminalId);
+        // A shell whose id hasn't come in yet can't be ruled out.
+        if (pid === undefined) return undefined;
+        if (foregroundOf(swept.processes, swept.children, pid) !== undefined) return true;
+      }
+      return false;
+    });
 
 /** Terminals that aren't there: a machine's host that went took its shells with it. */
 const noTerminals = (machine: Machine): Terminals => ({
@@ -279,7 +304,8 @@ const machineGit = (connection: HostConnection): GitStateRuntime["Service"] => (
  * calls fail, its folders read as there, and its sessions don't start.
  *
  * Its shells don't count among this machine's process roots, since their process ids are that
- * machine's; their port chips come later.
+ * machine's; their port chips come later. Whether one runs a command is read from that machine's
+ * own scan (`terminalBusyOn`).
  */
 export interface MachineDeps {
   readonly store: ThreadStore["Service"];
@@ -296,12 +322,21 @@ export const machineWorkerHost = (
 ): Effect.Effect<WorkerHost, never, Scope.Scope> =>
   Effect.gen(function* () {
     const threads = store.listThreads.pipe(Effect.orElseSucceed((): ReadonlyArray<Thread> => []));
+    /** The machine's shells by terminal, with their process ids there. */
+    const shells = new Map<TerminalId, number>();
     const terminals = yield* terminalsThroughHost(
       connection.terminals,
       connection.gone,
       noTerminals(machine),
       {
         ...(gate === undefined ? {} : { held: gate.held }),
+        // Kept apart from this machine's `ProcessRoots`: these ids mean nothing here.
+        roots: {
+          add: (_threadId, pid, terminalId) => void shells.set(terminalId, pid),
+          remove: (pid) => {
+            for (const [terminalId, known] of shells) if (known === pid) shells.delete(terminalId);
+          },
+        },
         // Only a thread placed on this machine has a folder here.
         threadFolder: (threadId: ThreadId) =>
           store.getThread(threadId).pipe(
@@ -351,7 +386,7 @@ export const machineWorkerHost = (
       git: machineGit(connection),
       files: connection.files,
       terminals,
-      ports: { scan: connection.scan },
+      ports: { scan: connection.scan, terminalBusy: terminalBusyOn(connection, shells) },
       process: connection.hello,
     };
   });

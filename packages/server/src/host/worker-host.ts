@@ -5,6 +5,7 @@ import {
   HostUnavailable,
   isLocalHost,
   LOCAL_HOST_ID,
+  type ThreadId,
 } from "@gram/contracts";
 import { GitStateRuntime, Proc, Worktrees } from "@gram/git";
 import * as Context from "effect/Context";
@@ -30,6 +31,12 @@ import type { Terminals } from "../terminal/terminals.ts";
 export interface HostPorts {
   /** One sweep of the machine's listening ports and process tree. */
   readonly scan: Effect.Effect<PortScan, unknown>;
+  /**
+   * Whether a terminal of the thread runs a command on this machine now, by a scan of its own;
+   * undefined when that can't be told. Another machine's host has it: this one's terminals are
+   * among `ProcessRoots`, which `ThreadPorts` reads.
+   */
+  readonly terminalBusy?: (threadId: ThreadId) => Effect.Effect<boolean | undefined>;
 }
 
 /** The parts of a machine that its checkouts' work reads and runs on, beside its agents. */

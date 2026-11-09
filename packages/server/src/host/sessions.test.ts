@@ -450,6 +450,17 @@ describe("a joined machine's sessions across a dropped connection", () => {
   );
 });
 
+describe("a joined machine's agent process", () => {
+  it.live("has no process id here, so the port chips never match it to this machine's", () =>
+    Effect.gen(function* () {
+      const { agent } = yield* redialling;
+      // The host reports pid 4242, which is that machine's: here it could be any process at all.
+      const session = yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+      expect(session.processId).toBeUndefined();
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
+
 describe("a host's sessions left behind", () => {
   it.live("end when their thread opens anew, unless something still follows them", () =>
     Effect.gen(function* () {

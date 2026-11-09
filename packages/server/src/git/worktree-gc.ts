@@ -719,8 +719,8 @@ const sweepOnce = (
         gate === undefined ? Effect.succeed(Effect.void) : gate.hold(thread.id),
         () =>
           Effect.gen(function* () {
-            const terminals = ports === undefined ? undefined : yield* ports.busyTerminalsNow;
-            if (terminals === undefined || terminals.includes(thread.id)) return undefined;
+            const busy = ports === undefined ? undefined : yield* ports.terminalBusyNow(thread.id);
+            if (busy !== false) return undefined;
             return yield* runtimes.whileAtRest(
               thread.id,
               Effect.gen(function* () {

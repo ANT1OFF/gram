@@ -96,6 +96,9 @@ or `gram-host service install`.
 - A clone that fails or is stopped leaves nothing behind. A folder that is already there but isn't
   a clone of that remote is left alone, and the worker isn't started.
 - A joined machine's terminals open with its own default shell on its own PATH.
+- Bulk worktree removal asks that machine whether a command runs in the worker's terminals, and
+  leaves the worker open while one does or while the machine can't be asked. A worker there shows
+  no port chips, rather than chips from this machine's processes.
 - While the machine is offline its workers don't start and their folders aren't marked missing;
   nothing falls back to running on this machine.
 

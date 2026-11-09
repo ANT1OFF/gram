@@ -48,7 +48,7 @@ const createRunning = (text = "one") =>
 
 /** `ThreadPorts` whose fresh scan finds `busy` running a terminal command. */
 const ports = (busy: ReadonlyArray<ThreadId> | undefined) => ({
-  busyTerminalsNow: Effect.succeed(busy),
+  terminalBusyNow: (threadId: ThreadId) => Effect.succeed(busy?.includes(threadId)),
 });
 
 const waitStatus = (threadId: ThreadId, status: string) =>
