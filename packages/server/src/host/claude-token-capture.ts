@@ -82,8 +82,9 @@ const SIGN_IN_HOSTS = new Set(["claude.ai", "claude.com"]);
 const SIGN_IN_PATHS = new Set(["/oauth/authorize", "/cai/oauth/authorize"]);
 /**
  * The query an OAuth authorization request carries, each parameter with the only values it can
- * have. No grammar admits `%`, so a value can't hide anything behind a second encoding, and none
- * is long enough to carry a setup-token token (about 100 characters) even without its prefix.
+ * have, checked once decoded. No grammar admits `%`, so a value can't hide anything behind a second
+ * encoding, and none is long enough to carry a setup-token token (about 100 characters) even
+ * without its prefix: a redirect's path is at most 64 characters.
  */
 const SIGN_IN_QUERY: ReadonlyMap<string, RegExp> = new Map([
   ["code", /^true$/],
@@ -96,7 +97,7 @@ const SIGN_IN_QUERY: ReadonlyMap<string, RegExp> = new Map([
   ["scope", /^[a-z][a-z:_.-]{0,63}(?: [a-z][a-z:_.-]{0,63}){0,15}$/],
   [
     "redirect_uri",
-    /^(?:https:\/\/(?:[a-z0-9-]+\.)*(?:claude\.ai|claude\.com|anthropic\.com)|http:\/\/(?:localhost|127\.0\.0\.1):\d{2,5})\/[A-Za-z0-9/_-]{0,128}$/,
+    /^(?:https:\/\/(?:[a-z0-9-]+\.)*(?:claude\.ai|claude\.com|anthropic\.com)|http:\/\/(?:localhost|127\.0\.0\.1):\d{2,5})\/[A-Za-z0-9/_-]{0,64}$/,
   ],
 ]);
 
@@ -129,7 +130,9 @@ export const signInLinkOf = (link: string): string | undefined => {
   const seen = new Set<string>();
   for (const [key, value] of query) {
     const grammar = SIGN_IN_QUERY.get(key);
-    if (grammar === undefined || seen.has(key) || !grammar.test(value)) return undefined;
+    // Checked decoded too: a token behind one escaped character (`%73k-ant-`) passes the raw check.
+    if (grammar === undefined || seen.has(key) || /sk-ant-/i.test(value) || !grammar.test(value))
+      return undefined;
     seen.add(key);
   }
   return url.href;

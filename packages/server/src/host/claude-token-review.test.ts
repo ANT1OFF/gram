@@ -555,3 +555,33 @@ describe("re-review R4 and R5: links the output could carry", () => {
       ).toBeUndefined();
   });
 });
+
+// Third review of e1a156b4 (comment 6733323388): R5 through `redirect_uri`. The token's alphabet is
+// URL-unreserved, so encoding it changes nothing; these encode a character by hand.
+
+/** `text` with its first `s` written as `%73`, so the raw link has no `sk-ant-` in it. */
+const hide = (text: string) => text.replace("sk-ant-", "%73k-ant-");
+
+describe("re-review R5 again: a token encoded into a link's parameters", () => {
+  it("is refused in the decoded redirect_uri, as in any other parameter", () => {
+    const token = `sk-ant-oat01-${"SYNTHETIC_".repeat(10)}`;
+    const cases = [
+      `redirect_uri=${hide(encodeURIComponent(`https://claude.ai/${token}`))}`,
+      `redirect_uri=${hide(encodeURIComponent(`https://claude.ai/oauth/${token}`))}`,
+      // The body alone, no prefix, still the whole credential's secret part.
+      `redirect_uri=${encodeURIComponent(`https://claude.ai/${token.slice(13)}`)}`,
+      `state=${hide(token)}`,
+    ];
+    for (const query of cases) {
+      const output = `https://claude.ai/oauth/authorize?code=true&${query}\r\n`;
+      expect(output).not.toContain("sk-ant-");
+      expect(scanSetupTokenOutput(output).signInLink, query).toBeUndefined();
+    }
+  });
+
+  it("still shows a real redirect", () => {
+    const link =
+      "https://claude.ai/oauth/authorize?code=true&client_id=00000000-0000-4000-8000-000000000000&response_type=code&redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&scope=user%3Ainference&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256&state=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    expect(scanSetupTokenOutput(`${link}\r\n`).signInLink).toBe(link);
+  });
+});

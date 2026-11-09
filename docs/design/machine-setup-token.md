@@ -110,7 +110,7 @@ convenience. Running setup-token again for a new machine costs one browser appro
   `claude.com`, `/oauth/authorize`), with no credentials, port or fragment, and each query
   parameter in its own grammar: `code=true`, a UUID `client_id`, a 43-or-so character
   `code_challenge` and `state`, a short `scope` and a Claude or loopback `redirect_uri`. No grammar
-  admits `%` or a value long enough to hold a token. A link that doesn't parse is dropped. It keeps at most 64 KiB of output in memory.
+  admits `%` or a value long enough to hold a token, and every value is checked once decoded for `sk-ant-` as well as the raw link. A link that doesn't parse is dropped. It keeps at most 64 KiB of output in memory.
   Once it finds a token, it stops the process and throws the buffer away. The token is held as an
   Effect `Redacted`, which prints as `<redacted>`, until each machine has answered. Then the
   reference is dropped. If no token comes within 10 minutes, the run is cancelled.
