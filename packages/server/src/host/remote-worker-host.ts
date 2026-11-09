@@ -384,7 +384,7 @@ const currentAttachments =
       Effect.flatMap((connection) =>
         connection.attachments === undefined
           ? Effect.fail(
-              `gram-host on ${machine.name} is older than this Gram; run the install command there again to update it`,
+              `gram-host on ${machine.name} is older than this Gram; update it (Settings → Machines, or rerun its install command there)`,
             )
           : Effect.succeed(connection.attachments),
       ),

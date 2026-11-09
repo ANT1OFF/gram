@@ -58,7 +58,8 @@ pick another. The menu marks a machine that is offline or whose Claude Code isn'
    `~/.local/share/gram-host/apps` on Linux. It writes a `gram-host` command to `~/.local/bin` (the
    app's own binary, run as Node), hands the link to `gram-host join` on stdin, and installs the
    background service. Run it again after the main Gram updates and it moves the service to the new
-   release; the join stands.
+   release; the join stands. Settings → Machines offers this as **Update** (see
+   [Updating a machine](#updating-a-machine)).
 
    The link sits in that shell's history, and in the installer's arguments while it runs. It works
    once and only for 15 minutes, and a machine that joins with it still waits for you to confirm
@@ -98,6 +99,58 @@ the host's folder; on Linux use `journalctl --user -u gram-host`.
 | `gram-host status`                                 | The main Gram it joined, its fingerprint, service |
 | `gram-host leave`                                  | Stop the service and forget the join and its key  |
 
+## When a machine is offline
+
+Settings → Machines says why on hover over a machine's state, with the fix where there is one, and
+the Machine picker on a new thread says the same on hover over an offline machine. The main Gram
+keeps each machine's last reason since it started, in memory only:
+
+| It says                                 | Because                                                                      | Fix                                                         |
+| --------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| It hasn't dialled in since Gram started | Nothing reached this Gram from it                                            | `gram-host status` there                                    |
+| Access over Tailscale is off            | No machine can dial in                                                       | Turn it on in Phone access                                  |
+| Clock is 3 min ahead (or behind)        | A dial it signed was more than two minutes off this machine's clock          | Fix the time there                                          |
+| A dial wasn't signed by its key         | A dial named it with a signature its key didn't make, or for another address | Remove it, `gram-host leave` there, and add it again        |
+| It dialled in but didn't answer         | It never said hello, in time or as itself                                    | Rerun the installer there                                   |
+| Connection lost at 14:03                | Its connection closed; it dials again by itself                              | If it stays offline, check Tailscale and `gram-host status` |
+| This Gram's tailnet address changed     | Access over Tailscale moved to another address, which it doesn't dial        | `gram-host leave` there, and add it again                   |
+| Needs update (1.16.0 → 1.17.0)          | Its host speaks another protocol, or doesn't serve what this Gram needs      | **Update**                                                  |
+
+Only a clock its own key signed is taken as its clock. A bad signature can come from anyone on
+your tailnet who knows the machine's id, so it is only ever shown. Nothing from a dial (its
+signature, nonce or key) reaches the page, and the listing stays local-app only.
+
+## Updating a machine
+
+Each host says which release it runs when it dials in (from the release after 1.16.0; earlier ones say nothing).
+What has to match is the **host protocol**, not the release: every release since joined machines
+arrived (1.14.0 to 1.16.0 and this one) speaks protocol 2 with the same messages, so a 1.15.0 host
+works with a 1.16.0 main Gram. A call added in a later release fails on its own on an older host, with an
+unknown-request error, and the rest keeps working. Only a host on another protocol, or one that
+doesn't serve everything this Gram needs, is refused; Settings → Machines then shows **Needs
+update** with both releases instead of offline. A host on another release that works shows online,
+and its hover says which release it runs.
+
+**Update** appears on a machine that needs one, and only when this Gram is a release (a Gram run
+from source has none to move it to). A machine on another release that works keeps its state; its
+hover says which release it runs and that rerunning the installer there moves it to this one.
+
+- For a machine Gram added over SSH, it runs that install again over the same `[user@]host`, with
+  no join link. The installer moves the service to this Gram's release and keeps the join; it never
+  joins a machine that hasn't, and Gram counts the update done only when the machine prints the
+  fingerprint of the one you chose. Gram records where it installed each machine over SSH in
+  `remote-access/machines.json` (the host, never a key or password), including a machine added by
+  the command that you later add over SSH again.
+- For any other machine, it shows the command to run there, with no link in it:
+
+  ```sh
+  curl -fsSL https://<device>.<tailnet>.ts.net/host/install | sh
+  ```
+
+  On a machine still joined, that moves the service and keeps the join, so there is nothing to
+  confirm again. If it says the machine hasn't joined (someone ran `gram-host leave` there), remove
+  it here and add it again with a fresh link.
+
 ## Sign in on a machine
 
 A joined machine runs Claude Code on its own sign-in. While it is online, its host checks two things when it connects, and again when a listing finds the answer more than a minute old:
@@ -129,9 +182,23 @@ or `gram-host service install`.
   or credential helper), so the repository has to be reachable from there.
 - A clone that fails or is stopped leaves nothing behind. A folder that is already there but isn't
   a clone of that remote is left alone, and the worker isn't started.
-- A joined machine's terminals open with its own default shell on its own PATH.
+- A joined machine's terminals open with its own default shell on its own PATH. Its shells outlast
+  a dropped connection or a restart of the main Gram while the host waits for it; once it connects
+  again, each shell whose thread is still open on that machine is taken up again, so typing and
+  closing reach it, and each one whose thread was closed meanwhile is closed.
+- A conversation forks only onto the machine it ran on, since its history is kept there: a fork of
+  a joined machine's thread goes into a worktree on that machine, and a fork of one of this
+  machine's threads stays here.
 - While the machine is offline its workers don't start and their folders aren't marked missing;
   nothing falls back to running on this machine.
+- A checkout is its machine and its path together. Two joined machines with the same user and
+  folders, or this machine, can hold the same path; each worker's git state is read on its own
+  machine. A request that names only such a path, and no thread, is refused rather than sent to a
+  guess.
+- The Changes panel's diff, push, creating a PR, applying a review suggestion, fast-forwarding to
+  upstream and undoing a turn run git on this machine, so a worker on another machine refuses them
+  and says so; ask its agent, or use its terminal. PR reads and actions that name the repository
+  (checks, reviews, merge, labels) work, with the PR bound to the thread.
 - A message sent while the connection is down waits for the machine for up to two minutes, as its
   session does, and is handed to the agent once it dials in again; if the connection dropped before
   Gram heard back, Gram asks again under the same id and the host takes it only once. A machine
@@ -162,8 +229,7 @@ folders is looked up on this machine, even where the same path happens to exist 
   didn't arrive. A thread's folder there goes when the thread is removed while the machine is
   connected, and otherwise once nothing has been added to it for a week.
 - A machine whose `gram-host` is from an older Gram still runs its workers, but its files and
-  attachments are refused with a note to update it: run the install command from
-  [Join a machine](#join-a-machine) there again.
+  attachments are refused with a note to update it ([Updating a machine](#updating-a-machine)).
 
 ## Add a machine over SSH
 
@@ -213,5 +279,6 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
   address, closes every joined machine's connection; the machines stay joined and dial in again
   once it is back. Up to 16 machines can be joined.
 
-The listing (`POST /machines/list`), join link, confirm, remove and sign-in check endpoints answer
-only the local app, never a paired phone or a joined machine, with the same Origin rules as phone access settings.
+The listing (`POST /machines/list`), join link, confirm, remove, update and sign-in check
+endpoints answer only the local app, never a paired phone or a joined machine, with the same Origin
+rules as phone access settings.

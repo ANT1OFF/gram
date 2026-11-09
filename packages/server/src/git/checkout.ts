@@ -1,4 +1,5 @@
 import {
+  LOCAL_HOST_ID,
   CheckoutInUse,
   effectiveCheckout,
   GitError,
@@ -218,6 +219,7 @@ export const GitCheckoutLive = Layer.effect(
         // It isn't held across the removal, an accepted gap that `git/worktree-gc.ts` describes.
         const others = usedCheckoutPaths(
           (yield* store.listThreads).filter((t) => t.id !== thread.id),
+          LOCAL_HOST_ID,
         );
         const remove = (target: Checkout, mergeRules: ReadonlyArray<string> | undefined) =>
           Effect.gen(function* () {
@@ -246,7 +248,7 @@ export const GitCheckoutLive = Layer.effect(
     const discard = (checkout: Checkout): Effect.Effect<void> =>
       Effect.gen(function* () {
         if (checkout.kind !== "worktree" || checkout.repoRoot === undefined) return;
-        const open = heldCheckoutPaths(yield* store.listThreads);
+        const open = heldCheckoutPaths(yield* store.listThreads, LOCAL_HOST_ID);
         yield* worktrees
           .remove({
             repoPath: checkout.repoRoot,
@@ -283,6 +285,7 @@ export const GitCheckoutLive = Layer.effect(
         const repo = yield* repoOf(checkout, thread);
         const others = usedCheckoutPaths(
           (yield* store.listThreads).filter((t) => t.id !== thread.id),
+          LOCAL_HOST_ID,
         );
         return yield* worktrees
           .restore({

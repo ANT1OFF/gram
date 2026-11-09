@@ -21,7 +21,7 @@ import { errorMessage } from "@/api/errors";
 import { useAvailableAgents } from "@/composer/agent-fields";
 import { keyLabel } from "@/keyboard/registry";
 import { KEY_CAP } from "@/keyboard/use-shortcut-hint";
-import { listIndexForKey } from "@/lib/list-keys";
+import { groupStarts, listIndexForKey } from "@/lib/list-keys";
 import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { PhoneSheetHeader } from "@/thread/dialog-shell";
@@ -203,6 +203,7 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
     if (waitsOn !== undefined && !busy) loadMore(waitsOn);
   }, [waitsOn, busy, loadMore]);
   const rows = shown.groups.flatMap((group) => group.rows);
+  const starts = groupStarts(shown.groups.map((group) => group.rows.length));
   const activeIndex = Math.min(active, rows.length - 1);
   const cursorEntry = activeIndex < 0 ? undefined : rows[activeIndex];
 
@@ -249,7 +250,6 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
     }
   };
 
-  let index = -1;
   return (
     <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
       {phone && <PhoneSheetHeader title="History" />}
@@ -324,7 +324,7 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
                 }
               />
             ))}
-          {shown.groups.map((group) => (
+          {shown.groups.map((group, groupIndex) => (
             <Fragment key={group.key}>
               <h3
                 data-testid="history-group"
@@ -333,9 +333,8 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
               >
                 {group.label}
               </h3>
-              {group.rows.map((entry) => {
-                index++;
-                const at = index;
+              {group.rows.map((entry, rowIndex) => {
+                const at = starts[groupIndex]! + rowIndex;
                 return (
                   <HistoryRow
                     key={entry.threadId}

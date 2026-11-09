@@ -206,7 +206,7 @@ export const fsHandlers = Effect.gen(function* () {
         host.reads === undefined
           ? Effect.fail(
               new InvalidState({
-                message: `gram-host on ${name} is older than this Gram, so its files can't be read from here. Run the install command there again to update it.`,
+                message: `gram-host on ${name} is older than this Gram, so its files can't be read from here. Update it (Settings → Machines, or rerun its install command there).`,
               }),
             )
           : Effect.succeed(host.reads);

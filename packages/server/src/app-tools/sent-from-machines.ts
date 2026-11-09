@@ -33,7 +33,7 @@ export const sentFromMachinesHere: Effect.Effect<SentFromMachines | undefined> =
             host.reads === undefined
               ? Effect.fail(
                   fail(
-                    `gram-host on ${name} is older than this Gram, so it can't send files. Run the install command there again to update it.`,
+                    `gram-host on ${name} is older than this Gram, so it can't send files. Update it (Settings → Machines, or rerun its install command there).`,
                   ),
                 )
               : Effect.succeed({ name, reads: host.reads }),

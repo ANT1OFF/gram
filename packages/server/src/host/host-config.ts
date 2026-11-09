@@ -63,14 +63,15 @@ const ownedPrivate = (path: string, directory: boolean) => {
     throw new Error(`${path} must be private to this user (chmod ${directory ? "700" : "600"}).`);
 };
 
-const ensureHome = (home: string) => {
+/** Creates a private destination, or refuses an unsafe existing folder before a join. */
+export const ensureHostHome = (home: string) => {
   mkdirSync(home, { recursive: true, mode: 0o700 });
   ownedPrivate(home, true);
 };
 
 /** Writes `name` in `home` owner-only, replacing it atomically with the rename made durable. */
 const writePrivate = (home: string, name: string, text: string) => {
-  ensureHome(home);
+  ensureHostHome(home);
   const path = join(home, name);
   const temporary = `${path}.${randomBytes(8).toString("hex")}.tmp`;
   let fd: number | undefined;

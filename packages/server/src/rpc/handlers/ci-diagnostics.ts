@@ -1,7 +1,7 @@
 import { effectiveCheckout, InvalidState, samePr, type Thread } from "@gram/contracts";
 import { Proc, readCiDiagnostic } from "@gram/git";
 import * as Effect from "effect/Effect";
-import { threadFolder, ThreadPrLookup } from "../../git/thread-pr.ts";
+import { ghFolder, ThreadPrLookup } from "../../git/thread-pr.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import type { Handlers } from "./common.ts";
 
@@ -13,7 +13,7 @@ export const ciDiagnosticHandlers = Effect.gen(function* () {
     "git.prCheckDiagnostic": ({ threadId, selection }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
-        const cwd = yield* threadFolder(thread);
+        const cwd = yield* ghFolder(thread);
         const target = yield* lookup.target(thread, cwd);
         if (target === undefined)
           return yield* new InvalidState({ message: "This thread has no pull request", threadId });

@@ -65,6 +65,6 @@ are much slower across that boundary.
 | --------------------- | ----------------------------- | --------------------------------------------- |
 | `CLAUDE_CODE_VERSION` | the version in the Dockerfile | Claude Code from npm                          |
 | `CODEX_VERSION`       | unset                         | Codex from npm, when set                      |
-| `GH_VERSION`          | `2.80.0`                      | The GitHub CLI's release; empty leaves it out |
-| `NODE_IMAGE`          | `node:26.12.0-bookworm-slim`  | The image it runs on                          |
-| `BUILD_IMAGE`         | `node:26.12.0-bookworm`       | The image it builds in                        |
+| `GH_VERSION`          | `2.103.3`                     | The GitHub CLI's release; empty leaves it out |
+| `NODE_IMAGE`          | `node:26.13.0-bookworm-slim`  | The image it runs on                          |
+| `BUILD_IMAGE`         | `node:26.13.0-bookworm`       | The image it builds in                        |
