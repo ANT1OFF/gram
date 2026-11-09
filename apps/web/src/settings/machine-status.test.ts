@@ -75,7 +75,7 @@ describe("a joined machine's health", () => {
     ).toMatchObject({
       tone: "update",
       label: "Needs update (1.15.0 → 1.15.2)",
-      fix: "Rerun the installer on cachyos.",
+      fix: "Update reruns the installer on cachyos.",
       update: { from: "1.15.0", to: "1.15.2" },
     });
     // A host from before releases were sent, short of what this build needs.
@@ -97,6 +97,7 @@ describe("a joined machine's health", () => {
       tone: "online",
       label: "online",
       why: "Runs Gram 1.15.0; this one is 1.15.2. They work together.",
+      fix: "Rerun the installer on cachyos to match.",
       update: { from: "1.15.0", to: "1.15.2" },
     });
     const same = machineHealth(

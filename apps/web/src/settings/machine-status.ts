@@ -62,6 +62,7 @@ export function machineHealth(
         ? {}
         : {
             why: `Runs ${runs}; this one is ${update.to}. They work together.`,
+            fix: `Rerun the installer on ${name} to match.`,
             update,
           }),
     };
@@ -79,7 +80,7 @@ export function machineHealth(
         why: `${name} runs ${from === undefined ? runs : `Gram ${from}`}, which this Gram can't talk to.`,
         fix: newer
           ? `Update Gram here, or rerun the installer on ${name} to match this one.`
-          : `Rerun the installer on ${name}.`,
+          : `Update reruns the installer on ${name}.`,
         ...(mine === undefined
           ? {}
           : { update: { ...(from === undefined ? {} : { from }), to: mine } }),

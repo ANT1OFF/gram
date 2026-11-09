@@ -224,8 +224,8 @@ function MachineRow({
 }) {
   const online = health.tone === "online";
   const hint = healthHint(health);
-  // Offered only where it can do something: this Gram is a release, and the machine isn't on it.
-  const updatable = machine.confirmed && health.update !== undefined;
+  // Only for a machine this Gram can't talk to; one on another release that works says so on hover.
+  const updatable = machine.confirmed && health.tone === "update" && health.update !== undefined;
   return (
     <div className="flex min-h-9 items-center gap-3" data-testid="machines-row">
       <Monitor aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
@@ -243,7 +243,7 @@ function MachineRow({
             />
           )}
         </span>
-        <span className="flex items-center gap-1 text-meta text-muted-foreground">
+        <span className="text-meta text-muted-foreground">
           Joined {formatDay(machine.joinedAt, now)} ·{" "}
           {hint === undefined ? (
             <span data-testid="machines-state">{health.label}</span>
@@ -257,17 +257,17 @@ function MachineRow({
                   tabIndex={0}
                   aria-description={hint}
                   data-testid="machines-state"
-                  className="inline-flex items-center gap-1 rounded-sm outline-none focus-visible:focus-ring"
+                  className="inline-flex items-center gap-1 rounded-sm align-bottom whitespace-nowrap outline-none focus-visible:focus-ring"
                 />
               }
             >
               {health.label}
               {/* Neutral: the glyph's shape says it, as for any caution that isn't a setting's. */}
-              {health.tone === "update" ? (
+              {health.update !== undefined ? (
                 <CircleArrowUp aria-hidden className="size-icon-chip" />
-              ) : health.tone !== "online" ? (
+              ) : (
                 <CircleAlert aria-hidden className="size-icon-chip" />
-              ) : null}
+              )}
             </Hint>
           )}
         </span>
@@ -282,13 +282,7 @@ function MachineRow({
           </Button>
         )}
         {updatable && (
-          <Button
-            size="sm"
-            variant={health.tone === "update" ? "default" : "ghost"}
-            onClick={onUpdate}
-            data-testid="machines-update"
-          >
-            {health.tone === "update" && <CircleArrowUp aria-hidden />}
+          <Button size="sm" onClick={onUpdate} data-testid="machines-update">
             Update
           </Button>
         )}
@@ -410,7 +404,7 @@ function UpdateDialog({
           </p>
           <span className="flex items-center gap-2">
             <code
-              className="min-w-0 flex-1 truncate rounded-sm bg-accent px-2 py-1 font-mono text-meta text-foreground"
+              className="min-w-0 flex-1 rounded-sm bg-accent px-2 py-1 font-mono text-meta break-all text-foreground select-all"
               data-testid="machines-update-command"
             >
               {command}

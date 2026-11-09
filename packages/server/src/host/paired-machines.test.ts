@@ -199,8 +199,8 @@ describe("joined machines", () => {
       release: "1.17.0",
     });
     // No key and nothing from a dial: only what the page shows.
-    expect(Object.keys(machineView(machine, undefined)).sort()).toEqual(
-      ["confirmed", "fingerprint", "id", "joinedAt", "name", "offline", "platform"].sort(),
+    expect(Object.keys(machineView(machine, undefined)).toSorted()).toEqual(
+      ["confirmed", "fingerprint", "id", "joinedAt", "name", "offline", "platform"].toSorted(),
     );
   });
 

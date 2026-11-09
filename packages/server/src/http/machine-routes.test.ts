@@ -60,13 +60,13 @@ const post = (
     Effect.flatMap((response) =>
       Effect.promise(async () => {
         const text = await response.text();
-        let body: Record<string, unknown>;
+        let answer: Record<string, unknown>;
         try {
-          body = JSON.parse(text) as Record<string, unknown>;
+          answer = JSON.parse(text) as Record<string, unknown>;
         } catch {
-          body = { text };
+          answer = { text };
         }
-        return { status: response.status, body };
+        return { status: response.status, body: answer };
       }),
     ),
   );

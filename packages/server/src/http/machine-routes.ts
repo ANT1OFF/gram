@@ -240,10 +240,9 @@ export const machineManagement = (
     const request = yield* HttpServerRequest.HttpServerRequest;
     if (request.method !== "POST" || request.headers["origin"] === undefined)
       return refuse("forbidden");
-    const status = () => machinesStatus(hosts, remote, appVersion);
     switch (path) {
       case MACHINES_LIST_PATH:
-        return json(status());
+        return json(machinesStatus(hosts, remote, appVersion));
       case MACHINES_JOIN_LINK_PATH:
         if (remote === undefined)
           return json(
@@ -286,7 +285,7 @@ export const machineManagement = (
           } catch {
             // Only what its update runs is lost; the move itself happened.
           }
-          return json({ ...status(), joined, output });
+          return json({ ...machinesStatus(hosts, remote, appVersion), joined, output });
         }
         if (joined === undefined)
           return json(
@@ -308,7 +307,7 @@ export const machineManagement = (
         // Joined with the printed key, then stopped (its service didn't start, say): it is confirmed,
         // and the person reads what went wrong.
         return json({
-          ...status(),
+          ...machinesStatus(hosts, remote, appVersion),
           joined: joined.id,
           ...(failure === undefined
             ? {}
@@ -358,7 +357,7 @@ export const machineManagement = (
             },
             409,
           );
-        return json({ ...status(), output });
+        return json({ ...machinesStatus(hosts, remote, appVersion), output });
       }
       case MACHINES_CONFIRM_PATH:
       case MACHINES_REMOVE_PATH: {
@@ -371,7 +370,7 @@ export const machineManagement = (
         } catch {
           return json({ message: "The change couldn't be saved." }, 500);
         }
-        return json(status());
+        return json(machinesStatus(hosts, remote, appVersion));
       }
       default:
         return refuse("forbidden");

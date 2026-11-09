@@ -114,8 +114,9 @@ doesn't serve everything this Gram needs, is refused; Settings → Machines then
 update** with both releases instead of offline. A host on another release that works shows online,
 and its hover says which release it runs.
 
-**Update** appears on a machine whose release isn't this Gram's, and only when this Gram is a
-release (a Gram run from source has none to move it to):
+**Update** appears on a machine that needs one, and only when this Gram is a release (a Gram run
+from source has none to move it to). A machine on another release that works keeps its state; its
+hover says which release it runs and that rerunning the installer there moves it to this one.
 
 - For a machine Gram added over SSH, it runs that install again over the same `[user@]host`, with
   no join link. The installer moves the service to this Gram's release and keeps the join; it never
