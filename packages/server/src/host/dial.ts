@@ -2,7 +2,8 @@ import type { KeyObject } from "node:crypto";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import type * as Scope from "effect/Scope";
+import * as Exit from "effect/Exit";
+import * as Scope from "effect/Scope";
 import { Socket } from "../platform/unstable.ts";
 import { HOST_CONNECT_PATH, signedConnectHeaders } from "./machine-keys.ts";
 import { type HostService, serveHost } from "./protocol.ts";
@@ -29,11 +30,14 @@ export const connectUrl = (origin: string) =>
 
 /**
  * One dial: a WebSocket to the main Gram, signed afresh, serving the host until the socket closes
- * or the dial is refused. The host's terminals and sessions are this connection's and end with it.
+ * or the dial is refused. What `service` builds in the dial's scope ends with it; `dialForever`
+ * hands it one it keeps across dials.
  */
 export const dialOnce = <R>(
   options: DialOptions,
   service: Effect.Effect<HostService, never, Scope.Scope | R>,
+  /** Runs on each message the main Gram sends: the dial got through and is being served. */
+  served: Effect.Effect<void> = Effect.void,
 ): Effect.Effect<void, never, R> =>
   Effect.gen(function* () {
     const ended = yield* Deferred.make<void>();
@@ -49,31 +53,77 @@ export const dialOnce = <R>(
     const host = yield* service;
     // Served until the socket ends: refused, closed by the main Gram, or broken.
     yield* Effect.raceFirst(
-      serveHost(watchedSocket(socket, Deferred.succeed(ended, undefined)), host),
+      serveHost(watchedSocket(socket, Deferred.succeed(ended, undefined), served), host),
       Deferred.await(ended),
     );
   }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
 
 /**
+ * How long the host keeps its sessions and terminals with no connection to the main Gram: a blip
+ * or a redial picks them up where they were; past it they end, as the main Gram has given them up
+ * (it waits `REATTACH_WITHIN_MS`, less than this).
+ */
+export const DETACHED_GRACE_MS = 3 * 60_000;
+
+/**
  * Dials the main Gram for good: each time a connection ends or a dial is refused (the machine
  * isn't confirmed yet, the main Gram is closed, the tailnet is down) the host waits and dials
- * again, longer each time up to half a minute.
+ * again, longer each time up to half a minute. What it serves is built once and kept across dials,
+ * so a session keeps running through a dropped connection and the next one picks it up; only
+ * `DETACHED_GRACE_MS` without a dial getting through ends it, checked between dials so a dial
+ * never serves what was ended under it.
  */
 export const dialForever = <R>(
   options: DialOptions,
   service: Effect.Effect<HostService, never, Scope.Scope | R>,
+  timing: { readonly detachedMs?: number; readonly retryFirstMs?: number } = {},
 ): Effect.Effect<never, never, R> =>
   Effect.gen(function* () {
     const now = options.now ?? Date.now;
-    let wait = RETRY_FIRST_MS;
+    const detachedMs = timing.detachedMs ?? DETACHED_GRACE_MS;
+    const retryFirstMs = timing.retryFirstMs ?? RETRY_FIRST_MS;
+    let kept: { readonly host: HostService; readonly scope: Scope.Closeable } | undefined;
+    /** The service the next dial serves: the kept one, or a new one when none is. */
+    const keptService = Effect.gen(function* () {
+      if (kept !== undefined) return kept.host;
+      const scope = yield* Scope.make();
+      const host = yield* service.pipe(Scope.provide(scope));
+      kept = { host, scope };
+      return host;
+    });
+    /** Ends what the host kept. */
+    const release = Effect.suspend(() => {
+      const ending = kept;
+      kept = undefined;
+      return ending === undefined ? Effect.void : Scope.close(ending.scope, Exit.void);
+    });
+    yield* Effect.addFinalizer(() => release);
+    /** Since when no dial has got through, while what is kept waits for one. */
+    let detachedSince: number | undefined;
+    // Only a message from the main Gram says a dial got through: a dial left hanging on its
+    // connect, or refused, doesn't.
+    const served = Effect.sync(() => {
+      detachedSince = undefined;
+    });
+    let wait = retryFirstMs;
     while (true) {
+      if (
+        kept !== undefined &&
+        detachedSince !== undefined &&
+        now() - detachedSince >= detachedMs
+      ) {
+        yield* Effect.logWarning("gram-host: no connection for too long; its sessions end");
+        yield* release;
+        detachedSince = undefined;
+      }
       const started = now();
-      yield* dialOnce(options, service);
-      if (now() - started >= STEADY_MS) wait = RETRY_FIRST_MS;
+      yield* dialOnce(options, keptService, served);
+      detachedSince ??= now();
+      if (now() - started >= STEADY_MS) wait = retryFirstMs;
       yield* Effect.logInfo("gram-host: not connected; dialling again").pipe(
         Effect.annotateLogs({ inSeconds: Math.round(wait / 1000) }),
       );
       yield* Effect.sleep(wait);
       wait = Math.min(wait * 2, RETRY_MOST_MS);
     }
-  });
+  }).pipe(Effect.scoped);

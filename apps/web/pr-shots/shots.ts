@@ -1204,6 +1204,22 @@ const openRealisticMorning = async (page: Page) => {
   });
 };
 
+/**
+ * The realistic orchestrator's update that holds its check on #142, opened to the tool calls and
+ * the memory change among them; `run` opens the run those calls fold into as well.
+ */
+const openMemoryChange = async (page: Page, run: boolean) => {
+  const made = await openRealisticMorning(page);
+  await openOrchestrator(page, made.orchestratorThreadId);
+  const block = page.getByTestId("update-block").filter({ hasText: "is up as" });
+  await block.getByTestId("update-block-toggle").click();
+  const group = block.getByTestId("tool-group").first();
+  await group.waitFor();
+  if (run) await group.getByRole("button").first().click();
+  await block.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(400);
+};
+
 /** The solo threads section opened, and `threadId`'s row in it. */
 const soloRowOf = async (page: Page, threadId: string) => {
   const section = page.getByTestId("overview-section-solo");
@@ -1950,6 +1966,17 @@ export const SHOTS: readonly Shot[] = [
   ...SNOOZE_SHOTS,
   ...PANEL_TAB_SHOTS,
   ...COMPOSER_TOOLBAR_SHOTS,
+  {
+    name: "orchestrator-memory-change",
+    title:
+      "The realistic orchestrator's check on #142 opened, a memory change among its tool calls: inside the run's row, not a card of its own",
+    open: (page) => openMemoryChange(page, false),
+  },
+  {
+    name: "orchestrator-memory-change-open",
+    title: "The same run opened: the memory change is one of its rows, its diff a click away",
+    open: (page) => openMemoryChange(page, true),
+  },
   {
     name: "composer-model-open",
     title:

@@ -1,5 +1,7 @@
 import {
+  type Checkout,
   InvalidState,
+  isLocalHost,
   linkedCheckoutMessage,
   NotFound,
   notARepositoryMessage,
@@ -8,11 +10,18 @@ import {
   type RepositoryCandidate,
   type RepositoryCandidates,
 } from "@gram/contracts";
-import { git as runGit, projectRoot, projectRootKey, realPath, type Proc } from "@gram/git";
+import {
+  git as runGit,
+  isForeignPath,
+  projectRoot,
+  projectRootKey,
+  realPath,
+  type Proc,
+} from "@gram/git";
 import * as Effect from "effect/Effect";
 import { existsSync, statSync } from "node:fs";
 import { lstat, readdir, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 
@@ -71,16 +80,35 @@ export const resolveFolder = (
 
 /**
  * True unless the path is definitely gone; permission and other errors are left to the caller.
- * Synchronous, so snapshots stay deterministic under `TestClock`.
+ * Synchronous, so snapshots stay deterministic under `TestClock`. A folder on another machine
+ * (`noteForeignPath`) is never asked of this disk, where it reads as gone (and on macOS, under
+ * `/home`, costs an autofs round trip on the event loop): it counts as there, as an offline
+ * machine's folders do. Whether it really is there is its machine's to say (`git.present`).
  */
 export const folderExists = (path: string): Effect.Effect<boolean> =>
   Effect.sync(() => {
+    if (isForeignPath(path)) return true;
     try {
       return statSync(path, { throwIfNoEntry: false }) !== undefined;
     } catch {
       return true;
     }
   });
+
+/**
+ * A folder on this machine to start `gh` in for `checkout`, when the call names its repo itself
+ * (`--repo`, or an API path), so any folder that exists will do: the checkout, else its repo's main
+ * checkout once the worktree is gone. A checkout on another machine has neither here, and `gh`
+ * runs on this one, so it starts in the temp folder.
+ */
+export const ghFolderOf = (
+  checkout: Pick<Checkout, "path" | "repoRoot" | "hostId">,
+): Effect.Effect<string> =>
+  isLocalHost(checkout)
+    ? Effect.map(folderExists(checkout.path), (there) =>
+        there || checkout.repoRoot === undefined ? checkout.path : checkout.repoRoot,
+      )
+    : Effect.sync(tmpdir);
 
 export const missingThreadFolder = (path: string) =>
   `This thread's folder no longer exists: ${path}`;

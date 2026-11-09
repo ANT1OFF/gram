@@ -1,6 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
 import { GitError, InvalidState, NotFound, notARepositoryMessage } from "@gram/contracts";
-import { Proc, ProcTimeout, type ProcOutput, type ProcShape } from "@gram/git";
+import {
+  forgetForeignPathsForTest,
+  noteForeignPath,
+  Proc,
+  ProcTimeout,
+  type ProcOutput,
+  type ProcShape,
+} from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import {
@@ -26,6 +33,8 @@ import {
   browseFolders,
   expandHome,
   folderError,
+  folderExists,
+  ghFolderOf,
   registerRepo,
   repoFolder,
   repoIdentity,
@@ -677,5 +686,38 @@ describe("makeCloneSuggestions", () => {
       yield* suggest(short, suggestions);
       expect(calls).toHaveLength(4);
     }),
+  );
+});
+
+describe("another machine's folders", () => {
+  it.effect("count as there, without asking this disk", () =>
+    Effect.gen(function* () {
+      const root = "/nonexistent-gram-host/repos";
+      expect(yield* folderExists(`${root}/x/.worktrees/a`)).toBe(false);
+      noteForeignPath(root);
+      yield* Effect.addFinalizer(() => Effect.sync(forgetForeignPathsForTest));
+      expect(yield* folderExists(`${root}/x/.worktrees/a`)).toBe(true);
+      expect(yield* folderExists("/nonexistent-gram-elsewhere")).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("start gh in a folder on this machine", () =>
+    Effect.gen(function* () {
+      const root = mkdtempSync(join(tmpdir(), "gram-gh-folder-"));
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(root, { recursive: true })));
+      const gone = join(root, ".worktrees", "gone");
+      // Here: the checkout while it's there, else its repo's main checkout.
+      expect(yield* ghFolderOf({ path: root, repoRoot: root })).toBe(root);
+      expect(yield* ghFolderOf({ path: gone, repoRoot: root })).toBe(root);
+      expect(yield* ghFolderOf({ path: gone })).toBe(gone);
+      // On another machine: neither is a folder here.
+      expect(
+        yield* ghFolderOf({
+          path: "/home/someone/.config/gram-host/repos/x/.worktrees/a",
+          repoRoot: "/home/someone/.config/gram-host/repos/x",
+          hostId: "machine-b" as never,
+        }),
+      ).toBe(tmpdir());
+    }).pipe(Effect.scoped),
   );
 });

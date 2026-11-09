@@ -9,13 +9,18 @@ import type { Socket } from "../platform/unstable.ts";
 export const watchedSocket = (
   socket: Socket.Socket,
   ended: Effect.Effect<void>,
+  /** Runs on each read that brings data: the other side is there and talking. */
+  received: Effect.Effect<void> = Effect.void,
 ): Socket.Socket => ({
   ...socket,
   reader: socket.reader.pipe(
     Effect.tapError(() => ended),
     Effect.map((reader) => ({
       ...reader,
-      pull: reader.pull.pipe(Effect.tapError(() => ended)),
+      pull: reader.pull.pipe(
+        Effect.tapError(() => ended),
+        Effect.tap(() => received),
+      ),
     })),
   ),
 });

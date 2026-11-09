@@ -3,6 +3,7 @@ import {
   effectiveCheckout,
   fenceThreadMessage,
   fromOwnOrchestrator,
+  isLocalHost,
   threadSender,
   ThreadStatus,
   type GitState,
@@ -32,6 +33,10 @@ import { captureReadWorker, withReadWorker } from "../persistence/read-worker.ts
 import { searchThreads } from "../search/search.ts";
 import { defineAppTool } from "./definition.ts";
 import { AppToolRegistry } from "./registry.ts";
+
+/** Why a thread on another machine has no turn diffs: checkpoints are taken on this one. */
+const REMOTE_CHECKPOINTS =
+  "This thread runs on another machine, where Gram keeps no per-turn checkpoints. Ask its git there instead.";
 
 /** The sender of a stored message another thread sent, when it is one. */
 const originOf = (message: GramUIMessage): MessageOrigin | undefined => {
@@ -283,8 +288,11 @@ export const ReadAppToolsLive = Layer.effectDiscard(
         Effect.gen(function* () {
           const tool = "git_state";
           const thread = yield* threadOf(tool, caller, other);
-          const cwd = effectiveCheckout(thread).path;
-          if (!(yield* folderExists(cwd))) {
+          const checkout = effectiveCheckout(thread);
+          const cwd = checkout.path;
+          // On another machine, whether the folder is there is that machine's to say: the
+          // publisher asks it.
+          if (isLocalHost(checkout) && !(yield* folderExists(cwd))) {
             return yield* new AppToolError({ tool, message: missingThreadFolder(cwd) });
           }
           if (refresh || (yield* publisher.stateFor(cwd)) === undefined) {
@@ -325,7 +333,13 @@ export const ReadAppToolsLive = Layer.effectDiscard(
                 turnId === undefined ? "That thread has no turns yet." : `unknown turn ${turnId}`,
             });
           }
-          const cwd = effectiveCheckout(thread).path;
+          const checkout = effectiveCheckout(thread);
+          const cwd = checkout.path;
+          // Checkpoints are read with this machine's git, and a thread on another machine keeps
+          // none here.
+          if (!isLocalHost(checkout)) {
+            return yield* new AppToolError({ tool, message: REMOTE_CHECKPOINTS });
+          }
           if (!(yield* folderExists(cwd))) {
             return yield* new AppToolError({ tool, message: missingThreadFolder(cwd) });
           }
@@ -376,14 +390,17 @@ export const ReadAppToolsLive = Layer.effectDiscard(
       handle: (threadId, { limit = 10 }) =>
         Effect.gen(function* () {
           const thread = yield* store.getThread(threadId);
-          const cwd = effectiveCheckout(thread).path;
+          const checkout = effectiveCheckout(thread);
+          const cwd = checkout.path;
           const all = yield* store.listTurns(threadId);
           const turns = all.slice(-clamp(limit, 1, 100));
           // Only prompts are named; a long thread's replies are most of its history.
           const messages = yield* store.listUserMessages(threadId);
-          const top = (yield* folderExists(cwd))
-            ? yield* provideGit(tryRepoTop(cwd)).pipe(Effect.orElseSucceed(() => undefined))
-            : undefined;
+          // A thread on another machine has no checkpoints here (`REMOTE_CHECKPOINTS`).
+          const top =
+            isLocalHost(checkout) && (yield* folderExists(cwd))
+              ? yield* provideGit(tryRepoTop(cwd)).pipe(Effect.orElseSucceed(() => undefined))
+              : undefined;
           const refs = new Set<string>(
             top === undefined
               ? []

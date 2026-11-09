@@ -75,6 +75,7 @@ import {
   presentState,
   safeLink,
   workerFlags,
+  type DiffLine,
   type StatePresentation,
   type StateTone,
 } from "./orchestration-model";
@@ -565,10 +566,30 @@ const DIFF_LINE = {
   del: { mark: "−", className: "bg-destructive/10 text-destructive" },
 } as const;
 
+const memoryVerb = (write: MemoryWrite) =>
+  write.action === "delete" ? "Deleted" : write.before === undefined ? "Created" : "Updated";
+
+function MemoryDiff({ diff }: { diff: readonly DiffLine[] }) {
+  return (
+    <pre
+      data-testid="memory-diff"
+      className="mt-1 overflow-x-auto rounded-sm bg-muted/40 py-1 font-mono text-meta"
+    >
+      {diff.map((line, i) => {
+        const display = DIFF_LINE[line.kind];
+        return (
+          <span key={i} className={cn("block px-2 whitespace-pre-wrap", display.className)}>
+            {display.mark} {line.text}
+          </span>
+        );
+      })}
+    </pre>
+  );
+}
+
 /** One change the orchestrator made to its memory, with the file's before and after. */
 export function MemoryWriteCard({ write }: { write: MemoryWrite }) {
-  const verb =
-    write.action === "delete" ? "Deleted" : write.before === undefined ? "Created" : "Updated";
+  const verb = memoryVerb(write);
   const diff = lineDiff(write.before, write.after);
   return (
     <article
@@ -589,22 +610,63 @@ export function MemoryWriteCard({ write }: { write: MemoryWrite }) {
       </header>
       {diff.length > 0 && (
         <Disclosure label={`Changes (${diffStat(diff)})`}>
-          <pre
-            data-testid="memory-diff"
-            className="mt-1 overflow-x-auto rounded-sm bg-muted/40 py-1 font-mono text-meta"
-          >
-            {diff.map((line, i) => {
-              const display = DIFF_LINE[line.kind];
-              return (
-                <span key={i} className={cn("block px-2 whitespace-pre-wrap", display.className)}>
-                  {display.mark} {line.text}
-                </span>
-              );
-            })}
-          </pre>
+          <MemoryDiff diff={diff} />
         </Disclosure>
       )}
     </article>
+  );
+}
+
+const ROW =
+  "flex w-full min-w-0 items-center gap-1.5 rounded-sm py-0.5 text-left text-meta text-muted-foreground";
+
+/**
+ * The same change as one of a tool run's rows, where a card would take the run's space: a line of
+ * muted meta like Gram's own finished calls beside it, opening to the diff.
+ */
+export function MemoryWriteRow({ write }: { write: MemoryWrite }) {
+  const verb = memoryVerb(write);
+  const diff = lineDiff(write.before, write.after);
+  const line = (
+    <>
+      <span className="shrink-0">{verb} memory</span>
+      <span className="min-w-0 truncate">· {write.path}</span>
+      {write.action === "write" && (
+        <span className="shrink-0 tabular-nums">· {formatBytes(write.bytes)}</span>
+      )}
+      {diff.length > 0 && (
+        <span className="shrink-0 font-mono tabular-nums">
+          <span className="text-success">+{diff.filter((d) => d.kind === "add").length}</span>{" "}
+          <span className="text-destructive">−{diff.filter((d) => d.kind === "del").length}</span>
+        </span>
+      )}
+    </>
+  );
+  if (diff.length === 0) {
+    return (
+      <div data-testid="memory-write" className={cn(ROW, "pl-5")}>
+        {line}
+      </div>
+    );
+  }
+  return (
+    <Collapsible data-testid="memory-write">
+      <CollapsibleTrigger
+        className={cn(
+          ROW,
+          "group outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        )}
+      >
+        <ChevronRight
+          aria-hidden
+          className="size-icon-chip shrink-0 transition-transform duration-(--dur-fast) group-data-[panel-open]:rotate-90"
+        />
+        {line}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="gram-collapse pl-5">
+        <MemoryDiff diff={diff} />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
