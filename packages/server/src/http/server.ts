@@ -278,7 +278,14 @@ export const AuthMiddleware = HttpRouter.middleware(
                 : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
                   ? isRemote || remoteHosts === undefined
                     ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
-                    : yield* machineManagement(remoteHosts, control.current(), path)
+                    : yield* machineManagement(
+                        remoteHosts,
+                        control.current(),
+                        path,
+                        config.appBuild !== undefined && /^[a-f0-9]{40}$/.test(config.appBuild)
+                          ? config.appVersion
+                          : undefined,
+                      )
                   : isRemote && path === "/ws"
                     ? yield* closedOnRevoke(remote, remote.sessionOf(authRequest), httpEffect)
                     : yield* httpEffect;

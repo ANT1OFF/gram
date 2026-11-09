@@ -160,3 +160,15 @@ describe("the join installer", () => {
     },
   );
 });
+
+describe("the installer run over SSH", () => {
+  it("carries only this Gram's own join link", () => {
+    expect(() =>
+      installScript(ORIGIN, "1.14.0", "https://evil.example/host/join#code=x"),
+    ).toThrow();
+    expect(() => installScript(ORIGIN, "1.14.0", `${ORIGIN}/host/join#code=a'b`)).toThrow();
+    const script = installScript(ORIGIN, "1.14.0", LINK);
+    expect(script).toContain(`LINK='${LINK}'`);
+    execFileSync("sh", ["-n"], { input: script });
+  });
+});

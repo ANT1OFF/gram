@@ -99,6 +99,30 @@ or `gram-host service install`.
 - While the machine is offline its workers don't start and their folders aren't marked missing;
   nothing falls back to running on this machine.
 
+## Add a machine over SSH
+
+If this computer can already SSH to the other machine with a key, Settings → Machines → **Add a
+machine** does it all from here: type `user@host` or pick a `Host` from `~/.ssh/config`, and choose
+**Add over SSH**. Gram runs the installer above on that machine over your own `ssh`, with a fresh
+join link inside the script on the session's stdin, so the link never reaches a command line or
+shell history on either side. The script runs in your login shell there, so the service keeps the
+PATH your terminal has (Homebrew, `~/.local/bin`).
+
+- **Keys only.** It runs `ssh -o BatchMode=yes`: your keys and agent, and your SSH config's
+  options for that host, never a password prompt. If `ssh <host>` asks for a password, set up a
+  key first. The host must look like `[user@]host` or a config alias, never an option.
+- **Confirmed for you.** The installer prints the new key's fingerprint into the session. Gram
+  confirms the machine only when the one machine that joined during the install has that key,
+  which is the same check you'd make by eye, over a channel only your own SSH could open.
+  Otherwise it stays waiting for you to confirm it.
+- **Still over Tailscale.** The other machine connects to this Gram over your tailnet like any
+  joined machine, so it needs Tailscale signed in to the same tailnet; SSH is only how it gets
+  installed.
+- A first install downloads Gram there, which can take a few minutes, and one runs at a time. If
+  it fails, the dialog shows the end of what the session printed, and makes a new link. If the
+  machine joined with the printed key and only its service failed to start (a Mac with nobody
+  signed in, say), it is still confirmed, and the dialog says what went wrong.
+
 ## How it is secured
 
 - **Its own key.** Joining makes an Ed25519 key pair on the new machine. The private key stays in

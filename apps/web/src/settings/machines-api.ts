@@ -87,13 +87,81 @@ export const machinesApi = {
   remove: async (id: string) =>
     status(await post("/machines/remove", { id }), "Couldn't remove the machine"),
   /** A one-time join link, or `tailscale-off` while access over Tailscale is off. */
-  joinLink: async (): Promise<JoinLink | "tailscale-off"> => {
+  joinLink: async (): Promise<JoinLink | "tailscale-off" | "ssh-running"> => {
     const response = await post("/machines/join-link");
-    if (response.status === 409) return "tailscale-off";
+    if (response.status === 409)
+      return (await response.text().catch(() => "")).includes('"ssh-running"')
+        ? "ssh-running"
+        : "tailscale-off";
     if (!response.ok) throw await refusal(response, "Couldn't make a join link");
     const value = (await response.json()) as { url?: unknown; expiresAt?: unknown };
     if (typeof value.url !== "string" || typeof value.expiresAt !== "number")
       throw new MachinesError("Couldn't make a join link");
     return { url: value.url, expiresAt: value.expiresAt };
   },
+  /** The hosts in this computer's SSH config, for the Add over SSH picker. */
+  sshHosts: async (): Promise<ReadonlyArray<string>> => {
+    const response = await post("/machines/ssh-hosts");
+    if (!response.ok) return [];
+    const value = (await response.json()) as { hosts?: unknown };
+    return Array.isArray(value.hosts)
+      ? value.hosts.filter((host): host is string => typeof host === "string")
+      : [];
+  },
+  /**
+   * Installs and joins `target` over this computer's SSH, confirming it when the key that joined is
+   * the one the install printed. Minutes, while it downloads Gram there.
+   */
+  sshJoin: async (
+    target: string,
+  ): Promise<
+    MachinesStatus & {
+      /** The machine confirmed, or `rejoined` when it had joined before and its service moved. */
+      readonly joined: string;
+      /** What went wrong after it joined and was confirmed, such as its service not starting. */
+      readonly problem?: string;
+      readonly output: string;
+    }
+  > => {
+    const response = await post("/machines/ssh-join", { target });
+    const text = await response.text().catch(() => "");
+    let value: {
+      message?: unknown;
+      output?: unknown;
+      joined?: unknown;
+      problem?: unknown;
+      reason?: unknown;
+    } = {};
+    try {
+      value = JSON.parse(text) as typeof value;
+    } catch {
+      // Plain text.
+    }
+    const output = typeof value.output === "string" ? value.output : "";
+    if (!response.ok)
+      throw new SshJoinError(
+        typeof value.message === "string" ? value.message : "Couldn't add the machine over SSH",
+        output,
+        value.reason === "ssh-running",
+      );
+    const parsed = await status(new Response(text, { status: 200 }), "Couldn't add the machine");
+    return {
+      ...parsed,
+      joined: typeof value.joined === "string" ? value.joined : "",
+      ...(typeof value.problem === "string" ? { problem: value.problem } : {}),
+      output,
+    };
+  },
 };
+
+/** Why adding over SSH failed, and the end of what the session printed. */
+export class SshJoinError extends MachinesError {
+  readonly output: string;
+  /** Refused because another install over SSH is running, which this one left alone. */
+  readonly busy: boolean;
+  constructor(message: string, output: string, busy = false) {
+    super(message);
+    this.output = output;
+    this.busy = busy;
+  }
+}

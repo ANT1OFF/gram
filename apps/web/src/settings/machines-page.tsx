@@ -8,7 +8,7 @@ import {
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import {
   MACHINES_KEY,
   machinesApi,
   MachinesError,
+  SshJoinError,
   type MachinesStatus,
 } from "./machines-api";
 import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
@@ -235,6 +236,108 @@ function MachineRow({
   );
 }
 
+/** An install over SSH: running, or how it ended. */
+type SshRun =
+  | { readonly phase: "running"; readonly host: string }
+  | {
+      readonly phase: "done";
+      readonly host: string;
+      /** What happened, for the person: joined and confirmed, or its service moved. */
+      readonly said: string;
+      /** What still went wrong after it joined, if anything. */
+      readonly problem?: string;
+      readonly output: string;
+    }
+  | { readonly phase: "failed"; readonly message: string; readonly output: string };
+
+/**
+ * Add over SSH: this computer runs the installer on a host it can SSH to with its keys, and the
+ * machine is confirmed when the key that joined is the one the install printed. The run's state
+ * lives in the dialog, so the new machine appearing, or the dialog's link expiring, mid-run doesn't
+ * lose its answer.
+ */
+function SshJoin({
+  run,
+  showForm,
+  onRun,
+}: {
+  run: SshRun | undefined;
+  showForm: boolean;
+  onRun: (host: string) => void;
+}) {
+  const { data: hosts = [] } = useQuery({
+    queryKey: ["machines.sshHosts"],
+    queryFn: machinesApi.sshHosts,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const [target, setTarget] = useState("");
+  const busy = run?.phase === "running";
+  return (
+    <div className="flex flex-col gap-2" data-testid="machines-ssh">
+      {showForm && run?.phase !== "done" && (
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (target.trim() !== "" && !busy) onRun(target.trim());
+          }}
+        >
+          <label className="flex flex-col gap-1">
+            <span className="font-medium">Add a machine you can SSH to</span>
+            <span className="text-meta text-muted-foreground">
+              Gram installs it there with your SSH keys, then checks its fingerprint for you.
+            </span>
+          </label>
+          <span className="flex gap-2">
+            <input
+              aria-label="SSH host"
+              list="machines-ssh-hosts"
+              placeholder="user@host"
+              className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2.5 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              value={target}
+              disabled={busy}
+              onChange={(event) => setTarget(event.target.value)}
+            />
+            <datalist id="machines-ssh-hosts">
+              {hosts.map((host) => (
+                <option key={host} value={host} />
+              ))}
+            </datalist>
+            <Button type="submit" size="sm" disabled={busy || target.trim() === ""}>
+              {busy ? "Installing…" : "Add over SSH"}
+            </Button>
+          </span>
+        </form>
+      )}
+      {busy && (
+        <p className="text-meta text-muted-foreground" aria-live="polite">
+          Installing on {run.host} over SSH. A first install downloads Gram there, which can take a
+          few minutes.
+        </p>
+      )}
+      {run?.phase === "done" && (
+        <p className="flex items-center gap-2 font-medium" role="status">
+          <CircleCheck aria-hidden className="size-icon-row text-success" />
+          {run.said}
+        </p>
+      )}
+      {(run?.phase === "failed" || (run?.phase === "done" && run.problem !== undefined)) && (
+        <div role="alert" className="flex flex-col gap-1 text-meta">
+          <span className="text-destructive">
+            {run.phase === "failed" ? run.message : run.problem}
+          </span>
+          {run.output !== "" && (
+            <pre className="max-h-32 overflow-auto rounded-sm bg-accent px-2 py-1 font-mono text-meta whitespace-pre-wrap text-foreground">
+              {run.output}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Access over Tailscale, turned on from here when it is off: other machines dial the address it
  * serves on the tailnet. While Tailscale itself isn't ready, what it still needs, checked again on
@@ -330,12 +433,48 @@ function AddDialog({
   onConfirm: (machine: JoinedMachine) => void;
   onClose: () => void;
 }) {
-  const [link, setLink] = useState<JoinLink | "tailscale-off" | "error">();
+  const [link, setLink] = useState<JoinLink | "tailscale-off" | "ssh-running" | "error">();
+  // A run that ends after the dialog closed mints no link nobody will see.
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
   const [known] = useState(() => new Set(machines.map((machine) => machine.id)));
   const [now, setNow] = useState(() => Date.now());
+  const [sshRun, setSshRun] = useState<SshRun>();
+  const queryClient = useQueryClient();
   const mint = () => {
     setLink(undefined);
     machinesApi.joinLink().then(setLink, () => setLink("error"));
+  };
+  const runSsh = async (host: string) => {
+    setSshRun({ phase: "running", host });
+    try {
+      const next = await machinesApi.sshJoin(host);
+      queryClient.setQueryData(MACHINES_KEY, { machines: next.machines });
+      setSshRun({
+        phase: "done",
+        host,
+        said:
+          next.joined === "rejoined"
+            ? `${host} had already joined; its service moved to this release.`
+            : `${host} joined, and its fingerprint matched.`,
+        ...(next.problem === undefined ? {} : { problem: next.problem }),
+        output: next.output,
+      });
+    } catch (e) {
+      setSshRun({
+        phase: "failed",
+        message: message(e),
+        output: e instanceof SshJoinError ? e.output : "",
+      });
+      // The install used its own link, which replaced this dialog's: the command gets a new one.
+      // One refused because another was running replaced nothing.
+      if (open.current && !(e instanceof SshJoinError && e.busy)) mint();
+    }
   };
   useEffect(() => {
     // A newer link replaces an older one on the server, so only the last answer counts.
@@ -359,8 +498,34 @@ function AddDialog({
 
   return (
     <DialogShell testId="machines-add-dialog" title="Add a machine" onClose={onClose}>
-      {link === "tailscale-off" ? (
+      {(sshRun !== undefined || typeof link === "object") && (
+        <SshJoin
+          run={sshRun}
+          showForm={joined === undefined && !expired}
+          onRun={(host) => void runSsh(host)}
+        />
+      )}
+      {sshRun?.phase === "running" ? null : sshRun?.phase === "done" ? (
+        <div className="flex justify-end">
+          <Dialog.Close render={<Button type="button" size="sm" />}>Done</Dialog.Close>
+        </div>
+      ) : link === "tailscale-off" ? (
         <TailscaleStep onReady={mint} />
+      ) : link === "ssh-running" ? (
+        <>
+          <p className="text-muted-foreground">
+            Gram is adding a machine over SSH, which uses the one join link. Try again once that
+            finishes.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Dialog.Close render={<Button type="button" variant="ghost" size="sm" />}>
+              Close
+            </Dialog.Close>
+            <Button size="sm" onClick={mint}>
+              Try again
+            </Button>
+          </div>
+        </>
       ) : link === "error" ? (
         <>
           <p role="alert" className="text-meta text-destructive">
@@ -412,8 +577,8 @@ function AddDialog({
         <>
           <ol className="flex list-decimal flex-col gap-3 ps-5 text-muted-foreground">
             <li>
-              On the other machine, with Tailscale connected, run this in a terminal. It uses the
-              Gram app there, or downloads it, and runs in the background from then on.
+              Or, on the other machine, with Tailscale connected, run this in a terminal. It uses
+              the Gram app there, or downloads it, and runs in the background from then on.
               <span className="mt-1.5 flex items-center gap-2">
                 {link === undefined ? (
                   <span className="h-7 flex-1 animate-pulse rounded-sm bg-accent" />
