@@ -7,6 +7,7 @@ import type {
   ConnectorSignInStart,
   ConnectorsSeen,
   ConnectorStatus,
+  SendOptions,
   SequencedEvent,
 } from "@gram/agents";
 import {
@@ -32,6 +33,7 @@ import {
   HostWorktreeFailed,
   NotFound,
   type TerminalEvent,
+  type UserInput,
 } from "@gram/contracts";
 import {
   type ProcError,
@@ -95,7 +97,7 @@ export interface HostService {
   readonly status?: Effect.Effect<HostStatus>;
 }
 
-/** The capabilities this build's host serves. */
+/** The capabilities a host must serve for this build to use it. */
 export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
   "files",
   "ports",
@@ -105,6 +107,12 @@ export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
   "sessions",
   "repos",
 ];
+
+/**
+ * The capabilities this build's host serves: the ones required, and those a control plane uses only
+ * where a host advertises them, so a host on an older release still connects.
+ */
+export const HOST_SERVES: ReadonlyArray<HostCapability> = [...HOST_CAPABILITIES, "deliveries"];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -230,12 +238,12 @@ const handlersFor = (host: HostService) => {
       "host.sessions.ack": ({ handle, seq }) => host.sessions.ack(handle, seq),
       "host.sessions.connectorsSeen": ({ handle }) =>
         host.sessions.connectorsSeen(handle).pipe(Stream.map(seenToWire)),
-      "host.sessions.send": ({ handle, input, messageId }) =>
-        withSession(handle, (session) =>
+      "host.sessions.send": ({ handle, input, messageId, deliveryId }) =>
+        delivered(handle, deliveryId, (session) =>
           session.send(input, messageId === undefined ? undefined : { messageId }),
         ),
-      "host.sessions.steer": ({ handle, input }) =>
-        withSession(handle, (session) => session.steer(input)),
+      "host.sessions.steer": ({ handle, input, deliveryId }) =>
+        delivered(handle, deliveryId, (session) => session.steer(input)),
       "host.sessions.interrupt": ({ handle }) =>
         withSession(handle, (session) => session.interrupt),
       "host.sessions.closeToolGate": ({ handle }) =>
@@ -285,6 +293,16 @@ const handlersFor = (host: HostService) => {
     f: (session: AgentSession) => Effect.Effect<A, E>,
   ): Effect.Effect<A, E | HostFailed> {
     return Effect.flatMap(host.sessions.session(handle), f);
+  }
+  /** Input for the session, taken once per delivery id when the caller named one. */
+  function delivered(
+    handle: string,
+    deliveryId: string | undefined,
+    f: (session: AgentSession) => Effect.Effect<void>,
+  ): Effect.Effect<void, HostFailed> {
+    return deliveryId === undefined
+      ? withSession(handle, f)
+      : host.sessions.deliver(handle, deliveryId, f);
   }
   function withConnectors<A, E>(
     handle: string,
@@ -373,13 +391,19 @@ export interface HostSessionsConnection {
   ) => Stream.Stream<SequencedEvent, HostUnavailable | NotFound>;
   readonly ack: (handle: string, seq: number) => Effect.Effect<void>;
   readonly connectorsSeen: (handle: string) => Stream.Stream<ConnectorsSeen>;
+  /**
+   * A send or a steer with a `deliveryId` is taken once by a host that serves `deliveries`, so it
+   * can be asked again when its answer was lost.
+   */
   readonly send: (
     handle: string,
-    ...args: Parameters<AgentSession["send"]>
+    input: UserInput,
+    options?: SendOptions & { readonly deliveryId?: string },
   ) => Effect.Effect<void, HostFailed>;
   readonly steer: (
     handle: string,
-    ...args: Parameters<AgentSession["steer"]>
+    input: UserInput,
+    options?: { readonly deliveryId?: string },
   ) => Effect.Effect<void, HostFailed>;
   readonly interrupt: (handle: string) => Effect.Effect<void, InterruptHung | HostFailed>;
   readonly closeToolGate: (handle: string) => Effect.Effect<void, HostFailed>;
@@ -825,11 +849,22 @@ export const connectHost = (
       send: (handle, input, sendOptions) =>
         sessionCall(
           client["host.sessions.send"](
-            defined({ handle, input, messageId: sendOptions?.messageId }),
+            defined({
+              handle,
+              input,
+              messageId: sendOptions?.messageId,
+              deliveryId: sendOptions?.deliveryId,
+            }),
           ),
           none,
         ),
-      steer: (handle, input) => sessionCall(client["host.sessions.steer"]({ handle, input }), none),
+      steer: (handle, input, steerOptions) =>
+        sessionCall(
+          client["host.sessions.steer"](
+            defined({ handle, input, deliveryId: steerOptions?.deliveryId }),
+          ),
+          none,
+        ),
       interrupt: (handle) =>
         sessionCall(
           client["host.sessions.interrupt"]({ handle }),

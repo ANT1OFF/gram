@@ -78,11 +78,12 @@ export const waitFor = <A, E, R>(
   });
 
 /**
- * The fake agent, except that `send` dies for an input whose text contains `marker`: an adapter
- * whose transport broke under it, which the fake has no switch for.
+ * The fake agent, except that `send` dies with `defect` for an input whose text contains `marker`:
+ * an adapter whose transport broke under it, which the fake has no switch for.
  */
 export const fakeAgentWithFailingSend = (
   marker: string,
+  defect: () => unknown = () => new Error("the transport is gone"),
 ): Layer.Layer<AgentHosts | FakeAgentControl> =>
   Layer.effectContext(
     Effect.gen(function* () {
@@ -101,7 +102,7 @@ export const fakeAgentWithFailingSend = (
                       ...session,
                       send: (input, sendOptions) =>
                         input.text.includes(marker)
-                          ? Effect.die(new Error("the transport is gone"))
+                          ? Effect.die(defect())
                           : session.send(input, sendOptions),
                     })),
                   ),

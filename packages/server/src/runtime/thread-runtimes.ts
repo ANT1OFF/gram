@@ -84,6 +84,7 @@ import { makeThreadLifecycle, makeCloseMethods } from "./thread-lifecycle.ts";
 import { makeAgentEvents } from "./agent-events.ts";
 import { makeSessionSwitch, makeSwitchMethods } from "./session-switch.ts";
 import { makeSessionLifecycle } from "./session-lifecycle.ts";
+import type { InputUndelivered } from "./undelivered.ts";
 
 export {
   type CreateThreadInput,
@@ -732,7 +733,8 @@ const make = Effect.gen(function* () {
    * same message (`queue-persistence.test.ts`). `resume` itself isn't used, since the send
    * needs the session that drain opens.
    */
-  type SendError = Effect.Error<ReturnType<typeof sendNow>>;
+  // Undelivered input is put back by `sendNow` itself, so `perform` takes it as done.
+  type SendError = Exclude<Effect.Error<ReturnType<typeof sendNow>>, InputUndelivered>;
   const handover = makeDurableWork<
     InFlightSend,
     NonNullable<Runtime["inFlight"]> & { readonly sent?: Handover<SendError> },
@@ -749,7 +751,11 @@ const make = Effect.gen(function* () {
             turnId: item.turnId,
             messageId: item.id,
             ...(published === undefined ? {} : { published }),
-          }),
+          }).pipe(
+            // Kept at the queue's head, the thread in error saying why: it goes from there with
+            // the next session, never into this one again at once, so the send counts as done.
+            Effect.catchTag("InputUndelivered", () => Effect.void),
+          ),
         );
         return { started };
       }),
