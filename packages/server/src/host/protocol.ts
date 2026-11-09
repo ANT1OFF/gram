@@ -15,6 +15,9 @@ import {
   AnswerUndelivered,
   type HostAgentReload,
   type HostStatus,
+  type HostUpdateCheck,
+  type HostUpdateProgress,
+  HostUpdateRefused,
   type HostSessionOpen,
   type HostSessionOpened,
   HOST_PROTOCOL_VERSION,
@@ -67,6 +70,7 @@ import type { HostFiles } from "./files.ts";
 import { NOT_A_CLAUDE_TOKEN } from "./host-config.ts";
 import type { HostGit } from "./git.ts";
 import type { HostRepos } from "./repos.ts";
+import { type Admission, UPDATING } from "./admission.ts";
 import type { HostSessionsService } from "./sessions.ts";
 import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
 import type {
@@ -120,6 +124,16 @@ export interface HostService {
   readonly status?: Effect.Effect<HostStatus>;
   /** Project checks of pull requests, on a host that serves `checks`. */
   readonly checks?: HostChecks;
+  /** Its own update, on a joined machine that runs as its service (`self-update.ts`). */
+  readonly update?: HostUpdater;
+  /** Whether it takes new work now; an update closes it before the restart (`admission.ts`). */
+  readonly admission?: Admission;
+}
+
+/** A host's update of itself, as it serves `host.update.*`. */
+export interface HostUpdater {
+  readonly check: Effect.Effect<HostUpdateCheck>;
+  readonly start: (release: string) => Stream.Stream<HostUpdateProgress, HostUpdateRefused>;
 }
 
 /** What a host without a token store answers. */
@@ -212,6 +226,11 @@ const defined = <A extends object>(value: A): Defined<A> =>
 
 /** The protocol's handlers over a host's own folders, worktrees, git state and scan. */
 const handlersFor = (host: HostService) => {
+  /** New work, refused while an update has closed the gate. */
+  const gated = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    host.admission === undefined
+      ? effect
+      : host.admission.admit(effect, () => new HostFailed({ message: UPDATING }));
   return HostRpcs.toLayer(
     HostRpcs.of({
       "host.hello": () => Effect.succeed(host.hello),
@@ -237,20 +256,32 @@ const handlersFor = (host: HostService) => {
         (host.status ?? Effect.succeed(UNKNOWN_STATUS)).pipe(
           Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
         ),
+      "host.update.check": () =>
+        (host.update?.check ?? Effect.succeed({})).pipe(
+          Effect.catchCause(() => Effect.succeed({})),
+        ),
+      "host.update.start": ({ release }) =>
+        host.update?.start(release) ??
+        Stream.fail(
+          new HostUpdateRefused({
+            reason: "unsupported",
+            message: "This host doesn't update itself.",
+          }),
+        ),
       "host.ports.scan": () =>
         host.scan.pipe(
           Effect.map(scanToWire),
           Effect.mapError((error) => new HostFailed({ message: failureText(error) })),
         ),
       "host.repos.ensure": ({ url }) =>
-        host.repos.ensure(url).pipe(Effect.mapError(worktreeToWire)),
+        gated(host.repos.ensure(url).pipe(Effect.mapError(worktreeToWire))),
       "host.repos.identify": ({ repoRoot, path }) => host.repos.identify(repoRoot, path),
       "host.worktrees.list": ({ repoPath, openCheckouts }) =>
         host.worktrees.list(repoPath, { openCheckouts }).pipe(Effect.mapError(worktreeToWire)),
       "host.worktrees.baseBranches": ({ repoPath }) =>
         host.worktrees.baseBranches(repoPath).pipe(Effect.mapError(worktreeToWire)),
       "host.worktrees.create": (request) =>
-        host.worktrees.create(request).pipe(Effect.mapError(worktreeToWire)),
+        gated(host.worktrees.create(request).pipe(Effect.mapError(worktreeToWire))),
       "host.worktrees.remove": (request) =>
         host.worktrees.remove(request).pipe(Effect.mapError(worktreeToWire)),
       "host.worktrees.restore": (request) =>
@@ -262,21 +293,24 @@ const handlersFor = (host: HostService) => {
       "host.checks.run": (request) =>
         host.checks === undefined
           ? Effect.fail(new HostFailed({ message: "This machine's host runs no local checks." }))
-          : host.checks.run(request),
+          : gated(host.checks.run(request)),
       "host.git.local": ({ cwd }) => host.git.local(cwd).pipe(Effect.mapError(commandToWire)),
       "host.git.present": ({ cwd }) => host.git.present(cwd),
       "host.git.watch": ({ paths, ...options }) => host.git.watch(paths, options),
       "host.terminals.open": ({ settingsShell, path, ...request }) =>
-        host.terminals.terminals
-          .open(request, path === undefined ? undefined : { settingsShell, path })
-          .pipe(
-            // Every open names its folder, so no thread is looked up here.
-            Effect.catchTag("ThreadNotFound", (error) =>
-              Effect.fail(new InvalidState({ message: `No thread ${error.threadId}` })),
+        gated(
+          host.terminals.terminals
+            .open(request, path === undefined ? undefined : { settingsShell, path })
+            .pipe(
+              // Every open names its folder, so no thread is looked up here.
+              Effect.catchTag("ThreadNotFound", (error) =>
+                Effect.fail(new InvalidState({ message: `No thread ${error.threadId}` })),
+              ),
             ),
-          ),
+        ),
+      // Typing into a shell can start a command in it.
       "host.terminals.input": ({ terminalId, data }) =>
-        host.terminals.terminals.input(terminalId, data),
+        gated(host.terminals.terminals.input(terminalId, data)),
       "host.terminals.resize": ({ terminalId, cols, rows }) =>
         host.terminals.terminals.resize(terminalId, cols, rows),
       "host.terminals.close": ({ terminalId }) => host.terminals.terminals.close(terminalId),
@@ -285,17 +319,19 @@ const handlersFor = (host: HostService) => {
         host.terminals.terminals.subscribe(terminalId),
       "host.terminals.snapshot": ({ threadId }) => host.terminals.terminals.snapshot(threadId),
       "host.terminals.roots": () => host.terminals.roots,
-      "host.sessions.open": (request) => host.sessions.open(request),
+      "host.sessions.open": (request) => gated(host.sessions.open(request)),
       "host.sessions.events": ({ handle, afterSeq }) => host.sessions.events(handle, afterSeq),
       "host.sessions.ack": ({ handle, seq }) => host.sessions.ack(handle, seq),
       "host.sessions.connectorsSeen": ({ handle }) =>
         host.sessions.connectorsSeen(handle).pipe(Stream.map(seenToWire)),
       "host.sessions.send": ({ handle, input, messageId, deliveryId }) =>
-        delivered(handle, deliveryId, (session) =>
-          session.send(input, messageId === undefined ? undefined : { messageId }),
+        gated(
+          delivered(handle, deliveryId, (session) =>
+            session.send(input, messageId === undefined ? undefined : { messageId }),
+          ),
         ),
       "host.sessions.steer": ({ handle, input, deliveryId }) =>
-        delivered(handle, deliveryId, (session) => session.steer(input)),
+        gated(delivered(handle, deliveryId, (session) => session.steer(input))),
       "host.sessions.interrupt": ({ handle }) =>
         withSession(handle, (session) => session.interrupt),
       "host.sessions.closeToolGate": ({ handle }) =>
@@ -563,6 +599,13 @@ export interface HostConnection {
   readonly status?: Effect.Effect<HostStatus>;
   /** Its project checks; absent on a host that doesn't serve `checks`, an older one say. */
   readonly checks?: HostChecksConnection;
+  /** Its own update, when it serves `update`. */
+  readonly update?: {
+    readonly check: Effect.Effect<HostUpdateCheck, HostUnavailable>;
+    readonly start: (
+      release: string,
+    ) => Stream.Stream<HostUpdateProgress, HostUpdateRefused | HostUnavailable>;
+  };
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
 }
@@ -1195,6 +1238,45 @@ export const connectHost = (
         }),
         Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
       ),
+      ...(hello.capabilities.includes("update")
+        ? {
+            update: {
+              check: guarded(client["host.update.check"]()).pipe(
+                Effect.timeoutOrElse({
+                  duration: STATUS_TIMEOUT,
+                  orElse: () => Effect.fail(unavailable("The host didn't answer in time.")),
+                }),
+                Effect.mapError((error) =>
+                  error._tag === "HostUnavailable"
+                    ? error
+                    : unavailable(`The host didn't answer: ${failureText(error)}`),
+                ),
+              ),
+              // A refusal is the host's answer, not a broken stream: only the stream ending says so.
+              start: (release: string) =>
+                Stream.suspend(() =>
+                  ended
+                    ? Stream.fail(unavailable("This machine's host has stopped."))
+                    : client["host.update.start"]({ release }).pipe(
+                        Stream.catch(
+                          (error): Stream.Stream<never, HostUpdateRefused | HostUnavailable> =>
+                            error instanceof HostUpdateRefused
+                              ? Stream.fail(error)
+                              : Stream.fromEffect(
+                                  Effect.andThen(
+                                    error._tag === "RpcClientError"
+                                      ? markEnded(failureText(error))
+                                      : Effect.void,
+                                    Effect.fail(unavailable(HOST_NOT_ANSWERING)),
+                                  ),
+                                ),
+                        ),
+                        Stream.interruptWhen(gone),
+                      ),
+                ),
+            },
+          }
+        : {}),
       gone: () => ended,
     };
   });

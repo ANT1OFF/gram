@@ -116,7 +116,7 @@ import {
   machineManagement,
   placedOnMachine,
 } from "./machine-routes.ts";
-import { RemoteHosts } from "../host/remote-hosts.ts";
+import { releaseOfConfig, RemoteHosts } from "../host/remote-hosts.ts";
 import { authTarget } from "./auth-target.ts";
 import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } from "./auth.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
@@ -285,9 +285,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                         remoteHosts,
                         control.current(),
                         path,
-                        config.appBuild !== undefined && /^[a-f0-9]{40}$/.test(config.appBuild)
-                          ? config.appVersion
-                          : undefined,
+                        releaseOfConfig(config),
                         undefined,
                         tokenCapture,
                       )

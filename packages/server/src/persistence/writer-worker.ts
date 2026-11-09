@@ -348,6 +348,8 @@ export const layer = (options: {
           isTransaction: (conn) => conn.isTransaction(),
         });
       const client = yield* SqlClient.make({
+        // Gram's own client over the writer worker's connection.
+        driver: "gram-writer-worker",
         acquirer,
         borrower,
         compiler: SqlStatement.makeCompilerSqlite(),

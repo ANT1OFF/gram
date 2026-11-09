@@ -10,7 +10,9 @@ import {
   sequenceEvents,
 } from "@gram/agents";
 import {
+  type AgentEvent,
   type AgentKind,
+  type AgentStatus,
   AgentUnavailable,
   HostFailed,
   type HostAgentReload,
@@ -62,7 +64,37 @@ export interface HostSessionsService {
   /** Ends the session and waits for its agent to stop; a handle not yet open stays closed. */
   readonly close: (handle: string) => Effect.Effect<void>;
   readonly reload: (agent: AgentKind, reload: HostAgentReload) => Effect.Effect<void>;
+  /**
+   * How many sessions are at work now: opening, in a turn, waiting on a question or a permission,
+   * or with background tasks running. A restart of the host would cut each of them off.
+   */
+  readonly busy: () => number;
 }
+
+/** What a session's events last said about its work, for `busy`. */
+interface Activity {
+  status: AgentStatus | undefined;
+  background: number;
+}
+
+/** A session settled between turns: idle, failed, or started with no turn yet. */
+const AT_REST: ReadonlySet<AgentStatus | undefined> = new Set([
+  undefined,
+  "starting",
+  "idle",
+  "error",
+]);
+
+/** Keeps `activity` in step with one event of the session. */
+const noteActivity = (activity: Activity, event: AgentEvent) => {
+  if (event.type === "status") activity.status = event.status;
+  else if (event.type === "turnEnd") activity.status = "idle";
+  else if (event.type === "backgroundTasks") activity.background = event.tasks.length;
+  else if (event.type === "ended") {
+    activity.status = undefined;
+    activity.background = 0;
+  }
+};
 
 type Entry =
   | {
@@ -171,6 +203,8 @@ export const sessionsOnHost = (
     const root = yield* Effect.scope;
     const unfollowedMs = timing.unfollowedMs ?? UNFOLLOWED_GRACE_MS;
     const entries = new Map<string, Entry>();
+    /** Each open session's work as its events say, by handle. */
+    const activities = new Map<string, Activity>();
     /** Handles closed before their open came in, so the open, when it does, is refused. */
     const closedEarly = new Set<string>();
 
@@ -197,6 +231,7 @@ export const sessionsOnHost = (
           return Effect.void;
         }
         entries.delete(handle);
+        activities.delete(handle);
         return Effect.gen(function* () {
           if (entry.state === "opening") {
             if (entry.fiber !== undefined) yield* Fiber.interrupt(entry.fiber);
@@ -291,6 +326,7 @@ export const sessionsOnHost = (
           const entry: Entry = { state: "opening", scope };
           // Taken before the first wait, so a close that comes in meanwhile finds it.
           entries.set(handle, entry);
+          activities.set(handle, { status: undefined, background: 0 });
           const changes = yield* PubSub.unbounded<ConnectorsSeen>();
           const seen: {
             last?: ConnectorsSeen;
@@ -324,10 +360,20 @@ export const sessionsOnHost = (
               ),
             ),
             Effect.flatMap((session) =>
-              Effect.map(sequenceEvents(session.events), (log) => ({
-                session,
-                log,
-              })),
+              Effect.map(
+                sequenceEvents(
+                  Stream.tap(session.events, (event) =>
+                    Effect.sync(() => {
+                      const activity = activities.get(handle);
+                      if (activity !== undefined) noteActivity(activity, event);
+                    }),
+                  ),
+                ),
+                (log) => ({
+                  session,
+                  log,
+                }),
+              ),
             ),
             Scope.provide(scope),
             Effect.forkIn(root),
@@ -336,7 +382,10 @@ export const sessionsOnHost = (
           const exit = yield* Fiber.await(fiber);
           const stillOpening = entries.get(handle) === entry;
           if (Exit.isFailure(exit) || !stillOpening) {
-            if (stillOpening) entries.delete(handle);
+            if (stillOpening) {
+              entries.delete(handle);
+              activities.delete(handle);
+            }
             yield* Scope.close(scope, Exit.void);
             if (Exit.isFailure(exit)) {
               const failure = Cause.findErrorOption(exit.cause);
@@ -369,6 +418,14 @@ export const sessionsOnHost = (
 
     return {
       open,
+      busy: () =>
+        [...entries].filter(([handle, entry]) => {
+          if (entry.state === "opening") return true;
+          const activity = activities.get(handle);
+          return (
+            activity !== undefined && (!AT_REST.has(activity.status) || activity.background > 0)
+          );
+        }).length,
       events: (handle, afterSeq) =>
         Stream.unwrap(
           Effect.map(

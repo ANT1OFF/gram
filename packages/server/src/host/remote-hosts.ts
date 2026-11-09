@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { type HostHello, HostUnavailable, type HostId, type HostStatus } from "@gram/contracts";
 import * as Context from "effect/Context";
@@ -8,6 +8,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import { ServerConfig } from "../config.ts";
+import { privateJsonFile } from "../http/remote-sessions.ts";
 import type { Socket } from "../platform/unstable.ts";
 import {
   createPairedMachines,
@@ -22,6 +23,9 @@ import {
   type PairedMachineStore,
 } from "./paired-machines.ts";
 import { connectHost, type HostConnection, helloMismatch, UNKNOWN_STATUS } from "./protocol.ts";
+import { makeMachineUpdates, RETRY_MS, type UpdateRequest } from "./machine-updates.ts";
+import * as Schedule from "effect/Schedule";
+import * as FiberSet from "effect/FiberSet";
 import { watchedSocket } from "./socket-end.ts";
 
 /** The release a host said it runs, kept only when it reads as a release: it is shown as text. */
@@ -29,6 +33,18 @@ const releaseOf = (hello: HostHello): string | undefined =>
   hello.release !== undefined &&
   /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[0-9A-Za-z.]{1,32})?$/.test(hello.release)
     ? hello.release
+    : undefined;
+
+/**
+ * This Gram's release, which the installer downloads and machines update to: its version, only when
+ * it was built as a release (its build is a commit); undefined when it runs from source.
+ */
+export const releaseOfConfig = (config: {
+  readonly appVersion?: string | undefined;
+  readonly appBuild?: string | undefined;
+}): string | undefined =>
+  config.appBuild !== undefined && /^[a-f0-9]{40}$/.test(config.appBuild)
+    ? config.appVersion
     : undefined;
 
 /** A joined machine's host while it is dialled in. */
@@ -63,6 +79,48 @@ const lazyFileStore = <R, W>(
         ? empty()
         : real().read(),
     write: (value: W) => real().write(value),
+  };
+};
+
+/** The automatic-updates switch, as kept: undefined until it is first set. */
+export interface AutomaticStore {
+  readonly read: () => boolean | undefined;
+  readonly write: (on: boolean) => void;
+}
+
+/**
+ * The switch in `remote-access/machine-updates.json`, owner-only like the machines beside it. Only
+ * a file that is genuinely not there reads as never set (on): anything else that stops it being
+ * read (a folder it can't look into, a link, a file not its own or not a switch) throws, and
+ * `automaticUpdates` reads that as off. Never `existsSync`, which says "absent" for all of those.
+ */
+export const fileAutomaticStore = (dataDir: string): AutomaticStore => {
+  const name = "machine-updates.json";
+  const file = () => privateJsonFile(dataDir, name, 1024);
+  return {
+    read: () => {
+      // Each step without following a link: the folder, then the file in it.
+      for (const [path, folder] of [
+        [join(dataDir, "remote-access"), true],
+        [join(dataDir, "remote-access", name), false],
+      ] as const) {
+        let stat;
+        try {
+          stat = lstatSync(path);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+          throw error;
+        }
+        if (folder ? !stat.isDirectory() : !stat.isFile())
+          throw new Error(`${path} isn't a ${folder ? "folder" : "file"} of its own.`);
+      }
+      const value = file().read() as { version?: unknown; automatic?: unknown } | undefined;
+      if (value === undefined) throw new Error(`${name} went away while it was read.`);
+      if (value.version !== 1 || typeof value.automatic !== "boolean")
+        throw new Error(`${name} isn't a machine updates file.`);
+      return value.automatic;
+    },
+    write: (on) => file().write({ version: 1, automatic: on }),
   };
 };
 
@@ -103,6 +161,17 @@ export interface RemoteHostsShape {
    * the listing: `undefined` while it is offline. A check already running is shared.
    */
   readonly checkSignIn: (id: HostId) => Promise<HostStatus | undefined>;
+  /**
+   * Updates the machine to this Gram's release over its own connection, now or once it is idle;
+   * `fallback` for a host too old to update itself, which the installer updates.
+   */
+  readonly update: (id: HostId) => UpdateRequest;
+  /**
+   * Whether joined machines update on their own, on until turned off. Kept beside the machines,
+   * not in Settings, so only the local app's `/machines/*` routes change it: never a paired phone.
+   */
+  readonly automaticUpdates: () => boolean;
+  readonly setAutomaticUpdates: (on: boolean) => void;
   /** Forgets the machine and closes its connection; false when it wasn't joined. */
   readonly remove: (id: HostId) => boolean;
   /**
@@ -120,13 +189,56 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
     store: PairedMachineStore,
     now: () => number = Date.now,
     nonces?: DialNonceStore,
+    /** This Gram's release, which machines update to; undefined when it runs from source. */
+    options: {
+      readonly release?: string | undefined;
+      readonly retryMs?: number;
+      /** Where the automatic-updates switch is kept; in memory when left out. */
+      readonly automatic?: AutomaticStore;
+    } = {},
   ) =>
     Effect.gen(function* () {
       const machines = createPairedMachines(store, now, nonces);
       const online = new Map<HostId, Online>();
       const root = yield* Effect.scope;
       // The server's own logger and the rest, for a check started outside an effect.
-      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      const context = yield* Effect.context<never>();
+      const runPromise = Effect.runPromiseWith(context);
+      /** Updates and their checks, which outlive the dial or request that started them. */
+      const runFork = yield* FiberSet.makeRuntime<never>();
+      let automaticMemory: boolean | undefined;
+      const automaticStore: AutomaticStore = options.automatic ?? {
+        read: () => automaticMemory,
+        write: (on) => {
+          automaticMemory = on;
+        },
+      };
+      /** On unless turned off; a switch it can't read counts as off, so nothing installs unasked. */
+      const automaticOn = () => {
+        try {
+          return automaticStore.read() !== false;
+        } catch {
+          return false;
+        }
+      };
+      const updates = makeMachineUpdates({
+        release: options.release,
+        connection: (id) => {
+          const live = online.get(id);
+          return live === undefined || live.connection.gone() ? undefined : live.connection;
+        },
+        online: () => [...online.keys()],
+        automatic: Effect.sync(automaticOn),
+        now,
+        fork: (effect) => {
+          runFork(effect);
+        },
+      });
+      yield* updates.sweep.pipe(
+        Effect.catchCause(() => Effect.void),
+        Effect.repeat(Schedule.spaced(options.retryMs ?? RETRY_MS)),
+        Effect.forkIn(root),
+      );
       const close = (id: HostId) => {
         const live = online.get(id);
         online.delete(id);
@@ -256,6 +368,9 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               Effect.annotateLogs({ hostId: machine.id, platform: opened.value.hello.platform }),
             );
             void checkSignIn(machine.id);
+            // How its last update went, which also confirms one that brought it back, then
+            // whether it updates now.
+            runFork(updates.connected(machine.id, opened.value));
             yield* Deferred.await(ended).pipe(Effect.ignore);
             yield* Effect.logInfo("machines: a joined machine went offline").pipe(
               Effect.annotateLogs({ hostId: machine.id }),
@@ -302,9 +417,15 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           machine,
           live === undefined
             ? undefined
-            : { since: live.since, status: live.status, release: releaseOf(live.connection.hello) },
+            : {
+                since: live.since,
+                status: live.status,
+                release: releaseOf(live.connection.hello),
+                selfUpdate: live.connection.update !== undefined,
+              },
           {
             problem: machines.problemOf(machine.id),
+            update: updates.stateOf(machine.id),
             ...(tailscale === undefined ? {} : { tailscale }),
           },
         );
@@ -325,8 +446,12 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         admit: (machine, origin) => ({ machine, origin, generation: generationOf(machine.id) }),
         attach,
         checkSignIn,
+        update: updates.request,
+        automaticUpdates: automaticOn,
+        setAutomaticUpdates: (on) => automaticStore.write(on),
         remove: (id) => {
           bump(id);
+          updates.forget(id);
           try {
             return machines.remove(id);
           } finally {
@@ -356,13 +481,18 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
   static readonly layer: Layer.Layer<RemoteHosts, never, ServerConfig> = Layer.effect(
     RemoteHosts,
     Effect.gen(function* () {
-      const { dataDir } = yield* ServerConfig;
+      const config = yield* ServerConfig;
+      const { dataDir } = config;
       return yield* RemoteHosts.make(
         lazyFileStore(dataDir, "machines.json", fileMachineStore, () => []),
         Date.now,
         {
           ...lazyFileStore(dataDir, "dial-nonces.json", fileNonceStore, () => NO_DIALS),
           lastSeen: () => dialNoncesLastSeen(dataDir),
+        },
+        {
+          release: releaseOfConfig(config),
+          automatic: fileAutomaticStore(dataDir),
         },
       );
     }),

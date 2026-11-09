@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { healthHint, machineHealth } from "./machine-status";
+import { compareReleases, healthHint, machineHealth } from "./machine-status";
 import type { JoinedMachine, OfflineReason } from "./machines-api";
 
 const NOW = Date.parse("2026-06-15T10:00:00Z");
@@ -111,5 +111,31 @@ describe("a joined machine's health", () => {
     expect(
       machineHealth(machine({ onlineSince: NOW - 10_000, release: "1.15.0" }), {}, NOW),
     ).not.toHaveProperty("update");
+  });
+});
+
+// Failed on c0a36524 in the independent review: rc.2 sorted after rc.10, so a main on rc.2 read an
+// rc.10 machine as behind and offered to move it back.
+describe("release order", () => {
+  it("orders prereleases as semver, numeric identifiers by value", () => {
+    expect(compareReleases("1.17.0-rc.2", "1.17.0-rc.10")).toBeLessThan(0);
+    expect(compareReleases("1.17.0-rc.10", "1.17.0")).toBeLessThan(0);
+    expect(compareReleases("1.16.0", "1.17.0-rc.1")).toBeLessThan(0);
+  });
+
+  it("offers no update to a machine on a later prerelease", () => {
+    const ahead: JoinedMachine = {
+      id: "m",
+      name: "cachyos",
+      platform: "linux",
+      fingerprint: "0000-0000-0000-0000-0000",
+      joinedAt: NOW - 86_400_000,
+      confirmed: true,
+      onlineSince: NOW - 3_600_000,
+      release: "1.17.0-rc.10",
+    };
+    expect(
+      machineHealth(ahead, { release: "1.17.0-rc.2", protocol: 2 }, NOW).update,
+    ).toBeUndefined();
   });
 });

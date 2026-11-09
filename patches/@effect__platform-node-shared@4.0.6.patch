@@ -1,5 +1,5 @@
 diff --git a/dist/NodeChildProcessSpawner.js b/dist/NodeChildProcessSpawner.js
-index 16dedd52262a0343df11fb14496f5f9f2a0f1e92..e374df9ab80794ef41e5212506665aac40704598 100644
+index 47285c035b3060e737f2c1beef66dcb70e39da84..5017103c6b3befc7545d51a37cfabeda83de87be 100644
 --- a/dist/NodeChildProcessSpawner.js
 +++ b/dist/NodeChildProcessSpawner.js
 @@ -306,7 +306,13 @@ const make = /*#__PURE__*/Effect.gen(function* () {

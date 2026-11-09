@@ -43,6 +43,8 @@ export interface HostCheckRequest {
 
 export interface HostChecks {
   readonly run: (request: HostCheckRequest) => Effect.Effect<HostCheckResult, HostFailed>;
+  /** How many checks run or wait for their turn now. */
+  readonly running?: () => number;
 }
 
 /** Runs the command in the prepared worktree: `spawnCheck` live, a test's own otherwise. */
@@ -302,6 +304,7 @@ export const checksOn = (
     };
 
     return {
+      running: () => [...runs.values()].filter((run) => run.endedAt === undefined).length,
       run: (request) =>
         Effect.gen(function* () {
           if (!SHA.test(request.head) || !SHA.test(request.base))
