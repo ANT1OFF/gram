@@ -2,6 +2,7 @@ import {
   currentBaseOf,
   AppToolError,
   BranchName,
+  isLocalHost,
   MERGE_AFTER_MAX,
   MERGE_FREEZE_ALLOW_MAX,
   MERGE_FREEZE_MAX_MINUTES,
@@ -44,6 +45,7 @@ import {
   dependencyBlocker,
   rebindBlocker,
 } from "../git/extra-prs.ts";
+import { ghFolderOf } from "../fs/folders.ts";
 import { GitRefresh } from "../git/platform.ts";
 import { LocalChecks } from "../git/local-checks.ts";
 import { MergeFreezes } from "../git/merge-freezes.ts";
@@ -180,7 +182,19 @@ export const PrAppToolsLive = Layer.effectDiscard(
         ),
       );
 
-    const currentPr = (thread: Thread) => threadPr.badge(thread.checkout.path);
+    /**
+     * The branch's PR. A thread on another machine has it only as published: its checkout isn't
+     * this machine's, and a folder at the same path here would be another repository.
+     */
+    const currentPr = (thread: Thread) =>
+      isLocalHost(thread.checkout)
+        ? threadPr.badge(thread.checkout.path)
+        : Effect.map(publisher.stateForThread(thread), (state) => state?.pr);
+    /** The checkout's `origin` as `owner/repo`, read by git here only for a checkout here. */
+    const originOf = (thread: Thread) =>
+      isLocalHost(thread.checkout)
+        ? originOwnerRepo(thread.checkout.path).pipe(Effect.provideService(Proc, proc))
+        : Effect.map(publisher.stateForThread(thread), (state) => state?.origin);
 
     const reviewPolicyFor = (thread: Thread, repo: string) =>
       Effect.gen(function* () {
@@ -481,7 +495,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
           yield* refuseOrchestratorPr(tool, thread);
           yield* refuseInBabysit(thread);
           yield* refuseOverHold(tool, caller, thread);
-          const cwd = thread.checkout.path;
           const bound = thread.boundPr;
           const branch =
             number === undefined && bound === undefined ? yield* currentPr(thread) : undefined;
@@ -492,7 +505,9 @@ export const PrAppToolsLive = Layer.effectDiscard(
               message: "No pull request found for this branch; pass number.",
             });
           }
-          const state = yield* publisher.stateFor(cwd);
+          const state = isLocalHost(thread.checkout)
+            ? yield* publisher.stateFor(thread.checkout.path)
+            : yield* publisher.stateForThread(thread);
           // A number that isn't the bound PR's is in the checkout's own repo, which gh is then
           // told by name, so the card's repo is the one merged in.
           const repo =
@@ -500,7 +515,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
               ? bound.repo
               : ((branch === undefined ? undefined : repoFromPrUrl(branch.url)) ??
                 state?.origin ??
-                (yield* originOwnerRepo(cwd).pipe(Effect.provideService(Proc, proc))));
+                (yield* originOf(thread)));
           // A card that can't name the repo would leave gh to pick one the user never saw.
           if (repo === undefined) {
             return yield* new AppToolError({
@@ -580,7 +595,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
       ) =>
         Effect.gen(function* () {
           const tool = "set_auto_merge";
-          const cwd = thread.checkout.path;
+          // `--repo` names the repository, so gh needs only a folder here to start in.
+          const cwd = yield* ghFolderOf(thread.checkout);
           /**
            * The thread as it stands, under the lock `merge_when_ready` changes intents under: babysit
            * may have started while the card waited, the orchestrator may have held the merge, and a
@@ -793,7 +809,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
           const repo =
             named?.repo ??
             (typeof input.pr === "number"
-              ? yield* originOwnerRepo(thread.checkout.path).pipe(Effect.provideService(Proc, proc))
+              ? yield* originOf(thread)
               : (thread.boundPr?.repo ??
                 (branch === undefined ? undefined : repoFromPrUrl(branch.url))));
           const number =

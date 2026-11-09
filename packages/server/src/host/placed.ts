@@ -51,22 +51,46 @@ const checkoutsOf = (thread: Thread): ReadonlyArray<Checkout> => [
 ];
 
 /**
- * Where each folder of a thread on another machine is, by `samePathKey`: its checkouts and their
- * repositories. Read from the threads as they are, so a worker placed a moment ago is found.
+ * Which machines each folder a thread holds is on, by `samePathKey`: its checkouts and their
+ * repositories, this machine's among them. Two machines can hold the same path (the same user and
+ * default folders on both), so a path can name more than one. Read from the threads as they are,
+ * so a worker placed a moment ago is found.
  */
 const machinePaths = (threads: ReadonlyArray<Thread>) => {
-  const paths = new Map<string, HostId>();
+  const paths = new Map<string, Set<HostId>>();
+  const claim = (path: string, host: HostId) => {
+    const key = samePathKey(path);
+    const hosts = paths.get(key) ?? new Set<HostId>();
+    hosts.add(host);
+    paths.set(key, hosts);
+  };
+  let remote = false;
   for (const thread of threads) {
     // Before the keys below, so they are taken as written rather than looked up on this disk.
     noteForeignCheckouts(thread);
     for (const checkout of checkoutsOf(thread)) {
       const host = hostOf(checkout);
-      if (host === LOCAL_HOST_ID) continue;
-      paths.set(samePathKey(checkout.path), host);
-      if (checkout.repoRoot !== undefined) paths.set(samePathKey(checkout.repoRoot), host);
+      if (host !== LOCAL_HOST_ID) remote = true;
+      claim(checkout.path, host);
+      if (checkout.repoRoot !== undefined) claim(checkout.repoRoot, host);
     }
   }
-  return paths;
+  // With no other machine's folder, every path is this machine's.
+  return remote ? paths : new Map<string, Set<HostId>>();
+};
+
+/** A path more than one machine holds, which a path alone can't place. */
+export const ambiguousPath = (path: string) =>
+  `${path} is a folder on more than one machine, so Gram can't tell which one is meant. Open it from its thread.`;
+
+/**
+ * One machine's checkouts' git state, worktrees and folders, as `placedHost` reaches them: a machine
+ * that is offline answers as such (its reads fail, its folders count as there, its watches wait for
+ * it to come back), and nothing of it runs here instead.
+ */
+export type MachineParts = Pick<WorkerHost, "git" | "worktrees" | "files"> & {
+  /** Whether the checkout's folder is there: true unless that machine says it is gone. */
+  readonly present: (path: string) => Effect.Effect<boolean>;
 };
 
 /**
@@ -83,15 +107,21 @@ export const placedHost = (
   store: Pick<ThreadStore["Service"], "listThreads" | "getThread">,
   /** Whether any machine is joined: with none, every call is this machine's, looked up for free. */
   anyMachines: () => boolean = () => true,
-): WorkerHost => {
+): WorkerHost & {
+  readonly machine: (id: HostId) => MachineParts;
+  readonly placeOf: (path: string) => Effect.Effect<HostId | undefined>;
+} => {
   const local = hosts.local;
   /** Set once a checkout is made on a machine here, which then stays routed after it is removed. */
   let placedNow = false;
   const routing = () => placedNow || anyMachines();
-  const maps = new WeakMap<ReadonlyArray<Thread>, Map<string, HostId>>();
+  const maps = new WeakMap<ReadonlyArray<Thread>, Map<string, Set<HostId>>>();
   const threads = store.listThreads;
-  /** The machine `path` is on: the one its own folder, or the nearest folder above it, is on. */
-  const hostIdOfPath = (path: string) =>
+  /**
+   * The machine `path` is on: the one its own folder, or the nearest folder above it, is on.
+   * `undefined` when more than one machine holds that folder: a path alone can't say which.
+   */
+  const hostIdOfPath = (path: string): Effect.Effect<HostId | undefined> =>
     routing()
       ? Effect.map(threads, (all) => {
           let paths = maps.get(all);
@@ -102,7 +132,7 @@ export const placedHost = (
           if (paths.size === 0) return LOCAL_HOST_ID;
           for (let at = path; ; at = dirname(at)) {
             const found = paths.get(samePathKey(at));
-            if (found !== undefined) return found;
+            if (found !== undefined) return found.size === 1 ? [...found][0]! : undefined;
             if (dirname(at) === at) return LOCAL_HOST_ID;
           }
         })
@@ -120,92 +150,130 @@ export const placedHost = (
     id === LOCAL_HOST_ID
       ? Effect.succeed(local)
       : hosts.get(id).pipe(Effect.mapError((error) => onOffline(error.message)));
-  const onPath = <A, E>(
-    path: string,
-    onOffline: (message: string) => E,
-    run: (host: WorkerHost) => Effect.Effect<A, E>,
-  ): Effect.Effect<A, E> =>
-    Effect.flatMap(hostIdOfPath(path), (id) => Effect.flatMap(hostFor(id, onOffline), run));
-
-  const git: GitStateRuntime["Service"] = {
-    local: (cwd) => onPath(cwd, commandOffline, (host) => host.git.local(cwd)),
-    // An offline machine's folder is there as far as anyone here can tell.
-    present: (cwd) =>
-      Effect.flatMap(hostIdOfPath(cwd), (id) =>
-        id === LOCAL_HOST_ID
-          ? local.git.present(cwd)
-          : hosts.get(id).pipe(
-              Effect.flatMap((host) => host.git.present(cwd)),
-              Effect.orElseSucceed(() => true),
-            ),
-      ),
-    snapshot: (cwd, options) =>
-      onPath(cwd, commandOffline, (host) => host.git.snapshot(cwd, options)),
-    watch: (paths, options) =>
-      Stream.unwrap(
-        Effect.gen(function* () {
-          const byHost = new Map<HostId, Array<string>>();
-          for (const path of paths) {
-            const id = yield* hostIdOfPath(path);
-            byHost.set(id, [...(byHost.get(id) ?? []), path]);
-          }
-          /**
-           * A machine's watch for as long as it is wanted: while the machine is offline, or once its
-           * connection ends, it waits for the machine to dial in again and watches anew.
-           */
-          const onMachine = (
-            id: HostId,
-            list: ReadonlyArray<string>,
-          ): Stream.Stream<GitStateChange> =>
-            Stream.concat(
-              Stream.unwrap(
-                hosts.get(id).pipe(
-                  Effect.match({
-                    onFailure: (): Stream.Stream<GitStateChange> =>
-                      Stream.drain(Stream.fromEffect(Effect.sleep(REDIAL_CHECK))),
-                    // Paced too, so a watch that ends at once can't spin.
-                    onSuccess: (host) =>
-                      Stream.concat(
-                        host.git.watch(list, options),
-                        Stream.drain(Stream.fromEffect(Effect.sleep(REDIAL_CHECK))),
-                      ),
-                  }),
-                ),
+  /**
+   * The machine parts where `placeOf` says each path is: `undefined` for a path more than one
+   * machine holds, which is refused rather than guessed, and counts as there.
+   */
+  const partsWhere = (
+    placeOf: (path: string) => Effect.Effect<HostId | undefined>,
+  ): MachineParts => {
+    const onPath = <A, E>(
+      path: string,
+      onOffline: (message: string) => E,
+      run: (host: WorkerHost) => Effect.Effect<A, E>,
+    ): Effect.Effect<A, E> =>
+      Effect.flatMap(placeOf(path), (id) =>
+        id === undefined
+          ? Effect.fail(onOffline(ambiguousPath(path)))
+          : Effect.flatMap(hostFor(id, onOffline), run),
+      );
+    // An offline machine's folder is there as far as anyone here can tell, and so is one that a
+    // path alone can't place.
+    const presentOn = (cwd: string, here: (cwd: string) => Effect.Effect<boolean>) =>
+      Effect.flatMap(placeOf(cwd), (id) =>
+        id === undefined
+          ? Effect.succeed(true)
+          : id === LOCAL_HOST_ID
+            ? here(cwd)
+            : hosts.get(id).pipe(
+                Effect.flatMap((host) => host.git.present(cwd)),
+                Effect.orElseSucceed(() => true),
               ),
-              Stream.suspend(() => onMachine(id, list)),
+      );
+
+    const git: GitStateRuntime["Service"] = {
+      local: (cwd) => onPath(cwd, commandOffline, (host) => host.git.local(cwd)),
+      present: (cwd) => presentOn(cwd, local.git.present),
+      snapshot: (cwd, options) =>
+        onPath(cwd, commandOffline, (host) => host.git.snapshot(cwd, options)),
+      watch: (paths, options) =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            const byHost = new Map<HostId, Array<string>>();
+            for (const path of paths) {
+              const id = yield* placeOf(path);
+              if (id === undefined) {
+                yield* Effect.logWarning("not watching a folder more than one machine holds").pipe(
+                  Effect.annotateLogs({ path }),
+                );
+                continue;
+              }
+              byHost.set(id, [...(byHost.get(id) ?? []), path]);
+            }
+            /**
+             * A machine's watch for as long as it is wanted: while the machine is offline, or once
+             * its connection ends, it waits for the machine to dial in again and watches anew.
+             */
+            const onMachine = (
+              id: HostId,
+              list: ReadonlyArray<string>,
+            ): Stream.Stream<GitStateChange> =>
+              Stream.concat(
+                Stream.unwrap(
+                  hosts.get(id).pipe(
+                    Effect.match({
+                      onFailure: (): Stream.Stream<GitStateChange> =>
+                        Stream.drain(Stream.fromEffect(Effect.sleep(REDIAL_CHECK))),
+                      // Paced too, so a watch that ends at once can't spin.
+                      onSuccess: (host) =>
+                        Stream.concat(
+                          host.git.watch(list, options),
+                          Stream.drain(Stream.fromEffect(Effect.sleep(REDIAL_CHECK))),
+                        ),
+                    }),
+                  ),
+                ),
+                Stream.suspend(() => onMachine(id, list)),
+              );
+            return Stream.mergeAll(
+              [...byHost].map(([id, list]) =>
+                id === LOCAL_HOST_ID ? local.git.watch(list, options) : onMachine(id, list),
+              ),
+              { concurrency: "unbounded" },
             );
-          return Stream.mergeAll(
-            [...byHost].map(([id, list]) =>
-              id === LOCAL_HOST_ID ? local.git.watch(list, options) : onMachine(id, list),
-            ),
-            { concurrency: "unbounded" },
-          );
-        }),
-      ),
+          }),
+        ),
+    };
+
+    const worktrees: Worktrees["Service"] = {
+      list: (repoPath, options) =>
+        onPath(repoPath, worktreeOffline, (host) => host.worktrees.list(repoPath, options)),
+      baseBranches: (repoPath) =>
+        onPath(repoPath, worktreeOffline, (host) => host.worktrees.baseBranches(repoPath)),
+      create: (request) =>
+        onPath(request.repoPath, worktreeOffline, (host) => host.worktrees.create(request)),
+      remove: (request) =>
+        onPath(request.repoPath, worktreeOffline, (host) => host.worktrees.remove(request)),
+      restore: (request) =>
+        onPath(request.repoPath, worktreeOffline, (host) => host.worktrees.restore(request)),
+      pendingPermissions: (repoPath, worktreeDir) =>
+        onPath(repoPath, worktreeOffline, (host) =>
+          host.worktrees.pendingPermissions(repoPath, worktreeDir),
+        ),
+    };
+
+    const files: HostFiles = {
+      list: (path, options) => onPath(path, invalid, (host) => host.files.list(path, options)),
+      search: (root, query, options) =>
+        onPath(root, invalid, (host) => host.files.search(root, query, options)),
+      names: (root) => onPath(root, invalid, (host) => host.files.names(root)),
+    };
+
+    return { git, worktrees, files, present: (path) => presentOn(path, local.checkouts.present) };
   };
 
-  const worktrees: Worktrees["Service"] = {
-    list: (repoPath, options) =>
-      onPath(repoPath, worktreeOffline, (host) => host.worktrees.list(repoPath, options)),
-    baseBranches: (repoPath) =>
-      onPath(repoPath, worktreeOffline, (host) => host.worktrees.baseBranches(repoPath)),
-    create: (request) =>
-      onPath(request.repoPath, worktreeOffline, (host) => host.worktrees.create(request)),
-    remove: (request) =>
-      onPath(request.repoPath, worktreeOffline, (host) => host.worktrees.remove(request)),
-    restore: (request) =>
-      onPath(request.repoPath, worktreeOffline, (host) => host.worktrees.restore(request)),
-    pendingPermissions: (repoPath, worktreeDir) =>
-      onPath(repoPath, worktreeOffline, (host) =>
-        host.worktrees.pendingPermissions(repoPath, worktreeDir),
-      ),
-  };
-
-  const files: HostFiles = {
-    list: (path, options) => onPath(path, invalid, (host) => host.files.list(path, options)),
-    search: (root, query, options) =>
-      onPath(root, invalid, (host) => host.files.search(root, query, options)),
-    names: (root) => onPath(root, invalid, (host) => host.files.names(root)),
+  /** Each path where the threads say it is. */
+  const placedParts = partsWhere(hostIdOfPath);
+  const { git, worktrees, files } = placedParts;
+  /** One machine's parts, whatever else holds the same paths: for a caller that knows the machine. */
+  const partsOf = new Map<HostId, MachineParts>();
+  const machine = (id: HostId): MachineParts => {
+    let parts = partsOf.get(id);
+    if (parts === undefined) {
+      parts = partsWhere(() => Effect.succeed(id));
+      partsOf.set(id, parts);
+    }
+    return parts;
   };
 
   const onThreadOf = <A, E>(
@@ -267,10 +335,7 @@ export const placedHost = (
           ),
         ),
       ),
-    present: (path) =>
-      Effect.flatMap(hostIdOfPath(path), (id) =>
-        id === LOCAL_HOST_ID ? local.checkouts.present(path) : git.present(path),
-      ),
+    present: placedParts.present,
     restore: (thread, fromPr) =>
       onThreadOf(thread, invalid, (host) => host.checkouts.restore(thread, fromPr)),
   };
@@ -405,5 +470,7 @@ export const placedHost = (
     terminals,
     ports: local.ports,
     process: local.process,
+    machine,
+    placeOf: hostIdOfPath,
   };
 };

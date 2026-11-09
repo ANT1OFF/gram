@@ -1,4 +1,4 @@
-import { InvalidState, type ThreadId } from "@gram/contracts";
+import { effectiveCheckout, InvalidState, type ThreadId } from "@gram/contracts";
 import {
   editPrLabels,
   listRepoLabels,
@@ -9,7 +9,7 @@ import {
 import * as Effect from "effect/Effect";
 import { GitRefresh } from "../../git/platform.ts";
 import { toGitError } from "../../git/mapping.ts";
-import { threadFolder, ThreadPrLookup } from "../../git/thread-pr.ts";
+import { ghFolder, ThreadPrLookup } from "../../git/thread-pr.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import type { Handlers } from "./common.ts";
 
@@ -25,12 +25,12 @@ export const prPeopleHandlers = Effect.gen(function* () {
   const threadPr = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(threadId);
-      const cwd = yield* threadFolder(thread);
+      const cwd = yield* ghFolder(thread);
       const found = yield* lookup.target(thread, cwd);
       if (found === undefined) {
         return yield* new InvalidState({ message: "This thread has no pull request", threadId });
       }
-      return { cwd, ...found };
+      return { cwd, at: effectiveCheckout(thread).path, ...found };
     });
 
   const editLabels = (
@@ -43,7 +43,7 @@ export const prPeopleHandlers = Effect.gen(function* () {
       yield* provide(editPrLabels(target.cwd, target.repo, target.number, change, labels)).pipe(
         Effect.mapError(toGitError),
       );
-      yield* refreshes.request(target.cwd, true);
+      yield* refreshes.request(target.at, true);
     });
 
   return {
@@ -53,7 +53,7 @@ export const prPeopleHandlers = Effect.gen(function* () {
         const sent = yield* provide(
           requestReviewers(target.cwd, target.repo, target.number, reviewers),
         ).pipe(Effect.mapError(toGitError));
-        yield* refreshes.request(target.cwd, true);
+        yield* refreshes.request(target.at, true);
         return { reviewers: sent };
       }),
 

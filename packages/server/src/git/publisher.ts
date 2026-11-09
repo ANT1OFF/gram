@@ -5,7 +5,10 @@ import {
   anyPrOpen,
   type Checkout,
   effectiveCheckout,
+  type HostId,
+  hostOf,
   isLocalHost,
+  LOCAL_HOST_ID,
   MAX_FAILING_CHECK_NAMES,
   requiredChecksOf,
   reviewBotsOf,
@@ -22,7 +25,6 @@ import {
 } from "@gram/contracts";
 import {
   invalidatePrBadges,
-  isForeignPath,
   notARepoState,
   Pr,
   prChecksStamp,
@@ -34,6 +36,7 @@ import {
   Worktrees,
 } from "@gram/git";
 import { tmpdir } from "node:os";
+import * as nodePath from "node:path";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -286,12 +289,40 @@ const targetsOf = (thread: Thread) => [
   ...(thread.extraPrs ?? []),
 ];
 
-/** How long a checkout's `samePathKey` stands for it, in `checkoutKey`. */
+/** Where a checkout is: the machine it is on, and its path there. */
+interface Spot {
+  readonly hostId: HostId;
+  readonly path: string;
+}
+
+const spotOf = (checkout: Pick<Checkout, "path" | "hostId">): Spot => ({
+  hostId: hostOf(checkout),
+  path: checkout.path,
+});
+
+/**
+ * What the publisher keeps a checkout's state under: on this machine its path's `samePathKey`, and
+ * on another its machine with its path as written (never looked up on this disk). Two machines can
+ * hold the same path, and those are two checkouts.
+ */
+const spotKey = (spot: Spot): string =>
+  spot.hostId === LOCAL_HOST_ID
+    ? samePathKey(spot.path)
+    : `${spot.hostId}\u0000${nodePath.resolve(spot.path)}`;
+
+/**
+ * Whether a checkout's folder is there, by this disk for this machine's: another machine's is that
+ * machine's to say, and its read does.
+ */
+const thereHere = (spot: Spot) =>
+  spot.hostId === LOCAL_HOST_ID ? folderExists(spot.path) : Effect.succeed(true);
+
+/** How long a checkout's key stands for it, in `checkoutKey`. */
 const CHECKOUT_KEY_TTL_MS = 2_000;
 const checkoutKeys = new WeakMap<Checkout, { readonly key: string; readonly at: number }>();
 
 /**
- * `samePathKey` of the checkout `thread` works in, kept a moment per checkout object. Each refresh
+ * `spotKey` of the checkout `thread` works in, kept a moment per checkout object. Each refresh
  * and sweep matches every thread against a key, so without it a sweep made a `realpath` (several
  * for a removed worktree) per thread per checkout: quadratic in threads, and synchronous. A thread
  * read again from the store is a new object, and a folder that changed under one is seen within
@@ -302,7 +333,7 @@ const checkoutKey = (thread: Thread): string => {
   const now = Date.now();
   const kept = checkoutKeys.get(checkout);
   if (kept !== undefined && now - kept.at < CHECKOUT_KEY_TTL_MS) return kept.key;
-  const key = samePathKey(checkout.path);
+  const key = spotKey(spotOf(checkout));
   checkoutKeys.set(checkout, { key, at: now });
   return key;
 };
@@ -365,8 +396,12 @@ export const GitStatePublisherLive = Layer.effect(
     const store = yield* ThreadStore;
     const hub = yield* EventHub;
     const runtimes = yield* ThreadRuntimes;
-    // Each checkout's git state and worktrees, read on the machine it is on.
-    const { git: gitState, worktrees } = (yield* WorkerHosts).placed;
+    // Each checkout's git state, read on the machine it is on: by its machine, never by its path,
+    // which another machine can hold too.
+    const machines = yield* WorkerHosts;
+    const gitOn = (spot: Spot) => machines.machine(spot.hostId).git;
+    // Only this machine's checkouts are looked at for PRs elsewhere (`publishElsewhere`).
+    const worktrees = machines.machine(LOCAL_HOST_ID).worktrees;
     const pr = yield* Pr;
     const config = yield* GitServerConfig;
     const refreshes = yield* GitRefresh;
@@ -1145,13 +1180,15 @@ export const GitStatePublisherLive = Layer.effect(
      * than for every checkout it refreshes.
      */
     const refreshIn = (
-      path: string,
+      spot: Spot,
       options: Parameters<GitStatePublisherShape["refresh"]>[1] & {
         readonly reuseLocal?: boolean;
       },
       inventory?: ReadonlyArray<Thread>,
     ) => {
-      const key = samePathKey(path);
+      const { path } = spot;
+      const key = spotKey(spot);
+      const gitState = gitOn(spot);
       return locks.withLock(
         key,
         Effect.gen(function* () {
@@ -1192,7 +1229,7 @@ export const GitStatePublisherLive = Layer.effect(
                   next.value,
                   inventory,
                   // gh runs here: another machine's folder is none to start it in.
-                  isForeignPath(path) ? tmpdir() : (root ?? path),
+                  spot.hostId !== LOCAL_HOST_ID ? tmpdir() : (root ?? path),
                 )
               : false;
           if (
@@ -1215,7 +1252,37 @@ export const GitStatePublisherLive = Layer.effect(
       );
     };
 
-    const refresh: GitStatePublisherShape["refresh"] = (path, options) => refreshIn(path, options);
+    /**
+     * The open checkouts at `path`: one per machine whose thread holds it, this machine's among them
+     * when one of its threads does or no thread elsewhere does. A path alone can name more than one.
+     */
+    const spotsAt = (path: string) =>
+      Effect.map(store.listThreads, (threads): ReadonlyArray<Spot> => {
+        const lexical = nodePath.resolve(path);
+        const elsewhere = new Map<string, Spot>();
+        let localKey: string | undefined;
+        let heldHere = false;
+        for (const thread of threads) {
+          const checkout = effectiveCheckout(thread);
+          if (isLocalHost(checkout)) {
+            if (heldHere) continue;
+            localKey ??= samePathKey(path);
+            heldHere = checkoutKey(thread) === localKey;
+          } else if (nodePath.resolve(checkout.path) === lexical) {
+            const spot = spotOf(checkout);
+            elsewhere.set(spotKey(spot), spot);
+          }
+        }
+        const here: Spot = { hostId: LOCAL_HOST_ID, path };
+        return elsewhere.size === 0 || heldHere
+          ? [here, ...elsewhere.values()]
+          : [...elsewhere.values()];
+      });
+
+    const refresh: GitStatePublisherShape["refresh"] = (path, options) =>
+      Effect.flatMap(spotsAt(path), (spots) =>
+        Effect.forEach(spots, (spot) => refreshIn(spot, options), { discard: true }),
+      );
 
     /** When each checkout's network tier last ran, for a focus that needn't refresh what is fresh. */
     const lastRemoteAt = new Map<string, number>();
@@ -1232,11 +1299,12 @@ export const GitStatePublisherLive = Layer.effect(
      * Runs a queued refresh, never replacing one that's running: that would kill its observers mid-
      * flight. Requests during a run coalesce into a single rerun after it, which reads the latest state.
      */
-    const requestRefresh = (cwd: string, remote: boolean, priority: GhPriority = "interactive") =>
+    const requestRefresh = (spot: Spot, remote: boolean, priority: GhPriority = "interactive") =>
       Effect.suspend(() => {
+        const checkout = spotKey(spot);
         // A held checkout may be being deleted: git mustn't run in it. Its watch refreshes on release.
-        if (held.has(samePathKey(cwd))) return Effect.void;
-        const key = refresherKey(samePathKey(cwd), remote);
+        if (held.has(checkout)) return Effect.void;
+        const key = refresherKey(checkout, remote);
         const running = queuedRuns.get(key);
         if (running !== undefined) {
           running.dirty = true;
@@ -1248,7 +1316,7 @@ export const GitStatePublisherLive = Layer.effect(
         // The priority is put back on the refresh itself: it runs in a fiber of the map's, which
         // inherits nothing from whoever asked. Read per pass, so a rerun the user joined is theirs.
         const loop: Effect.Effect<void> = Effect.suspend(() =>
-          refresh(cwd, { remote }).pipe(Effect.provideService(GhPriority, run.priority)),
+          refreshIn(spot, { remote }).pipe(Effect.provideService(GhPriority, run.priority)),
         ).pipe(
           Effect.andThen(
             Effect.suspend(() => {
@@ -1320,7 +1388,9 @@ export const GitStatePublisherLive = Layer.effect(
         // Parking frees the thread's folder: a lingering parked thread's checkout is swept, never
         // watched.
         const wanted = new Map(
-          threads.filter((t) => !t.parked).map((t) => [checkoutKey(t), effectiveCheckout(t).path]),
+          threads
+            .filter((t) => !t.parked)
+            .map((t) => [checkoutKey(t), spotOf(effectiveCheckout(t))]),
         );
         const kept = new Set(threads.map((t) => checkoutKey(t)));
         for (const key of held.keys()) {
@@ -1339,21 +1409,21 @@ export const GitStatePublisherLive = Layer.effect(
         }
         sweptOnly.clear();
         for (const key of kept) if (!wanted.has(key)) sweptOnly.add(key);
-        for (const [key, path] of wanted) {
+        for (const [key, spot] of wanted) {
           if (watched.has(key)) continue;
           watched.add(key);
           yield* FiberMap.run(
             watchers,
             key,
-            refresh(path, { remote: config.sweepInterval !== undefined }).pipe(
+            refreshIn(spot, { remote: config.sweepInterval !== undefined }).pipe(
               // The watcher has just read the checkout, so the refresh takes that read.
               Effect.andThen(
-                Stream.runForEach(gitState.watch([path]), (change) =>
+                Stream.runForEach(gitOn(spot).watch([spot.path]), (change) =>
                   Effect.suspend(() => {
                     if (change.live) liveWatched.add(key);
                     else liveWatched.delete(key);
                     localReadAt.set(key, sweeps);
-                    return refreshIn(path, { remote: false, reuseLocal: true });
+                    return refreshIn(spot, { remote: false, reuseLocal: true });
                   }),
                 ),
               ),
@@ -1464,9 +1534,9 @@ export const GitStatePublisherLive = Layer.effect(
       else held.delete(key);
     };
 
-    const hold = (path: string) =>
+    /** Holds the checkout `key`, as `hold` does, until the effect it returns runs. */
+    const holdKey = (key: string) =>
       Effect.gen(function* () {
-        const key = samePathKey(path);
         held.set(key, (held.get(key) ?? 0) + 1);
         // Then waits out a refresh already running git there; its checks keep it from publishing.
         yield* sync.pipe(
@@ -1483,15 +1553,26 @@ export const GitStatePublisherLive = Layer.effect(
         });
       });
 
-    /** Open checkouts by path key, less the held ones. */
+    /**
+     * Every open checkout at `path` is held: a path alone can't say which machine's is about to go,
+     * and holding one that isn't only pauses its reads.
+     */
+    const hold = (path: string) =>
+      Effect.gen(function* () {
+        const keys = [...new Set((yield* spotsAt(path)).map(spotKey))];
+        const releases = yield* Effect.forEach(keys, holdKey);
+        return Effect.forEach(releases, (release) => release, { discard: true });
+      });
+
+    /** Open checkouts by key, less the held ones. */
     const checkoutsOf = (threads: ReadonlyArray<Thread>) => {
-      const byPath = new Map<string, { path: string; threads: Array<Thread> }>();
+      const byPath = new Map<string, { spot: Spot; threads: Array<Thread> }>();
       for (const thread of threads) {
-        const path = effectiveCheckout(thread).path;
-        if (held.has(samePathKey(path))) continue;
-        const entry = byPath.get(samePathKey(path)) ?? { path, threads: [] };
+        const key = checkoutKey(thread);
+        if (held.has(key)) continue;
+        const entry = byPath.get(key) ?? { spot: spotOf(effectiveCheckout(thread)), threads: [] };
         entry.threads.push(thread);
-        byPath.set(samePathKey(path), entry);
+        byPath.set(key, entry);
       }
       return byPath;
     };
@@ -1519,13 +1600,16 @@ export const GitStatePublisherLive = Layer.effect(
      * The refreshes that follow reach `Pr.status` one checkout at a time, which asked that way is a
      * document each, and GitHub charges a point a document however little it carries.
      */
-    const primeBadges = (entries: Iterable<{ path: string; threads: ReadonlyArray<Thread> }>) =>
+    const primeBadges = (entries: Iterable<{ spot: Spot; threads: ReadonlyArray<Thread> }>) =>
       Effect.gen(function* () {
         // As `refreshBound` will ask, or what is primed isn't what it reads.
         const extras = affordsExtras(yield* budget.window("graphql"));
         yield* pr.prime(
-          [...entries].flatMap(({ path, threads }) => {
-            const state = states.get(samePathKey(path));
+          [...entries].flatMap(({ spot, threads }) => {
+            const state = states.get(spotKey(spot));
+            // gh runs here, so another machine's checkout has no branch of its own to ask about.
+            const here = spot.hostId === LOCAL_HOST_ID;
+            const path = here ? spot.path : tmpdir();
             const numbered = threads.flatMap((thread) => {
               const bound = state === undefined ? undefined : boundElsewhere(thread, state);
               return [
@@ -1546,7 +1630,10 @@ export const GitStatePublisherLive = Layer.effect(
                 })),
               ];
             });
-            return [{ cwd: path }, ...numbered.map((bound) => ({ cwd: path, bound }))];
+            return [
+              ...(here ? [{ cwd: path }] : []),
+              ...numbered.map((bound) => ({ cwd: path, bound })),
+            ];
           }),
         );
       });
@@ -1576,7 +1663,7 @@ export const GitStatePublisherLive = Layer.effect(
               catchUp ||
               sweeps - (localReadAt.get(key) ?? -Infinity) >= localEvery(attention, live) ||
               // Only the sweep's read sees a folder deleted: its watcher's reads just fail.
-              (live && !(yield* folderExists(entry.path)));
+              (live && !(yield* thereHere(entry.spot)));
             if (quotaHeld) return { entry, parked, localDue, tier: "local" as const };
             const state = states.get(key);
             const burst = now < (expectingUntil.get(key) ?? 0);
@@ -1613,14 +1700,14 @@ export const GitStatePublisherLive = Layer.effect(
             ? Effect.succeed(tier !== "local" || localDue)
             : tier === "local"
               ? Effect.succeed(false)
-              : folderExists(entry.path),
+              : thereHere(entry.spot),
         );
         yield* primeBadges(swept.filter(({ tier }) => tier !== "local").map(({ entry }) => entry));
         yield* Effect.forEach(
           swept,
           ({ entry, parked, localDue, tier }) =>
             refreshIn(
-              entry.path,
+              entry.spot,
               {
                 remote: tier !== "local",
                 rebase: tier === "full",
@@ -1659,7 +1746,7 @@ export const GitStatePublisherLive = Layer.effect(
         entries,
         (entry) =>
           refreshIn(
-            entry.path,
+            entry.spot,
             { remote: true, rebase: false, scanElsewhere: false, reuseLocal: true },
             entry.threads,
           ),
@@ -1715,11 +1802,14 @@ export const GitStatePublisherLive = Layer.effect(
     yield* Queue.take(refreshes.requests).pipe(
       Effect.flatMap(({ cwd, remote, expectChange, priority }) =>
         Effect.gen(function* () {
+          const spots = yield* spotsAt(cwd);
           if (expectChange === true) {
             const until = (yield* Clock.currentTimeMillis) + Duration.toMillis(EXPECT_CHANGE_FOR);
-            expectingUntil.set(samePathKey(cwd), until);
+            for (const spot of spots) expectingUntil.set(spotKey(spot), until);
           }
-          yield* requestRefresh(cwd, remote, priority);
+          yield* Effect.forEach(spots, (spot) => requestRefresh(spot, remote, priority), {
+            discard: true,
+          });
         }),
       ),
       Effect.forever,
@@ -1802,12 +1892,11 @@ export const GitStatePublisherLive = Layer.effect(
           Effect.gen(function* () {
             const thread = (yield* openThreads).find((t) => t.id === threadId);
             if (thread === undefined) return;
-            const path = effectiveCheckout(thread).path;
-            const key = samePathKey(path);
+            const key = checkoutKey(thread);
             const age = (yield* Clock.currentTimeMillis) - (lastRemoteAt.get(key) ?? 0);
             if (age < Duration.toMillis(FOCUS_FRESH_FOR)) return;
             skippedSweeps.delete(key);
-            yield* requestRefresh(path, true);
+            yield* requestRefresh(spotOf(effectiveCheckout(thread)), true);
           }),
         ),
         Effect.forkScoped,
@@ -1823,10 +1912,10 @@ export const GitStatePublisherLive = Layer.effect(
             const paths = new Map(
               threads
                 .filter((t) => revealed === "all" || revealed.includes(t.id))
-                .map((t) => [checkoutKey(t), effectiveCheckout(t).path]),
+                .map((t) => [checkoutKey(t), spotOf(effectiveCheckout(t))]),
             );
             const remote = config.sweepInterval !== undefined && (yield* backoff.consecutive) === 0;
-            yield* Effect.forEach(paths.values(), (path) => refresh(path, { remote }), {
+            yield* Effect.forEach(paths.values(), (spot) => refreshIn(spot, { remote }), {
               concurrency: config.sweepConcurrency,
               discard: true,
             });
@@ -1861,14 +1950,13 @@ export const GitStatePublisherLive = Layer.effect(
         if (badge?.state !== "OPEN" || seen.state === undefined || seen.state === "OPEN") return;
         if (badge.number !== seen.number || badge.url.toLowerCase() !== seen.url.toLowerCase())
           return;
-        const path = effectiveCheckout(thread).path;
-        const key = samePathKey(path);
+        const key = checkoutKey(thread);
         const until = (yield* Clock.currentTimeMillis) + Duration.toMillis(EXPECT_CHANGE_FOR);
         expectingUntil.set(key, until);
         skippedSweeps.delete(key);
         // The lookup cache would answer with the badge being corrected for up to its TTL.
         invalidatePrBadges();
-        yield* requestRefresh(path, true);
+        yield* requestRefresh(spotOf(effectiveCheckout(thread)), true);
       });
 
     const watchPrs: GitStatePublisherShape["watchPrs"] = (owner, watches) =>
@@ -1906,7 +1994,11 @@ export const GitStatePublisherLive = Layer.effect(
       });
 
     return {
-      stateFor: (path) => Effect.sync(() => states.get(samePathKey(path))),
+      // Only when the path names one checkout: two machines' states are never mixed up.
+      stateFor: (path) =>
+        Effect.map(spotsAt(path), (spots) =>
+          spots.length === 1 ? states.get(spotKey(spots[0]!)) : undefined,
+        ),
       badgeFor,
       watchPrs,
       watchedBadge,
