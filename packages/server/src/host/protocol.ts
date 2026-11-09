@@ -7,12 +7,14 @@ import type {
   ConnectorSignInStart,
   ConnectorsSeen,
   ConnectorStatus,
+  SendOptions,
   SequencedEvent,
 } from "@gram/agents";
 import {
   AgentUnavailable,
   AnswerUndelivered,
   type HostAgentReload,
+  type HostStatus,
   type HostSessionOpen,
   type HostSessionOpened,
   HOST_PROTOCOL_VERSION,
@@ -31,6 +33,7 @@ import {
   HostWorktreeFailed,
   NotFound,
   type TerminalEvent,
+  type UserInput,
 } from "@gram/contracts";
 import {
   type ProcError,
@@ -90,9 +93,11 @@ export interface HostService {
   readonly terminals: HostTerminalsService;
   readonly sessions: HostSessionsService;
   readonly scan: Effect.Effect<PortScan, unknown>;
+  /** What it can run, checked afresh: its Claude sign-in and its tools. */
+  readonly status?: Effect.Effect<HostStatus>;
 }
 
-/** The capabilities this build's host serves. */
+/** The capabilities a host must serve for this build to use it. */
 export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
   "files",
   "ports",
@@ -102,6 +107,12 @@ export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
   "sessions",
   "repos",
 ];
+
+/**
+ * The capabilities this build's host serves: the ones required, and those a control plane uses only
+ * where a host advertises them, so a host on an older release still connects.
+ */
+export const HOST_SERVES: ReadonlyArray<HostCapability> = [...HOST_CAPABILITIES, "deliveries"];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -174,6 +185,11 @@ const handlersFor = (host: HostService) => {
       "host.files.search": ({ root, query, regex, caseSensitive, offset, limit }) =>
         host.files.search(root, query, { regex, caseSensitive, offset, limit }),
       "host.files.names": ({ root }) => host.files.names(root),
+      // Never a defect: one from a handler breaks the whole connection, not just this call.
+      "host.status": () =>
+        (host.status ?? Effect.succeed(UNKNOWN_STATUS)).pipe(
+          Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
+        ),
       "host.ports.scan": () =>
         host.scan.pipe(
           Effect.map(scanToWire),
@@ -222,12 +238,12 @@ const handlersFor = (host: HostService) => {
       "host.sessions.ack": ({ handle, seq }) => host.sessions.ack(handle, seq),
       "host.sessions.connectorsSeen": ({ handle }) =>
         host.sessions.connectorsSeen(handle).pipe(Stream.map(seenToWire)),
-      "host.sessions.send": ({ handle, input, messageId }) =>
-        withSession(handle, (session) =>
+      "host.sessions.send": ({ handle, input, messageId, deliveryId }) =>
+        delivered(handle, deliveryId, (session) =>
           session.send(input, messageId === undefined ? undefined : { messageId }),
         ),
-      "host.sessions.steer": ({ handle, input }) =>
-        withSession(handle, (session) => session.steer(input)),
+      "host.sessions.steer": ({ handle, input, deliveryId }) =>
+        delivered(handle, deliveryId, (session) => session.steer(input)),
       "host.sessions.interrupt": ({ handle }) =>
         withSession(handle, (session) => session.interrupt),
       "host.sessions.closeToolGate": ({ handle }) =>
@@ -277,6 +293,16 @@ const handlersFor = (host: HostService) => {
     f: (session: AgentSession) => Effect.Effect<A, E>,
   ): Effect.Effect<A, E | HostFailed> {
     return Effect.flatMap(host.sessions.session(handle), f);
+  }
+  /** Input for the session, taken once per delivery id when the caller named one. */
+  function delivered(
+    handle: string,
+    deliveryId: string | undefined,
+    f: (session: AgentSession) => Effect.Effect<void>,
+  ): Effect.Effect<void, HostFailed> {
+    return deliveryId === undefined
+      ? withSession(handle, f)
+      : host.sessions.deliver(handle, deliveryId, f);
   }
   function withConnectors<A, E>(
     handle: string,
@@ -365,13 +391,19 @@ export interface HostSessionsConnection {
   ) => Stream.Stream<SequencedEvent, HostUnavailable | NotFound>;
   readonly ack: (handle: string, seq: number) => Effect.Effect<void>;
   readonly connectorsSeen: (handle: string) => Stream.Stream<ConnectorsSeen>;
+  /**
+   * A send or a steer with a `deliveryId` is taken once by a host that serves `deliveries`, so it
+   * can be asked again when its answer was lost.
+   */
   readonly send: (
     handle: string,
-    ...args: Parameters<AgentSession["send"]>
+    input: UserInput,
+    options?: SendOptions & { readonly deliveryId?: string },
   ) => Effect.Effect<void, HostFailed>;
   readonly steer: (
     handle: string,
-    ...args: Parameters<AgentSession["steer"]>
+    input: UserInput,
+    options?: { readonly deliveryId?: string },
   ) => Effect.Effect<void, HostFailed>;
   readonly interrupt: (handle: string) => Effect.Effect<void, InterruptHung | HostFailed>;
   readonly closeToolGate: (handle: string) => Effect.Effect<void, HostFailed>;
@@ -434,6 +466,11 @@ export interface HostConnection {
   readonly terminals: HostTerminalsConnection;
   readonly sessions: HostSessionsConnection;
   readonly scan: Effect.Effect<PortScan, unknown>;
+  /**
+   * What the machine can run as its host reads it now: unknown, with no tools, when the host
+   * doesn't answer, is too old to know the call, or has gone.
+   */
+  readonly status?: Effect.Effect<HostStatus>;
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
 }
@@ -504,6 +541,12 @@ const keepInvalid = <E extends { readonly _tag: string; readonly message?: strin
 const none = (error: unknown): error is never => error === none;
 const isAgentUnavailable = (error: unknown): error is AgentUnavailable =>
   error instanceof AgentUnavailable;
+
+/** How long a host's status (its `claude auth status`, its tools) gets before it reads as unknown. */
+const STATUS_TIMEOUT = "30 seconds";
+
+/** A host that can't say what it can run. */
+export const UNKNOWN_STATUS: HostStatus = { claudeSignIn: "unknown", tools: [] };
 
 /** How long a host gets to say hello before it counts as not answering. */
 const HELLO_TIMEOUT = "5 seconds";
@@ -806,11 +849,22 @@ export const connectHost = (
       send: (handle, input, sendOptions) =>
         sessionCall(
           client["host.sessions.send"](
-            defined({ handle, input, messageId: sendOptions?.messageId }),
+            defined({
+              handle,
+              input,
+              messageId: sendOptions?.messageId,
+              deliveryId: sendOptions?.deliveryId,
+            }),
           ),
           none,
         ),
-      steer: (handle, input) => sessionCall(client["host.sessions.steer"]({ handle, input }), none),
+      steer: (handle, input, steerOptions) =>
+        sessionCall(
+          client["host.sessions.steer"](
+            defined({ handle, input, deliveryId: steerOptions?.deliveryId }),
+          ),
+          none,
+        ),
       interrupt: (handle) =>
         sessionCall(
           client["host.sessions.interrupt"]({ handle }),
@@ -877,6 +931,14 @@ export const connectHost = (
       terminals,
       sessions,
       scan: guarded(client["host.ports.scan"]()).pipe(Effect.map(scanFromWire)),
+      // An older host's unknown-request defect is a failed call, not a broken stream.
+      status: guarded(client["host.status"]()).pipe(
+        Effect.timeoutOrElse({
+          duration: STATUS_TIMEOUT,
+          orElse: () => Effect.succeed(UNKNOWN_STATUS),
+        }),
+        Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
+      ),
       gone: () => ended,
     };
   });

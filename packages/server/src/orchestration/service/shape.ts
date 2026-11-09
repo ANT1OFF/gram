@@ -5,6 +5,7 @@ import {
   type InvalidState,
   type NotFound,
   type WorkspaceId,
+  type HostId,
   type FeatureCards,
   type AgentUnavailable,
   type Autonomy,
@@ -648,6 +649,8 @@ export interface OrchestrationShape {
       readonly model?: ModelRef;
       /** "Start under my control": held as the user's from its first input. */
       readonly hold?: boolean;
+      /** The joined machine its worktree is made on; absent is this one. */
+      readonly hostId?: HostId | undefined;
       /** What its feature and title are named from, in place of the input's text. */
       readonly name?: string;
     },
