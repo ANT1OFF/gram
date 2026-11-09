@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.15.0](https://github.com/ANT1OFF/gram/compare/v1.14.0...v1.15.0) (2026-11-09)
+
+
+### Features
+
+* add a machine over SSH, confirmed by the fingerprint it prints ([#309](https://github.com/ANT1OFF/gram/issues/309)) ([1d8eb7c](https://github.com/ANT1OFF/gram/commit/1d8eb7c8709248696233fd83b066394171951561))
+* join a machine with one command, served by the main Gram ([#307](https://github.com/ANT1OFF/gram/issues/307)) ([6929869](https://github.com/ANT1OFF/gram/commit/69298695e63c711d64e1641761fb908bac039950))
+* phone Needs you cards with worded actions, wrapped code, a clean usage axis ([#304](https://github.com/ANT1OFF/gram/issues/304)) ([1a25635](https://github.com/ANT1OFF/gram/commit/1a25635003ffa78138fdea9546177702fdaf8403))
+* pick a joined machine for a new thread or a spawned worker, and tag its workers ([#306](https://github.com/ANT1OFF/gram/issues/306)) ([1179ccc](https://github.com/ANT1OFF/gram/commit/1179ccca67ec360969b5aa31ac6f97559782d477))
+* place a new worktree thread on a joined machine ([#303](https://github.com/ANT1OFF/gram/issues/303)) ([267301d](https://github.com/ANT1OFF/gram/commit/267301d37ec59839277d77c43ea8cdde2552de71))
+* turn on access over Tailscale from Add a machine ([#308](https://github.com/ANT1OFF/gram/issues/308)) ([710c2bd](https://github.com/ANT1OFF/gram/commit/710c2bd54be56e81b11b13c8d74598d618981164))
+
 ## [1.14.0](https://github.com/ANT1OFF/gram/compare/v1.13.0...v1.14.0) (2026-11-09)
 
 
