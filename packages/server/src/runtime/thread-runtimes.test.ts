@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   AgentUnavailable,
+  HostId,
   InvalidState,
   EXAMPLE_GATEWAY,
   RequestNotFound,
@@ -13,7 +14,9 @@ import {
   type ServerEvent,
   type ThreadId,
 } from "@gram/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
@@ -628,6 +631,45 @@ describe("ThreadRuntimes", () => {
       const stored = yield* store.getThread(fork.id);
       expect(stored.agentSessionId).toBe("fork-session");
       expect(stored.agentSessionUnused).toBeUndefined();
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("forks only onto the machine the conversation ran on, where its history is", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const { thread, session } = yield* createRunning();
+      yield* session.completeTurn();
+      yield* waitStatus(thread.id, "idle");
+      const box = HostId.make("m-box");
+      const refused = (exit: Exit.Exit<unknown, unknown>) =>
+        Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof InvalidState;
+      const threadsBefore = (yield* store.listThreads).length;
+
+      // A local conversation forked onto a joined machine: before this change the fork was made
+      // and asked that machine's CLI to resume a session whose transcript is only here.
+      const plan = yield* runtimes.forkTarget(thread.id, undefined);
+      const onBox = yield* Effect.exit(
+        runtimes.fork(plan, { checkout: { kind: "worktree", path: "/box/fork", hostId: box } }),
+      );
+      expect(refused(onBox)).toBe(true);
+
+      // A joined machine's conversation forked here is refused the same way, and onto its own
+      // machine it goes.
+      yield* store.updateThread(thread.id, (t) => ({
+        ...t,
+        checkout: { ...t.checkout, hostId: box },
+      }));
+      const remote = yield* runtimes.forkTarget(thread.id, undefined);
+      const here = yield* Effect.exit(
+        runtimes.fork(remote, { checkout: { kind: "worktree", path: "/work/fork" } }),
+      );
+      expect(refused(here)).toBe(true);
+      expect((yield* store.listThreads).length).toBe(threadsBefore);
+      const sameMachine = yield* runtimes.fork(remote, {
+        checkout: { kind: "worktree", path: "/box/fork", hostId: box },
+      });
+      expect(sameMachine.forkedFrom?.agentSessionId).toBe(session.agentSessionId);
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 

@@ -2,6 +2,9 @@
 
 import {
   type AgentUnavailable,
+  effectiveCheckout,
+  type HostId,
+  hostOf,
   type Thread,
   type GramUIMessage,
   InvalidState,
@@ -130,6 +133,23 @@ export const makeResumePlans = ({ store }: ResumePlansDeps) => {
 
   return { resumeOptions };
 };
+
+/**
+ * Why a fork of `source` can't be made on `hostId`, or `undefined` when it can. The fork resumes the
+ * source's agent session, whose transcript is on the machine it ran on (the source's checkout's), so
+ * the fork runs there too: nothing carries a conversation's history to another machine.
+ */
+export const forkHostRefusal = (
+  source: Pick<Thread, "id" | "checkout" | "currentCheckout">,
+  hostId: HostId,
+): InvalidState | undefined =>
+  hostOf(effectiveCheckout(source)) === hostId
+    ? undefined
+    : new InvalidState({
+        threadId: source.id,
+        message:
+          "A fork stays on the machine its conversation ran on, where its history is: fork into a worktree on that machine.",
+      });
 
 /** What rewinding and forking read and change beside the stored history. */
 export interface HistoryMethodsDeps {
@@ -289,6 +309,8 @@ export const makeHistoryMethods = ({
   fork: (plan, { checkout, title }) =>
     Effect.gen(function* () {
       const { source } = plan;
+      const elsewhere = forkHostRefusal(source, hostOf(checkout));
+      if (elsewhere !== undefined) return yield* elsewhere;
       const inUse = [...runtimes.values()].some(
         (other) =>
           other.session !== undefined &&
