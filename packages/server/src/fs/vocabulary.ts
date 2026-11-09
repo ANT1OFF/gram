@@ -212,10 +212,10 @@ export const VOCABULARY_MAX_AGE_MS = 10 * 60_000;
 const CACHED_ROOTS = 8;
 
 /**
- * Project names by checkout, read again when the checkout's commit or index changes. Titles are
- * the caller's and cost nothing, so they are added on every call rather than cached.
+ * What a checkout's names are read from, by checkout, read again when the checkout's commit or
+ * index changes. Where the checkout is, so a joined machine keeps its own.
  */
-export const makeVocabularyCache = (now: () => number = Date.now) => {
+export const makeVocabularySourcesCache = (now: () => number = Date.now) => {
   const cache = new Map<
     string,
     {
@@ -224,21 +224,31 @@ export const makeVocabularyCache = (now: () => number = Date.now) => {
       readonly sources: Omit<VocabularySources, "titles">;
     }
   >();
-  return (root: string, titles: readonly string[]) =>
+  return (root: string) =>
     Effect.gen(function* () {
       const signature = yield* signatureOf(root);
       const held = cache.get(root);
-      let sources = held?.sources;
       if (
-        held === undefined ||
-        held.signature !== signature ||
-        now() - held.at > VOCABULARY_MAX_AGE_MS
+        held !== undefined &&
+        held.signature === signature &&
+        now() - held.at <= VOCABULARY_MAX_AGE_MS
       ) {
-        sources = yield* readVocabularySources(root);
-        cache.delete(root);
-        cache.set(root, { signature, at: now(), sources });
-        while (cache.size > CACHED_ROOTS) cache.delete(cache.keys().next().value!);
+        return held.sources;
       }
-      return projectTerms({ ...sources!, titles });
+      const sources = yield* readVocabularySources(root);
+      cache.delete(root);
+      cache.set(root, { signature, at: now(), sources });
+      while (cache.size > CACHED_ROOTS) cache.delete(cache.keys().next().value!);
+      return sources;
     });
+};
+
+/**
+ * Project names by checkout, read again when the checkout's commit or index changes. Titles are
+ * the caller's and cost nothing, so they are added on every call rather than cached.
+ */
+export const makeVocabularyCache = (now: () => number = Date.now) => {
+  const sourcesOf = makeVocabularySourcesCache(now);
+  return (root: string, titles: readonly string[]) =>
+    Effect.map(sourcesOf(root), (sources) => projectTerms({ ...sources, titles }));
 };

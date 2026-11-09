@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -17,6 +20,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import { followingSessions } from "../host/following-sessions.ts";
+import { attachmentsOnHost, fileReadsOn } from "../host/file-reads.ts";
 import { filesOn } from "../host/files.ts";
 import { gitOn } from "../host/git.ts";
 import {
@@ -91,6 +95,8 @@ const fakeMachine = () => {
           pid: pid++,
         },
         files: filesOn(proc),
+        reads: fileReadsOn(proc),
+        attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
         repos: reposOn(proc, REPOS),
         worktrees: yield* Worktrees,
         git: gitOn(proc),

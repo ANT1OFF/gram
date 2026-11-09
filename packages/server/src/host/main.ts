@@ -15,7 +15,8 @@ import * as Layer from "effect/Layer";
 import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
-import { hostRepos } from "./host-config.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
+import { hostAttachments, hostRepos } from "./host-config.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
@@ -86,6 +87,8 @@ const hostService = (
         ...(RELEASE === undefined ? {} : { release: RELEASE }),
       },
       files: filesOn(proc),
+      reads: fileReadsOn(proc),
+      attachments: yield* attachmentsOnHost(hostAttachments()),
       repos: reposOn(proc, hostRepos()),
       worktrees:
         hostId === LOCAL_HOST_ID ? yield* Worktrees : cloneWorktrees(proc, yield* Worktrees),
