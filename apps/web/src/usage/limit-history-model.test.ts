@@ -155,9 +155,10 @@ describe("the charts' legend and hover words", () => {
   });
 });
 
+const share = (at: number) => at / 100;
+
 describe("fittingTicks", () => {
   it("drops a tick in the axis's last tenth, which would hang over the day before", () => {
-    const share = (at: number) => at / 100;
     expect(fittingTicks([0, 14, 28, 42, 56, 70, 84, 96], share)).toEqual([
       0, 14, 28, 42, 56, 70, 84,
     ]);
