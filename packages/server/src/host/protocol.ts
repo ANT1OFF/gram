@@ -635,7 +635,24 @@ export interface ConnectOptions {
   readonly gone?: Effect.Effect<never, HostUnavailable>;
   /** Runs once when the host is found gone, whichever way: its owner stops what is left of it. */
   readonly onEnded?: (reason: string) => Effect.Effect<void>;
+  /** Told the host's hello as soon as it is read, before it is checked. */
+  readonly onHello?: (hello: HostHello) => void;
 }
+
+/**
+ * Why this build can't use a host that said `hello`: it speaks another protocol version, or doesn't
+ * serve everything this build needs. Either way one of the two builds needs an update.
+ */
+export const helloMismatch = (
+  hello: HostHello,
+):
+  | { readonly kind: "protocol" }
+  | { readonly kind: "capabilities"; readonly missing: ReadonlyArray<HostCapability> }
+  | undefined => {
+  if (hello.protocol !== HOST_PROTOCOL_VERSION) return { kind: "protocol" };
+  const missing = HOST_CAPABILITIES.filter((need) => !hello.capabilities.includes(need));
+  return missing.length > 0 ? { kind: "capabilities", missing } : undefined;
+};
 
 /**
  * Connects to the host at the other end of `socket` and checks its hello: a host that doesn't
@@ -704,17 +721,18 @@ export const connectHost = (
           : unavailable(`The host didn't answer: ${failureText(error)}`),
       ),
     );
+    options.onHello?.(hello);
     if (hello.hostId !== options.hostId) {
       return yield* unavailable(`A host answered as "${hello.hostId}", not "${options.hostId}".`);
     }
-    if (hello.protocol !== HOST_PROTOCOL_VERSION) {
+    const mismatch = helloMismatch(hello);
+    if (mismatch?.kind === "protocol") {
       return yield* unavailable(
         `The host speaks protocol ${hello.protocol}; this build speaks ${HOST_PROTOCOL_VERSION}.`,
       );
     }
-    const missing = HOST_CAPABILITIES.filter((need) => !hello.capabilities.includes(need));
-    if (missing.length > 0) {
-      return yield* unavailable(`The host doesn't serve ${missing.join(", ")}.`);
+    if (mismatch?.kind === "capabilities") {
+      return yield* unavailable(`The host doesn't serve ${mismatch.missing.join(", ")}.`);
     }
     const files: HostFiles = {
       list: (path, { showHidden, limit }) =>

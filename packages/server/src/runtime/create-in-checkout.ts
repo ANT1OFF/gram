@@ -5,6 +5,9 @@ import {
   type CheckoutInUse,
   type CheckoutRequest,
   type GitError,
+  type HostId,
+  hostOf,
+  LOCAL_HOST_ID,
   type NotFound,
   type Thread,
 } from "@gram/contracts";
@@ -20,11 +23,14 @@ import type { CreateThreadInput, ThreadRuntimesShape } from "./thread-runtimes.t
  */
 export const heldCheckoutPaths = (
   threads: ReadonlyArray<Pick<Thread, "checkout" | "extraCheckouts">>,
+  /** Only the checkouts on this machine: another machine's folder at the same path is another. */
+  on?: HostId,
 ): Array<string> =>
-  threads.flatMap((thread) => [
-    thread.checkout.path,
-    ...(thread.extraCheckouts ?? []).map((extra) => extra.path),
-  ]);
+  threads.flatMap((thread) =>
+    [thread.checkout, ...(thread.extraCheckouts ?? [])]
+      .filter((checkout) => on === undefined || hostOf(checkout) === on)
+      .map((checkout) => checkout.path),
+  );
 
 /**
  * `heldCheckoutPaths` and every checkout a thread follows its agent into (`currentCheckout`): the
@@ -32,10 +38,15 @@ export const heldCheckoutPaths = (
  */
 export const usedCheckoutPaths = (
   threads: ReadonlyArray<Pick<Thread, "checkout" | "extraCheckouts" | "currentCheckout">>,
+  /** Only the checkouts on this machine, as `heldCheckoutPaths` takes it. */
+  on?: HostId,
 ): Array<string> => [
-  ...heldCheckoutPaths(threads),
+  ...heldCheckoutPaths(threads, on),
   ...threads.flatMap((thread) =>
-    thread.currentCheckout === undefined ? [] : [thread.currentCheckout.path],
+    thread.currentCheckout === undefined ||
+    (on !== undefined && hostOf(thread.currentCheckout) !== on)
+      ? []
+      : [thread.currentCheckout.path],
   ),
 ];
 
@@ -76,7 +87,9 @@ export const makeThreadCreator = (deps: {
 }): ThreadCreator => {
   const prepare: ThreadCreator["prepare"] = (request, projectRoot) =>
     Effect.gen(function* () {
-      const open = heldCheckoutPaths(yield* deps.store.listThreads);
+      // The checkouts held on the machine the request is placed on.
+      const on = request.kind === "newWorktree" ? (request.hostId ?? LOCAL_HOST_ID) : LOCAL_HOST_ID;
+      const open = heldCheckoutPaths(yield* deps.store.listThreads, on);
       return yield* deps.checkouts.prepare(request, open, projectRoot);
     }).pipe(
       Effect.catchTag("WorktreeDirty", (e) =>

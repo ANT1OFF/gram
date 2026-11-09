@@ -31,7 +31,11 @@ import { PositiveInt } from "./shared.ts";
 
 /**
  * The host protocol's version. A control plane and a host that disagree on it don't talk: the
- * hello says so, and the control plane treats the host as unavailable.
+ * hello says so, and the control plane treats the host as unavailable, and shows a joined machine
+ * as needing an update. Bump it when a message either side already sends changes in a way the
+ * other's build can't read; a new call doesn't need it, since a host built before it answers that
+ * call alone with an unknown-request defect. `HostHello`'s `protocol`, `hostId` and `release` stay
+ * readable by every build, so a mismatch is always told apart from a host that didn't answer.
  */
 export const HOST_PROTOCOL_VERSION = 2;
 
@@ -59,6 +63,12 @@ export const HostHello = Schema.Struct({
   capabilities: Schema.Array(HostCapability),
   platform: Schema.String,
   pid: Schema.Int,
+  /**
+   * The Gram release the host was built from, such as `1.17.0`; absent from a host run from source
+   * and from a host built before it was sent (1.16.0 and earlier). A control plane built before it
+   * ignores it, as a struct ignores keys it doesn't name.
+   */
+  release: Schema.optionalKey(Schema.String),
 });
 export type HostHello = typeof HostHello.Type;
 

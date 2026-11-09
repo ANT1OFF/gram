@@ -5,6 +5,7 @@ import {
   HostUnavailable,
   isLocalHost,
   LOCAL_HOST_ID,
+  ThreadNotFound,
 } from "@gram/contracts";
 import { GitStateRuntime, Proc, Worktrees } from "@gram/git";
 import * as Context from "effect/Context";
@@ -14,13 +15,14 @@ import * as Option from "effect/Option";
 import { filesOn, type HostFiles } from "./files.ts";
 import { LocalHostProcess } from "./local-process.ts";
 import { RemoteHosts } from "./remote-hosts.ts";
-import { placedHost } from "./placed.ts";
+import { type MachineParts, placedHost } from "./placed.ts";
 import { machineHosts } from "./remote-worker-host.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { TerminalGate } from "../terminal/gate.ts";
 
 export type { HostFiles } from "./files.ts";
+export type { MachineParts } from "./placed.ts";
 import { liveScan, type PortScan } from "../ports/scan.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { CheckoutService, type CheckoutServiceShape } from "../runtime/hooks.ts";
@@ -95,6 +97,17 @@ export interface WorkerHostsShape {
    * be on another one.
    */
   readonly placed: WorkerHost;
+  /**
+   * One machine's checkouts' git state, worktrees and folders, for a caller that knows which
+   * machine a checkout is on (`hostOf`): what `placed` does for a path, without guessing the
+   * machine from the path, which two machines can share. Offline, it answers as `placed` does.
+   */
+  machine(id: HostId): MachineParts;
+  /**
+   * The machine the threads place `path` on, as `placed` routes it: this one's for a path no thread
+   * elsewhere holds, and `undefined` for one more than one machine holds, which a path can't settle.
+   */
+  placeOf(path: string): Effect.Effect<HostId | undefined>;
   /** The host a record (a checkout, a worker) is on, where an absent `hostId` is this machine. */
   of(record: { readonly hostId?: HostId | undefined }): Effect.Effect<WorkerHost, HostUnavailable>;
 }
@@ -130,6 +143,12 @@ const joinedMachines = Effect.gen(function* () {
   };
 });
 
+/** No threads: every path is this machine's, and a machine is reached only by its id. */
+const NO_THREADS: Pick<ThreadStore["Service"], "listThreads" | "getThread"> = {
+  listThreads: Effect.succeed([]),
+  getThread: (threadId) => Effect.fail(new ThreadNotFound({ threadId })),
+};
+
 /** The machines this server can place work on: this one, and the machines joined to it. */
 export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>()(
   "@gram/server/WorkerHosts",
@@ -157,11 +176,18 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
         : machines(id);
     };
     const hosts = { local, get };
+    const placed = placedHost(
+      hosts,
+      store ?? NO_THREADS,
+      store === undefined ? () => false : anyMachines,
+    );
     return WorkerHosts.of({
       local,
       get,
       of: (record) => get(hostOf(record)),
-      placed: store === undefined ? local : placedHost(hosts, store, anyMachines),
+      placed: store === undefined ? local : placed,
+      machine: placed.machine,
+      placeOf: placed.placeOf,
     });
   };
 

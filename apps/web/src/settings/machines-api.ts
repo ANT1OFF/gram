@@ -18,6 +18,12 @@ export interface JoinedMachine {
   readonly onlineSince?: number;
   /** When this Gram sent it a Claude token from `claude setup-token`; a time, never the token. */
   readonly claudeTokenSetAt?: number;
+  /** Why it is offline, as this Gram last saw it; set only while it isn't connected. */
+  readonly offline?: OfflineReason;
+  /** The Gram release its host said it runs, while online or when it couldn't connect. */
+  readonly release?: string;
+  /** The `[user@]host` Gram installed it at over SSH, which its update runs again. */
+  readonly sshTarget?: string;
   /**
    * While it is online, once asked: whether its own Claude Code is signed in to a subscription,
    * from its `claude auth status`. Only the classification reaches here.
@@ -27,6 +33,28 @@ export interface JoinedMachine {
   /** While it is online, once asked: whether `claude` and `git` are on its login-shell PATH. */
   readonly tools?: ReadonlyArray<MachineTool>;
 }
+
+/**
+ * Why a joined machine is offline: the last reason it dropped or was refused since this Gram
+ * started, that access over Tailscale is off, or that it hasn't dialled since. Times are epoch ms.
+ */
+export type OfflineReason =
+  | { readonly kind: "never" }
+  | { readonly kind: "tailscale-off" }
+  | { readonly kind: "unconfirmed"; readonly at: number }
+  | { readonly kind: "bad-signature"; readonly at: number }
+  /** Its clock against this machine's: positive when it is ahead. */
+  | { readonly kind: "clock"; readonly at: number; readonly skewMs: number }
+  | {
+      readonly kind: "mismatch";
+      readonly at: number;
+      readonly protocol: number;
+      readonly release?: string;
+      readonly missing?: ReadonlyArray<string>;
+    }
+  | { readonly kind: "no-hello"; readonly at: number }
+  | { readonly kind: "lost"; readonly at: number }
+  | { readonly kind: "moved"; readonly at: number };
 
 /** A command a joined machine needs, as its host found it. */
 export interface MachineTool {
@@ -102,6 +130,12 @@ export interface MachinesStatus {
   readonly joinLink?: { readonly expiresAt: number };
   /** After a Remove: the machine was offline, so the Claude token sent to it is still there. */
   readonly tokenLeft?: true;
+  /** This Gram's release, absent when it runs from source. */
+  readonly release?: string;
+  /** The host protocol this Gram speaks. */
+  readonly protocol?: number;
+  /** What updates a joined machine when run there; set while access over Tailscale is on. */
+  readonly updateCommand?: string;
 }
 
 export interface JoinLink {
@@ -155,8 +189,40 @@ const isMachine = (value: unknown): value is JoinedMachine => {
     (m["claudeTokenSetAt"] === undefined || typeof m["claudeTokenSetAt"] === "number") &&
     (m["claudeSignIn"] === undefined || SIGN_INS.has(m["claudeSignIn"])) &&
     (m["claudeSignInCheckedAt"] === undefined || typeof m["claudeSignInCheckedAt"] === "number") &&
-    (m["tools"] === undefined || (Array.isArray(m["tools"]) && m["tools"].every(isTool)))
+    (m["tools"] === undefined || (Array.isArray(m["tools"]) && m["tools"].every(isTool))) &&
+    (m["offline"] === undefined || isOffline(m["offline"])) &&
+    (m["release"] === undefined || typeof m["release"] === "string") &&
+    (m["sshTarget"] === undefined || typeof m["sshTarget"] === "string")
   );
+};
+
+const REASONS = new Set([
+  "never",
+  "tailscale-off",
+  "unconfirmed",
+  "bad-signature",
+  "clock",
+  "mismatch",
+  "no-hello",
+  "lost",
+  "moved",
+]);
+
+const isOffline = (value: unknown): value is OfflineReason => {
+  if (typeof value !== "object" || value === null) return false;
+  const r = value as Record<string, unknown>;
+  if (typeof r["kind"] !== "string" || !REASONS.has(r["kind"])) return false;
+  if (r["kind"] === "never" || r["kind"] === "tailscale-off") return true;
+  if (typeof r["at"] !== "number") return false;
+  if (r["kind"] === "clock") return typeof r["skewMs"] === "number";
+  if (r["kind"] === "mismatch")
+    return (
+      typeof r["protocol"] === "number" &&
+      (r["release"] === undefined || typeof r["release"] === "string") &&
+      (r["missing"] === undefined ||
+        (Array.isArray(r["missing"]) && r["missing"].every((m) => typeof m === "string")))
+    );
+  return true;
 };
 
 const status = async (response: Response, fallback: string): Promise<MachinesStatus> => {
@@ -165,6 +231,9 @@ const status = async (response: Response, fallback: string): Promise<MachinesSta
     machines?: unknown;
     joinLink?: unknown;
     tokenLeft?: unknown;
+    release?: unknown;
+    protocol?: unknown;
+    updateCommand?: unknown;
   };
   if (!Array.isArray(value.machines) || !value.machines.every(isMachine))
     throw new MachinesError(fallback);
@@ -173,6 +242,9 @@ const status = async (response: Response, fallback: string): Promise<MachinesSta
     machines: value.machines,
     ...(typeof link?.expiresAt === "number" ? { joinLink: { expiresAt: link.expiresAt } } : {}),
     ...(value.tokenLeft === true ? { tokenLeft: true } : {}),
+    ...(typeof value.release === "string" ? { release: value.release } : {}),
+    ...(typeof value.protocol === "number" ? { protocol: value.protocol } : {}),
+    ...(typeof value.updateCommand === "string" ? { updateCommand: value.updateCommand } : {}),
   };
 };
 
@@ -285,6 +357,31 @@ export const machinesApi = {
     },
     forget: async (id: string) =>
       status(await post("/machines/claude-token/forget", { id }), "Couldn't forget the token"),
+  },
+  /**
+   * Runs the install over SSH again on a machine Gram added that way: it moves the machine's
+   * service to this Gram's release and keeps the join. Minutes, while it downloads Gram there.
+   */
+  update: async (id: string): Promise<MachinesStatus & { readonly output: string }> => {
+    const response = await post("/machines/update", { id });
+    const text = await response.text().catch(() => "");
+    let value: { message?: unknown; output?: unknown; reason?: unknown } = {};
+    try {
+      value = JSON.parse(text) as typeof value;
+    } catch {
+      // Plain text.
+    }
+    const output = typeof value.output === "string" ? value.output : "";
+    if (!response.ok)
+      throw new SshJoinError(
+        typeof value.message === "string" ? value.message : "Couldn't update the machine",
+        output,
+        value.reason === "ssh-running",
+      );
+    return {
+      ...(await status(new Response(text, { status: 200 }), "Couldn't update the machine")),
+      output,
+    };
   },
   /** The hosts in this computer's SSH config, for the Add over SSH picker. */
   sshHosts: async (): Promise<ReadonlyArray<string>> => {

@@ -65,6 +65,12 @@ describe("MachinePicker", () => {
     const list = await screen.findByRole("listbox");
     expect(within(list).getByRole("option", { name: /build box/ }).textContent).toBe("build box");
     expect(within(list).getByRole("option", { name: /old box/ }).textContent).toContain("offline");
+    // Why, and the fix, on hover: as Settings → Machines says it.
+    expect(
+      within(list)
+        .getByRole("option", { name: /old box/ })
+        .getAttribute("aria-description"),
+    ).toBe("It hasn't dialled in since Gram started.\nCheck gram-host status on old box.");
     expect(within(list).getByRole("option", { name: /new box/ }).textContent).toContain(
       "not signed in",
     );

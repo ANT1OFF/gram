@@ -14,6 +14,7 @@ import {
   type ConfirmedRemoval,
   type CleanUpResult,
   type DiskSpace,
+  LOCAL_HOST_ID,
   type Project,
   type StorageGroup,
   type StoragePr,
@@ -251,7 +252,7 @@ const storageEntry = (
 ): StorageWorktree => {
   const { path, branch } = listed;
   const users = context.openThreads.filter((thread) =>
-    usedCheckoutPaths([thread]).some((used) => samePath(used, path)),
+    usedCheckoutPaths([thread], LOCAL_HOST_ID).some((used) => samePath(used, path)),
   );
   const holder = users.find((thread) => samePath(thread.checkout.path, path)) ?? users[0];
   // Gram's own folder only: a thread may have been opened in a worktree some other tool made.
@@ -424,7 +425,9 @@ const recheckEntry = (
   probe: WorktreeProbe,
   threads: ReadonlyArray<Thread>,
 ): StorageWorktree => {
-  const inUse = usedCheckoutPaths(threads).some((used) => samePath(used, entry.path));
+  const inUse = usedCheckoutPaths(threads, LOCAL_HOST_ID).some((used) =>
+    samePath(used, entry.path),
+  );
   return {
     ...entry,
     group: inUse ? "inUse" : entry.group,
@@ -516,7 +519,7 @@ export const cleanUp = (
           repoTop: entry.repoTop,
           path: entry.path,
           force: !losesNothing(entry),
-          openCheckouts: usedCheckoutPaths(threads),
+          openCheckouts: usedCheckoutPaths(threads, LOCAL_HOST_ID),
         })
         .pipe(Effect.result);
       if (outcome._tag === "Failure") {
