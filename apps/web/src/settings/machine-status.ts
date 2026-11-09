@@ -206,14 +206,16 @@ const UPDATED_SHOWN_MS = 10 * 60_000;
 export function machineUpdateLine(
   machine: JoinedMachine,
   now = Date.now(),
-): { readonly text: string; readonly tone: "progress" | "done" | "failed" } | undefined {
+):
+  | { readonly text: string; readonly tone: "waiting" | "progress" | "done" | "failed" }
+  | undefined {
   const update = machine.update;
   if (update === undefined) return undefined;
   const to = update.release;
   switch (update.phase) {
     case "waiting":
       return {
-        tone: "progress",
+        tone: "waiting",
         text: `Updates to ${to} once ${machine.name} is idle: ${busyText(update.busy)}.`,
       };
     case "downloading":
@@ -243,7 +245,7 @@ export function machineUpdateLine(
     case "rolledBack":
       return {
         tone: "failed",
-        text: `Update to ${to} didn't start, so ${machine.name} went back${machine.release === undefined ? "" : ` to ${machine.release}`}. ${update.message}`,
+        text: `Update to ${to} was rolled back${machine.release === undefined ? "" : ` to ${machine.release}`}: ${update.message}`,
       };
     case "failed":
       return { tone: "failed", text: `Update to ${to} failed: ${update.message}` };

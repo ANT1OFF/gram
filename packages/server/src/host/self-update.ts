@@ -520,7 +520,7 @@ export const superviseUpdate = async (
     return finish({ release: plan.release, outcome: "updated", at: deps.now() });
   }
   return rollBack(
-    `Gram ${plan.release} didn't dial in within ${Math.round((deps.confirmMs ?? CONFIRM_MS) / 60_000)} minutes, so ${plan.from === undefined ? "the machine went back to the app it ran" : `the machine went back to ${plan.from}`}.`,
+    `Gram ${plan.release} didn't dial in within ${Math.round((deps.confirmMs ?? CONFIRM_MS) / 60_000)} minutes.`,
   );
 };
 

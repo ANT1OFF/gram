@@ -3,6 +3,7 @@ import {
   CircleAlert,
   CircleArrowUp,
   CircleCheck,
+  Clock,
   Copy,
   Monitor,
   Plus,
@@ -374,6 +375,8 @@ function MachineRow({
             >
               {updateLine.tone === "failed" ? (
                 <CircleAlert aria-hidden className="size-icon-chip shrink-0" />
+              ) : updateLine.tone === "waiting" ? (
+                <Clock aria-hidden className="size-icon-chip shrink-0" />
               ) : updateLine.tone === "done" ? (
                 <CircleCheck aria-hidden className="size-icon-chip shrink-0 text-success" />
               ) : (

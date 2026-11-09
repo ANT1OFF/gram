@@ -152,8 +152,7 @@ describe("machines page", () => {
           update: {
             phase: "rolledBack",
             release: "1.17.0",
-            message:
-              "Gram 1.17.0 didn't dial in within 2 minutes, so the machine went back to 1.16.0.",
+            message: "Gram 1.17.0 didn't dial in within 2 minutes.",
             at: Date.now(),
           },
         }),
@@ -165,7 +164,7 @@ describe("machines page", () => {
     expect(lines.map((line) => line.textContent)).toEqual([
       "Updating to 1.17.0: downloading, 45%",
       "Updates to 1.17.0 once tower is idle: 1 running turn and 2 busy terminals.",
-      "Update to 1.17.0 didn't start, so pi went back to 1.16.0. Gram 1.17.0 didn't dial in within 2 minutes, so the machine went back to 1.16.0.",
+      "Update to 1.17.0 was rolled back to 1.16.0: Gram 1.17.0 didn't dial in within 2 minutes.",
     ]);
     const rows = screen.getAllByTestId("machines-row");
     // Under way: its Update waits. Waiting or rolled back: it can be asked again.

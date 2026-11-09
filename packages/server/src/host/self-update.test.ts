@@ -385,7 +385,7 @@ describe("the update's supervisor", () => {
     expect(outcome).toMatchObject({
       release: NEW,
       outcome: "rolledBack",
-      message: `Gram ${NEW} didn't dial in within 2 minutes, so the machine went back to ${OLD}.`,
+      message: `Gram ${NEW} didn't dial in within 2 minutes.`,
     });
     // Onto the new app, then back to the one it ran.
     expect(installed).toEqual([plan.next, plan.previous]);
