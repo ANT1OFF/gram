@@ -97,7 +97,7 @@ keeps each machine's last reason since it started, in memory only:
 | It dialled in but didn't answer         | It never said hello, in time or as itself                                    | Rerun the installer there                                   |
 | Connection lost at 14:03                | Its connection closed; it dials again by itself                              | If it stays offline, check Tailscale and `gram-host status` |
 | This Gram's tailnet address changed     | Access over Tailscale moved to another address, which it doesn't dial        | `gram-host leave` there, and add it again                   |
-| Needs update (1.15.0 → 1.15.2)          | Its host speaks another protocol, or doesn't serve what this Gram needs      | **Update**                                                  |
+| Needs update (1.16.0 → 1.17.0)          | Its host speaks another protocol, or doesn't serve what this Gram needs      | **Update**                                                  |
 
 Only a clock its own key signed is taken as its clock. A bad signature can come from anyone on
 your tailnet who knows the machine's id, so it is only ever shown. Nothing from a dial (its
@@ -105,10 +105,10 @@ signature, nonce or key) reaches the page, and the listing stays local-app only.
 
 ## Updating a machine
 
-Each host says which release it runs when it dials in (from 1.15.2; earlier ones say nothing).
+Each host says which release it runs when it dials in (from the release after 1.16.0; earlier ones say nothing).
 What has to match is the **host protocol**, not the release: every release since joined machines
-arrived (1.14.0 to this one) speaks protocol 2 with the same messages, so a 1.15.0 host works with
-a 1.15.2 main Gram. A call added in a later release fails on its own on an older host, with an
+arrived (1.14.0 to 1.16.0 and this one) speaks protocol 2 with the same messages, so a 1.15.0 host
+works with a 1.16.0 main Gram. A call added in a later release fails on its own on an older host, with an
 unknown-request error, and the rest keeps working. Only a host on another protocol, or one that
 doesn't serve everything this Gram needs, is refused; Settings → Machines then shows **Needs
 update** with both releases instead of offline. A host on another release that works shows online,

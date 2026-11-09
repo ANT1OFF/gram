@@ -5,7 +5,7 @@ import type { JoinedMachine, MachinesStatus } from "./machines-api";
 /** How a joined machine is doing, in the words Settings → Machines and the picker share. */
 export interface MachineHealth {
   readonly tone: "online" | "offline" | "waiting" | "update";
-  /** The state in a word or two: "online for 2 hours", "offline", "Needs update (1.15.0 → 1.15.2)". */
+  /** The state in a word or two: "online for 2 hours", "offline", "Needs update (1.16.0 → 1.17.0)". */
   readonly label: string;
   /** Why, for its hover: what this Gram saw last. */
   readonly why?: string;
@@ -13,7 +13,7 @@ export interface MachineHealth {
   readonly fix?: string;
   /**
    * Set when its release isn't this Gram's, so updating it is worth offering: the release it runs
-   * (absent when it didn't say, as hosts before 1.15.2 don't) and this Gram's.
+   * (absent when it didn't say, as hosts of 1.16.0 and earlier don't) and this Gram's.
    */
   readonly update?: { readonly from?: string; readonly to: string };
 }
@@ -38,8 +38,7 @@ export function machineHealth(
     mine !== undefined && machine.release !== mine
       ? { ...(machine.release === undefined ? {} : { from: machine.release }), to: mine }
       : undefined;
-  const runs =
-    machine.release === undefined ? "a Gram from before 1.15.2" : `Gram ${machine.release}`;
+  const runs = machine.release === undefined ? "an earlier Gram" : `Gram ${machine.release}`;
 
   if (!machine.confirmed)
     return {

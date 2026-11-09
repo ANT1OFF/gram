@@ -58,8 +58,8 @@ export const HostHello = Schema.Struct({
   platform: Schema.String,
   pid: Schema.Int,
   /**
-   * The Gram release the host was built from, such as `1.15.2`; absent from a host run from source
-   * and from a host built before it was sent (1.15.1 and earlier). A control plane built before it
+   * The Gram release the host was built from, such as `1.17.0`; absent from a host run from source
+   * and from a host built before it was sent (1.16.0 and earlier). A control plane built before it
    * ignores it, as a struct ignores keys it doesn't name.
    */
   release: Schema.optionalKey(Schema.String),
