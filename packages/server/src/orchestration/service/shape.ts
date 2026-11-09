@@ -250,6 +250,8 @@ export interface AdoptedThread {
 
 /** What `spawn_worker` tells the orchestrator about the worker it made, or had already made. */
 export interface SpawnedWorker {
+  /** The base actually chosen on the worker's machine, when a new branch was made. */
+  readonly base?: string | undefined;
   readonly threadId: ThreadId;
   readonly title: string;
   readonly feature: string;
@@ -602,6 +604,8 @@ export interface OrchestrationShape {
     },
     AppToolError
   >;
+  /** Refuses an incompatible joined-machine selection before the tool raises a card. */
+  checkSpawnMachine(callerId: ThreadId, input: SpawnWorkerInput): Effect.Effect<void, AppToolError>;
   /** Whether this spawn needs a card: a project outside the workspace, or one worker past the cap. Reads only. */
   spawnNeedsApproval(callerId: ThreadId, input: SpawnWorkerInput): Effect.Effect<boolean>;
   /** The card's text for such a spawn. */
