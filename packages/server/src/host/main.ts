@@ -16,6 +16,7 @@ import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { claudeTokenIn } from "./claude-token.ts";
+import { cloneWorktrees } from "./clone-worktrees.ts";
 import { hostHome, hostRepos, readClaudeToken } from "./host-config.ts";
 import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
@@ -93,7 +94,8 @@ const hostService = (
       },
       files: filesOn(proc),
       repos: reposOn(proc, hostRepos()),
-      worktrees: yield* Worktrees,
+      worktrees:
+        hostId === LOCAL_HOST_ID ? yield* Worktrees : cloneWorktrees(proc, yield* Worktrees),
       git: gitOn(proc),
       terminals: yield* terminalsOnHost,
       sessions: yield* sessionsOnHost(agents.get),
