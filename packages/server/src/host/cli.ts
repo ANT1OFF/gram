@@ -211,6 +211,22 @@ const joined = (home: string) => {
 };
 
 /**
+ * Leaves the Gram this machine joined: stops its service (`stopService`), then forgets the join
+ * and its key. When the service may still be running, the join is kept, so the machine still has
+ * what it needs to stop it, and nothing claims it left.
+ */
+export const leave = (home: string, stopService: Effect.Effect<void, Error> | undefined) =>
+  (stopService ?? Effect.void).pipe(
+    Effect.andThen(Effect.sync(() => forgetJoined(home))),
+    Effect.andThen(say("Left. Remove this machine on the main Gram too.")),
+    Effect.catch((error) =>
+      fail(
+        `${error.message} This machine is still joined; stop its host, then run \`gram-host leave\` again.`,
+      ),
+    ),
+  );
+
+/**
  * The `gram-host` commands. `service` is what the host serves on each connection, with `layer`
  * the services it runs on, built once for as long as `run` runs.
  */
@@ -246,6 +262,7 @@ export const runCli = <R>(
           case "uninstall":
             return uninstallService(platform).pipe(
               Effect.andThen(say("The background service is removed.")),
+              Effect.catch((error) => fail(error.message)),
             );
           case "status":
             return serviceRunning(platform).pipe(
@@ -269,13 +286,10 @@ export const runCli = <R>(
               (yield* serviceRunning(platform)) ? "Service: running." : "Service: not running.",
             );
         });
-      case "leave":
-        return Effect.gen(function* () {
-          const platform = servicePlatform();
-          if (platform !== undefined) yield* uninstallService(platform);
-          forgetJoined(home);
-          yield* say("Left. Remove this machine on the main Gram too.");
-        });
+      case "leave": {
+        const platform = servicePlatform();
+        return leave(home, platform === undefined ? undefined : uninstallService(platform));
+      }
       default:
         return say(USAGE);
     }

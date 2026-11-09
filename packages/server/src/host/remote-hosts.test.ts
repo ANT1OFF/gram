@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { HOST_PROTOCOL_VERSION, HostId } from "@gram/contracts";
 import * as Context from "effect/Context";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -52,26 +53,75 @@ const service = (hostId: string): Effect.Effect<HostService, never, Scope.Scope>
     } as unknown as HostService;
   });
 
-/** The machines' two routes on loopback, answering as if over the tailnet address. */
-const served = Effect.gen(function* () {
-  const hosts = yield* RemoteHosts.make(memoryMachineStore());
-  const context = yield* Layer.build(
-    HttpRouter.serve(
-      HttpRouter.add(
-        "*",
-        "/host/*",
-        Effect.gen(function* () {
-          const request = yield* HttpServerRequest.HttpServerRequest;
-          const remote = { host: request.headers["host"], origin: ORIGIN } as RemoteAccess;
-          return yield* hostRoute(hosts, remote, authTarget(request.url)?.path ?? "");
-        }),
+/**
+ * The machines' two routes on loopback, answering as if over the tailnet address. `duringUpgrade`
+ * runs as a dial's WebSocket upgrade does, after the route let it through and before it attaches.
+ */
+const servedWith = (duringUpgrade?: (hosts: RemoteHosts["Service"]) => void) =>
+  Effect.gen(function* () {
+    const hosts = yield* RemoteHosts.make(memoryMachineStore());
+    /** How many dials the route has finished with. */
+    let finished = 0;
+    const context = yield* Layer.build(
+      HttpRouter.serve(
+        HttpRouter.add(
+          "*",
+          "/host/*",
+          Effect.gen(function* () {
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const remote = { host: request.headers["host"], origin: ORIGIN } as RemoteAccess;
+            const upgrading: HttpServerRequest.HttpServerRequest =
+              duringUpgrade === undefined
+                ? request
+                : Object.create(request, {
+                    upgrade: {
+                      value: Effect.andThen(
+                        Effect.sync(() => duringUpgrade(hosts)),
+                        request.upgrade,
+                      ),
+                    },
+                  });
+            return yield* hostRoute(hosts, remote, authTarget(request.url)?.path ?? "").pipe(
+              Effect.provideService(HttpServerRequest.HttpServerRequest, upgrading),
+              Effect.ensuring(
+                Effect.sync(() => {
+                  if (authTarget(request.url)?.path === "/host/connect") finished += 1;
+                }),
+              ),
+            );
+          }),
+        ),
+        { disableListenLog: true, disableLogger: true },
+      ).pipe(
+        Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })),
       ),
-      { disableListenLog: true, disableLogger: true },
-    ).pipe(Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 }))),
-  ).pipe(Effect.orDie);
-  const port = serverPort(Context.get(context, HttpServer.HttpServer));
-  return { hosts, port, base: `http://127.0.0.1:${port}` };
-});
+    ).pipe(Effect.orDie);
+    const port = serverPort(Context.get(context, HttpServer.HttpServer));
+    return { hosts, port, base: `http://127.0.0.1:${port}`, finished: () => finished };
+  });
+
+const served = servedWith();
+
+/** A host that holds back its hello by `delay`. */
+const slowHello = (dial: DialOptions, hostId: string, delay: Duration.Input) =>
+  Effect.gen(function* () {
+    const socket = yield* Socket.makeWebSocket(dial.url!, {
+      headers: signedConnectHeaders(dial.key, dial.origin, dial.hostId),
+    });
+    let first = true;
+    const held: Socket.Socket = {
+      ...socket,
+      reader: Effect.map(socket.reader, (reader) => ({
+        ...reader,
+        pull: Effect.suspend(() => {
+          if (!first) return reader.pull;
+          first = false;
+          return Effect.andThen(Effect.sleep(delay), reader.pull);
+        }),
+      })),
+    };
+    yield* serveHost(held, yield* service(hostId));
+  }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
 
 /** The machine's connection, once it has dialled in. */
 const online = (hosts: RemoteHosts["Service"], hostId: string) =>
@@ -191,26 +241,7 @@ describe("joined machines over the network", () => {
       Effect.gen(function* () {
         const { hosts, base } = yield* served;
         const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
-        // A host that holds back its hello for three seconds.
-        const slow = Effect.gen(function* () {
-          const socket = yield* Socket.makeWebSocket(dial.url!, {
-            headers: signedConnectHeaders(dial.key, dial.origin, dial.hostId),
-          });
-          let first = true;
-          const held: Socket.Socket = {
-            ...socket,
-            reader: Effect.map(socket.reader, (reader) => ({
-              ...reader,
-              pull: Effect.suspend(() => {
-                if (!first) return reader.pull;
-                first = false;
-                return Effect.andThen(Effect.sleep("3 seconds"), reader.pull);
-              }),
-            })),
-          };
-          yield* serveHost(held, yield* service(hostId));
-        }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
-        yield* Effect.forkScoped(slow);
+        yield* Effect.forkScoped(slowHello(dial, hostId, "3 seconds"));
         yield* Effect.sleep("1 second");
         hosts.remove(HostId.make(hostId));
         yield* Effect.sleep("4 seconds");
@@ -235,5 +266,62 @@ describe("joined machines over the network", () => {
       expect(hosts.list()).toEqual([expect.objectContaining({ id: hostId, confirmed: true })]);
       expect(hosts.list()[0]).not.toHaveProperty("onlineSince");
     }).pipe(Effect.scoped),
+  );
+
+  // Joined-machines audit A1: a dial let through, then access turned off or moved while its
+  // upgrade ran, came online over the address that no longer had access.
+  for (const [what, moved] of [
+    ["turned off", undefined],
+    ["moved to another address", "https://other.example-tailnet.ts.net"],
+  ] as const)
+    it.live(`keeps a dial offline when access is ${what} while it upgrades`, () =>
+      Effect.gen(function* () {
+        let move = false;
+        const { hosts, base, finished } = yield* servedWith((them) => {
+          if (move) them.keepOrigin(moved);
+        });
+        const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+        move = true;
+        const fiber = yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+        while (finished() === 0 && hosts.list()[0]?.onlineSince === undefined)
+          yield* Effect.sleep("50 millis");
+        expect(hosts.list()[0]).not.toHaveProperty("onlineSince");
+        // Its socket is closed, so the machine dials again rather than wait on it.
+        yield* Fiber.join(fiber);
+        expect(Effect.runSync(Effect.exit(hosts.connection(HostId.make(hostId))))._tag).toBe(
+          "Failure",
+        );
+      }).pipe(Effect.scoped, Effect.timeout("10 seconds")),
+    );
+
+  it.live("still lets a dial in over the address access was kept on", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* served;
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      hosts.keepOrigin(undefined);
+      hosts.keepOrigin(ORIGIN);
+      yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+      yield* online(hosts, hostId);
+      expect(hosts.list()[0]).toHaveProperty("onlineSince");
+    }).pipe(Effect.scoped),
+  );
+
+  it.live(
+    "ends a dial still saying hello when access is turned off, without waiting for its hello",
+    () =>
+      Effect.gen(function* () {
+        const { hosts, base, finished } = yield* served;
+        const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+        yield* Effect.forkScoped(slowHello(dial, hostId, "4 seconds"));
+        yield* Effect.sleep("1 second");
+        expect(finished()).toBe(0);
+        hosts.keepOrigin(undefined);
+        // Ended at once, not when the held hello arrives three seconds later.
+        yield* Effect.sleep("1 second");
+        expect(finished()).toBe(1);
+        yield* Effect.sleep("3 seconds");
+        expect(hosts.list()[0]).not.toHaveProperty("onlineSince");
+      }).pipe(Effect.scoped),
+    20_000,
   );
 });

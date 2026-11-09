@@ -51,7 +51,19 @@ export type JoinResult =
 
 export type ConnectResult =
   | { readonly kind: "ok"; readonly machine: PairedMachine }
-  | { readonly kind: "refused"; readonly status: 401 | 403; readonly message: string };
+  | { readonly kind: "refused"; readonly status: 401 | 403 | 503; readonly message: string };
+
+/** An accepted dial's nonce, and when its dial falls out of the acceptance window. */
+export type DialNonce = readonly [nonce: string, until: number];
+
+/**
+ * The nonces of dials accepted within their window, kept across restarts: a dial's signed headers
+ * replayed after the main Gram restarts would otherwise be taken as new.
+ */
+export interface DialNonceStore {
+  readonly read: () => DialNonce[];
+  readonly write: (nonces: ReadonlyArray<DialNonce>) => void;
+}
 
 const NAME = /^[\p{L}\p{N} ._'-]{1,64}$/u;
 const PLATFORM = /^[a-z0-9]{1,16}$/;
@@ -103,6 +115,46 @@ export const fileMachineStore = (dataDir: string): PairedMachineStore => {
   };
 };
 
+const isNonce = (value: unknown): value is DialNonce =>
+  Array.isArray(value) &&
+  value.length === 2 &&
+  typeof value[0] === "string" &&
+  /^[a-f0-9]{32}$/.test(value[0]) &&
+  Number.isSafeInteger(value[1]);
+
+/** The accepted dials' nonces in `<dataDir>/remote-access/dial-nonces.json`, as the machines are. */
+export const fileNonceStore = (dataDir: string): DialNonceStore => {
+  const file = privateJsonFile(dataDir, "dial-nonces.json", 256 * 1024);
+  return {
+    read: () => {
+      const value = file.read();
+      if (value === undefined) return [];
+      const record = value as Record<string, unknown> | null;
+      if (
+        typeof record !== "object" ||
+        record === null ||
+        record["version"] !== 1 ||
+        !Array.isArray(record["nonces"]) ||
+        record["nonces"].length > NONCES_KEPT ||
+        !record["nonces"].every(isNonce)
+      )
+        throw new Error("Dial nonce storage is invalid");
+      return record["nonces"] as DialNonce[];
+    },
+    write: (nonces) => file.write({ version: 1, nonces }),
+  };
+};
+
+export const memoryNonceStore = (initial: ReadonlyArray<DialNonce> = []) => {
+  let nonces = [...initial];
+  return {
+    read: () => [...nonces],
+    write: (next: ReadonlyArray<DialNonce>) => {
+      nonces = [...next];
+    },
+  } satisfies DialNonceStore;
+};
+
 export const memoryMachineStore = (initial: ReadonlyArray<PairedMachine> = []) => {
   let machines = [...initial];
   return {
@@ -118,11 +170,26 @@ export const memoryMachineStore = (initial: ReadonlyArray<PairedMachine> = []) =
  * phone's pairing link is, and each machine's key pinned when it joins. A machine dials in only
  * with a fresh dial signed by that key, and only once a person here confirmed its fingerprint.
  */
-export const createPairedMachines = (store: PairedMachineStore, now: () => number = Date.now) => {
+export const createPairedMachines = (
+  store: PairedMachineStore,
+  now: () => number = Date.now,
+  nonceStore: DialNonceStore = memoryNonceStore(),
+) => {
   let machines = store.read();
   let invitation: { code: string; origin: string; expiresAt: number } | undefined;
-  /** Recent dials' nonces with when they stop mattering. */
+  /** Recent dials' nonces with when they stop mattering, as the last run left them. */
   const nonces = new Map<string, number>();
+  /**
+   * Until when every dial is refused, when the last run's nonces can't be read: by then any dial
+   * it accepted is out of its window, so none of them can be replayed.
+   */
+  let refuseUntil = 0;
+  try {
+    const at = now();
+    for (const [nonce, until] of nonceStore.read()) if (until > at) nonces.set(nonce, until);
+  } catch {
+    refuseUntil = now() + 2 * CONNECT_SKEW_MS;
+  }
   const save = (next: PairedMachine[]) => {
     store.write(next);
     machines = next;
@@ -148,12 +215,18 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
    * nonces still in their window, which refuses the dial rather than forget one that could then
    * be replayed.
    */
-  const record = (nonce: string, until: number): "ok" | "replayed" | "full" => {
+  const record = (nonce: string, until: number): "ok" | "replayed" | "full" | "unsaved" => {
     const at = now();
     for (const [kept, expires] of nonces) if (expires <= at) nonces.delete(kept);
     if (nonces.has(nonce)) return "replayed";
     if (nonces.size >= NONCES_KEPT) return "full";
+    // Kept in memory even when saving fails, so this run still refuses its replay.
     nonces.set(nonce, until);
+    try {
+      nonceStore.write([...nonces]);
+    } catch {
+      return "unsaved";
+    }
     return "ok";
   };
   return {
@@ -233,6 +306,8 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
       if (machine === undefined || key === undefined)
         return { kind: "refused", status: 401, message: "unauthorized: machine not joined" };
       const at = now();
+      if (at < refuseUntil)
+        return { kind: "refused", status: 503, message: "unavailable: dial again shortly" };
       if (Math.abs(at - claim.time) > CONNECT_SKEW_MS)
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       if (!verifyConnect(key, claim, claim.signature))
@@ -243,6 +318,9 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
         return { kind: "refused", status: 401, message: "unauthorized: dial replayed" };
       if (nonce === "full")
         return { kind: "refused", status: 401, message: "unauthorized: too many dials; wait" };
+      // Unsaved, it could be replayed after a restart: refused rather than taken on that risk.
+      if (nonce === "unsaved")
+        return { kind: "refused", status: 503, message: "unavailable: dial couldn't be recorded" };
       if (machine.confirmedAt === undefined)
         return { kind: "refused", status: 403, message: "forbidden: confirm this machine first" };
       return { kind: "ok", machine };

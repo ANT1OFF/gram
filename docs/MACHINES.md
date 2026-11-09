@@ -133,7 +133,9 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
 - **Every dial is signed.** A dial carries the machine's id, the time, a fresh nonce and a
   signature over them and the main Gram's address. The main Gram refuses one that isn't signed by
   the machine's pinned key, is more than two minutes off, repeats a nonce, or comes from a machine
-  that hasn't been confirmed.
+  that hasn't been confirmed. Accepted nonces are kept in `remote-access/dial-nonces.json` until
+  their two minutes are up, so a dial replayed after the main Gram restarts is refused too; when
+  that file can't be read, every dial is refused for four minutes after the start.
 - **Not a browser.** The install, join and dial endpoints answer only requests addressed to the tailnet
   name (which Tailscale Serve forwards over loopback), and refuse any request with an `Origin`, so
   no web page can reach them. They take no browser cookie, and a browser's cookie grants nothing
@@ -144,8 +146,12 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
   Threads on this machine keep to the loopback endpoint.
 - **Removing a machine** (Settings → Machines → Remove) forgets its key and closes its connection at
   once, including one still connecting. Turning access over Tailscale off, or onto another
-  address, closes every joined machine's connection; the machines stay joined and dial in again
-  once it is back. Up to 16 machines can be joined.
+  address, closes every joined machine's connection, including a dial let in just before and still
+  connecting; the machines stay joined and dial in again once it is back. Up to 16 machines can be
+  joined.
+- **Leaving** (`gram-host leave`) forgets the join only once the background service has stopped,
+  or was never installed. When `launchctl` or `systemctl` can't stop it or say it stopped, the join
+  and key stay, and it says the host may still be running.
 
 The listing (`POST /machines/list`), join link, confirm and remove endpoints answer only the local
 app, never a paired phone or a joined machine, with the same Origin rules as phone access settings.

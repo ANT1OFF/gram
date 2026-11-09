@@ -125,9 +125,11 @@ export const hostRoute = (
     if (request.method !== "GET") return refuse("forbidden");
     const decision = hosts.machines.authorizeConnect(remote.origin, request.headers);
     if (decision.kind === "refused") return refuse(decision.message, decision.status);
+    // Pinned before the upgrade yields, so access turned off or moved during it drops the dial.
+    const dial = hosts.admit(decision.machine, remote.origin);
     const socket = yield* request.upgrade.pipe(Effect.option);
     if (socket._tag === "None") return refuse("WebSocket required", 400);
-    yield* hosts.attach(decision.machine, socket.value, remote.origin);
+    yield* hosts.attach(dial, socket.value);
     return HttpServerResponse.empty();
   });
 
