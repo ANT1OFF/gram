@@ -6,10 +6,12 @@
 ### Features
 
 * fold memory changes into the tool run around them ([#311](https://github.com/ANT1OFF/gram/issues/311)) ([1650037](https://github.com/ANT1OFF/gram/commit/1650037a7f9f150c254edb211cb7e5505765d869))
+* pick a machine where a thread starts, and show and fix its Claude sign-in ([#318](https://github.com/ANT1OFF/gram/issues/318)) ([e35ec15](https://github.com/ANT1OFF/gram/commit/e35ec15cbac243c6908bfbad6e51a48dfe4c421f))
 
 
 ### Bug Fixes
 
+* keep a joined machine's message when its send or steer doesn't arrive ([#327](https://github.com/ANT1OFF/gram/issues/327)) ([18b89aa](https://github.com/ANT1OFF/gram/commit/18b89aaa4135787634bd930ecc23ef37252a6ea2))
 * keep a joined machine's sessions running through a dropped connection ([81ed140](https://github.com/ANT1OFF/gram/commit/81ed140be95a531beb0ffa1c99c27f06a3d98d5d))
 * stop asking this disk about a joined machine's folders, and key checkouts once per sweep ([b20f7f6](https://github.com/ANT1OFF/gram/commit/b20f7f6d97891d900655dac55508acc67d2021e7))
 

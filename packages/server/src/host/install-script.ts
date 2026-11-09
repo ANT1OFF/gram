@@ -90,6 +90,24 @@ usable() {
   [ -z "$VERSION" ] || [ "$2" = "$VERSION" ]
 }
 
+# Check the actual entry and its imported resources before publishing or reusing a cache.
+# --help loads the host without joining, starting a service or reading a saved join.
+host_app() {
+  [ -x "$1" ] && [ -e "$2/app.asar" ] || return 1
+  ELECTRON_RUN_AS_NODE=1 "$1" "$2/app.asar/out/server/gram-host.js" --help </dev/null >/dev/null 2>&1
+}
+
+# Repair an owner-created directory from an older installer, but never follow a link or take
+# over another user's folder. Do this before making children or consuming the invitation.
+private_home() {
+  [ ! -L "$HOST_HOME" ] || die "The host folder must not be a symbolic link."
+  (umask 077; mkdir -p "$HOST_HOME")
+  # Both macOS sh and Linux sh test ownership directly; stat's flags differ across platforms
+  # and a user's PATH can put GNU stat ahead of macOS's BSD stat.
+  [ -O "$HOST_HOME" ] || die "The host folder must belong to this user."
+  chmod 700 "$HOST_HOME"
+}
+
 mac_version() {
   /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$1/Contents/Info.plist" 2>/dev/null || true
 }
@@ -106,6 +124,8 @@ main() {
     Darwin)
       [ "$(uname -m)" = arm64 ] || die "Gram for macOS runs on Apple silicon only."
       HOST_HOME="$HOME/Library/Application Support/Gram Host"
+      case "\${GRAM_HOST_HOME:-}" in /*) HOST_HOME="$GRAM_HOST_HOME" ;; esac
+      private_home
       APPS="$HOST_HOME/apps"
       mkdir -p "$APPS"
       for app in "/Applications/Gram.app" "$HOME/Applications/Gram.app"; do
@@ -115,12 +135,18 @@ main() {
       done
       if [ -z "$BIN" ]; then
         own="$APPS/$VERSION/Gram.app"
-        if [ -z "$VERSION" ] || [ ! -x "$own/Contents/MacOS/Gram" ]; then
+        if [ -z "$VERSION" ] || [ ! -f "$APPS/$VERSION/.complete" ] || ! host_app "$own/Contents/MacOS/Gram" "$own/Contents/Resources"; then
           zip="gram_\${VERSION}_darwin-arm64_signed.zip"
           download "$zip"
+          stage=$(mktemp -d "$APPS/.extract-XXXXXX")
+          trap 'rm -rf "$stage"' EXIT
+          trap 'exit 1' HUP INT TERM
+          ditto -x -k "$APPS/$zip" "$stage" || die "Couldn't unpack $zip."
+          host_app "$stage/Gram.app/Contents/MacOS/Gram" "$stage/Gram.app/Contents/Resources" || die "The extracted app is incomplete. Run the installer again."
+          touch "$stage/.complete"
           rm -rf "$APPS/$VERSION"
-          mkdir -p "$APPS/$VERSION"
-          ditto -x -k "$APPS/$zip" "$APPS/$VERSION" || die "Couldn't unpack $zip."
+          mv "$stage" "$APPS/$VERSION"
+          trap - EXIT HUP INT TERM
           rm -f "$APPS/$zip"
         fi
         BIN="$own/Contents/MacOS/Gram"; RESOURCES="$own/Contents/Resources"
@@ -129,6 +155,8 @@ main() {
     Linux)
       [ "$(uname -m)" = x86_64 ] || die "Gram for Linux runs on x64 only."
       case "\${XDG_CONFIG_HOME:-}" in /*) HOST_HOME="$XDG_CONFIG_HOME/gram-host" ;; *) HOST_HOME="$HOME/.config/gram-host" ;; esac
+      case "\${GRAM_HOST_HOME:-}" in /*) HOST_HOME="$GRAM_HOST_HOME" ;; esac
+      private_home
       # The app is large and can be downloaded again, so it goes with data, not the host's config.
       case "\${XDG_DATA_HOME:-}" in /*) APPS="$XDG_DATA_HOME/gram-host/apps" ;; *) APPS="$HOME/.local/share/gram-host/apps" ;; esac
       mkdir -p "$APPS"
@@ -137,14 +165,21 @@ main() {
         BIN=/opt/Gram/gram; RESOURCES=/opt/Gram/resources
       else
         own="$APPS/$VERSION"
-        if [ -z "$VERSION" ] || [ ! -x "$own/gram" ]; then
+        if [ -z "$VERSION" ] || [ ! -f "$own/.complete" ] || ! host_app "$own/gram" "$own/resources"; then
           image="gram_\${VERSION}_x86_64.AppImage"
           download "$image"
           chmod +x "$APPS/$image"
           # Unpacked, so it needs no FUSE and starts no desktop: the host is the app's binary as Node.
-          rm -rf "$APPS/squashfs-root" "$own"
-          (cd "$APPS" && "./$image" --appimage-extract >/dev/null) || die "Couldn't unpack $image."
-          mv "$APPS/squashfs-root" "$own"
+          stage=$(mktemp -d "$APPS/.extract-XXXXXX")
+          trap 'rm -rf "$stage"' EXIT
+          trap 'exit 1' HUP INT TERM
+          (cd "$stage" && "$APPS/$image" --appimage-extract >/dev/null) || die "Couldn't unpack $image."
+          host_app "$stage/squashfs-root/gram" "$stage/squashfs-root/resources" || die "The extracted app is incomplete. Run the installer again."
+          touch "$stage/squashfs-root/.complete"
+          rm -rf "$own"
+          mv "$stage/squashfs-root" "$own"
+          rm -rf "$stage"
+          trap - EXIT HUP INT TERM
           rm -f "$APPS/$image"
         fi
         BIN="$own/gram"; RESOURCES="$own/resources"
@@ -153,8 +188,6 @@ main() {
     *) die "Only macOS and Linux machines can join." ;;
   esac
 
-  # As gram-host finds its folder: GRAM_HOST_HOME first, when it is absolute.
-  case "\${GRAM_HOST_HOME:-}" in /*) HOST_HOME="$GRAM_HOST_HOME" ;; esac
   # Joined to another Gram: that join stands, and this link isn't used.
   if [ -f "$HOST_HOME/host.json" ] && ! grep -qF "\\"$ORIGIN\\"" "$HOST_HOME/host.json"; then
     die "This machine already joined another Gram. Run \\\`gram-host leave\\\` there first to join $ORIGIN."

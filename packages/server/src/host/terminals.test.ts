@@ -2,7 +2,12 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
-import type { TerminalEvent, TerminalId, ThreadId } from "@gram/contracts";
+import {
+  type TerminalEvent,
+  type TerminalId,
+  type ThreadId,
+  ThreadNotFound,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -164,6 +169,63 @@ describe.skipIf(process.platform === "win32")("terminals through the host proces
         expect(yield* terminals.list(THREAD)).toEqual([]);
         yield* terminals.open({ threadId: THREAD, cols: 80, rows: 24, command: "true" });
         expect(opened).toEqual(["true"]);
+      }).pipe(Effect.scoped),
+    30_000,
+  );
+
+  it.live(
+    "takes up the shells a host kept for threads it still has, and closes the ones nothing owns",
+    () =>
+      Effect.gen(function* () {
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), "gram-host-terminals-")));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+        const host = yield* spawnLocalHost;
+        const GONE = "thread-closed-meanwhile" as ThreadId;
+        // Opened by a main Gram before this one: nothing here remembers them.
+        const shell = { cwd: dir, cols: 80, rows: 24, shell: "/bin/sh" };
+        const kept = yield* host.terminals.open(
+          { ...shell, threadId: THREAD },
+          { path: process.env["PATH"] ?? "" },
+        );
+        const orphan = yield* host.terminals.open(
+          { ...shell, threadId: GONE },
+          { path: process.env["PATH"] ?? "" },
+        );
+        const opened: Array<string> = [];
+        const terminals = yield* terminalsThroughHost(
+          host.terminals,
+          host.gone,
+          serverTerminals(opened),
+          {
+            // Only THREAD is still stored and placed here.
+            threadFolder: (threadId) =>
+              threadId === THREAD
+                ? Effect.succeed(dir)
+                : Effect.fail(new ThreadNotFound({ threadId })),
+            defaultFolder: Effect.succeed(undefined),
+            settingsShell: Effect.succeed(undefined),
+            path: Effect.sync(() => process.env["PATH"] ?? ""),
+            closedThreads: Stream.empty,
+          },
+        );
+        const listed = () =>
+          host.terminals.list(undefined).pipe(Effect.map((all) => all.map((t) => t.terminalId)));
+        // The shell whose thread is gone is closed as this connection starts.
+        yield* Effect.gen(function* () {
+          while ((yield* listed()).includes(orphan.terminalId)) yield* Effect.sleep("25 millis");
+        }).pipe(Effect.timeout("20 seconds"));
+        // The kept one's input reaches it on the host, not the server's terminals.
+        const watching = yield* terminals
+          .subscribe(kept.terminalId)
+          .pipe(Stream.runCollect, Effect.forkScoped);
+        yield* terminals.input(kept.terminalId, "echo adopted-$((6*7)); exit\n");
+        const events = yield* Fiber.join(watching).pipe(Effect.timeout("20 seconds"));
+        expect(output(events)).toContain("adopted-42");
+        // And its close reaches it there too. Before this change both went to the server's
+        // terminals, and the host's shell ran on.
+        yield* terminals.close(kept.terminalId);
+        expect(yield* listed()).toEqual([]);
+        expect(opened).toEqual([]);
       }).pipe(Effect.scoped),
     30_000,
   );
