@@ -29,6 +29,7 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import type { CheckoutServiceShape } from "../runtime/hooks.ts";
 import type { Terminals } from "../terminal/terminals.ts";
 import type { HostFiles } from "./files.ts";
+import { noteForeignCheckouts } from "./foreign-paths.ts";
 import type { WorkerHost, WorkerHostsShape } from "./worker-host.ts";
 
 /** How often an offline machine's watch looks for it again. */
@@ -55,13 +56,16 @@ const checkoutsOf = (thread: Thread): ReadonlyArray<Checkout> => [
  */
 const machinePaths = (threads: ReadonlyArray<Thread>) => {
   const paths = new Map<string, HostId>();
-  for (const thread of threads)
+  for (const thread of threads) {
+    // Before the keys below, so they are taken as written rather than looked up on this disk.
+    noteForeignCheckouts(thread);
     for (const checkout of checkoutsOf(thread)) {
       const host = hostOf(checkout);
       if (host === LOCAL_HOST_ID) continue;
       paths.set(samePathKey(checkout.path), host);
       if (checkout.repoRoot !== undefined) paths.set(samePathKey(checkout.repoRoot), host);
     }
+  }
   return paths;
 };
 

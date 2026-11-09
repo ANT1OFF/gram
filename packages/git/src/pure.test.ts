@@ -9,10 +9,13 @@ import { composeBranch, randomWorktreeName } from "./names.ts";
 import {
   basename,
   expandHome,
+  forgetForeignPathsForTest,
   fromGitPath,
+  isForeignPath,
   isInside,
   isPhysicallyInside,
   isStrictlyInside,
+  noteForeignPath,
   physicalPathAsync,
   realPathOrOwned,
   relativeInside,
@@ -259,6 +262,51 @@ describe("paths", () => {
       }
     },
   );
+
+  it.skipIf(process.platform === "win32")(
+    "takes another machine's paths as written, never asking this disk about them",
+    async () => {
+      const base = tempFolder();
+      try {
+        fs.mkdirSync(nodePath.join(base, "real"));
+        fs.symlinkSync(nodePath.join(base, "real"), nodePath.join(base, "alias"));
+        const alias = nodePath.join(base, "alias");
+        // Before: a local link resolves, as for any path here.
+        expect(physicalPath(nodePath.join(alias, "wt"))).toBe(nodePath.join(base, "real", "wt"));
+        noteForeignPath(alias);
+        expect(isForeignPath(nodePath.join(alias, "wt", "deeper"))).toBe(true);
+        expect(isForeignPath(nodePath.join(base, "real"))).toBe(false);
+        expect(isForeignPath(base)).toBe(false);
+        // After: the link is another machine's folder, so nothing below it is resolved here.
+        expect(physicalPath(nodePath.join(alias, "wt"))).toBe(nodePath.join(alias, "wt"));
+        expect(await physicalPathAsync(nodePath.join(alias, "wt"))).toBe(
+          nodePath.join(alias, "wt"),
+        );
+        expect(samePathKey(`${alias}/wt/../wt2/`)).toBe(nodePath.join(alias, "wt2"));
+        expect(samePath(nodePath.join(alias, "wt"), nodePath.join(base, "real", "wt"))).toBe(false);
+        // A relative path is never another machine's.
+        noteForeignPath("relative/dir");
+        expect(isForeignPath("relative/dir")).toBe(false);
+      } finally {
+        forgetForeignPathsForTest();
+        fs.rmSync(base, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("is fast for a host's paths under an automounted /home", () => {
+    // The stall this guards: on macOS each realpath under /home is a trip to automountd.
+    noteForeignPath("/home/someone/.config/gram-host/repos");
+    try {
+      const path = "/home/someone/.config/gram-host/repos/gram/.worktrees/feat-x/packages/server";
+      const started = performance.now();
+      for (let i = 0; i < 1_000; i += 1) samePathKey(path);
+      expect(samePathKey(path)).toBe(nodePath.resolve(path));
+      expect(performance.now() - started).toBeLessThan(500);
+    } finally {
+      forgetForeignPathsForTest();
+    }
+  });
 
   it.skipIf(process.platform === "win32")(
     "places a path inside a root by where both really are, linked or not",

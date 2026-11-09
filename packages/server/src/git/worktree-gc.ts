@@ -32,8 +32,10 @@ import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import {
   combinePrFacts,
+  effectiveCheckout,
   FINISHED_STATES,
   headPushed,
+  isLocalHost,
   mergedAndDone,
   prFactsOf,
   reopenedSinceMerge,
@@ -195,8 +197,8 @@ export interface SweepDue {
  * The steps due for `facts.thread` at `now`, or `undefined` when the sweep must never touch it: an
  * orchestrator, a plain thread outside the repo's `.worktrees/` folder, not finished, busy (background
  * tasks, subagents or terminal programs included) or waiting on the user, in the main checkout,
- * spanning repos, following its agent into another checkout, or in a checkout another thread holds
- * or follows its agent into.
+ * spanning repos, following its agent into another checkout, in a checkout another thread holds
+ * or follows its agent into, or on another machine.
  */
 export const sweepDue = (
   facts: SweepFacts,
@@ -206,6 +208,9 @@ export const sweepDue = (
   const { thread } = facts;
   const { checkout } = thread;
   if (thread.role !== undefined) return undefined;
+  // A worktree on another machine is that machine's to judge: here its folder reads as gone, and
+  // nothing about it may be asked of this disk.
+  if (!isLocalHost(checkout) || !isLocalHost(effectiveCheckout(thread))) return undefined;
   const worker = thread.spawnedBy !== undefined;
   // A thread of any kind, a worker adopting one included, may work in a worktree some other tool
   // or the user made: only one in Gram's own `.worktrees/` folder is the sweep's to take.
