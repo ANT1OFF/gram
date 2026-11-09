@@ -6,7 +6,8 @@ import { useNow } from "@/lib/use-now";
 
 /**
  * The marker's line: `Session restarted · config reloaded · 14:32`, or `· MCP config changed ·` for
- * a restart Gram made on its own, with the date before the time when it wasn't today
+ * a restart Gram made on its own, or `cachyos restarted · continued the turn · 14:32` where a
+ * joined machine restarted under the session, with the date before the time when it wasn't today
  * (`formatStamp`). `intl` pins the zone, for tests.
  */
 export const sessionRestartLabel = (
@@ -14,9 +15,22 @@ export const sessionRestartLabel = (
   now: number,
   intl: { readonly timeZone?: string } = {},
 ): string => {
+  const at = formatStamp(restart.at, now, intl);
+  const machine = restart.machineRestart;
+  if (machine !== undefined) {
+    const what = machine.continued === "turn" ? "continued the turn" : "resumed the session";
+    return `${machine.machine} restarted · ${what} · ${at}`;
+  }
   const why = restart.reason === "mcpConfig" ? "MCP config changed" : "config reloaded";
-  return `Session restarted · ${why} · ${formatStamp(restart.at, now, intl)}`;
+  return `Session restarted · ${why} · ${at}`;
 };
+
+const restartTitle = (restart: SessionRestartData): string =>
+  restart.machineRestart !== undefined
+    ? `${restart.machineRestart.machine} restarted while this agent ran there, so Gram resumed the same conversation on it and carried on.`
+    : restart.reason === "mcpConfig"
+      ? "An MCP server or connector this agent uses changed, so its session was restarted on the same conversation once it was idle, to load it."
+      : "The agent's session was restarted on the same conversation, and read its settings, MCP servers, connectors, instructions and skills again.";
 
 /** Where the agent session was restarted to reload its config, as a quiet divider like a compaction's. */
 export function SessionRestartMarker({ restart }: { restart: SessionRestartData }) {
@@ -27,11 +41,7 @@ export function SessionRestartMarker({ restart }: { restart: SessionRestartData 
     <div
       role="separator"
       aria-label={label}
-      title={
-        restart.reason === "mcpConfig"
-          ? "An MCP server or connector this agent uses changed, so its session was restarted on the same conversation once it was idle, to load it."
-          : "The agent's session was restarted on the same conversation, and read its settings, MCP servers, connectors, instructions and skills again."
-      }
+      title={restartTitle(restart)}
       data-testid="session-restart"
       className="my-3 flex w-full items-center gap-3 text-meta text-muted-foreground"
     >

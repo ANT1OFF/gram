@@ -185,6 +185,15 @@ export interface Runtime {
   /** `whileAtRest` is working on its checkout, so sends are turned away until it ends. */
   reserved: boolean;
   endedReason: string | undefined;
+  /** The joined machine the session's `ended` said restarted under it (`EndedEvent.restartedMachine`). */
+  restartedMachine: string | undefined;
+  /**
+   * The joined machine whose restart the next session to open resumes after, so it puts that in the
+   * transcript; and whether a cut turn is continued or only the queue goes on.
+   */
+  machineRestart: { readonly machine: string; readonly continued: "turn" | "queue" } | undefined;
+  /** The turn the user asked to stop, which a machine restart under it never continues. */
+  stopAsked: TurnId | undefined;
   /** The checkout or granted folders changed mid-turn; reopen the session once it's idle. */
   reopenOnIdle: boolean;
   /**

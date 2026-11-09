@@ -181,6 +181,30 @@ No command output, token or credential file leaves the machine.
 - The Machine picker marks such a machine, and its line under Where it runs offers the same sign-in, in a dialog.
 - A session that still can't start there names the machine, for example "Claude Code isn't logged in on <machine>. Run `claude /login` there, or choose Sign in under Settings → Machines." The main Gram's log records each failed start on a joined machine with the machine, the agent and the reason code.
 
+## When it drops or restarts
+
+A dropped connection that comes back within 2 minutes changes nothing: the host keeps its sessions
+and terminals for 3 minutes without one, and each session picks up where it was.
+
+When `gram-host` itself restarts (an update, a reboot, a crash or a service restart), its sessions
+and shells end with it. Once the machine dials in again and no longer has a session a thread was
+following, Gram resumes that thread's Claude conversation on the same machine, by its session id
+and in the same worktree there:
+
+- A turn the restart cut short carries on with a short note telling the agent the machine
+  restarted. The transcript shows a quiet line, such as `cachyos restarted · continued the turn`.
+- A thread with messages waiting in its queue sends them, and shows `resumed the session`.
+- An idle thread just rests, and opens again on your next message.
+
+Gram doesn't carry on by itself when the turn was waiting on you (an approval, a question or a
+plan), when you had stopped it, or after it already did so 3 times for that thread in the last
+hour. The turn then fails, saying the machine restarted and why it wasn't continued. A machine that
+doesn't dial in again within 2 minutes ends its sessions with a message that names it. Nothing ever
+falls back to running on this machine.
+
+Terminals aren't brought back: the shell, what ran in it and its scrollback ended with the host, so
+open a new one.
+
 ## Its repositories
 
 A worker placed on another machine works in a worktree of that machine's own clone of the
