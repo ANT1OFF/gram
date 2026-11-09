@@ -275,17 +275,48 @@ export const placedHost = (
       onThreadOf(thread, invalid, (host) => host.checkouts.restore(thread, fromPr)),
   };
 
-  /** Which machine each terminal opened on another machine is on. */
+  /** Which machine each terminal opened through here is on. */
   const terminalHosts = new Map<TerminalId, HostId>();
+  /**
+   * The machine `terminalId` is on. One this Gram didn't open (a joined machine kept it through a
+   * restart of this Gram) is looked for among the machines threads are placed on, by what each
+   * one's host lists, so its input and close reach it there rather than this machine.
+   */
+  const terminalHostOf = (terminalId: TerminalId): Effect.Effect<HostId> =>
+    Effect.suspend(() => {
+      const known = terminalHosts.get(terminalId);
+      if (known !== undefined || !routing()) return Effect.succeed(known ?? LOCAL_HOST_ID);
+      const listed = (host: WorkerHost) =>
+        host.terminals
+          .list()
+          .pipe(Effect.map((all) => all.some((terminal) => terminal.terminalId === terminalId)));
+      return Effect.gen(function* () {
+        if (yield* listed(local)) {
+          terminalHosts.set(terminalId, LOCAL_HOST_ID);
+          return LOCAL_HOST_ID;
+        }
+        const all = yield* threads.pipe(Effect.orElseSucceed((): ReadonlyArray<Thread> => []));
+        const machines = new Set(all.map((thread) => hostOf(effectiveCheckout(thread))));
+        machines.delete(LOCAL_HOST_ID);
+        for (const id of machines) {
+          const host = yield* hosts.get(id).pipe(Effect.option);
+          if (host._tag === "Some" && (yield* listed(host.value))) {
+            terminalHosts.set(terminalId, id);
+            return id;
+          }
+        }
+        return LOCAL_HOST_ID;
+      });
+    });
   const onTerminal = <A, E>(
     terminalId: TerminalId,
     run: (terminals: Terminals) => Effect.Effect<A, E>,
-  ): Effect.Effect<A, E | NotFound> => {
-    const id = terminalHosts.get(terminalId);
-    return id === undefined
-      ? run(local.terminals)
-      : Effect.flatMap(hostFor(id, terminalOffline(terminalId)), (host) => run(host.terminals));
-  };
+  ): Effect.Effect<A, E | NotFound> =>
+    Effect.flatMap(terminalHostOf(terminalId), (id) =>
+      id === LOCAL_HOST_ID
+        ? run(local.terminals)
+        : Effect.flatMap(hostFor(id, terminalOffline(terminalId)), (host) => run(host.terminals)),
+    );
   const terminalsOfThread = (threadId: ThreadId | undefined) =>
     threadId === undefined
       ? Effect.succeed(local)
@@ -298,7 +329,7 @@ export const placedHost = (
             ? yield* hostFor(request.hostId, invalid)
             : yield* terminalsOfThread(request.threadId);
         const opened = yield* host.terminals.open(request, settings);
-        if (host.id !== LOCAL_HOST_ID) terminalHosts.set(opened.terminalId, host.id);
+        terminalHosts.set(opened.terminalId, host.id);
         return opened;
       }),
     input: (terminalId, data) => onTerminal(terminalId, (t) => t.input(terminalId, data)),
@@ -315,9 +346,9 @@ export const placedHost = (
       ),
     subscribe: (terminalId) =>
       Stream.unwrap(
-        Effect.sync(() => terminalHosts.get(terminalId)).pipe(
+        terminalHostOf(terminalId).pipe(
           Effect.flatMap((id) =>
-            id === undefined
+            id === LOCAL_HOST_ID
               ? Effect.succeed(local.terminals.subscribe(terminalId))
               : hostFor(id, terminalOffline(terminalId)).pipe(
                   Effect.map((host) => host.terminals.subscribe(terminalId)),

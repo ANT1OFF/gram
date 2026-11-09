@@ -21,7 +21,12 @@ const REMOTE_PATH = "/srv/gram-host/repos/git.example.test/acme/widgets.worktree
 const LOCAL_PATH = "/Users/me/widgets";
 
 /** A host that records each call it answers, by its name. */
-const recordingHost = (id: HostId, calls: Array<string>): WorkerHost => {
+const recordingHost = (
+  id: HostId,
+  calls: Array<string>,
+  /** Terminals its host lists, open before this Gram started. */
+  kept: ReadonlyArray<TerminalId> = [],
+): WorkerHost => {
   const say =
     (name: string) =>
     (..._args: ReadonlyArray<unknown>) =>
@@ -88,8 +93,11 @@ const recordingHost = (id: HostId, calls: Array<string>): WorkerHost => {
           calls.push(`${id}:terminal.input:${terminalId}`);
         }),
       resize: say("resize"),
-      close: say("close"),
-      list: () => Effect.succeed([]),
+      close: (terminalId: TerminalId) =>
+        Effect.sync(() => {
+          calls.push(`${id}:terminal.close:${terminalId}`);
+        }),
+      list: () => Effect.succeed(kept.map((terminalId) => ({ terminalId }))),
       subscribe: () => {
         throw new Error("not in this test");
       },
@@ -113,10 +121,12 @@ const THREADS = [
   thread("t-local", { kind: "main", path: LOCAL_PATH }),
 ];
 
+const KEPT = "kept-on-the-machine" as TerminalId;
+
 const setup = (online: { value: boolean }) => {
   const calls: Array<string> = [];
   const local = recordingHost(LOCAL_HOST_ID, calls);
-  const machine = recordingHost(MACHINE, calls);
+  const machine = recordingHost(MACHINE, calls, [KEPT]);
   const placed = placedHost(
     {
       local,
@@ -187,6 +197,20 @@ describe("placedHost", () => {
         "local:open:t-local",
         `${MACHINE}:terminal.open:t-remote`,
         `${MACHINE}:terminal.input:${MACHINE}-t1`,
+      ]);
+    }),
+  );
+
+  it.effect("reaches a terminal the machine kept through a restart of this Gram", () =>
+    Effect.gen(function* () {
+      // A fresh placedHost is a main Gram that restarted: it never opened KEPT. Before this
+      // change its input and close went to this machine, and the shell ran on there.
+      const { calls, placed } = setup({ value: true });
+      yield* placed.terminals.input(KEPT, "ls\n");
+      yield* placed.terminals.close(KEPT);
+      expect(calls).toEqual([
+        `${MACHINE}:terminal.input:${KEPT}`,
+        `${MACHINE}:terminal.close:${KEPT}`,
       ]);
     }),
   );
