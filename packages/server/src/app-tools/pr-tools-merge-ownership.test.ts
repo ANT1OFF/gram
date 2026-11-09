@@ -1,6 +1,6 @@
 // merge_when_ready: unbinding, worker ownership and stacked PRs.
 import { describe, expect, it } from "@effect/vitest";
-import { DEFAULT_CHARTER, initialBabysitState } from "@gram/contracts";
+import { DEFAULT_CHARTER, type GitState, HostId, initialBabysitState } from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -21,8 +21,22 @@ import {
 } from "../orchestration/test-harness.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { workerPrBlocker, withOwnedBranch } from "../git/worker-pr.ts";
+import { cloneFoldersOf } from "../host/repos.ts";
 import { AppToolRegistry } from "./registry.ts";
 import { ready, armedWorkerBadge } from "./pr-tools-kit.ts";
+
+/** A worktree on a joined machine with `branch` checked out, as its host reads it. */
+const gitThere = (branch: string): GitState => ({
+  repo: true,
+  branch,
+  worktree: true,
+  head: "h1",
+  changesToken: "",
+  changedFiles: 0,
+  behindBase: 0,
+  aheadBase: 0,
+  conflicts: false,
+});
 
 describe("merge_when_ready", () => {
   for (const change of ["unbind", "head branch", "hold"] as const) {
@@ -659,4 +673,103 @@ describe("merge_when_ready", () => {
         );
       }).pipe(Effect.scoped),
   );
+
+  describe("on a joined machine", () => {
+    const MACHINE = HostId.make("m-0123456789abcdef01234567");
+    /** The host's clone of the project's origin, in the folder its identity names. */
+    const CLONE = `/home/invented/gram-host/repos/${cloneFoldersOf("https://github.com/acme/app.git")![0]}`;
+    const WORKTREE = "/home/invented/gram-host/worktrees/app/feat-remote";
+
+    for (const scenario of [
+      "own",
+      "switched there",
+      "foreign branch",
+      "offline",
+      "other clone",
+    ] as const) {
+      it.effect.skipIf(!hasGit)(
+        scenario === "own"
+          ? "arms a worker's own PR from its worktree there without a card"
+          : scenario === "switched there"
+            ? "reads the branch checked out there from its host"
+            : `keeps a card for ${scenario}`,
+        () =>
+          Effect.gen(function* () {
+            const world = yield* makeWorld;
+            const worktrees = new Map<string, GitState>();
+            world.joinedMachine = { id: MACHINE, online: scenario !== "offline", worktrees };
+            yield* withServer(
+              world,
+              Effect.gen(function* () {
+                const store = yield* ThreadStore;
+                const runtimes = yield* ThreadRuntimes;
+                const registry = yield* AppToolRegistry;
+                const { session, thread } = yield* openOrchestrator(world);
+                const worker = yield* spawn(session, { feature: "remote-own" });
+                yield* completeTurn(worker.session);
+                yield* atAutonomy(thread, "full");
+                const branch = "feat/remote-own";
+                // The worktree Gram made for it there, from the machine's clone of the project.
+                yield* runtimes.updateThread(worker.thread.id, (t) => ({
+                  ...t,
+                  checkout: {
+                    kind: "worktree" as const,
+                    path: WORKTREE,
+                    repoRoot:
+                      scenario === "other clone"
+                        ? "/home/invented/gram-host/repos/github.com/elsewhere/app"
+                        : CLONE,
+                    branch,
+                    hostId: MACHINE,
+                  },
+                  boundPr: { repo: "acme/app", number: 12, monitor: false },
+                }));
+                // Its agent may switch branches there: the host's HEAD counts, as one here does.
+                const checkedOut = scenario === "switched there" ? "feat/remote-next" : branch;
+                worktrees.set(WORKTREE, gitThere(checkedOut));
+                world.prHeads.set(12, {
+                  headRefName: scenario === "foreign branch" ? "feat/by-hand" : checkedOut,
+                });
+                const merge = registry
+                  .forTransport(worker.thread.id, "worker")
+                  .find((t) => t.descriptor.name === "merge_when_ready")!;
+                if (scenario === "own" || scenario === "switched there") {
+                  expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(true);
+                  yield* merge.run({});
+                  expect(
+                    (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+                  ).toMatchObject({ allowedBy: "autonomy" });
+                  expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+                  return;
+                }
+                expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(false);
+                const call = yield* Effect.forkScoped(merge.run({}).pipe(Effect.flip));
+                const card = yield* waitReal(
+                  "the approval card",
+                  store.listRequests(worker.thread.id).pipe(Effect.map((all) => all[0])),
+                );
+                if (card.kind !== "approval") throw new Error("not an approval");
+                const reason = {
+                  "foreign branch":
+                    "its branch isn't checked out in a worktree Gram gave the worker",
+                  offline: "Gram couldn't read the worker's worktree or the pull request on GitHub",
+                  "other clone":
+                    "its repository isn't a workspace project the worker has a worktree in",
+                }[scenario];
+                expect(card.autonomyNote).toBe(`full auto, PR ownership unverified: ${reason}`);
+                yield* runtimes.respond(worker.thread.id, card.id, {
+                  kind: "approval",
+                  decision: "deny",
+                  scope: "once",
+                });
+                expect(yield* Fiber.join(call)).toMatchObject({ approvalRequired: true });
+                expect(
+                  (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+                ).toBeUndefined();
+              }),
+            );
+          }).pipe(Effect.scoped),
+      );
+    }
+  });
 });

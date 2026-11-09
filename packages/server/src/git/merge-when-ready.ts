@@ -63,7 +63,9 @@ import {
   ownershipFix,
   workerPrBlocker,
   workerPrIdentity,
+  withMachines,
 } from "./worker-pr.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { fence, FENCE_OPENER } from "./untrusted-fence.ts";
 import { makeKeyedLock } from "./keyed-lock.ts";
 
@@ -303,6 +305,8 @@ export const MergeWhenReadyLive = Layer.effect(
     const publisher = yield* GitStatePublisher;
     const hub = yield* EventHub;
     const proc = yield* Proc;
+    // The joined machines' hosts, which read a worker's worktree there for its PR's ownership.
+    const machines = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const providerPr = yield* Pr;
     const refreshes = yield* GitRefresh;
     const recheckMs = yield* MergeRecheckMs;
@@ -395,6 +399,7 @@ export const MergeWhenReadyLive = Layer.effect(
           !(yield* workerPrIdentity(scope.thread, bound.repo, bound.number, head).pipe(
             Effect.provideService(ThreadStore, store),
             Effect.provideService(Proc, proc),
+            withMachines(machines),
           ))
         )
           return undefined;
@@ -792,6 +797,7 @@ export const MergeWhenReadyLive = Layer.effect(
                 ).pipe(
                   Effect.provideService(ThreadStore, store),
                   Effect.provideService(Proc, proc),
+                  withMachines(machines),
                 );
                 if (ownership !== undefined) {
                   why = `the pull request is no longer this worker's own: ${explainOwnershipBlocker(ownership).reason}`;
@@ -1531,6 +1537,7 @@ export const MergeWhenReadyLive = Layer.effect(
         const ownership = yield* workerPrBlocker(thread.value, bound.repo, bound.number, head).pipe(
           Effect.provideService(ThreadStore, store),
           Effect.provideService(Proc, proc),
+          withMachines(machines),
           Effect.orElseSucceed(() => OWNERSHIP_BLOCKERS.unverified),
         );
         if (ownership !== undefined) {

@@ -104,6 +104,16 @@ export const cloneFolderOf = (
   return "error" in remote ? remote : { folder: remote.folder };
 };
 
+/**
+ * The folders a host's clone of `url` can be in, under its `repos`: the identity folder and the
+ * legacy readable one. `ensure` keeps a clone in either only while its origin has `url`'s exact
+ * identity, so a clone Gram was handed back from one of them is a clone of `url`.
+ */
+export const cloneFoldersOf = (url: string): ReadonlyArray<string> | undefined => {
+  const remote = remoteOf(url);
+  return "error" in remote ? undefined : [remote.folder, remote.legacyFolder];
+};
+
 const failed = (message: string) =>
   new WorktreeError({
     reason: "failed",

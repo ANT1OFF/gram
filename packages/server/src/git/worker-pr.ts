@@ -2,10 +2,13 @@
 // covers. One check for every place that merges without a card: the
 // tools' gate, their recheck in `handle`, and `merge_when_ready`'s launch, which can come long after.
 
-import type { Thread } from "@gram/contracts";
+import { type Checkout, hostOf, isLocalHost, type Project, type Thread } from "@gram/contracts";
 import { git, originOwnerRepo, prHead, realPathOrOwned, samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
-import { folderExists } from "../fs/folders.ts";
+import * as Option from "effect/Option";
+import { folderExists, ghFolderOf } from "../fs/folders.ts";
+import { cloneFoldersOf } from "../host/repos.ts";
+import { WorkerHosts, type WorkerHostsShape } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 
 /** `owner/repo` names as GitHub compares them, ignoring case. */
@@ -181,11 +184,67 @@ export const withOwnedBranch = (
   return { ...thread, ownedBranches: [...(thread.ownedBranches ?? []), { path, branch }] };
 };
 
+/** A path's folders, whichever separator its machine writes. */
+const segmentsOf = (path: string) => path.split(/[\\/]+/).filter((part) => part !== "");
+
+/**
+ * Whether `repoRoot`, a clone on a joined machine, is that machine's clone of one of `projects`
+ * whose `origin` is `repo`: the clone is in the folder the project's origin identity names
+ * (`cloneFoldersOf`), which its host keeps only for a clone with exactly that origin, and the
+ * project's origin here is the PR's repository. Read from the projects on this machine, since that
+ * machine's clones are reached only through its host.
+ */
+const cloneOfProject = (repoRoot: string, projects: ReadonlyArray<Project>, repo: string) =>
+  Effect.gen(function* () {
+    const clone = segmentsOf(repoRoot);
+    for (const project of projects) {
+      const root = project.repoRoot ?? project.root;
+      if (!sameRepo(yield* originOwnerRepo(root), repo)) continue;
+      const out = yield* git(root, ["remote", "get-url", "origin"], { timeoutMs: 2_000 });
+      if (out.status !== 0) continue;
+      const folders = cloneFoldersOf(out.stdout.trim()) ?? [];
+      if (
+        folders.some((folder) => {
+          const tail = segmentsOf(folder);
+          return (
+            clone.length > tail.length &&
+            tail.every((part, i) => part === clone[clone.length - tail.length + i])
+          );
+        })
+      )
+        return true;
+    }
+    return false;
+  });
+
+/**
+ * The branch checked out in `checkout`, a worktree on a joined machine, as that machine's host
+ * reads it: reached by the checkout's own machine (`hostOf`), never by its path, which another
+ * machine can share. `undefined` when the machine can't be asked (it is offline, or this server
+ * has no joined machines' hosts) or the worktree isn't there, so the caller fails closed.
+ */
+const branchOnMachine = (hosts: WorkerHostsShape | undefined, checkout: Checkout) =>
+  hosts === undefined
+    ? Effect.succeed(undefined)
+    : hosts
+        .machine(hostOf(checkout))
+        .git.local(checkout.path)
+        .pipe(
+          Effect.map((state) => (state.repo ? { branch: state.branch } : undefined)),
+          Effect.orElseSucceed(() => undefined),
+        );
+
 /**
  * The verified held path and branch of the worker's open, non-fork PR, else why it is not owned.
  * The held worktree must still belong to a workspace project. Read-only, so the tool's gate can
  * call it repeatedly; arming persists the verified branch with the intent. GitHub supplies the head
  * on every call, asked from the repo's main checkout when the worktree's folder is gone. A doubt is a refusal; `reviewedHead`, when given, must still be its head.
+ *
+ * A worktree Gram made on a joined machine counts as one here does: its clone must be that
+ * machine's clone of a workspace project whose origin is the PR's repository (`cloneOfProject`),
+ * and its branch is read there by its host (`branchOnMachine`). While that machine can't be asked,
+ * the worktree confirms nothing, and the check says it couldn't verify rather than that the PR
+ * isn't the worker's.
  */
 const checkWorkerPr = (
   thread: Thread,
@@ -196,6 +255,8 @@ const checkWorkerPr = (
 ) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
+    // Present wherever a worker can be on another machine; without it, such a worktree fails closed.
+    const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     if (thread.workspaceId === undefined) return OWNERSHIP_BLOCKERS.noWorkspace;
     const { workspace } = yield* store.getWorkspace(thread.workspaceId);
     const projects = (yield* store.listProjects).filter((project) =>
@@ -207,10 +268,35 @@ const checkWorkerPr = (
     // `currentCheckout` is left out: following the agent into a worktree doesn't make it the
     // worker's, and it may be another thread's.
     const branches = new Map<string, string>();
+    /** Where `gh` starts for the PR, which it names with `--repo`. */
     let cwd: string | undefined;
+    /** The held path when GitHub's head branch is among none of `branches`. */
+    let held: string | undefined;
     let unrecorded = false;
+    /** A joined machine's worktree of the PR's project that couldn't be read there. */
+    let unreachable = false;
+    const recorded = (checkout: Checkout) => {
+      if (checkout.branch !== undefined) branches.set(checkout.branch, checkout.path);
+      for (const owned of thread.ownedBranches ?? []) {
+        if (samePath(owned.path, checkout.path)) branches.set(owned.branch, checkout.path);
+      }
+    };
     for (const checkout of [thread.checkout, ...(thread.extraCheckouts ?? [])]) {
       if (checkout.kind !== "worktree") continue;
+      if (!isLocalHost(checkout)) {
+        if (checkout.repoRoot === undefined) continue;
+        if (!(yield* cloneOfProject(checkout.repoRoot, projects, repo))) continue;
+        const there = yield* branchOnMachine(hosts, checkout);
+        if (there === undefined) {
+          unreachable = true;
+          continue;
+        }
+        recorded(checkout);
+        if (there.branch !== undefined) branches.set(there.branch, checkout.path);
+        cwd ??= yield* ghFolderOf(checkout);
+        held ??= checkout.path;
+        continue;
+      }
       // A worktree deleted outside Gram is asked about from its repo's main checkout, and
       // only the branches recorded for it count, since there is no HEAD left to read.
       const present = yield* folderExists(checkout.path);
@@ -221,10 +307,7 @@ const checkWorkerPr = (
       }
       if (!roots.has(yield* canonical(checkout.repoRoot ?? checkout.path))) continue;
       if (!sameRepo(yield* originOwnerRepo(at), repo)) continue;
-      if (checkout.branch !== undefined) branches.set(checkout.branch, checkout.path);
-      for (const owned of thread.ownedBranches ?? []) {
-        if (samePath(owned.path, checkout.path)) branches.set(owned.branch, checkout.path);
-      }
+      recorded(checkout);
       if (present) {
         // A tool can arrive before the watcher sees a branch created immediately before gh pr
         // create.
@@ -235,9 +318,14 @@ const checkWorkerPr = (
         if (observed !== undefined) branches.set(observed, checkout.path);
       }
       cwd ??= at;
+      held ??= at;
     }
-    if (cwd === undefined)
-      return unrecorded ? OWNERSHIP_BLOCKERS.worktreeGone : OWNERSHIP_BLOCKERS.repoNotInWorkspace;
+    if (cwd === undefined || held === undefined)
+      return unreachable
+        ? OWNERSHIP_BLOCKERS.unverified
+        : unrecorded
+          ? OWNERSHIP_BLOCKERS.worktreeGone
+          : OWNERSHIP_BLOCKERS.repoNotInWorkspace;
     const head = yield* prHead(cwd, number, repo);
     if (!sameRepo(head.repo, repo)) return OWNERSHIP_BLOCKERS.otherRepo;
     if (head.state !== "OPEN")
@@ -246,13 +334,22 @@ const checkWorkerPr = (
         : `it is ${head.state.toLowerCase()}`;
     if (head.fork) return OWNERSHIP_BLOCKERS.fork;
     if (requireOwnedBranch && !branches.has(head.headRefName))
-      return OWNERSHIP_BLOCKERS.branchNotHeld;
+      return unreachable ? OWNERSHIP_BLOCKERS.unverified : OWNERSHIP_BLOCKERS.branchNotHeld;
     if (reviewedHead !== undefined && head.headRefOid !== reviewedHead)
       return head.headRefOid === undefined
         ? OWNERSHIP_BLOCKERS.headUnknown
         : OWNERSHIP_BLOCKERS.headMoved;
-    return { path: branches.get(head.headRefName) ?? cwd, branch: head.headRefName };
+    return { path: branches.get(head.headRefName) ?? held, branch: head.headRefName };
   }).pipe(Effect.catchCause(() => Effect.succeed(OWNERSHIP_BLOCKERS.unverified)));
+
+/**
+ * Hands the ownership check the server's machines, when there are any: `checkWorkerPr` reads a
+ * joined machine's worktree through them, and fails closed for one without them.
+ */
+export const withMachines =
+  (hosts: WorkerHostsShape | undefined) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    hosts === undefined ? effect : Effect.provideService(effect, WorkerHosts, hosts);
 
 /** An owned branch, as before; identity-only verification never supplies ownership. */
 export const workerPrOwnership = (

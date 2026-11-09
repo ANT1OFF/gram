@@ -7,6 +7,8 @@ import {
   repoFromPrUrl,
   type Autonomy,
   type GitState,
+  type HostId,
+  HostUnavailable,
   type OrchestratorCharter,
   type PrStatus,
   type ServerEvent,
@@ -58,6 +60,7 @@ import { type EventLook, type EventLookContext, RoutineEventSources } from "../r
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
+import { type WorkerHost, WorkerHosts } from "../host/worker-host.ts";
 import { OrchestratorAppToolsLive } from "./tools.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
@@ -169,6 +172,14 @@ export interface World {
     EventLook | ((context: EventLookContext) => Effect.Effect<EventLook>)
   >;
   readonly eventLooks: Array<string>;
+  /**
+   * Set before the server is built: a joined machine that the PR tools and merges reach by its
+   * id, whose host answers each of its worktrees' git state by path while `online`. A path it
+   * doesn't list isn't a worktree there.
+   */
+  joinedMachine?:
+    | { readonly id: HostId; online: boolean; readonly worktrees: Map<string, GitState> }
+    | undefined;
 }
 
 const prKey = (pr: { readonly repo: string; readonly number: number }) =>
@@ -484,6 +495,45 @@ const conditionsOf = (world: World) =>
     ),
   );
 
+/**
+ * The machines as the PR tools and merges reach them: this one, and `world.joinedMachine` when a
+ * test set one, whose host reads nothing but its worktrees' git state.
+ */
+const machinesOf = (world: World) =>
+  Layer.effect(
+    WorkerHosts,
+    Effect.gen(function* () {
+      const hosts = yield* WorkerHosts;
+      const joined = world.joinedMachine;
+      if (joined === undefined) return hosts;
+      const unsupported = Effect.die(new Error("The test machine's host reads only git state."));
+      const host: WorkerHost = {
+        ...hosts.local,
+        id: joined.id,
+        name: "testbox",
+        git: {
+          local: (cwd) =>
+            Effect.suspend(() => {
+              const state = joined.worktrees.get(cwd);
+              return state === undefined
+                ? Effect.fail(
+                    new ProcSpawnError({ bin: "gram-host", message: `${cwd} isn't there` }),
+                  )
+                : Effect.succeed(state);
+            }),
+          present: (cwd) => Effect.sync(() => joined.worktrees.has(cwd)),
+          snapshot: () => unsupported,
+          watch: () => Stream.empty,
+        },
+      };
+      return WorkerHosts.fromHosts(hosts.local, [], (id) =>
+        id === joined.id && joined.online
+          ? Effect.succeed(host)
+          : Effect.fail(new HostUnavailable({ hostId: id, message: "That machine is offline." })),
+      );
+    }),
+  );
+
 /** The server over `world`'s database file and memory root. */
 export const serverLayer = (
   world: World,
@@ -500,6 +550,7 @@ export const serverLayer = (
       Layer.provide(fakeGh(world)),
     ),
   ).pipe(
+    Layer.provideMerge(machinesOf(world)),
     Layer.provideMerge(RoutinesLive.pipe(Layer.provide(fakeRoutineEvents(world)))),
     Layer.provideMerge(OrchestrationLive),
     Layer.provideMerge(ComposerPresence.layer),
