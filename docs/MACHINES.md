@@ -182,10 +182,18 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
   `/host/connect` answers 503 "dial history unreadable".
 
   That happens when the file or its `remote-access` folder can't be opened at all, as when its
-  permissions changed. To recover, make the folder owner-only again (`chmod 700`, the file
-  `chmod 600`), or restore the file from a backup; the next dial uses it, with no restart. Moving the
-  file aside also works, but Gram then has no history: wait until no joined machine has dialled
-  in for two minutes first, or a dial captured in that time could be replayed once.
+  permissions changed. Recover by keeping the history: make the folder owner-only again
+  (`chmod 700`, the file `chmod 600`) and leave the file as it is, or put back the latest copy of
+  it. The next dial uses it, with no restart, and every dial it recorded stays refused. An older
+  backup is a reset of the dials accepted after it was taken, so treat it as one.
+
+  Reset the history (move the file aside, or restore an older copy) only as a last resort, and
+  only once more than four minutes have passed since any joined machine last dialled in, with this
+  machine's clock and the joined machines' clocks steady over that time. A dial signed up to two
+  minutes ahead stays valid for two minutes after that, so a shorter wait lets captured dial
+  headers be replayed once. That elapsed time can't be trusted if a clock was set back meanwhile.
+  When in doubt, remove the machines in Settings → Machines and join them again instead: their old
+  keys, and every dial signed with them, are then refused.
 
 - **Not a browser.** The install, join and dial endpoints answer only requests addressed to the tailnet
   name (which Tailscale Serve forwards over loopback), and refuse any request with an `Origin`, so
