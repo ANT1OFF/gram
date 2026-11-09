@@ -1,4 +1,6 @@
 import type { KeyObject } from "node:crypto";
+import { lstatSync, lutimesSync } from "node:fs";
+import { join } from "node:path";
 import type { HostId } from "@gram/contracts";
 import { makeLaunchToken, tokensEqual } from "../http/auth.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
@@ -57,13 +59,15 @@ export type ConnectResult =
 export type DialNonce = readonly [nonce: string, until: number];
 
 /**
- * The accepted dials' nonces still in their window, and `floor`: the latest signed time of any
- * nonce let go (or that couldn't be read), at or before which no dial is taken, so a clock set
- * back can't bring a forgotten dial back into its window.
+ * The accepted dials' nonces still in their window; `floor`, the latest signed time of any nonce
+ * let go (or that couldn't be read), at or before which no dial is taken, so a clock set back
+ * can't bring a forgotten dial back into its window; and `seen`, the latest time any run saw when
+ * it accepted a dial, which a clock set back never lowers.
  */
 export interface DialNonces {
   readonly nonces: ReadonlyArray<DialNonce>;
   readonly floor: number;
+  readonly seen: number;
 }
 
 /**
@@ -73,7 +77,14 @@ export interface DialNonces {
 export interface DialNonceStore {
   readonly read: () => DialNonces;
   readonly write: (nonces: DialNonces) => void;
+  /**
+   * The `seen` of the last write, when `read` throws: kept apart from what it holds, so a file
+   * that can't be read still bounds the dials it took. Undefined when that can't be known either.
+   */
+  readonly lastSeen?: () => number | undefined;
 }
+
+export const NO_DIALS: DialNonces = { nonces: [], floor: 0, seen: 0 };
 
 const NAME = /^[\p{L}\p{N} ._'-]{1,64}$/u;
 const PLATFORM = /^[a-z0-9]{1,16}$/;
@@ -132,36 +143,59 @@ const isNonce = (value: unknown): value is DialNonce =>
   /^[a-f0-9]{32}$/.test(value[0]) &&
   Number.isSafeInteger(value[1]);
 
+const dialNoncesPath = (dataDir: string) => join(dataDir, "remote-access", "dial-nonces.json");
+
+/** The `seen` the nonces file's modified time holds, whether or not its content can be read. */
+export const dialNoncesLastSeen = (dataDir: string): number | undefined => {
+  try {
+    // A second on, for a filesystem that keeps whole seconds.
+    return Math.ceil(lstatSync(dialNoncesPath(dataDir)).mtimeMs) + 1000;
+  } catch {
+    return undefined;
+  }
+};
+
 /** The accepted dials' nonces in `<dataDir>/remote-access/dial-nonces.json`, as the machines are. */
 export const fileNonceStore = (dataDir: string): DialNonceStore => {
   const file = privateJsonFile(dataDir, "dial-nonces.json", 256 * 1024);
+  const path = dialNoncesPath(dataDir);
   return {
     read: () => {
       const value = file.read();
-      if (value === undefined) return { nonces: [], floor: 0 };
+      if (value === undefined) return NO_DIALS;
       const record = value as Record<string, unknown> | null;
       if (
         typeof record !== "object" ||
         record === null ||
         record["version"] !== 1 ||
         !Number.isSafeInteger(record["floor"]) ||
+        !Number.isSafeInteger(record["seen"]) ||
         !Array.isArray(record["nonces"]) ||
         record["nonces"].length > NONCES_KEPT ||
         !record["nonces"].every(isNonce)
       )
         throw new Error("Dial nonce storage is invalid");
-      return { nonces: record["nonces"] as DialNonce[], floor: record["floor"] as number };
+      return {
+        nonces: record["nonces"] as DialNonce[],
+        floor: record["floor"] as number,
+        seen: record["seen"] as number,
+      };
     },
-    write: ({ nonces, floor }) => file.write({ version: 1, floor, nonces }),
+    // Its modified time is `seen`, which survives what makes the content unreadable.
+    write: ({ nonces, floor, seen }) => {
+      file.write({ version: 1, floor, seen, nonces });
+      lutimesSync(path, new Date(), new Date(seen));
+    },
+    lastSeen: () => dialNoncesLastSeen(dataDir),
   };
 };
 
-export const memoryNonceStore = (initial: DialNonces = { nonces: [], floor: 0 }) => {
+export const memoryNonceStore = (initial: DialNonces = NO_DIALS) => {
   let kept = initial;
   return {
     read: () => kept,
     write: (next: DialNonces) => {
-      kept = { nonces: [...next.nonces], floor: next.floor };
+      kept = { ...next, nonces: [...next.nonces] };
     },
   } satisfies DialNonceStore;
 };
@@ -190,16 +224,22 @@ export const createPairedMachines = (
   let invitation: { code: string; origin: string; expiresAt: number } | undefined;
   /** Recent dials' nonces with when they stop mattering, as the last run left them. */
   const nonces = new Map<string, number>();
-  /** No dial signed at or before this is taken: see `DialNonces`. */
+  /** No dial signed at or before this is taken; the latest time a dial was accepted at. */
   let floor = 0;
+  let seen = 0;
+  /** Set when the last run's dials can't be bounded at all: then none is taken. */
+  let blind = false;
   try {
     const kept = nonceStore.read();
-    floor = kept.floor;
+    ({ floor, seen } = kept);
     for (const [nonce, until] of kept.nonces) nonces.set(nonce, until);
   } catch {
-    // The last run's nonces are unknown, but any dial it accepted was signed at most the skew
-    // ahead of now (unless the clock was set back since): none of those is taken.
-    floor = now() + CONNECT_SKEW_MS;
+    // The last run's nonces are unknown, but every dial it accepted was signed at most the skew
+    // past the latest time it saw, or past now: none of those is taken, whatever the clock did.
+    const last = nonceStore.lastSeen?.();
+    if (last === undefined) blind = true;
+    else floor = Math.max(now(), last) + CONNECT_SKEW_MS;
+    seen = floor;
   }
   const save = (next: PairedMachine[]) => {
     store.write(next);
@@ -226,8 +266,13 @@ export const createPairedMachines = (
    * nonces still in their window, which refuses the dial rather than forget one that could then
    * be replayed.
    */
-  const record = (nonce: string, until: number): "ok" | "replayed" | "full" | "unsaved" => {
-    const at = now();
+  const record = (
+    nonce: string,
+    signed: number,
+    /** The time the dial was checked at: one reading, so pruning can't pass the dial's window. */
+    at: number,
+  ): "ok" | "stale" | "replayed" | "full" | "unsaved" => {
+    const until = signed + CONNECT_SKEW_MS;
     // Let go once past their window, which the skew check refuses, and the floor raised past
     // them, so a clock set back later doesn't bring them into it again.
     for (const [kept, expires] of nonces)
@@ -235,12 +280,14 @@ export const createPairedMachines = (
         nonces.delete(kept);
         floor = Math.max(floor, expires - CONNECT_SKEW_MS);
       }
+    if (signed <= floor) return "stale";
     if (nonces.has(nonce)) return "replayed";
     if (nonces.size >= NONCES_KEPT) return "full";
     // Kept in memory even when saving fails, so this run still refuses its replay.
     nonces.set(nonce, until);
+    seen = Math.max(seen, at);
     try {
-      nonceStore.write({ nonces: [...nonces], floor });
+      nonceStore.write({ nonces: [...nonces], floor, seen });
     } catch {
       return "unsaved";
     }
@@ -322,6 +369,8 @@ export const createPairedMachines = (
       const key = machine === undefined ? undefined : keyOf(machine);
       if (machine === undefined || key === undefined)
         return { kind: "refused", status: 401, message: "unauthorized: machine not joined" };
+      if (blind)
+        return { kind: "refused", status: 503, message: "unavailable: dial history unreadable" };
       const at = now();
       if (Math.abs(at - claim.time) > CONNECT_SKEW_MS || claim.time <= floor)
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
@@ -332,7 +381,9 @@ export const createPairedMachines = (
       if (machine.confirmedAt === undefined)
         return { kind: "refused", status: 403, message: "forbidden: confirm this machine first" };
       // Checked after the signature, so a forged dial can't spend a real one's nonce.
-      const nonce = record(claim.nonce, claim.time + CONNECT_SKEW_MS);
+      const nonce = record(claim.nonce, claim.time, at);
+      if (nonce === "stale")
+        return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       if (nonce === "replayed")
         return { kind: "refused", status: 401, message: "unauthorized: dial replayed" };
       if (nonce === "full")

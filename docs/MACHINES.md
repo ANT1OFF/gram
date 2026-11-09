@@ -136,9 +136,10 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
   that hasn't been confirmed. A confirmed machine's accepted nonces are kept in
   `remote-access/dial-nonces.json` through their two minutes, so a dial replayed after the main
   Gram restarts is refused too. Once a nonce is let go, no dial signed at or before its time is
-  taken, so a clock set back can't bring it back either. When that file can't be read, no dial
-  signed before two minutes after the start is taken. A clock set back while the file was
-  unreadable is the one case left uncovered.
+  taken, so a clock set back can't bring it back either. Each write also sets the file's modified time
+  to the latest time any run accepted a dial at, which a clock set back never lowers. When the
+  file's content can't be read, no dial signed before two minutes past that time (or past now, if
+  later) is taken, and when even its time can't be read, no dial is taken at all.
 - **Not a browser.** The install, join and dial endpoints answer only requests addressed to the tailnet
   name (which Tailscale Serve forwards over loopback), and refuse any request with an `Origin`, so
   no web page can reach them. They take no browser cookie, and a browser's cookie grants nothing

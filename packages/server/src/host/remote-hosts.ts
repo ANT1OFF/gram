@@ -11,10 +11,12 @@ import { ServerConfig } from "../config.ts";
 import type { Socket } from "../platform/unstable.ts";
 import {
   createPairedMachines,
+  dialNoncesLastSeen,
   type DialNonceStore,
   fileMachineStore,
   fileNonceStore,
   machineView,
+  NO_DIALS,
   type PairedMachine,
   type PairedMachines,
   type PairedMachineStore,
@@ -237,10 +239,10 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       return yield* RemoteHosts.make(
         lazyFileStore(dataDir, "machines.json", fileMachineStore, () => []),
         Date.now,
-        lazyFileStore(dataDir, "dial-nonces.json", fileNonceStore, () => ({
-          nonces: [],
-          floor: 0,
-        })),
+        {
+          ...lazyFileStore(dataDir, "dial-nonces.json", fileNonceStore, () => NO_DIALS),
+          lastSeen: () => dialNoncesLastSeen(dataDir),
+        },
       );
     }),
   );

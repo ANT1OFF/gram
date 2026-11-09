@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -20,6 +20,7 @@ import {
   MAX_MACHINES,
   memoryMachineStore,
   memoryNonceStore,
+  NO_DIALS,
   type PairedMachines,
 } from "./paired-machines.ts";
 
@@ -218,11 +219,13 @@ describe("joined machines", () => {
     const ahead = signedConnectHeaders(own, ORIGIN, id, clock.now() + CONNECT_SKEW_MS);
     expect(first.authorizeConnect(ORIGIN, ahead).kind).toBe("ok");
     const saved = memoryNonceStore();
+    const lastSeen = clock.now();
     const unreadable = {
       read: (): DialNonces => {
         throw new Error("Dial nonce storage is invalid");
       },
       write: saved.write,
+      lastSeen: () => lastSeen,
     };
     const machines = createPairedMachines(store, clock.now, unreadable);
     const dial = () =>
@@ -238,7 +241,7 @@ describe("joined machines", () => {
 
     // A nonce that can't be saved refuses its dial, and its replay in this run too.
     const unsaved = createPairedMachines(store, clock.now, {
-      read: () => ({ nonces: [], floor: 0 }),
+      read: () => NO_DIALS,
       write: () => {
         throw new Error("disk full");
       },
@@ -248,6 +251,79 @@ describe("joined machines", () => {
     expect(unsaved.authorizeConnect(ORIGIN, headers)).toMatchObject({
       message: "unauthorized: dial replayed",
     });
+  });
+
+  // Re-review of #324: the skew check and the pruning each read the clock; a millisecond between
+  // them let the replayed dial's nonce go and took the dial, restarted or not.
+  it("checks a dial against one reading of the clock, however it moves meanwhile", () => {
+    const { clock, store, nonces } = restartable();
+    const machines = createPairedMachines(store, clock.now, nonces);
+    const { id, own } = confirmedMachine(machines);
+    const signed = clock.now();
+    const headers = signedConnectHeaders(own, ORIGIN, id, signed);
+    expect(machines.authorizeConnect(ORIGIN, headers).kind).toBe("ok");
+    /** The last moment of the dial's window. */
+    const atExpiry = () => clock.advance(signed + CONNECT_SKEW_MS - clock.now());
+    /** A clock a millisecond on at each reading. */
+    const ticking = () => {
+      const at = clock.now();
+      clock.advance(1);
+      return at;
+    };
+    atExpiry();
+    const live = createPairedMachines(store, ticking, nonces);
+    expect(live.authorizeConnect(ORIGIN, headers)).toMatchObject({ kind: "refused" });
+    atExpiry();
+    const restarted = createPairedMachines(store, ticking, nonces);
+    expect(restarted.authorizeConnect(ORIGIN, headers)).toMatchObject({ kind: "refused" });
+  });
+
+  // Re-review of #324: with its history unreadable, the floor came from the clock now, so a clock
+  // set back even a millisecond took a dial the last run had accepted.
+  it("bounds an unreadable history by the latest time it was written, not the clock now", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-machines-"));
+    try {
+      let time = 1_000_000;
+      const now = () => time;
+      const machines = createPairedMachines(fileMachineStore(dir), now, fileNonceStore(dir));
+      const { id, own } = confirmedMachine(machines);
+      const ahead = signedConnectHeaders(own, ORIGIN, id, time + CONNECT_SKEW_MS);
+      expect(machines.authorizeConnect(ORIGIN, ahead).kind).toBe("ok");
+      // Its content lost, as a disk fault would, the file's time kept.
+      const file = join(dir, "remote-access", "dial-nonces.json");
+      const { mtime } = statSync(file);
+      writeFileSync(file, "{");
+      utimesSync(file, mtime, mtime);
+      time -= 1;
+      const after = createPairedMachines(fileMachineStore(dir), now, fileNonceStore(dir));
+      time += 1;
+      expect(after.authorizeConnect(ORIGIN, ahead)).toMatchObject({ kind: "refused" });
+      time += 2 * CONNECT_SKEW_MS;
+      expect(after.authorizeConnect(ORIGIN, ahead)).toMatchObject({ kind: "refused" });
+      // Fresh dials get in once past every dial the lost history could hold.
+      time = 1_000_000 + CONNECT_SKEW_MS + 1001;
+      expect(after.authorizeConnect(ORIGIN, signedConnectHeaders(own, ORIGIN, id, time)).kind).toBe(
+        "ok",
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("takes no dial when it can't bound the history it can't read", () => {
+    const { clock, store } = restartable();
+    const machines = createPairedMachines(store, clock.now, {
+      read: () => {
+        throw new Error("Dial nonce storage is invalid");
+      },
+      write: () => {},
+    });
+    const { id, own } = confirmedMachine(machines);
+    const dial = () =>
+      machines.authorizeConnect(ORIGIN, signedConnectHeaders(own, ORIGIN, id, clock.now()));
+    expect(dial()).toMatchObject({ kind: "refused" });
+    clock.advance(10 * CONNECT_SKEW_MS);
+    expect(dial()).toMatchObject({ kind: "refused", status: 503 });
   });
 
   // Review of #324: a machine not confirmed yet could fill the dials' room, and have each of its
