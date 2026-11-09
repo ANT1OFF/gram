@@ -1,9 +1,16 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { AgentHost } from "@gram/agents";
-import { AgentUnavailable, HostId } from "@gram/contracts";
+import { AgentUnavailable, HostId, LOCAL_HOST_ID, type TerminalId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { onMachineUnavailable } from "../runtime/host-agent-sessions.ts";
-import { claudeSignInOf, machineSignInTerminal } from "./claude-sign-in.ts";
+import {
+  claudeSignInOf,
+  hostStatusOf,
+  machineSignInTerminal,
+  openSignInTerminal,
+  probeTool,
+  type ShellRun,
+} from "./claude-sign-in.ts";
 
 const failing = (reason: AgentUnavailable["reason"]) =>
   ({
@@ -57,12 +64,105 @@ describe("a machine's Claude sign-in", () => {
     expect(named("startup-failed", "cachyos is offline.").message).toBe("cachyos is offline.");
   });
 
-  it("opens the Sign in terminal on the machine, in its home, on a fixed command", () => {
+  it("opens the Sign in terminal on the machine, in its home, with the line typed not run", () => {
     expect(machineSignInTerminal(HostId.make("h1"))).toEqual({
       hostId: "h1",
       cwd: "~",
-      command: "claude auth login --claudeai",
-      script: "Sign in to Claude",
+      typed: "claude /login",
     });
   });
+
+  it("finds a tool on the login shell's PATH, with its version", async () => {
+    const scripts: string[] = [];
+    const run: ShellRun = async (script) => {
+      scripts.push(script);
+      return script.includes("git")
+        ? { code: 127, stdout: "" }
+        : { code: 0, stdout: "2.1.319 (Claude Code)\n" };
+    };
+    expect(await probeTool("claude", run)).toEqual({
+      tool: "claude",
+      found: true,
+      version: "2.1.319",
+    });
+    expect(await probeTool("git", run)).toEqual({ tool: "git", found: false });
+    // The name is the fixed one, never anything a caller sent.
+    expect(scripts).toEqual([
+      "command -v claude >/dev/null 2>&1 && claude --version",
+      "command -v git >/dev/null 2>&1 && git --version",
+    ]);
+    // A shell that couldn't run reads as not found, not as a failure.
+    expect(await probeTool("git", () => Promise.reject(new Error("no shell")))).toEqual({
+      tool: "git",
+      found: false,
+    });
+  });
+});
+
+const nothing: ShellRun = async () => ({ code: 1, stdout: "" });
+
+describe("a machine's status", () => {
+  it.effect("counts a Claude that answered about its sign-in as installed", () =>
+    Effect.gen(function* () {
+      expect(yield* hostStatusOf(Effect.succeed("notSignedIn"), nothing)).toEqual({
+        claudeSignIn: "notSignedIn",
+        tools: [
+          { tool: "claude", found: true },
+          { tool: "git", found: false },
+        ],
+      });
+      const unknown = yield* hostStatusOf(Effect.succeed("unknown"), nothing);
+      expect(unknown.tools[0]).toEqual({ tool: "claude", found: false });
+    }),
+  );
+});
+
+/** A recording stand-in for the terminals the handler opens on. */
+const fake = () => {
+  const calls: Array<{ readonly call: string; readonly args: unknown }> = [];
+  const terminals = {
+    open: (request: unknown) =>
+      Effect.sync(() => {
+        calls.push({ call: "open", args: request });
+        return { terminalId: "t1" as TerminalId, cwd: "~", shell: "/bin/zsh" };
+      }),
+    input: (terminalId: TerminalId, data: string) =>
+      Effect.sync(() => void calls.push({ call: "input", args: { terminalId, data } })),
+  };
+  return { calls, terminals };
+};
+
+describe("the Sign in terminal", () => {
+  it.effect("opens a shell on the machine and types the line without running it", () =>
+    Effect.gen(function* () {
+      const { calls, terminals } = fake();
+      yield* openSignInTerminal(terminals, HostId.make("h1"), { cols: 100, rows: 16 });
+      expect(calls).toEqual([
+        { call: "open", args: { hostId: "h1", cwd: "~", cols: 100, rows: 16 } },
+        // No Return: the user runs it.
+        { call: "input", args: { terminalId: "t1", data: "claude /login" } },
+      ]);
+    }),
+  );
+
+  it.effect("refuses anything else about where or what, and this machine", () =>
+    Effect.gen(function* () {
+      const { calls, terminals } = fake();
+      for (const extra of [
+        { threadId: "t" },
+        { cwd: "/etc" },
+        { shell: "/bin/sh" },
+        { script: "dev" },
+      ]) {
+        const error = yield* openSignInTerminal(terminals, HostId.make("h1"), {
+          cols: 1,
+          rows: 1,
+          ...extra,
+        }).pipe(Effect.flip);
+        expect(error._tag).toBe("InvalidState");
+      }
+      yield* openSignInTerminal(terminals, LOCAL_HOST_ID, { cols: 1, rows: 1 }).pipe(Effect.flip);
+      expect(calls).toEqual([]);
+    }),
+  );
 });

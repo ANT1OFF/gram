@@ -19,7 +19,7 @@ import { hostRepos } from "./host-config.ts";
 import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
-import { claudeSignInOf } from "./claude-sign-in.ts";
+import { claudeSignInOf, hostStatusOf } from "./claude-sign-in.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { HOST_CAPABILITIES, type HostService, serveHost } from "./protocol.ts";
@@ -82,9 +82,11 @@ const hostService = (
       terminals: yield* terminalsOnHost,
       sessions: yield* sessionsOnHost(agents.get),
       scan: liveScan.pipe(Effect.provideService(Proc, proc)),
-      claudeSignIn: agents.get("claude").pipe(
-        Effect.flatMap(claudeSignInOf),
-        Effect.orElseSucceed(() => "unknown" as const),
+      status: hostStatusOf(
+        agents.get("claude").pipe(
+          Effect.flatMap(claudeSignInOf),
+          Effect.orElseSucceed(() => "unknown" as const),
+        ),
       ),
     };
   });

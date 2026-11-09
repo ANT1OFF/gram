@@ -18,12 +18,14 @@ import { Dialog, DialogShell } from "@/thread/dialog-shell";
 import { copyText } from "./copy-text";
 import { phoneAccess, PhoneAccessError } from "./phone-access-api";
 import { PHONE_ACCESS_KEY, TailscaleChecklist } from "./phone-access-page";
-import { MachineSignIn } from "./machine-sign-in";
+import { MachineSignIn, SignInButton } from "./machine-sign-in";
 import {
   type JoinedMachine,
   type JoinLink,
   MACHINES_KEY,
+  machineNeedsSignIn,
   machineSignInProblem,
+  machineToolsLine,
   machinesApi,
   MachinesError,
   SshJoinError,
@@ -214,6 +216,7 @@ function MachineRow({
 }) {
   const online = machine.confirmed && machine.onlineSince !== undefined;
   const problem = online ? machineSignInProblem(machine) : undefined;
+  const tools = online ? machineToolsLine(machine) : undefined;
   return (
     <div className="flex flex-col gap-2" data-testid="machines-row">
       <div className="flex min-h-9 items-center gap-3">
@@ -233,6 +236,11 @@ function MachineRow({
             )}
           </span>
           <span className="text-meta text-muted-foreground">{machineState(machine, now)}</span>
+          {tools !== undefined && (
+            <span className="text-meta text-muted-foreground" data-testid="machines-tools">
+              {tools}
+            </span>
+          )}
           {problem !== undefined && (
             <span
               className="flex items-center gap-1 text-meta text-destructive"
@@ -252,10 +260,8 @@ function MachineRow({
               Confirm
             </Button>
           )}
-          {problem !== undefined && !signingIn && (
-            <Button size="sm" onClick={onSignIn} data-testid="machines-sign-in">
-              Sign in
-            </Button>
+          {online && machineNeedsSignIn(machine) && !signingIn && (
+            <SignInButton machine={machine} onClick={onSignIn} testId="machines-sign-in" />
           )}
           <Button size="sm" variant="ghost" onClick={onRemove}>
             Remove

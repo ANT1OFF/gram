@@ -5,10 +5,11 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { DialogShell } from "@/thread/dialog-shell";
-import { MachineSignIn } from "@/settings/machine-sign-in";
+import { MachineSignIn, SignInButton } from "@/settings/machine-sign-in";
 import {
   type JoinedMachine,
   MACHINES_KEY,
+  machineNeedsSignIn,
   machineSignInProblem,
   machinesApi,
 } from "@/settings/machines-api";
@@ -41,9 +42,11 @@ export const machineBlocker = (machine: JoinedMachine): string | undefined =>
 const stateOf = (machine: JoinedMachine): string | undefined =>
   machine.onlineSince === undefined
     ? "offline"
-    : machineSignInProblem(machine) !== undefined
-      ? "not signed in"
-      : undefined;
+    : machineSignInProblem(machine) === undefined
+      ? undefined
+      : machineNeedsSignIn(machine)
+        ? "not signed in"
+        : "can't run Claude";
 
 /**
  * Where the new thread runs: this machine, or a confirmed joined one. A chip beside the folder or
@@ -128,7 +131,8 @@ export function MachineNote({ machine }: { machine: JoinedMachine | undefined })
   const [checking, setChecking] = useState(false);
   if (machine === undefined) return null;
   const blocker = machineBlocker(machine);
-  const signIn = machine.onlineSince !== undefined && blocker !== undefined;
+  const online = machine.onlineSince !== undefined;
+  const signIn = online && machineNeedsSignIn(machine);
   return (
     <>
       <span
@@ -145,14 +149,11 @@ export function MachineNote({ machine }: { machine: JoinedMachine | undefined })
               {blocker}
             </span>
             {signIn && (
-              <Button
-                type="button"
-                size="xs"
+              <SignInButton
+                machine={machine}
                 onClick={() => setSigningIn(true)}
-                data-testid="machine-note-sign-in"
-              >
-                Sign in
-              </Button>
+                testId="machine-note-sign-in"
+              />
             )}
             <Button
               type="button"
@@ -164,7 +165,7 @@ export function MachineNote({ machine }: { machine: JoinedMachine | undefined })
                 try {
                   queryClient.setQueryData(
                     MACHINES_KEY,
-                    signIn ? await machinesApi.checkSignIn(machine.id) : await machinesApi.list(),
+                    online ? await machinesApi.checkSignIn(machine.id) : await machinesApi.list(),
                   );
                 } catch {
                   void queryClient.invalidateQueries({ queryKey: MACHINES_KEY });

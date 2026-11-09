@@ -21,9 +21,9 @@ pick another. The menu marks a machine that is offline or whose Claude Code isn'
 - Picking a joined machine makes the checkout a new worktree, made from that machine's own clone.
   Current checkout and Existing worktree are off while it is picked, since their folders are on
   this machine.
-- A line under Where it runs says where the thread will run. When the machine is offline or not
-  signed in, the line says so, with **Sign in** and **Check again**, and Start waits until it can
-  start there.
+- A line under Where it runs says where the thread will run. When the machine is offline, lacks
+  Claude Code or Git, or isn't signed in, the line says so, with **Check again** (and the sign-in
+  icon when signing in is the fix), and Start waits until it can start there.
 - A folded New task, one going back to the workspace the last task went to, names the machine in
   the line beside Start. Its Change opens the picker.
 - You can also ask the orchestrator to put a worker there: `spawn_worker` takes the machine's name.
@@ -99,25 +99,20 @@ the host's folder; on Linux use `journalctl --user -u gram-host`.
 
 ## Sign in on a machine
 
-A joined machine runs Claude Code on its own sign-in. While it is online, its host runs that
-machine's own `claude auth status` when it connects, and again when a listing finds the answer more
-than a minute old. It tells this Gram only the result: signed in, not signed in, an API key, a
-third-party provider, or unknown. Unknown covers an older `gram-host`, a missing CLI, or a status it
-couldn't read. No output, token or credential file leaves the machine.
+A joined machine runs Claude Code on its own sign-in. While it is online, its host checks two things when it connects, and again when a listing finds the answer more than a minute old:
 
-- When the machine isn't signed in, Settings → Machines says so on its row with the fix ("Claude
-  Code isn't signed in on <machine>. Run `claude /login` there.") and a **Sign in** button.
-- **Sign in** opens a terminal on that machine, inside Gram, in its home folder. It runs
-  `claude auth login --claudeai`, the user's own CLI. Open the link it prints to sign in in this
-  computer's browser. If the page shows a code, paste it into the terminal. Once the command
-  ends, Gram asks the machine again and the row updates. The machine's Claude Code stores the
-  login there, as it does in its own terminal. Gram only starts the command and never reads,
-  copies or relays what it stores.
-- The Machine picker's **Sign in** opens the same terminal, in a dialog.
-- A session that still can't start there names the machine, such as "Claude Code isn't logged in
-  on <machine>. Run `claude /login` there, or choose Sign in under Settings → Machines." The main
-  Gram's log records each failed start on a joined machine with the machine, the agent and the
-  reason code.
+- **Its sign-in.** The host runs that machine's own `claude auth status --json`, through the same readiness check its sessions use. It tells this Gram only the result: signed in, not signed in, an API key, a third-party provider, or unknown. Unknown covers an older `gram-host` or a status it couldn't read.
+- **Its tools.** It looks for `claude` and `git` in a non-interactive login shell (`$SHELL -lc 'command -v …'`) and reads their versions.
+
+No command output, token or credential file leaves the machine.
+
+- Settings → Machines lists the versions it found ("Claude Code 2.1.319 · Git 2.47.0"). When something is missing, the row says what, with the fix: "Claude Code isn't installed on <machine>, or isn't on its login shell's PATH.", or "Claude Code isn't signed in on <machine>. Run `claude /login` there."
+- A machine that is signed out gets a sign-in icon on its row, "Sign in to Claude on <machine>" on hover. It opens a shell on that machine, inside Gram, in its home folder, with `claude /login` typed but not run.
+  - Press Return to run it, open the link it prints to sign in in this computer's browser, and paste the code into the terminal if the page shows one.
+  - When the shell ends or you close the terminal, Gram asks the machine again and the row updates.
+  - The machine's Claude Code keeps the login there, as it does in its own terminal. Gram only types the command; it never reads, copies or relays what Claude Code stores.
+- The Machine picker marks such a machine, and its line under Where it runs offers the same sign-in, in a dialog.
+- A session that still can't start there names the machine, for example "Claude Code isn't logged in on <machine>. Run `claude /login` there, or choose Sign in under Settings → Machines." The main Gram's log records each failed start on a joined machine with the machine, the agent and the reason code.
 
 ## Its repositories
 

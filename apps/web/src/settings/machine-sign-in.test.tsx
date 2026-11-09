@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe("signing a joined machine in", () => {
-  it("says a machine isn't signed in, and Sign in runs the CLI there, then asks again", async () => {
+  it("says a machine isn't signed in, and Sign in opens a shell there, then asks again", async () => {
     let signedIn = false;
     const paths: string[] = [];
     vi.stubGlobal(
@@ -69,7 +69,7 @@ describe("signing a joined machine in", () => {
     expect((await screen.findByTestId("machines-sign-in-problem")).textContent).toBe(
       "Claude Code isn't signed in on build box. Run `claude /login` there.",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude on build box" }));
     // Only the machine is named: the server fixes the command and its folder.
     await waitFor(() =>
       expect(terminalOpen).toHaveBeenCalledWith({ signIn: "m-synthetic", cols: 100, rows: 16 }),
@@ -103,7 +103,58 @@ describe("signing a joined machine in", () => {
     );
     renderWithApi(<MachinesPage />, {});
     await screen.findByText("old box");
-    expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+    expect(screen.queryByTestId("machines-sign-in")).toBeNull();
     expect(screen.queryByTestId("machines-sign-in-problem")).toBeNull();
+  });
+
+  it("asks the machine again when the Sign in terminal is closed", async () => {
+    const paths: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) => {
+        paths.push(path);
+        return new Response(JSON.stringify({ machines: [machine()] }));
+      }),
+    );
+    const terminalOpen = vi.fn(async () => ({
+      terminalId: "term-sign-in" as TerminalId,
+      cwd: "~",
+      shell: "/bin/zsh",
+    }));
+    const terminalClose = vi.fn(async () => {});
+    renderWithApi(<MachinesPage />, { terminalOpen, terminalClose });
+    fireEvent.click(await screen.findByTestId("machines-sign-in"));
+    await screen.findByTestId("fake-terminal");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(paths).toContain("/machines/check-sign-in"));
+    expect(terminalClose).toHaveBeenCalledWith("term-sign-in");
+  });
+
+  it("says Claude Code isn't installed there, with no Sign in, and lists what it found", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              machines: [
+                machine({
+                  claudeSignIn: "unknown",
+                  tools: [
+                    { tool: "claude", found: false },
+                    { tool: "git", found: true, version: "2.47.0" },
+                  ],
+                }),
+              ],
+            }),
+          ),
+      ),
+    );
+    renderWithApi(<MachinesPage />, {});
+    expect((await screen.findByTestId("machines-sign-in-problem")).textContent).toBe(
+      "Claude Code isn't installed on build box, or isn't on its login shell's PATH.",
+    );
+    expect(screen.getByTestId("machines-tools").textContent).toBe("Git 2.47.0");
+    expect(screen.queryByTestId("machines-sign-in")).toBeNull();
   });
 });

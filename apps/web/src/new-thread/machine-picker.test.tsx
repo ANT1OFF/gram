@@ -118,7 +118,7 @@ describe("New thread on a joined machine", () => {
     expect(note.textContent).toContain(
       "Claude Code isn't signed in on new box. Run `claude /login` there.",
     );
-    expect(within(note).getByRole("button", { name: "Sign in" })).toBeTruthy();
+    expect(within(note).getByRole("button", { name: "Sign in to Claude on new box" })).toBeTruthy();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Start chat" }).hasAttribute("disabled")).toBe(
         true,

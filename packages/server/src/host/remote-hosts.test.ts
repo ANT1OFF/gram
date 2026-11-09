@@ -226,23 +226,32 @@ describe("joined machines over the network", () => {
     20_000,
   );
 
-  it.live("lists a machine's Claude sign-in once it is online, and again when asked", () =>
+  it.live("lists what a machine can run once it is online, and again when asked", () =>
     Effect.gen(function* () {
       const { hosts, base } = yield* served;
       const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
       let state: "notSignedIn" | "signedIn" = "notSignedIn";
-      const signIn = Effect.sync(() => state);
-      yield* Effect.forkScoped(dialOnce(dial, service(hostId, { claudeSignIn: signIn })));
+      const status = Effect.sync(() => ({
+        claudeSignIn: state,
+        tools: [{ tool: "claude" as const, found: true, version: "2.1.319" }],
+      }));
+      yield* Effect.forkScoped(dialOnce(dial, service(hostId, { status })));
       yield* online(hosts, hostId);
       // Asked as it comes online; offline, nothing is said about it.
       while (hosts.list()[0]?.claudeSignIn === undefined) yield* Effect.sleep("20 millis");
-      expect(hosts.list()[0]).toMatchObject({ claudeSignIn: "notSignedIn" });
+      expect(hosts.list()[0]).toMatchObject({
+        claudeSignIn: "notSignedIn",
+        tools: [{ tool: "claude", found: true, version: "2.1.319" }],
+      });
       state = "signedIn";
-      expect(yield* Effect.promise(() => hosts.checkSignIn(HostId.make(hostId)))).toBe("signedIn");
+      expect(yield* Effect.promise(() => hosts.checkSignIn(HostId.make(hostId)))).toMatchObject({
+        claudeSignIn: "signedIn",
+      });
       expect(hosts.list()[0]).toMatchObject({ claudeSignIn: "signedIn" });
       hosts.keepOrigin(undefined);
       while (hosts.list()[0]?.onlineSince !== undefined) yield* Effect.sleep("20 millis");
       expect(hosts.list()[0]).not.toHaveProperty("claudeSignIn");
+      expect(hosts.list()[0]).not.toHaveProperty("tools");
       expect(yield* Effect.promise(() => hosts.checkSignIn(HostId.make(hostId)))).toBeUndefined();
     }).pipe(Effect.scoped, Effect.timeout("15 seconds")),
   );

@@ -91,20 +91,25 @@ describe("host protocol", () => {
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 
-  it.effect(
-    "carries the machine's Claude sign-in, and reads a host that can't say as unknown",
-    () =>
-      Effect.gen(function* () {
-        const signedOut = yield* connected({}, { claudeSignIn: Effect.succeed("notSignedIn") });
-        expect(yield* signedOut.claudeSignIn!).toBe("notSignedIn");
-        // A host without the check, and one whose check dies.
-        expect(yield* (yield* connected()).claudeSignIn!).toBe("unknown");
-        const dying = yield* connected({}, { claudeSignIn: Effect.die("claude crashed") });
-        expect(yield* dying.claudeSignIn!).toBe("unknown");
-        // A defect in a handler would break the whole stream: the host keeps answering.
-        expect(dying.gone()).toBe(false);
-        expect((yield* dying.scan).listening.get(41)).toEqual([5173, 5174]);
-      }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  it.effect("carries what the machine can run, and reads a host that can't say as unknown", () =>
+    Effect.gen(function* () {
+      const status = {
+        claudeSignIn: "notSignedIn" as const,
+        tools: [
+          { tool: "claude" as const, found: true, version: "2.1.319" },
+          { tool: "git" as const, found: false },
+        ],
+      };
+      const signedOut = yield* connected({}, { status: Effect.succeed(status) });
+      expect(yield* signedOut.status!).toEqual(status);
+      // A host without the check, and one whose check dies.
+      expect(yield* (yield* connected()).status!).toEqual({ claudeSignIn: "unknown", tools: [] });
+      const dying = yield* connected({}, { status: Effect.die("claude crashed") });
+      expect(yield* dying.status!).toEqual({ claudeSignIn: "unknown", tools: [] });
+      // A defect in a handler would break the whole stream: the host keeps answering.
+      expect(dying.gone()).toBe(false);
+      expect((yield* dying.scan).listening.get(41)).toEqual([5173, 5174]);
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 
   it.effect("keeps a host's refusal as the Files panel's own error, with its message", () =>

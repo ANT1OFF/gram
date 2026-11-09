@@ -1,9 +1,11 @@
 import { HostId, type TerminalId } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
+import { LogIn } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { TerminalView } from "@/panels/terminal/terminal-view";
 
@@ -64,6 +66,8 @@ function SignInRun({
   const queryClient = useQueryClient();
   const [stage, setStage] = useState<Stage>({ kind: "opening" });
   const opened = useRef<TerminalId | undefined>(undefined);
+  /** Set once the sign-in was checked after this terminal: closing it then needn't ask again. */
+  const checked = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -79,13 +83,19 @@ function SignInRun({
       });
     return () => {
       live = false;
-      // Closing the panel stops a sign-in still waiting; one that ended is already gone.
+      // Closing the panel ends its shell, and asks the machine again how its sign-in stands.
       if (opened.current !== undefined) void api.terminalClose(opened.current).catch(() => {});
       opened.current = undefined;
+      if (!checked.current)
+        void machinesApi
+          .checkSignIn(machine.id)
+          .then((status) => queryClient.setQueryData(MACHINES_KEY, status))
+          .catch(() => {});
     };
-  }, [api, machine.id]);
+  }, [api, machine.id, queryClient]);
 
   const recheck = async (terminalId: TerminalId) => {
+    checked.current = true;
     setStage({ kind: "checking", terminalId });
     try {
       const status = await machinesApi.checkSignIn(machine.id);
@@ -113,14 +123,13 @@ function SignInRun({
   return (
     <div className="flex flex-col gap-2" data-testid="machine-sign-in">
       <p className="text-meta text-muted-foreground">
-        {`Signing in Claude Code on ${machine.name}. Open the link it prints to sign in in this computer's browser; if it asks for a code, paste it here.`}
+        {`A shell on ${machine.name}, with \`claude /login\` typed for you. Press Return to run it, open the link it prints to sign in in this computer's browser, and paste the code here if it asks. Gram checks again when you close this.`}
       </p>
       {terminalId !== undefined && (
         <div className="relative h-72 overflow-hidden rounded-md border border-border">
           <TerminalView
             terminalId={terminalId}
             active
-            script="Sign-in"
             onRestart={onAgain}
             onExit={() => {
               opened.current = undefined;
@@ -142,7 +151,7 @@ function SignInRun({
           {stage.kind === "opening"
             ? `Opening a terminal on ${machine.name}…`
             : stage.kind === "open"
-              ? "Waiting for the sign-in to finish."
+              ? "Close this once Claude Code says you're signed in."
               : stage.kind === "checking"
                 ? `Checking ${machine.name}…`
                 : stage.kind === "failed"
@@ -154,5 +163,37 @@ function SignInRun({
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * The Sign in action for `machine`: an icon, its words on hover. Opens the Sign in terminal there.
+ */
+export function SignInButton({
+  machine,
+  onClick,
+  testId,
+}: {
+  machine: JoinedMachine;
+  onClick: () => void;
+  testId?: string;
+}) {
+  const label = `Sign in to Claude on ${machine.name}`;
+  return (
+    <Hint
+      label={label}
+      render={
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label={label}
+          onClick={onClick}
+          data-testid={testId}
+        />
+      }
+    >
+      <LogIn />
+    </Hint>
   );
 }

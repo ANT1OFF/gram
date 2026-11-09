@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { type ClaudeSignIn, HostUnavailable, type HostId } from "@gram/contracts";
+import { HostUnavailable, type HostId, type HostStatus } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -17,7 +17,7 @@ import {
   type PairedMachines,
   type PairedMachineStore,
 } from "./paired-machines.ts";
-import { connectHost, type HostConnection } from "./protocol.ts";
+import { connectHost, type HostConnection, UNKNOWN_STATUS } from "./protocol.ts";
 import { watchedSocket } from "./socket-end.ts";
 
 /** A joined machine's host while it is dialled in. */
@@ -28,13 +28,13 @@ interface Online {
   readonly origin: string;
   /** Ends the connection: its socket closes and its calls fail. */
   readonly close: () => void;
-  /** Its Claude Code sign-in as last checked over this connection, and when. */
-  signIn?: { readonly state: ClaudeSignIn; readonly at: number };
+  /** What it can run (its Claude sign-in, its tools) as last checked here, and when. */
+  status?: { readonly status: HostStatus; readonly at: number };
   /** A check running now, so a burst of listings starts one. */
-  checking?: Promise<ClaudeSignIn | undefined> | undefined;
+  checking?: Promise<HostStatus | undefined> | undefined;
 }
 
-/** How old a sign-in check may be before a listing asks the machine again. */
+/** How old a status check may be before a listing asks the machine again. */
 export const SIGN_IN_FRESH_MS = 60_000;
 
 /** The store, made on first write: a Gram no machine joined never makes the file or its folder. */
@@ -68,10 +68,10 @@ export interface RemoteHostsShape {
     origin: string,
   ) => Effect.Effect<void>;
   /**
-   * Asks the machine for its Claude Code sign-in now and keeps the answer for the listing:
-   * `undefined` while it is offline. A check already running is shared.
+   * Asks the machine what it can run now (its Claude sign-in, its tools) and keeps the answer for
+   * the listing: `undefined` while it is offline. A check already running is shared.
    */
-  readonly checkSignIn: (id: HostId) => Promise<ClaudeSignIn | undefined>;
+  readonly checkSignIn: (id: HostId) => Promise<HostStatus | undefined>;
   /** Forgets the machine and closes its connection; false when it wasn't joined. */
   readonly remove: (id: HostId) => boolean;
   /**
@@ -165,25 +165,30 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             );
           }).pipe(Effect.ensuring(cleanUp));
         });
-      const checkSignIn = (id: HostId): Promise<ClaudeSignIn | undefined> => {
+      const checkSignIn = (id: HostId): Promise<HostStatus | undefined> => {
         const live = online.get(id);
         if (live === undefined || live.connection.gone()) return Promise.resolve(undefined);
         if (live.checking !== undefined) return live.checking;
-        const check = live.connection.claudeSignIn ?? Effect.succeed("unknown" as const);
+        const check = live.connection.status ?? Effect.succeed(UNKNOWN_STATUS);
         const checking = runPromise(
           check.pipe(
-            Effect.tap((state) =>
+            Effect.tap((status) =>
               Effect.sync(() => {
-                live.signIn = { state, at: now() };
+                live.status = { status, at: now() };
               }),
             ),
-            Effect.tap((state) =>
-              state === "signedIn"
+            Effect.tap((status) => {
+              const missing = status.tools.filter((tool) => !tool.found).map((tool) => tool.tool);
+              return status.claudeSignIn === "signedIn" && missing.length === 0
                 ? Effect.void
-                : Effect.logInfo(
-                    "machines: a joined machine's Claude Code can't start sessions",
-                  ).pipe(Effect.annotateLogs({ hostId: id, claudeSignIn: state })),
-            ),
+                : Effect.logInfo("machines: a joined machine can't run every session").pipe(
+                    Effect.annotateLogs({
+                      hostId: id,
+                      claudeSignIn: status.claudeSignIn,
+                      missing: missing.join(","),
+                    }),
+                  );
+            }),
           ),
         ).finally(() => {
           if (live.checking === checking) live.checking = undefined;
@@ -194,7 +199,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       /** The listing's view of each machine, asking again about any sign-in gone stale. */
       const view = (machine: PairedMachine) => {
         const live = online.get(machine.id);
-        if (live !== undefined && (live.signIn?.at ?? 0) + SIGN_IN_FRESH_MS <= now())
+        if (live !== undefined && (live.status?.at ?? 0) + SIGN_IN_FRESH_MS <= now())
           void checkSignIn(machine.id);
         return machineView(machine, live);
       };

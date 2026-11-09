@@ -1,7 +1,6 @@
 import {
   effectiveCheckout,
   InvalidState,
-  LOCAL_HOST_ID,
   NotFound,
   TerminalRpcs,
   type ThreadId,
@@ -13,7 +12,7 @@ import { WorkerHosts } from "../../host/worker-host.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { resolveScriptRun, ScriptsError } from "../../scripts/project-scripts.ts";
 import { checkShell } from "../../terminal/shell-check.ts";
-import { machineSignInTerminal } from "../../host/claude-sign-in.ts";
+import { openSignInTerminal } from "../../host/claude-sign-in.ts";
 import { logDefects, type Handlers } from "./common.ts";
 
 /** `terminal.*`: the Terminal tab, over the host's pseudo-terminals. */
@@ -44,19 +43,7 @@ const terminalHandlers = Effect.gen(function* () {
   return {
     "terminal.open": ({ script, signIn, ...request }) =>
       signIn !== undefined
-        ? request.threadId !== undefined ||
-          request.cwd !== undefined ||
-          request.shell !== undefined ||
-          script !== undefined ||
-          signIn === LOCAL_HOST_ID
-          ? Effect.fail(
-              new InvalidState({ message: "A sign-in terminal opens on a joined machine alone." }),
-            )
-          : terminals.open({
-              ...machineSignInTerminal(signIn),
-              cols: request.cols,
-              rows: request.rows,
-            })
+        ? openSignInTerminal(terminals, signIn, { ...request, script })
         : script === undefined
           ? terminals.open(request)
           : Effect.gen(function* () {
