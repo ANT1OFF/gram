@@ -8,6 +8,7 @@ import {
   type Autonomy,
   type GitState,
   type HostId,
+  type HostRepoIdentity,
   HostUnavailable,
   type OrchestratorCharter,
   type PrStatus,
@@ -28,7 +29,7 @@ import * as Stream from "effect/Stream";
 import * as nodePath from "node:path";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { Pr, Proc, ProcLive, ProcSpawnError } from "@gram/git";
+import { Pr, Proc, ProcLive, ProcSpawnError, samePath } from "@gram/git";
 import { OrchestrationAppToolsLive } from "../app-tools/orchestration-tools.ts";
 import { PrAppToolsLive } from "../app-tools/pr-tools.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
@@ -60,6 +61,7 @@ import { type EventLook, type EventLookContext, RoutineEventSources } from "../r
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
+import { cloneIdentityOf } from "../host/repos.ts";
 import { type WorkerHost, WorkerHosts } from "../host/worker-host.ts";
 import { OrchestratorAppToolsLive } from "./tools.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
@@ -174,11 +176,20 @@ export interface World {
   readonly eventLooks: Array<string>;
   /**
    * Set before the server is built: a joined machine that the PR tools and merges reach by its
-   * id, whose host answers each of its worktrees' git state by path while `online`. A path it
-   * doesn't list isn't a worktree there.
+   * id while `online`. Its host says what each worktree is by path (`identify`): the clone it
+   * shares a repository with, its `origin` URL and its branch; one it doesn't list has none of
+   * them. `identifies: false` is a host from before it could say.
    */
   joinedMachine?:
-    | { readonly id: HostId; online: boolean; readonly worktrees: Map<string, GitState> }
+    | {
+        readonly id: HostId;
+        online: boolean;
+        readonly identifies?: boolean;
+        readonly worktrees: Map<
+          string,
+          { readonly clone: string; readonly origin: string; readonly branch?: string }
+        >;
+      }
     | undefined;
 }
 
@@ -497,7 +508,7 @@ const conditionsOf = (world: World) =>
 
 /**
  * The machines as the PR tools and merges reach them: this one, and `world.joinedMachine` when a
- * test set one, whose host reads nothing but its worktrees' git state.
+ * test set one, whose host answers nothing but what its worktrees are, and their git state.
  */
 const machinesOf = (world: World) =>
   Layer.effect(
@@ -506,25 +517,47 @@ const machinesOf = (world: World) =>
       const hosts = yield* WorkerHosts;
       const joined = world.joinedMachine;
       if (joined === undefined) return hosts;
-      const unsupported = Effect.die(new Error("The test machine's host reads only git state."));
       const host: WorkerHost = {
         ...hosts.local,
         id: joined.id,
         name: "testbox",
         git: {
+          ...hosts.local.git,
           local: (cwd) =>
             Effect.suspend(() => {
-              const state = joined.worktrees.get(cwd);
-              return state === undefined
+              const there = joined.worktrees.get(cwd);
+              return there === undefined
                 ? Effect.fail(
                     new ProcSpawnError({ bin: "gram-host", message: `${cwd} isn't there` }),
                   )
-                : Effect.succeed(state);
+                : Effect.succeed({
+                    repo: true,
+                    ...(there.branch === undefined ? {} : { branch: there.branch }),
+                    worktree: true,
+                    head: "h1",
+                    changesToken: "",
+                    changedFiles: 0,
+                    behindBase: 0,
+                    aheadBase: 0,
+                    conflicts: false,
+                  });
             }),
-          present: (cwd) => Effect.sync(() => joined.worktrees.has(cwd)),
-          snapshot: () => unsupported,
-          watch: () => Stream.empty,
         },
+        ...(joined.identifies === false
+          ? {}
+          : {
+              identify: (repoRoot: string, path: string) =>
+                Effect.sync((): HostRepoIdentity => {
+                  const there = joined.worktrees.get(path);
+                  if (there === undefined) return { ofClone: false };
+                  const identity = cloneIdentityOf(there.origin);
+                  return {
+                    ofClone: samePath(there.clone, repoRoot),
+                    ...(identity === undefined ? {} : { identity }),
+                    ...(there.branch === undefined ? {} : { branch: there.branch }),
+                  };
+                }),
+            }),
       };
       return WorkerHosts.fromHosts(hosts.local, [], (id) =>
         id === joined.id && joined.online

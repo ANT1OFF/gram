@@ -1,6 +1,6 @@
 // merge_when_ready: unbinding, worker ownership and stacked PRs.
 import { describe, expect, it } from "@effect/vitest";
-import { DEFAULT_CHARTER, type GitState, HostId, initialBabysitState } from "@gram/contracts";
+import { DEFAULT_CHARTER, HostId, initialBabysitState, LOCAL_HOST_ID } from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -21,22 +21,9 @@ import {
 } from "../orchestration/test-harness.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { workerPrBlocker, withOwnedBranch } from "../git/worker-pr.ts";
-import { cloneFoldersOf } from "../host/repos.ts";
+import { cloneFolderOf, cloneIdentityOf } from "../host/repos.ts";
 import { AppToolRegistry } from "./registry.ts";
 import { ready, armedWorkerBadge } from "./pr-tools-kit.ts";
-
-/** A worktree on a joined machine with `branch` checked out, as its host reads it. */
-const gitThere = (branch: string): GitState => ({
-  repo: true,
-  branch,
-  worktree: true,
-  head: "h1",
-  changesToken: "",
-  changedFiles: 0,
-  behindBase: 0,
-  aheadBase: 0,
-  conflicts: false,
-});
 
 describe("merge_when_ready", () => {
   for (const change of ["unbind", "head branch", "hold"] as const) {
@@ -445,7 +432,11 @@ describe("merge_when_ready", () => {
                     hold: "Independent review",
                   },
                 });
-                expect(latest.ownedBranches).toContainEqual({ path, branch: "feat/evidence" });
+                expect(latest.ownedBranches).toContainEqual({
+                  path,
+                  branch: "feat/evidence",
+                  hostId: LOCAL_HOST_ID,
+                });
                 expect(yield* store.listRequests(thread.id)).toEqual([]);
               } else {
                 const before = (yield* store.getThread(worker.thread.id)).boundPr;
@@ -549,6 +540,7 @@ describe("merge_when_ready", () => {
           expect((yield* store.getThread(worker.thread.id)).ownedBranches).toContainEqual({
             path: worker.thread.checkout.path,
             branch: "feat/stack-next",
+            hostId: LOCAL_HOST_ID,
           });
           expect(yield* store.listRequests(thread.id)).toEqual([]);
           const workerMerge = tools.find((t) => t.descriptor.name === "merge_when_ready")!;
@@ -636,7 +628,7 @@ describe("merge_when_ready", () => {
             yield* completeTurn(worker.session);
             const foreign = { ...worker.thread.checkout, path: world.repo, branch: "feat/foreign" };
             const following = { ...worker.thread, currentCheckout: foreign };
-            expect(withOwnedBranch(following, foreign.path, foreign.branch)).toBe(following);
+            expect(withOwnedBranch(following, foreign, foreign.branch)).toBe(following);
             world.prHeads.set(13, { headRefName: "feat/released" });
             const released = yield* runtimes.updateThread(worker.thread.id, (t) => ({
               ...t,
@@ -676,28 +668,102 @@ describe("merge_when_ready", () => {
 
   describe("on a joined machine", () => {
     const MACHINE = HostId.make("m-0123456789abcdef01234567");
-    /** The host's clone of the project's origin, in the folder its identity names. */
-    const CLONE = `/home/invented/gram-host/repos/${cloneFoldersOf("https://github.com/acme/app.git")![0]}`;
+    const ORIGIN = "https://github.com/acme/app.git";
+    /** The host's clone of the project's origin, and the worktree Gram made from it there. */
+    const folder = cloneFolderOf(ORIGIN);
+    const CLONE = `/home/invented/gram-host/repos/${"folder" in folder ? folder.folder : ""}`;
     const WORKTREE = "/home/invented/gram-host/worktrees/app/feat-remote";
+    const OWN = "feat/remote-own";
+    const VICTIM = "feat/by-another-thread";
+    const scenarios = {
+      /** What Gram recorded as it made the worktree, and its host confirms. */
+      own: { pr: OWN },
+      /** The host claims another thread's branch is checked out there (finding 1). */
+      "a branch only its host claims": { pr: VICTIM, there: { branch: VICTIM } },
+      /** The worktree's branch is its own; the PR's is one it never held. */
+      "a foreign branch": { pr: "feat/by-hand" },
+      /** The clone was re-pointed at another repository after it was made (finding 2). */
+      "a re-pointed origin": {
+        pr: OWN,
+        there: { origin: "https://github.com/elsewhere/other.git" },
+      },
+      /** The same owner and name over another SSH account: another identity (finding 2). */
+      "another identity of the same name": {
+        pr: OWN,
+        there: { origin: "ssh://other-user@github.com/acme/app.git" },
+      },
+      /** The worktree no longer shares the recorded clone's repository. */
+      "a worktree of another clone": { pr: OWN, there: { clone: "/home/invented/elsewhere" } },
+      /** Made before the clone's identity was recorded: nothing says which project it is. */
+      "an unrecorded clone": { pr: OWN, record: { cloneIdentity: undefined } },
+      /** Recorded as a clone of another repository. */
+      "another project's clone": {
+        pr: OWN,
+        record: { cloneIdentity: cloneIdentityOf("https://github.com/elsewhere/app.git") },
+      },
+      "an offline machine": { pr: OWN, offline: true },
+      /** A gram-host from before it could say what a worktree is. */
+      "an older host": { pr: OWN, older: true },
+    } as const satisfies Record<
+      string,
+      {
+        readonly pr: string;
+        readonly there?: {
+          readonly branch?: string;
+          readonly origin?: string;
+          readonly clone?: string;
+        };
+        readonly record?: { readonly cloneIdentity: string | undefined };
+        readonly offline?: boolean;
+        readonly older?: boolean;
+      }
+    >;
+    const UNCONFIRMED =
+      "the machine the worker runs on didn't confirm that the worktree Gram made there still has its branch and its repository";
+    const reasons: Record<Exclude<keyof typeof scenarios, "own">, string> = {
+      "a branch only its host claims": UNCONFIRMED,
+      "a foreign branch": "its branch isn't checked out in a worktree Gram gave the worker",
+      "a re-pointed origin": UNCONFIRMED,
+      "another identity of the same name": UNCONFIRMED,
+      "a worktree of another clone": UNCONFIRMED,
+      "an unrecorded clone":
+        "the worktree Gram made on the worker's machine is older than Gram's record of which repository it cloned there",
+      "another project's clone":
+        "its repository isn't a workspace project the worker has a worktree in",
+      "an offline machine": UNCONFIRMED,
+      "an older host": UNCONFIRMED,
+    };
 
-    for (const scenario of [
-      "own",
-      "switched there",
-      "foreign branch",
-      "offline",
-      "other clone",
-    ] as const) {
+    for (const [scenario, setup] of Object.entries(scenarios) as Array<
+      [keyof typeof scenarios, (typeof scenarios)[keyof typeof scenarios]]
+    >) {
       it.effect.skipIf(!hasGit)(
         scenario === "own"
           ? "arms a worker's own PR from its worktree there without a card"
-          : scenario === "switched there"
-            ? "reads the branch checked out there from its host"
-            : `keeps a card for ${scenario}`,
+          : `keeps a card for ${scenario}`,
         () =>
           Effect.gen(function* () {
             const world = yield* makeWorld;
-            const worktrees = new Map<string, GitState>();
-            world.joinedMachine = { id: MACHINE, online: scenario !== "offline", worktrees };
+            const there: {
+              readonly branch?: string;
+              readonly origin?: string;
+              readonly clone?: string;
+            } = "there" in setup ? setup.there : {};
+            world.joinedMachine = {
+              id: MACHINE,
+              online: !("offline" in setup),
+              identifies: !("older" in setup),
+              worktrees: new Map([
+                [
+                  WORKTREE,
+                  {
+                    clone: there.clone ?? CLONE,
+                    origin: there.origin ?? ORIGIN,
+                    branch: there.branch ?? OWN,
+                  },
+                ],
+              ]),
+            };
             yield* withServer(
               world,
               Effect.gen(function* () {
@@ -708,33 +774,29 @@ describe("merge_when_ready", () => {
                 const worker = yield* spawn(session, { feature: "remote-own" });
                 yield* completeTurn(worker.session);
                 yield* atAutonomy(thread, "full");
-                const branch = "feat/remote-own";
-                // The worktree Gram made for it there, from the machine's clone of the project.
+                const identity =
+                  "record" in setup ? setup.record.cloneIdentity : cloneIdentityOf(ORIGIN);
+                // The worktree Gram made for it there, as this machine recorded it.
                 yield* runtimes.updateThread(worker.thread.id, (t) => ({
                   ...t,
                   checkout: {
                     kind: "worktree" as const,
                     path: WORKTREE,
-                    repoRoot:
-                      scenario === "other clone"
-                        ? "/home/invented/gram-host/repos/github.com/elsewhere/app"
-                        : CLONE,
-                    branch,
+                    repoRoot: CLONE,
+                    branch: OWN,
                     hostId: MACHINE,
+                    ...(identity === undefined ? {} : { cloneIdentity: identity }),
                   },
                   boundPr: { repo: "acme/app", number: 12, monitor: false },
                 }));
-                // Its agent may switch branches there: the host's HEAD counts, as one here does.
-                const checkedOut = scenario === "switched there" ? "feat/remote-next" : branch;
-                worktrees.set(WORKTREE, gitThere(checkedOut));
-                world.prHeads.set(12, {
-                  headRefName: scenario === "foreign branch" ? "feat/by-hand" : checkedOut,
-                });
-                const merge = registry
-                  .forTransport(worker.thread.id, "worker")
-                  .find((t) => t.descriptor.name === "merge_when_ready")!;
-                if (scenario === "own" || scenario === "switched there") {
-                  expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(true);
+                world.prHeads.set(12, { headRefName: setup.pr });
+                const tools = registry.forTransport(worker.thread.id, "worker");
+                const merge = tools.find((t) => t.descriptor.name === "merge_when_ready")!;
+                const check = tools.find((t) => t.descriptor.name === "local_check")!;
+                const own = scenario === "own";
+                expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(own);
+                expect(yield* check.delegatedAtFullAutonomy!({})).toBe(own);
+                if (own) {
                   yield* merge.run({});
                   expect(
                     (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
@@ -742,21 +804,15 @@ describe("merge_when_ready", () => {
                   expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
                   return;
                 }
-                expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(false);
                 const call = yield* Effect.forkScoped(merge.run({}).pipe(Effect.flip));
                 const card = yield* waitReal(
                   "the approval card",
                   store.listRequests(worker.thread.id).pipe(Effect.map((all) => all[0])),
                 );
                 if (card.kind !== "approval") throw new Error("not an approval");
-                const reason = {
-                  "foreign branch":
-                    "its branch isn't checked out in a worktree Gram gave the worker",
-                  offline: "Gram couldn't read the worker's worktree or the pull request on GitHub",
-                  "other clone":
-                    "its repository isn't a workspace project the worker has a worktree in",
-                }[scenario];
-                expect(card.autonomyNote).toBe(`full auto, PR ownership unverified: ${reason}`);
+                expect(card.autonomyNote).toBe(
+                  `full auto, PR ownership unverified: ${reasons[scenario]}`,
+                );
                 yield* runtimes.respond(worker.thread.id, card.id, {
                   kind: "approval",
                   decision: "deny",
@@ -766,6 +822,99 @@ describe("merge_when_ready", () => {
                 expect(
                   (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
                 ).toBeUndefined();
+              }),
+            );
+          }).pipe(Effect.scoped),
+      );
+    }
+
+    // Finding 3: a folder on this machine and one on the joined machine with the same path.
+    for (const history of ["observed", "recorded before machines were"] as const) {
+      it.effect.skipIf(!hasGit)(
+        `never hands the joined machine's worktree a branch ${history} at the same path here`,
+        () =>
+          Effect.gen(function* () {
+            const world = yield* makeWorld;
+            const worktrees = new Map<
+              string,
+              { readonly clone: string; readonly origin: string; readonly branch?: string }
+            >();
+            world.joinedMachine = { id: MACHINE, online: true, worktrees };
+            yield* withServer(
+              world,
+              Effect.gen(function* () {
+                const store = yield* ThreadStore;
+                const runtimes = yield* ThreadRuntimes;
+                const registry = yield* AppToolRegistry;
+                const { session, thread } = yield* openOrchestrator(world);
+                const worker = yield* spawn(session, { feature: "same-path" });
+                yield* completeTurn(worker.session);
+                yield* atAutonomy(thread, "full");
+                const here = worker.thread.checkout;
+                // An honest host: its worktree at the same path still has the worker's own branch.
+                worktrees.set(here.path, { clone: CLONE, origin: ORIGIN, branch: OWN });
+                const remote = {
+                  kind: "worktree" as const,
+                  path: here.path,
+                  repoRoot: CLONE,
+                  branch: OWN,
+                  hostId: MACHINE,
+                  cloneIdentity: cloneIdentityOf(ORIGIN)!,
+                };
+                let updated = yield* runtimes.updateThread(worker.thread.id, (t) => ({
+                  ...t,
+                  checkout: remote,
+                  ...(history === "observed"
+                    ? // Following a folder here, at the same path, on another thread's branch.
+                      { currentCheckout: { ...here, branch: VICTIM } }
+                    : // A worktree here at that path too, and a branch recorded for "that path".
+                      {
+                        extraCheckouts: [here],
+                        ownedBranches: [{ path: here.path, branch: VICTIM }],
+                      }),
+                  boundPr: { repo: "acme/app", number: 12, monitor: false },
+                }));
+                if (history === "observed") {
+                  // What the publisher's observer does with the followed folder's branch.
+                  expect(withOwnedBranch(updated, updated.currentCheckout!, VICTIM)).toBe(updated);
+                  // Seen in the folder here, it is recorded as this machine's, not the other's.
+                  const held = { ...updated, extraCheckouts: [here] };
+                  expect(withOwnedBranch(held, here, "feat/next").ownedBranches).toEqual([
+                    { path: here.path, branch: "feat/next", hostId: LOCAL_HOST_ID },
+                  ]);
+                  updated = yield* store.getThread(worker.thread.id);
+                }
+                world.prHeads.set(12, { headRefName: VICTIM });
+                const tools = registry.forTransport(worker.thread.id, "worker");
+                const merge = tools.find((t) => t.descriptor.name === "merge_when_ready")!;
+                const check = tools.find((t) => t.descriptor.name === "local_check")!;
+                expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(false);
+                expect(yield* check.delegatedAtFullAutonomy!({})).toBe(false);
+                expect(
+                  yield* workerPrBlocker(updated, "acme/app", 12).pipe(
+                    Effect.provideService(ThreadStore, store),
+                    Effect.provideService(Proc, {
+                      run: (bin, args) =>
+                        Effect.succeed({
+                          status: 0,
+                          stdout:
+                            bin === "git"
+                              ? args[0] === "symbolic-ref"
+                                ? OWN
+                                : ORIGIN
+                              : JSON.stringify({
+                                  number: 12,
+                                  url: "https://github.com/acme/app/pull/12",
+                                  headRefName: VICTIM,
+                                  state: "OPEN",
+                                  isCrossRepository: false,
+                                }),
+                          stderr: "",
+                          truncated: false,
+                        }),
+                    }),
+                  ),
+                ).toBe("its head branch is no longer a worktree branch held by this worker");
               }),
             );
           }).pipe(Effect.scoped),

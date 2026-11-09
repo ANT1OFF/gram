@@ -820,10 +820,10 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           before ?? { ...noChangedPaths, repo: undefined },
         );
         extraFacts.set(key, after);
-        if (withOwnedBranch(thread, extra.path, after.branch) !== thread) {
+        if (withOwnedBranch(thread, extra, after.branch) !== thread) {
           // A worker removed during the sample has no ownership left to record.
           yield* runtimes
-            .updateThread(thread.id, (latest) => withOwnedBranch(latest, extra.path, after.branch))
+            .updateThread(thread.id, (latest) => withOwnedBranch(latest, extra, after.branch))
             .pipe(Effect.ignore);
         }
         moved ||= before === undefined || !sameChangedPaths(before, after);

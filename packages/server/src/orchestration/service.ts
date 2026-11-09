@@ -678,16 +678,14 @@ export const OrchestrationLive = Layer.effect(
     yield* publisher.observe({
       onState: (thread, state) =>
         Effect.gen(function* () {
-          const path = effectiveCheckout(thread).path;
+          const at = effectiveCheckout(thread);
           // Before the coalescing queue: a quick second branch switch must retain the first.
-          const observed = withOwnedBranch(thread, path, state.branch);
+          const observed = withOwnedBranch(thread, at, state.branch);
           const latest =
             observed === thread
               ? thread
               : yield* runtimes
-                  .updateThread(thread.id, (current) =>
-                    withOwnedBranch(current, path, state.branch),
-                  )
+                  .updateThread(thread.id, (current) => withOwnedBranch(current, at, state.branch))
                   .pipe(Effect.orElseSucceed(() => thread));
           yield* signals.offer({ type: "gitState", thread: latest, state });
         }),

@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
-import { git, Proc, type ProcShape, realPathSync, WorktreeError } from "@gram/git";
+import { git, Proc, type ProcShape, realPathSync, tryRealPathSync, WorktreeError } from "@gram/git";
+import type { HostRepoIdentity } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { redactUrlCredentials } from "./remote-url.ts";
 import { withCloneLock } from "./clone-lock.ts";
@@ -105,13 +106,13 @@ export const cloneFolderOf = (
 };
 
 /**
- * The folders a host's clone of `url` can be in, under its `repos`: the identity folder and the
- * legacy readable one. `ensure` keeps a clone in either only while its origin has `url`'s exact
- * identity, so a clone Gram was handed back from one of them is a clone of `url`.
+ * The identity of the repository `url` names (transport, host, port, SSH account and path), as
+ * clones are told apart by; `undefined` for a URL the host doesn't clone. Names no secret: a URL
+ * with a password, or an https one with a user, has none.
  */
-export const cloneFoldersOf = (url: string): ReadonlyArray<string> | undefined => {
+export const cloneIdentityOf = (url: string): string | undefined => {
   const remote = remoteOf(url);
-  return "error" in remote ? undefined : [remote.folder, remote.legacyFolder];
+  return "error" in remote ? undefined : remote.identity;
 };
 
 const failed = (message: string) =>
@@ -231,7 +232,37 @@ export const reposOn = (
     };
     return ensureIn(target.legacyFolder, true);
   };
-  return { ensure };
+  /**
+   * What the worktree at `path` is now, beside the clone at `repoRoot`: its origin's identity,
+   * whether it shares that clone's repository, and its branch. Read-only, and anything git can't
+   * say is left out, so the control plane fails closed on it.
+   */
+  const read = (cwd: string, args: ReadonlyArray<string>) =>
+    on(git(cwd, args, { timeoutMs: 5_000 })).pipe(
+      Effect.map((out) => (out.status === 0 ? out.stdout.trim() || undefined : undefined)),
+      Effect.orElseSucceed(() => undefined),
+    );
+  const identify = (repoRoot: string, path: string): Effect.Effect<HostRepoIdentity> =>
+    Effect.gen(function* () {
+      const common = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
+      const [mine, clones, origin, branch] = [
+        yield* read(path, common),
+        yield* read(repoRoot, common),
+        // As stored, not as `insteadOf` rewrites it: the URL the clone was made from.
+        yield* read(path, ["config", "--get", "remote.origin.url"]),
+        yield* read(path, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
+      ];
+      const shared = mine === undefined ? undefined : tryRealPathSync(mine);
+      const ofClone =
+        shared !== undefined && clones !== undefined && shared === tryRealPathSync(clones);
+      const identity = origin === undefined ? undefined : cloneIdentityOf(origin);
+      return {
+        ofClone,
+        ...(identity === undefined ? {} : { identity }),
+        ...(branch === undefined ? {} : { branch }),
+      };
+    });
+  return { ensure, identify };
 };
 
 export type HostRepos = ReturnType<typeof reposOn>;

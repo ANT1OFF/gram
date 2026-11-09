@@ -5,7 +5,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Proc, ProcLive, ProcSpawnError, type ProcShape } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
-import { cloneFolderOf, reposOn } from "./repos.ts";
+import { cloneFolderOf, cloneIdentityOf, reposOn } from "./repos.ts";
 
 const URL = "https://git.example.test/acme/widgets.git";
 const folderOf = (url = URL) => {
@@ -277,5 +277,46 @@ describe("reposOn", () => {
       expect(error).toMatchObject({ _tag: "WorktreeError", reason: "failed" });
       expect(readdirSync(join(root, "git.example.test", "acme"))).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+});
+
+const git = (cwd: string, ...args: Array<string>) =>
+  execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
+
+describe("identify", () => {
+  it.effect("says what a worktree is now, beside the clone it was made from", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const clone = makeRepo(join(dir, "clone"));
+      git(clone, "remote", "add", "origin", URL);
+      const worktree = join(dir, "worktree");
+      git(clone, "worktree", "add", "--quiet", "-b", "feat/own", worktree);
+      const other = makeRepo(join(dir, "other"));
+      const proc = yield* Proc;
+      const { identify } = reposOn(proc, join(dir, "repos"));
+
+      expect(yield* identify(clone, worktree)).toEqual({
+        ofClone: true,
+        identity: cloneIdentityOf(URL),
+        branch: "feat/own",
+      });
+      // Another repository's folder isn't a worktree of the clone.
+      expect((yield* identify(other, worktree)).ofClone).toBe(false);
+      // Its origin re-pointed, or under another account: another identity, never the recorded one.
+      for (const url of [
+        "https://git.example.test/elsewhere/other.git",
+        "ssh://other-user@git.example.test/acme/widgets.git",
+      ]) {
+        git(clone, "remote", "set-url", "origin", url);
+        expect((yield* identify(clone, worktree)).identity).toBe(cloneIdentityOf(url));
+        expect(cloneIdentityOf(url)).not.toBe(cloneIdentityOf(URL));
+      }
+      // A URL the host doesn't clone, a detached HEAD and a folder that isn't there say nothing.
+      git(clone, "remote", "set-url", "origin", "file:///somewhere");
+      git(worktree, "checkout", "--quiet", "--detach");
+      expect(yield* identify(clone, worktree)).toEqual({ ofClone: true });
+      expect(yield* identify(clone, join(dir, "gone"))).toEqual({ ofClone: false });
+    }).pipe(Effect.provide(ProcLive), Effect.scoped),
   );
 });

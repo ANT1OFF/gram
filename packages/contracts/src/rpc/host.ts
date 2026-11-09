@@ -67,6 +67,12 @@ export const HostCapability = Schema.Literals([
    * check id, answering a repeat with the run already under way or its result.
    */
   "checks",
+  /**
+   * Says what a worker's worktree is now (`host.repos.identify`): its origin's identity, whether
+   * it is a worktree of the clone it was made from, and its branch. Optional: without it, the
+   * control plane can't confirm a worker there owns a pull request, and asks the user.
+   */
+  "repo-identity",
 ]);
 export type HostCapability = typeof HostCapability.Type;
 
@@ -157,6 +163,20 @@ export const HostCheckFailure = Schema.Struct({
   exitCode: Schema.optionalKey(Schema.Number),
   tail: Schema.optionalKey(Schema.String),
 });
+
+/**
+ * A worktree on the host as it is now, read there for the control plane to compare with what it
+ * recorded when it made it: never a grant of anything by itself.
+ */
+export const HostRepoIdentity = Schema.Struct({
+  /** The identity of the worktree's `origin` (transport, host, port, account, path); absent when it has none the host clones. */
+  identity: Schema.optionalKey(Schema.String),
+  /** The worktree shares its repository with the clone at `repoRoot`. */
+  ofClone: Schema.Boolean,
+  /** The branch checked out there; absent when detached or unreadable. */
+  branch: Schema.optionalKey(Schema.String),
+});
+export type HostRepoIdentity = typeof HostRepoIdentity.Type;
 
 /** How a check on the host ended, and what it checked. */
 export const HostCheckResult = Schema.Struct({
@@ -468,6 +488,15 @@ export const HostRpcs = RpcGroup.make(
     payload: { url: Schema.String },
     success: Schema.Struct({ path: Schema.String }),
     error: worktreeErrors,
+  }),
+  /**
+   * What the worktree at `path` is now, beside the clone at `repoRoot` it was made from, on a host
+   * that serves `repo-identity`. Read-only: nothing is fetched or cloned.
+   */
+  Rpc.make("host.repos.identify", {
+    payload: { repoRoot: Schema.String, path: Schema.String },
+    success: HostRepoIdentity,
+    error: HostFailed,
   }),
   /** A repo's worktrees, those open in a thread marked. */
   Rpc.make("host.worktrees.list", {

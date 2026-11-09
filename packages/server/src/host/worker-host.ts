@@ -14,6 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import type { HostAttachments, HostFileReads } from "./file-reads.ts";
+import type { HostRepoIdentify } from "./protocol.ts";
 import { filesOn, type HostFiles } from "./files.ts";
 import { LocalHostProcess } from "./local-process.ts";
 import { RemoteHosts } from "./remote-hosts.ts";
@@ -98,6 +99,11 @@ export interface WorkerHost {
   readonly reads?: HostFileReads | undefined;
   /** Another machine's store for the files users attach to its sessions; absent as `reads` is. */
   readonly attachments?: HostAttachments | undefined;
+  /**
+   * What a worker's worktree on another machine is now, read there to confirm what this machine
+   * recorded when it made it. Absent for this machine, and for a host whose build doesn't serve it.
+   */
+  readonly identify?: HostRepoIdentify | undefined;
 }
 
 export interface WorkerHostsShape {

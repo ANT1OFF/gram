@@ -21,6 +21,8 @@ describe("ownership blockers", () => {
       "GitHub didn't say which commit its head is",
       "its head moved after Gram checked it",
       "Gram couldn't read the worker's worktree or the pull request on GitHub",
+      "the machine the worker runs on didn't confirm that the worktree Gram made there still has its branch and its repository",
+      "the worktree Gram made on the worker's machine is older than Gram's record of which repository it cloned there",
     ]);
     for (const blocker of Object.values(OWNERSHIP_BLOCKERS))
       expect(explainOwnershipBlocker(blocker).fix).toMatch(/\.$/);

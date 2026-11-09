@@ -1114,9 +1114,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
               // The gate is read-only; remember its reverified branch atomically with arming so a
               // switch before the next publisher sample cannot drop this intent.
               const owned =
-                typeof ownership === "object"
-                  ? withOwnedBranch(t, ownership.path, ownership.branch)
-                  : t;
+                typeof ownership === "object" ? withOwnedBranch(t, ownership, ownership.branch) : t;
               return bindMainPr(owned, { ...rest, mergeWhenReady: intent });
             },
             reusing || (call.carded === true && byOrchestrator) ? caller : undefined,

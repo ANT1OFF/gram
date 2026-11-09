@@ -35,7 +35,7 @@ import type { AttachmentsOnMachine } from "./carry-attachments.ts";
 import type { HostConnection } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
-import { cloneFolderOf } from "./repos.ts";
+import { cloneFolderOf, cloneIdentityOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
 /** A joined machine as its worker host is named and reached. */
@@ -188,10 +188,13 @@ export const machineCheckouts = (
                   : new GitError({ message: redactUrlCredentials(error.message) }),
             ),
           );
+        // Recorded here as it is made: what a check of the worker's ownership later goes by.
+        const cloneIdentity = cloneIdentityOf(url);
         return {
           ...created.checkout,
           repoRoot: created.checkout.repoRoot ?? repoPath,
           hostId: machine.id,
+          ...(cloneIdentity === undefined ? {} : { cloneIdentity }),
         };
       }),
     checkRelease: (thread, options) =>
@@ -405,6 +408,7 @@ export const machineWorkerHost = (
       name: machine.name,
       reads: connection.reads,
       attachments: connection.attachments,
+      identify: connection.repos.identify,
     };
   });
 

@@ -328,6 +328,12 @@ export const Checkout = Schema.Struct({
   base: Schema.optionalKey(Schema.String),
   /** The main checkout's repo root for a worktree; equal to `path` or omitted for main. */
   repoRoot: Schema.optionalKey(Schema.String),
+  /**
+   * For a worktree Gram made on another machine, the identity of the `origin` it cloned there
+   * (transport, host, port, account, path), recorded here as it was made. Its host is asked only
+   * to confirm it; absent on a checkout made before it was recorded.
+   */
+  cloneIdentity: Schema.optionalKey(Schema.String),
 });
 export type Checkout = typeof Checkout.Type;
 
@@ -728,9 +734,18 @@ export const Thread = Schema.Struct({
    * no other thread is opened on them and so closing the worker can release them.
    */
   extraCheckouts: Schema.optionalKey(Schema.Array(Checkout)),
-  /** Branches observed in held worker worktrees, scoped by path; checkout moves grant no ownership. */
+  /**
+   * Branches observed in held worker worktrees, scoped by machine and path; checkout moves grant no
+   * ownership. One recorded before `hostId` was can't say which machine it was seen on.
+   */
   ownedBranches: Schema.optionalKey(
-    Schema.Array(Schema.Struct({ path: Schema.String, branch: Schema.String })),
+    Schema.Array(
+      Schema.Struct({
+        path: Schema.String,
+        branch: Schema.String,
+        hostId: Schema.optionalKey(HostId),
+      }),
+    ),
   ),
   /** What the thread is for the server beyond a plain conversation; absent for a plain thread. */
   role: Schema.optionalKey(ThreadRole),

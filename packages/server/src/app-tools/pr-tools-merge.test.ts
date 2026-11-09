@@ -1,6 +1,11 @@
 // merge_when_ready: arming, holds, policy and what invalidates an armed merge.
 import { describe, expect, it } from "@effect/vitest";
-import { initialBabysitState, type ThreadNotFound, type NotFound } from "@gram/contracts";
+import {
+  initialBabysitState,
+  LOCAL_HOST_ID,
+  type ThreadNotFound,
+  type NotFound,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { MergeWhenReady } from "../git/merge-when-ready.ts";
@@ -458,6 +463,7 @@ describe("merge_when_ready", () => {
                 {
                   path,
                   branch: "feat/unsampled-stack",
+                  hostId: LOCAL_HOST_ID,
                 },
               );
               run(path, "switch", "-c", "feat/next-stack");
