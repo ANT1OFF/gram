@@ -16,6 +16,7 @@ const protectedPaths = [
   "/host/join",
   "/host/connect",
   "/host/mcp",
+  "/host/install",
 ] as const;
 const protectedRoutes = FindMyWay.make<string>();
 for (const path of protectedPaths) protectedRoutes.all(path, path);
