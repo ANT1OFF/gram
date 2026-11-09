@@ -73,6 +73,18 @@ const fixedIdentity = {
   GIT_COMMITTER_DATE: "1970-01-01T00:00:00Z",
 };
 
+/** What a run checks: a repeat of its id must ask for the very same. */
+const asksOf = (request: HostCheckRequest) =>
+  JSON.stringify([
+    request.path,
+    request.repoRoot ?? null,
+    request.head,
+    request.base,
+    request.command,
+    request.setup ?? null,
+    request.timeoutMs,
+  ]);
+
 const unstartable = (reason: string): LocalCheckOutcome => ({
   ok: false,
   reason,
@@ -119,7 +131,12 @@ export const checksOn = (
     const slot = yield* Semaphore.make(1);
     const runs = new Map<
       string,
-      { readonly done: Deferred.Deferred<HostCheckResult>; endedAt?: number }
+      {
+        readonly done: Deferred.Deferred<HostCheckResult>;
+        /** What the run checks: a repeat of its id must ask for the very same. */
+        readonly asks: string;
+        endedAt?: number;
+      }
     >();
     const work = nodePath.join(dir, "work");
     /**
@@ -293,9 +310,16 @@ export const checksOn = (
             return yield* new HostFailed({ message: "A check needs a command." });
           prune();
           let run = runs.get(request.id);
+          if (run !== undefined && run.asks !== asksOf(request))
+            return yield* new HostFailed({
+              message: "Another check already runs under that id.",
+            });
           if (run === undefined) {
             const done = yield* Deferred.make<HostCheckResult>();
-            const entry: { readonly done: typeof done; endedAt?: number } = { done };
+            const entry: { readonly done: typeof done; readonly asks: string; endedAt?: number } = {
+              done,
+              asks: asksOf(request),
+            };
             run = entry;
             runs.set(request.id, entry);
             // Runs in the host's scope, not the caller's: a dropped connection doesn't stop it.

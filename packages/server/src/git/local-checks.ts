@@ -1866,8 +1866,31 @@ export const LocalChecksLive = Layer.effect(
               "unstartable",
             );
           asked = true;
-          const answer = yield* checks.run(request).pipe(Effect.exit);
-          if (Exit.isSuccess(answer)) return answer.value;
+          // A host that stays connected but never answers holds the slot no longer than this.
+          const answer = yield* checks.run(request).pipe(
+            Effect.timeoutOrElse({
+              duration: Duration.millis(Math.max(0, deadline - now)),
+              orElse: () =>
+                Effect.succeed(
+                  failed(
+                    `no word from ${name} on how its check ended, past its timeout; run local_check again`,
+                    "stopped",
+                  ),
+                ),
+            }),
+            Effect.exit,
+          );
+          if (Exit.isSuccess(answer)) {
+            const result = answer.value;
+            // Only a pass that names what it checked counts as one.
+            return result.ok &&
+              (result.tree === null ||
+                !SHA.test(result.tree) ||
+                result.mergedCommit === undefined ||
+                !SHA.test(result.mergedCommit))
+              ? failed(`${name}'s pass named no merged tree and commit`, "unstartable")
+              : result;
+          }
           const error = Cause.findErrorOption(answer.cause);
           if (Option.isSome(error) && error.value._tag === "HostFailed")
             return failed(`${name} couldn't run it: ${error.value.message}`, "unstartable");
@@ -1877,6 +1900,7 @@ export const LocalChecksLive = Layer.effect(
           yield* Effect.logInfo(
             "local check: a joined machine's connection dropped mid-check",
           ).pipe(Effect.annotateLogs({ hostId: site.hostId, head: started.head }));
+          yield* Effect.sleep(Math.min(MACHINE_POLL_MS, reattachMs));
         }
       });
       return machineAdmission(site.hostId)

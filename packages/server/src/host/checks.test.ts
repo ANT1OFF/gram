@@ -124,6 +124,12 @@ describe.skipIf(!hasGit)("a joined machine's checks", () => {
       // Asked once more after it ended, it answers from what it kept.
       expect(yield* connection.checks!.run(request)).toEqual(result);
       expect(seen).toHaveLength(1);
+      // The same id never stands for another check.
+      const other = yield* connection
+        .checks!.run({ ...request, command: "other-check" })
+        .pipe(Effect.flip);
+      expect(other).toMatchObject({ _tag: "HostFailed" });
+      expect(seen).toHaveLength(1);
       expect(readFileSync(join(worktree, "scratch.txt"), "utf8")).toBe("uncommitted\n");
     }).pipe(Effect.scoped, Effect.provide(Live)),
   );

@@ -400,6 +400,29 @@ describe("Gram's own check of a thread on a joined machine", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("a pass that doesn't name its merged tree and commit isn't one", () =>
+    Effect.gen(function* () {
+      const host = machine(() => Effect.succeed({ tree: null, ok: true, host: "cachyos" }));
+      const { dir, merged, layer } = yield* armed(host.layer);
+      yield* Effect.gen(function* () {
+        const { thread, site } = yield* placed(dir);
+        const checks = yield* LocalChecks;
+        yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
+        yield* waitReal(
+          "the pass refused",
+          checks
+            .lookup(site, HEAD, BASE, thread.projectId)
+            .pipe(Effect.map((check) => check?.status === "failed")),
+        );
+        expect(yield* checks.lookup(site, HEAD, BASE, thread.projectId)).toMatchObject({
+          status: "failed",
+          failure: { kind: "unstartable" },
+        });
+        expect(merged).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(layer));
+    }).pipe(Effect.scoped),
+  );
+
   it.live("a host's refusal is a failure it can act on, not a pass", () =>
     Effect.gen(function* () {
       const host = machine(() => Effect.fail(new HostFailed({ message: "no such checkout" })));
