@@ -47,6 +47,8 @@ export interface RemoteHostsShape {
   readonly machines: PairedMachines;
   /** The machine's host, when it is joined, confirmed and dialled in now. */
   readonly connection: (id: HostId) => Effect.Effect<HostConnection, HostUnavailable>;
+  /** The tailnet address the machine dialled, while it is online: where it reaches this Gram. */
+  readonly origin: (id: HostId) => string | undefined;
   /** The joined machines as the settings page lists them. */
   readonly list: () => ReadonlyArray<ReturnType<typeof machineView>>;
   /**
@@ -159,6 +161,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                 )
               : Effect.succeed(live.connection);
           }),
+        origin: (id) => online.get(id)?.origin,
         list: () => machines.list().map((machine) => machineView(machine, online.get(machine.id))),
         attach,
         remove: (id) => {

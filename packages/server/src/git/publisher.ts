@@ -341,8 +341,8 @@ export const GitStatePublisherLive = Layer.effect(
     const store = yield* ThreadStore;
     const hub = yield* EventHub;
     const runtimes = yield* ThreadRuntimes;
-    // The checkouts' git state and worktrees are this machine's, read through its host.
-    const { git: gitState, worktrees } = (yield* WorkerHosts).local;
+    // Each checkout's git state and worktrees, read on the machine it is on.
+    const { git: gitState, worktrees } = (yield* WorkerHosts).placed;
     const pr = yield* Pr;
     const config = yield* GitServerConfig;
     const refreshes = yield* GitRefresh;

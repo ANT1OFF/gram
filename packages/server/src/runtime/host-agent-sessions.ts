@@ -14,6 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { LocalHostProcess } from "../host/local-process.ts";
+import { HOST_MCP_PATH } from "../host/machine-keys.ts";
 import type { HostSessionsConnection } from "../host/protocol.ts";
 import { AgentHosts } from "./agent-hosts.ts";
 
@@ -337,8 +338,21 @@ export const agentHostOnMachine = (
   gone: () => boolean,
   inServer: AgentHost,
   machineName: string,
+  /** The tailnet address the machine reaches this Gram at, for its sessions' app tools. */
+  origin: () => string | undefined,
 ): AgentHost => {
   const kind = inServer.kind;
+  /**
+   * The app tools' endpoint as the machine reaches it: this Gram's tailnet address, where the
+   * thread's own token is let through only for a thread placed on that machine.
+   */
+  const overTailnet = (options: OpenSessionOptions): OpenSessionOptions | undefined => {
+    if (options.mcp === undefined) return options;
+    const at = origin();
+    return at === undefined
+      ? undefined
+      : { ...options, mcp: { ...options.mcp, url: `${at}${HOST_MCP_PATH}` } };
+  };
   return {
     ...inServer,
     open: (options) =>
@@ -359,7 +373,18 @@ export const agentHostOnMachine = (
                   message: `This session can't run on ${machineName} yet.`,
                 }),
               )
-            : openOnHost(host, kind, options),
+            : Effect.suspend(() => {
+                const reaching = overTailnet(options);
+                return reaching === undefined
+                  ? Effect.fail(
+                      new AgentUnavailable({
+                        agent: kind,
+                        reason: "startup-failed",
+                        message: `${machineName} is offline; its workers start once it's back.`,
+                      }),
+                    )
+                  : openOnHost(host, kind, reaching);
+              }),
       ),
   };
 };

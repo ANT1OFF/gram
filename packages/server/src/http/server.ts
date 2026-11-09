@@ -113,10 +113,12 @@ import {
   hostRoute,
   MACHINE_MANAGEMENT_PATHS,
   machineManagement,
+  placedOnMachine,
 } from "./machine-routes.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { authTarget } from "./auth-target.ts";
 import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } from "./auth.ts";
+import { HOST_MCP_PATH } from "../host/machine-keys.ts";
 
 /** The per-launch secret carried by the boot URL. */
 export class LaunchToken extends Context.Service<LaunchToken, { readonly token: string }>()(
@@ -143,6 +145,7 @@ export const AuthMiddleware = HttpRouter.middleware(
     const control = yield* RemoteControl;
     // Absent only in tests that serve the middleware alone: no machine can join or dial in then.
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
+    const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
       "cache-control": "no-store",
@@ -215,6 +218,22 @@ export const AuthMiddleware = HttpRouter.middleware(
             Effect.orDie,
           );
           return secureResponse(response);
+        }
+        // A session on a joined machine reaching its thread's app tools: the thread's own token,
+        // let through only while that thread is placed on a machine that is online now.
+        if (isRemote && path === HOST_MCP_PATH) {
+          const allowed =
+            request.method === "POST" &&
+            request.headers["origin"] === undefined &&
+            remoteHosts !== undefined &&
+            (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers));
+          return secureResponse(
+            allowed
+              ? yield* httpEffect
+              : HttpServerResponse.text("unauthorized: not a thread on a joined machine", {
+                  status: 401,
+                }),
+          );
         }
         // A joined machine's host joining or dialling in: its own proof, never a browser's cookie.
         if (isRemote && path !== undefined && HOST_PATHS.has(path))
@@ -460,9 +479,11 @@ export const ServerCore = Layer.unwrap(
               Layer.provideMerge(UsageLimitReadings.layer),
             ),
           ),
-          // The machines work runs on: only this one for now, over its agents, checkouts, git,
-          // files, terminals and port scan. One host process serves the worker host, the worktrees
-          // the checkouts make, and the Claude sessions it can run.
+          // The machines work runs on: this one, over its agents, checkouts, git, files, terminals
+          // and port scan, and the machines joined to it. One host process serves this machine's
+          // worker host, the worktrees its checkouts make, and the Claude sessions it can run.
+          // `CheckoutService` above here makes each thread's checkout on the machine it is placed on.
+          Layer.provideMerge(WorkerHosts.placedCheckouts),
           Layer.provideMerge(
             WorkerHosts.layerLocalOn.pipe(
               Layer.provideMerge(

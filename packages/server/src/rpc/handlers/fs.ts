@@ -96,7 +96,7 @@ export const fsHandlers = Effect.gen(function* () {
   const runtimes = yield* ThreadRuntimes;
   const proc = yield* Proc;
   // The Files panel reads this machine's folders; which paths a thread may read stays decided here.
-  const hostFiles = (yield* WorkerHosts).local.files;
+  const hostFiles = (yield* WorkerHosts).placed.files;
 
   const threadOf = (threadId: ThreadId) =>
     store

@@ -37,6 +37,8 @@ import type { WorkerHost } from "./worker-host.ts";
 export interface Machine {
   readonly id: HostId;
   readonly name: string;
+  /** The tailnet address it dialled, where its sessions reach their app tools; absent offline. */
+  readonly origin?: () => string | undefined;
 }
 
 const offline = (machine: Machine) => `${machine.name} is offline.`;
@@ -324,6 +326,7 @@ export const machineWorkerHost = (
               connection.gone,
               agent,
               machine.name,
+              machine.origin ?? (() => undefined),
             );
             wrapped.set(agent, through);
             return through;
@@ -372,7 +375,11 @@ export const machineHosts = (
             yield* Scope.close(kept.scope, Exit.void);
           }
           const scope = yield* Scope.fork(root);
-          const machine = { id, name: remote.machines.get(id)?.name ?? id };
+          const machine = {
+            id,
+            name: remote.machines.get(id)?.name ?? id,
+            origin: () => remote.origin(id),
+          };
           const host = yield* machineWorkerHost(machine, connection, deps).pipe(
             Scope.provide(scope),
           );

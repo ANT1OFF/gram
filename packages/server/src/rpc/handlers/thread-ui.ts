@@ -7,7 +7,7 @@ import type { Handlers } from "./common.ts";
 /** `worktree.pendingPermissions` for the close checklist. */
 export const threadUiHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
-  const { worktrees } = (yield* WorkerHosts).local;
+  const { worktrees } = (yield* WorkerHosts).placed;
 
   return {
     "worktree.pendingPermissions": ({ threadId }) =>

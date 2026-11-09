@@ -20,6 +20,8 @@ import { HostId } from "@gram/contracts";
 export const HOST_JOIN_PATH = "/host/join";
 /** Where a joined machine's host dials in, as a WebSocket. */
 export const HOST_CONNECT_PATH = "/host/connect";
+/** Where a session on a joined machine reaches its thread's app tools, with the thread's token. */
+export const HOST_MCP_PATH = "/host/mcp";
 
 /** The headers a host proves itself with when it dials in. */
 export const HOST_ID_HEADER = "x-gram-host-id";

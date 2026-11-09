@@ -85,7 +85,7 @@ export const gitHandlers = Effect.gen(function* () {
   const runtimes = yield* ThreadRuntimes;
   const proc = yield* Proc;
   // This machine's worktrees and git state, through its host.
-  const { worktrees, git: gitState } = (yield* WorkerHosts).local;
+  const { worktrees, git: gitState } = (yield* WorkerHosts).placed;
   const pr = yield* Pr;
   const checkpoints = yield* Checkpoints;
   const publisher = yield* GitStatePublisher;

@@ -13,6 +13,7 @@ import * as Option from "effect/Option";
 import { filesOn, type HostFiles } from "./files.ts";
 import { LocalHostProcess } from "./local-process.ts";
 import { RemoteHosts } from "./remote-hosts.ts";
+import { placedHost } from "./placed.ts";
 import { machineHosts } from "./remote-worker-host.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -87,6 +88,12 @@ export interface WorkerHostsShape {
    * machine's host lasts only as long as its connection, so look it up for each piece of work.
    */
   get(id: HostId): Effect.Effect<WorkerHost, HostUnavailable>;
+  /**
+   * Every thread's work wherever it is placed, as one host: each call goes to the machine of the
+   * thread, checkout or folder it is about (`placedHost`). This machine's host where no thread can
+   * be on another one.
+   */
+  readonly placed: WorkerHost;
   /** The host a record (a checkout, a worker) is on, where an absent `hostId` is this machine. */
   of(record: { readonly hostId?: HostId | undefined }): Effect.Effect<WorkerHost, HostUnavailable>;
 }
@@ -121,6 +128,8 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     others: ReadonlyArray<WorkerHost> = [],
     /** The joined machines' hosts, for an id that isn't among `others`. */
     machines?: (id: HostId) => Effect.Effect<WorkerHost, HostUnavailable>,
+    /** The threads, which say where each one's work is placed. */
+    store?: Pick<ThreadStore["Service"], "listThreads" | "getThread">,
   ) => {
     const byId = new Map<HostId, WorkerHost>([
       [local.id, local],
@@ -133,8 +142,26 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
         ? Effect.fail(new HostUnavailable({ hostId: id, message: `No machine "${id}" is paired.` }))
         : machines(id);
     };
-    return WorkerHosts.of({ local, get, of: (record) => get(hostOf(record)) });
+    const hosts = { local, get };
+    return WorkerHosts.of({
+      local,
+      get,
+      of: (record) => get(hostOf(record)),
+      placed: store === undefined ? local : placedHost(hosts, store),
+    });
   };
+
+  /**
+   * `CheckoutService` as every thread's checkout is placed (`placed`), for whatever takes the
+   * service itself: provided over the local one, a checkout on another machine is made, checked
+   * and removed there.
+   */
+  static readonly placedCheckouts: Layer.Layer<CheckoutService, never, WorkerHosts> = Layer.effect(
+    CheckoutService,
+    Effect.gen(function* () {
+      return (yield* WorkerHosts).placed.checkouts;
+    }),
+  );
 
   /**
    * This machine only, built from the services already in the server, its folders, worktrees, git
@@ -150,6 +177,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     Effect.gen(function* () {
       const { parts } = yield* LocalHostProcess;
       const machines = yield* joinedMachines;
+      const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
       return WorkerHosts.fromHosts(
         {
           id: LOCAL_HOST_ID,
@@ -164,6 +192,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
         },
         [],
         machines,
+        machines === undefined ? undefined : store,
       );
     }),
   );

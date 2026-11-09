@@ -166,9 +166,8 @@ const make = Effect.gen(function* () {
   const plans = yield* ThreadPlans;
   const waits = yield* ThreadWaits;
   const turnActivity = yield* TurnActivity;
-  // This machine's host. A session and its checkout reach the machine only through it, so a thread
-  // on another machine can later take that machine's host instead.
-  const { sessions: hosts, checkouts } = (yield* WorkerHosts).local;
+  // Each thread's machine: its session and its checkout go to the machine it is placed on.
+  const { sessions: hosts, checkouts } = (yield* WorkerHosts).placed;
   const config = yield* ServerConfig;
   const hooks = yield* TurnHooks;
   const sessions = yield* FiberMap.make<ThreadId>();

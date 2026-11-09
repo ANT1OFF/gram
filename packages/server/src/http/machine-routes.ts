@@ -1,9 +1,12 @@
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
-import { HostId } from "@gram/contracts";
+import { effectiveCheckout, HostId, hostOf, LOCAL_HOST_ID } from "@gram/contracts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { HOST_CONNECT_PATH, HOST_JOIN_PATH } from "../host/machine-keys.ts";
 import type { RemoteHostsShape } from "../host/remote-hosts.ts";
+import type { McpTokens } from "../app-tools/mcp-tokens.ts";
+import type { ThreadStore } from "../persistence/thread-store.ts";
+import { bearerToken } from "./auth.ts";
 import type { RemoteAccess } from "./remote-access.ts";
 
 export const MACHINES_LIST_PATH = "/machines/list";
@@ -143,4 +146,26 @@ export const machineManagement = (
       default:
         return refuse("forbidden");
     }
+  });
+
+/**
+ * Whether the request's bearer token is a thread's whose checkout is on a joined machine that is
+ * online now: what lets a session there reach its app tools over the tailnet.
+ */
+export const placedOnMachine = (
+  tokens: Pick<McpTokens["Service"], "threadFor">,
+  store: Pick<ThreadStore["Service"], "getThread"> | undefined,
+  remoteHosts: Pick<RemoteHostsShape, "connection">,
+  headers: Readonly<Record<string, string | undefined>>,
+) =>
+  Effect.gen(function* () {
+    const bearer = bearerToken(headers);
+    if (bearer === undefined || store === undefined) return false;
+    const threadId = yield* tokens.threadFor(bearer);
+    if (threadId === undefined) return false;
+    const thread = yield* store.getThread(threadId).pipe(Effect.option);
+    if (thread._tag === "None") return false;
+    const hostId = hostOf(effectiveCheckout(thread.value));
+    if (hostId === LOCAL_HOST_ID) return false;
+    return (yield* remoteHosts.connection(hostId).pipe(Effect.exit))._tag === "Success";
   });
