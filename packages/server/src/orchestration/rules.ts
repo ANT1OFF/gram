@@ -668,7 +668,9 @@ export type RefusalCode =
   | "feature_paused"
   | "unknown_question"
   | "closed"
-  | "forwarded";
+  | "forwarded"
+  | "unknown_machine"
+  | "ambiguous_machine";
 
 /**
  * An `AppToolError` message with its machine-readable prefix, `code: message`, so an agent (and a

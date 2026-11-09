@@ -105,6 +105,7 @@ import {
   workerModelLabel,
 } from "../rules.ts";
 import { type OrchestrationShape } from "./shape.ts";
+import { RemoteHosts } from "../../host/remote-hosts.ts";
 import { heldBriefOf } from "../limit-pause.ts";
 import { type PromptWorktree } from "../prompt.ts";
 
@@ -528,6 +529,11 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const proc = yield* Effect.serviceOption(Proc);
   // Absent in layers that keep no limit readings: nothing is then near a limit.
   const limitReadings = yield* Effect.serviceOption(UsageLimitReadings);
+  // Absent where no machine can join: every worker is then this machine's.
+  const remoteHosts = yield* Effect.serviceOption(RemoteHosts);
+  /** The confirmed joined machines a worker can be placed on, as the settings page lists them. */
+  const joinedMachines = () =>
+    Option.isSome(remoteHosts) ? remoteHosts.value.list().filter((m) => m.confirmed) : [];
   // Absent headless and in test layers: the user then never counts as away.
   const appActivity = yield* Effect.serviceOption(AppActivity);
   // Absent in layers that keep no limit readings, and there nothing is near a limit.
@@ -1169,6 +1175,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     });
 
   return {
+    joinedMachines,
     store,
     hub,
     runtimes,

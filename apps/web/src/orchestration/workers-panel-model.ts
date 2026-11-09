@@ -1,4 +1,10 @@
-import type { ThreadId, ThreadSummary } from "@gram/contracts";
+import {
+  effectiveCheckout,
+  type HostId,
+  isLocalHost,
+  type ThreadId,
+  type ThreadSummary,
+} from "@gram/contracts";
 
 import { formatRelative, formatStamp } from "@/lib/time";
 
@@ -76,6 +82,8 @@ export interface PanelRow {
   readonly at?: string | undefined;
   /** Closed with its worktree or a solo thread: it opens in the main view only. */
   readonly mainOnly: boolean;
+  /** The joined machine its checkout is on; absent for this one. */
+  readonly hostId?: HostId | undefined;
 }
 
 export interface StatusGroup extends StatusGroupSpec {
@@ -95,6 +103,12 @@ export const lineOf = (status: string, dot: DotState): string => {
   if (!status.startsWith(prefix)) return status;
   const rest = status.slice(prefix.length);
   return rest.charAt(0).toUpperCase() + rest.slice(1);
+};
+
+/** The joined machine a thread's checkout is on, or `undefined` for this one. */
+const hostOfSummary = (summary: ThreadSummary | undefined): HostId | undefined => {
+  const checkout = summary === undefined ? undefined : effectiveCheckout(summary.thread);
+  return checkout === undefined || isLocalHost(checkout) ? undefined : checkout.hostId;
 };
 
 /** A ⌘J row as the panel's: its dot, its words and its age. */
@@ -122,6 +136,7 @@ export const panelRow = (
     age: at === undefined ? "" : formatRelative(at, now),
     at: at === undefined ? undefined : formatStamp(at, now),
     mainOnly: row.cleanedUp === true || row.solo === true,
+    hostId: hostOfSummary(summary),
   };
 };
 

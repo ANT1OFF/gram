@@ -182,3 +182,77 @@ describe("CurrentCheckoutFreshness fast-forward", () => {
     expect(screen.queryByTestId("upstream-sync")).toBeNull();
   });
 });
+
+const serveMachines = (machines: ReadonlyArray<Record<string, unknown>>) =>
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify({ machines }), {
+          headers: { "content-type": "application/json" },
+        }),
+    ),
+  );
+const machine = (overrides: Record<string, unknown>) => ({
+  id: "m-0123456789abcdef01234567",
+  name: "build box",
+  platform: "linux",
+  fingerprint: "0123-4567-89AB-CDEF-0123",
+  joinedAt: 1,
+  confirmed: true,
+  onlineSince: 2,
+  ...overrides,
+});
+
+describe("WorktreeFields machine", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("offers a confirmed joined machine, and says so when it is offline", async () => {
+    serveMachines([
+      machine({ onlineSince: undefined }),
+      machine({ id: "m-unconfirmed", name: "new box", confirmed: false }),
+    ]);
+    renderWithApi(
+      <WorktreeFields
+        repoPath="/repo"
+        value={choice("__default__")}
+        onChange={() => {}}
+        machines
+      />,
+      { branches },
+    );
+    const picker = await screen.findByRole("combobox", { name: "Machine" });
+    expect(picker.textContent).toContain("This machine");
+    fireEvent.click(picker);
+    expect(await screen.findByText("build box (offline)")).toBeTruthy();
+    expect(screen.queryByText("new box")).toBeNull();
+  });
+
+  it("stays out of the way with no machine joined, or where machines can't be listed", async () => {
+    serveMachines([]);
+    renderWithApi(
+      <WorktreeFields
+        repoPath="/repo"
+        value={choice("__default__")}
+        onChange={() => {}}
+        machines
+      />,
+      { branches },
+    );
+    await screen.findByRole("combobox", { name: "Base branch" });
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(screen.queryByRole("combobox", { name: "Machine" })).toBeNull();
+  });
+
+  it("puts the picked machine on the request", async () => {
+    const { worktreeCheckout } = await import("./worktree-fields");
+    expect(
+      worktreeCheckout({ ...choice("__default__"), machine: "m-0123456789abcdef01234567" }),
+    ).toEqual({
+      kind: "newWorktree",
+      branch: "feat/calm-otter",
+      hostId: "m-0123456789abcdef01234567",
+    });
+    expect(worktreeCheckout(choice("__default__"))).not.toHaveProperty("hostId");
+  });
+});

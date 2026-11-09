@@ -8,7 +8,10 @@ import {
   autonomyOf,
   briefFooterOf,
   effectiveCheckout,
+  type HostId,
+  hostOf,
   InvalidState,
+  LOCAL_HOST_ID,
   type Checkout,
   type ModelRef,
   type Project,
@@ -141,7 +144,35 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     checkouts,
     openedInAuto,
     briefedByUser,
+    joinedMachines,
   } = kit;
+  /**
+   * The joined machine `named` (its name, any case, or its id), for `spawn_worker`'s `machine`;
+   * `undefined` for this one.
+   */
+  const machineNamed = (tool: string, named: string) =>
+    Effect.gen(function* () {
+      const wanted = named.trim().toLowerCase();
+      if (wanted === "" || wanted === "local" || wanted === "this machine") return undefined;
+      const machines = joinedMachines();
+      const found = machines.filter(
+        (m) => m.id.toLowerCase() === wanted || m.name.toLowerCase() === wanted,
+      );
+      if (found.length === 1) return found[0]!.id as HostId;
+      const known =
+        machines.length === 0
+          ? "No machine is joined to this Gram."
+          : `Joined machines: ${machines.map((m) => m.name).join(", ")}.`;
+      return yield* toolError(
+        tool,
+        refusal(
+          found.length === 0 ? "unknown_machine" : "ambiguous_machine",
+          found.length === 0
+            ? `No joined machine is named “${named}”. ${known}`
+            : `More than one joined machine is named “${named}”; name it by its id.`,
+        ),
+      );
+    });
   const {
     outsideWorkspace,
     survey,
@@ -183,7 +214,8 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       const repos = (
         authority === undefined ? named : yield* repoNames("spawn_worker", named, authority.state)
       ).join(", ");
-      const plain = `Spawn a worker in ${repos} for ${input.feature}: ${input.title}`;
+      const on = input.machine === undefined ? "" : ` on ${input.machine}`;
+      const plain = `Spawn a worker in ${repos}${on} for ${input.feature}: ${input.title}`;
       if (authority === undefined) return plain;
       const { state } = authority;
       const outside = yield* outsideWorkspace(
@@ -601,6 +633,8 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           const siblings = found.workers.filter(
             (worker) => worker.projectId === project.id && !finished.has(worker.id),
           );
+          const hostId =
+            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
           const readAlso: Array<string> = [];
           for (const id of input.readAlso ?? []) {
             const sibling = found.workers.find((worker) => worker.id === id);
@@ -610,6 +644,16 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 refusal(
                   "not_your_worker",
                   `readAlso names ${id}, which isn't one of your workers.`,
+                ),
+              );
+            }
+            // A folder on another machine isn't there to read.
+            if (hostOf(effectiveCheckout(sibling)) !== (hostId ?? LOCAL_HOST_ID)) {
+              return yield* toolError(
+                tool,
+                refusal(
+                  "not_allowed",
+                  `readAlso names “${sibling.title}” [thread ${id}], which runs on another machine than this worker would.`,
                 ),
               );
             }
@@ -633,6 +677,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             kind: "newWorktree" as const,
             branch,
             ...(input.base === undefined ? {} : { base: input.base }),
+            ...(hostId === undefined ? {} : { hostId }),
           };
           const prepareIn = (repo: Project) =>
             creator.prepare(request, repo.root).pipe(
@@ -828,7 +873,20 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       })
       .pipe(Effect.ignore);
 
-  const spawnWorker: OrchestrationShape["spawnWorker"] = (callerId, input) =>
+  const spawnWorker: OrchestrationShape["spawnWorker"] = (callerId, named) =>
+    // The machine is checked first, and a held brief keeps its id: a name that is wrong now is
+    // refused now, not when the brief is released hours later.
+    (named.machine === undefined
+      ? Effect.succeed(named)
+      : machineNamed("spawn_worker", named.machine).pipe(
+          Effect.map((id) => {
+            const { machine: _machine, ...rest } = named;
+            return id === undefined ? rest : { ...rest, machine: id };
+          }),
+        )
+    ).pipe(Effect.flatMap((input) => spawnGated(callerId, input)));
+
+  const spawnGated: OrchestrationShape["spawnWorker"] = (callerId, input) =>
     pausedSpawnGate(callerId, input).pipe(
       Effect.andThen(spawnBreaker.gate(callerId, input)),
       Effect.flatMap((held): Effect.Effect<HeldSpawn | RouteOffer | undefined> =>

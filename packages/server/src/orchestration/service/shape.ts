@@ -88,6 +88,8 @@ export interface SpawnWorkerInput {
   readonly brief: string;
   readonly branch?: string | undefined;
   readonly base?: string | undefined;
+  /** The joined machine to make its worktrees on, by name or id; this one when absent. */
+  readonly machine?: string | undefined;
   readonly model?: string | undefined;
   readonly effort?: ReasoningVariant | undefined;
   readonly scope?: ReadonlyArray<string> | undefined;
@@ -676,6 +678,8 @@ export interface OrchestrationShape {
       readonly workerModels: ReadonlyArray<RosterEntry>;
       /** The running Gram app's version and build (`appLabelOf`), when known. */
       readonly app?: string;
+      /** The joined machines `spawn_worker`'s `machine` can name, when any is joined. */
+      readonly machines?: ReadonlyArray<{ readonly name: string; readonly online: boolean }>;
     },
     AppToolError
   >;

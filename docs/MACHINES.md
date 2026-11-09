@@ -9,8 +9,10 @@ opens no port of its own.
 
 A machine can join, be confirmed and stay connected; Settings → Machines lists it. A new thread
 in a new worktree can be placed on it, and its session, checkout, git state and terminals then run
-there. Its Files panel, turn checkpoints, PR badge and port chips don't reach that machine yet. Choosing the machine in the composer, and from the orchestrator's
-`spawn_worker`, comes next.
+there. Pick the machine under **Machine** when you start a new thread in a new worktree (it shows
+once a machine is confirmed), or ask the orchestrator to put a worker there: `spawn_worker` takes
+the machine's name. The Workers tab tags each worker that runs on another machine. Its Files
+panel, turn checkpoints, PR badge and port chips don't reach that machine yet.
 
 ## What you need
 

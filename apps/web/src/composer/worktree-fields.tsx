@@ -1,6 +1,7 @@
-import type { CheckoutRequest } from "@gram/contracts";
+import { type CheckoutRequest, HostId } from "@gram/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dices } from "lucide-react";
+import { useEffect } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
@@ -13,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { agoText } from "@/lib/time";
+import { MACHINES_KEY, machinesApi } from "@/settings/machines-api";
 import { cn } from "@/lib/utils";
 import { branchPrefixSetting } from "@/settings/branch-prefix";
 import { useServerSettings } from "@/settings-sync/store";
@@ -31,6 +33,8 @@ export interface WorktreeChoice {
   name: string;
   /** A branch name, or the repo's default branch. */
   base: string;
+  /** The joined machine to make it on; this one when absent. */
+  machine?: string | undefined;
 }
 
 export const initialWorktreeChoice = (): WorktreeChoice => ({
@@ -39,21 +43,91 @@ export const initialWorktreeChoice = (): WorktreeChoice => ({
   base: DEFAULT_BASE,
 });
 
-export const worktreeCheckout = ({ prefix, name, base }: WorktreeChoice): CheckoutRequest => ({
+export const worktreeCheckout = ({
+  prefix,
+  name,
+  base,
+  machine,
+}: WorktreeChoice): CheckoutRequest => ({
   kind: "newWorktree",
   branch: branchRef(prefix, name),
   ...(base !== DEFAULT_BASE ? { base } : {}),
+  ...(machine !== undefined ? { hostId: HostId.make(machine) } : {}),
 });
 
-/** Branch prefix, name (with a random suggestion) and base branch for a new worktree. */
+/** `WorktreeChoice.machine` for this machine, in the picker. */
+const THIS_MACHINE = "__this__";
+
+/**
+ * Where the worktree is made: this machine, or a confirmed joined one. Shown only once a machine is
+ * joined, and never where the machines can't be listed (a paired phone).
+ */
+function MachineField({
+  value,
+  onChange,
+}: {
+  value: string | undefined;
+  onChange: (next: string | undefined) => void;
+}) {
+  const { data } = useQuery({
+    queryKey: MACHINES_KEY,
+    queryFn: machinesApi.list,
+    retry: false,
+    staleTime: 10_000,
+  });
+  const machines = (data?.machines ?? []).filter((m) => m.confirmed);
+  // A pick of a machine since removed is dropped, so nothing unseen goes on the request.
+  const gone = value !== undefined && data !== undefined && !machines.some((m) => m.id === value);
+  useEffect(() => {
+    if (gone) onChange(undefined);
+  }, [gone, onChange]);
+  if (machines.length === 0) return null;
+  const items = [
+    { value: THIS_MACHINE, label: "This machine" },
+    ...machines.map((m) => ({
+      value: m.id,
+      label: m.onlineSince === undefined ? `${m.name} (offline)` : m.name,
+    })),
+  ];
+  return (
+    <label className="flex flex-col gap-1">
+      <span className={labelCls}>Machine</span>
+      <Select
+        value={value ?? THIS_MACHINE}
+        items={items}
+        onValueChange={(next) => {
+          if (next !== null) onChange(next === THIS_MACHINE ? undefined : next);
+        }}
+      >
+        <SelectTrigger aria-label="Machine" className="text-meta">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
+  );
+}
+
+/**
+ * Branch prefix, name (with a random suggestion) and base branch for a new worktree, and with
+ * `machines`, the machine to make it on.
+ */
 export function WorktreeFields({
   repoPath,
   value,
   onChange,
+  machines = false,
 }: {
   repoPath: string;
   value: WorktreeChoice;
   onChange: (next: WorktreeChoice) => void;
+  machines?: boolean;
 }) {
   const api = useApi();
   const { data: branches } = useQuery({
@@ -131,6 +205,12 @@ export function WorktreeFields({
           </SelectContent>
         </Select>
       </label>
+      {machines && (
+        <MachineField
+          value={value.machine}
+          onChange={(machine) => onChange({ ...value, machine })}
+        />
+      )}
       {repoPath !== "" && value.base !== DEFAULT_BASE && (
         <BaseFreshness key={value.base} repoPath={repoPath} base={value.base} />
       )}

@@ -328,6 +328,7 @@ export const StoredHeldBrief = Schema.Struct({
     brief: Schema.String,
     branch: Schema.optionalKey(Schema.String),
     base: Schema.optionalKey(Schema.String),
+    machine: Schema.optionalKey(Schema.String),
     model: Schema.optionalKey(Schema.String),
     effort: Schema.optionalKey(ReasoningVariant),
     scope: Schema.optionalKey(Schema.Array(Schema.String)),
