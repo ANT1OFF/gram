@@ -183,29 +183,29 @@ describe("CurrentCheckoutFreshness fast-forward", () => {
   });
 });
 
+const serveMachines = (machines: ReadonlyArray<Record<string, unknown>>) =>
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify({ machines }), {
+          headers: { "content-type": "application/json" },
+        }),
+    ),
+  );
+const machine = (overrides: Record<string, unknown>) => ({
+  id: "m-0123456789abcdef01234567",
+  name: "build box",
+  platform: "linux",
+  fingerprint: "0123-4567-89AB-CDEF-0123",
+  joinedAt: 1,
+  confirmed: true,
+  onlineSince: 2,
+  ...overrides,
+});
+
 describe("WorktreeFields machine", () => {
   afterEach(() => vi.unstubAllGlobals());
-
-  const serveMachines = (machines: ReadonlyArray<Record<string, unknown>>) =>
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ machines }), {
-            headers: { "content-type": "application/json" },
-          }),
-      ),
-    );
-  const machine = (overrides: Record<string, unknown>) => ({
-    id: "m-0123456789abcdef01234567",
-    name: "build box",
-    platform: "linux",
-    fingerprint: "0123-4567-89AB-CDEF-0123",
-    joinedAt: 1,
-    confirmed: true,
-    onlineSince: 2,
-    ...overrides,
-  });
 
   it("offers a confirmed joined machine, and says so when it is offline", async () => {
     serveMachines([
