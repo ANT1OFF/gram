@@ -98,6 +98,14 @@ or `gram-host service install`.
 - A joined machine's terminals open with its own default shell on its own PATH.
 - While the machine is offline its workers don't start and their folders aren't marked missing;
   nothing falls back to running on this machine.
+- A checkout is its machine and its path together. Two joined machines with the same user and
+  folders, or this machine, can hold the same path; each worker's git state is read on its own
+  machine. A request that names only such a path, and no thread, is refused rather than sent to a
+  guess.
+- The Changes panel's diff, push, creating a PR, applying a review suggestion, fast-forwarding to
+  upstream and undoing a turn run git on this machine, so a worker on another machine refuses them
+  and says so; ask its agent, or use its terminal. PR reads and actions that name the repository
+  (checks, reviews, merge, labels) work, with the PR bound to the thread.
 
 ## Add a machine over SSH
 

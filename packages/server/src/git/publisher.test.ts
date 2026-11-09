@@ -1,6 +1,12 @@
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
-import type { GitState, PrStatus, ServerEvent } from "@gram/contracts";
+import {
+  type GitState,
+  HostId,
+  type PrStatus,
+  type ServerEvent,
+  type ThreadId,
+} from "@gram/contracts";
 import {
   Pr,
   prChecksStamp,
@@ -22,6 +28,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { EventHub } from "../events/event-hub.ts";
+import { type WorkerHost, WorkerHosts } from "../host/worker-host.ts";
 import { gatedHubLayer, makePublishGate, type PublishGate } from "../events/gated-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
@@ -279,6 +286,53 @@ const directLookupLayer = (ghReady: boolean) =>
     ),
   );
 
+/** A joined machine that holds the same paths as this one, its checkouts on its own branch. */
+const MACHINE = HostId.make("m-0123456789abcdef01234567");
+/** What the machine reads of any checkout of its own, and the paths it was asked to read. */
+const onMachine = { reads: [] as Array<string> };
+const machineState: GitState = {
+  repo: true,
+  branch: "on-the-machine",
+  worktree: true,
+  head: "f".repeat(40),
+  changesToken: "machine",
+  changedFiles: 0,
+  behindBase: 0,
+  aheadBase: 0,
+  conflicts: false,
+};
+const machineHost = {
+  id: MACHINE,
+  git: {
+    local: (cwd: string) =>
+      Effect.sync(() => {
+        onMachine.reads.push(cwd);
+        return machineState;
+      }),
+    snapshot: (cwd: string) =>
+      Effect.sync(() => {
+        onMachine.reads.push(cwd);
+        return machineState;
+      }),
+    present: () => Effect.succeed(true),
+    watch: () => Stream.never,
+  },
+} as unknown as WorkerHost;
+
+/** The publisher with `MACHINE` joined beside this machine. */
+const machineLayer = GitStatePublisherLive.pipe(
+  Layer.provide(
+    Layer.effect(
+      WorkerHosts,
+      Effect.map(Effect.service(WorkerHosts), (hosts) =>
+        WorkerHosts.fromHosts(hosts.local, [machineHost]),
+      ),
+    ),
+  ),
+  Layer.provideMerge(RuntimeTestLayer),
+  Layer.provideMerge(gitPlatformTest({ pr: MockPr })),
+);
+
 /** The gate the publisher's "merged" notice waits on, when a test sets one. */
 const mergedNoticeGate: { current: PublishGate | undefined } = { current: undefined };
 
@@ -412,6 +466,52 @@ describe.skipIf(!hasGit)("GitStatePublisher", () => {
     dirs.push(dir);
     return makeRepo(dir);
   };
+
+  it.live("keeps a joined machine's checkout apart from this one's at the same path", () =>
+    Effect.gen(function* () {
+      const root = repo();
+      const hub = yield* EventHub;
+      const runtimes = yield* ThreadRuntimes;
+      const publisher = yield* GitStatePublisher;
+      const seen = new Map<ThreadId, GitState>();
+      yield* hub.serverEvents(Effect.succeed({ type: "threads.snapshot", threads: [] })).pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            if (event.type === "git.state") seen.set(event.threadId, event.state);
+          }),
+        ),
+        Effect.forkScoped,
+      );
+      const here = yield* runtimes.create({
+        projectRoot: root,
+        checkout: { kind: "main", path: root },
+      });
+      const created = yield* runtimes.create({
+        projectRoot: root,
+        checkout: { kind: "main", path: root },
+      });
+      // The same path on the other machine: the same user and default folders on both.
+      const there = yield* runtimes.updateThread(created.id, (t) => ({
+        ...t,
+        checkout: { ...t.checkout, hostId: MACHINE },
+      }));
+      yield* publisher.sync;
+      yield* eventually(
+        "both threads' states",
+        Effect.sync(() =>
+          seen.has(here.id) && seen.get(there.id)?.branch === "on-the-machine" ? true : undefined,
+        ),
+      );
+      // Before, both were one checkout by path: each thread was sent whichever machine read last.
+      expect(seen.get(here.id)?.branch).toBe("main");
+      expect(seen.get(there.id)?.branch).toBe("on-the-machine");
+      expect(onMachine.reads.every((path) => path === root)).toBe(true);
+      expect((yield* publisher.stateForThread(here))?.branch).toBe("main");
+      expect((yield* publisher.stateForThread(there))?.branch).toBe("on-the-machine");
+      // A path alone names both, so it answers for neither rather than for the wrong one.
+      expect(yield* publisher.stateFor(root)).toBeUndefined();
+    }).pipe(Effect.scoped, Effect.provide(machineLayer)),
+  );
 
   it.live("publishes git.state for an open thread's checkout, then again after an edit", () =>
     Effect.gen(function* () {
