@@ -89,6 +89,7 @@ const spawnedResult = (
     project: projects.get(worker.projectId)?.name ?? "",
     ...(checkout.branch === undefined ? {} : { branch: checkout.branch }),
     worktree: checkout.path,
+    ...(checkout.base === undefined ? {} : { base: checkout.base }),
     ...(alsoIn.length === 0 ? {} : { alsoIn }),
     model: workerModelLabel(worker.model),
     mode: worker.mode,
@@ -584,6 +585,21 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   instead: undefined,
                 };
           const chosen = picked.model;
+          const hostId =
+            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
+          if (
+            hostId !== undefined &&
+            (chosen.agent !== "claude" || chosen.profileId !== undefined)
+          ) {
+            const machine = joinedMachines().find((m) => m.id === hostId)?.name ?? input.machine;
+            return yield* toolError(
+              tool,
+              refusal(
+                "not_admitted",
+                `${machine} runs direct Claude sessions only. Choose a direct Claude worker model, or spawn on this machine.`,
+              ),
+            );
+          }
           if (byUser?.model !== undefined && !sameTaskModel(chosen, byUser.model))
             return yield* toolError(
               tool,
@@ -633,8 +649,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           const siblings = found.workers.filter(
             (worker) => worker.projectId === project.id && !finished.has(worker.id),
           );
-          const hostId =
-            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
           const readAlso: Array<string> = [];
           for (const id of input.readAlso ?? []) {
             const sibling = found.workers.find((worker) => worker.id === id);

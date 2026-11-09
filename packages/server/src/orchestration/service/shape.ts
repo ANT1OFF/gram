@@ -249,6 +249,8 @@ export interface AdoptedThread {
 
 /** What `spawn_worker` tells the orchestrator about the worker it made, or had already made. */
 export interface SpawnedWorker {
+  /** The base actually chosen on the worker's machine, when a new branch was made. */
+  readonly base?: string | undefined;
   readonly threadId: ThreadId;
   readonly title: string;
   readonly feature: string;

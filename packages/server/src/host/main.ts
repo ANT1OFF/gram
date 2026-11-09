@@ -16,6 +16,7 @@ import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { hostRepos } from "./host-config.ts";
+import { cloneWorktrees } from "./clone-worktrees.ts";
 import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
@@ -75,7 +76,8 @@ const hostService = (
       },
       files: filesOn(proc),
       repos: reposOn(proc, hostRepos()),
-      worktrees: yield* Worktrees,
+      worktrees:
+        hostId === LOCAL_HOST_ID ? yield* Worktrees : cloneWorktrees(proc, yield* Worktrees),
       git: gitOn(proc),
       terminals: yield* terminalsOnHost,
       sessions: yield* sessionsOnHost((yield* AgentHosts).get),

@@ -3,6 +3,7 @@ import { existsSync, lstatSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { git, Proc, type ProcShape, realPathSync, WorktreeError } from "@gram/git";
 import * as Effect from "effect/Effect";
+import { redactUrlCredentials } from "./remote-url.ts";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
 
 /** How long a clone may take before it is given up. */
@@ -13,28 +14,29 @@ const FETCH_TIMEOUT_MS = 2 * 60_000;
  * Only the transports a repository's remote is reached over: never `file`, `ext` or the
  * unauthenticated `git` daemon, whatever a URL asks for.
  */
-const GIT_ENV = {
+export const HOST_REPO_GIT_ENV = {
   GIT_ALLOW_PROTOCOL: "https:ssh",
   GIT_TERMINAL_PROMPT: "0",
 };
 
+const SSH_USER = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/;
 const SEGMENT = /^[A-Za-z0-9._-]{1,100}$/;
 
-/**
- * A remote's URL as the folder the host keeps its clone in, `<host>/<owner>/<name>`, the same for
- * each way of writing one remote (`https`, `ssh`, with or without `.git`), or why it
- * isn't one the host clones: `https://` without credentials in it, `ssh://`, or `user@host:path`.
- */
-export const cloneFolderOf = (
+/** Safe folder naming is deliberately lossy; only `identity` authorizes reuse of an origin. */
+const remoteOf = (
   url: string,
-): { readonly folder: string } | { readonly error: string } => {
+): { readonly folder: string; readonly identity: string } | { readonly error: string } => {
   const refuse = { error: "That remote isn't an https or ssh URL the host clones." };
   if (url.length > 512 || url.startsWith("-") || /[\s\0\\]/.test(url)) return refuse;
   // Never a path that climbs or names itself, which a URL parser would quietly resolve.
   if (/(^|[/:])\.\.?(\/|$)/.test(url)) return refuse;
   let host: string;
   let path: string;
-  const scp = /^(?:[A-Za-z0-9._-]+@)?([A-Za-z0-9.-]+):(?!\/\/)(.+)$/.exec(url);
+  let identityPath: string;
+  let transport: string;
+  let user = "";
+  let port = "";
+  const scp = /^(?:([A-Za-z0-9._-]+)@)?([A-Za-z0-9.-]+):(?!\/\/)(.+)$/.exec(url);
   if (url.includes("://")) {
     let parsed: URL;
     try {
@@ -43,11 +45,17 @@ export const cloneFolderOf = (
       return refuse;
     }
     if (parsed.protocol !== "https:" && parsed.protocol !== "ssh:") return refuse;
-    if (parsed.protocol === "https:" && (parsed.username !== "" || parsed.password !== ""))
+    if (parsed.password !== "" || (parsed.protocol === "https:" && parsed.username !== ""))
       return {
         error: "A remote with credentials in its URL isn't cloned; use a credential helper.",
       };
+    if (parsed.protocol === "ssh:" && parsed.username !== "" && !SSH_USER.test(parsed.username))
+      return refuse;
     if (parsed.search !== "" || parsed.hash !== "") return refuse;
+    identityPath = parsed.pathname;
+    transport = parsed.protocol;
+    user = parsed.username;
+    port = parsed.port || (parsed.protocol === "ssh:" ? "22" : "443");
     host = parsed.hostname;
     try {
       path = decodeURIComponent(parsed.pathname);
@@ -55,8 +63,14 @@ export const cloneFolderOf = (
       return refuse;
     }
   } else if (scp !== null) {
-    host = scp[1]!;
-    path = scp[2]!;
+    user = scp[1] ?? "";
+    if (user !== "" && !SSH_USER.test(user)) return refuse;
+    host = scp[2]!;
+    path = scp[3]!;
+    identityPath = path;
+    // SCP paths can be relative to an account's home; SSH URL paths are absolute.
+    transport = "scp";
+    port = "22";
   } else return refuse;
   const segments = [host.toLowerCase(), ...path.replace(/\.git\/?$/, "").split("/")].filter(
     (segment) => segment !== "",
@@ -71,11 +85,26 @@ export const cloneFolderOf = (
   // Always three levels deep, a group's subgroups joined into the name, so no clone's folder is
   // ever inside another's: `gitlab.com/group/sub/repo` is `gitlab.com/group/sub+repo`.
   const [first, owner, ...name] = segments;
-  return { folder: join(first!, owner!, name.join("+")) };
+  return {
+    folder: join(first!, owner!, name.join("+")),
+    identity: JSON.stringify([transport, host.toLowerCase(), port, user, identityPath]),
+  };
+};
+
+/** The readable clone folder, never a proof that two remotes name the same repository. */
+export const cloneFolderOf = (
+  url: string,
+): { readonly folder: string } | { readonly error: string } => {
+  const remote = remoteOf(url);
+  return "error" in remote ? remote : { folder: remote.folder };
 };
 
 const failed = (message: string) =>
-  new WorktreeError({ reason: "failed", message: message.slice(0, 400), dirty: false });
+  new WorktreeError({
+    reason: "failed",
+    message: redactUrlCredentials(message).slice(0, 400),
+    dirty: false,
+  });
 
 /**
  * The repositories a machine's host clones for workers placed on it, each under `root` at its
@@ -90,11 +119,11 @@ export const reposOn = (
   extraEnv: Readonly<Record<string, string>> = {},
 ) => {
   const on = Effect.provideService(Proc, proc);
-  const env = { ...GIT_ENV, ...extraEnv };
+  const env = { ...HOST_REPO_GIT_ENV, ...extraEnv };
   /** One clone or fetch at a time per folder, so two workers asking at once share one clone. */
   const lock = makeKeyedLock<string>();
   const ensure = (url: string): Effect.Effect<{ readonly path: string }, WorktreeError> => {
-    const target = cloneFolderOf(url);
+    const target = remoteOf(url);
     if ("error" in target)
       return Effect.fail(
         new WorktreeError({ reason: "invalidRequest", message: target.error, dirty: false }),
@@ -127,11 +156,11 @@ export const reposOn = (
           const origin = yield* on(git(dest, ["remote", "get-url", "origin"])).pipe(
             Effect.mapError((error) => failed(error.message)),
           );
-          const kept = origin.status === 0 ? cloneFolderOf(origin.stdout.trim()) : undefined;
-          if (kept === undefined || !("folder" in kept) || kept.folder !== target.folder)
+          const kept = origin.status === 0 ? remoteOf(origin.stdout.trim()) : undefined;
+          if (kept === undefined || !("folder" in kept) || kept.identity !== target.identity)
             return yield* new WorktreeError({
               reason: "conflict",
-              message: `${dest} is there but isn't a clone of ${url}.`,
+              message: `${dest} already holds a different origin. Move that clone or choose a different repository; nothing was fetched.`,
               dirty: false,
             });
           // A fetch that fails leaves the clone as it was: a worker can still start from it.
