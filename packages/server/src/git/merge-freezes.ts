@@ -32,6 +32,7 @@ import {
   type PrStatus,
   type Thread,
 } from "@gram/contracts";
+import { isForeignPath } from "@gram/git";
 import { tmpdir } from "node:os";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -44,7 +45,7 @@ import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { EventHub, isThreadRemoved } from "../events/event-hub.ts";
-import { folderExists } from "../fs/folders.ts";
+import { folderExists, ghFolderOf } from "../fs/folders.ts";
 import { redactText } from "../logging/redact.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
@@ -163,14 +164,8 @@ const minuteText = (at: number) => `${new Date(at).toISOString().slice(11, 16)}Z
 const standing = <F extends MergeFreeze>(freeze: F | undefined, now: number) =>
   freeze !== undefined && freeze.until > now ? freeze : undefined;
 
-/** A folder of the thread's to run gh in: its checkout, or its repo's main one. */
-const folderOf = (thread: Thread) =>
-  Effect.gen(function* () {
-    const cwd = thread.checkout.path;
-    return (yield* folderExists(cwd)) || thread.checkout.repoRoot === undefined
-      ? cwd
-      : thread.checkout.repoRoot;
-  });
+/** A folder of the thread's to run gh in: its checkout, or its repo's main one (`ghFolderOf`). */
+const folderOf = (thread: Thread) => ghFolderOf(thread.checkout);
 
 export const MergeFreezesLive = Layer.effect(
   MergeFreezes,
@@ -205,7 +200,13 @@ export const MergeFreezesLive = Layer.effect(
     /** A folder to run gh in for a freeze's repo: the one it kept, while it is there. */
     const ghFolder = (freeze: StoredFreeze) =>
       Effect.gen(function* () {
-        if (freeze.cwd !== undefined && (yield* folderExists(freeze.cwd))) return freeze.cwd;
+        // One kept on another machine is no folder to start gh in here.
+        if (
+          freeze.cwd !== undefined &&
+          !isForeignPath(freeze.cwd) &&
+          (yield* folderExists(freeze.cwd))
+        )
+          return freeze.cwd;
         return tmpdir();
       });
 
