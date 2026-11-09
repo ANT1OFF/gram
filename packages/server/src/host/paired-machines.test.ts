@@ -326,6 +326,42 @@ describe("joined machines", () => {
     expect(dial()).toMatchObject({ kind: "refused", status: 503 });
   });
 
+  // Third re-check of #324: storage that couldn't be read or bounded at the start refused every
+  // dial until a restart, even once it was put right.
+  it("loads the history again once it can, rather than refuse dials until a restart", () => {
+    const { clock, store } = restartable();
+    const kept = memoryNonceStore();
+    let broken = true;
+    let reads = 0;
+    const flaky = {
+      read: () => {
+        reads += 1;
+        if (broken) throw new Error("Dial nonce storage is invalid");
+        return kept.read();
+      },
+      write: kept.write,
+      lastSeen: () => undefined,
+    };
+    const machines = createPairedMachines(store, clock.now, flaky);
+    const { id, own } = confirmedMachine(machines);
+    const dial = (from = machines) =>
+      from.authorizeConnect(ORIGIN, signedConnectHeaders(own, ORIGIN, id, clock.now()));
+    expect(dial()).toMatchObject({ status: 503 });
+    broken = false;
+    clock.advance(1);
+    expect(dial().kind).toBe("ok");
+
+    // Only a confirmed machine's signed dial makes it read the storage again.
+    broken = true;
+    const blind = createPairedMachines(store, clock.now, flaky);
+    const before = reads;
+    const stranger = privateKeyFrom(generateHostKey().privateKeyPem);
+    blind.authorizeConnect(ORIGIN, signedConnectHeaders(stranger, ORIGIN, id, clock.now()));
+    expect(reads).toBe(before);
+    expect(dial(blind)).toMatchObject({ status: 503 });
+    expect(reads).toBe(before + 1);
+  });
+
   // Review of #324: a machine not confirmed yet could fill the dials' room, and have each of its
   // refused dials written to disk.
   it("keeps no nonce for a machine not confirmed yet", () => {

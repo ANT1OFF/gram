@@ -1,5 +1,5 @@
 import type { KeyObject } from "node:crypto";
-import { lstatSync, lutimesSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import type { HostId, HostStatus } from "@gram/contracts";
 import { makeLaunchToken, tokensEqual } from "../http/auth.ts";
@@ -158,7 +158,6 @@ export const dialNoncesLastSeen = (dataDir: string): number | undefined => {
 /** The accepted dials' nonces in `<dataDir>/remote-access/dial-nonces.json`, as the machines are. */
 export const fileNonceStore = (dataDir: string): DialNonceStore => {
   const file = privateJsonFile(dataDir, "dial-nonces.json", 256 * 1024);
-  const path = dialNoncesPath(dataDir);
   return {
     read: () => {
       const value = file.read();
@@ -181,11 +180,9 @@ export const fileNonceStore = (dataDir: string): DialNonceStore => {
         seen: record["seen"] as number,
       };
     },
-    // Its modified time is `seen`, which survives what makes the content unreadable.
-    write: ({ nonces, floor, seen }) => {
-      file.write({ version: 1, floor, seen, nonces });
-      lutimesSync(path, new Date(), new Date(seen));
-    },
+    // Its modified time is `seen`, which survives what makes the content unreadable. It is set
+    // before the file replaces the old one, so a write that fails never lowers it.
+    write: ({ nonces, floor, seen }) => file.write({ version: 1, floor, seen, nonces }, seen),
     lastSeen: () => dialNoncesLastSeen(dataDir),
   };
 };
@@ -227,20 +224,30 @@ export const createPairedMachines = (
   /** No dial signed at or before this is taken; the latest time a dial was accepted at. */
   let floor = 0;
   let seen = 0;
-  /** Set when the last run's dials can't be bounded at all: then none is taken. */
+  /**
+   * Set while the last run's dials can't be bounded at all: then none is taken, and each dial
+   * tries again to load them, so storage put right is used without a restart.
+   */
   let blind = false;
-  try {
-    const kept = nonceStore.read();
-    ({ floor, seen } = kept);
-    for (const [nonce, until] of kept.nonces) nonces.set(nonce, until);
-  } catch {
-    // The last run's nonces are unknown, but every dial it accepted was signed at most the skew
-    // past the latest time it saw, or past now: none of those is taken, whatever the clock did.
-    const last = nonceStore.lastSeen?.();
-    if (last === undefined) blind = true;
-    else floor = Math.max(now(), last) + CONNECT_SKEW_MS;
-    seen = floor;
-  }
+  /** Loads the last run's nonces, or a bound on them; false when there is neither. */
+  const load = () => {
+    try {
+      const kept = nonceStore.read();
+      ({ floor, seen } = kept);
+      for (const [nonce, until] of kept.nonces) nonces.set(nonce, until);
+      return true;
+    } catch {
+      // The last run's nonces are unknown, but every dial it accepted was signed at most the
+      // skew past the latest time it saw, or past now: none of those is taken, whatever the
+      // clock did.
+      const last = nonceStore.lastSeen?.();
+      if (last === undefined) return false;
+      floor = Math.max(now(), last) + CONNECT_SKEW_MS;
+      seen = floor;
+      return true;
+    }
+  };
+  blind = !load();
   const save = (next: PairedMachine[]) => {
     store.write(next);
     machines = next;
@@ -369,8 +376,6 @@ export const createPairedMachines = (
       const key = machine === undefined ? undefined : keyOf(machine);
       if (machine === undefined || key === undefined)
         return { kind: "refused", status: 401, message: "unauthorized: machine not joined" };
-      if (blind)
-        return { kind: "refused", status: 503, message: "unavailable: dial history unreadable" };
       const at = now();
       if (Math.abs(at - claim.time) > CONNECT_SKEW_MS || claim.time <= floor)
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
@@ -380,6 +385,11 @@ export const createPairedMachines = (
       // writes them, and its replay is refused all the same.
       if (machine.confirmedAt === undefined)
         return { kind: "refused", status: 403, message: "forbidden: confirm this machine first" };
+      // Retried only for a confirmed machine's signed dial; `record` checks it against the floor
+      // a load sets.
+      if (blind) blind = !load();
+      if (blind)
+        return { kind: "refused", status: 503, message: "unavailable: dial history unreadable" };
       // Checked after the signature, so a forged dial can't spend a real one's nonce.
       const nonce = record(claim.nonce, claim.time, at);
       if (nonce === "stale")

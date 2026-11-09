@@ -175,9 +175,18 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
   `remote-access/dial-nonces.json` through their two minutes, so a dial replayed after the main
   Gram restarts is refused too. Once a nonce is let go, no dial signed at or before its time is
   taken, so a clock set back can't bring it back either. Each write also sets the file's modified time
-  to the latest time any run accepted a dial at, which a clock set back never lowers. When the
-  file's content can't be read, no dial signed before two minutes past that time (or past now, if
-  later) is taken, and when even its time can't be read, no dial is taken at all.
+  to the latest time any run accepted a dial at, which a clock set back never lowers; the time is
+  set on the new file before it replaces the old one, so a write that fails leaves the old one as
+  it was. When the file's content can't be read, no dial signed before two minutes past that time
+  (or past now, if later) is taken. When even its time can't be read, no dial is taken at all, and
+  `/host/connect` answers 503 "dial history unreadable".
+
+  That happens when the file or its `remote-access` folder can't be opened at all, as when its
+  permissions changed. To recover, make the folder owner-only again (`chmod 700`, the file
+  `chmod 600`), or restore the file from a backup; the next dial uses it, with no restart. Moving the
+  file aside also works, but Gram then has no history: wait until no joined machine has dialled
+  in for two minutes first, or a dial captured in that time could be replayed once.
+
 - **Not a browser.** The install, join and dial endpoints answer only requests addressed to the tailnet
   name (which Tailscale Serve forwards over loopback), and refuse any request with an `Origin`, so
   no web page can reach them. They take no browser cookie, and a browser's cookie grants nothing
