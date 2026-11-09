@@ -164,7 +164,8 @@ interface Handover<E> {
 
 /**
  * The turn hooks, with a thread on another machine's turns taking no checkpoints here: this
- * machine's git can't reach its checkout, and a folder of the same name here isn't it.
+ * machine's git can't reach its checkout, and a folder of the same name here isn't it. Its turn
+ * end still asks for a git-state refresh, which reads the machine's checkout there.
  */
 const turnsHere = (
   hooks: TurnHooksShape,
@@ -183,7 +184,12 @@ const turnsHere = (
       ),
     onTurnEnd: (threadId, turnId, cwd, reason, touchedRemote) =>
       Effect.flatMap(here(threadId), (local) =>
-        local ? hooks.onTurnEnd(threadId, turnId, cwd, reason, touchedRemote) : Effect.void,
+        local
+          ? hooks.onTurnEnd(threadId, turnId, cwd, reason, touchedRemote)
+          : // No checkpoint, but its git state (read on its machine) is still refreshed.
+            touchedRemote
+            ? hooks.onRemoteCommand(threadId, cwd)
+            : hooks.onFilesChanged(threadId, cwd),
       ),
   };
 };
