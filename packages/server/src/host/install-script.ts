@@ -132,6 +132,13 @@ main() {
     *) die "Only macOS and Linux machines can join." ;;
   esac
 
+  # As gram-host finds its folder: GRAM_HOST_HOME first, when it is absolute.
+  case "\${GRAM_HOST_HOME:-}" in /*) HOST_HOME="$GRAM_HOST_HOME" ;; esac
+  # Joined to another Gram: that join stands, and this link isn't used.
+  if [ -f "$HOST_HOME/host.json" ] && ! grep -qF "\\"$ORIGIN\\"" "$HOST_HOME/host.json"; then
+    die "This machine already joined another Gram. Run \\\`gram-host leave\\\` there first to join $ORIGIN."
+  fi
+
   ENTRY="$RESOURCES/app.asar/out/server/gram-host.js"
   case "$BIN$ENTRY" in *"'"*) die "Gram's folder has a quote in its path: $BIN" ;; esac
   mkdir -p "$HOME/.local/bin"
@@ -153,7 +160,7 @@ main() {
 
   if [ -f "$HOST_HOME/host.json" ]; then
     # Already joined: the service moves to this app, and the join stands.
-    say "This machine already joined a Gram; moving its service to this app."
+    say "This machine already joined $ORIGIN; moving its service to this app."
     "$SHIM" service install </dev/null
     for old in "$APPS"/*; do
       [ -e "$old" ] || continue

@@ -120,7 +120,12 @@ describe("the join installer", () => {
       const { dir, home, run, ran } = machine("1.14.0");
       try {
         mkdirSync(join(home, ".config", "gram-host"), { recursive: true });
-        writeFileSync(join(home, ".config", "gram-host", "host.json"), "{}");
+        const config = join(home, ".config", "gram-host", "host.json");
+        writeFileSync(config, JSON.stringify({ origin: "https://other.example-tailnet.ts.net" }));
+        const elsewhere = run(installScript(ORIGIN, "1.14.0"));
+        expect(elsewhere.status).not.toBe(0);
+        expect(elsewhere.stderr).toContain("already joined another Gram");
+        writeFileSync(config, JSON.stringify({ origin: ORIGIN }));
         const old = join(home, ".local", "share", "gram-host", "apps", "1.13.0");
         mkdirSync(old, { recursive: true });
         const result = run(installScript(ORIGIN, "1.14.0"));
