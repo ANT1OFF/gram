@@ -44,6 +44,14 @@ export interface WorkersDeps {
 }
 
 /** Listing workers, their reports, and the user's holds on them. */
+/** `list_workers`' `machines`: the joined machines, left out while none is. */
+const machinesListed = (
+  machines: ReadonlyArray<{ readonly name: string; readonly onlineSince?: number }>,
+) =>
+  machines.length === 0
+    ? {}
+    : { machines: machines.map((m) => ({ name: m.name, online: m.onlineSince !== undefined })) };
+
 export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
   const {
     requireAuthority,
@@ -92,6 +100,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         }),
         ...(ownWakes.length === 0 ? {} : { wakes: ownWakes }),
         ...(app === undefined ? {} : { app }),
+        ...machinesListed(kit.joinedMachines()),
         autonomy: autonomyOf(state.charter),
         workerModels: rosterOf(
           allowedWorkerModels(thread, state.charter),

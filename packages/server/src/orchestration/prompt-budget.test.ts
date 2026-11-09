@@ -27,9 +27,11 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * routines and workspace memory need (#198 with #199 merged in): `memory_list` and `memory_read`,
  * read-only, with the prompt's line on when to look; and `routine_create`, whose call from a worker
  * always asks the user. Its description was cut first; measured then at 35,470, about 4% under it.
+ * The orchestrator's raised on 2026-11-09, on purpose, for `spawn_worker`'s `machine` (a worker
+ * on a joined machine), its line cut to one sentence first.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 61_300,
+  orchestrator: 61_500,
   worker: 36_900,
   plain: 23_550,
 };

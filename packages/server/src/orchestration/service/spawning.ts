@@ -8,6 +8,7 @@ import {
   autonomyOf,
   briefFooterOf,
   effectiveCheckout,
+  type HostId,
   InvalidState,
   type Checkout,
   type ModelRef,
@@ -141,7 +142,35 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     checkouts,
     openedInAuto,
     briefedByUser,
+    joinedMachines,
   } = kit;
+  /**
+   * The joined machine `named` (its name, any case, or its id), for `spawn_worker`'s `machine`;
+   * `undefined` for this one.
+   */
+  const machineNamed = (tool: string, named: string) =>
+    Effect.gen(function* () {
+      const wanted = named.trim().toLowerCase();
+      if (wanted === "" || wanted === "local" || wanted === "this machine") return undefined;
+      const machines = joinedMachines();
+      const found = machines.filter(
+        (m) => m.id.toLowerCase() === wanted || m.name.toLowerCase() === wanted,
+      );
+      if (found.length === 1) return found[0]!.id as HostId;
+      const known =
+        machines.length === 0
+          ? "No machine is joined to this Gram."
+          : `Joined machines: ${machines.map((m) => m.name).join(", ")}.`;
+      return yield* toolError(
+        tool,
+        refusal(
+          found.length === 0 ? "unknown_machine" : "ambiguous_machine",
+          found.length === 0
+            ? `No joined machine is named “${named}”. ${known}`
+            : `More than one joined machine is named “${named}”; name it by its id.`,
+        ),
+      );
+    });
   const {
     outsideWorkspace,
     survey,
@@ -183,7 +212,8 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       const repos = (
         authority === undefined ? named : yield* repoNames("spawn_worker", named, authority.state)
       ).join(", ");
-      const plain = `Spawn a worker in ${repos} for ${input.feature}: ${input.title}`;
+      const on = input.machine === undefined ? "" : ` on ${input.machine}`;
+      const plain = `Spawn a worker in ${repos}${on} for ${input.feature}: ${input.title}`;
       if (authority === undefined) return plain;
       const { state } = authority;
       const outside = yield* outsideWorkspace(
@@ -629,10 +659,13 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             }
           }
 
+          const hostId =
+            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
           const request = {
             kind: "newWorktree" as const,
             branch,
             ...(input.base === undefined ? {} : { base: input.base }),
+            ...(hostId === undefined ? {} : { hostId }),
           };
           const prepareIn = (repo: Project) =>
             creator.prepare(request, repo.root).pipe(

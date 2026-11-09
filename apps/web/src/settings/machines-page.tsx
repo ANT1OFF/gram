@@ -20,13 +20,14 @@ import { copyText } from "./copy-text";
 import {
   type JoinedMachine,
   type JoinLink,
+  MACHINES_KEY,
   machinesApi,
   MachinesError,
   type MachinesStatus,
 } from "./machines-api";
 import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
 
-export const MACHINES_KEY = ["machines.status"] as const;
+export { MACHINES_KEY } from "./machines-api";
 
 /** How many machines can join, as the server keeps them. */
 export const MAX_MACHINES = 16;

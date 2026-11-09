@@ -570,7 +570,12 @@ function ConfiguredNewThreadDraft() {
               <CurrentCheckoutFreshness repoPath={projectRoot} />
             )}
             {checkout === "newWorktree" && (
-              <WorktreeFields repoPath={repoPath} value={worktree} onChange={setWorktree} />
+              <WorktreeFields
+                repoPath={repoPath}
+                value={worktree}
+                onChange={setWorktree}
+                machines
+              />
             )}
             {checkout === "existingWorktree" && (
               <ExistingWorktrees

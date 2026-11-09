@@ -208,6 +208,20 @@ describe("a row", () => {
     expect(done.age).toBe("3h");
   });
 
+  it("names the joined machine its checkout is on, and none for this one", () => {
+    const remote = summary("a", "running", {
+      checkout: {
+        kind: "worktree",
+        path: "/srv/w",
+        branch: "b",
+        repoRoot: "/srv/r",
+        hostId: "m-0123456789abcdef01234567",
+      },
+    } as Partial<Thread>);
+    expect(panelRow(row("a", "working"), remote, NOW).hostId).toBe("m-0123456789abcdef01234567");
+    expect(panelRow(row("a", "working"), summary("a", "running"), NOW).hostId).toBeUndefined();
+  });
+
   it("adds its now line to the state's word", () => {
     expect(panelRow(row("a", "working", { now: "running tests" }), undefined, NOW).status).toBe(
       "Running · running tests",

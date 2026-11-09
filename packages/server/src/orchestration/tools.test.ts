@@ -361,6 +361,10 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
         );
         expect((yield* call({ readAlso: ["nobody"] })).message).toMatch(/^not_your_worker: /);
         expect((yield* call({ model: "gpt-5" })).message).toMatch(/^not_admitted: /);
+        // No machine is joined in this server, so only this one can be named.
+        const elsewhere = (yield* call({ machine: "build box" })).message;
+        expect(elsewhere).toMatch(/^unknown_machine: /);
+        expect(elsewhere).toContain("No machine is joined to this Gram.");
 
         const first = yield* spawn(session, {
           feature: "billing",

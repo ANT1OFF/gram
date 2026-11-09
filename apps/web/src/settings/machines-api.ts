@@ -77,6 +77,9 @@ const status = async (response: Response, fallback: string): Promise<MachinesSta
   };
 };
 
+/** The query the Machines page and the new-thread machine picker share. */
+export const MACHINES_KEY = ["machines.status"] as const;
+
 export const machinesApi = {
   list: async () => status(await post("/machines/list"), "Couldn't read the machines"),
   confirm: async (id: string) =>
