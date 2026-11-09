@@ -27,18 +27,25 @@ describe("release-linux.yml", () => {
     expect(job("build")).toMatch(/permissions:\n {6}contents: read\n {4}outputs:/);
   });
 
-  it("caches only versioned packaging downloads and leaves the attestation cache-free", () => {
+  it("restores only hash-verifiable archives, never extracted builder toolsets", () => {
     const attest = job("attest");
     expect(uses(attest)).not.toContain("actions/cache");
     expect(attest).not.toMatch(/\n\s+cache:/);
     const build = job("build");
     const caches = build.split(/\n {6}- /).filter((step) => step.includes("uses: actions/cache@"));
     expect(caches).toHaveLength(1);
-    expect(caches[0]).toMatch(
-      /path: \|\n {12}~\/\.cache\/electron\n {12}~\/\.cache\/electron-builder\n {10}key:/,
-    );
+    const paths = /path: \|\n([^]*?)\n {10}key:/
+      .exec(caches[0])[1]
+      .trim()
+      .split("\n")
+      .map((line) => line.trim());
+    expect(paths).toEqual([
+      "~/.cache/electron",
+      "~/.cache/electron-builder/*/*.tar.gz",
+      "~/.cache/electron-builder/*/*.7z",
+    ]);
     expect(caches[0]).toContain(
-      "gram-packaging-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.packaging-cache.outputs.versions }}",
+      "gram-release-packaging-archives-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.packaging-cache.outputs.versions }}",
     );
     expect(caches[0]).not.toMatch(/restore-keys:/);
     expect(build).toContain("node tools/packaging/cache.mjs --key");

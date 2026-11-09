@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { seedChecksums } from "./cache.mjs";
 import { isTransientDownloadFailure, retryPackaging } from "./retry.mjs";
@@ -16,6 +16,8 @@ const { downloadArtifact } = requireBuilder("@electron/get");
 const { buildElectronArtifactConfig } = requireBuilder("./out/util/electronGet.js");
 const temporary = [];
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 const temp = () => {
@@ -169,5 +171,42 @@ describe("Electron checksum cache", () => {
     expect(() => seedChecksums(temp(), "45.0.0", { bad: "not a hash" })).toThrow(
       "Invalid Electron checksums",
     );
+  });
+});
+
+describe("release builder archive cache", () => {
+  it("re-hashes cached tool archives before extraction and rejects corrupted bytes", async () => {
+    const cacheRoot = temp();
+    vi.stubEnv("ELECTRON_BUILDER_CACHE", cacheRoot);
+    const { mkdirSync } = await import("node:fs");
+    const { create } = requireBuilder("tar");
+    const releaseName = "synthetic-tool@1.0.0";
+    const filenameWithExt = "synthetic-tool.tar.gz";
+    const source = join(temp(), "tool");
+    mkdirSync(source);
+    writeFileSync(join(source, "runtime"), "invented runtime; never executed");
+    const archiveDir = join(cacheRoot, releaseName);
+    mkdirSync(archiveDir);
+    const archive = join(archiveDir, filenameWithExt);
+    await create({ file: archive, gzip: true, cwd: join(source, "..") }, ["tool"]);
+    const checksums = {
+      [filenameWithExt]: createHash("sha256").update(readFileSync(archive)).digest("hex"),
+    };
+    const network = vi
+      .spyOn(requireBuilder("@electron/get"), "downloadArtifact")
+      .mockRejectedValue(new Error("network forbidden for synthetic archive test"));
+    const { downloadBuilderToolset } = requireBuilder("./out/util/electronGet.js");
+    const options = { releaseName, filenameWithExt, checksums };
+    const extracted = await downloadBuilderToolset(options);
+    expect(readFileSync(join(extracted, "runtime"), "utf8")).toBe(
+      "invented runtime; never executed",
+    );
+    expect(network).not.toHaveBeenCalled();
+
+    // A fresh release restores archives only, so no extracted state can bypass this hash check.
+    rmSync(extracted, { recursive: true });
+    writeFileSync(archive, "corrupted cached tool archive");
+    await expect(downloadBuilderToolset(options)).rejects.toThrow("network forbidden");
+    expect(network).toHaveBeenCalledOnce();
   });
 });

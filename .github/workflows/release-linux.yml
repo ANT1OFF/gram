@@ -116,8 +116,9 @@ jobs:
           for file in "$committed"/*; do
             cmp "$file" "$RUNNER_TEMP/sherpa-onnx-rebuild/$(basename "$file")"
           done
-      # Keep package-manager and build caches disabled. Only versioned Electron and packaging
-      # tool downloads are cached below; Electron checksums come from the pinned npm package.
+      # Keep package-manager and build caches disabled. Electron checksums come from the pinned
+      # npm package. Cache only builder archives: each is re-hashed against its pinned toolset
+      # checksum before extraction. Extracted toolsets and their .state fast paths are not trusted.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -129,13 +130,14 @@ jobs:
       - name: Identify packaging download versions
         id: packaging-cache
         run: node tools/packaging/cache.mjs --key
-      - name: Cache Electron and electron-builder downloads
+      - name: Cache Electron and verified packaging archives
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/electron
-            ~/.cache/electron-builder
-          key: gram-packaging-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.packaging-cache.outputs.versions }}
+            ~/.cache/electron-builder/*/*.tar.gz
+            ~/.cache/electron-builder/*/*.7z
+          key: gram-release-packaging-archives-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.packaging-cache.outputs.versions }}
       - run: bun install --frozen-lockfile
       - name: Seed pinned Electron checksums for offline cache validation
         run: node tools/packaging/cache.mjs --seed-checksums
