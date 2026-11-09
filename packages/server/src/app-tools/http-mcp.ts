@@ -17,6 +17,7 @@ import { CORE_APP_TOOLS } from "@gram/agents/claude";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import { IncomingMessage, ServerResponse } from "node:http";
 import { bearerToken, MCP_PATH } from "../http/auth.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
 import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
@@ -144,7 +145,13 @@ export const McpRoute = Layer.unwrap(
         // Asked per request: a thread's role can change while its agent keeps the same token.
         const audience = yield* registry.audienceOf(threadId);
         const disconnected = new AbortController();
+        const incoming = NodeHttpServerRequest.toIncomingMessage(request);
         const response = NodeHttpServerRequest.toServerResponse(request);
+        // Gram listens with `node:http`, and the SDK's transport takes only its request and
+        // response; an HTTP/2 pair would mean a listener this route was never written for.
+        if (!(incoming instanceof IncomingMessage) || !(response instanceof ServerResponse)) {
+          return HttpServerResponse.text("MCP is served over HTTP/1.1", { status: 505 });
+        }
         const onClose = () => {
           if (!response.writableEnded) disconnected.abort();
         };
@@ -176,10 +183,7 @@ export const McpRoute = Layer.unwrap(
         yield* Effect.acquireUseRelease(
           // The SDK's optional members don't satisfy `exactOptionalPropertyTypes`.
           Effect.promise(() => server.connect(transport as Transport)),
-          () =>
-            Effect.promise(() =>
-              transport.handleRequest(NodeHttpServerRequest.toIncomingMessage(request), response),
-            ),
+          () => Effect.promise(() => transport.handleRequest(incoming, response)),
           () =>
             Effect.promise(async () => {
               response.off("close", onClose);

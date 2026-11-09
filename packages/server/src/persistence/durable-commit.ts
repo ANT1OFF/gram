@@ -130,6 +130,8 @@ export const durableSqliteLayer = (
         }),
       );
       return yield* SqlClient.make({
+        // Gram's own client over sqlite-node connections, with its own commit gate.
+        driver: "gram-durable-commit",
         acquirer: acquire,
         transactionAcquirer: acquire,
         borrower: (f) =>

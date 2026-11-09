@@ -10,6 +10,7 @@ import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Stream from "effect/Stream";
 import * as Fiber from "effect/Fiber";
+import * as Scope from "effect/Scope";
 import { type Runtime, locked, feedLocked, replyOf, makeQueueItemId } from "./runtime-state.ts";
 import {
   type AfterMachineRestart,
@@ -38,6 +39,25 @@ import type { SessionPolicies } from "./session-policy.ts";
 import type { SessionRestarts } from "./session-restarts.ts";
 import type { AgentEvents } from "./agent-events.ts";
 import type { ServerApprovals } from "./server-approvals.ts";
+
+/**
+ * `Effect.scoped` for a session's lifetime, where a finalizer's defect joins the lifetime's failure
+ * instead of replacing it. Since Effect 4.0.6 a scope that closes with a dying finalizer turns the
+ * body's typed failures into defects, and the session's exit has to keep an `AgentUnavailable` for
+ * `handleSessionExit` to report an agent that couldn't start in its own words.
+ */
+const scopedKeepingFailure = <A, E, R>(self: Effect.Effect<A, E, R>) =>
+  Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const exit = yield* restore(self.pipe(Scope.provide(scope))).pipe(Effect.exit);
+      const closed = yield* Scope.close(scope, exit).pipe(Effect.exit);
+      if (Exit.isSuccess(closed)) return yield* exit;
+      return yield* Effect.failCause(
+        Exit.isFailure(exit) ? Cause.combine(exit.cause, closed.cause) : closed.cause,
+      );
+    }),
+  );
 
 /** What opening and ending a session read and change beside a thread's `Runtime`. */
 export interface SessionLifecycleDeps {
@@ -583,7 +603,7 @@ export const makeSessionLifecycle = ({
           handleEvent(rt, event).pipe(Effect.andThen(log.ack(seq))),
         );
       }).pipe(
-        Effect.scoped,
+        scopedKeepingFailure,
         Effect.onExit((exit) => {
           if (isShuttingDown() && Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
             markShutdownFailed();
