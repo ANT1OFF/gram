@@ -98,3 +98,73 @@ describe("installCommand", () => {
     );
   });
 });
+
+const reply = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+
+describe("adding a machine while access over Tailscale is off", () => {
+  it("turns it on from the dialog, then shows the join command", async () => {
+    let on = false;
+    const calls: Array<string> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) => {
+        calls.push(path);
+        const remote = {
+          mode: on ? "on" : "off",
+          tailscale: { state: "ready", dnsName: "studio.example-tailnet.ts.net" },
+          port: 8443,
+          devices: [],
+          ...(on ? { origin: "https://studio.example-tailnet.ts.net" } : {}),
+        };
+        if (path === "/remote/status") return reply(remote);
+        if (path === "/remote/enable") {
+          on = true;
+          return reply({ ...remote, mode: "on", origin: "https://studio.example-tailnet.ts.net" });
+        }
+        if (path === "/machines/join-link")
+          return on
+            ? reply({
+                url: `https://studio.example-tailnet.ts.net/host/join#code=${"a".repeat(64)}`,
+                expiresAt: Date.now() + 15 * 60_000,
+              })
+            : reply({ message: "off" }, 409);
+        return reply({ machines: [] });
+      }),
+    );
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add a machine" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Turn on access over Tailscale" }));
+    const command = await screen.findByTestId("machines-command");
+    expect(command.textContent).toContain("/host/install | sh -s --");
+    expect(command.textContent).not.toContain("a".repeat(64));
+    expect(calls).toContain("/remote/enable");
+  });
+
+  it("lists what Tailscale still needs when it isn't ready", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) =>
+        path === "/remote/status"
+          ? new Response(
+              JSON.stringify({
+                mode: "off",
+                tailscale: { state: "missing" },
+                port: 8443,
+                devices: [],
+              }),
+            )
+          : path === "/machines/join-link"
+            ? new Response("off", { status: 409 })
+            : new Response(JSON.stringify({ machines: [] })),
+      ),
+    );
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add a machine" }));
+    expect(await screen.findByTestId("phone-access-tailscale")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Turn on access over Tailscale" })).toBeNull();
+  });
+});

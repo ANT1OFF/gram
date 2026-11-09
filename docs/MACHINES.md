@@ -16,8 +16,9 @@ panel, turn checkpoints, PR badge and port chips don't reach that machine yet.
 
 ## What you need
 
-- Tailscale on both machines, in the same tailnet, and phone access over Tailscale turned on in
-  Gram on the main machine ([phone access](REMOTE_ACCESS.md)). The joined machine dials the same
+- Tailscale on both machines, in the same tailnet, and access over Tailscale turned on in Gram on
+  the main machine ([phone access](REMOTE_ACCESS.md)). **Add a machine** turns it on for you when
+  it is off, or lists what Tailscale still needs on this computer. The joined machine dials the same
   `https://<device>.<tailnet>.ts.net` address a paired phone opens.
 - Git on the new machine, and Claude Code signed in there (`claude /login`) for its sessions.
   Nothing else: the join command uses the Gram app on that machine, or downloads this Gram's

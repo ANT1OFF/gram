@@ -270,7 +270,7 @@ function AddressRow({ address, note }: { address: string | undefined; note?: str
 }
 
 /** Why phone access can't turn on yet, as the three things it needs, in order. */
-function TailscaleChecklist({
+export function TailscaleChecklist({
   state,
   checking,
   onCheck,

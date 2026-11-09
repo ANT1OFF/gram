@@ -1,5 +1,4 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import {
   CircleAlert,
   CircleCheck,
@@ -17,6 +16,8 @@ import { agoText, formatDay } from "@/lib/time";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
 
 import { copyText } from "./copy-text";
+import { phoneAccess, PhoneAccessError } from "./phone-access-api";
+import { PHONE_ACCESS_KEY, TailscaleChecklist } from "./phone-access-page";
 import {
   type JoinedMachine,
   type JoinLink,
@@ -234,6 +235,72 @@ function MachineRow({
   );
 }
 
+/**
+ * Access over Tailscale, turned on from here when it is off: other machines dial the address it
+ * serves on the tailnet. While Tailscale itself isn't ready, what it still needs, checked again on
+ * request.
+ */
+function TailscaleStep({ onReady }: { onReady: () => void }) {
+  const queryClient = useQueryClient();
+  const status = useQuery({
+    queryKey: PHONE_ACCESS_KEY,
+    queryFn: phoneAccess.status,
+    retry: false,
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const tailscale = status.data?.tailscale;
+  const enable = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const next = await phoneAccess.enable();
+      queryClient.setQueryData(PHONE_ACCESS_KEY, next);
+      if (next.origin === undefined)
+        setError(next.problem ?? "Access over Tailscale didn't start.");
+      else onReady();
+    } catch (e) {
+      setError(e instanceof PhoneAccessError ? e.message : "Couldn't reach Gram's server");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      {tailscale !== undefined && tailscale.state !== "ready" ? (
+        <TailscaleChecklist
+          state={tailscale}
+          checking={status.isFetching}
+          onCheck={() => void status.refetch()}
+        />
+      ) : (
+        <Alert>
+          <CircleAlert aria-hidden />
+          <AlertDescription>
+            Other machines reach this one over your tailnet, at the same address phone access uses.
+            Turn on access over Tailscale to add one; you can turn it off again in Phone access.
+          </AlertDescription>
+        </Alert>
+      )}
+      {(error !== undefined || status.isError) && (
+        <p role="alert" className="text-meta text-destructive">
+          {error ?? "Couldn't read Tailscale's state."}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Dialog.Close render={<Button type="button" variant="ghost" size="sm" />}>
+          Close
+        </Dialog.Close>
+        {tailscale?.state === "ready" && (
+          <Button size="sm" disabled={busy} onClick={() => void enable()}>
+            {busy ? "Turning on…" : "Turn on access over Tailscale"}
+          </Button>
+        )}
+      </div>
+    </>
+  );
+}
+
 function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -293,28 +360,7 @@ function AddDialog({
   return (
     <DialogShell testId="machines-add-dialog" title="Add a machine" onClose={onClose}>
       {link === "tailscale-off" ? (
-        <>
-          <Alert>
-            <CircleAlert aria-hidden />
-            <AlertDescription>
-              Other machines reach this one at the address phone access serves on your tailnet. Turn
-              on phone access first, then add the machine.
-            </AlertDescription>
-          </Alert>
-          <div className="flex justify-end gap-2">
-            <Dialog.Close render={<Button type="button" variant="ghost" size="sm" />}>
-              Close
-            </Dialog.Close>
-            <Button
-              size="sm"
-              render={<Link to="/settings/phones" />}
-              nativeButton={false}
-              onClick={onClose}
-            >
-              Phone access
-            </Button>
-          </div>
-        </>
+        <TailscaleStep onReady={mint} />
       ) : link === "error" ? (
         <>
           <p role="alert" className="text-meta text-destructive">
