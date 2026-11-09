@@ -69,7 +69,8 @@ export function TerminalView({
   script,
   onExit,
 }: {
-  threadId: ThreadId;
+  /** The thread it belongs to; none for a machine's Sign in terminal, whose paths aren't here. */
+  threadId?: ThreadId | undefined;
   terminalId: TerminalId;
   /** The running shell, for quoting dropped paths; POSIX rules when unknown. */
   shell?: string | undefined;
@@ -102,7 +103,9 @@ export function TerminalView({
   const fontSize = monoSize ?? DEFAULT_FONT_SIZE;
   // Re-renders when the monospace setting changes, so the effect below picks up the new family.
   useServerSettings((s) => s.settings?.fonts.mono);
-  const root = useThreadsStore((s) => s.byId[threadId]?.thread.checkout.path);
+  const root = useThreadsStore((s) =>
+    threadId === undefined ? undefined : s.byId[threadId]?.thread.checkout.path,
+  );
 
   // The theme by value: the hook makes a new object every render, and a new theme remakes the terminal.
   const themeKey = JSON.stringify(theme);
@@ -204,8 +207,10 @@ export function TerminalView({
       term.onData((data) => void api.terminalInput(terminalId, data).catch(() => {}));
       term.setLinks({
         onUrl: (url) => void openContentUrl(api, url).catch(() => {}),
-        findPaths: (text) => findPathLinks(text, latest.current.root),
+        findPaths: (text) =>
+          threadId === undefined ? [] : findPathLinks(text, latest.current.root),
         onPath: (link) => {
+          if (threadId === undefined) return;
           const { local: opensLocally, root: checkout } = latest.current;
           if (opensLocally || checkout === undefined) {
             void latest.current.openInEditor(link.path, { line: link.line, threadId });

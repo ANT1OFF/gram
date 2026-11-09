@@ -293,7 +293,10 @@ export const placedHost = (
   const terminals: Terminals = {
     open: (request, settings) =>
       Effect.gen(function* () {
-        const host = yield* terminalsOfThread(request.threadId);
+        const host =
+          request.threadId === undefined && request.hostId !== undefined
+            ? yield* hostFor(request.hostId, invalid)
+            : yield* terminalsOfThread(request.threadId);
         const opened = yield* host.terminals.open(request, settings);
         if (host.id !== LOCAL_HOST_ID) terminalHosts.set(opened.terminalId, host.id);
         return opened;
