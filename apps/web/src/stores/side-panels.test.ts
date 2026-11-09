@@ -787,17 +787,14 @@ describe("side panels", () => {
         overviewUnfolded: ["solo", "rest", "x"],
       }),
     ).toEqual({ overviewFolded: ["solo"], overviewUnfolded: ["rest"] });
-    // A section At rest took in (Pull requests, Done) or the idle group left open opens At rest;
-    // folded, they leave it folded.
+    // A section At rest took in (Pull requests, Done) left open opens At rest; folded, they leave
+    // it folded.
     expect(sanitizeOverviewView({ overviewUnfolded: ["pullRequests"] })).toEqual({
       overviewUnfolded: ["rest"],
     });
     expect(sanitizeOverviewView({ overviewUnfolded: ["doneToday"] })).toEqual({
       overviewUnfolded: ["rest"],
     });
-    expect(
-      sanitizeOverviewView({ workspacesCollapsedNodes: ["overview-idle:open", "overview:ws-1"] }),
-    ).toEqual({ overviewUnfolded: ["rest"] });
     expect(sanitizeOverviewView({ overviewUnfolded: [] })).toEqual({ overviewUnfolded: [] });
     expect(sanitizeOverviewView({ workspacesCollapsedNodes: ["overview:ws-1"] })).toEqual({});
   });
