@@ -128,12 +128,13 @@ main() {
           download "$zip"
           stage=$(mktemp -d "$APPS/.extract-XXXXXX")
           trap 'rm -rf "$stage"' EXIT
+          trap 'exit 1' HUP INT TERM
           ditto -x -k "$APPS/$zip" "$stage" || die "Couldn't unpack $zip."
           host_app "$stage/Gram.app/Contents/MacOS/Gram" "$stage/Gram.app/Contents/Resources" || die "The extracted app is incomplete. Run the installer again."
           touch "$stage/.complete"
           rm -rf "$APPS/$VERSION"
           mv "$stage" "$APPS/$VERSION"
-          trap - EXIT
+          trap - EXIT HUP INT TERM
           rm -f "$APPS/$zip"
         fi
         BIN="$own/Contents/MacOS/Gram"; RESOURCES="$own/Contents/Resources"
@@ -159,13 +160,14 @@ main() {
           # Unpacked, so it needs no FUSE and starts no desktop: the host is the app's binary as Node.
           stage=$(mktemp -d "$APPS/.extract-XXXXXX")
           trap 'rm -rf "$stage"' EXIT
+          trap 'exit 1' HUP INT TERM
           (cd "$stage" && "$APPS/$image" --appimage-extract >/dev/null) || die "Couldn't unpack $image."
           host_app "$stage/squashfs-root/gram" "$stage/squashfs-root/resources" || die "The extracted app is incomplete. Run the installer again."
           touch "$stage/squashfs-root/.complete"
           rm -rf "$own"
           mv "$stage/squashfs-root" "$own"
           rm -rf "$stage"
-          trap - EXIT
+          trap - EXIT HUP INT TERM
           rm -f "$APPS/$image"
         fi
         BIN="$own/gram"; RESOURCES="$own/resources"

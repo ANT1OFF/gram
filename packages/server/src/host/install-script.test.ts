@@ -52,6 +52,7 @@ cat >squashfs-root/gram <<'GRAM'
 exec node "$@"
 GRAM
 chmod +x squashfs-root/gram
+if [ -n "\${SYNTHETIC_UNPACK_SIGNAL:-}" ]; then kill -s "$SYNTHETIC_UNPACK_SIGNAL" "$PPID"; exit 23; fi
 [ "\${SYNTHETIC_UNPACK_FAIL:-}" != 1 ] || exit 23
 cat >squashfs-root/resources/app.asar/out/server/gram-host.js <<'HOST'
 const { readFileSync, writeFileSync } = require("node:fs");
@@ -97,8 +98,8 @@ if [ -n "$out" ]; then cp "$file" "$out"; else cat "$file"; fi
 `,
   );
   for (const tool of ["git", "tailscale", "claude"]) executable(join(bin, tool), "#!/bin/sh\n");
-  const run = (script: string, extra: Record<string, string> = {}) =>
-    spawnSync("sh", ["-s", "--", LINK], {
+  const run = (script: string, extra: Record<string, string> = {}, shell = "sh") =>
+    spawnSync(shell, ["-s", "--", LINK], {
       input: script,
       encoding: "utf8",
       env: {
@@ -118,6 +119,27 @@ describe("the join installer", () => {
       `curl -fsSL ${ORIGIN}/host/install | sh -s -- '${ORIGIN}/host/join#code=abcd'`,
     );
   });
+
+  for (const shell of ["sh", "dash"].filter((name) => spawnSync(name, ["-c", ":"]).status === 0)) {
+    for (const signal of ["HUP", "TERM"]) {
+      it(`cleans the temporary extraction after ${signal} under ${shell}`, () => {
+        const m = machine("99.14.0");
+        try {
+          const result = m.run(
+            installScript(ORIGIN, "99.14.0"),
+            { SYNTHETIC_UNPACK_SIGNAL: signal },
+            shell,
+          );
+          expect(result.status === 0).toBe(false);
+          const apps = join(m.home, ".local", "share", "gram-host", "apps");
+          expect(readdirSync(apps).filter((name) => name.startsWith(".extract-"))).toEqual([]);
+          expect(existsSync(join(apps, "99.14.0"))).toBe(false);
+        } finally {
+          removeDir(m.dir);
+        }
+      });
+    }
+  }
 
   it("embeds only an https origin and a version", () => {
     expect(() => installScript("https://x.ts.net'; rm -rf ~; '", "1.0.0")).toThrow();
