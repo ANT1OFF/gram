@@ -34,10 +34,18 @@ panel, turn checkpoints, PR badge and port chips don't reach that machine yet.
    ```
 
    The installer comes from your own Gram over the tailnet. It uses the Gram app installed there
-   (`/Applications/Gram.app`, `~/Applications/Gram.app`, or the .deb's `/opt/Gram`), or downloads
-   the same release as the main Gram from GitHub and checks it against the release's
-   `SHA256SUMS.txt`. It writes a `gram-host` command to `~/.local/bin` (the app's own binary, run as
-   Node), hands the link to `gram-host join` on stdin, and installs the background service.
+   (`/Applications/Gram.app`, `~/Applications/Gram.app`, or the .deb's `/opt/Gram`) when it is the
+   main Gram's version; otherwise it downloads that release from GitHub, checks it against the
+   release's `SHA256SUMS.txt`, and keeps it in `apps` in the host's folder on a Mac, or in
+   `~/.local/share/gram-host/apps` on Linux. It writes a `gram-host` command to `~/.local/bin` (the
+   app's own binary, run as Node), hands the link to `gram-host join` on stdin, and installs the
+   background service. Run it again after the main Gram updates and it moves the service to the new
+   release; the join stands.
+
+   The link sits in that shell's history, and in the installer's arguments while it runs. It works
+   once and only for 15 minutes, and a machine that joins with it still waits for you to confirm
+   it, but if the install fails before it joins, make a new link rather than leave that one live.
+   A Gram run from source has no release to download, so the other machine needs Gram installed.
 
    From a Gram checkout, `node packages/server/src/host/main.ts join` does the same: paste the link
    when it asks. `--name <name>` sets the name it joins with (its host name by default), and

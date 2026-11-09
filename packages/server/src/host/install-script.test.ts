@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { removeDir, tempDir } from "../git/test-repo.ts";
@@ -103,11 +103,30 @@ describe("the join installer", () => {
         const result = run(installScript(ORIGIN, "1.14.0"));
         expect(result.stderr).toContain("Installed");
         expect(result.status).toBe(0);
-        const app = join(home, ".local", "share", "gram-host", "app-1.14.0");
+        const app = join(home, ".local", "share", "gram-host", "apps", "1.14.0");
         expect(ran()).toEqual({ args: ["join"], stdin: `${LINK}\n` });
         expect(readFileSync(join(home, ".local", "bin", "gram-host"), "utf8")).toContain(
           `ELECTRON_RUN_AS_NODE=1 exec '${app}/gram' '${app}/resources/app.asar/out/server/gram-host.js' "$@"`,
         );
+      } finally {
+        removeDir(dir);
+      }
+    },
+  );
+
+  it.skipIf(process.platform !== "linux" || process.arch !== "x64")(
+    "on a machine that already joined, moves its service to the new app instead",
+    () => {
+      const { dir, home, run, ran } = machine("1.14.0");
+      try {
+        mkdirSync(join(home, ".config", "gram-host"), { recursive: true });
+        writeFileSync(join(home, ".config", "gram-host", "host.json"), "{}");
+        const old = join(home, ".local", "share", "gram-host", "apps", "1.13.0");
+        mkdirSync(old, { recursive: true });
+        const result = run(installScript(ORIGIN, "1.14.0"));
+        expect(result.status).toBe(0);
+        expect(ran()).toEqual({ args: ["service", "install"], stdin: "" });
+        expect(existsSync(old)).toBe(false);
       } finally {
         removeDir(dir);
       }

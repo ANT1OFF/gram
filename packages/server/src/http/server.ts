@@ -240,7 +240,15 @@ export const AuthMiddleware = HttpRouter.middleware(
           return secureResponse(
             remoteHosts === undefined
               ? HttpServerResponse.text("forbidden", { status: 403 })
-              : yield* hostRoute(remoteHosts, remote, path, config.appVersion),
+              : yield* hostRoute(
+                  remoteHosts,
+                  remote,
+                  path,
+                  // A release is downloaded only for a packaged build, whose build is a commit.
+                  config.appBuild !== undefined && /^[a-f0-9]{40}$/.test(config.appBuild)
+                    ? config.appVersion
+                    : undefined,
+                ),
           );
         const decision = isRemote
           ? remote.authorize(authRequest)
