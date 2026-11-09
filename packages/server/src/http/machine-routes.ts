@@ -2,7 +2,8 @@ import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import { effectiveCheckout, HostId, hostOf, LOCAL_HOST_ID } from "@gram/contracts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
-import { HOST_CONNECT_PATH, HOST_JOIN_PATH } from "../host/machine-keys.ts";
+import { HOST_CONNECT_PATH, HOST_INSTALL_PATH, HOST_JOIN_PATH } from "../host/machine-keys.ts";
+import { installScript } from "../host/install-script.ts";
 import type { RemoteHostsShape } from "../host/remote-hosts.ts";
 import type { McpTokens } from "../app-tools/mcp-tokens.ts";
 import type { ThreadStore } from "../persistence/thread-store.ts";
@@ -23,7 +24,11 @@ export const MACHINE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 /** What a joining machine's host reaches: answered before any browser auth, by its own rules. */
-export const HOST_PATHS: ReadonlySet<string> = new Set([HOST_JOIN_PATH, HOST_CONNECT_PATH]);
+export const HOST_PATHS: ReadonlySet<string> = new Set([
+  HOST_JOIN_PATH,
+  HOST_CONNECT_PATH,
+  HOST_INSTALL_PATH,
+]);
 
 const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 const refuse = (message: string, status = 403) => HttpServerResponse.text(message, { status });
@@ -59,14 +64,30 @@ const fromAHost = (request: HttpServerRequest.HttpServerRequest, remote: RemoteA
   request.headers["host"] === remote.host && request.headers["origin"] === undefined;
 
 /**
- * Answers `/host/join` and `/host/connect` on the tailnet address. A join must carry the current
+ * Answers `/host/install`, `/host/join` and `/host/connect` on the tailnet address. A join must carry the current
  * join link's code; a dial must be signed by a joined, confirmed machine's key. Neither is ever
  * answered on loopback, and neither takes a browser's cookie.
  */
-export const hostRoute = (hosts: RemoteHostsShape, remote: RemoteAccess, path: string) =>
+export const hostRoute = (
+  hosts: RemoteHostsShape,
+  remote: RemoteAccess,
+  path: string,
+  /** This Gram's release, which the installer downloads; undefined when run from source. */
+  appVersion?: string,
+) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     if (!fromAHost(request, remote)) return refuse("forbidden");
+    // The installer holds no secret, and installs nothing without the join link it is given.
+    if (path === HOST_INSTALL_PATH) {
+      if (request.method !== "GET") return refuse("forbidden");
+      return HttpServerResponse.text(installScript(remote.origin, appVersion), {
+        headers: {
+          "content-type": "text/x-shellscript; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      });
+    }
     if (path === HOST_JOIN_PATH) {
       if (request.method !== "POST" || request.headers["content-type"] !== "application/json")
         return refuse("forbidden");

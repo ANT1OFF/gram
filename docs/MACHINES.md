@@ -19,24 +19,29 @@ panel, turn checkpoints, PR badge and port chips don't reach that machine yet.
 - Tailscale on both machines, in the same tailnet, and phone access over Tailscale turned on in
   Gram on the main machine ([phone access](REMOTE_ACCESS.md)). The joined machine dials the same
   `https://<device>.<tailnet>.ts.net` address a paired phone opens.
-- Node and a Gram checkout on the new machine, for now, until `gram-host` ships as its own
-  download. Sign Claude Code in there (`claude /login`) for its sessions.
+- Git on the new machine, and Claude Code signed in there (`claude /login`) for its sessions.
+  Nothing else: the join command uses the Gram app on that machine, or downloads this Gram's
+  release (macOS on Apple silicon, Linux on x64) into the host's folder.
 
 ## Join a machine
 
-1. On the main machine, open Settings → Machines and choose **Add a machine**. It shows the
-   command to run and a join link that lasts 15 minutes and works once.
-2. On the new machine, run:
+1. On the main machine, open Settings → Machines and choose **Add a machine**. It shows one
+   command, with a join link in it that lasts 15 minutes and works once.
+2. On the new machine, run it in a terminal:
 
    ```sh
-   node packages/server/src/host/main.ts join
+   curl -fsSL https://<device>.<tailnet>.ts.net/host/install | sh -s -- '<join link>'
    ```
 
-   and paste the link when it asks (or pipe it in). A link given after `join` works too, but it
-   then lands in your shell history and the process list.
+   The installer comes from your own Gram over the tailnet. It uses the Gram app installed there
+   (`/Applications/Gram.app`, `~/Applications/Gram.app`, or the .deb's `/opt/Gram`), or downloads
+   the same release as the main Gram from GitHub and checks it against the release's
+   `SHA256SUMS.txt`. It writes a `gram-host` command to `~/.local/bin` (the app's own binary, run as
+   Node), hands the link to `gram-host join` on stdin, and installs the background service.
 
-   `--name <name>` sets the name it joins with (its host name by default), and `--no-service`
-   leaves out the background service.
+   From a Gram checkout, `node packages/server/src/host/main.ts join` does the same: paste the link
+   when it asks. `--name <name>` sets the name it joins with (its host name by default), and
+   `--no-service` leaves out the background service.
 
 3. It prints the machine's fingerprint. Once it joins, Settings → Machines lists it as waiting:
    choose **Confirm**, check the fingerprint matches, and choose **They match**. Until it is
@@ -96,7 +101,7 @@ or `gram-host service install`.
   signature over them and the main Gram's address. The main Gram refuses one that isn't signed by
   the machine's pinned key, is more than two minutes off, repeats a nonce, or comes from a machine
   that hasn't been confirmed.
-- **Not a browser.** The join and dial endpoints answer only requests addressed to the tailnet
+- **Not a browser.** The install, join and dial endpoints answer only requests addressed to the tailnet
   name (which Tailscale Serve forwards over loopback), and refuse any request with an `Origin`, so
   no web page can reach them. They take no browser cookie, and a browser's cookie grants nothing
   there. Without the join code or a joined machine's key they grant nothing either.

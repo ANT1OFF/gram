@@ -32,9 +32,16 @@ export { MACHINES_KEY } from "./machines-api";
 /** How many machines can join, as the server keeps them. */
 export const MAX_MACHINES = 16;
 
-/** What runs `gram-host join` on the new machine, from a Gram checkout until it ships alone. */
+/** What runs `gram-host join` from a Gram checkout, for a machine that has one. */
 export const JOIN_COMMAND = "node packages/server/src/host/main.ts join";
-const STATUS_COMMAND = "node packages/server/src/host/main.ts status";
+const STATUS_COMMAND = "gram-host status";
+
+/**
+ * The one command that joins a machine: this Gram's installer, which uses or downloads the Gram
+ * app there and joins with the link, handed over on stdin.
+ */
+export const installCommand = (link: string): string =>
+  `curl -fsSL ${new URL(link).origin}/host/install | sh -s -- '${link.replaceAll("'", "")}'`;
 
 const message = (error: unknown) =>
   error instanceof MachinesError ? error.message : "Couldn't reach Gram's server";
@@ -359,32 +366,30 @@ function AddDialog({
         <>
           <ol className="flex list-decimal flex-col gap-3 ps-5 text-muted-foreground">
             <li>
-              On the other machine, with Tailscale connected and Claude Code signed in, run this
-              from a Gram checkout:
-              <span className="mt-1.5 flex items-center gap-2">
-                <code
-                  className="min-w-0 flex-1 truncate rounded-sm bg-accent px-2 py-1 font-mono text-meta text-foreground select-all"
-                  data-testid="machines-command"
-                >
-                  {JOIN_COMMAND}
-                </code>
-                <CopyButton text={JOIN_COMMAND} label="Copy" />
-              </span>
-            </li>
-            <li>
-              Paste this join link when it asks. It installs itself as a background service.
+              On the other machine, with Tailscale connected, run this in a terminal. It uses the
+              Gram app there, or downloads it, and runs in the background from then on.
               <span className="mt-1.5 flex items-center gap-2">
                 {link === undefined ? (
                   <span className="h-7 flex-1 animate-pulse rounded-sm bg-accent" />
                 ) : (
                   <>
-                    <span className="min-w-0 flex-1 truncate font-mono text-meta text-foreground">
-                      {link.url.replace(/#.*$/, "#code=…")}
-                    </span>
-                    <CopyButton text={link.url} label="Copy link" />
+                    <code
+                      className="min-w-0 flex-1 truncate rounded-sm bg-accent px-2 py-1 font-mono text-meta text-foreground"
+                      data-testid="machines-command"
+                    >
+                      {installCommand(link.url).replace(/#code=[^']*/, "#code=…")}
+                    </code>
+                    <CopyButton text={installCommand(link.url)} label="Copy" />
                   </>
                 )}
               </span>
+              {link !== undefined && (
+                <span className="mt-1.5 flex flex-wrap items-center gap-x-1 text-meta">
+                  From a Gram checkout instead: run{" "}
+                  <code className="font-mono">{JOIN_COMMAND}</code> and paste the link.
+                  <CopyButton text={link.url} label="Copy link" />
+                </span>
+              )}
             </li>
             <li>
               Once it joins, check the fingerprint it printed against the one Gram shows, and

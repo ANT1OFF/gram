@@ -240,7 +240,7 @@ export const AuthMiddleware = HttpRouter.middleware(
           return secureResponse(
             remoteHosts === undefined
               ? HttpServerResponse.text("forbidden", { status: 403 })
-              : yield* hostRoute(remoteHosts, remote, path),
+              : yield* hostRoute(remoteHosts, remote, path, config.appVersion),
           );
         const decision = isRemote
           ? remote.authorize(authRequest)

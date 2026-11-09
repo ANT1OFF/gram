@@ -14,6 +14,7 @@ const protectedPaths = [
   "/host/join",
   "/host/connect",
   "/host/mcp",
+  "/host/install",
 ] as const;
 
 const request = (url: string, host: string): AuthRequest => ({

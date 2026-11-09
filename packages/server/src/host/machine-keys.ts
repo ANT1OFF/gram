@@ -20,6 +20,8 @@ import { HostId } from "@gram/contracts";
 export const HOST_JOIN_PATH = "/host/join";
 /** Where a joined machine's host dials in, as a WebSocket. */
 export const HOST_CONNECT_PATH = "/host/connect";
+/** The installer a new machine runs to join, with its join link (`install-script.ts`). */
+export const HOST_INSTALL_PATH = "/host/install";
 /** Where a session on a joined machine reaches its thread's app tools, with the thread's token. */
 export const HOST_MCP_PATH = "/host/mcp";
 

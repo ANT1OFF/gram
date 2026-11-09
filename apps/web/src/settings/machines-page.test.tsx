@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { JoinedMachine } from "./machines-api";
-import { machineState, MachinesPage } from "./machines-page";
+import { installCommand, machineState, MachinesPage } from "./machines-page";
 
 const DAY = 86_400_000;
 const NOW = Date.parse("2026-06-15T10:00:00Z");
@@ -88,5 +88,13 @@ describe("machines page", () => {
     );
     await waitFor(() => expect(calls.map((call) => call.path)).toContain("/machines/remove"));
     expect(await screen.findByText(/No other machines yet/)).toBeTruthy();
+  });
+});
+
+describe("installCommand", () => {
+  it("joins with one command that carries the link, without its quotes", () => {
+    expect(installCommand("https://studio.example-tailnet.ts.net/host/join#code=ab'cd")).toBe(
+      "curl -fsSL https://studio.example-tailnet.ts.net/host/install | sh -s -- 'https://studio.example-tailnet.ts.net/host/join#code=abcd'",
+    );
   });
 });
