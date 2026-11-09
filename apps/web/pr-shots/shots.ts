@@ -1959,7 +1959,8 @@ const EVENT_ROUTINE_SHOTS: readonly Shot[] = [
 
 /**
  * Synthetic joined machines for the Machine picker and Settings → Machines: one online and signed
- * in, one offline, one online whose Claude Code isn't signed in. No real host, tailnet or account.
+ * in, one offline, one online whose Claude Code isn't signed in, one without Claude Code. No real
+ * host, tailnet or account.
  */
 const JOINED_MACHINES = [
   {
@@ -1971,6 +1972,10 @@ const JOINED_MACHINES = [
     confirmed: true,
     onlineSince: CLOCK.getTime() - 3 * HOUR,
     claudeSignIn: "signedIn",
+    tools: [
+      { tool: "claude", found: true, version: "2.1.319" },
+      { tool: "git", found: true, version: "2.47.0" },
+    ],
   },
   {
     id: "m-synthetic-old",
@@ -1989,6 +1994,24 @@ const JOINED_MACHINES = [
     confirmed: true,
     onlineSince: CLOCK.getTime() - 20 * 60_000,
     claudeSignIn: "notSignedIn",
+    tools: [
+      { tool: "claude", found: true, version: "2.1.319" },
+      { tool: "git", found: true, version: "2.45.2" },
+    ],
+  },
+  {
+    id: "m-synthetic-bare",
+    name: "bare-box",
+    platform: "linux",
+    fingerprint: "5E6F-7A8B-9C0D-1A2B-3C4D",
+    joinedAt: CLOCK.getTime() - 2 * HOUR,
+    confirmed: true,
+    onlineSince: CLOCK.getTime() - 90 * 60_000,
+    claudeSignIn: "unknown",
+    tools: [
+      { tool: "claude", found: false },
+      { tool: "git", found: true, version: "2.39.5" },
+    ],
   },
 ];
 
@@ -2022,7 +2045,8 @@ const openNewWithMachines = async (page: Page, pick?: string) => {
 const MACHINE_SHOTS: readonly Shot[] = [
   {
     name: "machine-new-thread",
-    title: "/new with three joined machines (one offline, one not signed in): where Machine is",
+    title:
+      "/new with four joined machines (offline, not signed in, no Claude Code): where Machine is",
     open: (page) => openNewWithMachines(page),
   },
   {
@@ -2058,7 +2082,8 @@ const MACHINE_SHOTS: readonly Shot[] = [
   },
   {
     name: "machines-signed-out",
-    title: "Settings → Machines: a machine whose Claude Code isn't signed in, with Sign in",
+    title:
+      "Settings → Machines: versions found, a machine not signed in (Sign in icon), one without Claude Code",
     open: async (page) => {
       await stageMachines(page);
       await page.setViewportSize({ width: 1280, height: 900 });
@@ -2069,7 +2094,8 @@ const MACHINE_SHOTS: readonly Shot[] = [
   },
   {
     name: "machines-sign-in-terminal",
-    title: "Settings → Machines → Sign in: the terminal on new-box (the mock's shell, no CLI ran)",
+    title:
+      "Settings → Machines → Sign in: a shell on new-box (the mock's, with no line typed: no CLI ran)",
     open: async (page) => {
       await stageMachines(page);
       await page.setViewportSize({ width: 1280, height: 1000 });

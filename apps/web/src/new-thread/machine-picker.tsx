@@ -46,7 +46,11 @@ const stateOf = (machine: JoinedMachine): string | undefined =>
       ? undefined
       : machineNeedsSignIn(machine)
         ? "not signed in"
-        : "can't run Claude";
+        : machine.tools?.find((tool) => !tool.found)?.tool === "git"
+          ? "no Git"
+          : machine.tools?.some((tool) => tool.tool === "claude" && !tool.found)
+            ? "no Claude Code"
+            : "can't run Claude Code";
 
 /**
  * Where the new thread runs: this machine, or a confirmed joined one. A chip beside the folder or
