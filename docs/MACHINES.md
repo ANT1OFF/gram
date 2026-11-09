@@ -99,6 +99,11 @@ or `gram-host service install`.
 - A joined machine's terminals open with its own default shell on its own PATH.
 - While the machine is offline its workers don't start and their folders aren't marked missing;
   nothing falls back to running on this machine.
+- A message sent while the connection is down waits for the machine for up to two minutes, as its
+  session does, and is handed to the agent once it dials in again; if the connection dropped before
+  Gram heard back, Gram asks again under the same id and the host takes it only once. A machine
+  that doesn't come back in time leaves the message at the top of the thread's queue, and the
+  thread says it wasn't delivered.
 
 ## Its files and attachments
 

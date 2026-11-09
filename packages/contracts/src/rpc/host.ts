@@ -45,6 +45,11 @@ export const HostCapability = Schema.Literals([
   "sessions",
   "repos",
   /**
+   * Takes a session's send or steer once per delivery id, answering a repeat with the first one's
+   * outcome, so a control plane unsure whether one arrived can ask again.
+   */
+  "deliveries",
+  /**
    * Scoping and reading a thread's files on the host for previews, file links, `send_file` and
    * dictation's vocabulary (`host.files.scope` and the rest). Optional: a host without it still
    * runs its workers, and its files are refused here rather than read on this machine.
@@ -555,11 +560,13 @@ export const HostRpcs = RpcGroup.make(
       ...session,
       input: UserInput,
       messageId: Schema.optionalKey(Schema.String),
+      /** Taken once per session on a host that serves `deliveries`. */
+      deliveryId: Schema.optionalKey(Schema.String),
     },
     error: HostFailed,
   }),
   Rpc.make("host.sessions.steer", {
-    payload: { ...session, input: UserInput },
+    payload: { ...session, input: UserInput, deliveryId: Schema.optionalKey(Schema.String) },
     error: HostFailed,
   }),
   Rpc.make("host.sessions.interrupt", {

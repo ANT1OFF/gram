@@ -33,7 +33,7 @@ import { gitOn } from "./git.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import {
   connectHost,
-  HOST_CAPABILITIES,
+  HOST_SERVES,
   scanFromWire,
   scanToWire,
   serveHost,
@@ -59,7 +59,7 @@ const SCAN: PortScan = {
 const hello = (overrides: Partial<HostHello> = {}): HostHello => ({
   protocol: HOST_PROTOCOL_VERSION,
   hostId: LOCAL_HOST_ID,
-  capabilities: HOST_CAPABILITIES,
+  capabilities: HOST_SERVES,
   platform: process.platform,
   pid: 4242,
   ...overrides,
@@ -388,7 +388,7 @@ describe("a joined machine's file reads", () => {
   it.effect("are absent for a host from a build without them, which still connects", () =>
     Effect.gen(function* () {
       const old = yield* connected({
-        capabilities: HOST_CAPABILITIES.filter((c) => c !== "file-reads" && c !== "attachments"),
+        capabilities: HOST_SERVES.filter((c) => c !== "file-reads" && c !== "attachments"),
       });
       expect(old.reads).toBeUndefined();
       expect(old.attachments).toBeUndefined();

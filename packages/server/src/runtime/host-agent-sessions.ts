@@ -5,11 +5,12 @@ import {
   type AgentKind,
   AgentUnavailable,
   AnswerUndelivered,
-  type HostFailed,
+  HostFailed,
   type HostSessionOpen,
   ModeRefused,
   type UserInput,
 } from "@gram/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -19,6 +20,7 @@ import { HOST_MCP_PATH } from "../host/machine-keys.ts";
 import { type AttachmentsOnMachine, carryAttachments } from "../host/carry-attachments.ts";
 import type { HostSessionsConnection } from "../host/protocol.ts";
 import { AgentHosts } from "./agent-hosts.ts";
+import { InputUndelivered } from "./undelivered.ts";
 
 /** The event a session whose host went ends with. */
 export const HOST_STOPPED_ENDED: AgentEvent = {
@@ -81,6 +83,15 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
     peerMessaging: o.peerMessaging,
   }) as HostSessionOpen;
 
+/**
+ * A send or steer the host didn't take, or can't say it took, dies as `InputUndelivered`, so the
+ * runtime keeps the input rather than count it taken.
+ */
+const undelivered = (error: HostFailed) =>
+  Effect.die(
+    new InputUndelivered({ message: `The agent's machine didn't take it: ${error.message}` }),
+  );
+
 const logFailed = (call: string) => (error: HostFailed) =>
   Effect.logWarning("worker host: a session call didn't reach the agent").pipe(
     Effect.annotateLogs({ call, reason: error.message }),
@@ -120,6 +131,16 @@ const openOnHost = (
         Effect.forkScoped,
       );
     }
+    /** Done once the session's events end: input still on its way to it has nowhere to go. */
+    const over = yield* Deferred.make<void>();
+    /** `call`, given up once the session has ended. */
+    const whileOpen = (call: Effect.Effect<void, HostFailed>) =>
+      Effect.raceFirst(
+        call,
+        Deferred.await(over).pipe(
+          Effect.andThen(Effect.fail(new HostFailed({ message: "The session ended." }))),
+        ),
+      );
     let received = 0;
     let acked = 0;
     yield* Effect.suspend(() => {
@@ -141,6 +162,7 @@ const openOnHost = (
         Stream.catch((error) =>
           Stream.make(error._tag === "NotFound" ? HOST_SESSION_GONE_ENDED : HOST_STOPPED_ENDED),
         ),
+        Stream.ensuring(Deferred.succeed(over, undefined)),
       ),
     );
 
@@ -182,15 +204,25 @@ const openOnHost = (
 
     const session: AgentSession = {
       events,
+      // Each under an id of its own, so the host takes it once however often it is asked.
       send: (input, sendOptions) =>
         carry(input).pipe(
-          Effect.flatMap((carried) => host.send(handle, carried, sendOptions)),
-          Effect.catch(logFailed("send")),
+          Effect.flatMap((carried) =>
+            whileOpen(
+              host.send(handle, carried, {
+                ...sendOptions,
+                deliveryId: sendOptions?.messageId ?? randomUUID(),
+              }),
+            ),
+          ),
+          Effect.catch(undelivered),
         ),
       steer: (input) =>
         carry(input).pipe(
-          Effect.flatMap((carried) => host.steer(handle, carried)),
-          Effect.catch(logFailed("steer")),
+          Effect.flatMap((carried) =>
+            whileOpen(host.steer(handle, carried, { deliveryId: randomUUID() })),
+          ),
+          Effect.catch(undelivered),
         ),
       // A host that went has no turn left to stop.
       interrupt: host.interrupt(handle).pipe(Effect.catchTag("HostFailed", logFailed("interrupt"))),

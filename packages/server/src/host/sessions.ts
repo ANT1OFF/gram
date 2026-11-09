@@ -48,6 +48,17 @@ export interface HostSessionsService {
   readonly connectorsSeen: (handle: string) => Stream.Stream<ConnectorsSeen>;
   /** The open session under `handle`, for the calls that act on it. */
   readonly session: (handle: string) => Effect.Effect<AgentSession, HostFailed>;
+  /**
+   * Hands the session under `handle` input once per `deliveryId` (a send or a steer). A repeat, from
+   * a control plane whose connection dropped before it heard back, waits for the first and answers
+   * as it did, so the agent never takes the input twice; one that failed is forgotten, so a repeat
+   * tries again. It runs in the session's scope, so a caller that goes mid-call doesn't cut it off.
+   */
+  readonly deliver: (
+    handle: string,
+    deliveryId: string,
+    deliver: (session: AgentSession) => Effect.Effect<void>,
+  ) => Effect.Effect<void, HostFailed>;
   /** Ends the session and waits for its agent to stop; a handle not yet open stays closed. */
   readonly close: (handle: string) => Effect.Effect<void>;
   readonly reload: (agent: AgentKind, reload: HostAgentReload) => Effect.Effect<void>;
@@ -75,6 +86,8 @@ type Entry =
       followers: number;
       /** Epoch ms since when no stream has followed it; `undefined` while one does. */
       unfollowedSince: number | undefined;
+      /** Each delivery taken, or being taken, by its id, oldest first (`deliver`). */
+      readonly deliveries: Map<string, Deferred.Deferred<void>>;
     };
 
 /**
@@ -88,6 +101,12 @@ const UNFOLLOWED_SWEEP_MS = 30_000;
 
 /** How many handles closed before their open arrived are remembered. */
 const CLOSED_EARLY_KEPT = 256;
+
+/**
+ * How many of a session's deliveries are remembered. A repeat comes within the control plane's
+ * reattach window, behind at most a few others, so this is far more than one will look back.
+ */
+const DELIVERIES_KEPT = 256;
 
 const noSession = (handle: string) => new HostFailed({ message: `No agent session ${handle}.` });
 
@@ -339,6 +358,7 @@ export const sessionsOnHost = (
             threadId: request.threadId,
             followers: 0,
             unfollowedSince: Date.now(),
+            deliveries: new Map(),
           });
           return openedFrom(exit.value.session);
         }).pipe(
@@ -398,6 +418,45 @@ export const sessionsOnHost = (
           }),
         ),
       session: (handle) => Effect.map(openEntry(handle), (entry) => entry.session),
+      deliver: (handle, deliveryId, deliver) =>
+        Effect.flatMap(openEntry(handle), (entry) =>
+          Effect.gen(function* () {
+            let taken = entry.deliveries.get(deliveryId);
+            if (taken === undefined) {
+              const done = yield* Deferred.make<void>();
+              taken = done;
+              entry.deliveries.set(deliveryId, done);
+              if (entry.deliveries.size > DELIVERIES_KEPT) {
+                const oldest = entry.deliveries.keys().next().value;
+                if (oldest !== undefined) entry.deliveries.delete(oldest);
+              }
+              yield* deliver(entry.session).pipe(
+                Effect.onExit((exit) =>
+                  Effect.andThen(
+                    Effect.sync(() => {
+                      if (Exit.isFailure(exit) && entry.deliveries.get(deliveryId) === done) {
+                        entry.deliveries.delete(deliveryId);
+                      }
+                    }),
+                    Deferred.done(done, exit),
+                  ),
+                ),
+                Effect.forkIn(entry.scope),
+              );
+            }
+            // A session that closes meanwhile took nothing more.
+            return yield* Effect.raceFirst(
+              Deferred.await(taken),
+              Deferred.await(entry.closed).pipe(Effect.andThen(Effect.fail(noSession(handle)))),
+            ).pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.fail(noSession(handle))
+                  : Effect.failCause(cause),
+              ),
+            );
+          }),
+        ),
       close,
       reload: (agent, reload) =>
         agents(agent).pipe(
