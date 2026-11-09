@@ -9,7 +9,9 @@ import {
   briefFooterOf,
   effectiveCheckout,
   type HostId,
+  hostOf,
   InvalidState,
+  LOCAL_HOST_ID,
   type Checkout,
   type ModelRef,
   type Project,
@@ -631,6 +633,8 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           const siblings = found.workers.filter(
             (worker) => worker.projectId === project.id && !finished.has(worker.id),
           );
+          const hostId =
+            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
           const readAlso: Array<string> = [];
           for (const id of input.readAlso ?? []) {
             const sibling = found.workers.find((worker) => worker.id === id);
@@ -640,6 +644,16 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 refusal(
                   "not_your_worker",
                   `readAlso names ${id}, which isn't one of your workers.`,
+                ),
+              );
+            }
+            // A folder on another machine isn't there to read.
+            if (hostOf(effectiveCheckout(sibling)) !== (hostId ?? LOCAL_HOST_ID)) {
+              return yield* toolError(
+                tool,
+                refusal(
+                  "not_allowed",
+                  `readAlso names “${sibling.title}” [thread ${id}], which runs on another machine than this worker would.`,
                 ),
               );
             }
@@ -659,8 +673,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             }
           }
 
-          const hostId =
-            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
           const request = {
             kind: "newWorktree" as const,
             branch,
@@ -861,7 +873,20 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       })
       .pipe(Effect.ignore);
 
-  const spawnWorker: OrchestrationShape["spawnWorker"] = (callerId, input) =>
+  const spawnWorker: OrchestrationShape["spawnWorker"] = (callerId, named) =>
+    // The machine is checked first, and a held brief keeps its id: a name that is wrong now is
+    // refused now, not when the brief is released hours later.
+    (named.machine === undefined
+      ? Effect.succeed(named)
+      : machineNamed("spawn_worker", named.machine).pipe(
+          Effect.map((id) => {
+            const { machine: _machine, ...rest } = named;
+            return id === undefined ? rest : { ...rest, machine: id };
+          }),
+        )
+    ).pipe(Effect.flatMap((input) => spawnGated(callerId, input)));
+
+  const spawnGated: OrchestrationShape["spawnWorker"] = (callerId, input) =>
     pausedSpawnGate(callerId, input).pipe(
       Effect.andThen(spawnBreaker.gate(callerId, input)),
       Effect.flatMap((held): Effect.Effect<HeldSpawn | RouteOffer | undefined> =>

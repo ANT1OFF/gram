@@ -560,7 +560,7 @@ function Row({ row }: { row: PanelRow }) {
   );
 }
 
-/** The joined machine a worker runs on, by its name in Settings → Machines. */
+/** The joined machine a worker runs on, named on hover as in Settings → Machines. */
 function MachineTag({ hostId }: { hostId: HostId }) {
   const { data } = useQuery({
     queryKey: MACHINES_KEY,
@@ -571,14 +571,17 @@ function MachineTag({ hostId }: { hostId: HostId }) {
   const machine = data?.machines.find((m) => m.id === hostId);
   const name = machine?.name ?? "another machine";
   const offline = machine !== undefined && machine.onlineSince === undefined;
+  const label = offline ? `On ${name}, which is offline` : `On ${name}`;
+  // An icon of fixed width, its name on hover: the chips' fit is measured without it changing.
   return (
     <span
       data-testid="workers-panel-machine"
-      title={offline ? `On ${name}, which is offline` : `On ${name}`}
-      className="flex min-w-0 shrink items-center gap-1 text-meta text-muted-foreground"
+      role="img"
+      aria-label={label}
+      title={label}
+      className="flex h-lh shrink-0 items-center text-muted-foreground"
     >
-      <Server aria-hidden className="size-3 shrink-0" />
-      <span className="truncate">{name}</span>
+      <Server aria-hidden className="size-3" />
     </span>
   );
 }

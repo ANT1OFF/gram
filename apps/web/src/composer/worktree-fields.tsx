@@ -1,6 +1,7 @@
 import { type CheckoutRequest, HostId } from "@gram/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dices } from "lucide-react";
+import { useEffect } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
@@ -75,6 +76,11 @@ function MachineField({
     staleTime: 10_000,
   });
   const machines = (data?.machines ?? []).filter((m) => m.confirmed);
+  // A pick of a machine since removed is dropped, so nothing unseen goes on the request.
+  const gone = value !== undefined && data !== undefined && !machines.some((m) => m.id === value);
+  useEffect(() => {
+    if (gone) onChange(undefined);
+  }, [gone, onChange]);
   if (machines.length === 0) return null;
   const items = [
     { value: THIS_MACHINE, label: "This machine" },
