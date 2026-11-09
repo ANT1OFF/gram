@@ -6,6 +6,7 @@ import {
   isOpenQuestion,
   autonomyOf,
   effectiveCheckout,
+  isLocalHost,
   type BackgroundTask,
   type GitState,
   DEPENDENCY_DRAG_CONFLICT_MIN,
@@ -864,7 +865,9 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       for (const worker of mine) {
         const touched = cutOff.has(worker.id) || (workers[worker.id]?.background ?? []).length > 0;
         if (!touched || worker.parked || worker.completedAt !== undefined) continue;
-        if (yield* Effect.sync(() => existsSync(effectiveCheckout(worker).path))) {
+        // A worker on another machine has no folder here to look for: it is that machine's.
+        const checkout = effectiveCheckout(worker);
+        if (!isLocalHost(checkout) || (yield* Effect.sync(() => existsSync(checkout.path)))) {
           candidates.push(worker);
         }
       }

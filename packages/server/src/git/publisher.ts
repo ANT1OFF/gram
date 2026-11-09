@@ -3,6 +3,7 @@
 
 import {
   anyPrOpen,
+  type Checkout,
   effectiveCheckout,
   isLocalHost,
   MAX_FAILING_CHECK_NAMES,
@@ -21,6 +22,7 @@ import {
 } from "@gram/contracts";
 import {
   invalidatePrBadges,
+  isForeignPath,
   notARepoState,
   Pr,
   prChecksStamp,
@@ -31,6 +33,7 @@ import {
   samePathKey,
   Worktrees,
 } from "@gram/git";
+import { tmpdir } from "node:os";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -44,7 +47,7 @@ import * as Stream from "effect/Stream";
 import { EventHub } from "../events/event-hub.ts";
 import { besidesActivity, upsertsChanging } from "../events/upsert-changes.ts";
 import { branchPrOf, completionStep, type CompletionStep } from "./completion.ts";
-import { folderExists } from "../fs/folders.ts";
+import { folderExists, ghFolderOf } from "../fs/folders.ts";
 import { isBadgeOf, markOf, prunedMarks, withMonitorMark, type PrRef } from "./extra-prs.ts";
 import { activityMultiplier, makePollBackoff } from "../github/poll-backoff.ts";
 import { affordsExtras, asBackground, GhBudget, GhPriority } from "../github/budget.ts";
@@ -283,12 +286,32 @@ const targetsOf = (thread: Thread) => [
   ...(thread.extraPrs ?? []),
 ];
 
+/** How long a checkout's `samePathKey` stands for it, in `checkoutKey`. */
+const CHECKOUT_KEY_TTL_MS = 2_000;
+const checkoutKeys = new WeakMap<Checkout, { readonly key: string; readonly at: number }>();
+
+/**
+ * `samePathKey` of the checkout `thread` works in, kept a moment per checkout object. Each refresh
+ * and sweep matches every thread against a key, so without it a sweep made a `realpath` (several
+ * for a removed worktree) per thread per checkout: quadratic in threads, and synchronous. A thread
+ * read again from the store is a new object, and a folder that changed under one is seen within
+ * `CHECKOUT_KEY_TTL_MS`.
+ */
+const checkoutKey = (thread: Thread): string => {
+  const checkout = effectiveCheckout(thread);
+  const now = Date.now();
+  const kept = checkoutKeys.get(checkout);
+  if (kept !== undefined && now - kept.at < CHECKOUT_KEY_TTL_MS) return kept.key;
+  const key = samePathKey(checkout.path);
+  checkoutKeys.set(checkout, { key, at: now });
+  return key;
+};
+
 /** A thread's bound PRs as one comparable string. */
 const targetsKey = (thread: Thread) => targetsOf(thread).map(extraKey).toSorted().join(" ");
 
 /** What a thread's completion facts are about: its bound PRs and the checkout it works in. */
-const bindingOf = (thread: Thread) =>
-  `${targetsKey(thread)}@${samePathKey(effectiveCheckout(thread).path)}`;
+const bindingOf = (thread: Thread) => `${targetsKey(thread)}@${checkoutKey(thread)}`;
 
 /** The CI watcher's key for one of a thread's extra PRs; a bare thread id is its `boundPr`. */
 const extraWatchKey = (threadId: ThreadId, extra: Pick<BoundPr, "repo" | "number">) =>
@@ -558,10 +581,7 @@ export const GitStatePublisherLive = Layer.effect(
     ) =>
       Effect.gen(function* () {
         const mine =
-          inventory ??
-          (yield* openThreads).filter(
-            (thread) => samePathKey(effectiveCheckout(thread).path) === key,
-          );
+          inventory ?? (yield* openThreads).filter((thread) => checkoutKey(thread) === key);
         const extras = affordsExtras(yield* budget.window("graphql"));
         let changed = false;
         // Concurrent, so `Pr.status`'s resolver collapses these lookups into one `gh` document.
@@ -901,7 +921,7 @@ export const GitStatePublisherLive = Layer.effect(
      * branch's own PR when the badge is one bound from elsewhere.
      */
     const completionPrs = (thread: Thread, state: GitState) => {
-      const branchPr = branchPrOf(thread, states.get(samePathKey(effectiveCheckout(thread).path)));
+      const branchPr = branchPrOf(thread, states.get(checkoutKey(thread)));
       return [...threadPrBadges(thread, state), ...(branchPr === undefined ? [] : [branchPr])];
     };
 
@@ -1113,7 +1133,7 @@ export const GitStatePublisherLive = Layer.effect(
       Effect.gen(function* () {
         for (const thread of inventory ?? (yield* store.listThreads)) {
           const checkout = effectiveCheckout(thread);
-          if (samePathKey(checkout.path) === key && checkout.repoRoot !== undefined)
+          if (checkout.repoRoot !== undefined && checkoutKey(thread) === key)
             return { root: checkout.repoRoot, branch: checkout.branch };
         }
         return {};
@@ -1166,7 +1186,14 @@ export const GitStatePublisherLive = Layer.effect(
           const tracked = new Set((inventory ?? (yield* openThreads)).map((t) => t.id));
           const boundChanged =
             options.remote && (present || root !== undefined)
-              ? yield* refreshBound(path, key, next.value, inventory, root ?? path)
+              ? yield* refreshBound(
+                  path,
+                  key,
+                  next.value,
+                  inventory,
+                  // gh runs here: another machine's folder is none to start it in.
+                  isForeignPath(path) ? tmpdir() : (root ?? path),
+                )
               : false;
           if (
             !boundChanged &&
@@ -1181,7 +1208,7 @@ export const GitStatePublisherLive = Layer.effect(
             (t) => !t.parked || lingers(t) || tracked.has(t.id),
           );
           for (const thread of threads) {
-            if (samePathKey(effectiveCheckout(thread).path) === key)
+            if (checkoutKey(thread) === key)
               yield* publishTo(thread, threadState(thread, next.value));
           }
         }),
@@ -1293,11 +1320,9 @@ export const GitStatePublisherLive = Layer.effect(
         // Parking frees the thread's folder: a lingering parked thread's checkout is swept, never
         // watched.
         const wanted = new Map(
-          threads
-            .filter((t) => !t.parked)
-            .map((t) => [samePathKey(effectiveCheckout(t).path), effectiveCheckout(t).path]),
+          threads.filter((t) => !t.parked).map((t) => [checkoutKey(t), effectiveCheckout(t).path]),
         );
-        const kept = new Set(threads.map((t) => samePathKey(effectiveCheckout(t).path)));
+        const kept = new Set(threads.map((t) => checkoutKey(t)));
         for (const key of held.keys()) {
           wanted.delete(key);
           kept.delete(key);
@@ -1349,7 +1374,7 @@ export const GitStatePublisherLive = Layer.effect(
         // A notice already waiting out its delay when the thread was archived would wake its agent.
         for (const thread of threads) if (thread.parked) yield* silence(thread.id);
         for (const thread of threads) {
-          const state = states.get(samePathKey(effectiveCheckout(thread).path));
+          const state = states.get(checkoutKey(thread));
           if (state !== undefined) yield* publishTo(thread, threadState(thread, state));
         }
       }),
@@ -1397,7 +1422,7 @@ export const GitStatePublisherLive = Layer.effect(
                 elsewhere === undefined ? rest : { ...rest, prElsewhere: elsewhere };
               states.set(key, next);
               for (const thread of threads) {
-                if (samePathKey(effectiveCheckout(thread).path) === key)
+                if (checkoutKey(thread) === key)
                   yield* publishTo(thread, threadState(thread, next));
               }
             }),
@@ -1413,7 +1438,7 @@ export const GitStatePublisherLive = Layer.effect(
     const elsewhereInputs = (threads: ReadonlyArray<Thread>) =>
       JSON.stringify(
         threads.map((thread) => {
-          const key = samePathKey(effectiveCheckout(thread).path);
+          const key = checkoutKey(thread);
           const state = states.get(key);
           const own = state?.pr;
           return [
@@ -1798,7 +1823,7 @@ export const GitStatePublisherLive = Layer.effect(
             const paths = new Map(
               threads
                 .filter((t) => revealed === "all" || revealed.includes(t.id))
-                .map((t) => [samePathKey(effectiveCheckout(t).path), effectiveCheckout(t).path]),
+                .map((t) => [checkoutKey(t), effectiveCheckout(t).path]),
             );
             const remote = config.sweepInterval !== undefined && (yield* backoff.consecutive) === 0;
             yield* Effect.forEach(paths.values(), (path) => refresh(path, { remote }), {
@@ -1814,7 +1839,7 @@ export const GitStatePublisherLive = Layer.effect(
     const badgeFor: GitStatePublisherShape["badgeFor"] = (thread) =>
       Effect.sync(() => {
         if (thread.role === "orchestrator") return undefined;
-        const state = states.get(samePathKey(effectiveCheckout(thread).path));
+        const state = states.get(checkoutKey(thread));
         const elsewhere =
           thread.boundPr !== undefined &&
           (state === undefined || boundElsewhere(thread, state) !== undefined);
@@ -1824,7 +1849,7 @@ export const GitStatePublisherLive = Layer.effect(
     // Named as `git.state` sends it, so a snapshot or a reload has the names the stream had.
     const stateForThread: GitStatePublisherShape["stateForThread"] = (thread) =>
       Effect.suspend(() => {
-        const state = states.get(samePathKey(effectiveCheckout(thread).path));
+        const state = states.get(checkoutKey(thread));
         return state === undefined
           ? Effect.succeed(undefined)
           : namedChecks(threadState(thread, state));
@@ -1864,12 +1889,8 @@ export const GitStatePublisherLive = Layer.effect(
 
     const lookupPr: GitStatePublisherShape["lookupPr"] = (thread, ref) =>
       Effect.gen(function* () {
-        const checkout = effectiveCheckout(thread);
         // `--repo` names the repo, so gh only needs a folder that exists to start in.
-        const cwd =
-          (yield* folderExists(checkout.path)) || checkout.repoRoot === undefined
-            ? checkout.path
-            : checkout.repoRoot;
+        const cwd = yield* ghFolderOf(effectiveCheckout(thread));
         // `Pr.status` answers no PR, not a failure, while gh isn't signed in: that says nothing.
         if (Option.isSome(tools) && !(yield* tools.value.ghReady)) return Option.none();
         const found = yield* pr

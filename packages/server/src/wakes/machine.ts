@@ -16,6 +16,7 @@ import {
   AppToolError,
   MACHINE_LOAD_DEFAULT_MINUTES,
   type DiskFreeCondition,
+  isLocalHost,
   type MachineLoadCondition,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
@@ -66,6 +67,10 @@ const GB = 1e9;
 const MAX_MINUTES = 24 * 60;
 
 const refuse = (message: string) => new AppToolError({ tool: "schedule_wake", message });
+
+const ON_ANOTHER_MACHINE =
+  "A `machine` wake reads the machine Gram's app runs on, and this thread runs on another one.";
+
 const met = (facts: Readonly<Record<string, string>>): ConditionLook => ({ met: true, facts });
 const gb = (bytes: number) => (bytes / GB).toFixed(1);
 
@@ -141,9 +146,13 @@ export const machineSource = Effect.gen(function* () {
     // The load's hold is `forMinutes`, and free space doesn't flicker.
     debounce: Duration.zero,
     arm: (caller, spec) =>
-      spec.metric === "load"
-        ? armLoad(spec)
-        : armDisk(spec.path ?? caller.checkout.repoRoot ?? caller.checkout.path, spec),
+      // This machine's load and disks say nothing about the one a thread elsewhere runs on, and
+      // its folders aren't here to read the space of.
+      !isLocalHost(caller.checkout)
+        ? Effect.fail(refuse(ON_ANOTHER_MACHINE))
+        : spec.metric === "load"
+          ? armLoad(spec)
+          : armDisk(spec.path ?? caller.checkout.repoRoot ?? caller.checkout.path, spec),
     look: (wake) =>
       Effect.gen(function* () {
         const spec = wake.spec;
