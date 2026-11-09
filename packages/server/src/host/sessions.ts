@@ -216,7 +216,12 @@ export const sessionsOnHost = (
             Effect.suspend(() => {
               // Asked again: an earlier close took time, and a stream may have followed it since.
               const entry = entries.get(handle);
-              if (entry?.state !== "open" || entry.followers > 0) return Effect.void;
+              if (
+                entry?.state !== "open" ||
+                entry.unfollowedSince === undefined ||
+                Date.now() - entry.unfollowedSince < unfollowedMs
+              )
+                return Effect.void;
               return Effect.logInfo("gram-host: ending a session nothing follows any more").pipe(
                 Effect.andThen(close(handle)),
               );
