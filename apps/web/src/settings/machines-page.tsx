@@ -3,6 +3,7 @@ import {
   CircleAlert,
   CircleArrowUp,
   CircleCheck,
+  Clock,
   Copy,
   Monitor,
   Plus,
@@ -12,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { Hint } from "@/components/hint";
+import { Spinner } from "@/motion/spinner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { formatDay } from "@/lib/time";
@@ -34,7 +36,14 @@ import {
   type MachinesStatus,
 } from "./machines-api";
 import { REVOKE_AT, TokenDialog } from "./machine-token-dialog";
-import { healthHint, type MachineHealth, machineHealth } from "./machine-status";
+import {
+  healthHint,
+  type MachineHealth,
+  machineHealth,
+  machineUpdateLine,
+  updating,
+} from "./machine-status";
+import { Toggle } from "./fields";
 import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
 
 export { MACHINES_KEY } from "./machines-api";
@@ -90,8 +99,10 @@ export function MachinesPage() {
     queryKey: MACHINES_KEY,
     queryFn: machinesApi.list,
     retry: false,
-    // The join dialog watches for the new machine; otherwise a slow refresh keeps "online" honest.
-    refetchInterval: adding ? 1500 : 10_000,
+    // The join dialog watches for the new machine, and a row its update; otherwise a slow refresh
+    // keeps "online" honest.
+    refetchInterval: (query) =>
+      adding || query.state.data?.machines.some(updating) === true ? 1500 : 10_000,
   });
   const act = async (run: () => Promise<MachinesStatus>) => {
     setError(undefined);
@@ -117,6 +128,17 @@ export function MachinesPage() {
       </p>
     );
   const machines = status.data.machines;
+  const healthOf = (machine: JoinedMachine) =>
+    machineHealth(machine, status.data, status.dataUpdatedAt);
+  /** Confirmed machines behind this Gram, which an Update moves to its release. */
+  const behind = machines.filter(
+    (machine) => machine.confirmed && healthOf(machine).update !== undefined,
+  );
+  const update = (machine: JoinedMachine) => {
+    // A host that updates itself starts at once, and its row shows how it goes.
+    if (machine.selfUpdate === true) void act(() => machinesApi.update(machine.id));
+    else setPending({ kind: "update", machine });
+  };
   return (
     <section
       className="flex flex-col gap-2"
@@ -130,9 +152,29 @@ export function MachinesPage() {
         <span className="text-meta text-muted-foreground tabular-nums">
           {machines.length} of {MAX_MACHINES}
         </span>
+        {behind.length > 1 && status.data.release !== undefined && (
+          <Hint
+            label={`Update the machines that can update themselves to ${status.data.release}, each once it's idle`}
+            render={
+              <Button
+                size="sm"
+                variant="outline"
+                className="ms-auto"
+                disabled={behind.every(
+                  (machine) => machine.selfUpdate !== true || updating(machine),
+                )}
+                onClick={() => void act(() => machinesApi.updateAll())}
+                data-testid="machines-update-all"
+              />
+            }
+          >
+            <CircleArrowUp aria-hidden />
+            Update all
+          </Hint>
+        )}
         <Button
           size="sm"
-          className="ms-auto"
+          className={behind.length > 1 && status.data.release !== undefined ? "" : "ms-auto"}
           disabled={machines.length >= MAX_MACHINES}
           onClick={() => setAdding(true)}
           data-testid="machines-add"
@@ -152,13 +194,13 @@ export function MachinesPage() {
             <MachineRow
               key={machine.id}
               machine={machine}
-              health={machineHealth(machine, status.data, status.dataUpdatedAt)}
+              health={healthOf(machine)}
               now={status.dataUpdatedAt}
               onConfirm={() => setPending({ kind: "confirm", machine })}
               onRemove={() => setPending({ kind: "remove", machine })}
               onToken={() => setPending({ kind: "token", machine })}
               onForget={() => setPending({ kind: "forget", machine })}
-              onUpdate={() => setPending({ kind: "update", machine })}
+              onUpdate={() => update(machine)}
               signingIn={signingIn === machine.id}
               onSignIn={() => setSigningIn(machine.id)}
               onSignInClosed={() => setSigningIn(undefined)}
@@ -185,6 +227,12 @@ export function MachinesPage() {
           A machine runs nothing until you confirm it. Removing one forgets its key and disconnects
           it at once.
         </p>
+      )}
+      {machines.length > 0 && (
+        <MachineUpdatesToggle
+          on={status.data.automaticUpdates !== false}
+          onChange={(enabled) => act(() => machinesApi.setAutomaticUpdates(enabled))}
+        />
       )}
       {adding && (
         <AddDialog
@@ -255,6 +303,30 @@ export function MachinesPage() {
   );
 }
 
+/**
+ * Settings → Machines' switch for updating joined machines on their own, on until turned off. It
+ * goes through the machines' own local-only route, never Settings, so a paired phone can't flip it.
+ */
+function MachineUpdatesToggle({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (enabled: boolean) => Promise<void>;
+}) {
+  return (
+    <div className={SETTINGS_CARD}>
+      <Toggle
+        label="Update machines automatically"
+        description="When Gram updates, each joined machine moves to the same release once it has no running turn, check or busy terminal."
+        keywords={["update", "upgrade", "release", "gram-host", "automatic"]}
+        checked={on}
+        onChange={(enabled) => void onChange(enabled)}
+      />
+    </div>
+  );
+}
+
 function MachineRow({
   machine,
   health,
@@ -282,8 +354,10 @@ function MachineRow({
 }) {
   const online = health.tone === "online";
   const hint = healthHint(health);
-  // Only for a machine this Gram can't talk to; one on another release that works says so on hover.
-  const updatable = machine.confirmed && health.tone === "update" && health.update !== undefined;
+  // Any confirmed machine behind this Gram: over its own connection when its host updates itself,
+  // otherwise by the installer.
+  const updateTo = machine.confirmed ? health.update?.to : undefined;
+  const updateLine = machineUpdateLine(machine, now);
   const problem = online ? machineSignInProblem(machine) : undefined;
   const tools = online ? machineToolsLine(machine) : undefined;
   return (
@@ -342,6 +416,24 @@ function MachineRow({
               {tools}
             </span>
           )}
+          {updateLine !== undefined && (
+            <span
+              className={`flex items-center gap-1 text-meta ${updateLine.tone === "failed" ? "text-destructive" : "text-muted-foreground"}`}
+              data-testid="machines-update-state"
+              aria-live="polite"
+            >
+              {updateLine.tone === "failed" ? (
+                <CircleAlert aria-hidden className="size-icon-chip shrink-0" />
+              ) : updateLine.tone === "waiting" ? (
+                <Clock aria-hidden className="size-icon-chip shrink-0" />
+              ) : updateLine.tone === "done" ? (
+                <CircleCheck aria-hidden className="size-icon-chip shrink-0 text-success" />
+              ) : (
+                <Spinner aria-hidden className="size-icon-chip shrink-0" />
+              )}
+              {updateLine.text}
+            </span>
+          )}
           {problem !== undefined && (
             <span
               className="flex items-center gap-1 text-meta text-destructive"
@@ -381,10 +473,23 @@ function MachineRow({
               Forget token
             </Button>
           )}
-          {updatable && (
-            <Button size="sm" onClick={onUpdate} data-testid="machines-update">
-              Update
-            </Button>
+          {updateTo !== undefined && (
+            <Hint
+              label={`Update ${machine.name} to ${updateTo}`}
+              render={
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="outline"
+                  aria-label={`Update ${machine.name} to ${updateTo}`}
+                  disabled={updating(machine)}
+                  onClick={onUpdate}
+                  data-testid="machines-update"
+                />
+              }
+            >
+              <CircleArrowUp />
+            </Hint>
           )}
           <Button size="sm" variant="ghost" onClick={onRemove}>
             Remove

@@ -32,7 +32,80 @@ export interface JoinedMachine {
   readonly claudeSignInCheckedAt?: number;
   /** While it is online, once asked: whether `claude` and `git` are on its login-shell PATH. */
   readonly tools?: ReadonlyArray<MachineTool>;
+  /** While it is online: its host updates itself over its connection, with no shell there. */
+  readonly selfUpdate?: boolean;
+  /** Its update over its connection, while one runs or since one ended. */
+  readonly update?: MachineUpdate;
 }
+
+/** What keeps a machine from updating now. */
+export interface MachineBusy {
+  readonly turns: number;
+  readonly terminals: number;
+  readonly clones: number;
+  readonly checks: number;
+}
+
+/** A joined machine's update to this Gram's release, as the server keeps it. Times are epoch ms. */
+export type MachineUpdate =
+  /** Busy: it updates once it is idle. */
+  | { readonly phase: "waiting"; readonly release: string; readonly busy: MachineBusy }
+  | {
+      readonly phase: "downloading";
+      readonly release: string;
+      readonly received: number;
+      readonly total?: number;
+    }
+  | {
+      readonly phase: "verifying" | "unpacking" | "testing" | "switching" | "restarting";
+      readonly release: string;
+    }
+  | { readonly phase: "updated"; readonly release: string; readonly at: number }
+  | {
+      readonly phase: "failed" | "rolledBack";
+      readonly release: string;
+      readonly message: string;
+      readonly at: number;
+    };
+
+const STEPS: ReadonlySet<unknown> = new Set([
+  "verifying",
+  "unpacking",
+  "testing",
+  "switching",
+  "restarting",
+]);
+
+const isUpdate = (value: unknown): value is MachineUpdate => {
+  if (typeof value !== "object" || value === null) return false;
+  const u = value as Record<string, unknown>;
+  if (typeof u["release"] !== "string") return false;
+  switch (u["phase"]) {
+    case "waiting": {
+      const busy = u["busy"] as Record<string, unknown> | null | undefined;
+      return (
+        typeof busy === "object" &&
+        busy !== null &&
+        typeof busy["turns"] === "number" &&
+        typeof busy["terminals"] === "number" &&
+        typeof busy["clones"] === "number" &&
+        typeof busy["checks"] === "number"
+      );
+    }
+    case "downloading":
+      return (
+        typeof u["received"] === "number" &&
+        (u["total"] === undefined || typeof u["total"] === "number")
+      );
+    case "updated":
+      return typeof u["at"] === "number";
+    case "failed":
+    case "rolledBack":
+      return typeof u["at"] === "number" && typeof u["message"] === "string";
+    default:
+      return STEPS.has(u["phase"]);
+  }
+};
 
 /**
  * Why a joined machine is offline: the last reason it dropped or was refused since this Gram
@@ -136,6 +209,8 @@ export interface MachinesStatus {
   readonly protocol?: number;
   /** What updates a joined machine when run there; set while access over Tailscale is on. */
   readonly updateCommand?: string;
+  /** Whether joined machines update to this Gram's release on their own; on unless turned off. */
+  readonly automaticUpdates?: boolean;
 }
 
 export interface JoinLink {
@@ -192,7 +267,9 @@ const isMachine = (value: unknown): value is JoinedMachine => {
     (m["tools"] === undefined || (Array.isArray(m["tools"]) && m["tools"].every(isTool))) &&
     (m["offline"] === undefined || isOffline(m["offline"])) &&
     (m["release"] === undefined || typeof m["release"] === "string") &&
-    (m["sshTarget"] === undefined || typeof m["sshTarget"] === "string")
+    (m["sshTarget"] === undefined || typeof m["sshTarget"] === "string") &&
+    (m["selfUpdate"] === undefined || typeof m["selfUpdate"] === "boolean") &&
+    (m["update"] === undefined || isUpdate(m["update"]))
   );
 };
 
@@ -234,6 +311,7 @@ const status = async (response: Response, fallback: string): Promise<MachinesSta
     release?: unknown;
     protocol?: unknown;
     updateCommand?: unknown;
+    automaticUpdates?: unknown;
   };
   if (!Array.isArray(value.machines) || !value.machines.every(isMachine))
     throw new MachinesError(fallback);
@@ -245,6 +323,9 @@ const status = async (response: Response, fallback: string): Promise<MachinesSta
     ...(typeof value.release === "string" ? { release: value.release } : {}),
     ...(typeof value.protocol === "number" ? { protocol: value.protocol } : {}),
     ...(typeof value.updateCommand === "string" ? { updateCommand: value.updateCommand } : {}),
+    ...(typeof value.automaticUpdates === "boolean"
+      ? { automaticUpdates: value.automaticUpdates }
+      : {}),
   };
 };
 
@@ -359,13 +440,28 @@ export const machinesApi = {
       status(await post("/machines/claude-token/forget", { id }), "Couldn't forget the token"),
   },
   /**
-   * Runs the install over SSH again on a machine Gram added that way: it moves the machine's
-   * service to this Gram's release and keeps the join. Minutes, while it downloads Gram there.
+   * Updates every machine whose host updates itself and runs an earlier release, each once it is
+   * idle; the rows show how each goes.
    */
-  update: async (id: string): Promise<MachinesStatus & { readonly output: string }> => {
+  /** Turns joined machines updating on their own on or off; only this computer's app can. */
+  setAutomaticUpdates: async (enabled: boolean) =>
+    status(
+      await post("/machines/automatic-updates", { enabled }),
+      "Couldn't change automatic updates",
+    ),
+  updateAll: async () => status(await post("/machines/update-all"), "Couldn't update the machines"),
+  /**
+   * Updates the machine to this Gram's release. A host that updates itself starts at once and its
+   * row shows how it goes (`started`); otherwise this runs the install over SSH again on a machine
+   * Gram added that way, which moves its service and keeps the join. Minutes, while it downloads
+   * Gram there.
+   */
+  update: async (
+    id: string,
+  ): Promise<MachinesStatus & { readonly output: string; readonly started?: boolean }> => {
     const response = await post("/machines/update", { id });
     const text = await response.text().catch(() => "");
-    let value: { message?: unknown; output?: unknown; reason?: unknown } = {};
+    let value: { message?: unknown; output?: unknown; reason?: unknown; started?: unknown } = {};
     try {
       value = JSON.parse(text) as typeof value;
     } catch {
@@ -381,6 +477,7 @@ export const machinesApi = {
     return {
       ...(await status(new Response(text, { status: 200 }), "Couldn't update the machine")),
       output,
+      ...(value.started === true ? { started: true } : {}),
     };
   },
   /** The hosts in this computer's SSH config, for the Add over SSH picker. */

@@ -67,6 +67,11 @@ export const HostCapability = Schema.Literals([
    * check id, answering a repeat with the run already under way or its result.
    */
   "checks",
+  /**
+   * Updates itself to a Gram release the control plane names (`host.update.start`), from that
+   * release's own download, and says how its last update went (`host.update.check`).
+   */
+  "update",
 ]);
 export type HostCapability = typeof HostCapability.Type;
 
@@ -101,6 +106,68 @@ export const HostStatus = Schema.Struct({
   tools: Schema.Array(HostTool).check(Schema.isMaxLength(8)),
 });
 export type HostStatus = typeof HostStatus.Type;
+
+/** What keeps a host from updating now: work that a restart would cut off. */
+export const HostBusy = Schema.Struct({
+  /** Agent sessions in a turn, waiting on a question, or with background tasks running. */
+  turns: Schema.Int,
+  /** Terminals running a command, or a sign-in shell still open. */
+  terminals: Schema.Int,
+  /** Clones or fetches of a repository in flight. */
+  clones: Schema.Int,
+  /** Project checks running or waiting their turn. */
+  checks: Schema.Int,
+});
+export type HostBusy = typeof HostBusy.Type;
+
+/** How a host's last update ended, as it keeps it across the restart. */
+export const HostUpdateOutcome = Schema.Struct({
+  /** The release it tried to move to. */
+  release: Schema.String.check(Schema.isMaxLength(64)),
+  outcome: Schema.Literals(["updated", "rolledBack", "failed"]),
+  /** Why, for one that didn't update. */
+  message: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(400))),
+  /** Epoch ms. */
+  at: Schema.Number,
+});
+export type HostUpdateOutcome = typeof HostUpdateOutcome.Type;
+
+/**
+ * `host.update.check`: whether the host could update now, and how its last update ended. Asked
+ * once a connection has passed its hello, which is what tells a host that just updated that its
+ * new release dialled in and works, so the previous one can go.
+ */
+export const HostUpdateCheck = Schema.Struct({
+  /** Absent when it can update; otherwise what is running. */
+  busy: Schema.optionalKey(HostBusy),
+  last: Schema.optionalKey(HostUpdateOutcome),
+});
+export type HostUpdateCheck = typeof HostUpdateCheck.Type;
+
+/** A step of `host.update.start`, in order; the stream ends once the service is handed over. */
+export const HostUpdateProgress = Schema.Union([
+  Schema.Struct({
+    phase: Schema.Literal("downloading"),
+    received: Schema.Number,
+    total: Schema.optionalKey(Schema.Number),
+  }),
+  Schema.Struct({ phase: Schema.Literals(["verifying", "unpacking", "testing", "switching"]) }),
+]);
+export type HostUpdateProgress = typeof HostUpdateProgress.Type;
+
+/**
+ * Why a host didn't update: `busy` (work a restart would cut off, which it names), `invalid` (not
+ * a release it would take: malformed, not newer, or not for this platform), `unsupported` (run
+ * from source, or not as its service), `failed` (the download, checksum, unpacking or test).
+ */
+export class HostUpdateRefused extends Schema.TaggedError<HostUpdateRefused>()(
+  "HostUpdateRefused",
+  {
+    reason: Schema.Literals(["busy", "invalid", "unsupported", "failed"]),
+    message: Schema.String,
+    busy: Schema.optionalKey(HostBusy),
+  },
+) {}
 
 /** A host couldn't do what it was asked, for a reason its own side knows. */
 export class HostFailed extends Schema.TaggedError<HostFailed>()("HostFailed", {
@@ -460,6 +527,20 @@ export const HostRpcs = RpcGroup.make(
    * which the control plane reads as unknown.
    */
   Rpc.make("host.status", { success: HostStatus }),
+  /** Served with `update`: whether it could update now, and how its last update went. */
+  Rpc.make("host.update.check", { success: HostUpdateCheck }),
+  /**
+   * Served with `update`: downloads `release` from Gram's own GitHub releases, checks it against
+   * that release's `SHA256SUMS.txt`, unpacks and tests it beside the app it runs, then hands its
+   * service to it. The host restarts once the stream ends; it rolls back to the app it runs now
+   * unless the new one dials in and is asked `host.update.check` within two minutes.
+   */
+  Rpc.make("host.update.start", {
+    payload: { release: Schema.String.check(Schema.isMaxLength(64)) },
+    success: HostUpdateProgress,
+    error: HostUpdateRefused,
+    stream: true,
+  }),
   /**
    * The host's own clone of the repository at `url`, in the folder it keeps clones in: cloned when
    * it has none, fetched when it has. What a worker placed on this machine makes its worktree from.
