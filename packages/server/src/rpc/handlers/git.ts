@@ -3,6 +3,8 @@ import {
   GitError,
   GitRpcs,
   InvalidState,
+  isLocalHost,
+  LOCAL_HOST_ID,
   ORCHESTRATOR_HAS_NO_PR,
   reviewBotsOf,
   samePr,
@@ -24,6 +26,7 @@ import {
   Pr,
   prChecksStamp,
   Proc,
+  repoFromPrUrl,
   samePath,
   tryRepoTop,
   whitespaceArgs,
@@ -49,7 +52,7 @@ import {
 import { makePrDetailCache, prDetailStamp } from "../../git/pr-detail-cache.ts";
 import { GitStatePublisher } from "../../git/publisher.ts";
 import { PrReviews } from "../../git/review.ts";
-import { threadFolder, ThreadPrLookup } from "../../git/thread-pr.ts";
+import { ghFolder, pathHere, threadFolder, ThreadPrLookup } from "../../git/thread-pr.ts";
 import { turnDiff } from "../../git/turn-diff.ts";
 import { diffChunk } from "../../git/diff-chunk.ts";
 import { cleanUp, cleanupNotes, cleanupPlan, storageReport } from "../../git/storage.ts";
@@ -84,8 +87,9 @@ export const gitHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const runtimes = yield* ThreadRuntimes;
   const proc = yield* Proc;
-  // This machine's worktrees and git state, through its host.
-  const { worktrees, git: gitState } = (yield* WorkerHosts).placed;
+  // Each path's worktrees and git state, on the machine the threads place it on.
+  const hosts = yield* WorkerHosts;
+  const { worktrees, git: gitState } = hosts.placed;
   const pr = yield* Pr;
   const checkpoints = yield* Checkpoints;
   const publisher = yield* GitStatePublisher;
@@ -101,6 +105,7 @@ export const gitHandlers = Effect.gen(function* () {
       if (!/^origin\/[A-Za-z0-9._/-]+$/.test(base) || base.includes("..")) {
         return yield* new GitError({ message: `${base} is not an origin branch` });
       }
+      yield* pathHere(hosts, repoPath);
       const repoTop = yield* provide(tryRepoTop(repoPath)).pipe(Effect.mapError(toGitError));
       if (repoTop === undefined) {
         return yield* new GitError({ message: `${repoPath} is not a git repository` });
@@ -121,14 +126,20 @@ export const gitHandlers = Effect.gen(function* () {
       return main;
     });
 
-  /** What Settings › Storage reads: the projects, the threads open and closed, and git's lists. */
+  /** This machine's worktrees, whatever another machine holds at the same paths. */
+  const worktreesHere = hosts.machine(LOCAL_HOST_ID).worktrees;
+
+  /**
+   * What Settings › Storage reads: the projects, the threads open and closed, and git's lists, of
+   * this machine's disk.
+   */
   const storageSources = Effect.gen(function* () {
     return {
       projects: yield* store.listProjects,
       openThreads: yield* store.listThreads,
       currentThreads: store.listThreads,
       listLinked: (repoTop: string) =>
-        worktrees
+        worktreesHere
           .list(repoTop, { openCheckouts: [] })
           .pipe(Effect.map((list) => list.worktrees.filter((entry) => !entry.isMain))),
       remove: (request: {
@@ -137,7 +148,7 @@ export const gitHandlers = Effect.gen(function* () {
         readonly force: boolean;
         readonly openCheckouts: ReadonlyArray<string>;
       }) =>
-        worktrees.remove({
+        worktreesHere.remove({
           repoPath: request.repoTop,
           worktreeDir: request.path,
           force: request.force,
@@ -218,16 +229,18 @@ export const gitHandlers = Effect.gen(function* () {
   return {
     "worktree.list": ({ repoPath }) =>
       Effect.gen(function* () {
+        // Only the threads on the machine the repository is on hold its worktrees.
+        const host = (yield* hosts.placeOf(repoPath)) ?? LOCAL_HOST_ID;
         const threads = yield* store.listThreads;
         const lastActivity = (path: string) =>
           Math.max(
             0,
             ...threads
-              .filter((t) => heldCheckoutPaths([t]).some((held) => samePath(held, path)))
+              .filter((t) => heldCheckoutPaths([t], host).some((held) => samePath(held, path)))
               .map((t) => t.lastActivityAt),
           );
         const list = yield* worktrees
-          .list(repoPath, { openCheckouts: heldCheckoutPaths(threads), lastActivity })
+          .list(repoPath, { openCheckouts: heldCheckoutPaths(threads, host), lastActivity })
           .pipe(Effect.mapError(toGitError));
         return { repoTop: list.repoTop, worktrees: [...list.worktrees] };
       }),
@@ -244,6 +257,8 @@ export const gitHandlers = Effect.gen(function* () {
         if (!list.worktrees.slice(1).some((w) => samePath(w.path, path))) {
           return yield* new InvalidState({ message: `${path} isn't a linked worktree` });
         }
+        // Measured on this disk.
+        yield* pathHere(hosts, path);
         return yield* cachedFolderSize(path);
       }),
 
@@ -296,7 +311,11 @@ export const gitHandlers = Effect.gen(function* () {
                 .list(main.path, { openCheckouts: [] })
                 .pipe(Effect.mapError(toGitError))).worktrees.find((w) => samePath(w.path, path))
                 ?.branch;
-        const openCheckouts = usedCheckoutPaths(yield* store.listThreads);
+        // The list above placed it, so a path two machines hold never gets this far.
+        const host = (yield* hosts.placeOf(path)) ?? LOCAL_HOST_ID;
+        const here = host === LOCAL_HOST_ID;
+        // Only that machine's threads use its folders: one elsewhere at the same path is another.
+        const openCheckouts = usedCheckoutPaths(yield* store.listThreads, host);
         yield* worktrees
           .remove({
             repoPath: main.path,
@@ -305,9 +324,24 @@ export const gitHandlers = Effect.gen(function* () {
             openCheckouts,
             ...(permissionRules === undefined ? {} : { mergeRules: permissionRules }),
           })
-          .pipe(Effect.catch((error) => provide(removalError(error, path))));
+          .pipe(
+            Effect.catch((error) =>
+              // Counting the changes runs git here, so another machine's are only named.
+              here ? provide(removalError(error, path)) : Effect.fail(toGitError(error)),
+            ),
+          );
         forgetFolderSize(path);
         if (deleteBranch === undefined || branch === undefined) return {};
+        // The branch is deleted with git here, in that repository.
+        if (!here) {
+          return {
+            branch: {
+              name: branch,
+              deleted: false,
+              reason: "the branch is on another machine, whose git this can't run",
+            },
+          };
+        }
         const cleanup = yield* provide(
           deleteMergedBranch({ repoPath: main.path, branch, pr: deleteBranch }),
         ).pipe(Effect.provideService(Pr, pr));
@@ -374,6 +408,7 @@ export const gitHandlers = Effect.gen(function* () {
 
     "git.upstreamStatus": ({ repoPath }) =>
       Effect.gen(function* () {
+        yield* pathHere(hosts, repoPath);
         const repoTop = yield* provide(tryRepoTop(repoPath)).pipe(Effect.mapError(toGitError));
         if (repoTop === undefined) {
           return yield* new GitError({ message: `${repoPath} is not a git repository` });
@@ -392,15 +427,24 @@ export const gitHandlers = Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
         // Not its checkout's PR either: an orchestrator follows none of its own.
         if (thread.role === "orchestrator") return { available: true };
-        const cwd = yield* threadFolder(thread);
-        const state = yield* publisher.stateFor(cwd);
+        const cwd = yield* ghFolder(thread);
+        const here = isLocalHost(effectiveCheckout(thread));
+        // Another machine's checkout has its branch's PR only as published, with its repository
+        // named: a lookup from `cwd` here would ask about no repository, or another one.
+        const state = here
+          ? yield* publisher.stateFor(cwd)
+          : yield* publisher.stateForThread(thread);
         const number =
           thread.boundPr?.number ??
           state?.pr?.number ??
-          (yield* pr.status(cwd).pipe(Effect.orElseSucceed(() => undefined)))?.number;
+          (here
+            ? (yield* pr.status(cwd).pipe(Effect.orElseSucceed(() => undefined)))?.number
+            : undefined);
         // No PR is a normal state, not a failure: `error` is reserved for gh, network and auth failures.
         if (number === undefined) return { available: true };
-        const repo = thread.boundPr?.repo;
+        const repo =
+          thread.boundPr?.repo ??
+          (here || state?.pr === undefined ? undefined : repoFromPrUrl(state.pr.url));
         const stamp = prDetailStamp(yield* publisher.badgeFor(thread), { number, repo });
         const result = yield* cachedDetail({
           cwd,
@@ -420,7 +464,7 @@ export const gitHandlers = Effect.gen(function* () {
     "git.prChecks": ({ threadId }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
-        const cwd = yield* threadFolder(thread);
+        const cwd = yield* ghFolder(thread);
         const target = yield* threadPr(thread, cwd);
         // No PR is a normal state here as it is for `git.prDetail`, not a failure.
         if (target === undefined) return { checks: [] };
@@ -442,7 +486,7 @@ export const gitHandlers = Effect.gen(function* () {
     "git.prRerunChecks": ({ threadId }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
-        const cwd = yield* threadFolder(thread);
+        const cwd = yield* ghFolder(thread);
         const target = yield* threadPr(thread, cwd);
         if (target === undefined) return yield* noPullRequest;
         // Never from the cache: the PR row reads these checks too, and an answer it cached before
@@ -471,7 +515,11 @@ export const gitHandlers = Effect.gen(function* () {
           runIds,
           (runId) => reviews.rerun(cwd, target.repo, runId).pipe(Effect.mapError(toGitError)),
           { discard: true },
-        ).pipe(Effect.ensuring(refreshes.request(cwd, true, { expectChange: true })));
+        ).pipe(
+          Effect.ensuring(
+            refreshes.request(effectiveCheckout(thread).path, true, { expectChange: true }),
+          ),
+        );
         return { runIds, skipped };
       }),
 
@@ -511,9 +559,14 @@ export const gitHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
         if (thread.role === "orchestrator") return {};
-        const cwd = yield* threadFolder(thread);
-        const cached = (yield* publisher.stateFor(cwd))?.pr;
-        const badge = cached ?? (yield* pr.status(cwd).pipe(Effect.mapError(toGitError)));
+        // Another machine's branch is looked up there or not at all: never from a folder here.
+        const badge = isLocalHost(effectiveCheckout(thread))
+          ? yield* Effect.gen(function* () {
+              const cwd = yield* threadFolder(thread);
+              const cached = (yield* publisher.stateFor(cwd))?.pr;
+              return cached ?? (yield* pr.status(cwd).pipe(Effect.mapError(toGitError)));
+            })
+          : (yield* publisher.stateForThread(thread))?.pr;
         return {
           ...(thread.boundPr === undefined ? {} : { bound: thread.boundPr }),
           ...(badge === undefined ? {} : { pr: badge }),
@@ -593,7 +646,7 @@ export const gitHandlers = Effect.gen(function* () {
     "git.prReview": ({ threadId }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
-        const cwd = yield* threadFolder(thread);
+        const cwd = yield* ghFolder(thread);
         const target = yield* threadPr(thread, cwd);
         if (target === undefined) return { available: true, threads: [] };
         const bots = reviewBotsOf(yield* store.getSettings);
@@ -609,6 +662,7 @@ export const gitHandlers = Effect.gen(function* () {
     "git.prApplySuggestion": ({ threadId, commentId }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
+        // Applied with git here, in the thread's checkout.
         const cwd = yield* threadFolder(thread);
         const target = yield* threadPr(thread, cwd);
         if (target === undefined) return yield* noPullRequest;
@@ -642,25 +696,28 @@ export const gitHandlers = Effect.gen(function* () {
 
     "git.prReplyThread": ({ threadId, reviewThreadId, body }) =>
       Effect.gen(function* () {
-        const cwd = yield* threadFolder(yield* store.getThread(threadId));
+        const thread = yield* store.getThread(threadId);
+        // By the review thread's node id, so gh needs only a folder here to start in.
+        const cwd = yield* ghFolder(thread);
         const comment = yield* reviews
           .reply(cwd, reviewThreadId, body)
           .pipe(Effect.mapError(toGitError));
-        yield* refreshes.request(cwd, true);
+        yield* refreshes.request(effectiveCheckout(thread).path, true);
         return comment;
       }),
 
     "git.prResolveThread": ({ threadId, reviewThreadId }) =>
       Effect.gen(function* () {
-        const cwd = yield* threadFolder(yield* store.getThread(threadId));
+        const thread = yield* store.getThread(threadId);
+        const cwd = yield* ghFolder(thread);
         yield* reviews.resolve(cwd, reviewThreadId).pipe(Effect.mapError(toGitError));
-        yield* refreshes.request(cwd, true);
+        yield* refreshes.request(effectiveCheckout(thread).path, true);
       }),
 
     "git.prRequestRereview": ({ threadId }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
-        const cwd = yield* threadFolder(thread);
+        const cwd = yield* ghFolder(thread);
         const target = yield* threadPr(thread, cwd);
         if (target === undefined) return yield* noPullRequest;
         const bots = reviewBotsOf(yield* store.getSettings);
@@ -676,7 +733,7 @@ export const gitHandlers = Effect.gen(function* () {
         yield* reviews
           .comment(cwd, target.repo, target.number, bot.rereviewCommand)
           .pipe(Effect.mapError(toGitError));
-        yield* refreshes.request(cwd, true, { expectChange: true });
+        yield* refreshes.request(effectiveCheckout(thread).path, true, { expectChange: true });
         return { command: bot.rereviewCommand };
       }),
   } satisfies Partial<Handlers>;

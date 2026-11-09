@@ -1,4 +1,5 @@
 import {
+  hostOf,
   InvalidState,
   NotFound,
   type Checkout,
@@ -72,7 +73,7 @@ export const makeClosedThreadHandlers = (
         const projectRoot =
           checkout.kind === "worktree" ? (checkout.repoRoot ?? checkout.path) : checkout.path;
         if (folderMissing) {
-          const held = heldCheckoutPaths(yield* store.listThreads);
+          const held = heldCheckoutPaths(yield* store.listThreads, hostOf(checkout));
           if (held.some((path) => samePath(path, checkout.path))) {
             return yield* new InvalidState({ message: "That checkout is already open elsewhere." });
           }

@@ -10,6 +10,7 @@ import {
   autonomyOf,
   NotFound,
   customModelsOf,
+  isLocalHost,
   requiredChecksOf,
   type AgentKind,
   type GitState,
@@ -810,6 +811,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     Effect.gen(function* () {
       let moved = false;
       for (const extra of thread.extraCheckouts ?? []) {
+        // Read with git here: another machine's worktree isn't this disk's to read.
+        if (!isLocalHost(extra)) continue;
         const key = samePathKey(extra.path);
         const before = extraFacts.get(key);
         const after = yield* provideProc(

@@ -137,6 +137,14 @@ or `gram-host service install`.
   machine's threads stays here.
 - While the machine is offline its workers don't start and their folders aren't marked missing;
   nothing falls back to running on this machine.
+- A checkout is its machine and its path together. Two joined machines with the same user and
+  folders, or this machine, can hold the same path; each worker's git state is read on its own
+  machine. A request that names only such a path, and no thread, is refused rather than sent to a
+  guess.
+- The Changes panel's diff, push, creating a PR, applying a review suggestion, fast-forwarding to
+  upstream and undoing a turn run git on this machine, so a worker on another machine refuses them
+  and says so; ask its agent, or use its terminal. PR reads and actions that name the repository
+  (checks, reviews, merge, labels) work, with the PR bound to the thread.
 - A message sent while the connection is down waits for the machine for up to two minutes, as its
   session does, and is handed to the agent once it dials in again; if the connection dropped before
   Gram heard back, Gram asks again under the same id and the host takes it only once. A machine

@@ -263,4 +263,65 @@ describe("placedHost", () => {
       expect(calls).toEqual([]);
     }),
   );
+
+  it.effect(
+    "never guesses between machines that hold the same path, and reaches each by its id",
+    () =>
+      Effect.gen(function* () {
+        // Two machines with the same user and default folders, and this one, all at one path.
+        const OTHER = HostId.make("m-fedcba9876543210fedcba98");
+        const SHARED = "/srv/synthetic/work";
+        const ROOT = "/srv/synthetic/repos/widgets";
+        const threads = [
+          thread("t-a", {
+            kind: "worktree",
+            path: SHARED,
+            repoRoot: ROOT,
+            hostId: MACHINE,
+          } as never),
+          thread("t-b", {
+            kind: "worktree",
+            path: `${ROOT}/.worktrees/b`,
+            repoRoot: ROOT,
+            hostId: OTHER,
+          } as never),
+          thread("t-b2", { kind: "worktree", path: SHARED, hostId: OTHER } as never),
+          thread("t-local", { kind: "main", path: SHARED }),
+        ];
+        const calls: Array<string> = [];
+        const byId = new Map([
+          [LOCAL_HOST_ID, recordingHost(LOCAL_HOST_ID, calls)],
+          [MACHINE, recordingHost(MACHINE, calls)],
+          [OTHER, recordingHost(OTHER, calls)],
+        ]);
+        const placed = placedHost(
+          { local: byId.get(LOCAL_HOST_ID)!, get: (id) => Effect.succeed(byId.get(id)!) },
+          {
+            listThreads: Effect.succeed(threads),
+            getThread: (id) => Effect.succeed(threads.find((t) => t.id === id)!),
+          },
+        );
+        // Before, the last thread at the path won: every caller's read went to that one machine.
+        const refused = yield* placed.git.local(SHARED).pipe(Effect.flip);
+        expect(refused.message).toContain("more than one machine");
+        expect(
+          (yield* placed.worktrees.list(ROOT, { openCheckouts: [] }).pipe(Effect.flip))._tag,
+        ).toBe("WorktreeError");
+        // What a path alone can't place isn't marked gone.
+        expect(yield* placed.git.present(SHARED)).toBe(true);
+        expect(calls).toEqual([]);
+        // A worktree path only one machine holds is still that machine's, below a shared repo root.
+        yield* placed.git.local(`${ROOT}/.worktrees/b`);
+        // A caller that knows the machine reaches it, whoever else holds the path.
+        yield* placed.machine(MACHINE).git.local(SHARED);
+        yield* placed.machine(OTHER).git.local(SHARED);
+        yield* placed.machine(LOCAL_HOST_ID).git.local(SHARED);
+        expect(calls).toEqual([
+          `${OTHER}:git.local:${ROOT}/.worktrees/b`,
+          `${MACHINE}:git.local:${SHARED}`,
+          `${OTHER}:git.local:${SHARED}`,
+          `local:git.local:${SHARED}`,
+        ]);
+      }),
+  );
 });
