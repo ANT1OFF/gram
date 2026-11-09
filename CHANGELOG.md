@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.14.0](https://github.com/ANT1OFF/gram/compare/v1.13.0...v1.14.0) (2026-11-09)
+
+
+### Features
+
+* a phone layout for phone access ([#298](https://github.com/ANT1OFF/gram/issues/298)) ([46a8b15](https://github.com/ANT1OFF/gram/commit/46a8b15af0b1f678a78f51e83f87099230acb363))
+* a run timeline for each turn ([#295](https://github.com/ANT1OFF/gram/issues/295)) ([b9ad3c7](https://github.com/ANT1OFF/gram/commit/b9ad3c70c5d67e7d6dbe4602d5155c09acd261d1))
+* answer an agent's question in your own words beside its choices ([#294](https://github.com/ANT1OFF/gram/issues/294)) ([b1f19c4](https://github.com/ANT1OFF/gram/commit/b1f19c401e7d90d5143cd9016d88e51b7f81a256))
+* joined machines as worker hosts, with their own clones and worktrees ([#301](https://github.com/ANT1OFF/gram/issues/301)) ([fe625af](https://github.com/ANT1OFF/gram/commit/fe625af5afd0bd94db9c99e91ab823b76233913b))
+* let another machine join and dial in as a worker host ([#299](https://github.com/ANT1OFF/gram/issues/299)) ([424e063](https://github.com/ANT1OFF/gram/commit/424e06363bd3916725f5cf5890d6a898bdeefcdc))
+* list, add, confirm and remove other machines in Settings → Machines ([#300](https://github.com/ANT1OFF/gram/issues/300)) ([050fefb](https://github.com/ANT1OFF/gram/commit/050fefb1bd941dccc5f5b5170876c308bd51c1c0))
+* make a thread's new and restored worktrees in the host process ([#288](https://github.com/ANT1OFF/gram/issues/288)) ([8c974a8](https://github.com/ANT1OFF/gram/commit/8c974a850a080b20013a24036e86ff807e3b11cb))
+* open Claude sessions in the host process ([#292](https://github.com/ANT1OFF/gram/issues/292)) ([9fcbc18](https://github.com/ANT1OFF/gram/commit/9fcbc185b4760854805c00d37ffab2192111ccb9))
+* open terminals in the host process ([#290](https://github.com/ANT1OFF/gram/issues/290)) ([8b2e983](https://github.com/ANT1OFF/gram/commit/8b2e9830344402887ca451dc94c2c4f576510ab1))
+* routines that start on events ([#289](https://github.com/ANT1OFF/gram/issues/289)) ([42dfbe6](https://github.com/ANT1OFF/gram/commit/42dfbe6745ce700182db7f26779e9c76ed24eb41))
+* run the server and web app in a Linux container ([#297](https://github.com/ANT1OFF/gram/issues/297)) ([df75e6e](https://github.com/ANT1OFF/gram/commit/df75e6e7bd361a00ef7dacb4be3c5e506c51f2ef))
+* run this machine's worker host as its own process, over the host protocol ([#285](https://github.com/ANT1OFF/gram/issues/285)) ([b8fcc27](https://github.com/ANT1OFF/gram/commit/b8fcc27356fc26c7d02b9a646e4c2f7effe6d8ce))
+* run worktrees and local git state through the host process ([#287](https://github.com/ANT1OFF/gram/issues/287)) ([bfa3922](https://github.com/ANT1OFF/gram/commit/bfa39222d4ddbb4362af7a7b3e0a45c59119eaa4))
+* show the tokens each turn used on its reply ([#293](https://github.com/ANT1OFF/gram/issues/293)) ([5087dd4](https://github.com/ANT1OFF/gram/commit/5087dd408cd4fe5d06421718051df41b38d00053))
+* tidy the phone layout: no key hints, 44 px buttons, two-line History ([#302](https://github.com/ANT1OFF/gram/issues/302)) ([57dfa37](https://github.com/ANT1OFF/gram/commit/57dfa37743f3bf3f060975a69ea17c86c9e54a12))
+
+
+### Bug Fixes
+
+* deterministic read-worker seal test ([#296](https://github.com/ANT1OFF/gram/issues/296)) ([8f952a3](https://github.com/ANT1OFF/gram/commit/8f952a3d085967b62315d8f6f3f83263d80bbac8))
+* event routines keep their events and re-seed on a new repository ([#291](https://github.com/ANT1OFF/gram/issues/291)) ([9af04b9](https://github.com/ANT1OFF/gram/commit/9af04b9bddffc12e0bd30b8babf3de2b16c69e0a))
+
 ## [1.13.0](https://github.com/ANT1OFF/gram/compare/v1.12.0...v1.13.0) (2026-11-08)
 
 
