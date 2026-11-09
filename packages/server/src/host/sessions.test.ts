@@ -5,7 +5,9 @@ import {
   type AgentEvent,
   type AgentKind,
   AgentUnavailable,
+  HostId,
   HOST_PROTOCOL_VERSION,
+  HostUnavailable,
   LOCAL_HOST_ID,
   type ProfileId,
   type RequestId,
@@ -21,16 +23,22 @@ import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import { agentHostThroughHost, HOST_STOPPED_ENDED } from "../runtime/host-agent-sessions.ts";
+import {
+  agentHostOnMachine,
+  agentHostThroughHost,
+  HOST_STOPPED_ENDED,
+} from "../runtime/host-agent-sessions.ts";
 import { filesOn } from "./files.ts";
 import { reposOn } from "./repos.ts";
 import { gitOn } from "./git.ts";
-import { connectHost, HOST_CAPABILITIES, serveHost } from "./protocol.ts";
+import { followingSessions } from "./following-sessions.ts";
+import { connectHost, HOST_CAPABILITIES, type HostConnection, serveHost } from "./protocol.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { streamPair } from "./test-stream.ts";
 
 const THREAD = "thread-on-the-host" as ThreadId;
+const MACHINE = HostId.make("m-box");
 /** Never cloned into here: no test asks for a repository. */
 const REPOS = "/nonexistent/gram-host-repos";
 const CAPABILITIES = {
@@ -323,5 +331,165 @@ describe("a host's session events", () => {
       expect(Exit.isFailure(early)).toBe(true);
       expect(agent.opened).toHaveLength(1);
     }).pipe(Effect.scoped),
+  );
+});
+
+/**
+ * A joined machine's host whose service outlives its dials, as `dialForever` keeps it: `dial`
+ * serves it over a new stream and connects to it, as a redial does; `current` is the machine's
+ * connection now, failing while none is up.
+ */
+const redialling = Effect.gen(function* () {
+  const onHost = yield* scriptedAgent("claude", "host");
+  const inServer = yield* scriptedAgent("claude", "server");
+  const service = {
+    hello: {
+      protocol: HOST_PROTOCOL_VERSION,
+      hostId: MACHINE,
+      capabilities: HOST_CAPABILITIES,
+      platform: process.platform,
+      pid: 7,
+    },
+    files: filesOn(yield* Proc),
+    repos: reposOn(yield* Proc, REPOS),
+    worktrees: yield* Worktrees,
+    git: gitOn(yield* Proc),
+    terminals: yield* terminalsOnHost,
+    sessions: yield* sessionsOnHost((agent) =>
+      agent === "claude"
+        ? Effect.succeed(onHost.host)
+        : Effect.fail(new AgentUnavailable({ agent, message: "not here" })),
+    ),
+    scan: Effect.succeed({ listening: new Map(), children: new Map() }),
+  };
+  let live: { connection: HostConnection; hostEnd: { destroy: () => void } } | undefined;
+  const dial = Effect.gen(function* () {
+    const { host: hostEnd, control } = yield* streamPair;
+    yield* Effect.forkScoped(
+      serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(hostEnd)), service),
+    );
+    const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)), {
+      hostId: MACHINE,
+    });
+    live = { connection, hostEnd };
+    return live;
+  });
+  const current = Effect.suspend(() =>
+    live === undefined || live.connection.gone()
+      ? Effect.fail(new HostUnavailable({ hostId: MACHINE, message: "That machine is offline." }))
+      : Effect.succeed(live.connection),
+  );
+  const first = yield* dial;
+  const agent = (reattachMs: number) =>
+    agentHostOnMachine(
+      followingSessions(current, { reattachMs, callMs: 2_000 }),
+      () => false,
+      inServer.host,
+      "box",
+      () => "http://gram.test",
+    );
+  return { onHost, dial, first, agent, sessions: service.sessions };
+});
+
+const notice = (message: string): AgentEvent => ({ type: "notice", level: "info", message });
+const said = (events: Iterable<AgentEvent>) =>
+  [...events].map((event) => (event.type === "notice" ? event.message : event.type));
+
+describe("a joined machine's sessions across a dropped connection", () => {
+  it.live("pick up after a redial where they were, the agent still running", () =>
+    Effect.gen(function* () {
+      const { onHost, dial, first, agent } = yield* redialling;
+      const reports: Array<string> = [];
+      const session = yield* agent(10_000).open({
+        threadId: THREAD,
+        cwd: "/work",
+        onConnectorsSeen: (report) => void reports.push(report.connectors[0]!.name),
+      });
+      yield* eventually(() => (reports.length === 1 ? true : undefined), "the connectors report");
+      const seen: Array<AgentEvent> = [];
+      yield* Effect.forkScoped(
+        Stream.runForEach(session.events, (event) => Effect.sync(() => void seen.push(event))),
+      );
+      yield* Queue.offer(onHost.events, notice("before"));
+      yield* eventually(() => (seen.length === 1 ? true : undefined), "the first event");
+      // Before this change the session ended here with HOST_STOPPED_ENDED.
+      first.hostEnd.destroy();
+      yield* eventually(() => (first.connection.gone() ? true : undefined), "the drop");
+      // The agent keeps working while no one is connected; what it says is kept for the redial.
+      yield* Queue.offer(onHost.events, notice("while away"));
+      yield* Effect.sleep("300 millis");
+      yield* dial;
+      yield* Queue.offer(onHost.events, notice("after"));
+      yield* eventually(
+        () => (seen.length === 3 ? true : undefined),
+        "the events after the redial",
+      );
+      expect(said(seen)).toEqual(["before", "while away", "after"]);
+      // The connectors report is followed again too: the host hands the last one to the new stream.
+      yield* eventually(() => (reports.length === 2 ? true : undefined), "the report again");
+      expect(reports).toEqual(["docs", "docs"]);
+      // Calls reach the agent over the new connection, and it never closed.
+      yield* session.send({ text: "hi" });
+      expect(onHost.calls).toContain("send hi");
+      expect(onHost.closed).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("end once the machine doesn't come back in time", () =>
+    Effect.gen(function* () {
+      const { onHost, first, agent } = yield* redialling;
+      const session = yield* agent(1_000).open({ threadId: THREAD, cwd: "/work" });
+      const collected = yield* Effect.forkScoped(Stream.runCollect(session.events));
+      yield* Queue.offer(onHost.events, notice("before"));
+      yield* Effect.sleep("200 millis");
+      first.hostEnd.destroy();
+      const events = yield* Fiber.join(collected);
+      expect(said(events)).toEqual(["before", "ended"]);
+      expect(events.at(-1)).toEqual(HOST_STOPPED_ENDED);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
+
+describe("a host's sessions left behind", () => {
+  it.live("end when their thread opens anew, unless something still follows them", () =>
+    Effect.gen(function* () {
+      const agent = yield* scriptedAgent("claude", "host");
+      const sessions = yield* sessionsOnHost(() => Effect.succeed(agent.host));
+      const open = (handle: string, threadId: string) =>
+        sessions.open({ handle, agent: "claude", threadId: threadId as ThreadId, cwd: "/work" });
+      yield* open("followed", "t1");
+      yield* Effect.forkScoped(Stream.runDrain(sessions.events("followed", 0)));
+      yield* Effect.sleep("50 millis");
+      yield* open("left", "t2");
+      yield* open("other", "t3");
+      // A Gram that restarted opens its threads anew: only the session nothing follows ends.
+      yield* open("followed-again", "t1");
+      yield* open("left-again", "t2");
+      expect(agent.closed).toEqual(["host"]);
+      expect(yield* Effect.exit(sessions.session("left"))).toMatchObject({ _tag: "Failure" });
+      expect(yield* Effect.exit(sessions.session("followed"))).toMatchObject({ _tag: "Success" });
+      expect(yield* Effect.exit(sessions.session("other"))).toMatchObject({ _tag: "Success" });
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("end once nothing has followed them for the grace", () =>
+    Effect.gen(function* () {
+      const agent = yield* scriptedAgent("claude", "host");
+      const sessions = yield* sessionsOnHost(() => Effect.succeed(agent.host), undefined, {
+        unfollowedMs: 150,
+        sweepMs: 25,
+      });
+      const open = (handle: string) =>
+        sessions.open({ handle, agent: "claude", threadId: handle as ThreadId, cwd: "/work" });
+      yield* open("followed");
+      yield* Effect.forkScoped(Stream.runDrain(sessions.events("followed", 0)));
+      yield* open("given-up");
+      yield* Effect.sleep("50 millis");
+      expect(agent.closed).toEqual([]);
+      yield* Effect.sleep("400 millis");
+      expect(agent.closed).toEqual(["host"]);
+      expect(yield* Effect.exit(sessions.session("given-up"))).toMatchObject({ _tag: "Failure" });
+      expect(yield* Effect.exit(sessions.session("followed"))).toMatchObject({ _tag: "Success" });
+    }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 });

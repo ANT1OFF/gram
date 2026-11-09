@@ -12,6 +12,7 @@
 
 import {
   AppToolError,
+  isLocalHost,
   MAX_RUN_WATCHES,
   type RunWatch,
   type Thread,
@@ -30,7 +31,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { EventHub } from "../events/event-hub.ts";
 import { upsertsChanging } from "../events/upsert-changes.ts";
-import { folderExists } from "../fs/folders.ts";
+import { folderExists, ghFolderOf } from "../fs/folders.ts";
 import { asBackground, GhBudget } from "../github/budget.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -422,11 +423,12 @@ export const RunMonitorLive = Layer.effect(
       Effect.gen(function* () {
         // The API path names the repo, so any watcher's checkout does as the directory gh runs in,
         // as long as it is there: `gh` can't start in a folder that was deleted under its thread.
+        // A watcher on another machine has no folder here, so gh starts in the temp folder.
         const there = yield* Effect.findFirst(watchers, ({ thread }) =>
-          folderExists(thread.checkout.path),
+          isLocalHost(thread.checkout) ? folderExists(thread.checkout.path) : Effect.succeed(true),
         );
         if (Option.isNone(there)) return;
-        const cwd = there.value.thread.checkout.path;
+        const cwd = yield* ghFolderOf(there.value.thread.checkout);
         const out = yield* view(cwd, repo, runId);
         if (out.status !== 0) {
           if (!GONE.test(out.stderr)) return;
