@@ -90,6 +90,23 @@ describe("joined machines", () => {
     expect(joinOne().result).toMatchObject({ kind: "refused", status: 409 });
   });
 
+  it("refuses reserved local aliases without consuming the invitation", () => {
+    const { machines } = setup();
+    const code = codeOf(machines.mint(ORIGIN).url);
+    const key = generateHostKey();
+    for (const name of ["local", "LOCAL", " local ", "this machine", "This Machine"]) {
+      expect(machines.join(ORIGIN, { code, name, platform: "linux", ...key })).toMatchObject({
+        kind: "refused",
+        status: 400,
+        message: expect.stringContaining("reserved"),
+      });
+      expect(machines.list()).toEqual([]);
+    }
+    expect(machines.join(ORIGIN, { code, name: "build box", platform: "linux", ...key }).kind).toBe(
+      "joined",
+    );
+  });
+
   it("lets a machine dial in only once confirmed, with a fresh dial signed by its own key", () => {
     const { clock, machines, joinOne } = setup();
     const { key, id } = joinOne();

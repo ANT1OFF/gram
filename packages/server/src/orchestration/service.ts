@@ -426,6 +426,7 @@ export const OrchestrationLive = Layer.effect(
 
     const {
       spawnNeedsApproval,
+      checkSpawnMachine,
       describeSpawn,
       checkWorkerModel,
       spawnFor,
@@ -806,6 +807,7 @@ export const OrchestrationLive = Layer.effect(
       checkWorkerMessage,
       pinRepos,
       spawnNeedsApproval,
+      checkSpawnMachine,
       describeSpawn,
       spawnWorker,
       releaseHeldBrief,

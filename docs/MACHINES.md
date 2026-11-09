@@ -77,6 +77,20 @@ pick another. The menu marks a machine that is offline or whose Claude Code isn'
 The link carries its code in the fragment (`#code=…`), so it never reaches a server or proxy log.
 Treat it as a password until it is used or expires.
 
+## Update a joined machine
+
+After updating the main Gram, rerun its installer on **each joined machine**. An existing join is
+kept and its background service moves to the updated app; no new join link or confirmation is
+needed:
+
+```sh
+curl -fsSL https://<device>.<tailnet>.ts.net/host/install | sh
+```
+
+The repository identity and explicit-base fixes run in that machine's host. Updating the main
+Gram alone does not change an older joined host's repository behavior. Until its installer runs
+again, that host can still reuse a different repository origin or silently choose a default base.
+
 ## The background service
 
 `gram-host join` installs `gram-host run` as a service of your user and starts it:
@@ -173,12 +187,18 @@ A worker placed on another machine works in a worktree of that machine's own clo
 project's repository, never in a folder on this one. The host finds the repository by the
 project's `origin` remote here and clones it the first time, then fetches it each time a worker
 starts there. Clones go in `repos` in the host's folder, by host, owner and name
-(`repos/github.com/acme/widgets`), or in `GRAM_HOST_REPOS` when it is set before `gram-host join`
+(`repos/github.com/acme/widgets+<identity suffix>`), or in `GRAM_HOST_REPOS` when it is set before `gram-host join`
 or `gram-host service install`.
 
 - Only `https://` and `ssh` remotes are cloned, never `file`, `ext` or `git://`, and never a URL
   with a password or token in it. The clone uses that machine's own git credentials (its SSH keys
   or credential helper), so the repository has to be reachable from there.
+- Different transports, ports, SSH accounts or remote paths get separate clone folders. An
+  existing folder without an identity suffix is reused only when its stored origin matches
+  exactly; other origins are left alone.
+- An explicit base is resolved on the joined machine. Push a branch that exists only on the main
+  machine before naming it as a remote worker's base. A local branch behind its origin uses the
+  updated origin; a local branch with additional or divergent work keeps that local tip.
 - A clone that fails or is stopped leaves nothing behind. A folder that is already there but isn't
   a clone of that remote is left alone, and the worker isn't started.
 - A joined machine's terminals open with its own default shell on its own PATH. Its shells outlast

@@ -230,6 +230,13 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
         return { kind: "refused", status: 403, message: "That join link isn't valid any more." };
       if (!NAME.test(request.name) || !PLATFORM.test(request.platform))
         return { kind: "refused", status: 400, message: "The machine's name isn't valid." };
+      if (["local", "this machine"].includes(request.name.trim().toLowerCase()))
+        return {
+          kind: "refused",
+          status: 400,
+          message:
+            "That machine name is reserved for this machine. Choose another name with gram-host join --name.",
+        };
       if (publicKeyFrom(request.publicKey) === undefined)
         return { kind: "refused", status: 400, message: "The machine's key isn't valid." };
       const id = hostIdOf(request.publicKey);
