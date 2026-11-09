@@ -99,6 +99,10 @@ const unusedFork = Effect.gen(function* () {
   return { source: session, plan, fork };
 });
 
+/** Whether `exit` is a refusal as `InvalidState`. */
+const refusedAsInvalid = (exit: Exit.Exit<unknown, unknown>) =>
+  Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof InvalidState;
+
 const forkSession = (fake: FakeAgentControl["Service"], threadId: ThreadId) =>
   Effect.sync(() => fake.sessions.find((s) => s.options.threadId === threadId) ?? false);
 
@@ -642,8 +646,6 @@ describe("ThreadRuntimes", () => {
       yield* session.completeTurn();
       yield* waitStatus(thread.id, "idle");
       const box = HostId.make("m-box");
-      const refused = (exit: Exit.Exit<unknown, unknown>) =>
-        Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof InvalidState;
       const threadsBefore = (yield* store.listThreads).length;
 
       // A local conversation forked onto a joined machine: before this change the fork was made
@@ -652,7 +654,7 @@ describe("ThreadRuntimes", () => {
       const onBox = yield* Effect.exit(
         runtimes.fork(plan, { checkout: { kind: "worktree", path: "/box/fork", hostId: box } }),
       );
-      expect(refused(onBox)).toBe(true);
+      expect(refusedAsInvalid(onBox)).toBe(true);
 
       // A joined machine's conversation forked here is refused the same way, and onto its own
       // machine it goes.
@@ -664,7 +666,7 @@ describe("ThreadRuntimes", () => {
       const here = yield* Effect.exit(
         runtimes.fork(remote, { checkout: { kind: "worktree", path: "/work/fork" } }),
       );
-      expect(refused(here)).toBe(true);
+      expect(refusedAsInvalid(here)).toBe(true);
       expect((yield* store.listThreads).length).toBe(threadsBefore);
       const sameMachine = yield* runtimes.fork(remote, {
         checkout: { kind: "worktree", path: "/box/fork", hostId: box },
