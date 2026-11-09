@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -67,12 +68,6 @@ HOST
     join(bin, "uname"),
     `#!/bin/sh
 case "$1" in -s) echo ${platform} ;; -m) echo ${platform === "Darwin" ? "arm64" : "x86_64"} ;; esac
-`,
-  );
-  executable(
-    join(bin, "stat"),
-    `#!/bin/sh
-exec node -e 'process.stdout.write(String(require("node:fs").statSync(process.argv[1]).uid))' "$3"
 `,
   );
   if (platform === "Darwin")
@@ -160,6 +155,22 @@ describe("the join installer", () => {
         expect(result.stderr).toContain("Installed");
         expect(result.status).toBe(0);
         expect(statSync(hostHome).mode & 0o777).toBe(0o700);
+      } finally {
+        removeDir(m.dir);
+      }
+    });
+
+    it(`refuses a linked ${platform} host home before creating children or joining`, () => {
+      const m = machine("99.14.0", false, platform);
+      try {
+        const elsewhere = join(m.home, "elsewhere");
+        mkdirSync(elsewhere);
+        const home = join(m.home, "linked-host");
+        symlinkSync(elsewhere, home);
+        const result = m.run(installScript(ORIGIN, "99.14.0"), { GRAM_HOST_HOME: home });
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain("symbolic link");
+        expect(readdirSync(elsewhere)).toEqual([]);
       } finally {
         removeDir(m.dir);
       }

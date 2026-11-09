@@ -59,6 +59,7 @@ const ownedPrivate = (path: string, directory: boolean) => {
     throw new Error(`${path} must be private to this user (chmod ${directory ? "700" : "600"}).`);
 };
 
+/** Creates a private destination, or refuses an unsafe existing folder before a join. */
 export const ensureHostHome = (home: string) => {
   mkdirSync(home, { recursive: true, mode: 0o700 });
   ownedPrivate(home, true);

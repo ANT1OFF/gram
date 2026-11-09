@@ -90,11 +90,9 @@ host_app() {
 private_home() {
   [ ! -L "$HOST_HOME" ] || die "The host folder must not be a symbolic link."
   (umask 077; mkdir -p "$HOST_HOME")
-  case "$(uname -s)" in
-    Darwin) owner=$(stat -f '%u' "$HOST_HOME") ;;
-    *) owner=$(stat -c '%u' "$HOST_HOME") ;;
-  esac
-  [ "$owner" = "$(id -u)" ] || die "The host folder must belong to this user."
+  # Both macOS sh and Linux sh test ownership directly; stat's flags differ across platforms
+  # and a user's PATH can put GNU stat ahead of macOS's BSD stat.
+  [ -O "$HOST_HOME" ] || die "The host folder must belong to this user."
   chmod 700 "$HOST_HOME"
 }
 
