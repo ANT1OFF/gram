@@ -9,11 +9,26 @@ opens no port of its own.
 
 A machine can join, be confirmed and stay connected; Settings → Machines lists it. A new thread
 in a new worktree can be placed on it, and its session, checkout, git state and terminals then run
-there. Pick the machine under **Machine** when you start a new thread in a new worktree (it shows
-once a machine is confirmed), or ask the orchestrator to put a worker there: `spawn_worker` takes
-the machine's name. The Workers tab tags each worker that runs on another machine. Its Files
-panel, file previews and attachments work on that machine ([its files](#its-files-and-attachments));
-its turn checkpoints, PR badge and port chips don't reach that machine yet.
+there. The Workers tab tags each worker that runs on another machine. Its Files panel, file
+previews and attachments work on that machine ([its files](#its-files-and-attachments)); its turn
+checkpoints, PR badge and port chips don't reach that machine yet.
+
+## Start a thread on a machine
+
+Once a machine is confirmed, **Machine** shows under Where it runs, beside the folder of a new
+thread and beside the repository when New task starts a worker. It reads "This machine" until you
+pick another. The menu marks a machine that is offline or whose Claude Code isn't signed in.
+
+- Picking a joined machine makes the checkout a new worktree, made from that machine's own clone.
+  Current checkout and Existing worktree are off while it is picked, since their folders are on
+  this machine.
+- A line under Where it runs says where the thread will run. When the machine is offline, lacks
+  Claude Code or Git, or isn't signed in, the line says so, with **Check again** (and the sign-in
+  icon when signing in is the fix), and Start waits until it can start there.
+- A folded New task, one going back to the workspace the last task went to, names the machine in
+  the line beside Start. Its Change opens the picker.
+- You can also ask the orchestrator to put a worker there: `spawn_worker` takes the machine's name.
+  The orchestrator itself always runs on this machine.
 
 ## What you need
 
@@ -21,9 +36,10 @@ its turn checkpoints, PR badge and port chips don't reach that machine yet.
   the main machine ([phone access](REMOTE_ACCESS.md)). **Add a machine** turns it on for you when
   it is off, or lists what Tailscale still needs on this computer. The joined machine dials the same
   `https://<device>.<tailnet>.ts.net` address a paired phone opens.
-- Git on the new machine, and Claude Code signed in there (`claude /login`) for its sessions.
-  Nothing else: the join command uses the Gram app on that machine, or downloads this Gram's
-  release (macOS on Apple silicon, Linux on x64) into the host's folder.
+- Git on the new machine, and Claude Code signed in there for its sessions (see
+  [Sign in on a machine](#sign-in-on-a-machine)). Nothing else: the join command uses the Gram app
+  on that machine, or downloads this Gram's release (macOS on Apple silicon, Linux on x64) into the
+  host's folder.
 
 ## Join a machine
 
@@ -81,6 +97,23 @@ the host's folder; on Linux use `journalctl --user -u gram-host`.
 | `gram-host service install \| uninstall \| status` | Manage the service                                |
 | `gram-host status`                                 | The main Gram it joined, its fingerprint, service |
 | `gram-host leave`                                  | Stop the service and forget the join and its key  |
+
+## Sign in on a machine
+
+A joined machine runs Claude Code on its own sign-in. While it is online, its host checks two things when it connects, and again when a listing finds the answer more than a minute old:
+
+- **Its sign-in.** The host runs that machine's own `claude auth status --json`, through the same readiness check its sessions use. It tells this Gram only the result: signed in, not signed in, an API key, a third-party provider, or unknown. Unknown covers an older `gram-host` or a status it couldn't read.
+- **Its tools.** It looks for `claude` and `git` in a non-interactive login shell (`$SHELL -lc 'command -v …'`) and reads their versions.
+
+No command output, token or credential file leaves the machine.
+
+- Settings → Machines lists the versions it found ("Claude Code 2.1.319 · Git 2.47.0"). When something is missing, the row says what, with the fix: "Claude Code isn't installed on <machine>, or isn't on its login shell's PATH.", or "Claude Code isn't signed in on <machine>. Run `claude /login` there."
+- A machine that is signed out gets a sign-in icon on its row, "Sign in to Claude on <machine>" on hover. It opens a shell on that machine, inside Gram, in its home folder, with `claude /login` typed but not run.
+  - Press Return to run it, open the link it prints to sign in in this computer's browser, and paste the code into the terminal if the page shows one.
+  - When the shell ends or you close the terminal, Gram asks the machine again and the row updates.
+  - The machine's Claude Code keeps the login there, as it does in its own terminal. Gram only types the command; it never reads, copies or relays what Claude Code stores.
+- The Machine picker marks such a machine, and its line under Where it runs offers the same sign-in, in a dialog.
+- A session that still can't start there names the machine, for example "Claude Code isn't logged in on <machine>. Run `claude /login` there, or choose Sign in under Settings → Machines." The main Gram's log records each failed start on a joined machine with the machine, the agent and the reason code.
 
 ## Its repositories
 
@@ -180,5 +213,5 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
   address, closes every joined machine's connection; the machines stay joined and dial in again
   once it is back. Up to 16 machines can be joined.
 
-The listing (`POST /machines/list`), join link, confirm and remove endpoints answer only the local
-app, never a paired phone or a joined machine, with the same Origin rules as phone access settings.
+The listing (`POST /machines/list`), join link, confirm, remove and sign-in check endpoints answer
+only the local app, never a paired phone or a joined machine, with the same Origin rules as phone access settings.

@@ -68,6 +68,7 @@ const hello = (overrides: Partial<HostHello> = {}): HostHello => ({
 /** A host served on one end of a fresh stream, and the control plane's connection to it. */
 const connected = (
   overrides: Partial<HostHello> = {},
+  extra: Partial<HostService> = {},
   attached: string = mkdtempSync(join(tmpdir(), "gram-host-attached-")),
 ) =>
   Effect.gen(function* () {
@@ -83,6 +84,7 @@ const connected = (
       terminals: yield* terminalsOnHost,
       sessions: yield* sessionsOnHost(noAgents),
       scan: Effect.succeed(SCAN),
+      ...extra,
     };
     yield* Effect.forkScoped(
       serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(host)), service),
@@ -110,6 +112,27 @@ describe("host protocol", () => {
       const scan = yield* host.scan;
       expect(scan.listening.get(41)).toEqual([5173, 5174]);
       expect(scan.processes?.get(41)?.command).toBe("vite");
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+
+  it.effect("carries what the machine can run, and reads a host that can't say as unknown", () =>
+    Effect.gen(function* () {
+      const status = {
+        claudeSignIn: "notSignedIn" as const,
+        tools: [
+          { tool: "claude" as const, found: true, version: "2.1.319" },
+          { tool: "git" as const, found: false },
+        ],
+      };
+      const signedOut = yield* connected({}, { status: Effect.succeed(status) });
+      expect(yield* signedOut.status!).toEqual(status);
+      // A host without the check, and one whose check dies.
+      expect(yield* (yield* connected()).status!).toEqual({ claudeSignIn: "unknown", tools: [] });
+      const dying = yield* connected({}, { status: Effect.die("claude crashed") });
+      expect(yield* dying.status!).toEqual({ claudeSignIn: "unknown", tools: [] });
+      // A defect in a handler would break the whole stream: the host keeps answering.
+      expect(dying.gone()).toBe(false);
+      expect((yield* dying.scan).listening.get(41)).toEqual([5173, 5174]);
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 
@@ -355,7 +378,7 @@ describe("a joined machine's file reads", () => {
     Effect.gen(function* () {
       const attached = realpathSync(mkdtempSync(join(tmpdir(), "gram-host-attached-")));
       yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(attached, { recursive: true })));
-      const store = (yield* connected({}, attached)).attachments!;
+      const store = (yield* connected({}, {}, attached)).attachments!;
       const thread = "t-attached" as ThreadId;
       const data = Buffer.from("synthetic attachment").toString("base64");
       const { path } = yield* store.put(thread, "../../notes.txt", data);

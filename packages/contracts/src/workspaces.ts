@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 import { DraftId } from "./attachments.ts";
 import { ModelRef, PermissionMode, UserInput } from "./domain.ts";
 import { SupportedTaskModelSelection } from "./task-preflight.ts";
-import { ProjectId, ThreadId, WorkspaceId } from "./ids.ts";
+import { HostId, ProjectId, ThreadId, WorkspaceId } from "./ids.ts";
 import { MergeReviewPolicy, RepoMergeReviewPolicies } from "./merge-policy.ts";
 import { FeatureStage, OrchestrationPause } from "./orchestration.ts";
 import { WorkspaceRoutines } from "./routines.ts";
@@ -383,6 +383,8 @@ export const StartTaskInput = Schema.Struct({
        * user's words as its brief.
        */
       hold: Schema.optionalKey(Schema.Boolean),
+      /** The joined machine its worktree is made on, as `newWorktree.hostId`; absent is this one. */
+      hostId: Schema.optionalKey(HostId),
     }),
   ),
   /**
