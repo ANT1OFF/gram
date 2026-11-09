@@ -116,9 +116,8 @@ jobs:
           for file in "$committed"/*; do
             cmp "$file" "$RUNNER_TEMP/sherpa-onnx-rebuild/$(basename "$file")"
           done
-      # No Actions cache anywhere in a release build: Node and Bun come from their pinned versions
-      # and packages from the lockfile, so the attested files depend on pinned inputs alone, never
-      # on anything an earlier run left in a cache.
+      # Keep package-manager and build caches disabled. Only versioned Electron and packaging
+      # tool downloads are cached below; Electron checksums come from the pinned npm package.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -127,7 +126,19 @@ jobs:
         with:
           bun-version-file: .bun-version
           no-cache: true
+      - name: Identify packaging download versions
+        id: packaging-cache
+        run: node tools/packaging/cache.mjs --key
+      - name: Cache Electron and electron-builder downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: gram-packaging-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.packaging-cache.outputs.versions }}
       - run: bun install --frozen-lockfile
+      - name: Seed pinned Electron checksums for offline cache validation
+        run: node tools/packaging/cache.mjs --seed-checksums
       - run: bun run build:bundles
       - name: Compile node-pty against Electron's headers
         run: bun run rebuild:node-pty
@@ -135,7 +146,7 @@ jobs:
       - name: Package the AppImage and .deb
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: bun run electron-builder --linux --x64 --publish never "-c.extraMetadata.version=$VERSION"
+        run: node ../../tools/packaging/retry.mjs bun run electron-builder --linux --x64 --publish never "-c.extraMetadata.version=$VERSION"
         working-directory: apps/desktop
       - run: bun run verify:package
         working-directory: apps/desktop

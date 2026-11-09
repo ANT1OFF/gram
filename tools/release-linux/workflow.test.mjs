@@ -1,5 +1,5 @@
 // The release workflow's trust rules, read from the file itself so an edit can't drop one quietly:
-// no Actions cache in the attested build, read-only tokens where repository code runs, and an
+// only versioned download caches in the build, read-only tokens where repository code runs, and an
 // attest job that runs none.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -27,13 +27,22 @@ describe("release-linux.yml", () => {
     expect(job("build")).toMatch(/permissions:\n {6}contents: read\n {4}outputs:/);
   });
 
-  it("restores no cache in the build or the attestation", () => {
-    for (const name of ["build", "attest"]) {
-      const block = job(name);
-      expect(uses(block)).not.toContain("actions/cache");
-      expect(block).not.toMatch(/\n\s+cache:/);
-    }
+  it("caches only versioned packaging downloads and leaves the attestation cache-free", () => {
+    const attest = job("attest");
+    expect(uses(attest)).not.toContain("actions/cache");
+    expect(attest).not.toMatch(/\n\s+cache:/);
     const build = job("build");
+    const caches = build.split(/\n {6}- /).filter((step) => step.includes("uses: actions/cache@"));
+    expect(caches).toHaveLength(1);
+    expect(caches[0]).toMatch(
+      /path: \|\n {12}~\/\.cache\/electron\n {12}~\/\.cache\/electron-builder\n {10}key:/,
+    );
+    expect(caches[0]).toContain(
+      "gram-packaging-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.packaging-cache.outputs.versions }}",
+    );
+    expect(caches[0]).not.toMatch(/restore-keys:/);
+    expect(build).toContain("node tools/packaging/cache.mjs --key");
+    expect(build).toContain("node tools/packaging/cache.mjs --seed-checksums");
     expect(build).toMatch(/setup-bun@[0-9a-f]{40}[^\n]*\n {8}with:\n[^]*?no-cache: true/);
     expect(build).toMatch(
       /setup-node@[0-9a-f]{40}[^\n]*\n {8}with:\n[^]*?package-manager-cache: false/,
