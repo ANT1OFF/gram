@@ -312,6 +312,22 @@ describe("identify", () => {
         expect((yield* identify(clone, worktree)).identity).toBe(cloneIdentityOf(url));
         expect(cloneIdentityOf(url)).not.toBe(cloneIdentityOf(URL));
       }
+      // The clone re-pointed, and a worktree-scoped setting naming the recorded origin there: the
+      // clone's own config still says otherwise, so no identity is confirmed. And the reverse.
+      git(clone, "config", "extensions.worktreeConfig", "true");
+      git(worktree, "config", "--worktree", "remote.origin.url", URL);
+      expect((yield* identify(clone, worktree)).identity).toBeUndefined();
+      git(clone, "remote", "set-url", "origin", URL);
+      git(
+        worktree,
+        "config",
+        "--worktree",
+        "remote.origin.url",
+        "https://git.example.test/elsewhere/other.git",
+      );
+      expect((yield* identify(clone, worktree)).identity).toBeUndefined();
+      git(worktree, "config", "--worktree", "--unset", "remote.origin.url");
+      expect((yield* identify(clone, worktree)).identity).toBe(cloneIdentityOf(URL));
       // A URL the host doesn't clone, a detached HEAD and a folder that isn't there say nothing.
       git(clone, "remote", "set-url", "origin", "file:///somewhere");
       git(worktree, "checkout", "--quiet", "--detach");

@@ -115,6 +115,10 @@ export const cloneIdentityOf = (url: string): string | undefined => {
   return "error" in remote ? undefined : remote.identity;
 };
 
+/** `cloneIdentityOf`, of a URL that may not be there. */
+const identityOf = (url: string | undefined) =>
+  url === undefined ? undefined : cloneIdentityOf(url);
+
 const failed = (message: string) =>
   new WorktreeError({
     reason: "failed",
@@ -245,20 +249,26 @@ export const reposOn = (
   const identify = (repoRoot: string, path: string): Effect.Effect<HostRepoIdentity> =>
     Effect.gen(function* () {
       const common = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
-      const [mine, clones, origin, branch] = [
+      const origin = ["--get", "remote.origin.url"];
+      const [mine, clones, stored, effective, branch] = [
         yield* read(path, common),
         yield* read(repoRoot, common),
-        // As stored, not as `insteadOf` rewrites it: the URL the clone was made from.
-        yield* read(path, ["config", "--get", "remote.origin.url"]),
+        // As stored, not as `insteadOf` rewrites it: the URL the clone was made from, in the
+        // clone's own config, which no worktree-scoped or included setting stands in for.
+        yield* read(repoRoot, ["config", "--local", "--no-includes", ...origin]),
+        // And where the worktree's own pushes go, which a worktree-scoped setting can change.
+        yield* read(path, ["config", ...origin]),
         yield* read(path, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
       ];
       const shared = mine === undefined ? undefined : tryRealPathSync(mine);
       const ofClone =
         shared !== undefined && clones !== undefined && shared === tryRealPathSync(clones);
-      const identity = origin === undefined ? undefined : cloneIdentityOf(origin);
+      // An identity only when both say the same one: otherwise none, and nothing is confirmed.
+      const identity = identityOf(stored);
+      const agreed = identity !== undefined && identityOf(effective) === identity;
       return {
         ofClone,
-        ...(identity === undefined ? {} : { identity }),
+        ...(agreed ? { identity } : {}),
         ...(branch === undefined ? {} : { branch }),
       };
     });

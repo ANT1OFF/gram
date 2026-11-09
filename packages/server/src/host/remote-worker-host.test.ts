@@ -30,10 +30,16 @@ import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
-import { connectHost, HOST_CAPABILITIES, type HostConnection, serveHost } from "./protocol.ts";
+import {
+  connectHost,
+  HOST_CAPABILITIES,
+  type HostConnection,
+  type HostWorktrees,
+  serveHost,
+} from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { machineHosts, machineWorkerHost, type MachineDeps } from "./remote-worker-host.ts";
-import { cloneFolderOf, reposOn } from "./repos.ts";
+import { cloneFolderOf, cloneIdentityOf, reposOn } from "./repos.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { type HostTerminalsService, terminalsOnHost } from "./terminals.ts";
 import { streamPair } from "./test-stream.ts";
@@ -72,6 +78,8 @@ const machine = (
   scan: Effect.Effect<PortScan> = Effect.succeed({ listening: new Map(), children: new Map() }),
   /** Called with the machine's terminals once its host serves them. */
   onTerminals?: (terminals: HostTerminalsService) => void,
+  /** The machine's worktree code as its host runs it: a test's host can answer otherwise. */
+  worktreesThere: (honest: HostWorktrees) => HostWorktrees = (honest) => honest,
 ) =>
   Effect.gen(function* () {
     const { host, control } = yield* streamPair;
@@ -90,7 +98,7 @@ const machine = (
           reads: fileReadsOn(proc),
           attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
           repos: reposOn(proc, repos, env),
-          worktrees: cloneWorktrees(proc, yield* Worktrees, env),
+          worktrees: worktreesThere(cloneWorktrees(proc, yield* Worktrees, env)),
           git: gitOn(proc),
           terminals: yield* terminalsOnHost.pipe(
             Effect.tap((t) => Effect.sync(() => onTerminals?.(t))),
@@ -132,6 +140,60 @@ const waitGone = (connection: HostConnection) =>
 const Live = WorktreesLive.pipe(Layer.provideMerge(ProcLive));
 
 describe("a joined machine's worker host", () => {
+  // What a check of the worker's ownership later goes by is this machine's record, never the
+  // host's reply: a host that lies about the worktree it made can't choose what is recorded.
+  for (const lie of ["another branch", "other records"] as const) {
+    it.live(`records only its own values for a worktree made there, given ${lie}`, () =>
+      Effect.gen(function* () {
+        const dir = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+        const { root, env } = project(dir);
+        const repos = join(dir, "repos");
+        const { connection } = yield* machine(repos, env, undefined, undefined, (honest) => ({
+          ...honest,
+          create: (request) =>
+            honest.create(request).pipe(
+              Effect.map((created) => ({
+                ...created,
+                checkout:
+                  lie === "another branch"
+                    ? { ...created.checkout, branch: "feat/by-another-thread" }
+                    : {
+                        ...created.checkout,
+                        repoRoot: "/home/invented/elsewhere",
+                        hostId: HostId.make("m-ffffffffffffffffffffffff"),
+                        cloneIdentity: cloneIdentityOf("https://git.example.test/other/repo.git")!,
+                      },
+              })),
+            ),
+        }));
+        const host = yield* machineWorkerHost(MACHINE, connection, yield* deps());
+        const prepared = host.checkouts.prepare(
+          { kind: "newWorktree", branch: "feat/review-ownership" },
+          [],
+          root,
+        );
+        if (lie === "another branch") {
+          expect((yield* prepared.pipe(Effect.flip)).message).toBe(
+            "build box made the worktree on another branch than the feat/review-ownership Gram asked for, so it isn't used.",
+          );
+          return;
+        }
+        const checkout = yield* prepared;
+        // Kept from its reply: where it put the worktree, and the base it chose, set aside here.
+        const { base: _base, ...recorded } = checkout;
+        expect(recorded).toEqual({
+          kind: "worktree",
+          path: checkout.path,
+          hostId: MACHINE.id,
+          branch: "feat/review-ownership",
+          repoRoot: cloneAt(repos),
+          cloneIdentity: cloneIdentityOf(URL),
+        });
+      }).pipe(Effect.scoped, Effect.provide(Live)),
+    );
+  }
+
   it.live(
     "makes a worker's worktree from its own clone, keeps it on that machine, and refuses to lose work",
     () =>
