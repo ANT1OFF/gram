@@ -111,7 +111,7 @@ export function OverviewPullRequests({ rows }: { rows: readonly OverviewPrRow[] 
 }
 
 /**
- * A group's heading inside At rest ("Idle workspaces", "Pull requests", "Done"): a section title's
+ * A group's heading inside At rest ("Pull requests", "Done"): a section title's
  * look and grid, its count in the same right column, with no fold of its own.
  */
 export function RestHeading({
