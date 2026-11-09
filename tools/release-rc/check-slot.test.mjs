@@ -25,13 +25,15 @@ afterEach(() => {
 /**
  * A source checkout and stub `git`, `gh`, `bun`, `security` and `xcrun` for running rc.mjs up to
  * its first check: the repository `gh repo view` describes, its latest release, its releases and
- * its tags. `start(args)` runs rc.mjs with `args` and returns the child and its output.
+ * its tags, and with `ci` (its jobs) main's check run at the commit. `start(args)` runs rc.mjs
+ * with `args` and returns the child and its output.
  */
 function releaseFixture({
   repo = { nameWithOwner: "ANT1OFF/gram", isPrivate: true, defaultBranchRef: { name: "main" } },
   latest = "v0.3.0",
   releases = ["v0.3.0"],
   tags = ["v0.3.0"],
+  ci,
 } = {}) {
   const root = realpathSync(mkdtempSync("/tmp/grs-"));
   dirs.push(root);
@@ -82,7 +84,12 @@ else if(!["status --porcelain --untracked-files=normal","fetch --quiet --tags or
   executable(
     "gh",
     `const a=process.argv.slice(2).join(" ");
+const ci=${JSON.stringify(ci ?? null)};
+require("node:fs").appendFileSync(${JSON.stringify(join(root, "gh.log"))}, a + "\\n");
 if(a.startsWith("repo view ")) console.log(JSON.stringify(${JSON.stringify(repo)}));
+else if(ci && a==="api repos/ANT1OFF/gram/actions/workflows/check.yml") console.log(JSON.stringify({id:3,path:".github/workflows/check.yml"}));
+else if(ci && a.startsWith("run list --repo ANT1OFF/gram --workflow check.yml ") && a.includes(" --commit ${"a".repeat(40)} ")) console.log(JSON.stringify([{databaseId:501,event:"push",headBranch:"main",headSha:"${"a".repeat(40)}"}]));
+else if(ci && a.startsWith("run view 501 ")) console.log(JSON.stringify({databaseId:501,event:"push",headBranch:"main",headSha:"${"a".repeat(40)}",workflowDatabaseId:3,status:"in_progress",conclusion:"",attempt:1,url:"https://github.com/ANT1OFF/gram/actions/runs/501",jobs:ci}));
 else if(a.includes("releases/latest")) { if (${JSON.stringify(latest)}) console.log(${JSON.stringify(latest)}); else { console.error("HTTP 404"); process.exit(1); } }
 else if(a.includes("releases?")) console.log(${JSON.stringify(releases.join("\n"))});
 else if(a.startsWith("workflow run release-linux.yml ")) require("node:fs").appendFileSync(${JSON.stringify(join(root, "dispatched.log"))}, a + "\\n");
@@ -237,6 +244,58 @@ it("takes a first release only into a repository with no release or tag", async 
     expect(run.code).toBe(1);
     expect(run.output).toMatch(/--first-release is for a repository with no releases or tags/);
   }
+}, 20_000);
+
+const lanes = (conclusion = "success") =>
+  [
+    "check static",
+    "check tests 1/2",
+    "check tests 2/2",
+    "macos tests 1/3",
+    "macos tests 2/3",
+    "macos tests 3/3",
+  ].map((name) => ({ name, status: "completed", conclusion }));
+
+it("takes the tests from main's check run on the exact commit, and holds no check slot", async () => {
+  const fixture = releaseFixture({ ci: lanes() });
+  // Another checkout holds the only slot: the static stages don't wait for it.
+  const free = await acquireSlot({ dir: fixture.dir, slots: 1, label: "other-worktree" });
+  try {
+    const run = await runRelease(fixture, ["--stable", "0.4.0"]);
+    expect(run.code).toBe(1);
+    expect(run.output).toContain(
+      "check: tests from main's check run https://github.com/ANT1OFF/gram/actions/runs/501",
+    );
+    expect(run.output).not.toContain("held by:");
+    expect(run.output).toContain("install failed");
+    // The install ran while the other checkout still held the slot.
+    expect(JSON.parse(readFileSync(fixture.marker, "utf8")).cwd).toBe("other-worktree");
+  } finally {
+    free();
+  }
+}, 10_000);
+
+it("stops before building on a red check run, and asks nothing with --check local", async () => {
+  const red = releaseFixture({
+    ci: [...lanes(), { name: "e2e 3/8", status: "completed", conclusion: "failure" }],
+  });
+  let run = await runRelease(red, ["--stable", "0.4.0"]);
+  expect(run.code).toBe(1);
+  expect(run.output).toMatch(/main's check run .*runs\/501: its job "e2e 3\/8" ended failure/);
+  expect(run.output).not.toContain("install");
+  // --check ci refuses a commit main hasn't checked; --check local runs the whole check here.
+  run = await runRelease(releaseFixture(), ["--stable", "0.4.0", "--check", "ci"]);
+  expect(run.code).toBe(1);
+  expect(run.output).toMatch(/pass --check local/);
+  const local = releaseFixture({ ci: lanes() });
+  const free = await acquireSlot({ dir: local.dir, slots: 1, label: "other-worktree" });
+  const waiting = local.start(["--stable", "0.4.0", "--check", "local"]);
+  await new Promise((resolve) =>
+    waiting.child.stdout.on("data", () => waiting.output.includes("held by:") && resolve()),
+  );
+  free();
+  await waiting.exited;
+  expect(readFileSync(join(local.root, "gh.log"), "utf8")).not.toContain("check.yml");
 }, 20_000);
 
 it("returns the slot on a failed release check", async () => {

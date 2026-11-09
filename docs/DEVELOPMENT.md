@@ -163,7 +163,8 @@ upstream's tag in a manylinux_2_28 container pinned by digest (Docker; about two
 much longer emulated), so they need glibc 2.28 at most; two builds are byte-identical, and the
 [sherpa-onnx linux-x64](../.github/workflows/sherpa-onnx-linux.yml) workflow rebuilds them and
 requires the committed bytes, then runs `apps/desktop/src/speech.live.test.ts` on x64 Linux; the
-Linux release build repeats the rebuild and comparison before it packages them.
+Linux release build repeats the rebuild and comparison beside its packaging, and attests nothing
+unless it passes.
 afterPack and `verify:package` fail a package whose sherpa-onnx files differ from the committed
 ones or hold TTS, espeak-ng or piper-phonemize symbols.
 

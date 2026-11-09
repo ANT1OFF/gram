@@ -15,11 +15,18 @@ import {
   linuxManifestName,
   linuxPackageNames,
   matchRun,
+  rerunArgs,
+  runNonce,
   runProblems,
   runTitle,
   verifyAttestations,
 } from "./linux-lib.mjs";
-import { collectLinuxBuild, startLinuxBuild } from "./linux-release.mjs";
+import {
+  LinuxBuildError,
+  adoptLinuxBuild,
+  collectLinuxBuild,
+  startLinuxBuild,
+} from "./linux-release.mjs";
 import { writeLinuxBuild } from "./testing/linux-build.mjs";
 
 const SHA = "a".repeat(40);
@@ -183,15 +190,26 @@ describe("the dispatched run", () => {
       workflowDatabaseId: 9,
       jobs: [
         { name: "build", conclusion: "success" },
+        { name: "sherpa-onnx", conclusion: "success" },
         { name: "attest", conclusion: "success" },
       ],
     };
     expect(runProblems(view, { sha: SHA, workflowId: 9 })).toEqual([]);
+    // The sherpa-onnx rebuild runs beside the build; a run without its pass builds no release.
+    expect(
+      runProblems(
+        { ...view, jobs: view.jobs.filter((j) => j.name !== "sherpa-onnx") },
+        { sha: SHA, workflowId: 9 },
+      ),
+    ).toEqual(["its sherpa-onnx job is missing"]);
     expect(runProblems({ ...view, conclusion: "failure" }, { sha: SHA, workflowId: 9 })).toEqual([
       "it ended failure",
     ]);
     expect(runProblems(view, { sha: SHA, workflowId: 10 })[0]).toMatch(/not .*release-linux\.yml/);
-    const unattested = { ...view, jobs: [view.jobs[0], { name: "attest", conclusion: "skipped" }] };
+    const unattested = {
+      ...view,
+      jobs: [...view.jobs.slice(0, 2), { name: "attest", conclusion: "skipped" }],
+    };
     expect(runProblems(unattested, { sha: SHA, workflowId: 9 })).toEqual([
       "its attest job is skipped",
     ]);
@@ -200,6 +218,22 @@ describe("the dispatched run", () => {
     expect(runProblems(view, { sha: SHA, workflowId: 9, dryRun: true })).toEqual([
       "its attest job is success in a dry run",
     ]);
+  });
+
+  it("reads the nonce of a run named for this version, and reruns only failed jobs", () => {
+    expect(runNonce(runTitle(VERSION, NONCE), VERSION)).toBe(NONCE);
+    expect(runNonce(runTitle("1.3.9", NONCE), VERSION)).toBeUndefined();
+    expect(runNonce("Linux release dry run (feat/x)", VERSION)).toBeUndefined();
+    expect(runNonce(undefined, VERSION)).toBeUndefined();
+    expect(rerunArgs({ runId: 77 })).toEqual([
+      "run",
+      "rerun",
+      "77",
+      "--failed",
+      "--repo",
+      "ANT1OFF/gram",
+    ]);
+    expect(() => rerunArgs({ runId: "77 --debug" })).toThrow();
   });
 });
 
@@ -291,6 +325,7 @@ function fakeGh({ view = {}, attest = true, build = {} } = {}) {
         url: "https://github.com/ANT1OFF/gram/actions/runs/77",
         jobs: [
           { name: "build", conclusion: "success" },
+          { name: "sherpa-onnx", conclusion: "success" },
           { name: "attest", conclusion: "success" },
         ],
         ...view,
@@ -365,6 +400,7 @@ describe("collectLinuxBuild", () => {
       view: {
         jobs: [
           { name: "build", conclusion: "success" },
+          { name: "sherpa-onnx", conclusion: "success" },
           { name: "attest", conclusion: "skipped" },
         ],
       },
@@ -374,5 +410,124 @@ describe("collectLinuxBuild", () => {
     const got = await collect(gh.run, scratch(), build);
     expect(got.attestations).toEqual([]);
     expect(gh.calls.some((call) => call.startsWith("attestation"))).toBe(false);
+  });
+});
+
+/**
+ * A run that already exists, as `gh run view` shows it look after look: `views` is the sequence
+ * (the last repeats), each `{ attempt, status, conclusion }` over a successful release run.
+ */
+function existingRunGh(views, { title = runTitle(VERSION, NONCE), headSha = SHA } = {}) {
+  const calls = [];
+  let look = 0;
+  const run = (args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "api" && args[1].endsWith("actions/workflows/release-linux.yml"))
+      return ok({ id: 9, path: LINUX_WORKFLOW });
+    if (args[0] === "run" && args[1] === "view") {
+      const at = views[Math.min(look++, views.length - 1)];
+      return ok({
+        databaseId: 77,
+        displayTitle: title,
+        event: "workflow_dispatch",
+        headBranch: "main",
+        headSha,
+        workflowDatabaseId: 9,
+        url: "https://github.com/ANT1OFF/gram/actions/runs/77",
+        jobs: [
+          { name: "build", conclusion: at.conclusion === "success" ? "success" : "failure" },
+          { name: "sherpa-onnx", conclusion: "success" },
+          { name: "attest", conclusion: at.conclusion === "success" ? "success" : "skipped" },
+        ],
+        ...at,
+      });
+    }
+    if (args[0] === "run" && args[1] === "rerun") return { status: 0, stdout: "", stderr: "" };
+    if (args[0] === "run" && args[1] === "download") {
+      writeLinuxBuild(args[args.indexOf("--dir") + 1]);
+      return { status: 0, stdout: "", stderr: "" };
+    }
+    if (args[0] === "attestation") return ok(JSON.parse(verdict(sha256(readFileSync(args[2])))));
+    return { status: 99, stdout: "", stderr: `unexpected gh ${args.join(" ")}` };
+  };
+  return { run, calls };
+}
+
+const failed = { attempt: 1, status: "completed", conclusion: "failure" };
+const passed = (attempt) => ({ attempt, status: "completed", conclusion: "success" });
+
+describe("adopting and rerunning a Linux build", () => {
+  it("adopts a run dispatched for this release, and refuses any other", () => {
+    const adopted = adoptLinuxBuild({
+      gh: existingRunGh([passed(1)]).run,
+      version: VERSION,
+      sha: SHA,
+      runId: 77,
+    });
+    expect(adopted).toMatchObject({ runId: 77, nonce: NONCE, sha: SHA, dryRun: false });
+    expect(() =>
+      adoptLinuxBuild({
+        gh: existingRunGh([passed(1)], { title: runTitle("1.3.9", NONCE) }).run,
+        version: VERSION,
+        sha: SHA,
+        runId: 77,
+      }),
+    ).toThrow(/not as a 1\.4\.0 release/);
+    expect(() =>
+      adoptLinuxBuild({
+        gh: existingRunGh([passed(1)], { headSha: "b".repeat(40) }).run,
+        version: VERSION,
+        sha: SHA,
+        runId: 77,
+      }),
+    ).toThrow(/ran at b{40}/);
+    expect(() =>
+      adoptLinuxBuild({ gh: existingRunGh([]).run, version: VERSION, sha: SHA, runId: "x" }),
+    ).toThrow(/Not a run id/);
+  });
+
+  it("reruns a failed run's failed jobs once, at the same commit, and takes the new attempt", async () => {
+    // The view may still show the failed attempt right after the rerun is asked for.
+    const gh = existingRunGh([
+      failed,
+      failed,
+      { attempt: 2, status: "in_progress", conclusion: "" },
+      passed(2),
+    ]);
+    const build = adoptLinuxBuild({ gh: gh.run, version: VERSION, sha: SHA, runId: 77 });
+    const assets = scratch();
+    const got = await collectLinuxBuild(build, {
+      gh: gh.run,
+      into: join(scratch(), "linux"),
+      assets,
+      sleep: async () => {},
+      pollMs: 0,
+      reruns: 1,
+    });
+    expect(got).toMatchObject({ runId: 77, attempt: 2 });
+    expect(gh.calls.filter((call) => call.startsWith("run rerun"))).toEqual([
+      "run rerun 77 --failed --repo ANT1OFF/gram",
+    ]);
+    expect(readdirSync(assets)).toHaveLength(3);
+  });
+
+  it("stops after its reruns, naming the run to pick up later, with nothing copied", async () => {
+    // adoptLinuxBuild takes the first look.
+    const gh = existingRunGh([failed, failed, { ...failed, attempt: 2 }]);
+    const build = adoptLinuxBuild({ gh: gh.run, version: VERSION, sha: SHA, runId: 77 });
+    const assets = scratch();
+    const error = await collectLinuxBuild(build, {
+      gh: gh.run,
+      into: join(scratch(), "linux"),
+      assets,
+      sleep: async () => {},
+      pollMs: 0,
+      reruns: 1,
+    }).catch((e) => e);
+    expect(error).toBeInstanceOf(LinuxBuildError);
+    expect(error.message).toMatch(/it ended failure; its build job is failure/);
+    expect(error).toMatchObject({ runId: 77, runUrl: expect.stringMatching(/runs\/77$/) });
+    expect(gh.calls.filter((call) => call.startsWith("run rerun"))).toHaveLength(1);
+    expect(readdirSync(assets)).toEqual([]);
   });
 });

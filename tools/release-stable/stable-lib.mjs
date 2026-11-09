@@ -8,7 +8,7 @@ export const RELEASE_REPO = "ANT1OFF/gram";
 /** The state `release:rc --stable` leaves in its work dir for the later phases. */
 export const STATE_FILE = "release.json";
 
-const PHASES = ["validate", "update-check", "publish"];
+const PHASES = ["linux", "validate", "update-check", "publish"];
 
 /** Arguments of `release:stable <phase>`; throws on anything unknown. */
 export function parseStableArgs(argv) {
@@ -26,6 +26,10 @@ export function parseStableArgs(argv) {
     else if (arg === "--bun") options.bun = value();
     else if (arg === "--live") options.live = true;
     else if (arg === "--notes") options.notes = value();
+    else if (arg === "--run") {
+      options.run = value();
+      if (!/^\d+$/.test(options.run)) throw new Error(`--run takes a run id, not ${options.run}.`);
+    } else if (arg === "--dispatch") options.dispatch = true;
     else if (arg === "--help" || arg === "-h") options.help = true;
     else if (!arg.startsWith("-") && options.phase === undefined) options.phase = arg;
     else throw new Error(`Unknown argument: ${arg}`);
@@ -42,6 +46,10 @@ export function parseStableArgs(argv) {
     throw new Error("--live is for update-check.");
   if (options.notes !== undefined && options.phase !== "publish")
     throw new Error("--notes is for publish.");
+  if ((options.run !== undefined || options.dispatch) && options.phase !== "linux")
+    throw new Error("--run and --dispatch are for linux.");
+  if (options.run !== undefined && options.dispatch)
+    throw new Error("Use --run <id> or --dispatch, not both.");
   return options;
 }
 

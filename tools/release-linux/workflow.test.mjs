@@ -22,9 +22,10 @@ const job = (name) => {
 const uses = (block) => [...block.matchAll(/uses: ([^\s@]+)@([0-9a-f]+)/g)].map((m) => m[1]);
 
 describe("release-linux.yml", () => {
-  it("grants nothing at the top, and a read-only token to the build", () => {
+  it("grants nothing at the top, and a read-only token to the build and the rebuild", () => {
     expect(text).toMatch(/\npermissions: \{\}\n/);
     expect(job("build")).toMatch(/permissions:\n {6}contents: read\n {4}outputs:/);
+    expect(job("sherpa-onnx")).toMatch(/permissions:\n {6}contents: read\n {4}defaults:/);
   });
 
   it("restores only hash-verifiable archives, never extracted builder toolsets", () => {
@@ -65,12 +66,20 @@ describe("release-linux.yml", () => {
     );
   });
 
-  it("rebuilds the committed sherpa-onnx and requires the same bytes before installing them", () => {
-    const build = job("build");
-    const rebuild = build.indexOf("tools/sherpa-onnx/build-linux-x64.sh");
-    expect(rebuild).toBeGreaterThan(0);
-    expect(build.slice(rebuild)).toMatch(/cmp "\$file"/);
-    expect(rebuild).toBeLessThan(build.indexOf("bun install --frozen-lockfile"));
+  it("rebuilds the committed sherpa-onnx beside the build, and attests only once both passed", () => {
+    const rebuild = job("sherpa-onnx");
+    const at = rebuild.indexOf("tools/sherpa-onnx/build-linux-x64.sh");
+    expect(at).toBeGreaterThan(0);
+    expect(rebuild.slice(at)).toMatch(/diff <\(ls "\$committed"\)/);
+    expect(rebuild.slice(at)).toMatch(/cmp "\$file"/);
+    // The same commit as the build, no cache, nothing uploaded.
+    expect(uses(rebuild)).toEqual(["actions/checkout"]);
+    expect(rebuild).toMatch(/persist-credentials: false/);
+    expect(rebuild).not.toMatch(/\bref:/);
+    // It runs for the same events as the build, so a PR's dry run exercises it too.
+    expect(/\n {4}if: (.*)\n/.exec(rebuild)[1]).toBe(/\n {4}if: (.*)\n/.exec(job("build"))[1]);
+    expect(job("build")).not.toContain("build-linux-x64.sh");
+    expect(job("attest")).toMatch(/\n {4}needs: \[build, sherpa-onnx\]\n/);
   });
 
   it("pins every action to a full commit SHA", () => {
