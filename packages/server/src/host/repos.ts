@@ -1,10 +1,10 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { git, Proc, type ProcShape, realPathSync, WorktreeError } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { redactUrlCredentials } from "./remote-url.ts";
-import { makeKeyedLock } from "../git/keyed-lock.ts";
+import { withCloneLock } from "./clone-lock.ts";
 
 /** How long a clone may take before it is given up. */
 const CLONE_TIMEOUT_MS = 15 * 60_000;
@@ -25,7 +25,9 @@ const SEGMENT = /^[A-Za-z0-9._-]{1,100}$/;
 /** Safe folder naming is deliberately lossy; only `identity` authorizes reuse of an origin. */
 const remoteOf = (
   url: string,
-): { readonly folder: string; readonly identity: string } | { readonly error: string } => {
+):
+  | { readonly folder: string; readonly legacyFolder: string; readonly identity: string }
+  | { readonly error: string } => {
   const refuse = { error: "That remote isn't an https or ssh URL the host clones." };
   if (url.length > 512 || url.startsWith("-") || /[\s\0\\]/.test(url)) return refuse;
   // Never a path that climbs or names itself, which a URL parser would quietly resolve.
@@ -85,9 +87,12 @@ const remoteOf = (
   // Always three levels deep, a group's subgroups joined into the name, so no clone's folder is
   // ever inside another's: `gitlab.com/group/sub/repo` is `gitlab.com/group/sub+repo`.
   const [first, owner, ...name] = segments;
+  const identity = JSON.stringify([transport, host.toLowerCase(), port, user, identityPath]);
+  const legacyFolder = join(first!, owner!, name.join("+"));
   return {
-    folder: join(first!, owner!, name.join("+")),
-    identity: JSON.stringify([transport, host.toLowerCase(), port, user, identityPath]),
+    legacyFolder,
+    folder: `${legacyFolder}+${createHash("sha256").update(identity).digest("hex").slice(0, 16)}`,
+    identity,
   };
 };
 
@@ -120,92 +125,101 @@ export const reposOn = (
 ) => {
   const on = Effect.provideService(Proc, proc);
   const env = { ...HOST_REPO_GIT_ENV, ...extraEnv };
-  /** One clone or fetch at a time per folder, so two workers asking at once share one clone. */
-  const lock = makeKeyedLock<string>();
   const ensure = (url: string): Effect.Effect<{ readonly path: string }, WorktreeError> => {
     const target = remoteOf(url);
     if ("error" in target)
       return Effect.fail(
         new WorktreeError({ reason: "invalidRequest", message: target.error, dirty: false }),
       );
-    const dest = join(root, target.folder);
-    /**
-     * Every folder from `root` down to the clone is a real folder of its own, never a link, so a
-     * clone can't be made, or answered, anywhere outside `root`.
-     */
-    const contained = Effect.sync(() => {
-      let at = root;
-      for (const part of target.folder.split(sep)) {
-        at = join(at, part);
-        const stat = lstatSync(at, { throwIfNoEntry: false });
-        if (stat === undefined) return true;
-        if (stat.isSymbolicLink() || !stat.isDirectory()) return false;
-      }
-      return true;
-    });
-    const outside = new WorktreeError({
-      reason: "conflict",
-      message: `${dest} isn't a folder of its own under ${root}, so nothing is cloned there.`,
-      dirty: false,
-    });
-    return lock.withLock(
-      dest,
-      Effect.gen(function* () {
-        if (!(yield* contained)) return yield* outside;
-        if (existsSync(dest)) {
-          const origin = yield* on(git(dest, ["remote", "get-url", "origin"])).pipe(
-            Effect.mapError((error) => failed(error.message)),
-          );
-          const kept = origin.status === 0 ? remoteOf(origin.stdout.trim()) : undefined;
-          if (kept === undefined || !("folder" in kept) || kept.identity !== target.identity)
-            return yield* new WorktreeError({
-              reason: "conflict",
-              message: `${dest} already holds a different origin. Move that clone or choose a different repository; nothing was fetched.`,
-              dirty: false,
-            });
-          // A fetch that fails leaves the clone as it was: a worker can still start from it.
-          yield* on(
-            git(
-              dest,
-              ["-c", "credential.interactive=false", "fetch", "--quiet", "--prune", "origin"],
-              {
-                timeoutMs: FETCH_TIMEOUT_MS,
-                env,
-              },
-            ),
-          ).pipe(Effect.ignore);
-          return { path: realPathSync(dest) };
+    const ensureIn = (
+      folder: string,
+      legacy: boolean,
+    ): Effect.Effect<{ readonly path: string }, WorktreeError> => {
+      const dest = join(root, folder);
+      /**
+       * Every folder from `root` down to the clone is a real folder of its own, never a link, so a
+       * clone can't be made, or answered, anywhere outside `root`.
+       */
+      const contained = Effect.sync(() => {
+        let at = root;
+        for (const part of folder.split(sep)) {
+          at = join(at, part);
+          const stat = lstatSync(at, { throwIfNoEntry: false });
+          if (stat === undefined) return true;
+          if (stat.isSymbolicLink() || !stat.isDirectory()) return false;
         }
-        mkdirSync(dirname(dest), { recursive: true, mode: 0o700 });
-        const partial = `${dest}.cloning-${randomBytes(4).toString("hex")}`;
-        const clone = Effect.gen(function* () {
-          const cloned = yield* on(
-            git(
-              dirname(dest),
-              ["-c", "credential.interactive=false", "clone", "--quiet", "--", url, partial],
-              { timeoutMs: CLONE_TIMEOUT_MS, env },
-            ),
-          ).pipe(Effect.mapError((error) => failed(error.message)));
-          if (cloned.status !== 0)
-            return yield* failed(`Couldn't clone ${url}: ${cloned.stderr.trim()}`);
+        return true;
+      });
+      const outside = new WorktreeError({
+        reason: "conflict",
+        message: `${dest} isn't a folder of its own under ${root}, so nothing is cloned there.`,
+        dirty: false,
+      });
+      return withCloneLock(
+        dest,
+        Effect.gen(function* () {
           if (!(yield* contained)) return yield* outside;
-          renameSync(partial, dest);
-        });
-        // A clone that failed, overran or was given up leaves no half-made folder behind.
-        yield* clone.pipe(
-          Effect.onExit((exit) =>
-            exit._tag === "Success"
-              ? Effect.void
-              : Effect.sync(() => rmSync(partial, { recursive: true, force: true })),
+          if (existsSync(dest)) {
+            const origin = yield* on(git(dest, ["remote", "get-url", "origin"])).pipe(
+              Effect.mapError((error) => failed(error.message)),
+            );
+            const kept = origin.status === 0 ? remoteOf(origin.stdout.trim()) : undefined;
+            if (kept === undefined || !("folder" in kept) || kept.identity !== target.identity) {
+              // Older hosts used the readable name alone. Leave another identity there untouched,
+              // and give this identity its own stable folder. Hash-folder collisions still refuse.
+              if (legacy) return yield* ensureIn(target.folder, false);
+              return yield* new WorktreeError({
+                reason: "conflict",
+                message: `${dest} already holds a different origin. Move that clone or choose a different repository; nothing was fetched.`,
+                dirty: false,
+              });
+            }
+            // A fetch that fails leaves the clone as it was: a worker can still start from it.
+            yield* on(
+              git(
+                dest,
+                ["-c", "credential.interactive=false", "fetch", "--quiet", "--prune", "origin"],
+                {
+                  timeoutMs: FETCH_TIMEOUT_MS,
+                  env,
+                },
+              ),
+            ).pipe(Effect.ignore);
+            return { path: realPathSync(dest) };
+          }
+          if (legacy) return yield* ensureIn(target.folder, false);
+          mkdirSync(dirname(dest), { recursive: true, mode: 0o700 });
+          const partial = `${dest}.cloning-${randomBytes(4).toString("hex")}`;
+          const clone = Effect.gen(function* () {
+            const cloned = yield* on(
+              git(
+                dirname(dest),
+                ["-c", "credential.interactive=false", "clone", "--quiet", "--", url, partial],
+                { timeoutMs: CLONE_TIMEOUT_MS, env },
+              ),
+            ).pipe(Effect.mapError((error) => failed(error.message)));
+            if (cloned.status !== 0)
+              return yield* failed(`Couldn't clone ${url}: ${cloned.stderr.trim()}`);
+            if (!(yield* contained)) return yield* outside;
+            renameSync(partial, dest);
+          });
+          // A clone that failed, overran or was given up leaves no half-made folder behind.
+          yield* clone.pipe(
+            Effect.onExit((exit) =>
+              exit._tag === "Success"
+                ? Effect.void
+                : Effect.sync(() => rmSync(partial, { recursive: true, force: true })),
+            ),
+          );
+          return { path: realPathSync(dest) };
+        }).pipe(
+          Effect.catchDefect((defect) =>
+            Effect.fail(failed(defect instanceof Error ? defect.message : String(defect))),
           ),
-        );
-        return { path: realPathSync(dest) };
-      }).pipe(
-        Effect.catchDefect((defect) =>
-          Effect.fail(failed(defect instanceof Error ? defect.message : String(defect))),
         ),
-      ),
-    );
+      );
+    };
+    return ensureIn(target.legacyFolder, true);
   };
   return { ensure };
 };
