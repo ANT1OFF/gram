@@ -256,6 +256,12 @@ describe("joined machines over the network", () => {
           release: "1.17.0",
         });
         expect(hosts.list(true)[0]).not.toHaveProperty("onlineSince");
+        // A release that doesn't read as one isn't kept.
+        yield* dialOnce(
+          dial,
+          service(hostId, { protocol: HOST_PROTOCOL_VERSION + 1, release: "<b>1.17</b>" }),
+        );
+        expect(hosts.list(true)[0]).not.toHaveProperty("release");
         // A host from before releases were sent, and short of what this build needs.
         yield* dialOnce(dial, service(hostId, { capabilities: ["files", "git"] }));
         const offline = hosts.list(true)[0]!.offline;
@@ -308,6 +314,14 @@ describe("joined machines over the network", () => {
       hosts.keepOrigin("https://moved.example-tailnet.ts.net");
       yield* Effect.sleep("200 millis");
       expect(hosts.list(true)[0]?.offline).toMatchObject({ kind: "moved" });
+
+      // Access turned off and on again before it redials: its connection was lost then.
+      yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+      yield* online(hosts, hostId);
+      hosts.keepOrigin(undefined);
+      yield* Effect.sleep("200 millis");
+      expect(hosts.list(false)[0]?.offline).toEqual({ kind: "tailscale-off" });
+      expect(hosts.list(true)[0]?.offline).toMatchObject({ kind: "lost" });
 
       // Removed while online: nothing is kept for it.
       yield* Effect.forkScoped(dialOnce(dial, service(hostId)));

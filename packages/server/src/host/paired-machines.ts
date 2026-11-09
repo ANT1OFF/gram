@@ -50,7 +50,10 @@ export type MachineProblem =
    * tailnet who knows its id can send one, so this is only ever shown, never acted on.
    */
   | { readonly kind: "bad-signature"; readonly at: number }
-  /** A dial it signed carried a time this far from this machine's clock: positive when ahead. */
+  /**
+   * A dial it signed carried a time this far from this machine's clock: positive when ahead. An
+   * old dial of its own replayed later reads the same, and is as harmless: only ever shown.
+   */
   | { readonly kind: "clock"; readonly at: number; readonly skewMs: number }
   /**
    * It said hello in another protocol version, or without something this build needs: one of the
@@ -297,7 +300,10 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       }
       if (!verifyConnect(key, claim, claim.signature)) {
-        note(machine.id, { kind: "bad-signature", at });
+        // Anyone can send one, so it never replaces a reason the machine's own key stood behind.
+        const kept = problems.get(machine.id)?.kind;
+        if (kept === undefined || kept === "bad-signature")
+          note(machine.id, { kind: "bad-signature", at });
         return { kind: "refused", status: 401, message: "unauthorized: bad signature" };
       }
       // Checked after the signature, so a forged dial can't spend a real one's nonce.

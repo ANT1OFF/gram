@@ -144,6 +144,8 @@ describe("joined machines", () => {
     dial();
     expect(machines.problemOf(id)).toEqual({ kind: "unconfirmed", at: clock.now() });
     machines.confirm(id);
+    // It came online, which clears that.
+    machines.note(id, undefined);
 
     // Signed by another key, or for another address.
     clock.advance(1000);
@@ -160,6 +162,10 @@ describe("joined machines", () => {
     clock.advance(1000);
     dial(privateKeyFrom(generateHostKey().privateKeyPem), clock.now() + 10 * 60_000);
     expect(machines.problemOf(id)).toMatchObject({ kind: "clock", skewMs: -240_000 });
+
+    // A bad signature anyone could send doesn't replace a reason its own key stood behind.
+    dial(privateKeyFrom(generateHostKey().privateKeyPem));
+    expect(machines.problemOf(id)).toMatchObject({ kind: "clock" });
 
     // A dial with no signature at all is nobody's.
     machines.authorizeConnect(ORIGIN, {});

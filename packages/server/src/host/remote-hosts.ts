@@ -20,6 +20,13 @@ import {
 import { connectHost, type HostConnection, helloMismatch } from "./protocol.ts";
 import { watchedSocket } from "./socket-end.ts";
 
+/** The release a host said it runs, kept only when it reads as a release: it is shown as text. */
+const releaseOf = (hello: HostHello): string | undefined =>
+  hello.release !== undefined &&
+  /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[0-9A-Za-z.]{1,32})?$/.test(hello.release)
+    ? hello.release
+    : undefined;
+
 /** A joined machine's host while it is dialled in. */
 interface Online {
   readonly connection: HostConnection;
@@ -140,6 +147,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                 hello !== undefined && hello.hostId === machine.id
                   ? helloMismatch(hello)
                   : undefined;
+              const release = hello === undefined ? undefined : releaseOf(hello);
               if (generationOf(machine.id) === generation)
                 machines.note(
                   machine.id,
@@ -148,7 +156,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                         kind: "mismatch",
                         at: now(),
                         protocol: hello.protocol,
-                        ...(hello.release === undefined ? {} : { release: hello.release }),
+                        ...(release === undefined ? {} : { release }),
                         ...(mismatch.kind === "capabilities" ? { missing: mismatch.missing } : {}),
                       }
                     : { kind: "no-hello", at: now() },
@@ -160,7 +168,10 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                   hostId: machine.id,
                   ...(mismatch === undefined
                     ? {}
-                    : { protocol: hello?.protocol, release: hello?.release ?? "unknown" }),
+                    : {
+                        protocol: hello?.protocol,
+                        release: release ?? "unknown",
+                      }),
                 }),
               );
               return;
@@ -209,7 +220,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               machine,
               live === undefined
                 ? undefined
-                : { since: live.since, release: live.connection.hello.release },
+                : { since: live.since, release: releaseOf(live.connection.hello) },
               {
                 problem: machines.problemOf(machine.id),
                 ...(tailscale === undefined ? {} : { tailscale }),
@@ -229,9 +240,13 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           for (const machine of machines.list()) {
             const live = online.get(machine.id);
             if (live !== undefined && live.origin === origin) continue;
-            // Onto another address, which it doesn't dial; turned off, the list says so itself.
-            if (live !== undefined && origin !== undefined)
-              machines.note(machine.id, { kind: "moved", at: now() });
+            // Onto another address, which it doesn't dial. Turned off, the list says so itself, and
+            // once it is back on, this connection was lost then.
+            if (live !== undefined)
+              machines.note(machine.id, {
+                kind: origin === undefined ? "lost" : "moved",
+                at: now(),
+              });
             bump(machine.id);
             close(machine.id);
           }
