@@ -69,7 +69,8 @@ export const probeTool = (tool: HostTool["tool"], run: ShellRun = loginShell): P
   run(`command -v ${tool} >/dev/null 2>&1 && ${tool} --version`).then(
     ({ code, stdout }) => {
       if (code !== 0) return { tool, found: false };
-      const version = parseToolVersion(stdout);
+      // Within what the wire takes: one odd `--version` mustn't lose the whole status.
+      const version = parseToolVersion(stdout)?.slice(0, 64);
       return { tool, found: true, ...(version === undefined ? {} : { version }) };
     },
     () => ({ tool, found: false }),
@@ -112,10 +113,13 @@ export const machineSignInTerminal = (hostId: HostId) => ({
 
 /**
  * `terminal.open`'s `signIn`: the Sign in terminal on that joined machine, with nothing else the
- * request could have said about where or what. The line is typed for the user, who runs it.
+ * request could have said about where or what. `machine` must find it as a joined machine's own
+ * host, so a server without their routing refuses rather than opening the shell here. The line is
+ * typed for the user, who runs it.
  */
 export const openSignInTerminal = (
   terminals: Pick<Terminals, "open" | "input">,
+  machine: (id: HostId) => Effect.Effect<{ readonly id: HostId }, unknown>,
   hostId: HostId,
   request: {
     readonly cols: number;
@@ -125,20 +129,33 @@ export const openSignInTerminal = (
     readonly shell?: unknown;
     readonly script?: unknown;
   },
-): Effect.Effect<TerminalOpened, InvalidState | Effect.Error<ReturnType<Terminals["open"]>>> =>
-  request.threadId !== undefined ||
-  request.cwd !== undefined ||
-  request.shell !== undefined ||
-  request.script !== undefined ||
-  hostId === LOCAL_HOST_ID
-    ? Effect.fail(
-        new InvalidState({ message: "A sign-in terminal opens on a joined machine alone." }),
-      )
-    : Effect.gen(function* () {
-        const { typed, ...where } = machineSignInTerminal(hostId);
-        const opened = yield* terminals.open({ ...where, cols: request.cols, rows: request.rows });
-        // Typed, not run: the user reads the line and runs it with Return. The pty holds it
-        // until the shell reads its first line.
-        yield* terminals.input(opened.terminalId, typed).pipe(Effect.ignore);
-        return opened;
-      });
+): Effect.Effect<TerminalOpened, InvalidState | Effect.Error<ReturnType<Terminals["open"]>>> => {
+  const refused = new InvalidState({
+    message: "A sign-in terminal opens on a joined machine alone.",
+  });
+  if (
+    request.threadId !== undefined ||
+    request.cwd !== undefined ||
+    request.shell !== undefined ||
+    request.script !== undefined ||
+    hostId === LOCAL_HOST_ID
+  )
+    return Effect.fail(refused);
+  return Effect.gen(function* () {
+    const host = yield* machine(hostId).pipe(
+      Effect.mapError(
+        () =>
+          new InvalidState({
+            message: "That machine isn't joined and online, so it can't sign in now.",
+          }),
+      ),
+    );
+    if (host.id !== hostId || host.id === LOCAL_HOST_ID) return yield* refused;
+    const { typed, ...where } = machineSignInTerminal(hostId);
+    const opened = yield* terminals.open({ ...where, cols: request.cols, rows: request.rows });
+    // Typed, not run: the user reads the line and runs it with Return. The pty holds it until
+    // the shell reads its first line.
+    yield* terminals.input(opened.terminalId, typed).pipe(Effect.ignore);
+    return opened;
+  });
+};

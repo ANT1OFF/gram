@@ -91,6 +91,11 @@ describe("a machine's Claude sign-in", () => {
       "command -v claude >/dev/null 2>&1 && claude --version",
       "command -v git >/dev/null 2>&1 && git --version",
     ]);
+    // A version too long for the wire is cut, so the rest of the status still arrives.
+    expect(
+      (await probeTool("claude", async () => ({ code: 0, stdout: `1.2.3-${"a".repeat(80)}` })))
+        .version,
+    ).toHaveLength(64);
     // A shell that couldn't run reads as not found, not as a failure.
     expect(await probeTool("git", () => Promise.reject(new Error("no shell")))).toEqual({
       tool: "git",
@@ -117,6 +122,9 @@ describe("a machine's status", () => {
   );
 });
 
+/** Finds every id as its own joined machine, as a server with them does. */
+const joined = (id: HostId) => Effect.succeed({ id });
+
 /** A recording stand-in for the terminals the handler opens on. */
 const fake = () => {
   const calls: Array<{ readonly call: string; readonly args: unknown }> = [];
@@ -136,7 +144,7 @@ describe("the Sign in terminal", () => {
   it.effect("opens a shell on the machine and types the line without running it", () =>
     Effect.gen(function* () {
       const { calls, terminals } = fake();
-      yield* openSignInTerminal(terminals, HostId.make("h1"), { cols: 100, rows: 16 });
+      yield* openSignInTerminal(terminals, joined, HostId.make("h1"), { cols: 100, rows: 16 });
       expect(calls).toEqual([
         { call: "open", args: { hostId: "h1", cwd: "~", cols: 100, rows: 16 } },
         // No Return: the user runs it.
@@ -154,14 +162,34 @@ describe("the Sign in terminal", () => {
         { shell: "/bin/sh" },
         { script: "dev" },
       ]) {
-        const error = yield* openSignInTerminal(terminals, HostId.make("h1"), {
+        const error = yield* openSignInTerminal(terminals, joined, HostId.make("h1"), {
           cols: 1,
           rows: 1,
           ...extra,
         }).pipe(Effect.flip);
         expect(error._tag).toBe("InvalidState");
       }
-      yield* openSignInTerminal(terminals, LOCAL_HOST_ID, { cols: 1, rows: 1 }).pipe(Effect.flip);
+      yield* openSignInTerminal(terminals, joined, LOCAL_HOST_ID, { cols: 1, rows: 1 }).pipe(
+        Effect.flip,
+      );
+      // Without the joined machines' routing, an id it can't find is refused, not opened here.
+      const unrouted = yield* openSignInTerminal(
+        terminals,
+        () => Effect.fail("no machines"),
+        HostId.make("h1"),
+        { cols: 1, rows: 1 },
+      ).pipe(Effect.flip);
+      expect(unrouted._tag).toBe("InvalidState");
+      // A lookup that answers with this machine for it is refused too.
+      yield* openSignInTerminal(
+        terminals,
+        () => Effect.succeed({ id: LOCAL_HOST_ID }),
+        HostId.make("h1"),
+        {
+          cols: 1,
+          rows: 1,
+        },
+      ).pipe(Effect.flip);
       expect(calls).toEqual([]);
     }),
   );
