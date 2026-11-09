@@ -15,6 +15,7 @@ import {
   createPairedMachines,
   fileMachineStore,
   JOIN_LIFETIME_MS,
+  machineView,
   MAX_MACHINES,
   memoryMachineStore,
 } from "./paired-machines.ts";
@@ -89,6 +90,23 @@ describe("joined machines", () => {
     expect(joinOne().result).toMatchObject({ kind: "refused", status: 409 });
   });
 
+  it("refuses reserved local aliases without consuming the invitation", () => {
+    const { machines } = setup();
+    const code = codeOf(machines.mint(ORIGIN).url);
+    const key = generateHostKey();
+    for (const name of ["local", "LOCAL", " local ", "this machine", "This Machine"]) {
+      expect(machines.join(ORIGIN, { code, name, platform: "linux", ...key })).toMatchObject({
+        kind: "refused",
+        status: 400,
+        message: expect.stringContaining("reserved"),
+      });
+      expect(machines.list()).toEqual([]);
+    }
+    expect(machines.join(ORIGIN, { code, name: "build box", platform: "linux", ...key }).kind).toBe(
+      "joined",
+    );
+  });
+
   it("lets a machine dial in only once confirmed, with a fresh dial signed by its own key", () => {
     const { clock, machines, joinOne } = setup();
     const { key, id } = joinOne();
@@ -126,6 +144,106 @@ describe("joined machines", () => {
         expect.objectContaining({ id: hostIdOf(key.publicKey), name: "box", platform: "darwin" }),
       ]);
       expect(statSync(join(dir, "remote-access", "machines.json")).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps why each signed dial was refused, and never a forged one's clock", () => {
+    const { clock, machines, joinOne } = setup();
+    const { key, id } = joinOne();
+    const own = privateKeyFrom(key.privateKeyPem);
+    const dial = (k = own, at = clock.now()) =>
+      machines.authorizeConnect(ORIGIN, signedConnectHeaders(k, ORIGIN, id, at));
+    expect(machines.problemOf(id)).toBeUndefined();
+
+    // Not confirmed yet.
+    dial();
+    expect(machines.problemOf(id)).toEqual({ kind: "unconfirmed", at: clock.now() });
+    machines.confirm(id);
+    // It came online, which clears that.
+    machines.note(id, undefined);
+
+    // Signed by another key, or for another address.
+    clock.advance(1000);
+    dial(privateKeyFrom(generateHostKey().privateKeyPem));
+    expect(machines.problemOf(id)).toEqual({ kind: "bad-signature", at: clock.now() });
+
+    // Its own signed time, three minutes ahead or behind.
+    clock.advance(1000);
+    dial(own, clock.now() + 3 * 60_000);
+    expect(machines.problemOf(id)).toEqual({ kind: "clock", at: clock.now(), skewMs: 180_000 });
+    dial(own, clock.now() - 4 * 60_000);
+    expect(machines.problemOf(id)).toMatchObject({ kind: "clock", skewMs: -240_000 });
+    // An out-of-date dial another key signed says nothing about its clock.
+    clock.advance(1000);
+    dial(privateKeyFrom(generateHostKey().privateKeyPem), clock.now() + 10 * 60_000);
+    expect(machines.problemOf(id)).toMatchObject({ kind: "clock", skewMs: -240_000 });
+
+    // A bad signature anyone could send doesn't replace a reason its own key stood behind.
+    dial(privateKeyFrom(generateHostKey().privateKeyPem));
+    expect(machines.problemOf(id)).toMatchObject({ kind: "clock" });
+
+    // A dial with no signature at all is nobody's.
+    machines.authorizeConnect(ORIGIN, {});
+    expect(machines.problemOf(id)).toMatchObject({ kind: "clock" });
+
+    // Online again clears it; removing the machine forgets it.
+    machines.note(id, undefined);
+    expect(machines.problemOf(id)).toBeUndefined();
+    machines.note(id, { kind: "lost", at: clock.now() });
+    machines.remove(id);
+    expect(machines.problemOf(id)).toBeUndefined();
+    machines.note(id, { kind: "lost", at: clock.now() });
+    expect(machines.problemOf(id)).toBeUndefined();
+  });
+
+  it("says why a machine is offline, and its release while it says one", () => {
+    const { clock, machines, joinOne } = setup();
+    const { id } = joinOne();
+    machines.confirm(id);
+    const machine = machines.get(id)!;
+    expect(machineView(machine, undefined).offline).toEqual({ kind: "never" });
+    expect(machineView(machine, undefined, { tailscale: false }).offline).toEqual({
+      kind: "tailscale-off",
+    });
+    const lost = { kind: "lost", at: clock.now() } as const;
+    expect(machineView(machine, undefined, { problem: lost, tailscale: true }).offline).toEqual(
+      lost,
+    );
+    const online = machineView(machine, { since: 5, release: "1.15.2" }, { problem: lost });
+    expect(online).toMatchObject({ onlineSince: 5, release: "1.15.2" });
+    expect(online).not.toHaveProperty("offline");
+    const mismatch = machineView(machine, undefined, {
+      problem: { kind: "mismatch", at: 1, protocol: 3, release: "1.17.0" },
+    });
+    expect(mismatch).toMatchObject({
+      offline: { kind: "mismatch", protocol: 3 },
+      release: "1.17.0",
+    });
+    // No key and nothing from a dial: only what the page shows.
+    expect(Object.keys(machineView(machine, undefined)).toSorted()).toEqual(
+      ["confirmed", "fingerprint", "id", "joinedAt", "name", "offline", "platform"].toSorted(),
+    );
+  });
+
+  it("keeps where Gram installed a machine over SSH, and only a host to SSH to", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-machines-"));
+    try {
+      const machines = createPairedMachines(fileMachineStore(dir));
+      const key = generateHostKey();
+      const code = codeOf(machines.mint(ORIGIN).url);
+      machines.join(ORIGIN, { code, name: "box", platform: "linux", ...key });
+      const id = hostIdOf(key.publicKey);
+      machines.installedOverSsh(id, "-oProxyCommand=evil");
+      expect(machines.get(id)).not.toHaveProperty("sshTarget");
+      machines.installedOverSsh(id, "me@build-box");
+      expect(createPairedMachines(fileMachineStore(dir)).get(id)).toMatchObject({
+        sshTarget: "me@build-box",
+      });
+      expect(machineView(machines.get(id)!, undefined)).toMatchObject({
+        sshTarget: "me@build-box",
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

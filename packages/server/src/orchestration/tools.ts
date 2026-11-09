@@ -190,6 +190,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       // check, the card and the handler all see.
       resolve: (caller, { userMessages, ...input }) =>
         Effect.gen(function* () {
+          yield* orchestration.checkSpawnMachine(caller, input);
           // The workspace's standing instructions, then the user's words, which stay last.
           const brief = yield* attachUserWords(
             store,

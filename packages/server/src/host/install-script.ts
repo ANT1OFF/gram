@@ -24,15 +24,26 @@ export const installCommand = (origin: string, link: string): string =>
   `curl -fsSL ${origin}/host/install | sh -s -- '${link.replaceAll("'", "")}'`;
 
 /**
+ * The command that updates a machine already joined to this Gram at `origin`: the same installer
+ * with no link, which moves its service to this Gram's release and keeps the join.
+ */
+export const updateCommand = (origin: string): string => `curl -fsSL ${origin}/host/install | sh`;
+
+/**
  * The script, for this Gram at `origin` running release `version` (undefined for a Gram run from
  * source, which has no release to download: then only an app already installed there is used).
  */
 export const installScript = (
   origin: string,
   version: string | undefined,
-  /** The join link, carried in the script itself when Gram runs it over SSH (`ssh-join.ts`). */
-  link?: string,
+  run: {
+    /** The join link, carried in the script itself when Gram runs it over SSH (`ssh-join.ts`). */
+    readonly link?: string;
+    /** Only moves a joined machine's service, run over SSH to update it: it never joins. */
+    readonly update?: boolean;
+  } = {},
 ): string => {
+  const { link } = run;
   if (!ORIGIN.test(origin)) throw new Error("Not an https origin.");
   if (version !== undefined && !VERSION.test(version)) throw new Error("Not a version.");
   if (link !== undefined && !link.startsWith(`${origin}/host/join#code=`))
@@ -47,6 +58,7 @@ ORIGIN='${origin}'
 VERSION='${version ?? ""}'
 RELEASE="${RELEASES}/v$VERSION"
 LINK='${link ?? ""}'
+UPDATE='${run.update === true ? "1" : ""}'
 
 say() { printf 'gram-host: %s\\n' "$*" >&2; }
 die() { say "$*"; exit 1; }
@@ -180,6 +192,10 @@ main() {
   if [ -f "$HOST_HOME/host.json" ] && ! grep -qF "\\"$ORIGIN\\"" "$HOST_HOME/host.json"; then
     die "This machine already joined another Gram. Run \\\`gram-host leave\\\` there first to join $ORIGIN."
   fi
+  # An update finds the machine joined, or changes nothing.
+  if [ -n "$UPDATE" ] && [ ! -f "$HOST_HOME/host.json" ]; then
+    die "This machine hasn't joined $ORIGIN, so there is nothing to update. Add it again in Settings → Machines."
+  fi
 
   ENTRY="$RESOURCES/app.asar/out/server/gram-host.js"
   case "$BIN$ENTRY" in *"'"*) die "Gram's folder has a quote in its path: $BIN" ;; esac
@@ -204,6 +220,8 @@ main() {
     # Already joined: the service moves to this app, and the join stands.
     say "This machine already joined $ORIGIN; moving its service to this app."
     "$SHIM" service install </dev/null
+    # Its fingerprint, which tells the main Gram that ran this over SSH which machine it moved.
+    "$SHIM" status </dev/null || true
     for old in "$APPS"/*; do
       [ -e "$old" ] || continue
       case "$BIN" in "$old"/*) ;; *) rm -rf "$old" ;; esac

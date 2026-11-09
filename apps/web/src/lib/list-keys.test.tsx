@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { listIndexForKey, PAGE_STEP, radioGroupKeyDown } from "./list-keys";
+import { groupStarts, listIndexForKey, PAGE_STEP, radioGroupKeyDown } from "./list-keys";
 
 afterEach(cleanup);
 
@@ -46,6 +46,13 @@ function Group() {
 }
 
 const radio = (name: string) => screen.getByRole("radio", { name });
+
+describe("groupStarts", () => {
+  it("gives each group's first flat index, empty groups included", () => {
+    expect(groupStarts([3, 0, 2, 1])).toEqual([0, 3, 3, 5]);
+    expect(groupStarts([])).toEqual([]);
+  });
+});
 
 describe("radioGroupKeyDown", () => {
   it("moves to and chooses the next option, focusing it, with one Tab stop", () => {

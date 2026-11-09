@@ -33,6 +33,7 @@ import { foregroundOf } from "../ports/pure.ts";
 import { followingSessions } from "./following-sessions.ts";
 import type { HostConnection } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
+import { redactUrlCredentials } from "./remote-url.ts";
 import { cloneFolderOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
@@ -120,7 +121,7 @@ export const machineCheckouts = (
   const originOf = (projectRoot: string) =>
     git(projectRoot, ["remote", "get-url", "origin"]).pipe(
       Effect.provideService(Proc, deps.proc),
-      Effect.mapError((error) => new GitError({ message: error.message })),
+      Effect.mapError((error) => new GitError({ message: redactUrlCredentials(error.message) })),
       Effect.flatMap((out) => {
         const url = out.stdout.trim();
         if (out.status === 0 && url !== "") {
@@ -166,7 +167,7 @@ export const machineCheckouts = (
           .pipe(
             Effect.mapError((error) =>
               error.reason === "failed"
-                ? new GitError({ message: error.message })
+                ? new GitError({ message: redactUrlCredentials(error.message) })
                 : new InvalidState({ message: error.message }),
             ),
           );
@@ -183,7 +184,7 @@ export const machineCheckouts = (
                 ? new CheckoutInUse({ path: repoPath, message: error.message })
                 : error.reason === "invalidRequest"
                   ? new InvalidState({ message: error.message })
-                  : new GitError({ message: error.message }),
+                  : new GitError({ message: redactUrlCredentials(error.message) }),
             ),
           );
         return {
@@ -220,7 +221,7 @@ export const machineCheckouts = (
               Effect.mapError((error) =>
                 error.dirty
                   ? new WorktreeDirty({ path: target.path, changedFiles: 0 })
-                  : new GitError({ message: error.message }),
+                  : new GitError({ message: redactUrlCredentials(error.message) }),
               ),
             );
         }
@@ -271,7 +272,7 @@ export const machineCheckouts = (
                 ? new CheckoutInUse({ path: checkout.path, message: error.message })
                 : error.reason === "invalidRequest"
                   ? new InvalidState({ message: error.message })
-                  : new GitError({ message: error.message }),
+                  : new GitError({ message: redactUrlCredentials(error.message) }),
             ),
           );
       }),
