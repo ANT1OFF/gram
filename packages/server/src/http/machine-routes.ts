@@ -4,10 +4,16 @@ import type * as Exit from "effect/Exit";
 import {
   effectiveCheckout,
   HOST_PROTOCOL_VERSION,
+  HostFailed,
   HostId,
   hostOf,
   LOCAL_HOST_ID,
 } from "@gram/contracts";
+import {
+  type ClaudeTokenCapture,
+  makeClaudeTokenCapture,
+  type StartSetupToken,
+} from "../host/claude-token-capture.ts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import {
   fingerprintOf,
@@ -35,6 +41,17 @@ export const MACHINES_CONFIRM_PATH = "/machines/confirm";
 export const MACHINES_REMOVE_PATH = "/machines/remove";
 export const MACHINES_SSH_HOSTS_PATH = "/machines/ssh-hosts";
 export const MACHINES_SSH_JOIN_PATH = "/machines/ssh-join";
+export const MACHINES_TOKEN_START_PATH = "/machines/claude-token/start";
+export const MACHINES_TOKEN_STATUS_PATH = "/machines/claude-token/status";
+export const MACHINES_TOKEN_CODE_PATH = "/machines/claude-token/code";
+export const MACHINES_TOKEN_CANCEL_PATH = "/machines/claude-token/cancel";
+export const MACHINES_TOKEN_FORGET_PATH = "/machines/claude-token/forget";
+
+/**
+ * What a start must carry to show the person agreed to the consent dialog: a literal, so a call
+ * that merely names machines starts nothing.
+ */
+export const TOKEN_CONSENT = "send-claude-token-to-these-machines";
 export const MACHINES_UPDATE_PATH = "/machines/update";
 /** Asks a machine for its Claude Code sign-in again, as after its Sign in terminal ends. */
 export const MACHINES_CHECK_SIGN_IN_PATH = "/machines/check-sign-in";
@@ -47,9 +64,54 @@ export const MACHINE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
   MACHINES_REMOVE_PATH,
   MACHINES_SSH_HOSTS_PATH,
   MACHINES_SSH_JOIN_PATH,
+  MACHINES_TOKEN_START_PATH,
+  MACHINES_TOKEN_STATUS_PATH,
+  MACHINES_TOKEN_CODE_PATH,
+  MACHINES_TOKEN_CANCEL_PATH,
+  MACHINES_TOKEN_FORGET_PATH,
   MACHINES_UPDATE_PATH,
   MACHINES_CHECK_SIGN_IN_PATH,
 ]);
+
+/**
+ * The capture of `claude setup-token` for this server's joined machines. Each token goes over the
+ * machine's own connection, only to the join the person consented to, and only once the machine
+ * is recorded as one that may hold it (a time, never the token).
+ */
+export const claudeTokenCaptureFor = (hosts: RemoteHostsShape, start?: StartSetupToken) =>
+  makeClaudeTokenCapture({
+    ...(start === undefined ? {} : { start }),
+    send: (id, token) =>
+      hosts.connection(HostId.make(id)).pipe(
+        Effect.mapError((error) => new HostFailed({ message: error.message })),
+        Effect.flatMap((connection) => connection.claude.setToken(token)),
+      ),
+    mark: (id) => hosts.machines.tokenSent(id, true),
+    joinOf: (id) => {
+      const machine = hosts.machines.get(id);
+      return machine?.confirmedAt === undefined
+        ? undefined
+        : `${machine.publicKey}:${machine.joinedAt}:${machine.confirmedAt}`;
+    },
+  });
+
+/** A code the browser shows for `claude setup-token`: printable, short, no control characters. */
+const SIGN_IN_CODE = /^[A-Za-z0-9#._~+/=-]{1,512}$/;
+
+/** Asks the machine to delete its token; true when it answered, whether or not it had one. */
+const forgetOn = (hosts: RemoteHostsShape, id: string) =>
+  hosts.connection(HostId.make(id)).pipe(
+    Effect.flatMap((connection) => connection.claude.forgetToken),
+    Effect.map(() => {
+      try {
+        hosts.machines.tokenSent(id, false);
+      } catch {
+        // Only the record; the machine deleted it.
+      }
+      return true;
+    }),
+    Effect.orElseSucceed(() => false),
+  );
 
 /** What a joining machine's host reaches: answered before any browser auth, by its own rules. */
 export const HOST_PATHS: ReadonlySet<string> = new Set([
@@ -240,6 +302,8 @@ export const machineManagement = (
   appVersion?: string,
   /** `ssh`, for tests. */
   ssh?: string,
+  /** The `claude setup-token` capture; without one, its routes refuse. */
+  capture?: ClaudeTokenCapture,
 ) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -374,15 +438,114 @@ export const machineManagement = (
       case MACHINES_CONFIRM_PATH:
       case MACHINES_REMOVE_PATH: {
         const id = (yield* jsonBody(256))?.["id"];
+        const machine = typeof id === "string" ? hosts.machines.get(id) : undefined;
+        if (typeof id !== "string" || machine === undefined) return refuse("no such machine", 404);
+        if (path === MACHINES_CONFIRM_PATH) {
+          try {
+            hosts.machines.confirm(id);
+          } catch {
+            return json({ message: "The change couldn't be saved." }, 500);
+          }
+          return json(machinesStatus(hosts, remote, appVersion));
+        }
+        /**
+         * Held for the whole removal: no run starts for it and nothing is sent to it, and every
+         * send already in flight is answered first. Then it deletes any token while it can still be
+         * reached, recorded or not (a write whose reply was lost leaves one too), and only then is
+         * it forgotten.
+         */
+        const removal = Effect.gen(function* () {
+          const forgot = yield* forgetOn(hosts, id);
+          const tokenLeft = !forgot && hosts.machines.get(id)?.claudeTokenSetAt !== undefined;
+          try {
+            hosts.remove(HostId.make(id));
+          } catch {
+            return json({ message: "The change couldn't be saved." }, 500);
+          }
+          return json({
+            ...machinesStatus(hosts, remote, appVersion),
+            ...(tokenLeft ? { tokenLeft: true } : {}),
+          });
+        });
+        return yield* capture === undefined
+          ? removal
+          : capture.holding(id, { drop: true }, removal);
+      }
+      case MACHINES_TOKEN_FORGET_PATH: {
+        const id = (yield* jsonBody(256))?.["id"];
         if (typeof id !== "string" || hosts.machines.get(id) === undefined)
           return refuse("no such machine", 404);
-        try {
-          if (path === MACHINES_CONFIRM_PATH) hosts.machines.confirm(id);
-          else hosts.remove(HostId.make(id));
-        } catch {
-          return json({ message: "The change couldn't be saved." }, 500);
-        }
+        const forgot = yield* capture === undefined
+          ? forgetOn(hosts, id)
+          : capture.holding(id, { drop: false }, forgetOn(hosts, id));
+        if (!forgot)
+          return json(
+            {
+              message:
+                "The machine didn't answer, so its token is still there. Try again while it's online, or run `gram-host leave` on it.",
+            },
+            409,
+          );
         return json(machinesStatus(hosts, remote, appVersion));
+      }
+      case MACHINES_TOKEN_START_PATH: {
+        if (capture === undefined) return refuse("forbidden");
+        const body = yield* jsonBody(4096);
+        const ids = body?.["ids"];
+        if (body?.["consent"] !== TOKEN_CONSENT)
+          return json({ message: "Agree to send the token first." }, 400);
+        if (
+          !Array.isArray(ids) ||
+          ids.length === 0 ||
+          ids.length > 16 ||
+          !ids.every((id): id is string => typeof id === "string") ||
+          new Set(ids).size !== ids.length
+        )
+          return json({ message: "Pick the machines to send the token to." }, 400);
+        for (const id of ids) {
+          const machine = hosts.machines.get(id);
+          if (machine === undefined) return refuse("no such machine", 404);
+          if (machine.confirmedAt === undefined)
+            return json({ message: `Confirm ${machine.name} first.` }, 409);
+          if (capture.held(id))
+            return json(
+              {
+                message: `${machine.name} is being removed, or its token deleted. Try again after.`,
+              },
+              409,
+            );
+          if ((yield* hosts.connection(HostId.make(id)).pipe(Effect.exit))._tag === "Failure")
+            return json(
+              { message: `${machine.name} is offline. Pick machines that are online.` },
+              409,
+            );
+        }
+        if (capture.busy())
+          return json(
+            { message: "`claude setup-token` is already running for another sign-in." },
+            409,
+          );
+        return json(yield* capture.begin(ids));
+      }
+      case MACHINES_TOKEN_STATUS_PATH:
+      case MACHINES_TOKEN_CODE_PATH:
+      case MACHINES_TOKEN_CANCEL_PATH: {
+        if (capture === undefined) return refuse("forbidden");
+        const body = yield* jsonBody(1024);
+        const captureId = body?.["captureId"];
+        if (typeof captureId !== "string") return refuse("bad request", 400);
+        if (path === MACHINES_TOKEN_STATUS_PATH) {
+          const view = capture.view(captureId);
+          return view === undefined ? refuse("no such sign-in", 404) : json(view);
+        }
+        if (path === MACHINES_TOKEN_CANCEL_PATH)
+          return json({ cancelled: capture.cancel(captureId) });
+        const code = body?.["code"];
+        if (typeof code !== "string" || !SIGN_IN_CODE.test(code.trim()))
+          return json({ message: "That isn't a code from the sign-in page." }, 400);
+        return capture.answer(captureId, code.trim())
+          ? json({ sent: true })
+          : json({ message: "It isn't waiting for a code." }, 409);
       }
       default:
         return refuse("forbidden");

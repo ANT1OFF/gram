@@ -717,4 +717,16 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.sessions.reload", {
     payload: { agent: AgentKind, reload: HostAgentReload },
   }),
+  /**
+   * Keeps a token the user ran `claude setup-token` for on the main machine, and consented to send
+   * to this one, owner-only in the host's folder: its new Claude sessions sign in with it. The
+   * payload is `Redacted`, so a log or error that prints it shows `<redacted>`. A host built before
+   * this answers with an unknown-request defect.
+   */
+  Rpc.make("host.claude.setToken", {
+    payload: { token: Schema.RedactedFromValue(Schema.String) },
+    error: HostFailed,
+  }),
+  /** Deletes the kept token; true when there was one. */
+  Rpc.make("host.claude.forgetToken", { success: Schema.Boolean, error: HostFailed }),
 );

@@ -37,9 +37,10 @@ pick another. The menu marks a machine that is offline or whose Claude Code isn'
   the main machine ([phone access](REMOTE_ACCESS.md)). **Add a machine** turns it on for you when
   it is off, or lists what Tailscale still needs on this computer. The joined machine dials the same
   `https://<device>.<tailnet>.ts.net` address a paired phone opens.
-- Git on the new machine, and Claude Code signed in there for its sessions (see
-  [Sign in on a machine](#sign-in-on-a-machine)). Nothing else: the join command uses the Gram app
-  on that machine, or downloads this Gram's release (macOS on Apple silicon, Linux on x64) into the
+- Git on the new machine, and Claude Code signed in there for its sessions: its own
+  `claude /login` (see [Sign in on a machine](#sign-in-on-a-machine)), or a token from this machine
+  ([below](#a-claude-token-from-this-machine)). Nothing else: the join command uses the Gram app on
+  that machine, or downloads this Gram's release (macOS on Apple silicon, Linux on x64) into the
   host's folder.
 
 ## Join a machine
@@ -206,6 +207,32 @@ falls back to running on this machine.
 
 Terminals aren't brought back: the shell, what ran in it and its scrollback ended with the host, so
 open a new one.
+
+## A Claude token from this machine
+
+Instead of `claude /login` on each joined machine, Settings → Machines → **Use a token from this
+Mac** runs `claude setup-token` here and sends the token it prints to the machines you tick.
+
+- **Your consent, each time.** The dialog says what happens before anything runs. Only the machine
+  you started from is ticked, and only confirmed machines that are online can be picked. A token
+  is never queued for a machine that is offline.
+- **Never shown or kept here.** Gram reads the token from the command's output on this machine and
+  sends it over each machine's own connection to this Gram. The page never sees the output. Gram
+  doesn't save, log or show the token.
+- **Owner-only there.** Each machine keeps the token in `claude-oauth-token` in its host's folder
+  (mode `0600`), and sets `CLAUDE_CODE_OAUTH_TOKEN` only for the Claude sessions `gram-host`
+  starts. It never goes in a shell profile or the service's unit or plist. While it is there, it
+  takes the place of that machine's own `claude /login`.
+- **Removing it.** **Forget token**, **Remove** and `gram-host leave` each delete it from the
+  machine. A machine that is offline when you remove it keeps the token until you run
+  `gram-host leave` there.
+- **Revoking it.** The token lasts a year and only makes model requests: no claude.ai connectors
+  or Remote Control there. Deleting it doesn't revoke it. Revoke it at claude.ai → Settings →
+  Claude Code.
+
+Gram runs the `claude` your login shell finds, as a terminal would, but starts it directly
+and without debugger, preload or request-logging settings. The
+[design note](design/machine-setup-token.md) covers the threat model.
 
 ## Its repositories
 

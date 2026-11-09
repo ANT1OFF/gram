@@ -152,3 +152,89 @@ export const toolSearchOn = (
   const base = read("ANTHROPIC_BASE_URL");
   return base === "" || anthropicHost(base);
 };
+
+/**
+ * What a process that holds a `claude setup-token` token must not inherit: anything that could
+ * attach a debugger or inspector (`NODE_OPTIONS`, `--inspect`, Bun's inspector), preload code into
+ * it (`LD_PRELOAD`, `DYLD_*`, `BASH_ENV`), log its requests and their headers (`NODE_DEBUG`,
+ * `DEBUG`, `ANTHROPIC_LOG`), or let its TLS be read or bypassed (`SSLKEYLOGFILE`,
+ * `NODE_TLS_REJECT_UNAUTHORIZED`). Proxies and extra CA certificates stay: the CLI may need them,
+ * and they see only TLS it verified.
+ */
+const TOKEN_CHILD_STRIP_EXACT = new Set([
+  "NODE_OPTIONS",
+  "NODE_DEBUG",
+  "NODE_V8_COVERAGE",
+  "NODE_TLS_REJECT_UNAUTHORIZED",
+  "NODE_REPL_EXTERNAL_MODULE",
+  "NODE_PRESERVE_SYMLINKS",
+  "BUN_OPTIONS",
+  "BUN_CONFIG_VERBOSE_FETCH",
+  "SSLKEYLOGFILE",
+  "BASH_ENV",
+  "ENV",
+  "ANTHROPIC_LOG",
+  "DEBUG",
+  "ELECTRON_RUN_AS_NODE",
+  "LD_PRELOAD",
+  "LD_AUDIT",
+  "LD_LIBRARY_PATH",
+  // The Agent SDK's and Claude Code's own debug, recording and raw-logging switches: the SDK turns
+  // `DEBUG_CLAUDE_AGENT_SDK` into `DEBUG=1` for the child after Gram builds its env.
+  "CLAUDE_DEBUG",
+  "CLAUDE_CODE_TEE_SDK_STDOUT",
+  "CLAUDE_CODE_TERMINAL_RECORDING",
+  "CLAUDE_CODE_SESSION_LOG",
+  "CLAUDE_CODE_PERFETTO_TRACE",
+  "CLAUDE_CODE_FRAME_TIMING_LOG",
+  "CLAUDE_PTY_RECORD",
+  "OTEL_LOG_RAW_API_BODIES",
+  "VCR_RECORD",
+]);
+const TOKEN_CHILD_STRIP_PREFIXES = [
+  "NODE_INSPECT",
+  "BUN_INSPECT",
+  "DYLD_",
+  "DEBUG_",
+  "CLAUDE_CODE_DEBUG",
+];
+
+/** Whether a token-bearing child must not inherit `name` (`TOKEN_CHILD_STRIP_EXACT`). */
+export const isTokenChildStripped = (name: string): boolean => {
+  const key = name.toUpperCase();
+  return (
+    TOKEN_CHILD_STRIP_EXACT.has(key) ||
+    TOKEN_CHILD_STRIP_PREFIXES.some((prefix) => key.startsWith(prefix))
+  );
+};
+
+/**
+ * `env` for a process that will hold a `claude setup-token` token: without the debugger, preload,
+ * request-logging and TLS-bypass settings (`isTokenChildStripped`), and without any OAuth token
+ * already in it, which the caller sets itself when it means to.
+ */
+export const tokenChildEnv = (
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined || isTokenChildStripped(name)) continue;
+    if (name.toUpperCase().startsWith("CLAUDE_CODE_OAUTH_TOKEN")) continue;
+    out[name] = value;
+  }
+  return out;
+};
+
+/**
+ * The env a Claude child is finally spawned with, after the Agent SDK has added its own settings:
+ * when it carries an OAuth token, the token-child policy again (`tokenChildEnv`), so nothing the
+ * SDK set (such as `DEBUG`) reaches the process that holds it. The token itself is kept.
+ */
+export const spawnEnvFor = (
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined> => {
+  const token = env["CLAUDE_CODE_OAUTH_TOKEN"];
+  return token === undefined || token === ""
+    ? { ...env }
+    : { ...tokenChildEnv(env), CLAUDE_CODE_OAUTH_TOKEN: token };
+};

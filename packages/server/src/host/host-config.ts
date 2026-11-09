@@ -27,7 +27,8 @@ export interface HostConfig {
 
 /**
  * The host's own folder: `GRAM_HOST_HOME` when set, otherwise Application Support on a Mac and the
- * XDG config folder on Linux. It holds `host.json` and the private key `host-key.pem`.
+ * XDG config folder on Linux. It holds `host.json`, the private key `host-key.pem`
+ * and, when the user sent one, the Claude token `claude-oauth-token`.
  */
 export const hostHome = (env: NodeJS.ProcessEnv = process.env, home = homedir()): string => {
   const set = env["GRAM_HOST_HOME"];
@@ -53,6 +54,14 @@ export const hostRepos = (env: NodeJS.ProcessEnv = process.env, home = homedir()
 
 const CONFIG = "host.json";
 const KEY = "host-key.pem";
+/** A token from `claude setup-token` the user sent from the main machine; never anything else. */
+export const CLAUDE_TOKEN = "claude-oauth-token";
+
+/**
+ * What `claude setup-token` prints: `sk-ant-oat`, a two-digit version, then base64url. Anything
+ * else is refused, so the file can't be made to carry another kind of key.
+ */
+export const CLAUDE_TOKEN_SHAPE = /^sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,1000}$/;
 
 const ownedPrivate = (path: string, directory: boolean) => {
   const stat = lstatSync(path);
@@ -136,8 +145,40 @@ export const writeJoined = (home: string, config: HostConfig, privateKeyPem: str
   writePrivate(home, CONFIG, `${JSON.stringify(config, null, 2)}\n`);
 };
 
-/** Forgets the join: the config and the key. The folder and its logs stay. */
+/** Forgets the join: the config, the key and any Claude token. The folder and its logs stay. */
 export const forgetJoined = (home: string) => {
+  forgetClaudeToken(home);
   rmSync(join(home, CONFIG), { force: true });
   rmSync(join(home, KEY), { force: true });
+};
+
+/** The refusal for a token that isn't `CLAUDE_TOKEN_SHAPE`; it never quotes what it was given. */
+export const NOT_A_CLAUDE_TOKEN = "That isn't a token from `claude setup-token`.";
+
+/** Keeps `token` owner-only in `home`, replacing any kept before. */
+export const writeClaudeToken = (home: string, token: string) => {
+  if (!CLAUDE_TOKEN_SHAPE.test(token)) throw new Error(NOT_A_CLAUDE_TOKEN);
+  writePrivate(home, CLAUDE_TOKEN, `${token}\n`);
+};
+
+/**
+ * The kept token, or undefined when there is none or the file doesn't hold one. A file that isn't
+ * private to this user throws, naming only its path.
+ */
+export const readClaudeToken = (home: string): string | undefined => {
+  const token = readPrivate(home, CLAUDE_TOKEN)?.trim();
+  return token !== undefined && CLAUDE_TOKEN_SHAPE.test(token) ? token : undefined;
+};
+
+/** Deletes the kept token; true when there was a file to delete. */
+export const forgetClaudeToken = (home: string): boolean => {
+  const path = join(home, CLAUDE_TOKEN);
+  let there = true;
+  try {
+    lstatSync(path);
+  } catch {
+    there = false;
+  }
+  rmSync(path, { force: true });
+  return there;
 };

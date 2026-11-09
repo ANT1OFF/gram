@@ -46,8 +46,8 @@ const USAGE = `gram-host: run this machine's work for a Gram on another machine,
   gram-host service install | uninstall | status
   gram-host status       What this machine joined, its fingerprint and the service's state.
   gram-host leave [--no-service]
-      Stop the service and forget the join and its key. With --no-service, for a machine that
-      joined with --no-service, it forgets them without stopping a service.
+      Stop the service and forget the join, its key and any Claude token. With --no-service, for
+      a machine that joined with --no-service, it forgets them without stopping a service.
 
 GRAM_HOST_HOME sets the folder the host keeps its join and key in, and GRAM_HOST_REPOS the one
 it clones repositories into for the workers placed on it (by default, repos in GRAM_HOST_HOME).`;
