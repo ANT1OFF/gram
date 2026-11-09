@@ -53,16 +53,26 @@ export type ConnectResult =
   | { readonly kind: "ok"; readonly machine: PairedMachine }
   | { readonly kind: "refused"; readonly status: 401 | 403 | 503; readonly message: string };
 
-/** An accepted dial's nonce, and when its dial falls out of the acceptance window. */
+/** An accepted dial's nonce, and the last moment its dial is in the acceptance window. */
 export type DialNonce = readonly [nonce: string, until: number];
 
 /**
- * The nonces of dials accepted within their window, kept across restarts: a dial's signed headers
- * replayed after the main Gram restarts would otherwise be taken as new.
+ * The accepted dials' nonces still in their window, and `floor`: the latest signed time of any
+ * nonce let go (or that couldn't be read), at or before which no dial is taken, so a clock set
+ * back can't bring a forgotten dial back into its window.
+ */
+export interface DialNonces {
+  readonly nonces: ReadonlyArray<DialNonce>;
+  readonly floor: number;
+}
+
+/**
+ * The accepted dials' nonces, kept across restarts: a dial's signed headers replayed after the
+ * main Gram restarts would otherwise be taken as new.
  */
 export interface DialNonceStore {
-  readonly read: () => DialNonce[];
-  readonly write: (nonces: ReadonlyArray<DialNonce>) => void;
+  readonly read: () => DialNonces;
+  readonly write: (nonces: DialNonces) => void;
 }
 
 const NAME = /^[\p{L}\p{N} ._'-]{1,64}$/u;
@@ -128,29 +138,30 @@ export const fileNonceStore = (dataDir: string): DialNonceStore => {
   return {
     read: () => {
       const value = file.read();
-      if (value === undefined) return [];
+      if (value === undefined) return { nonces: [], floor: 0 };
       const record = value as Record<string, unknown> | null;
       if (
         typeof record !== "object" ||
         record === null ||
         record["version"] !== 1 ||
+        !Number.isSafeInteger(record["floor"]) ||
         !Array.isArray(record["nonces"]) ||
         record["nonces"].length > NONCES_KEPT ||
         !record["nonces"].every(isNonce)
       )
         throw new Error("Dial nonce storage is invalid");
-      return record["nonces"] as DialNonce[];
+      return { nonces: record["nonces"] as DialNonce[], floor: record["floor"] as number };
     },
-    write: (nonces) => file.write({ version: 1, nonces }),
+    write: ({ nonces, floor }) => file.write({ version: 1, floor, nonces }),
   };
 };
 
-export const memoryNonceStore = (initial: ReadonlyArray<DialNonce> = []) => {
-  let nonces = [...initial];
+export const memoryNonceStore = (initial: DialNonces = { nonces: [], floor: 0 }) => {
+  let kept = initial;
   return {
-    read: () => [...nonces],
-    write: (next: ReadonlyArray<DialNonce>) => {
-      nonces = [...next];
+    read: () => kept,
+    write: (next: DialNonces) => {
+      kept = { nonces: [...next.nonces], floor: next.floor };
     },
   } satisfies DialNonceStore;
 };
@@ -179,16 +190,16 @@ export const createPairedMachines = (
   let invitation: { code: string; origin: string; expiresAt: number } | undefined;
   /** Recent dials' nonces with when they stop mattering, as the last run left them. */
   const nonces = new Map<string, number>();
-  /**
-   * Until when every dial is refused, when the last run's nonces can't be read: by then any dial
-   * it accepted is out of its window, so none of them can be replayed.
-   */
-  let refuseUntil = 0;
+  /** No dial signed at or before this is taken: see `DialNonces`. */
+  let floor = 0;
   try {
-    const at = now();
-    for (const [nonce, until] of nonceStore.read()) if (until > at) nonces.set(nonce, until);
+    const kept = nonceStore.read();
+    floor = kept.floor;
+    for (const [nonce, until] of kept.nonces) nonces.set(nonce, until);
   } catch {
-    refuseUntil = now() + 2 * CONNECT_SKEW_MS;
+    // The last run's nonces are unknown, but any dial it accepted was signed at most the skew
+    // ahead of now (unless the clock was set back since): none of those is taken.
+    floor = now() + CONNECT_SKEW_MS;
   }
   const save = (next: PairedMachine[]) => {
     store.write(next);
@@ -217,13 +228,19 @@ export const createPairedMachines = (
    */
   const record = (nonce: string, until: number): "ok" | "replayed" | "full" | "unsaved" => {
     const at = now();
-    for (const [kept, expires] of nonces) if (expires <= at) nonces.delete(kept);
+    // Let go once past their window, which the skew check refuses, and the floor raised past
+    // them, so a clock set back later doesn't bring them into it again.
+    for (const [kept, expires] of nonces)
+      if (expires < at) {
+        nonces.delete(kept);
+        floor = Math.max(floor, expires - CONNECT_SKEW_MS);
+      }
     if (nonces.has(nonce)) return "replayed";
     if (nonces.size >= NONCES_KEPT) return "full";
     // Kept in memory even when saving fails, so this run still refuses its replay.
     nonces.set(nonce, until);
     try {
-      nonceStore.write([...nonces]);
+      nonceStore.write({ nonces: [...nonces], floor });
     } catch {
       return "unsaved";
     }
@@ -306,12 +323,14 @@ export const createPairedMachines = (
       if (machine === undefined || key === undefined)
         return { kind: "refused", status: 401, message: "unauthorized: machine not joined" };
       const at = now();
-      if (at < refuseUntil)
-        return { kind: "refused", status: 503, message: "unavailable: dial again shortly" };
-      if (Math.abs(at - claim.time) > CONNECT_SKEW_MS)
+      if (Math.abs(at - claim.time) > CONNECT_SKEW_MS || claim.time <= floor)
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       if (!verifyConnect(key, claim, claim.signature))
         return { kind: "refused", status: 401, message: "unauthorized: bad signature" };
+      // Before its nonce is kept: a machine not confirmed yet neither spends the dials' room nor
+      // writes them, and its replay is refused all the same.
+      if (machine.confirmedAt === undefined)
+        return { kind: "refused", status: 403, message: "forbidden: confirm this machine first" };
       // Checked after the signature, so a forged dial can't spend a real one's nonce.
       const nonce = record(claim.nonce, claim.time + CONNECT_SKEW_MS);
       if (nonce === "replayed")
@@ -321,8 +340,6 @@ export const createPairedMachines = (
       // Unsaved, it could be replayed after a restart: refused rather than taken on that risk.
       if (nonce === "unsaved")
         return { kind: "refused", status: 503, message: "unavailable: dial couldn't be recorded" };
-      if (machine.confirmedAt === undefined)
-        return { kind: "refused", status: 403, message: "forbidden: confirm this machine first" };
       return { kind: "ok", machine };
     },
   };

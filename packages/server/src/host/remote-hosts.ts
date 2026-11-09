@@ -33,20 +33,20 @@ interface Online {
 }
 
 /** A store, made on first write: a Gram no machine joined never makes the file or its folder. */
-const lazyFileStore = <A>(
+const lazyFileStore = <R, W>(
   dataDir: string,
   name: string,
-  make: (dataDir: string) => {
-    readonly read: () => A[];
-    readonly write: (all: ReadonlyArray<A>) => void;
-  },
+  make: (dataDir: string) => { readonly read: () => R; readonly write: (value: W) => void },
+  empty: () => R,
 ) => {
   let store: ReturnType<typeof make> | undefined;
   const real = () => (store ??= make(dataDir));
   return {
-    read: (): A[] =>
-      store === undefined && !existsSync(join(dataDir, "remote-access", name)) ? [] : real().read(),
-    write: (all: ReadonlyArray<A>) => real().write(all),
+    read: (): R =>
+      store === undefined && !existsSync(join(dataDir, "remote-access", name))
+        ? empty()
+        : real().read(),
+    write: (value: W) => real().write(value),
   };
 };
 
@@ -235,9 +235,12 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
     Effect.gen(function* () {
       const { dataDir } = yield* ServerConfig;
       return yield* RemoteHosts.make(
-        lazyFileStore(dataDir, "machines.json", fileMachineStore),
+        lazyFileStore(dataDir, "machines.json", fileMachineStore, () => []),
         Date.now,
-        lazyFileStore(dataDir, "dial-nonces.json", fileNonceStore),
+        lazyFileStore(dataDir, "dial-nonces.json", fileNonceStore, () => ({
+          nonces: [],
+          floor: 0,
+        })),
       );
     }),
   );

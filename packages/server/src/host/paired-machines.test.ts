@@ -13,12 +13,14 @@ import {
 } from "./machine-keys.ts";
 import {
   createPairedMachines,
-  type DialNonce,
+  type DialNonces,
   fileMachineStore,
   fileNonceStore,
   JOIN_LIFETIME_MS,
   MAX_MACHINES,
   memoryMachineStore,
+  memoryNonceStore,
+  type PairedMachines,
 } from "./paired-machines.ts";
 
 const ORIGIN = "https://main.example-tailnet.ts.net";
@@ -36,6 +38,23 @@ const setup = () => {
     return { key, result, id: hostIdOf(key.publicKey) };
   };
   return { clock, machines, joinOne };
+};
+
+/** A machine joined to `machines` and confirmed, with the key it signs with. */
+const confirmedMachine = (machines: PairedMachines) => {
+  const key = generateHostKey();
+  const id = hostIdOf(key.publicKey);
+  const code = codeOf(machines.mint(ORIGIN).url);
+  machines.join(ORIGIN, { code, name: "box", platform: "linux", ...key });
+  machines.confirm(id);
+  return { id, own: privateKeyFrom(key.privateKeyPem) };
+};
+
+/** One machine store and clock across restarts, with the nonces the runs share. */
+const restartable = () => {
+  let time = 1_000_000;
+  const clock = { now: () => time, advance: (ms: number) => (time += ms) };
+  return { clock, store: memoryMachineStore(), nonces: memoryNonceStore() };
 };
 
 describe("machine keys", () => {
@@ -116,93 +135,152 @@ describe("joined machines", () => {
   // Joined-machines audit A2: a dial's signed headers replayed after the main Gram restarted,
   // within their two minutes, were taken as a new dial, as the nonces lived only in memory.
   it("refuses a dial replayed after the main Gram restarts within its window", () => {
-    let time = 1_000_000;
-    const now = () => time;
-    const store = memoryMachineStore();
-    let kept: ReadonlyArray<DialNonce> = [];
-    const nonces = {
-      read: () => [...kept],
-      write: (next: ReadonlyArray<DialNonce>) => (kept = next),
-    };
-    const before = createPairedMachines(store, now, nonces);
-    const key = generateHostKey();
-    const id = hostIdOf(key.publicKey);
-    before.join(ORIGIN, {
-      code: codeOf(before.mint(ORIGIN).url),
-      name: "box",
-      platform: "linux",
-      ...key,
-    });
-    before.confirm(id);
-    const own = privateKeyFrom(key.privateKeyPem);
-    const headers = signedConnectHeaders(own, ORIGIN, id, time);
+    const { clock, store, nonces } = restartable();
+    const before = createPairedMachines(store, clock.now, nonces);
+    const { id, own } = confirmedMachine(before);
+    const headers = signedConnectHeaders(own, ORIGIN, id, clock.now());
     expect(before.authorizeConnect(ORIGIN, headers).kind).toBe("ok");
     expect(before.authorizeConnect(ORIGIN, headers)).toMatchObject({
       message: "unauthorized: dial replayed",
     });
 
-    time += 30_000;
-    const after = createPairedMachines(store, now, nonces);
+    clock.advance(30_000);
+    const after = createPairedMachines(store, clock.now, nonces);
     expect(after.authorizeConnect(ORIGIN, headers)).toMatchObject({
       kind: "refused",
       message: "unauthorized: dial replayed",
     });
     // A fresh dial still gets in, and nonces past their window aren't kept.
-    expect(after.authorizeConnect(ORIGIN, signedConnectHeaders(own, ORIGIN, id, time)).kind).toBe(
-      "ok",
-    );
-    time += 2 * CONNECT_SKEW_MS;
-    createPairedMachines(store, now, nonces).authorizeConnect(
+    expect(
+      after.authorizeConnect(ORIGIN, signedConnectHeaders(own, ORIGIN, id, clock.now())).kind,
+    ).toBe("ok");
+    clock.advance(2 * CONNECT_SKEW_MS);
+    createPairedMachines(store, clock.now, nonces).authorizeConnect(
       ORIGIN,
-      signedConnectHeaders(own, ORIGIN, id, time),
+      signedConnectHeaders(own, ORIGIN, id, clock.now()),
     );
-    expect(kept).toHaveLength(1);
+    expect(nonces.read().nonces).toHaveLength(1);
   });
 
-  it("refuses dials while it can't know which were accepted before it restarted", () => {
-    let time = 1_000_000;
-    const now = () => time;
-    const store = memoryMachineStore();
-    const first = createPairedMachines(store, now);
-    const key = generateHostKey();
-    const id = hostIdOf(key.publicKey);
-    first.join(ORIGIN, {
-      code: codeOf(first.mint(ORIGIN).url),
-      name: "box",
-      platform: "linux",
-      ...key,
-    });
-    first.confirm(id);
-    const own = privateKeyFrom(key.privateKeyPem);
-    let saved: ReadonlyArray<DialNonce> = [];
+  // Review of #324: the skew check takes a dial exactly two minutes old, but its nonce was let
+  // go at that moment, in memory and on a restart.
+  it("refuses a replay at the last moment of its window, restarted or not", () => {
+    const { clock, store, nonces } = restartable();
+    const machines = createPairedMachines(store, clock.now, nonces);
+    const { id, own } = confirmedMachine(machines);
+    const headers = signedConnectHeaders(own, ORIGIN, id, clock.now());
+    expect(machines.authorizeConnect(ORIGIN, headers).kind).toBe("ok");
+    clock.advance(CONNECT_SKEW_MS);
+    expect(machines.authorizeConnect(ORIGIN, headers)).toMatchObject({ kind: "refused" });
+    const again = createPairedMachines(store, clock.now, nonces);
+    expect(again.authorizeConnect(ORIGIN, headers)).toMatchObject({ kind: "refused" });
+  });
+
+  // Review of #324: with the clock moved forward a nonce was let go; set back, its dial was in
+  // its window again and was taken, before and after a restart.
+  it("refuses a replay a clock set back brings into its window again", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-machines-"));
+    try {
+      let time = 1_000_000;
+      const now = () => time;
+      const machines = createPairedMachines(fileMachineStore(dir), now, fileNonceStore(dir));
+      const key = generateHostKey();
+      const id = hostIdOf(key.publicKey);
+      const code = codeOf(machines.mint(ORIGIN).url);
+      machines.join(ORIGIN, { code, name: "box", platform: "linux", ...key });
+      machines.confirm(id);
+      const own = privateKeyFrom(key.privateKeyPem);
+      const headers = signedConnectHeaders(own, ORIGIN, id, time);
+      expect(machines.authorizeConnect(ORIGIN, headers).kind).toBe("ok");
+      time += CONNECT_SKEW_MS + 1;
+      expect(
+        machines.authorizeConnect(ORIGIN, signedConnectHeaders(own, ORIGIN, id, time)).kind,
+      ).toBe("ok");
+      time = 1_000_000 + 30_000;
+      expect(machines.authorizeConnect(ORIGIN, headers)).toMatchObject({ kind: "refused" });
+      const again = createPairedMachines(fileMachineStore(dir), now, fileNonceStore(dir));
+      expect(again.authorizeConnect(ORIGIN, headers)).toMatchObject({ kind: "refused" });
+      // A fresh dial gets in again once the clock is past every nonce it let go.
+      time = 1_000_000 + CONNECT_SKEW_MS + 2;
+      expect(again.authorizeConnect(ORIGIN, signedConnectHeaders(own, ORIGIN, id, time)).kind).toBe(
+        "ok",
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses dials signed before it can know which were accepted, when it can't read them", () => {
+    const { clock, store } = restartable();
+    const first = createPairedMachines(store, clock.now);
+    const { id, own } = confirmedMachine(first);
+    // Taken by the run before, signed as far ahead as the skew allows.
+    const ahead = signedConnectHeaders(own, ORIGIN, id, clock.now() + CONNECT_SKEW_MS);
+    expect(first.authorizeConnect(ORIGIN, ahead).kind).toBe("ok");
+    const saved = memoryNonceStore();
     const unreadable = {
-      read: (): DialNonce[] => {
+      read: (): DialNonces => {
         throw new Error("Dial nonce storage is invalid");
       },
-      write: (next: ReadonlyArray<DialNonce>) => (saved = next),
+      write: saved.write,
     };
-    const machines = createPairedMachines(store, now, unreadable);
+    const machines = createPairedMachines(store, clock.now, unreadable);
     const dial = () =>
-      machines.authorizeConnect(ORIGIN, signedConnectHeaders(own, ORIGIN, id, time));
-    expect(dial()).toMatchObject({ kind: "refused", status: 503 });
-    time += 2 * CONNECT_SKEW_MS - 1;
-    expect(dial()).toMatchObject({ kind: "refused", status: 503 });
-    time += 1;
+      machines.authorizeConnect(ORIGIN, signedConnectHeaders(own, ORIGIN, id, clock.now()));
+    expect(dial()).toMatchObject({ kind: "refused" });
+    clock.advance(CONNECT_SKEW_MS);
+    expect(dial()).toMatchObject({ kind: "refused" });
+    // The other edge of that dial's window: it is still refused.
+    clock.advance(CONNECT_SKEW_MS);
+    expect(machines.authorizeConnect(ORIGIN, ahead)).toMatchObject({ kind: "refused" });
     expect(dial().kind).toBe("ok");
-    expect(saved).toHaveLength(1);
+    expect(saved.read().nonces).toHaveLength(1);
 
     // A nonce that can't be saved refuses its dial, and its replay in this run too.
-    const unsaved = createPairedMachines(store, now, {
-      read: () => [],
+    const unsaved = createPairedMachines(store, clock.now, {
+      read: () => ({ nonces: [], floor: 0 }),
       write: () => {
         throw new Error("disk full");
       },
     });
-    const headers = signedConnectHeaders(own, ORIGIN, id, time);
+    const headers = signedConnectHeaders(own, ORIGIN, id, clock.now());
     expect(unsaved.authorizeConnect(ORIGIN, headers)).toMatchObject({ status: 503 });
     expect(unsaved.authorizeConnect(ORIGIN, headers)).toMatchObject({
       message: "unauthorized: dial replayed",
     });
+  });
+
+  // Review of #324: a machine not confirmed yet could fill the dials' room, and have each of its
+  // refused dials written to disk.
+  it("keeps no nonce for a machine not confirmed yet", () => {
+    const { clock, store } = restartable();
+    let writes = 0;
+    const kept = memoryNonceStore();
+    const nonces = {
+      read: kept.read,
+      write: (next: DialNonces) => {
+        writes += 1;
+        kept.write(next);
+      },
+    };
+    const machines = createPairedMachines(store, clock.now, nonces);
+    const { id: trusted, own: trustedKey } = confirmedMachine(machines);
+    const key = generateHostKey();
+    const id = hostIdOf(key.publicKey);
+    const code = codeOf(machines.mint(ORIGIN).url);
+    machines.join(ORIGIN, { code, name: "new box", platform: "linux", ...key });
+    const own = privateKeyFrom(key.privateKeyPem);
+    for (let i = 0; i < 4096; i++)
+      expect(
+        machines.authorizeConnect(ORIGIN, signedConnectHeaders(own, ORIGIN, id, clock.now())),
+      ).toMatchObject({ status: 403 });
+    expect(writes).toBe(0);
+    expect(
+      machines.authorizeConnect(
+        ORIGIN,
+        signedConnectHeaders(trustedKey, ORIGIN, trusted, clock.now()),
+      ).kind,
+    ).toBe("ok");
   });
 
   it("keeps accepted dials' nonces in a private file", () => {
@@ -211,12 +289,8 @@ describe("joined machines", () => {
       const machines = createPairedMachines(fileMachineStore(dir), Date.now, fileNonceStore(dir));
       const key = generateHostKey();
       const id = hostIdOf(key.publicKey);
-      machines.join(ORIGIN, {
-        code: codeOf(machines.mint(ORIGIN).url),
-        name: "box",
-        platform: "linux",
-        ...key,
-      });
+      const code = codeOf(machines.mint(ORIGIN).url);
+      machines.join(ORIGIN, { code, name: "box", platform: "linux", ...key });
       machines.confirm(id);
       const headers = signedConnectHeaders(privateKeyFrom(key.privateKeyPem), ORIGIN, id);
       expect(machines.authorizeConnect(ORIGIN, headers).kind).toBe("ok");

@@ -79,7 +79,7 @@ the host's folder; on Linux use `journalctl --user -u gram-host`.
 | `gram-host run`                                    | Dial and serve in the foreground                  |
 | `gram-host service install \| uninstall \| status` | Manage the service                                |
 | `gram-host status`                                 | The main Gram it joined, its fingerprint, service |
-| `gram-host leave`                                  | Stop the service and forget the join and its key  |
+| `gram-host leave [--no-service]`                   | Stop the service and forget the join and its key  |
 
 ## Its repositories
 
@@ -133,9 +133,12 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
 - **Every dial is signed.** A dial carries the machine's id, the time, a fresh nonce and a
   signature over them and the main Gram's address. The main Gram refuses one that isn't signed by
   the machine's pinned key, is more than two minutes off, repeats a nonce, or comes from a machine
-  that hasn't been confirmed. Accepted nonces are kept in `remote-access/dial-nonces.json` until
-  their two minutes are up, so a dial replayed after the main Gram restarts is refused too; when
-  that file can't be read, every dial is refused for four minutes after the start.
+  that hasn't been confirmed. A confirmed machine's accepted nonces are kept in
+  `remote-access/dial-nonces.json` through their two minutes, so a dial replayed after the main
+  Gram restarts is refused too. Once a nonce is let go, no dial signed at or before its time is
+  taken, so a clock set back can't bring it back either. When that file can't be read, no dial
+  signed before two minutes after the start is taken. A clock set back while the file was
+  unreadable is the one case left uncovered.
 - **Not a browser.** The install, join and dial endpoints answer only requests addressed to the tailnet
   name (which Tailscale Serve forwards over loopback), and refuse any request with an `Origin`, so
   no web page can reach them. They take no browser cookie, and a browser's cookie grants nothing
@@ -149,9 +152,11 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
   address, closes every joined machine's connection, including a dial let in just before and still
   connecting; the machines stay joined and dial in again once it is back. Up to 16 machines can be
   joined.
-- **Leaving** (`gram-host leave`) forgets the join only once the background service has stopped,
-  or was never installed. When `launchctl` or `systemctl` can't stop it or say it stopped, the join
-  and key stay, and it says the host may still be running.
+- **Leaving** (`gram-host leave`) forgets the join only once `launchctl` or `systemctl` stopped the
+  background service or says it isn't loaded or running. When it can't stop it or say, the join
+  and key stay, and it says the host may still be running, even when the service's file is gone.
+  `gram-host leave --no-service`, for a machine that joined with `--no-service`, forgets them
+  without asking.
 
 The listing (`POST /machines/list`), join link, confirm and remove endpoints answer only the local
 app, never a paired phone or a joined machine, with the same Origin rules as phone access settings.

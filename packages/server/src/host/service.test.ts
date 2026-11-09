@@ -118,9 +118,12 @@ describe("removing the host's background service", () => {
     const bus = { code: 1, output: "Failed to connect to bus: No medium found" };
     expect(Exit.isFailure(uninstall("linux", { disable: bus, "is-active": bus }))).toBe(true);
     expect(existsSync(file)).toBe(true);
-    // Never installed here: nothing of it can be running.
+    // Review of #324: a missing file isn't proof it never ran, as a service stays loaded after
+    // its file goes (as the old uninstall could leave it).
     rmSync(file);
-    expect(Exit.isSuccess(uninstall("linux", { disable: bus, "is-active": bus }))).toBe(true);
+    expect(Exit.isFailure(uninstall("linux", { disable: bus, "is-active": bus }))).toBe(true);
+    const unknown = { code: 1, output: "Bad request." };
+    expect(Exit.isFailure(uninstall("darwin", { bootout: unknown, print: unknown }))).toBe(true);
   });
 
   it("takes a service that isn't installed or running as removed", () => {

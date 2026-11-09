@@ -44,7 +44,9 @@ const USAGE = `gram-host: run this machine's work for a Gram on another machine,
   gram-host run          Dial the main Gram and serve it, in the foreground.
   gram-host service install | uninstall | status
   gram-host status       What this machine joined, its fingerprint and the service's state.
-  gram-host leave        Stop the service and forget the join and its key.
+  gram-host leave [--no-service]
+      Stop the service and forget the join and its key. With --no-service, for a machine that
+      joined with --no-service, it forgets them without stopping a service.
 
 GRAM_HOST_HOME sets the folder the host keeps its join and key in, and GRAM_HOST_REPOS the one
 it clones repositories into for the workers placed on it (by default, repos in GRAM_HOST_HOME).`;
@@ -221,7 +223,7 @@ export const leave = (home: string, stopService: Effect.Effect<void, Error> | un
     Effect.andThen(say("Left. Remove this machine on the main Gram too.")),
     Effect.catch((error) =>
       fail(
-        `${error.message} This machine is still joined; stop its host, then run \`gram-host leave\` again.`,
+        `${error.message} This machine is still joined; stop its host, then run \`gram-host leave\` again (with --no-service if no service was ever installed here).`,
       ),
     ),
   );
@@ -288,7 +290,12 @@ export const runCli = <R>(
         });
       case "leave": {
         const platform = servicePlatform();
-        return leave(home, platform === undefined ? undefined : uninstallService(platform));
+        return leave(
+          home,
+          platform === undefined || flag(rest, "--no-service")
+            ? undefined
+            : uninstallService(platform),
+        );
       }
       default:
         return say(USAGE);

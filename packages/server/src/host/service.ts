@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import * as Effect from "effect/Effect";
@@ -198,7 +198,8 @@ const serviceStopped = (platform: ServicePlatform, runner: ServiceRunner) =>
 /**
  * Stops the service, checks it stopped, and removes its file; one that isn't installed or running
  * is left as it is. Fails, keeping the file, when the service may still be running: its manager
- * says it is, or its stop failed and the manager can't say, unless it was never installed here.
+ * says it is, or its stop failed and the manager can't say. A missing file proves nothing: the
+ * service can stay loaded after its file goes.
  */
 export const uninstallService = (
   platform: ServicePlatform,
@@ -211,8 +212,8 @@ export const uninstallService = (
         ? yield* runner("launchctl", ["bootout", `gui/${uid()}/${LAUNCHD_LABEL}`])
         : yield* runner("systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT]);
     const stopped = yield* serviceStopped(platform, runner);
-    // A manager that can't say after a stop that failed: stopped only if never installed here.
-    if (stopped === false || (stopped === undefined && stop.code !== 0 && existsSync(file)))
+    // A stop that worked, with a manager that can't say after it, is taken at its word.
+    if (stopped === false || (stopped === undefined && stop.code !== 0))
       return yield* Effect.fail(
         new Error(
           `The background service didn't stop (${platform === "darwin" ? "launchctl bootout" : "systemctl --user disable --now"} ${stop.code}: ${stop.output.slice(0, 400)}); it may still be running.`,
