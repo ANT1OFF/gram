@@ -58,7 +58,9 @@ import {
   workerOwnsPr as ownsPr,
   workerPrOwnership,
   workerPrIdentity,
+  withMachines,
 } from "../git/worker-pr.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { ThreadPrLookup } from "../git/thread-pr.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -153,6 +155,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
     const threadPr = yield* ThreadPrLookup;
     const publisher = yield* GitStatePublisher;
     const proc = yield* Proc;
+    // The joined machines' hosts, which read a worker's worktree there for its PR's ownership.
+    const machines = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const localChecks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
     // Absent in layers without orchestration, where no outward call is ever delegated.
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
@@ -224,6 +228,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
       ownsPr(thread, repo, number).pipe(
         Effect.provideService(ThreadStore, store),
         Effect.provideService(Proc, proc),
+        withMachines(machines),
       );
 
     const bind = (tool: string, threadId: ThreadId, input: BindInput) =>
@@ -570,6 +575,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
           const ownership = yield* workerPrOwnership(thread, repo, number).pipe(
             Effect.provideService(ThreadStore, store),
             Effect.provideService(Proc, proc),
+            withMachines(machines),
           );
           if (typeof ownership !== "string") return undefined;
           return ownershipAsk(
@@ -870,6 +876,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
               (yield* workerPrIdentity(thread, pr.repo, pr.number).pipe(
                 Effect.provideService(ThreadStore, store),
                 Effect.provideService(Proc, proc),
+                withMachines(machines),
               ))
             );
           }
@@ -893,6 +900,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
             ? yield* workerPrOwnership(thread, pr.repo, pr.number).pipe(
                 Effect.provideService(ThreadStore, store),
                 Effect.provideService(Proc, proc),
+                withMachines(machines),
               )
             : undefined;
           // Metadata only: no card body, thread title, account data or prompt text in diagnostics.
@@ -963,6 +971,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
             !(yield* workerPrIdentity(latest, pr.repo, pr.number).pipe(
               Effect.provideService(ThreadStore, store),
               Effect.provideService(Proc, proc),
+              withMachines(machines),
             ))
           ) {
             return yield* new AppToolError({
@@ -975,6 +984,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
               ? yield* workerPrOwnership(latest, pr.repo, pr.number).pipe(
                   Effect.provideService(ThreadStore, store),
                   Effect.provideService(Proc, proc),
+                  withMachines(machines),
                 )
               : undefined;
           // Binding follows arming; the fresh ownership check covers stacked and unbound PRs too.
@@ -1104,9 +1114,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
               // The gate is read-only; remember its reverified branch atomically with arming so a
               // switch before the next publisher sample cannot drop this intent.
               const owned =
-                typeof ownership === "object"
-                  ? withOwnedBranch(t, ownership.path, ownership.branch)
-                  : t;
+                typeof ownership === "object" ? withOwnedBranch(t, ownership, ownership.branch) : t;
               return bindMainPr(owned, { ...rest, mergeWhenReady: intent });
             },
             reusing || (call.carded === true && byOrchestrator) ? caller : undefined,
@@ -1195,6 +1203,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
           const ownership = yield* workerPrOwnership(thread, bound.repo, bound.number).pipe(
             Effect.provideService(ThreadStore, store),
             Effect.provideService(Proc, proc),
+            withMachines(machines),
           );
           if (typeof ownership !== "string") return undefined;
           return ownershipAsk(

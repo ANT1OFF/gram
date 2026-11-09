@@ -7,6 +7,9 @@ import {
   repoFromPrUrl,
   type Autonomy,
   type GitState,
+  type HostId,
+  type HostRepoIdentity,
+  HostUnavailable,
   type OrchestratorCharter,
   type PrStatus,
   type ServerEvent,
@@ -26,7 +29,7 @@ import * as Stream from "effect/Stream";
 import * as nodePath from "node:path";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { Pr, Proc, ProcLive, ProcSpawnError } from "@gram/git";
+import { Pr, Proc, ProcLive, ProcSpawnError, samePath } from "@gram/git";
 import { OrchestrationAppToolsLive } from "../app-tools/orchestration-tools.ts";
 import { PrAppToolsLive } from "../app-tools/pr-tools.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
@@ -58,6 +61,8 @@ import { type EventLook, type EventLookContext, RoutineEventSources } from "../r
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
+import { cloneIdentityOf } from "../host/repos.ts";
+import { type WorkerHost, WorkerHosts } from "../host/worker-host.ts";
 import { OrchestratorAppToolsLive } from "./tools.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
@@ -169,6 +174,23 @@ export interface World {
     EventLook | ((context: EventLookContext) => Effect.Effect<EventLook>)
   >;
   readonly eventLooks: Array<string>;
+  /**
+   * Set before the server is built: a joined machine that the PR tools and merges reach by its
+   * id while `online`. Its host says what each worktree is by path (`identify`): the clone it
+   * shares a repository with, its `origin` URL and its branch; one it doesn't list has none of
+   * them. `identifies: false` is a host from before it could say.
+   */
+  joinedMachine?:
+    | {
+        readonly id: HostId;
+        online: boolean;
+        readonly identifies?: boolean;
+        readonly worktrees: Map<
+          string,
+          { readonly clone: string; readonly origin: string; readonly branch?: string }
+        >;
+      }
+    | undefined;
 }
 
 const prKey = (pr: { readonly repo: string; readonly number: number }) =>
@@ -484,6 +506,67 @@ const conditionsOf = (world: World) =>
     ),
   );
 
+/**
+ * The machines as the PR tools and merges reach them: this one, and `world.joinedMachine` when a
+ * test set one, whose host answers nothing but what its worktrees are, and their git state.
+ */
+const machinesOf = (world: World) =>
+  Layer.effect(
+    WorkerHosts,
+    Effect.gen(function* () {
+      const hosts = yield* WorkerHosts;
+      const joined = world.joinedMachine;
+      if (joined === undefined) return hosts;
+      const host: WorkerHost = {
+        ...hosts.local,
+        id: joined.id,
+        name: "testbox",
+        git: {
+          ...hosts.local.git,
+          local: (cwd) =>
+            Effect.suspend(() => {
+              const there = joined.worktrees.get(cwd);
+              return there === undefined
+                ? Effect.fail(
+                    new ProcSpawnError({ bin: "gram-host", message: `${cwd} isn't there` }),
+                  )
+                : Effect.succeed({
+                    repo: true,
+                    ...(there.branch === undefined ? {} : { branch: there.branch }),
+                    worktree: true,
+                    head: "h1",
+                    changesToken: "",
+                    changedFiles: 0,
+                    behindBase: 0,
+                    aheadBase: 0,
+                    conflicts: false,
+                  });
+            }),
+        },
+        ...(joined.identifies === false
+          ? {}
+          : {
+              identify: (repoRoot: string, path: string) =>
+                Effect.sync((): HostRepoIdentity => {
+                  const there = joined.worktrees.get(path);
+                  if (there === undefined) return { ofClone: false };
+                  const identity = cloneIdentityOf(there.origin);
+                  return {
+                    ofClone: samePath(there.clone, repoRoot),
+                    ...(identity === undefined ? {} : { identity }),
+                    ...(there.branch === undefined ? {} : { branch: there.branch }),
+                  };
+                }),
+            }),
+      };
+      return WorkerHosts.fromHosts(hosts.local, [], (id) =>
+        id === joined.id && joined.online
+          ? Effect.succeed(host)
+          : Effect.fail(new HostUnavailable({ hostId: id, message: "That machine is offline." })),
+      );
+    }),
+  );
+
 /** The server over `world`'s database file and memory root. */
 export const serverLayer = (
   world: World,
@@ -500,6 +583,7 @@ export const serverLayer = (
       Layer.provide(fakeGh(world)),
     ),
   ).pipe(
+    Layer.provideMerge(machinesOf(world)),
     Layer.provideMerge(RoutinesLive.pipe(Layer.provide(fakeRoutineEvents(world)))),
     Layer.provideMerge(OrchestrationLive),
     Layer.provideMerge(ComposerPresence.layer),

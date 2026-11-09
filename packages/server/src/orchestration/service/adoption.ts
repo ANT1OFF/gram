@@ -441,7 +441,7 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
               workspaceId,
               spawnedBy: { threadId: plan.holder.id, feature: plan.feature },
             },
-            plan.checkout.path,
+            plan.checkout,
             plan.branch,
           ),
         )

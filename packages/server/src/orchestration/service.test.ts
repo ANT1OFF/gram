@@ -2,6 +2,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   DEFAULT_CHARTER,
+  LOCAL_HOST_ID,
   type ModelRef,
   type OrchestratorLedger,
   type ThreadId,
@@ -944,7 +945,9 @@ describe.skipIf(!hasGit)("joining a workspace", () => {
           const joined = yield* orchestration.joinWorkspace(plain.thread.id, workspaceId, {});
           expect(joined.spawnedBy).toEqual({ threadId: orchestrator.id, feature: "reopen-tabs" });
           expect(joined.workspaceId).toBe(workspaceId);
-          expect(joined.ownedBranches).toEqual([{ path: plain.path, branch: "fix/reopen-tabs" }]);
+          expect(joined.ownedBranches).toEqual([
+            { path: plain.path, branch: "fix/reopen-tabs", hostId: LOCAL_HOST_ID },
+          ]);
           expect(yield* orchestration.isDelegated(orchestrator.id, plain.thread.id)).toBe(true);
           yield* settle;
           const [feature] = (yield* orchestration.ledger(workspaceId)).features;

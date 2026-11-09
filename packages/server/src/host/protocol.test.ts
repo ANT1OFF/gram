@@ -290,6 +290,22 @@ describe("host protocol", () => {
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 
+  it.effect(
+    "says what a worker's worktree is through a host that can, and not one that can't",
+    () =>
+      Effect.gen(function* () {
+        const tmp = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(tmp)));
+        const repo = makeRepo(tmp);
+        const host = yield* connected();
+        expect(yield* host.repos.identify!(repo, repo)).toEqual({ ofClone: true, branch: "main" });
+        const old = yield* connected({
+          capabilities: HOST_SERVES.filter((c) => c !== "repo-identity"),
+        });
+        expect(old.repos.identify).toBeUndefined();
+      }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+
   it.live("reads and watches a checkout's git state through the host", () =>
     Effect.gen(function* () {
       const tmp = tempDir();

@@ -35,7 +35,7 @@ import type { AttachmentsOnMachine } from "./carry-attachments.ts";
 import type { HostConnection } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
-import { cloneFolderOf } from "./repos.ts";
+import { cloneFolderOf, cloneIdentityOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
 /** A joined machine as its worker host is named and reached. */
@@ -188,11 +188,27 @@ export const machineCheckouts = (
                   : new GitError({ message: redactUrlCredentials(error.message) }),
             ),
           );
-        return {
-          ...created.checkout,
-          repoRoot: created.checkout.repoRoot ?? repoPath,
+        // The record a check of the worker's ownership later goes by, made of this machine's own
+        // values: the branch it asked for (as the host's worktree code trims it), the clone it was
+        // handed for its origin, that origin's identity and the machine. Of the host's reply only
+        // where it put the worktree, and the base it chose, are taken; a reply naming another
+        // branch is refused rather than recorded.
+        const branch = request.branch.trim();
+        if (created.checkout.branch !== branch)
+          return yield* new InvalidState({
+            message: `${machine.name} made the worktree on another branch than the ${branch} Gram asked for, so it isn't used.`,
+          });
+        const cloneIdentity = cloneIdentityOf(url);
+        const checkout: Checkout = {
+          kind: created.checkout.kind,
+          path: created.checkout.path,
           hostId: machine.id,
+          branch,
+          ...(created.checkout.base === undefined ? {} : { base: created.checkout.base }),
+          repoRoot: repoPath,
+          ...(cloneIdentity === undefined ? {} : { cloneIdentity }),
         };
+        return checkout;
       }),
     checkRelease: (thread, options) =>
       options.removeWorktree === undefined || options.removeWorktree?.force === true
@@ -405,6 +421,7 @@ export const machineWorkerHost = (
       name: machine.name,
       reads: connection.reads,
       attachments: connection.attachments,
+      identify: connection.repos.identify,
     };
   });
 

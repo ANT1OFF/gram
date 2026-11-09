@@ -345,6 +345,14 @@ or `gram-host service install`.
   upstream and undoing a turn run git on this machine, so a worker on another machine refuses them
   and says so; ask its agent, or use its terminal. PR reads and actions that name the repository
   (checks, reviews, merge, labels) work, with the PR bound to the thread.
+- Under full auto, a worker there merges its own pull request without a card, as one here does,
+  and Gram's local check of it runs without one. Ownership goes by what this Gram recorded when it
+  made the worktree there: the machine, the identity of the origin it cloned (which must be a
+  workspace project's origin here, the PR's repository) and the branch it gave the worker. That
+  machine's host only confirms the record: that the worktree still shares the clone's repository,
+  has that origin and has that branch checked out. A branch the worker switched to there, a
+  re-pointed origin, an offline machine, a `gram-host` older than this Gram, and a worker started
+  before Gram kept the record all still ask.
 - A message sent while the connection is down waits for the machine for up to two minutes, as its
   session does, and is handed to the agent once it dials in again; if the connection dropped before
   Gram heard back, Gram asks again under the same id and the host takes it only once. A machine

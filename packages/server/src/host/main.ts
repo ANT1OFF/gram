@@ -155,6 +155,8 @@ const hostService = (
             () => repos.ensure(url),
             () => Effect.sync(() => (clones -= 1)),
           ),
+        // A read: nothing for an update to wait on.
+        identify: repos.identify,
       },
       worktrees:
         hostId === LOCAL_HOST_ID ? yield* Worktrees : cloneWorktrees(proc, yield* Worktrees),

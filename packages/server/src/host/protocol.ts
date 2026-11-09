@@ -25,6 +25,7 @@ import {
   ModeRefused,
   type HostCapability,
   type HostCheckResult,
+  type HostRepoIdentity,
   HostCommandFailed,
   HostFailed,
   type HostHello,
@@ -159,6 +160,7 @@ export const HOST_SERVES: ReadonlyArray<HostCapability> = [
   "file-reads",
   "attachments",
   "checks",
+  "repo-identity",
 ];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
@@ -273,6 +275,7 @@ const handlersFor = (host: HostService) => {
         ),
       "host.repos.ensure": ({ url }) =>
         gated(host.repos.ensure(url).pipe(Effect.mapError(worktreeToWire))),
+      "host.repos.identify": ({ repoRoot, path }) => host.repos.identify(repoRoot, path),
       "host.worktrees.list": ({ repoPath, openCheckouts }) =>
         host.worktrees.list(repoPath, { openCheckouts }).pipe(Effect.mapError(worktreeToWire)),
       "host.worktrees.baseBranches": ({ repoPath }) =>
@@ -545,6 +548,15 @@ export interface HostSessionsConnection {
   ) => Effect.Effect<void>;
 }
 
+/**
+ * What a worker's worktree on the host is now, as its host reads it there: for confirming what the
+ * control plane recorded when it made it, never as a grant of its own.
+ */
+export type HostRepoIdentify = (
+  repoRoot: string,
+  path: string,
+) => Effect.Effect<HostRepoIdentity, HostFailed | HostUnavailable>;
+
 /** A host's project checks as the control plane reaches them. */
 export interface HostChecksConnection {
   /**
@@ -567,6 +579,8 @@ export interface HostConnection {
   readonly attachments: HostAttachments | undefined;
   readonly repos: {
     readonly ensure: (url: string) => Effect.Effect<{ readonly path: string }, WorktreeError>;
+    /** Absent for a host from a build that doesn't serve `repo-identity`. */
+    readonly identify?: HostRepoIdentify | undefined;
   };
   readonly worktrees: HostWorktrees;
   readonly git: HostGitConnection;
@@ -1196,7 +1210,21 @@ export const connectHost = (
       reads: hello.capabilities.includes("file-reads") ? reads : undefined,
       attachments: hello.capabilities.includes("attachments") ? attachments : undefined,
       ...(hello.capabilities.includes("checks") ? { checks } : {}),
-      repos: { ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })) },
+      repos: {
+        ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })),
+        ...(hello.capabilities.includes("repo-identity")
+          ? {
+              identify: (repoRoot: string, path: string) =>
+                guarded(client["host.repos.identify"]({ repoRoot, path })).pipe(
+                  Effect.mapError((error) =>
+                    error instanceof HostFailed || error instanceof HostUnavailable
+                      ? error
+                      : unavailable(HOST_NOT_ANSWERING),
+                  ),
+                ),
+            }
+          : {}),
+      },
       worktrees,
       git,
       terminals,
