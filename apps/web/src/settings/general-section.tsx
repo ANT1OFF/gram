@@ -1,3 +1,4 @@
+import { usePhone } from "@/lib/use-phone";
 import {
   type LaunchAtLogin,
   DEFAULT_CLONE_FOLDER,
@@ -99,6 +100,7 @@ export function GeneralSection() {
   const overview = useLayoutStore((s) => s.overviewSidebar);
   const setOverview = useLayoutStore((s) => s.setOverviewSidebar);
   const overviewHint = useShortcutHint("sidebar.toggle");
+  const phone = usePhone();
   const overviewHidden = useLayoutStore((s) => s.overviewHidden);
   const setOverviewHidden = useLayoutStore((s) => s.setOverviewHidden);
 
@@ -147,38 +149,41 @@ export function GeneralSection() {
         anchor={GENERAL_ANCHORS.navigation}
         description="How the left sidebar looks, and where the side panel sits."
       >
-        <SettingRow
-          label="Overview sidebar"
-          description={`The left column of threads.${overviewHint ? ` ${overviewHint} hides or shows it.` : ""}`}
-          learnMore={
-            <p>
-              It lists what needs you, every workspace&rsquo;s orchestrator with the current
-              one&rsquo;s workers, and solo threads. Compact is a narrow rail of tiles; Automatic is
-              open from {OVERVIEW_OPEN_FROM} px wide and compact below.
-            </p>
-          }
-          keywords={[
-            "overview",
-            "sidebar",
-            "workers",
-            "orchestrators",
-            "solo",
-            "left",
-            "rail",
-            "compact",
-          ]}
-          onReset={overview === undefined ? undefined : () => setOverview(undefined)}
-        >
-          <OptionGroup
+        {/* A phone opens the threads as a drawer from its header, so the column's modes don't apply. */}
+        {!phone && (
+          <SettingRow
             label="Overview sidebar"
-            options={OVERVIEW_SIDEBAR}
-            value={overview ?? "automatic"}
-            onChange={(mode) => {
-              setOverview(mode === "automatic" ? undefined : mode);
-              markTouchedSaved();
-            }}
-          />
-        </SettingRow>
+            description={`The left column of threads.${overviewHint ? ` ${overviewHint} hides or shows it.` : ""}`}
+            learnMore={
+              <p>
+                It lists what needs you, every workspace&rsquo;s orchestrator with the current
+                one&rsquo;s workers, and solo threads. Compact is a narrow rail of tiles; Automatic
+                is open from {OVERVIEW_OPEN_FROM} px wide and compact below.
+              </p>
+            }
+            keywords={[
+              "overview",
+              "sidebar",
+              "workers",
+              "orchestrators",
+              "solo",
+              "left",
+              "rail",
+              "compact",
+            ]}
+            onReset={overview === undefined ? undefined : () => setOverview(undefined)}
+          >
+            <OptionGroup
+              label="Overview sidebar"
+              options={OVERVIEW_SIDEBAR}
+              value={overview ?? "automatic"}
+              onChange={(mode) => {
+                setOverview(mode === "automatic" ? undefined : mode);
+                markTouchedSaved();
+              }}
+            />
+          </SettingRow>
+        )}
         <SettingRow
           label="Sidebar sections"
           description="Which optional sections the left sidebar shows."

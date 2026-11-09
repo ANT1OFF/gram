@@ -17,6 +17,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { TokenSpan, useCodeTokens } from "@/components/ai-elements/code-block";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { useDiffCommentsStore, type DiffComment } from "@/stores/diff-comments";
 import type { DiffLayout } from "@/stores/layout";
@@ -86,12 +87,12 @@ export const ROW_BUDGET = 400;
  * A file's patch as numbered rows, unified or side by side; binary, oversized and content-less files
  * get a short note. A long patch shows its first `budget` rows and offers the rest. `current`
  * marks a hunk, and each new `revealKey` renders it if it was past the budget. Unified lines scroll
- * sideways unless `wrap`; split lines always wrap, each side being half as wide.
+ * sideways unless `wrap` or on a phone; split lines always wrap, each side being half as wide.
  */
 export function PatchView({
   file,
   layout = "unified",
-  wrap = false,
+  wrap: wrapAsked = false,
   current,
   revealKey,
   budget: rowBudget = ROW_BUDGET,
@@ -120,6 +121,9 @@ export function PatchView({
    */
   hunkOffset?: number;
 }) {
+  // A phone always wraps: a sideways scroll inside a scrolling thread is a fight for a thumb.
+  const phone = usePhone();
+  const wrap = wrapAsked || phone;
   const hunks = useMemo(() => parseHunks(file.patch), [file.patch]);
   const review = useDiffReview();
   const [menu, setMenu] = useState<MenuTarget>();

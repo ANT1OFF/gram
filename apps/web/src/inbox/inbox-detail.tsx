@@ -441,54 +441,58 @@ export function InboxDetail({
               .join(" · ")}
           </p>
         </div>
-        <Button
-          size="xs"
-          variant="ghost"
-          data-testid="inbox-open-thread"
-          disabled={item.threadId === undefined}
-          title={
-            item.threadId === undefined
-              ? "No thread to open"
-              : docked
-                ? `Show ${item.where} beside the Inbox (⏎)`
-                : `Open ${item.where} at it (⏎)`
-          }
-          onClick={() => onOpenThread(item)}
-        >
-          {docked ? "Show thread" : card ? "Open" : "Open thread"}
-          {!docked && !card && <SquareArrowOutUpRight aria-hidden data-icon="inline-end" />}
-        </Button>
-        <Hint
-          label="Later (1 hour)"
-          side="bottom"
-          render={
+        {!card && (
+          <>
             <Button
-              size="icon-xs"
+              size="xs"
               variant="ghost"
-              aria-label={`Later: ${itemText(item)}`}
-              data-testid="inbox-later"
-              onClick={() => actions.later(item)}
-            />
-          }
-        >
-          <AlarmClock aria-hidden />
-        </Hint>
-        {canDismiss(item) && (
-          <Hint
-            label={item.kind === "failure" ? "Dismiss until it fails again" : "Dismiss"}
-            side="bottom"
-            render={
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                aria-label={`Dismiss: ${itemText(item)}`}
-                data-testid="inbox-dismiss"
-                onClick={() => actions.dismiss(item)}
-              />
-            }
-          >
-            <X aria-hidden />
-          </Hint>
+              data-testid="inbox-open-thread"
+              disabled={item.threadId === undefined}
+              title={
+                item.threadId === undefined
+                  ? "No thread to open"
+                  : docked
+                    ? `Show ${item.where} beside the Inbox (⏎)`
+                    : `Open ${item.where} at it (⏎)`
+              }
+              onClick={() => onOpenThread(item)}
+            >
+              {docked ? "Show thread" : card ? "Open" : "Open thread"}
+              {!docked && !card && <SquareArrowOutUpRight aria-hidden data-icon="inline-end" />}
+            </Button>
+            <Hint
+              label="Later (1 hour)"
+              side="bottom"
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={`Later: ${itemText(item)}`}
+                  data-testid="inbox-later"
+                  onClick={() => actions.later(item)}
+                />
+              }
+            >
+              <AlarmClock aria-hidden />
+            </Hint>
+            {canDismiss(item) && (
+              <Hint
+                label={item.kind === "failure" ? "Dismiss until it fails again" : "Dismiss"}
+                side="bottom"
+                render={
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`Dismiss: ${itemText(item)}`}
+                    data-testid="inbox-dismiss"
+                    onClick={() => actions.dismiss(item)}
+                  />
+                }
+              >
+                <X aria-hidden />
+              </Hint>
+            )}
+          </>
         )}
       </header>
       <div
@@ -536,6 +540,45 @@ export function InboxDetail({
           <InboxContext key={item.threadId} threadId={item.threadId} />
         )}
       </div>
+      {/* A phone card's actions in words, at the card's foot where a thumb is: a glyph alone in
+          the corner was a 28 px guess. */}
+      {card && (
+        <footer data-testid="inbox-card-actions" className="flex items-center gap-1 px-2 pt-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={`Later: ${itemText(item)}`}
+            data-testid="inbox-later"
+            onClick={() => actions.later(item)}
+          >
+            <AlarmClock aria-hidden />
+            Later
+          </Button>
+          {canDismiss(item) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Dismiss: ${itemText(item)}`}
+              data-testid="inbox-dismiss"
+              onClick={() => actions.dismiss(item)}
+            >
+              <X aria-hidden />
+              Dismiss
+            </Button>
+          )}
+          {item.threadId !== undefined && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto"
+              data-testid="inbox-open-thread"
+              onClick={() => onOpenThread(item)}
+            >
+              Open
+            </Button>
+          )}
+        </footer>
+      )}
     </section>
   );
 }

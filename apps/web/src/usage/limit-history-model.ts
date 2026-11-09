@@ -148,6 +148,14 @@ export const addedText = (burn: CreditBurn): string | undefined =>
  * The days a period's axis names, as epoch ms of local midnights from `from` to `to`:
  * every day over a week, every seventh over a month, so labels never crowd.
  */
+/**
+ * The ticks whose labels fit: none in the axis's last tenth, where a label would have to hang left
+ * over the day before it (a part day at the end: now, a few hours into today).
+ */
+export function fittingTicks(ticks: readonly number[], share: (at: number) => number): number[] {
+  return ticks.filter((at, i) => i === 0 || share(at) <= 0.9);
+}
+
 export function dayTicks(from: number, to: number, everyDays: number): number[] {
   const first = new Date(from);
   first.setHours(0, 0, 0, 0);

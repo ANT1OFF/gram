@@ -150,7 +150,8 @@ const CodeBlockBody = memo(
     return (
       <pre
         className={cn(
-          "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0 p-4 text-reading",
+          // A phone wraps long lines: a sideways scroll inside the thread is a fight for a thumb.
+          "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0 p-4 text-reading phone:whitespace-pre-wrap phone:[overflow-wrap:anywhere]",
           className,
         )}
         style={preStyle}
