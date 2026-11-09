@@ -6,8 +6,9 @@ import type { CloseThreadOptions, ThreadRuntimesShape } from "./thread-runtimes.
 
 /**
  * `ThreadRuntimes.close` with `onlyAtRest`, first refusing, stopping nothing, while one of the
- * thread's terminals runs a command, by a scan of its own: the periodic one can be five seconds
- * old. A scan that fails, or no `ThreadPorts` at all, refuses too, since then nothing is ruled out.
+ * thread's terminals runs a command, by a scan of its own on the thread's machine: the periodic one
+ * can be five seconds old. A scan that fails, a machine that can't be asked, or no `ThreadPorts` at
+ * all, refuses too, since then nothing is ruled out.
  * The thread's terminals take no new shell or input from before the scan until the close is done
  * or refused (`gate`), so nothing typed after the scan runs in a checkout about to go. Terminals are
  * `ThreadPorts`' and the terminal handlers', which sit above the runtimes, so this can't live in
@@ -15,7 +16,7 @@ import type { CloseThreadOptions, ThreadRuntimesShape } from "./thread-runtimes.
  */
 export const closeAtRest = (
   runtimes: Pick<ThreadRuntimesShape, "close" | "releaseAfterClose">,
-  ports: Pick<ThreadPortsShape, "busyTerminalsNow"> | undefined,
+  ports: Pick<ThreadPortsShape, "terminalBusyNow"> | undefined,
   gate: Pick<TerminalGateShape, "hold"> | undefined,
   threadId: ThreadId,
   options: Omit<CloseThreadOptions, "onlyAtRest"> = {},
@@ -29,13 +30,13 @@ export const closeAtRest = (
 
 const scanThenClose = (
   runtimes: Pick<ThreadRuntimesShape, "close">,
-  ports: Pick<ThreadPortsShape, "busyTerminalsNow"> | undefined,
+  ports: Pick<ThreadPortsShape, "terminalBusyNow"> | undefined,
   threadId: ThreadId,
   options: Omit<CloseThreadOptions, "onlyAtRest">,
 ) =>
   Effect.gen(function* () {
-    const busy = ports === undefined ? undefined : yield* ports.busyTerminalsNow;
-    if (busy === undefined || busy.includes(threadId)) {
+    const busy = ports === undefined ? undefined : yield* ports.terminalBusyNow(threadId);
+    if (busy !== false) {
       return yield* new InvalidState({
         message:
           busy === undefined

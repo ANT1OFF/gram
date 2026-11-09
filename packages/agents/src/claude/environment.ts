@@ -14,7 +14,7 @@ import {
   resolveBinary,
   versionWarning,
 } from "./binary.ts";
-import { buildChildEnv } from "./env.ts";
+import { buildChildEnv, tokenChildEnv } from "./env.ts";
 import { runCommand } from "../cli/process.ts";
 import { nodeFs } from "../cli/discovery.ts";
 import { resettableOnSuccess } from "../cli/cache.ts";
@@ -56,7 +56,90 @@ export interface ClaudeEnvironmentConfig {
   readonly binaryPath?: string;
   readonly probeTimeoutMs?: number;
   readonly commandTimeoutMs?: number;
+  /**
+   * A long-lived token from `claude setup-token`, read at each `prepare` and set as
+   * `CLAUDE_CODE_OAUTH_TOKEN` in the child env only. A joined machine's host passes the one the
+   * user sent it; nothing else sets it. Undefined, or a reader that returns undefined, leaves the
+   * env as probed (`buildChildEnv` keeps an inherited token too: it is a subscription login).
+   */
+  readonly oauthToken?: () => string | undefined;
 }
+
+/** The variable Claude Code reads a `claude setup-token` token from. */
+export const OAUTH_TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN";
+
+/**
+ * `prepared` with `token` as its child env's OAuth token, when there is one. A child that holds it
+ * gets no debugger, preload or request-logging settings (`tokenChildEnv`).
+ */
+export const withOAuthToken = (
+  prepared: PreparedClaude,
+  token: string | undefined,
+): PreparedClaude =>
+  token === undefined || token === ""
+    ? prepared
+    : { ...prepared, env: { ...tokenChildEnv(prepared.env), [OAUTH_TOKEN_VAR]: token } };
+
+/** The environment Gram's process has, without unset entries. */
+const inheritedEnv = () =>
+  Object.fromEntries(
+    Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+  );
+
+/**
+ * The user's login shell's `claude` and environment, as a terminal they opened would have them.
+ * The shell's own startup output is never read: only what the probe prints between its markers.
+ * Falls back to Gram's own environment when the probe fails.
+ */
+export const probeLoginShell = (
+  config: Pick<ClaudeEnvironmentConfig, "shell" | "probeTimeoutMs"> = {},
+): Effect.Effect<{
+  readonly commandPath?: string;
+  readonly env: Record<string, string>;
+  readonly warnings: Array<string>;
+}> =>
+  Effect.suspend(() => {
+    const inherited = inheritedEnv();
+    if (process.platform === "win32") return Effect.succeed({ env: inherited, warnings: [] });
+    const shell =
+      config.shell ??
+      process.env["SHELL"] ??
+      (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
+    return runCommand(shell, ["-ilc", PROBE_SCRIPT], {
+      timeoutMs: config.probeTimeoutMs ?? 5_000,
+      isolateSession: true,
+    }).pipe(
+      Effect.map((output) => ({ ...parseProbeOutput(output.stdout), warnings: [] })),
+      Effect.catch((error) =>
+        Effect.succeed({
+          env: inherited,
+          warnings: [`Login-shell probe failed (${error.message}); using the app's environment.`],
+        }),
+      ),
+    );
+  });
+
+/**
+ * The `claude` executable a session would use, by its absolute path, and the env it runs with
+ * (`buildChildEnv`), for launching it directly rather than through a shell.
+ */
+export const resolveClaudeCli = (
+  config: Pick<ClaudeEnvironmentConfig, "shell" | "probeTimeoutMs" | "binaryPath"> = {},
+): Effect.Effect<
+  { readonly binaryPath: string; readonly env: Record<string, string> },
+  AgentUnavailable
+> =>
+  Effect.gen(function* () {
+    const probed = yield* probeLoginShell(config);
+    const candidates = config.binaryPath
+      ? [config.binaryPath]
+      : [
+          ...(probed.commandPath ? [probed.commandPath] : []),
+          ...pathCandidates(probed.env, process.platform),
+        ];
+    const binary = yield* resolveBinary(candidates, nodeFs);
+    return { binaryPath: binary.path, env: buildChildEnv(probed.env) };
+  });
 
 /**
  * Whether the Agent SDK can find the CLI it bundles for this platform. It looks from its own module,
@@ -98,31 +181,7 @@ export const ClaudeEnvironmentLive = (
       const sdk = yield* ClaudeSdk;
       const probeTimeoutMs = config.probeTimeoutMs ?? 5_000;
       const timeoutMs = config.commandTimeoutMs ?? 15_000;
-      const inherited = Object.fromEntries(
-        Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
-      );
-
-      const probe = Effect.gen(function* () {
-        if (process.platform === "win32") return { env: inherited, warnings: [] };
-        const shell =
-          config.shell ??
-          process.env["SHELL"] ??
-          (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
-        return yield* runCommand(shell, ["-ilc", PROBE_SCRIPT], {
-          timeoutMs: probeTimeoutMs,
-          isolateSession: true,
-        }).pipe(
-          Effect.map((output) => ({ ...parseProbeOutput(output.stdout), warnings: [] })),
-          Effect.catch((error) =>
-            Effect.succeed({
-              env: inherited,
-              warnings: [
-                `Login-shell probe failed (${error.message}); using the app's environment.`,
-              ],
-            }),
-          ),
-        );
-      });
+      const probe = probeLoginShell({ ...config, probeTimeoutMs });
 
       const prepare = Effect.gen(function* () {
         const probed: {
@@ -177,8 +236,20 @@ export const ClaudeEnvironmentLive = (
         );
 
       const prepared = yield* resettableOnSuccess(prepare);
+      // Read after the cache, so a token set or forgotten applies to the next session.
+      const oauthToken = config.oauthToken;
       return {
-        prepare: prepared.get,
+        prepare:
+          oauthToken === undefined
+            ? prepared.get
+            : prepared.get.pipe(
+                Effect.flatMap((ready) =>
+                  Effect.try(() => withOAuthToken(ready, oauthToken())).pipe(
+                    // A token that can't be read leaves the machine on its own sign-in.
+                    Effect.orElseSucceed(() => ready),
+                  ),
+                ),
+              ),
         invalidate: prepared.reset,
         checkAuth,
       } satisfies ClaudeEnvironmentShape;

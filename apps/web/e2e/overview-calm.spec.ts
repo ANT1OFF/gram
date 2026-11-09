@@ -1,8 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// The overview's calm forms over the realistic morning: workspaces at rest go to At rest, folded,
-// every row is one 36 px line, and the compact
-// rail tells its workspaces apart by a monogram of each name.
+// The overview's calm forms over the realistic morning: every workspace stays listed whatever its
+// state, At rest folds only the PRs and Done, every row is one 36 px line, and the compact rail
+// tells its workspaces apart by a monogram of each name.
 
 const open = async (page: Page, width: number) => {
   await page.addInitScript(() => sessionStorage.setItem("gram.mock.orchestration", "realistic"));
@@ -22,21 +22,24 @@ const names = (page: Page, scope: string) =>
         .map((row) => row.querySelector(".truncate.font-medium")?.textContent ?? ""),
     );
 
-test("workspaces at rest go to At rest at the list's end, folded until opened, with the PRs and Done", async ({
+test("every workspace stays listed, idle ones too; At rest folds only the PRs and Done", async ({
   page,
 }) => {
   await open(page, 1440);
   const sidebar = page.getByTestId("overview-sidebar");
   const rest = sidebar.getByTestId("overview-section-rest");
   const fold = rest.getByRole("button", { name: /^At rest, \d+$/ });
-  // web and infra have nothing running and nothing asking: At rest holds them, folded.
+  const orchestrators = '[data-testid="overview-section-orchestrators"]';
+  // web and infra have nothing running and nothing asking, and are still listed, in the order
+  // the workspaces were made.
   await expect(fold).toHaveAttribute("aria-expanded", "false");
-  await expect(
-    rest.getByTestId("overview-idle").getByTestId("overview-workspace").first(),
-  ).toBeHidden();
   await expect
-    .poll(() => names(page, '[data-testid="overview-section-orchestrators"]'))
-    .toEqual(["Gram", "billing-api"]);
+    .poll(() => names(page, orchestrators))
+    .toEqual(["Gram", "billing-api", "web", "infra"]);
+  await expect(
+    sidebar.getByRole("button", { name: /^Orchestrators, 4$/ }),
+    "the count is every workspace",
+  ).toBeVisible();
   // The sections are three at most, every title one look: its count in the right column.
   await expect(
     sidebar.locator("section[data-testid^='overview-section-']:not(section section)"),
@@ -47,11 +50,14 @@ test("workspaces at rest go to At rest at the list's end, folded until opened, w
       buttons.map((button) => Math.round(button.lastElementChild!.getBoundingClientRect().right)),
     );
   expect(new Set(counts).size).toBe(1);
-  // Unfolded, the idle workspaces under their heading, kept open across a reload.
+  // Unfolded, At rest holds no workspace, and its fold is kept across a reload.
   await fold.click();
   await expect(fold).toHaveAttribute("aria-expanded", "true");
-  await expect(rest.getByRole("heading", { name: /Idle workspaces/ })).toBeVisible();
-  await expect.poll(() => names(page, '[data-testid="overview-idle"]')).toEqual(["web", "infra"]);
+  await expect(rest.getByTestId("overview-section-pullRequests")).toBeVisible();
+  await expect(rest.getByTestId("overview-workspace")).toHaveCount(0);
+  await expect
+    .poll(() => names(page, orchestrators))
+    .toEqual(["Gram", "billing-api", "web", "infra"]);
   await page.reload();
   await expect(
     sidebar.getByTestId("overview-section-rest").getByRole("button", { name: /^At rest/ }),

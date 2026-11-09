@@ -2,12 +2,14 @@ import type { FileHandle } from "node:fs/promises";
 import {
   checkoutRoots,
   effectiveCheckout,
+  hostOf,
+  isLocalHost,
   previewFileKind,
   FileRpcs,
   FsError,
   InvalidState,
-  isCredentialPath,
   NotFound,
+  type Thread,
   type ThreadId,
 } from "@gram/contracts";
 import { isInside, Proc, realPath, tryRealPath } from "@gram/git";
@@ -18,19 +20,22 @@ import {
   FILE_MAX_BYTES,
   FILE_MAX_BYTES_CEILING,
   LIST_LIMIT,
+  mayBeOutside,
   mentionForms,
   mentionHints,
-  outsideRoots,
-  openOutside,
+  type OutsideGate,
+  previewTarget,
   readFilePreview,
+  readPreview,
   resolveFileRefs,
   resolveScoped,
-  resolveScopedIn,
   writesPath,
 } from "../../fs/files.ts";
 import { browseFolders, expandHome } from "../../fs/folders.ts";
 import { IMAGE_MAX_BYTES, readImage } from "../../fs/images.ts";
-import { makeVocabularyCache } from "../../fs/vocabulary.ts";
+import { makeVocabularyCache, projectTerms } from "../../fs/vocabulary.ts";
+import type { HostFileReads, OutsideAllowed } from "../../host/file-reads.ts";
+import { machineNames } from "../../host/machine-name.ts";
 import { SEARCH_MAX_PAGE, SEARCH_PAGE } from "../../fs/search.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
@@ -96,7 +101,9 @@ export const fsHandlers = Effect.gen(function* () {
   const runtimes = yield* ThreadRuntimes;
   const proc = yield* Proc;
   // The Files panel reads this machine's folders; which paths a thread may read stays decided here.
-  const hostFiles = (yield* WorkerHosts).placed.files;
+  const hosts = yield* WorkerHosts;
+  const hostFiles = hosts.placed.files;
+  const nameOf = yield* machineNames;
 
   const threadOf = (threadId: ThreadId) =>
     store
@@ -157,36 +164,13 @@ export const fsHandlers = Effect.gen(function* () {
     allows: wrote,
     refusal: "is outside this thread's folders, and the thread didn't write it",
   };
+  /** `gate` for `path` in `threadId`, as `previewTarget` asks it. */
+  const gateFor = (threadId: ThreadId, path: string, gate: Gate): OutsideGate => ({
+    allows: gate.allows(threadId, path),
+    refusal: gate.refusal,
+  });
   /**
-   * The file `path` names for a preview in `threadId`: in `roots` through `resolveScopedIn`, or an
-   * absolute path outside them only when `gate` allows it. `outside` says which, so the caller
-   * reads it through `openOutside`.
-   */
-  const previewPath = (
-    path: string,
-    threadId: ThreadId,
-    roots: ReadonlyArray<string>,
-    gate: Gate,
-  ) =>
-    Effect.gen(function* () {
-      if (!(yield* outsideRoots(path, roots))) {
-        return { target: yield* resolveScopedIn(path, roots), outside: false };
-      }
-      // Refused before the transcript is asked: whether a message names it changes nothing.
-      if (isCredentialPath(path)) {
-        return yield* new InvalidState({
-          message: `Gram doesn't preview files that may hold credentials: ${path}`,
-        });
-      }
-      if (!(yield* gate.allows(threadId, path))) {
-        return yield* new InvalidState({
-          message: `${path} ${gate.refusal}`,
-        });
-      }
-      return { target: yield* resolveScoped(path, undefined), outside: true };
-    });
-  /**
-   * Reads `path` for a preview in `threadId` with `read`, where `previewPath` allows it; outside
+   * Reads `path` for a preview in `threadId` with `read`, where `previewTarget` allows it; outside
    * `roots` through `openOutside`, which refuses a credential file and hands `read` the very file
    * it checked. A path an agent wrote is all the renderer may read outside the checkouts, so a
    * renderer made to ask for anything else is refused.
@@ -197,11 +181,57 @@ export const fsHandlers = Effect.gen(function* () {
     roots: ReadonlyArray<string>,
     read: (target: string, opened?: FileHandle) => Effect.Effect<A, NotFound | InvalidState>,
     gate: Gate = inMessages,
-  ) =>
+  ) => readPreview(path, roots, gateFor(threadId, path, gate), read);
+
+  /**
+   * The machine a thread's files are on when it isn't this one: its host, for the reads that are
+   * done there, and its name. `undefined` for a thread on this machine. Nothing about the thread's
+   * paths is looked up on this disk once it is on another machine.
+   */
+  const machineOf = (thread: Thread) =>
     Effect.gen(function* () {
-      const { target, outside } = yield* previewPath(path, threadId, roots, gate);
-      return yield* read(target, outside ? yield* openOutside(target) : undefined);
-    }).pipe(Effect.scoped);
+      const checkout = effectiveCheckout(thread);
+      if (isLocalHost(checkout)) return undefined;
+      const name = nameOf(hostOf(checkout));
+      const host = yield* hosts.get(hostOf(checkout)).pipe(
+        Effect.mapError(
+          (error) =>
+            new InvalidState({
+              message: `This thread's files are on ${name}, which can't be reached now: ${error.message}`,
+            }),
+        ),
+      );
+      /** The machine's reads, or a refusal naming it for a host too old to do them. */
+      const reads: Effect.Effect<HostFileReads, InvalidState> =
+        host.reads === undefined
+          ? Effect.fail(
+              new InvalidState({
+                message: `gram-host on ${name} is older than this Gram, so its files can't be read from here. Update it (Settings → Machines, or rerun its install command there).`,
+              }),
+            )
+          : Effect.succeed(host.reads);
+      return { name, files: host.files, reads };
+    });
+  /**
+   * Whether the thread's transcript lets a preview on its machine read `path` outside `roots`,
+   * asked only when `path` could be outside them (`mayBeOutside`), since the host decides the rest.
+   */
+  const outsideOn = (
+    threadId: ThreadId,
+    path: string,
+    roots: ReadonlyArray<string>,
+    gate: Gate = inMessages,
+  ): Effect.Effect<OutsideAllowed> =>
+    mayBeOutside(path, roots)
+      ? Effect.map(gate.allows(threadId, path), (allowed) => ({ allowed, refusal: gate.refusal }))
+      : Effect.succeed({ allowed: false, refusal: gate.refusal });
+  /** The thread's folder on its machine, `path` scoped to it there; for list, search and names. */
+  const scopedOn = (
+    machine: NonNullable<Effect.Success<ReturnType<typeof machineOf>>>,
+    path: string,
+    thread: Thread,
+  ) =>
+    Effect.flatMap(machine.reads, (reads) => reads.scope(path, [effectiveCheckout(thread).path]));
 
   return {
     "fs.browse": ({ path, limit }) => browseFolders(path, limit === undefined ? {} : { limit }),
@@ -232,40 +262,58 @@ export const fsHandlers = Effect.gen(function* () {
 
     "fs.list": ({ path, threadId, showHidden, limit }) =>
       Effect.gen(function* () {
+        const options = { showHidden: showHidden ?? false, limit: limit ?? LIST_LIMIT };
+        const thread = threadId === undefined ? undefined : yield* threadOf(threadId);
+        const machine = thread === undefined ? undefined : yield* machineOf(thread);
+        if (machine !== undefined && thread !== undefined) {
+          return yield* machine.files.list(yield* scopedOn(machine, path, thread), options);
+        }
         const target = yield* resolveScoped(path, yield* scopeRoot(threadId));
-        return yield* hostFiles.list(target, {
-          showHidden: showHidden ?? false,
-          limit: limit ?? LIST_LIMIT,
-        });
+        return yield* hostFiles.list(target, options);
       }),
 
     "fs.file": ({ path, threadId, maxBytes }) =>
       Effect.gen(function* () {
         if (threadId === undefined) return yield* noThread();
         const limit = Math.min(maxBytes ?? FILE_MAX_BYTES, FILE_MAX_BYTES_CEILING);
+        const thread = yield* threadOf(threadId);
         // A worker spanning repos has files in its other worktrees too, which a file link opens.
-        return yield* preview(
-          path,
-          threadId,
-          checkoutRoots(yield* threadOf(threadId)),
-          (target, opened) => readFilePreview(target, limit, opened),
+        const roots = checkoutRoots(thread);
+        const machine = yield* machineOf(thread);
+        if (machine !== undefined) {
+          const reads = yield* machine.reads;
+          return yield* reads.file(path, roots, yield* outsideOn(threadId, path, roots), limit);
+        }
+        return yield* preview(path, threadId, roots, (target, opened) =>
+          readFilePreview(target, limit, opened),
         );
       }),
 
     "fs.search": ({ threadId, query, regex, caseSensitive, offset, limit }) =>
       Effect.gen(function* () {
-        const checkout = yield* scopeRoot(threadId);
-        const root = yield* resolveScoped(".", checkout);
-        return yield* hostFiles.search(root, query, {
+        const options = {
           regex: regex ?? false,
           caseSensitive: caseSensitive ?? false,
           offset: offset ?? 0,
           limit: Math.min(limit ?? SEARCH_PAGE, SEARCH_MAX_PAGE),
-        });
+        };
+        const thread = threadId === undefined ? undefined : yield* threadOf(threadId);
+        const machine = thread === undefined ? undefined : yield* machineOf(thread);
+        if (machine !== undefined && thread !== undefined) {
+          return yield* machine.files.search(yield* scopedOn(machine, ".", thread), query, options);
+        }
+        const checkout = yield* scopeRoot(threadId);
+        const root = yield* resolveScoped(".", checkout);
+        return yield* hostFiles.search(root, query, options);
       }),
 
     "fs.files": ({ threadId, path }) =>
       Effect.gen(function* () {
+        const thread = threadId === undefined ? undefined : yield* threadOf(threadId);
+        const machine = thread === undefined ? undefined : yield* machineOf(thread);
+        if (machine !== undefined && thread !== undefined) {
+          return yield* machine.files.names(yield* scopedOn(machine, path ?? ".", thread));
+        }
         const root = yield* resolveScoped(path ?? ".", yield* scopeRoot(threadId));
         return yield* hostFiles.names(root);
       }),
@@ -280,12 +328,42 @@ export const fsHandlers = Effect.gen(function* () {
           .toSorted((a, b) => b.lastActivityAt - a.lastActivityAt)
           .slice(0, VOCABULARY_TITLES)
           .map((other) => other.title);
+        const machine = yield* machineOf(thread).pipe(Effect.orElseSucceed(() => null));
+        if (machine !== undefined) {
+          // Read where the checkout is; offline, or on a host too old to read it, the titles stay.
+          const sources =
+            machine === null
+              ? undefined
+              : yield* machine.reads.pipe(
+                  Effect.flatMap((reads) => reads.vocabulary(checkout.path)),
+                  Effect.orElseSucceed(() => undefined),
+                );
+          return projectTerms({ symbols: [], files: [], branches: [], ...sources, titles });
+        }
         return yield* vocabulary(checkout.path, titles).pipe(Effect.provideService(Proc, proc));
       }),
 
     "fs.resolve": ({ threadId, paths }) =>
       Effect.gen(function* () {
-        const roots = checkoutRoots(yield* threadOf(threadId));
+        const thread = yield* threadOf(threadId);
+        const roots = checkoutRoots(thread);
+        const machine = yield* machineOf(thread);
+        if (machine !== undefined) {
+          // The host resolves what is in the thread's folders; a path outside them is asked about
+          // here, in the transcript, and then checked there.
+          const reads = yield* machine.reads;
+          const first = yield* reads.resolve(paths, roots, []);
+          const vouched = yield* Effect.filter(
+            first.unchecked,
+            (path) => mentioned(threadId, path),
+            {
+              concurrency: 8,
+            },
+          );
+          if (vouched.length === 0) return { files: [...first.files] };
+          const outside = yield* reads.resolve(vouched, roots, vouched);
+          return { files: [...first.files, ...outside.files] };
+        }
         const files = yield* resolveFileRefs(paths, roots, (path) =>
           mentioned(threadId, path),
         ).pipe(Effect.provideService(Proc, proc));
@@ -300,12 +378,38 @@ export const fsHandlers = Effect.gen(function* () {
         }
         const thread = yield* threadOf(threadId);
         const roots = [...checkoutRoots(thread), ...(thread.additionalDirectories ?? [])];
+        const machine = yield* machineOf(thread);
+        if (machine !== undefined && kind === "html") {
+          // Its page loads the files beside it from a listener on this machine, which can't reach them.
+          return yield* new InvalidState({
+            message: `Gram can't preview HTML from ${machine.name} yet. Open ${path} in the Files panel to read its source.`,
+          });
+        }
+        if (machine !== undefined) {
+          const reads = yield* machine.reads;
+          const file = yield* reads.file(
+            path,
+            roots,
+            yield* outsideOn(threadId, path, roots, writtenByThread),
+            FILE_MAX_BYTES,
+          );
+          if (file.content === undefined) {
+            return yield* new InvalidState({
+              message: file.binary ? `${path} isn't text` : `${path} is too large to preview`,
+            });
+          }
+          return { kind: "markdown", path: file.path, content: file.content } as const;
+        }
         if (kind === "html") {
           if (previewFiles === undefined) {
             return yield* new InvalidState({ message: "HTML previews aren't available here" });
           }
           // The listener opens each file it serves through `openOutside`, this page included.
-          const { target, outside } = yield* previewPath(path, threadId, roots, writtenByThread);
+          const { target, outside } = yield* previewTarget(
+            path,
+            roots,
+            gateFor(threadId, path, writtenByThread),
+          );
           const real = yield* pageFolderCheck(target, outside, roots);
           return { kind, path: target, url: yield* previewFiles.urlFor(real) } as const;
         }
@@ -331,8 +435,14 @@ export const fsHandlers = Effect.gen(function* () {
         if (threadId === undefined) return yield* noThread();
         const thread = yield* threadOf(threadId);
         const roots = [...new Set([thread.checkout.path, ...checkoutRoots(thread)])];
+        const limit = Math.min(maxBytes ?? IMAGE_MAX_BYTES, IMAGE_MAX_BYTES);
+        const machine = yield* machineOf(thread);
+        if (machine !== undefined) {
+          const reads = yield* machine.reads;
+          return yield* reads.image(path, roots, yield* outsideOn(threadId, path, roots), limit);
+        }
         return yield* preview(path, threadId, roots, (target, opened) =>
-          readImage(target, Math.min(maxBytes ?? IMAGE_MAX_BYTES, IMAGE_MAX_BYTES), opened),
+          readImage(target, limit, opened),
         );
       }),
   } satisfies Partial<Handlers>;

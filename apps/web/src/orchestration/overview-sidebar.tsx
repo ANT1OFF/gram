@@ -77,7 +77,6 @@ import {
   OverviewHistory,
   OverviewPullRequests,
   OverviewSearch,
-  RestHeading,
   useOverviewDone,
   useOverviewPrRows,
 } from "./overview-extras";
@@ -465,9 +464,9 @@ function NeedsYou() {
 }
 
 /**
- * The overview's lists, grouped by state: the workspaces where something runs, asks or is in view
- * (Orchestrators), the solo threads, and At rest at the end, one fold for what needs nothing of you:
- * the workspaces at rest, the pull requests and Done.
+ * The overview's lists: every workspace (Orchestrators), whatever its state, in the order they were
+ * made, so a row never moves when its state changes; the solo threads; and At rest at the end, one
+ * fold for what needs nothing of you: the pull requests and Done.
  */
 function Orchestrators() {
   const workspaces = useWorkspaces();
@@ -494,61 +493,31 @@ function Orchestrators() {
   // Every line counts its workers from its ledger, folded or open, so both say the same.
   const workspaceIds = useMemo(() => workspaces.map((state) => state.workspace.id), [workspaces]);
   const ledgers = useOrchestratorLedgers(workspaceIds);
-  // Workspaces where something runs now, a worker or the orchestrator itself, read live: one
-  // leaves At rest the moment it starts, whatever its held status still says.
-  const running = useThreadsStore((s) =>
-    workspaces
-      .filter(
-        (state) =>
-          workingWorkerThreads(s.byId, s.statusDetail, state.workspace.id).length > 0 ||
-          workingOrchestrator(s, state.workspace) !== undefined,
-      )
-      .map((state) => state.workspace.id)
-      .join("\n"),
-  );
   const hidden = useLayoutStore((s) => s.overviewHidden);
   const anyThread = useThreadsStore((s) => Object.keys(s.byId).length > 0);
-  const busy = new Set(running.split("\n"));
-  const row = (state: WorkspaceState) => {
-    const id = state.workspace.id;
-    return (
-      <WorkspaceRow
-        key={id}
-        state={state}
-        here={id === current?.workspace.id}
-        asks={byWorkspace.get(id) ?? 0}
-        asking={asking.get(id) ?? NO_ASKING}
-        word={overviewState(statuses.get(id), state.paused !== undefined)}
-        ledger={ledgers.get(id)}
-      />
-    );
-  };
-  // At rest: nothing runs and nothing asks there, no brief held, and it isn't the one in view.
-  const quiet = workspaces.filter((state) => {
-    const id = state.workspace.id;
-    const word = overviewState(statuses.get(id), state.paused !== undefined);
-    return (
-      (word === "idle" || word === "parked") &&
-      id !== current?.workspace.id &&
-      (byWorkspace.get(id) ?? 0) === 0 &&
-      !busy.has(id) &&
-      (ledgers.get(id)?.held?.length ?? 0) === 0
-    );
-  });
-  // One workspace at rest keeps its row: folded away alone, it would only hide its name.
-  const resting = quiet.length >= 2 ? quiet : [];
-  const active = workspaces.filter((state) => !resting.includes(state));
   return (
     <>
-      {active.length > 0 && (
-        <Section id="orchestrators" title="Orchestrators" count={active.length}>
-          {active.map(row)}
+      {workspaces.length > 0 && (
+        <Section id="orchestrators" title="Orchestrators" count={workspaces.length}>
+          {workspaces.map((state) => {
+            const id = state.workspace.id;
+            return (
+              <WorkspaceRow
+                key={id}
+                state={state}
+                here={id === current?.workspace.id}
+                asks={byWorkspace.get(id) ?? 0}
+                asking={asking.get(id) ?? NO_ASKING}
+                word={overviewState(statuses.get(id), state.paused !== undefined)}
+                ledger={ledgers.get(id)}
+              />
+            );
+          })}
         </Section>
       )}
       <OverviewEmptyHint />
       {!hidden.includes("solo") && <SoloThreads />}
       <AtRest
-        idle={resting.map(row)}
         // Pull requests sit beside work: on an empty home, with no workspace and no thread, they
         // would stand alone, unrelated to anything there.
         prs={(workspaces.length > 0 || anyThread) && !hidden.includes("pullRequests")}
@@ -560,34 +529,23 @@ function Orchestrators() {
 
 /**
  * At rest: what needs nothing of you, folded at the list's end into its one title line until
- * opened (kept across reloads): the workspaces at rest, the pull requests and Done, each under a
- * heading with its count. A workspace leaves it the moment something runs or asks there, or once it
- * is the one in view.
+ * opened (kept across reloads): the pull requests and Done, each under a heading with its count.
+ * Workspaces are never in it: they stay listed above, whatever their state.
  */
-function AtRest({ idle, prs, done }: { idle: ReactNode[]; prs: boolean; done: boolean }) {
+function AtRest({ prs, done }: { prs: boolean; done: boolean }) {
   const prRows = useOverviewPrRows();
   const finished = useOverviewDone();
   const prCount = prs ? prRows.length : 0;
   const doneCount = done ? finished.rows.length : 0;
-  const count = idle.length + prCount + doneCount;
+  const count = prCount + doneCount;
   if (count === 0) return null;
   return (
     <Section
       id="rest"
       title="At rest"
       count={count}
-      hint="Idle workspaces, pull requests and finished chats: nothing here needs you."
+      hint="Pull requests and finished chats: nothing here needs you."
     >
-      {idle.length > 0 && (
-        <section
-          aria-label="Idle workspaces"
-          data-testid="overview-idle"
-          className="flex flex-col gap-px"
-        >
-          <RestHeading title="Idle workspaces" count={idle.length} />
-          {idle}
-        </section>
-      )}
       {prCount > 0 && <OverviewPullRequests rows={prRows} />}
       {doneCount > 0 && <OverviewDone rows={finished.rows} now={finished.now} />}
     </Section>

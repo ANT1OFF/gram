@@ -142,7 +142,7 @@ describe("machines page", () => {
           update: {
             phase: "waiting",
             release: "1.17.0",
-            busy: { turns: 1, terminals: 2, clones: 0 },
+            busy: { turns: 1, terminals: 2, clones: 0, checks: 0 },
           },
         }),
         machine({

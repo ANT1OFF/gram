@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it } from "@effect/vitest";
@@ -16,24 +17,35 @@ import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import type { EventHub } from "../events/event-hub.ts";
 import { makeRepo, removeDir, tempDir, write } from "../git/test-repo.ts";
-import type { ThreadStore } from "../persistence/thread-store.ts";
+import { EventHub as EventHubTag } from "../events/event-hub.ts";
+import { ThreadStore as ThreadStoreTag } from "../persistence/thread-store.ts";
+import { ProcessRoots, type PortScan, ThreadPorts } from "../ports/service.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
+import { closeAtRest } from "../runtime/close-at-rest.ts";
+import { ThreadRuntimes, type ThreadRuntimesShape } from "../runtime/thread-runtimes.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
+import { cloneWorktrees } from "./clone-worktrees.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { connectHost, HOST_CAPABILITIES, type HostConnection, serveHost } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { machineHosts, machineWorkerHost, type MachineDeps } from "./remote-worker-host.ts";
-import { reposOn } from "./repos.ts";
+import { cloneFolderOf, reposOn } from "./repos.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
-import { terminalsOnHost } from "./terminals.ts";
+import { type HostTerminalsService, terminalsOnHost } from "./terminals.ts";
 import { streamPair } from "./test-stream.ts";
-import { WorkerHosts } from "./worker-host.ts";
+import { type WorkerHost, WorkerHosts } from "./worker-host.ts";
 
 const MACHINE = { id: HostId.make("m-0123456789abcdef01234567"), name: "build box" };
 const URL = "https://git.example.test/acme/widgets.git";
+const cloneAt = (repos: string) => {
+  const target = cloneFolderOf(URL);
+  if ("error" in target) throw new Error(target.error);
+  return join(repos, target.folder);
+};
 
 /** A project here with `URL` as its origin, which the machine reaches as a bare repository. */
 const project = (dir: string) => {
@@ -53,7 +65,14 @@ const project = (dir: string) => {
 };
 
 /** The machine's host on one end of a stream, cloning into `repos`, and the connection to it. */
-const machine = (repos: string, env: Record<string, string>) =>
+const machine = (
+  repos: string,
+  env: Record<string, string>,
+  /** The machine's own port scan; none of its processes by default. */
+  scan: Effect.Effect<PortScan> = Effect.succeed({ listening: new Map(), children: new Map() }),
+  /** Called with the machine's terminals once its host serves them. */
+  onTerminals?: (terminals: HostTerminalsService) => void,
+) =>
   Effect.gen(function* () {
     const { host, control } = yield* streamPair;
     const proc = yield* Proc;
@@ -68,12 +87,16 @@ const machine = (repos: string, env: Record<string, string>) =>
             pid: 7,
           },
           files: filesOn(proc),
+          reads: fileReadsOn(proc),
+          attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
           repos: reposOn(proc, repos, env),
-          worktrees: yield* Worktrees,
+          worktrees: cloneWorktrees(proc, yield* Worktrees, env),
           git: gitOn(proc),
-          terminals: yield* terminalsOnHost,
+          terminals: yield* terminalsOnHost.pipe(
+            Effect.tap((t) => Effect.sync(() => onTerminals?.(t))),
+          ),
           sessions: yield* sessionsOnHost(noAgents),
-          scan: Effect.succeed({ listening: new Map(), children: new Map() }),
+          scan,
         });
       }).pipe(Effect.scoped, Effect.ensuring(Effect.sync(() => host.destroy()))),
     );
@@ -91,8 +114,8 @@ const deps = (threads: ReadonlyArray<Thread> = []): Effect.Effect<MachineDeps, n
       store: {
         listThreads: Effect.succeed(threads),
         getThread: () => Effect.die(new Error("no thread in this test")),
-      } as unknown as ThreadStore["Service"],
-      hub: { internalEvents: () => Stream.never } as unknown as EventHub["Service"],
+      } as unknown as ThreadStoreTag["Service"],
+      hub: { internalEvents: () => Stream.never } as unknown as EventHubTag["Service"],
       agents: AgentHosts.of({ get: () => Effect.succeed(server) }),
       proc: yield* Proc,
     };
@@ -126,7 +149,7 @@ describe("a joined machine's worker host", () => {
           [],
           root,
         );
-        const clone = join(repos, "git.example.test", "acme", "widgets");
+        const clone = cloneAt(repos);
         expect(checkout).toMatchObject({
           kind: "worktree",
           branch: "feature/remote",
@@ -173,6 +196,169 @@ describe("a joined machine's worker host", () => {
         expect(existsSync(checkout.path)).toBe(false);
       }).pipe(Effect.scoped, Effect.provide(Live)),
     30_000,
+  );
+
+  it.live("refuses an explicit base available only on the main machine", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const { root, env } = project(dir);
+      execFileSync("git", ["-C", root, "branch", "feat/local-only"]);
+      const repos = join(dir, "repos");
+      const { connection } = yield* machine(repos, env);
+      const host = yield* machineWorkerHost(MACHINE, connection, yield* deps());
+      const result = yield* host.checkouts
+        .prepare(
+          { kind: "newWorktree", branch: "feat/dependent", base: "feat/local-only" },
+          [],
+          root,
+        )
+        .pipe(Effect.result);
+      expect(result).toMatchObject({
+        _tag: "Failure",
+        failure: {
+          _tag: "InvalidState",
+          message: expect.stringContaining("feat/local-only"),
+        },
+      });
+      const clone = cloneAt(repos);
+      expect(existsSync(join(clone, ".worktrees"))).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(Live)),
+  );
+
+  it.live(
+    "fetches an explicit remote base even with a narrowed clone refspec and returns the chosen ref",
+    () =>
+      Effect.gen(function* () {
+        const dir = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+        const { root, env } = project(dir);
+        const repos = join(dir, "repos");
+        const { connection } = yield* machine(repos, env);
+        const host = yield* machineWorkerHost(MACHINE, connection, yield* deps());
+        yield* host.checkouts.prepare({ kind: "newWorktree", branch: "feat/first" }, [], root);
+        const clone = cloneAt(repos);
+        execFileSync("git", [
+          "-C",
+          clone,
+          "config",
+          "remote.origin.fetch",
+          "+refs/heads/main:refs/remotes/origin/main",
+        ]);
+        execFileSync("git", ["-C", root, "checkout", "-b", "feat/prerequisite"]);
+        execFileSync("git", [
+          "-C",
+          root,
+          "commit",
+          "--quiet",
+          "--allow-empty",
+          "-m",
+          "prerequisite",
+        ]);
+        execFileSync("git", ["-C", root, "push", "--quiet", join(dir, "widgets.git"), "HEAD"]);
+        const expected = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+          encoding: "utf8",
+        }).trim();
+        for (const [index, base] of ["feat/prerequisite", "origin/feat/prerequisite"].entries()) {
+          const checkout = yield* host.checkouts.prepare(
+            { kind: "newWorktree", branch: `feat/dependent-${index}`, base },
+            [],
+            root,
+          );
+          expect(checkout.base).toBe("origin/feat/prerequisite");
+          expect(
+            execFileSync("git", ["-C", checkout.path, "rev-parse", "HEAD"], {
+              encoding: "utf8",
+            }).trim(),
+          ).toBe(expected);
+        }
+      }).pipe(Effect.scoped, Effect.provide(Live)),
+  );
+
+  it.live("uses the fresh origin base when the clone's local default branch is behind", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const { root, env } = project(dir);
+      const { connection } = yield* machine(join(dir, "repos"), env);
+      const host = yield* machineWorkerHost(MACHINE, connection, yield* deps());
+      yield* host.checkouts.prepare({ kind: "newWorktree", branch: "feat/first" }, [], root);
+      execFileSync("git", ["-C", root, "commit", "--quiet", "--allow-empty", "-m", "new main"]);
+      execFileSync("git", ["-C", root, "push", "--quiet", join(dir, "widgets.git"), "HEAD"]);
+      const expected = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+        encoding: "utf8",
+      }).trim();
+      const checkout = yield* host.checkouts.prepare(
+        { kind: "newWorktree", branch: "feat/new-main", base: "main" },
+        [],
+        root,
+      );
+      expect(checkout.base).toBe("origin/main");
+      expect(
+        execFileSync("git", ["-C", checkout.path, "rev-parse", "HEAD"], {
+          encoding: "utf8",
+        }).trim(),
+      ).toBe(expected);
+    }).pipe(Effect.scoped, Effect.provide(Live)),
+  );
+
+  it.live("keeps an explicitly selected host branch's additional work", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const { root, env } = project(dir);
+      execFileSync("git", [
+        "-C",
+        root,
+        "push",
+        "--quiet",
+        join(dir, "widgets.git"),
+        "HEAD:refs/heads/feat/shared",
+      ]);
+      const repos = join(dir, "repos");
+      const { connection } = yield* machine(repos, env);
+      const host = yield* machineWorkerHost(MACHINE, connection, yield* deps());
+      yield* host.checkouts.prepare({ kind: "newWorktree", branch: "feat/first" }, [], root);
+      const clone = cloneAt(repos);
+      execFileSync("git", [
+        "-C",
+        clone,
+        "checkout",
+        "-q",
+        "-b",
+        "feat/shared",
+        "origin/feat/shared",
+      ]);
+      execFileSync("git", [
+        "-C",
+        clone,
+        "-c",
+        "user.name=Synthetic",
+        "-c",
+        "user.email=synthetic@example.test",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--quiet",
+        "--allow-empty",
+        "-m",
+        "host work",
+      ]);
+      const expected = execFileSync("git", ["-C", clone, "rev-parse", "HEAD"], {
+        encoding: "utf8",
+      }).trim();
+      const checkout = yield* host.checkouts.prepare(
+        { kind: "newWorktree", branch: "feat/dependent", base: "feat/shared" },
+        [],
+        root,
+      );
+      expect(checkout.base).toBe("feat/shared");
+      expect(
+        execFileSync("git", ["-C", checkout.path, "rev-parse", "HEAD"], {
+          encoding: "utf8",
+        }).trim(),
+      ).toBe(expected);
+    }).pipe(Effect.scoped, Effect.provide(Live)),
   );
 
   it.live("starts nothing here while the machine is offline", () =>
@@ -225,5 +411,136 @@ describe("a joined machine's worker host", () => {
       current = undefined;
       expect((yield* hosts.get(MACHINE.id).pipe(Effect.flip))._tag).toBe("HostUnavailable");
     }).pipe(Effect.scoped, Effect.provide(Live)),
+  );
+});
+
+/**
+ * A close at rest of a thread on the machine, through the server's `ThreadPorts`, with this
+ * machine running nothing in any terminal: what it closed, or why it refused.
+ */
+const closeOnMachine = (get: (id: HostId) => Effect.Effect<WorkerHost, HostUnavailable>) =>
+  Effect.gen(function* () {
+    const worker = thread({
+      kind: "local",
+      path: "/srv/synthetic/work",
+      hostId: MACHINE.id,
+    } as never);
+    const closed: Array<ThreadId> = [];
+    const runtimes = {
+      processIds: Effect.succeed([]),
+      close: (threadId: ThreadId) => Effect.sync(() => void closed.push(threadId)),
+      releaseAfterClose: (_: ThreadId, release: Effect.Effect<void>) => release,
+    } as unknown as ThreadRuntimesShape;
+    const local = {
+      id: LOCAL_HOST_ID,
+      // This machine's scan would find nothing of the other machine's shells.
+      ports: { scan: Effect.succeed({ listening: new Map(), children: new Map() }) },
+    } as unknown as WorkerHost;
+    const ports = yield* Effect.provide(
+      ThreadPorts,
+      ThreadPorts.layer.pipe(
+        Layer.provide(ProcessRoots.layer),
+        Layer.provide(Layer.succeed(ThreadRuntimes)(runtimes)),
+        Layer.provide(
+          Layer.succeed(EventHubTag)({
+            publish: () => Effect.void,
+          } as unknown as EventHubTag["Service"]),
+        ),
+        Layer.provide(
+          Layer.succeed(ThreadStoreTag)({
+            getThread: () => Effect.succeed(worker),
+          } as unknown as ThreadStoreTag["Service"]),
+        ),
+        Layer.provide(Layer.succeed(WorkerHosts)(WorkerHosts.fromHosts(local, [], get))),
+      ),
+    );
+    const result = yield* closeAtRest(runtimes, ports, undefined, worker.id).pipe(
+      Effect.flip,
+      Effect.option,
+    );
+    return { closed, refused: Option.getOrUndefined(result) };
+  });
+
+describe("a joined machine's terminals at rest", () => {
+  it.live("are read on that machine, so a command running there keeps the thread open", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      /** The machine's shell's pid there, and whether a command runs in its foreground. */
+      let shell: number | undefined;
+      let running = false;
+      const scan = Effect.sync((): PortScan => {
+        if (shell === undefined) return { listening: new Map(), children: new Map() };
+        const job = shell + 1_000_000;
+        const tpgid = running ? job : shell;
+        return {
+          listening: new Map(),
+          children: new Map([[shell, running ? [job] : []]]),
+          processes: new Map([
+            [shell, { pid: shell, ppid: 1, pgid: shell, tpgid, command: "-bash" }],
+            ...(running
+              ? [[job, { pid: job, ppid: shell, pgid: job, tpgid, command: "make build" }] as const]
+              : []),
+          ]),
+        };
+      });
+      let onMachine: HostTerminalsService | undefined;
+      const { connection } = yield* machine(join(dir, "repos"), {}, scan, (t) => {
+        onMachine = t;
+      });
+      const worker = thread({ kind: "local", path: dir, hostId: MACHINE.id } as never);
+      const host = yield* machineWorkerHost(MACHINE, connection, {
+        ...(yield* deps([worker])),
+        store: {
+          listThreads: Effect.succeed([worker]),
+          getThread: () => Effect.succeed(worker),
+        } as unknown as ThreadStoreTag["Service"],
+      });
+      const get = (id: HostId) =>
+        id === MACHINE.id
+          ? Effect.succeed(host)
+          : Effect.fail(new HostUnavailable({ hostId: id, message: "not paired" }));
+
+      // No terminal at all: at rest.
+      expect(yield* host.ports.terminalBusy!(worker.id)).toBe(false);
+
+      const opened = yield* host.terminals.open({ threadId: worker.id, cols: 80, rows: 24 });
+      const root = Option.getOrThrow(yield* Stream.runHead(onMachine!.roots));
+      shell = root.kind === "add" ? root.pid : undefined;
+      expect(shell).toBeTypeOf("number");
+      // The shell's id reaches this side over the connection.
+      for (let i = 0; i < 200 && (yield* host.ports.terminalBusy!(worker.id)) === undefined; i++)
+        yield* Effect.sleep("20 millis");
+      expect(yield* host.ports.terminalBusy!(worker.id)).toBe(false);
+
+      running = true;
+      expect(yield* host.ports.terminalBusy!(worker.id)).toBe(true);
+      // Before, this machine's empty scan ruled the thread at rest, and the close went ahead.
+      const busy = yield* closeOnMachine(get);
+      expect(busy.closed).toEqual([]);
+      expect(busy.refused).toMatchObject({
+        _tag: "InvalidState",
+        message: expect.stringContaining("running a command"),
+      });
+
+      running = false;
+      const idle = yield* closeOnMachine(get);
+      expect(idle.refused).toBeUndefined();
+      expect(idle.closed).toEqual([worker.id]);
+      yield* host.terminals.close(opened.terminalId);
+    }).pipe(Effect.scoped, Effect.provide(Live)),
+  );
+
+  it.live("count as busy while the machine can't be asked", () =>
+    Effect.gen(function* () {
+      const { closed, refused } = yield* closeOnMachine((id) =>
+        Effect.fail(new HostUnavailable({ hostId: id, message: "That machine is offline." })),
+      );
+      expect(closed).toEqual([]);
+      expect(refused).toMatchObject({
+        _tag: "InvalidState",
+        message: expect.stringContaining("couldn't be read"),
+      });
+    }).pipe(Effect.provide(Live)),
   );
 });

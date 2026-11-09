@@ -1342,6 +1342,16 @@ describe("MessageBlock compaction marker", () => {
     expect(sessionRestartLabel({ at: AT, reason: "mcpConfig" }, AT + 60_000, UTC)).toBe(
       "Session restarted · MCP config changed · 12:32",
     );
+    const restarted = (continued: "turn" | "queue") => ({
+      at: AT,
+      machineRestart: { machine: "build box", continued },
+    });
+    expect(sessionRestartLabel(restarted("turn"), AT + 60_000, UTC)).toBe(
+      "build box restarted · continued the turn · 12:32",
+    );
+    expect(sessionRestartLabel(restarted("queue"), AT + 60_000, UTC)).toBe(
+      "build box restarted · resumed the session · 12:32",
+    );
     renderWithApi(
       <MessageBlock
         threadId={T}

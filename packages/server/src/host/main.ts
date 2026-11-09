@@ -5,6 +5,7 @@
 // listens on a network either way.
 
 import { Socket as NetSocket } from "node:net";
+import { join } from "node:path";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
@@ -15,14 +16,24 @@ import * as Layer from "effect/Layer";
 import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
-import { hostRepos } from "./host-config.ts";
+import { claudeTokenIn } from "./claude-token.ts";
+import { checksOn } from "./checks.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
+import { cloneWorktrees } from "./clone-worktrees.ts";
+import { hostAttachments, hostHome, hostRepos, readClaudeToken } from "./host-config.ts";
 import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { claudeSignInOf, hostStatusOf } from "./claude-sign-in.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
-import { HOST_SERVES, type HostService, type HostUpdater, serveHost } from "./protocol.ts";
+import {
+  HOST_SERVES,
+  type HostClaudeToken,
+  type HostService,
+  type HostUpdater,
+  serveHost,
+} from "./protocol.ts";
 import { foregroundOf } from "../ports/pure.ts";
 import { runCli } from "./cli.ts";
 import type { HostBusy, HostId } from "@gram/contracts";
@@ -45,11 +56,12 @@ const RELEASE = typeof GRAM_HOST_RELEASE === "string" ? GRAM_HOST_RELEASE : unde
 export const HOST_STREAM_FD = 3;
 
 /**
- * The agents whose sessions the host runs: Claude Code on the user's own login. A session through a
- * gateway profile, and every Codex session, still opens in the server, which keeps the keys and the
- * Codex homes. Under the fake agent the host runs the fake, as the server does.
+ * The agents whose sessions the host runs: Claude Code on the user's own login, or on the token
+ * `oauthToken` reads (a joined machine's, from `claude setup-token`). A session through a gateway
+ * profile, and every Codex session, still opens in the server, which keeps the keys and the Codex
+ * homes. Under the fake agent the host runs the fake, as the server does.
  */
-const HostAgents: Layer.Layer<AgentHosts> =
+const hostAgents = (oauthToken?: () => string | undefined): Layer.Layer<AgentHosts> =>
   process.env["GRAM_FAKE_AGENT"] === "1"
     ? makeFakeAgentAdapter()
     : Layer.effect(
@@ -68,7 +80,11 @@ const HostAgents: Layer.Layer<AgentHosts> =
                   ),
           });
         }),
-      ).pipe(Layer.provide(ClaudeHostLive()));
+      ).pipe(
+        Layer.provide(
+          ClaudeHostLive(oauthToken === undefined ? {} : { environment: { oauthToken } }),
+        ),
+      );
 
 /** What could stop a host's update: what is running in it now (`HostBusy`). */
 export type BusyOf = Effect.Effect<HostBusy>;
@@ -79,6 +95,7 @@ export type BusyOf = Effect.Effect<HostBusy>;
  */
 const hostService = (
   hostId: HostId,
+  claude?: HostClaudeToken,
   update?: (busy: BusyOf) => HostUpdater | undefined,
 ): Effect.Effect<HostService, never, Scope.Scope | Proc | Worktrees | AgentHosts> =>
   Effect.gen(function* () {
@@ -87,6 +104,7 @@ const hostService = (
     const terminals = yield* terminalsOnHost;
     const sessions = yield* sessionsOnHost(agents.get);
     let clones = 0;
+    const checks = yield* checksOn(proc, join(hostHome(), "checks"));
     const repos = reposOn(proc, hostRepos());
     const scan = liveScan.pipe(Effect.provideService(Proc, proc));
     /**
@@ -108,7 +126,12 @@ const hostService = (
           ).length;
         }
       }
-      return { turns: sessions.busy(), terminals: loose + running, clones };
+      return {
+        turns: sessions.busy(),
+        terminals: loose + running,
+        clones,
+        checks: checks.running?.() ?? 0,
+      };
     });
     const updater = update?.(busy);
     return {
@@ -121,6 +144,8 @@ const hostService = (
         ...(RELEASE === undefined ? {} : { release: RELEASE }),
       },
       files: filesOn(proc),
+      reads: fileReadsOn(proc),
+      attachments: yield* attachmentsOnHost(hostAttachments()),
       repos: {
         ensure: (url) =>
           Effect.acquireUseRelease(
@@ -129,22 +154,26 @@ const hostService = (
             () => Effect.sync(() => (clones -= 1)),
           ),
       },
-      worktrees: yield* Worktrees,
+      worktrees:
+        hostId === LOCAL_HOST_ID ? yield* Worktrees : cloneWorktrees(proc, yield* Worktrees),
       git: gitOn(proc),
       terminals,
       sessions,
       scan,
+      ...(claude === undefined ? {} : { claude }),
       status: hostStatusOf(
         agents.get("claude").pipe(
           Effect.flatMap(claudeSignInOf),
           Effect.orElseSucceed(() => "unknown" as const),
         ),
       ),
+      checks,
       ...(updater === undefined ? {} : { update: updater }),
     };
   });
 
-const HostLayer = Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)), HostAgents);
+const hostLayer = (oauthToken?: () => string | undefined) =>
+  Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)), hostAgents(oauthToken));
 
 /** This machine's host, for the server that started it. */
 const child = Effect.gen(function* () {
@@ -152,14 +181,22 @@ const child = Effect.gen(function* () {
     Effect.sync(() => new NetSocket({ fd: HOST_STREAM_FD, readable: true, writable: true })),
   );
   yield* serveHost(socket, yield* hostService(LOCAL_HOST_ID));
-}).pipe(Effect.scoped, Effect.provide(HostLayer));
+}).pipe(Effect.scoped, Effect.provide(hostLayer()));
 
 const args = process.argv.slice(2);
+/**
+ * A joined machine's host reads its token from its own folder at each session, so one set or
+ * forgotten applies to the next; one it can't read leaves Claude on the machine's own sign-in.
+ */
+const joinedHome = hostHome();
 NodeRuntime.runMain(
   args.length === 0
     ? child
     : runCli(args, {
-        service: (hostId, home) => hostService(hostId, (busy) => selfUpdater(RELEASE, home, busy)),
-        layer: HostLayer,
+        service: (hostId, home) =>
+          hostService(hostId, claudeTokenIn(joinedHome), (busy) =>
+            selfUpdater(RELEASE, home, busy),
+          ),
+        layer: hostLayer(() => readClaudeToken(joinedHome)),
       }),
 );

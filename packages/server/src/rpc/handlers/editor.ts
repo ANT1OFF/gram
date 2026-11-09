@@ -1,12 +1,21 @@
 import { stat } from "node:fs/promises";
 import { dirname } from "node:path";
-import { checkoutRoots, InvalidState, NotFound, type ThreadId } from "@gram/contracts";
+import {
+  checkoutRoots,
+  effectiveCheckout,
+  hostOf,
+  InvalidState,
+  isLocalHost,
+  NotFound,
+  type ThreadId,
+} from "@gram/contracts";
 import { childEnv, PathProbe } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { refuseUnavailable } from "../../config.ts";
 import { editorCommand, resolveEditorBin, revealCommand } from "../../editor/editor.ts";
 import { resolveScoped, resolveScopedIn } from "../../fs/files.ts";
+import { machineNames } from "../../host/machine-name.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { Opener } from "../../platform/opener.ts";
 import type { Handlers } from "./common.ts";
@@ -17,19 +26,33 @@ import type { Handlers } from "./common.ts";
  */
 export const editorHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
+  const nameOf = yield* machineNames;
   const launcher = yield* Opener;
   const probe = yield* Effect.serviceOption(PathProbe);
   const childPath = Option.isSome(probe)
     ? probe.value.path
     : Effect.sync(() => process.env["PATH"] ?? "");
 
-  /** A relative path is the checkout's; an absolute one may be in any folder of the thread's. */
+  /**
+   * A relative path is the checkout's; an absolute one may be in any folder of the thread's. A
+   * thread on another machine has its folders there, which an editor or file manager started on
+   * this one can't open: refused before anything is looked up on this disk.
+   */
   const scopeRoots = (threadId: ThreadId) =>
     store.getThread(threadId).pipe(
-      Effect.map((thread) => [...new Set([thread.checkout.path, ...checkoutRoots(thread)])]),
       Effect.catchTag("ThreadNotFound", () =>
         Effect.fail(new InvalidState({ message: "This thread no longer exists", threadId })),
       ),
+      Effect.flatMap((thread) => {
+        const checkout = effectiveCheckout(thread);
+        if (isLocalHost(checkout))
+          return Effect.succeed([...new Set([thread.checkout.path, ...checkoutRoots(thread)])]);
+        return Effect.fail(
+          new InvalidState({
+            message: `This thread's files are on ${nameOf(hostOf(checkout))}, and Gram opens files in an editor or file manager only on this machine.`,
+          }),
+        );
+      }),
     );
 
   const resolveTarget = (path: string, threadId: ThreadId | undefined) =>

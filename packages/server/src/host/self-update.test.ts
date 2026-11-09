@@ -22,6 +22,7 @@ import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { RELEASES } from "./install-script.ts";
@@ -45,7 +46,7 @@ import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { streamPair } from "./test-stream.ts";
 
-const IDLE: HostBusy = { turns: 0, terminals: 0, clones: 0 };
+const IDLE: HostBusy = { turns: 0, terminals: 0, clones: 0, checks: 0 };
 const OLD = "1.16.0";
 const NEW = "1.17.0";
 const ASSET = releaseAsset(NEW, "linux", "x64")!;
@@ -161,10 +162,10 @@ describe("releases", () => {
   });
 
   it("words what keeps a machine busy", () => {
-    expect(busyText({ turns: 1, terminals: 2, clones: 0 })).toBe(
+    expect(busyText({ turns: 1, terminals: 2, clones: 0, checks: 0 })).toBe(
       "1 running turn and 2 busy terminals",
     );
-    expect(busyText({ turns: 0, terminals: 0, clones: 1 })).toBe("1 clone");
+    expect(busyText({ turns: 0, terminals: 0, clones: 1, checks: 0 })).toBe("1 clone");
   });
 });
 
@@ -260,7 +261,7 @@ describe("a host updating itself", () => {
   });
 
   it("defers while busy, then updates without downloading again once idle", async () => {
-    let busy: HostBusy = { turns: 1, terminals: 0, clones: 0 };
+    let busy: HostBusy = { turns: 1, terminals: 0, clones: 0, checks: 0 };
     const { updater, handed, release } = setup({ busy: () => busy });
     // Busy before it starts: nothing is fetched.
     expect((await steps(updater)).refused).toMatchObject({
@@ -273,7 +274,7 @@ describe("a host updating itself", () => {
     // Work starts while it downloads: the app stays ready, the service stays where it is.
     let calls = 0;
     const flipping = setup({
-      busy: () => (calls++ === 0 ? IDLE : { turns: 0, terminals: 2, clones: 0 }),
+      busy: () => (calls++ === 0 ? IDLE : { turns: 0, terminals: 2, clones: 0, checks: 0 }),
     });
     expect((await steps(flipping.updater)).refused).toMatchObject({
       reason: "busy",
@@ -450,6 +451,8 @@ const connected = (updater: ReturnType<typeof makeSelfUpdate>) =>
         release: OLD,
       },
       files: filesOn(yield* Proc),
+      reads: fileReadsOn(yield* Proc),
+      attachments: yield* attachmentsOnHost(temp()),
       repos: reposOn(yield* Proc, "/nonexistent/gram-host-repos"),
       worktrees: yield* Worktrees,
       git: gitOn(yield* Proc),
@@ -491,7 +494,7 @@ describe("host.update over the wire", () => {
       expect(refused).toMatchObject({ _tag: "HostUpdateRefused", reason: "failed" });
       expect(tampered.handed).toEqual([]);
 
-      const busy = setup({ busy: () => ({ turns: 0, terminals: 1, clones: 0 }) });
+      const busy = setup({ busy: () => ({ turns: 0, terminals: 1, clones: 0, checks: 0 }) });
       const busyConnection = yield* connected(busy.updater);
       const deferred = yield* busyConnection
         .update!.start(NEW)
@@ -504,7 +507,7 @@ describe("host.update over the wire", () => {
       // The connection stays up after a refusal.
       expect(busyConnection.gone()).toBe(false);
       expect(yield* busyConnection.update!.check).toEqual({
-        busy: { turns: 0, terminals: 1, clones: 0 },
+        busy: { turns: 0, terminals: 1, clones: 0, checks: 0 },
       });
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
@@ -521,6 +524,8 @@ describe("host.update over the wire", () => {
           pid: 1,
         },
         files: filesOn(yield* Proc),
+        reads: fileReadsOn(yield* Proc),
+        attachments: yield* attachmentsOnHost(temp()),
         repos: reposOn(yield* Proc, "/nonexistent/gram-host-repos"),
         worktrees: yield* Worktrees,
         git: gitOn(yield* Proc),

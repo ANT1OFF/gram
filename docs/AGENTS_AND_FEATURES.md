@@ -679,7 +679,9 @@ closed**. A check whose process is gone with no status runs again once from the 
 **restarted after Gram quit**; a second cut-off fails with that reason.
 
 Gram runs one local check at a time on a machine by default, or two with 12 or more cores;
-`workspaces.localCheckConcurrency` (Local checks at once) changes it. Waiting checks read
+`workspaces.localCheckConcurrency` (Local checks at once) changes it. A worker on a
+[joined machine](MACHINES.md#its-local-checks) has its check run there, one at a time on that
+machine. Waiting checks read
 **queued for local check (n ahead)**, and a check's timeout starts only once it runs. A sweep
 five minutes after start and every six hours forgets finished checks (passes after 30 days,
 everything else after 7), keeps the logs within 256 MiB and reclaims only work folders with

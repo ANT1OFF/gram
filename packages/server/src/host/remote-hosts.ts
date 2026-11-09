@@ -11,8 +11,12 @@ import { ServerConfig } from "../config.ts";
 import type { Socket } from "../platform/unstable.ts";
 import {
   createPairedMachines,
+  dialNoncesLastSeen,
+  type DialNonceStore,
   fileMachineStore,
+  fileNonceStore,
   machineView,
+  NO_DIALS,
   type PairedMachine,
   type PairedMachines,
   type PairedMachineStore,
@@ -59,18 +63,34 @@ interface Online {
 /** How old a status check may be before a listing asks the machine again. */
 export const SIGN_IN_FRESH_MS = 60_000;
 
-/** The store, made on first write: a Gram no machine joined never makes the file or its folder. */
-const lazyFileStore = (dataDir: string): PairedMachineStore => {
-  let store: PairedMachineStore | undefined;
-  const real = () => (store ??= fileMachineStore(dataDir));
+/** A store, made on first write: a Gram no machine joined never makes the file or its folder. */
+const lazyFileStore = <R, W>(
+  dataDir: string,
+  name: string,
+  make: (dataDir: string) => { readonly read: () => R; readonly write: (value: W) => void },
+  empty: () => R,
+) => {
+  let store: ReturnType<typeof make> | undefined;
+  const real = () => (store ??= make(dataDir));
   return {
-    read: () =>
-      store === undefined && !existsSync(join(dataDir, "remote-access", "machines.json"))
-        ? []
+    read: (): R =>
+      store === undefined && !existsSync(join(dataDir, "remote-access", name))
+        ? empty()
         : real().read(),
-    write: (machines) => real().write(machines),
+    write: (value: W) => real().write(value),
   };
 };
+
+/**
+ * A dial the route let through, pinned to the access it was let through under: the machine's
+ * generation and the tailnet address it dialled, taken before the WebSocket upgrade starts. It
+ * comes online only while both still hold.
+ */
+export interface AdmittedDial {
+  readonly machine: PairedMachine;
+  readonly origin: string;
+  readonly generation: number;
+}
 
 export interface RemoteHostsShape {
   readonly machines: PairedMachines;
@@ -84,14 +104,15 @@ export interface RemoteHostsShape {
    */
   readonly list: (tailscale?: boolean) => ReadonlyArray<ReturnType<typeof machineView>>;
   /**
-   * Serves a dial from `machine` that the auth middleware let through, until its socket closes or
-   * the machine is removed. A second dial from the same machine replaces the first.
+   * Pins a dial from `machine` that the route let through over `origin`, before its upgrade
+   * starts: turning access off or moving it, or removing the machine, after this drops the dial.
    */
-  readonly attach: (
-    machine: PairedMachine,
-    socket: Socket.Socket,
-    origin: string,
-  ) => Effect.Effect<void>;
+  readonly admit: (machine: PairedMachine, origin: string) => AdmittedDial;
+  /**
+   * Serves an admitted dial until its socket closes or the machine is removed. A second dial from
+   * the same machine replaces the first.
+   */
+  readonly attach: (dial: AdmittedDial, socket: Socket.Socket) => Effect.Effect<void>;
   /**
    * Asks the machine what it can run now (its Claude sign-in, its tools) and keeps the answer for
    * the listing: `undefined` while it is offline. A check already running is shared.
@@ -120,11 +141,12 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
   static readonly make = (
     store: PairedMachineStore,
     now: () => number = Date.now,
+    nonces?: DialNonceStore,
     /** This Gram's release, which machines update to; undefined when it runs from source. */
     options: { readonly release?: string | undefined; readonly retryMs?: number } = {},
   ) =>
     Effect.gen(function* () {
-      const machines = createPairedMachines(store, now);
+      const machines = createPairedMachines(store, now, nonces);
       const online = new Map<HostId, Online>();
       const root = yield* Effect.scope;
       // The server's own logger and the rest, for a check started outside an effect.
@@ -167,10 +189,29 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
        */
       const generations = new Map<HostId, number>();
       const generationOf = (id: HostId) => generations.get(id) ?? 0;
-      const bump = (id: HostId) => generations.set(id, generationOf(id) + 1);
-      const attach = (machine: PairedMachine, socket: Socket.Socket, origin: string) =>
+      /** Each machine's dials still saying hello, ended when its generation is bumped. */
+      const pending = new Map<HostId, Set<() => void>>();
+      const bump = (id: HostId) => {
+        generations.set(id, generationOf(id) + 1);
+        const ends = pending.get(id);
+        pending.delete(id);
+        for (const end of ends ?? []) end();
+      };
+      /**
+       * The address access was last kept on (`null` when it was turned off), so a dial admitted
+       * over another address never comes online; undefined until access is first kept or moved.
+       */
+      let kept: string | null | undefined;
+      /** Whether the access a dial was admitted under still holds. */
+      const stillAdmitted = ({ machine, origin, generation }: AdmittedDial) =>
+        generationOf(machine.id) === generation &&
+        (kept === undefined || kept === origin) &&
+        machines.get(machine.id)?.confirmedAt !== undefined;
+      const attach = (dial: AdmittedDial, socket: Socket.Socket) =>
         Effect.gen(function* () {
-          const generation = generationOf(machine.id);
+          const { machine, origin } = dial;
+          // Access turned off or moved, or the machine removed, while the dial was upgraded.
+          if (!stillAdmitted(dial)) return;
           const scope = yield* Scope.fork(root);
           let entry: Online | undefined;
           const ended = yield* Deferred.make<never, HostUnavailable>();
@@ -180,9 +221,14 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               ended,
               Exit.fail(new HostUnavailable({ hostId: machine.id, message })),
             );
+          // Ended while it says hello when the machine is removed or access is turned off or moved.
+          const endPending = () => end("The machine was removed, or access to it moved.");
+          const saying = pending.get(machine.id) ?? new Set<() => void>();
+          pending.set(machine.id, saying.add(endPending));
           // Whichever way the dial ends (its socket closed, it was replaced or removed, or the
           // request was interrupted), its entry and scope go with it.
           const cleanUp = Effect.suspend(() => {
+            pending.get(machine.id)?.delete(endPending);
             if (entry !== undefined && online.get(machine.id) === entry) online.delete(machine.id);
             return Scope.close(scope, Exit.void);
           });
@@ -211,7 +257,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                   ? helloMismatch(hello)
                   : undefined;
               const release = hello === undefined ? undefined : releaseOf(hello);
-              if (generationOf(machine.id) === generation)
+              if (generationOf(machine.id) === dial.generation)
                 machines.note(
                   machine.id,
                   hello !== undefined && mismatch !== undefined
@@ -240,11 +286,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               return;
             }
             // Removed, or its connections closed, while it said hello: it doesn't come online.
-            if (
-              generationOf(machine.id) !== generation ||
-              machines.get(machine.id)?.confirmedAt === undefined
-            )
-              return;
+            if (!stillAdmitted(dial)) return;
+            pending.get(machine.id)?.delete(endPending);
             close(machine.id);
             const live: Online = {
               connection: opened.value,
@@ -334,6 +377,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           }),
         origin: (id) => online.get(id)?.origin,
         list: (tailscale) => machines.list().map((machine) => view(machine, tailscale)),
+        admit: (machine, origin) => ({ machine, origin, generation: generationOf(machine.id) }),
         attach,
         checkSignIn,
         update: updates.request,
@@ -350,6 +394,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           }
         },
         keepOrigin: (origin) => {
+          kept = origin ?? null;
           for (const machine of machines.list()) {
             const live = online.get(machine.id);
             if (live !== undefined && live.origin === origin) continue;
@@ -372,9 +417,16 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
     RemoteHosts,
     Effect.gen(function* () {
       const config = yield* ServerConfig;
-      return yield* RemoteHosts.make(lazyFileStore(config.dataDir), Date.now, {
-        release: releaseOfConfig(config),
-      });
+      const { dataDir } = config;
+      return yield* RemoteHosts.make(
+        lazyFileStore(dataDir, "machines.json", fileMachineStore, () => []),
+        Date.now,
+        {
+          ...lazyFileStore(dataDir, "dial-nonces.json", fileNonceStore, () => NO_DIALS),
+          lastSeen: () => dialNoncesLastSeen(dataDir),
+        },
+        { release: releaseOfConfig(config) },
+      );
     }),
   );
 }

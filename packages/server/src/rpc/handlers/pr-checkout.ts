@@ -1,4 +1,4 @@
-import { GitError, InvalidState, type BoundPr } from "@gram/contracts";
+import { GitError, InvalidState, LOCAL_HOST_ID, type BoundPr } from "@gram/contracts";
 import { fetchPrHead, prHead, Proc, tryRepoTop } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { resolveFolder } from "../../fs/folders.ts";
@@ -29,7 +29,7 @@ export const prCheckoutHandlers = Effect.gen(function* () {
         }
         const head = yield* provide(prHead(top, number, repo)).pipe(Effect.mapError(toGitError));
         const branch = yield* provide(fetchPrHead(top, head)).pipe(Effect.mapError(toGitError));
-        const open = heldCheckoutPaths(yield* store.listThreads);
+        const open = heldCheckoutPaths(yield* store.listThreads, LOCAL_HOST_ID);
         const checkout = yield* checkouts
           .prepare({ kind: "newWorktree", branch }, open, root)
           .pipe(

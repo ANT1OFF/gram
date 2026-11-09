@@ -73,7 +73,7 @@ export type UpdateRequest =
   | { readonly kind: "unavailable"; readonly message: string };
 
 const isBusy = (busy: HostBusy | undefined): busy is HostBusy =>
-  busy !== undefined && busy.turns + busy.terminals + busy.clones > 0;
+  busy !== undefined && busy.turns + busy.terminals + busy.clones + busy.checks > 0;
 
 /** The release a host said it runs, when it reads as one. */
 const releaseOf = (connection: HostConnection): string | undefined =>

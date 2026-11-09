@@ -687,10 +687,12 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       const token = `${git.head}\0${git.changesToken}`;
       const ownMoved = git.repo && changedFiles.get(thread.id)?.token !== token;
       if (ownMoved) {
-        const changed = yield* provideProc(
-          changedPaths(effectiveCheckout(thread).path, git.base),
-          noChangedPaths,
-        );
+        const checkout = effectiveCheckout(thread);
+        // Read with git here, so only a checkout here: another machine's would be read as
+        // whatever this one has at that path, if anything.
+        const changed = isLocalHost(checkout)
+          ? yield* provideProc(changedPaths(checkout.path, git.base), noChangedPaths)
+          : noChangedPaths;
         changedFiles.set(thread.id, { token, ...changed });
       }
       const extrasMoved = yield* sampleExtras(thread);

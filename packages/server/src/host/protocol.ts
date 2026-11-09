@@ -24,6 +24,7 @@ import {
   InterruptHung,
   ModeRefused,
   type HostCapability,
+  type HostCheckResult,
   HostCommandFailed,
   HostFailed,
   type HostHello,
@@ -45,9 +46,11 @@ import {
   WorktreeError,
   type Worktrees,
 } from "@gram/git";
+import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Redacted from "effect/Redacted";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -60,7 +63,10 @@ import {
   Socket,
   SocketServer,
 } from "../platform/unstable.ts";
+import type { HostAttachments, HostFileReads } from "./file-reads.ts";
+import type { HostCheckRequest, HostChecks } from "./checks.ts";
 import type { HostFiles } from "./files.ts";
+import { NOT_A_CLAUDE_TOKEN } from "./host-config.ts";
 import type { HostGit } from "./git.ts";
 import type { HostRepos } from "./repos.ts";
 import type { HostSessionsService } from "./sessions.ts";
@@ -85,10 +91,24 @@ export interface HostWorktrees {
   readonly pendingPermissions: Worktrees["Service"]["pendingPermissions"];
 }
 
+/**
+ * The Claude token a joined machine keeps: one the user ran `claude setup-token` for on the main
+ * machine and consented to send here. Its failures never carry the token.
+ */
+export interface HostClaudeToken {
+  readonly setToken: (token: Redacted.Redacted<string>) => Effect.Effect<void, HostFailed>;
+  /** True when there was one to delete. */
+  readonly forgetToken: Effect.Effect<boolean, HostFailed>;
+}
+
 /** What a host serves: its folders, worktrees, git state and port scan, and who it says it is. */
 export interface HostService {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  /** Its threads' files scoped and read where they are. */
+  readonly reads: HostFileReads;
+  /** The files users attach to its sessions. */
+  readonly attachments: HostAttachments;
   /** The clones it keeps of repositories, for the workers placed on it. */
   readonly repos: HostRepos;
   readonly worktrees: HostWorktrees;
@@ -96,8 +116,12 @@ export interface HostService {
   readonly terminals: HostTerminalsService;
   readonly sessions: HostSessionsService;
   readonly scan: Effect.Effect<PortScan, unknown>;
+  /** A joined machine's; the main machine's own host keeps no token. */
+  readonly claude?: HostClaudeToken;
   /** What it can run, checked afresh: its Claude sign-in and its tools. */
   readonly status?: Effect.Effect<HostStatus>;
+  /** Project checks of pull requests, on a host that serves `checks`. */
+  readonly checks?: HostChecks;
   /** Its own update, on a joined machine that runs as its service (`self-update.ts`). */
   readonly update?: HostUpdater;
 }
@@ -107,6 +131,9 @@ export interface HostUpdater {
   readonly check: Effect.Effect<HostUpdateCheck>;
   readonly start: (release: string) => Stream.Stream<HostUpdateProgress, HostUpdateRefused>;
 }
+
+/** What a host without a token store answers. */
+const NO_TOKEN_STORE = "This machine's host doesn't keep a Claude token.";
 
 /** The capabilities a host must serve for this build to use it. */
 export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
@@ -123,7 +150,13 @@ export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
  * The capabilities this build's host serves: the ones required, and those a control plane uses only
  * where a host advertises them, so a host on an older release still connects.
  */
-export const HOST_SERVES: ReadonlyArray<HostCapability> = [...HOST_CAPABILITIES, "deliveries"];
+export const HOST_SERVES: ReadonlyArray<HostCapability> = [
+  ...HOST_CAPABILITIES,
+  "deliveries",
+  "file-reads",
+  "attachments",
+  "checks",
+];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -196,6 +229,18 @@ const handlersFor = (host: HostService) => {
       "host.files.search": ({ root, query, regex, caseSensitive, offset, limit }) =>
         host.files.search(root, query, { regex, caseSensitive, offset, limit }),
       "host.files.names": ({ root }) => host.files.names(root),
+      "host.files.scope": ({ path, roots }) => host.reads.scope(path, roots),
+      "host.files.file": ({ path, roots, outside, maxBytes }) =>
+        host.reads.file(path, roots, outside, maxBytes),
+      "host.files.image": ({ path, roots, outside, maxBytes }) =>
+        host.reads.image(path, roots, outside, maxBytes),
+      "host.files.resolve": ({ paths, roots, outside }) =>
+        host.reads.resolve(paths, roots, outside),
+      "host.files.vocabulary": ({ root }) => host.reads.vocabulary(root),
+      "host.files.fetch": ({ path, cwd, maxBytes }) => host.reads.fetch(path, cwd, maxBytes),
+      "host.attachments.put": ({ threadId, name, data }) =>
+        host.attachments.put(threadId, name, data),
+      "host.attachments.remove": ({ threadId }) => host.attachments.remove(threadId),
       // Never a defect: one from a handler breaks the whole connection, not just this call.
       "host.status": () =>
         (host.status ?? Effect.succeed(UNKNOWN_STATUS)).pipe(
@@ -234,6 +279,10 @@ const handlersFor = (host: HostService) => {
         host.worktrees
           .pendingPermissions(repoPath, worktreeDir)
           .pipe(Effect.mapError(worktreeToWire)),
+      "host.checks.run": (request) =>
+        host.checks === undefined
+          ? Effect.fail(new HostFailed({ message: "This machine's host runs no local checks." }))
+          : host.checks.run(request),
       "host.git.local": ({ cwd }) => host.git.local(cwd).pipe(Effect.mapError(commandToWire)),
       "host.git.present": ({ cwd }) => host.git.present(cwd),
       "host.git.watch": ({ paths, ...options }) => host.git.watch(paths, options),
@@ -309,6 +358,12 @@ const handlersFor = (host: HostService) => {
         ),
       "host.sessions.close": ({ handle }) => host.sessions.close(handle),
       "host.sessions.reload": ({ agent, reload }) => host.sessions.reload(agent, reload),
+      "host.claude.setToken": ({ token }) =>
+        host.claude === undefined
+          ? Effect.fail(new HostFailed({ message: NO_TOKEN_STORE }))
+          : host.claude.setToken(token),
+      "host.claude.forgetToken": () =>
+        host.claude === undefined ? Effect.succeed(false) : host.claude.forgetToken,
     }),
   );
   function withSession<A, E>(
@@ -477,10 +532,26 @@ export interface HostSessionsConnection {
   ) => Effect.Effect<void>;
 }
 
+/** A host's project checks as the control plane reaches them. */
+export interface HostChecksConnection {
+  /**
+   * Runs the check of `request.id`, or joins the one under way. `HostFailed` is the host's own
+   * refusal; `HostUnavailable` means the connection went before it answered, so how the check
+   * ended is unknown, and asking again under the same id finds it.
+   */
+  readonly run: (
+    request: HostCheckRequest,
+  ) => Effect.Effect<HostCheckResult, HostFailed | HostUnavailable>;
+}
+
 /** A connected host, as the control plane reaches it. */
 export interface HostConnection {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  /** Absent for a host from a build that doesn't serve `file-reads`. */
+  readonly reads: HostFileReads | undefined;
+  /** Absent for a host from a build that doesn't serve `attachments`. */
+  readonly attachments: HostAttachments | undefined;
   readonly repos: {
     readonly ensure: (url: string) => Effect.Effect<{ readonly path: string }, WorktreeError>;
   };
@@ -490,10 +561,17 @@ export interface HostConnection {
   readonly sessions: HostSessionsConnection;
   readonly scan: Effect.Effect<PortScan, unknown>;
   /**
+   * The machine's Claude token. A host built before these calls, or one that doesn't answer,
+   * fails with `HostFailed` saying so; no failure carries the token.
+   */
+  readonly claude: HostClaudeToken;
+  /**
    * What the machine can run as its host reads it now: unknown, with no tools, when the host
    * doesn't answer, is too old to know the call, or has gone.
    */
   readonly status?: Effect.Effect<HostStatus>;
+  /** Its project checks; absent on a host that doesn't serve `checks`, an older one say. */
+  readonly checks?: HostChecksConnection;
   /** Its own update, when it serves `update`. */
   readonly update?: {
     readonly check: Effect.Effect<HostUpdateCheck, HostUnavailable>;
@@ -504,6 +582,51 @@ export interface HostConnection {
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
 }
+
+/** What a token call says when the host didn't answer it, the token left out. */
+export const HOST_TOKEN_UNANSWERED =
+  "This machine's gram-host didn't take the token. It may be older than this Gram: update it there and try again.";
+
+/** What a token call says when the host refused it in words this side doesn't pass on. */
+export const HOST_TOKEN_REFUSED = "This machine's gram-host refused the token.";
+
+/** The file errors a joined host's token store reports, by code; any other code isn't passed on. */
+const STORE_ERROR_CODES: ReadonlySet<string> = new Set([
+  "EACCES",
+  "EPERM",
+  "ENOSPC",
+  "EDQUOT",
+  "EROFS",
+  "EEXIST",
+  "ENOENT",
+  "ENOTDIR",
+  "EISDIR",
+  "ELOOP",
+  "EMFILE",
+  "ENFILE",
+  "EIO",
+  "EBUSY",
+]);
+
+/** How a joined host's store words a failed step: the step and a code, nothing else. */
+const STORE_REFUSAL = /^Couldn't (keep|delete) the Claude token: ([A-Z]{2,12}|file error)\.$/;
+
+/**
+ * A host's refusal as this side passes it on: a message built here from a known step and a known
+ * error code, never text the host chose, which could carry part of the token it was sent.
+ */
+export const publicTokenRefusal = (message: string): string => {
+  if (message === NOT_A_CLAUDE_TOKEN) return NOT_A_CLAUDE_TOKEN;
+  if (message === NO_TOKEN_STORE) return NO_TOKEN_STORE;
+  const parts = STORE_REFUSAL.exec(message);
+  if (parts === null) return HOST_TOKEN_REFUSED;
+  const step = parts[1] === "keep" ? "keep" : "delete";
+  const code = STORE_ERROR_CODES.has(parts[2]!) ? parts[2]! : "file error";
+  return `Couldn't ${step} the Claude token: ${code}.`;
+};
+
+/** How long a token call waits for the host. */
+const TOKEN_CALL_TIMEOUT = "20 seconds";
 
 /** What the Files panel shows when the host doesn't answer; the detail goes to the log. */
 export const HOST_NOT_ANSWERING = "This machine's host isn't answering.";
@@ -710,6 +833,41 @@ export const connectHost = (
         guarded(client["host.files.names"]({ root })).pipe(
           Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
         ),
+    };
+    const reads: HostFileReads = {
+      scope: (path, roots) =>
+        guarded(client["host.files.scope"]({ path, roots })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+      file: (path, roots, outside, maxBytes) =>
+        guarded(client["host.files.file"]({ path, roots, outside, maxBytes })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+      image: (path, roots, outside, maxBytes) =>
+        guarded(client["host.files.image"]({ path, roots, outside, maxBytes })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+      resolve: (paths, roots, outside) =>
+        guarded(client["host.files.resolve"]({ paths, roots, outside })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      vocabulary: (root) =>
+        guarded(client["host.files.vocabulary"]({ root })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      fetch: (path, cwd, maxBytes) =>
+        guarded(client["host.files.fetch"]({ path, cwd, maxBytes })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+    };
+    const attachments: HostAttachments = {
+      put: (threadId, name, data) =>
+        guarded(client["host.attachments.put"]({ threadId, name, data })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      // A host that went holds nothing more to delete now; its own prune takes the rest.
+      remove: (threadId) =>
+        guarded(client["host.attachments.remove"]({ threadId })).pipe(Effect.ignore),
     };
     const worktreeCall = <A, E extends { readonly _tag: string; readonly message?: string }>(
       call: Effect.Effect<A, E>,
@@ -970,9 +1128,61 @@ export const connectHost = (
       reload: (agent, reload) =>
         guarded(client["host.sessions.reload"]({ agent, reload })).pipe(Effect.ignore),
     };
+    /**
+     * A token call: the host's own refusal passes as it is; anything else (an older host's
+     * unknown-request defect, a broken stream, no answer in time) reads as `HOST_TOKEN_UNANSWERED`.
+     * Only the error's tag is logged, never its text, which could quote the request.
+     */
+    const tokenCall = <A, E extends { readonly _tag: string }>(
+      call: Effect.Effect<A, E>,
+    ): Effect.Effect<A, HostFailed> =>
+      guarded(call).pipe(
+        Effect.timeoutOrElse({
+          duration: TOKEN_CALL_TIMEOUT,
+          orElse: () => Effect.fail(new HostFailed({ message: HOST_TOKEN_UNANSWERED })),
+        }),
+        Effect.catchCause((cause) => {
+          const failure = cause.reasons.find(Cause.isFailReason)?.error;
+          if (failure instanceof HostFailed)
+            return Effect.fail(new HostFailed({ message: publicTokenRefusal(failure.message) }));
+          if (cause.reasons.some(Cause.isInterruptReason) && failure === undefined)
+            return Effect.failCause(cause as Cause.Cause<never>);
+          return Effect.logWarning("worker host: a token call wasn't answered").pipe(
+            Effect.annotateLogs({
+              hostId: options.hostId,
+              kind:
+                failure === undefined
+                  ? "defect"
+                  : ((failure as { readonly _tag?: string })._tag ?? "failure"),
+            }),
+            Effect.andThen(Effect.fail(new HostFailed({ message: HOST_TOKEN_UNANSWERED }))),
+          );
+        }),
+      );
+    const claude: HostClaudeToken = {
+      setToken: (token) => tokenCall(client["host.claude.setToken"]({ token })),
+      forgetToken: tokenCall(client["host.claude.forgetToken"]()),
+    };
+    const checks: HostChecksConnection = {
+      run: (request) =>
+        guarded(client["host.checks.run"](defined({ ...request }))).pipe(
+          Effect.catch((error) =>
+            error instanceof HostFailed || error instanceof HostUnavailable
+              ? Effect.fail(error)
+              : Effect.logWarning("worker host: a check call failed on the stream").pipe(
+                  Effect.annotateLogs({ reason: failureText(error) }),
+                  Effect.andThen(Effect.fail(unavailable(HOST_NOT_ANSWERING))),
+                ),
+          ),
+        ),
+    };
     return {
       hello,
       files,
+      claude,
+      reads: hello.capabilities.includes("file-reads") ? reads : undefined,
+      attachments: hello.capabilities.includes("attachments") ? attachments : undefined,
+      ...(hello.capabilities.includes("checks") ? { checks } : {}),
       repos: { ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })) },
       worktrees,
       git,

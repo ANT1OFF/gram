@@ -8,6 +8,7 @@ import {
   type HostUnavailable,
   InvalidState,
   NotFound,
+  type TerminalId,
   type Thread,
   type ThreadId,
   ThreadNotFound,
@@ -28,9 +29,12 @@ import type { CheckoutServiceShape } from "../runtime/hooks.ts";
 import type { TerminalGate } from "../terminal/gate.ts";
 import { terminalsThroughHost } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
+import { foregroundOf } from "../ports/pure.ts";
 import { followingSessions } from "./following-sessions.ts";
+import type { AttachmentsOnMachine } from "./carry-attachments.ts";
 import type { HostConnection } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
+import { redactUrlCredentials } from "./remote-url.ts";
 import { cloneFolderOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
@@ -50,6 +54,29 @@ export interface Machine {
 }
 
 const offline = (machine: Machine) => `${machine.name} is offline.`;
+
+/**
+ * Whether a terminal of a thread runs a command on the machine, by the machine's own scan and its
+ * shells' process ids there (`shells`, by terminal); undefined when that can't be told, so a close
+ * at rest leaves the thread open. Never this machine's processes: the ids are the other machine's.
+ */
+const terminalBusyOn =
+  (connection: HostConnection, shells: ReadonlyMap<TerminalId, number>) => (threadId: ThreadId) =>
+    Effect.gen(function* () {
+      const open = (yield* connection.terminals.list(threadId)).filter((t) => t.alive);
+      // An empty list from a machine that went meanwhile says nothing about its shells.
+      if (connection.gone()) return undefined;
+      if (open.length === 0) return false;
+      const swept = yield* connection.scan.pipe(Effect.orElseSucceed(() => undefined));
+      if (swept?.processes === undefined) return undefined;
+      for (const { terminalId } of open) {
+        const pid = shells.get(terminalId);
+        // A shell whose id hasn't come in yet can't be ruled out.
+        if (pid === undefined) return undefined;
+        if (foregroundOf(swept.processes, swept.children, pid) !== undefined) return true;
+      }
+      return false;
+    });
 
 /** Terminals that aren't there: a machine's host that went took its shells with it. */
 const noTerminals = (machine: Machine): Terminals => ({
@@ -95,7 +122,7 @@ export const machineCheckouts = (
   const originOf = (projectRoot: string) =>
     git(projectRoot, ["remote", "get-url", "origin"]).pipe(
       Effect.provideService(Proc, deps.proc),
-      Effect.mapError((error) => new GitError({ message: error.message })),
+      Effect.mapError((error) => new GitError({ message: redactUrlCredentials(error.message) })),
       Effect.flatMap((out) => {
         const url = out.stdout.trim();
         if (out.status === 0 && url !== "") {
@@ -141,7 +168,7 @@ export const machineCheckouts = (
           .pipe(
             Effect.mapError((error) =>
               error.reason === "failed"
-                ? new GitError({ message: error.message })
+                ? new GitError({ message: redactUrlCredentials(error.message) })
                 : new InvalidState({ message: error.message }),
             ),
           );
@@ -158,7 +185,7 @@ export const machineCheckouts = (
                 ? new CheckoutInUse({ path: repoPath, message: error.message })
                 : error.reason === "invalidRequest"
                   ? new InvalidState({ message: error.message })
-                  : new GitError({ message: error.message }),
+                  : new GitError({ message: redactUrlCredentials(error.message) }),
             ),
           );
         return {
@@ -195,7 +222,7 @@ export const machineCheckouts = (
               Effect.mapError((error) =>
                 error.dirty
                   ? new WorktreeDirty({ path: target.path, changedFiles: 0 })
-                  : new GitError({ message: error.message }),
+                  : new GitError({ message: redactUrlCredentials(error.message) }),
               ),
             );
         }
@@ -246,7 +273,7 @@ export const machineCheckouts = (
                 ? new CheckoutInUse({ path: checkout.path, message: error.message })
                 : error.reason === "invalidRequest"
                   ? new InvalidState({ message: error.message })
-                  : new GitError({ message: error.message }),
+                  : new GitError({ message: redactUrlCredentials(error.message) }),
             ),
           );
       }),
@@ -281,7 +308,8 @@ const machineGit = (connection: HostConnection): GitStateRuntime["Service"] => (
  * calls fail, its folders read as there, and its sessions don't start.
  *
  * Its shells don't count among this machine's process roots, since their process ids are that
- * machine's; their port chips come later.
+ * machine's; their port chips come later. Whether one runs a command is read from that machine's
+ * own scan (`terminalBusyOn`).
  */
 export interface MachineDeps {
   readonly store: ThreadStore["Service"];
@@ -298,12 +326,21 @@ export const machineWorkerHost = (
 ): Effect.Effect<WorkerHost, never, Scope.Scope> =>
   Effect.gen(function* () {
     const threads = store.listThreads.pipe(Effect.orElseSucceed((): ReadonlyArray<Thread> => []));
+    /** The machine's shells by terminal, with their process ids there. */
+    const shells = new Map<TerminalId, number>();
     const terminals = yield* terminalsThroughHost(
       connection.terminals,
       connection.gone,
       noTerminals(machine),
       {
         ...(gate === undefined ? {} : { held: gate.held }),
+        // Kept apart from this machine's `ProcessRoots`: these ids mean nothing here.
+        roots: {
+          add: (_threadId, pid, terminalId) => void shells.set(terminalId, pid),
+          remove: (pid) => {
+            for (const [terminalId, known] of shells) if (known === pid) shells.delete(terminalId);
+          },
+        },
         // Only a thread placed on this machine has a folder here.
         threadFolder: (threadId: ThreadId) =>
           store.getThread(threadId).pipe(
@@ -324,6 +361,14 @@ export const machineWorkerHost = (
           .pipe(Stream.map((event) => event.threadId)),
       },
     );
+    // A removed thread's attachments there go with it; a thread on no machine finds nothing.
+    const attachments = connection.attachments;
+    if (attachments !== undefined) {
+      yield* hub.internalEvents(isThreadRemoved, `attachment cleanup on ${machine.id}`).pipe(
+        Stream.runForEach((event) => attachments.remove(event.threadId)),
+        Effect.forkScoped,
+      );
+    }
     const wrapped = new WeakMap<object, ReturnType<typeof agentHostOnMachine>>();
     // A session outlives the dial it opened on: a dropped connection that comes back picks it up.
     const sessions =
@@ -344,6 +389,7 @@ export const machineWorkerHost = (
               machine.name,
               machine.origin ?? (() => undefined),
               machine.recheckSignIn,
+              currentAttachments(machine, connection),
             );
             wrapped.set(agent, through);
             return through;
@@ -354,10 +400,31 @@ export const machineWorkerHost = (
       git: machineGit(connection),
       files: connection.files,
       terminals,
-      ports: { scan: connection.scan },
+      ports: { scan: connection.scan, terminalBusy: terminalBusyOn(connection, shells) },
       process: connection.hello,
+      name: machine.name,
+      reads: connection.reads,
+      attachments: connection.attachments,
     };
   });
+
+/**
+ * The machine's attachments store on its connection at the time of each call, since a session
+ * outlives the dial it opened on; why not while it is offline or on a build without one.
+ */
+const currentAttachments =
+  (machine: Machine, opened: HostConnection): AttachmentsOnMachine =>
+  () =>
+    (machine.connection ?? Effect.succeed(opened)).pipe(
+      Effect.mapError(() => `${machine.name} is offline`),
+      Effect.flatMap((connection) =>
+        connection.attachments === undefined
+          ? Effect.fail(
+              `gram-host on ${machine.name} is older than this Gram; update it (Settings → Machines, or rerun its install command there)`,
+            )
+          : Effect.succeed(connection.attachments),
+      ),
+    );
 
 /**
  * The worker hosts of the machines joined to this Gram, each built once per connection: a machine

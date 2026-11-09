@@ -231,10 +231,8 @@ describe("an orchestrator's fold in the overview", () => {
     localStorage.setItem("gram.layout", saved);
     await useLayoutStore.persist.rehydrate();
     expect(useLayoutStore.getState().workspacesCollapsedNodes).toEqual([key]);
-    // The idle group's old open key is At rest's now (`sanitizeOverviewView`), so it is dropped.
-    expect(
-      sanitizeWorkspacesView({ workspacesCollapsedNodes: [key, 7, "overview-idle:open"] }),
-    ).toEqual({
+    // A stored key that is not a string is dropped.
+    expect(sanitizeWorkspacesView({ workspacesCollapsedNodes: [key, 7] })).toEqual({
       workspacesCollapsedNodes: [key],
     });
   });

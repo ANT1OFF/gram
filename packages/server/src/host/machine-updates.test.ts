@@ -109,14 +109,14 @@ describe("updating joined machines", () => {
   it.effect("defers a busy machine, and updates it once it is idle", () =>
     Effect.gen(function* () {
       const machine = fakeMachine("1.16.0");
-      machine.state.busy = { turns: 1, terminals: 1, clones: 0 };
+      machine.state.busy = { turns: 1, terminals: 1, clones: 0, checks: 0 };
       const { updates, settle } = setup(machine);
       yield* updates.connected(ID, machine.connection);
       yield* settle;
       expect(updates.stateOf(ID)).toEqual({
         phase: "waiting",
         release: MINE,
-        busy: { turns: 1, terminals: 1, clones: 0 },
+        busy: { turns: 1, terminals: 1, clones: 0, checks: 0 },
       });
       // Still busy at the next sweep: still waiting.
       yield* updates.sweep;
@@ -133,7 +133,7 @@ describe("updating joined machines", () => {
   it.effect("leaves machines alone with automatic updates off, unless asked", () =>
     Effect.gen(function* () {
       const machine = fakeMachine("1.16.0");
-      machine.state.busy = { turns: 0, terminals: 0, clones: 1 };
+      machine.state.busy = { turns: 0, terminals: 0, clones: 1, checks: 0 };
       const { updates, settle } = setup(machine, false);
       yield* updates.connected(ID, machine.connection);
       yield* updates.sweep;

@@ -187,6 +187,7 @@ export const busyText = (busy: MachineBusy): string => {
       [busy.turns, "running turn"],
       [busy.terminals, "busy terminal"],
       [busy.clones, "clone"],
+      [busy.checks, "check"],
     ] as const
   )
     .filter(([count]) => count > 0)

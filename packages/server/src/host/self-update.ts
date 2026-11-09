@@ -190,7 +190,7 @@ const refusal = (reason: Refusal["reason"], message: string, busy?: HostBusy): R
   ...(busy === undefined ? {} : { busy }),
 });
 
-const isBusy = (busy: HostBusy) => busy.turns + busy.terminals + busy.clones > 0;
+const isBusy = (busy: HostBusy) => busy.turns + busy.terminals + busy.clones + busy.checks > 0;
 
 /** "1 running turn and 2 busy terminals": what keeps a machine from updating now. */
 export const busyText = (busy: HostBusy): string => {
@@ -198,6 +198,7 @@ export const busyText = (busy: HostBusy): string => {
     [busy.turns, "running turn"],
     [busy.terminals, "busy terminal"],
     [busy.clones, "clone"],
+    [busy.checks, "check"],
   ] as const;
   const named = each
     .filter(([count]) => count > 0)

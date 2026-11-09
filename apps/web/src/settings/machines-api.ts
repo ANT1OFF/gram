@@ -16,6 +16,8 @@ export interface JoinedMachine {
   readonly confirmed: boolean;
   /** Set while it is connected. */
   readonly onlineSince?: number;
+  /** When this Gram sent it a Claude token from `claude setup-token`; a time, never the token. */
+  readonly claudeTokenSetAt?: number;
   /** Why it is offline, as this Gram last saw it; set only while it isn't connected. */
   readonly offline?: OfflineReason;
   /** The Gram release its host said it runs, while online or when it couldn't connect. */
@@ -41,6 +43,7 @@ export interface MachineBusy {
   readonly turns: number;
   readonly terminals: number;
   readonly clones: number;
+  readonly checks: number;
 }
 
 /** A joined machine's update to this Gram's release, as the server keeps it. Times are epoch ms. */
@@ -85,7 +88,8 @@ const isUpdate = (value: unknown): value is MachineUpdate => {
         busy !== null &&
         typeof busy["turns"] === "number" &&
         typeof busy["terminals"] === "number" &&
-        typeof busy["clones"] === "number"
+        typeof busy["clones"] === "number" &&
+        typeof busy["checks"] === "number"
       );
     }
     case "downloading":
@@ -197,6 +201,8 @@ export interface MachinesStatus {
   readonly machines: ReadonlyArray<JoinedMachine>;
   /** A join link waiting to be used. */
   readonly joinLink?: { readonly expiresAt: number };
+  /** After a Remove: the machine was offline, so the Claude token sent to it is still there. */
+  readonly tokenLeft?: true;
   /** This Gram's release, absent when it runs from source. */
   readonly release?: string;
   /** The host protocol this Gram speaks. */
@@ -253,6 +259,7 @@ const isMachine = (value: unknown): value is JoinedMachine => {
     typeof m["joinedAt"] === "number" &&
     typeof m["confirmed"] === "boolean" &&
     (m["onlineSince"] === undefined || typeof m["onlineSince"] === "number") &&
+    (m["claudeTokenSetAt"] === undefined || typeof m["claudeTokenSetAt"] === "number") &&
     (m["claudeSignIn"] === undefined || SIGN_INS.has(m["claudeSignIn"])) &&
     (m["claudeSignInCheckedAt"] === undefined || typeof m["claudeSignInCheckedAt"] === "number") &&
     (m["tools"] === undefined || (Array.isArray(m["tools"]) && m["tools"].every(isTool))) &&
@@ -298,6 +305,7 @@ const status = async (response: Response, fallback: string): Promise<MachinesSta
   const value = (await response.json()) as {
     machines?: unknown;
     joinLink?: unknown;
+    tokenLeft?: unknown;
     release?: unknown;
     protocol?: unknown;
     updateCommand?: unknown;
@@ -308,10 +316,63 @@ const status = async (response: Response, fallback: string): Promise<MachinesSta
   return {
     machines: value.machines,
     ...(typeof link?.expiresAt === "number" ? { joinLink: { expiresAt: link.expiresAt } } : {}),
+    ...(value.tokenLeft === true ? { tokenLeft: true } : {}),
     ...(typeof value.release === "string" ? { release: value.release } : {}),
     ...(typeof value.protocol === "number" ? { protocol: value.protocol } : {}),
     ...(typeof value.updateCommand === "string" ? { updateCommand: value.updateCommand } : {}),
   };
+};
+
+/**
+ * What a start carries to show the person agreed to the consent dialog; the server refuses a start
+ * without it.
+ */
+export const TOKEN_CONSENT = "send-claude-token-to-these-machines";
+
+/** One machine's answer once the token was sent. */
+export interface TokenSent {
+  readonly id: string;
+  readonly ok: boolean;
+  readonly message?: string;
+}
+
+/** A `claude setup-token` run, as the server reports it; its output never reaches the page. */
+export type TokenRun =
+  | { readonly state: "waiting"; readonly signInLink?: string; readonly asksForCode: boolean }
+  | { readonly state: "sending" }
+  | { readonly state: "done"; readonly results: ReadonlyArray<TokenSent> }
+  | { readonly state: "failed"; readonly message: string }
+  | { readonly state: "cancelled" };
+
+const isTokenRun = (value: unknown): value is TokenRun => {
+  if (typeof value !== "object" || value === null) return false;
+  const run = value as Record<string, unknown>;
+  switch (run["state"]) {
+    case "waiting":
+      return (
+        typeof run["asksForCode"] === "boolean" &&
+        (run["signInLink"] === undefined ||
+          (typeof run["signInLink"] === "string" && run["signInLink"].startsWith("https://")))
+      );
+    case "sending":
+    case "cancelled":
+      return true;
+    case "failed":
+      return typeof run["message"] === "string";
+    case "done":
+      return (
+        Array.isArray(run["results"]) &&
+        run["results"].every(
+          (result: unknown) =>
+            typeof result === "object" &&
+            result !== null &&
+            typeof (result as TokenSent).id === "string" &&
+            typeof (result as TokenSent).ok === "boolean",
+        )
+      );
+    default:
+      return false;
+  }
 };
 
 /** The query the Machines page and the new-thread machine picker share. */
@@ -338,6 +399,39 @@ export const machinesApi = {
     if (typeof value.url !== "string" || typeof value.expiresAt !== "number")
       throw new MachinesError("Couldn't make a join link");
     return { url: value.url, expiresAt: value.expiresAt };
+  },
+  /**
+   * The Claude token from `claude setup-token` on this machine, for joined machines the person
+   * consented to send it to. Only the run's state comes back: never its output or the token.
+   */
+  claudeToken: {
+    start: async (ids: ReadonlyArray<string>): Promise<string> => {
+      const response = await post("/machines/claude-token/start", {
+        ids,
+        consent: TOKEN_CONSENT,
+      });
+      if (!response.ok) throw await refusal(response, "Couldn't start claude setup-token");
+      const value = (await response.json()) as { captureId?: unknown };
+      if (typeof value.captureId !== "string")
+        throw new MachinesError("Couldn't start claude setup-token");
+      return value.captureId;
+    },
+    status: async (captureId: string): Promise<TokenRun> => {
+      const response = await post("/machines/claude-token/status", { captureId });
+      if (!response.ok) throw await refusal(response, "Couldn't read the sign-in");
+      const value: unknown = await response.json();
+      if (!isTokenRun(value)) throw new MachinesError("Couldn't read the sign-in");
+      return value;
+    },
+    code: async (captureId: string, code: string): Promise<void> => {
+      const response = await post("/machines/claude-token/code", { captureId, code });
+      if (!response.ok) throw await refusal(response, "Couldn't send the code");
+    },
+    cancel: async (captureId: string): Promise<void> => {
+      await post("/machines/claude-token/cancel", { captureId });
+    },
+    forget: async (id: string) =>
+      status(await post("/machines/claude-token/forget", { id }), "Couldn't forget the token"),
   },
   /**
    * Updates every machine whose host updates itself and runs an earlier release, each once it is

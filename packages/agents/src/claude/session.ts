@@ -77,6 +77,7 @@ import {
 import {
   PEER_MESSAGING_SWITCH,
   REFUSE_PEER_MESSAGES,
+  spawnEnvFor,
   toolSearchOn,
   withPeerMessaging,
 } from "./env.ts";
@@ -890,7 +891,9 @@ export const makeClaudeHost = (
           }
           const child = spawn(command, args, {
             cwd,
-            env: spawnEnv,
+            // A child that holds a setup-token token gets the token-child policy here too, after
+            // the SDK's own changes (it turns `DEBUG_CLAUDE_AGENT_SDK` into `DEBUG`).
+            env: spawnEnvFor(spawnEnv),
             signal,
             stdio: ["pipe", "pipe", "pipe"],
             windowsHide: true,

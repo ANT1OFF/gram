@@ -89,6 +89,7 @@ const spawnedResult = (
     project: projects.get(worker.projectId)?.name ?? "",
     ...(checkout.branch === undefined ? {} : { branch: checkout.branch }),
     worktree: checkout.path,
+    ...(checkout.base === undefined ? {} : { base: checkout.base }),
     ...(alsoIn.length === 0 ? {} : { alsoIn }),
     model: workerModelLabel(worker.model),
     mode: worker.mode,
@@ -153,10 +154,21 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   const machineNamed = (tool: string, named: string) =>
     Effect.gen(function* () {
       const wanted = named.trim().toLowerCase();
-      if (wanted === "" || wanted === "local" || wanted === "this machine") return undefined;
       const machines = joinedMachines();
+      if (wanted === "" || wanted === "local" || wanted === "this machine") {
+        const legacy = machines.filter((m) => m.name.trim().toLowerCase() === wanted);
+        if (legacy.length > 0)
+          return yield* toolError(
+            tool,
+            refusal(
+              "ambiguous_machine",
+              `“${named}” names both this machine and a joined machine. Use the joined machine's id (${legacy.map((m) => m.id).join(", ")}), or omit machine to run here.`,
+            ),
+          );
+        return undefined;
+      }
       const found = machines.filter(
-        (m) => m.id.toLowerCase() === wanted || m.name.toLowerCase() === wanted,
+        (m) => m.id.toLowerCase() === wanted || m.name.trim().toLowerCase() === wanted,
       );
       if (found.length === 1) return found[0]!.id as HostId;
       const known =
@@ -172,6 +184,55 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             : `More than one joined machine is named “${named}”; name it by its id.`,
         ),
       );
+    });
+  const admitMachineModel = (tool: string, hostId: HostId | undefined, chosen: ModelRef) =>
+    Effect.gen(function* () {
+      if (hostId === undefined) return;
+      const machine = joinedMachines().find((m) => m.id === hostId);
+      const name = machine?.name ?? hostId;
+      if (chosen.agent !== "claude" || chosen.profileId !== undefined)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name} runs direct Claude sessions only. Choose a direct Claude worker model, or spawn on this machine.`,
+          ),
+        );
+      if (machine?.tools?.some((entry) => entry.tool === "claude" && !entry.found))
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}: Claude Code is not installed. Install it there, then use Settings → Machines → Sign in before spawning a worker.`,
+          ),
+        );
+      if (machine?.claudeSignIn === "notSignedIn")
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name} is not signed in to Claude Code. Use Settings → Machines → Sign in, or run claude /login on that machine, before spawning a worker.`,
+          ),
+        );
+    });
+  // Tool resolution runs before any approval card. The handler repeats admission under its lock
+  // because a roster or machine may change while a card is awaiting its answer.
+  const checkSpawnMachine: OrchestrationShape["checkSpawnMachine"] = (callerId, input) =>
+    Effect.gen(function* () {
+      if (input.machine === undefined) return;
+      const hostId = yield* machineNamed("spawn_worker", input.machine);
+      if (hostId === undefined) return;
+      const { thread, state } = yield* requireAuthority("spawn_worker", callerId);
+      const chosen = yield* workerModel(
+        "spawn_worker",
+        thread,
+        state.charter,
+        input.model,
+        state.charter.workerModels === undefined
+          ? undefined
+          : yield* rosterHere(state.charter.workerModels, state.charter),
+      );
+      yield* admitMachineModel("spawn_worker", hostId, chosen.model);
     });
   const {
     outsideWorkspace,
@@ -584,6 +645,9 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   instead: undefined,
                 };
           const chosen = picked.model;
+          const hostId =
+            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
+          yield* admitMachineModel(tool, hostId, chosen);
           if (byUser?.model !== undefined && !sameTaskModel(chosen, byUser.model))
             return yield* toolError(
               tool,
@@ -633,8 +697,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           const siblings = found.workers.filter(
             (worker) => worker.projectId === project.id && !finished.has(worker.id),
           );
-          const hostId =
-            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
           const readAlso: Array<string> = [];
           for (const id of input.readAlso ?? []) {
             const sibling = found.workers.find((worker) => worker.id === id);
@@ -892,22 +954,23 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       Effect.flatMap((held): Effect.Effect<HeldSpawn | RouteOffer | undefined> =>
         held === undefined ? routeGate(callerId, input) : Effect.succeed(held),
       ),
-      Effect.flatMap((offer): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
-        offer !== undefined
-          ? Effect.succeed(offer)
-          : holdGate(callerId, input).pipe(
-              Effect.flatMap(
-                (held): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
-                  held !== undefined
-                    ? routeHeld(callerId, input, held)
-                    : limitGate(callerId, input).pipe(
-                        Effect.matchEffect({
-                          onFailure: (refused) => routePaused(callerId, input, refused),
-                          onSuccess: () => spawnFor(callerId, input),
-                        }),
-                      ),
+      Effect.flatMap(
+        (offer): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
+          offer !== undefined
+            ? Effect.succeed(offer)
+            : holdGate(callerId, input).pipe(
+                Effect.flatMap(
+                  (held): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
+                    held !== undefined
+                      ? routeHeld(callerId, input, held)
+                      : limitGate(callerId, input).pipe(
+                          Effect.matchEffect({
+                            onFailure: (refused) => routePaused(callerId, input, refused),
+                            onSuccess: () => spawnFor(callerId, input),
+                          }),
+                        ),
+                ),
               ),
-            ),
       ),
     );
 
@@ -973,6 +1036,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   return {
     setRoutineAdmission,
     spawnNeedsApproval,
+    checkSpawnMachine,
     describeSpawn,
     checkWorkerModel,
     spawnFor,

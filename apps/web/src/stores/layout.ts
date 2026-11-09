@@ -571,8 +571,8 @@ export function sanitizeSidePanels(raw: unknown): Partial<SidePanels> {
 export type OverviewSection = "orchestrators" | "solo" | "rest";
 
 /**
- * The sections that start folded: the things you check now and then. "At rest" (the idle
- * workspaces, the pull requests and Done) folds to its one title line: nothing in it needs you, the
+ * The sections that start folded: the things you check now and then. "At rest" (the pull
+ * requests and Done) folds to its one title line: nothing in it needs you, the
  * Board shows what finished today and History keeps it all.
  */
 export const OVERVIEW_FOLDED_BY_DEFAULT: readonly OverviewSection[] = ["rest"];
@@ -630,32 +630,24 @@ const overviewFoldPatch = (
   };
 };
 
-/**
- * The fold key the idle workspaces' group kept, open, before At rest took it in: read once to carry
- * an open idle group over to an open At rest, then dropped.
- */
-const LEGACY_IDLE_OPEN_KEY = "overview-idle:open";
-
 /** The sections At rest took in: one left open opens At rest. */
 const LEGACY_REST_SECTIONS: readonly string[] = ["pullRequests", "doneToday"];
 
 /**
- * Stored overview view state; unknown sections are dropped. A Pull requests or Done section, or the
- * idle workspaces' group, left open before At rest took them in leaves At rest open.
+ * Stored overview view state; unknown sections are dropped. A Pull requests or Done section left
+ * open before At rest took them in leaves At rest open.
  */
 export function sanitizeOverviewView(raw: unknown): Partial<OverviewView> {
   const r = (raw ?? {}) as Record<string, unknown>;
   const folded = r["overviewFolded"];
-  const nodes = r["workspacesCollapsedNodes"];
-  const legacyOpen =
-    (Array.isArray(r["overviewUnfolded"]) &&
-      r["overviewUnfolded"].some((section) => LEGACY_REST_SECTIONS.includes(section))) ||
-    (Array.isArray(nodes) && nodes.includes(LEGACY_IDLE_OPEN_KEY));
   const unfolded = Array.isArray(r["overviewUnfolded"])
-    ? [...r["overviewUnfolded"], ...(legacyOpen ? ["rest"] : [])]
-    : legacyOpen
-      ? ["rest"]
-      : undefined;
+    ? [
+        ...r["overviewUnfolded"],
+        ...(r["overviewUnfolded"].some((section) => LEGACY_REST_SECTIONS.includes(section))
+          ? ["rest"]
+          : []),
+      ]
+    : undefined;
   const hidden = r["overviewHidden"];
   const before = r["overviewBeforeHide"] as OverviewSidebar;
   const grouping = r["doneGrouping"] as DoneGrouping;
@@ -749,9 +741,7 @@ export function sanitizeWorkspacesView(raw: unknown): Partial<WorkspacesView> {
   const nodes = ((raw ?? {}) as Record<string, unknown>)["workspacesCollapsedNodes"];
   return Array.isArray(nodes)
     ? {
-        workspacesCollapsedNodes: nodes.filter(
-          (node) => typeof node === "string" && node !== LEGACY_IDLE_OPEN_KEY,
-        ),
+        workspacesCollapsedNodes: nodes.filter((node) => typeof node === "string"),
       }
     : {};
 }

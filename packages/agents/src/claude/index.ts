@@ -11,6 +11,10 @@ export {
   ClaudeEnvironment,
   ClaudeEnvironmentLive,
   nodeFs,
+  OAUTH_TOKEN_VAR,
+  probeLoginShell,
+  resolveClaudeCli,
+  withOAuthToken,
   type ClaudeEnvironmentConfig,
   type PreparedClaude,
 } from "./environment.ts";
@@ -32,3 +36,4 @@ export {
   makeClaudeHost,
   type ClaudeHostConfig,
 } from "./session.ts";
+export { isTokenChildStripped, tokenChildEnv } from "./env.ts";

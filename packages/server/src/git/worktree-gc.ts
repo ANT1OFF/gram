@@ -46,6 +46,7 @@ import {
   type ThreadStatus,
   type WorkspaceId,
   type WorktreeSweep,
+  LOCAL_HOST_ID,
 } from "@gram/contracts";
 import {
   gh,
@@ -585,7 +586,11 @@ export const freeUnlessInUse = (
 export const othersCheckouts = (
   threads: ReadonlyArray<Thread>,
   self: Thread["id"],
-): ReadonlyArray<string> => usedCheckoutPaths(threads.filter((other) => other.id !== self));
+): ReadonlyArray<string> =>
+  usedCheckoutPaths(
+    threads.filter((other) => other.id !== self),
+    LOCAL_HOST_ID,
+  );
 
 /**
  * What the sweep found a worker due on, to be checked again under its runtime lock right before
@@ -719,8 +724,8 @@ const sweepOnce = (
         gate === undefined ? Effect.succeed(Effect.void) : gate.hold(thread.id),
         () =>
           Effect.gen(function* () {
-            const terminals = ports === undefined ? undefined : yield* ports.busyTerminalsNow;
-            if (terminals === undefined || terminals.includes(thread.id)) return undefined;
+            const busy = ports === undefined ? undefined : yield* ports.terminalBusyNow(thread.id);
+            if (busy !== false) return undefined;
             return yield* runtimes.whileAtRest(
               thread.id,
               Effect.gen(function* () {
