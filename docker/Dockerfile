@@ -7,8 +7,8 @@
 # See docs/DOCKER.md.
 
 # The full image builds: it has the compilers node-pty needs. The slim one runs.
-ARG BUILD_IMAGE=node:26.12.0-bookworm
-ARG NODE_IMAGE=node:26.12.0-bookworm-slim
+ARG BUILD_IMAGE=node:26.13.0-bookworm
+ARG NODE_IMAGE=node:26.13.0-bookworm-slim
 
 FROM ${BUILD_IMAGE} AS build
 RUN npm install -g bun@1.4.4
@@ -25,7 +25,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 # The GitHub CLI, for Clone from GitHub, pull requests and their checks: its release tarball for
 # this architecture, checked against the release's checksums. An empty GH_VERSION leaves it out.
-ARG GH_VERSION=2.80.0
+ARG GH_VERSION=2.103.3
 RUN if [ -n "${GH_VERSION}" ]; then \
     set -e; \
     arch="$(dpkg --print-architecture)"; \

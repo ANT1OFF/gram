@@ -17,7 +17,9 @@ import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { checksOn } from "./checks.ts";
-import { hostHome, hostRepos } from "./host-config.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
+import { hostAttachments, hostHome, hostRepos } from "./host-config.ts";
+import { cloneWorktrees } from "./clone-worktrees.ts";
 import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
@@ -32,6 +34,14 @@ import type * as Scope from "effect/Scope";
 // The server starts the host as plain Node under Electron; what the host runs (git, ps, an editor
 // git opens) must not inherit that.
 delete process.env["ELECTRON_RUN_AS_NODE"];
+
+/**
+ * The Gram release this host was built from, which its hello carries so the main Gram can say a
+ * joined machine needs an update. The app's build sets it (`proc-worker-build.ts`); a host run
+ * from source has none.
+ */
+declare const GRAM_HOST_RELEASE: string | undefined;
+const RELEASE = typeof GRAM_HOST_RELEASE === "string" ? GRAM_HOST_RELEASE : undefined;
 
 /** The descriptor the server hands the host stream on. */
 export const HOST_STREAM_FD = 3;
@@ -76,10 +86,14 @@ const hostService = (
         capabilities: HOST_SERVES,
         platform: process.platform,
         pid: process.pid,
+        ...(RELEASE === undefined ? {} : { release: RELEASE }),
       },
       files: filesOn(proc),
+      reads: fileReadsOn(proc),
+      attachments: yield* attachmentsOnHost(hostAttachments()),
       repos: reposOn(proc, hostRepos()),
-      worktrees: yield* Worktrees,
+      worktrees:
+        hostId === LOCAL_HOST_ID ? yield* Worktrees : cloneWorktrees(proc, yield* Worktrees),
       git: gitOn(proc),
       terminals: yield* terminalsOnHost,
       sessions: yield* sessionsOnHost(agents.get),

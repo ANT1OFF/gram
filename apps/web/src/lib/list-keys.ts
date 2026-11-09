@@ -28,6 +28,21 @@ export function listIndexForKey(key: string, active: number, count: number): num
 }
 
 /**
+ * Where each group of a grouped list starts in its flattened order, from the groups' sizes: a
+ * row's flat index is its group's start plus its place in the group, with no counter bumped while
+ * rendering (which the React Compiler can't keep correct).
+ */
+export function groupStarts(sizes: readonly number[]): number[] {
+  const starts: number[] = [];
+  let next = 0;
+  for (const size of sizes) {
+    starts.push(next);
+    next += size;
+  }
+  return starts;
+}
+
+/**
  * Keys for a hand-built radiogroup, like native radios: one Tab stop, and the arrows (or Home /
  * End) move to and choose the next option. Give each radio `tabIndex={checked ? 0 : -1}`.
  */

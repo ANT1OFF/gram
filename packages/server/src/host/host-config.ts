@@ -38,6 +38,10 @@ export const hostHome = (env: NodeJS.ProcessEnv = process.env, home = homedir())
   return join(xdg !== undefined && xdg.startsWith("/") ? xdg : join(home, ".config"), "gram-host");
 };
 
+/** Where the host keeps the files users attach to its sessions: `attachments` in its folder. */
+export const hostAttachments = (env: NodeJS.ProcessEnv = process.env, home = homedir()): string =>
+  join(hostHome(env, home), "attachments");
+
 /**
  * Where the host keeps its clones of the repositories workers placed on it work in:
  * `GRAM_HOST_REPOS` when set, otherwise `repos` in the host's own folder.
@@ -59,14 +63,15 @@ const ownedPrivate = (path: string, directory: boolean) => {
     throw new Error(`${path} must be private to this user (chmod ${directory ? "700" : "600"}).`);
 };
 
-const ensureHome = (home: string) => {
+/** Creates a private destination, or refuses an unsafe existing folder before a join. */
+export const ensureHostHome = (home: string) => {
   mkdirSync(home, { recursive: true, mode: 0o700 });
   ownedPrivate(home, true);
 };
 
 /** Writes `name` in `home` owner-only, replacing it atomically with the rename made durable. */
 const writePrivate = (home: string, name: string, text: string) => {
-  ensureHome(home);
+  ensureHostHome(home);
   const path = join(home, name);
   const temporary = `${path}.${randomBytes(8).toString("hex")}.tmp`;
   let fd: number | undefined;

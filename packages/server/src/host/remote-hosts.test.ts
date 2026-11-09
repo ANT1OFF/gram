@@ -28,6 +28,7 @@ const none = () => Effect.die(new Error("not in this test"));
 /** A host that says hello as `hostId` and has nothing else a test reaches. */
 const service = (
   hostId: string,
+  said: Partial<HostService["hello"]> = {},
   extra: Partial<HostService> = {},
 ): Effect.Effect<HostService, never, Scope.Scope> =>
   Effect.gen(function* () {
@@ -38,6 +39,7 @@ const service = (
         capabilities: HOST_CAPABILITIES,
         platform: "linux",
         pid: 7,
+        ...said,
       },
       files: { list: none, search: none, names: none },
       worktrees: {
@@ -235,7 +237,7 @@ describe("joined machines over the network", () => {
         claudeSignIn: state,
         tools: [{ tool: "claude" as const, found: true, version: "2.1.319" }],
       }));
-      yield* Effect.forkScoped(dialOnce(dial, service(hostId, { status })));
+      yield* Effect.forkScoped(dialOnce(dial, service(hostId, {}, { status })));
       yield* online(hosts, hostId);
       // Asked as it comes online; offline, nothing is said about it.
       while (hosts.list()[0]?.claudeSignIn === undefined) yield* Effect.sleep("20 millis");
@@ -268,6 +270,97 @@ describe("joined machines over the network", () => {
       yield* Fiber.join(fiber).pipe(Effect.timeout("10 seconds"));
       expect(hosts.list()).toEqual([expect.objectContaining({ id: hostId, confirmed: true })]);
       expect(hosts.list()[0]).not.toHaveProperty("onlineSince");
+    }).pipe(Effect.scoped),
+  );
+
+  it.live(
+    "says a machine whose host speaks another protocol needs an update, with its release",
+    () =>
+      Effect.gen(function* () {
+        const { hosts, base } = yield* served;
+        const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+        yield* dialOnce(
+          dial,
+          service(hostId, { protocol: HOST_PROTOCOL_VERSION + 1, release: "1.17.0" }),
+        );
+        expect(hosts.list(true)[0]).toMatchObject({
+          offline: { kind: "mismatch", protocol: HOST_PROTOCOL_VERSION + 1 },
+          release: "1.17.0",
+        });
+        expect(hosts.list(true)[0]).not.toHaveProperty("onlineSince");
+        // A release that doesn't read as one isn't kept.
+        yield* dialOnce(
+          dial,
+          service(hostId, { protocol: HOST_PROTOCOL_VERSION + 1, release: "<b>1.17</b>" }),
+        );
+        expect(hosts.list(true)[0]).not.toHaveProperty("release");
+        // A host from before releases were sent, and short of what this build needs.
+        yield* dialOnce(dial, service(hostId, { capabilities: ["files", "git"] }));
+        const offline = hosts.list(true)[0]!.offline;
+        expect(offline).toMatchObject({ kind: "mismatch", protocol: HOST_PROTOCOL_VERSION });
+        expect(offline).toHaveProperty("missing", expect.arrayContaining(["sessions", "repos"]));
+        expect(offline).not.toHaveProperty("release");
+      }).pipe(Effect.scoped),
+  );
+
+  it.live("comes online with its release, which clears why it was offline", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* served;
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      expect(hosts.list(true)[0]?.offline).toEqual({ kind: "never" });
+      expect(hosts.list(false)[0]?.offline).toEqual({ kind: "tailscale-off" });
+      yield* dialOnce(dial, service(hostId, { protocol: HOST_PROTOCOL_VERSION + 1 }));
+      const fiber = yield* Effect.forkScoped(
+        dialOnce(dial, service(hostId, { release: "1.15.2" })),
+      );
+      yield* online(hosts, hostId);
+      expect(hosts.list(true)[0]).toMatchObject({ release: "1.15.2" });
+      expect(hosts.list(true)[0]).not.toHaveProperty("offline");
+      expect(hosts.machines.problemOf(hostId)).toBeUndefined();
+      yield* Fiber.interrupt(fiber);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("says a host that answered as another machine didn't say hello", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* served;
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      yield* dialOnce(dial, service(hostId, { hostId: HostId.make(`m-${"0".repeat(24)}`) }));
+      expect(hosts.list(true)[0]?.offline).toMatchObject({ kind: "no-hello" });
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("says when a machine's connection was lost, or access moved off its address", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* served;
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      // The host's end goes: its dial ends, and the main Gram sees the connection close.
+      const fiber = yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+      yield* online(hosts, hostId);
+      yield* Fiber.interrupt(fiber);
+      while (hosts.list(true)[0]?.offline === undefined) yield* Effect.sleep("50 millis");
+      expect(hosts.list(true)[0]?.offline).toMatchObject({ kind: "lost" });
+
+      yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+      yield* online(hosts, hostId);
+      hosts.keepOrigin("https://moved.example-tailnet.ts.net");
+      yield* Effect.sleep("200 millis");
+      expect(hosts.list(true)[0]?.offline).toMatchObject({ kind: "moved" });
+
+      // Access turned off and on again before it redials: its connection was lost then.
+      yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+      yield* online(hosts, hostId);
+      hosts.keepOrigin(undefined);
+      yield* Effect.sleep("200 millis");
+      expect(hosts.list(false)[0]?.offline).toEqual({ kind: "tailscale-off" });
+      expect(hosts.list(true)[0]?.offline).toMatchObject({ kind: "lost" });
+
+      // Removed while online: nothing is kept for it.
+      yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+      yield* online(hosts, hostId);
+      hosts.remove(HostId.make(hostId));
+      yield* Effect.sleep("200 millis");
+      expect(hosts.machines.problemOf(hostId)).toBeUndefined();
     }).pipe(Effect.scoped),
   );
 });

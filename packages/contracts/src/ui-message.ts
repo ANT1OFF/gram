@@ -207,6 +207,14 @@ export const SessionRestartDataSchema = Schema.Struct({
    * thread's agent uses changed. Absent when someone asked for it.
    */
   reason: Schema.optionalKey(SessionRestartReason),
+  /**
+   * Set when the joined machine the session ran on restarted under it, and Gram resumed the same
+   * conversation there on its own: the machine's name, and whether a turn the restart cut short was
+   * continued (`turn`) or only what was queued went on (`queue`).
+   */
+  machineRestart: Schema.optionalKey(
+    Schema.Struct({ machine: Schema.String, continued: Schema.Literals(["turn", "queue"]) }),
+  ),
 });
 export type SessionRestartData = typeof SessionRestartDataSchema.Type;
 

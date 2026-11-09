@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it } from "@effect/vitest";
@@ -21,12 +22,14 @@ import type { EventHub } from "../events/event-hub.ts";
 import { makeRepo, removeDir, tempDir, write } from "../git/test-repo.ts";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
+import { cloneWorktrees } from "./clone-worktrees.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { connectHost, HOST_CAPABILITIES, type HostConnection, serveHost } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { machineHosts, machineWorkerHost, type MachineDeps } from "./remote-worker-host.ts";
-import { reposOn } from "./repos.ts";
+import { cloneFolderOf, reposOn } from "./repos.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { streamPair } from "./test-stream.ts";
@@ -34,6 +37,11 @@ import { WorkerHosts } from "./worker-host.ts";
 
 const MACHINE = { id: HostId.make("m-0123456789abcdef01234567"), name: "build box" };
 const URL = "https://git.example.test/acme/widgets.git";
+const cloneAt = (repos: string) => {
+  const target = cloneFolderOf(URL);
+  if ("error" in target) throw new Error(target.error);
+  return join(repos, target.folder);
+};
 
 /** A project here with `URL` as its origin, which the machine reaches as a bare repository. */
 const project = (dir: string) => {
@@ -68,8 +76,10 @@ const machine = (repos: string, env: Record<string, string>) =>
             pid: 7,
           },
           files: filesOn(proc),
+          reads: fileReadsOn(proc),
+          attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
           repos: reposOn(proc, repos, env),
-          worktrees: yield* Worktrees,
+          worktrees: cloneWorktrees(proc, yield* Worktrees, env),
           git: gitOn(proc),
           terminals: yield* terminalsOnHost,
           sessions: yield* sessionsOnHost(noAgents),
@@ -126,7 +136,7 @@ describe("a joined machine's worker host", () => {
           [],
           root,
         );
-        const clone = join(repos, "git.example.test", "acme", "widgets");
+        const clone = cloneAt(repos);
         expect(checkout).toMatchObject({
           kind: "worktree",
           branch: "feature/remote",
@@ -173,6 +183,169 @@ describe("a joined machine's worker host", () => {
         expect(existsSync(checkout.path)).toBe(false);
       }).pipe(Effect.scoped, Effect.provide(Live)),
     30_000,
+  );
+
+  it.live("refuses an explicit base available only on the main machine", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const { root, env } = project(dir);
+      execFileSync("git", ["-C", root, "branch", "feat/local-only"]);
+      const repos = join(dir, "repos");
+      const { connection } = yield* machine(repos, env);
+      const host = yield* machineWorkerHost(MACHINE, connection, yield* deps());
+      const result = yield* host.checkouts
+        .prepare(
+          { kind: "newWorktree", branch: "feat/dependent", base: "feat/local-only" },
+          [],
+          root,
+        )
+        .pipe(Effect.result);
+      expect(result).toMatchObject({
+        _tag: "Failure",
+        failure: {
+          _tag: "InvalidState",
+          message: expect.stringContaining("feat/local-only"),
+        },
+      });
+      const clone = cloneAt(repos);
+      expect(existsSync(join(clone, ".worktrees"))).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(Live)),
+  );
+
+  it.live(
+    "fetches an explicit remote base even with a narrowed clone refspec and returns the chosen ref",
+    () =>
+      Effect.gen(function* () {
+        const dir = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+        const { root, env } = project(dir);
+        const repos = join(dir, "repos");
+        const { connection } = yield* machine(repos, env);
+        const host = yield* machineWorkerHost(MACHINE, connection, yield* deps());
+        yield* host.checkouts.prepare({ kind: "newWorktree", branch: "feat/first" }, [], root);
+        const clone = cloneAt(repos);
+        execFileSync("git", [
+          "-C",
+          clone,
+          "config",
+          "remote.origin.fetch",
+          "+refs/heads/main:refs/remotes/origin/main",
+        ]);
+        execFileSync("git", ["-C", root, "checkout", "-b", "feat/prerequisite"]);
+        execFileSync("git", [
+          "-C",
+          root,
+          "commit",
+          "--quiet",
+          "--allow-empty",
+          "-m",
+          "prerequisite",
+        ]);
+        execFileSync("git", ["-C", root, "push", "--quiet", join(dir, "widgets.git"), "HEAD"]);
+        const expected = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+          encoding: "utf8",
+        }).trim();
+        for (const [index, base] of ["feat/prerequisite", "origin/feat/prerequisite"].entries()) {
+          const checkout = yield* host.checkouts.prepare(
+            { kind: "newWorktree", branch: `feat/dependent-${index}`, base },
+            [],
+            root,
+          );
+          expect(checkout.base).toBe("origin/feat/prerequisite");
+          expect(
+            execFileSync("git", ["-C", checkout.path, "rev-parse", "HEAD"], {
+              encoding: "utf8",
+            }).trim(),
+          ).toBe(expected);
+        }
+      }).pipe(Effect.scoped, Effect.provide(Live)),
+  );
+
+  it.live("uses the fresh origin base when the clone's local default branch is behind", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const { root, env } = project(dir);
+      const { connection } = yield* machine(join(dir, "repos"), env);
+      const host = yield* machineWorkerHost(MACHINE, connection, yield* deps());
+      yield* host.checkouts.prepare({ kind: "newWorktree", branch: "feat/first" }, [], root);
+      execFileSync("git", ["-C", root, "commit", "--quiet", "--allow-empty", "-m", "new main"]);
+      execFileSync("git", ["-C", root, "push", "--quiet", join(dir, "widgets.git"), "HEAD"]);
+      const expected = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+        encoding: "utf8",
+      }).trim();
+      const checkout = yield* host.checkouts.prepare(
+        { kind: "newWorktree", branch: "feat/new-main", base: "main" },
+        [],
+        root,
+      );
+      expect(checkout.base).toBe("origin/main");
+      expect(
+        execFileSync("git", ["-C", checkout.path, "rev-parse", "HEAD"], {
+          encoding: "utf8",
+        }).trim(),
+      ).toBe(expected);
+    }).pipe(Effect.scoped, Effect.provide(Live)),
+  );
+
+  it.live("keeps an explicitly selected host branch's additional work", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const { root, env } = project(dir);
+      execFileSync("git", [
+        "-C",
+        root,
+        "push",
+        "--quiet",
+        join(dir, "widgets.git"),
+        "HEAD:refs/heads/feat/shared",
+      ]);
+      const repos = join(dir, "repos");
+      const { connection } = yield* machine(repos, env);
+      const host = yield* machineWorkerHost(MACHINE, connection, yield* deps());
+      yield* host.checkouts.prepare({ kind: "newWorktree", branch: "feat/first" }, [], root);
+      const clone = cloneAt(repos);
+      execFileSync("git", [
+        "-C",
+        clone,
+        "checkout",
+        "-q",
+        "-b",
+        "feat/shared",
+        "origin/feat/shared",
+      ]);
+      execFileSync("git", [
+        "-C",
+        clone,
+        "-c",
+        "user.name=Synthetic",
+        "-c",
+        "user.email=synthetic@example.test",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--quiet",
+        "--allow-empty",
+        "-m",
+        "host work",
+      ]);
+      const expected = execFileSync("git", ["-C", clone, "rev-parse", "HEAD"], {
+        encoding: "utf8",
+      }).trim();
+      const checkout = yield* host.checkouts.prepare(
+        { kind: "newWorktree", branch: "feat/dependent", base: "feat/shared" },
+        [],
+        root,
+      );
+      expect(checkout.base).toBe("feat/shared");
+      expect(
+        execFileSync("git", ["-C", checkout.path, "rev-parse", "HEAD"], {
+          encoding: "utf8",
+        }).trim(),
+      ).toBe(expected);
+    }).pipe(Effect.scoped, Effect.provide(Live)),
   );
 
   it.live("starts nothing here while the machine is offline", () =>

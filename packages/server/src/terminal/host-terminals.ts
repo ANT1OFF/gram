@@ -1,5 +1,11 @@
 import { homedir } from "node:os";
-import { effectiveCheckout, InvalidState, type TerminalId, type ThreadId } from "@gram/contracts";
+import {
+  effectiveCheckout,
+  InvalidState,
+  type TerminalId,
+  type TerminalInfo,
+  type ThreadId,
+} from "@gram/contracts";
 import { PathProbe } from "@gram/git";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -90,7 +96,65 @@ export const terminalsThroughHost = (
 
     const held = (threadId: ThreadId | undefined) =>
       threadId !== undefined && deps.held?.(threadId) === true;
-    const isOnHost = (terminalId: TerminalId) => onHost.has(terminalId);
+
+    /**
+     * Whether the host's terminal `terminal` still has an owner here: a thread that is stored, not
+     * closed, and has its folder on this host.
+     */
+    const owned = (terminal: TerminalInfo) =>
+      terminal.threadId === undefined || closedIds.has(terminal.threadId)
+        ? Effect.succeed(false)
+        : deps.threadFolder(terminal.threadId).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          );
+    /**
+     * The host's own list is what it holds, whatever this side remembers: what a connection before
+     * this one opened (a redial), or a main Gram before this one (a restart within the host's
+     * grace). Each terminal whose thread still owns it here is taken up again, so its input and
+     * close reach it; with `closeOrphans`, one nothing owns is closed.
+     */
+    const adopt = (terminals: ReadonlyArray<TerminalInfo>, closeOrphans: boolean) =>
+      Effect.forEach(
+        terminals,
+        (terminal) =>
+          onHost.has(terminal.terminalId)
+            ? Effect.void
+            : Effect.flatMap(owned(terminal), (yes) =>
+                yes
+                  ? Effect.sync(() => void onHost.set(terminal.terminalId, terminal.threadId))
+                  : closeOrphans
+                    ? Effect.logInfo("worker host: closing a terminal nothing owns any more").pipe(
+                        Effect.annotateLogs({ terminalId: terminal.terminalId }),
+                        Effect.andThen(host.close(terminal.terminalId)),
+                        Effect.ignore,
+                      )
+                    : Effect.void,
+              ),
+        { discard: true },
+      );
+    // Once, as this connection starts: what the host kept that nothing here owns any more (its
+    // thread closed, or moved off this machine, while nothing could reach it) is closed, so a
+    // shell a restart abandoned doesn't run on for as long as the host stays connected.
+    yield* host.list(undefined).pipe(
+      Effect.flatMap((terminals) => adopt(terminals, true)),
+      Effect.forkScoped,
+    );
+    /** Whether `terminalId` is the host's, asking the host when this side doesn't know it. */
+    const isOnHost = (terminalId: TerminalId): Effect.Effect<boolean> =>
+      onHost.has(terminalId)
+        ? Effect.succeed(true)
+        : gone()
+          ? Effect.succeed(false)
+          : host.list(undefined).pipe(
+              Effect.flatMap((terminals) =>
+                adopt(
+                  terminals.filter((terminal) => terminal.terminalId === terminalId),
+                  false,
+                ),
+              ),
+              Effect.map(() => onHost.has(terminalId)),
+            );
 
     const open: Terminals["open"] = (request, settings) =>
       Effect.suspend(() => {
@@ -124,21 +188,19 @@ export const terminalsThroughHost = (
     return {
       open,
       input: (terminalId, data) =>
-        Effect.suspend(() => {
-          if (!isOnHost(terminalId)) return inServer.input(terminalId, data);
+        Effect.flatMap(isOnHost(terminalId), (here) => {
+          if (!here) return inServer.input(terminalId, data);
           return held(onHost.get(terminalId))
             ? Effect.fail(new InvalidState({ message: HELD }))
             : host.input(terminalId, data);
         }),
       resize: (terminalId, cols, rows) =>
-        Effect.suspend(() =>
-          isOnHost(terminalId)
-            ? host.resize(terminalId, cols, rows)
-            : inServer.resize(terminalId, cols, rows),
+        Effect.flatMap(isOnHost(terminalId), (here) =>
+          here ? host.resize(terminalId, cols, rows) : inServer.resize(terminalId, cols, rows),
         ),
       close: (terminalId) =>
-        Effect.suspend(() =>
-          isOnHost(terminalId)
+        Effect.flatMap(isOnHost(terminalId), (here) =>
+          here
             ? host
                 .close(terminalId)
                 .pipe(Effect.ensuring(Effect.sync(() => onHost.delete(terminalId))))
@@ -147,8 +209,10 @@ export const terminalsThroughHost = (
       list: (threadId) =>
         Effect.zipWith(host.list(threadId), inServer.list(threadId), (a, b) => [...a, ...b]),
       subscribe: (terminalId) =>
-        Stream.suspend(() =>
-          isOnHost(terminalId) ? host.subscribe(terminalId) : inServer.subscribe(terminalId),
+        Stream.unwrap(
+          Effect.map(isOnHost(terminalId), (here) =>
+            here ? host.subscribe(terminalId) : inServer.subscribe(terminalId),
+          ),
         ),
       snapshot: (threadId) =>
         Effect.zipWith(host.snapshot(threadId), inServer.snapshot(threadId), (a, b) => [

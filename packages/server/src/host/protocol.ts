@@ -58,6 +58,7 @@ import {
   Socket,
   SocketServer,
 } from "../platform/unstable.ts";
+import type { HostAttachments, HostFileReads } from "./file-reads.ts";
 import type { HostCheckRequest, HostChecks } from "./checks.ts";
 import type { HostFiles } from "./files.ts";
 import type { HostGit } from "./git.ts";
@@ -88,6 +89,10 @@ export interface HostWorktrees {
 export interface HostService {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  /** Its threads' files scoped and read where they are. */
+  readonly reads: HostFileReads;
+  /** The files users attach to its sessions. */
+  readonly attachments: HostAttachments;
   /** The clones it keeps of repositories, for the workers placed on it. */
   readonly repos: HostRepos;
   readonly worktrees: HostWorktrees;
@@ -119,6 +124,8 @@ export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
 export const HOST_SERVES: ReadonlyArray<HostCapability> = [
   ...HOST_CAPABILITIES,
   "deliveries",
+  "file-reads",
+  "attachments",
   "checks",
 ];
 
@@ -193,6 +200,18 @@ const handlersFor = (host: HostService) => {
       "host.files.search": ({ root, query, regex, caseSensitive, offset, limit }) =>
         host.files.search(root, query, { regex, caseSensitive, offset, limit }),
       "host.files.names": ({ root }) => host.files.names(root),
+      "host.files.scope": ({ path, roots }) => host.reads.scope(path, roots),
+      "host.files.file": ({ path, roots, outside, maxBytes }) =>
+        host.reads.file(path, roots, outside, maxBytes),
+      "host.files.image": ({ path, roots, outside, maxBytes }) =>
+        host.reads.image(path, roots, outside, maxBytes),
+      "host.files.resolve": ({ paths, roots, outside }) =>
+        host.reads.resolve(paths, roots, outside),
+      "host.files.vocabulary": ({ root }) => host.reads.vocabulary(root),
+      "host.files.fetch": ({ path, cwd, maxBytes }) => host.reads.fetch(path, cwd, maxBytes),
+      "host.attachments.put": ({ threadId, name, data }) =>
+        host.attachments.put(threadId, name, data),
+      "host.attachments.remove": ({ threadId }) => host.attachments.remove(threadId),
       // Never a defect: one from a handler breaks the whole connection, not just this call.
       "host.status": () =>
         (host.status ?? Effect.succeed(UNKNOWN_STATUS)).pipe(
@@ -482,6 +501,10 @@ export interface HostChecksConnection {
 export interface HostConnection {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  /** Absent for a host from a build that doesn't serve `file-reads`. */
+  readonly reads: HostFileReads | undefined;
+  /** Absent for a host from a build that doesn't serve `attachments`. */
+  readonly attachments: HostAttachments | undefined;
   readonly repos: {
     readonly ensure: (url: string) => Effect.Effect<{ readonly path: string }, WorktreeError>;
   };
@@ -587,7 +610,24 @@ export interface ConnectOptions {
   readonly gone?: Effect.Effect<never, HostUnavailable>;
   /** Runs once when the host is found gone, whichever way: its owner stops what is left of it. */
   readonly onEnded?: (reason: string) => Effect.Effect<void>;
+  /** Told the host's hello as soon as it is read, before it is checked. */
+  readonly onHello?: (hello: HostHello) => void;
 }
+
+/**
+ * Why this build can't use a host that said `hello`: it speaks another protocol version, or doesn't
+ * serve everything this build needs. Either way one of the two builds needs an update.
+ */
+export const helloMismatch = (
+  hello: HostHello,
+):
+  | { readonly kind: "protocol" }
+  | { readonly kind: "capabilities"; readonly missing: ReadonlyArray<HostCapability> }
+  | undefined => {
+  if (hello.protocol !== HOST_PROTOCOL_VERSION) return { kind: "protocol" };
+  const missing = HOST_CAPABILITIES.filter((need) => !hello.capabilities.includes(need));
+  return missing.length > 0 ? { kind: "capabilities", missing } : undefined;
+};
 
 /**
  * Connects to the host at the other end of `socket` and checks its hello: a host that doesn't
@@ -656,17 +696,18 @@ export const connectHost = (
           : unavailable(`The host didn't answer: ${failureText(error)}`),
       ),
     );
+    options.onHello?.(hello);
     if (hello.hostId !== options.hostId) {
       return yield* unavailable(`A host answered as "${hello.hostId}", not "${options.hostId}".`);
     }
-    if (hello.protocol !== HOST_PROTOCOL_VERSION) {
+    const mismatch = helloMismatch(hello);
+    if (mismatch?.kind === "protocol") {
       return yield* unavailable(
         `The host speaks protocol ${hello.protocol}; this build speaks ${HOST_PROTOCOL_VERSION}.`,
       );
     }
-    const missing = HOST_CAPABILITIES.filter((need) => !hello.capabilities.includes(need));
-    if (missing.length > 0) {
-      return yield* unavailable(`The host doesn't serve ${missing.join(", ")}.`);
+    if (mismatch?.kind === "capabilities") {
+      return yield* unavailable(`The host doesn't serve ${mismatch.missing.join(", ")}.`);
     }
     const files: HostFiles = {
       list: (path, { showHidden, limit }) =>
@@ -688,6 +729,41 @@ export const connectHost = (
         guarded(client["host.files.names"]({ root })).pipe(
           Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
         ),
+    };
+    const reads: HostFileReads = {
+      scope: (path, roots) =>
+        guarded(client["host.files.scope"]({ path, roots })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+      file: (path, roots, outside, maxBytes) =>
+        guarded(client["host.files.file"]({ path, roots, outside, maxBytes })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+      image: (path, roots, outside, maxBytes) =>
+        guarded(client["host.files.image"]({ path, roots, outside, maxBytes })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+      resolve: (paths, roots, outside) =>
+        guarded(client["host.files.resolve"]({ paths, roots, outside })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      vocabulary: (root) =>
+        guarded(client["host.files.vocabulary"]({ root })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      fetch: (path, cwd, maxBytes) =>
+        guarded(client["host.files.fetch"]({ path, cwd, maxBytes })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+    };
+    const attachments: HostAttachments = {
+      put: (threadId, name, data) =>
+        guarded(client["host.attachments.put"]({ threadId, name, data })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      // A host that went holds nothing more to delete now; its own prune takes the rest.
+      remove: (threadId) =>
+        guarded(client["host.attachments.remove"]({ threadId })).pipe(Effect.ignore),
     };
     const worktreeCall = <A, E extends { readonly _tag: string; readonly message?: string }>(
       call: Effect.Effect<A, E>,
@@ -964,6 +1040,8 @@ export const connectHost = (
     return {
       hello,
       files,
+      reads: hello.capabilities.includes("file-reads") ? reads : undefined,
+      attachments: hello.capabilities.includes("attachments") ? attachments : undefined,
       ...(hello.capabilities.includes("checks") ? { checks } : {}),
       repos: { ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })) },
       worktrees,

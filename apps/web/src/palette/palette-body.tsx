@@ -36,7 +36,7 @@ import { prefillDraftProject, prefillTaskTarget } from "@/composer/draft-prefill
 import { useStashMenuStore } from "@/composer/stash-store";
 import { shortcutHint } from "@/keyboard/bindings";
 import { formatKeys, keyLabel } from "@/keyboard/registry";
-import { listIndexForKey } from "@/lib/list-keys";
+import { groupStarts, listIndexForKey } from "@/lib/list-keys";
 import { formatRelative } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { isTouch, usePhone } from "@/lib/use-phone";
@@ -1062,6 +1062,7 @@ export function PaletteBody({
     });
   }
   const items = flattenSections(sections);
+  const starts = groupStarts(sections.map((section) => section.items.length));
   const activeIndex = items.length === 0 ? -1 : Math.min(active, items.length - 1);
   const activeItem = activeIndex === -1 ? undefined : items[activeIndex];
 
@@ -1158,7 +1159,6 @@ export function PaletteBody({
   };
 
   const scopeTitle = scope === undefined ? undefined : (scoped.title ?? "…");
-  let index = -1;
   return (
     <>
       {phone ? (
@@ -1298,7 +1298,7 @@ export function PaletteBody({
           {sections.length === 0 && (!searchMode || messageSearch.status !== "searching") && (
             <p className="px-3 py-6 text-center text-reading text-muted-foreground">No matches</p>
           )}
-          {sections.map((section) => (
+          {sections.map((section, sectionIndex) => (
             <div
               key={section.id}
               role="group"
@@ -1315,9 +1315,8 @@ export function PaletteBody({
               {section.id === "filtered" && section.items.length === 0 && (
                 <p className="px-2 py-2 text-reading text-muted-foreground">No filtered matches</p>
               )}
-              {section.items.map((item) => {
-                index++;
-                const itemIndex = index;
+              {section.items.map((item, inSection) => {
+                const itemIndex = starts[sectionIndex]! + inSection;
                 return (
                   <div
                     key={item.id}

@@ -1,4 +1,4 @@
-import { AppToolError } from "@gram/contracts";
+import { AppToolError, LOCAL_HOST_ID } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -39,6 +39,7 @@ export const moveToWorktreeTool = (
         }
         const others = heldCheckoutPaths(
           (yield* store.listThreads).filter((t) => t.id !== threadId),
+          LOCAL_HOST_ID,
         );
         const checkout = yield* checkouts
           .prepare(

@@ -222,6 +222,11 @@ export const TurnEndEvent = Schema.Struct({
 export const EndedEvent = Schema.Struct({
   type: Schema.Literal("ended"),
   reason: Schema.String,
+  /**
+   * The joined machine, by name, whose host no longer had the session when it came back: it
+   * restarted under it. The conversation is still there to resume on that machine.
+   */
+  restartedMachine: Schema.optionalKey(Schema.String),
 });
 
 /** The permission mode changed: by the user, a plan approval, or the agent. */

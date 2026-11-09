@@ -11,7 +11,7 @@ import {
   ModeRefused,
   NotFound,
 } from "../errors.ts";
-import { FsFilesResult } from "../fs-files.ts";
+import { FsFilesResult, FsResolveResult } from "../fs-files.ts";
 import { FsSearchResult } from "../fs-search.ts";
 import {
   AgentKind,
@@ -21,17 +21,22 @@ import {
   RequestAnswer,
   UserInput,
 } from "../domain.ts";
-import { FsListing } from "../fs.ts";
+import { FsFile, FsListing } from "../fs.ts";
 import { GitState } from "../git.ts";
 import { ClaudeSignIn } from "../launch-checks.ts";
 import { HostId, ProfileId, RequestId, TerminalId, ThreadId } from "../ids.ts";
 import { TerminalEvent, TerminalInfo, TerminalOpened } from "../terminal.ts";
+import { FileImage } from "../thread-ui.ts";
 import { WorktreeList } from "../worktrees.ts";
 import { PositiveInt } from "./shared.ts";
 
 /**
  * The host protocol's version. A control plane and a host that disagree on it don't talk: the
- * hello says so, and the control plane treats the host as unavailable.
+ * hello says so, and the control plane treats the host as unavailable, and shows a joined machine
+ * as needing an update. Bump it when a message either side already sends changes in a way the
+ * other's build can't read; a new call doesn't need it, since a host built before it answers that
+ * call alone with an unknown-request defect. `HostHello`'s `protocol`, `hostId` and `release` stay
+ * readable by every build, so a mismatch is always told apart from a host that didn't answer.
  */
 export const HOST_PROTOCOL_VERSION = 2;
 
@@ -50,6 +55,14 @@ export const HostCapability = Schema.Literals([
    */
   "deliveries",
   /**
+   * Scoping and reading a thread's files on the host for previews, file links, `send_file` and
+   * dictation's vocabulary (`host.files.scope` and the rest). Optional: a host without it still
+   * runs its workers, and its files are refused here rather than read on this machine.
+   */
+  "file-reads",
+  /** Holding the files a user attaches to a session on the host (`host.attachments.*`). Optional. */
+  "attachments",
+  /**
    * Runs a project's check of a head merged onto its base in the host's own repository, once per
    * check id, answering a repeat with the run already under way or its result.
    */
@@ -64,6 +77,12 @@ export const HostHello = Schema.Struct({
   capabilities: Schema.Array(HostCapability),
   platform: Schema.String,
   pid: Schema.Int,
+  /**
+   * The Gram release the host was built from, such as `1.17.0`; absent from a host run from source
+   * and from a host built before it was sent (1.16.0 and earlier). A control plane built before it
+   * ignores it, as a struct ignores keys it doesn't name.
+   */
+  release: Schema.optionalKey(Schema.String),
 });
 export type HostHello = typeof HostHello.Type;
 
@@ -306,6 +325,28 @@ const commandErrors = Schema.Union([HostCommandFailed, HostFailed]);
 const openCheckouts = Schema.Array(Schema.String);
 
 const listErrors = Schema.Union([NotFound, InvalidState, HostFailed]);
+
+/** A file read for a preview: where, scoped to which roots, and whether outside them is allowed. */
+const fileRead = {
+  path: Schema.String,
+  roots: Schema.Array(Schema.String),
+  outside: Schema.Struct({ allowed: Schema.Boolean, refusal: Schema.String }),
+};
+
+/** What a project's vocabulary reads from its checkout, its thread titles aside. */
+export const HostVocabulary = Schema.Struct({
+  symbols: Schema.Array(Schema.String),
+  files: Schema.Array(Schema.String),
+  branches: Schema.Array(Schema.String),
+});
+
+/** A file `send_file` takes from the host: its path there, its size and its bytes as base64. */
+export const HostFetchedFile = Schema.Struct({
+  path: Schema.String,
+  size: Schema.Int,
+  data: Schema.String,
+});
+export type HostFetchedFile = typeof HostFetchedFile.Type;
 const readErrors = Schema.Union([InvalidState, HostFailed]);
 
 /**
@@ -341,6 +382,75 @@ export const HostRpcs = RpcGroup.make(
     success: FsFilesResult,
     error: readErrors,
   }),
+  /**
+   * `path` scoped to `roots` on the host, as `resolveScopedIn` does it: a relative path against
+   * the first root, an absolute one against the root that really holds it, and nothing that leaves
+   * its root lexically or through a link. What `host.files.list` and the rest then read.
+   */
+  Rpc.make("host.files.scope", {
+    payload: { path: Schema.String, roots: Schema.Array(Schema.String) },
+    success: Schema.String,
+    error: listErrors,
+  }),
+  /**
+   * A file preview on the host, scoped as `host.files.scope` scopes it. A path outside every root
+   * is read only when `outside` allows it, and never a credential file; what refused it reads
+   * `outside.refusal`. The control plane decides `outside` from the thread's transcript.
+   */
+  Rpc.make("host.files.file", {
+    payload: { ...fileRead, maxBytes: PositiveInt },
+    success: FsFile,
+    error: listErrors,
+  }),
+  /** An image preview on the host, scoped and gated as `host.files.file` is. */
+  Rpc.make("host.files.image", {
+    payload: { ...fileRead, maxBytes: PositiveInt },
+    success: FileImage,
+    error: listErrors,
+  }),
+  /**
+   * Which of `paths` name one file in `roots` on the host, as `resolveFileRefs` decides it. An
+   * absolute path in no root is checked only when it is in `outside`; the rest of those come back
+   * in `unchecked`, for the control plane to ask the thread's transcript about.
+   */
+  Rpc.make("host.files.resolve", {
+    payload: {
+      paths: Schema.Array(Schema.String),
+      roots: Schema.Array(Schema.String),
+      outside: Schema.Array(Schema.String),
+    },
+    success: Schema.Struct({
+      files: FsResolveResult.fields.files,
+      unchecked: Schema.Array(Schema.String),
+    }),
+    error: readErrors,
+  }),
+  /** What dictation's project vocabulary reads from a checkout on the host. */
+  Rpc.make("host.files.vocabulary", {
+    payload: { root: Schema.String },
+    success: HostVocabulary,
+    error: readErrors,
+  }),
+  /**
+   * A file's bytes for `send_file`: `path` resolved against `cwd` on the host, a regular file of
+   * at most `maxBytes`, never a credential file.
+   */
+  Rpc.make("host.files.fetch", {
+    payload: { path: Schema.String, cwd: Schema.String, maxBytes: PositiveInt },
+    success: HostFetchedFile,
+    error: listErrors,
+  }),
+  /**
+   * Stores a file the user attached for `threadId`'s session in the host's own attachments folder,
+   * and answers where, for the agent to read it there.
+   */
+  Rpc.make("host.attachments.put", {
+    payload: { threadId: ThreadId, name: Schema.String, data: Schema.String },
+    success: Schema.Struct({ path: Schema.String }),
+    error: readErrors,
+  }),
+  /** Deletes what the host holds of `threadId`'s attachments: the thread is gone. */
+  Rpc.make("host.attachments.remove", { payload: { threadId: ThreadId } }),
   /** One sweep of the host's listening ports and processes. */
   Rpc.make("host.ports.scan", { success: HostPortScan, error: HostFailed }),
   /**
