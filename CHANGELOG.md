@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.17.0](https://github.com/ANT1OFF/gram/compare/v1.16.0...v1.17.0) (2026-11-09)
+
+
+### Features
+
+* keep every workspace in the sidebar, never in At rest ([#317](https://github.com/ANT1OFF/gram/issues/317)) ([3b1bfb8](https://github.com/ANT1OFF/gram/commit/3b1bfb8d0e5fe4193d46a7376e1240a237fed706))
+* say why a joined machine is offline, and update one that needs it ([#322](https://github.com/ANT1OFF/gram/issues/322)) ([e412205](https://github.com/ANT1OFF/gram/commit/e412205f618b659738cd7dc0b54e7340293a7790))
+* sign in a joined machine to Claude with a setup-token from this Mac, with consent per machine ([#314](https://github.com/ANT1OFF/gram/issues/314)) ([daa678b](https://github.com/ANT1OFF/gram/commit/daa678b664492f1c489f629f7ff6ac0085c2fe62))
+* update joined machines over their own connection, with rollback and automatic updates ([#336](https://github.com/ANT1OFF/gram/issues/336)) ([4ab126c](https://github.com/ANT1OFF/gram/commit/4ab126cd4e130996aa6ac3019308cd4d20950ab4))
+
+
+### Bug Fixes
+
+* continue a joined machine's turns after its host restarts ([#326](https://github.com/ANT1OFF/gram/issues/326)) ([326206b](https://github.com/ANT1OFF/gram/commit/326206b442d4e0c0414cc50aa783a6544e999d23))
+* count a joined machine's worktree as the worker's own for full-auto merges ([a4456e4](https://github.com/ANT1OFF/gram/commit/a4456e40b50efd5e4608c9678ae6255ff4c87039))
+* identify a joined machine's checkout by its machine and path ([#330](https://github.com/ANT1OFF/gram/issues/330)) ([d1fe808](https://github.com/ANT1OFF/gram/commit/d1fe80898fce9c195bb3eddfa5190117db8bee61))
+* keep a joined machine's terminals reachable after a reconnect, and forks on the conversation's machine ([#329](https://github.com/ANT1OFF/gram/issues/329)) ([a32e106](https://github.com/ANT1OFF/gram/commit/a32e106aae1e94306058f1d8d15a1f243477a60e))
+* pin machine dials to their access, keep dial nonces across restarts, and only leave once the host stopped ([#324](https://github.com/ANT1OFF/gram/issues/324)) ([a566866](https://github.com/ANT1OFF/gram/commit/a566866de4c7e2a3a8972aa29026b03fd98e0a60))
+* read a joined machine's files on that machine, and carry attachments there ([#328](https://github.com/ANT1OFF/gram/issues/328)) ([959fb68](https://github.com/ANT1OFF/gram/commit/959fb6851be99252e49b02e4afd1c506583ff7b3))
+* read a joined machine's terminals and agent pids on that machine ([#323](https://github.com/ANT1OFF/gram/issues/323)) ([03acabf](https://github.com/ANT1OFF/gram/commit/03acabffbb89c98c9ea99c0cecec1d8474d35e52))
+* run a joined machine's local check there, and gate its merge on it ([#333](https://github.com/ANT1OFF/gram/issues/333)) ([6f0965e](https://github.com/ANT1OFF/gram/commit/6f0965e23fb9714e7d172c457a1cf3cf117e272d))
+* secure joined-machine installation and validate cached apps ([#320](https://github.com/ANT1OFF/gram/issues/320)) ([5bde789](https://github.com/ANT1OFF/gram/commit/5bde7892e71bb7b427b2b80be98202dfb2cbf6ea))
+* validate joined-machine repositories and worker admission ([#325](https://github.com/ANT1OFF/gram/issues/325)) ([9bfbae5](https://github.com/ANT1OFF/gram/commit/9bfbae588d1e5ed765a692894814b3794082d32a))
+
 ## [1.16.0](https://github.com/ANT1OFF/gram/compare/v1.15.1...v1.16.0) (2026-11-09)
 
 
