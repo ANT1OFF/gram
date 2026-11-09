@@ -28,6 +28,7 @@ import type { CheckoutServiceShape } from "../runtime/hooks.ts";
 import type { TerminalGate } from "../terminal/gate.ts";
 import { terminalsThroughHost } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
+import { followingSessions } from "./following-sessions.ts";
 import type { HostConnection } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { cloneFolderOf } from "./repos.ts";
@@ -39,6 +40,11 @@ export interface Machine {
   readonly name: string;
   /** The tailnet address it dialled, where its sessions reach their app tools; absent offline. */
   readonly origin?: () => string | undefined;
+  /**
+   * Its connection now, failing while it is offline. Given, its sessions follow it across a
+   * redial (`followingSessions`); without it, they end with the connection they opened on.
+   */
+  readonly connection?: Effect.Effect<HostConnection, HostUnavailable>;
 }
 
 const offline = (machine: Machine) => `${machine.name} is offline.`;
@@ -317,6 +323,11 @@ export const machineWorkerHost = (
       },
     );
     const wrapped = new WeakMap<object, ReturnType<typeof agentHostOnMachine>>();
+    // A session outlives the dial it opened on: a dropped connection that comes back picks it up.
+    const sessions =
+      machine.connection === undefined
+        ? connection.sessions
+        : followingSessions(machine.connection);
     return {
       id: machine.id,
       sessions: AgentHosts.of({
@@ -325,7 +336,7 @@ export const machineWorkerHost = (
             const known = wrapped.get(agent);
             if (known !== undefined) return known;
             const through = agentHostOnMachine(
-              connection.sessions,
+              sessions,
               connection.gone,
               agent,
               machine.name,
@@ -382,6 +393,7 @@ export const machineHosts = (
             id,
             name: remote.machines.get(id)?.name ?? id,
             origin: () => remote.origin(id),
+            connection: remote.connection(id),
           };
           const host = yield* machineWorkerHost(machine, connection, deps).pipe(
             Scope.provide(scope),
