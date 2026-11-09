@@ -46,7 +46,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Cause from "effect/Cause";
 import { EventHub } from "../events/event-hub.ts";
-import { folderExists } from "../fs/folders.ts";
+import { folderExists, ghFolderOf } from "../fs/folders.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { type MergeFence, type PendingMerge } from "../persistence/merge-fence.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -139,7 +139,10 @@ const featurePaused = (
   thread.spawnedBy !== undefined &&
   workspace.pausedFeatures?.includes(thread.spawnedBy.feature) === true;
 
-/** A folder of the thread's repository to run git in: its checkout, or the main one. */
+/**
+ * A folder of the thread's repository to run git in: its checkout, or the main one. Not for `gh`,
+ * which runs on this machine whatever machine the thread is on: that is `ghDirOf`.
+ */
 const repoDirOf = (thread: Thread) =>
   Effect.gen(function* () {
     const cwd = thread.checkout.path;
@@ -147,6 +150,9 @@ const repoDirOf = (thread: Thread) =>
       ? cwd
       : thread.checkout.repoRoot;
   });
+
+/** A folder to start `gh` in for the thread's PR, which every call names with `--repo`. */
+const ghDirOf = (thread: Thread) => ghFolderOf(thread.checkout);
 
 /** What the thread is told once Gram merged its PR. */
 const mergedText = (
@@ -664,7 +670,7 @@ export const MergeWhenReadyLive = Layer.effect(
               .pipe(Effect.orElseSucceed(() => undefined));
             if (owner !== undefined) {
               yield* noteWait(owner, pending.pr, uncertaintyText(pending));
-              const settled = yield* baseLocks.withLock(key, settle(key, yield* repoDirOf(owner)));
+              const settled = yield* baseLocks.withLock(key, settle(key, yield* ghDirOf(owner)));
               if (settled === undefined || settled === "merged") {
                 yield* noteWait(owner, pending.pr, undefined);
                 yield* afterMerge(owner.id, pending.pr);
@@ -700,10 +706,7 @@ export const MergeWhenReadyLive = Layer.effect(
         const cwd = thread.value.checkout.path;
         // `--repo` names the repo, so gh needs only a folder to start in: with the worktree deleted
         // outside Gram, its main checkout, or every gh would fail to start and stall it.
-        const ghCwd =
-          (yield* folderExists(cwd)) || thread.value.checkout.repoRoot === undefined
-            ? cwd
-            : thread.value.checkout.repoRoot;
+        const ghCwd = yield* ghDirOf(thread.value);
         const after = [
           ...(intent.after ?? []),
           ...mergeAfterDependencies(bound).filter(
@@ -1151,7 +1154,7 @@ export const MergeWhenReadyLive = Layer.effect(
         if (Option.isNone(thread) || bound?.mergeWhenReady === undefined) return;
         const read = yield* providerPr
           .status(
-            yield* repoDirOf(thread.value),
+            yield* ghDirOf(thread.value),
             { repo: bound.repo, number: bound.number, reviews: true },
             undefined,
             { fresh: true },
@@ -1498,7 +1501,7 @@ export const MergeWhenReadyLive = Layer.effect(
         if (workspace?.paused !== undefined) return { refused: PAUSED_BLOCKER };
         if (workspace !== undefined && featurePaused(workspace, thread.value))
           return { refused: `the user paused feature ${thread.value.spawnedBy?.feature}` };
-        const cwd = yield* repoDirOf(thread.value);
+        const cwd = yield* ghDirOf(thread.value);
         // GitHub's own word on head and base, read afresh: a just-pushed head is the one checked.
         const badge = yield* providerPr
           .status(cwd, { repo: bound.repo, number: bound.number }, undefined, { fresh: true })
@@ -1593,7 +1596,7 @@ export const MergeWhenReadyLive = Layer.effect(
           .getThread(caller)
           .pipe(Effect.mapError(() => refuse("The caller no longer exists.")));
         const owner = Option.isSome(authority) ? authority.value.thread : actor;
-        const cwd = yield* repoDirOf(owner);
+        const cwd = yield* ghDirOf(owner);
         const result = yield* baseLocks.withLock(
           key,
           Effect.gen(function* () {
