@@ -24,15 +24,24 @@ import { toolLabel } from "./tool-labels";
 /** Tool calls that keep their own card: a subagent's card carries its whole transcript. */
 const UNGROUPED = new Set(["Task", "Agent"]);
 
-const groupable = (part: MessagePart): part is AnyToolPart =>
-  isToolPart(part) && !UNGROUPED.has(toolNameOf(part));
+/** A change an orchestrator's memory tool made, which its run shows as one of its rows. */
+export type MemoryWritePart = Extract<MessagePart, { type: "data-memory-write" }>;
+
+/** What a run folds: tool calls, and the memory changes they made. */
+export type RunPart = AnyToolPart | MemoryWritePart;
+
+const groupable = (part: MessagePart): part is RunPart =>
+  (isToolPart(part) && !UNGROUPED.has(toolNameOf(part))) || part.type === "data-memory-write";
+
+/** A run's tool calls, without the memory changes between them. */
+export const runCalls = (run: readonly RunPart[]): AnyToolPart[] => run.filter(isToolPart);
 
 /** The shortest run worth folding; a lone tool call is already one line. */
 const MIN_RUN = 2;
 
 export interface ToolRuns {
   /** Each folded run, keyed by the index of its first part. */
-  starts: ReadonlyMap<number, readonly AnyToolPart[]>;
+  starts: ReadonlyMap<number, readonly RunPart[]>;
   /** Indexes of the parts a run absorbed, which render nothing themselves. */
   absorbed: ReadonlySet<number>;
 }
@@ -50,14 +59,15 @@ const invisible = (part: MessagePart) =>
   (part.type === "reasoning" && part.state !== "streaming");
 
 /**
- * Consecutive tool calls in a message, folded into runs. Anything visible between two calls ends a
- * run; invisible markers don't. So do the parts in `apart`, which a closed turn fold holds out of
- * any run.
+ * Consecutive tool calls in a message, folded into runs. A memory change sits among them as one of
+ * the run's rows, where a card of its own would split the run. Anything else visible between two
+ * calls ends a run; invisible markers don't. So do the parts in `apart`, which a closed turn fold
+ * holds out of any run.
  */
 export function toolRuns(parts: readonly MessagePart[], apart?: ReadonlySet<number>): ToolRuns {
-  const starts = new Map<number, readonly AnyToolPart[]>();
+  const starts = new Map<number, readonly RunPart[]>();
   const absorbed = new Set<number>();
-  let run: AnyToolPart[] = [];
+  let run: RunPart[] = [];
   let indexes: number[] = [];
   const close = () => {
     if (run.length >= MIN_RUN) {
@@ -122,7 +132,7 @@ export const missingToolImageLabel = (
     : `Image can't be previewed · ${image.mediaType}`;
 };
 
-type StepKind = "command" | "read" | "edit" | "search" | "web" | "other";
+type StepKind = "command" | "read" | "edit" | "memory" | "search" | "web" | "other";
 
 const KIND_OF: Record<string, StepKind> = {
   Bash: "command",
@@ -137,20 +147,38 @@ const KIND_OF: Record<string, StepKind> = {
   WebSearch: "web",
 };
 
+/** Gram's tools that change an orchestrator's memory, each drawn with the change it made. */
+const MEMORY_CHANGE = /^mcp__gram__memory_(write|append|edit|delete)$/;
+
+const kindOf = (part: AnyToolPart): StepKind => {
+  const name = toolNameOf(part);
+  return KIND_OF[name] ?? (MEMORY_CHANGE.test(name) ? "memory" : "other");
+};
+
 // Edits first: what a run changed matters more than what it looked at.
-const KIND_ORDER: readonly StepKind[] = ["edit", "command", "read", "search", "web", "other"];
+const KIND_ORDER: readonly StepKind[] = [
+  "edit",
+  "memory",
+  "command",
+  "read",
+  "search",
+  "web",
+  "other",
+];
 
 const PHRASE: Record<StepKind, (count: number) => string> = {
   command: (n) => (n === 1 ? "ran 1 command" : `ran ${n} commands`),
   read: (n) => (n === 1 ? "read 1 file" : `read ${n} files`),
   edit: (n) => (n === 1 ? "made 1 edit" : `made ${n} edits`),
+  // The run's rows name each file; the summary only says memory changed.
+  memory: () => "updated memory",
   search: (n) => (n === 1 ? "searched once" : `searched ${n} times`),
   web: (n) => (n === 1 ? "made 1 web lookup" : `made ${n} web lookups`),
   other: (n) => (n === 1 ? "used 1 tool" : `used ${n} tools`),
 };
 
 /** The files a run's calls changed, in order; a call that doesn't say which adds none. */
-export const runEdits = (run: readonly AnyToolPart[]): FileEdit[] => run.flatMap(partEdits);
+export const runEdits = (run: readonly RunPart[]): FileEdit[] => runCalls(run).flatMap(partEdits);
 
 /** Files named before a run's summary counts them instead. */
 const NAMED_FILES = 2;
@@ -169,11 +197,11 @@ function editPhrase(edits: readonly FileEdit[]): string {
  * "Edited retry.ts, ran 2 commands, read 2 files": what a run did, edits first and named by file.
  * An edit call that doesn't say which files it changed is counted instead.
  */
-export function runSummary(run: readonly AnyToolPart[]): string {
+export function runSummary(run: readonly RunPart[]): string {
   const counts = new Map<StepKind, number>();
   const edits: FileEdit[] = [];
-  for (const part of run) {
-    const kind = KIND_OF[toolNameOf(part)] ?? "other";
+  for (const part of runCalls(run)) {
+    const kind = kindOf(part);
     const files = kind === "edit" ? partEdits(part) : [];
     if (files.length > 0) {
       edits.push(...files);
@@ -258,9 +286,10 @@ const NO_CALLS: ReadonlySet<string> = new Set();
  * call the agent started and still asks about waits, rather than runs.
  */
 export function runState(
-  run: readonly AnyToolPart[],
+  parts: readonly RunPart[],
   pendingApprovals: ReadonlySet<string> = NO_CALLS,
 ): RunState {
+  const run = runCalls(parts);
   const phases = run.map((part) => {
     const phase = toolPhase(
       part.state,
@@ -325,12 +354,14 @@ const phaseOf = (part: AnyToolPart) =>
 const SETTLED: ReadonlySet<ToolPhase> = new Set(["done", "cancelled", "denied"]);
 
 /**
- * Narration and how the turn got there. Anything else, an error card say, stays out of the fold, and
+ * Narration and how the turn got there, the memory changes its tools made among it. Anything else,
+ * an error card say, stays out of the fold, and
  * so do words still arriving, whatever the thread's status says of the turn.
  */
 const foldable = (part: MessagePart) =>
   ((part.type === "text" || part.type === "reasoning") && part.state !== "streaming") ||
   part.type === "data-chapter" ||
+  part.type === "data-memory-write" ||
   (isToolPart(part) && SETTLED.has(phaseOf(part)));
 
 /** Parts that draw nothing wherever they are, so a reply of only these is empty. */
