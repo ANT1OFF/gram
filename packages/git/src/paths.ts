@@ -63,11 +63,47 @@ export const relativeInside = (
 };
 
 /**
+ * Folders on another machine (a joined host's clones and worktrees), resolved lexically. Their
+ * paths mean nothing on this filesystem, and asking it about them isn't free: on macOS `/home` is
+ * an autofs mount, so each `realpath` under it is a round trip to `automountd` (~17 ms idle, far
+ * more under load), and `physicalPath` makes one per missing parent. Synchronous, on the event
+ * loop, that starved the host connections until they dropped.
+ */
+const foreignRoots = new Set<string>();
+
+/**
+ * Marks `path` and everything below it as another machine's: `physicalPath`, `samePathKey` and
+ * `samePath` compare it as written and never touch the filesystem for it. Only ever added to, since
+ * a folder that was another machine's stays so for a key already handed out. Relative paths are
+ * ignored: a host's paths are always absolute.
+ */
+export const noteForeignPath = (path: string): void => {
+  if (!nodePath.isAbsolute(path)) return;
+  foreignRoots.add(nodePath.resolve(path));
+};
+
+/** Whether `path` is at or below a folder `noteForeignPath` marked, by its lexical form. */
+export const isForeignPath = (path: string): boolean => {
+  if (foreignRoots.size === 0 || !nodePath.isAbsolute(path)) return false;
+  for (let at = nodePath.resolve(path); ;) {
+    if (foreignRoots.has(at)) return true;
+    const parent = nodePath.dirname(at);
+    if (parent === at) return false;
+    at = parent;
+  }
+};
+
+/** Forgets every `noteForeignPath`, for tests. */
+export const forgetForeignPathsForTest = (): void => foreignRoots.clear();
+
+/**
  * `path` as the filesystem names it: the real path of its deepest part that exists, with the rest
  * as written. The real path carries the case the disk stores, so on a case-insensitive volume every
- * spelling of a folder comes out the same and on a case-sensitive one two folders stay two.
+ * spelling of a folder comes out the same and on a case-sensitive one two folders stay two. A path
+ * on another machine (`noteForeignPath`) is only resolved lexically.
  */
 export const physicalPath = (path: string): string => {
+  if (isForeignPath(path)) return nodePath.resolve(path);
   const real = tryRealPathSync(path);
   if (real !== undefined) return real;
   const resolved = nodePath.resolve(path);
@@ -79,6 +115,7 @@ export const physicalPath = (path: string): string => {
 
 /** `physicalPath`, asynchronously. */
 export const physicalPathAsync = async (path: string): Promise<string> => {
+  if (isForeignPath(path)) return nodePath.resolve(path);
   const real = await tryRealPath(path);
   if (real !== undefined) return real;
   const resolved = nodePath.resolve(path);
@@ -114,7 +151,7 @@ export const samePathKey = (path: string, platform: NodeJS.Platform = process.pl
 
 /** Whether `a` and `b` are one folder by `samePathKey`, resolving links where the path exists. */
 export const samePath = (a: string, b: string, platform: NodeJS.Platform = process.platform) =>
-  samePathKey(a, platform) === samePathKey(b, platform);
+  a === b || samePathKey(a, platform) === samePathKey(b, platform);
 
 /**
  * A project root in one spelling: the platform's separators, no trailing one, and on Windows an

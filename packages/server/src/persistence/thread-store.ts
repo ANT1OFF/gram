@@ -73,6 +73,7 @@ import * as Schema from "effect/Schema";
 import { createHash, randomUUID } from "node:crypto";
 import { SqlClient, SqlError } from "../platform/unstable.ts";
 import { MigrationsLayer } from "./migrations.ts";
+import { noteForeignCheckouts } from "../host/foreign-paths.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
@@ -1298,6 +1299,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           if (unstamped.labels.length > 1)
             return yield* Effect.die(new Error(`thread ${unstamped.id} has more than one label`));
           const thread: Thread = { ...unstamped, revision: yield* nextRevision };
+          noteForeignCheckouts(thread);
           yield* sql`INSERT INTO threads
             (id, project_id, agent_session_id, pinned, parked, created_at, last_activity_at, data,
               host_id)
@@ -1328,6 +1330,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               ? Effect.succeed(undefined)
               : readableRow(unreadable, "threads", id, decodeStored(Thread, rows[0].data)),
           ),
+          Effect.map((thread) => {
+            if (thread !== undefined) noteForeignCheckouts(thread);
+            return thread;
+          }),
           Effect.flatMap((thread) =>
             thread === undefined
               ? Effect.fail(new ThreadNotFound({ threadId: id }))
@@ -1954,6 +1960,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               (r) => r.id,
               (r) => decodeStored(Thread, r.data),
             );
+            for (const thread of threads) noteForeignCheckouts(thread);
             listedThreads = version === undefined ? undefined : { token: version.token, threads };
             return threads;
           }),

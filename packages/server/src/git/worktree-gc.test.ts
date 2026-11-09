@@ -2,13 +2,14 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
-import type {
-  PrStatus,
-  ProjectId,
-  Thread,
-  ThreadId,
-  ThreadStatus,
-  WorkspaceId,
+import {
+  HostId,
+  type PrStatus,
+  type ProjectId,
+  type Thread,
+  type ThreadId,
+  type ThreadStatus,
+  type WorkspaceId,
 } from "@gram/contracts";
 import {
   Pr,
@@ -167,6 +168,29 @@ describe("sweepDue", () => {
     // Counted from completion when that came after the last activity.
     const completed = facts({ thread: thread({ completedAt: NOW - DAY }) });
     expect(sweepDue(completed, SWEEP, NOW)).toBeUndefined();
+  });
+
+  it("leaves a worktree on another machine to that machine", () => {
+    const remote = HostId.make("m-remote");
+    const placed = facts({
+      thread: thread({
+        checkout: {
+          kind: "worktree",
+          path: PATH,
+          branch: "feat/x",
+          repoRoot: "/r",
+          hostId: remote,
+        },
+      }),
+    });
+    expect(sweepDue(placed, SWEEP, NOW)).toBeUndefined();
+    // Nor one whose agent followed into a checkout there.
+    const followed = facts({
+      thread: thread({
+        currentCheckout: { kind: "worktree", path: PATH, repoRoot: "/r", hostId: remote },
+      }),
+    });
+    expect(sweepDue(followed, SWEEP, NOW)).toBeUndefined();
   });
 
   it("removes a merged thread's worktree once the grace has passed, not after M days", () => {
