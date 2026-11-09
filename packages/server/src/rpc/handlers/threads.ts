@@ -4,6 +4,7 @@ import {
   GitError,
   InvalidState,
   isLocalHost,
+  LOCAL_HOST_ID,
   NotFound,
   plainWaitText,
   ThreadId,
@@ -35,6 +36,7 @@ import { deleteMergedBranch } from "../../git/branch-cleanup.ts";
 import { GitStatePublisher } from "../../git/publisher.ts";
 import { HelperScheduler } from "../../helper/scheduler.ts";
 import { restoreThreadWorktree } from "../../git/restore-worktree.ts";
+import { forkHostRefusal } from "../../runtime/history-plans.ts";
 import { Orchestration } from "../../orchestration/service.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { PlanKeeper } from "../../plans/keeper.ts";
@@ -491,6 +493,14 @@ export const threadHandlers = Effect.gen(function* () {
     "thread.fork": ({ threadId, fromMessageId, checkout, title }) =>
       Effect.gen(function* () {
         const plan = yield* runtimes.forkTarget(threadId, fromMessageId);
+        // Refused before a worktree is made for it on another machine (`fork` refuses it too).
+        if (checkout !== undefined) {
+          const elsewhere = forkHostRefusal(
+            plan.source,
+            checkout.kind === "newWorktree" ? (checkout.hostId ?? LOCAL_HOST_ID) : LOCAL_HOST_ID,
+          );
+          if (elsewhere !== undefined) return yield* elsewhere;
+        }
         const prepared =
           checkout === undefined
             ? plan.source.checkout

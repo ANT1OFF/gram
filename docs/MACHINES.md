@@ -128,10 +128,16 @@ or `gram-host service install`.
   or credential helper), so the repository has to be reachable from there.
 - A clone that fails or is stopped leaves nothing behind. A folder that is already there but isn't
   a clone of that remote is left alone, and the worker isn't started.
-- A joined machine's terminals open with its own default shell on its own PATH.
+- A joined machine's terminals open with its own default shell on its own PATH. Its shells outlast
+  a dropped connection or a restart of the main Gram while the host waits for it; once it connects
+  again, each shell whose thread is still open on that machine is taken up again, so typing and
+  closing reach it, and each one whose thread was closed meanwhile is closed.
 - Bulk worktree removal asks that machine whether a command runs in the worker's terminals, and
   leaves the worker open while one does or while the machine can't be asked. A worker there shows
   no port chips, rather than chips from this machine's processes.
+- A conversation forks only onto the machine it ran on, since its history is kept there: a fork of
+  a joined machine's thread goes into a worktree on that machine, and a fork of one of this
+  machine's threads stays here.
 - While the machine is offline its workers don't start and their folders aren't marked missing;
   nothing falls back to running on this machine.
 - A message sent while the connection is down waits for the machine for up to two minutes, as its
