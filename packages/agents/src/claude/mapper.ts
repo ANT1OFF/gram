@@ -3,6 +3,7 @@ import type {
   SDKMessage,
   SDKResultMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import type {
   AgentEvent,
   AgentFailure,
@@ -813,7 +814,9 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
       return;
     }
     if (typeof content === "string") return;
-    const results = content.filter((block) => block.type === "tool_result");
+    // `MessageParam` also covers system messages, whose content is text blocks: read either as blocks.
+    const blocks: ReadonlyArray<ContentBlockParam> = content;
+    const results = blocks.filter((block) => block.type === "tool_result");
     for (const block of results) {
       // Its `task_started`, if it has one, came before the result and took the command.
       bashCommands.delete(block.tool_use_id);
