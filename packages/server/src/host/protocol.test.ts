@@ -3,11 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
-import { HOST_PROTOCOL_VERSION, type HostHello, HostId, LOCAL_HOST_ID } from "@gram/contracts";
+import {
+  HOST_PROTOCOL_VERSION,
+  HostCapability,
+  HostHello,
+  HostId,
+  LOCAL_HOST_ID,
+} from "@gram/contracts";
 import { type GitStateChange, Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { filesOn } from "./files.ts";
 import { reposOn } from "./repos.ts";
@@ -15,6 +22,7 @@ import { gitOn } from "./git.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import {
   connectHost,
+  helloMismatch,
   HOST_CAPABILITIES,
   scanFromWire,
   scanToWire,
@@ -106,6 +114,38 @@ describe("host protocol", () => {
       });
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
+
+  it.effect("connects a host that sends its release and one built before it did", () =>
+    Effect.gen(function* () {
+      expect((yield* connected({ release: "1.15.2" })).hello.release).toBe("1.15.2");
+      expect((yield* connected()).hello).not.toHaveProperty("release");
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+
+  it("keeps a hello with a release readable by a build from before it was sent", () => {
+    // `HostHello` as 1.14.0 to 1.15.1 had it, which read every hello since.
+    const Before = Schema.Struct({
+      protocol: Schema.Int,
+      hostId: HostId,
+      capabilities: Schema.Array(HostCapability),
+      platform: Schema.String,
+      pid: Schema.Int,
+    });
+    const now = Schema.encodeSync(HostHello)(hello({ release: "1.15.2" }));
+    expect(Schema.decodeUnknownSync(Before)(now)).toEqual(hello());
+    expect(Schema.decodeUnknownSync(HostHello)(Schema.encodeSync(Before)(hello()))).toEqual(
+      hello(),
+    );
+    // Same protocol and everything this build needs: compatible, whatever the release.
+    expect(helloMismatch(hello({ release: "1.14.0" }))).toBeUndefined();
+    expect(helloMismatch(hello({ protocol: HOST_PROTOCOL_VERSION - 1 }))).toEqual({
+      kind: "protocol",
+    });
+    expect(helloMismatch(hello({ capabilities: ["files"] }))).toMatchObject({
+      kind: "capabilities",
+      missing: expect.arrayContaining(["sessions"]),
+    });
+  });
 
   it.effect("refuses a host on another protocol version", () =>
     Effect.gen(function* () {

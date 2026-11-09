@@ -30,6 +30,14 @@ import type * as Scope from "effect/Scope";
 // git opens) must not inherit that.
 delete process.env["ELECTRON_RUN_AS_NODE"];
 
+/**
+ * The Gram release this host was built from, which its hello carries so the main Gram can say a
+ * joined machine needs an update. The app's build sets it (`proc-worker-build.ts`); a host run
+ * from source has none.
+ */
+declare const GRAM_HOST_RELEASE: string | undefined;
+const RELEASE = typeof GRAM_HOST_RELEASE === "string" ? GRAM_HOST_RELEASE : undefined;
+
 /** The descriptor the server hands the host stream on. */
 export const HOST_STREAM_FD = 3;
 
@@ -72,6 +80,7 @@ const hostService = (
         capabilities: HOST_CAPABILITIES,
         platform: process.platform,
         pid: process.pid,
+        ...(RELEASE === undefined ? {} : { release: RELEASE }),
       },
       files: filesOn(proc),
       repos: reposOn(proc, hostRepos()),

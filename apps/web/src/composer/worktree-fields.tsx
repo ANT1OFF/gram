@@ -14,6 +14,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { agoText } from "@/lib/time";
+import { Hint } from "@/components/hint";
+import { healthHint, machineHealth } from "@/settings/machine-status";
 import { MACHINES_KEY, machinesApi } from "@/settings/machines-api";
 import { cn } from "@/lib/utils";
 import { branchPrefixSetting } from "@/settings/branch-prefix";
@@ -83,11 +85,19 @@ function MachineField({
   }, [gone, onChange]);
   if (machines.length === 0) return null;
   const items = [
-    { value: THIS_MACHINE, label: "This machine" },
-    ...machines.map((m) => ({
-      value: m.id,
-      label: m.onlineSince === undefined ? `${m.name} (offline)` : m.name,
-    })),
+    { value: THIS_MACHINE, label: "This machine", hint: undefined },
+    ...machines.map((m) => {
+      const health = machineHealth(m, data ?? {});
+      return {
+        value: m.id,
+        label:
+          health.tone === "online"
+            ? m.name
+            : `${m.name} (${health.tone === "update" ? "needs update" : "offline"})`,
+        // Why it is offline and the fix, on hover: what Settings → Machines says too.
+        hint: health.tone === "online" ? undefined : healthHint(health),
+      };
+    }),
   ];
   return (
     <label className="flex flex-col gap-1">
@@ -103,11 +113,22 @@ function MachineField({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {items.map((item) => (
-            <SelectItem key={item.value} value={item.value}>
-              {item.label}
-            </SelectItem>
-          ))}
+          {items.map((item) =>
+            item.hint === undefined ? (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ) : (
+              <Hint
+                key={item.value}
+                label={item.hint}
+                side="right"
+                render={<SelectItem value={item.value} aria-description={item.hint} />}
+              >
+                {item.label}
+              </Hint>
+            ),
+          )}
         </SelectContent>
       </Select>
     </label>

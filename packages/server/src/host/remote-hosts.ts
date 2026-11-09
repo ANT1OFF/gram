@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { HostUnavailable, type HostId } from "@gram/contracts";
+import { type HostHello, HostUnavailable, type HostId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -17,7 +17,7 @@ import {
   type PairedMachines,
   type PairedMachineStore,
 } from "./paired-machines.ts";
-import { connectHost, type HostConnection } from "./protocol.ts";
+import { connectHost, type HostConnection, helloMismatch } from "./protocol.ts";
 import { watchedSocket } from "./socket-end.ts";
 
 /** A joined machine's host while it is dialled in. */
@@ -49,8 +49,11 @@ export interface RemoteHostsShape {
   readonly connection: (id: HostId) => Effect.Effect<HostConnection, HostUnavailable>;
   /** The tailnet address the machine dialled, while it is online: where it reaches this Gram. */
   readonly origin: (id: HostId) => string | undefined;
-  /** The joined machines as the settings page lists them. */
-  readonly list: () => ReadonlyArray<ReturnType<typeof machineView>>;
+  /**
+   * The joined machines as the settings page lists them, each offline one with why: `tailscale`
+   * false says access over Tailscale is off, so none of them can dial.
+   */
+  readonly list: (tailscale?: boolean) => ReadonlyArray<ReturnType<typeof machineView>>;
   /**
    * Serves a dial from `machine` that the auth middleware let through, until its socket closes or
    * the machine is removed. A second dial from the same machine replaces the first.
@@ -101,6 +104,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           const scope = yield* Scope.fork(root);
           let entry: Online | undefined;
           const ended = yield* Deferred.make<never, HostUnavailable>();
+          let hello: HostHello | undefined;
           const end = (message: string) =>
             Deferred.doneUnsafe(
               ended,
@@ -116,14 +120,49 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             const opened = yield* connectHost(
               watchedSocket(
                 socket,
-                Effect.sync(() => end("The machine's connection closed.")),
+                Effect.sync(() => {
+                  // Only a connection that was online is lost; one replaced or removed isn't.
+                  if (entry !== undefined && online.get(machine.id) === entry)
+                    machines.note(machine.id, { kind: "lost", at: now() });
+                  end("The machine's connection closed.");
+                }),
               ),
-              { hostId: machine.id, gone: Deferred.await(ended) },
+              {
+                hostId: machine.id,
+                gone: Deferred.await(ended),
+                onHello: (said) => {
+                  hello = said;
+                },
+              },
             ).pipe(Scope.provide(scope), Effect.exit);
             if (Exit.isFailure(opened)) {
+              const mismatch =
+                hello !== undefined && hello.hostId === machine.id
+                  ? helloMismatch(hello)
+                  : undefined;
+              if (generationOf(machine.id) === generation)
+                machines.note(
+                  machine.id,
+                  hello !== undefined && mismatch !== undefined
+                    ? {
+                        kind: "mismatch",
+                        at: now(),
+                        protocol: hello.protocol,
+                        ...(hello.release === undefined ? {} : { release: hello.release }),
+                        ...(mismatch.kind === "capabilities" ? { missing: mismatch.missing } : {}),
+                      }
+                    : { kind: "no-hello", at: now() },
+                );
               yield* Effect.logWarning(
                 "machines: a joined machine dialled in but didn't connect",
-              ).pipe(Effect.annotateLogs({ hostId: machine.id }));
+              ).pipe(
+                Effect.annotateLogs({
+                  hostId: machine.id,
+                  ...(mismatch === undefined
+                    ? {}
+                    : { protocol: hello?.protocol, release: hello?.release ?? "unknown" }),
+                }),
+              );
               return;
             }
             // Removed, or its connections closed, while it said hello: it doesn't come online.
@@ -141,6 +180,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             };
             entry = live;
             online.set(machine.id, live);
+            machines.note(machine.id, undefined);
             yield* Effect.logInfo("machines: a joined machine is online").pipe(
               Effect.annotateLogs({ hostId: machine.id, platform: opened.value.hello.platform }),
             );
@@ -162,7 +202,20 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               : Effect.succeed(live.connection);
           }),
         origin: (id) => online.get(id)?.origin,
-        list: () => machines.list().map((machine) => machineView(machine, online.get(machine.id))),
+        list: (tailscale) =>
+          machines.list().map((machine) => {
+            const live = online.get(machine.id);
+            return machineView(
+              machine,
+              live === undefined
+                ? undefined
+                : { since: live.since, release: live.connection.hello.release },
+              {
+                problem: machines.problemOf(machine.id),
+                ...(tailscale === undefined ? {} : { tailscale }),
+              },
+            );
+          }),
         attach,
         remove: (id) => {
           bump(id);
@@ -176,6 +229,9 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           for (const machine of machines.list()) {
             const live = online.get(machine.id);
             if (live !== undefined && live.origin === origin) continue;
+            // Onto another address, which it doesn't dial; turned off, the list says so itself.
+            if (live !== undefined && origin !== undefined)
+              machines.note(machine.id, { kind: "moved", at: now() });
             bump(machine.id);
             close(machine.id);
           }

@@ -16,12 +16,46 @@ export interface JoinedMachine {
   readonly confirmed: boolean;
   /** Set while it is connected. */
   readonly onlineSince?: number;
+  /** Why it is offline, as this Gram last saw it; set only while it isn't connected. */
+  readonly offline?: OfflineReason;
+  /** The Gram release its host said it runs, while online or when it couldn't connect. */
+  readonly release?: string;
+  /** The `[user@]host` Gram installed it at over SSH, which its update runs again. */
+  readonly sshTarget?: string;
 }
+
+/**
+ * Why a joined machine is offline: the last reason it dropped or was refused since this Gram
+ * started, that access over Tailscale is off, or that it hasn't dialled since. Times are epoch ms.
+ */
+export type OfflineReason =
+  | { readonly kind: "never" }
+  | { readonly kind: "tailscale-off" }
+  | { readonly kind: "unconfirmed"; readonly at: number }
+  | { readonly kind: "bad-signature"; readonly at: number }
+  /** Its clock against this machine's: positive when it is ahead. */
+  | { readonly kind: "clock"; readonly at: number; readonly skewMs: number }
+  | {
+      readonly kind: "mismatch";
+      readonly at: number;
+      readonly protocol: number;
+      readonly release?: string;
+      readonly missing?: ReadonlyArray<string>;
+    }
+  | { readonly kind: "no-hello"; readonly at: number }
+  | { readonly kind: "lost"; readonly at: number }
+  | { readonly kind: "moved"; readonly at: number };
 
 export interface MachinesStatus {
   readonly machines: ReadonlyArray<JoinedMachine>;
   /** A join link waiting to be used. */
   readonly joinLink?: { readonly expiresAt: number };
+  /** This Gram's release, absent when it runs from source. */
+  readonly release?: string;
+  /** The host protocol this Gram speaks. */
+  readonly protocol?: number;
+  /** What updates a joined machine when run there; set while access over Tailscale is on. */
+  readonly updateCommand?: string;
 }
 
 export interface JoinLink {
@@ -61,19 +95,60 @@ const isMachine = (value: unknown): value is JoinedMachine => {
     typeof m["fingerprint"] === "string" &&
     typeof m["joinedAt"] === "number" &&
     typeof m["confirmed"] === "boolean" &&
-    (m["onlineSince"] === undefined || typeof m["onlineSince"] === "number")
+    (m["onlineSince"] === undefined || typeof m["onlineSince"] === "number") &&
+    (m["offline"] === undefined || isOffline(m["offline"])) &&
+    (m["release"] === undefined || typeof m["release"] === "string") &&
+    (m["sshTarget"] === undefined || typeof m["sshTarget"] === "string")
   );
+};
+
+const REASONS = new Set([
+  "never",
+  "tailscale-off",
+  "unconfirmed",
+  "bad-signature",
+  "clock",
+  "mismatch",
+  "no-hello",
+  "lost",
+  "moved",
+]);
+
+const isOffline = (value: unknown): value is OfflineReason => {
+  if (typeof value !== "object" || value === null) return false;
+  const r = value as Record<string, unknown>;
+  if (typeof r["kind"] !== "string" || !REASONS.has(r["kind"])) return false;
+  if (r["kind"] === "never" || r["kind"] === "tailscale-off") return true;
+  if (typeof r["at"] !== "number") return false;
+  if (r["kind"] === "clock") return typeof r["skewMs"] === "number";
+  if (r["kind"] === "mismatch")
+    return (
+      typeof r["protocol"] === "number" &&
+      (r["release"] === undefined || typeof r["release"] === "string") &&
+      (r["missing"] === undefined ||
+        (Array.isArray(r["missing"]) && r["missing"].every((m) => typeof m === "string")))
+    );
+  return true;
 };
 
 const status = async (response: Response, fallback: string): Promise<MachinesStatus> => {
   if (!response.ok) throw await refusal(response, fallback);
-  const value = (await response.json()) as { machines?: unknown; joinLink?: unknown };
+  const value = (await response.json()) as {
+    machines?: unknown;
+    joinLink?: unknown;
+    release?: unknown;
+    protocol?: unknown;
+    updateCommand?: unknown;
+  };
   if (!Array.isArray(value.machines) || !value.machines.every(isMachine))
     throw new MachinesError(fallback);
   const link = value.joinLink as { expiresAt?: unknown } | undefined;
   return {
     machines: value.machines,
     ...(typeof link?.expiresAt === "number" ? { joinLink: { expiresAt: link.expiresAt } } : {}),
+    ...(typeof value.release === "string" ? { release: value.release } : {}),
+    ...(typeof value.protocol === "number" ? { protocol: value.protocol } : {}),
+    ...(typeof value.updateCommand === "string" ? { updateCommand: value.updateCommand } : {}),
   };
 };
 
@@ -98,6 +173,31 @@ export const machinesApi = {
     if (typeof value.url !== "string" || typeof value.expiresAt !== "number")
       throw new MachinesError("Couldn't make a join link");
     return { url: value.url, expiresAt: value.expiresAt };
+  },
+  /**
+   * Runs the install over SSH again on a machine Gram added that way: it moves the machine's
+   * service to this Gram's release and keeps the join. Minutes, while it downloads Gram there.
+   */
+  update: async (id: string): Promise<MachinesStatus & { readonly output: string }> => {
+    const response = await post("/machines/update", { id });
+    const text = await response.text().catch(() => "");
+    let value: { message?: unknown; output?: unknown; reason?: unknown } = {};
+    try {
+      value = JSON.parse(text) as typeof value;
+    } catch {
+      // Plain text.
+    }
+    const output = typeof value.output === "string" ? value.output : "";
+    if (!response.ok)
+      throw new SshJoinError(
+        typeof value.message === "string" ? value.message : "Couldn't update the machine",
+        output,
+        value.reason === "ssh-running",
+      );
+    return {
+      ...(await status(new Response(text, { status: 200 }), "Couldn't update the machine")),
+      output,
+    };
   },
   /** The hosts in this computer's SSH config, for the Add over SSH picker. */
   sshHosts: async (): Promise<ReadonlyArray<string>> => {

@@ -21,6 +21,7 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
+import { machineHealth } from "@/settings/machine-status";
 import { MACHINES_KEY, machinesApi } from "@/settings/machines-api";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useThreadsStore } from "@/stores/threads";
@@ -570,8 +571,14 @@ function MachineTag({ hostId }: { hostId: HostId }) {
   });
   const machine = data?.machines.find((m) => m.id === hostId);
   const name = machine?.name ?? "another machine";
-  const offline = machine !== undefined && machine.onlineSince === undefined;
-  const label = offline ? `On ${name}, which is offline` : `On ${name}`;
+  const health =
+    machine === undefined || data === undefined ? undefined : machineHealth(machine, data);
+  const label =
+    health === undefined || health.tone === "online"
+      ? `On ${name}`
+      : `On ${name}, which ${health.tone === "update" ? "needs an update" : "is offline"}${
+          health.why === undefined ? "" : `. ${health.why}`
+        }`;
   // An icon of fixed width, its name on hover: the chips' fit is measured without it changing.
   return (
     <span

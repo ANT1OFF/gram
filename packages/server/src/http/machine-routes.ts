@@ -1,6 +1,13 @@
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
-import { effectiveCheckout, HostId, hostOf, LOCAL_HOST_ID } from "@gram/contracts";
+import type * as Exit from "effect/Exit";
+import {
+  effectiveCheckout,
+  HOST_PROTOCOL_VERSION,
+  HostId,
+  hostOf,
+  LOCAL_HOST_ID,
+} from "@gram/contracts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import {
   fingerprintOf,
@@ -8,8 +15,14 @@ import {
   HOST_INSTALL_PATH,
   HOST_JOIN_PATH,
 } from "../host/machine-keys.ts";
-import { printedFingerprint, runOverSsh, sshConfigHosts, SSH_TARGET } from "../host/ssh-join.ts";
-import { installScript } from "../host/install-script.ts";
+import {
+  printedFingerprint,
+  runOverSsh,
+  sshConfigHosts,
+  type SshJoinFailed,
+  SSH_TARGET,
+} from "../host/ssh-join.ts";
+import { installScript, updateCommand } from "../host/install-script.ts";
 import type { RemoteHostsShape } from "../host/remote-hosts.ts";
 import type { McpTokens } from "../app-tools/mcp-tokens.ts";
 import type { ThreadStore } from "../persistence/thread-store.ts";
@@ -22,6 +35,7 @@ export const MACHINES_CONFIRM_PATH = "/machines/confirm";
 export const MACHINES_REMOVE_PATH = "/machines/remove";
 export const MACHINES_SSH_HOSTS_PATH = "/machines/ssh-hosts";
 export const MACHINES_SSH_JOIN_PATH = "/machines/ssh-join";
+export const MACHINES_UPDATE_PATH = "/machines/update";
 
 /** Machines settings: only the local app may call them, never a paired browser or a machine. */
 export const MACHINE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
@@ -31,6 +45,7 @@ export const MACHINE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
   MACHINES_REMOVE_PATH,
   MACHINES_SSH_HOSTS_PATH,
   MACHINES_SSH_JOIN_PATH,
+  MACHINES_UPDATE_PATH,
 ]);
 
 /** What a joining machine's host reaches: answered before any browser auth, by its own rules. */
@@ -145,10 +160,27 @@ export const joinedOverSsh = <M extends { readonly id: string; readonly publicKe
   output: string,
 ): M | "rejoined" | undefined => {
   const printed = printedFingerprint(output);
-  if (printed === undefined) return MOVED_SERVICE.test(output) ? "rejoined" : undefined;
-  return machines.find(
-    (machine) => !before.has(machine.id) && fingerprintOf(machine.publicKey) === printed,
-  );
+  const fresh =
+    printed === undefined
+      ? undefined
+      : machines.find(
+          (machine) => !before.has(machine.id) && fingerprintOf(machine.publicKey) === printed,
+        );
+  if (fresh !== undefined) return fresh;
+  return MOVED_SERVICE.test(output) ? "rejoined" : undefined;
+};
+
+/**
+ * The joined machine whose service an install over SSH moved: the one already here whose key has
+ * the fingerprint it printed after it said so. Undefined when it printed none or another.
+ */
+export const movedOverSsh = <M extends { readonly publicKey: string }>(
+  machines: ReadonlyArray<M>,
+  output: string,
+): M | undefined => {
+  const printed = printedFingerprint(output);
+  if (printed === undefined || !MOVED_SERVICE.test(output)) return undefined;
+  return machines.find((machine) => fingerprintOf(machine.publicKey) === printed);
 };
 
 /**
@@ -161,10 +193,33 @@ const SSH_JOIN_BUSY = {
   message: "Gram is adding a machine over SSH. Try again once that finishes.",
 };
 
-/** The settings page's view: the machines, and the join link waiting, if one is. */
-const machinesStatus = (hosts: RemoteHostsShape) => {
+/**
+ * The settings page's view: the machines, each offline one with why, and the join link waiting, if
+ * one is; this Gram's release and protocol, which a machine's must match, and the command that
+ * updates a machine to them while access over Tailscale is on.
+ */
+const machinesStatus = (
+  hosts: RemoteHostsShape,
+  remote: RemoteAccess | undefined,
+  release: string | undefined,
+) => {
   const joinLink = hosts.machines.joinOpen();
-  return { machines: hosts.list(), ...(joinLink === undefined ? {} : { joinLink }) };
+  return {
+    machines: hosts.list(remote !== undefined),
+    ...(joinLink === undefined ? {} : { joinLink }),
+    protocol: HOST_PROTOCOL_VERSION,
+    ...(release === undefined ? {} : { release }),
+    ...(remote === undefined ? {} : { updateCommand: updateCommand(remote.origin) }),
+  };
+};
+
+/** Why an install over SSH failed, from its exit. */
+const sshFailure = (ran: Exit.Exit<string, SshJoinFailed>) => {
+  const failure =
+    ran._tag === "Failure"
+      ? ran.cause.reasons.find((reason) => reason._tag === "Fail")?.error
+      : undefined;
+  return { failure, output: ran._tag === "Success" ? ran.value : (failure?.output ?? "") };
 };
 
 /**
@@ -185,9 +240,10 @@ export const machineManagement = (
     const request = yield* HttpServerRequest.HttpServerRequest;
     if (request.method !== "POST" || request.headers["origin"] === undefined)
       return refuse("forbidden");
+    const status = () => machinesStatus(hosts, remote, appVersion);
     switch (path) {
       case MACHINES_LIST_PATH:
-        return json(machinesStatus(hosts));
+        return json(status());
       case MACHINES_JOIN_LINK_PATH:
         if (remote === undefined)
           return json(
@@ -212,22 +268,26 @@ export const machineManagement = (
         const before = new Set(hosts.machines.list().map((machine) => machine.id));
         const link = hosts.machines.mint(remote.origin);
         // Built before the flag is set: it throws on what it won't embed.
-        const script = installScript(remote.origin, appVersion, link.url);
+        const script = installScript(remote.origin, appVersion, { link: link.url });
         sshJoinRunning = true;
         const ran = yield* runOverSsh(target, script, ssh === undefined ? {} : { ssh }).pipe(
           Effect.exit,
           Effect.ensuring(Effect.sync(() => (sshJoinRunning = false))),
         );
-        const failure =
-          ran._tag === "Failure"
-            ? ran.cause.reasons.find((reason) => reason._tag === "Fail")?.error
-            : undefined;
-        const output = ran._tag === "Success" ? ran.value : (failure?.output ?? "");
+        const { failure, output } = sshFailure(ran);
         const joined = joinedOverSsh(before, hosts.machines.list(), output);
         if (ran._tag === "Failure" && (joined === undefined || joined === "rejoined"))
           return json({ message: failure?.message ?? "The install over SSH failed.", output }, 502);
         // Run again on a machine already joined here: its service moved, and it joined before.
-        if (joined === "rejoined") return json({ ...machinesStatus(hosts), joined, output });
+        if (joined === "rejoined") {
+          const moved = movedOverSsh(hosts.machines.list(), output);
+          try {
+            if (moved !== undefined) hosts.machines.installedOverSsh(moved.id, target);
+          } catch {
+            // Only what its update runs is lost; the move itself happened.
+          }
+          return json({ ...status(), joined, output });
+        }
         if (joined === undefined)
           return json(
             {
@@ -241,13 +301,14 @@ export const machineManagement = (
           );
         try {
           hosts.machines.confirm(joined.id);
+          hosts.machines.installedOverSsh(joined.id, target);
         } catch {
           return json({ message: "The change couldn't be saved.", output }, 500);
         }
         // Joined with the printed key, then stopped (its service didn't start, say): it is confirmed,
         // and the person reads what went wrong.
         return json({
-          ...machinesStatus(hosts),
+          ...status(),
           joined: joined.id,
           ...(failure === undefined
             ? {}
@@ -257,6 +318,47 @@ export const machineManagement = (
               }),
           output,
         });
+      }
+      case MACHINES_UPDATE_PATH: {
+        // Runs the install over SSH again where Gram added the machine: it moves the service to
+        // this Gram's release and keeps the join. Any other machine runs `updateCommand` itself.
+        if (remote === undefined)
+          return json(
+            { reason: "tailscale-off", message: "Turn on access over Tailscale first." },
+            409,
+          );
+        const id = (yield* jsonBody(256))?.["id"];
+        const machine = typeof id === "string" ? hosts.machines.get(id) : undefined;
+        if (machine === undefined) return refuse("no such machine", 404);
+        const target = machine.sshTarget;
+        if (target === undefined)
+          return json(
+            {
+              reason: "not-ssh",
+              message: `Gram didn't add ${machine.name} over SSH. Run the update command there.`,
+            },
+            409,
+          );
+        if (sshJoinRunning) return json(SSH_JOIN_BUSY, 409);
+        const script = installScript(remote.origin, appVersion, { update: true });
+        sshJoinRunning = true;
+        const ran = yield* runOverSsh(target, script, ssh === undefined ? {} : { ssh }).pipe(
+          Effect.exit,
+          Effect.ensuring(Effect.sync(() => (sshJoinRunning = false))),
+        );
+        const { failure, output } = sshFailure(ran);
+        if (failure !== undefined || ran._tag === "Failure")
+          return json({ message: failure?.message ?? "The update over SSH failed.", output }, 502);
+        // The machine at that address now may not be the one that joined: say so, and keep nothing.
+        if (movedOverSsh([machine], output) === undefined)
+          return json(
+            {
+              message: `The install on ${target} didn't print ${machine.name}'s fingerprint, so it may have updated another machine. Run the update command on ${machine.name} itself.`,
+              output,
+            },
+            409,
+          );
+        return json({ ...status(), output });
       }
       case MACHINES_CONFIRM_PATH:
       case MACHINES_REMOVE_PATH: {
@@ -269,7 +371,7 @@ export const machineManagement = (
         } catch {
           return json({ message: "The change couldn't be saved." }, 500);
         }
-        return json(machinesStatus(hosts));
+        return json(status());
       }
       default:
         return refuse("forbidden");

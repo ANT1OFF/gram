@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CircleAlert,
+  CircleArrowUp,
   CircleCheck,
   Copy,
   Monitor,
@@ -10,9 +11,10 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Hint } from "@/components/hint";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { agoText, formatDay } from "@/lib/time";
+import { formatDay } from "@/lib/time";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
 
 import { copyText } from "./copy-text";
@@ -27,6 +29,7 @@ import {
   SshJoinError,
   type MachinesStatus,
 } from "./machines-api";
+import { healthHint, type MachineHealth, machineHealth } from "./machine-status";
 import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
 
 export { MACHINES_KEY } from "./machines-api";
@@ -51,17 +54,19 @@ const message = (error: unknown) =>
 const platformName = (platform: string) =>
   platform === "darwin" ? "macOS" : platform === "linux" ? "Linux" : platform;
 
-/** How a joined machine reads in its row: waiting for you, online, or offline since it joined. */
-export function machineState(machine: JoinedMachine, now = Date.now()): string {
-  const joined = `Joined ${formatDay(machine.joinedAt, now)}`;
-  if (!machine.confirmed) return `${joined} · waiting for you to confirm it`;
-  if (machine.onlineSince === undefined) return `${joined} · offline`;
-  return now - machine.onlineSince < 60_000
-    ? `${joined} · online`
-    : `${joined} · online for ${agoText(machine.onlineSince, now, { long: true }).replace(/ ago$/, "")}`;
+/** How a joined machine reads in its row: waiting for you, online, offline, or needing an update. */
+export function machineState(
+  machine: JoinedMachine,
+  now = Date.now(),
+  status: Pick<MachinesStatus, "release" | "protocol"> = {},
+): string {
+  return `Joined ${formatDay(machine.joinedAt, now)} · ${machineHealth(machine, status, now).label}`;
 }
 
-type Pending = { readonly kind: "confirm" | "remove"; readonly machine: JoinedMachine };
+type Pending = {
+  readonly kind: "confirm" | "remove" | "update";
+  readonly machine: JoinedMachine;
+};
 
 /**
  * Settings → Machines: the other computers joined to this Gram, which run its work over the
@@ -133,9 +138,11 @@ export function MachinesPage() {
             <MachineRow
               key={machine.id}
               machine={machine}
+              health={machineHealth(machine, status.data, status.dataUpdatedAt)}
               now={status.dataUpdatedAt}
               onConfirm={() => setPending({ kind: "confirm", machine })}
               onRemove={() => setPending({ kind: "remove", machine })}
+              onUpdate={() => setPending({ kind: "update", machine })}
             />
           ))}
         </div>
@@ -174,6 +181,18 @@ export function MachinesPage() {
           }}
         />
       )}
+      {pending?.kind === "update" && (
+        <UpdateDialog
+          machine={pending.machine}
+          health={machineHealth(pending.machine, status.data, status.dataUpdatedAt)}
+          command={status.data.updateCommand}
+          onUpdated={(next) => queryClient.setQueryData(MACHINES_KEY, next)}
+          onClose={() => {
+            setPending(undefined);
+            void queryClient.invalidateQueries({ queryKey: MACHINES_KEY });
+          }}
+        />
+      )}
       {pending?.kind === "remove" && (
         <RemoveDialog
           machine={pending.machine}
@@ -190,16 +209,23 @@ export function MachinesPage() {
 
 function MachineRow({
   machine,
+  health,
   now,
   onConfirm,
   onRemove,
+  onUpdate,
 }: {
   machine: JoinedMachine;
+  health: MachineHealth;
   now: number;
   onConfirm: () => void;
   onRemove: () => void;
+  onUpdate: () => void;
 }) {
-  const online = machine.confirmed && machine.onlineSince !== undefined;
+  const online = health.tone === "online";
+  const hint = healthHint(health);
+  // Offered only where it can do something: this Gram is a release, and the machine isn't on it.
+  const updatable = machine.confirmed && health.update !== undefined;
   return (
     <div className="flex min-h-9 items-center gap-3" data-testid="machines-row">
       <Monitor aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
@@ -217,7 +243,34 @@ function MachineRow({
             />
           )}
         </span>
-        <span className="text-meta text-muted-foreground">{machineState(machine, now)}</span>
+        <span className="flex items-center gap-1 text-meta text-muted-foreground">
+          Joined {formatDay(machine.joinedAt, now)} ·{" "}
+          {hint === undefined ? (
+            <span data-testid="machines-state">{health.label}</span>
+          ) : (
+            <Hint
+              label={hint}
+              side="bottom"
+              render={
+                <span
+                  // Focusable, so the reason is there by keyboard too.
+                  tabIndex={0}
+                  aria-description={hint}
+                  data-testid="machines-state"
+                  className="inline-flex items-center gap-1 rounded-sm outline-none focus-visible:focus-ring"
+                />
+              }
+            >
+              {health.label}
+              {/* Neutral: the glyph's shape says it, as for any caution that isn't a setting's. */}
+              {health.tone === "update" ? (
+                <CircleArrowUp aria-hidden className="size-icon-chip" />
+              ) : health.tone !== "online" ? (
+                <CircleAlert aria-hidden className="size-icon-chip" />
+              ) : null}
+            </Hint>
+          )}
+        </span>
         <span className="font-mono text-meta text-muted-foreground" title="Key fingerprint">
           {machine.fingerprint}
         </span>
@@ -228,11 +281,151 @@ function MachineRow({
             Confirm
           </Button>
         )}
+        {updatable && (
+          <Button
+            size="sm"
+            variant={health.tone === "update" ? "default" : "ghost"}
+            onClick={onUpdate}
+            data-testid="machines-update"
+          >
+            {health.tone === "update" && <CircleArrowUp aria-hidden />}
+            Update
+          </Button>
+        )}
         <Button size="sm" variant="ghost" onClick={onRemove}>
           Remove
         </Button>
       </span>
     </div>
+  );
+}
+
+/**
+ * Updates a joined machine to this Gram's release: over SSH again where Gram added it, otherwise
+ * the one command to run there, which moves its service to the release and keeps the join.
+ */
+function UpdateDialog({
+  machine,
+  health,
+  command,
+  onUpdated,
+  onClose,
+}: {
+  machine: JoinedMachine;
+  health: MachineHealth;
+  command: string | undefined;
+  onUpdated: (next: MachinesStatus) => void;
+  onClose: () => void;
+}) {
+  const [run, setRun] = useState<SshRun>();
+  const target = machine.sshTarget;
+  const to = health.update?.to;
+  const update = async () => {
+    if (target === undefined) return;
+    setRun({ phase: "running", host: target });
+    try {
+      const next = await machinesApi.update(machine.id);
+      onUpdated(next);
+      setRun({
+        phase: "done",
+        host: target,
+        said: `${machine.name} moved to ${to ?? "this Gram's release"}. It dials in again in a moment.`,
+        output: next.output,
+      });
+    } catch (e) {
+      setRun({
+        phase: "failed",
+        message: message(e),
+        output: e instanceof SshJoinError ? e.output : "",
+      });
+    }
+  };
+  return (
+    <DialogShell
+      testId="machines-update-dialog"
+      title={`Update ${machine.name}${to === undefined ? "" : ` to ${to}`}?`}
+      onClose={onClose}
+    >
+      {health.why !== undefined && <p className="text-muted-foreground">{health.why}</p>}
+      {target !== undefined ? (
+        <>
+          {run === undefined && (
+            <p className="text-muted-foreground">
+              Gram added it over SSH, so it runs that install again on{" "}
+              <code className="font-mono">{target}</code>: it moves the service to this release and
+              keeps the join.
+            </p>
+          )}
+          {run?.phase === "running" && (
+            <p className="text-meta text-muted-foreground" aria-live="polite">
+              Updating {machine.name} over SSH. Downloading Gram there can take a few minutes.
+            </p>
+          )}
+          {run?.phase === "done" && (
+            <p className="flex items-center gap-2 font-medium" role="status">
+              <CircleCheck aria-hidden className="size-icon-row text-success" />
+              {run.said}
+            </p>
+          )}
+          {run?.phase === "failed" && (
+            <div role="alert" className="flex flex-col gap-1 text-meta">
+              <span className="text-destructive">{run.message}</span>
+              {run.output !== "" && (
+                <pre className="max-h-32 overflow-auto rounded-sm bg-accent px-2 py-1 font-mono text-meta whitespace-pre-wrap text-foreground">
+                  {run.output}
+                </pre>
+              )}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Dialog.Close render={<Button type="button" variant="ghost" size="sm" />}>
+              {run?.phase === "done" ? "Done" : "Cancel"}
+            </Dialog.Close>
+            {run?.phase !== "done" && (
+              <Button
+                size="sm"
+                disabled={run?.phase === "running" || command === undefined}
+                onClick={() => void update()}
+              >
+                {run?.phase === "running" ? "Updating…" : "Update over SSH"}
+              </Button>
+            )}
+          </div>
+        </>
+      ) : command === undefined ? (
+        <>
+          <p className="text-muted-foreground">
+            Turn on access over Tailscale in Phone access first: the machine updates from this
+            Gram&apos;s address on your tailnet.
+          </p>
+          <div className="flex justify-end">
+            <Dialog.Close render={<Button type="button" size="sm" />}>Close</Dialog.Close>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-muted-foreground">
+            On {machine.name}, run this in a terminal. It moves the service to this release and
+            keeps the join, so there is nothing to confirm again.
+          </p>
+          <span className="flex items-center gap-2">
+            <code
+              className="min-w-0 flex-1 truncate rounded-sm bg-accent px-2 py-1 font-mono text-meta text-foreground"
+              data-testid="machines-update-command"
+            >
+              {command}
+            </code>
+            <CopyButton text={command} label="Copy" />
+          </span>
+          <p className="text-meta text-muted-foreground">
+            If it says the machine hasn&apos;t joined, remove it here and add it again.
+          </p>
+          <div className="flex justify-end">
+            <Dialog.Close render={<Button type="button" size="sm" />}>Done</Dialog.Close>
+          </div>
+        </>
+      )}
+    </DialogShell>
   );
 }
 

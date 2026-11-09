@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { removeDir, tempDir } from "../git/test-repo.ts";
-import { installCommand, installScript, RELEASES } from "./install-script.ts";
+import { installCommand, installScript, RELEASES, updateCommand } from "./install-script.ts";
 
 const ORIGIN = "https://studio.example-tailnet.ts.net";
 const LINK = `${ORIGIN}/host/join#code=${"a".repeat(64)}`;
@@ -41,8 +41,8 @@ exec node "$@"
 GRAM
 chmod +x squashfs-root/gram
 cat >squashfs-root/resources/app.asar/out/server/gram-host.js <<'HOST'
-const { readFileSync, writeFileSync } = require("node:fs");
-writeFileSync(${JSON.stringify(record)}, JSON.stringify({ args: process.argv.slice(2), stdin: readFileSync(0, "utf8") }));
+const { appendFileSync, readFileSync } = require("node:fs");
+appendFileSync(${JSON.stringify(record)}, JSON.stringify({ args: process.argv.slice(2), stdin: readFileSync(0, "utf8") }) + "\\n");
 HOST
 `,
   );
@@ -75,8 +75,14 @@ if [ -n "$out" ]; then cp "$file" "$out"; else cat "$file"; fi
         XDG_DATA_HOME: join(home, ".local", "share"),
       },
     });
-  const ran = () => JSON.parse(readFileSync(record, "utf8")) as { args: string[]; stdin: string };
-  return { dir, home, run, ran };
+  /** Each run of `gram-host`, in order. */
+  const calls = () =>
+    readFileSync(record, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { args: string[]; stdin: string });
+  const ran = () => calls()[0];
+  return { dir, home, run, ran, calls };
 };
 
 describe("the join installer", () => {
@@ -84,6 +90,8 @@ describe("the join installer", () => {
     expect(installCommand(ORIGIN, `${ORIGIN}/host/join#code=ab'cd`)).toBe(
       `curl -fsSL ${ORIGIN}/host/install | sh -s -- '${ORIGIN}/host/join#code=abcd'`,
     );
+    // Run again on a joined machine it needs no link: the join stands.
+    expect(updateCommand(ORIGIN)).toBe(`curl -fsSL ${ORIGIN}/host/install | sh`);
   });
 
   it("embeds only an https origin and a version", () => {
@@ -92,6 +100,7 @@ describe("the join installer", () => {
     expect(() => installScript(ORIGIN, "1.0.0'; true; '")).toThrow();
     for (const version of ["1.14.0", undefined]) {
       execFileSync("sh", ["-n"], { input: installScript(ORIGIN, version) });
+      execFileSync("sh", ["-n"], { input: installScript(ORIGIN, version, { update: true }) });
     }
   });
 
@@ -117,7 +126,7 @@ describe("the join installer", () => {
   it.skipIf(process.platform !== "linux" || process.arch !== "x64")(
     "on a machine that already joined, moves its service to the new app instead",
     () => {
-      const { dir, home, run, ran } = machine("1.14.0");
+      const { dir, home, run, calls } = machine("1.14.0");
       try {
         mkdirSync(join(home, ".config", "gram-host"), { recursive: true });
         const config = join(home, ".config", "gram-host", "host.json");
@@ -130,8 +139,26 @@ describe("the join installer", () => {
         mkdirSync(old, { recursive: true });
         const result = run(installScript(ORIGIN, "1.14.0"));
         expect(result.status).toBe(0);
-        expect(ran()).toEqual({ args: ["service", "install"], stdin: "" });
+        // It moves the service, then says which machine it is, for an install over SSH to check.
+        expect(calls()).toEqual([
+          { args: ["service", "install"], stdin: "" },
+          { args: ["status"], stdin: "" },
+        ]);
         expect(existsSync(old)).toBe(false);
+      } finally {
+        removeDir(dir);
+      }
+    },
+  );
+
+  it.skipIf(process.platform !== "linux" || process.arch !== "x64")(
+    "as an update, never joins a machine that hasn't joined",
+    () => {
+      const { dir, run } = machine("1.14.0");
+      try {
+        const result = run(installScript(ORIGIN, "1.14.0", { update: true }));
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain("nothing to update");
       } finally {
         removeDir(dir);
       }
@@ -164,10 +191,12 @@ describe("the join installer", () => {
 describe("the installer run over SSH", () => {
   it("carries only this Gram's own join link", () => {
     expect(() =>
-      installScript(ORIGIN, "1.14.0", "https://evil.example/host/join#code=x"),
+      installScript(ORIGIN, "1.14.0", { link: "https://evil.example/host/join#code=x" }),
     ).toThrow();
-    expect(() => installScript(ORIGIN, "1.14.0", `${ORIGIN}/host/join#code=a'b`)).toThrow();
-    const script = installScript(ORIGIN, "1.14.0", LINK);
+    expect(() =>
+      installScript(ORIGIN, "1.14.0", { link: `${ORIGIN}/host/join#code=a'b` }),
+    ).toThrow();
+    const script = installScript(ORIGIN, "1.14.0", { link: LINK });
     expect(script).toContain(`LINK='${LINK}'`);
     execFileSync("sh", ["-n"], { input: script });
   });

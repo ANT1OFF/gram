@@ -209,7 +209,13 @@ describe("WorktreeFields machine", () => {
 
   it("offers a confirmed joined machine, and says so when it is offline", async () => {
     serveMachines([
-      machine({ onlineSince: undefined }),
+      machine({ onlineSince: undefined, offline: { kind: "lost", at: 2 } }),
+      machine({
+        id: "m-old",
+        name: "tower",
+        onlineSince: undefined,
+        offline: { kind: "mismatch", at: 2, protocol: 1 },
+      }),
       machine({ id: "m-unconfirmed", name: "new box", confirmed: false }),
     ]);
     renderWithApi(
@@ -224,7 +230,12 @@ describe("WorktreeFields machine", () => {
     const picker = await screen.findByRole("combobox", { name: "Machine" });
     expect(picker.textContent).toContain("This machine");
     fireEvent.click(picker);
-    expect(await screen.findByText("build box (offline)")).toBeTruthy();
+    const offline = await screen.findByRole("option", { name: "build box (offline)" });
+    // Why, and the fix, on hover: as Settings → Machines says it.
+    expect(offline.getAttribute("aria-description")).toMatch(
+      /^Connection lost at .+\.\nIt dials again by itself/,
+    );
+    expect(screen.getByRole("option", { name: "tower (needs update)" })).toBeTruthy();
     expect(screen.queryByText("new box")).toBeNull();
   });
 

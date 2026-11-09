@@ -11,6 +11,7 @@ import {
   publicKeyFrom,
   verifyConnect,
 } from "./machine-keys.ts";
+import { SSH_TARGET } from "./ssh-join.ts";
 
 /** How long a join link lasts, as a phone's pairing link does. */
 export const JOIN_LIFETIME_MS = 15 * 60_000;
@@ -30,7 +31,44 @@ export interface PairedMachine {
   readonly joinedAt: number;
   /** Set when a person on this machine confirmed its fingerprint; until then it gets no work. */
   readonly confirmedAt?: number;
+  /**
+   * The `[user@]host` Gram last installed it at over SSH (Add over SSH, or its update), so an
+   * update can run that install again; absent for a machine that joined by the command.
+   */
+  readonly sshTarget?: string;
 }
+
+/**
+ * The last reason a joined machine dropped or was refused, as this Gram saw it since it started:
+ * kept in memory only, and never anything from the dial itself (its signature, nonce or key).
+ */
+export type MachineProblem =
+  /** It dialled, signed by its key, before a person here confirmed it. */
+  | { readonly kind: "unconfirmed"; readonly at: number }
+  /**
+   * A dial named it but its key didn't sign it, or signed it for another address. Anyone on the
+   * tailnet who knows its id can send one, so this is only ever shown, never acted on.
+   */
+  | { readonly kind: "bad-signature"; readonly at: number }
+  /** A dial it signed carried a time this far from this machine's clock: positive when ahead. */
+  | { readonly kind: "clock"; readonly at: number; readonly skewMs: number }
+  /**
+   * It said hello in another protocol version, or without something this build needs: one of the
+   * two builds needs an update. Its release, when it sent one.
+   */
+  | {
+      readonly kind: "mismatch";
+      readonly at: number;
+      readonly protocol: number;
+      readonly release?: string;
+      readonly missing?: ReadonlyArray<string>;
+    }
+  /** It dialled in but didn't say hello, in time or as itself. */
+  | { readonly kind: "no-hello"; readonly at: number }
+  /** Its connection closed. */
+  | { readonly kind: "lost"; readonly at: number }
+  /** Access over Tailscale moved to another address, which it doesn't dial. */
+  | { readonly kind: "moved"; readonly at: number };
 
 export interface PairedMachineStore {
   readonly read: () => PairedMachine[];
@@ -68,7 +106,9 @@ const isMachine = (value: unknown): value is PairedMachine => {
     typeof m["platform"] === "string" &&
     PLATFORM.test(m["platform"]) &&
     Number.isSafeInteger(m["joinedAt"]) &&
-    (m["confirmedAt"] === undefined || Number.isSafeInteger(m["confirmedAt"]))
+    (m["confirmedAt"] === undefined || Number.isSafeInteger(m["confirmedAt"])) &&
+    (m["sshTarget"] === undefined ||
+      (typeof m["sshTarget"] === "string" && SSH_TARGET.test(m["sshTarget"])))
   );
 };
 
@@ -123,6 +163,12 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
   let invitation: { code: string; origin: string; expiresAt: number } | undefined;
   /** Recent dials' nonces with when they stop mattering. */
   const nonces = new Map<string, number>();
+  /** Each machine's last problem since this Gram started. */
+  const problems = new Map<string, MachineProblem>();
+  const note = (id: string, problem: MachineProblem | undefined) => {
+    if (problem === undefined) problems.delete(id);
+    else if (byId(id) !== undefined) problems.set(id, problem);
+  };
   const save = (next: PairedMachine[]) => {
     store.write(next);
     machines = next;
@@ -211,12 +257,23 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
       save(machines.map((m) => (m === machine ? confirmed : m)));
       return confirmed;
     },
+    /** Records that Gram installed the machine at `target` over SSH, for its updates. */
+    installedOverSsh: (id: string, target: string): void => {
+      const machine = byId(id);
+      if (machine === undefined || !SSH_TARGET.test(target) || machine.sshTarget === target) return;
+      save(machines.map((m) => (m === machine ? { ...machine, sshTarget: target } : m)));
+    },
     /** Forgets the machine and its key; the caller closes its connection. */
     remove: (id: string): boolean => {
       if (byId(id) === undefined) return false;
+      problems.delete(id);
       forget(machines.filter((machine) => machine.id !== id));
       return true;
     },
+    /** The machine's last problem since this Gram started, if any. */
+    problemOf: (id: string): MachineProblem | undefined => problems.get(id),
+    /** Records the machine's latest problem, or (`undefined`) that it came online. */
+    note,
     /**
      * Checks a dial's headers: a machine that joined and was confirmed, a time within the skew, a
      * nonce not seen before, and the machine's own signature over all of it and `origin`.
@@ -233,18 +290,26 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
       if (machine === undefined || key === undefined)
         return { kind: "refused", status: 401, message: "unauthorized: machine not joined" };
       const at = now();
-      if (Math.abs(at - claim.time) > CONNECT_SKEW_MS)
+      if (Math.abs(at - claim.time) > CONNECT_SKEW_MS) {
+        // Its clock, only when the machine's own key signed the time it is off by.
+        if (verifyConnect(key, claim, claim.signature))
+          note(machine.id, { kind: "clock", at, skewMs: claim.time - at });
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
-      if (!verifyConnect(key, claim, claim.signature))
+      }
+      if (!verifyConnect(key, claim, claim.signature)) {
+        note(machine.id, { kind: "bad-signature", at });
         return { kind: "refused", status: 401, message: "unauthorized: bad signature" };
+      }
       // Checked after the signature, so a forged dial can't spend a real one's nonce.
       const nonce = record(claim.nonce, claim.time + CONNECT_SKEW_MS);
       if (nonce === "replayed")
         return { kind: "refused", status: 401, message: "unauthorized: dial replayed" };
       if (nonce === "full")
         return { kind: "refused", status: 401, message: "unauthorized: too many dials; wait" };
-      if (machine.confirmedAt === undefined)
+      if (machine.confirmedAt === undefined) {
+        note(machine.id, { kind: "unconfirmed", at });
         return { kind: "refused", status: 403, message: "forbidden: confirm this machine first" };
+      }
       return { kind: "ok", machine };
     },
   };
@@ -252,16 +317,40 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
 
 export type PairedMachines = ReturnType<typeof createPairedMachines>;
 
+/**
+ * Why a machine is offline, as the settings page says it: its last problem, or that access over
+ * Tailscale is off (which no machine can dial), or that it hasn't dialled since this Gram started.
+ */
+export type OfflineReason =
+  | MachineProblem
+  | { readonly kind: "tailscale-off" }
+  | { readonly kind: "never" };
+
 /** A machine as the settings page lists it: no key, its fingerprint instead. */
 export const machineView = (
   machine: PairedMachine,
-  online: { readonly since: number } | undefined,
-) => ({
-  id: machine.id,
-  name: machine.name,
-  platform: machine.platform,
-  fingerprint: fingerprintOf(machine.publicKey),
-  joinedAt: machine.joinedAt,
-  confirmed: machine.confirmedAt !== undefined,
-  ...(online === undefined ? {} : { onlineSince: online.since }),
-});
+  online: { readonly since: number; readonly release?: string | undefined } | undefined,
+  /** Its last problem, and whether access over Tailscale is on, for why it is offline. */
+  status: { readonly problem?: MachineProblem | undefined; readonly tailscale?: boolean } = {},
+) => {
+  const offline: OfflineReason | undefined =
+    online !== undefined
+      ? undefined
+      : status.tailscale === false
+        ? { kind: "tailscale-off" }
+        : (status.problem ?? { kind: "never" });
+  const release =
+    online?.release ?? (status.problem?.kind === "mismatch" ? status.problem.release : undefined);
+  return {
+    id: machine.id,
+    name: machine.name,
+    platform: machine.platform,
+    fingerprint: fingerprintOf(machine.publicKey),
+    joinedAt: machine.joinedAt,
+    confirmed: machine.confirmedAt !== undefined,
+    ...(online === undefined ? {} : { onlineSince: online.since }),
+    ...(offline === undefined ? {} : { offline }),
+    ...(release === undefined ? {} : { release }),
+    ...(machine.sshTarget === undefined ? {} : { sshTarget: machine.sshTarget }),
+  };
+};
