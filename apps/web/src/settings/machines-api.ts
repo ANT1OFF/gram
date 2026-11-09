@@ -96,4 +96,44 @@ export const machinesApi = {
       throw new MachinesError("Couldn't make a join link");
     return { url: value.url, expiresAt: value.expiresAt };
   },
+  /** The hosts in this computer's SSH config, for the Add over SSH picker. */
+  sshHosts: async (): Promise<ReadonlyArray<string>> => {
+    const response = await post("/machines/ssh-hosts");
+    if (!response.ok) return [];
+    const value = (await response.json()) as { hosts?: unknown };
+    return Array.isArray(value.hosts)
+      ? value.hosts.filter((host): host is string => typeof host === "string")
+      : [];
+  },
+  /**
+   * Installs and joins `target` over this computer's SSH, confirming it when the key that joined is
+   * the one the install printed. Minutes, while it downloads Gram there.
+   */
+  sshJoin: async (target: string): Promise<MachinesStatus & { readonly output: string }> => {
+    const response = await post("/machines/ssh-join", { target });
+    const text = await response.text().catch(() => "");
+    let value: { message?: unknown; output?: unknown } = {};
+    try {
+      value = JSON.parse(text) as typeof value;
+    } catch {
+      // Plain text.
+    }
+    const output = typeof value.output === "string" ? value.output : "";
+    if (!response.ok)
+      throw new SshJoinError(
+        typeof value.message === "string" ? value.message : "Couldn't add the machine over SSH",
+        output,
+      );
+    const parsed = await status(new Response(text, { status: 200 }), "Couldn't add the machine");
+    return { ...parsed, output };
+  },
 };
+
+/** Why adding over SSH failed, and the end of what the session printed. */
+export class SshJoinError extends MachinesError {
+  readonly output: string;
+  constructor(message: string, output: string) {
+    super(message);
+    this.output = output;
+  }
+}

@@ -24,6 +24,7 @@ import {
   MACHINES_KEY,
   machinesApi,
   MachinesError,
+  SshJoinError,
   type MachinesStatus,
 } from "./machines-api";
 import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
@@ -236,6 +237,100 @@ function MachineRow({
 }
 
 /**
+ * Add over SSH: this computer runs the installer on a host it can SSH to with its keys, and the
+ * machine is confirmed when the key that joined is the one the install printed.
+ */
+function SshJoin({ onFailed }: { onFailed: () => void }) {
+  const queryClient = useQueryClient();
+  const { data: hosts = [] } = useQuery({
+    queryKey: ["machines.sshHosts"],
+    queryFn: machinesApi.sshHosts,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const [target, setTarget] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<{ message: string; output: string }>();
+  const [added, setAdded] = useState<string>();
+  const add = async () => {
+    setBusy(true);
+    setFailure(undefined);
+    setAdded(undefined);
+    try {
+      const host = target.trim();
+      const next = await machinesApi.sshJoin(host);
+      queryClient.setQueryData(MACHINES_KEY, { machines: next.machines });
+      setAdded(host);
+    } catch (e) {
+      setFailure({
+        message: message(e),
+        output: e instanceof SshJoinError ? e.output : "",
+      });
+      // The join link the install used is spent or replaced: the command below gets a new one.
+      onFailed();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="flex flex-col gap-2"
+      data-testid="machines-ssh"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (target.trim() !== "" && !busy) void add();
+      }}
+    >
+      <label className="flex flex-col gap-1">
+        <span className="font-medium">Add a machine you can SSH to</span>
+        <span className="text-meta text-muted-foreground">
+          Gram installs it there with your SSH keys, then checks its fingerprint for you.
+        </span>
+      </label>
+      <span className="flex gap-2">
+        <input
+          aria-label="SSH host"
+          list="machines-ssh-hosts"
+          placeholder="user@host"
+          className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2.5 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          value={target}
+          disabled={busy}
+          onChange={(event) => setTarget(event.target.value)}
+        />
+        <datalist id="machines-ssh-hosts">
+          {hosts.map((host) => (
+            <option key={host} value={host} />
+          ))}
+        </datalist>
+        <Button type="submit" size="sm" disabled={busy || target.trim() === ""}>
+          {busy ? "Installing…" : "Add over SSH"}
+        </Button>
+      </span>
+      {busy && (
+        <p className="text-meta text-muted-foreground" aria-live="polite">
+          Installing over SSH. A first install downloads Gram there, which can take a few minutes.
+        </p>
+      )}
+      {added !== undefined && (
+        <p className="text-meta text-muted-foreground" role="status">
+          {added} joined, and its fingerprint matched.
+        </p>
+      )}
+      {failure !== undefined && (
+        <div role="alert" className="flex flex-col gap-1 text-meta">
+          <span className="text-destructive">{failure.message}</span>
+          {failure.output !== "" && (
+            <pre className="max-h-32 overflow-auto rounded-sm bg-accent px-2 py-1 font-mono text-meta whitespace-pre-wrap text-foreground">
+              {failure.output}
+            </pre>
+          )}
+        </div>
+      )}
+    </form>
+  );
+}
+
+/**
  * Access over Tailscale, turned on from here when it is off: other machines dial the address it
  * serves on the tailnet. While Tailscale itself isn't ready, what it still needs, checked again on
  * request.
@@ -410,10 +505,11 @@ function AddDialog({
         </>
       ) : (
         <>
+          <SshJoin onFailed={mint} />
           <ol className="flex list-decimal flex-col gap-3 ps-5 text-muted-foreground">
             <li>
-              On the other machine, with Tailscale connected, run this in a terminal. It uses the
-              Gram app there, or downloads it, and runs in the background from then on.
+              Or, on the other machine, with Tailscale connected, run this in a terminal. It uses
+              the Gram app there, or downloads it, and runs in the background from then on.
               <span className="mt-1.5 flex items-center gap-2">
                 {link === undefined ? (
                   <span className="h-7 flex-1 animate-pulse rounded-sm bg-accent" />

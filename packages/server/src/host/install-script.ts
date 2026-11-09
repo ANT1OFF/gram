@@ -27,9 +27,17 @@ export const installCommand = (origin: string, link: string): string =>
  * The script, for this Gram at `origin` running release `version` (undefined for a Gram run from
  * source, which has no release to download: then only an app already installed there is used).
  */
-export const installScript = (origin: string, version: string | undefined): string => {
+export const installScript = (
+  origin: string,
+  version: string | undefined,
+  /** The join link, carried in the script itself when Gram runs it over SSH (`ssh-join.ts`). */
+  link?: string,
+): string => {
   if (!ORIGIN.test(origin)) throw new Error("Not an https origin.");
   if (version !== undefined && !VERSION.test(version)) throw new Error("Not a version.");
+  if (link !== undefined && !link.startsWith(`${origin}/host/join#code=`))
+    throw new Error("Not this Gram's join link.");
+  if (link !== undefined && !/#code=[a-f0-9]{64}$/.test(link)) throw new Error("Not a join link.");
   return `#!/bin/sh
 # Joins this machine to the Gram at ${origin}, with the link given after \`sh -s --\`.
 # Everything is in main, run on the last line, so a script cut off in transit runs nothing.
@@ -38,6 +46,7 @@ set -eu
 ORIGIN='${origin}'
 VERSION='${version ?? ""}'
 RELEASE="${RELEASES}/v$VERSION"
+LINK='${link ?? ""}'
 
 say() { printf 'gram-host: %s\\n' "$*" >&2; }
 die() { say "$*"; exit 1; }
@@ -166,6 +175,8 @@ main() {
       [ -e "$old" ] || continue
       case "$BIN" in "$old"/*) ;; *) rm -rf "$old" ;; esac
     done
+  elif [ -n "$LINK" ]; then
+    printf '%s\\n' "$LINK" | "$SHIM" join
   elif [ "$#" -gt 0 ] && [ -n "$1" ]; then
     printf '%s\\n' "$1" | "$SHIM" join
   else
