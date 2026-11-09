@@ -5,10 +5,11 @@ import {
   type AgentKind,
   AgentUnavailable,
   AnswerUndelivered,
-  type HostFailed,
+  HostFailed,
   type HostSessionOpen,
   ModeRefused,
 } from "@gram/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -17,6 +18,7 @@ import { LocalHostProcess } from "../host/local-process.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
 import type { HostSessionsConnection } from "../host/protocol.ts";
 import { AgentHosts } from "./agent-hosts.ts";
+import { InputUndelivered } from "./undelivered.ts";
 
 /** The event a session whose host went ends with. */
 export const HOST_STOPPED_ENDED: AgentEvent = {
@@ -79,6 +81,15 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
     peerMessaging: o.peerMessaging,
   }) as HostSessionOpen;
 
+/**
+ * A send or steer the host didn't take, or can't say it took, dies as `InputUndelivered`, so the
+ * runtime keeps the input rather than count it taken.
+ */
+const undelivered = (error: HostFailed) =>
+  Effect.die(
+    new InputUndelivered({ message: `The agent's machine didn't take it: ${error.message}` }),
+  );
+
 const logFailed = (call: string) => (error: HostFailed) =>
   Effect.logWarning("worker host: a session call didn't reach the agent").pipe(
     Effect.annotateLogs({ call, reason: error.message }),
@@ -112,6 +123,16 @@ const openOnHost = (host: HostSessionsConnection, agent: AgentKind, o: OpenSessi
         Effect.forkScoped,
       );
     }
+    /** Done once the session's events end: input still on its way to it has nowhere to go. */
+    const over = yield* Deferred.make<void>();
+    /** `call`, given up once the session has ended. */
+    const whileOpen = (call: Effect.Effect<void, HostFailed>) =>
+      Effect.raceFirst(
+        call,
+        Deferred.await(over).pipe(
+          Effect.andThen(Effect.fail(new HostFailed({ message: "The session ended." }))),
+        ),
+      );
     let received = 0;
     let acked = 0;
     yield* Effect.suspend(() => {
@@ -133,6 +154,7 @@ const openOnHost = (host: HostSessionsConnection, agent: AgentKind, o: OpenSessi
         Stream.catch((error) =>
           Stream.make(error._tag === "NotFound" ? HOST_SESSION_GONE_ENDED : HOST_STOPPED_ENDED),
         ),
+        Stream.ensuring(Deferred.succeed(over, undefined)),
       ),
     );
 
@@ -174,9 +196,18 @@ const openOnHost = (host: HostSessionsConnection, agent: AgentKind, o: OpenSessi
 
     const session: AgentSession = {
       events,
+      // Each under an id of its own, so the host takes it once however often it is asked.
       send: (input, sendOptions) =>
-        host.send(handle, input, sendOptions).pipe(Effect.catch(logFailed("send"))),
-      steer: (input) => host.steer(handle, input).pipe(Effect.catch(logFailed("steer"))),
+        whileOpen(
+          host.send(handle, input, {
+            ...sendOptions,
+            deliveryId: sendOptions?.messageId ?? randomUUID(),
+          }),
+        ).pipe(Effect.catch(undelivered)),
+      steer: (input) =>
+        whileOpen(host.steer(handle, input, { deliveryId: randomUUID() })).pipe(
+          Effect.catch(undelivered),
+        ),
       // A host that went has no turn left to stop.
       interrupt: host.interrupt(handle).pipe(Effect.catchTag("HostFailed", logFailed("interrupt"))),
       respond: (requestId, answer) =>
@@ -327,6 +358,39 @@ export const AgentHostsThroughHost: Layer.Layer<AgentHosts, never, AgentHosts | 
     }),
   );
 
+const isSignInProblem = (error: AgentUnavailable) =>
+  error.reason === "not-logged-in" ||
+  error.reason === "api-key-auth" ||
+  error.reason === "third-party-provider";
+
+/**
+ * A session that couldn't start on `machine`, said of that machine: its sign-in problems with the
+ * fix to make there, anything else with the machine's name before the agent's own words.
+ */
+export const onMachineUnavailable = (
+  error: AgentUnavailable,
+  machine: string,
+): AgentUnavailable => {
+  const agent = error.agent === "claude" ? "Claude Code" : error.agent;
+  const message = (() => {
+    switch (error.reason) {
+      case "not-logged-in":
+        return `${agent} isn't logged in on ${machine}. Run \`claude /login\` there, or choose Sign in under Settings → Machines.`;
+      case "api-key-auth":
+        return `${agent} on ${machine} is using API-key auth; Gram needs your subscription login. Run \`claude /login\` there.`;
+      case "third-party-provider":
+        return `${agent} on ${machine} is set up for a third-party API provider; Gram needs your subscription login there.`;
+      default:
+        return error.message.includes(machine) ? error.message : `On ${machine}: ${error.message}`;
+    }
+  })();
+  return new AgentUnavailable({
+    agent: error.agent,
+    ...(error.reason === undefined ? {} : { reason: error.reason }),
+    message,
+  });
+};
+
 /**
  * `inServer`'s agent with its sessions opened on another machine's host, for a worker placed
  * there. Nothing opens here instead: a session the host can't run, or one asked for while the
@@ -340,8 +404,23 @@ export const agentHostOnMachine = (
   machineName: string,
   /** The tailnet address the machine reaches this Gram at, for its sessions' app tools. */
   origin: () => string | undefined,
+  /** Told when a session there couldn't start for its sign-in, so the machine is asked again. */
+  onSignInProblem?: () => void,
 ): AgentHost => {
   const kind = inServer.kind;
+  /** A start that failed there, named for the machine and logged here, where nothing else is. */
+  const failedThere = (error: AgentUnavailable) =>
+    Effect.gen(function* () {
+      yield* Effect.logWarning("machines: an agent couldn't start on a joined machine").pipe(
+        Effect.annotateLogs({
+          machine: machineName,
+          agent: kind,
+          reason: error.reason ?? "",
+        }),
+      );
+      if (isSignInProblem(error)) onSignInProblem?.();
+      return yield* onMachineUnavailable(error, machineName);
+    });
   /**
    * The app tools' endpoint as the machine reaches it: this Gram's tailnet address, where the
    * thread's own token is let through only for a thread placed on that machine.
@@ -383,7 +462,7 @@ export const agentHostOnMachine = (
                         message: `${machineName} is offline; its workers start once it's back.`,
                       }),
                     )
-                  : openOnHost(host, kind, reaching);
+                  : openOnHost(host, kind, reaching).pipe(Effect.catch(failedThere));
               }),
       ),
   };

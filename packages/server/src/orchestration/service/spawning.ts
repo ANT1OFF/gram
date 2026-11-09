@@ -955,6 +955,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           title: feature,
           brief: text,
           ...(input.base === undefined ? {} : { base: input.base }),
+          ...(input.hostId === undefined ? {} : { machine: input.hostId }),
         },
         {
           id: input.id,

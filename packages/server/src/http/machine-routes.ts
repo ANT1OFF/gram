@@ -22,6 +22,8 @@ export const MACHINES_CONFIRM_PATH = "/machines/confirm";
 export const MACHINES_REMOVE_PATH = "/machines/remove";
 export const MACHINES_SSH_HOSTS_PATH = "/machines/ssh-hosts";
 export const MACHINES_SSH_JOIN_PATH = "/machines/ssh-join";
+/** Asks a machine for its Claude Code sign-in again, as after its Sign in terminal ends. */
+export const MACHINES_CHECK_SIGN_IN_PATH = "/machines/check-sign-in";
 
 /** Machines settings: only the local app may call them, never a paired browser or a machine. */
 export const MACHINE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
@@ -31,6 +33,7 @@ export const MACHINE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
   MACHINES_REMOVE_PATH,
   MACHINES_SSH_HOSTS_PATH,
   MACHINES_SSH_JOIN_PATH,
+  MACHINES_CHECK_SIGN_IN_PATH,
 ]);
 
 /** What a joining machine's host reaches: answered before any browser auth, by its own rules. */
@@ -259,6 +262,13 @@ export const machineManagement = (
               }),
           output,
         });
+      }
+      case MACHINES_CHECK_SIGN_IN_PATH: {
+        const id = (yield* jsonBody(256))?.["id"];
+        if (typeof id !== "string" || hosts.machines.get(id) === undefined)
+          return refuse("no such machine", 404);
+        yield* Effect.promise(() => hosts.checkSignIn(HostId.make(id)));
+        return json(machinesStatus(hosts));
       }
       case MACHINES_CONFIRM_PATH:
       case MACHINES_REMOVE_PATH: {

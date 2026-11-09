@@ -18,6 +18,7 @@ import {
 } from "./runtime-state.ts";
 import {
   type QueuedInput,
+  QueueItemId,
   type UserInput,
   type TurnId,
   fenceWaitNote,
@@ -43,6 +44,7 @@ import type { ThreadWaitsShape } from "../waits/service.ts";
 import type { FeedWriter } from "./feed-writer.ts";
 import type { TurnLifecycle } from "./turn-lifecycle.ts";
 import type { LimitResume } from "./limit-resume.ts";
+import { isUndelivered } from "./undelivered.ts";
 
 /** What the queue and deliveries read and change beside a thread's `Runtime`. */
 export interface MessageQueueDeps {
@@ -91,6 +93,7 @@ export const makeMessageQueue = ({
   dispatch,
   getRuntime,
   publishMessage,
+  withdrawMessage,
   setStatus,
   openTurn,
   markRunning,
@@ -240,7 +243,28 @@ export const makeMessageQueue = ({
           queueLength: rt.queue.length,
         }),
       );
-      yield* session.send(yield* forAgent(rt, input), { messageId });
+      const read = yield* forAgent(rt, input);
+      const lost = yield* session.send(read, { messageId }).pipe(
+        Effect.as(undefined),
+        Effect.catchDefect((defect) =>
+          isUndelivered(defect) ? Effect.succeed(defect) : Effect.die(defect),
+        ),
+      );
+      if (lost === undefined) return;
+      // The agent never took it, or can't be said to have. A delivery's own failure settles it,
+      // so only the queue's input is kept here: out of the feed, at the queue's head, under its id,
+      // so a host that did take it knows it again rather than take it twice.
+      if (rt.carrying?.turnId === turn.id) return yield* Effect.die(lost);
+      yield* Effect.logWarning(
+        "thread input didn't reach the agent; kept at the queue's head",
+      ).pipe(Effect.annotateLogs({ threadId: rt.threadId, turnId: turn.id }));
+      yield* withdrawMessage(rt, messageId);
+      if (rt.inFlight?.id === messageId) rt.inFlight = undefined;
+      rt.queue.unshift({ id: QueueItemId.make(messageId), input: sent });
+      yield* finishTurn(rt, "interrupted", "sendFailed");
+      yield* syncQueue(rt);
+      yield* setStatus(rt, "error", `${lost.message} Your message waits at the top of the queue.`);
+      return yield* lost;
     });
 
   /**
@@ -595,8 +619,20 @@ export const makeMessageQueue = ({
               });
             case "idle":
             case "error":
+              // Input a failed send left at the queue's head goes first, as it would from cold.
+              if (
+                rt.status === "error" &&
+                rt.session !== undefined &&
+                rt.turn === undefined &&
+                rt.queue.length > 0
+              ) {
+                const result = yield* enqueue();
+                yield* becomeIdle(rt);
+                return result;
+              }
               if (rt.session !== undefined && rt.turn === undefined) {
-                yield* sendNow(rt, rt.session, input).pipe(
+                const kept = yield* sendNow(rt, rt.session, input).pipe(
+                  Effect.as(false),
                   Effect.tapError(() =>
                     // deliverNext settles a carrying delivery itself. A direct send has none, and
                     // the turn sendNow opened never reached the adapter.
@@ -604,8 +640,10 @@ export const makeMessageQueue = ({
                       ? finishTurn(rt, "interrupted", "sendFailed")
                       : Effect.void,
                   ),
+                  // What didn't reach the agent waits at the queue's head, and the status says why.
+                  Effect.catchTag("InputUndelivered", () => Effect.succeed(true)),
                 );
-                return { queued: false };
+                return { queued: kept };
               }
               if (rt.session !== undefined) return yield* enqueue();
               break;

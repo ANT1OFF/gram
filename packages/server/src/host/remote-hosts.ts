@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { HostUnavailable, type HostId } from "@gram/contracts";
+import { HostUnavailable, type HostId, type HostStatus } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -21,7 +21,7 @@ import {
   type PairedMachines,
   type PairedMachineStore,
 } from "./paired-machines.ts";
-import { connectHost, type HostConnection } from "./protocol.ts";
+import { connectHost, type HostConnection, UNKNOWN_STATUS } from "./protocol.ts";
 import { watchedSocket } from "./socket-end.ts";
 
 /** A joined machine's host while it is dialled in. */
@@ -32,7 +32,14 @@ interface Online {
   readonly origin: string;
   /** Ends the connection: its socket closes and its calls fail. */
   readonly close: () => void;
+  /** What it can run (its Claude sign-in, its tools) as last checked here, and when. */
+  status?: { readonly status: HostStatus; readonly at: number };
+  /** A check running now, so a burst of listings starts one. */
+  checking?: Promise<HostStatus | undefined> | undefined;
 }
+
+/** How old a status check may be before a listing asks the machine again. */
+export const SIGN_IN_FRESH_MS = 60_000;
 
 /** A store, made on first write: a Gram no machine joined never makes the file or its folder. */
 const lazyFileStore = <R, W>(
@@ -81,6 +88,11 @@ export interface RemoteHostsShape {
    * the same machine replaces the first.
    */
   readonly attach: (dial: AdmittedDial, socket: Socket.Socket) => Effect.Effect<void>;
+  /**
+   * Asks the machine what it can run now (its Claude sign-in, its tools) and keeps the answer for
+   * the listing: `undefined` while it is offline. A check already running is shared.
+   */
+  readonly checkSignIn: (id: HostId) => Promise<HostStatus | undefined>;
   /** Forgets the machine and closes its connection; false when it wasn't joined. */
   readonly remove: (id: HostId) => boolean;
   /**
@@ -103,6 +115,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       const machines = createPairedMachines(store, now, nonces);
       const online = new Map<HostId, Online>();
       const root = yield* Effect.scope;
+      // The server's own logger and the rest, for a check started outside an effect.
+      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
       const close = (id: HostId) => {
         const live = online.get(id);
         online.delete(id);
@@ -190,12 +204,51 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             yield* Effect.logInfo("machines: a joined machine is online").pipe(
               Effect.annotateLogs({ hostId: machine.id, platform: opened.value.hello.platform }),
             );
+            void checkSignIn(machine.id);
             yield* Deferred.await(ended).pipe(Effect.ignore);
             yield* Effect.logInfo("machines: a joined machine went offline").pipe(
               Effect.annotateLogs({ hostId: machine.id }),
             );
           }).pipe(Effect.ensuring(cleanUp));
         });
+      const checkSignIn = (id: HostId): Promise<HostStatus | undefined> => {
+        const live = online.get(id);
+        if (live === undefined || live.connection.gone()) return Promise.resolve(undefined);
+        if (live.checking !== undefined) return live.checking;
+        const check = live.connection.status ?? Effect.succeed(UNKNOWN_STATUS);
+        const checking = runPromise(
+          check.pipe(
+            Effect.tap((status) =>
+              Effect.sync(() => {
+                live.status = { status, at: now() };
+              }),
+            ),
+            Effect.tap((status) => {
+              const missing = status.tools.filter((tool) => !tool.found).map((tool) => tool.tool);
+              return status.claudeSignIn === "signedIn" && missing.length === 0
+                ? Effect.void
+                : Effect.logInfo("machines: a joined machine can't run every session").pipe(
+                    Effect.annotateLogs({
+                      hostId: id,
+                      claudeSignIn: status.claudeSignIn,
+                      missing: missing.join(","),
+                    }),
+                  );
+            }),
+          ),
+        ).finally(() => {
+          if (live.checking === checking) live.checking = undefined;
+        });
+        live.checking = checking;
+        return checking;
+      };
+      /** The listing's view of each machine, asking again about any sign-in gone stale. */
+      const view = (machine: PairedMachine) => {
+        const live = online.get(machine.id);
+        if (live !== undefined && (live.status?.at ?? 0) + SIGN_IN_FRESH_MS <= now())
+          void checkSignIn(machine.id);
+        return machineView(machine, live);
+      };
       return RemoteHosts.of({
         machines,
         connection: (id) =>
@@ -208,9 +261,10 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               : Effect.succeed(live.connection);
           }),
         origin: (id) => online.get(id)?.origin,
-        list: () => machines.list().map((machine) => machineView(machine, online.get(machine.id))),
+        list: () => machines.list().map(view),
         admit: (machine, origin) => ({ machine, origin, generation: generationOf(machine.id) }),
         attach,
+        checkSignIn,
         remove: (id) => {
           bump(id);
           try {

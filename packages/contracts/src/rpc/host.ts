@@ -23,6 +23,7 @@ import {
 } from "../domain.ts";
 import { FsListing } from "../fs.ts";
 import { GitState } from "../git.ts";
+import { ClaudeSignIn } from "../launch-checks.ts";
 import { HostId, ProfileId, RequestId, TerminalId, ThreadId } from "../ids.ts";
 import { TerminalEvent, TerminalInfo, TerminalOpened } from "../terminal.ts";
 import { WorktreeList } from "../worktrees.ts";
@@ -43,6 +44,11 @@ export const HostCapability = Schema.Literals([
   "terminals",
   "sessions",
   "repos",
+  /**
+   * Takes a session's send or steer once per delivery id, answering a repeat with the first one's
+   * outcome, so a control plane unsure whether one arrived can ask again.
+   */
+  "deliveries",
 ]);
 export type HostCapability = typeof HostCapability.Type;
 
@@ -55,6 +61,22 @@ export const HostHello = Schema.Struct({
   pid: Schema.Int,
 });
 export type HostHello = typeof HostHello.Type;
+
+/** A command a joined machine needs, as its host finds it on its own login-shell PATH. */
+export const HostTool = Schema.Struct({
+  tool: Schema.Literals(["claude", "git"]),
+  found: Schema.Boolean,
+  /** As `--version` prints it, when it could be read. */
+  version: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
+});
+export type HostTool = typeof HostTool.Type;
+
+/** `host.status`: what the machine can run now. */
+export const HostStatus = Schema.Struct({
+  claudeSignIn: ClaudeSignIn,
+  tools: Schema.Array(HostTool).check(Schema.isMaxLength(8)),
+});
+export type HostStatus = typeof HostStatus.Type;
 
 /** A host couldn't do what it was asked, for a reason its own side knows. */
 export class HostFailed extends Schema.TaggedError<HostFailed>()("HostFailed", {
@@ -292,6 +314,13 @@ export const HostRpcs = RpcGroup.make(
   /** One sweep of the host's listening ports and processes. */
   Rpc.make("host.ports.scan", { success: HostPortScan, error: HostFailed }),
   /**
+   * What this machine can run: whether its own Claude Code is signed in to a subscription (its
+   * `claude auth status`, the classification only, never the output or a credential) and whether
+   * `claude` and `git` are installed there. An older host answers with an unknown-request defect,
+   * which the control plane reads as unknown.
+   */
+  Rpc.make("host.status", { success: HostStatus }),
+  /**
    * The host's own clone of the repository at `url`, in the folder it keeps clones in: cloned when
    * it has none, fetched when it has. What a worker placed on this machine makes its worktree from.
    */
@@ -455,11 +484,13 @@ export const HostRpcs = RpcGroup.make(
       ...session,
       input: UserInput,
       messageId: Schema.optionalKey(Schema.String),
+      /** Taken once per session on a host that serves `deliveries`. */
+      deliveryId: Schema.optionalKey(Schema.String),
     },
     error: HostFailed,
   }),
   Rpc.make("host.sessions.steer", {
-    payload: { ...session, input: UserInput },
+    payload: { ...session, input: UserInput, deliveryId: Schema.optionalKey(Schema.String) },
     error: HostFailed,
   }),
   Rpc.make("host.sessions.interrupt", {
