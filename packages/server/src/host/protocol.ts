@@ -15,6 +15,9 @@ import {
   AnswerUndelivered,
   type HostAgentReload,
   type HostStatus,
+  type HostUpdateCheck,
+  type HostUpdateProgress,
+  HostUpdateRefused,
   type HostSessionOpen,
   type HostSessionOpened,
   HOST_PROTOCOL_VERSION,
@@ -95,6 +98,14 @@ export interface HostService {
   readonly scan: Effect.Effect<PortScan, unknown>;
   /** What it can run, checked afresh: its Claude sign-in and its tools. */
   readonly status?: Effect.Effect<HostStatus>;
+  /** Its own update, on a joined machine that runs as its service (`self-update.ts`). */
+  readonly update?: HostUpdater;
+}
+
+/** A host's update of itself, as it serves `host.update.*`. */
+export interface HostUpdater {
+  readonly check: Effect.Effect<HostUpdateCheck>;
+  readonly start: (release: string) => Stream.Stream<HostUpdateProgress, HostUpdateRefused>;
 }
 
 /** The capabilities a host must serve for this build to use it. */
@@ -189,6 +200,18 @@ const handlersFor = (host: HostService) => {
       "host.status": () =>
         (host.status ?? Effect.succeed(UNKNOWN_STATUS)).pipe(
           Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
+        ),
+      "host.update.check": () =>
+        (host.update?.check ?? Effect.succeed({})).pipe(
+          Effect.catchCause(() => Effect.succeed({})),
+        ),
+      "host.update.start": ({ release }) =>
+        host.update?.start(release) ??
+        Stream.fail(
+          new HostUpdateRefused({
+            reason: "unsupported",
+            message: "This host doesn't update itself.",
+          }),
         ),
       "host.ports.scan": () =>
         host.scan.pipe(
@@ -471,6 +494,13 @@ export interface HostConnection {
    * doesn't answer, is too old to know the call, or has gone.
    */
   readonly status?: Effect.Effect<HostStatus>;
+  /** Its own update, when it serves `update`. */
+  readonly update?: {
+    readonly check: Effect.Effect<HostUpdateCheck, HostUnavailable>;
+    readonly start: (
+      release: string,
+    ) => Stream.Stream<HostUpdateProgress, HostUpdateRefused | HostUnavailable>;
+  };
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
 }
@@ -957,6 +987,45 @@ export const connectHost = (
         }),
         Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
       ),
+      ...(hello.capabilities.includes("update")
+        ? {
+            update: {
+              check: guarded(client["host.update.check"]()).pipe(
+                Effect.timeoutOrElse({
+                  duration: STATUS_TIMEOUT,
+                  orElse: () => Effect.fail(unavailable("The host didn't answer in time.")),
+                }),
+                Effect.mapError((error) =>
+                  error._tag === "HostUnavailable"
+                    ? error
+                    : unavailable(`The host didn't answer: ${failureText(error)}`),
+                ),
+              ),
+              // A refusal is the host's answer, not a broken stream: only the stream ending says so.
+              start: (release: string) =>
+                Stream.suspend(() =>
+                  ended
+                    ? Stream.fail(unavailable("This machine's host has stopped."))
+                    : client["host.update.start"]({ release }).pipe(
+                        Stream.catch(
+                          (error): Stream.Stream<never, HostUpdateRefused | HostUnavailable> =>
+                            error instanceof HostUpdateRefused
+                              ? Stream.fail(error)
+                              : Stream.fromEffect(
+                                  Effect.andThen(
+                                    error._tag === "RpcClientError"
+                                      ? markEnded(failureText(error))
+                                      : Effect.void,
+                                    Effect.fail(unavailable(HOST_NOT_ANSWERING)),
+                                  ),
+                                ),
+                        ),
+                        Stream.interruptWhen(gone),
+                      ),
+                ),
+            },
+          }
+        : {}),
       gone: () => ended,
     };
   });

@@ -306,6 +306,11 @@ export const UpdateSettings = Schema.Struct({
    */
   channel: Schema.Literals(["stable", "prerelease"]),
   pinnedVersion: Schema.optionalKey(Schema.String),
+  /**
+   * Joined machines update to this Gram's release on their own once they are idle. Absent means
+   * on; read through `machineUpdatesOn`.
+   */
+  machines: Schema.optionalKey(Schema.Boolean),
 });
 
 /** The release channel, as persisted and as the desktop updater checks it. */
@@ -636,6 +641,10 @@ export const Settings = Schema.Struct({
 });
 export type Settings = typeof Settings.Type;
 
+/** Joined machines updating to this Gram's release on their own, on by default. */
+export const machineUpdatesOn = (settings: Settings): boolean =>
+  settings.updates.machines !== false;
+
 /** System sleep prevention during agent turns, on by default. */
 export const keepAwakeOn = (settings: Settings): boolean => settings.agents.keepAwake !== false;
 
@@ -957,6 +966,7 @@ export const SettingsPatch = Schema.Struct({
       channel: Schema.optionalKey(UpdateSettings.fields.channel),
       automaticChecks: Schema.optionalKey(Schema.Boolean),
       pinnedVersion: clearable(Schema.String),
+      machines: Schema.optionalKey(Schema.Boolean),
     }),
   ),
   onboarding: Schema.optionalKey(

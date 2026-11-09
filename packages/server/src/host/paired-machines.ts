@@ -12,6 +12,7 @@ import {
   verifyConnect,
 } from "./machine-keys.ts";
 import { SSH_TARGET } from "./ssh-join.ts";
+import type { MachineUpdate } from "./machine-updates.ts";
 
 /** How long a join link lasts, as a phone's pairing link does. */
 export const JOIN_LIFETIME_MS = 15 * 60_000;
@@ -340,10 +341,19 @@ export const machineView = (
         readonly since: number;
         readonly status?: { readonly status: HostStatus; readonly at: number } | undefined;
         readonly release?: string | undefined;
+        /** Whether its host updates itself over its connection (`host.update.*`). */
+        readonly selfUpdate?: boolean;
       }
     | undefined,
-  /** Its last problem, and whether access over Tailscale is on, for why it is offline. */
-  status: { readonly problem?: MachineProblem | undefined; readonly tailscale?: boolean } = {},
+  /**
+   * Its last problem, and whether access over Tailscale is on, for why it is offline; its update,
+   * while one runs or since one ended.
+   */
+  status: {
+    readonly problem?: MachineProblem | undefined;
+    readonly tailscale?: boolean;
+    readonly update?: MachineUpdate | undefined;
+  } = {},
 ) => {
   const offline: OfflineReason | undefined =
     online !== undefined
@@ -373,5 +383,7 @@ export const machineView = (
     ...(offline === undefined ? {} : { offline }),
     ...(release === undefined ? {} : { release }),
     ...(machine.sshTarget === undefined ? {} : { sshTarget: machine.sshTarget }),
+    ...(online?.selfUpdate === true ? { selfUpdate: true } : {}),
+    ...(status.update === undefined ? {} : { update: status.update }),
   };
 };

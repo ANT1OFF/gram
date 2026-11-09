@@ -22,9 +22,11 @@ import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { claudeSignInOf, hostStatusOf } from "./claude-sign-in.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
-import { HOST_SERVES, type HostService, serveHost } from "./protocol.ts";
+import { HOST_SERVES, type HostService, type HostUpdater, serveHost } from "./protocol.ts";
+import { foregroundOf } from "../ports/pure.ts";
 import { runCli } from "./cli.ts";
-import type { HostId } from "@gram/contracts";
+import type { HostBusy, HostId } from "@gram/contracts";
+import { selfUpdater } from "./self-update-host.ts";
 import type * as Scope from "effect/Scope";
 
 // The server starts the host as plain Node under Electron; what the host runs (git, ps, an editor
@@ -68,35 +70,77 @@ const HostAgents: Layer.Layer<AgentHosts> =
         }),
       ).pipe(Layer.provide(ClaudeHostLive()));
 
-/** What the host serves as `hostId`, its terminals and sessions closed with the scope. */
+/** What could stop a host's update: what is running in it now (`HostBusy`). */
+export type BusyOf = Effect.Effect<HostBusy>;
+
+/**
+ * What the host serves as `hostId`, its terminals and sessions closed with the scope. A joined
+ * machine's host passes `update`, which it serves with what it has running.
+ */
 const hostService = (
   hostId: HostId,
+  update?: (busy: BusyOf) => HostUpdater | undefined,
 ): Effect.Effect<HostService, never, Scope.Scope | Proc | Worktrees | AgentHosts> =>
   Effect.gen(function* () {
     const proc = yield* Proc;
     const agents = yield* AgentHosts;
+    const terminals = yield* terminalsOnHost;
+    const sessions = yield* sessionsOnHost(agents.get);
+    let clones = 0;
+    const repos = reposOn(proc, hostRepos());
+    const scan = liveScan.pipe(Effect.provideService(Proc, proc));
+    /**
+     * Sessions at work, terminals running a command (a thread's shell with a foreground job, or any
+     * other shell still open, such as a sign-in), and clones in flight. A scan that fails counts
+     * every thread's shell as busy.
+     */
+    const busy: BusyOf = Effect.gen(function* () {
+      const alive = (yield* terminals.terminals.list()).filter((terminal) => terminal.alive);
+      const loose = alive.filter((terminal) => terminal.threadId === undefined).length;
+      const shells = terminals.shells();
+      let running = shells.length;
+      if (shells.length > 0) {
+        const swept = yield* scan.pipe(Effect.orElseSucceed(() => undefined));
+        if (swept?.processes !== undefined) {
+          const { processes, children } = swept;
+          running = shells.filter(
+            (pid) => foregroundOf(processes, children, pid) !== undefined,
+          ).length;
+        }
+      }
+      return { turns: sessions.busy(), terminals: loose + running, clones };
+    });
+    const updater = update?.(busy);
     return {
       hello: {
         protocol: HOST_PROTOCOL_VERSION,
         hostId,
-        capabilities: HOST_SERVES,
+        capabilities: updater === undefined ? HOST_SERVES : [...HOST_SERVES, "update"],
         platform: process.platform,
         pid: process.pid,
         ...(RELEASE === undefined ? {} : { release: RELEASE }),
       },
       files: filesOn(proc),
-      repos: reposOn(proc, hostRepos()),
+      repos: {
+        ensure: (url) =>
+          Effect.acquireUseRelease(
+            Effect.sync(() => (clones += 1)),
+            () => repos.ensure(url),
+            () => Effect.sync(() => (clones -= 1)),
+          ),
+      },
       worktrees: yield* Worktrees,
       git: gitOn(proc),
-      terminals: yield* terminalsOnHost,
-      sessions: yield* sessionsOnHost(agents.get),
-      scan: liveScan.pipe(Effect.provideService(Proc, proc)),
+      terminals,
+      sessions,
+      scan,
       status: hostStatusOf(
         agents.get("claude").pipe(
           Effect.flatMap(claudeSignInOf),
           Effect.orElseSucceed(() => "unknown" as const),
         ),
       ),
+      ...(updater === undefined ? {} : { update: updater }),
     };
   });
 
@@ -112,5 +156,10 @@ const child = Effect.gen(function* () {
 
 const args = process.argv.slice(2);
 NodeRuntime.runMain(
-  args.length === 0 ? child : runCli(args, { service: hostService, layer: HostLayer }),
+  args.length === 0
+    ? child
+    : runCli(args, {
+        service: (hostId, home) => hostService(hostId, (busy) => selfUpdater(RELEASE, home, busy)),
+        layer: HostLayer,
+      }),
 );

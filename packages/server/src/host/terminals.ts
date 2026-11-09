@@ -21,6 +21,8 @@ export interface HostTerminalsService {
   readonly terminals: Terminals;
   /** The shells running now, then each one that starts or ends. */
   readonly roots: Stream.Stream<TerminalRoot>;
+  /** The pids of the threads' shells running now. */
+  readonly shells: () => ReadonlyArray<number>;
 }
 
 /**
@@ -61,6 +63,6 @@ export const terminalsOnHost: Effect.Effect<HostTerminalsService, never, Scope.S
         );
       }),
     );
-    return { terminals, roots };
+    return { terminals, roots, shells: () => [...live.keys()] };
   },
 );

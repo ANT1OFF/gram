@@ -2,7 +2,7 @@ import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
-import { GramRpcs } from "@gram/contracts";
+import { GramRpcs, machineUpdatesOn } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -115,7 +115,7 @@ import {
   machineManagement,
   placedOnMachine,
 } from "./machine-routes.ts";
-import { RemoteHosts } from "../host/remote-hosts.ts";
+import { releaseOfConfig, RemoteHosts } from "../host/remote-hosts.ts";
 import { authTarget } from "./auth-target.ts";
 import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } from "./auth.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
@@ -146,6 +146,9 @@ export const AuthMiddleware = HttpRouter.middleware(
     // Absent only in tests that serve the middleware alone: no machine can join or dial in then.
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
+    // Joined machines update on their own unless Settings turns it off.
+    if (remoteHosts !== undefined && store !== undefined)
+      remoteHosts.automaticUpdates(store.getSettings.pipe(Effect.map(machineUpdatesOn)));
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
       "cache-control": "no-store",
@@ -282,9 +285,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                         remoteHosts,
                         control.current(),
                         path,
-                        config.appBuild !== undefined && /^[a-f0-9]{40}$/.test(config.appBuild)
-                          ? config.appVersion
-                          : undefined,
+                        releaseOfConfig(config),
                       )
                   : isRemote && path === "/ws"
                     ? yield* closedOnRevoke(remote, remote.sessionOf(authRequest), httpEffect)

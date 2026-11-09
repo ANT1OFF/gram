@@ -94,6 +94,100 @@ describe("machines page", () => {
     expect(within(rows[1]!).getByTestId("machines-update")).toBeTruthy();
   });
 
+  it("updates a machine whose host updates itself from its row, and shows how it goes", async () => {
+    const online = machine({
+      id: "m-a",
+      name: "cachyos",
+      onlineSince: Date.now() - 60 * 60_000,
+      release: "1.16.0",
+      selfUpdate: true,
+    });
+    const calls = serve(
+      [online, machine({ id: "m-b", name: "tower", release: "1.17.0", onlineSince: Date.now() })],
+      {
+        release: "1.17.0",
+        protocol: 2,
+      },
+    );
+    renderPage();
+    const button = await screen.findByTestId("machines-update");
+    expect(button.getAttribute("aria-label")).toBe("Update cachyos to 1.17.0");
+    // Only one machine is behind: no Update all.
+    expect(screen.queryByTestId("machines-update-all")).toBeNull();
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        path: "/machines/update",
+        body: JSON.stringify({ id: "m-a" }),
+      }),
+    );
+    // Straight over its connection: no dialog, no command to run there.
+    expect(screen.queryByTestId("machines-update-dialog")).toBeNull();
+  });
+
+  it("shows an update's progress, a busy machine waiting, and a rollback on the row", async () => {
+    const base = { onlineSince: Date.now() - 60 * 60_000, release: "1.16.0", selfUpdate: true };
+    serve(
+      [
+        machine({
+          ...base,
+          id: "m-a",
+          name: "cachyos",
+          update: { phase: "downloading", release: "1.17.0", received: 45, total: 100 },
+        }),
+        machine({
+          ...base,
+          id: "m-b",
+          name: "tower",
+          update: {
+            phase: "waiting",
+            release: "1.17.0",
+            busy: { turns: 1, terminals: 2, clones: 0 },
+          },
+        }),
+        machine({
+          ...base,
+          id: "m-c",
+          name: "pi",
+          update: {
+            phase: "rolledBack",
+            release: "1.17.0",
+            message:
+              "Gram 1.17.0 didn't dial in within 2 minutes, so the machine went back to 1.16.0.",
+            at: Date.now(),
+          },
+        }),
+      ],
+      { release: "1.17.0", protocol: 2 },
+    );
+    renderPage();
+    const lines = await screen.findAllByTestId("machines-update-state");
+    expect(lines.map((line) => line.textContent)).toEqual([
+      "Updating to 1.17.0: downloading, 45%",
+      "Updates to 1.17.0 once tower is idle: 1 running turn and 2 busy terminals.",
+      "Update to 1.17.0 didn't start, so pi went back to 1.16.0. Gram 1.17.0 didn't dial in within 2 minutes, so the machine went back to 1.16.0.",
+    ]);
+    const rows = screen.getAllByTestId("machines-row");
+    // Under way: its Update waits. Waiting or rolled back: it can be asked again.
+    expect(within(rows[0]!).getByTestId("machines-update")).toHaveProperty("disabled", true);
+    expect(within(rows[1]!).getByTestId("machines-update")).toHaveProperty("disabled", false);
+    expect(within(rows[2]!).getByTestId("machines-update")).toHaveProperty("disabled", false);
+  });
+
+  it("offers Update all when more than one machine is behind", async () => {
+    const base = { onlineSince: Date.now(), release: "1.16.0", selfUpdate: true };
+    const calls = serve(
+      [
+        machine({ ...base, id: "m-a", name: "cachyos" }),
+        machine({ ...base, id: "m-b", name: "tower" }),
+      ],
+      { release: "1.17.0", protocol: 2 },
+    );
+    renderPage();
+    fireEvent.click(await screen.findByTestId("machines-update-all"));
+    await waitFor(() => expect(calls.map((call) => call.path)).toContain("/machines/update-all"));
+  });
+
   it("shows the one command to update a machine that joined by the command", async () => {
     const calls = serve([machine({ offline: { kind: "mismatch", at: NOW, protocol: 1 } })], {
       release: "1.15.2",

@@ -18,6 +18,9 @@ import {
   type PairedMachineStore,
 } from "./paired-machines.ts";
 import { connectHost, type HostConnection, helloMismatch, UNKNOWN_STATUS } from "./protocol.ts";
+import { makeMachineUpdates, RETRY_MS, type UpdateRequest } from "./machine-updates.ts";
+import * as Schedule from "effect/Schedule";
+import * as FiberSet from "effect/FiberSet";
 import { watchedSocket } from "./socket-end.ts";
 
 /** The release a host said it runs, kept only when it reads as a release: it is shown as text. */
@@ -25,6 +28,18 @@ const releaseOf = (hello: HostHello): string | undefined =>
   hello.release !== undefined &&
   /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[0-9A-Za-z.]{1,32})?$/.test(hello.release)
     ? hello.release
+    : undefined;
+
+/**
+ * This Gram's release, which the installer downloads and machines update to: its version, only when
+ * it was built as a release (its build is a commit); undefined when it runs from source.
+ */
+export const releaseOfConfig = (config: {
+  readonly appVersion?: string | undefined;
+  readonly appBuild?: string | undefined;
+}): string | undefined =>
+  config.appBuild !== undefined && /^[a-f0-9]{40}$/.test(config.appBuild)
+    ? config.appVersion
     : undefined;
 
 /** A joined machine's host while it is dialled in. */
@@ -82,6 +97,13 @@ export interface RemoteHostsShape {
    * the listing: `undefined` while it is offline. A check already running is shared.
    */
   readonly checkSignIn: (id: HostId) => Promise<HostStatus | undefined>;
+  /**
+   * Updates the machine to this Gram's release over its own connection, now or once it is idle;
+   * `fallback` for a host too old to update itself, which the installer updates.
+   */
+  readonly update: (id: HostId) => UpdateRequest;
+  /** Reads whether joined machines update on their own (`updates.machines`); on until set. */
+  readonly automaticUpdates: (automatic: Effect.Effect<boolean>) => void;
   /** Forgets the machine and closes its connection; false when it wasn't joined. */
   readonly remove: (id: HostId) => boolean;
   /**
@@ -95,13 +117,40 @@ export interface RemoteHostsShape {
 export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>()(
   "@gram/server/RemoteHosts",
 ) {
-  static readonly make = (store: PairedMachineStore, now: () => number = Date.now) =>
+  static readonly make = (
+    store: PairedMachineStore,
+    now: () => number = Date.now,
+    /** This Gram's release, which machines update to; undefined when it runs from source. */
+    options: { readonly release?: string | undefined; readonly retryMs?: number } = {},
+  ) =>
     Effect.gen(function* () {
       const machines = createPairedMachines(store, now);
       const online = new Map<HostId, Online>();
       const root = yield* Effect.scope;
       // The server's own logger and the rest, for a check started outside an effect.
-      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      const context = yield* Effect.context<never>();
+      const runPromise = Effect.runPromiseWith(context);
+      /** Updates and their checks, which outlive the dial or request that started them. */
+      const runFork = yield* FiberSet.makeRuntime<never>();
+      let automatic: Effect.Effect<boolean> = Effect.succeed(true);
+      const updates = makeMachineUpdates({
+        release: options.release,
+        connection: (id) => {
+          const live = online.get(id);
+          return live === undefined || live.connection.gone() ? undefined : live.connection;
+        },
+        online: () => [...online.keys()],
+        automatic: Effect.suspend(() => automatic).pipe(Effect.orElseSucceed(() => true)),
+        now,
+        fork: (effect) => {
+          runFork(effect);
+        },
+      });
+      yield* updates.sweep.pipe(
+        Effect.catchCause(() => Effect.void),
+        Effect.repeat(Schedule.spaced(options.retryMs ?? RETRY_MS)),
+        Effect.forkIn(root),
+      );
       const close = (id: HostId) => {
         const live = online.get(id);
         online.delete(id);
@@ -210,6 +259,9 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               Effect.annotateLogs({ hostId: machine.id, platform: opened.value.hello.platform }),
             );
             void checkSignIn(machine.id);
+            // How its last update went, which also confirms one that brought it back, then
+            // whether it updates now.
+            runFork(updates.connected(machine.id, opened.value));
             yield* Deferred.await(ended).pipe(Effect.ignore);
             yield* Effect.logInfo("machines: a joined machine went offline").pipe(
               Effect.annotateLogs({ hostId: machine.id }),
@@ -256,9 +308,15 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           machine,
           live === undefined
             ? undefined
-            : { since: live.since, status: live.status, release: releaseOf(live.connection.hello) },
+            : {
+                since: live.since,
+                status: live.status,
+                release: releaseOf(live.connection.hello),
+                selfUpdate: live.connection.update !== undefined,
+              },
           {
             problem: machines.problemOf(machine.id),
+            update: updates.stateOf(machine.id),
             ...(tailscale === undefined ? {} : { tailscale }),
           },
         );
@@ -278,8 +336,13 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         list: (tailscale) => machines.list().map((machine) => view(machine, tailscale)),
         attach,
         checkSignIn,
+        update: updates.request,
+        automaticUpdates: (next) => {
+          automatic = next;
+        },
         remove: (id) => {
           bump(id);
+          updates.forget(id);
           try {
             return machines.remove(id);
           } finally {
@@ -308,8 +371,10 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
   static readonly layer: Layer.Layer<RemoteHosts, never, ServerConfig> = Layer.effect(
     RemoteHosts,
     Effect.gen(function* () {
-      const { dataDir } = yield* ServerConfig;
-      return yield* RemoteHosts.make(lazyFileStore(dataDir));
+      const config = yield* ServerConfig;
+      return yield* RemoteHosts.make(lazyFileStore(config.dataDir), Date.now, {
+        release: releaseOfConfig(config),
+      });
     }),
   );
 }

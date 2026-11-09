@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as Effect from "effect/Effect";
 
 /**
@@ -20,6 +21,29 @@ export interface ServiceCommand {
   /** The host's folder, where its log goes. */
   readonly home: string;
 }
+
+/**
+ * The program a service runs: this same Node and entry, with `run`. `GRAM_HOST_SERVICE` tells the
+ * host it runs as its service, which it can then move to another app when it updates itself.
+ */
+export const serviceCommand = (home: string): ServiceCommand => {
+  const entry = process.argv[1] ?? fileURLToPath(new URL("./main.ts", import.meta.url));
+  return {
+    program: [process.execPath, entry, "run"],
+    env: {
+      GRAM_HOST_HOME: home,
+      GRAM_HOST_SERVICE: "1",
+      PATH: process.env["PATH"] ?? "/usr/bin:/bin",
+      // Where it clones the repositories its workers use, when not its own folder's `repos`.
+      ...(process.env["GRAM_HOST_REPOS"]
+        ? { GRAM_HOST_REPOS: process.env["GRAM_HOST_REPOS"] }
+        : {}),
+      // Run under Electron's own binary, as a packaged app's host is, it has to be plain Node.
+      ...(process.versions["electron"] === undefined ? {} : { ELECTRON_RUN_AS_NODE: "1" }),
+    },
+    home,
+  };
+};
 
 const xml = (text: string) =>
   text

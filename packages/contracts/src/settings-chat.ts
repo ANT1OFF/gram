@@ -404,6 +404,11 @@ export const USER_ONLY_SETTINGS: ReadonlyArray<UserOnlyKey> = [
   },
   { key: "updates.pinnedVersion", reason: "it decides which build Gram installs" },
   {
+    key: "updates.machines",
+    reason: "it decides whether Gram installs releases on joined machines",
+    read: (w) => w.settings.updates.machines !== false,
+  },
+  {
     key: "usageHistory.claude",
     reason: "it is consent to read Claude Code's local history",
     read: (w) => usageHistoryEnabled(w.settings, "claude"),

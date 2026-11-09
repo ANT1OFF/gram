@@ -1,6 +1,5 @@
 import { hostname } from "node:os";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import type { HostId } from "@gram/contracts";
 import { HostId as HostIdSchema } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -27,13 +26,14 @@ import {
 import type { HostService } from "./protocol.ts";
 import {
   installService,
-  type ServiceCommand,
+  serviceCommand,
   serviceFile,
   servicePlatform,
   serviceRunning,
   uninstallService,
 } from "./service.ts";
 import { createPublicKey } from "node:crypto";
+import { superviseHere } from "./self-update-host.ts";
 
 const USAGE = `gram-host: run this machine's work for a Gram on another machine, over Tailscale.
 
@@ -112,25 +112,6 @@ const fail = (text: string) =>
     process.stderr.write(`gram-host: ${text}\n`);
     process.exitCode = 1;
   });
-
-/** The program a service runs: this same Node and entry, with `run`. */
-const serviceCommand = (home: string): ServiceCommand => {
-  const entry = process.argv[1] ?? fileURLToPath(new URL("./main.ts", import.meta.url));
-  return {
-    program: [process.execPath, entry, "run"],
-    env: {
-      GRAM_HOST_HOME: home,
-      PATH: process.env["PATH"] ?? "/usr/bin:/bin",
-      // Where it clones the repositories its workers use, when not its own folder's `repos`.
-      ...(process.env["GRAM_HOST_REPOS"]
-        ? { GRAM_HOST_REPOS: process.env["GRAM_HOST_REPOS"] }
-        : {}),
-      // Run under Electron's own binary, as a packaged app's host is, it has to be plain Node.
-      ...(process.versions["electron"] === undefined ? {} : { ELECTRON_RUN_AS_NODE: "1" }),
-    },
-    home,
-  };
-};
 
 const install = (home: string) =>
   Effect.gen(function* () {
@@ -217,7 +198,10 @@ const joined = (home: string) => {
 export const runCli = <R>(
   args: ReadonlyArray<string>,
   host: {
-    readonly service: (hostId: HostId) => Effect.Effect<HostService, never, Scope.Scope | R>;
+    readonly service: (
+      hostId: HostId,
+      home: string,
+    ) => Effect.Effect<HostService, never, Scope.Scope | R>;
     readonly layer: Layer.Layer<R>;
   },
 ): Effect.Effect<void> =>
@@ -232,7 +216,7 @@ export const runCli = <R>(
         if (found === undefined) return fail("This machine hasn't joined a Gram: gram-host join.");
         return dialForever(
           { origin: found.config.origin, hostId: found.config.hostId, key: found.key },
-          host.service(HostIdSchema.make(found.config.hostId)),
+          host.service(HostIdSchema.make(found.config.hostId), home),
         ).pipe(Effect.provide(host.layer));
       }
       case "service": {
@@ -269,6 +253,9 @@ export const runCli = <R>(
               (yield* serviceRunning(platform)) ? "Service: running." : "Service: not running.",
             );
         });
+      // Started by the host itself when it updates (`self-update.ts`), outside its own service.
+      case "update-supervise":
+        return superviseHere(home);
       case "leave":
         return Effect.gen(function* () {
           const platform = servicePlatform();
