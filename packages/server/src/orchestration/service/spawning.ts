@@ -187,16 +187,33 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     });
   const admitMachineModel = (tool: string, hostId: HostId | undefined, chosen: ModelRef) =>
     Effect.gen(function* () {
-      if (hostId === undefined || (chosen.agent === "claude" && chosen.profileId === undefined))
-        return;
-      const machine = joinedMachines().find((m) => m.id === hostId)?.name ?? hostId;
-      return yield* toolError(
-        tool,
-        refusal(
-          "not_admitted",
-          `${machine} runs direct Claude sessions only. Choose a direct Claude worker model, or spawn on this machine.`,
-        ),
-      );
+      if (hostId === undefined) return;
+      const machine = joinedMachines().find((m) => m.id === hostId);
+      const name = machine?.name ?? hostId;
+      if (chosen.agent !== "claude" || chosen.profileId !== undefined)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name} runs direct Claude sessions only. Choose a direct Claude worker model, or spawn on this machine.`,
+          ),
+        );
+      if (machine?.tools?.some((entry) => entry.tool === "claude" && !entry.found))
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}: Claude Code is not installed. Install it there, then use Settings → Machines → Sign in before spawning a worker.`,
+          ),
+        );
+      if (machine?.claudeSignIn === "notSignedIn")
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name} is not signed in to Claude Code. Use Settings → Machines → Sign in, or run claude /login on that machine, before spawning a worker.`,
+          ),
+        );
     });
   // Tool resolution runs before any approval card. The handler repeats admission under its lock
   // because a roster or machine may change while a card is awaiting its answer.

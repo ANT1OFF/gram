@@ -146,4 +146,47 @@ describe("spawn admission on a joined machine", () => {
       }).pipe(Effect.scoped),
     );
   }
+  for (const status of ["notSignedIn", "notInstalled"] as const) {
+    it.effect(`refuses a joined machine reported as ${status} before preparing a checkout`, () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const machines = Layer.succeed(RemoteHosts, {
+          list: () => [
+            {
+              ...MACHINE,
+              claudeSignIn: status === "notSignedIn" ? "notSignedIn" : "unknown",
+              tools: [{ tool: "claude", found: status !== "notInstalled" }],
+            },
+          ],
+        } as unknown as RemoteHostsShape);
+        const context = yield* Layer.build(
+          serverLayer(world, {}, agents).pipe(Layer.provide(machines)),
+        );
+        yield* Effect.gen(function* () {
+          const { session } = yield* openOrchestrator(world);
+          const store = yield* ThreadStore;
+          const before = yield* store.listThreads;
+          const refused = yield* session
+            .callTool("spawn_worker", {
+              project: "shop",
+              feature: "needs-claude",
+              title: "Needs Claude",
+              brief: "Synthetic",
+              machine: "build box",
+            })
+            .pipe(Effect.result);
+          expect(refused).toMatchObject({
+            _tag: "Failure",
+            failure: {
+              message: expect.stringMatching(
+                status === "notSignedIn" ? /build box.*not signed in/ : /build box.*not installed/,
+              ),
+            },
+          });
+          expect(yield* store.listThreads).toEqual(before);
+          expect(existsSync(join(world.repo, ".worktrees"))).toBe(false);
+        }).pipe(Effect.provide(context));
+      }).pipe(Effect.scoped),
+    );
+  }
 });
