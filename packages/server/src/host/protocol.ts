@@ -21,6 +21,7 @@ import {
   InterruptHung,
   ModeRefused,
   type HostCapability,
+  type HostCheckResult,
   HostCommandFailed,
   HostFailed,
   type HostHello,
@@ -57,6 +58,7 @@ import {
   Socket,
   SocketServer,
 } from "../platform/unstable.ts";
+import type { HostCheckRequest, HostChecks } from "./checks.ts";
 import type { HostFiles } from "./files.ts";
 import type { HostGit } from "./git.ts";
 import type { HostRepos } from "./repos.ts";
@@ -95,6 +97,8 @@ export interface HostService {
   readonly scan: Effect.Effect<PortScan, unknown>;
   /** What it can run, checked afresh: its Claude sign-in and its tools. */
   readonly status?: Effect.Effect<HostStatus>;
+  /** Project checks of pull requests, on a host that serves `checks`. */
+  readonly checks?: HostChecks;
 }
 
 /** The capabilities a host must serve for this build to use it. */
@@ -112,7 +116,11 @@ export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
  * The capabilities this build's host serves: the ones required, and those a control plane uses only
  * where a host advertises them, so a host on an older release still connects.
  */
-export const HOST_SERVES: ReadonlyArray<HostCapability> = [...HOST_CAPABILITIES, "deliveries"];
+export const HOST_SERVES: ReadonlyArray<HostCapability> = [
+  ...HOST_CAPABILITIES,
+  "deliveries",
+  "checks",
+];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -211,6 +219,10 @@ const handlersFor = (host: HostService) => {
         host.worktrees
           .pendingPermissions(repoPath, worktreeDir)
           .pipe(Effect.mapError(worktreeToWire)),
+      "host.checks.run": (request) =>
+        host.checks === undefined
+          ? Effect.fail(new HostFailed({ message: "This machine's host runs no local checks." }))
+          : host.checks.run(request),
       "host.git.local": ({ cwd }) => host.git.local(cwd).pipe(Effect.mapError(commandToWire)),
       "host.git.present": ({ cwd }) => host.git.present(cwd),
       "host.git.watch": ({ paths, ...options }) => host.git.watch(paths, options),
@@ -454,6 +466,18 @@ export interface HostSessionsConnection {
   ) => Effect.Effect<void>;
 }
 
+/** A host's project checks as the control plane reaches them. */
+export interface HostChecksConnection {
+  /**
+   * Runs the check of `request.id`, or joins the one under way. `HostFailed` is the host's own
+   * refusal; `HostUnavailable` means the connection went before it answered, so how the check
+   * ended is unknown, and asking again under the same id finds it.
+   */
+  readonly run: (
+    request: HostCheckRequest,
+  ) => Effect.Effect<HostCheckResult, HostFailed | HostUnavailable>;
+}
+
 /** A connected host, as the control plane reaches it. */
 export interface HostConnection {
   readonly hello: HostHello;
@@ -471,6 +495,8 @@ export interface HostConnection {
    * doesn't answer, is too old to know the call, or has gone.
    */
   readonly status?: Effect.Effect<HostStatus>;
+  /** Its project checks; absent on a host that doesn't serve `checks`, an older one say. */
+  readonly checks?: HostChecksConnection;
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
 }
@@ -922,9 +948,23 @@ export const connectHost = (
       reload: (agent, reload) =>
         guarded(client["host.sessions.reload"]({ agent, reload })).pipe(Effect.ignore),
     };
+    const checks: HostChecksConnection = {
+      run: (request) =>
+        guarded(client["host.checks.run"](defined({ ...request }))).pipe(
+          Effect.catch((error) =>
+            error instanceof HostFailed || error instanceof HostUnavailable
+              ? Effect.fail(error)
+              : Effect.logWarning("worker host: a check call failed on the stream").pipe(
+                  Effect.annotateLogs({ reason: failureText(error) }),
+                  Effect.andThen(Effect.fail(unavailable(HOST_NOT_ANSWERING))),
+                ),
+          ),
+        ),
+    };
     return {
       hello,
       files,
+      ...(hello.capabilities.includes("checks") ? { checks } : {}),
       repos: { ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })) },
       worktrees,
       git,

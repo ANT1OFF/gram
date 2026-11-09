@@ -11,8 +11,12 @@
 // that weakens `tools/check` or a test is the reviewer's to catch; and any process of this user
 // could rewrite Gram's database, the trust boundary every local result shares.
 import {
+  type Checkout,
+  hostOf,
+  type HostCheckResult,
+  type HostId,
+  isLocalHost,
   localCheckConcurrencyOf,
-  redactText,
   DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
   type Project,
   type ProjectLocalCheck,
@@ -21,7 +25,6 @@ import {
 import {
   canonicalizeOrOwned,
   git,
-  isInside,
   PathProbe,
   Proc,
   realPathSync,
@@ -33,11 +36,12 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { execFileSync, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
   constants as fsConstants,
@@ -52,19 +56,47 @@ import {
   utimesSync,
   readFileSync,
   readSync,
-  readlinkSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { availableParallelism, hostname } from "node:os";
 import * as nodePath from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  isGitControl,
+  LEADERLESS_WAITS,
+  LocalCheckFailure,
+  markRetained,
+  recordedGroup,
+  recordedOutcome,
+  RETAINED,
+  readExitStatus,
+  spawnCheck,
+  stopVerifiedGroup,
+  timedOut,
+  type DurableCheck,
+  type LocalCheckOutcome,
+  type LocalCheckRun,
+} from "./check-process.ts";
 import { ServerConfig } from "../config.ts";
+import { RemoteHosts } from "../host/remote-hosts.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
 import { dropOldest } from "../bounded.ts";
 import { DAY_MS } from "../zone-time.ts";
 import { makeAdmission } from "./keyed-lock.ts";
+
+export {
+  diagnoseExit,
+  lastLines,
+  missingCommand,
+  readExitStatus,
+  spawnCheck,
+  type CheckEnvironment,
+  type DurableCheck,
+  type LocalCheckOutcome,
+  type LocalCheckRun,
+} from "./check-process.ts";
 
 /** A publisher Git read's stdout; any failure or truncation refuses the publish. */
 const requiredPublisherGit = (result: ProcOutput | undefined) => {
@@ -79,21 +111,6 @@ const requirePreparedGit = (out: ProcOutput | undefined) => {
     throw new Error("private selected Git preparation failed");
   return out.stdout;
 };
-
-/** All configuration affecting reuse; a record without a project never authorizes a project's gate. */
-export interface LocalCheckRun {
-  /** How the source was isolated from the agent's repository (`LOCAL_CHECK_ISOLATION`). */
-  readonly isolation: string;
-  readonly command: string;
-  readonly preparation?: NonNullable<ProjectLocalCheck["preparation"]>;
-  readonly projectId?: string;
-  readonly setup?: string;
-  readonly timeoutMs?: number;
-  /** Only `unavailable/v1`, for a stored recipe that can't be read; it never runs. */
-  readonly profile?: string;
-  readonly qualification?: string;
-  readonly refusal?: string;
-}
 
 /** The merged source a run checks, and how its runner keeps or hands it on. */
 export interface MergedCheckSource {
@@ -115,6 +132,47 @@ export interface MergedCheckSource {
  */
 export const LOCAL_CHECK_ISOLATION = "own-bare-repository/2";
 const SELECTED_CHECK_ISOLATION = "own-bare-repository/selected/1";
+
+/** A thread's checkout on a joined machine, where its check runs through that machine's host. */
+export interface MachineCheckSite {
+  readonly hostId: HostId;
+  /** The checkout's folder there. */
+  readonly path: string;
+  /** The machine's clone it was made from. */
+  readonly repoRoot?: string | undefined;
+}
+
+/** Where a check runs: a folder of this machine's repository, or a joined machine's checkout. */
+export type CheckSite = string | MachineCheckSite;
+
+/**
+ * Where the check of `checkout`'s thread runs: `here`, a folder on this machine, for a checkout on
+ * this machine; the checkout itself on the joined machine it is on.
+ */
+export const checkSiteOf = (
+  checkout: Pick<Checkout, "path" | "repoRoot" | "hostId">,
+  here: string,
+): CheckSite =>
+  isLocalHost(checkout)
+    ? here
+    : {
+        hostId: hostOf(checkout),
+        path: checkout.path,
+        ...(checkout.repoRoot === undefined ? {} : { repoRoot: checkout.repoRoot }),
+      };
+
+/**
+ * How long a joined machine's check waits for its host to dial in again after the connection went,
+ * before how it ended counts as unknown: the host keeps a run going across a redial, and answers
+ * the same id with it.
+ */
+export const MachineReattachMs = Context.Reference<number>("@gram/server/MachineReattachMs", {
+  defaultValue: () => 2 * 60_000,
+});
+/** How often a check waiting for its machine looks for it again. */
+const MACHINE_POLL_MS = 2_000;
+/** Past its timeout, how long a joined machine's check is given to answer before it is given up. */
+const MACHINE_SLACK_MS = 10 * 60_000;
 
 /** The single neutral project setting to command conversion. */
 export const localCheckRunFor = (
@@ -376,36 +434,7 @@ function selectedSourceManifest(
   }
 }
 
-/** How long a stopped check's processes get to end on SIGTERM before SIGKILL. */
-const KILL_GRACE_MS = 10_000;
-
 const SHA = /^[a-f0-9]{40}$/;
-
-/** Why a check didn't pass, as the worker and the ledger are told it. */
-const LocalCheckFailure = Schema.Struct({
-  kind: Schema.Literals([
-    /** A command the check runs wasn't on its PATH. */
-    "not-found",
-    /** It ran past the configured timeout and was stopped. */
-    "timed-out",
-    /** It ran and exited non-zero: a failing check. */
-    "exited",
-    /** A signal stopped it. */
-    "stopped",
-    /** Gram couldn't start it, or prepare the source for it. */
-    "unstartable",
-    /** The head conflicts with its base: nothing to check. */
-    "conflict",
-  ]),
-  /** The command that wasn't found. */
-  command: Schema.optionalKey(Schema.String),
-  /** The PATH the check ran on. */
-  path: Schema.optionalKey(Schema.String),
-  exitCode: Schema.optionalKey(Schema.Number),
-  /** The output's last lines. */
-  tail: Schema.optionalKey(Schema.String),
-});
-type LocalCheckFailure = typeof LocalCheckFailure.Type;
 
 export const LocalCheck = Schema.Struct({
   head: Schema.String,
@@ -439,6 +468,8 @@ export const LocalCheck = Schema.Struct({
   profile: Schema.optionalKey(Schema.String),
   qualification: Schema.optionalKey(Schema.String),
   mergedCommit: Schema.optionalKey(Schema.String),
+  /** The joined machine it ran on, by id, through its host; absent for this machine. */
+  machine: Schema.optionalKey(Schema.String),
   startedAt: Schema.Number,
   finishedAt: Schema.optionalKey(Schema.Number),
   host: Schema.String,
@@ -501,13 +532,6 @@ const KEPT_AFTER_QUIT = "kept running while Gram was closed";
 const decode = Schema.decodeUnknownOption(Schema.fromJsonString(LocalCheck));
 const encode = Schema.encodeSync(Schema.fromJsonString(LocalCheck));
 
-/** How a run ended: `reason` is its line, `failure` what a reader can act on. */
-export interface LocalCheckOutcome {
-  readonly ok: boolean;
-  readonly reason?: string | undefined;
-  readonly failure?: LocalCheckFailure | undefined;
-}
-
 /** Runs the check in a prepared worktree. The live one spawns the command; tests supply their own. */
 export interface LocalCheckRunnerShape {
   readonly run: (
@@ -548,16 +572,6 @@ export class LocalCheckRunner extends Context.Service<LocalCheckRunner, LocalChe
       }),
     );
 }
-
-/**
- * Git's variables that locate a repository, its objects, index or config, or inject config: one
- * inherited from Gram's own launch would point a git call made for the check (Gram's or the
- * check's own) at another repository, the agent's say, whatever folder it runs in. Only how git
- * reaches a remote and asks for credentials is kept.
- */
-const isGitControl = (name: string): boolean =>
-  name.toUpperCase().startsWith("GIT_") &&
-  !["GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT", "GIT_ASKPASS"].includes(name.toUpperCase());
 
 /** Shared selected checkout and raw-byte verification for native and explicit publisher preparation. */
 type SelectedGit = (
@@ -750,578 +764,9 @@ export const materializeSelectedPublisher = (
     };
   });
 
-/** Gram's own variables stay out of the check, whose tests set what they need themselves. */
-const checkEnv = (
-  base: Readonly<Record<string, string | undefined>>,
-  pathValue: string,
-): Record<string, string> => {
-  const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(base)) {
-    if (
-      value === undefined ||
-      name === "CI" ||
-      isGitControl(name) ||
-      (name.startsWith("GRAM_") && !name.startsWith("GRAM_CHECK_")) ||
-      name.startsWith("SB_") ||
-      name.startsWith("ELECTRON_")
-    )
-      continue;
-    env[name] = value;
-  }
-  if (pathValue !== "") env["PATH"] = pathValue;
-  return env;
-};
-
-export interface CheckEnvironment {
-  /** The server's environment, filtered by `checkEnv`. */
-  readonly base: Readonly<Record<string, string | undefined>>;
-  /** The login-shell PATH; empty keeps `base`'s. */
-  readonly pathValue: string;
-  /** Grace for stopping remaining command processes; tests may shorten it. */
-  readonly killGraceMs?: number | undefined;
-  /** Keeps the check's source when its stopped processes couldn't be shown gone. */
-  readonly retain?: (() => void) | undefined;
-  /** Makes the check survive a quit, for Gram's own runs (`LocalChecksLive`). */
-  readonly durable?: DurableCheck | undefined;
-}
-
-/** At most this much of the log's end is read to explain a failure. */
-const TAIL_BYTES = 64 * 1024;
-
-/** The end of `log`; empty when it can't be read. */
-const readTail = (log: string): string => {
-  try {
-    const fd = openSync(log, "r");
-    try {
-      const size = fstatSync(fd).size;
-      const length = Math.min(size, TAIL_BYTES);
-      const buffer = Buffer.alloc(length);
-      readSync(fd, buffer, 0, length, size - length);
-      return buffer.toString("utf8");
-    } finally {
-      closeSync(fd);
-    }
-  } catch {
-    return "";
-  }
-};
-
-/**
- * `text` as plain lines: terminal escape sequences (colours, titles) and other control characters
- * gone, and a carriage return's overwrite kept as its last state.
- */
-const plainLines = (text: string): Array<string> =>
-  text
-    // oxlint-disable-next-line no-control-regex -- terminal escape sequences
-    .replace(/\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)|[@-Z\\-_])/g, "")
-    .split("\n")
-    .map((line) => {
-      const parts = line.split("\r").filter((part) => part !== "");
-      // oxlint-disable-next-line no-control-regex -- the control characters left
-      return (parts.at(-1) ?? "").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trimEnd();
-    });
-
-/**
- * The last few non-blank lines of `text`, plain and bounded for a message, with anything shaped
- * like a secret redacted: the check runs with the server's environment, which a test may print.
- */
-export const lastLines = (text: string, lines = 12, chars = 1500): string => {
-  const kept = redactText(
-    plainLines(text)
-      .filter((line) => line.trim() !== "")
-      .slice(-lines)
-      .join("\n"),
-  );
-  return kept.length > chars ? `…${kept.slice(-chars)}` : kept;
-};
-
-/**
- * The command a shell or `env` said it couldn't find, the last one named in `output`: bash's
- * `sh: line 1: foo: command not found`, dash's `sh: 1: foo: not found`, zsh's and Bun's
- * `command not found: foo` and `env: foo: No such file or directory`. Only a line a shell or `env`
- * starts counts, so a test's own `Error: command not found` blames nothing.
- */
-export const missingCommand = (output: string): string | undefined => {
-  const shell = String.raw`(?:\S*/)?(?:ba|z|da|k)?sh`;
-  const name = String.raw`([^\s:'"‘’]+)`;
-  const patterns = [
-    // A script names itself by its path: `./scripts/x.sh: line 3: foo: command not found` in bash,
-    // `./scripts/x.sh: 3: foo: not found` in dash (`/bin/sh` on Debian and Ubuntu).
-    new RegExp(String.raw`^(?:${shell}|\S*/\S*): (?:line \d+: )?${name}: command not found$`),
-    new RegExp(String.raw`^(?:${shell}|\S*/\S*): \d+: ${name}: not found$`),
-    new RegExp(String.raw`^(?:${shell}|(?:\S*/)?bun): command not found: ${name}$`),
-    new RegExp(String.raw`^(?:\S*/)?env: ['"‘]?${name}['"’]?: No such file or directory$`),
-  ];
-  let found: string | undefined;
-  for (const line of plainLines(output)) {
-    for (const pattern of patterns) {
-      const match = pattern.exec(line.trim());
-      if (match !== null) {
-        found = match[1];
-        break;
-      }
-    }
-  }
-  return found;
-};
-
-/** What an exit means, from its code, signal and output: the line a worker can act on. */
-export const diagnoseExit = (
-  code: number | null,
-  signal: NodeJS.Signals | null,
-  output: string,
-  pathValue: string,
-): LocalCheckOutcome => {
-  if (code === 0) return { ok: true };
-  const tail = lastLines(output);
-  const withTail = (failure: LocalCheckFailure): LocalCheckFailure =>
-    tail === "" ? failure : { ...failure, tail };
-  if (signal !== null)
-    return {
-      ok: false,
-      reason: `stopped by ${signal}`,
-      failure: withTail({ kind: "stopped" }),
-    };
-  if (code === 127) {
-    const command = missingCommand(output);
-    return {
-      ok: false,
-      reason: `${command === undefined ? "a command" : `\`${command}\``} was not found on the check's PATH (exit 127); install it or add its folder to PATH in your shell profile, then restart Gram. PATH=${pathValue}`,
-      failure: withTail({
-        kind: "not-found",
-        ...(command === undefined ? {} : { command }),
-        path: pathValue,
-        exitCode: 127,
-      }),
-    };
-  }
-  return {
-    ok: false,
-    reason: `exited ${code}`,
-    failure: withTail({ kind: "exited", ...(code === null ? {} : { exitCode: code }) }),
-  };
-};
-
-/**
- * What makes a check's command durable across a quit (`LocalChecksLive`): where its wrapper writes
- * how it ended, a record of its process made before Gram waits on it, and whether a stop is Gram
- * quitting, which leaves the recorded process running for the next start to take back.
- */
-export interface DurableCheck {
-  /** The file the wrapper writes the exit status to, outside the checked tree. */
-  readonly status: string;
-  /** Records the started process; false when it couldn't be, and a quit then stops it. */
-  readonly started: (process: CheckProcess) => Effect.Effect<boolean>;
-  /** Whether Gram is quitting, so a recorded process is left running. */
-  readonly detach: () => boolean;
-}
-
-/** A check's running wrapper, as recorded to take it back after a restart. */
-interface CheckProcess {
-  readonly pid: number;
-  /** `ps`'s start time of `pid`: with the PID and its folder, what proves it is still this one. */
-  readonly processStart: string;
-  /** Epoch ms when Gram stops it. */
-  readonly deadline: number;
-  /** The PATH it runs on, for explaining a missing command after a restart. */
-  readonly pathValue: string;
-}
-
-/**
- * The setup and the command, each in its own shell, in one wrapper that leads the check's process
- * group and writes the exit status (`$1`) once they end: a check Gram left running when it quit
- * still says how it ended to the next start. A watchdog in the group stops it, SIGTERM then
- * SIGKILL after `$5` seconds, once `$4` seconds pass with the wrapper still there: the timeout Gram
- * isn't running to enforce. It ignores SIGTERM only once it sent its own, so Gram's stops it at once.
- */
-const WRAPPER = `status=$1 setup=$2 command=$3 limit=$4 grace=$5
-(
-  n=0
-  while [ "$n" -lt "$limit" ]; do
-    sleep 1
-    kill -0 $$ 2>/dev/null || exit 0
-    n=$((n + 1))
-  done
-  trap '' TERM
-  kill -TERM 0
-  sleep "$grace"
-  kill -KILL 0
-) &
-code=0
-if [ -n "$setup" ]; then /bin/sh -c "$setup"; code=$?; fi
-if [ "$code" -eq 0 ]; then /bin/sh -c "$command"; code=$?; fi
-if [ -n "$status" ]; then printf '%s\\n' "$code" > "$status.tmp" && mv -f "$status.tmp" "$status"; fi
-exit "$code"`;
-
-/** How long past its timeout the watchdog waits for Gram to stop a check, before doing it. */
-const WATCHDOG_SLACK_S = 30;
-
-/** Configured setup then check on the resolved login-shell PATH, with shared diagnostics. */
-export const spawnCheck = (
-  dir: string,
-  log: string,
-  environment: CheckEnvironment,
-  run: LocalCheckRun,
-) =>
-  Effect.gen(function* () {
-    const env = checkEnv(environment.base, environment.pathValue);
-    // Only the approved recipe can supply this binding; never inherit a caller's claim.
-    delete env["GRAM_CHECK_SOURCE_SELECTION_MANIFEST"];
-    delete env["GRAM_CHECK_SOURCE_SELECTION_SHA256"];
-    delete env["GRAM_CHECK_APPROVED_INPUT_SHA256"];
-    if (run.preparation !== undefined) {
-      env["GRAM_CHECK_SOURCE_SELECTION_MANIFEST"] = run.preparation.manifest;
-      env["GRAM_CHECK_SOURCE_SELECTION_SHA256"] = run.preparation.sha256;
-      if (run.preparation.inputConfigSha256 !== undefined) {
-        env["GRAM_CHECK_APPROVED_INPUT_SHA256"] = run.preparation.inputConfigSha256;
-      }
-    }
-    const timeoutMs = run.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS;
-    const graceMs = environment.killGraceMs ?? KILL_GRACE_MS;
-    return yield* spawnCommand(
-      dir,
-      log,
-      env,
-      run.setup ?? "",
-      run.command,
-      timeoutMs,
-      graceMs,
-      environment.retain,
-      environment.durable,
-    );
-  });
-
-/** `90 minutes`, `1 minute`, `500 ms`. */
-const spell = (ms: number) =>
-  ms >= 60_000 && ms % 60_000 === 0
-    ? `${ms / 60_000} minute${ms === 60_000 ? "" : "s"}`
-    : `${ms} ms`;
-
-const timedOut = (log: string, timeoutMs: number): LocalCheckOutcome => {
-  const tail = lastLines(readTail(log));
-  return {
-    ok: false,
-    reason: `timed out: still running after ${spell(timeoutMs)}, so Gram stopped it`,
-    failure: { kind: "timed-out", ...(tail === "" ? {} : { tail }) },
-  };
-};
-
-/**
- * How long a group sent SIGKILL gets to be gone, its leader reaped, before Gram stops waiting and
- * keeps the check's source (`CheckEnvironment.retain`): a process stuck in the kernel outlives it.
- */
-const REAP_MS = 5_000;
-
-/** Sends `signal` to the process group `pgid`; false when there is none. */
-const signalGroup = (pgid: number, signal: NodeJS.Signals | 0) => {
-  try {
-    process.kill(-pgid, signal);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-/**
- * Stops a check's process group: SIGTERM, SIGKILL for whatever is still there after `graceMs`,
- * then a wait of up to `REAP_MS` for it to be gone. True once `present` says it is gone; false when
- * it couldn't be shown gone, or `present` stopped vouching that the group is the check's.
- */
-const stopGroup = (
-  pgid: number,
-  present: () => "ours" | "gone" | "unsure",
-  graceMs: number,
-): Promise<boolean> =>
-  new Promise<boolean>((done) => {
-    const first = present();
-    if (first !== "ours") return done(first === "gone");
-    signalGroup(pgid, "SIGTERM");
-    const stoppedAt = Date.now();
-    let killed = false;
-    const poll = setInterval(() => {
-      const now = present();
-      if (now !== "ours") {
-        clearInterval(poll);
-        return done(now === "gone");
-      }
-      const waited = Date.now() - stoppedAt;
-      if (!killed && waited >= graceMs) {
-        killed = true;
-        signalGroup(pgid, "SIGKILL");
-      }
-      if (waited >= graceMs + REAP_MS) {
-        clearInterval(poll);
-        done(false);
-      }
-    }, 50);
-  });
-
-/**
- * The wrapper in its own process group. However it ends (exit, timeout, interruption), what is
- * left of the group, such as a watcher it started in the background, is stopped before the result
- * is told, the interruption ends and the worktree is removed (`stopGroup`). A group that can't be
- * shown gone keeps the source (`retain`). Only this group is signalled, by the id it was spawned
- * with; a process that left it (`setsid`) is beyond what Gram can follow. Interrupted while Gram
- * quits, a durable check that was recorded is left running instead (`DurableCheck`).
- */
-const spawnCommand = (
-  dir: string,
-  log: string,
-  env: Record<string, string>,
-  setup: string,
-  command: string,
-  timeoutMs: number,
-  graceMs: number,
-  retain?: () => void,
-  durable?: DurableCheck,
-) =>
-  Effect.uninterruptibleMask((restore) =>
-    Effect.gen(function* () {
-      const pathValue = env["PATH"] ?? "";
-      const deadline = Date.now() + timeoutMs;
-      const running = yield* Effect.sync(() => {
-        const fd = openSync(log, "w");
-        const child = (() => {
-          try {
-            return spawn(
-              "/bin/sh",
-              [
-                "-c",
-                WRAPPER,
-                "gram-check",
-                durable?.status ?? "",
-                setup,
-                command,
-                String(Math.ceil(timeoutMs / 1000) + WATCHDOG_SLACK_S),
-                String(Math.ceil(graceMs / 1000)),
-              ],
-              { cwd: dir, env, detached: true, stdio: ["ignore", fd, fd] },
-            );
-          } finally {
-            closeSync(fd);
-          }
-        })();
-        /** Node reaped the leader: until then its zombie keeps the group's id taken. */
-        let reaped = child.pid === undefined;
-        const present = () =>
-          !reaped || (child.pid !== undefined && signalGroup(child.pid, 0)) ? "ours" : "gone";
-        let stopping: Promise<void> | undefined;
-        /** Stops what is left of the group and waits for it to be gone, once however often asked. */
-        const stop = () =>
-          (stopping ??=
-            child.pid === undefined
-              ? Promise.resolve()
-              : stopGroup(child.pid, present, graceMs).then((gone) => {
-                  if (!gone) retain?.();
-                }));
-        let settled = false;
-        let release: (() => void) | undefined;
-        const outcome = new Promise<LocalCheckOutcome>((resolve) => {
-          /** Stops what is left of the group, then tells `outcome`, once. */
-          const settle = (told: () => LocalCheckOutcome) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            void stop().then(() => resolve(told()));
-          };
-          const timer = setTimeout(() => {
-            // Like the exit handler, capture the check's output before stopping its group:
-            // bash can print a termination notice while its children are being killed.
-            const result = timedOut(log, timeoutMs);
-            settle(() => result);
-          }, timeoutMs);
-          release = () => {
-            settled = true;
-            clearTimeout(timer);
-          };
-          child.once("error", (error) => {
-            if (child.pid === undefined) reaped = true;
-            settle(() => ({
-              ok: false,
-              reason: `couldn't start: ${error.message}`,
-              failure: { kind: "unstartable", path: pathValue },
-            }));
-          });
-          child.once("exit", (code, signal) => {
-            reaped = true;
-            // Read now: what the group's leftovers print while they are stopped is not the check's.
-            const output = readTail(log);
-            settle(() => diagnoseExit(code, signal, output, pathValue));
-          });
-        });
-        return {
-          pid: child.pid,
-          outcome,
-          stop: () => {
-            release?.();
-            return stop();
-          },
-          /** Lets it run on past Gram: nothing of it keeps this process alive. */
-          leave: () => {
-            release?.();
-            child.unref();
-          },
-        };
-      });
-      let recorded = false;
-      return yield* restore(
-        Effect.gen(function* () {
-          if (durable !== undefined && running.pid !== undefined) {
-            const processStart = processStartOf(running.pid);
-            if (processStart !== undefined)
-              recorded = yield* durable.started({
-                pid: running.pid,
-                processStart,
-                deadline,
-                pathValue,
-              });
-          }
-          return yield* Effect.promise(() => running.outcome);
-        }),
-      ).pipe(
-        // Interrupted, the group is stopped the same way, and the interruption waits for it;
-        // unless Gram is quitting and the next start can take it back.
-        Effect.onInterrupt(() =>
-          recorded && durable?.detach() === true
-            ? Effect.sync(running.leave)
-            : Effect.promise(running.stop),
-        ),
-      );
-    }),
-  );
-
-/** `ps`, at its path: an app opened from the Dock has launchd's PATH, and a shell may alias it. */
-const PS = ["/bin/ps", "/usr/bin/ps"].find((path) => existsSync(path)) ?? "ps";
-
-/** When `pid` started, as `ps` says it, in a fixed locale; undefined when it isn't there. */
-const processStartOf = (pid: number): string | undefined => {
-  try {
-    const out = execFileSync(PS, ["-o", "lstart=", "-p", String(pid)], {
-      env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
-      encoding: "utf8",
-      timeout: 5_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return out === "" ? undefined : out;
-  } catch {
-    return undefined;
-  }
-};
-
-/** The folder `pid` runs in; undefined when it can't be read. */
-const processCwdOf = (pid: number): string | undefined => {
-  try {
-    if (process.platform === "linux") return readlinkSync(`/proc/${pid}/cwd`);
-    const out = execFileSync("/usr/sbin/lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"], {
-      env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
-      encoding: "utf8",
-      timeout: 5_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const line = out.split("\n").find((each) => each.startsWith("n"));
-    return line === undefined ? undefined : line.slice(1);
-  } catch {
-    return undefined;
-  }
-};
-
-/**
- * Whether a process of the group `pgid` runs inside the worktree `work`: what a check leaves
- * behind inherits its folder, and no other process has a reason to be in Gram's own worktree.
- */
-const memberInWork = (pgid: number, work: string): boolean => {
-  try {
-    const members = execFileSync(PS, ["-A", "-o", "pid=,pgid="], {
-      env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
-      encoding: "utf8",
-      timeout: 5_000,
-      stdio: ["ignore", "pipe", "ignore"],
-      maxBuffer: 16 * 1024 * 1024,
-    })
-      .split("\n")
-      .map((line) => line.trim().split(/\s+/).map(Number))
-      .filter(([pid, group]) => group === pgid && Number.isInteger(pid))
-      .map(([pid]) => pid!);
-    const root = canonicalizeOrOwned(work);
-    return members.some((pid) => {
-      const cwd = processCwdOf(pid);
-      if (cwd === undefined) return false;
-      return isInside(root, canonicalizeOrOwned(cwd));
-    });
-  } catch {
-    return false;
-  }
-};
-
-/**
- * Whether the check's process group is still the one recorded. `ours`: its leader is there with
- * the recorded start time and, when `checkCwd`, folder. `gone`: no such group, or the PID now
- * names a process that started later, which it couldn't while the check's group was there.
- * Without its leader, the group is `ours` when, `checkCwd`, one of its processes runs inside the
- * worktree, and otherwise `leaderless`: only a caller who verified it before may take it as the
- * check's. `unsure`: the start time
- * matches but the folder doesn't, or can't be read.
- */
-const recordedGroup = (
-  job: { readonly pid: number; readonly processStart: string; readonly work: string },
-  checkCwd = true,
-): "ours" | "gone" | "leaderless" | "unsure" => {
-  if (!signalGroup(job.pid, 0)) return "gone";
-  const leaderless = () => (checkCwd && memberInWork(job.pid, job.work) ? "ours" : "leaderless");
-  try {
-    process.kill(job.pid, 0);
-  } catch {
-    return leaderless();
-  }
-  const start = processStartOf(job.pid);
-  if (start === undefined) return signalGroup(job.pid, 0) ? leaderless() : "gone";
-  if (start !== job.processStart) return "gone";
-  if (!checkCwd) return "ours";
-  const cwd = processCwdOf(job.pid);
-  return cwd !== undefined && canonicalizeOrOwned(cwd) === canonicalizeOrOwned(job.work)
-    ? "ours"
-    : "unsure";
-};
-
-/**
- * Stops the group `pgid` of a check Gram took back, which the caller has just verified as the
- * check's: while any of it is left, no other process can take its id. True once it is gone.
- */
-const stopVerifiedGroup = (pgid: number, graceMs = KILL_GRACE_MS) =>
-  stopGroup(pgid, () => (signalGroup(pgid, 0) ? "ours" : "gone"), graceMs);
-
-/** How many seconds a group without its leader, unverified, gets to be gone before it is kept. */
-const LEADERLESS_WAITS = 5;
-
-/** In a work folder, marks a worktree kept because its processes weren't shown gone. */
-const RETAINED = "retained";
-
-/** Marks the work folder of the worktree `dir` as kept: nothing reclaims it. */
-const markRetained = (dir: string) => {
-  try {
-    writeFileSync(nodePath.join(nodePath.dirname(dir), RETAINED), "");
-  } catch {
-    // The worktree is kept regardless; only retention reads this.
-  }
-};
-
-/** The status the wrapper wrote, or undefined when it wrote none. */
-export const readExitStatus = (path: string): number | undefined => {
-  try {
-    const text = readFileSync(path, "utf8").trim();
-    return /^\d{1,3}$/.test(text) ? Number(text) : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-/** How a check ended that Gram took back, from what its wrapper wrote and its log's end. */
-const recordedOutcome = (code: number, log: string, pathValue: string): LocalCheckOutcome =>
-  diagnoseExit(code, null, readTail(log), pathValue);
-
 export interface LocalChecksShape {
   readonly configuration: (
-    repoDir: string,
+    repoDir: CheckSite,
     projectId?: ProjectId,
   ) => Effect.Effect<{
     readonly project: string;
@@ -1331,7 +776,7 @@ export interface LocalChecksShape {
 
   /** The check of `head` merged onto `base`, in `repoDir`'s repository, if one ran or runs. */
   readonly lookup: (
-    repoDir: string,
+    repoDir: CheckSite,
     head: string | undefined,
     base: string | undefined,
     projectId?: ProjectId,
@@ -1342,7 +787,7 @@ export interface LocalChecksShape {
    * the same managed queue; its pass cannot satisfy the cutoff. Undefined for unknown commits.
    */
   readonly ensure: (
-    repoDir: string,
+    repoDir: CheckSite,
     head: string,
     base: string,
     options: {
@@ -1359,7 +804,7 @@ export interface LocalChecksShape {
    * `lookup`'s, which reads the merged tree.
    */
   readonly latest: (
-    repoDir: string,
+    repoDir: CheckSite,
     head: string,
     base: string,
     project?: Project,
@@ -1456,8 +901,13 @@ const keyOf = (
   head: string,
   base: string,
   tree: string | null,
-  run: Parameters<typeof runIdOf>[0],
-) => `${head}:${base}:${tree ?? "conflict"}:${runIdOf(run)}`;
+  run: Parameters<typeof runIdOf>[0] & { readonly machine?: string | undefined },
+) =>
+  // A joined machine's check is asked for before its host says what tree it merged: the pair
+  // names it, as the tree names nothing a pair doesn't already.
+  run.machine === undefined
+    ? `${head}:${base}:${tree ?? "conflict"}:${runIdOf(run)}`
+    : `machine:${run.machine}:${head}:${base}:${runIdOf(run)}`;
 
 /** A broken database is a defect, as in `ThreadStore`. */
 const run = <A>(effect: Effect.Effect<A, SqlError>) =>
@@ -1734,6 +1184,10 @@ export const LocalChecksLive = Layer.effect(
     const proc = yield* Proc;
     const runner = yield* LocalCheckRunner;
     const { dataDir } = yield* ServerConfig;
+    /** The machines joined to this Gram, whose threads' checks run through their hosts. */
+    const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
+    const reattachMs = yield* MachineReattachMs;
+    const machineName = (id: string) => remoteHosts?.machines.get(id)?.name ?? id;
     const records = new Map<string, LocalCheck>();
     /** `${head}:${base}` to the latest of its records. */
     const latestByPair = new Map<string, LocalCheck>();
@@ -1764,13 +1218,26 @@ export const LocalChecksLive = Layer.effect(
       Effect.map((settings) => localCheckConcurrencyOf(settings, cores)),
     );
     /** Each queued check reads how many wait ahead of it. */
-    const admission = makeAdmission<string>(capacity, (waiting) =>
+    const queuedNote = (waiting: ReadonlyArray<string>) =>
       waiting.forEach((key, ahead) => {
         const queued = records.get(key);
         if (queued?.status === "running")
           remember(key, { ...queued, reason: `queued for local check (${ahead} ahead)` });
-      }),
-    );
+      });
+    const admission = makeAdmission<string>(capacity, queuedNote);
+    /**
+     * Each joined machine's own slot, one check at a time there: a check on another machine never
+     * waits behind this one's, nor this one's behind it.
+     */
+    const machineAdmissions = new Map<string, ReturnType<typeof makeAdmission<string>>>();
+    const machineAdmission = (hostId: string) => {
+      let found = machineAdmissions.get(hostId);
+      if (found === undefined) {
+        found = makeAdmission<string>(Effect.succeed(1), queuedNote);
+        machineAdmissions.set(hostId, found);
+      }
+      return found;
+    };
     /**
      * Runs `effect` once a slot is free, in turn; `record` is how the check reads once it runs.
      * Gram quitting interrupts a wait as readily as a run.
@@ -1852,6 +1319,7 @@ export const LocalChecksLive = Layer.effect(
       );
     const configuration: LocalChecksShape["configuration"] = (repoDir, projectId) =>
       Effect.gen(function* () {
+        if (typeof repoDir !== "string") return yield* machineConfiguration(repoDir, projectId);
         const common = yield* g(repoDir, [
           "rev-parse",
           "--path-format=absolute",
@@ -1992,6 +1460,18 @@ export const LocalChecksLive = Layer.effect(
           return undefined;
         const { config: wanted } = yield* configuration(repoDir, projectId);
         if (wanted === undefined) return undefined;
+        if (typeof repoDir !== "string") {
+          const found = records.get(
+            keyOf(head, base, null, { ...wanted, machine: repoDir.hostId }),
+          );
+          return found?.head === head &&
+            found.base === base &&
+            found.machine === repoDir.hostId &&
+            found.isolation === wanted.isolation &&
+            runIdOf(found) === runIdOf(wanted)
+            ? found
+            : undefined;
+        }
         // Without fetching: a pair Gram never fetched has no check of it.
         const own = yield* ownRepoOf(repoDir, wanted);
         const tree = yield* treeOf(own, repoDir, head, base, false, wanted);
@@ -2259,6 +1739,225 @@ export const LocalChecksLive = Layer.effect(
       );
     };
 
+    /**
+     * The project's check as a joined machine runs it: the project is the thread's own, since this
+     * machine can't read the checkout there. A host too old to run checks has none, as a project
+     * without a command has none; a selected-source check doesn't run there yet.
+     */
+    const machineConfiguration = (site: MachineCheckSite, projectId: ProjectId | undefined) =>
+      Effect.gen(function* () {
+        const projects = yield* store.listProjects;
+        const found =
+          projectId === undefined ? undefined : projects.find((each) => each.id === projectId);
+        const project = found?.name ?? nodePath.basename(site.path);
+        const name = machineName(site.hostId);
+        const off = (why: string) => ({
+          project,
+          config: undefined,
+          reason: `${why}; local gate OFF — CI and GitHub rules apply`,
+        });
+        if (remoteHosts?.machines.get(site.hostId) === undefined)
+          return off(`no local check on ${name}: it isn't joined to this Gram`);
+        const config = localCheckRunFor(
+          found?.localCheck,
+          found?.id,
+          found?.localCheckUnavailable,
+          found?.localCheckRevision,
+        );
+        if (config === undefined) return off(`no local check configured for ${project}`);
+        // Offline, it can't say what it runs: the check waits for it rather than the gate opening.
+        const online = yield* remoteHosts.connection(site.hostId).pipe(Effect.option);
+        if (Option.isSome(online) && online.value.checks === undefined)
+          return off(
+            `no local check on ${name}: its gram-host is older than this Gram and runs none (run the install command there again to update it)`,
+          );
+        const refused =
+          config.refusal === undefined && config.preparation !== undefined
+            ? { ...config, refusal: `a selected-source check doesn't run on ${name} yet` }
+            : config;
+        return {
+          project,
+          config: refused,
+          reason: refused.refusal ?? `local check configured for ${project}, on ${name}`,
+        };
+      });
+
+    /** How a joined machine's run ended, as its record keeps it. */
+    const machineEnded = (
+      running: LocalCheck,
+      result: HostCheckResult,
+      finishedAt: number,
+    ): LocalCheck => ({
+      ...endedAs(running, result, finishedAt),
+      tree: result.tree ?? "",
+      ...(result.mergedCommit === undefined ? {} : { mergedCommit: result.mergedCommit }),
+      host: result.host,
+    });
+
+    /**
+     * Runs the check on the machine `site` is on, through its host, in that machine's own slot.
+     * The host is asked under one id throughout: a connection that drops while it runs is waited
+     * for (`MachineReattachMs`) and asked again, which joins the run still going there or hears
+     * how it ended. Only the host's own answer is a result; a machine that doesn't come back in
+     * time leaves the check unknown, a failure that runs again when asked, never a pass.
+     */
+    const machineCheck = (
+      site: MachineCheckSite,
+      key: string,
+      started: LocalCheck,
+      wanted: LocalCheckRun,
+    ) => {
+      const name = machineName(site.hostId);
+      const request = {
+        id: randomUUID(),
+        path: site.path,
+        ...(site.repoRoot === undefined ? {} : { repoRoot: site.repoRoot }),
+        head: started.head,
+        base: started.base,
+        command: wanted.command,
+        ...(wanted.setup === undefined ? {} : { setup: wanted.setup }),
+        timeoutMs: wanted.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
+      };
+      const failed = (
+        reason: string,
+        kind: LocalCheckFailure["kind"],
+      ): HostCheckResult & LocalCheckOutcome => ({
+        tree: null,
+        ok: false,
+        reason,
+        failure: { kind },
+        host: name,
+      });
+      const body = Effect.gen(function* () {
+        if (wanted.refusal !== undefined) return failed(wanted.refusal, "unstartable");
+        if (remoteHosts === undefined)
+          return failed(`${name} isn't joined to this Gram`, "unstartable");
+        const deadline = (yield* Clock.currentTimeMillis) + request.timeoutMs + MACHINE_SLACK_MS;
+        /** Since when the machine has been away, while the check waits for it. */
+        let away: number | undefined;
+        let asked = false;
+        for (;;) {
+          const now = yield* Clock.currentTimeMillis;
+          if (now >= deadline)
+            return failed(
+              `no word from ${name} on how its check ended, past its timeout; run local_check again`,
+              "stopped",
+            );
+          if (away !== undefined && now - away >= reattachMs)
+            return asked
+              ? failed(
+                  `the connection to ${name} dropped while its check ran and didn't come back in time, so how it ended is unknown; run local_check again`,
+                  "stopped",
+                )
+              : failed(
+                  `${name} is offline, so its check couldn't run; run local_check again once it is back`,
+                  "unstartable",
+                );
+          const connection = yield* remoteHosts.connection(site.hostId).pipe(Effect.option);
+          if (Option.isNone(connection)) {
+            away ??= now;
+            yield* Effect.sleep(Math.min(MACHINE_POLL_MS, reattachMs));
+            continue;
+          }
+          const checks = connection.value.checks;
+          if (checks === undefined)
+            return failed(
+              `${name}'s gram-host is older than this Gram and runs no local checks; run the install command there again to update it`,
+              "unstartable",
+            );
+          asked = true;
+          const answer = yield* checks.run(request).pipe(Effect.exit);
+          if (Exit.isSuccess(answer)) return answer.value;
+          const error = Cause.findErrorOption(answer.cause);
+          if (Option.isSome(error) && error.value._tag === "HostFailed")
+            return failed(`${name} couldn't run it: ${error.value.message}`, "unstartable");
+          if (Option.isNone(error)) return yield* Effect.failCause(answer.cause);
+          // The connection went before the host answered: wait for it, then ask again.
+          away = yield* Clock.currentTimeMillis;
+          yield* Effect.logInfo(
+            "local check: a joined machine's connection dropped mid-check",
+          ).pipe(Effect.annotateLogs({ hostId: site.hostId, head: started.head }));
+        }
+      });
+      return machineAdmission(site.hostId)
+        .inTurn(
+          key,
+          Effect.suspend(() => {
+            remember(key, started);
+            return body;
+          }),
+        )
+        .pipe(
+          Effect.catchDefect((defect) =>
+            Effect.succeed(failed(`Gram's check failed to run: ${String(defect)}`, "unstartable")),
+          ),
+          Effect.flatMap((result) =>
+            Effect.gen(function* () {
+              if (started.log !== undefined) {
+                const text = result.log ?? result.reason ?? "";
+                yield* Effect.sync(() => {
+                  try {
+                    writeFileSync(started.log!, text.endsWith("\n") ? text : `${text}\n`, {
+                      mode: 0o600,
+                    });
+                  } catch {
+                    // The record keeps how it ended regardless.
+                  }
+                });
+              }
+              yield* finish(key, machineEnded(started, result, yield* Clock.currentTimeMillis));
+            }),
+          ),
+        );
+    };
+
+    /** `ensure` for a thread on a joined machine: the same reuse, the run on that machine. */
+    const machineEnsure = (
+      site: MachineCheckSite,
+      head: string,
+      base: string,
+      wanted: LocalCheckRun,
+      options: {
+        readonly since: number;
+        readonly after?: number | undefined;
+        readonly onDone: (check: LocalCheck) => Effect.Effect<void>;
+      },
+    ) =>
+      Effect.gen(function* () {
+        const key = keyOf(head, base, null, { ...wanted, machine: site.hostId });
+        const known = records.get(key);
+        if (
+          known?.status === "passed" &&
+          (options.after === undefined || known.startedAt > options.after)
+        )
+          return known;
+        if (known?.status === "running") {
+          waiters.set(key, [...(waiters.get(key) ?? []), options.onDone]);
+          return known;
+        }
+        if (known?.status === "failed" && (known.finishedAt ?? 0) >= options.since) return known;
+        const logs = nodePath.join(dataDir, "local-checks");
+        yield* Effect.sync(() => mkdirSync(logs, { recursive: true }));
+        const started: LocalCheck = {
+          head,
+          base,
+          tree: "",
+          status: "running",
+          ...wanted,
+          machine: site.hostId,
+          startedAt: yield* Clock.currentTimeMillis,
+          host: machineName(site.hostId),
+          log: nodePath.join(
+            logs,
+            `${head.slice(0, 12)}-${base.slice(0, 12)}-${createHash("sha256").update(site.hostId).digest("hex").slice(0, 12)}-${runIdOf(wanted)}.log`,
+          ),
+        };
+        yield* save(key, started);
+        waiters.set(key, [options.onDone]);
+        yield* FiberMap.run(fibers, ++runs, machineCheck(site, key, started, wanted));
+        return started;
+      });
+
     const ensure: LocalChecksShape["ensure"] = (
       repoDir,
       head,
@@ -2269,6 +1968,8 @@ export const LocalChecksLive = Layer.effect(
         if (!SHA.test(head) || !SHA.test(base)) return undefined;
         const { config: wanted } = yield* configuration(repoDir, projectId);
         if (wanted === undefined) return undefined;
+        if (typeof repoDir !== "string")
+          return yield* machineEnsure(repoDir, head, base, wanted, { since, onDone, after });
         const own = yield* ownRepoOf(repoDir, wanted);
         const tree = yield* treeOf(own, repoDir, head, base, true, wanted);
         const startedAt = yield* Clock.currentTimeMillis;

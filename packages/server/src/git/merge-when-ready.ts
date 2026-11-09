@@ -12,6 +12,7 @@
 import {
   AppToolError,
   currentBaseOf,
+  isLocalHost,
   samePr,
   mergePolicyReady,
   mergeReviewPolicyOf,
@@ -52,7 +53,7 @@ import { type MergeFence, type PendingMerge } from "../persistence/merge-fence.t
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { isBadgeOf } from "./extra-prs.ts";
-import { LocalChecks, type LocalCheck } from "./local-checks.ts";
+import { type CheckSite, checkSiteOf, LocalChecks, type LocalCheck } from "./local-checks.ts";
 import { MergeFreezes } from "./merge-freezes.ts";
 import { GitRefresh } from "./platform.ts";
 import { GitStatePublisher } from "./publisher.ts";
@@ -150,6 +151,15 @@ const repoDirOf = (thread: Thread) =>
       ? cwd
       : thread.checkout.repoRoot;
   });
+
+/**
+ * Where the thread's check runs: its repository's folder `here` on this machine, or its checkout on
+ * the joined machine it is on, whose host runs it. Never a look at this disk for a folder there.
+ */
+const checkSiteFor = (thread: Thread, here: Effect.Effect<string>): Effect.Effect<CheckSite> =>
+  isLocalHost(thread.checkout)
+    ? here
+    : Effect.succeed(checkSiteOf(thread.checkout, thread.checkout.path));
 
 /** A folder to start `gh` in for the thread's PR, which every call names with `--repo`. */
 const ghDirOf = (thread: Thread) => ghFolderOf(thread.checkout);
@@ -314,7 +324,7 @@ export const MergeWhenReadyLive = Layer.effect(
       Effect.gen(function* () {
         if (localChecks === undefined) return undefined;
         const found = yield* localChecks.lookup(
-          yield* repoDirOf(thread),
+          yield* checkSiteFor(thread, repoDirOf(thread)),
           badge.headRefOid,
           currentBaseOf(badge),
           thread.projectId,
@@ -1106,7 +1116,10 @@ export const MergeWhenReadyLive = Layer.effect(
         const configuration =
           localChecks === undefined
             ? undefined
-            : yield* localChecks.configuration(cwd, thread.value.projectId);
+            : yield* localChecks.configuration(
+                yield* checkSiteFor(thread.value, Effect.succeed(cwd)),
+                thread.value.projectId,
+              );
         const gateNotice =
           (yield* policyFor(thread.value, bound.repo)).policy === "solo" &&
           configuration?.config === undefined
@@ -1302,7 +1315,7 @@ export const MergeWhenReadyLive = Layer.effect(
           return `GitHub still reads ${base.slice(0, 7)} as a base Gram moved on from`;
         // Read before the turn is taken, so nothing stands between taking it and the check that
         // hands it on.
-        const dir = yield* repoDirOf(thread);
+        const dir = yield* checkSiteFor(thread, repoDirOf(thread));
         const claim = yield* claimTurn(key, thread.id, bound, listener);
         if (claim === "running") return undefined;
         if (claim !== "claimed") return claim.waits;
@@ -1526,14 +1539,15 @@ export const MergeWhenReadyLive = Layer.effect(
             refused: `${prName(bound)} isn't this worker's own pull request: ${reason}${unblocks ? `. ${fix.replace(/\.$/, "")}` : ""}`,
           };
         }
-        const configuration = yield* localChecks.configuration(cwd, thread.value.projectId);
+        const site = yield* checkSiteFor(thread.value, Effect.succeed(cwd));
+        const configuration = yield* localChecks.configuration(site, thread.value.projectId);
         if (configuration.config === undefined) return { refused: configuration.reason };
         if (configuration.config.refusal !== undefined)
           return { refused: configuration.config.refusal };
-        const before = yield* localChecks.lookup(cwd, head, base, thread.value.projectId);
+        const before = yield* localChecks.lookup(site, head, base, thread.value.projectId);
         if (options?.start === false) return { check: before, reused: false };
         const requestedAt = yield* Clock.currentTimeMillis;
-        const found = yield* localChecks.ensure(cwd, head, base, {
+        const found = yield* localChecks.ensure(site, head, base, {
           projectId: thread.value.projectId,
           since: requestedAt,
           ...(verificationAfter.has(baseKey(bound.repo, badge.baseRef))

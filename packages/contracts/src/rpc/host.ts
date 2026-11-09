@@ -49,6 +49,11 @@ export const HostCapability = Schema.Literals([
    * outcome, so a control plane unsure whether one arrived can ask again.
    */
   "deliveries",
+  /**
+   * Runs a project's check of a head merged onto its base in the host's own repository, once per
+   * check id, answering a repeat with the run already under way or its result.
+   */
+  "checks",
 ]);
 export type HostCapability = typeof HostCapability.Type;
 
@@ -124,6 +129,31 @@ export class HostCommandFailed extends Schema.TaggedError<HostCommandFailed>()(
     message: Schema.String,
   },
 ) {}
+
+/** Why a check on the host didn't pass, as the control plane records it. */
+export const HostCheckFailure = Schema.Struct({
+  kind: Schema.Literals(["not-found", "timed-out", "exited", "stopped", "unstartable", "conflict"]),
+  command: Schema.optionalKey(Schema.String),
+  path: Schema.optionalKey(Schema.String),
+  exitCode: Schema.optionalKey(Schema.Number),
+  tail: Schema.optionalKey(Schema.String),
+});
+
+/** How a check on the host ended, and what it checked. */
+export const HostCheckResult = Schema.Struct({
+  /** The tree of the head merged onto the base; null when they conflict. */
+  tree: Schema.NullOr(Schema.String),
+  /** The throwaway commit of that tree the check ran on. */
+  mergedCommit: Schema.optionalKey(Schema.String),
+  ok: Schema.Boolean,
+  reason: Schema.optionalKey(Schema.String),
+  failure: Schema.optionalKey(HostCheckFailure),
+  /** The end of the run's output, bounded. */
+  log: Schema.optionalKey(Schema.String),
+  /** The host machine's own name. */
+  host: Schema.String,
+});
+export type HostCheckResult = typeof HostCheckResult.Type;
 
 /** A new worktree, or the one the request reused. */
 export const HostCreatedWorktree = Schema.Struct({
@@ -383,6 +413,25 @@ export const HostRpcs = RpcGroup.make(
     payload: { repoPath: Schema.String, worktreeDir: Schema.String },
     success: Schema.Array(Schema.String),
     error: worktreeErrors,
+  }),
+  /**
+   * Checks `head` merged onto `base`, from the repository of the checkout at `path` (or the clone
+   * at `repoRoot`), with the project's command, on a host that serves `checks`. Taken once per `id`:
+   * a repeat joins the run under way, or answers with how it ended.
+   */
+  Rpc.make("host.checks.run", {
+    payload: {
+      id: Schema.String,
+      path: Schema.String,
+      repoRoot: Schema.optionalKey(Schema.String),
+      head: Schema.String,
+      base: Schema.String,
+      command: Schema.String,
+      setup: Schema.optionalKey(Schema.String),
+      timeoutMs: PositiveInt,
+    },
+    success: HostCheckResult,
+    error: HostFailed,
   }),
   /** A checkout's local git state: branch, changes, HEAD. */
   Rpc.make("host.git.local", {

@@ -45,7 +45,7 @@ import {
   rebindBlocker,
 } from "../git/extra-prs.ts";
 import { GitRefresh } from "../git/platform.ts";
-import { LocalChecks } from "../git/local-checks.ts";
+import { checkSiteOf, LocalChecks } from "../git/local-checks.ts";
 import { MergeFreezes } from "../git/merge-freezes.ts";
 import { mergeBlocker, MergeWhenReady, parsePrRef, prName } from "../git/merge-when-ready.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
@@ -367,7 +367,10 @@ export const PrAppToolsLive = Layer.effectDiscard(
           const configuration =
             localChecks === undefined
               ? undefined
-              : yield* localChecks.configuration(thread.checkout.path, thread.projectId);
+              : yield* localChecks.configuration(
+                  checkSiteOf(thread.checkout, thread.checkout.path),
+                  thread.projectId,
+                );
           // Solo merges accept Gram's own check of the head merged onto the base in place of CI.
           const localCheck =
             reviewPolicy === "solo" &&
@@ -375,7 +378,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
             localChecks !== undefined &&
             configuration?.config?.refusal === undefined
               ? yield* localChecks.lookup(
-                  thread.checkout.path,
+                  checkSiteOf(thread.checkout, thread.checkout.path),
                   badge.headRefOid,
                   currentBaseOf(badge),
                   thread.projectId,
@@ -1106,7 +1109,10 @@ export const PrAppToolsLive = Layer.effectDiscard(
           const configuration =
             localChecks === undefined
               ? undefined
-              : yield* localChecks.configuration(updated.checkout.path, updated.projectId);
+              : yield* localChecks.configuration(
+                  checkSiteOf(updated.checkout, updated.checkout.path),
+                  updated.projectId,
+                );
           const localGate =
             (yield* reviewPolicyFor(updated, pr.repo)) === "solo" &&
             configuration !== undefined &&
