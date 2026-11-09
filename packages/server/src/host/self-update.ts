@@ -24,8 +24,6 @@ import {
   existsSync,
   fstatSync,
   fsyncSync,
-  linkSync,
-  lstatSync,
   mkdtempSync,
   openSync,
   readFileSync,
@@ -44,6 +42,7 @@ import type {
 } from "@gram/contracts";
 import { relativeInside } from "@gram/git";
 import type { Admission } from "./admission.ts";
+import { lockPort, takeUpdateLock, updateLockState } from "./update-lock.ts";
 import { RELEASES } from "./install-script.ts";
 import { LAUNCHD_LABEL, type ServiceCommand } from "./service.ts";
 
@@ -159,7 +158,7 @@ export interface UpdatePlan {
   /**
    * `switching` until the new host is asked `host.update.check`, then `confirmed`; or
    * `rollingBack` once its supervisor gave up on it, which no late confirmation undoes; then
-   * `done`. Each move between them is made under `PLAN_LOCK_FILE`.
+   * `done`. Each move between them is made under the plan lock (`update-lock.ts`).
    */
   readonly phase: "switching" | "confirmed" | "rollingBack" | "done";
   readonly startedAt: number;
@@ -176,10 +175,6 @@ export const PLAN_ID = /^[a-f0-9]{16}$/;
  * for the supervisor to start.
  */
 export const STALE_MS = CONFIRM_MS + 60_000;
-/** The supervisor's lock, in the host's folder: only one supervisor acts at a time. */
-export const LOCK_FILE = "update.lock";
-/** Held for each move of the plan's phase, so a confirmation and a rollback can't cross. */
-export const PLAN_LOCK_FILE = "update.plan.lock";
 
 const readPlan = (home: string): UpdatePlan | undefined => {
   let fd: number;
@@ -225,142 +220,26 @@ const writePlan = (home: string, plan: UpdatePlan) => {
   renameSync(temporary, path);
 };
 
-/** Whether the process `pid` is still running (one of another user counts as running). */
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-};
-
-/** A lock as its file holds it: who took it, and a nonce of its own that fences it. */
-export interface Lock {
-  readonly id: string;
-  readonly pid: number;
-  readonly nonce: string;
-}
-
-const lockBody = (path: string): Lock | undefined => {
-  try {
-    const value = JSON.parse(readFileSync(path, "utf8")) as Partial<Lock> | null;
-    return value !== null &&
-      typeof value.id === "string" &&
-      typeof value.pid === "number" &&
-      typeof value.nonce === "string"
-      ? (value as Lock)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
 /**
- * What the lock file at `path` says: none; held by a live process; or stale, its holder dead. One
- * that can't be read counts as held (it is never half-written, so it is something else), until it
- * is older than `STALE_MS`.
+ * Whether a supervisor holds the update's lock now. A port another program holds counts as held
+ * too: no supervisor could take it, so no update should start.
  */
-const lockState = (
-  path: string,
-): { readonly kind: "absent" } | { readonly kind: "held" | "stale"; readonly body?: Lock } => {
-  let modified: number;
-  try {
-    modified = lstatSync(path).mtimeMs;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "absent" };
-    return { kind: "held" };
-  }
-  const body = lockBody(path);
-  if (body === undefined) return { kind: Date.now() - modified > STALE_MS ? "stale" : "held" };
-  return { kind: alive(body.pid) ? "held" : "stale", body };
-};
+export const supervisorRunning = async (home: string): Promise<boolean> =>
+  (await updateLockState(home, "supervisor")) !== "free";
 
 /**
- * Publishes `body` as the lock at `path`, whole: written to a file of its own first, then linked
- * into place, which fails if the name is taken. No reader ever sees it half-written.
- */
-const publishLock = (path: string, body: Lock): boolean => {
-  const temporary = `${path}.${body.nonce}.tmp`;
-  const fd = openSync(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
-  try {
-    writeSync(fd, JSON.stringify(body));
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  try {
-    linkSync(temporary, path);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
-    throw error;
-  } finally {
-    rmSync(temporary, { force: true });
-  }
-};
-
-/**
- * Takes the lock at `path` for `id`, or undefined while another live process holds it. A stale
- * lock is taken over fenced: it is renamed aside, and only if what was moved is the very lock found
- * stale (by its nonce) is it dropped; a live lock published meanwhile is put back. Its holder
- * checks it still owns the lock (`ownsLock`) before each thing it does, so even one that lost it
- * acts no further.
- */
-export const takeLock = (path: string, id: string): Lock | undefined => {
-  const mine: Lock = { id, pid: process.pid, nonce: randomBytes(12).toString("hex") };
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    if (publishLock(path, mine)) return mine;
-    const found = lockState(path);
-    if (found.kind === "absent") continue;
-    if (found.kind === "held") return undefined;
-    const aside = `${path}.stale-${mine.nonce}-${attempt}`;
-    try {
-      renameSync(path, aside);
-    } catch {
-      continue;
-    }
-    const moved = lockBody(aside);
-    if (moved?.nonce === found.body?.nonce) {
-      rmSync(aside, { force: true });
-      continue;
-    }
-    // Moved a lock taken since it was found stale: back it goes, and this one doesn't take it.
-    try {
-      linkSync(aside, path);
-    } catch {
-      // Taken again meanwhile: its holder sees it lost the lock before it acts.
-    }
-    rmSync(aside, { force: true });
-    return undefined;
-  }
-  return undefined;
-};
-
-/** Whether `lock` is still the lock at `path`. */
-export const ownsLock = (path: string, lock: Lock): boolean => lockBody(path)?.nonce === lock.nonce;
-
-const dropLock = (path: string, lock: Lock) => {
-  if (ownsLock(path, lock)) rmSync(path, { force: true });
-};
-
-/** Whether a live supervisor holds the update's lock, or one that can't be read may. */
-export const supervisorRunning = (home: string): boolean =>
-  lockState(join(home, LOCK_FILE)).kind === "held";
-
-/**
- * Runs `move` with the plan lock held: the one place the plan's phase changes. Waits a few
- * seconds for it; a lock held longer than that counts as a failure to move.
+ * Runs `move` with the plan lock held: the one place the plan's phase changes, so a confirmation
+ * and a rollback can't cross. Waits a few seconds for it; a lock held longer than that counts as a
+ * failure to move.
  */
 const withPlanLock = async <A>(home: string, move: () => A): Promise<A> => {
-  const path = join(home, PLAN_LOCK_FILE);
   for (let tries = 0; tries < 250; tries += 1) {
-    const lock = takeLock(path, "plan");
+    const lock = await takeUpdateLock(home, "plan");
     if (lock !== undefined) {
       try {
         return move();
       } finally {
-        dropLock(path, lock);
+        await lock.release();
       }
     }
     await wait(20);
@@ -598,8 +477,13 @@ export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
       const pending = readPlan(deps.home);
       if (pending !== undefined && pending.phase !== "done")
         return refusal("failed", `An update to ${pending.release} is still under way.`);
-      if (supervisorRunning(deps.home))
-        return refusal("failed", "An update's supervisor is still running.");
+      const lock = await updateLockState(deps.home, "supervisor");
+      if (lock === "held") return refusal("failed", "An update's supervisor is still running.");
+      if (lock === "foreign")
+        return refusal(
+          "failed",
+          `Another program uses port ${lockPort(deps.home, "supervisor")} on this machine, which gram-host's update needs.`,
+        );
       const before = await deps.busy();
       if (isBusy(before)) return refusal("busy", `It is busy: ${busyText(before)}.`, before);
       const ready = await prepare(release, asset, progress);
@@ -735,18 +619,13 @@ export const superviseUpdate = async (
   id: string,
   mode: SupervisorMode = "switch",
 ): Promise<HostUpdateOutcome | undefined> => {
-  const lockPath = join(deps.home, LOCK_FILE);
-  const lock = takeLock(lockPath, id);
+  // Held by the kernel for as long as this process runs: no second supervisor can take it, and
+  // it is free again once this one ends, however it ends.
+  const lock = await takeUpdateLock(deps.home, "supervisor");
   if (lock === undefined) {
     deps.log("gram-host: another update's supervisor is running; this one leaves it alone.");
     return undefined;
   }
-  /** Before each thing it does: one that lost its lock stops there. */
-  const stillOwns = () => {
-    if (ownsLock(lockPath, lock)) return true;
-    deps.log("gram-host: this update's supervisor lost its lock, so it stops here.");
-    return false;
-  };
   try {
     const plan = readPlan(deps.home);
     // A rollback picks up a plan left rolling back by a supervisor that died mid-way.
@@ -773,7 +652,6 @@ export const superviseUpdate = async (
     const back = plan.from === undefined ? "the app it ran" : plan.from;
     /** The new host confirmed it: the app it ran before goes. */
     const succeed = async (): Promise<HostUpdateOutcome | undefined> => {
-      if (!stillOwns()) return undefined;
       if (previousApp !== undefined && previousApp !== nextApp)
         rmSync(previousApp, { recursive: true, force: true });
       if (deps.shim !== undefined) {
@@ -813,7 +691,6 @@ export const superviseUpdate = async (
           message: `${message} The app it ran before is gone, so nothing was moved back; rerun the installer there.`,
           at: deps.now(),
         });
-      if (!stillOwns()) return undefined;
       try {
         await deps.install(plan.previous);
       } catch (error) {
@@ -825,7 +702,6 @@ export const superviseUpdate = async (
           at: deps.now(),
         });
       }
-      if (!stillOwns()) return undefined;
       if (previousApp !== nextApp) rmSync(nextApp, { recursive: true, force: true });
       return finish({ release: plan.release, outcome: "rolledBack", message, at: deps.now() });
     };
@@ -833,7 +709,6 @@ export const superviseUpdate = async (
       return await rollBack(
         `The machine restarted before Gram ${plan.release} dialled in, so it went back to ${back}.`,
       );
-    if (!stillOwns()) return undefined;
     try {
       await deps.install(plan.next);
     } catch (error) {
@@ -852,7 +727,7 @@ export const superviseUpdate = async (
       `Gram ${plan.release} didn't dial in within ${Math.round((deps.confirmMs ?? CONFIRM_MS) / 60_000)} minutes.`,
     );
   } finally {
-    dropLock(lockPath, lock);
+    await lock.release();
   }
 };
 
@@ -868,7 +743,8 @@ export const recoverUpdate = async (deps: {
   readonly handOver: (plan: UpdatePlan, mode: SupervisorMode) => Promise<void>;
 }): Promise<"rollback" | "finished" | undefined> => {
   const plan = readPlan(deps.home);
-  if (plan === undefined || plan.phase === "done" || supervisorRunning(deps.home)) return undefined;
+  if (plan === undefined || plan.phase === "done" || (await supervisorRunning(deps.home)))
+    return undefined;
   if (plan.phase === "confirmed") {
     const finished = await withPlanLock(deps.home, () => {
       const now = readPlan(deps.home);
@@ -1019,7 +895,7 @@ export const handOverToSupervisor =
   (platform: NodeJS.Platform) =>
   async (plan: UpdatePlan, mode: SupervisorMode): Promise<void> => {
     // Never a second supervisor beside one still running.
-    if (supervisorRunning(plan.previous.home))
+    if (await supervisorRunning(plan.previous.home))
       throw new Error("An update's supervisor is still running.");
     const command = supervisorCommand(plan.previous, plan.id, mode);
     if (platform === "darwin") {

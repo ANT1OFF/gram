@@ -8,7 +8,8 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -35,7 +36,7 @@ import {
   busyText,
   compareReleases,
   makeSelfUpdate,
-  LOCK_FILE,
+  supervisorRunning,
   recoverUpdate,
   releaseAsset,
   STALE_MS,
@@ -48,6 +49,7 @@ import {
 } from "./self-update.ts";
 import { hostUpdaterOf } from "./self-update-host.ts";
 import { makeAdmission, UPDATING } from "./admission.ts";
+import { lockPort } from "./update-lock.ts";
 import type { ServiceCommand } from "./service.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
@@ -591,7 +593,7 @@ describe("review regressions", () => {
     expect(await second).toBeUndefined();
     expect(secondSupervisor.installed).toEqual([]);
     expect(readFileSyncDir(fixture.apps)).toEqual([NEW]);
-    expect(existsSync(join(fixture.home, LOCK_FILE))).toBe(false);
+    expect(await supervisorRunning(fixture.home)).toBe(false);
   });
 
   it("removes only the app it ran before, not one staged since", async () => {
@@ -697,147 +699,165 @@ describe("review regressions", () => {
   });
 });
 
-/** A pid no process has now: one that ran and ended. */
-const deadPid = () => {
-  const ended = spawnSync(process.execPath, ["-e", ""]);
-  return ended.pid!;
-};
-
 /**
- * A supervisor of `plan` in a process of its own, as two would run on a machine. With `pause` it
- * stops itself (SIGSTOP) the moment its lock is in place, before it reads anything.
+ * A supervisor of `plan` in a process of its own, as two would run on a machine. Its service move
+ * never ends, so it holds the lock until it is killed. With `pauseAtRename`, the third review's
+ * preload: it stops itself just before and just after renaming `update.lock`, which is how a stale
+ * takeover on 5aecc08e displaced a live lock. Nothing renames a lock now, so it never stops.
  */
 const supervisorProcess = (
   fixture: { readonly home: string; readonly apps: string },
   id: string,
-  pause: boolean,
+  name: string,
+  pauseAtRename = false,
 ) => {
   const moduleUrl = pathToFileURL(fileURLToPath(new URL("./self-update.ts", import.meta.url))).href;
-  const script = join(fixture.home, `supervisor-${pause ? "paused" : "free"}.mjs`);
+  const script = join(fixture.home, `supervisor-${name}.mjs`);
   writeFileSync(
     script,
     `import { superviseUpdate } from ${JSON.stringify(moduleUrl)};
 import { writeSync } from "node:fs";
+// As a real service move does (it runs launchctl or systemctl), this keeps the process alive.
+const alive = setInterval(() => {}, 1000);
 const outcome = await superviseUpdate({
   home: process.argv[2], apps: process.argv[3], now: () => 0, sleep: async () => {}, log: () => {},
   install: async () => { writeSync(1, "INSTALL\\n"); await new Promise(() => {}); },
 }, process.argv[4]);
 writeSync(1, "DONE " + JSON.stringify(outcome ?? null) + "\\n");
+clearInterval(alive);
 process.exit(0);
 `,
   );
-  // Stops right after the lock is published: when it is linked into place, or (as c0a36524 made
-  // it) created with O_EXCL and not yet written.
-  const preload = join(fixture.home, "pause-at-lock.mjs");
+  const preload = join(fixture.home, "pause-at-rename.mjs");
   writeFileSync(
     preload,
     `import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-const stop = () => { fs.writeSync(1, "LOCKED\\n"); process.kill(process.pid, "SIGSTOP"); };
-const open = fs.openSync;
-fs.openSync = function (path, flags, ...rest) {
-  const fd = open.call(this, path, flags, ...rest);
-  if (String(path).endsWith("/update.lock") && typeof flags === "number" && (flags & fs.constants.O_EXCL)) stop();
-  return fd;
-};
-const link = fs.linkSync;
-fs.linkSync = function (from, to) {
-  link.call(this, from, to);
-  if (String(to).endsWith("/update.lock")) stop();
+const rename = fs.renameSync;
+fs.renameSync = function (from, to) {
+  if (String(from).endsWith("/update.lock")) {
+    fs.writeSync(1, "BEFORE\\n"); process.kill(process.pid, "SIGSTOP");
+    const done = rename.call(this, from, to);
+    fs.writeSync(1, "AFTER\\n"); process.kill(process.pid, "SIGSTOP");
+    return done;
+  }
+  return rename.call(this, from, to);
 };
 syncBuiltinESMExports();
 `,
   );
   const child = spawn(
     process.execPath,
-    [...(pause ? ["--import", preload] : []), script, fixture.home, fixture.apps, id],
+    [...(pauseAtRename ? ["--import", preload] : []), script, fixture.home, fixture.apps, id],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
   let out = "";
   let err = "";
   child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
   child.stderr.on("data", (chunk: Buffer) => (err += chunk.toString()));
-  const waitFor = (word: string) =>
-    new Promise<void>((resolve, reject) => {
+  /** Waits for the first of `words` it prints, and answers which. */
+  const waitFor = (...words: string[]) =>
+    new Promise<string>((resolve, reject) => {
       const started = Date.now();
       const poll = setInterval(() => {
-        if (out.includes(word)) {
+        const said = words.find((word) => out.includes(word));
+        if (said !== undefined) {
           clearInterval(poll);
-          resolve();
-        } else if (Date.now() - started > 10_000) {
+          resolve(said);
+        } else if (Date.now() - started > 15_000) {
           clearInterval(poll);
-          reject(new Error(`no ${word}: ${out} ${err}`));
+          reject(new Error(`no ${words.join(" or ")}: ${out} ${err}`));
         }
       }, 10);
     });
-  const stop = () =>
+  const kill = () =>
     new Promise<void>((resolve) => {
       if (child.exitCode !== null || child.signalCode !== null) return resolve();
       child.once("exit", () => resolve());
       child.kill("SIGCONT");
       child.kill("SIGKILL");
     });
-  return { child, waitFor, output: () => out, stop };
+  return { child, waitFor, output: () => out, kill };
 };
 
-// Each of these failed on e846c852, in the independent re-review's reproductions.
+// Each of these failed on e846c852 or 5aecc08e, in the independent reviews' reproductions.
 describe("re-review regressions", () => {
-  it("lets one of two supervisor processes act, even one that finds the lock just taken", async () => {
+  it("lets one of two supervisor processes act", async () => {
     const fixture = setup();
     await steps(fixture.updater);
     const id = fixture.handed[0]!.id;
-    const first = supervisorProcess(fixture, id, true);
+    const first = supervisorProcess(fixture, id, "first");
+    const second = supervisorProcess(fixture, id, "second");
     try {
-      await first.waitFor("LOCKED");
-      // The second starts while the first holds the lock, stopped before it did anything.
-      const late = supervisorProcess(fixture, id, false);
-      try {
-        // It either finishes, leaving the lock alone, or enters the service move beside the first.
-        await Promise.race([late.waitFor("DONE"), late.waitFor("INSTALL")]);
-        expect(late.output()).not.toContain("INSTALL");
-        expect(late.output()).toContain("DONE null");
-      } finally {
-        await late.stop();
-      }
-      first.child.kill("SIGCONT");
-      await first.waitFor("INSTALL");
+      // Whichever takes the lock enters the service move and holds it; the other leaves.
+      const [a, b] = await Promise.all([
+        first.waitFor("INSTALL", "DONE"),
+        second.waitFor("INSTALL", "DONE"),
+      ]);
+      expect([a, b].toSorted()).toEqual(["DONE", "INSTALL"]);
+      expect(`${first.output()}${second.output()}`).toContain("DONE null");
     } finally {
-      await first.stop();
+      await first.kill();
+      await second.kill();
     }
   }, 30_000);
 
-  it("leaves alone a lock it can't read, and takes over one whose holder died", async () => {
+  it("never has two supervisors in the service move: not after a holder dies, not with a stale observer", async () => {
     const fixture = setup();
     await steps(fixture.updater);
     const id = fixture.handed[0]!.id;
-    const lock = join(fixture.home, LOCK_FILE);
-    writeFileSync(lock, "{", { mode: 0o600 });
-    const unreadable = supervising(fixture);
-    expect(await superviseUpdate(unreadable.deps, id)).toBeUndefined();
-    expect(unreadable.installed).toEqual([]);
-    expect(readFileSync(lock, "utf8")).toBe("{");
-    writeFileSync(lock, JSON.stringify({ id, pid: deadPid(), nonce: "gone" }));
-    const newHost = makeSelfUpdate({ ...fixture.deps, release: NEW, admission: makeAdmission() });
-    const taker = supervising(fixture, { sleep: async () => void (await newHost.check()) });
-    expect(await superviseUpdate(taker.deps, id)).toMatchObject({ outcome: "updated" });
-    expect(existsSync(lock)).toBe(false);
-  });
+    const started: Array<ReturnType<typeof supervisorProcess>> = [];
+    const launch = (name: string, pauseAtRename = false) => {
+      const each = supervisorProcess(fixture, id, name, pauseAtRename);
+      started.push(each);
+      return each;
+    };
+    try {
+      // A holder that dies in the middle of the move: the kernel frees its lock, with nothing left
+      // on disk for anyone to take over.
+      const dead = launch("dead");
+      expect(await dead.waitFor("INSTALL", "DONE")).toBe("INSTALL");
+      await dead.kill();
+      expect(await supervisorRunning(fixture.home)).toBe(false);
+      // The third review's stale observer, its rename paused, then the first to take the lock.
+      const observer = launch("observer", true);
+      expect(await observer.waitFor("INSTALL", "DONE", "BEFORE")).toBe("INSTALL");
+      expect(observer.output()).not.toContain("BEFORE");
+      // A second and a third, while it holds the lock in the move: neither enters it.
+      for (const name of ["second", "third"]) {
+        const late = launch(name);
+        expect(await late.waitFor("INSTALL", "DONE")).toBe("DONE");
+        expect(late.output()).toContain("DONE null");
+      }
+      expect(await supervisorRunning(fixture.home)).toBe(true);
+      // Once that one ends too, the next takes the lock and the move.
+      await observer.kill();
+      expect(await launch("next").waitFor("INSTALL", "DONE")).toBe("INSTALL");
+      // Nothing on disk was ever a lock.
+      expect(readdirSync(fixture.home).filter((name) => name.includes("lock"))).toEqual([]);
+    } finally {
+      for (const each of started) await each.kill();
+    }
+  }, 60_000);
 
-  it("stops before moving the service back once it has lost its lock", async () => {
+  it("leaves the update alone when another program holds the lock's port", async () => {
     const fixture = setup();
     await steps(fixture.updater);
-    const plan = fixture.handed[0]!;
-    const lock = join(fixture.home, LOCK_FILE);
-    const supervisor = supervising(fixture, {
-      confirmMs: 0,
-      install: async () => {
-        // Another supervisor took the lock over while this one moved the service.
-        writeFileSync(lock, JSON.stringify({ id: plan.id, pid: process.pid, nonce: "other" }));
-      },
-    });
-    expect(await superviseUpdate(supervisor.deps, plan.id)).toBeUndefined();
-    expect(supervisor.installed).toEqual([plan.next]);
-    expect(readFileSyncDir(fixture.apps)).toEqual([OLD, NEW]);
+    const id = fixture.handed[0]!.id;
+    const squatter = createServer((socket) => socket.end("not gram\n"));
+    await new Promise<void>((resolve) =>
+      squatter.listen({ host: "127.0.0.1", port: lockPort(fixture.home, "supervisor") }, () =>
+        resolve(),
+      ),
+    );
+    try {
+      expect(await supervisorRunning(fixture.home)).toBe(true);
+      const supervisor = supervising(fixture);
+      expect(await superviseUpdate(supervisor.deps, id)).toBeUndefined();
+      expect(supervisor.installed).toEqual([]);
+    } finally {
+      await new Promise<void>((resolve) => squatter.close(() => resolve()));
+    }
   });
 
   it("keeps the new host from taking work until it is confirmed, and confirms nothing once it is given up", async () => {
