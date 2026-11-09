@@ -1,6 +1,7 @@
 import {
   DEFAULT_CHARTER,
   autonomyOf,
+  HostId,
   sendKeyOf,
   type DraftId,
   type ProjectId,
@@ -13,6 +14,12 @@ import { FolderGit2, GitBranch } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
+import {
+  MachineNote,
+  MachinePicker,
+  machineBlocker,
+  useJoinedMachines,
+} from "@/new-thread/machine-picker";
 import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-preflight";
 import { HarnessSupportDetails } from "@/agents/support-details";
 import { agentLabel } from "@/agents/agent-display";
@@ -161,6 +168,10 @@ export function NewTaskDraft({
   const repos = target === undefined ? [] : taskRepos(target, workspaces, projects);
   const [repoId, setRepoId] = useState<ProjectId>();
   const repo = repos.find((each) => each.id === repoId) ?? repos[0];
+  // A direct worker can start on a joined machine, in a new worktree of that machine's own clone.
+  const joined = useJoinedMachines();
+  const [machineId, setMachineId] = useState<string>();
+  const machine = way === "direct" ? joined?.find((each) => each.id === machineId) : undefined;
   const workspace =
     target?.kind === "workspace"
       ? workspaces.find((state) => state.workspace.id === target.workspaceId)
@@ -325,6 +336,7 @@ export function NewTaskDraft({
     (way !== "direct" || (workerModel !== undefined && !workerPreflight.blocked)) &&
     (!hasImages || !imagePreflight.blocked) &&
     (way === "plan" || repo !== undefined) &&
+    (machine === undefined || machineBlocker(machine) === undefined) &&
     // The line beside Start names the workspace's autonomy: never start on a level not yet read.
     (target.kind !== "workspace" || workspace !== undefined);
 
@@ -356,6 +368,7 @@ export function NewTaskDraft({
                 projectId: repo.id,
                 ...(chosenWorker === undefined ? {} : { worker: chosenWorker }),
                 ...(hold ? { hold: true } : {}),
+                ...(machine === undefined ? {} : { hostId: HostId.make(machine.id) }),
               },
             }
           : {}),
@@ -447,8 +460,15 @@ export function NewTaskDraft({
     autonomy ?? autonomyOf(DEFAULT_CHARTER),
   );
   // The places after the workspace, as the form names them: a direct worker's repo and checkout.
+  // With a machine joined, which one too, so a folded form still says where it runs.
   const places =
-    way === "direct" && repo !== undefined ? [repo.name, "New worktree, new branch"] : [];
+    way === "direct" && repo !== undefined
+      ? [
+          repo.name,
+          "New worktree, new branch",
+          ...((joined?.length ?? 0) > 0 ? [machine?.name ?? "This machine"] : []),
+        ]
+      : [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -652,12 +672,19 @@ export function NewTaskDraft({
                   </WhereFact>
                 </WhereStop>
               )}
+              {way === "direct" && repo !== undefined && (joined?.length ?? 0) > 0 && (
+                <WhereStop label="Machine">
+                  <MachinePicker machines={joined} value={machineId} onChange={setMachineId} />
+                </WhereStop>
+              )}
             </>
           }
           line={
-            target === undefined && settled
-              ? "Gram doesn't know a repository to start a workspace in yet. Pick Chat to open one, or add one under Settings → Workspaces & merging."
-              : undefined
+            target === undefined && settled ? (
+              "Gram doesn't know a repository to start a workspace in yet. Pick Chat to open one, or add one under Settings → Workspaces & merging."
+            ) : machine === undefined ? undefined : (
+              <MachineNote machine={machine} />
+            )
           }
         />
 

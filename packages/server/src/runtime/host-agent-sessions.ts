@@ -393,6 +393,39 @@ export const AgentHostsThroughHost: Layer.Layer<AgentHosts, never, AgentHosts | 
     }),
   );
 
+const isSignInProblem = (error: AgentUnavailable) =>
+  error.reason === "not-logged-in" ||
+  error.reason === "api-key-auth" ||
+  error.reason === "third-party-provider";
+
+/**
+ * A session that couldn't start on `machine`, said of that machine: its sign-in problems with the
+ * fix to make there, anything else with the machine's name before the agent's own words.
+ */
+export const onMachineUnavailable = (
+  error: AgentUnavailable,
+  machine: string,
+): AgentUnavailable => {
+  const agent = error.agent === "claude" ? "Claude Code" : error.agent;
+  const message = (() => {
+    switch (error.reason) {
+      case "not-logged-in":
+        return `${agent} isn't logged in on ${machine}. Run \`claude /login\` there, or choose Sign in under Settings → Machines.`;
+      case "api-key-auth":
+        return `${agent} on ${machine} is using API-key auth; Gram needs your subscription login. Run \`claude /login\` there.`;
+      case "third-party-provider":
+        return `${agent} on ${machine} is set up for a third-party API provider; Gram needs your subscription login there.`;
+      default:
+        return error.message.includes(machine) ? error.message : `On ${machine}: ${error.message}`;
+    }
+  })();
+  return new AgentUnavailable({
+    agent: error.agent,
+    ...(error.reason === undefined ? {} : { reason: error.reason }),
+    message,
+  });
+};
+
 /**
  * `inServer`'s agent with its sessions opened on another machine's host, for a worker placed
  * there. Nothing opens here instead: a session the host can't run, or one asked for while the
@@ -406,8 +439,23 @@ export const agentHostOnMachine = (
   machineName: string,
   /** The tailnet address the machine reaches this Gram at, for its sessions' app tools. */
   origin: () => string | undefined,
+  /** Told when a session there couldn't start for its sign-in, so the machine is asked again. */
+  onSignInProblem?: () => void,
 ): AgentHost => {
   const kind = inServer.kind;
+  /** A start that failed there, named for the machine and logged here, where nothing else is. */
+  const failedThere = (error: AgentUnavailable) =>
+    Effect.gen(function* () {
+      yield* Effect.logWarning("machines: an agent couldn't start on a joined machine").pipe(
+        Effect.annotateLogs({
+          machine: machineName,
+          agent: kind,
+          reason: error.reason ?? "",
+        }),
+      );
+      if (isSignInProblem(error)) onSignInProblem?.();
+      return yield* onMachineUnavailable(error, machineName);
+    });
   /**
    * The app tools' endpoint as the machine reaches it: this Gram's tailnet address, where the
    * thread's own token is let through only for a thread placed on that machine.
@@ -449,7 +497,7 @@ export const agentHostOnMachine = (
                         message: `${machineName} is offline; its workers start once it's back.`,
                       }),
                     )
-                  : openOnHost(host, kind, reaching, machineName);
+                  : openOnHost(host, kind, reaching, machineName).pipe(Effect.catch(failedThere));
               }),
       ),
   };
