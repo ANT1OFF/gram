@@ -182,10 +182,12 @@ that one:
    service (a transient `systemd-run --user` unit on Linux, a one-off launchd job on a Mac), moves
    the service and restarts it. The plan is kept in `update.json` in the host's folder, owner-only,
    under an id of its own; one update runs at a time, and one supervisor, which acts only on its
-   own plan. Its lock is a loopback port of the host's own (drawn from the host's folder, between
-   20000 and 29999), which the kernel lets only one process hold and frees the moment its holder
-   ends: nothing is ever taken over. If another program happens to use that port, no update
-   starts there. Each change of the plan's phase holds a second such port the same way.
+   own plan. Its lock is a loopback port of the host's own, which the kernel lets only one process
+   hold and frees the moment its holder ends: nothing is ever taken over. Each change of the plan's
+   phase holds the port beside it the same way. The pair, between 20000 and 29999, comes from the
+   host folder itself (its device and inode, whatever path leads to it), so two spellings of one
+   folder share one lock. Both are checked before anything is downloaded or changed: if another
+   program uses either port, the update is refused and names the port.
 7. **The new host dials in.** It takes no work until its update is confirmed. Once its hello has
    passed, the main Gram asks it how its update went, which confirms it and lets it take work. The supervisor then removes the app the host ran before (no other) and points
    `~/.local/bin/gram-host` at the new one. If the new host doesn't dial in and pass its hello

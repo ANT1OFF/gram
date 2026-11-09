@@ -42,7 +42,7 @@ import type {
 } from "@gram/contracts";
 import { relativeInside } from "@gram/git";
 import type { Admission } from "./admission.ts";
-import { lockPort, takeUpdateLock, updateLockState } from "./update-lock.ts";
+import { lockConflict, lockPort, takeUpdateLock, updateLockState } from "./update-lock.ts";
 import { RELEASES } from "./install-script.ts";
 import { LAUNCHD_LABEL, type ServiceCommand } from "./service.ts";
 
@@ -232,6 +232,20 @@ export const supervisorRunning = async (home: string): Promise<boolean> =>
  * and a rollback can't cross. Waits a few seconds for it; a lock held longer than that counts as a
  * failure to move.
  */
+/** Whether the plan lock can be taken now: taken and let go at once. */
+const planLockUsable = async (home: string): Promise<boolean> => {
+  for (let tries = 0; tries < 50; tries += 1) {
+    const lock = await takeUpdateLock(home, "plan");
+    if (lock !== undefined) {
+      await lock.release();
+      return true;
+    }
+    if ((await updateLockState(home, "plan")) === "foreign") return false;
+    await wait(20);
+  }
+  return false;
+};
+
 const withPlanLock = async <A>(home: string, move: () => A): Promise<A> => {
   for (let tries = 0; tries < 250; tries += 1) {
     const lock = await takeUpdateLock(home, "plan");
@@ -477,13 +491,9 @@ export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
       const pending = readPlan(deps.home);
       if (pending !== undefined && pending.phase !== "done")
         return refusal("failed", `An update to ${pending.release} is still under way.`);
-      const lock = await updateLockState(deps.home, "supervisor");
-      if (lock === "held") return refusal("failed", "An update's supervisor is still running.");
-      if (lock === "foreign")
-        return refusal(
-          "failed",
-          `Another program uses port ${lockPort(deps.home, "supervisor")} on this machine, which gram-host's update needs.`,
-        );
+      // Both locks it will need, before anything is downloaded or changed.
+      const conflict = await lockConflict(deps.home);
+      if (conflict !== undefined) return refusal("failed", conflict);
       const before = await deps.busy();
       if (isBusy(before)) return refusal("busy", `It is busy: ${busyText(before)}.`, before);
       const ready = await prepare(release, asset, progress);
@@ -507,6 +517,9 @@ export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
         phase: "switching",
         startedAt: deps.now(),
       };
+      // Asked again just before anything changes: the download took minutes.
+      const late = await lockConflict(deps.home);
+      if (late !== undefined) return refusal("failed", late);
       writePlan(deps.home, plan);
       try {
         await deps.handOver(plan, "switch");
@@ -709,6 +722,22 @@ export const superviseUpdate = async (
       return await rollBack(
         `The machine restarted before Gram ${plan.release} dialled in, so it went back to ${back}.`,
       );
+    // Its plan lock must be takeable before the service moves: every decision after the move
+    // needs it, and one it can't take would strand the update half-way.
+    if (!(await planLockUsable(deps.home))) {
+      // Written without that lock: the service hasn't moved, so only the host it runs now reads
+      // the plan, and it confirms no release but its own.
+      const outcome: HostUpdateOutcome = {
+        release: plan.release,
+        outcome: "failed",
+        message: `gram-host couldn't take its update's plan lock (port ${lockPort(deps.home, "plan") ?? "unknown"}), so the service didn't move.`,
+        at: deps.now(),
+      };
+      const now = readPlan(deps.home);
+      if (now?.id === plan.id) writePlan(deps.home, { ...now, phase: "done", outcome });
+      deps.log(`gram-host: update to ${plan.release}: failed (${outcome.message})`);
+      return outcome;
+    }
     try {
       await deps.install(plan.next);
     } catch (error) {

@@ -6,10 +6,11 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
+import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -49,7 +50,7 @@ import {
 } from "./self-update.ts";
 import { hostUpdaterOf } from "./self-update-host.ts";
 import { makeAdmission, UPDATING } from "./admission.ts";
-import { lockPort } from "./update-lock.ts";
+import { lockPort, takeUpdateLock, updateLockState } from "./update-lock.ts";
 import type { ServiceCommand } from "./service.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
@@ -914,6 +915,148 @@ describe("re-review regressions", () => {
     });
     expect(supervisor.installed).toEqual([plan.next]);
     expect(readFileSyncDir(fixture.apps)).toEqual([NEW]);
+  });
+});
+
+/** Another program listening on `port`, answering with something that isn't a lock's greeting. */
+const squat = async (port: number | undefined) => {
+  const server = createServer((socket) => socket.end("synthetic unrelated program\n"));
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen({ host: "127.0.0.1", port }, () => resolve());
+  });
+  return () => new Promise<void>((resolve) => server.close(() => resolve()));
+};
+
+// Each of these failed on 62f10926, in the fourth independent review's reproductions.
+describe("fourth review regressions", () => {
+  it("locks one physical host folder however its path is spelled", async () => {
+    const root = temp();
+    const real = join(root, "real");
+    const home = join(real, "host");
+    mkdirSync(home, { recursive: true, mode: 0o700 });
+    symlinkSync(real, join(root, "alias"));
+    const alias = join(root, "alias", "host");
+    for (const spelling of [alias, `${home}/`, `${alias}/`, join(home, "..", "host")])
+      expect(lockPort(spelling, "supervisor")).toBe(lockPort(home, "supervisor"));
+    // On a folder that ignores case, as a Mac's usually does, another case is the same folder.
+    const upper = home.replace(/host$/, "HOST");
+    if (existsSync(upper)) expect(lockPort(upper, "supervisor")).toBe(lockPort(home, "supervisor"));
+
+    // Two supervisors, one through each spelling: only one enters the service move.
+    const fixture = setup({ overrides: { home } });
+    await steps(fixture.updater);
+    const id = fixture.handed[0]!.id;
+    let unblock!: () => void;
+    const barrier = new Promise<void>((resolve) => (unblock = resolve));
+    let entered!: () => void;
+    const inMove = new Promise<void>((resolve) => (entered = resolve));
+    const installed: ServiceCommand[] = [];
+    const common = {
+      apps: fixture.apps,
+      now: () => 0,
+      confirmMs: 0,
+      sleep: async () => {},
+      log: () => {},
+    };
+    const first = superviseUpdate(
+      {
+        ...common,
+        home,
+        install: async (command) => {
+          installed.push(command);
+          entered();
+          await barrier;
+        },
+      },
+      id,
+    );
+    await inMove;
+    const second = supervising({ home: alias, apps: fixture.apps });
+    expect(await superviseUpdate(second.deps, id)).toBeUndefined();
+    expect(second.installed).toEqual([]);
+    expect(installed).toEqual([fixture.handed[0]!.next]);
+    unblock();
+    await first;
+  });
+
+  it("gives a folder's two locks two ports side by side, never one", () => {
+    for (let i = 0; i < 40; i += 1) {
+      const home = temp();
+      expect(lockPort(home, "plan")).toBe(lockPort(home, "supervisor")! + 1);
+    }
+  });
+
+  it("takes no lock for a folder it can't identify", async () => {
+    const home = join(temp(), "gone");
+    expect(lockPort(home, "supervisor")).toBeUndefined();
+    expect(await takeUpdateLock(home, "supervisor")).toBeUndefined();
+    expect(await supervisorRunning(home)).toBe(true);
+  });
+
+  it("refuses before downloading or writing anything when another program holds the plan's port", async () => {
+    const fixture = setup();
+    const port = lockPort(fixture.home, "plan");
+    const close = await squat(port);
+    try {
+      const run = await steps(fixture.updater);
+      expect(run.refused).toMatchObject({
+        reason: "failed",
+        message: expect.stringContaining(`port ${port}`),
+      });
+      expect(fixture.release.asked).toEqual([]);
+      expect(fixture.handed).toEqual([]);
+      expect(existsSync(join(fixture.home, UPDATE_FILE))).toBe(false);
+    } finally {
+      await close();
+    }
+  });
+
+  it("doesn't move the service when the plan's port is taken after the update started", async () => {
+    const fixture = setup();
+    await steps(fixture.updater);
+    const plan = fixture.handed[0]!;
+    const close = await squat(lockPort(fixture.home, "plan"));
+    try {
+      const supervisor = supervising(fixture);
+      const outcome = await superviseUpdate(supervisor.deps, plan.id);
+      expect(outcome).toMatchObject({
+        outcome: "failed",
+        message: expect.stringContaining(`port ${lockPort(fixture.home, "plan")}`),
+      });
+      expect(supervisor.installed).toEqual([]);
+      expect(JSON.parse(readFileSync(join(fixture.home, UPDATE_FILE), "utf8"))).toMatchObject({
+        phase: "done",
+        outcome: { outcome: "failed" },
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it("lets go of a lock while a client keeps its connection half open", async () => {
+    const home = temp();
+    const lock = await takeUpdateLock(home, "plan");
+    expect(lock).toBeDefined();
+    const client = connect({
+      host: "127.0.0.1",
+      port: lockPort(home, "plan")!,
+      allowHalfOpen: true,
+    });
+    await new Promise<void>((resolve, reject) => {
+      client.once("data", () => resolve());
+      client.once("error", reject);
+    });
+    try {
+      const released = await Promise.race([
+        lock!.release().then(() => "released"),
+        new Promise((resolve) => setTimeout(() => resolve("stuck"), 2_000)),
+      ]);
+      expect(released).toBe("released");
+      expect(await updateLockState(home, "plan")).toBe("free");
+    } finally {
+      client.destroy();
+    }
   });
 });
 
