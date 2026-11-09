@@ -13,6 +13,7 @@ import {
   Maximize2,
   Minimize2,
   Plug,
+  SquareChevronRight,
   SquareTerminal,
   MessagesSquare,
   Workflow,
@@ -41,13 +42,17 @@ import {
 } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { besideShown, useBesideStore } from "@/orchestration/beside-store";
+import { useCommandViewStore } from "@/thread/command-view-store";
 
 import { foldedTabs, tabNamed, useTabLabelFit } from "./panel-tab-labels";
 import { useKeepReadingPlace } from "./review-room";
 import type * as PanelTabs from "./right-panel-tabs";
 
-/** A tab of the strip: the stored ones, and the worker open beside the chat, kept per window. */
-type ShownTab = RightPanelTab | "thread";
+/**
+ * A tab of the strip: the stored ones, the worker open beside the chat, and the command opened from
+ * its line above the composer, those two kept per window.
+ */
+type ShownTab = RightPanelTab | "thread" | "command";
 
 interface PanelTab {
   value: ShownTab;
@@ -80,6 +85,14 @@ const THREAD_TAB: PanelTab = {
   value: "thread",
   label: "Thread",
   icon: MessagesSquare,
+  primary: true,
+};
+
+/** While a command opened from the strip above the composer is in reach (`command-view-store`). */
+const COMMAND_TAB: PanelTab = {
+  value: "command",
+  label: "Command",
+  icon: SquareChevronRight,
   primary: true,
 };
 
@@ -150,14 +163,31 @@ export function RightPanel() {
   const besideWorker = useBesideStore((s) => (s.restored ? undefined : s.worker));
   const besideOn = useBesideStore((s) => besideShown(s) !== undefined);
   const setBesideShown = useBesideStore((s) => s.setShown);
-  const tab: ShownTab = besideOn ? "thread" : panelTab;
+  const params = useParams({ strict: false });
+  const routeThreadId = params.threadId as ThreadId | undefined;
+  // A command opened from a thread's strip is in reach while that thread is in view.
+  const openCommand = useCommandViewStore((s) => s.open);
+  const commandHere = useLayoutStore(
+    (s) =>
+      openCommand !== undefined &&
+      (openCommand.threadId === routeThreadId || s.grid.panes.includes(openCommand.threadId)),
+  );
+  const command = commandHere ? openCommand : undefined;
+  const commandOn = useCommandViewStore((s) => s.shown) && command !== undefined;
+  const setCommandShown = useCommandViewStore((s) => s.setShown);
+  const tab: ShownTab = commandOn ? "command" : besideOn ? "thread" : panelTab;
   const setPanelTab = useLayoutStore((s) => s.setPanelTab);
   const setTab = (value: ShownTab) => {
+    setCommandShown(value === "command");
     setBesideShown(value === "thread");
-    if (value !== "thread") setPanelTab(value);
+    if (value !== "thread" && value !== "command") setPanelTab(value);
   };
   const tabList = useRef<HTMLDivElement>(null);
-  const shownTabs = [...(besideWorker === undefined ? [] : [THREAD_TAB]), ...TABS].filter(
+  const shownTabs = [
+    ...(besideWorker === undefined ? [] : [THREAD_TAB]),
+    ...(command === undefined ? [] : [COMMAND_TAB]),
+    ...TABS,
+  ].filter(
     (t) =>
       (t.value !== "reviews" || reviewsHere) &&
       (t.value !== "preview" || previewHere) &&
@@ -166,7 +196,7 @@ export function RightPanel() {
   const expanded = useLayoutStore((s) => s.panelExpanded);
   const focused = useLayoutStore((s) => s.reviewFocus);
   // On a review the action beside the tabs is Focus review, in words; elsewhere an icon at the end.
-  const reviewAction = tab !== "thread" && isReviewTab(tab) && !expanded;
+  const reviewAction = tab !== "thread" && tab !== "command" && isReviewTab(tab) && !expanded;
   const labelFit = useTabLabelFit(tabList, tab);
   const aside = useRef<HTMLElement>(null);
   useKeepReadingPlace(aside);
@@ -176,8 +206,6 @@ export function RightPanel() {
       ?.querySelector<HTMLElement>(`[data-panel-tab="${tab}"]`)
       ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [tab]);
-  const params = useParams({ strict: false });
-  const routeThreadId = params.threadId as ThreadId | undefined;
   // A thread the server no longer has, such as a worker closed with its worktree and shown
   // read-only, has no diff, files or terminal to show, so the panels say there is no thread.
   const known = useThreadsStore(
@@ -304,6 +332,7 @@ export function RightPanel() {
             threadId={threadId}
             workspaceId={workspaceId}
             besideWorker={besideWorker}
+            command={command}
             previewHere={previewHere}
             reviewsHere={reviewsHere}
             requestsHere={requestsHere}

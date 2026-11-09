@@ -1,10 +1,11 @@
 import type { ThreadId } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
 import { ChevronRight, Maximize2, X } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef } from "react";
 
 import { keyLabel } from "@/keyboard/registry";
 import { Hint } from "@/components/hint";
+import { useFollowBottom } from "@/lib/use-follow-bottom";
 import { cn } from "@/lib/utils";
 import { SegmentSlab, Swap } from "@/motion";
 import { DiffPanel } from "@/panels/diff-panel";
@@ -202,9 +203,6 @@ export function BesidePanel({ worker }: { worker: ThreadId }) {
   );
 }
 
-/** Within this many pixels of its bottom the terminal counts as following. */
-const FOLLOW_SLACK = 24;
-
 const TERMINAL_PILL =
   "absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-edge bg-popover px-2.5 py-1 text-meta shadow-raised";
 
@@ -245,23 +243,7 @@ function LiveTerminal({ threadId }: { threadId: ThreadId }) {
 
 /** One command and its output: kept at the bottom while you are there, put while you scroll up. */
 function CommandView({ last }: { last: LastCommand }) {
-  const ref = useRef<HTMLPreElement>(null);
-  const following = useRef(true);
-  const [behind, setBehind] = useState(false);
-  const { output } = last;
-  // More output takes the view down with it, as a terminal does, unless you scrolled up to read.
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (element !== null && following.current) element.scrollTop = element.scrollHeight;
-    // `output` is the signal, not an input: each time it grows, a following view goes down with it.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
-  }, [output]);
-  const follow = () => {
-    following.current = true;
-    setBehind(false);
-    const element = ref.current;
-    if (element !== null) element.scrollTop = element.scrollHeight;
-  };
+  const { ref, behind, onScroll, follow } = useFollowBottom<HTMLPreElement>(last.output);
   const status = last.running
     ? "Running"
     : last.failed
@@ -277,13 +259,7 @@ function CommandView({ last }: { last: LastCommand }) {
         data-tool-call-id={last.toolCallId}
         data-running={last.running}
         aria-label="Terminal output"
-        onScroll={(event) => {
-          const element = event.currentTarget;
-          const atBottom =
-            element.scrollHeight - element.scrollTop - element.clientHeight <= FOLLOW_SLACK;
-          following.current = atBottom;
-          setBehind(!atBottom);
-        }}
+        onScroll={onScroll}
         className="min-h-0 flex-1 overflow-auto px-4 pt-3 pb-12 font-mono text-meta leading-relaxed whitespace-pre-wrap text-foreground/90"
       >
         <span className="text-muted-foreground">$ </span>

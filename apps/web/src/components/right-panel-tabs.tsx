@@ -14,6 +14,8 @@ import { PreviewPane } from "@/panels/preview-pane";
 import { TerminalPanel } from "@/panels/terminal/terminal-panel";
 import { WorktreeBanner } from "@/panels/worktree-banner";
 import { OpenPrsPanel } from "@/reviews/open-prs";
+import { CommandPanel } from "@/thread/command-panel";
+import type { OpenCommand } from "@/thread/command-view-model";
 import { ReviewRequestsPanel } from "@/reviews/review-requests";
 
 /** The right panel's tab contents, a chunk of their own that `RightPanel` loads lazily. */
@@ -21,6 +23,7 @@ export function RightPanelTabs({
   threadId,
   workspaceId,
   besideWorker,
+  command,
   previewHere,
   reviewsHere,
   requestsHere,
@@ -31,6 +34,8 @@ export function RightPanelTabs({
   workspaceId: WorkspaceId | undefined;
   /** The worker open beside the chat, which the Thread tab shows. */
   besideWorker: ThreadId | undefined;
+  /** The command opened from the strip above the composer, which the Command tab shows. */
+  command: OpenCommand | undefined;
   previewHere: boolean;
   reviewsHere: boolean;
   requestsHere: boolean;
@@ -46,6 +51,14 @@ export function RightPanelTabs({
       {besideWorker !== undefined && (
         <TabsContent value="thread" className="flex min-h-0 flex-col">
           <BesidePanel key={besideWorker} worker={besideWorker} />
+        </TabsContent>
+      )}
+      {command !== undefined && (
+        <TabsContent value="command" className="flex min-h-0 flex-col">
+          <CommandPanel
+            key={`${command.threadId}:${command.taskId ?? command.toolCallId}`}
+            open={command}
+          />
         </TabsContent>
       )}
       <TabsContent value="diff" className="flex min-h-0 flex-col">

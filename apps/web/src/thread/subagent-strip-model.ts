@@ -159,6 +159,11 @@ export interface StripRow {
   jump: RunningSubagent | undefined;
   /** What Stop stops; absent where the agent can't stop it. */
   taskId: string | undefined;
+  /**
+   * The command a click shows, with its output, in the right panel's Command tab: a shell's task
+   * and the tool call that started it. Absent for a subagent, whose line jumps to its card.
+   */
+  output: { taskId: string; toolCallId: string | undefined } | undefined;
 }
 
 /**
@@ -190,6 +195,7 @@ export function stripRows(
       startedAt: run.startedAt ?? task?.startedAt,
       jump: run,
       taskId: canStop ? task?.taskId : undefined,
+      output: undefined,
     };
   });
   for (const task of background) {
@@ -211,6 +217,10 @@ export function stripRows(
       startedAt: task.startedAt,
       jump: undefined,
       taskId: canStop ? task.taskId : undefined,
+      output:
+        command === undefined || task.kind === "subagent"
+          ? undefined
+          : { taskId: task.taskId, toolCallId: task.toolCallId },
     });
   }
   return rows.toSorted(
