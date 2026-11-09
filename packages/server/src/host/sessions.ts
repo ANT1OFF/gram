@@ -20,10 +20,12 @@ import {
 } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as PubSub from "effect/PubSub";
+import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { appToolsAt } from "./remote-app-tools.ts";
@@ -67,7 +69,22 @@ type Entry =
         readonly changes: PubSub.PubSub<ConnectorsSeen>;
       };
       readonly closed: Deferred.Deferred<void>;
+      /** The thread it was opened for, when the request named one. */
+      readonly threadId: string | undefined;
+      /** Event streams following it now: none once the control plane that opened it let go. */
+      followers: number;
+      /** Epoch ms since when no stream has followed it; `undefined` while one does. */
+      unfollowedSince: number | undefined;
     };
+
+/**
+ * How long an open session may go without an event stream following it before the host ends it.
+ * Longer than the control plane waits for a dropped connection to come back (`REATTACH_WITHIN_MS`),
+ * so a session waiting out a redial is still there when it does.
+ */
+export const UNFOLLOWED_GRACE_MS = 3 * 60_000;
+/** How often sessions are looked over for that. */
+const UNFOLLOWED_SWEEP_MS = 30_000;
 
 /** How many handles closed before their open arrived are remembered. */
 const CLOSED_EARLY_KEPT = 256;
@@ -123,14 +140,17 @@ const openedFrom = (session: AgentSession): HostSessionOpened => ({
 
 /**
  * The host's agent sessions. Every one still open is closed with the scope, which is the host's
- * own: when the control plane goes, the host exits and its sessions with it.
+ * own: for this machine's host process, when the server goes; for a joined machine's, once it has
+ * been without a connection for `DETACHED_GRACE_MS` (`dialForever`).
  */
 export const sessionsOnHost = (
   agents: HostAgents,
   toolsAt: AppToolsAt = appToolsAt,
+  timing: { readonly unfollowedMs?: number; readonly sweepMs?: number } = {},
 ): Effect.Effect<HostSessionsService, never, Scope.Scope> =>
   Effect.gen(function* () {
     const root = yield* Effect.scope;
+    const unfollowedMs = timing.unfollowedMs ?? UNFOLLOWED_GRACE_MS;
     const entries = new Map<string, Entry>();
     /** Handles closed before their open came in, so the open, when it does, is refused. */
     const closedEarly = new Set<string>();
@@ -168,6 +188,41 @@ export const sessionsOnHost = (
         });
       });
 
+    /** The open sessions of `threadId` that no event stream follows. */
+    const leftBehind = (threadId: string | undefined): ReadonlyArray<string> =>
+      threadId === undefined
+        ? []
+        : [...entries].flatMap(([handle, entry]) =>
+            entry.state === "open" && entry.threadId === threadId && entry.followers === 0
+              ? [handle]
+              : [],
+          );
+
+    // A session no stream has followed for the grace was given up on: the control plane that
+    // opened it restarted, or stopped waiting for this host to dial in again.
+    yield* Effect.forkScoped(
+      Effect.suspend(() => {
+        const now = Date.now();
+        const stale = [...entries].flatMap(([handle, entry]) =>
+          entry.state === "open" &&
+          entry.unfollowedSince !== undefined &&
+          now - entry.unfollowedSince >= unfollowedMs
+            ? [handle]
+            : [],
+        );
+        return Effect.forEach(
+          stale,
+          (handle) =>
+            Effect.logInfo("gram-host: ending a session nothing follows any more").pipe(
+              Effect.andThen(close(handle)),
+            ),
+          { discard: true },
+        );
+      }).pipe(
+        Effect.repeat(Schedule.spaced(Duration.millis(timing.sweepMs ?? UNFOLLOWED_SWEEP_MS))),
+      ),
+    );
+
     const openEntry = (handle: string) =>
       Effect.suspend(() => {
         const entry = entries.get(handle);
@@ -191,6 +246,17 @@ export const sessionsOnHost = (
             }),
           );
         return Effect.gen(function* () {
+          // A session the same thread left behind, kept through a dropped connection but never
+          // followed again (the main Gram restarted and opened anew), ends before its successor
+          // starts: one thread's agent runs once.
+          yield* Effect.forEach(
+            leftBehind(request.threadId),
+            (stale) =>
+              Effect.logInfo("gram-host: ending a session its thread left behind").pipe(
+                Effect.andThen(close(stale)),
+              ),
+            { discard: true },
+          );
           // Each its own, not the host's scope's child, so the host's end closes them all at once.
           const scope = yield* Scope.make();
           const entry: Entry = { state: "opening", scope };
@@ -260,6 +326,9 @@ export const sessionsOnHost = (
             log: exit.value.log,
             seen,
             closed,
+            threadId: request.threadId,
+            followers: 0,
+            unfollowedSince: Date.now(),
           });
           return openedFrom(exit.value.session);
         }).pipe(
@@ -277,9 +346,26 @@ export const sessionsOnHost = (
               Effect.mapError(() => new NotFound({ entity: "session", id: handle })),
             ),
             (entry) =>
-              entry.log
-                .subscribe(afterSeq)
-                .pipe(Stream.interruptWhen(Deferred.await(entry.closed))),
+              // Counted while it runs, so a session no one follows any more can be told apart.
+              Stream.unwrap(
+                Effect.acquireRelease(
+                  Effect.sync(() => {
+                    entry.followers += 1;
+                    entry.unfollowedSince = undefined;
+                  }),
+                  () =>
+                    Effect.sync(() => {
+                      entry.followers -= 1;
+                      if (entry.followers === 0) entry.unfollowedSince = Date.now();
+                    }),
+                ).pipe(
+                  Effect.as(
+                    entry.log
+                      .subscribe(afterSeq)
+                      .pipe(Stream.interruptWhen(Deferred.await(entry.closed))),
+                  ),
+                ),
+              ),
           ),
         ),
       ack: (handle, seq) =>
