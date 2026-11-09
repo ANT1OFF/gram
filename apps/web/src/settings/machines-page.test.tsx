@@ -231,6 +231,23 @@ describe("adding a machine over SSH", () => {
     expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
   });
 
+  it("makes no join link while an install over SSH is running", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) =>
+        path === "/remote/status"
+          ? reply(on)
+          : path === "/machines/join-link"
+            ? reply({ reason: "ssh-running", message: "busy" }, 409)
+            : reply({ machines: [] }),
+      ),
+    );
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add a machine" }));
+    expect(await screen.findByText(/Gram is adding a machine over SSH/)).toBeTruthy();
+    expect(screen.queryByTestId("phone-access-tailscale")).toBeNull();
+  });
+
   it("shows why it failed, with what the session printed", async () => {
     serveSsh(() =>
       reply(

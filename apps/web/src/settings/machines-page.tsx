@@ -8,7 +8,7 @@ import {
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -433,7 +433,15 @@ function AddDialog({
   onConfirm: (machine: JoinedMachine) => void;
   onClose: () => void;
 }) {
-  const [link, setLink] = useState<JoinLink | "tailscale-off" | "error">();
+  const [link, setLink] = useState<JoinLink | "tailscale-off" | "ssh-running" | "error">();
+  // A run that ends after the dialog closed mints no link nobody will see.
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
   const [known] = useState(() => new Set(machines.map((machine) => machine.id)));
   const [now, setNow] = useState(() => Date.now());
   const [sshRun, setSshRun] = useState<SshRun>();
@@ -464,7 +472,8 @@ function AddDialog({
         output: e instanceof SshJoinError ? e.output : "",
       });
       // The install used its own link, which replaced this dialog's: the command gets a new one.
-      mint();
+      // One refused because another was running replaced nothing.
+      if (open.current && !(e instanceof SshJoinError && e.busy)) mint();
     }
   };
   useEffect(() => {
@@ -502,6 +511,21 @@ function AddDialog({
         </div>
       ) : link === "tailscale-off" ? (
         <TailscaleStep onReady={mint} />
+      ) : link === "ssh-running" ? (
+        <>
+          <p className="text-muted-foreground">
+            Gram is adding a machine over SSH, which uses the one join link. Try again once that
+            finishes.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Dialog.Close render={<Button type="button" variant="ghost" size="sm" />}>
+              Close
+            </Dialog.Close>
+            <Button size="sm" onClick={mint}>
+              Try again
+            </Button>
+          </div>
+        </>
       ) : link === "error" ? (
         <>
           <p role="alert" className="text-meta text-destructive">

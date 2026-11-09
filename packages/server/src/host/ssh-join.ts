@@ -138,6 +138,7 @@ export const runOverSsh = (
     return Effect.sync(() => {
       clearTimeout(timer);
       child.kill("SIGTERM");
+      setTimeout(() => child.exitCode === null && child.kill("SIGKILL"), 5_000).unref();
     });
   });
 

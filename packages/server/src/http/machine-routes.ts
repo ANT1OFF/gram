@@ -156,6 +156,10 @@ export const joinedOverSsh = <M extends { readonly id: string; readonly publicKe
  * so a second would spend the first's.
  */
 let sshJoinRunning = false;
+const SSH_JOIN_BUSY = {
+  reason: "ssh-running",
+  message: "Gram is adding a machine over SSH. Try again once that finishes.",
+};
 
 /** The settings page's view: the machines, and the join link waiting, if one is. */
 const machinesStatus = (hosts: RemoteHostsShape) => {
@@ -190,6 +194,8 @@ export const machineManagement = (
             { reason: "tailscale-off", message: "Turn on access over Tailscale first." },
             409,
           );
+        // A new link would replace the one an install over SSH is using.
+        if (sshJoinRunning) return json(SSH_JOIN_BUSY, 409);
         return json(hosts.machines.mint(remote.origin));
       case MACHINES_SSH_HOSTS_PATH:
         return json({ hosts: sshConfigHosts() });
@@ -202,16 +208,16 @@ export const machineManagement = (
         const target = (yield* jsonBody(256))?.["target"];
         if (typeof target !== "string" || !SSH_TARGET.test(target))
           return json({ message: "That isn't a host to SSH to." }, 400);
-        if (sshJoinRunning)
-          return json({ message: "Gram is already adding a machine over SSH." }, 409);
+        if (sshJoinRunning) return json(SSH_JOIN_BUSY, 409);
         const before = new Set(hosts.machines.list().map((machine) => machine.id));
         const link = hosts.machines.mint(remote.origin);
+        // Built before the flag is set: it throws on what it won't embed.
+        const script = installScript(remote.origin, appVersion, link.url);
         sshJoinRunning = true;
-        const ran = yield* runOverSsh(
-          target,
-          installScript(remote.origin, appVersion, link.url),
-          ssh === undefined ? {} : { ssh },
-        ).pipe(Effect.exit, Effect.ensuring(Effect.sync(() => (sshJoinRunning = false))));
+        const ran = yield* runOverSsh(target, script, ssh === undefined ? {} : { ssh }).pipe(
+          Effect.exit,
+          Effect.ensuring(Effect.sync(() => (sshJoinRunning = false))),
+        );
         const failure =
           ran._tag === "Failure"
             ? ran.cause.reasons.find((reason) => reason._tag === "Fail")?.error
@@ -246,7 +252,8 @@ export const machineManagement = (
           ...(failure === undefined
             ? {}
             : {
-                problem: `It joined and was confirmed, but the install stopped after that: ${failure.message}`,
+                problem:
+                  "It joined and was confirmed, but the install didn't finish after that, so its background service may not be running. Add it over SSH again, or run `gram-host service install` there.",
               }),
           output,
         });

@@ -87,9 +87,12 @@ export const machinesApi = {
   remove: async (id: string) =>
     status(await post("/machines/remove", { id }), "Couldn't remove the machine"),
   /** A one-time join link, or `tailscale-off` while access over Tailscale is off. */
-  joinLink: async (): Promise<JoinLink | "tailscale-off"> => {
+  joinLink: async (): Promise<JoinLink | "tailscale-off" | "ssh-running"> => {
     const response = await post("/machines/join-link");
-    if (response.status === 409) return "tailscale-off";
+    if (response.status === 409)
+      return (await response.text().catch(() => "")).includes('"ssh-running"')
+        ? "ssh-running"
+        : "tailscale-off";
     if (!response.ok) throw await refusal(response, "Couldn't make a join link");
     const value = (await response.json()) as { url?: unknown; expiresAt?: unknown };
     if (typeof value.url !== "string" || typeof value.expiresAt !== "number")
@@ -122,7 +125,13 @@ export const machinesApi = {
   > => {
     const response = await post("/machines/ssh-join", { target });
     const text = await response.text().catch(() => "");
-    let value: { message?: unknown; output?: unknown; joined?: unknown; problem?: unknown } = {};
+    let value: {
+      message?: unknown;
+      output?: unknown;
+      joined?: unknown;
+      problem?: unknown;
+      reason?: unknown;
+    } = {};
     try {
       value = JSON.parse(text) as typeof value;
     } catch {
@@ -133,6 +142,7 @@ export const machinesApi = {
       throw new SshJoinError(
         typeof value.message === "string" ? value.message : "Couldn't add the machine over SSH",
         output,
+        value.reason === "ssh-running",
       );
     const parsed = await status(new Response(text, { status: 200 }), "Couldn't add the machine");
     return {
@@ -147,8 +157,11 @@ export const machinesApi = {
 /** Why adding over SSH failed, and the end of what the session printed. */
 export class SshJoinError extends MachinesError {
   readonly output: string;
-  constructor(message: string, output: string) {
+  /** Refused because another install over SSH is running, which this one left alone. */
+  readonly busy: boolean;
+  constructor(message: string, output: string, busy = false) {
     super(message);
     this.output = output;
+    this.busy = busy;
   }
 }
