@@ -103,14 +103,14 @@ export const placedHost = (
           }
         })
       : Effect.succeed(LOCAL_HOST_ID);
+  // Always read: one call per session open or terminal, and a thread reopened from a machine
+  // since removed is still that machine's (and unavailable), never this one's.
   const hostIdOfThread = (threadId: ThreadId) =>
-    routing()
-      ? store.getThread(threadId).pipe(
-          Effect.map((thread) => hostOf(effectiveCheckout(thread))),
-          // A thread that isn't stored (a dream, a helper) is this machine's.
-          Effect.orElseSucceed(() => LOCAL_HOST_ID),
-        )
-      : Effect.succeed(LOCAL_HOST_ID);
+    store.getThread(threadId).pipe(
+      Effect.map((thread) => hostOf(effectiveCheckout(thread))),
+      // A thread that isn't stored (a dream, a helper) is this machine's.
+      Effect.orElseSucceed(() => LOCAL_HOST_ID),
+    );
   /** The host `id` names, or the reason it can't be reached as `onOffline` words it. */
   const hostFor = <E>(id: HostId, onOffline: (message: string) => E) =>
     id === LOCAL_HOST_ID

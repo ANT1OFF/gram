@@ -1,9 +1,7 @@
 import { Checkpoints, Proc, samePath, seedWorktreePermissions } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import { effectiveCheckout, isLocalHost, type ThreadId } from "@gram/contracts";
-import { ThreadStore } from "../persistence/thread-store.ts";
+import { effectiveCheckout, isLocalHost } from "@gram/contracts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { GitRefresh } from "./platform.ts";
 import { resolveWorktreeMove } from "./worktree-move.ts";
@@ -23,23 +21,8 @@ export const GitTurnHooksLive = Layer.effect(
     const checkpoints = yield* Checkpoints;
     const refresh = yield* GitRefresh;
     const proc = yield* Proc;
-    // Absent in test layers without threads: every thread is this machine's then.
-    const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
-    /**
-     * Whether the thread works on another machine, where this machine's git can't reach: its turns
-     * take no checkpoints here and a worktree it moves into isn't followed, for now.
-     */
-    const elsewhere = (threadId: string) =>
-      store === undefined
-        ? Effect.succeed(false)
-        : store.getThread(threadId as ThreadId).pipe(
-            Effect.map((thread) => !isLocalHost(effectiveCheckout(thread))),
-            Effect.orElseSucceed(() => false),
-          );
     const snapshot = (cwd: string, threadId: string, id: string) =>
-      Effect.flatMap(elsewhere(threadId), (away) =>
-        away ? Effect.void : checkpoints.snapshot(cwd, threadId, id),
-      ).pipe(
+      checkpoints.snapshot(cwd, threadId, id).pipe(
         Effect.catch((error) =>
           Effect.logDebug("no checkpoint for turn").pipe(
             Effect.annotateLogs({ threadId, checkpoint: id, reason: error.message }),
