@@ -213,9 +213,14 @@ export const sessionsOnHost = (
         return Effect.forEach(
           stale,
           (handle) =>
-            Effect.logInfo("gram-host: ending a session nothing follows any more").pipe(
-              Effect.andThen(close(handle)),
-            ),
+            Effect.suspend(() => {
+              // Asked again: an earlier close took time, and a stream may have followed it since.
+              const entry = entries.get(handle);
+              if (entry?.state !== "open" || entry.followers > 0) return Effect.void;
+              return Effect.logInfo("gram-host: ending a session nothing follows any more").pipe(
+                Effect.andThen(close(handle)),
+              );
+            }),
           { discard: true },
         );
       }).pipe(

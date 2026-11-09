@@ -1,3 +1,4 @@
+import type { ConnectorsSeen } from "@gram/agents";
 import { HostFailed, type HostUnavailable } from "@gram/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -59,7 +60,13 @@ export const followingSessions = (
    * finalizer must not fail the scope it closes.
    */
   const quiet = (run: (sessions: HostSessionsConnection) => Effect.Effect<void>) =>
-    sessions.pipe(Effect.flatMap(run), Effect.exit, Effect.asVoid);
+    // Not waited for: a close is a finalizer, and an ack is repeated anyway. A session left on a
+    // machine that is away is ended there once nothing follows it.
+    current.pipe(
+      Effect.flatMap((connection) => run(connection.sessions)),
+      Effect.exit,
+      Effect.asVoid,
+    );
   return {
     open: (request) => call((s) => s.open(request)),
     events: (handle, afterSeq) => {
@@ -96,13 +103,23 @@ export const followingSessions = (
       return follow(awaitConnection(current, callMs));
     },
     ack: (handle, seq) => quiet((s) => s.ack(handle, seq)),
-    connectorsSeen: (handle) =>
-      Stream.unwrap(
-        sessions.pipe(
-          Effect.map((s) => s.connectorsSeen(handle)),
-          Effect.orElseSucceed(() => Stream.empty),
-        ),
-      ),
+    // Ends quietly when its connection goes, so it is followed again after a redial; it ends for
+    // good when the session does, or when the machine doesn't come back.
+    connectorsSeen: (handle) => {
+      const follow = (wait: number): Stream.Stream<ConnectorsSeen> =>
+        Stream.unwrap(
+          awaitConnection(current, wait).pipe(
+            Effect.map((live) =>
+              Stream.concat(
+                live.sessions.connectorsSeen(handle),
+                Stream.unwrap(Effect.sync(() => (live.gone() ? follow(reattachMs) : Stream.empty))),
+              ),
+            ),
+            Effect.orElseSucceed(() => Stream.empty),
+          ),
+        );
+      return follow(callMs);
+    },
     send: (handle, input, options) => call((s) => s.send(handle, input, options)),
     steer: (handle, input) => call((s) => s.steer(handle, input)),
     interrupt: (handle) => call((s) => s.interrupt(handle)),

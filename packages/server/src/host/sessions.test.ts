@@ -399,7 +399,13 @@ describe("a joined machine's sessions across a dropped connection", () => {
   it.live("pick up after a redial where they were, the agent still running", () =>
     Effect.gen(function* () {
       const { onHost, dial, first, agent } = yield* redialling;
-      const session = yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+      const reports: Array<string> = [];
+      const session = yield* agent(10_000).open({
+        threadId: THREAD,
+        cwd: "/work",
+        onConnectorsSeen: (report) => void reports.push(report.connectors[0]!.name),
+      });
+      yield* eventually(() => (reports.length === 1 ? true : undefined), "the connectors report");
       const seen: Array<AgentEvent> = [];
       yield* Effect.forkScoped(
         Stream.runForEach(session.events, (event) => Effect.sync(() => void seen.push(event))),
@@ -419,6 +425,9 @@ describe("a joined machine's sessions across a dropped connection", () => {
         "the events after the redial",
       );
       expect(said(seen)).toEqual(["before", "while away", "after"]);
+      // The connectors report is followed again too: the host hands the last one to the new stream.
+      yield* eventually(() => (reports.length === 2 ? true : undefined), "the report again");
+      expect(reports).toEqual(["docs", "docs"]);
       // Calls reach the agent over the new connection, and it never closed.
       yield* session.send({ text: "hi" });
       expect(onHost.calls).toContain("send hi");
