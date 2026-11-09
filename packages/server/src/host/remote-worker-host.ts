@@ -40,6 +40,8 @@ export interface Machine {
   readonly name: string;
   /** The tailnet address it dialled, where its sessions reach their app tools; absent offline. */
   readonly origin?: () => string | undefined;
+  /** Asks the machine for its Claude Code sign-in again, after a start failed for it. */
+  readonly recheckSignIn?: () => void;
   /**
    * Its connection now, failing while it is offline. Given, its sessions follow it across a
    * redial (`followingSessions`); without it, they end with the connection they opened on.
@@ -341,6 +343,7 @@ export const machineWorkerHost = (
               agent,
               machine.name,
               machine.origin ?? (() => undefined),
+              machine.recheckSignIn,
             );
             wrapped.set(agent, through);
             return through;
@@ -393,6 +396,7 @@ export const machineHosts = (
             id,
             name: remote.machines.get(id)?.name ?? id,
             origin: () => remote.origin(id),
+            recheckSignIn: () => void remote.checkSignIn(id),
             connection: remote.connection(id),
           };
           const host = yield* machineWorkerHost(machine, connection, deps).pipe(

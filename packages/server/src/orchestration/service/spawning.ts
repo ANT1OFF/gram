@@ -892,23 +892,22 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       Effect.flatMap((held): Effect.Effect<HeldSpawn | RouteOffer | undefined> =>
         held === undefined ? routeGate(callerId, input) : Effect.succeed(held),
       ),
-      Effect.flatMap(
-        (offer): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
-          offer !== undefined
-            ? Effect.succeed(offer)
-            : holdGate(callerId, input).pipe(
-                Effect.flatMap(
-                  (held): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
-                    held !== undefined
-                      ? routeHeld(callerId, input, held)
-                      : limitGate(callerId, input).pipe(
-                          Effect.matchEffect({
-                            onFailure: (refused) => routePaused(callerId, input, refused),
-                            onSuccess: () => spawnFor(callerId, input),
-                          }),
-                        ),
-                ),
+      Effect.flatMap((offer): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
+        offer !== undefined
+          ? Effect.succeed(offer)
+          : holdGate(callerId, input).pipe(
+              Effect.flatMap(
+                (held): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
+                  held !== undefined
+                    ? routeHeld(callerId, input, held)
+                    : limitGate(callerId, input).pipe(
+                        Effect.matchEffect({
+                          onFailure: (refused) => routePaused(callerId, input, refused),
+                          onSuccess: () => spawnFor(callerId, input),
+                        }),
+                      ),
               ),
+            ),
       ),
     );
 
@@ -955,6 +954,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           title: feature,
           brief: text,
           ...(input.base === undefined ? {} : { base: input.base }),
+          ...(input.hostId === undefined ? {} : { machine: input.hostId }),
         },
         {
           id: input.id,

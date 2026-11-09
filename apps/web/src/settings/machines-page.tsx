@@ -20,10 +20,14 @@ import { Dialog, DialogShell } from "@/thread/dialog-shell";
 import { copyText } from "./copy-text";
 import { phoneAccess, PhoneAccessError } from "./phone-access-api";
 import { PHONE_ACCESS_KEY, TailscaleChecklist } from "./phone-access-page";
+import { MachineSignIn, SignInButton } from "./machine-sign-in";
 import {
   type JoinedMachine,
   type JoinLink,
   MACHINES_KEY,
+  machineNeedsSignIn,
+  machineSignInProblem,
+  machineToolsLine,
   machinesApi,
   MachinesError,
   SshJoinError,
@@ -77,6 +81,8 @@ export function MachinesPage() {
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState<Pending>();
+  /** The machine whose Sign in terminal is open under its row. */
+  const [signingIn, setSigningIn] = useState<string>();
   const [error, setError] = useState<string>();
   const status = useQuery({
     queryKey: MACHINES_KEY,
@@ -143,6 +149,9 @@ export function MachinesPage() {
               onConfirm={() => setPending({ kind: "confirm", machine })}
               onRemove={() => setPending({ kind: "remove", machine })}
               onUpdate={() => setPending({ kind: "update", machine })}
+              signingIn={signingIn === machine.id}
+              onSignIn={() => setSigningIn(machine.id)}
+              onSignInClosed={() => setSigningIn(undefined)}
             />
           ))}
         </div>
@@ -214,6 +223,9 @@ function MachineRow({
   onConfirm,
   onRemove,
   onUpdate,
+  signingIn,
+  onSignIn,
+  onSignInClosed,
 }: {
   machine: JoinedMachine;
   health: MachineHealth;
@@ -221,75 +233,100 @@ function MachineRow({
   onConfirm: () => void;
   onRemove: () => void;
   onUpdate: () => void;
+  signingIn: boolean;
+  onSignIn: () => void;
+  onSignInClosed: () => void;
 }) {
   const online = health.tone === "online";
   const hint = healthHint(health);
   // Only for a machine this Gram can't talk to; one on another release that works says so on hover.
   const updatable = machine.confirmed && health.tone === "update" && health.update !== undefined;
+  const problem = online ? machineSignInProblem(machine) : undefined;
+  const tools = online ? machineToolsLine(machine) : undefined;
   return (
-    <div className="flex min-h-9 items-center gap-3" data-testid="machines-row">
-      <Monitor aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 font-medium">
-          {machine.name}
-          <span className="text-meta font-normal text-muted-foreground">
-            {platformName(machine.platform)}
+    <div className="flex flex-col gap-2" data-testid="machines-row">
+      <div className="flex min-h-9 items-center gap-3">
+        <Monitor aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="flex items-center gap-1.5 font-medium">
+            {machine.name}
+            <span className="text-meta font-normal text-muted-foreground">
+              {platformName(machine.platform)}
+            </span>
+            {online && (
+              <span
+                aria-hidden
+                className="size-1.5 rounded-full bg-success"
+                data-testid="machines-online"
+              />
+            )}
           </span>
-          {online && (
+          <span className="text-meta text-muted-foreground">
+            Joined {formatDay(machine.joinedAt, now)} ·{" "}
+            {hint === undefined ? (
+              <span data-testid="machines-state">{health.label}</span>
+            ) : (
+              <Hint
+                label={hint}
+                side="bottom"
+                render={
+                  <span
+                    // Focusable, so the reason is there by keyboard too.
+                    tabIndex={0}
+                    aria-description={hint}
+                    data-testid="machines-state"
+                    className="inline-flex items-center gap-1 rounded-sm align-bottom whitespace-nowrap outline-none focus-visible:focus-ring"
+                  />
+                }
+              >
+                {health.label}
+                {/* Neutral: the glyph's shape says it, as for any caution that isn't a setting's. */}
+                {health.update !== undefined ? (
+                  <CircleArrowUp aria-hidden className="size-icon-chip" />
+                ) : (
+                  <CircleAlert aria-hidden className="size-icon-chip" />
+                )}
+              </Hint>
+            )}
+          </span>
+          {tools !== undefined && (
+            <span className="text-meta text-muted-foreground" data-testid="machines-tools">
+              {tools}
+            </span>
+          )}
+          {problem !== undefined && (
             <span
-              aria-hidden
-              className="size-1.5 rounded-full bg-success"
-              data-testid="machines-online"
-            />
-          )}
-        </span>
-        <span className="text-meta text-muted-foreground">
-          Joined {formatDay(machine.joinedAt, now)} ·{" "}
-          {hint === undefined ? (
-            <span data-testid="machines-state">{health.label}</span>
-          ) : (
-            <Hint
-              label={hint}
-              side="bottom"
-              render={
-                <span
-                  // Focusable, so the reason is there by keyboard too.
-                  tabIndex={0}
-                  aria-description={hint}
-                  data-testid="machines-state"
-                  className="inline-flex items-center gap-1 rounded-sm align-bottom whitespace-nowrap outline-none focus-visible:focus-ring"
-                />
-              }
+              className="flex items-center gap-1 text-meta text-destructive"
+              data-testid="machines-sign-in-problem"
             >
-              {health.label}
-              {/* Neutral: the glyph's shape says it, as for any caution that isn't a setting's. */}
-              {health.update !== undefined ? (
-                <CircleArrowUp aria-hidden className="size-icon-chip" />
-              ) : (
-                <CircleAlert aria-hidden className="size-icon-chip" />
-              )}
-            </Hint>
+              <CircleAlert aria-hidden className="size-icon-chip shrink-0" />
+              {problem}
+            </span>
           )}
+          <span className="font-mono text-meta text-muted-foreground" title="Key fingerprint">
+            {machine.fingerprint}
+          </span>
         </span>
-        <span className="font-mono text-meta text-muted-foreground" title="Key fingerprint">
-          {machine.fingerprint}
+        <span className="ms-auto flex shrink-0 gap-1">
+          {!machine.confirmed && (
+            <Button size="sm" onClick={onConfirm}>
+              Confirm
+            </Button>
+          )}
+          {online && machineNeedsSignIn(machine) && !signingIn && (
+            <SignInButton machine={machine} onClick={onSignIn} testId="machines-sign-in" />
+          )}
+          {updatable && (
+            <Button size="sm" onClick={onUpdate} data-testid="machines-update">
+              Update
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={onRemove}>
+            Remove
+          </Button>
         </span>
-      </span>
-      <span className="ms-auto flex shrink-0 gap-1">
-        {!machine.confirmed && (
-          <Button size="sm" onClick={onConfirm}>
-            Confirm
-          </Button>
-        )}
-        {updatable && (
-          <Button size="sm" onClick={onUpdate} data-testid="machines-update">
-            Update
-          </Button>
-        )}
-        <Button size="sm" variant="ghost" onClick={onRemove}>
-          Remove
-        </Button>
-      </span>
+      </div>
+      {signingIn && <MachineSignIn machine={machine} onClose={onSignInClosed} />}
     </div>
   );
 }
