@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { Hint } from "@/components/hint";
+import { Spinner } from "@/motion/spinner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { formatDay } from "@/lib/time";
@@ -428,10 +429,7 @@ function MachineRow({
               ) : updateLine.tone === "done" ? (
                 <CircleCheck aria-hidden className="size-icon-chip shrink-0 text-success" />
               ) : (
-                <RefreshCw
-                  aria-hidden
-                  className="size-icon-chip shrink-0 motion-safe:animate-spin"
-                />
+                <Spinner aria-hidden className="size-icon-chip shrink-0" />
               )}
               {updateLine.text}
             </span>
