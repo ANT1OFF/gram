@@ -1,7 +1,9 @@
 import type { ConnectorsSeen } from "@gram/agents";
 import { HostFailed, type HostUnavailable } from "@gram/contracts";
+import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import type { HostConnection, HostSessionsConnection } from "./protocol.ts";
@@ -12,7 +14,10 @@ import type { HostConnection, HostSessionsConnection } from "./protocol.ts";
  * `DETACHED_GRACE_MS`, so the host still has it when this side gives up.
  */
 export const REATTACH_WITHIN_MS = 2 * 60_000;
-/** How long a call into a session (a send, an answer) waits for the machine to be back. */
+/**
+ * How long a call into a session (an answer, a mode) waits for the machine to be back. Its input
+ * waits as long as the session does (`REATTACH_WITHIN_MS`).
+ */
 export const CALL_WAIT_MS = 15_000;
 /** How often a dropped machine is looked for again. */
 const LOOK_EVERY = "500 millis";
@@ -54,6 +59,37 @@ export const followingSessions = (
       Effect.mapError((error) => new HostFailed({ message: error.message })),
       Effect.flatMap(run),
     );
+  /**
+   * A send or a steer under `deliveryId`, which the agent must neither miss nor take twice. A
+   * machine that is away is waited for as long as its sessions are (`reattachMs`): the input waits
+   * with them rather than fail and leave the session running without it. A connection that drops
+   * under the call leaves unknown whether it arrived, so it is asked again, under the same id, once
+   * the machine is back: a host that serves `deliveries` takes it once and answers a repeat as it
+   * did the first. One that doesn't is never asked again, and what a host itself answers stands.
+   */
+  const deliver = (
+    deliveryId: string | undefined,
+    run: (sessions: HostSessionsConnection) => Effect.Effect<void, HostFailed>,
+  ): Effect.Effect<void, HostFailed> =>
+    deliveryId === undefined
+      ? call(run)
+      : Effect.gen(function* () {
+          const until = (yield* Clock.currentTimeMillis) + reattachMs;
+          for (;;) {
+            const left = until - (yield* Clock.currentTimeMillis);
+            const live = yield* awaitConnection(current, Math.max(0, left)).pipe(
+              Effect.mapError((error) => new HostFailed({ message: error.message })),
+            );
+            const exit = yield* Effect.exit(run(live.sessions));
+            if (Exit.isSuccess(exit)) return;
+            const again =
+              live.gone() &&
+              live.hello.capabilities.includes("deliveries") &&
+              (yield* Clock.currentTimeMillis) < until;
+            if (!again) return yield* Effect.failCause(exit.cause);
+            yield* Effect.logInfo("worker host: a delivery waits for its machine to dial in");
+          }
+        });
   /**
    * A call with nothing to report, which a machine that is away leaves undone. Its exit is
    * dropped whole: a connection torn down under it interrupts the call, and a close run as a
@@ -120,8 +156,10 @@ export const followingSessions = (
         );
       return follow(callMs);
     },
-    send: (handle, input, options) => call((s) => s.send(handle, input, options)),
-    steer: (handle, input) => call((s) => s.steer(handle, input)),
+    send: (handle, input, options) =>
+      deliver(options?.deliveryId, (s) => s.send(handle, input, options)),
+    steer: (handle, input, options) =>
+      deliver(options?.deliveryId, (s) => s.steer(handle, input, options)),
     interrupt: (handle) => call((s) => s.interrupt(handle)),
     closeToolGate: (handle) => call((s) => s.closeToolGate(handle)),
     stopBackgroundTasks: (handle) => call((s) => s.stopBackgroundTasks(handle)),

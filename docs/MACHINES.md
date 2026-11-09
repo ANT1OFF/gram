@@ -106,6 +106,11 @@ or `gram-host service install`.
   upstream and undoing a turn run git on this machine, so a worker on another machine refuses them
   and says so; ask its agent, or use its terminal. PR reads and actions that name the repository
   (checks, reviews, merge, labels) work, with the PR bound to the thread.
+- A message sent while the connection is down waits for the machine for up to two minutes, as its
+  session does, and is handed to the agent once it dials in again; if the connection dropped before
+  Gram heard back, Gram asks again under the same id and the host takes it only once. A machine
+  that doesn't come back in time leaves the message at the top of the thread's queue, and the
+  thread says it wasn't delivered.
 
 ## Add a machine over SSH
 

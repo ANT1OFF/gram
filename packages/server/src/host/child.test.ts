@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { spawnHost, spawnLocalHost } from "./child.ts";
-import { HOST_CAPABILITIES } from "./protocol.ts";
+import { HOST_SERVES } from "./protocol.ts";
 
 const folder = Effect.acquireRelease(
   Effect.sync(() => {
@@ -34,7 +34,7 @@ describe("the host as its own process", () => {
           Effect.gen(function* () {
             const host = yield* spawnLocalHost;
             expect(host.hello.pid).not.toBe(process.pid);
-            expect(host.hello.capabilities).toEqual(HOST_CAPABILITIES);
+            expect(host.hello.capabilities).toEqual(HOST_SERVES);
             const listing = yield* host.files.list(dir, { showHidden: false, limit: 10 });
             expect(listing.entries.map((entry) => entry.name)).toEqual(["a.txt"]);
             return host.hello.pid;

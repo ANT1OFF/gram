@@ -21,7 +21,7 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
-import { HOST_CAPABILITIES, type HostService, serveHost } from "./protocol.ts";
+import { HOST_SERVES, type HostService, serveHost } from "./protocol.ts";
 import { runCli } from "./cli.ts";
 import type { HostId } from "@gram/contracts";
 import type * as Scope from "effect/Scope";
@@ -69,7 +69,7 @@ const hostService = (
       hello: {
         protocol: HOST_PROTOCOL_VERSION,
         hostId,
-        capabilities: HOST_CAPABILITIES,
+        capabilities: HOST_SERVES,
         platform: process.platform,
         pid: process.pid,
       },
