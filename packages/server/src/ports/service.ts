@@ -2,7 +2,13 @@
 // found by one machine-wide scan per poll and pushed as `thread.ports` events when they change. The
 // same scan finds what runs in the foreground of each terminal, pushed as `thread.terminalProcesses`.
 
-import type { TerminalProcess, ThreadId } from "@gram/contracts";
+import {
+  effectiveCheckout,
+  hostOf,
+  LOCAL_HOST_ID,
+  type TerminalProcess,
+  type ThreadId,
+} from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -12,6 +18,7 @@ import * as Layer from "effect/Layer";
 import { EventHub } from "../events/event-hub.ts";
 import { AppActivity, pollWhileShown } from "../git/activity.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { redactText } from "../logging/redact.ts";
 import { foregroundOf, portsByKey, samePorts, shortCommand } from "./pure.ts";
@@ -33,11 +40,21 @@ export interface ThreadPortsShape {
    * than the last periodic one; undefined when that scan fails, since then nothing is ruled out.
    */
   readonly busyTerminalsNow: Effect.Effect<ReadonlyArray<ThreadId> | undefined>;
+  /**
+   * Whether a terminal of the thread runs a command right now on the machine the thread is on, from
+   * a scan of that machine's own; undefined when that can't be told, so nothing is ruled out.
+   */
+  readonly terminalBusyNow: (threadId: ThreadId) => Effect.Effect<boolean | undefined>;
 }
 
 export interface ThreadPortsOptions {
   readonly scan?: Effect.Effect<PortScan, unknown, Proc>;
   readonly interval?: Duration.Input;
+  /**
+   * For a thread on another machine, whether its terminals run a command there (`undefined` when
+   * that can't be told); `"here"` for a thread on this machine, which this machine's scan answers.
+   */
+  readonly elsewhere?: (threadId: ThreadId) => Effect.Effect<boolean | undefined | "here">;
 }
 
 export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>()(
@@ -143,24 +160,59 @@ export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>(
           ];
         });
 
+        const elsewhere = options.elsewhere ?? (() => Effect.succeed("here" as const));
+        const terminalBusyNow = (threadId: ThreadId) =>
+          Effect.flatMap(elsewhere(threadId), (answer) =>
+            answer === "here"
+              ? Effect.map(busyTerminalsNow, (threads) => threads?.includes(threadId))
+              : Effect.succeed(answer),
+          );
+
         return ThreadPorts.of({
           portsOf: (threadId) => current.get(threadId) ?? [],
           terminalProcessesOf: (threadId) => busy.get(threadId) ?? [],
           refresh,
           busyTerminalsNow,
+          terminalBusyNow,
         });
       }),
     );
 
-  /** Over this machine's host's scan, so the chips read the machine the threads run on. */
+  /**
+   * Over this machine's host's scan, so the chips read the machine the threads run on. A thread on
+   * another machine has its terminals read by that machine's host, and is never ruled at rest while
+   * the machine can't be asked.
+   */
   static readonly layer: Layer.Layer<
     ThreadPorts,
     never,
     ThreadRuntimes | EventHub | ProcessRoots | Proc | WorkerHosts
   > = Layer.unwrap(
     Effect.gen(function* () {
-      const { ports } = (yield* WorkerHosts).local;
-      return ThreadPorts.layerWith({ scan: ports.scan });
+      const hosts = yield* WorkerHosts;
+      const store = yield* Effect.serviceOption(ThreadStore);
+      type Answer = boolean | undefined | "here";
+      const elsewhere = (threadId: ThreadId): Effect.Effect<Answer> =>
+        store._tag === "None"
+          ? Effect.succeed("here")
+          : store.value.getThread(threadId).pipe(
+              // Where its terminals open (`placedHost`): a thread that isn't stored is this machine's.
+              Effect.map((thread) => hostOf(effectiveCheckout(thread))),
+              Effect.orElseSucceed(() => LOCAL_HOST_ID),
+              Effect.flatMap((id): Effect.Effect<Answer> =>
+                id === LOCAL_HOST_ID
+                  ? Effect.succeed("here")
+                  : hosts.get(id).pipe(
+                      Effect.flatMap(
+                        (host): Effect.Effect<Answer> =>
+                          host.ports.terminalBusy?.(threadId) ?? Effect.succeed(undefined),
+                      ),
+                      // Offline: its shells may well run on, out of sight.
+                      Effect.orElseSucceed((): Answer => undefined),
+                    ),
+              ),
+            );
+      return ThreadPorts.layerWith({ scan: hosts.local.ports.scan, elsewhere });
     }),
   );
 }

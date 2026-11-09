@@ -122,6 +122,9 @@ const logFailed = (call: string) => (error: HostFailed) =>
  * ones received are confirmed to the host, which keeps the rest for a stream that picks up again
  * (as a reconnecting host's will). A host that goes ends the session with an `ended` event, which
  * names the joined `machine` the session ran on, if it ran on one.
+ *
+ * A session on a joined `machine` has no process id here: its agent's is that machine's, so the
+ * port chips never look for it among this machine's processes.
  */
 const openOnHost = (
   host: HostSessionsConnection,
@@ -306,7 +309,7 @@ const openOnHost = (
                 .pipe(Effect.catch((e) => Effect.as(logFailed("addDirectories")(e), false))),
           }
         : {}),
-      ...(opened.processId
+      ...(opened.processId && machine === undefined
         ? {
             processId: host
               .processId(handle)

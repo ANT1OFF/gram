@@ -231,6 +231,9 @@ or `gram-host service install`.
   a dropped connection or a restart of the main Gram while the host waits for it; once it connects
   again, each shell whose thread is still open on that machine is taken up again, so typing and
   closing reach it, and each one whose thread was closed meanwhile is closed.
+- Bulk worktree removal asks that machine whether a command runs in the worker's terminals, and
+  leaves the worker open while one does or while the machine can't be asked. A worker there shows
+  no port chips, rather than chips from this machine's processes.
 - A conversation forks only onto the machine it ran on, since its history is kept there: a fork of
   a joined machine's thread goes into a worktree on that machine, and a fork of one of this
   machine's threads stays here.

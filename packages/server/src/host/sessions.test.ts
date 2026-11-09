@@ -624,6 +624,17 @@ describe("a host's deliveries", () => {
   );
 });
 
+describe("a joined machine's agent process", () => {
+  it.live("has no process id here, so the port chips never match it to this machine's", () =>
+    Effect.gen(function* () {
+      const { agent } = yield* redialling;
+      // The host reports pid 4242, which is that machine's: here it could be any process at all.
+      const session = yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+      expect(session.processId).toBeUndefined();
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
+
 describe("a joined machine's session sent an attachment", () => {
   it.live("reads a copy kept on that machine, never this machine's path", () =>
     Effect.gen(function* () {
