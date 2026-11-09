@@ -13,6 +13,7 @@ import {
   toolRuns,
   turnFoldLabel,
   turnFolds,
+  type MemoryWritePart,
   type TurnSummary,
 } from "./tool-group-model";
 
@@ -28,6 +29,12 @@ const image = (toolCallId: string, path?: string, size = 68) =>
     type: "data-tool-image",
     data: { toolCallId, mediaType: "image/png", size, ...(path === undefined ? {} : { path }) },
   }) as MessagePart;
+const memoryWrite = (path: string) =>
+  ({
+    type: "data-memory-write",
+    id: `memory-${path}`,
+    data: { path, action: "write", before: "a\n", after: "b\n", bytes: 2 },
+  }) as MemoryWritePart;
 
 describe("toolRuns", () => {
   it("folds consecutive tool calls and lets prose end a run", () => {
@@ -76,6 +83,25 @@ describe("toolRuns", () => {
     expect(absorbed.size).toBe(0);
   });
 
+  it("keeps a memory change in the run around it, rather than splitting it", () => {
+    const parts = [
+      tool("Bash"),
+      tool("mcp__gram__memory_edit"),
+      memoryWrite("decisions.md"),
+      tool("Read"),
+      text("b"),
+    ];
+    const { starts, absorbed } = toolRuns(parts);
+    expect([...starts.keys()]).toEqual([0]);
+    expect(starts.get(0)).toEqual(parts.slice(0, 4));
+    expect([...absorbed]).toEqual([1, 2, 3]);
+  });
+
+  it("folds a lone memory call with the change it made", () => {
+    const parts = [text("a"), tool("mcp__gram__memory_append"), memoryWrite("map.md"), text("b")];
+    expect(toolRuns(parts).starts.get(1)).toEqual([parts[1], parts[2]]);
+  });
+
   it("keeps a subagent's card out of a run, and lets it split one", () => {
     const parts = [tool("Read"), tool("Task"), tool("Read"), tool("Bash")];
     const { starts, absorbed } = toolRuns(parts);
@@ -85,6 +111,18 @@ describe("toolRuns", () => {
 });
 
 describe("runSummary", () => {
+  it("says memory changed, after edits and before the rest, without counting the changes", () => {
+    const run = [
+      tool("Bash"),
+      tool("mcp__gram__memory_edit"),
+      memoryWrite("decisions.md"),
+      tool("mcp__gram__memory_write"),
+      memoryWrite("map.md"),
+      tool("mcp__gram__memory_read"),
+    ];
+    expect(runSummary(run)).toBe("Updated memory, ran 1 command, used 1 tool");
+  });
+
   it("counts each kind of step in a fixed order", () => {
     expect(runSummary([tool("Read"), tool("Bash"), tool("Read"), tool("Bash")])).toBe(
       "Ran 2 commands, read 2 files",
@@ -250,6 +288,12 @@ describe("turnFolds", () => {
     const parts = [text("a"), tool("Bash"), text("one"), { type: "step-start" }, text("two")];
     const fold = turnFolds([user("u"), reply("r", parts as MessagePart[], worked)], false);
     expect([...fold.get("r")!.hidden]).toEqual([0, 1]);
+  });
+
+  it("folds the memory changes among the turn's tool calls with them", () => {
+    const parts = [text("a"), tool("mcp__gram__memory_edit"), memoryWrite("map.md"), text("final")];
+    const fold = turnFolds([user("u"), reply("r", parts, worked)], false).get("r")!;
+    expect([...fold.hidden]).toEqual([0, 1, 2]);
   });
 
   it("folds what the agent did after its last words", () => {

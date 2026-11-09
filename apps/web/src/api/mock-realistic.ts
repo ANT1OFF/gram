@@ -512,11 +512,27 @@ export async function simulateRealistic(
       "**Cold start:** the worker profiled a launch at 1.6 s. Most of it is the settings read and the font load, both on the first paint. It is moving the settings read behind the first frame and preloading the font, then it measures again.",
     ),
   );
+  // A memory change among the calls, as an orchestrator makes one between checks.
+  const decisions = "# Decisions\n\n- One worker per feature.\n";
+  const rule = "- Merge each PR once its checks and the review bot pass.";
   say(
     70,
     tool("Bash", { command: "gh pr checks 142 --repo example/gram" }),
     tool("mcp__gram__pr_status", { pr: 142 }),
+    tool("mcp__gram__memory_append", { path: "decisions.md", text: rule }),
+    {
+      type: "data-memory-write",
+      id: host.ids(),
+      data: {
+        path: "decisions.md",
+        action: "write",
+        before: decisions,
+        after: `${decisions}${rule}\n`,
+        bytes: decisions.length + rule.length + 1,
+      },
+    },
     tool("mcp__gram__pr_review_threads", { pr: 142 }),
+    tool("mcp__gram__list_threads", {}),
   );
   say(
     69,

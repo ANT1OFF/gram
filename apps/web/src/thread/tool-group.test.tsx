@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { AnyToolPart } from "./parts";
@@ -63,6 +63,33 @@ describe("ToolGroup", () => {
     ];
     render(<ToolGroup run={run} {...card} />);
     expect(screen.getByRole("button").textContent).toBe("Running the check…· 1 failed");
+  });
+
+  it("keeps a memory change as one of its rows, opening to the diff", () => {
+    const run = [
+      tool("a", "mcp__gram__memory_edit", { path: "decisions.md" }, "output-available"),
+      {
+        type: "data-memory-write",
+        id: "m",
+        data: {
+          path: "decisions.md",
+          action: "write",
+          before: "- keep\n- old\n",
+          after: "- keep\n- new\n",
+          bytes: 2048,
+        },
+      } as const,
+      tool("b", "Bash", { command: "pnpm test" }, "output-available"),
+    ];
+    render(<ToolGroup run={run} {...card} />);
+    const toggle = screen.getByRole("button", { name: "Updated memory, ran 1 command" });
+    expect(screen.queryByTestId("memory-write")).toBeNull();
+
+    fireEvent.click(toggle);
+    const row = screen.getByTestId("memory-write");
+    expect(row.textContent).toBe("Updated memory· decisions.md· 2.0 KB+1 −1");
+    fireEvent.click(within(row).getByRole("button"));
+    expect(screen.getByTestId("memory-diff").textContent).toContain("+ - new");
   });
 
   it("starts open while a call waits for approval", () => {

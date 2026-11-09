@@ -7,26 +7,30 @@ import { Expand } from "@/motion";
 
 import { ApprovalSlot, ApprovalSlotsOpen, useNeedsSlot } from "./approval-slots";
 import { useAwaitingTools } from "./awaiting-tools";
+import { MemoryWriteRow } from "./orchestration-cards";
 import { ToolCard, type ToolCardProps } from "./tool-cards";
 import { EditCounts } from "./file-edit-card";
 import {
+  runCalls,
   runEdits,
   runState,
   runSummary,
   stepLabel,
   turnFoldLabel,
+  type RunPart,
   type TurnSummary,
 } from "./tool-group-model";
 
 /**
  * A run of tool calls folded into one line: what it did once it's finished ("Edited retry.ts, ran 2
- * commands +4 −1"), the step in flight while it isn't. Opening it shows each call's own card. Failures stay
- * countable on the closed line, and a run waiting on the user starts open.
+ * commands +4 −1"), the step in flight while it isn't. Opening it shows each call's own card, and each
+ * memory change among them as a row. Failures stay countable on the closed line, and a run waiting
+ * on the user starts open.
  */
 export function ToolGroup({
   run,
   ...card
-}: { run: readonly ToolCardProps["part"][] } & Omit<ToolCardProps, "part">) {
+}: { run: readonly RunPart[] } & Omit<ToolCardProps, "part">) {
   const { active, waiting, failed, cancelled, awaiting } = runState(run, useAwaitingTools());
   const edits = runEdits(run);
   // A run waiting on the user is open until the user says otherwise, even when the ask came later.
@@ -38,14 +42,15 @@ export function ToolGroup({
   const bodyId = useId();
   // Closed, the run's line holds the card of the call it hides, or that card's receipt.
   const needsSlot = useNeedsSlot();
-  const hidden = open ? undefined : run.find((part) => needsSlot(part.toolCallId));
+  const calls = runCalls(run);
+  const hidden = open ? undefined : calls.find((part) => needsSlot(part.toolCallId));
 
   return (
     <div
       data-testid="tool-group"
       data-open={open}
       // Find in thread opens the group a match is in (find-highlight.ts).
-      data-tool-call-ids={run.map((part) => part.toolCallId).join(" ")}
+      data-tool-call-ids={calls.map((part) => part.toolCallId).join(" ")}
     >
       <button
         type="button"
@@ -98,9 +103,13 @@ export function ToolGroup({
         {opened && (
           <ApprovalSlotsOpen open={open}>
             <div className="flex flex-col gap-2 pt-1.5">
-              {run.map((part) => (
-                <ToolCard key={part.toolCallId} part={part} {...card} />
-              ))}
+              {run.map((part, i) =>
+                part.type === "data-memory-write" ? (
+                  <MemoryWriteRow key={part.id ?? `memory:${i}`} write={part.data} />
+                ) : (
+                  <ToolCard key={part.toolCallId} part={part} {...card} />
+                ),
+              )}
             </div>
           </ApprovalSlotsOpen>
         )}
