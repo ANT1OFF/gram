@@ -104,7 +104,8 @@ Mac** runs `claude setup-token` here and sends the token it prints to the machin
   or Remote Control there. Deleting it doesn't revoke it. Revoke it at claude.ai → Settings →
   Claude Code.
 
-Gram runs the `claude` on your login shell's PATH, as a terminal would. The
+Gram runs the `claude` your login shell finds, as a terminal would, but starts it directly
+and without debugger, preload or request-logging settings. The
 [design note](design/machine-setup-token.md) covers the threat model.
 
 ## Its repositories

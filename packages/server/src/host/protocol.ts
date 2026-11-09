@@ -57,6 +57,7 @@ import {
   SocketServer,
 } from "../platform/unstable.ts";
 import type { HostFiles } from "./files.ts";
+import { NOT_A_CLAUDE_TOKEN } from "./host-config.ts";
 import type { HostGit } from "./git.ts";
 import type { HostRepos } from "./repos.ts";
 import type { HostSessionsService } from "./sessions.ts";
@@ -469,6 +470,21 @@ export interface HostConnection {
 /** What a token call says when the host didn't answer it, the token left out. */
 export const HOST_TOKEN_UNANSWERED =
   "This machine's gram-host didn't take the token. It may be older than this Gram: update it there and try again.";
+
+/** What a token call says when the host refused it in words this side doesn't pass on. */
+export const HOST_TOKEN_REFUSED = "This machine's gram-host refused the token.";
+
+/** A file error as the joined host's own store words it: the step and an error code, nothing else. */
+const STORE_REFUSAL = /^Couldn't (?:keep|delete) the Claude token: [A-Za-z0-9_ ]{1,32}\.$/;
+
+/**
+ * A host's refusal as this side passes it on: only words a host built from this tree says, never
+ * free text a host chose, which could quote the token it was sent.
+ */
+export const publicTokenRefusal = (message: string): string =>
+  message === NOT_A_CLAUDE_TOKEN || message === NO_TOKEN_STORE || STORE_REFUSAL.test(message)
+    ? message
+    : HOST_TOKEN_REFUSED;
 
 /** How long a token call waits for the host. */
 const TOKEN_CALL_TIMEOUT = "20 seconds";
@@ -918,7 +934,8 @@ export const connectHost = (
         }),
         Effect.catchCause((cause) => {
           const failure = cause.reasons.find(Cause.isFailReason)?.error;
-          if (failure instanceof HostFailed) return Effect.fail(failure);
+          if (failure instanceof HostFailed)
+            return Effect.fail(new HostFailed({ message: publicTokenRefusal(failure.message) }));
           if (cause.reasons.some(Cause.isInterruptReason) && failure === undefined)
             return Effect.failCause(cause as Cause.Cause<never>);
           return Effect.logWarning("worker host: a token call wasn't answered").pipe(

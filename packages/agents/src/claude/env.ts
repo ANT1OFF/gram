@@ -152,3 +152,58 @@ export const toolSearchOn = (
   const base = read("ANTHROPIC_BASE_URL");
   return base === "" || anthropicHost(base);
 };
+
+/**
+ * What a process that holds a `claude setup-token` token must not inherit: anything that could
+ * attach a debugger or inspector (`NODE_OPTIONS`, `--inspect`, Bun's inspector), preload code into
+ * it (`LD_PRELOAD`, `DYLD_*`, `BASH_ENV`), log its requests and their headers (`NODE_DEBUG`,
+ * `DEBUG`, `ANTHROPIC_LOG`), or let its TLS be read or bypassed (`SSLKEYLOGFILE`,
+ * `NODE_TLS_REJECT_UNAUTHORIZED`). Proxies and extra CA certificates stay: the CLI may need them,
+ * and they see only TLS it verified.
+ */
+const TOKEN_CHILD_STRIP_EXACT = new Set([
+  "NODE_OPTIONS",
+  "NODE_DEBUG",
+  "NODE_V8_COVERAGE",
+  "NODE_TLS_REJECT_UNAUTHORIZED",
+  "NODE_REPL_EXTERNAL_MODULE",
+  "NODE_PRESERVE_SYMLINKS",
+  "BUN_OPTIONS",
+  "BUN_CONFIG_VERBOSE_FETCH",
+  "SSLKEYLOGFILE",
+  "BASH_ENV",
+  "ENV",
+  "ANTHROPIC_LOG",
+  "DEBUG",
+  "ELECTRON_RUN_AS_NODE",
+  "LD_PRELOAD",
+  "LD_AUDIT",
+  "LD_LIBRARY_PATH",
+]);
+const TOKEN_CHILD_STRIP_PREFIXES = ["NODE_INSPECT", "BUN_INSPECT", "DYLD_"];
+
+/** Whether a token-bearing child must not inherit `name` (`TOKEN_CHILD_STRIP_EXACT`). */
+export const isTokenChildStripped = (name: string): boolean => {
+  const key = name.toUpperCase();
+  return (
+    TOKEN_CHILD_STRIP_EXACT.has(key) ||
+    TOKEN_CHILD_STRIP_PREFIXES.some((prefix) => key.startsWith(prefix))
+  );
+};
+
+/**
+ * `env` for a process that will hold a `claude setup-token` token: without the debugger, preload,
+ * request-logging and TLS-bypass settings (`isTokenChildStripped`), and without any OAuth token
+ * already in it, which the caller sets itself when it means to.
+ */
+export const tokenChildEnv = (
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined || isTokenChildStripped(name)) continue;
+    if (name.toUpperCase().startsWith("CLAUDE_CODE_OAUTH_TOKEN")) continue;
+    out[name] = value;
+  }
+  return out;
+};

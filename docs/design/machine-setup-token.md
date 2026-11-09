@@ -77,6 +77,9 @@ a dialog before anything runs:
   **Cancel**. The terminal output itself never reaches the page.
 - When it ends, the dialog shows a result for each machine: either a token was set, or why it
   wasn't (offline, its gram-host is too old, it refused).
+- Consent is for the join the user ticked. A machine removed after it was ticked gets nothing
+  from that run, even if it joins again with the same key: its join is compared when the token
+  is sent, and Remove drops it from the run.
 
 **Keep for future machines.** The brief allows an opt-in to keep the token on the main machine
 for machines joined later. This design leaves it out, and recommends against it. Keeping it would
@@ -85,13 +88,23 @@ convenience. Running setup-token again for a new machine costs one browser appro
 
 ## Capture and transport
 
-- **Capture.** The server starts `claude setup-token` in a pseudo-terminal on the main machine.
-  It runs in the user's login shell (`$SHELL -ilc 'exec claude setup-token'`), so it is their
-  own `claude` on their own PATH, as in a terminal they opened, without any
-  `CLAUDE_CODE_OAUTH_TOKEN` from Gram's environment. The terminal is 1000 columns wide, so the
-  token and the sign-in link each print on one line.
-  The server strips ANSI from the output and looks for three things: the authorization link, the
-  code prompt, and a token (`sk-ant-oat<NN>-…`). It keeps at most 64 KiB of output in memory.
+- **Capture.** The server finds the user's `claude` the way a session does: the login shell's
+  `command -v claude` and environment, read only between the probe's markers. It then starts
+  `claude setup-token` itself, by its absolute path, in a pseudo-terminal. No shell runs in that
+  terminal, so nothing a shell profile prints (a `set -x` trace of an exported token, say) is ever
+  read as its output. The terminal is 1000 columns wide, so the token and the sign-in link each
+  print on one line.
+- **The process that holds the token.** Its environment is the login shell's, without anything
+  that could attach a debugger or inspector (`NODE_OPTIONS`, `NODE_INSPECT*`, `BUN_INSPECT*`),
+  preload code (`LD_PRELOAD`, `DYLD_*`, `BASH_ENV`), log requests (`NODE_DEBUG`, `DEBUG`,
+  `ANTHROPIC_LOG`) or read or bypass its TLS (`SSLKEYLOGFILE`, `NODE_TLS_REJECT_UNAUTHORIZED`), and
+  without any `CLAUDE_CODE_OAUTH_TOKEN` already set (`tokenChildEnv`). The same rule applies on the
+  joined machine to every Claude process that gets the token.
+- **Reading the output.** The server strips ANSI from the output and looks for three things: the
+  sign-in link, the code prompt, and a token (`sk-ant-oat<NN>-…`), each only once it is whole. A
+  link reaches the page only when it is Claude's own authorization page (`https://claude.ai` or
+  `claude.com`, `/oauth/authorize`), with an OAuth request's query and no credentials, fragment or
+  token in it. It keeps at most 64 KiB of output in memory.
   Once it finds a token, it stops the process and throws the buffer away. The token is held as an
   Effect `Redacted`, which prints as `<redacted>`, until each machine has answered. Then the
   reference is dropped. If no token comes within 10 minutes, the run is cancelled.
@@ -102,9 +115,11 @@ convenience. Running setup-token again for a new machine costs one browser appro
   body to or from the page, a command line or an environment variable on the main machine.
 - **Not persisted on the main machine.** No database row, settings file, log line or crash
   report holds it. The machines store records only `claudeTokenSetAt` for each machine, a time
-  and nothing else, so Remove can warn about an offline machine.
+  and nothing else. It is written before the token is sent, so a machine whose reply was lost
+  still counts as holding one. If it can't be written, nothing is sent to that machine.
 - **Logs and errors.** An error says which step failed, never what was received. The host
-  rejects a malformed token without quoting it. Diagnostics' redaction patterns also match
+  rejects a malformed token without quoting it. A host's refusal reaches the page only in the
+  words a host from this tree uses; any other text a host sends is replaced by a fixed message. Diagnostics' redaction patterns also match
   `sk-ant-oat…`, so a log line that would carry a token by accident is masked. A test checks
   that a synthetic token appears in none of the logs, errors, status replies or RPC failures of
   the flow.
@@ -126,8 +141,9 @@ convenience. Running setup-token again for a new machine costs one browser appro
 
 - **Forget token** in Settings → Machines asks the machine to delete the file
   (`host.claude.forgetToken`). It then uses its own `claude /login` sign-in again, if it has one.
-- **Remove** deletes the token on the machine first, while it is online, and then forgets the
-  machine. If the machine is offline and a token was sent to it, Remove says so. The token stays
+- **Remove** first stops the run from sending to the machine and waits for a send in flight to be
+  answered. Then, while the machine is online, it asks it to delete any token, recorded or not, and
+  only then forgets the machine. If the machine is offline and may hold a token, Remove says so. The token stays
   there until `gram-host leave` runs on that machine, or until the user revokes it at claude.ai.
 - `gram-host leave` deletes the token along with the join and its key.
 

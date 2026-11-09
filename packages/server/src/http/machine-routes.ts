@@ -55,8 +55,9 @@ export const MACHINE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The capture of `claude setup-token` for this server's joined machines: each token goes over the
- * machine's own connection, and a machine that takes it is recorded (a time, never the token).
+ * The capture of `claude setup-token` for this server's joined machines. Each token goes over the
+ * machine's own connection, only to the join the person consented to, and only once the machine
+ * is recorded as one that may hold it (a time, never the token).
  */
 export const claudeTokenCaptureFor = (hosts: RemoteHostsShape, start?: StartSetupToken) =>
   makeClaudeTokenCapture({
@@ -66,7 +67,13 @@ export const claudeTokenCaptureFor = (hosts: RemoteHostsShape, start?: StartSetu
         Effect.mapError((error) => new HostFailed({ message: error.message })),
         Effect.flatMap((connection) => connection.claude.setToken(token)),
       ),
-    sent: (id) => hosts.machines.tokenSent(id, true),
+    mark: (id) => hosts.machines.tokenSent(id, true),
+    joinOf: (id) => {
+      const machine = hosts.machines.get(id);
+      return machine?.confirmedAt === undefined
+        ? undefined
+        : `${machine.publicKey}:${machine.joinedAt}:${machine.confirmedAt}`;
+    },
   });
 
 /** A code the browser shows for `claude setup-token`: printable, short, no control characters. */
@@ -319,11 +326,15 @@ export const machineManagement = (
         const id = (yield* jsonBody(256))?.["id"];
         const machine = typeof id === "string" ? hosts.machines.get(id) : undefined;
         if (typeof id !== "string" || machine === undefined) return refuse("no such machine", 404);
-        // A machine that may hold a token deletes it first, while it can still be reached.
-        const tokenLeft =
-          path === MACHINES_REMOVE_PATH &&
-          machine.claudeTokenSetAt !== undefined &&
-          !(yield* forgetOn(hosts, id));
+        let tokenLeft = false;
+        if (path === MACHINES_REMOVE_PATH) {
+          // Nothing more is sent to it, and a send in flight is answered before the delete.
+          if (capture !== undefined) yield* capture.settle(id, { drop: true });
+          // It deletes any token while it can still be reached, recorded or not: a write whose
+          // reply was lost leaves one there too.
+          const forgot = yield* forgetOn(hosts, id);
+          tokenLeft = !forgot && hosts.machines.get(id)?.claudeTokenSetAt !== undefined;
+        }
         try {
           if (path === MACHINES_CONFIRM_PATH) hosts.machines.confirm(id);
           else hosts.remove(HostId.make(id));
@@ -336,6 +347,7 @@ export const machineManagement = (
         const id = (yield* jsonBody(256))?.["id"];
         if (typeof id !== "string" || hosts.machines.get(id) === undefined)
           return refuse("no such machine", 404);
+        if (capture !== undefined) yield* capture.settle(id, { drop: false });
         if (!(yield* forgetOn(hosts, id)))
           return json(
             {

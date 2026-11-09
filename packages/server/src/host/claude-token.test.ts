@@ -193,9 +193,11 @@ describe("the setup-token capture", () => {
           id === "m-refuses"
             ? Effect.fail(new HostFailed({ message: HOST_TOKEN_UNANSWERED }))
             : Effect.sync(() => void got.push([id, Redacted.value(token)])),
-        sent: (id) => void sent.push(id),
+        mark: (id) => void sent.push(id),
+        joinOf: () => "join",
       });
       const { captureId } = yield* capture.begin(["m-a", "m-refuses"]);
+      yield* settle;
       const views: Array<CaptureView | undefined> = [capture.view(captureId)];
       fake.print("Paste code here if prompted > ");
       views.push(capture.view(captureId));
@@ -216,7 +218,8 @@ describe("the setup-token capture", () => {
         ],
       });
       expect(got).toEqual([["m-a", FAKE_TOKEN]]);
-      expect(sent).toEqual(["m-a"]);
+      // Both were recorded as possibly holding it before anything was sent.
+      expect(sent).toEqual(["m-a", "m-refuses"]);
       expect(leaks(JSON.stringify(views))).toBe(false);
       // Done, it takes no more code and isn't busy.
       expect(capture.answer(captureId, "again")).toBe(false);
@@ -232,9 +235,11 @@ describe("the setup-token capture", () => {
       const capture = yield* makeClaudeTokenCapture({
         start: () => ended.process,
         send,
-        sent: () => {},
+        mark: () => {},
+        joinOf: () => "join",
       });
       const first = yield* capture.begin(["m-a"]);
+      yield* settle;
       ended.print("error: not signed in\r\n");
       ended.exit();
       expect(capture.view(first.captureId)).toMatchObject({ state: "failed" });
@@ -243,9 +248,11 @@ describe("the setup-token capture", () => {
       const second = yield* makeClaudeTokenCapture({
         start: () => cancelled.process,
         send,
-        sent: () => {},
+        mark: () => {},
+        joinOf: () => "join",
       });
       const run = yield* second.begin(["m-a"]);
+      yield* settle;
       expect(second.cancel(run.captureId)).toBe(true);
       expect(cancelled.killed()).toBe(true);
       // A token printed after the cancel is ignored.
@@ -256,10 +263,12 @@ describe("the setup-token capture", () => {
       const third = yield* makeClaudeTokenCapture({
         start: () => slow.process,
         send,
-        sent: () => {},
+        mark: () => {},
+        joinOf: () => "join",
         timeoutMs: 5,
       });
       const late = yield* third.begin(["m-a"]);
+      yield* settle;
       yield* settle;
       expect(third.view(late.captureId)).toMatchObject({ state: "failed" });
       expect(slow.killed()).toBe(true);

@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { ClaudeEnvironment, ClaudeEnvironmentLive, OAUTH_TOKEN_VAR } from "./environment.ts";
+import {
+  ClaudeEnvironment,
+  ClaudeEnvironmentLive,
+  OAUTH_TOKEN_VAR,
+  type PreparedClaude,
+  withOAuthToken,
+} from "./environment.ts";
 import { ClaudeSdk, type ClaudeSdkShape } from "./sdk.ts";
 
 /** Synthetic: the shape `claude setup-token` prints, never a real token. */
@@ -58,5 +64,37 @@ describe("the Claude child env with a setup-token token", () => {
         }).pipe(Layer.provide(sdk)),
       ),
     );
+  });
+});
+
+describe("a Claude child that holds a setup-token token", () => {
+  // Review finding 4 on #314: these reached the token-bearing child as the probe found them.
+  it("gets no debugger, preload, request-logging or TLS-bypass settings", () => {
+    const prepared: PreparedClaude = {
+      binaryPath: "/synthetic/claude",
+      warnings: [],
+      env: {
+        PATH: "/usr/bin:/bin",
+        HTTPS_PROXY: "http://proxy.example.invalid:3128",
+        NODE_OPTIONS: "--inspect=0.0.0.0:9229",
+        NODE_INSPECT_RESUME_ON_START: "1",
+        BUN_INSPECT: "ws://0.0.0.0:6499",
+        BASH_ENV: "/synthetic/preload.sh",
+        DYLD_INSERT_LIBRARIES: "/synthetic/hook.dylib",
+        LD_PRELOAD: "/synthetic/hook.so",
+        SSLKEYLOGFILE: "/synthetic/keys.log",
+        NODE_TLS_REJECT_UNAUTHORIZED: "0",
+        NODE_DEBUG: "http",
+        ANTHROPIC_LOG: "debug",
+        DEBUG: "*",
+      },
+    };
+    expect(withOAuthToken(prepared, FAKE_TOKEN).env).toEqual({
+      PATH: "/usr/bin:/bin",
+      HTTPS_PROXY: "http://proxy.example.invalid:3128",
+      [OAUTH_TOKEN_VAR]: FAKE_TOKEN,
+    });
+    // Without a token, the machine's own sign-in keeps the env as it was.
+    expect(withOAuthToken(prepared, undefined)).toBe(prepared);
   });
 });
