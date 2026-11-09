@@ -29,6 +29,8 @@ import {
   agentHostOnMachine,
   agentHostThroughHost,
   HOST_STOPPED_ENDED,
+  machineAwayEnded,
+  machineRestartedEnded,
 } from "../runtime/host-agent-sessions.ts";
 import { isUndelivered } from "../runtime/undelivered.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
@@ -372,7 +374,7 @@ const redialling = Effect.gen(function* () {
   const inServer = yield* scriptedAgent("claude", "server");
   /** Where the machine keeps what users attach to its sessions. */
   const attachedOnMachine = mkdtempSync(join(tmpdir(), "gram-host-attached-"));
-  const service = {
+  let service = {
     hello: {
       protocol: HOST_PROTOCOL_VERSION,
       hostId: MACHINE,
@@ -411,6 +413,14 @@ const redialling = Effect.gen(function* () {
       ? Effect.fail(new HostUnavailable({ hostId: MACHINE, message: "That machine is offline." }))
       : Effect.succeed(live.connection),
   );
+  /** The host process starts afresh, with none of the old one's sessions. */
+  const restarted = Effect.gen(function* () {
+    service = {
+      ...service,
+      hello: { ...service.hello, pid: service.hello.pid + 1 },
+      sessions: yield* sessionsOnHost(() => Effect.succeed(onHost.host)),
+    };
+  });
   const first = yield* dial;
   const agent = (reattachMs: number) =>
     agentHostOnMachine(
@@ -430,7 +440,7 @@ const redialling = Effect.gen(function* () {
           ),
         ),
     );
-  return { onHost, dial, first, agent, sessions: service.sessions, attachedOnMachine };
+  return { onHost, dial, restarted, first, agent, sessions: service.sessions, attachedOnMachine };
 });
 
 const notice = (message: string): AgentEvent => ({ type: "notice", level: "info", message });
@@ -477,6 +487,24 @@ describe("a joined machine's sessions across a dropped connection", () => {
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 
+  it.live("end saying the machine restarted when it comes back without them", () =>
+    Effect.gen(function* () {
+      const { onHost, dial, restarted, first, agent } = yield* redialling;
+      const session = yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+      const collected = yield* Effect.forkScoped(Stream.runCollect(session.events));
+      yield* Queue.offer(onHost.events, notice("before"));
+      yield* Effect.sleep("200 millis");
+      first.hostEnd.destroy();
+      yield* eventually(() => (first.connection.gone() ? true : undefined), "the drop");
+      yield* restarted;
+      yield* dial;
+      const events = yield* Fiber.join(collected);
+      expect(said(events)).toEqual(["before", "ended"]);
+      expect(events.at(-1)).toEqual(machineRestartedEnded("box"));
+      expect(events.at(-1)).toMatchObject({ restartedMachine: "box" });
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
   it.live("end once the machine doesn't come back in time", () =>
     Effect.gen(function* () {
       const { onHost, first, agent } = yield* redialling;
@@ -487,7 +515,8 @@ describe("a joined machine's sessions across a dropped connection", () => {
       first.hostEnd.destroy();
       const events = yield* Fiber.join(collected);
       expect(said(events)).toEqual(["before", "ended"]);
-      expect(events.at(-1)).toEqual(HOST_STOPPED_ENDED);
+      // Named, and no restart to resume after: the machine never came back.
+      expect(events.at(-1)).toEqual(machineAwayEnded("box"));
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 });

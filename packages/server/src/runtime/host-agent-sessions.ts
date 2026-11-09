@@ -16,6 +16,7 @@ import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { LocalHostProcess } from "../host/local-process.ts";
+import { REATTACH_WITHIN_MS } from "../host/following-sessions.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
 import { type AttachmentsOnMachine, carryAttachments } from "../host/carry-attachments.ts";
 import type { HostSessionsConnection } from "../host/protocol.ts";
@@ -36,6 +37,25 @@ const HOST_SESSION_GONE_ENDED: AgentEvent = {
   type: "ended",
   reason: "This machine's host no longer has the session.",
 };
+
+/**
+ * The event a joined machine's session ends with when the machine came back without it: its host
+ * restarted (an update, a reboot, a crash), and the agent with it. The runtime can resume the
+ * conversation there (`restartedMachine`).
+ */
+export const machineRestartedEnded = (machine: string): AgentEvent => ({
+  type: "ended",
+  reason: `${machine} restarted, and the agent with it.`,
+  restartedMachine: machine,
+});
+
+/** The event a joined machine's session ends with when the machine didn't come back in time. */
+export const machineAwayEnded = (machine: string): AgentEvent => ({
+  type: "ended",
+  reason: `${machine} stopped or restarted and didn't come back within ${Math.round(
+    REATTACH_WITHIN_MS / 60_000,
+  )} minutes, so the agent stopped with it.`,
+});
 
 /**
  * Whether a session can open in the host process. What can't cross as data keeps it in the server:
@@ -100,12 +120,14 @@ const logFailed = (call: string) => (error: HostFailed) =>
 /**
  * A session opened in the host process, as the runtime holds it. Its events come numbered, and the
  * ones received are confirmed to the host, which keeps the rest for a stream that picks up again
- * (as a reconnecting host's will). A host that goes ends the session with an `ended` event.
+ * (as a reconnecting host's will). A host that goes ends the session with an `ended` event, which
+ * names the joined `machine` the session ran on, if it ran on one.
  */
 const openOnHost = (
   host: HostSessionsConnection,
   agent: AgentKind,
   o: OpenSessionOptions,
+  machine?: string,
   /** The input as the host's machine reads it; this machine's own host reads it as it is. */
   carry: (input: UserInput) => Effect.Effect<UserInput> = Effect.succeed,
 ) =>
@@ -160,7 +182,16 @@ const openOnHost = (
           return next.event;
         }),
         Stream.catch((error) =>
-          Stream.make(error._tag === "NotFound" ? HOST_SESSION_GONE_ENDED : HOST_STOPPED_ENDED),
+          Stream.make(
+            machine === undefined
+              ? error._tag === "NotFound"
+                ? HOST_SESSION_GONE_ENDED
+                : HOST_STOPPED_ENDED
+              : // A machine that came back without the session restarted under it.
+                error._tag === "NotFound"
+                ? machineRestartedEnded(machine)
+                : machineAwayEnded(machine),
+          ),
         ),
         Stream.ensuring(Deferred.succeed(over, undefined)),
       ),
@@ -480,7 +511,7 @@ export const agentHostOnMachine = (
                         message: `${machineName} is offline; its workers start once it's back.`,
                       }),
                     )
-                  : openOnHost(host, kind, reaching, (input) =>
+                  : openOnHost(host, kind, reaching, machineName, (input) =>
                       carryAttachments(options.threadId, input, machineName, attachments),
                     ).pipe(Effect.catch(failedThere));
               }),
