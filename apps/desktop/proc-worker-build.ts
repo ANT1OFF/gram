@@ -2,6 +2,7 @@
 // that runs as its own process. Building each separately keeps the bundler from hoisting their
 // entry code into the owning process.
 
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { build, type Plugin } from "vite";
 
@@ -9,12 +10,18 @@ import { bundledPackages } from "../../tools/notices/bundled-packages.mjs";
 import { shippedBuild, shippedOutput } from "./shipped-code.ts";
 
 /** One CommonJS bundle of `input`, emitted beside the server as `<name>.js`. */
-const besideServer = (name: string, input: URL, external: ReadonlyArray<string> = []): Plugin => ({
+const besideServer = (
+  name: string,
+  input: URL,
+  external: ReadonlyArray<string> = [],
+  define: Record<string, string> = {},
+): Plugin => ({
   name: `gram:${name}`,
   async generateBundle() {
     const result = await build({
       configFile: false,
       logLevel: "error",
+      define,
       plugins: [bundledPackages(name)],
       ssr: { noExternal: true },
       build: {
@@ -49,7 +56,19 @@ export const commandWorkerPlugin = (): Plugin =>
  * addons stay external, as in the server's own bundle.
  */
 export const hostProcessPlugin = (): Plugin =>
-  besideServer("gram-host", new URL("../../packages/server/src/host/main.ts", import.meta.url), [
-    "@parcel/watcher",
-    "node-pty",
-  ]);
+  besideServer(
+    "gram-host",
+    new URL("../../packages/server/src/host/main.ts", import.meta.url),
+    ["@parcel/watcher", "node-pty"],
+    // The release it was built as, for its hello: the main Gram tells a joined machine to update.
+    { GRAM_HOST_RELEASE: JSON.stringify(appRelease()) },
+  );
+
+/** The app's release, as its package says. */
+export const appRelease = (): string => {
+  const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
+    version?: unknown;
+  };
+  if (typeof pkg.version !== "string") throw new Error("apps/desktop/package.json has no version");
+  return pkg.version;
+};

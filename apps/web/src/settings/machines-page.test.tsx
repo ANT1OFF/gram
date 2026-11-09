@@ -18,7 +18,7 @@ const machine = (overrides: Partial<JoinedMachine> = {}): JoinedMachine => ({
   ...overrides,
 });
 
-const serve = (machines: ReadonlyArray<JoinedMachine>) => {
+const serve = (machines: ReadonlyArray<JoinedMachine>, extra: Record<string, unknown> = {}) => {
   const calls: Array<{ path: string; body?: string }> = [];
   vi.stubGlobal(
     "fetch",
@@ -30,7 +30,7 @@ const serve = (machines: ReadonlyArray<JoinedMachine>) => {
           : path === "/machines/remove"
             ? []
             : machines;
-      return new Response(JSON.stringify({ machines: next }), {
+      return new Response(JSON.stringify({ machines: next, ...extra }), {
         headers: { "content-type": "application/json" },
       });
     }),
@@ -61,6 +61,80 @@ describe("machines page", () => {
     );
     expect(machineState(machine({ onlineSince: NOW - 2 * 3_600_000 }), NOW)).toBe(
       "Joined 12 Jun · online for 2 hours",
+    );
+  });
+
+  it("says why a machine is offline on hover, and keeps an update to a real mismatch", async () => {
+    serve(
+      [
+        machine({
+          id: "m-a",
+          name: "cachyos",
+          offline: { kind: "clock", at: NOW, skewMs: 180_000 },
+        }),
+        machine({
+          id: "m-b",
+          name: "tower",
+          offline: { kind: "mismatch", at: NOW, protocol: 1, release: "1.15.0" },
+          release: "1.15.0",
+        }),
+      ],
+      { release: "1.15.2", protocol: 2 },
+    );
+    renderPage();
+    const [clock, mismatch] = await screen.findAllByTestId("machines-state");
+    expect(clock!.textContent).toBe("offline");
+    expect(clock!.getAttribute("aria-description")).toBe(
+      "Clock is 3 min ahead.\nFix the time on cachyos.",
+    );
+    expect(mismatch!.textContent).toBe("Needs update (1.15.0 → 1.15.2)");
+    // Only the machine that needs it offers Update.
+    const rows = screen.getAllByTestId("machines-row");
+    expect(within(rows[0]!).queryByTestId("machines-update")).toBeNull();
+    expect(within(rows[1]!).getByTestId("machines-update")).toBeTruthy();
+  });
+
+  it("shows the one command to update a machine that joined by the command", async () => {
+    const calls = serve([machine({ offline: { kind: "mismatch", at: NOW, protocol: 1 } })], {
+      release: "1.15.2",
+      protocol: 2,
+      updateCommand: "curl -fsSL https://studio.example-tailnet.ts.net/host/install | sh",
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("machines-update"));
+    expect(screen.getByTestId("machines-update-command").textContent).toBe(
+      "curl -fsSL https://studio.example-tailnet.ts.net/host/install | sh",
+    );
+    expect(calls.some((call) => call.path === "/machines/update")).toBe(false);
+  });
+
+  it("updates a machine Gram added over SSH by running that install again", async () => {
+    const calls = serve(
+      [
+        machine({
+          offline: { kind: "mismatch", at: NOW, protocol: 1 },
+          sshTarget: "me@cachyos",
+        }),
+      ],
+      {
+        release: "1.15.2",
+        protocol: 2,
+        updateCommand: "curl -fsSL https://x.ts.net/host/install | sh",
+      },
+    );
+    renderPage();
+    fireEvent.click(await screen.findByTestId("machines-update"));
+    expect(screen.getByTestId("machines-update-dialog").textContent).toContain("me@cachyos");
+    fireEvent.click(screen.getByRole("button", { name: "Update over SSH" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        path: "/machines/update",
+        body: JSON.stringify({ id: "m-0123456789abcdef01234567" }),
+      }),
+    );
+    expect(await screen.findByRole("status")).toHaveProperty(
+      "textContent",
+      "build box moved to 1.15.2. It dials in again in a moment.",
     );
   });
 
