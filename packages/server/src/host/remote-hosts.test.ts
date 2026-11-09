@@ -26,7 +26,10 @@ const ORIGIN = "https://main.example-tailnet.ts.net";
 const none = () => Effect.die(new Error("not in this test"));
 
 /** A host that says hello as `hostId` and has nothing else a test reaches. */
-const service = (hostId: string): Effect.Effect<HostService, never, Scope.Scope> =>
+const service = (
+  hostId: string,
+  extra: Partial<HostService> = {},
+): Effect.Effect<HostService, never, Scope.Scope> =>
   Effect.gen(function* () {
     return {
       hello: {
@@ -49,6 +52,7 @@ const service = (hostId: string): Effect.Effect<HostService, never, Scope.Scope>
       terminals: yield* terminalsOnHost,
       sessions: yield* sessionsOnHost(noAgents),
       scan: Effect.succeed({ listening: new Map(), children: new Map() }),
+      ...extra,
     } as unknown as HostService;
   });
 
@@ -220,6 +224,27 @@ describe("joined machines over the network", () => {
         );
       }).pipe(Effect.scoped),
     20_000,
+  );
+
+  it.live("lists a machine's Claude sign-in once it is online, and again when asked", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* served;
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      let state: "notSignedIn" | "signedIn" = "notSignedIn";
+      const signIn = Effect.sync(() => state);
+      yield* Effect.forkScoped(dialOnce(dial, service(hostId, { claudeSignIn: signIn })));
+      yield* online(hosts, hostId);
+      // Asked as it comes online; offline, nothing is said about it.
+      while (hosts.list()[0]?.claudeSignIn === undefined) yield* Effect.sleep("20 millis");
+      expect(hosts.list()[0]).toMatchObject({ claudeSignIn: "notSignedIn" });
+      state = "signedIn";
+      expect(yield* Effect.promise(() => hosts.checkSignIn(HostId.make(hostId)))).toBe("signedIn");
+      expect(hosts.list()[0]).toMatchObject({ claudeSignIn: "signedIn" });
+      hosts.keepOrigin(undefined);
+      while (hosts.list()[0]?.onlineSince !== undefined) yield* Effect.sleep("20 millis");
+      expect(hosts.list()[0]).not.toHaveProperty("claudeSignIn");
+      expect(yield* Effect.promise(() => hosts.checkSignIn(HostId.make(hostId)))).toBeUndefined();
+    }).pipe(Effect.scoped, Effect.timeout("15 seconds")),
   );
 
   it.live("closes machines' connections when access moves off their address", () =>

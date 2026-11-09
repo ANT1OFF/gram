@@ -1,6 +1,7 @@
 import {
   effectiveCheckout,
   InvalidState,
+  LOCAL_HOST_ID,
   NotFound,
   TerminalRpcs,
   type ThreadId,
@@ -12,6 +13,7 @@ import { WorkerHosts } from "../../host/worker-host.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { resolveScriptRun, ScriptsError } from "../../scripts/project-scripts.ts";
 import { checkShell } from "../../terminal/shell-check.ts";
+import { machineSignInTerminal } from "../../host/claude-sign-in.ts";
 import { logDefects, type Handlers } from "./common.ts";
 
 /** `terminal.*`: the Terminal tab, over the host's pseudo-terminals. */
@@ -40,22 +42,38 @@ const terminalHandlers = Effect.gen(function* () {
     });
 
   return {
-    "terminal.open": ({ script, ...request }) =>
-      script === undefined
-        ? terminals.open(request)
-        : Effect.gen(function* () {
-            if (request.threadId === undefined)
-              return yield* new InvalidState({ message: "A script runs in a thread's checkout." });
-            if (request.cwd !== undefined)
-              return yield* new InvalidState({ message: "A script runs in its own folder." });
-            const run = yield* scriptRun(request.threadId, script);
-            return yield* terminals.open({
-              ...request,
-              cwd: run.cwd,
-              command: run.command,
-              script: run.name,
-            });
-          }),
+    "terminal.open": ({ script, signIn, ...request }) =>
+      signIn !== undefined
+        ? request.threadId !== undefined ||
+          request.cwd !== undefined ||
+          request.shell !== undefined ||
+          script !== undefined ||
+          signIn === LOCAL_HOST_ID
+          ? Effect.fail(
+              new InvalidState({ message: "A sign-in terminal opens on a joined machine alone." }),
+            )
+          : terminals.open({
+              ...machineSignInTerminal(signIn),
+              cols: request.cols,
+              rows: request.rows,
+            })
+        : script === undefined
+          ? terminals.open(request)
+          : Effect.gen(function* () {
+              if (request.threadId === undefined)
+                return yield* new InvalidState({
+                  message: "A script runs in a thread's checkout.",
+                });
+              if (request.cwd !== undefined)
+                return yield* new InvalidState({ message: "A script runs in its own folder." });
+              const run = yield* scriptRun(request.threadId, script);
+              return yield* terminals.open({
+                ...request,
+                cwd: run.cwd,
+                command: run.command,
+                script: run.name,
+              });
+            }),
     "terminal.input": ({ terminalId, data }) => terminals.input(terminalId, data),
     "terminal.resize": ({ terminalId, cols, rows }) => terminals.resize(terminalId, cols, rows),
     "terminal.close": ({ terminalId }) => terminals.close(terminalId),

@@ -19,6 +19,7 @@ import { hostRepos } from "./host-config.ts";
 import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
+import { claudeSignInOf } from "./claude-sign-in.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { HOST_CAPABILITIES, type HostService, serveHost } from "./protocol.ts";
@@ -65,6 +66,7 @@ const hostService = (
 ): Effect.Effect<HostService, never, Scope.Scope | Proc | Worktrees | AgentHosts> =>
   Effect.gen(function* () {
     const proc = yield* Proc;
+    const agents = yield* AgentHosts;
     return {
       hello: {
         protocol: HOST_PROTOCOL_VERSION,
@@ -78,8 +80,12 @@ const hostService = (
       worktrees: yield* Worktrees,
       git: gitOn(proc),
       terminals: yield* terminalsOnHost,
-      sessions: yield* sessionsOnHost((yield* AgentHosts).get),
+      sessions: yield* sessionsOnHost(agents.get),
       scan: liveScan.pipe(Effect.provideService(Proc, proc)),
+      claudeSignIn: agents.get("claude").pipe(
+        Effect.flatMap(claudeSignInOf),
+        Effect.orElseSucceed(() => "unknown" as const),
+      ),
     };
   });
 

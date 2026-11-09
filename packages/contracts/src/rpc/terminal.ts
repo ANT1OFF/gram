@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { InvalidState, NotFound, ThreadNotFound } from "../errors.ts";
-import { TerminalId, ThreadId } from "../ids.ts";
+import { HostId, TerminalId, ThreadId } from "../ids.ts";
 import { ShellCheck } from "../shell-check.ts";
 import { TerminalEvent, TerminalInfo, TerminalOpened } from "../terminal.ts";
 import { errors, PositiveInt } from "./shared.ts";
@@ -25,6 +25,13 @@ export const TerminalRpcs = RpcGroup.make(
        * does.
        */
       script: Schema.optionalKey(Schema.String),
+      /**
+       * Signs that joined machine's own Claude Code in: a terminal there, in its home folder,
+       * running `claude auth login --claudeai`, which ends once the sign-in is done. The command is
+       * fixed here; it takes no `threadId`, `cwd`, `shell` or `script`. Only the Sign in button on
+       * Settings → Machines sends it.
+       */
+      signIn: Schema.optionalKey(HostId),
     },
     success: TerminalOpened,
     error: errors(ThreadNotFound, NotFound, InvalidState),

@@ -48,7 +48,7 @@ const hello = (overrides: Partial<HostHello> = {}): HostHello => ({
 });
 
 /** A host served on one end of a fresh stream, and the control plane's connection to it. */
-const connected = (overrides: Partial<HostHello> = {}) =>
+const connected = (overrides: Partial<HostHello> = {}, extra: Partial<HostService> = {}) =>
   Effect.gen(function* () {
     const { host, control } = yield* streamPair;
     const service: HostService = {
@@ -60,6 +60,7 @@ const connected = (overrides: Partial<HostHello> = {}) =>
       terminals: yield* terminalsOnHost,
       sessions: yield* sessionsOnHost(noAgents),
       scan: Effect.succeed(SCAN),
+      ...extra,
     };
     yield* Effect.forkScoped(
       serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(host)), service),
@@ -88,6 +89,22 @@ describe("host protocol", () => {
       expect(scan.listening.get(41)).toEqual([5173, 5174]);
       expect(scan.processes?.get(41)?.command).toBe("vite");
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+
+  it.effect(
+    "carries the machine's Claude sign-in, and reads a host that can't say as unknown",
+    () =>
+      Effect.gen(function* () {
+        const signedOut = yield* connected({}, { claudeSignIn: Effect.succeed("notSignedIn") });
+        expect(yield* signedOut.claudeSignIn!).toBe("notSignedIn");
+        // A host without the check, and one whose check dies.
+        expect(yield* (yield* connected()).claudeSignIn!).toBe("unknown");
+        const dying = yield* connected({}, { claudeSignIn: Effect.die("claude crashed") });
+        expect(yield* dying.claudeSignIn!).toBe("unknown");
+        // A defect in a handler would break the whole stream: the host keeps answering.
+        expect(dying.gone()).toBe(false);
+        expect((yield* dying.scan).listening.get(41)).toEqual([5173, 5174]);
+      }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 
   it.effect("keeps a host's refusal as the Files panel's own error, with its message", () =>

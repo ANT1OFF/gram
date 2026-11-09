@@ -16,7 +16,40 @@ export interface JoinedMachine {
   readonly confirmed: boolean;
   /** Set while it is connected. */
   readonly onlineSince?: number;
+  /**
+   * While it is online, once asked: whether its own Claude Code is signed in to a subscription,
+   * from its `claude auth status`. Only the classification reaches here.
+   */
+  readonly claudeSignIn?: MachineSignIn;
+  readonly claudeSignInCheckedAt?: number;
 }
+
+/** A joined machine's Claude Code sign-in, as `app.launchChecks` names this one's. */
+export type MachineSignIn = "signedIn" | "notSignedIn" | "apiKey" | "thirdParty" | "unknown";
+const SIGN_INS: ReadonlySet<unknown> = new Set([
+  "signedIn",
+  "notSignedIn",
+  "apiKey",
+  "thirdParty",
+  "unknown",
+]);
+
+/**
+ * Why `machine` can't start a Claude session now, with the fix to make there, or `undefined`
+ * when it can, or can't say (an older gram-host, or not asked yet).
+ */
+export const machineSignInProblem = (machine: JoinedMachine): string | undefined => {
+  switch (machine.claudeSignIn) {
+    case "notSignedIn":
+      return `Claude Code isn't signed in on ${machine.name}. Run \`claude /login\` there.`;
+    case "apiKey":
+      return `Claude Code on ${machine.name} uses an API key; Gram needs your subscription login. Run \`claude /login\` there.`;
+    case "thirdParty":
+      return `Claude Code on ${machine.name} is set up for a third-party API provider; Gram needs your subscription login there.`;
+    default:
+      return undefined;
+  }
+};
 
 export interface MachinesStatus {
   readonly machines: ReadonlyArray<JoinedMachine>;
@@ -61,7 +94,9 @@ const isMachine = (value: unknown): value is JoinedMachine => {
     typeof m["fingerprint"] === "string" &&
     typeof m["joinedAt"] === "number" &&
     typeof m["confirmed"] === "boolean" &&
-    (m["onlineSince"] === undefined || typeof m["onlineSince"] === "number")
+    (m["onlineSince"] === undefined || typeof m["onlineSince"] === "number") &&
+    (m["claudeSignIn"] === undefined || SIGN_INS.has(m["claudeSignIn"])) &&
+    (m["claudeSignInCheckedAt"] === undefined || typeof m["claudeSignInCheckedAt"] === "number")
   );
 };
 
@@ -86,6 +121,9 @@ export const machinesApi = {
     status(await post("/machines/confirm", { id }), "Couldn't confirm the machine"),
   remove: async (id: string) =>
     status(await post("/machines/remove", { id }), "Couldn't remove the machine"),
+  /** Asks the machine for its Claude Code sign-in again, and answers with the fresh listing. */
+  checkSignIn: async (id: string) =>
+    status(await post("/machines/check-sign-in", { id }), "Couldn't check the machine's sign-in"),
   /** A one-time join link, or `tailscale-off` while access over Tailscale is off. */
   joinLink: async (): Promise<JoinLink | "tailscale-off" | "ssh-running"> => {
     const response = await post("/machines/join-link");

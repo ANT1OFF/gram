@@ -18,10 +18,12 @@ import { Dialog, DialogShell } from "@/thread/dialog-shell";
 import { copyText } from "./copy-text";
 import { phoneAccess, PhoneAccessError } from "./phone-access-api";
 import { PHONE_ACCESS_KEY, TailscaleChecklist } from "./phone-access-page";
+import { MachineSignIn } from "./machine-sign-in";
 import {
   type JoinedMachine,
   type JoinLink,
   MACHINES_KEY,
+  machineSignInProblem,
   machinesApi,
   MachinesError,
   SshJoinError,
@@ -72,6 +74,8 @@ export function MachinesPage() {
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState<Pending>();
+  /** The machine whose Sign in terminal is open under its row. */
+  const [signingIn, setSigningIn] = useState<string>();
   const [error, setError] = useState<string>();
   const status = useQuery({
     queryKey: MACHINES_KEY,
@@ -136,6 +140,9 @@ export function MachinesPage() {
               now={status.dataUpdatedAt}
               onConfirm={() => setPending({ kind: "confirm", machine })}
               onRemove={() => setPending({ kind: "remove", machine })}
+              signingIn={signingIn === machine.id}
+              onSignIn={() => setSigningIn(machine.id)}
+              onSignInClosed={() => setSigningIn(undefined)}
             />
           ))}
         </div>
@@ -193,45 +200,69 @@ function MachineRow({
   now,
   onConfirm,
   onRemove,
+  signingIn,
+  onSignIn,
+  onSignInClosed,
 }: {
   machine: JoinedMachine;
   now: number;
   onConfirm: () => void;
   onRemove: () => void;
+  signingIn: boolean;
+  onSignIn: () => void;
+  onSignInClosed: () => void;
 }) {
   const online = machine.confirmed && machine.onlineSince !== undefined;
+  const problem = online ? machineSignInProblem(machine) : undefined;
   return (
-    <div className="flex min-h-9 items-center gap-3" data-testid="machines-row">
-      <Monitor aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 font-medium">
-          {machine.name}
-          <span className="text-meta font-normal text-muted-foreground">
-            {platformName(machine.platform)}
+    <div className="flex flex-col gap-2" data-testid="machines-row">
+      <div className="flex min-h-9 items-center gap-3">
+        <Monitor aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="flex items-center gap-1.5 font-medium">
+            {machine.name}
+            <span className="text-meta font-normal text-muted-foreground">
+              {platformName(machine.platform)}
+            </span>
+            {online && (
+              <span
+                aria-hidden
+                className="size-1.5 rounded-full bg-success"
+                data-testid="machines-online"
+              />
+            )}
           </span>
-          {online && (
+          <span className="text-meta text-muted-foreground">{machineState(machine, now)}</span>
+          {problem !== undefined && (
             <span
-              aria-hidden
-              className="size-1.5 rounded-full bg-success"
-              data-testid="machines-online"
-            />
+              className="flex items-center gap-1 text-meta text-destructive"
+              data-testid="machines-sign-in-problem"
+            >
+              <CircleAlert aria-hidden className="size-icon-chip shrink-0" />
+              {problem}
+            </span>
           )}
+          <span className="font-mono text-meta text-muted-foreground" title="Key fingerprint">
+            {machine.fingerprint}
+          </span>
         </span>
-        <span className="text-meta text-muted-foreground">{machineState(machine, now)}</span>
-        <span className="font-mono text-meta text-muted-foreground" title="Key fingerprint">
-          {machine.fingerprint}
-        </span>
-      </span>
-      <span className="ms-auto flex shrink-0 gap-1">
-        {!machine.confirmed && (
-          <Button size="sm" onClick={onConfirm}>
-            Confirm
+        <span className="ms-auto flex shrink-0 gap-1">
+          {!machine.confirmed && (
+            <Button size="sm" onClick={onConfirm}>
+              Confirm
+            </Button>
+          )}
+          {problem !== undefined && !signingIn && (
+            <Button size="sm" onClick={onSignIn} data-testid="machines-sign-in">
+              Sign in
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={onRemove}>
+            Remove
           </Button>
-        )}
-        <Button size="sm" variant="ghost" onClick={onRemove}>
-          Remove
-        </Button>
-      </span>
+        </span>
+      </div>
+      {signingIn && <MachineSignIn machine={machine} onClose={onSignInClosed} />}
     </div>
   );
 }

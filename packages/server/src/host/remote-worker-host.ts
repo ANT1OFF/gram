@@ -39,6 +39,8 @@ export interface Machine {
   readonly name: string;
   /** The tailnet address it dialled, where its sessions reach their app tools; absent offline. */
   readonly origin?: () => string | undefined;
+  /** Asks the machine for its Claude Code sign-in again, after a start failed for it. */
+  readonly recheckSignIn?: () => void;
 }
 
 const offline = (machine: Machine) => `${machine.name} is offline.`;
@@ -330,6 +332,7 @@ export const machineWorkerHost = (
               agent,
               machine.name,
               machine.origin ?? (() => undefined),
+              machine.recheckSignIn,
             );
             wrapped.set(agent, through);
             return through;
@@ -382,6 +385,7 @@ export const machineHosts = (
             id,
             name: remote.machines.get(id)?.name ?? id,
             origin: () => remote.origin(id),
+            recheckSignIn: () => void remote.checkSignIn(id),
           };
           const host = yield* machineWorkerHost(machine, connection, deps).pipe(
             Scope.provide(scope),

@@ -23,6 +23,7 @@ import {
 } from "../domain.ts";
 import { FsListing } from "../fs.ts";
 import { GitState } from "../git.ts";
+import { ClaudeSignIn } from "../launch-checks.ts";
 import { HostId, ProfileId, RequestId, TerminalId, ThreadId } from "../ids.ts";
 import { TerminalEvent, TerminalInfo, TerminalOpened } from "../terminal.ts";
 import { WorktreeList } from "../worktrees.ts";
@@ -291,6 +292,13 @@ export const HostRpcs = RpcGroup.make(
   }),
   /** One sweep of the host's listening ports and processes. */
   Rpc.make("host.ports.scan", { success: HostPortScan, error: HostFailed }),
+  /**
+   * Whether this machine's own Claude Code is signed in to a subscription, from its own
+   * `claude auth status`: the classification only, never the command's output or a credential.
+   * An older host answers with an unknown-request defect, which the control plane reads as
+   * `unknown`.
+   */
+  Rpc.make("host.claude.signIn", { success: ClaudeSignIn }),
   /**
    * The host's own clone of the repository at `url`, in the folder it keeps clones in: cloned when
    * it has none, fetched when it has. What a worker placed on this machine makes its worktree from.

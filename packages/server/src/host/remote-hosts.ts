@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { HostUnavailable, type HostId } from "@gram/contracts";
+import { type ClaudeSignIn, HostUnavailable, type HostId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -28,7 +28,14 @@ interface Online {
   readonly origin: string;
   /** Ends the connection: its socket closes and its calls fail. */
   readonly close: () => void;
+  /** Its Claude Code sign-in as last checked over this connection, and when. */
+  signIn?: { readonly state: ClaudeSignIn; readonly at: number };
+  /** A check running now, so a burst of listings starts one. */
+  checking?: Promise<ClaudeSignIn | undefined> | undefined;
 }
+
+/** How old a sign-in check may be before a listing asks the machine again. */
+export const SIGN_IN_FRESH_MS = 60_000;
 
 /** The store, made on first write: a Gram no machine joined never makes the file or its folder. */
 const lazyFileStore = (dataDir: string): PairedMachineStore => {
@@ -60,6 +67,11 @@ export interface RemoteHostsShape {
     socket: Socket.Socket,
     origin: string,
   ) => Effect.Effect<void>;
+  /**
+   * Asks the machine for its Claude Code sign-in now and keeps the answer for the listing:
+   * `undefined` while it is offline. A check already running is shared.
+   */
+  readonly checkSignIn: (id: HostId) => Promise<ClaudeSignIn | undefined>;
   /** Forgets the machine and closes its connection; false when it wasn't joined. */
   readonly remove: (id: HostId) => boolean;
   /**
@@ -78,6 +90,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       const machines = createPairedMachines(store, now);
       const online = new Map<HostId, Online>();
       const root = yield* Effect.scope;
+      // The server's own logger and the rest, for a check started outside an effect.
+      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
       const close = (id: HostId) => {
         const live = online.get(id);
         online.delete(id);
@@ -144,12 +158,46 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             yield* Effect.logInfo("machines: a joined machine is online").pipe(
               Effect.annotateLogs({ hostId: machine.id, platform: opened.value.hello.platform }),
             );
+            void checkSignIn(machine.id);
             yield* Deferred.await(ended).pipe(Effect.ignore);
             yield* Effect.logInfo("machines: a joined machine went offline").pipe(
               Effect.annotateLogs({ hostId: machine.id }),
             );
           }).pipe(Effect.ensuring(cleanUp));
         });
+      const checkSignIn = (id: HostId): Promise<ClaudeSignIn | undefined> => {
+        const live = online.get(id);
+        if (live === undefined || live.connection.gone()) return Promise.resolve(undefined);
+        if (live.checking !== undefined) return live.checking;
+        const check = live.connection.claudeSignIn ?? Effect.succeed("unknown" as const);
+        const checking = runPromise(
+          check.pipe(
+            Effect.tap((state) =>
+              Effect.sync(() => {
+                live.signIn = { state, at: now() };
+              }),
+            ),
+            Effect.tap((state) =>
+              state === "signedIn"
+                ? Effect.void
+                : Effect.logInfo(
+                    "machines: a joined machine's Claude Code can't start sessions",
+                  ).pipe(Effect.annotateLogs({ hostId: id, claudeSignIn: state })),
+            ),
+          ),
+        ).finally(() => {
+          if (live.checking === checking) live.checking = undefined;
+        });
+        live.checking = checking;
+        return checking;
+      };
+      /** The listing's view of each machine, asking again about any sign-in gone stale. */
+      const view = (machine: PairedMachine) => {
+        const live = online.get(machine.id);
+        if (live !== undefined && (live.signIn?.at ?? 0) + SIGN_IN_FRESH_MS <= now())
+          void checkSignIn(machine.id);
+        return machineView(machine, live);
+      };
       return RemoteHosts.of({
         machines,
         connection: (id) =>
@@ -162,8 +210,9 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               : Effect.succeed(live.connection);
           }),
         origin: (id) => online.get(id)?.origin,
-        list: () => machines.list().map((machine) => machineView(machine, online.get(machine.id))),
+        list: () => machines.list().map(view),
         attach,
+        checkSignIn,
         remove: (id) => {
           bump(id);
           try {
