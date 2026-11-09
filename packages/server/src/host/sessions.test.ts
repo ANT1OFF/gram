@@ -5,6 +5,7 @@ import {
   type AgentEvent,
   type AgentKind,
   AgentUnavailable,
+  HostFailed,
   HostId,
   HOST_PROTOCOL_VERSION,
   HostUnavailable,
@@ -30,11 +31,19 @@ import {
   machineAwayEnded,
   machineRestartedEnded,
 } from "../runtime/host-agent-sessions.ts";
+import { isUndelivered } from "../runtime/undelivered.ts";
 import { filesOn } from "./files.ts";
 import { reposOn } from "./repos.ts";
 import { gitOn } from "./git.ts";
 import { followingSessions } from "./following-sessions.ts";
-import { connectHost, HOST_CAPABILITIES, type HostConnection, serveHost } from "./protocol.ts";
+import {
+  connectHost,
+  HOST_CAPABILITIES,
+  HOST_SERVES,
+  type HostConnection,
+  type HostSessionsConnection,
+  serveHost,
+} from "./protocol.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { streamPair } from "./test-stream.ts";
@@ -55,8 +64,8 @@ const scriptedAgent = (kind: AgentKind, where: string) =>
     const opened: Array<OpenSessionOptions> = [];
     const closed: Array<string> = [];
     const events = yield* Queue.unbounded<AgentEvent, Cause.Done>();
-    /** When set, an open waits on it. */
-    const gate: { open?: Deferred.Deferred<void> } = {};
+    /** When set, an open waits on it, and a send once the agent has it. */
+    const gate: { open?: Deferred.Deferred<void>; send?: Deferred.Deferred<void> } = {};
     const host: AgentHost = {
       kind,
       capabilities: CAPABILITIES,
@@ -74,7 +83,10 @@ const scriptedAgent = (kind: AgentKind, where: string) =>
           });
           const session: AgentSession = {
             events: Stream.fromQueue(events),
-            send: (input) => Effect.sync(() => void calls.push(`send ${input.text}`)),
+            send: (input) =>
+              Effect.sync(() => void calls.push(`send ${input.text}`)).pipe(
+                Effect.andThen(gate.send === undefined ? Effect.void : Deferred.await(gate.send)),
+              ),
             steer: (input) => Effect.sync(() => void calls.push(`steer ${input.text}`)),
             interrupt: Effect.sync(() => void calls.push("interrupt")),
             respond: (requestId) => Effect.sync(() => void calls.push(`respond ${requestId}`)),
@@ -348,7 +360,7 @@ const redialling = Effect.gen(function* () {
     hello: {
       protocol: HOST_PROTOCOL_VERSION,
       hostId: MACHINE,
-      capabilities: HOST_CAPABILITIES,
+      capabilities: HOST_SERVES,
       platform: process.platform,
       pid: 7,
     },
@@ -475,6 +487,109 @@ describe("a joined machine's sessions across a dropped connection", () => {
       expect(said(events)).toEqual(["before", "ended"]);
       // Named, and no restart to resume after: the machine never came back.
       expect(events.at(-1)).toEqual(machineAwayEnded("box"));
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
+
+/** Whether `exit` is a death by `InputUndelivered`: the input kept, not counted taken. */
+const diedUndelivered = (exit: Exit.Exit<unknown, unknown>) =>
+  Exit.isFailure(exit) &&
+  exit.cause.reasons.some((r) => r._tag === "Die" && isUndelivered(r.defect));
+
+describe("input a joined machine's session didn't take", () => {
+  it.live("isn't reported delivered when the host fails the send or the steer", () =>
+    Effect.gen(function* () {
+      const { inServer, connection: real } = yield* routed;
+      const failed = Effect.fail(
+        new HostFailed({ message: "This machine's host isn't answering." }),
+      );
+      // The audit's reproduction: a connection whose send and steer fail before they arrive.
+      const connection: HostSessionsConnection = {
+        ...real.sessions,
+        send: () => failed,
+        steer: () => failed,
+      };
+      const session = yield* agentHostOnMachine(
+        connection,
+        () => false,
+        inServer.host,
+        "box",
+        () => "http://gram.test",
+      ).open({ threadId: THREAD, cwd: "/work" });
+      // Before this change both succeeded, a warning logged and the input lost.
+      expect(diedUndelivered(yield* Effect.exit(session.send({ text: "hi" })))).toBe(true);
+      expect(diedUndelivered(yield* Effect.exit(session.steer({ text: "and this" })))).toBe(true);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("waits for a machine that is away past a call's wait, and delivers once it is back", () =>
+    Effect.gen(function* () {
+      const { onHost, dial, first, agent } = yield* redialling;
+      const session = yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+      yield* Effect.forkScoped(Stream.runDrain(session.events));
+      first.hostEnd.destroy();
+      yield* eventually(() => (first.connection.gone() ? true : undefined), "the drop");
+      const sending = yield* Effect.forkScoped(Effect.exit(session.send({ text: "hi" })));
+      // Longer than a call waits (2 s here): before this change the send gave up and succeeded.
+      yield* Effect.sleep("2500 millis");
+      yield* dial;
+      expect(Exit.isSuccess(yield* Fiber.join(sending))).toBe(true);
+      expect(onHost.calls.filter((call) => call === "send hi")).toHaveLength(1);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("asks again after a drop that lost the answer, and the agent takes it once", () =>
+    Effect.gen(function* () {
+      const { onHost, dial, first, agent } = yield* redialling;
+      const session = yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+      yield* Effect.forkScoped(Stream.runDrain(session.events));
+      const held = yield* Deferred.make<void>();
+      onHost.gate.send = held;
+      const sending = yield* Effect.forkScoped(Effect.exit(session.send({ text: "hi" })));
+      // The host has it; the connection drops before its answer comes back.
+      yield* eventually(() => (onHost.calls.includes("send hi") ? true : undefined), "the send");
+      first.hostEnd.destroy();
+      yield* eventually(() => (first.connection.gone() ? true : undefined), "the drop");
+      yield* dial;
+      yield* Effect.sleep("200 millis");
+      yield* Deferred.succeed(held, undefined);
+      expect(Exit.isSuccess(yield* Fiber.join(sending))).toBe(true);
+      expect(onHost.calls.filter((call) => call === "send hi")).toHaveLength(1);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("is kept, not lost, when the machine doesn't come back in time", () =>
+    Effect.gen(function* () {
+      const { onHost, first, agent } = yield* redialling;
+      const session = yield* agent(1_000).open({ threadId: THREAD, cwd: "/work" });
+      yield* Effect.forkScoped(Stream.runDrain(session.events));
+      first.hostEnd.destroy();
+      yield* eventually(() => (first.connection.gone() ? true : undefined), "the drop");
+      expect(diedUndelivered(yield* Effect.exit(session.send({ text: "hi" })))).toBe(true);
+      expect(onHost.calls).not.toContain("send hi");
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
+
+describe("a host's deliveries", () => {
+  it.live("take input once per delivery id, a repeat answered as the first", () =>
+    Effect.gen(function* () {
+      const agent = yield* scriptedAgent("claude", "host");
+      const sessions = yield* sessionsOnHost(() => Effect.succeed(agent.host));
+      yield* sessions.open({ handle: "h", agent: "claude", threadId: THREAD, cwd: "/work" });
+      const send = (text: string, id: string) =>
+        sessions.deliver("h", id, (session) => session.send({ text }));
+      yield* send("one", "d1");
+      yield* send("one", "d1");
+      yield* send("two", "d2");
+      expect(agent.calls.filter((call) => call.startsWith("send"))).toEqual([
+        "send one",
+        "send two",
+      ]);
+      // A session that isn't open takes nothing.
+      expect(
+        Exit.isFailure(yield* Effect.exit(sessions.deliver("gone", "d3", () => Effect.void))),
+      ).toBe(true);
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 });
