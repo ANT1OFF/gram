@@ -12,6 +12,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "../git/test-repo.ts";
 import { checksOn, type HostCheckRunner } from "./checks.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { connectHost, HOST_CAPABILITIES, HOST_SERVES, serveHost } from "./protocol.ts";
@@ -57,6 +58,8 @@ const machine = (dir: string, runner: HostCheckRunner, serves = HOST_SERVES) =>
             pid: 7,
           },
           files: filesOn(proc),
+          reads: fileReadsOn(proc),
+          attachments: yield* attachmentsOnHost(join(dir, "attached")),
           repos: reposOn(proc, join(dir, "repos")),
           worktrees: yield* Worktrees,
           git: gitOn(proc),
