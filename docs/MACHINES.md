@@ -118,8 +118,10 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
 - **Still over Tailscale.** The other machine connects to this Gram over your tailnet like any
   joined machine, so it needs Tailscale signed in to the same tailnet; SSH is only how it gets
   installed.
-- A first install downloads Gram there, which can take a few minutes. If it fails, the dialog
-  shows the end of what the session printed, and makes a new link.
+- A first install downloads Gram there, which can take a few minutes, and one runs at a time. If
+  it fails, the dialog shows the end of what the session printed, and makes a new link. If the
+  machine joined with the printed key and only its service failed to start (a Mac with nobody
+  signed in, say), it is still confirmed, and the dialog says what went wrong.
 
 ## How it is secured
 

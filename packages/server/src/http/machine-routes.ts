@@ -131,10 +131,13 @@ export const hostRoute = (
     return HttpServerResponse.empty();
   });
 
+/** What the installer prints on a machine already joined to this Gram, whose service it moves. */
+const MOVED_SERVICE = /^gram-host: This machine already joined \S+; moving its service/m;
+
 /**
  * The machine an install over SSH joined: the new one whose key has the fingerprint the install
- * printed into the session; `rejoined` when it printed none (a machine already joined, whose
- * service moved); undefined when no new machine has that key, which is never confirmed.
+ * printed into the session; `rejoined` when it printed none and said it moved the service of a
+ * machine already joined; undefined otherwise, which is never confirmed.
  */
 export const joinedOverSsh = <M extends { readonly id: string; readonly publicKey: string }>(
   before: ReadonlySet<string>,
@@ -142,11 +145,17 @@ export const joinedOverSsh = <M extends { readonly id: string; readonly publicKe
   output: string,
 ): M | "rejoined" | undefined => {
   const printed = printedFingerprint(output);
-  if (printed === undefined) return "rejoined";
+  if (printed === undefined) return MOVED_SERVICE.test(output) ? "rejoined" : undefined;
   return machines.find(
     (machine) => !before.has(machine.id) && fingerprintOf(machine.publicKey) === printed,
   );
 };
+
+/**
+ * Whether an install over SSH is running: each mints the one join link, which replaces any other,
+ * so a second would spend the first's.
+ */
+let sshJoinRunning = false;
 
 /** The settings page's view: the machines, and the join link waiting, if one is. */
 const machinesStatus = (hosts: RemoteHostsShape) => {
@@ -193,32 +202,33 @@ export const machineManagement = (
         const target = (yield* jsonBody(256))?.["target"];
         if (typeof target !== "string" || !SSH_TARGET.test(target))
           return json({ message: "That isn't a host to SSH to." }, 400);
+        if (sshJoinRunning)
+          return json({ message: "Gram is already adding a machine over SSH." }, 409);
         const before = new Set(hosts.machines.list().map((machine) => machine.id));
         const link = hosts.machines.mint(remote.origin);
+        sshJoinRunning = true;
         const ran = yield* runOverSsh(
           target,
           installScript(remote.origin, appVersion, link.url),
           ssh === undefined ? {} : { ssh },
-        ).pipe(Effect.exit);
-        if (ran._tag === "Failure") {
-          const failure = ran.cause.reasons.find((reason) => reason._tag === "Fail")?.error;
-          return json(
-            {
-              message: failure?.message ?? "The install over SSH failed.",
-              output: failure?.output ?? "",
-            },
-            502,
-          );
-        }
-        const output = ran.value;
+        ).pipe(Effect.exit, Effect.ensuring(Effect.sync(() => (sshJoinRunning = false))));
+        const failure =
+          ran._tag === "Failure"
+            ? ran.cause.reasons.find((reason) => reason._tag === "Fail")?.error
+            : undefined;
+        const output = ran._tag === "Success" ? ran.value : (failure?.output ?? "");
         const joined = joinedOverSsh(before, hosts.machines.list(), output);
+        if (ran._tag === "Failure" && (joined === undefined || joined === "rejoined"))
+          return json({ message: failure?.message ?? "The install over SSH failed.", output }, 502);
         // Run again on a machine already joined here: its service moved, and it joined before.
-        if (joined === "rejoined") return json({ ...machinesStatus(hosts), output });
+        if (joined === "rejoined") return json({ ...machinesStatus(hosts), joined, output });
         if (joined === undefined)
           return json(
             {
               message:
-                "The machine that joined isn't the one Gram installed over SSH, so it wasn't confirmed. Remove it, and add the machine again.",
+                printedFingerprint(output) === undefined
+                  ? "The install didn't print the machine's fingerprint, so nothing was confirmed. If a machine joined, check its fingerprint before you confirm it."
+                  : "The machine that joined isn't the one Gram installed over SSH, so it wasn't confirmed. Remove it, and add the machine again.",
               output,
             },
             409,
@@ -228,7 +238,18 @@ export const machineManagement = (
         } catch {
           return json({ message: "The change couldn't be saved.", output }, 500);
         }
-        return json({ ...machinesStatus(hosts), joined: joined.id, output });
+        // Joined with the printed key, then stopped (its service didn't start, say): it is confirmed,
+        // and the person reads what went wrong.
+        return json({
+          ...machinesStatus(hosts),
+          joined: joined.id,
+          ...(failure === undefined
+            ? {}
+            : {
+                problem: `It joined and was confirmed, but the install stopped after that: ${failure.message}`,
+              }),
+          output,
+        });
       }
       case MACHINES_CONFIRM_PATH:
       case MACHINES_REMOVE_PATH: {

@@ -109,10 +109,20 @@ export const machinesApi = {
    * Installs and joins `target` over this computer's SSH, confirming it when the key that joined is
    * the one the install printed. Minutes, while it downloads Gram there.
    */
-  sshJoin: async (target: string): Promise<MachinesStatus & { readonly output: string }> => {
+  sshJoin: async (
+    target: string,
+  ): Promise<
+    MachinesStatus & {
+      /** The machine confirmed, or `rejoined` when it had joined before and its service moved. */
+      readonly joined: string;
+      /** What went wrong after it joined and was confirmed, such as its service not starting. */
+      readonly problem?: string;
+      readonly output: string;
+    }
+  > => {
     const response = await post("/machines/ssh-join", { target });
     const text = await response.text().catch(() => "");
-    let value: { message?: unknown; output?: unknown } = {};
+    let value: { message?: unknown; output?: unknown; joined?: unknown; problem?: unknown } = {};
     try {
       value = JSON.parse(text) as typeof value;
     } catch {
@@ -125,7 +135,12 @@ export const machinesApi = {
         output,
       );
     const parsed = await status(new Response(text, { status: 200 }), "Couldn't add the machine");
-    return { ...parsed, output };
+    return {
+      ...parsed,
+      joined: typeof value.joined === "string" ? value.joined : "",
+      ...(typeof value.problem === "string" ? { problem: value.problem } : {}),
+      output,
+    };
   },
 };
 

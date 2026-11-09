@@ -92,7 +92,15 @@ export const runOverSsh = (
     };
     child.stdout.on("data", keep);
     child.stderr.on("data", keep);
-    const timer = setTimeout(() => child.kill("SIGTERM"), options.timeoutMs ?? SSH_JOIN_TIMEOUT_MS);
+    // ssh catches SIGTERM and exits 255 itself, so the timeout is remembered rather than read from
+    // the exit; one that ignores it is killed a few seconds later.
+    let timedOut = false;
+    let kill: ReturnType<typeof setTimeout> | undefined;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      kill = setTimeout(() => child.kill("SIGKILL"), 5_000);
+    }, options.timeoutMs ?? SSH_JOIN_TIMEOUT_MS);
     child.on("error", (error) => {
       clearTimeout(timer);
       resume(
@@ -108,14 +116,15 @@ export const runOverSsh = (
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
+      clearTimeout(kill);
       const text = readableOutput(output);
       if (code === 0) resume(Effect.succeed(text));
       else
         resume(
           Effect.fail(
             new SshJoinFailed(
-              signal === "SIGTERM"
-                ? "The install over SSH took too long and was stopped."
+              timedOut
+                ? "The install over SSH took too long and was stopped. It may still finish there: check Settings → Machines before you confirm a machine."
                 : code === 255
                   ? `Couldn't connect to ${target} over SSH. Gram uses your SSH keys or agent, never a password: check that \`ssh ${target}\` works without one.`
                   : `The install on ${target} stopped (exit ${code ?? signal}).`,

@@ -177,7 +177,10 @@ describe("adding a machine over SSH", () => {
     devices: [],
     origin: "https://studio.example-tailnet.ts.net",
   };
-  const serveSsh = (join: () => Response) => {
+  const serveSsh = (
+    join: () => Response | Promise<Response>,
+    list: () => ReadonlyArray<JoinedMachine> = () => [],
+  ) => {
     const calls: Array<{ path: string; body?: string }> = [];
     vi.stubGlobal(
       "fetch",
@@ -191,15 +194,22 @@ describe("adding a machine over SSH", () => {
           });
         if (path === "/machines/ssh-hosts") return reply({ hosts: ["build-box"] });
         if (path === "/machines/ssh-join") return join();
-        return reply({ machines: [] });
+        return reply({ machines: list() });
       }),
     );
     return calls;
   };
 
-  it("installs on the host and shows the machine it confirmed", async () => {
-    const calls = serveSsh(() =>
-      reply({ machines: [machine()], joined: machine(), output: "Fingerprint: X" }),
+  it("installs on the host and keeps its answer while the new machine appears", async () => {
+    let joining = false;
+    let finish: ((response: Response) => void) | undefined;
+    const calls = serveSsh(
+      () => {
+        joining = true;
+        return new Promise<Response>((resolve) => (finish = resolve));
+      },
+      // The machine joins before the install ends, and the dialog's poll sees it.
+      () => (joining ? [machine({ confirmed: false })] : []),
     );
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Add a machine" }));
@@ -207,12 +217,18 @@ describe("adding a machine over SSH", () => {
       target: { value: " build-box " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add over SSH" }));
+    expect(await screen.findByText(/Installing on build-box over SSH/)).toBeTruthy();
+    const listed = () => calls.filter((call) => call.path === "/machines/list").length;
+    const before = listed();
+    await waitFor(() => expect(listed()).toBeGreaterThan(before), { timeout: 4_000 });
+    expect(screen.queryByTestId("machines-joined-new")).toBeNull();
+    finish?.(reply({ machines: [machine()], joined: machine().id, output: "Fingerprint: X" }));
     expect(await screen.findByText("build-box joined, and its fingerprint matched.")).toBeTruthy();
     expect(calls).toContainEqual({
       path: "/machines/ssh-join",
       body: JSON.stringify({ target: "build-box" }),
     });
-    expect(await screen.findAllByText("build box")).not.toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
   });
 
   it("shows why it failed, with what the session printed", async () => {

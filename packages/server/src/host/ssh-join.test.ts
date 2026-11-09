@@ -69,6 +69,27 @@ describe("adding a machine over SSH", () => {
     }),
   );
 
+  it.effect("says it timed out, even when ssh exits on its own when stopped", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      try {
+        const ssh = join(dir, "ssh");
+        // Like OpenSSH: catches SIGTERM and exits 255.
+        writeFileSync(
+          ssh,
+          "#!/bin/sh\ntrap 'exit 255' TERM\ncat >/dev/null\nwhile :; do sleep 0.05; done\n",
+        );
+        chmodSync(ssh, 0o755);
+        const stopped = yield* runOverSsh("build-box", "true", { ssh, timeoutMs: 200 }).pipe(
+          Effect.flip,
+        );
+        expect(stopped.message).toContain("took too long");
+      } finally {
+        removeDir(dir);
+      }
+    }),
+  );
+
   it("confirms only the new machine whose key the install printed", () => {
     const old = generateHostKey();
     const fresh = generateHostKey();
@@ -82,7 +103,13 @@ describe("adding a machine over SSH", () => {
     // A machine already here that printed its key is not a new join.
     expect(joinedOverSsh(new Set(["m-old"]), machines, said(old))).toBeUndefined();
     expect(joinedOverSsh(new Set(["m-old"]), [machines[0]!], said(fresh))).toBeUndefined();
-    expect(joinedOverSsh(new Set(), machines, "moved its service")).toBe("rejoined");
+    const moved =
+      "gram-host: This machine already joined https://studio.example-tailnet.ts.net; moving its service to this app.\n";
+    expect(joinedOverSsh(new Set(), machines, moved)).toBe("rejoined");
+    // Printing neither is never taken as success.
+    expect(joinedOverSsh(new Set(), machines, "gram-host: Installed ~/.local/bin/gram-host.")).toBe(
+      undefined,
+    );
   });
 
   it("keeps the session's words, without colour codes or progress bars", () => {
