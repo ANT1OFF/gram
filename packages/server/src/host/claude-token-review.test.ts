@@ -410,7 +410,7 @@ describe("review finding 5: a host's refusal is not passed on as it says it", ()
 describe("review finding 6: the sign-in link the page is shown", () => {
   it("is only Claude's own authorization page, whole, with no token in it", () => {
     const good =
-      "https://claude.ai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback&scope=user%3Ainference&code_challenge=abc_DEF-123&code_challenge_method=S256&state=xyz_789";
+      "https://claude.ai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback&scope=user%3Ainference&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256&state=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
     expect(scanSetupTokenOutput(`Use the url below to sign in:\r\n${good}\r\n`).signInLink).toBe(
       good,
     );
@@ -427,5 +427,131 @@ describe("review finding 6: the sign-in link the page is shown", () => {
       "https://claude.ai/logout?next=oauth\r\n",
     ])
       expect(scanSetupTokenOutput(output).signInLink, output).toBeUndefined();
+  });
+});
+
+// Re-review of 8897fc4d (comment 6733115769). Each case failed on that head.
+
+describe("re-review R1: Remove holds the machine for the whole operation", () => {
+  it.effect(
+    "refuses a second run for a machine being removed, so its delete is the last word",
+    () =>
+      Effect.gen(function* () {
+        const { machines, joinWith } = joinedMachines();
+        const id = joinWith(generateHostKey());
+        const events: Array<string> = [];
+        const deleting = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const hosts = hostsOver(machines, {
+          setToken: () => Effect.sync(() => void events.push("set")),
+          forgetToken: Effect.sync(() => void events.push("delete")).pipe(
+            Effect.andThen(Deferred.succeed(deleting, undefined)),
+            Effect.andThen(Deferred.await(release)),
+            Effect.as(true),
+          ),
+        });
+        const processes: Array<ReturnType<typeof fakeProcess>> = [];
+        const capture = yield* claudeTokenCaptureFor(hosts, () => {
+          const next = fakeProcess();
+          processes.push(next);
+          return next.process;
+        });
+        const start = () =>
+          post(hosts, MACHINES_TOKEN_START_PATH, { ids: [id], consent: TOKEN_CONSENT }, capture);
+        // Run A delivers.
+        expect((yield* start()).status).toBe(200);
+        yield* settle();
+        processes[0]!.print(`${SETUP_TOKEN}\r\n`);
+        yield* settle();
+        // Remove is waiting on the machine's delete...
+        const removing = yield* Effect.forkScoped(
+          post(hosts, MACHINES_REMOVE_PATH, { id }, capture),
+        );
+        yield* Deferred.await(deleting);
+        // ...when another window starts run B for the same machine.
+        const second = yield* start();
+        if (second.status === 200) {
+          yield* settle();
+          processes[1]?.print(`${SETUP_TOKEN}\r\n`);
+          yield* settle();
+        }
+        yield* Deferred.succeed(release, undefined);
+        const removed = yield* Fiber.join(removing);
+        expect(second.status).toBe(409);
+        expect(events).toEqual(["set", "delete"]);
+        expect(JSON.parse(removed.text)).not.toHaveProperty("tokenLeft");
+      }),
+  );
+});
+
+describe("re-review R3: a host's refusal is a fixed message chosen here", () => {
+  it.effect("drops a refusal that carries anything beyond a known error code", () =>
+    Effect.gen(function* () {
+      const fragment = SETUP_TOKEN.slice(13, 40);
+      const { host, control } = yield* streamPair;
+      const refusals = [
+        `Couldn't keep the Claude token: E ${fragment}.`,
+        `Couldn't keep the Claude token: ${fragment}.`,
+        "Couldn't keep the Claude token: EACCES.",
+      ];
+      let next = 0;
+      const service: HostService = {
+        hello: {
+          protocol: HOST_PROTOCOL_VERSION,
+          hostId: LOCAL_HOST_ID,
+          capabilities: HOST_CAPABILITIES,
+          platform: process.platform,
+          pid: 1,
+        },
+        files: filesOn(yield* Proc),
+        repos: reposOn(yield* Proc, "/nonexistent/gram-host-repos"),
+        worktrees: yield* Worktrees,
+        git: gitOn(yield* Proc),
+        terminals: yield* terminalsOnHost,
+        sessions: yield* sessionsOnHost(noAgents),
+        scan: Effect.succeed({ listening: new Map(), children: new Map() }),
+        claude: {
+          setToken: () =>
+            Effect.suspend(() => Effect.fail(new HostFailed({ message: refusals[next++]! }))),
+          forgetToken: Effect.succeed(false),
+        },
+      };
+      yield* Effect.forkScoped(
+        serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(host)), service),
+      );
+      const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)));
+      const messages: Array<string> = [];
+      for (const _ of refusals)
+        messages.push(
+          (yield* connection.claude.setToken(Redacted.make(SETUP_TOKEN)).pipe(Effect.flip)).message,
+        );
+      for (const message of messages) expect(message, message).not.toContain(fragment.slice(0, 12));
+      // A known code still reads as itself.
+      expect(messages[2]).toBe("Couldn't keep the Claude token: EACCES.");
+    }).pipe(Effect.scoped, Effect.provide(HostLayer)),
+  );
+});
+
+describe("re-review R4 and R5: links the output could carry", () => {
+  it("rejects a malformed escape rather than throwing", () => {
+    for (const output of [
+      "https://claude.ai/oauth/authorize?code=true&state=%FF\r\n",
+      "https://claude.ai/oauth/authorize?code=true&state=%E0%A4\r\n",
+    ])
+      expect(() => scanSetupTokenOutput(output)).not.toThrow();
+    expect(
+      scanSetupTokenOutput("https://claude.ai/oauth/authorize?code=true&state=%FF\r\n").signInLink,
+    ).toBeUndefined();
+  });
+
+  it("rejects a token hidden by encoding it twice", () => {
+    const twice = encodeURIComponent(encodeURIComponent(SETUP_TOKEN));
+    const once = encodeURIComponent(SETUP_TOKEN.slice(13));
+    for (const state of [twice, once, SETUP_TOKEN.slice(13)])
+      expect(
+        scanSetupTokenOutput(`https://claude.ai/oauth/authorize?code=true&state=${state}\r\n`)
+          .signInLink,
+        state,
+      ).toBeUndefined();
   });
 });

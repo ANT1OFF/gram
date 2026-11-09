@@ -80,26 +80,39 @@ const LINKS = /https:\/\/[^\s"'<>\u0007\u001b]+(?=[\s"'<>\u0007\u001b])/g;
 /** Where Claude Code sends a sign-in: Claude's own authorization page, and nowhere else. */
 const SIGN_IN_HOSTS = new Set(["claude.ai", "claude.com"]);
 const SIGN_IN_PATHS = new Set(["/oauth/authorize", "/cai/oauth/authorize"]);
-/** The query an OAuth authorization request carries, and nothing else. */
-const SIGN_IN_QUERY = new Set([
-  "code",
-  "client_id",
-  "response_type",
-  "redirect_uri",
-  "scope",
-  "code_challenge",
-  "code_challenge_method",
-  "state",
+/**
+ * The query an OAuth authorization request carries, each parameter with the only values it can
+ * have. No grammar admits `%`, so a value can't hide anything behind a second encoding, and none
+ * is long enough to carry a setup-token token (about 100 characters) even without its prefix.
+ */
+const SIGN_IN_QUERY: ReadonlyMap<string, RegExp> = new Map([
+  ["code", /^true$/],
+  ["response_type", /^code$/],
+  ["code_challenge_method", /^S256$/],
+  ["client_id", /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i],
+  // PKCE challenges and states are 43 base64url characters; a little room either way.
+  ["code_challenge", /^[A-Za-z0-9_-]{32,64}$/],
+  ["state", /^[A-Za-z0-9_-]{16,64}$/],
+  ["scope", /^[a-z][a-z:_.-]{0,63}(?: [a-z][a-z:_.-]{0,63}){0,15}$/],
+  [
+    "redirect_uri",
+    /^(?:https:\/\/(?:[a-z0-9-]+\.)*(?:claude\.ai|claude\.com|anthropic\.com)|http:\/\/(?:localhost|127\.0\.0\.1):\d{2,5})\/[A-Za-z0-9/_-]{0,128}$/,
+  ],
 ]);
 
 /**
- * `link` when it is Claude's own authorization page with an OAuth request's query and no token,
- * credentials or fragment in it; undefined for anything else, which the page is never shown.
+ * `link` when it is Claude's own authorization page with an OAuth request's query, each value in
+ * its own grammar, and no credentials, port or fragment; undefined for anything else, including a
+ * link that doesn't parse or decode, which the page is never shown.
  */
 export const signInLinkOf = (link: string): string | undefined => {
+  if (link.length > 2048 || /sk-ant-/i.test(link)) return undefined;
   let url: URL;
+  let query: Array<[string, string]>;
   try {
     url = new URL(link);
+    // `URLSearchParams` decodes once, and stands in a replacement character for a bad escape.
+    query = [...url.searchParams];
   } catch {
     return undefined;
   }
@@ -110,18 +123,14 @@ export const signInLinkOf = (link: string): string | undefined => {
     url.port !== "" ||
     url.hash !== "" ||
     !SIGN_IN_HOSTS.has(url.hostname) ||
-    !SIGN_IN_PATHS.has(url.pathname) ||
-    link.length > 4096 ||
-    /sk-ant-/i.test(decodeURIComponent(link.replace(/%(?![0-9a-f]{2})/gi, "%25")))
+    !SIGN_IN_PATHS.has(url.pathname)
   )
     return undefined;
-  for (const [key, value] of url.searchParams) {
-    if (
-      !SIGN_IN_QUERY.has(key) ||
-      value.length > 1024 ||
-      [...value].some((char) => char.charCodeAt(0) < 0x20)
-    )
-      return undefined;
+  const seen = new Set<string>();
+  for (const [key, value] of query) {
+    const grammar = SIGN_IN_QUERY.get(key);
+    if (grammar === undefined || seen.has(key) || !grammar.test(value)) return undefined;
+    seen.add(key);
   }
   return url.href;
 };
@@ -227,9 +236,17 @@ export const makeClaudeTokenCapture = Effect.fnUntraced(function* (deps: ClaudeT
     timer: ReturnType<typeof setTimeout> | undefined;
     /** Machines removed since consent: nothing more is sent to them in this run. */
     readonly dropped: Set<string>;
-    /** Sends not yet answered, by machine. */
-    readonly inFlight: Map<string, Deferred.Deferred<void>>;
   }
+  /**
+   * Sends not yet answered, by machine, whichever run made them, so a delete waits for all of them.
+   */
+  const inFlight = new Map<string, Set<Deferred.Deferred<void>>>();
+  /**
+   * Machines a Remove or Forget token is working on, with how many: no run starts for them and no
+   * send to them begins until it is done, so its delete is the last thing the machine gets.
+   */
+  const held = new Map<string, number>();
+  const isHeld = (id: string) => (held.get(id) ?? 0) > 0;
   let run: Run | undefined;
   const live = (r: Run) => r.view.state === "waiting" || r.view.state === "sending";
   const stop = (r: Run) => {
@@ -259,7 +276,6 @@ export const makeClaudeTokenCapture = Effect.fnUntraced(function* (deps: ClaudeT
           process: undefined,
           timer: undefined,
           dropped: new Set(),
-          inFlight: new Map(),
         };
         run = r;
         // Consent is for these joins: one removed and joined again since gets nothing.
@@ -277,7 +293,12 @@ export const makeClaudeTokenCapture = Effect.fnUntraced(function* (deps: ClaudeT
         ): Effect.Effect<TokenSent> =>
           Effect.suspend(() => {
             const { id } = target;
-            if (target.join === undefined || r.dropped.has(id) || deps.joinOf(id) !== target.join)
+            if (
+              target.join === undefined ||
+              r.dropped.has(id) ||
+              isHeld(id) ||
+              deps.joinOf(id) !== target.join
+            )
               return Effect.succeed({ id, ok: false, message: NOT_THIS_JOIN });
             try {
               deps.mark(id);
@@ -285,7 +306,9 @@ export const makeClaudeTokenCapture = Effect.fnUntraced(function* (deps: ClaudeT
               return Effect.succeed({ id, ok: false, message: NOT_RECORDED });
             }
             const answered = Deferred.makeUnsafe<void>();
-            r.inFlight.set(id, answered);
+            const pending = inFlight.get(id) ?? new Set();
+            pending.add(answered);
+            inFlight.set(id, pending);
             return deps.send(id, token).pipe(
               Effect.map((): TokenSent => ({ id, ok: true })),
               Effect.catch((error) =>
@@ -293,7 +316,8 @@ export const makeClaudeTokenCapture = Effect.fnUntraced(function* (deps: ClaudeT
               ),
               Effect.ensuring(
                 Effect.sync(() => {
-                  r.inFlight.delete(id);
+                  pending.delete(answered);
+                  if (pending.size === 0 && inFlight.get(id) === pending) inFlight.delete(id);
                   Deferred.doneUnsafe(answered, Exit.void);
                 }),
               ),
@@ -365,17 +389,32 @@ export const makeClaudeTokenCapture = Effect.fnUntraced(function* (deps: ClaudeT
         );
         return { captureId: r.id };
       }),
+    /** Whether a Remove or Forget token is working on `id`, so no run may start for it. */
+    held: isHeld,
     /**
-     * Waits for a send to `id` in flight to be answered, so a delete that follows lands after it.
-     * With `drop`, for a machine being removed, nothing more is sent to it in this run.
+     * Runs `effect` (a machine's delete) holding `id`: no run starts for it and no send to it begins
+     * until `effect` is done, and every send to it already in flight, from any run, is answered
+     * first. With `drop`, for a machine being removed, the current run never sends to it again.
      */
-    settle: (id: string, options: { readonly drop: boolean }): Effect.Effect<void> =>
-      Effect.suspend(() => {
-        if (run === undefined) return Effect.void;
-        if (options.drop) run.dropped.add(id);
-        const answered = run.inFlight.get(id);
-        return answered === undefined ? Effect.void : Deferred.await(answered);
-      }),
+    holding: <A, E, R>(
+      id: string,
+      options: { readonly drop: boolean },
+      effect: Effect.Effect<A, E, R>,
+    ): Effect.Effect<A, E, R> =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => {
+          held.set(id, (held.get(id) ?? 0) + 1);
+          if (options.drop) run?.dropped.add(id);
+          return [...(inFlight.get(id) ?? [])];
+        }),
+        (pending) => Effect.andThen(Effect.forEach(pending, Deferred.await), effect),
+        () =>
+          Effect.sync(() => {
+            const count = (held.get(id) ?? 1) - 1;
+            if (count > 0) held.set(id, count);
+            else held.delete(id);
+          }),
+      ),
     /** The run's state, or undefined for a run that isn't the current one. */
     view: (captureId: string): CaptureView | undefined =>
       run !== undefined && run.id === captureId ? run.view : undefined,

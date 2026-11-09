@@ -474,17 +474,40 @@ export const HOST_TOKEN_UNANSWERED =
 /** What a token call says when the host refused it in words this side doesn't pass on. */
 export const HOST_TOKEN_REFUSED = "This machine's gram-host refused the token.";
 
-/** A file error as the joined host's own store words it: the step and an error code, nothing else. */
-const STORE_REFUSAL = /^Couldn't (?:keep|delete) the Claude token: [A-Za-z0-9_ ]{1,32}\.$/;
+/** The file errors a joined host's token store reports, by code; any other code isn't passed on. */
+const STORE_ERROR_CODES: ReadonlySet<string> = new Set([
+  "EACCES",
+  "EPERM",
+  "ENOSPC",
+  "EDQUOT",
+  "EROFS",
+  "EEXIST",
+  "ENOENT",
+  "ENOTDIR",
+  "EISDIR",
+  "ELOOP",
+  "EMFILE",
+  "ENFILE",
+  "EIO",
+  "EBUSY",
+]);
+
+/** How a joined host's store words a failed step: the step and a code, nothing else. */
+const STORE_REFUSAL = /^Couldn't (keep|delete) the Claude token: ([A-Z]{2,12}|file error)\.$/;
 
 /**
- * A host's refusal as this side passes it on: only words a host built from this tree says, never
- * free text a host chose, which could quote the token it was sent.
+ * A host's refusal as this side passes it on: a message built here from a known step and a known
+ * error code, never text the host chose, which could carry part of the token it was sent.
  */
-export const publicTokenRefusal = (message: string): string =>
-  message === NOT_A_CLAUDE_TOKEN || message === NO_TOKEN_STORE || STORE_REFUSAL.test(message)
-    ? message
-    : HOST_TOKEN_REFUSED;
+export const publicTokenRefusal = (message: string): string => {
+  if (message === NOT_A_CLAUDE_TOKEN) return NOT_A_CLAUDE_TOKEN;
+  if (message === NO_TOKEN_STORE) return NO_TOKEN_STORE;
+  const parts = STORE_REFUSAL.exec(message);
+  if (parts === null) return HOST_TOKEN_REFUSED;
+  const step = parts[1] === "keep" ? "keep" : "delete";
+  const code = STORE_ERROR_CODES.has(parts[2]!) ? parts[2]! : "file error";
+  return `Couldn't ${step} the Claude token: ${code}.`;
+};
 
 /** How long a token call waits for the host. */
 const TOKEN_CALL_TIMEOUT = "20 seconds";

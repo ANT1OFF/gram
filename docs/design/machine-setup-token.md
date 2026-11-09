@@ -98,13 +98,19 @@ convenience. Running setup-token again for a new machine costs one browser appro
   that could attach a debugger or inspector (`NODE_OPTIONS`, `NODE_INSPECT*`, `BUN_INSPECT*`),
   preload code (`LD_PRELOAD`, `DYLD_*`, `BASH_ENV`), log requests (`NODE_DEBUG`, `DEBUG`,
   `ANTHROPIC_LOG`) or read or bypass its TLS (`SSLKEYLOGFILE`, `NODE_TLS_REJECT_UNAUTHORIZED`), and
-  without any `CLAUDE_CODE_OAUTH_TOKEN` already set (`tokenChildEnv`). The same rule applies on the
-  joined machine to every Claude process that gets the token.
+  without any `CLAUDE_CODE_OAUTH_TOKEN` already set (`tokenChildEnv`). The Agent SDK's and Claude
+  Code's own debug, recording and raw-logging switches go too (`DEBUG_*`, `CLAUDE_DEBUG`,
+  `CLAUDE_CODE_DEBUG*`, `CLAUDE_CODE_TERMINAL_RECORDING`, `CLAUDE_PTY_RECORD`, `VCR_RECORD` and
+  others): SDK 0.3.311 turns `DEBUG_CLAUDE_AGENT_SDK` into `DEBUG=1` for its child. The same rule
+  applies on the joined machine to every Claude process that gets the token, and again at Gram's
+  spawn of a session's child, after the SDK's own changes to its env.
 - **Reading the output.** The server strips ANSI from the output and looks for three things: the
   sign-in link, the code prompt, and a token (`sk-ant-oat<NN>-…`), each only once it is whole. A
   link reaches the page only when it is Claude's own authorization page (`https://claude.ai` or
-  `claude.com`, `/oauth/authorize`), with an OAuth request's query and no credentials, fragment or
-  token in it. It keeps at most 64 KiB of output in memory.
+  `claude.com`, `/oauth/authorize`), with no credentials, port or fragment, and each query
+  parameter in its own grammar: `code=true`, a UUID `client_id`, a 43-or-so character
+  `code_challenge` and `state`, a short `scope` and a Claude or loopback `redirect_uri`. No grammar
+  admits `%` or a value long enough to hold a token. A link that doesn't parse is dropped. It keeps at most 64 KiB of output in memory.
   Once it finds a token, it stops the process and throws the buffer away. The token is held as an
   Effect `Redacted`, which prints as `<redacted>`, until each machine has answered. Then the
   reference is dropped. If no token comes within 10 minutes, the run is cancelled.
@@ -119,7 +125,8 @@ convenience. Running setup-token again for a new machine costs one browser appro
   still counts as holding one. If it can't be written, nothing is sent to that machine.
 - **Logs and errors.** An error says which step failed, never what was received. The host
   rejects a malformed token without quoting it. A host's refusal reaches the page only in the
-  words a host from this tree uses; any other text a host sends is replaced by a fixed message. Diagnostics' redaction patterns also match
+  words built here: the step and one of a fixed set of file error codes. Any other text a host sends
+  is replaced by a fixed message. Diagnostics' redaction patterns also match
   `sk-ant-oat…`, so a log line that would carry a token by accident is masked. A test checks
   that a synthetic token appears in none of the logs, errors, status replies or RPC failures of
   the flow.
@@ -141,9 +148,11 @@ convenience. Running setup-token again for a new machine costs one browser appro
 
 - **Forget token** in Settings → Machines asks the machine to delete the file
   (`host.claude.forgetToken`). It then uses its own `claude /login` sign-in again, if it has one.
-- **Remove** first stops the run from sending to the machine and waits for a send in flight to be
-  answered. Then, while the machine is online, it asks it to delete any token, recorded or not, and
-  only then forgets the machine. If the machine is offline and may hold a token, Remove says so. The token stays
+- **Remove** holds the machine for the whole operation: no run can start for it and no send to it
+  can begin, and every send already in flight, from any run, is answered first. Then, while the
+  machine is online, it asks it to delete any token, recorded or not, and only then forgets the
+  machine, so the delete is the last thing it receives. If the machine is offline and may hold a
+  token, Remove says so. **Forget token** holds the machine the same way while it deletes. The token stays
   there until `gram-host leave` runs on that machine, or until the user revokes it at claude.ai.
 - `gram-host leave` deletes the token along with the join and its key.
 

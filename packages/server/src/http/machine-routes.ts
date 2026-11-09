@@ -326,29 +326,42 @@ export const machineManagement = (
         const id = (yield* jsonBody(256))?.["id"];
         const machine = typeof id === "string" ? hosts.machines.get(id) : undefined;
         if (typeof id !== "string" || machine === undefined) return refuse("no such machine", 404);
-        let tokenLeft = false;
-        if (path === MACHINES_REMOVE_PATH) {
-          // Nothing more is sent to it, and a send in flight is answered before the delete.
-          if (capture !== undefined) yield* capture.settle(id, { drop: true });
-          // It deletes any token while it can still be reached, recorded or not: a write whose
-          // reply was lost leaves one there too.
+        if (path === MACHINES_CONFIRM_PATH) {
+          try {
+            hosts.machines.confirm(id);
+          } catch {
+            return json({ message: "The change couldn't be saved." }, 500);
+          }
+          return json(machinesStatus(hosts));
+        }
+        /**
+         * Held for the whole removal: no run starts for it and nothing is sent to it, and every
+         * send already in flight is answered first. Then it deletes any token while it can still be
+         * reached, recorded or not (a write whose reply was lost leaves one too), and only then is
+         * it forgotten.
+         */
+        const removal = Effect.gen(function* () {
           const forgot = yield* forgetOn(hosts, id);
-          tokenLeft = !forgot && hosts.machines.get(id)?.claudeTokenSetAt !== undefined;
-        }
-        try {
-          if (path === MACHINES_CONFIRM_PATH) hosts.machines.confirm(id);
-          else hosts.remove(HostId.make(id));
-        } catch {
-          return json({ message: "The change couldn't be saved." }, 500);
-        }
-        return json({ ...machinesStatus(hosts), ...(tokenLeft ? { tokenLeft: true } : {}) });
+          const tokenLeft = !forgot && hosts.machines.get(id)?.claudeTokenSetAt !== undefined;
+          try {
+            hosts.remove(HostId.make(id));
+          } catch {
+            return json({ message: "The change couldn't be saved." }, 500);
+          }
+          return json({ ...machinesStatus(hosts), ...(tokenLeft ? { tokenLeft: true } : {}) });
+        });
+        return yield* capture === undefined
+          ? removal
+          : capture.holding(id, { drop: true }, removal);
       }
       case MACHINES_TOKEN_FORGET_PATH: {
         const id = (yield* jsonBody(256))?.["id"];
         if (typeof id !== "string" || hosts.machines.get(id) === undefined)
           return refuse("no such machine", 404);
-        if (capture !== undefined) yield* capture.settle(id, { drop: false });
-        if (!(yield* forgetOn(hosts, id)))
+        const forgot = yield* capture === undefined
+          ? forgetOn(hosts, id)
+          : capture.holding(id, { drop: false }, forgetOn(hosts, id));
+        if (!forgot)
           return json(
             {
               message:
@@ -377,6 +390,13 @@ export const machineManagement = (
           if (machine === undefined) return refuse("no such machine", 404);
           if (machine.confirmedAt === undefined)
             return json({ message: `Confirm ${machine.name} first.` }, 409);
+          if (capture.held(id))
+            return json(
+              {
+                message: `${machine.name} is being removed, or its token deleted. Try again after.`,
+              },
+              409,
+            );
           if ((yield* hosts.connection(HostId.make(id)).pipe(Effect.exit))._tag === "Failure")
             return json(
               { message: `${machine.name} is offline. Pick machines that are online.` },

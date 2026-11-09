@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,8 @@ import {
   type PreparedClaude,
   withOAuthToken,
 } from "./environment.ts";
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { spawnEnvFor } from "./env.ts";
 import { ClaudeSdk, type ClaudeSdkShape } from "./sdk.ts";
 
 /** Synthetic: the shape `claude setup-token` prints, never a real token. */
@@ -96,5 +99,61 @@ describe("a Claude child that holds a setup-token token", () => {
     });
     // Without a token, the machine's own sign-in keeps the env as it was.
     expect(withOAuthToken(prepared, undefined)).toBe(prepared);
+  });
+});
+
+describe("a token-bearing Claude child as the Agent SDK spawns it", () => {
+  // Re-review R2 on #314: the SDK turns DEBUG_CLAUDE_AGENT_SDK into DEBUG=1 after Gram's env.
+  it("gets no DEBUG or other debug switch after the real SDK's own changes", async () => {
+    const { binary, done } = fixture();
+    try {
+      const prepared: PreparedClaude = {
+        binaryPath: binary,
+        warnings: [],
+        env: {
+          PATH: "/usr/bin:/bin",
+          DEBUG_CLAUDE_AGENT_SDK: "1",
+          DEBUG_SDK: "1",
+          CLAUDE_DEBUG: "1",
+          CLAUDE_CODE_DEBUG_LOG_LEVEL: "verbose",
+          CLAUDE_CODE_TERMINAL_RECORDING: "/synthetic/rec",
+        },
+      };
+      let fromSdk: Record<string, string | undefined> | undefined;
+      const run = query({
+        prompt: "synthetic",
+        options: {
+          env: withOAuthToken(prepared, FAKE_TOKEN).env,
+          pathToClaudeCodeExecutable: binary,
+          // The fixture only prints a version and exits: no real Claude Code or provider runs.
+          spawnClaudeCodeProcess: ({ env, signal }) => {
+            fromSdk = { ...env };
+            return spawn(binary, [], { stdio: ["pipe", "pipe", "pipe"], signal });
+          },
+        },
+      });
+      await (async () => {
+        for await (const _ of run) {
+          // The fixture says nothing the SDK reads.
+        }
+      })().catch(() => {});
+      expect(fromSdk).toBeDefined();
+      const spawned = spawnEnvFor(fromSdk!);
+      for (const env of [fromSdk!, spawned]) {
+        expect(env["DEBUG"]).toBeUndefined();
+        expect(
+          Object.keys(env).filter(
+            (name) => /DEBUG|RECORDING/.test(name) && env[name] !== undefined,
+          ),
+        ).toEqual([]);
+      }
+      expect(spawned["CLAUDE_CODE_OAUTH_TOKEN"]).toBe(FAKE_TOKEN);
+      // And whatever the SDK adds, the spawn boundary takes off again.
+      expect(
+        spawnEnvFor({ CLAUDE_CODE_OAUTH_TOKEN: FAKE_TOKEN, DEBUG: "1", NODE_OPTIONS: "--inspect" }),
+      ).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: FAKE_TOKEN });
+    } finally {
+      done();
+    }
   });
 });

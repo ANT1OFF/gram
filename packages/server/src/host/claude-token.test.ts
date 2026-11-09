@@ -142,7 +142,8 @@ describe("a joined machine's Claude token on disk", () => {
 
 describe("reading setup-token's output", () => {
   it("finds the sign-in link, the code prompt and the whole token, through terminal escapes", () => {
-    const link = "https://claude.ai/oauth/authorize?code=true&client_id=synthetic&state=abc";
+    const link =
+      "https://claude.ai/oauth/authorize?code=true&client_id=00000000-0000-4000-8000-000000000000&state=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
     const early = `\u001b[2J\u001b[1mOpening browser\u001b[22m\r\nBrowser didn't open? Use the url below to sign in:\r\n${link}\r\n\r\nPaste code here if prompted > `;
     expect(scanSetupTokenOutput(early)).toEqual({ signInLink: link, asksForCode: true });
     // Half a token isn't taken: more of it may be on its way.

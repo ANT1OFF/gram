@@ -179,8 +179,25 @@ const TOKEN_CHILD_STRIP_EXACT = new Set([
   "LD_PRELOAD",
   "LD_AUDIT",
   "LD_LIBRARY_PATH",
+  // The Agent SDK's and Claude Code's own debug, recording and raw-logging switches: the SDK turns
+  // `DEBUG_CLAUDE_AGENT_SDK` into `DEBUG=1` for the child after Gram builds its env.
+  "CLAUDE_DEBUG",
+  "CLAUDE_CODE_TEE_SDK_STDOUT",
+  "CLAUDE_CODE_TERMINAL_RECORDING",
+  "CLAUDE_CODE_SESSION_LOG",
+  "CLAUDE_CODE_PERFETTO_TRACE",
+  "CLAUDE_CODE_FRAME_TIMING_LOG",
+  "CLAUDE_PTY_RECORD",
+  "OTEL_LOG_RAW_API_BODIES",
+  "VCR_RECORD",
 ]);
-const TOKEN_CHILD_STRIP_PREFIXES = ["NODE_INSPECT", "BUN_INSPECT", "DYLD_"];
+const TOKEN_CHILD_STRIP_PREFIXES = [
+  "NODE_INSPECT",
+  "BUN_INSPECT",
+  "DYLD_",
+  "DEBUG_",
+  "CLAUDE_CODE_DEBUG",
+];
 
 /** Whether a token-bearing child must not inherit `name` (`TOKEN_CHILD_STRIP_EXACT`). */
 export const isTokenChildStripped = (name: string): boolean => {
@@ -206,4 +223,18 @@ export const tokenChildEnv = (
     out[name] = value;
   }
   return out;
+};
+
+/**
+ * The env a Claude child is finally spawned with, after the Agent SDK has added its own settings:
+ * when it carries an OAuth token, the token-child policy again (`tokenChildEnv`), so nothing the
+ * SDK set (such as `DEBUG`) reaches the process that holds it. The token itself is kept.
+ */
+export const spawnEnvFor = (
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined> => {
+  const token = env["CLAUDE_CODE_OAUTH_TOKEN"];
+  return token === undefined || token === ""
+    ? { ...env }
+    : { ...tokenChildEnv(env), CLAUDE_CODE_OAUTH_TOKEN: token };
 };
