@@ -9,7 +9,8 @@ opens no port of its own.
 
 A machine can join, be confirmed and stay connected; Settings → Machines lists it. A new thread
 in a new worktree can be placed on it, and its session, checkout, git state and terminals then run
-there. The Workers tab tags each worker that runs on another machine. Its Files panel, file
+there. The Workers tab tags each worker that runs on another machine. Gram's own
+[local check](#its-local-checks) of its pull request runs there too. Its Files panel, file
 previews and attachments work on that machine ([its files](#its-files-and-attachments)); its turn
 checkpoints, PR badge and port chips don't reach that machine yet.
 
@@ -301,6 +302,30 @@ folders is looked up on this machine, even where the same path happens to exist 
   connected, and otherwise once nothing has been added to it for a week.
 - A machine whose `gram-host` is from an older Gram still runs its workers, but its files and
   attachments are refused with a note to update it ([Updating a machine](#updating-a-machine)).
+
+## Its local checks
+
+A solo workspace's [local check](AGENTS_AND_FEATURES.md#project-local-merge-checks) of a worker's
+pull request runs on the machine the worker is on, through its host: `local_check`, `pr_status`
+and `merge_when_ready` read and gate on it as they do on a check of this machine.
+
+- The host merges the exact head onto the exact base in a bare repository of its own, in `checks`
+  in the host's folder, fed only by fetch from that machine's clone, and runs the project's
+  approved command and setup in a fresh worktree of the merged commit with its service's PATH. The
+  main Gram keeps the record: head, base, merged tree, pass or failure, and the output's end in its
+  log.
+- One check runs at a time on each joined machine, in a slot of its own, so it never waits behind
+  this machine's queue, nor this machine's behind it. `workspaces.localCheckConcurrency` is this
+  machine's alone.
+- A connection that drops while a check runs doesn't end it: the host keeps running it, and Gram
+  waits up to two minutes for the machine to dial in again and asks for the same run. A machine
+  that doesn't come back in time, or a Gram that quits meanwhile, leaves the check failed as
+  unknown, never passed; `local_check` runs it again. A machine that is offline when the check is
+  due waits the same two minutes before it fails.
+- A machine whose `gram-host` is older than its main Gram runs no checks: its threads read **no
+  local check on <machine>** and the local gate is off, as for a project without a command. Update it
+  ([Updating a machine](#updating-a-machine)). A selected-source check doesn't run on a joined machine
+  yet.
 
 ## Add a machine over SSH
 

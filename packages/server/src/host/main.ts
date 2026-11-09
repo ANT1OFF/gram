@@ -5,6 +5,7 @@
 // listens on a network either way.
 
 import { Socket as NetSocket } from "node:net";
+import { join } from "node:path";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
@@ -16,6 +17,7 @@ import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { claudeTokenIn } from "./claude-token.ts";
+import { checksOn } from "./checks.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import { hostAttachments, hostHome, hostRepos, readClaudeToken } from "./host-config.ts";
@@ -110,6 +112,7 @@ const hostService = (
           Effect.orElseSucceed(() => "unknown" as const),
         ),
       ),
+      checks: yield* checksOn(proc, join(hostHome(), "checks")),
     };
   });
 
