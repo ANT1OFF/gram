@@ -31,6 +31,7 @@ import {
 import { inputLengthProblem } from "./input.ts";
 import { dreamFileTools } from "./dream-tools.ts";
 import { sendFileTool } from "./file-tools.ts";
+import { sentFromMachinesHere } from "./sent-from-machines.ts";
 import { setPlanTool } from "./plan-tool.ts";
 import { sessionAppTools } from "./session-tools.ts";
 import { showMockTool } from "./show-mock.ts";
@@ -496,6 +497,7 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
       const plans = yield* ThreadPlans;
       const waits = yield* ThreadWaits;
       const checkouts = yield* CheckoutService;
+      const sentFromMachines = yield* sentFromMachinesHere;
 
       const setTitle = defineAppTool({
         descriptor: {
@@ -706,7 +708,7 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
         setUnread,
         notifyUser,
         showPanelTool(hub),
-        sendFileTool(runtimes, store),
+        sendFileTool(runtimes, store, sentFromMachines),
         showMockTool(runtimes, store),
         ...sessionAppTools(runtimes, store),
         moveToWorktreeTool(runtimes, store, checkouts),

@@ -59,6 +59,7 @@ import {
   Socket,
   SocketServer,
 } from "../platform/unstable.ts";
+import type { HostAttachments, HostFileReads } from "./file-reads.ts";
 import type { HostFiles } from "./files.ts";
 import { NOT_A_CLAUDE_TOKEN } from "./host-config.ts";
 import type { HostGit } from "./git.ts";
@@ -99,6 +100,10 @@ export interface HostClaudeToken {
 export interface HostService {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  /** Its threads' files scoped and read where they are. */
+  readonly reads: HostFileReads;
+  /** The files users attach to its sessions. */
+  readonly attachments: HostAttachments;
   /** The clones it keeps of repositories, for the workers placed on it. */
   readonly repos: HostRepos;
   readonly worktrees: HostWorktrees;
@@ -130,7 +135,12 @@ export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
  * The capabilities this build's host serves: the ones required, and those a control plane uses only
  * where a host advertises them, so a host on an older release still connects.
  */
-export const HOST_SERVES: ReadonlyArray<HostCapability> = [...HOST_CAPABILITIES, "deliveries"];
+export const HOST_SERVES: ReadonlyArray<HostCapability> = [
+  ...HOST_CAPABILITIES,
+  "deliveries",
+  "file-reads",
+  "attachments",
+];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -203,6 +213,18 @@ const handlersFor = (host: HostService) => {
       "host.files.search": ({ root, query, regex, caseSensitive, offset, limit }) =>
         host.files.search(root, query, { regex, caseSensitive, offset, limit }),
       "host.files.names": ({ root }) => host.files.names(root),
+      "host.files.scope": ({ path, roots }) => host.reads.scope(path, roots),
+      "host.files.file": ({ path, roots, outside, maxBytes }) =>
+        host.reads.file(path, roots, outside, maxBytes),
+      "host.files.image": ({ path, roots, outside, maxBytes }) =>
+        host.reads.image(path, roots, outside, maxBytes),
+      "host.files.resolve": ({ paths, roots, outside }) =>
+        host.reads.resolve(paths, roots, outside),
+      "host.files.vocabulary": ({ root }) => host.reads.vocabulary(root),
+      "host.files.fetch": ({ path, cwd, maxBytes }) => host.reads.fetch(path, cwd, maxBytes),
+      "host.attachments.put": ({ threadId, name, data }) =>
+        host.attachments.put(threadId, name, data),
+      "host.attachments.remove": ({ threadId }) => host.attachments.remove(threadId),
       // Never a defect: one from a handler breaks the whole connection, not just this call.
       "host.status": () =>
         (host.status ?? Effect.succeed(UNKNOWN_STATUS)).pipe(
@@ -482,6 +504,10 @@ export interface HostSessionsConnection {
 export interface HostConnection {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  /** Absent for a host from a build that doesn't serve `file-reads`. */
+  readonly reads: HostFileReads | undefined;
+  /** Absent for a host from a build that doesn't serve `attachments`. */
+  readonly attachments: HostAttachments | undefined;
   readonly repos: {
     readonly ensure: (url: string) => Effect.Effect<{ readonly path: string }, WorktreeError>;
   };
@@ -754,6 +780,41 @@ export const connectHost = (
         guarded(client["host.files.names"]({ root })).pipe(
           Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
         ),
+    };
+    const reads: HostFileReads = {
+      scope: (path, roots) =>
+        guarded(client["host.files.scope"]({ path, roots })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+      file: (path, roots, outside, maxBytes) =>
+        guarded(client["host.files.file"]({ path, roots, outside, maxBytes })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+      image: (path, roots, outside, maxBytes) =>
+        guarded(client["host.files.image"]({ path, roots, outside, maxBytes })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+      resolve: (paths, roots, outside) =>
+        guarded(client["host.files.resolve"]({ paths, roots, outside })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      vocabulary: (root) =>
+        guarded(client["host.files.vocabulary"]({ root })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      fetch: (path, cwd, maxBytes) =>
+        guarded(client["host.files.fetch"]({ path, cwd, maxBytes })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+    };
+    const attachments: HostAttachments = {
+      put: (threadId, name, data) =>
+        guarded(client["host.attachments.put"]({ threadId, name, data })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      // A host that went holds nothing more to delete now; its own prune takes the rest.
+      remove: (threadId) =>
+        guarded(client["host.attachments.remove"]({ threadId })).pipe(Effect.ignore),
     };
     const worktreeCall = <A, E extends { readonly _tag: string; readonly message?: string }>(
       call: Effect.Effect<A, E>,
@@ -1053,6 +1114,8 @@ export const connectHost = (
       hello,
       files,
       claude,
+      reads: hello.capabilities.includes("file-reads") ? reads : undefined,
+      attachments: hello.capabilities.includes("attachments") ? attachments : undefined,
       repos: { ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })) },
       worktrees,
       git,

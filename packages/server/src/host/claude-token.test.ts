@@ -38,6 +38,7 @@ import {
   type SetupTokenProcess,
 } from "./claude-token-capture.ts";
 import { claudeTokenIn } from "./claude-token.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import {
@@ -301,6 +302,8 @@ const connected = (claude: HostClaudeToken | undefined) =>
       terminals: yield* terminalsOnHost,
       sessions: yield* sessionsOnHost(noAgents),
       scan: Effect.succeed({ listening: new Map(), children: new Map() }),
+      reads: fileReadsOn(yield* Proc),
+      attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
       ...(claude === undefined ? {} : { claude }),
     };
     yield* Effect.forkScoped(

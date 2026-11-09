@@ -1,4 +1,15 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
@@ -9,6 +20,7 @@ import {
   HostHello,
   HostId,
   LOCAL_HOST_ID,
+  type ThreadId,
 } from "@gram/contracts";
 import { type GitStateChange, Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -16,6 +28,7 @@ import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { reposOn } from "./repos.ts";
 import { gitOn } from "./git.ts";
@@ -23,7 +36,7 @@ import { terminalsOnHost } from "./terminals.ts";
 import {
   connectHost,
   helloMismatch,
-  HOST_CAPABILITIES,
+  HOST_SERVES,
   scanFromWire,
   scanToWire,
   serveHost,
@@ -49,19 +62,25 @@ const SCAN: PortScan = {
 const hello = (overrides: Partial<HostHello> = {}): HostHello => ({
   protocol: HOST_PROTOCOL_VERSION,
   hostId: LOCAL_HOST_ID,
-  capabilities: HOST_CAPABILITIES,
+  capabilities: HOST_SERVES,
   platform: process.platform,
   pid: 4242,
   ...overrides,
 });
 
 /** A host served on one end of a fresh stream, and the control plane's connection to it. */
-const connected = (overrides: Partial<HostHello> = {}, extra: Partial<HostService> = {}) =>
+const connected = (
+  overrides: Partial<HostHello> = {},
+  extra: Partial<HostService> = {},
+  attached: string = mkdtempSync(join(tmpdir(), "gram-host-attached-")),
+) =>
   Effect.gen(function* () {
     const { host, control } = yield* streamPair;
     const service: HostService = {
       hello: hello(overrides),
       files: filesOn(yield* Proc),
+      reads: fileReadsOn(yield* Proc),
+      attachments: yield* attachmentsOnHost(attached),
       repos: reposOn(yield* Proc, REPOS),
       worktrees: yield* Worktrees,
       git: gitOn(yield* Proc),
@@ -292,5 +311,146 @@ describe("host protocol", () => {
       const edited = yield* Queue.take(changes).pipe(Effect.timeout("20 seconds"));
       expect(edited).toMatchObject({ path: repo, state: { changedFiles: 1, branch: "main" } });
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+});
+
+const onHost = Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)));
+const NOT_VOUCHED = { allowed: false, refusal: "is outside this thread's folder" };
+
+/** A checkout on the host, a file outside it, and a link from inside it to that file. */
+const hostFolders = Effect.gen(function* () {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "gram-host-reads-")));
+  yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+  const checkout = join(dir, "checkout");
+  mkdirSync(join(checkout, "src"), { recursive: true });
+  writeFileSync(join(checkout, "src", "app.ts"), "export const onHost = 1;\n");
+  writeFileSync(join(dir, "outside.txt"), "outside the checkout\n");
+  writeFileSync(join(dir, ".git-credentials"), "synthetic-not-a-secret\n");
+  symlinkSync(join(dir, "outside.txt"), join(checkout, "escape.txt"));
+  return { dir, checkout };
+});
+
+describe("a joined machine's file reads", () => {
+  it.effect("scope a path to the thread's folders on the host, links included", () =>
+    Effect.gen(function* () {
+      const { dir, checkout } = yield* hostFolders;
+      const reads = (yield* connected()).reads!;
+      expect(yield* reads.scope("src", [checkout])).toBe(join(checkout, "src"));
+      const escape = yield* reads.scope("escape.txt", [checkout]).pipe(Effect.flip);
+      expect(escape.message).toContain("outside this thread's folder");
+      const up = yield* reads.scope("../outside.txt", [checkout]).pipe(Effect.flip);
+      expect(up.message).toContain("outside this thread's folder");
+      expect(yield* reads.scope(join(dir, "checkout", "src"), [checkout])).toBe(
+        join(checkout, "src"),
+      );
+    }).pipe(Effect.scoped, onHost),
+  );
+
+  it.effect("read a file in the folders, and outside them only as the transcript allows", () =>
+    Effect.gen(function* () {
+      const { dir, checkout } = yield* hostFolders;
+      const reads = (yield* connected()).reads!;
+      const file = yield* reads.file("src/app.ts", [checkout], NOT_VOUCHED, 1024);
+      expect(file.content).toBe("export const onHost = 1;\n");
+      const linked = yield* reads
+        .file("escape.txt", [checkout], NOT_VOUCHED, 1024)
+        .pipe(Effect.flip);
+      expect(linked.message).toContain("outside this thread's folder");
+      const outside = join(dir, "outside.txt");
+      const refused = yield* reads.file(outside, [checkout], NOT_VOUCHED, 1024).pipe(Effect.flip);
+      expect(refused.message).toBe(`${outside} is outside this thread's folder`);
+      const vouched = yield* reads.file(
+        outside,
+        [checkout],
+        { ...NOT_VOUCHED, allowed: true },
+        1024,
+      );
+      expect(vouched.content).toBe("outside the checkout\n");
+      // A credential file stays refused, whatever the transcript says.
+      const key = yield* reads
+        .file(join(dir, ".git-credentials"), [checkout], { ...NOT_VOUCHED, allowed: true }, 1024)
+        .pipe(Effect.flip);
+      expect(key.message).toContain("may hold credentials");
+    }).pipe(Effect.scoped, onHost),
+  );
+
+  it.effect("resolve file links there, handing back the outside ones unchecked", () =>
+    Effect.gen(function* () {
+      const { dir, checkout } = yield* hostFolders;
+      const reads = (yield* connected()).reads!;
+      const outside = join(dir, "outside.txt");
+      const first = yield* reads.resolve(["src/app.ts", outside], [checkout], []);
+      expect(first.files).toEqual([
+        { path: "src/app.ts", resolved: join(checkout, "src", "app.ts") },
+      ]);
+      expect(first.unchecked).toEqual([outside]);
+      const second = yield* reads.resolve([outside], [checkout], [outside]);
+      expect(second.files).toEqual([{ path: outside, resolved: outside }]);
+    }).pipe(Effect.scoped, onHost),
+  );
+
+  it.effect("fetch a regular file for send_file, within its size and never a credential", () =>
+    Effect.gen(function* () {
+      const { dir, checkout } = yield* hostFolders;
+      const reads = (yield* connected()).reads!;
+      const fetched = yield* reads.fetch("src/app.ts", checkout, 1024);
+      expect(fetched.path).toBe(join(checkout, "src", "app.ts"));
+      expect(Buffer.from(fetched.data, "base64").toString("utf8")).toBe(
+        "export const onHost = 1;\n",
+      );
+      const large = yield* reads.fetch("src/app.ts", checkout, 4).pipe(Effect.flip);
+      expect(large.message).toContain("is over the");
+      const key = yield* reads
+        .fetch(join(dir, ".git-credentials"), checkout, 1024)
+        .pipe(Effect.flip);
+      expect(key.message).toContain("may hold credentials");
+      const folder = yield* reads.fetch("src", checkout, 1024).pipe(Effect.flip);
+      expect(folder.message).toContain("Not a regular file");
+    }).pipe(Effect.scoped, onHost),
+  );
+
+  it.effect("hold a session's attachments per thread, until the thread is gone", () =>
+    Effect.gen(function* () {
+      const attached = realpathSync(mkdtempSync(join(tmpdir(), "gram-host-attached-")));
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(attached, { recursive: true })));
+      const store = (yield* connected({}, {}, attached)).attachments!;
+      const thread = "t-attached" as ThreadId;
+      const data = Buffer.from("synthetic attachment").toString("base64");
+      const { path } = yield* store.put(thread, "../../notes.txt", data);
+      // Named only inside the thread's folder, whatever name it came with.
+      expect(path.startsWith(join(attached, thread))).toBe(true);
+      expect(readFileSync(path, "utf8")).toBe("synthetic attachment");
+      expect(readdirSync(join(attached, thread))).toHaveLength(1);
+      const escape = yield* store.put("../x" as ThreadId, "a.txt", data).pipe(Effect.flip);
+      expect(escape.message).toContain("Not a thread id");
+      const empty = yield* store.put(thread, "a.txt", "").pipe(Effect.flip);
+      expect(empty.message).toContain("is empty");
+      yield* store.remove(thread);
+      expect(existsSync(join(attached, thread))).toBe(false);
+    }).pipe(Effect.scoped, onHost),
+  );
+
+  it.effect("prune a thread's attachments nothing was added to for a week", () =>
+    Effect.gen(function* () {
+      const attached = realpathSync(mkdtempSync(join(tmpdir(), "gram-host-attached-")));
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(attached, { recursive: true })));
+      mkdirSync(join(attached, "t-old"));
+      mkdirSync(join(attached, "t-new"));
+      const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+      utimesSync(join(attached, "t-old"), old, old);
+      yield* attachmentsOnHost(attached);
+      expect(readdirSync(attached)).toEqual(["t-new"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("are absent for a host from a build without them, which still connects", () =>
+    Effect.gen(function* () {
+      const old = yield* connected({
+        capabilities: HOST_SERVES.filter((c) => c !== "file-reads" && c !== "attachments"),
+      });
+      expect(old.reads).toBeUndefined();
+      expect(old.attachments).toBeUndefined();
+      expect(old.files).toBeDefined();
+    }).pipe(Effect.scoped, onHost),
   );
 });

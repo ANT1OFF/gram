@@ -16,8 +16,9 @@ import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { claudeTokenIn } from "./claude-token.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
-import { hostHome, hostRepos, readClaudeToken } from "./host-config.ts";
+import { hostAttachments, hostHome, hostRepos, readClaudeToken } from "./host-config.ts";
 import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
@@ -93,6 +94,8 @@ const hostService = (
         ...(RELEASE === undefined ? {} : { release: RELEASE }),
       },
       files: filesOn(proc),
+      reads: fileReadsOn(proc),
+      attachments: yield* attachmentsOnHost(hostAttachments()),
       repos: reposOn(proc, hostRepos()),
       worktrees:
         hostId === LOCAL_HOST_ID ? yield* Worktrees : cloneWorktrees(proc, yield* Worktrees),

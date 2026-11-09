@@ -27,6 +27,7 @@ import {
   scanSetupTokenOutput,
   type SetupTokenProcess,
 } from "./claude-token-capture.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { generateHostKey } from "./machine-keys.ts";
@@ -390,6 +391,8 @@ describe("review finding 5: a host's refusal is not passed on as it says it", ()
         terminals: yield* terminalsOnHost,
         sessions: yield* sessionsOnHost(noAgents),
         scan: Effect.succeed({ listening: new Map(), children: new Map() }),
+        reads: fileReadsOn(yield* Proc),
+        attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
         claude: {
           setToken: (token) =>
             Effect.fail(new HostFailed({ message: `refused ${Redacted.value(token)}` })),
@@ -511,6 +514,8 @@ describe("re-review R3: a host's refusal is a fixed message chosen here", () => 
         terminals: yield* terminalsOnHost,
         sessions: yield* sessionsOnHost(noAgents),
         scan: Effect.succeed({ listening: new Map(), children: new Map() }),
+        reads: fileReadsOn(yield* Proc),
+        attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
         claude: {
           setToken: () =>
             Effect.suspend(() => Effect.fail(new HostFailed({ message: refusals[next++]! }))),

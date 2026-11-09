@@ -490,3 +490,65 @@ export const readFilePreview = (
     if (tooLarge) return { ...base, tooLarge: true };
     return { ...base, tooLarge: false, content: bytes.toString("utf8") };
   }).pipe(Effect.scoped);
+
+/**
+ * Whether a preview may read a path outside a thread's folders: `allows` asks the caller's own
+ * rule (the thread's transcript, read where the thread is kept), `refusal` says why not.
+ */
+export interface OutsideGate {
+  readonly allows: Effect.Effect<boolean>;
+  readonly refusal: string;
+}
+
+/**
+ * The file `path` names for a preview: in `roots` through `resolveScopedIn`, or an absolute path
+ * outside them only when `gate` allows it and it doesn't look like a credential file. `outside`
+ * says which, so the caller reads it through `openOutside`. Run on the machine the files are on.
+ */
+export const previewTarget = (
+  path: string,
+  roots: ReadonlyArray<string>,
+  gate: OutsideGate,
+): Effect.Effect<{ readonly target: string; readonly outside: boolean }, NotFound | InvalidState> =>
+  Effect.gen(function* () {
+    if (!(yield* outsideRoots(path, roots))) {
+      return { target: yield* resolveScopedIn(path, roots), outside: false };
+    }
+    // Refused before the transcript is asked: whether a message names it changes nothing.
+    if (isCredentialPath(path)) {
+      return yield* new InvalidState({
+        message: `Gram doesn't preview files that may hold credentials: ${path}`,
+      });
+    }
+    if (!(yield* gate.allows)) {
+      return yield* new InvalidState({ message: `${path} ${gate.refusal}` });
+    }
+    return { target: yield* resolveScoped(path, undefined), outside: true };
+  });
+
+/**
+ * Reads `path` for a preview with `read`, where `previewTarget` allows it; outside `roots` through
+ * `openOutside`, which refuses a credential file and hands `read` the very file it checked.
+ */
+export const readPreview = <A>(
+  path: string,
+  roots: ReadonlyArray<string>,
+  gate: OutsideGate,
+  read: (target: string, opened?: FileHandle) => Effect.Effect<A, NotFound | InvalidState>,
+): Effect.Effect<A, NotFound | InvalidState> =>
+  Effect.gen(function* () {
+    const { target, outside } = yield* previewTarget(path, roots, gate);
+    return yield* read(target, outside ? yield* openOutside(target) : undefined);
+  }).pipe(Effect.scoped);
+
+/**
+ * Whether a preview of `path` could fall outside `roots`: an absolute path that isn't lexically in
+ * any of them. One that is lexically inside is scoped to that root however its links lead, so only
+ * the others need a gate. Pure path arithmetic: nothing here is looked up on this disk.
+ */
+export const mayBeOutside = (path: string, roots: ReadonlyArray<string>): boolean => {
+  const expanded = expandHome(path.trim());
+  if (!isAbsolute(expanded)) return false;
+  const target = resolve(expanded);
+  return !roots.some((root) => isInside(resolve(root), target));
+};
