@@ -397,6 +397,9 @@ const fakeHosts = (
         name: m.name,
         ...(m.claudeTokenSetAt === undefined ? {} : { claudeTokenSetAt: m.claudeTokenSetAt }),
       })) as unknown as ReturnType<RemoteHostsShape["list"]>,
+    admit: () => {
+      throw new Error("No machine dials in these tests.");
+    },
     attach: () => Effect.void,
     checkSignIn: () => Promise.resolve(undefined),
     remove: (id) => {

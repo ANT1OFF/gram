@@ -4,6 +4,7 @@ import {
   constants,
   fstatSync,
   fsyncSync,
+  futimesSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -75,13 +76,18 @@ export const privateJsonFile = (dataDir: string, name: string, maxBytes: number)
       closeSync(fd);
     }
   };
-  const write = (value: unknown) => {
+  /**
+   * Replaces the file with `value`. `modified`, when given, is set as its modified time on the new
+   * file before it replaces the old, so the two land together or neither does.
+   */
+  const write = (value: unknown, modified?: number) => {
     assertPrivate(lstatSync(directory), true);
     const temporary = `${path}.${randomBytes(16).toString("hex")}.tmp`;
     let fd: number | undefined;
     try {
       fd = openSync(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
       writeFileSync(fd, JSON.stringify(value));
+      if (modified !== undefined) futimesSync(fd, new Date(), new Date(modified));
       fsyncSync(fd);
       closeSync(fd);
       fd = undefined;

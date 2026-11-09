@@ -103,6 +103,9 @@ const hostsOver = (
       .map((m: PairedMachine) => ({ id: m.id, name: m.name })) as unknown as ReturnType<
       RemoteHostsShape["list"]
     >,
+  admit: () => {
+    throw new Error("No machine dials in these tests.");
+  },
   attach: () => Effect.void,
   checkSignIn: () => Promise.resolve(undefined),
   remove: (id) => machines.remove(id),
