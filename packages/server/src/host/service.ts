@@ -118,12 +118,15 @@ export const serviceFile = (platform: ServicePlatform, home = homedir()): string
         SYSTEMD_UNIT,
       );
 
-interface Run {
+export interface Run {
   readonly code: number;
   readonly output: string;
 }
 
-const run = (file: string, args: ReadonlyArray<string>) =>
+/** Runs a service manager's command: `launchctl` or `systemctl`. */
+export type ServiceRunner = (file: string, args: ReadonlyArray<string>) => Effect.Effect<Run>;
+
+const run: ServiceRunner = (file, args) =>
   Effect.callback<Run>((resume) => {
     const child = execFile(file, [...args], { timeout: 30_000 }, (error, stdout, stderr) => {
       const code =
@@ -167,18 +170,57 @@ export const installService = (platform: ServicePlatform, command: ServiceComman
     return file;
   });
 
-/** Stops the service and removes its file; one that isn't there is left as it is. */
-export const uninstallService = (platform: ServicePlatform) =>
+/**
+ * Whether the service is stopped now, by its manager's own answer: launchd has no such service
+ * loaded, or systemd has the unit inactive or failed. Undefined when the manager couldn't say.
+ */
+const serviceStopped = (platform: ServicePlatform, runner: ServiceRunner) =>
+  platform === "darwin"
+    ? runner("launchctl", ["print", `gui/${uid()}/${LAUNCHD_LABEL}`]).pipe(
+        Effect.map((result) =>
+          result.code === 0
+            ? false
+            : // 113: launchd has no service by that label in this user's domain.
+              result.code === 113 || /could not find service/i.test(result.output)
+              ? true
+              : undefined,
+        ),
+      )
+    : runner("systemctl", ["--user", "is-active", SYSTEMD_UNIT]).pipe(
+        Effect.map((result) => {
+          if (result.code === 0) return false;
+          const state = result.output.split("\n")[0]?.trim() ?? "";
+          if (state === "inactive" || state === "failed") return true;
+          return /^(activating|deactivating|reloading|refreshing)$/.test(state) ? false : undefined;
+        }),
+      );
+
+/**
+ * Stops the service, checks it stopped, and removes its file; one that isn't installed or running
+ * is left as it is. Fails, keeping the file, when the service may still be running: its manager
+ * says it is, or its stop failed and the manager can't say. A missing file proves nothing: the
+ * service can stay loaded after its file goes.
+ */
+export const uninstallService = (
+  platform: ServicePlatform,
+  runner: ServiceRunner = run,
+  file = serviceFile(platform),
+) =>
   Effect.gen(function* () {
-    const file = serviceFile(platform);
-    if (platform === "darwin") {
-      yield* run("launchctl", ["bootout", `gui/${uid()}/${LAUNCHD_LABEL}`]);
-      rmSync(file, { force: true });
-      return;
-    }
-    yield* run("systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT]);
+    const stop =
+      platform === "darwin"
+        ? yield* runner("launchctl", ["bootout", `gui/${uid()}/${LAUNCHD_LABEL}`])
+        : yield* runner("systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT]);
+    const stopped = yield* serviceStopped(platform, runner);
+    // A stop that worked, with a manager that can't say after it, is taken at its word.
+    if (stopped === false || (stopped === undefined && stop.code !== 0))
+      return yield* Effect.fail(
+        new Error(
+          `The background service didn't stop (${platform === "darwin" ? "launchctl bootout" : "systemctl --user disable --now"} ${stop.code}: ${stop.output.slice(0, 400)}); it may still be running.`,
+        ),
+      );
     rmSync(file, { force: true });
-    yield* run("systemctl", ["--user", "daemon-reload"]);
+    if (platform === "linux") yield* runner("systemctl", ["--user", "daemon-reload"]);
   });
 
 /** Whether the service is running now. */

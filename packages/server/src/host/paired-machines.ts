@@ -1,4 +1,6 @@
 import type { KeyObject } from "node:crypto";
+import { lstatSync } from "node:fs";
+import { join } from "node:path";
 import type { HostId, HostStatus } from "@gram/contracts";
 import { makeLaunchToken, tokensEqual } from "../http/auth.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
@@ -92,7 +94,38 @@ export type JoinResult =
 
 export type ConnectResult =
   | { readonly kind: "ok"; readonly machine: PairedMachine }
-  | { readonly kind: "refused"; readonly status: 401 | 403; readonly message: string };
+  | { readonly kind: "refused"; readonly status: 401 | 403 | 503; readonly message: string };
+
+/** An accepted dial's nonce, and the last moment its dial is in the acceptance window. */
+export type DialNonce = readonly [nonce: string, until: number];
+
+/**
+ * The accepted dials' nonces still in their window; `floor`, the latest signed time of any nonce
+ * let go (or that couldn't be read), at or before which no dial is taken, so a clock set back
+ * can't bring a forgotten dial back into its window; and `seen`, the latest time any run saw when
+ * it accepted a dial, which a clock set back never lowers.
+ */
+export interface DialNonces {
+  readonly nonces: ReadonlyArray<DialNonce>;
+  readonly floor: number;
+  readonly seen: number;
+}
+
+/**
+ * The accepted dials' nonces, kept across restarts: a dial's signed headers replayed after the
+ * main Gram restarts would otherwise be taken as new.
+ */
+export interface DialNonceStore {
+  readonly read: () => DialNonces;
+  readonly write: (nonces: DialNonces) => void;
+  /**
+   * The `seen` of the last write, when `read` throws: kept apart from what it holds, so a file
+   * that can't be read still bounds the dials it took. Undefined when that can't be known either.
+   */
+  readonly lastSeen?: () => number | undefined;
+}
+
+export const NO_DIALS: DialNonces = { nonces: [], floor: 0, seen: 0 };
 
 const NAME = /^[\p{L}\p{N} ._'-]{1,64}$/u;
 const PLATFORM = /^[a-z0-9]{1,16}$/;
@@ -146,6 +179,67 @@ export const fileMachineStore = (dataDir: string): PairedMachineStore => {
   };
 };
 
+const isNonce = (value: unknown): value is DialNonce =>
+  Array.isArray(value) &&
+  value.length === 2 &&
+  typeof value[0] === "string" &&
+  /^[a-f0-9]{32}$/.test(value[0]) &&
+  Number.isSafeInteger(value[1]);
+
+const dialNoncesPath = (dataDir: string) => join(dataDir, "remote-access", "dial-nonces.json");
+
+/** The `seen` the nonces file's modified time holds, whether or not its content can be read. */
+export const dialNoncesLastSeen = (dataDir: string): number | undefined => {
+  try {
+    // A second on, for a filesystem that keeps whole seconds.
+    return Math.ceil(lstatSync(dialNoncesPath(dataDir)).mtimeMs) + 1000;
+  } catch {
+    return undefined;
+  }
+};
+
+/** The accepted dials' nonces in `<dataDir>/remote-access/dial-nonces.json`, as the machines are. */
+export const fileNonceStore = (dataDir: string): DialNonceStore => {
+  const file = privateJsonFile(dataDir, "dial-nonces.json", 256 * 1024);
+  return {
+    read: () => {
+      const value = file.read();
+      if (value === undefined) return NO_DIALS;
+      const record = value as Record<string, unknown> | null;
+      if (
+        typeof record !== "object" ||
+        record === null ||
+        record["version"] !== 1 ||
+        !Number.isSafeInteger(record["floor"]) ||
+        !Number.isSafeInteger(record["seen"]) ||
+        !Array.isArray(record["nonces"]) ||
+        record["nonces"].length > NONCES_KEPT ||
+        !record["nonces"].every(isNonce)
+      )
+        throw new Error("Dial nonce storage is invalid");
+      return {
+        nonces: record["nonces"] as DialNonce[],
+        floor: record["floor"] as number,
+        seen: record["seen"] as number,
+      };
+    },
+    // Its modified time is `seen`, which survives what makes the content unreadable. It is set
+    // before the file replaces the old one, so a write that fails never lowers it.
+    write: ({ nonces, floor, seen }) => file.write({ version: 1, floor, seen, nonces }, seen),
+    lastSeen: () => dialNoncesLastSeen(dataDir),
+  };
+};
+
+export const memoryNonceStore = (initial: DialNonces = NO_DIALS) => {
+  let kept = initial;
+  return {
+    read: () => kept,
+    write: (next: DialNonces) => {
+      kept = { ...next, nonces: [...next.nonces] };
+    },
+  } satisfies DialNonceStore;
+};
+
 export const memoryMachineStore = (initial: ReadonlyArray<PairedMachine> = []) => {
   let machines = [...initial];
   return {
@@ -161,11 +255,42 @@ export const memoryMachineStore = (initial: ReadonlyArray<PairedMachine> = []) =
  * phone's pairing link is, and each machine's key pinned when it joins. A machine dials in only
  * with a fresh dial signed by that key, and only once a person here confirmed its fingerprint.
  */
-export const createPairedMachines = (store: PairedMachineStore, now: () => number = Date.now) => {
+export const createPairedMachines = (
+  store: PairedMachineStore,
+  now: () => number = Date.now,
+  nonceStore: DialNonceStore = memoryNonceStore(),
+) => {
   let machines = store.read();
   let invitation: { code: string; origin: string; expiresAt: number } | undefined;
-  /** Recent dials' nonces with when they stop mattering. */
+  /** Recent dials' nonces with when they stop mattering, as the last run left them. */
   const nonces = new Map<string, number>();
+  /** No dial signed at or before this is taken; the latest time a dial was accepted at. */
+  let floor = 0;
+  let seen = 0;
+  /**
+   * Set while the last run's dials can't be bounded at all: then none is taken, and each dial
+   * tries again to load them, so storage put right is used without a restart.
+   */
+  let blind = false;
+  /** Loads the last run's nonces, or a bound on them; false when there is neither. */
+  const load = () => {
+    try {
+      const kept = nonceStore.read();
+      ({ floor, seen } = kept);
+      for (const [nonce, until] of kept.nonces) nonces.set(nonce, until);
+      return true;
+    } catch {
+      // The last run's nonces are unknown, but every dial it accepted was signed at most the
+      // skew past the latest time it saw, or past now: none of those is taken, whatever the
+      // clock did.
+      const last = nonceStore.lastSeen?.();
+      if (last === undefined) return false;
+      floor = Math.max(now(), last) + CONNECT_SKEW_MS;
+      seen = floor;
+      return true;
+    }
+  };
+  blind = !load();
   /** Each machine's last problem since this Gram started. */
   const problems = new Map<string, MachineProblem>();
   const note = (id: string, problem: MachineProblem | undefined) => {
@@ -197,12 +322,31 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
    * nonces still in their window, which refuses the dial rather than forget one that could then
    * be replayed.
    */
-  const record = (nonce: string, until: number): "ok" | "replayed" | "full" => {
-    const at = now();
-    for (const [kept, expires] of nonces) if (expires <= at) nonces.delete(kept);
+  const record = (
+    nonce: string,
+    signed: number,
+    /** The time the dial was checked at: one reading, so pruning can't pass the dial's window. */
+    at: number,
+  ): "ok" | "stale" | "replayed" | "full" | "unsaved" => {
+    const until = signed + CONNECT_SKEW_MS;
+    // Let go once past their window, which the skew check refuses, and the floor raised past
+    // them, so a clock set back later doesn't bring them into it again.
+    for (const [kept, expires] of nonces)
+      if (expires < at) {
+        nonces.delete(kept);
+        floor = Math.max(floor, expires - CONNECT_SKEW_MS);
+      }
+    if (signed <= floor) return "stale";
     if (nonces.has(nonce)) return "replayed";
     if (nonces.size >= NONCES_KEPT) return "full";
+    // Kept in memory even when saving fails, so this run still refuses its replay.
     nonces.set(nonce, until);
+    seen = Math.max(seen, at);
+    try {
+      nonceStore.write({ nonces: [...nonces], floor, seen });
+    } catch {
+      return "unsaved";
+    }
     return "ok";
   };
   return {
@@ -306,6 +450,9 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
           note(machine.id, { kind: "clock", at, skewMs: claim.time - at });
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       }
+      // At or before a nonce let go, or the bound on a history it couldn't read: see `DialNonces`.
+      if (claim.time <= floor)
+        return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       if (!verifyConnect(key, claim, claim.signature)) {
         // Anyone can send one, so it never replaces a reason the machine's own key stood behind.
         const kept = problems.get(machine.id)?.kind;
@@ -313,16 +460,28 @@ export const createPairedMachines = (store: PairedMachineStore, now: () => numbe
           note(machine.id, { kind: "bad-signature", at });
         return { kind: "refused", status: 401, message: "unauthorized: bad signature" };
       }
-      // Checked after the signature, so a forged dial can't spend a real one's nonce.
-      const nonce = record(claim.nonce, claim.time + CONNECT_SKEW_MS);
-      if (nonce === "replayed")
-        return { kind: "refused", status: 401, message: "unauthorized: dial replayed" };
-      if (nonce === "full")
-        return { kind: "refused", status: 401, message: "unauthorized: too many dials; wait" };
+      // Before its nonce is kept: a machine not confirmed yet neither spends the dials' room nor
+      // writes them, and its replay is refused all the same.
       if (machine.confirmedAt === undefined) {
         note(machine.id, { kind: "unconfirmed", at });
         return { kind: "refused", status: 403, message: "forbidden: confirm this machine first" };
       }
+      // Retried only for a confirmed machine's signed dial; `record` checks it against the floor
+      // a load sets.
+      if (blind) blind = !load();
+      if (blind)
+        return { kind: "refused", status: 503, message: "unavailable: dial history unreadable" };
+      // Checked after the signature, so a forged dial can't spend a real one's nonce.
+      const nonce = record(claim.nonce, claim.time, at);
+      if (nonce === "stale")
+        return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
+      if (nonce === "replayed")
+        return { kind: "refused", status: 401, message: "unauthorized: dial replayed" };
+      if (nonce === "full")
+        return { kind: "refused", status: 401, message: "unauthorized: too many dials; wait" };
+      // Unsaved, it could be replayed after a restart: refused rather than taken on that risk.
+      if (nonce === "unsaved")
+        return { kind: "refused", status: 503, message: "unavailable: dial couldn't be recorded" };
       return { kind: "ok", machine };
     },
   };

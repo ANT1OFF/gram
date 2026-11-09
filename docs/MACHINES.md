@@ -112,7 +112,7 @@ the host's folder; on Linux use `journalctl --user -u gram-host`.
 | `gram-host run`                                    | Dial and serve in the foreground                  |
 | `gram-host service install \| uninstall \| status` | Manage the service                                |
 | `gram-host status`                                 | The main Gram it joined, its fingerprint, service |
-| `gram-host leave`                                  | Stop the service and forget the join and its key  |
+| `gram-host leave [--no-service]`                   | Stop the service and forget the join and its key  |
 
 ## When a machine is offline
 
@@ -334,7 +334,30 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
 - **Every dial is signed.** A dial carries the machine's id, the time, a fresh nonce and a
   signature over them and the main Gram's address. The main Gram refuses one that isn't signed by
   the machine's pinned key, is more than two minutes off, repeats a nonce, or comes from a machine
-  that hasn't been confirmed.
+  that hasn't been confirmed. A confirmed machine's accepted nonces are kept in
+  `remote-access/dial-nonces.json` through their two minutes, so a dial replayed after the main
+  Gram restarts is refused too. Once a nonce is let go, no dial signed at or before its time is
+  taken, so a clock set back can't bring it back either. Each write also sets the file's modified time
+  to the latest time any run accepted a dial at, which a clock set back never lowers; the time is
+  set on the new file before it replaces the old one, so a write that fails leaves the old one as
+  it was. When the file's content can't be read, no dial signed before two minutes past that time
+  (or past now, if later) is taken. When even its time can't be read, no dial is taken at all, and
+  `/host/connect` answers 503 "dial history unreadable".
+
+  That happens when the file or its `remote-access` folder can't be opened at all, as when its
+  permissions changed. Recover by keeping the history: make the folder owner-only again
+  (`chmod 700`, the file `chmod 600`) and leave the file as it is, or put back the latest copy of
+  it. The next dial uses it, with no restart, and every dial it recorded stays refused. An older
+  backup is a reset of the dials accepted after it was taken, so treat it as one.
+
+  Reset the history (move the file aside, or restore an older copy) only as a last resort, and
+  only once more than four minutes have passed since any joined machine last dialled in, with this
+  machine's clock and the joined machines' clocks steady over that time. A dial signed up to two
+  minutes ahead stays valid for two minutes after that, so a shorter wait lets captured dial
+  headers be replayed once. That elapsed time can't be trusted if a clock was set back meanwhile.
+  When in doubt, remove the machines in Settings → Machines and join them again instead: their old
+  keys, and every dial signed with them, are then refused.
+
 - **Not a browser.** The install, join and dial endpoints answer only requests addressed to the tailnet
   name (which Tailscale Serve forwards over loopback), and refuse any request with an `Origin`, so
   no web page can reach them. They take no browser cookie, and a browser's cookie grants nothing
@@ -345,8 +368,14 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
   Threads on this machine keep to the loopback endpoint.
 - **Removing a machine** (Settings → Machines → Remove) forgets its key and closes its connection at
   once, including one still connecting. Turning access over Tailscale off, or onto another
-  address, closes every joined machine's connection; the machines stay joined and dial in again
-  once it is back. Up to 16 machines can be joined.
+  address, closes every joined machine's connection, including a dial let in just before and still
+  connecting; the machines stay joined and dial in again once it is back. Up to 16 machines can be
+  joined.
+- **Leaving** (`gram-host leave`) forgets the join only once `launchctl` or `systemctl` stopped the
+  background service or says it isn't loaded or running. When it can't stop it or say, the join
+  and key stay, and it says the host may still be running, even when the service's file is gone.
+  `gram-host leave --no-service`, for a machine that joined with `--no-service`, forgets them
+  without asking.
 
 The listing (`POST /machines/list`), join link, confirm, remove, update and sign-in check
 endpoints answer only the local app, never a paired phone or a joined machine, with the same Origin
