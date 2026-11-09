@@ -223,3 +223,40 @@ describe("New task's direct worker picker", () => {
     );
   });
 });
+
+describe("New task's direct worker on a joined machine", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("offers Machine beside the repository and starts the worker there", async () => {
+    // A synthetic joined machine: nothing behind it but this stubbed listing.
+    const listing = {
+      machines: [
+        {
+          id: "m-synthetic",
+          name: "build box",
+          platform: "linux",
+          fingerprint: "0123-4567-89AB-CDEF-0123",
+          joinedAt: 1,
+          confirmed: true,
+          onlineSince: 2,
+          claudeSignIn: "signedIn",
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify(listing))),
+    );
+    const { start } = setup([opus]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId("where-machine"));
+    await user.click(await screen.findByRole("option", { name: /build box/ }));
+    expect(screen.getByTestId("machine-note").textContent).toContain("runs on build box");
+    await send();
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        direct: { projectId, worker: opus.model, hostId: "m-synthetic" },
+      }),
+    );
+  });
+});

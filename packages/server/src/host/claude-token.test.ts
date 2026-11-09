@@ -395,6 +395,7 @@ const fakeHosts = (
         ...(m.claudeTokenSetAt === undefined ? {} : { claudeTokenSetAt: m.claudeTokenSetAt }),
       })) as unknown as ReturnType<RemoteHostsShape["list"]>,
     attach: () => Effect.void,
+    checkSignIn: () => Promise.resolve(undefined),
     remove: (id) => {
       removed.push(id);
       return machines.remove(id);

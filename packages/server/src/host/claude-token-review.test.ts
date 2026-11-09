@@ -103,6 +103,7 @@ const hostsOver = (
       RemoteHostsShape["list"]
     >,
   attach: () => Effect.void,
+  checkSignIn: () => Promise.resolve(undefined),
   remove: (id) => machines.remove(id),
   keepOrigin: () => {},
 });

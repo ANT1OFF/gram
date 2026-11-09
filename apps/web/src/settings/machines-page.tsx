@@ -18,10 +18,14 @@ import { Dialog, DialogShell } from "@/thread/dialog-shell";
 import { copyText } from "./copy-text";
 import { phoneAccess, PhoneAccessError } from "./phone-access-api";
 import { PHONE_ACCESS_KEY, TailscaleChecklist } from "./phone-access-page";
+import { MachineSignIn, SignInButton } from "./machine-sign-in";
 import {
   type JoinedMachine,
   type JoinLink,
   MACHINES_KEY,
+  machineNeedsSignIn,
+  machineSignInProblem,
+  machineToolsLine,
   machinesApi,
   MachinesError,
   SshJoinError,
@@ -76,6 +80,8 @@ export function MachinesPage() {
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState<Pending>();
+  /** The machine whose Sign in terminal is open under its row. */
+  const [signingIn, setSigningIn] = useState<string>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const status = useQuery({
@@ -149,6 +155,9 @@ export function MachinesPage() {
               onRemove={() => setPending({ kind: "remove", machine })}
               onToken={() => setPending({ kind: "token", machine })}
               onForget={() => setPending({ kind: "forget", machine })}
+              signingIn={signingIn === machine.id}
+              onSignIn={() => setSigningIn(machine.id)}
+              onSignInClosed={() => setSigningIn(undefined)}
             />
           ))}
         </div>
@@ -237,6 +246,9 @@ function MachineRow({
   onRemove,
   onToken,
   onForget,
+  signingIn,
+  onSignIn,
+  onSignInClosed,
 }: {
   machine: JoinedMachine;
   now: number;
@@ -244,62 +256,87 @@ function MachineRow({
   onRemove: () => void;
   onToken: () => void;
   onForget: () => void;
+  signingIn: boolean;
+  onSignIn: () => void;
+  onSignInClosed: () => void;
 }) {
   const online = machine.confirmed && machine.onlineSince !== undefined;
+  const problem = online ? machineSignInProblem(machine) : undefined;
+  const tools = online ? machineToolsLine(machine) : undefined;
   return (
-    <div className="flex min-h-9 items-center gap-3" data-testid="machines-row">
-      <Monitor aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 font-medium">
-          {machine.name}
-          <span className="text-meta font-normal text-muted-foreground">
-            {platformName(machine.platform)}
+    <div className="flex flex-col gap-2" data-testid="machines-row">
+      <div className="flex min-h-9 items-center gap-3">
+        <Monitor aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="flex items-center gap-1.5 font-medium">
+            {machine.name}
+            <span className="text-meta font-normal text-muted-foreground">
+              {platformName(machine.platform)}
+            </span>
+            {online && (
+              <span
+                aria-hidden
+                className="size-1.5 rounded-full bg-success"
+                data-testid="machines-online"
+              />
+            )}
           </span>
-          {online && (
-            <span
-              aria-hidden
-              className="size-1.5 rounded-full bg-success"
-              data-testid="machines-online"
-            />
+          <span className="text-meta text-muted-foreground">{machineState(machine, now)}</span>
+          {machine.claudeTokenSetAt !== undefined && (
+            <span className="text-meta text-muted-foreground" data-testid="machines-token-line">
+              Claude: token from this Mac, sent {formatDay(machine.claudeTokenSetAt, now)}
+            </span>
           )}
-        </span>
-        <span className="text-meta text-muted-foreground">{machineState(machine, now)}</span>
-        {machine.claudeTokenSetAt !== undefined && (
-          <span className="text-meta text-muted-foreground" data-testid="machines-token-line">
-            Claude: token from this Mac, sent {formatDay(machine.claudeTokenSetAt, now)}
+          {tools !== undefined && (
+            <span className="text-meta text-muted-foreground" data-testid="machines-tools">
+              {tools}
+            </span>
+          )}
+          {problem !== undefined && (
+            <span
+              className="flex items-center gap-1 text-meta text-destructive"
+              data-testid="machines-sign-in-problem"
+            >
+              <CircleAlert aria-hidden className="size-icon-chip shrink-0" />
+              {problem}
+            </span>
+          )}
+          <span className="font-mono text-meta text-muted-foreground" title="Key fingerprint">
+            {machine.fingerprint}
           </span>
-        )}
-        <span className="font-mono text-meta text-muted-foreground" title="Key fingerprint">
-          {machine.fingerprint}
         </span>
-      </span>
-      <span className="ms-auto flex shrink-0 gap-1">
-        {!machine.confirmed && (
-          <Button size="sm" onClick={onConfirm}>
-            Confirm
+        <span className="ms-auto flex shrink-0 gap-1">
+          {!machine.confirmed && (
+            <Button size="sm" onClick={onConfirm}>
+              Confirm
+            </Button>
+          )}
+          {online && machineNeedsSignIn(machine) && !signingIn && (
+            <SignInButton machine={machine} onClick={onSignIn} testId="machines-sign-in" />
+          )}
+          {online && machine.claudeTokenSetAt === undefined && (
+            <Button size="sm" variant="ghost" onClick={onToken} data-testid="machines-token">
+              Use a token from this Mac
+            </Button>
+          )}
+          {machine.claudeTokenSetAt !== undefined && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!online}
+              title={online ? undefined : "It's offline"}
+              onClick={onForget}
+              data-testid="machines-token-forget"
+            >
+              Forget token
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={onRemove}>
+            Remove
           </Button>
-        )}
-        {online && machine.claudeTokenSetAt === undefined && (
-          <Button size="sm" variant="ghost" onClick={onToken} data-testid="machines-token">
-            Use a token from this Mac
-          </Button>
-        )}
-        {machine.claudeTokenSetAt !== undefined && (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={!online}
-            title={online ? undefined : "It's offline"}
-            onClick={onForget}
-            data-testid="machines-token-forget"
-          >
-            Forget token
-          </Button>
-        )}
-        <Button size="sm" variant="ghost" onClick={onRemove}>
-          Remove
-        </Button>
-      </span>
+        </span>
+      </div>
+      {signingIn && <MachineSignIn machine={machine} onClose={onSignInClosed} />}
     </div>
   );
 }

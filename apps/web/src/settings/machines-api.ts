@@ -18,7 +18,83 @@ export interface JoinedMachine {
   readonly onlineSince?: number;
   /** When this Gram sent it a Claude token from `claude setup-token`; a time, never the token. */
   readonly claudeTokenSetAt?: number;
+  /**
+   * While it is online, once asked: whether its own Claude Code is signed in to a subscription,
+   * from its `claude auth status`. Only the classification reaches here.
+   */
+  readonly claudeSignIn?: MachineSignIn;
+  readonly claudeSignInCheckedAt?: number;
+  /** While it is online, once asked: whether `claude` and `git` are on its login-shell PATH. */
+  readonly tools?: ReadonlyArray<MachineTool>;
 }
+
+/** A command a joined machine needs, as its host found it. */
+export interface MachineTool {
+  readonly tool: "claude" | "git";
+  readonly found: boolean;
+  readonly version?: string;
+}
+
+const TOOL_NAMES: Readonly<Record<MachineTool["tool"], string>> = {
+  claude: "Claude Code",
+  git: "Git",
+};
+
+const toolOf = (machine: JoinedMachine, tool: MachineTool["tool"]) =>
+  machine.tools?.find((each) => each.tool === tool);
+
+/** "Claude Code 2.1.319 · Git 2.47.0": the tools it found and their versions, when it said. */
+export const machineToolsLine = (machine: JoinedMachine): string | undefined => {
+  const found = (machine.tools ?? []).filter((tool) => tool.found);
+  return found.length === 0
+    ? undefined
+    : found
+        .map((tool) =>
+          tool.version === undefined
+            ? TOOL_NAMES[tool.tool]
+            : `${TOOL_NAMES[tool.tool]} ${tool.version}`,
+        )
+        .join(" · ");
+};
+
+/** Whether signing in there is the fix: Claude Code is there, and isn't on a subscription login. */
+export const machineNeedsSignIn = (machine: JoinedMachine): boolean =>
+  toolOf(machine, "claude")?.found !== false &&
+  (machine.claudeSignIn === "notSignedIn" ||
+    machine.claudeSignIn === "apiKey" ||
+    machine.claudeSignIn === "thirdParty");
+
+/** A joined machine's Claude Code sign-in, as `app.launchChecks` names this one's. */
+export type MachineSignIn = "signedIn" | "notSignedIn" | "apiKey" | "thirdParty" | "unknown";
+const SIGN_INS: ReadonlySet<unknown> = new Set([
+  "signedIn",
+  "notSignedIn",
+  "apiKey",
+  "thirdParty",
+  "unknown",
+]);
+
+/**
+ * Why `machine` can't start a Claude session now, with the fix to make there, or `undefined`
+ * when it can, or can't say (an older gram-host, or not asked yet): a tool it lacks first, then
+ * its sign-in.
+ */
+export const machineSignInProblem = (machine: JoinedMachine): string | undefined => {
+  if (toolOf(machine, "claude")?.found === false)
+    return `Claude Code isn't installed on ${machine.name}, or isn't on its login shell's PATH.`;
+  if (toolOf(machine, "git")?.found === false)
+    return `Git isn't installed on ${machine.name}, or isn't on its login shell's PATH.`;
+  switch (machine.claudeSignIn) {
+    case "notSignedIn":
+      return `Claude Code isn't signed in on ${machine.name}. Run \`claude /login\` there.`;
+    case "apiKey":
+      return `Claude Code on ${machine.name} uses an API key; Gram needs your subscription login. Run \`claude /login\` there.`;
+    case "thirdParty":
+      return `Claude Code on ${machine.name} is set up for a third-party API provider; Gram needs your subscription login there.`;
+    default:
+      return undefined;
+  }
+};
 
 export interface MachinesStatus {
   readonly machines: ReadonlyArray<JoinedMachine>;
@@ -55,6 +131,16 @@ const refusal = async (response: Response, fallback: string): Promise<MachinesEr
   return new MachinesError(text.trim() !== "" && text.length < 200 ? text : fallback);
 };
 
+const isTool = (value: unknown): value is MachineTool => {
+  if (typeof value !== "object" || value === null) return false;
+  const t = value as Record<string, unknown>;
+  return (
+    (t["tool"] === "claude" || t["tool"] === "git") &&
+    typeof t["found"] === "boolean" &&
+    (t["version"] === undefined || typeof t["version"] === "string")
+  );
+};
+
 const isMachine = (value: unknown): value is JoinedMachine => {
   if (typeof value !== "object" || value === null) return false;
   const m = value as Record<string, unknown>;
@@ -66,7 +152,10 @@ const isMachine = (value: unknown): value is JoinedMachine => {
     typeof m["joinedAt"] === "number" &&
     typeof m["confirmed"] === "boolean" &&
     (m["onlineSince"] === undefined || typeof m["onlineSince"] === "number") &&
-    (m["claudeTokenSetAt"] === undefined || typeof m["claudeTokenSetAt"] === "number")
+    (m["claudeTokenSetAt"] === undefined || typeof m["claudeTokenSetAt"] === "number") &&
+    (m["claudeSignIn"] === undefined || SIGN_INS.has(m["claudeSignIn"])) &&
+    (m["claudeSignInCheckedAt"] === undefined || typeof m["claudeSignInCheckedAt"] === "number") &&
+    (m["tools"] === undefined || (Array.isArray(m["tools"]) && m["tools"].every(isTool)))
   );
 };
 
@@ -148,6 +237,9 @@ export const machinesApi = {
     status(await post("/machines/confirm", { id }), "Couldn't confirm the machine"),
   remove: async (id: string) =>
     status(await post("/machines/remove", { id }), "Couldn't remove the machine"),
+  /** Asks the machine again what it can run (sign-in, tools), and answers with the fresh listing. */
+  checkSignIn: async (id: string) =>
+    status(await post("/machines/check-sign-in", { id }), "Couldn't check the machine's sign-in"),
   /** A one-time join link, or `tailscale-off` while access over Tailscale is off. */
   joinLink: async (): Promise<JoinLink | "tailscale-off" | "ssh-running"> => {
     const response = await post("/machines/join-link");
