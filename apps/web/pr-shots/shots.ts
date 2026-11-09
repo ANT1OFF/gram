@@ -1957,7 +1957,132 @@ const EVENT_ROUTINE_SHOTS: readonly Shot[] = [
   },
 ];
 
+/**
+ * Synthetic joined machines for the Machine picker and Settings → Machines: one online and signed
+ * in, one offline, one online whose Claude Code isn't signed in. No real host, tailnet or account.
+ */
+const JOINED_MACHINES = [
+  {
+    id: "m-synthetic-build",
+    name: "build-box",
+    platform: "linux",
+    fingerprint: "1A2B-3C4D-5E6F-7A8B-9C0D",
+    joinedAt: CLOCK.getTime() - 5 * 24 * HOUR,
+    confirmed: true,
+    onlineSince: CLOCK.getTime() - 3 * HOUR,
+    claudeSignIn: "signedIn",
+  },
+  {
+    id: "m-synthetic-old",
+    name: "old-box",
+    platform: "darwin",
+    fingerprint: "0F1E-2D3C-4B5A-6978-8796",
+    joinedAt: CLOCK.getTime() - 20 * 24 * HOUR,
+    confirmed: true,
+  },
+  {
+    id: "m-synthetic-new",
+    name: "new-box",
+    platform: "linux",
+    fingerprint: "AB12-CD34-EF56-0789-1A2B",
+    joinedAt: CLOCK.getTime() - 24 * HOUR,
+    confirmed: true,
+    onlineSince: CLOCK.getTime() - 20 * 60_000,
+    claudeSignIn: "notSignedIn",
+  },
+];
+
+/** Answers the machines endpoints, which the mock API doesn't serve, with `JOINED_MACHINES`. */
+const stageMachines = (page: Page) =>
+  page.route(/\/machines\/(list|check-sign-in)$/, (route) =>
+    route.fulfill({ json: { machines: JOINED_MACHINES } }),
+  );
+
+/** /new with the machines joined, its picker opened on `pick` when given (after-only). */
+const openNewWithMachines = async (page: Page, pick?: string) => {
+  await stageMachines(page);
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.goto("/new");
+  await page.getByRole("form", { name: "New thread" }).waitFor();
+  // Base and branch: the base's picker sits among them.
+  await page.getByRole("combobox", { name: "Base branch" }).waitFor();
+  await page.waitForTimeout(600);
+  if (pick === undefined) return;
+  await page.getByTestId("where-machine").click();
+  if (pick === "") {
+    await page.getByRole("option").first().waitFor();
+  } else {
+    await page.getByRole("option", { name: new RegExp(pick) }).click();
+    await page.getByTestId("machine-note").waitFor();
+  }
+  await page.mouse.move(1200, 950);
+  await page.waitForTimeout(400);
+};
+
+const MACHINE_SHOTS: readonly Shot[] = [
+  {
+    name: "machine-new-thread",
+    title: "/new with three joined machines (one offline, one not signed in): where Machine is",
+    open: (page) => openNewWithMachines(page),
+  },
+  {
+    name: "machine-new-thread-menu",
+    title: "/new's Machine menu: offline and not signed in marked",
+    open: (page) => openNewWithMachines(page, ""),
+  },
+  {
+    name: "machine-new-thread-picked",
+    title: "/new on build-box: the checkout is a new worktree, the others off",
+    open: (page) => openNewWithMachines(page, "build-box"),
+  },
+  {
+    name: "machine-new-thread-signed-out",
+    title: "/new on new-box, whose Claude Code isn't signed in: Start waits, with Sign in",
+    open: (page) => openNewWithMachines(page, "new-box"),
+  },
+  {
+    name: "machine-new-worker",
+    title: "New task → Worker: Machine beside the repository",
+    open: async (page) => {
+      await stageMachines(page);
+      await openOverviewDensity(page, 280);
+      await page.setViewportSize({ width: 1440, height: 860 });
+      await page.evaluate(() => {
+        history.pushState({}, "", "/new-task?way=direct");
+        dispatchEvent(new PopStateEvent("popstate"));
+      });
+      await expect(page).toHaveURL(/\/new-task\?way=direct$/);
+      await page.mouse.move(1100, 700);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "machines-signed-out",
+    title: "Settings → Machines: a machine whose Claude Code isn't signed in, with Sign in",
+    open: async (page) => {
+      await stageMachines(page);
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto("/settings/machines");
+      await page.getByTestId("machines-list").waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "machines-sign-in-terminal",
+    title: "Settings → Machines → Sign in: the terminal on new-box (the mock's shell, no CLI ran)",
+    open: async (page) => {
+      await stageMachines(page);
+      await page.setViewportSize({ width: 1280, height: 1000 });
+      await page.goto("/settings/machines");
+      await page.getByTestId("machines-sign-in").click();
+      await page.getByTestId("terminal").waitFor();
+      await page.waitForTimeout(800);
+    },
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
+  ...MACHINE_SHOTS,
   ...PHONE_ACCESS_SHOTS,
   ...EVENT_ROUTINE_SHOTS,
   ...ROUTINES_POLISH_SHOTS,
