@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { HostUnavailable, type HostId, type HostStatus } from "@gram/contracts";
+import { type HostHello, HostUnavailable, type HostId, type HostStatus } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -21,8 +21,15 @@ import {
   type PairedMachines,
   type PairedMachineStore,
 } from "./paired-machines.ts";
-import { connectHost, type HostConnection, UNKNOWN_STATUS } from "./protocol.ts";
+import { connectHost, type HostConnection, helloMismatch, UNKNOWN_STATUS } from "./protocol.ts";
 import { watchedSocket } from "./socket-end.ts";
+
+/** The release a host said it runs, kept only when it reads as a release: it is shown as text. */
+const releaseOf = (hello: HostHello): string | undefined =>
+  hello.release !== undefined &&
+  /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[0-9A-Za-z.]{1,32})?$/.test(hello.release)
+    ? hello.release
+    : undefined;
 
 /** A joined machine's host while it is dialled in. */
 interface Online {
@@ -76,8 +83,11 @@ export interface RemoteHostsShape {
   readonly connection: (id: HostId) => Effect.Effect<HostConnection, HostUnavailable>;
   /** The tailnet address the machine dialled, while it is online: where it reaches this Gram. */
   readonly origin: (id: HostId) => string | undefined;
-  /** The joined machines as the settings page lists them. */
-  readonly list: () => ReadonlyArray<ReturnType<typeof machineView>>;
+  /**
+   * The joined machines as the settings page lists them, each offline one with why: `tailscale`
+   * false says access over Tailscale is off, so none of them can dial.
+   */
+  readonly list: (tailscale?: boolean) => ReadonlyArray<ReturnType<typeof machineView>>;
   /**
    * Pins a dial from `machine` that the route let through over `origin`, before its upgrade
    * starts: turning access off or moving it, or removing the machine, after this drops the dial.
@@ -159,6 +169,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           const scope = yield* Scope.fork(root);
           let entry: Online | undefined;
           const ended = yield* Deferred.make<never, HostUnavailable>();
+          let hello: HostHello | undefined;
           const end = (message: string) =>
             Deferred.doneUnsafe(
               ended,
@@ -179,14 +190,53 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             const opened = yield* connectHost(
               watchedSocket(
                 socket,
-                Effect.sync(() => end("The machine's connection closed.")),
+                Effect.sync(() => {
+                  // Only a connection that was online is lost; one replaced or removed isn't.
+                  if (entry !== undefined && online.get(machine.id) === entry)
+                    machines.note(machine.id, { kind: "lost", at: now() });
+                  end("The machine's connection closed.");
+                }),
               ),
-              { hostId: machine.id, gone: Deferred.await(ended) },
+              {
+                hostId: machine.id,
+                gone: Deferred.await(ended),
+                onHello: (said) => {
+                  hello = said;
+                },
+              },
             ).pipe(Scope.provide(scope), Effect.exit);
             if (Exit.isFailure(opened)) {
+              const mismatch =
+                hello !== undefined && hello.hostId === machine.id
+                  ? helloMismatch(hello)
+                  : undefined;
+              const release = hello === undefined ? undefined : releaseOf(hello);
+              if (generationOf(machine.id) === dial.generation)
+                machines.note(
+                  machine.id,
+                  hello !== undefined && mismatch !== undefined
+                    ? {
+                        kind: "mismatch",
+                        at: now(),
+                        protocol: hello.protocol,
+                        ...(release === undefined ? {} : { release }),
+                        ...(mismatch.kind === "capabilities" ? { missing: mismatch.missing } : {}),
+                      }
+                    : { kind: "no-hello", at: now() },
+                );
               yield* Effect.logWarning(
                 "machines: a joined machine dialled in but didn't connect",
-              ).pipe(Effect.annotateLogs({ hostId: machine.id }));
+              ).pipe(
+                Effect.annotateLogs({
+                  hostId: machine.id,
+                  ...(mismatch === undefined
+                    ? {}
+                    : {
+                        protocol: hello?.protocol,
+                        release: release ?? "unknown",
+                      }),
+                }),
+              );
               return;
             }
             // Removed, or its connections closed, while it said hello: it doesn't come online.
@@ -201,6 +251,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             };
             entry = live;
             online.set(machine.id, live);
+            machines.note(machine.id, undefined);
             yield* Effect.logInfo("machines: a joined machine is online").pipe(
               Effect.annotateLogs({ hostId: machine.id, platform: opened.value.hello.platform }),
             );
@@ -243,11 +294,20 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         return checking;
       };
       /** The listing's view of each machine, asking again about any sign-in gone stale. */
-      const view = (machine: PairedMachine) => {
+      const view = (machine: PairedMachine, tailscale: boolean | undefined) => {
         const live = online.get(machine.id);
         if (live !== undefined && (live.status?.at ?? 0) + SIGN_IN_FRESH_MS <= now())
           void checkSignIn(machine.id);
-        return machineView(machine, live);
+        return machineView(
+          machine,
+          live === undefined
+            ? undefined
+            : { since: live.since, status: live.status, release: releaseOf(live.connection.hello) },
+          {
+            problem: machines.problemOf(machine.id),
+            ...(tailscale === undefined ? {} : { tailscale }),
+          },
+        );
       };
       return RemoteHosts.of({
         machines,
@@ -261,7 +321,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               : Effect.succeed(live.connection);
           }),
         origin: (id) => online.get(id)?.origin,
-        list: () => machines.list().map(view),
+        list: (tailscale) => machines.list().map((machine) => view(machine, tailscale)),
         admit: (machine, origin) => ({ machine, origin, generation: generationOf(machine.id) }),
         attach,
         checkSignIn,
@@ -278,6 +338,13 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           for (const machine of machines.list()) {
             const live = online.get(machine.id);
             if (live !== undefined && live.origin === origin) continue;
+            // Onto another address, which it doesn't dial. Turned off, the list says so itself, and
+            // once it is back on, this connection was lost then.
+            if (live !== undefined)
+              machines.note(machine.id, {
+                kind: origin === undefined ? "lost" : "moved",
+                at: now(),
+              });
             bump(machine.id);
             close(machine.id);
           }

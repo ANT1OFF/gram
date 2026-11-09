@@ -27,6 +27,18 @@ if (typeof window !== "undefined") {
       cancel.call(this);
     };
   }
+
+  // Fetch's `Response.bytes()` (Chromium 132, Firefox 128, Safari 18): happy-dom 21's Response
+  // lacks it, and Shiki's inlined Oniguruma WASM loader reads its binary with it, so without it
+  // every highlighted render waits forever on a rejected engine.
+  const response = window.Response?.prototype as
+    | (Response & { bytes?: () => Promise<Uint8Array> })
+    | undefined;
+  if (response && typeof response.bytes !== "function") {
+    response.bytes = async function (this: Response) {
+      return new Uint8Array(await this.arrayBuffer());
+    };
+  }
 }
 
 configure({ asyncUtilTimeout: 5000 });

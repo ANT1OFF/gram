@@ -1,10 +1,10 @@
-import { InvalidState, type Thread, type ThreadId } from "@gram/contracts";
+import { effectiveCheckout, InvalidState, type Thread, type ThreadId } from "@gram/contracts";
 import type { PrActionError } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { toGitError } from "../../git/mapping.ts";
 import { GitRefresh } from "../../git/platform.ts";
 import { PrActions } from "../../git/pr-actions.ts";
-import { threadFolder, ThreadPrLookup } from "../../git/thread-pr.ts";
+import { ghFolder, ThreadPrLookup } from "../../git/thread-pr.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import type { Handlers } from "./common.ts";
 
@@ -26,7 +26,7 @@ export const prHandlers = Effect.gen(function* () {
   const target = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(threadId);
-      const cwd = yield* threadFolder(thread);
+      const cwd = yield* ghFolder(thread);
       const found = yield* threadPr.target(thread, cwd);
       if (found === undefined) {
         return yield* new InvalidState({ message: "This thread has no pull request" });
@@ -46,7 +46,9 @@ export const prHandlers = Effect.gen(function* () {
       const found = yield* target(threadId);
       yield* act(found).pipe(
         Effect.catchTag("PrActionError", (e) => Effect.fail(toGitError(e))),
-        Effect.ensuring(refreshes.request(found.cwd, true, { expectChange: true })),
+        Effect.ensuring(
+          refreshes.request(effectiveCheckout(found.thread).path, true, { expectChange: true }),
+        ),
       );
     });
 

@@ -2,10 +2,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, Server } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { DialogShell } from "@/thread/dialog-shell";
 import { MachineSignIn, SignInButton } from "@/settings/machine-sign-in";
+import { healthHint, machineHealth } from "@/settings/machine-status";
 import {
   type JoinedMachine,
   MACHINES_KEY,
@@ -32,16 +34,25 @@ export function useJoinedMachines(): readonly JoinedMachine[] | undefined {
   return data === undefined ? undefined : data.machines.filter((m) => m.confirmed);
 }
 
-/** What stops a start on `machine` now: it is offline, or its Claude Code can't start sessions. */
-export const machineBlocker = (machine: JoinedMachine): string | undefined =>
-  machine.onlineSince === undefined
-    ? `${machine.name} is offline. Start Gram's host there, or pick another machine.`
-    : machineSignInProblem(machine);
+/**
+ * What stops a start on `machine` now: it is offline (with why, and the fix, as Settings →
+ * Machines says it), or its Claude Code can't start sessions.
+ */
+export const machineBlocker = (machine: JoinedMachine): string | undefined => {
+  if (machine.onlineSince !== undefined) return machineSignInProblem(machine);
+  const health = machineHealth(machine, {});
+  const state = health.tone === "update" ? "needs an update" : "is offline";
+  return [`${machine.name} ${state}.`, health.why, health.fix ?? "Pick another machine."]
+    .filter((line) => line !== undefined)
+    .join(" ");
+};
 
 /** The muted words after a machine's name in the menu. */
 const stateOf = (machine: JoinedMachine): string | undefined =>
   machine.onlineSince === undefined
-    ? "offline"
+    ? machine.offline?.kind === "mismatch"
+      ? "needs update"
+      : "offline"
     : machineSignInProblem(machine) === undefined
       ? undefined
       : machineNeedsSignIn(machine)
@@ -111,13 +122,29 @@ export function MachinePicker({
         <SelectItem value={THIS_MACHINE}>This machine</SelectItem>
         {machines.map((m) => {
           const state = stateOf(m);
-          return (
-            <SelectItem key={m.id} value={m.id}>
+          const content = (
+            <>
               <span className="min-w-0 truncate">{m.name}</span>
               {state !== undefined && (
                 <span className="text-meta text-muted-foreground">{state}</span>
               )}
+            </>
+          );
+          // An offline machine says why, and the fix, on hover: as Settings → Machines does.
+          const hint = m.onlineSince === undefined ? healthHint(machineHealth(m, {})) : undefined;
+          return hint === undefined ? (
+            <SelectItem key={m.id} value={m.id}>
+              {content}
             </SelectItem>
+          ) : (
+            <Hint
+              key={m.id}
+              label={hint}
+              side="right"
+              render={<SelectItem value={m.id} aria-description={hint} />}
+            >
+              {content}
+            </Hint>
           );
         })}
       </SelectContent>

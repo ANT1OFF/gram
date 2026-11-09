@@ -21,7 +21,12 @@ const REMOTE_PATH = "/srv/gram-host/repos/git.example.test/acme/widgets.worktree
 const LOCAL_PATH = "/Users/me/widgets";
 
 /** A host that records each call it answers, by its name. */
-const recordingHost = (id: HostId, calls: Array<string>): WorkerHost => {
+const recordingHost = (
+  id: HostId,
+  calls: Array<string>,
+  /** Terminals its host lists, open before this Gram started. */
+  kept: ReadonlyArray<TerminalId> = [],
+): WorkerHost => {
   const say =
     (name: string) =>
     (..._args: ReadonlyArray<unknown>) =>
@@ -88,8 +93,11 @@ const recordingHost = (id: HostId, calls: Array<string>): WorkerHost => {
           calls.push(`${id}:terminal.input:${terminalId}`);
         }),
       resize: say("resize"),
-      close: say("close"),
-      list: () => Effect.succeed([]),
+      close: (terminalId: TerminalId) =>
+        Effect.sync(() => {
+          calls.push(`${id}:terminal.close:${terminalId}`);
+        }),
+      list: () => Effect.succeed(kept.map((terminalId) => ({ terminalId }))),
       subscribe: () => {
         throw new Error("not in this test");
       },
@@ -113,10 +121,12 @@ const THREADS = [
   thread("t-local", { kind: "main", path: LOCAL_PATH }),
 ];
 
+const KEPT = "kept-on-the-machine" as TerminalId;
+
 const setup = (online: { value: boolean }) => {
   const calls: Array<string> = [];
   const local = recordingHost(LOCAL_HOST_ID, calls);
-  const machine = recordingHost(MACHINE, calls);
+  const machine = recordingHost(MACHINE, calls, [KEPT]);
   const placed = placedHost(
     {
       local,
@@ -191,6 +201,20 @@ describe("placedHost", () => {
     }),
   );
 
+  it.effect("reaches a terminal the machine kept through a restart of this Gram", () =>
+    Effect.gen(function* () {
+      // A fresh placedHost is a main Gram that restarted: it never opened KEPT. Before this
+      // change its input and close went to this machine, and the shell ran on there.
+      const { calls, placed } = setup({ value: true });
+      yield* placed.terminals.input(KEPT, "ls\n");
+      yield* placed.terminals.close(KEPT);
+      expect(calls).toEqual([
+        `${MACHINE}:terminal.input:${KEPT}`,
+        `${MACHINE}:terminal.close:${KEPT}`,
+      ]);
+    }),
+  );
+
   it.effect("while the machine is offline: its folders are there, and nothing runs here", () =>
     Effect.gen(function* () {
       const { calls, placed } = setup({ value: false });
@@ -238,5 +262,66 @@ describe("placedHost", () => {
       yield* placed.checkouts.release(remote, { removeWorktree: { force: false } });
       expect(calls).toEqual([]);
     }),
+  );
+
+  it.effect(
+    "never guesses between machines that hold the same path, and reaches each by its id",
+    () =>
+      Effect.gen(function* () {
+        // Two machines with the same user and default folders, and this one, all at one path.
+        const OTHER = HostId.make("m-fedcba9876543210fedcba98");
+        const SHARED = "/srv/synthetic/work";
+        const ROOT = "/srv/synthetic/repos/widgets";
+        const threads = [
+          thread("t-a", {
+            kind: "worktree",
+            path: SHARED,
+            repoRoot: ROOT,
+            hostId: MACHINE,
+          } as never),
+          thread("t-b", {
+            kind: "worktree",
+            path: `${ROOT}/.worktrees/b`,
+            repoRoot: ROOT,
+            hostId: OTHER,
+          } as never),
+          thread("t-b2", { kind: "worktree", path: SHARED, hostId: OTHER } as never),
+          thread("t-local", { kind: "main", path: SHARED }),
+        ];
+        const calls: Array<string> = [];
+        const byId = new Map([
+          [LOCAL_HOST_ID, recordingHost(LOCAL_HOST_ID, calls)],
+          [MACHINE, recordingHost(MACHINE, calls)],
+          [OTHER, recordingHost(OTHER, calls)],
+        ]);
+        const placed = placedHost(
+          { local: byId.get(LOCAL_HOST_ID)!, get: (id) => Effect.succeed(byId.get(id)!) },
+          {
+            listThreads: Effect.succeed(threads),
+            getThread: (id) => Effect.succeed(threads.find((t) => t.id === id)!),
+          },
+        );
+        // Before, the last thread at the path won: every caller's read went to that one machine.
+        const refused = yield* placed.git.local(SHARED).pipe(Effect.flip);
+        expect(refused.message).toContain("more than one machine");
+        expect(
+          (yield* placed.worktrees.list(ROOT, { openCheckouts: [] }).pipe(Effect.flip))._tag,
+        ).toBe("WorktreeError");
+        // What a path alone can't place isn't marked gone.
+        expect(yield* placed.git.present(SHARED)).toBe(true);
+        expect(calls).toEqual([]);
+        // A worktree path only one machine holds is still that machine's, below a shared repo root.
+        yield* placed.git.local(`${ROOT}/.worktrees/b`);
+        // A caller that knows the machine reaches it, whoever else holds the path.
+        yield* placed.machine(MACHINE).git.local(SHARED);
+        yield* placed.machine(OTHER).git.local(SHARED);
+        yield* placed.machine(LOCAL_HOST_ID).git.local(SHARED);
+        expect(calls).toEqual([
+          `${OTHER}:git.local:${ROOT}/.worktrees/b`,
+          `${MACHINE}:git.local:${SHARED}`,
+          `${OTHER}:git.local:${SHARED}`,
+          `local:git.local:${SHARED}`,
+        ]);
+      }),
   );
 });

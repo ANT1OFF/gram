@@ -9,6 +9,7 @@ import type * as Scope from "effect/Scope";
 import { remoteOrigin } from "../http/remote-access.ts";
 import { dialForever } from "./dial.ts";
 import {
+  ensureHostHome,
   forgetJoined,
   type HostConfig,
   hostHome,
@@ -159,6 +160,8 @@ const join = (args: ReadonlyArray<string>, home: string) =>
       return yield* fail("Give the join link: gram-host join, then paste it.");
     const parsed = parseJoinLink(link);
     if ("error" in parsed) return yield* fail(parsed.error);
+    // Refuse an unsafe destination before the one-use invitation can be consumed.
+    ensureHostHome(home);
     const existing = readHostConfig(home);
     if (existing !== undefined)
       return yield* fail(
