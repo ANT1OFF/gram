@@ -35,7 +35,14 @@ import { ADMITTED_AGENTS } from "@/orchestration/admitted";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { Field, inputCls, LONG_COPY, WhyDisabled } from "./fields";
-import { sameSlot, useDefaultModel, useRosterHere, useSlotHere, useSlotModel } from "./model-slots";
+import {
+  sameSlot,
+  useDefaultHere,
+  useDefaultModel,
+  useRosterHere,
+  useSlotHere,
+  useSlotModel,
+} from "./model-slots";
 import {
   addWorkerModel,
   defaultWorkerIndex,
@@ -234,10 +241,13 @@ function OrchestratorModelField({
   onChange: (charter: OrchestratorCharter) => void;
 }) {
   const selectId = useId();
-  const defaultModel = useDefaultModel();
+  const inherited = useDefaultHere();
+  const defaultModel = inherited.model;
   const own = charter.orchestratorModel;
   const slot = useSlotHere(own);
   const ownHere = slot.model;
+  // Its own slot's reason, or, while it follows the default, the default's.
+  const missing = own === undefined ? inherited.missing : slot.missing;
   const [pending, setPending] = useState<AgentChoice>();
   const shown = pending ?? choiceFromModel(ownHere ?? defaultModel ?? DEFAULT_ORCHESTRATOR_MODEL);
   const pick = (next: AgentChoice) => {
@@ -284,11 +294,14 @@ function OrchestratorModelField({
             <AgentFields value={shown} onChange={pick} allowed={ADMITTED_AGENTS} />
           </div>
         )}
-        {slot.missing !== undefined && (
+        {missing !== undefined && (
           <IssueNote
             issue={{
               index: -1,
-              message: `Unavailable: ${slot.missing[0]!.toUpperCase()}${slot.missing.slice(1)}. The orchestrator opens on your default model instead.`,
+              message:
+                own === undefined
+                  ? `Your default model is unavailable: ${missing}. The orchestrator opens on what Gram finds installed instead.`
+                  : `Unavailable: ${missing[0]!.toUpperCase()}${missing.slice(1)}. The orchestrator opens on your default model instead.`,
             }}
           />
         )}

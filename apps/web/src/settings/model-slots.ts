@@ -48,9 +48,17 @@ export function useSlotModel(slot: ModelSlot | undefined): ModelRef | undefined 
   return useSlotHere(slot).model;
 }
 
+/**
+ * The new-chat default as it stands here (`useSlotHere`): what it runs on, or why it can't, for a
+ * slot that inherits it to say so too.
+ */
+export function useDefaultHere(): ReturnType<typeof slotHere> {
+  return useSlotHere(useServerSettings((state) => state.settings?.agents.defaultModel));
+}
+
 /** The new-chat default as it runs here, resolved when it follows a tier. */
 export function useDefaultModel(): ModelRef | undefined {
-  return useSlotModel(useServerSettings((state) => state.settings?.agents.defaultModel));
+  return useDefaultHere().model;
 }
 
 /**

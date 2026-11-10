@@ -132,4 +132,19 @@ describe("RosterEditor with entries that follow a tier", () => {
     const rows = screen.getAllByTestId("worker-model");
     expect(rows.map((row) => row.dataset["unavailable"])).toEqual(["true", "true", undefined]);
   });
+
+  it("keeps an inherited default's reason when the orchestrator follows it", async () => {
+    useServerSettings.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        agents: { ...DEFAULT_SETTINGS.agents, defaultModel: { tier: "top" } },
+      },
+    });
+    current = { maxConcurrentWorkers: 1 };
+    render(view(current));
+    const warning = await screen.findByTestId("worker-model-warning");
+    expect(warning.textContent).toContain(
+      "Your default model is unavailable: nothing here fills the Top tier",
+    );
+  });
 });

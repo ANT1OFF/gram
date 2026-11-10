@@ -47,7 +47,8 @@ const clampEffort = (
 /**
  * The models a job tries, in order: the profile's helper model and its fallback. A thread on a
  * model id carries no implied data classification or region. The user's
- * own effort is sent as picked; the default model gets the kind's effort, or the job's `effort`.
+ * own effort is sent as picked; a default model, primary or fallback, gets the kind's effort, or
+ * the job's `effort`.
  */
 export const helperRoutes = (
   profile: GatewayProfile,
@@ -69,7 +70,15 @@ export const helperRoutes = (
     const byDefault = profile.helperModel === undefined && primary.effort !== undefined;
     add(primary.model, byDefault ? (options.effort ?? KIND_EFFORT(options.kind)) : primary.effort);
   }
-  if (fallback !== undefined) add(fallback.model, fallback.effort);
+  if (fallback !== undefined) {
+    // The automatic fallback (Luna, when the profile picks none) runs at the kind's effort too; a
+    // fallback the user configured keeps the effort they set, exactly.
+    const automatic = profile.helperFallback === undefined && fallback.effort !== undefined;
+    add(
+      fallback.model,
+      automatic ? (options.effort ?? KIND_EFFORT(options.kind)) : fallback.effort,
+    );
+  }
   return routes;
 };
 

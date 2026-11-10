@@ -1077,7 +1077,8 @@ describe("helper scheduler", () => {
           model: "gpt-6-luna",
         });
         expect(calls.map(modelOf)).toEqual(["claude-haiku-5.5-eu", "gpt-6-luna"]);
-        expect(calls[1]!.reasoningEffort).toBe("high");
+        // The automatic fallback runs a plan at the kind's low, as the primary would.
+        expect(calls[1]!.reasoningEffort).toBe("low");
         // Haiku 5.5 is backing off, so the next job goes straight to Luna.
         yield* scheduler.schedule(planJob("b2"));
         expect(calls.map(modelOf)).toEqual(["claude-haiku-5.5-eu", "gpt-6-luna", "gpt-6-luna"]);
@@ -1099,7 +1100,8 @@ describe("helper scheduler", () => {
         yield* scheduler.schedule(planJob("b2"));
         expect(calls.map((c) => [modelOf(c), c.reasoningEffort])).toEqual([
           ["claude-haiku-5.5-eu", "low"],
-          ["gpt-6-luna", "high"],
+          // The automatic fallback at the plan's low too.
+          ["gpt-6-luna", "low"],
           // Not backed off, but not asked at `low` again.
           ["claude-haiku-5.5-eu", undefined],
         ]);
@@ -1341,9 +1343,22 @@ const failure = (error: unknown) => classifyFailure(error).failure;
 
 describe("helper models", () => {
   it("routes the default, the user's picks, and never sends `none` where it's refused", () => {
-    // A title at the Cheap tier's medium; the fallback keeps the effort it was given.
+    // The automatic primary and fallback alike run at the Cheap tier's effort for the kind.
     expect(helperRoutes(EXAMPLE, { kind: "title" })).toEqual([
       { model: "claude-haiku-5.5-eu", effort: "medium" },
+      { model: "gpt-6-luna", effort: "medium" },
+    ]);
+    expect(helperRoutes(EXAMPLE, { kind: "recap" })).toEqual([
+      { model: "claude-haiku-5.5-eu", effort: "low" },
+      { model: "gpt-6-luna", effort: "low" },
+    ]);
+    // A fallback the user configured keeps their effort exactly, high included.
+    const ownFallback: GatewayProfile = {
+      ...EXAMPLE,
+      helperFallback: { model: "gpt-6-luna", effort: "high" },
+    };
+    expect(helperRoutes(ownFallback, { kind: "recap" })).toEqual([
+      { model: "claude-haiku-5.5-eu", effort: "low" },
       { model: "gpt-6-luna", effort: "high" },
     ]);
     // Haiku 5.5 can't turn its thinking off, so a job's `none` goes out as `low`.
