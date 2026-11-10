@@ -57,9 +57,10 @@ one.
 
 What does hold:
 
-- **Only the main Gram app can list or check folders on a joined machine.** It asks over the
-  machine's own signed connection. A paired phone can't list or check another machine's folders:
-  those requests answer only the app on this machine.
+- **Only the Gram app on this computer can list, check or start a chat in a folder on a joined
+  machine.** It does so over the machine's own signed connection. A paired phone can still start
+  chats in projects and worktrees as before, but it can't list another machine's folders, check
+  them, or start a chat in one: the server refuses those from any connection but the app's own.
 - **You choose a folder outside the host's clones for one chat at a time.** Nothing an agent
   starts, a worker or a task chip, gets such a folder: workers always get a new worktree there, and
   a task chip from such a chat starts from New task instead. A fork of the chat stays in its

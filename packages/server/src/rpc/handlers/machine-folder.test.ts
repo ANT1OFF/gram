@@ -13,7 +13,8 @@ import { gitPlatformTest } from "../../git/platform.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { CheckoutService, TurnHooks } from "../../runtime/hooks.ts";
 import { makeRuntimeTestLayer } from "../../runtime/test-harness.ts";
-import { threadHandlers } from "./threads.ts";
+import { LOCAL_APP_HEADER, localAppHeadersForTests } from "../../http/local-app.ts";
+import { MACHINE_FOLDER_LOCAL_ONLY, threadHandlers } from "./threads.ts";
 
 const MACHINE = HostId.make("m-0123456789abcdef01234567");
 /** A folder on the machine, named as it is there: nothing at this path is read on this disk. */
@@ -41,6 +42,9 @@ const MachineCheckouts: Layer.Layer<CheckoutService> = Layer.effect(
   }),
 ).pipe(Layer.provide(CheckoutService.layerNoGit));
 
+/** How the local app's connection reaches a handler: marked by the auth middleware. */
+const LOCAL_APP = { headers: localAppHeadersForTests() };
+
 const TestLayer = Layer.merge(
   makeRuntimeTestLayer(TurnHooks.layerNoop, MachineCheckouts),
   gitPlatformTest(),
@@ -52,11 +56,14 @@ describe("thread.create in a folder on a joined machine", () => {
       asked.length = 0;
       const handlers = yield* threadHandlers;
       const store = yield* ThreadStore;
-      const thread = yield* handlers["thread.create"]({
-        // Not on this disk: the server must not look for it here.
-        projectRoot: THERE,
-        checkout: { kind: "machineFolder", hostId: MACHINE, path: "~/scratch" },
-      });
+      const thread = yield* handlers["thread.create"](
+        {
+          // Not on this disk: the server must not look for it here.
+          projectRoot: THERE,
+          checkout: { kind: "machineFolder", hostId: MACHINE, path: "~/scratch" },
+        },
+        LOCAL_APP,
+      );
       expect(asked).toEqual([`${MACHINE}:~/scratch`]);
       expect(thread.checkout).toEqual({ kind: "main", path: THERE, hostId: MACHINE });
 
@@ -69,10 +76,13 @@ describe("thread.create in a folder on a joined machine", () => {
       expect(isFolderProject(project!)).toBe(false);
 
       // A second chat there joins the same project.
-      const again = yield* handlers["thread.create"]({
-        projectRoot: THERE,
-        checkout: { kind: "machineFolder", hostId: MACHINE, path: "~/scratch" },
-      });
+      const again = yield* handlers["thread.create"](
+        {
+          projectRoot: THERE,
+          checkout: { kind: "machineFolder", hostId: MACHINE, path: "~/scratch" },
+        },
+        LOCAL_APP,
+      );
       expect(again.projectId).toBe(thread.projectId);
     }).pipe(Effect.provide(TestLayer)),
   );
@@ -80,12 +90,60 @@ describe("thread.create in a folder on a joined machine", () => {
   it.effect("won't resume a past session of this machine in a folder on another", () =>
     Effect.gen(function* () {
       const handlers = yield* threadHandlers;
-      const error = yield* handlers["thread.create"]({
-        projectRoot: THERE,
-        checkout: { kind: "machineFolder", hostId: MACHINE, path: "~" },
-        resumeSessionId: "session-1",
-      }).pipe(Effect.flip);
+      const error = yield* handlers["thread.create"](
+        {
+          projectRoot: THERE,
+          checkout: { kind: "machineFolder", hostId: MACHINE, path: "~" },
+          resumeSessionId: "session-1",
+        },
+        LOCAL_APP,
+      ).pipe(Effect.flip);
       expect(error).toBeInstanceOf(InvalidState);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("starts nothing for a caller that isn't the local app, whatever it says", () =>
+    Effect.gen(function* () {
+      asked.length = 0;
+      const handlers = yield* threadHandlers;
+      const store = yield* ThreadStore;
+      const request = {
+        projectRoot: THERE,
+        checkout: { kind: "machineFolder" as const, hostId: MACHINE, path: "~/scratch" },
+      };
+      for (const call of [
+        undefined,
+        { headers: {} },
+        // The header without this run's secret: a phone can name it, not know its value.
+        { headers: { [LOCAL_APP_HEADER]: "0".repeat(64) } },
+      ]) {
+        const refused = yield* handlers["thread.create"](request, call).pipe(Effect.flip);
+        expect(refused).toEqual(new InvalidState({ message: MACHINE_FOLDER_LOCAL_ONLY }));
+      }
+      expect(asked).toEqual([]);
+      expect(yield* store.listThreads).toEqual([]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("never forks into a machine folder", () =>
+    Effect.gen(function* () {
+      const handlers = yield* threadHandlers;
+      const thread = yield* handlers["thread.create"](
+        {
+          projectRoot: THERE,
+          checkout: { kind: "machineFolder", hostId: MACHINE, path: "~/scratch" },
+        },
+        LOCAL_APP,
+      );
+      const refused = yield* handlers["thread.fork"]({
+        threadId: thread.id,
+        checkout: { kind: "machineFolder", hostId: MACHINE, path: "~/other" },
+      }).pipe(Effect.flip);
+      expect(refused).toEqual(
+        new InvalidState({
+          message: "A fork goes in its chat's folder or a new worktree, not another folder.",
+        }),
+      );
     }).pipe(Effect.provide(TestLayer)),
   );
 

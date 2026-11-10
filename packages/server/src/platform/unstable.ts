@@ -5,6 +5,7 @@
  * server.
  */
 export * as FindMyWay from "effect/http/FindMyWay";
+export * as Headers from "effect/http/Headers";
 export * as HttpPlatform from "effect/http/HttpPlatform";
 export * as HttpRouter from "effect/http/HttpRouter";
 export * as HttpServer from "effect/http/HttpServer";

@@ -55,6 +55,11 @@ import { TerminalGate } from "../../terminal/gate.ts";
 import { makeThreadCreator } from "../../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../../runtime/hooks.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
+import { isLocalApp } from "../../http/local-app.ts";
+
+/** What a phone, or any caller but the local app, hears when it asks for a machine folder. */
+export const MACHINE_FOLDER_LOCAL_ONLY =
+  "A chat in a folder on another machine starts only from the Gram app on this computer.";
 import { ThreadRuntimes, type ForkPlan } from "../../runtime/thread-runtimes.ts";
 import type { Handlers } from "./common.ts";
 import { taskCheckoutRequest } from "./task-checkout.ts";
@@ -247,18 +252,17 @@ export const threadHandlers = Effect.gen(function* () {
     });
 
   return {
-    "thread.create": ({
-      projectRoot,
-      checkout,
-      model,
-      mode,
-      title,
-      input,
-      resumeSessionId,
-      codexHome,
-      draftId,
-    }) =>
+    "thread.create": (
+      { projectRoot, checkout, model, mode, title, input, resumeSessionId, codexHome, draftId },
+      /** The call's transport, which the RPC server always gives; absent in-process. */
+      call?: { readonly headers?: Readonly<Record<string, string | undefined>> },
+    ) =>
       Effect.gen(function* () {
+        // A folder on another machine is the local app's to pick, never a paired phone's: the
+        // transport says which connection this is (`isLocalApp`), not anything the caller sent.
+        if (checkout.kind === "machineFolder" && !isLocalApp(call?.headers)) {
+          return yield* new InvalidState({ message: MACHINE_FOLDER_LOCAL_ONLY });
+        }
         if (resumeSessionId !== undefined && !/^[A-Za-z0-9_-]{1,128}$/.test(resumeSessionId)) {
           return yield* new InvalidState({ message: `Not a session id: ${resumeSessionId}` });
         }
@@ -526,6 +530,13 @@ export const threadHandlers = Effect.gen(function* () {
 
     "thread.fork": ({ threadId, fromMessageId, checkout, title }) =>
       Effect.gen(function* () {
+        // A fork stays in its source's folder or gets a new worktree: a folder on another machine
+        // is picked only for a new chat (`thread.create`).
+        if (checkout?.kind === "machineFolder") {
+          return yield* new InvalidState({
+            message: "A fork goes in its chat's folder or a new worktree, not another folder.",
+          });
+        }
         const plan = yield* runtimes.forkTarget(threadId, fromMessageId);
         // Refused before a worktree is made for it on another machine (`fork` refuses it too).
         if (checkout !== undefined) {
