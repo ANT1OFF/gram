@@ -4732,10 +4732,6 @@ export const SHOTS: readonly Shot[] = [
           const mock = window.gramMock!;
           const minute = 60_000;
           const at = (ago: number) => Date.now() - ago * minute;
-          const review = (title: string, head: string, body: string) => ({
-            title,
-            content: `# ${title}\n\n**Reviewed head:** \`${head}\`\n\n${body}`,
-          });
           mock.simulatePublishDoc(
             other as never,
             {
@@ -4746,11 +4742,11 @@ export const SHOTS: readonly Shot[] = [
           );
           const first = mock.simulatePublishDoc(
             search as never,
-            review(
-              "Review of #142",
-              "4be1c09a77d0c1e2f3a4b5c6d7e8f9a0b1c2d3e4",
-              "Two nits: an unused import, and a misspelt test name.",
-            ) as never,
+            {
+              title: "Review of #142",
+              content:
+                "# Review of #142\n\n**Reviewed head:** `4be1c09a77d0c1e2f3a4b5c6d7e8f9a0b1c2d3e4`\n\nTwo nits: an unused import, and a misspelt test name.",
+            } as never,
             at(40),
           );
           mock.simulatePublishDoc(
