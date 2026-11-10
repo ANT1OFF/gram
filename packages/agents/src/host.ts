@@ -317,6 +317,11 @@ export interface SendOptions {
 }
 
 /** One live agent conversation. Closing the scope passed to `AgentHost.open` ends it. */
+export interface SteerOptions {
+  /** Stop the turn now and deliver: the one way to cut off tool calls. */
+  readonly interrupt?: boolean;
+}
+
 export interface AgentSession {
   /**
    * Workspace-switch only. Requests graceful relinquishment and succeeds only after the actual
@@ -335,8 +340,13 @@ export interface AgentSession {
   readonly events: Stream.Stream<AgentEvent>;
   /** Starts a turn. The runtime owns the queue and only calls this while idle. */
   send(input: UserInput, options?: SendOptions): Effect.Effect<void>;
-  /** Delivers input mid-turn: the current tool finishes, then the agent answers it. */
-  steer(input: UserInput): Effect.Effect<void>;
+  /**
+   * Delivers input mid-turn. A steer cancels nothing: the tool call or batch under way finishes,
+   * then the agent reads it at its next step. With `interrupt` (where the capabilities say
+   * `steerInterrupt`), the turn stops now, cutting off its tool calls, and the agent answers the
+   * input in the same logical turn.
+   */
+  steer(input: UserInput, options?: SteerOptions): Effect.Effect<void>;
   readonly interrupt: Effect.Effect<void, InterruptHung>;
   /**
    * Closes the session's tool gate, at once: until the turn ends, every tool call is refused before

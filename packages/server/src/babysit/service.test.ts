@@ -387,6 +387,34 @@ const quiet = Effect.gen(function* () {
   for (let i = 0; i < 200; i++) yield* Effect.yieldNow;
 });
 
+/**
+ * The thread's agent ends each turn it runs until it rests with nothing queued, as a worker does
+ * between rounds: a notice queued behind a turn goes out once that turn ends.
+ */
+const turnsDone = (threadId: ThreadId) =>
+  Effect.gen(function* () {
+    const control = yield* FakeAgentControl;
+    const runtimes = yield* ThreadRuntimes;
+    const summary = runtimes.snapshot.pipe(
+      Effect.map((all) => all.find((s) => s.thread.id === threadId)),
+    );
+    for (let i = 0; i < 10; i++) {
+      const now = yield* summary;
+      if (now?.status !== "running") {
+        if ((now?.queue.length ?? 0) === 0) return;
+        yield* quiet;
+        continue;
+      }
+      const session = yield* control.latest(threadId);
+      const sent = session.sent.length;
+      yield* session.completeTurn();
+      yield* waitFor(
+        "the turn's end",
+        summary.pipe(Effect.map((s) => s?.status !== "running" || session.sent.length > sent)),
+      );
+    }
+  });
+
 describe("review monitor", () => {
   it.effect(
     "keeps what it saw with the binding, and after a restart tells what changed meanwhile",
@@ -493,7 +521,7 @@ describe("review monitor", () => {
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
-  it.effect("steers a notice into a running turn whose agent can take it", () =>
+  it.effect("queues a notice behind a running turn, cutting nothing off, for its end", () =>
     Effect.gen(function* () {
       reset();
       const { id, session } = yield* busyThread;
@@ -506,15 +534,19 @@ describe("review monitor", () => {
         }),
       );
       yield* TestClock.adjust("30 seconds");
+      yield* waitFor("the queued notice", notices(id).pipe(Effect.map((n) => n.length === 1)));
+      // Never steered, so no tool call of the running turn is cut off.
+      expect(session.steered).toEqual([]);
+      expect(session.sent.map((i) => i.text)).toEqual(["work"]);
+      yield* session.completeTurn();
       yield* waitFor(
-        "the steered notice",
-        Effect.sync(() => session.steered.length === 1),
+        "the notice sent as the next turn",
+        Effect.sync(() => session.sent.length === 2),
       );
-      expect(session.steered[0]?.notice).toMatchObject({
+      expect(session.sent[1]?.notice).toMatchObject({
         verdict: "changesRequested",
         blockers: [{ reviewThreadId: "PRRT_1" }],
       });
-      expect(session.sent.map((i) => i.text)).toEqual(["work"]);
       const summary = (yield* (yield* ThreadRuntimes).snapshot).find((s) => s.thread.id === id);
       expect(summary?.queue).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
@@ -729,21 +761,24 @@ describe("review monitor, people's reviews", () => {
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
-  it.effect("steers into a running turn, and a queued one is replaced by the newer", () =>
+  it.effect("queues behind a running turn, never steering, and goes at its end", () =>
     Effect.gen(function* () {
       reset();
       const { id, session } = yield* busyThread;
       yield* publish(id, reviewedBy([]));
       yield* publish(id, reviewedBy([personReview("PRR_h1", "alice", "approved")]));
+      yield* waitFor("the queued notice", humanNotices(id).pipe(Effect.map((n) => n.length === 1)));
+      expect(session.steered).toEqual([]);
+      expect(session.sent.map((i) => i.text)).toEqual(["work"]);
+      yield* session.completeTurn();
       yield* waitFor(
-        "the steered notice",
-        Effect.sync(() => session.steered.length === 1),
+        "the notice sent",
+        Effect.sync(() => session.sent.length === 2),
       );
-      expect(session.steered[0]?.notice).toMatchObject({
+      expect(session.sent[1]?.notice).toMatchObject({
         kind: "humanReview",
         newReviewIds: ["PRR_h1"],
       });
-      expect(session.sent.map((i) => i.text)).toEqual(["work"]);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
@@ -1108,6 +1143,7 @@ describe("babysit mode", () => {
         countedReviewId: "PRR_1",
         existingReviewId: "PRR_1",
       });
+      yield* turnsDone(id);
 
       // The publisher's own event for that round, and later states, are the same round.
       yield* round(id, "PRR_1");
@@ -1179,13 +1215,12 @@ describe("babysit mode", () => {
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
-  it.effect("babysits a running turn, counting the round its steered notice carries", () =>
+  it.effect("babysits a running turn, counting the round its queued notice carries", () =>
     Effect.gen(function* () {
       reset();
       const { id, session } = yield* busyThread;
       const babysit = yield* Babysit;
       yield* babysit.setEnabled(id, true);
-      expect(session.steered[0]?.text).toMatch(/^Babysit mode is on for #12/);
       world.review = { available: true, threads: [botThread("PRRT_1", "blocker")] };
       yield* publish(
         id,
@@ -1195,10 +1230,13 @@ describe("babysit mode", () => {
       );
       yield* TestClock.adjust("30 seconds");
       yield* waitFor("round 1", babysitOf(id).pipe(Effect.map((b) => b?.rounds === 1)));
-      expect(session.steered[1]?.text).toMatch(/Fix what holds up/);
-      expect(session.steered[1]?.notice).toMatchObject({ round: 1 });
-      // Still the turn the notice arrived in.
+      // Nothing is steered into the turn under way: kick-off and round wait for its end.
+      expect(session.steered).toEqual([]);
       expect(session.sent.map((i) => i.text)).toEqual(["work"]);
+      yield* turnsDone(id);
+      expect(session.sent[1]?.text).toMatch(/^Babysit mode is on for #12/);
+      expect(session.sent[2]?.text).toMatch(/Fix what holds up/);
+      expect(session.sent[2]?.notice).toMatchObject({ round: 1 });
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
@@ -1303,6 +1341,7 @@ describe("babysit mode", () => {
       yield* babysit.setEnabled(id, true, { rounds: 2 });
       yield* TestClock.adjust("30 seconds");
       yield* waitFor("the existing review", notices(id).pipe(Effect.map((n) => n.length === 1)));
+      yield* turnsDone(id);
       yield* round(id, "PRR_1");
       yield* TestClock.adjust("30 seconds");
       yield* waitFor("round 1", babysitOf(id).pipe(Effect.map((b) => b?.rounds === 1)));

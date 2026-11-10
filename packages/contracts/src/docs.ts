@@ -109,11 +109,33 @@ export const DocCardData = Schema.Struct({
 export type DocCardData = typeof DocCardData.Type;
 
 /**
+ * Whether a line is a label and one bare value ("Reviewed head: a0e7383ac9b6", "PR: #348", "Date:
+ * 2026-11-10"): a report's header field, which says nothing of what the report found. A label of
+ * at most four words, then a value with no space in it. Split, never matched, so it is linear.
+ */
+const metadataLine = (plain: string): boolean => {
+  const at = plain.indexOf(": ");
+  if (at <= 0 || at > 32) return false;
+  const label = plain.slice(0, at);
+  const value = plain.slice(at + 2).trim();
+  return (
+    value !== "" &&
+    !value.includes(" ") &&
+    label.split(" ").length <= 4 &&
+    !label.includes(".") &&
+    !label.includes(",")
+  );
+};
+
+/**
  * A doc's opening prose as plain text, for a thumbnail: the first lines that aren't a heading, a
- * fence, a rule or a table's frame, with inline Markdown dropped, cut at `max` characters.
+ * fence, a rule or a table's frame, with inline Markdown dropped, cut at `max` characters. Header
+ * fields before the prose (`metadataLine`) are passed over, so a review's excerpt is what it says,
+ * not the commit it read; a doc that is nothing but such fields keeps them.
  */
 export const docExcerpt = (markdown: string, max = DOC_EXCERPT_MAX): string => {
   const lines: string[] = [];
+  const fields: string[] = [];
   let fenced = false;
   for (const raw of markdown.split(/\r?\n/)) {
     // Only a line's start can reach the excerpt, which bounds the work on a long one too.
@@ -142,10 +164,14 @@ export const docExcerpt = (markdown: string, max = DOC_EXCERPT_MAX): string => {
       .replace(/[*_`~]+/g, "")
       .trim();
     if (plain === "") continue;
+    if (lines.length === 0 && fields.length < 8 && metadataLine(plain)) {
+      fields.push(plain);
+      continue;
+    }
     lines.push(plain);
     if (lines.join(" ").length >= max) break;
   }
-  const text = lines.join(" ");
+  const text = (lines.length === 0 ? fields : lines).join(" ");
   if (text.length <= max) return text;
   const cut = text.slice(0, max - 1);
   const space = cut.lastIndexOf(" ");

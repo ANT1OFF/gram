@@ -1,10 +1,12 @@
 import { expect, test } from "@playwright/test";
+import { openMoreOptions } from "./new-thread-options";
 
 test("the current checkout fetches, shows how far behind it is and fast-forwards", async ({
   page,
 }) => {
   await page.goto("/new");
   const form = page.getByRole("form", { name: "New thread" });
+  await openMoreOptions(page);
   await page.getByRole("combobox", { name: "Project path" }).fill("~/code/api");
   await form.getByRole("radio", { name: "Current checkout" }).click();
 

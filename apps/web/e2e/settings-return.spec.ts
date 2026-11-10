@@ -37,13 +37,19 @@ async function readHalfway(page: Page) {
   await openOrchestrator(page, made.orchestratorThreadId);
   const transcript = page.getByTestId("transcript");
   await expect(transcript.locator("[data-message-id]").first()).toBeVisible();
-  // Up by the wheel, as a reader would, so the transcript stops following its end.
+  // Up by the wheel, as a reader would, so the transcript stops following its end: a notch at a
+  // time until the view's top is in the middle of a row, so coming back to the row alone wouldn't
+  // pass. How far that is depends on how tall the rows above are, which isn't this spec's to fix.
   await transcript.hover();
-  for (let i = 0; i < 2; i++) await page.mouse.wheel(0, -330);
-  await expect.poll(async () => (await readingPlace(page)).following).toBe(false);
+  let place = await readingPlace(page);
+  for (let notch = 0; notch < 12 && (place.following || place.past <= 8); notch++) {
+    await page.mouse.wheel(0, -90);
+    await page.waitForTimeout(150);
+    place = await readingPlace(page);
+  }
   await page.waitForTimeout(300);
-  const place = await readingPlace(page);
-  // Somewhere in the middle of a row, so coming back to the row alone wouldn't pass.
+  place = await readingPlace(page);
+  expect(place.following).toBe(false);
   expect(place.past).toBeGreaterThan(8);
   return { made, place };
 }

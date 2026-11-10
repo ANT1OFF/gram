@@ -39,7 +39,7 @@ import type { ResumeHold, QueueHold, TurnHold } from "./turn-holds.ts";
 import type * as Scope from "effect/Scope";
 import type { ThreadReplay } from "../events/event-hub.ts";
 import type { ServerApprovalAnswer } from "./server-approvals.ts";
-import type { AgentSession, AppToolRegistryPort, ToolAudience } from "@gram/agents";
+import type { AgentSession, AppToolRegistryPort, SteerOptions, ToolAudience } from "@gram/agents";
 import type { McpConfigChange } from "./session-restarts.ts";
 import type { SessionPolicyPort } from "./session-policy.ts";
 import type { SystemDelivery } from "./system-delivery.ts";
@@ -181,10 +181,21 @@ export interface ThreadRuntimesShape {
     join: JoinQueued,
     joinsWith?: (queued: UserInput) => boolean,
   ): Effect.Effect<JoinResult, ThreadNotFound | InvalidState | AgentUnavailable>;
-  steer(threadId: ThreadId, input: UserInput): Effect.Effect<void, ThreadNotFound | InvalidState>;
   /**
-   * Delivers a server-authored notice (a PR monitor's): steered into a `running` turn whose agent
-   * can take mid-turn input, and otherwise `send`, which a steer that fails falls back to. `key`
+   * Delivers input into the running turn. A steer cancels nothing: it lands once the tool call or
+   * batch under way finishes. With `interrupt`, the turn stops now (cutting off its tool calls)
+   * and the agent answers the input; refused where the agent can't (`steerInterrupt`).
+   */
+  steer(
+    threadId: ThreadId,
+    input: UserInput,
+    options?: SteerOptions,
+  ): Effect.Effect<void, ThreadNotFound | InvalidState>;
+  /**
+   * Delivers a server-authored notice (a PR monitor's). It queues for the end of a running turn,
+   * and is never steered unless `options.steer`, and then without cutting off a tool call: steered
+   * into a `running` turn whose agent can take mid-turn input, and otherwise `send`, which a steer
+   * that fails falls back to. `key`
    * names what the notice is about, so a newer one replaces an older one with the same key still
    * in the queue, in its place, and the thread only ever reads the newest. It isn't steered past
    * something queued behind that older one. Nothing else in the queue
@@ -196,6 +207,7 @@ export interface ThreadRuntimesShape {
     threadId: ThreadId,
     key: string,
     input: UserInput,
+    options?: { readonly steer?: boolean },
   ): Effect.Effect<NoticeResult, ThreadNotFound | InvalidState | AgentUnavailable>;
   /** Takes every notice `sendNotice` queued under a key `drop` picks out of the queue. */
   dropNotices(threadId: ThreadId, drop: (key: string) => boolean): Effect.Effect<void>;

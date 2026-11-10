@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { chipFace, choicesChip, choicesPopup, openChoices } from "./composer-choices";
+import { openMoreOptions } from "./new-thread-options";
 
 for (const agent of ["claude", "codex"] as const)
   test(`${agent} speed persists independently of effort and resets on an unsupported model`, async ({
@@ -76,6 +77,7 @@ for (const agent of ["claude", "codex"] as const)
     await expect(chip).toHaveAccessibleName(/ · Speed: Fast$/);
     await expect(chip).toHaveAccessibleName(/ · Effort: High · /);
     await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: ["speed"] });
+    await openMoreOptions(page);
     await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/code/sandbox");
     await form.getByLabel("First prompt").fill("Synthetic speed preference test.");
     await form.getByRole("button", { name: /Start chat/ }).click();

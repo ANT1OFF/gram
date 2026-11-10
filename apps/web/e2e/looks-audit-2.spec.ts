@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { slowdown } from "./slowdown";
 import { threadRow } from "./thread-row";
 import { openPanelTab } from "./panel-tab";
+import { openMoreOptions } from "./new-thread-options";
 
 // Looks and accessibility audit of the surfaces added in M3 wave "tonight": Glass, the only look,
 // light and dark, standard and more contrast. Each surface is driven from the mock, then its text is checked
@@ -411,6 +412,7 @@ const SURFACES: Surface[] = [
     name: "behind-origin",
     open: async (page) => {
       const form = await newThreadForm(page);
+      await openMoreOptions(page);
       await page.getByRole("combobox", { name: "Project path" }).fill("~/code/api");
       await form.getByRole("radio", { name: "Current checkout" }).click();
       const freshness = form.getByTestId("base-freshness");

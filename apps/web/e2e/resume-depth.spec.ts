@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { choicesChip, pickChoice } from "./composer-choices";
+import { openMoreOptions } from "./new-thread-options";
 
 test("deletes a past session, then continues the latest one on the chosen effort", async ({
   page,
@@ -12,6 +13,7 @@ test("deletes a past session, then continues the latest one on the chosen effort
   await pickChoice(page, form, "effort", "High effort");
   await expect(choicesChip(form)).toHaveAccessibleName(/ · Effort: High · /);
 
+  await openMoreOptions(page);
   await page.getByRole("button", { name: "Resume a past session…" }).click();
   const picker = page.getByTestId("resume-sessions");
   const sessions = picker.getByTestId("past-session");
@@ -23,6 +25,7 @@ test("deletes a past session, then continues the latest one on the chosen effort
   await expect(sessions).toHaveCount(1);
   await expect(picker).not.toContainText("Add request tracing");
 
+  await openMoreOptions(page);
   await page.getByRole("button", { name: "Continue latest session" }).click();
   await expect(page).toHaveURL(/\/t\/t-/);
   await expect(page.getByTestId("pane-header")).toContainText("Speed up the flaky retry suite");

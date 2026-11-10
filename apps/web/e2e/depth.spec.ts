@@ -4,9 +4,11 @@ import { openHeaderMore, openThreadMenu } from "./more-menu";
 
 import { openSettingsPage } from "./settings-nav";
 import { openPanelTab } from "./panel-tab";
+import { openMoreOptions } from "./new-thread-options";
 
 test("resumes a past session from /new, then marks it open", async ({ page }) => {
   await page.goto("/new");
+  await openMoreOptions(page);
   await page.getByRole("button", { name: "Resume a past session…" }).click();
 
   const sessions = page.getByTestId("resume-sessions").getByTestId("past-session");
@@ -19,6 +21,7 @@ test("resumes a past session from /new, then marks it open", async ({ page }) =>
 
   // Client-side navigation keeps the mock's state, so the resumed thread still exists.
   await page.keyboard.press("ControlOrMeta+KeyT");
+  await openMoreOptions(page);
   await page.getByRole("button", { name: "Resume a past session…" }).click();
   await expect(sessions.filter({ hasText: "Speed up the flaky retry suite" })).toContainText(
     "Open",

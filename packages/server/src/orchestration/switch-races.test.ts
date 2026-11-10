@@ -98,9 +98,13 @@ for (const switching of [false, true])
               });
             else yield* rt.send(thread.id, { text: "Ordinary active work" });
             yield* waitSent(thread.id, 2);
-            const result = yield* rt.sendNotice(thread.id, "independent-monitor", {
-              text: "Independent automatic notice",
-            });
+            // A notice that asks to steer (a question's answer); the rest only ever queue.
+            const result = yield* rt.sendNotice(
+              thread.id,
+              "independent-monitor",
+              { text: "Independent automatic notice" },
+              { steer: true },
+            );
             if (switching) {
               expect(result.queued).toBe(true);
               expect(session.steered).toEqual([]);

@@ -54,6 +54,8 @@ export interface FakeSession {
   /** The `messageId` passed with each send, in order. */
   readonly sentIds: Array<string | undefined>;
   readonly steered: Array<UserInput>;
+  /** For each of `steered`, whether it was sent to interrupt the turn. */
+  readonly steeredInterrupt: Array<boolean>;
   readonly responses: Array<{ requestId: RequestId; answer: RequestAnswer }>;
   readonly modes: Array<PermissionMode>;
   readonly models: Array<ModelRef>;
@@ -161,6 +163,7 @@ export const FAKE_CAPABILITIES: AgentCapabilities = {
   fork: true,
   rewind: "history",
   steer: true,
+  steerInterrupt: true,
   planMode: true,
   approvalScopes: ["once", "session", "always"],
   userQuestions: true,
@@ -463,6 +466,7 @@ export const makeFakeAgentAdapter = (
             sent: [],
             sentIds: [],
             steered: [],
+            steeredInterrupt: [],
             responses: [],
             modes: [],
             models: [],
@@ -641,11 +645,14 @@ export const makeFakeAgentAdapter = (
                 Effect.andThen(emit({ type: "status", status: "running" })),
                 Effect.andThen(options.reply === "echo" ? echo(input) : Effect.void),
               ),
-            steer: (input) =>
+            steer: (input, steerOptions) =>
               Effect.suspend(() =>
                 steerFails
                   ? Effect.die(new Error("the agent rejected the steer"))
-                  : Effect.sync(() => void record.steered.push(input)),
+                  : Effect.sync(() => {
+                      record.steered.push(input);
+                      record.steeredInterrupt.push(steerOptions?.interrupt === true);
+                    }),
               ),
             stopBackgroundTasks: Effect.sync(() => {
               record.backgroundStops++;

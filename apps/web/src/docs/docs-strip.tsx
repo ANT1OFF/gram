@@ -123,18 +123,35 @@ function DocLine({ doc, now, onOpen }: { doc: DocMeta; now: number; onOpen: () =
   );
 }
 
+/**
+ * A doc's line under its title: who saved it last and when, and which version it is once it has
+ * been saved again ("cp-artifacts · 5m ago · version 3"). Under its author's own heading
+ * (`grouped`) the author is left out, and only your own edit is named.
+ */
+export const docByline = (doc: DocMeta, now: number, grouped = false): string =>
+  [
+    doc.updatedBy === "user" ? "You" : grouped ? undefined : doc.authorTitle,
+    agoText(doc.updatedAt, now),
+    doc.revision > 1 ? `version ${doc.revision}` : undefined,
+  ]
+    .filter((part) => part !== undefined)
+    .join(" · ");
+
 /** One doc as a row: its thumbnail, title, and who saved it last and when. */
 export function DocRow({
   doc,
   now,
   onOpen,
   excerpt = false,
+  grouped = false,
 }: {
   doc: DocMeta;
   now: number;
   onOpen: () => void;
   /** Show its opening words under the title, as the full list does. */
   excerpt?: boolean;
+  /** Under its author's heading, which names who wrote it. */
+  grouped?: boolean;
 }) {
   return (
     <button
@@ -152,7 +169,7 @@ export function DocRow({
           className="block truncate text-meta text-muted-foreground"
           title={`Updated ${formatStamp(doc.updatedAt, now)}`}
         >
-          {doc.updatedBy === "user" ? "You" : doc.authorTitle} · {agoText(doc.updatedAt, now)}
+          {docByline(doc, now, grouped)}
         </span>
         {excerpt && doc.excerpt !== "" && (
           <span className="mt-0.5 line-clamp-2 text-meta text-muted-foreground">{doc.excerpt}</span>

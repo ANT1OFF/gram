@@ -133,6 +133,7 @@ describe("New thread on a joined machine", () => {
     const user = userEvent.setup();
     renderWithApi(<NewThreadDraft />, createMockApi({ speed: 0, autoplay: false }));
     await pick(/build box/);
+    await user.click(screen.getByTestId("new-more-options"));
     const field = await screen.findByRole("combobox", { name: "Folder on build box" });
     await user.clear(field);
     await user.type(field, "~/code/dotfiles");

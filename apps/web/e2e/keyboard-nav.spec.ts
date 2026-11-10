@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { slowdown } from "./slowdown";
 import { threadRow } from "./thread-row";
+import { openMoreOptions } from "./new-thread-options";
 
 /**
  * Opens the fixture thread and returns its composer once a message row is in the transcript. The
@@ -136,6 +137,7 @@ test("keyboard only: actions palette, ? overlay, rename, pickers, refresh, send 
   await page.keyboard.press("ControlOrMeta+Alt+Enter");
   await expect(page).toHaveURL(/\/new$/);
 
+  await openMoreOptions(page);
   await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/code/gram");
   await expect(page.getByTestId("folder-status")).toContainText("git");
   await page.getByLabel("First prompt").fill("created from the keyboard");

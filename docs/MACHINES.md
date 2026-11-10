@@ -348,7 +348,8 @@ open a new one.
 ## A Claude token from this machine
 
 Instead of `claude /login` on each joined machine, Settings → Machines → **Use a token from this
-Mac** runs `claude setup-token` here and sends the token it prints to the machines you tick.
+Mac** runs `claude setup-token` here and sends the token it prints to the machines you tick. It is
+on the row of a machine that isn't signed in, and in the **⋯** menu of one that is.
 
 - **Your consent, each time.** The dialog says what happens before anything runs. Only the machine
   you started from is ticked, and only confirmed machines that are online can be picked. A token
@@ -360,7 +361,8 @@ Mac** runs `claude setup-token` here and sends the token it prints to the machin
   (mode `0600`), and sets `CLAUDE_CODE_OAUTH_TOKEN` only for the Claude sessions `gram-host`
   starts. It never goes in a shell profile or the service's unit or plist. While it is there, it
   takes the place of that machine's own `claude /login`.
-- **Removing it.** **Forget token**, **Remove** and `gram-host leave` each delete it from the
+- **Removing it.** **Forget token** and **Remove** (both in the machine's **⋯** menu) and
+  `gram-host leave` each delete it from the
   machine. A machine that is offline when you remove it keeps the token until you run
   `gram-host leave` there.
 - **Revoking it.** The token lasts a year and only makes model requests: no claude.ai connectors
@@ -544,7 +546,7 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
   `/host/mcp` on the main Gram's tailnet address, with that thread's own token. It is let through
   only for a thread placed on a joined machine that is online now, and never with an `Origin`.
   Threads on this machine keep to the loopback endpoint.
-- **Removing a machine** (Settings → Machines → Remove) forgets its key and closes its connection at
+- **Removing a machine** (Settings → Machines → ⋯ → Remove) forgets its key and closes its connection at
   once, including one still connecting. Turning access over Tailscale off, or onto another
   address, closes every joined machine's connection, including a dial let in just before and still
   connecting; the machines stay joined and dial in again once it is back. Up to 16 machines can be

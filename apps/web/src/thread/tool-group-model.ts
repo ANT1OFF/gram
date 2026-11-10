@@ -9,6 +9,7 @@ import {
 import { formatSize } from "@/panels/files/format";
 
 import {
+  cutOffByInterrupt,
   isToolPart,
   partEdits,
   toolNameOf,
@@ -274,12 +275,18 @@ export interface RunState {
   /** The call held at the user's approval card, which the collapsed line names first. */
   waiting: AnyToolPart | undefined;
   failed: number;
+  /** Calls stopped before they finished, other than by an interrupt. */
   cancelled: number;
+  /** Calls an interrupt cut off: stopped, not failed, and declined by nobody. */
+  interrupted: number;
   /** A call is waiting on the user, so the run starts open. */
   awaiting: boolean;
 }
 
 const NO_CALLS: ReadonlySet<string> = new Set();
+
+const cutOff = (part: AnyToolPart) =>
+  part.state === "output-error" && cutOffByInterrupt(part.errorText);
 
 /**
  * Where a run stands. `pendingApprovals` holds the call ids the user's approval cards are about: a
@@ -306,7 +313,8 @@ export function runState(
     active: activeIndex === -1 ? undefined : run[activeIndex],
     waiting: waitingIndex === -1 ? undefined : run[waitingIndex],
     failed: phases.filter((phase) => phase === "error").length,
-    cancelled: phases.filter((phase) => phase === "cancelled").length,
+    cancelled: phases.filter((phase, i) => phase === "cancelled" && !cutOff(run[i]!)).length,
+    interrupted: phases.filter((phase, i) => phase === "cancelled" && cutOff(run[i]!)).length,
     awaiting: phases.includes("awaiting"),
   };
 }

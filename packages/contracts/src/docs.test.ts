@@ -23,6 +23,26 @@ describe("docExcerpt", () => {
     expect(docExcerpt(markdown)).toBe("A quoted link and code. One item A · B 1 · 2");
   });
 
+  it("passes over a report's header fields for what it says", () => {
+    const review = [
+      "# Re-review of #348",
+      "",
+      "**Reviewed head:** `a0e7383ac9b678673aa7894846e1acd4ad78e000`",
+      "PR: #348",
+      "",
+      "The pairing check now refuses a phone, and the two findings from the first pass are fixed.",
+    ].join("\n");
+    expect(docExcerpt(review)).toBe(
+      "The pairing check now refuses a phone, and the two findings from the first pass are fixed.",
+    );
+    // A sentence with a colon is prose, and a field after the prose has begun stays.
+    expect(docExcerpt("Note: this changes the default.\nHead: abc123")).toBe(
+      "Note: this changes the default. Head: abc123",
+    );
+    // Nothing but fields: they are all there is to show.
+    expect(docExcerpt("Head: abc123\nPR: #348")).toBe("Head: abc123 PR: #348");
+  });
+
   it("reads a hostile line in linear time", () => {
     const started = performance.now();
     for (const line of [

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { seedTheme } from "./seed-theme";
+import { openMoreOptions } from "./new-thread-options";
 
 // Dark with system (full) motion, light with motion off: the picker must work in both.
 for (const { mode, motion, resolved } of [
@@ -14,6 +15,7 @@ for (const { mode, motion, resolved } of [
     await page.goto("/new");
     await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
 
+    await openMoreOptions(page);
     const path = page.getByRole("combobox", { name: "Project path" });
     await path.fill("~/Documents/co");
     await expect(page.getByRole("option", { name: "code" })).toBeVisible();
@@ -47,6 +49,7 @@ for (const { mode, motion, resolved } of [
 
 test("blocks Create until the path is a real folder", async ({ page }) => {
   await page.goto("/new");
+  await openMoreOptions(page);
   const path = page.getByRole("combobox", { name: "Project path" });
   await path.fill("~/Documents/nope");
   await expect(page.getByTestId("folder-problem")).toHaveText(
