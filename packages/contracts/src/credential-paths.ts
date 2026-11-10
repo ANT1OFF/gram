@@ -102,11 +102,29 @@ export function isCredentialPath(path: string): boolean {
 }
 
 /**
- * Whether `path` is a credential folder (`~/.ssh`, `~/.aws`, …) or inside one, judged on the path
- * alone as `isCredentialPath` judges a file. A session never runs there, and a folder picker never
- * offers one.
+ * The coding agents' own folders, which hold their logins (Claude Code's `.credentials.json`,
+ * Codex's `auth.json`) beside their settings. No session runs in one; a file in one is judged by
+ * `isCredentialPath` as anywhere else.
+ */
+const AGENT_LOGIN_FOLDERS = [[".claude"], [".codex"]] as const;
+
+/**
+ * The folders no session runs in, as they sit in a home: the credential folders and the agents'
+ * login folders. A host resolves each under its own home and compares what it is asked for with
+ * where these really are.
+ */
+export const CREDENTIAL_FOLDERS_IN_HOME: ReadonlyArray<ReadonlyArray<string>> = [
+  ...CREDENTIAL_FOLDERS,
+  ...AGENT_LOGIN_FOLDERS,
+];
+
+/**
+ * Whether `path` is a credential folder (`~/.ssh`, `~/.aws`, …), an agent's login folder
+ * (`~/.claude`, `~/.codex`) or inside one, judged on the path's names alone. A session never runs
+ * there, and a folder picker never offers one. The name is only the first test: a host also
+ * compares where the folder really is with where those folders really are.
  */
 export function isCredentialFolder(path: string): boolean {
   const segments = path.split(/[\\/]+/).filter((segment) => segment !== "");
-  return CREDENTIAL_FOLDERS.some((folder) => contains(segments, folder));
+  return CREDENTIAL_FOLDERS_IN_HOME.some((folder) => contains(segments, folder));
 }

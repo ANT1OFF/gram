@@ -1,14 +1,16 @@
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import * as fsp from "node:fs/promises";
 import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it } from "@effect/vitest";
-import type { AgentHost } from "@gram/agents";
+import type { AgentHost, AgentSession, OpenSessionOptions } from "@gram/agents";
 import {
   HOST_PROTOCOL_VERSION,
   HostId,
   HostUnavailable,
   LOCAL_HOST_ID,
   type HostCapability,
+  ThreadId,
 } from "@gram/contracts";
 import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -20,7 +22,14 @@ import type { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
-import { type FolderBounds, folderRefusal, foldersOn } from "./folders.ts";
+import {
+  type FolderBounds,
+  type FolderIo,
+  foldersOn,
+  gatedSessions,
+  MAX_LISTED,
+  MAX_SCANNED,
+} from "./folders.ts";
 import { gitOn } from "./git.ts";
 import { connectHost, HOST_CAPABILITIES, HOST_SERVES, serveHost } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
@@ -34,8 +43,9 @@ import { WorkerHosts } from "./worker-host.ts";
 const MACHINE = { id: HostId.make("m-0123456789abcdef01234567"), name: "build box" };
 
 /**
- * A synthetic home: plain folders, a repository, credential folders, the host's own folder, a link
- * into `.ssh` and a file. Nothing in it is a real key or a real host's.
+ * A synthetic home: plain folders, a repository, credential and agent login folders (with no real
+ * key or login in them), the host's own folder with a worktree of a clone, a link into `.ssh` and a
+ * file. Nothing in it is a real key or a real host's.
  */
 const home = (dir: string): FolderBounds => {
   const at = join(dir, "home");
@@ -44,7 +54,9 @@ const home = (dir: string): FolderBounds => {
     "scratch",
     ".ssh",
     ".aws",
-    ".config/gram-host/repos/widgets",
+    ".claude/synthetic",
+    ".codex/synthetic",
+    ".config/gram-host/repos/widgets/.worktrees/feat-x",
     ".config/nvim",
   ])
     mkdirSync(join(at, folder), { recursive: true });
@@ -52,34 +64,28 @@ const home = (dir: string): FolderBounds => {
   writeFileSync(join(at, "notes.md"), "notes\n");
   symlinkSync(join(at, ".ssh"), join(at, "keys"));
   if (hasGit) makeRepo(join(at, "code"));
-  return { home: at, hostHome: join(at, ".config", "gram-host") };
+  return {
+    home: at,
+    hostHome: join(at, ".config", "gram-host"),
+    hostRepos: join(at, ".config", "gram-host", "repos"),
+    agentHomes: [],
+  };
 };
 
 const names = (listing: { readonly entries: ReadonlyArray<{ readonly name: string }> }) =>
   listing.entries.map((entry) => entry.name);
 
-describe("folderRefusal", () => {
-  const bounds = { home: "/home/dev", hostHome: "/home/dev/.config/gram-host" };
-  it("refuses credential folders, the host's own folder and the whole filesystem", () => {
-    expect(folderRefusal("/home/dev/.ssh", bounds)).toBe(
-      "Gram doesn't run a chat in /home/dev/.ssh: it holds keys or credentials.",
-    );
-    expect(folderRefusal("/home/dev/.aws/sso", bounds)).toContain("keys or credentials");
-    expect(folderRefusal("/home/dev/.config/gh", bounds)).toContain("keys or credentials");
-    expect(folderRefusal("/home/dev/.config/gram-host/repos/x", bounds)).toBe(
-      "Gram doesn't run a chat in /home/dev/.config/gram-host/repos/x: it is Gram Host's own folder.",
-    );
-    expect(folderRefusal("/", bounds)).toBe("Gram doesn't run a chat in the whole filesystem.");
-  });
+/** Why the gate refused `path`, or "admitted". */
+const verdict = (folders: ReturnType<typeof foldersOn>, path: string) =>
+  folders
+    .check(path)
+    .pipe(Effect.match({ onFailure: (error) => error.message, onSuccess: () => "admitted" }));
 
-  it("takes a home, a project and a dotfolder that holds no credentials", () => {
-    for (const path of ["/home/dev", "/home/dev/code/api", "/home/dev/.config/nvim", "/srv/media"])
-      expect(folderRefusal(path, bounds), path).toBeUndefined();
-  });
-});
+const keys = (path: string) => `Gram doesn't run a chat in ${path}: it holds keys or credentials.`;
+const own = (path: string) => `Gram doesn't run a chat in ${path}: it is Gram Host's own folder.`;
 
 describe("a machine's folders, on the machine", () => {
-  it.live("lists folders from its own home, hiding credential folders and its own", () =>
+  it.live("lists folders from its own home, hiding credential, login and its own folders", () =>
     Effect.gen(function* () {
       const dir = tempDir();
       yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
@@ -88,13 +94,19 @@ describe("a machine's folders, on the machine", () => {
 
       const top = yield* folders.browse("~/", 100);
       expect(top.path).toBe(bounds.home);
-      // Dotfolders only for a `.` prefix, as `fs.browse` lists them; files never.
+      // Dotfolders only for a `.` prefix, as `fs.browse` lists them; files and links never.
       expect(names(top)).toEqual([...(hasGit ? ["code"] : []), "Downloads", "scratch"]);
-      expect(names(yield* folders.browse("~/.c", 100))).toEqual([".config"]);
+      expect(names(yield* folders.browse("~/.", 100))).toEqual([".config"]);
       expect(names(yield* folders.browse("~/.config/", 100))).toEqual(["nvim"]);
 
-      // Never listed into, typed or through a link.
-      for (const input of ["~/.ssh/", "~/.config/gram-host/", "~/keys/"]) {
+      // Never listed into, typed, through a link, or as an agent's login folder.
+      for (const input of [
+        "~/.ssh/",
+        "~/.config/gram-host/",
+        "~/keys/",
+        "~/.claude/",
+        "~/.codex/",
+      ]) {
         const refused = yield* folders.browse(input, 100).pipe(Effect.flip);
         expect(refused._tag, input).toBe("InvalidState");
       }
@@ -108,34 +120,344 @@ describe("a machine's folders, on the machine", () => {
       yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
       const bounds = home(dir);
       const folders = foldersOn(yield* Proc, bounds);
+      const at = (path: string) => join(bounds.home, path);
 
       expect(yield* folders.check("~")).toEqual({ path: bounds.home });
-      expect(yield* folders.check(`${bounds.home}/scratch/`)).toEqual({
-        path: join(bounds.home, "scratch"),
-      });
+      expect(yield* folders.check(`${bounds.home}/scratch/`)).toEqual({ path: at("scratch") });
       if (hasGit)
         expect(yield* folders.check("~/code/repo")).toEqual({
           path: join(bounds.home, "code", "repo"),
           branch: "main",
         });
 
-      const why = (path: string) =>
-        folders.check(path).pipe(
-          Effect.flip,
-          Effect.map((error) => error.message),
-        );
-      expect(yield* why("~/.ssh")).toBe(
-        `Gram doesn't run a chat in ${join(bounds.home, ".ssh")}: it holds keys or credentials.`,
-      );
+      expect(yield* verdict(folders, "~/.ssh")).toBe(keys(at(".ssh")));
       // A link is judged where it leads.
-      expect(yield* why("~/keys")).toBe(
-        `Gram doesn't run a chat in ${join(bounds.home, ".ssh")}: it holds keys or credentials.`,
+      expect(yield* verdict(folders, "~/keys")).toBe(keys(at(".ssh")));
+      // The agents' login folders, and anything in them (review #348, finding 1).
+      expect(yield* verdict(folders, "~/.claude")).toBe(keys(at(".claude")));
+      expect(yield* verdict(folders, "~/.codex/synthetic")).toBe(keys(at(".codex/synthetic")));
+      expect(yield* verdict(folders, "~/.config/gram-host")).toBe(own(at(".config/gram-host")));
+      // A worker's worktree in the host's clones is no place for a one-off chat.
+      expect(yield* verdict(folders, "~/.config/gram-host/repos/widgets/.worktrees/feat-x")).toBe(
+        own(at(".config/gram-host/repos/widgets/.worktrees/feat-x")),
       );
-      expect(yield* why("~/.config/gram-host/repos/widgets")).toContain("Gram Host's own folder");
-      expect(yield* why("/")).toBe("Gram doesn't run a chat in the whole filesystem.");
-      expect(yield* why("~/notes.md")).toBe(`Not a folder: ${join(bounds.home, "notes.md")}`);
-      expect(yield* why("~/missing")).toBe(`Folder not found: ${join(bounds.home, "missing")}`);
+      expect(yield* verdict(folders, "/")).toBe("Gram doesn't run a chat in the whole filesystem.");
+      expect(yield* verdict(folders, "~/notes.md")).toBe(`Not a folder: ${at("notes.md")}`);
+      expect(yield* verdict(folders, "~/missing")).toBe(`Folder not found: ${at("missing")}`);
     }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.live("refuses an agent's login folder where it is configured to be", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const configured = join(dir, "claude-config");
+      mkdirSync(join(configured, "projects"), { recursive: true });
+      const folders = foldersOn(yield* Proc, { ...home(dir), agentHomes: [configured] });
+      expect(yield* verdict(folders, configured)).toBe(keys(configured));
+      expect(yield* verdict(folders, join(configured, "projects"))).toBe(
+        keys(join(configured, "projects")),
+      );
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+});
+
+/**
+ * Review #348, finding 2: a protected folder is the folder itself, not its spelling. Each case
+ * configures the bound one way and asks for the folder another.
+ */
+describe("the gate compares folders, not spellings", () => {
+  it.live("refuses the host's folder named through a link in the configured bound", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const real = join(dir, "real-home");
+      mkdirSync(join(real, ".config", "gram-host", "keys-here"), { recursive: true });
+      symlinkSync(real, join(dir, "alias"));
+      const folders = foldersOn(yield* Proc, {
+        home: real,
+        hostHome: join(dir, "alias", ".config", "gram-host"),
+        hostRepos: join(dir, "alias", ".config", "gram-host", "repos"),
+        agentHomes: [],
+      });
+      const target = join(real, ".config", "gram-host");
+      expect(yield* verdict(folders, target)).toBe(own(target));
+      expect(yield* verdict(folders, join(target, "keys-here"))).toBe(
+        own(join(target, "keys-here")),
+      );
+      const browse = yield* folders.browse(`${target}/`, 10).pipe(Effect.flip);
+      expect(browse.message).toBe(own(target));
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.live("refuses the host's folder in another case, where the filesystem ignores case", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const real = join(dir, "real-home");
+      mkdirSync(join(real, ".config", "gram-host"), { recursive: true });
+      const upper = join(real, ".CONFIG", "GRAM-HOST");
+      const foldsCase = yield* Effect.promise(() =>
+        fsp.stat(upper).then(
+          () => true,
+          () => false,
+        ),
+      );
+      if (!foldsCase) return; // A case-sensitive filesystem: two spellings are two folders.
+      const folders = foldersOn(yield* Proc, {
+        home: real,
+        hostHome: upper,
+        hostRepos: join(upper, "repos"),
+        agentHomes: [],
+      });
+      const lower = join(real, ".config", "gram-host");
+      expect(yield* verdict(folders, lower)).toBe(own(lower));
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.live(
+    "refuses the host's folder in another Unicode form, where the filesystem joins them",
+    () =>
+      Effect.gen(function* () {
+        const dir = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+        const nfc = join(dir, "caf\u00e9-host");
+        const nfd = join(dir, "cafe\u0301-host");
+        mkdirSync(nfc);
+        const joinsForms = yield* Effect.promise(() =>
+          fsp.stat(nfd).then(
+            () => true,
+            () => false,
+          ),
+        );
+        if (!joinsForms) return; // The filesystem keeps the two forms apart: two folders.
+        const folders = foldersOn(yield* Proc, {
+          home: dir,
+          hostHome: nfd,
+          hostRepos: join(nfd, "repos"),
+          agentHomes: [],
+        });
+        const answer = yield* verdict(folders, nfc);
+        expect(answer).not.toBe("admitted");
+        expect(answer).toContain("Gram Host's own folder");
+      }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.live("refuses a credential folder moved elsewhere behind a link", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const store = join(dir, "synthetic-key-store");
+      mkdirSync(join(store, "inner"), { recursive: true });
+      const bounds = home(dir);
+      renameSync(join(bounds.home, ".ssh"), join(dir, "old-ssh"));
+      symlinkSync(store, join(bounds.home, ".ssh"));
+      const folders = foldersOn(yield* Proc, bounds);
+      expect(yield* verdict(folders, store)).toBe(keys(store));
+      expect(yield* verdict(folders, join(store, "inner"))).toBe(keys(join(store, "inner")));
+      expect((yield* folders.browse(`${store}/`, 10).pipe(Effect.flip))._tag).toBe("InvalidState");
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+});
+
+/** A fake agent that records where each session really opened, and runs `during` as it opens. */
+const recordingAgent = (during: () => void = () => {}) => {
+  const openedIn: Array<string> = [];
+  const host = {
+    kind: "claude",
+    open: (options: OpenSessionOptions) =>
+      Effect.sync(() => {
+        openedIn.push(realpathSync(options.cwd));
+        during();
+        return {
+          events: Stream.never,
+          send: () => Effect.void,
+          steer: () => Effect.void,
+          interrupt: Effect.void,
+          respond: () => Effect.void,
+          setMode: () => Effect.void,
+          setModel: () => Effect.void,
+        } as unknown as AgentSession;
+      }),
+  } as unknown as AgentHost;
+  return { host, openedIn };
+};
+
+const request = (cwd: string, handle = "h-1") => ({
+  handle,
+  agent: "claude" as const,
+  threadId: ThreadId.make("t-on-machine"),
+  cwd,
+});
+
+/** Review #348, finding 3: a checked folder is checked again where a session opens in it. */
+describe("a joined machine's sessions", () => {
+  it.live("never open in a folder swapped for a link to a refused one after its check", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const bounds = home(dir);
+      const folders = foldersOn(yield* Proc, bounds);
+      const scratch = join(bounds.home, "scratch");
+      const { path: checked } = yield* folders.check("~/scratch");
+      expect(checked).toBe(scratch);
+
+      renameSync(scratch, join(bounds.home, "scratch-original"));
+      symlinkSync(join(bounds.home, ".ssh"), scratch);
+      const agent = recordingAgent();
+      const sessions = gatedSessions(
+        yield* sessionsOnHost(() => Effect.succeed(agent.host)),
+        folders.gate,
+      );
+      const refused = yield* sessions.open(request(checked)).pipe(Effect.flip);
+      expect(refused).toMatchObject({
+        _tag: "HostFailed",
+        message: keys(join(bounds.home, ".ssh")),
+      });
+      expect(agent.openedIn).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.live("are stopped when the folder is swapped while the agent starts", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const bounds = home(dir);
+      const folders = foldersOn(yield* Proc, bounds);
+      const scratch = join(bounds.home, "scratch");
+      const agent = recordingAgent(() => {
+        renameSync(scratch, join(bounds.home, "scratch-original"));
+        symlinkSync(join(bounds.home, ".aws"), scratch);
+      });
+      const sessions = gatedSessions(
+        yield* sessionsOnHost(() => Effect.succeed(agent.host)),
+        folders.gate,
+      );
+      const refused = yield* sessions.open(request(scratch)).pipe(Effect.flip);
+      expect(refused._tag).toBe("HostFailed");
+      // It was closed: the handle is free, and nothing of it is open.
+      expect(sessions.busy()).toBe(0);
+      expect((yield* sessions.session("h-1").pipe(Effect.flip))._tag).toBe("HostFailed");
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.live("open in a worker's worktree of the host's clones, and in a picked folder", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const bounds = home(dir);
+      const folders = foldersOn(yield* Proc, bounds);
+      const agent = recordingAgent();
+      const sessions = gatedSessions(
+        yield* sessionsOnHost(() => Effect.succeed(agent.host)),
+        folders.gate,
+      );
+      const worktree = join(bounds.hostRepos, "widgets", ".worktrees", "feat-x");
+      yield* sessions.open(request(worktree, "h-worker"));
+      yield* sessions.open(request(join(bounds.home, "scratch"), "h-chat"));
+      expect(agent.openedIn).toEqual([worktree, join(bounds.home, "scratch")]);
+      // The host's own folder outside its clones is still refused.
+      const refused = yield* sessions.open(request(bounds.hostHome, "h-own")).pipe(Effect.flip);
+      expect(refused.message).toBe(own(bounds.hostHome));
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+});
+
+/** Review #348, finding 4: a listing is bounded however large the folder or slow its disk. */
+describe("a machine's folder listing", () => {
+  it.live("lists at most MAX_LISTED folders, whatever limit it is asked for", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const bounds = home(dir);
+      const many = join(bounds.home, "many");
+      for (let i = 0; i < MAX_LISTED + 10; i++)
+        mkdirSync(join(many, `d${String(i).padStart(4, "0")}`), { recursive: true });
+      const listing = yield* foldersOn(yield* Proc, bounds).browse(`${many}/`, 1000);
+      expect(listing.entries).toHaveLength(MAX_LISTED);
+      expect(listing.truncated).toBe(true);
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.live("reads at most MAX_SCANNED entries of a folder", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const bounds = home(dir);
+      const huge = join(bounds.home, "huge");
+      mkdirSync(huge);
+      for (let i = 0; i < MAX_SCANNED + 20; i++) writeFileSync(join(huge, `f${i}`), "");
+      let read = 0;
+      const io: FolderIo = {
+        realpath: (path) => fsp.realpath(path),
+        stat: (path) => fsp.stat(path),
+        opendir: async (path) => {
+          const opened = await fsp.opendir(path);
+          const entries = opened[Symbol.asyncIterator].bind(opened);
+          return Object.assign(opened, {
+            [Symbol.asyncIterator]: async function* () {
+              for await (const entry of { [Symbol.asyncIterator]: entries }) {
+                read += 1;
+                yield entry;
+              }
+            },
+          });
+        },
+      };
+      const listing = yield* foldersOn(yield* Proc, bounds, io).browse(`${huge}/`, 10);
+      expect(listing.truncated).toBe(true);
+      expect(read).toBeLessThanOrEqual(MAX_SCANNED + 1);
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.live("refuses a refused folder before reading anything in it", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const bounds = home(dir);
+      const opened: Array<string> = [];
+      const io: FolderIo = {
+        realpath: (path) => fsp.realpath(path),
+        stat: (path) => fsp.stat(path),
+        opendir: (path) => {
+          opened.push(path);
+          return fsp.opendir(path);
+        },
+      };
+      const folders = foldersOn(yield* Proc, bounds, io);
+      for (const input of ["~/.ssh/", "~/keys/", "~/.config/gram-host/"])
+        yield* folders.browse(input, 10).pipe(Effect.flip);
+      expect(opened).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.live(
+    "doesn't wait on a folder whose disk doesn't answer",
+    () =>
+      Effect.gen(function* () {
+        const dir = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+        const bounds = home(dir);
+        // `scratch/.git` stands for a link into a mount that hangs: its probe never settles.
+        const io: FolderIo = {
+          realpath: (path) => fsp.realpath(path),
+          stat: (path) =>
+            path.endsWith(join("scratch", ".git")) ? new Promise(() => {}) : fsp.stat(path),
+          opendir: (path) => fsp.opendir(path),
+        };
+        const started = Date.now();
+        const listing = yield* foldersOn(yield* Proc, bounds, io).browse("~/", 50);
+        expect(Date.now() - started).toBeLessThan(8_000);
+        expect(listing.entries.find((entry) => entry.name === "scratch")?.isGitRepo).toBe(false);
+
+        // A folder that never answers at all is given up on, not waited for.
+        const stuck: FolderIo = { ...io, realpath: () => new Promise(() => {}) };
+        const gaveUp = yield* foldersOn(yield* Proc, bounds, stuck)
+          .browse("~/", 50)
+          .pipe(Effect.flip);
+        expect(gaveUp.message).toContain("took too long");
+      }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+    20_000,
   );
 });
 
@@ -239,10 +561,12 @@ describe("a joined machine's folders, from the main Gram", () => {
         hostId: MACHINE.id,
       });
 
-      const refused = yield* placed
-        .prepare({ kind: "machineFolder", hostId: MACHINE.id, path: "~/keys" }, [], "")
-        .pipe(Effect.flip);
-      expect(refused._tag).toBe("InvalidState");
+      for (const path of ["~/keys", "~/.claude", "~/.codex/sessions"]) {
+        const refused = yield* placed
+          .prepare({ kind: "machineFolder", hostId: MACHINE.id, path }, [], "")
+          .pipe(Effect.flip);
+        expect(refused._tag, path).toBe("InvalidState");
+      }
     }).pipe(Effect.scoped, Effect.provide(Live)),
   );
 

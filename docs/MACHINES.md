@@ -56,11 +56,22 @@ read what that user can. Gram keeps a few lines anyway:
   outside the machine's repositories folder: a task chip from such a chat starts from New task
   instead.
 - The host refuses a credential folder or anything in one (`~/.ssh`, `~/.aws`, `~/.gnupg`,
-  `~/.kube`, `~/.docker`, `~/.config/gh`, `~/.config/gcloud`, keyrings and the like), its own
-  folder (`~/.config/gram-host` on Linux, `~/Library/Application Support/Gram Host` on a Mac, or
-  `GRAM_HOST_HOME`), and the whole filesystem (`/`). It checks the real path, so a link into one of
-  them is refused too. Its folder browser never lists those folders, and lists folders only, never
-  files.
+  `~/.kube`, `~/.docker`, `~/.config/gh`, `~/.config/gcloud`, keyrings and the like), the agents'
+  login folders (`~/.claude`, `~/.codex`, and `CLAUDE_CONFIG_DIR` or `CODEX_HOME` where set), its
+  own folder (`~/.config/gram-host` on Linux, `~/Library/Application Support/Gram Host` on a Mac,
+  or `GRAM_HOST_HOME`) with its clones, and the whole filesystem (`/`).
+- It decides on the folder itself, not how it is written: it resolves the real path and compares
+  that folder and each of its parents with where those folders really are, by device and inode. A
+  link into one, a link in a parent, another spelling of a name (case, Unicode form) and a
+  credential folder moved elsewhere behind a link are all refused.
+- The same check runs for a listing (before anything in the folder is read), for the folder's
+  check before the chat starts, and every time a session opens there, a restart included. A
+  folder swapped for a link to a refused one after it was picked is refused when the session
+  opens, and one swapped while the agent starts stops it. A worker's session in a worktree of the
+  host's clones is the one use of Gram Host's folder let through.
+- Its folder browser never lists those folders, lists folders only, never files, and lists at
+  most 500 of them from at most 5,000 entries read, with a deadline, so a huge folder or a stuck
+  mount doesn't hold the host up.
 - A host from an older release doesn't list its folders: the chat asks you to update it first.
 
 ## What you need
