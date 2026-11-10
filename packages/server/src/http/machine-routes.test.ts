@@ -5,7 +5,7 @@ import { HOST_PROTOCOL_VERSION } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { removeDir, tempDir } from "../git/test-repo.ts";
 import { fingerprintOf, generateHostKey, hostIdOf } from "../host/machine-keys.ts";
-import { memoryMachineStore } from "../host/paired-machines.ts";
+import { type DialAccess, memoryMachineStore } from "../host/paired-machines.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import {
@@ -33,7 +33,11 @@ const post = (
   hosts: RemoteHosts["Service"],
   path: string,
   body: unknown,
-  options: { readonly remote?: RemoteAccess | undefined; readonly ssh?: string } = {},
+  options: {
+    readonly remote?: RemoteAccess | undefined;
+    readonly ssh?: string;
+    readonly access?: DialAccess;
+  } = {},
 ) =>
   machineManagement(
     hosts,
@@ -41,6 +45,8 @@ const post = (
     path,
     "1.15.2",
     options.ssh,
+    undefined,
+    options.access,
   ).pipe(
     Effect.provideService(
       HttpServerRequest.HttpServerRequest,
@@ -98,6 +104,16 @@ describe("Settings → Machines", () => {
       const off = yield* post(hosts, MACHINES_LIST_PATH, {}, { remote: undefined });
       expect(off.body).not.toHaveProperty("updateCommand");
       expect(off.body).toMatchObject({ machines: [{ offline: { kind: "tailscale-off" } }] });
+      // Switched on, but Tailscale is stopped here, so the listing says that instead.
+      const down = yield* post(
+        hosts,
+        MACHINES_LIST_PATH,
+        {},
+        { remote: undefined, access: "stopped" },
+      );
+      expect(down.body).toMatchObject({
+        machines: [{ offline: { kind: "tailscale-down", cause: "stopped" } }],
+      });
     }).pipe(Effect.scoped),
   );
 

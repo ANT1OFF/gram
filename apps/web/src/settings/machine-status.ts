@@ -1,6 +1,7 @@
+import { isMac } from "@/keyboard/registry";
 import { agoText, formatStamp } from "@/lib/time";
 
-import type { JoinedMachine, MachineBusy, MachinesStatus } from "./machines-api";
+import type { JoinedMachine, MachineBusy, MachinesStatus, TailscaleDown } from "./machines-api";
 
 /** How a joined machine is doing, in the words Settings → Machines and the picker share. */
 export interface MachineHealth {
@@ -17,6 +18,29 @@ export interface MachineHealth {
    */
   readonly update?: { readonly from?: string; readonly to: string };
 }
+
+/** Why no machine can dial in while access over Tailscale is on, and what brings them back. */
+const downHealth = (cause: TailscaleDown): { why: string; fix: string } => {
+  const here = isMac() ? "this Mac" : "this computer";
+  const back = "and Gram will reconnect machines by itself.";
+  switch (cause) {
+    case "stopped":
+      return { why: `Tailscale is stopped on ${here}.`, fix: `Turn it on, ${back}` };
+    case "signed-out":
+      return { why: `Tailscale is signed out on ${here}.`, fix: `Sign in, ${back}` };
+    case "missing":
+      return { why: `Gram can't find Tailscale on ${here}.`, fix: `Install it, ${back}` };
+    case "no-https":
+      return {
+        why: "HTTPS certificates are off for your tailnet.",
+        fix: "Turn them on in the Tailscale admin console.",
+      };
+    case "error":
+      return { why: `Tailscale didn't answer on ${here}.`, fix: "Gram tries again by itself." };
+    case "serve":
+      return { why: "Gram couldn't set up Tailscale Serve.", fix: "Phone access says why." };
+  }
+};
 
 const minutes = (ms: number) => Math.max(1, Math.round(Math.abs(ms) / 60_000));
 
@@ -174,6 +198,8 @@ export function machineHealth(
         why: "Access over Tailscale is off, so no machine can dial in.",
         fix: "Turn it on in Phone access.",
       };
+    case "tailscale-down":
+      return { tone: "offline", label: "offline", ...downHealth(offline.cause) };
     case "unconfirmed":
       // Refused before it was confirmed; it dials again within half a minute.
       return {

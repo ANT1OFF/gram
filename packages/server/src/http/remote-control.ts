@@ -1,13 +1,23 @@
 import { execFile } from "node:child_process";
 import type { RemoteAccessStatus, TailscaleState } from "@gram/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
 import { HttpServer } from "../platform/unstable.ts";
 import { ServerConfig } from "../config.ts";
-import { createRemoteAccess, remoteOrigin, type RemoteAccess } from "./remote-access.ts";
+import type { DialAccess } from "../host/paired-machines.ts";
+import {
+  createRemoteAccess,
+  remoteOrigin,
+  remotePairings,
+  type RemoteAccess,
+  type RemotePairings,
+} from "./remote-access.ts";
 import { fileRemoteSessionStore, privateJsonFile } from "./remote-sessions.ts";
 
 export class TailscaleMissing extends Data.TaggedError("TailscaleMissing")<{}> {}
@@ -163,6 +173,8 @@ const GRAM_TARGET = /^http:\/\/127\.0\.0\.1:\d{1,5}$/;
 
 export class RemoteRefused extends Data.TaggedError("RemoteRefused")<{
   readonly message: string;
+  /** Tailscale didn't answer, which one more look may well fix. */
+  readonly transient?: boolean;
 }> {}
 
 interface ServeSetting {
@@ -206,6 +218,16 @@ const serveSettingFile = (dataDir: string) => {
 export interface RemoteControlShape {
   /** The remote access serving right now, if any; read on every request. */
   readonly current: () => RemoteAccess | undefined;
+  /**
+   * Whether joined machines can dial in: on, switched off, or switched on but down and why, from
+   * the last look at Tailscale. Read on every machines listing, so it never runs the CLI.
+   */
+  readonly dialAccess: () => DialAccess;
+  /**
+   * Calls `listener` with the origin access is served on each time it opens, closes or moves,
+   * and at once when it is open, so joined machines' connections follow it. Returns the unwatch.
+   */
+  readonly watch: (listener: (origin: string | undefined) => void) => () => void;
   readonly status: Effect.Effect<RemoteAccessStatus>;
   /** Turns phone access on through Tailscale Serve, on `port` or one Gram picks. */
   readonly enable: (port?: number) => Effect.Effect<RemoteAccessStatus, RemoteRefused>;
@@ -214,6 +236,37 @@ export interface RemoteControlShape {
 }
 
 const refused = (message: string) => Effect.fail(new RemoteRefused({ message }));
+
+/**
+ * After a failed try at serving while the switch is on, how long Gram waits before the next:
+ * doubling to a minute, then a minute apart.
+ */
+export const RECOVERY_DELAYS_MS = [5_000, 10_000, 20_000, 40_000, 60_000] as const;
+/** While serving, or while the switch is off, how often Gram looks again. */
+export const RECHECK_MS = 60_000;
+
+const OFF_UNSAVED =
+  "Turned off, but the setting couldn't be saved, so it turns back on when Gram restarts";
+
+const here = process.platform === "darwin" ? "this Mac" : "this computer";
+
+/** Why the switch is on but Gram isn't serving, when Tailscale itself is the cause. */
+export const downMessage = (state: TailscaleState): string | undefined => {
+  switch (state.state) {
+    case "missing":
+      return `Gram can't find Tailscale on ${here}. Once it's installed, Gram sets up access by itself.`;
+    case "signed-out":
+      return `Tailscale is signed out on ${here}. Sign in, and Gram sets up access again by itself.`;
+    case "stopped":
+      return `Tailscale is stopped on ${here}. Turn it on, and Gram sets up access again by itself.`;
+    case "no-https":
+      return "Turn on HTTPS certificates for your tailnet in the Tailscale admin console. Gram sets up access again by itself.";
+    case "error":
+      return "Tailscale didn't answer. Gram tries again by itself.";
+    case "ready":
+      return undefined;
+  }
+};
 
 const stateMessage = (state: TailscaleState): string => {
   switch (state.state) {
@@ -246,7 +299,10 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
       Effect.gen(function* () {
         const config = yield* ServerConfig;
         const server = yield* HttpServer.HttpServer;
-        const tailscale = yield* Tailscale;
+        const cli = yield* Tailscale;
+        // One CLI call at a time: a status check never races recovery, enable or disable.
+        const cliLock = yield* Semaphore.make(1);
+        const tailscale: TailscaleShape = { run: (args) => cliLock.withPermits(1)(cli.run(args)) };
         const loopback = "port" in server.address ? server.address.port : 0;
         if (config.remoteOrigin !== undefined) {
           const origin = config.remoteOrigin;
@@ -267,6 +323,11 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
           const locked = refused("GRAM_REMOTE_ORIGIN sets phone access; unset it to switch here");
           return RemoteControl.of({
             current: () => access,
+            dialAccess: () => "on",
+            watch: (listener) => {
+              listener(origin);
+              return () => {};
+            },
             status,
             enable: () => locked,
             disable: locked,
@@ -280,16 +341,51 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
         };
         const lock = yield* Semaphore.make(1);
         let access: RemoteAccess | undefined;
+        const watchers = new Set<(origin: string | undefined) => void>();
+        /**
+         * Opens, replaces or closes access. A replaced or closed one disconnects its browsers, and
+         * watchers hear of every change, so no connection or dial outlives the access it came in on.
+         */
+        const setAccess = (next: RemoteAccess | undefined) => {
+          const previous = access;
+          if (previous === next) return;
+          access = next;
+          previous?.close();
+          if (previous?.origin === next?.origin) return;
+          for (const watcher of watchers) watcher(next?.origin);
+        };
+        /**
+         * Set by turning off, cleared by turning on: the user's choice, kept even when saving it
+         * failed, so recovery never serves again what the user turned off.
+         */
+        let wantOff = false;
+        /** Looks in a row that Tailscale didn't answer; one is borne before access closes. */
+        let unanswered = 0;
+        /** Why the last try at serving, or at turning off, failed, other than Tailscale being down. */
         let problem: string | undefined;
+        /**
+         * Set while a turn-off couldn't remove Gram's listener: recovery keeps trying to remove it,
+         * rather than serving again, until it is gone.
+         */
+        let turningOff: { readonly port: number; readonly owned: string | undefined } | undefined;
+        /** Tailscale's state when recovery last looked, so a status that finds it back wakes it. */
+        let recoverySaw: TailscaleState["state"] | undefined;
+        let wakeRecovery = Deferred.makeUnsafe<void>();
+        const wake = () => Deferred.doneUnsafe(wakeRecovery, Exit.void);
         let tailscaleSeen: { at: number; state: TailscaleState } | undefined;
+        // One look at a time, so a caller that waited reuses the look just taken.
+        const probeLock = yield* Semaphore.make(1);
         const probe = (fresh = false) =>
-          Effect.gen(function* () {
-            if (!fresh && tailscaleSeen !== undefined && Date.now() - tailscaleSeen.at < 15_000)
-              return tailscaleSeen.state;
-            const state = yield* tailscaleState(tailscale);
-            tailscaleSeen = { at: Date.now(), state };
-            return state;
-          });
+          probeLock.withPermits(1)(
+            Effect.gen(function* () {
+              const now = yield* Clock.currentTimeMillis;
+              if (!fresh && tailscaleSeen !== undefined && now - tailscaleSeen.at < 15_000)
+                return tailscaleSeen.state;
+              const state = yield* tailscaleState(tailscale);
+              tailscaleSeen = { at: yield* Clock.currentTimeMillis, state };
+              return state;
+            }),
+          );
         const readSetting = () => {
           try {
             return settings.read();
@@ -305,8 +401,13 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
             try: () => settings.write(setting),
             catch: () => new RemoteRefused({ message: "Couldn't save the setting" }),
           });
+        /**
+         * Gram's own listener: its one `/` proxy pointing at this run or the target Gram saved, and
+         * never one shared with Funnel, which only the user turns on.
+         */
         const ours = (listener: ServeListener | undefined, owned: string | undefined) =>
           listener !== undefined &&
+          !listener.funnel &&
           listener.handlers === 1 &&
           listener.proxy !== undefined &&
           (listener.proxy === target || listener.proxy === owned);
@@ -319,13 +420,18 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
         const serve = (dnsName: string, port: number, saved: ServeSetting | undefined) =>
           Effect.gen(function* () {
             const listeners = yield* serveListeners(tailscale, dnsName);
-            if (listeners === undefined) return yield* refused("Tailscale Serve didn't answer");
+            if (listeners === undefined)
+              return yield* Effect.fail(
+                new RemoteRefused({ message: "Tailscale Serve didn't answer", transient: true }),
+              );
             const held = listeners.find((listener) => listener.port === port);
             if (held?.funnel) return yield* refused(`Port ${port} is shared publicly with Funnel`);
             const owned = saved?.port === port ? saved.target : undefined;
             if (held !== undefined && !ours(held, owned))
               return yield* refused(`Another Tailscale Serve listener uses port ${port}`);
-            yield* save({ enabled: true, port, target });
+            // Unchanged on a recheck, so serving steadily doesn't rewrite the file each time.
+            if (saved?.enabled !== true || saved.port !== port || saved.target !== target)
+              yield* save({ enabled: true, port, target });
             // Before asking, so an interrupted ask still leaves the finalizer to check the port.
             applied = port;
             if (held?.proxy === target) return;
@@ -390,14 +496,21 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
             if (applied === port) applied = undefined;
           });
 
+        /**
+         * Each address's pairings, loaded once and shared by every access opened on it this run,
+         * so a removal made through an access that has since closed holds on the one serving now.
+         */
+        const pairingsOn = new Map<string, RemotePairings>();
+        /** Serves access on `dnsName`, replacing access open on any other address. */
         const open = (dnsName: string, port: number) => {
           const origin = originFor(dnsName, port);
-          access = createRemoteAccess(
-            origin,
-            port,
-            Date.now,
-            fileRemoteSessionStore(config.dataDir, origin, port),
-          );
+          if (access?.origin === origin) return;
+          let pairings = pairingsOn.get(origin);
+          if (pairings === undefined) {
+            pairings = remotePairings(fileRemoteSessionStore(config.dataDir, origin, port));
+            pairingsOn.set(origin, pairings);
+          }
+          setAccess(createRemoteAccess(origin, port, Date.now, pairings));
         };
 
         const pickPort = (dnsName: string, requested: number | undefined, saved?: ServeSetting) =>
@@ -411,21 +524,38 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
             );
           });
 
+        /** On as the user left it: turned on, and not turned off since, saved or not. */
+        const switchedOn = (saved: ServeSetting | undefined) =>
+          !wantOff && (access !== undefined || saved?.enabled === true);
+
         const statusNow = Effect.gen(function* () {
           const state = yield* probe();
           const saved = readSetting();
+          // Still on while a turn-off waits to remove the listener.
+          const on = turningOff !== undefined || switchedOn(saved);
+          // Tailscale is back while recovery waits out its backoff: try now, not in a minute.
+          if (on && state.state === "ready" && recoverySaw !== undefined && recoverySaw !== "ready")
+            wake();
           const port =
             access !== undefined ? portOf(access.origin) : (saved?.port ?? SERVE_PORTS[0]);
+          const shown = on && turningOff === undefined ? (downMessage(state) ?? problem) : problem;
           return {
-            mode: access !== undefined || saved?.enabled === true ? "on" : "off",
+            mode: on ? "on" : "off",
             tailscale: state,
             port,
             ...(access === undefined ? {} : { origin: access.origin }),
             devices: access?.devices() ?? [],
             ...(access === undefined ? {} : pairingOf(access)),
-            ...(problem === undefined ? {} : { problem }),
+            ...(shown === undefined ? {} : { problem: shown }),
           } satisfies RemoteAccessStatus;
         });
+
+        const dialAccess = (): DialAccess => {
+          if (turningOff !== undefined || !switchedOn(readSetting())) return "off";
+          const state = tailscaleSeen?.state;
+          if (state !== undefined && state.state !== "ready") return state.state;
+          return problem === undefined && access !== undefined ? "on" : "serve";
+        };
 
         // A dead loopback port could be reused by another program, which Serve would then share
         // with the tailnet. Take the listener down with the server; startup puts it back. Added
@@ -434,6 +564,7 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
           lock
             .withPermits(1)(
               Effect.suspend(() => {
+                // Browsers only: joined machines are the host registry's to close on shutdown.
                 access?.disconnectAll();
                 const port = applied;
                 if (port === undefined) return Effect.void;
@@ -456,31 +587,92 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
             .pipe(Effect.timeout(8000), Effect.ignore),
         );
 
-        // Re-point a listener Settings turned on to this run's port, off the boot path.
-        yield* lock
-          .withPermits(1)(
-            Effect.gen(function* () {
+        /**
+         * One look while the switch is on: serve on this run's port when Tailscale is ready, taking
+         * back a listener Gram left on an earlier run's port, or finish a turn-off that couldn't
+         * remove its listener. `retry` when it couldn't, so the next look comes sooner.
+         */
+        const recoverOnce = lock.withPermits(1)(
+          Effect.gen(function* () {
+            if (turningOff !== undefined) {
+              const { port, owned } = turningOff;
+              yield* unserve(port, owned);
+              turningOff = undefined;
+              problem = undefined;
               const saved = readSetting();
-              if (saved?.enabled !== true) return;
-              const state = yield* probe(true);
-              if (state.state !== "ready") {
-                problem = stateMessage(state);
-                return;
-              }
-              yield* serve(state.dnsName, saved.port, saved);
-              open(state.dnsName, saved.port);
-            }).pipe(
-              Effect.catchTag("RemoteRefused", (error) =>
-                Effect.sync(() => {
-                  problem = error.message;
-                }),
-              ),
+              if (saved !== undefined)
+                yield* save({ ...saved, enabled: false }).pipe(
+                  Effect.catchTag("RemoteRefused", () =>
+                    Effect.sync(() => {
+                      problem = OFF_UNSAVED;
+                    }),
+                  ),
+                );
+              return "ok" as const;
+            }
+            const saved = readSetting();
+            if (!switchedOn(saved)) {
+              recoverySaw = undefined;
+              return "idle" as const;
+            }
+            const state = yield* probe(true);
+            recoverySaw = state.state;
+            if (state.state !== "ready") {
+              // Unavailable: nothing is authorized on an address Tailscale isn't serving. One look
+              // that went unanswered is borne, as the CLI can be slow.
+              if (state.state !== "error" || ++unanswered > 1) setAccess(undefined);
+              return "retry" as const;
+            }
+            const port =
+              access !== undefined ? portOf(access.origin) : (saved?.port ?? SERVE_PORTS[0]);
+            // Tailscale answered with another name: the old address is gone for certain, whatever
+            // Serve says next, so access on it closes now and opens on the new one once served.
+            if (access !== undefined && access.origin !== originFor(state.dnsName, port))
+              setAccess(undefined);
+            yield* serve(state.dnsName, port, saved);
+            // On this run's port, and on the tailnet name Tailscale reports now.
+            open(state.dnsName, port);
+            unanswered = 0;
+            problem = undefined;
+            return "ok" as const;
+          }).pipe(
+            Effect.catchTag("RemoteRefused", (error) =>
+              Effect.sync(() => {
+                problem = error.message;
+                if (error.transient !== true || ++unanswered > 1) setAccess(undefined);
+                return "retry" as const;
+              }),
             ),
-          )
-          .pipe(Effect.forkScoped);
+          ),
+        );
+
+        // Off the boot path: the first look re-points a listener Settings turned on to this run's
+        // port; later ones bring it back after Tailscale stops, signs out or loses the listener.
+        yield* Effect.gen(function* () {
+          let failures = 0;
+          while (true) {
+            wakeRecovery = Deferred.makeUnsafe<void>();
+            const outcome = yield* recoverOnce;
+            failures = outcome === "retry" ? failures + 1 : 0;
+            const delay =
+              failures === 0
+                ? RECHECK_MS
+                : (RECOVERY_DELAYS_MS[Math.min(failures, RECOVERY_DELAYS_MS.length) - 1] ??
+                  RECHECK_MS);
+            yield* Effect.raceFirst(Effect.sleep(delay), Deferred.await(wakeRecovery));
+          }
+        }).pipe(Effect.forkScoped);
 
         return RemoteControl.of({
           current: () => access,
+          dialAccess,
+          watch: (listener) => {
+            watchers.add(listener);
+            if (access !== undefined) listener(access.origin);
+            return () => {
+              watchers.delete(listener);
+            };
+          },
           status: statusNow,
           enable: (requested) =>
             lock.withPermits(1)(
@@ -496,8 +688,12 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
                 if (access === undefined && saved !== undefined && saved.port !== port)
                   yield* unserve(saved.port, saved.target);
                 yield* serve(state.dnsName, port, saved);
-                if (access === undefined) open(state.dnsName, port);
+                wantOff = false;
+                open(state.dnsName, port);
                 problem = undefined;
+                unanswered = 0;
+                turningOff = undefined;
+                recoverySaw = state.state;
                 return yield* statusNow;
               }),
             ),
@@ -505,29 +701,35 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
             Effect.gen(function* () {
               const saved = readSetting();
               const current = access;
-              access = undefined;
+              // First, so nothing serves again whatever fails below.
+              wantOff = true;
+              setAccess(undefined);
               problem = undefined;
-              current?.disconnectAll();
-              const port = current !== undefined ? portOf(current.origin) : saved?.port;
+              const port =
+                current !== undefined ? portOf(current.origin) : (turningOff?.port ?? saved?.port);
               // Off first: a setting that fails to save must not leave the listener up.
-              if (port !== undefined && (current !== undefined || saved?.enabled === true))
-                // Kept on when the listener stays up, so the status says so and a restart retries.
-                yield* unserve(port, saved?.port === port ? saved.target : undefined).pipe(
+              if (
+                port !== undefined &&
+                (current !== undefined || saved?.enabled === true || turningOff !== undefined)
+              ) {
+                const owned = saved?.port === port ? saved.target : turningOff?.owned;
+                // Kept on when the listener stays up, so the status says so; recovery keeps
+                // trying to remove it.
+                yield* unserve(port, owned).pipe(
                   Effect.tapError((error) =>
                     Effect.sync(() => {
                       problem = error.message;
+                      turningOff = { port, owned };
+                      // Retried from the first backoff step, not after a quiet minute.
+                      wake();
                     }),
                   ),
                 );
+              }
+              turningOff = undefined;
               if (saved !== undefined)
                 yield* save({ ...saved, enabled: false }).pipe(
-                  Effect.mapError(
-                    () =>
-                      new RemoteRefused({
-                        message:
-                          "Turned off, but the setting couldn't be saved, so it turns back on when Gram restarts",
-                      }),
-                  ),
+                  Effect.mapError(() => new RemoteRefused({ message: OFF_UNSAVED })),
                 );
               return yield* statusNow;
             }),

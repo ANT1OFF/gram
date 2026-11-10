@@ -46,6 +46,35 @@ describe("a joined machine's health", () => {
     expect(healthHint(offline({ kind: "tailscale-off" }))).toBe(
       "Access over Tailscale is off, so no machine can dial in.\nTurn it on in Phone access.",
     );
+    // Switched on, but down on this computer: what's wrong here, and that it comes back by itself.
+    const here = "this (Mac|computer)";
+    const down = [
+      [
+        "stopped",
+        `^Tailscale is stopped on ${here}\\.\nTurn it on, and Gram will reconnect machines by itself\\.$`,
+      ],
+      [
+        "signed-out",
+        `^Tailscale is signed out on ${here}\\.\nSign in, and Gram will reconnect machines by itself\\.$`,
+      ],
+      [
+        "missing",
+        `^Gram can't find Tailscale on ${here}\\.\nInstall it, and Gram will reconnect machines by itself\\.$`,
+      ],
+      [
+        "no-https",
+        "^HTTPS certificates are off for your tailnet\\.\nTurn them on in the Tailscale admin console\\.$",
+      ],
+      ["error", `^Tailscale didn't answer on ${here}\\.\nGram tries again by itself\\.$`],
+      ["serve", "^Gram couldn't set up Tailscale Serve\\.\nPhone access says why\\.$"],
+    ] as const;
+    for (const [cause, hint] of down) {
+      const health = offline({ kind: "tailscale-down", cause });
+      expect(health).toMatchObject({ tone: "offline", label: "offline" });
+      expect(healthHint(health)).toMatch(new RegExp(hint));
+      // Never the switch's advice: it is on.
+      expect(healthHint(health)).not.toContain("Turn it on in Phone access");
+    }
     expect(healthHint(offline({ kind: "never" }))).toBe(
       "It hasn't dialled in since Gram started.\nCheck gram-host status on cachyos.",
     );

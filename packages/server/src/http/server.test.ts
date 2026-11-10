@@ -50,6 +50,7 @@ import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { captureLogs } from "@gram/agents/testing/logs";
 import { attestShutdown, stopForShutdown } from "../runtime/shutdown.ts";
 import { remoteCookieName } from "./remote-access.ts";
+import { Tailscale, type TailscaleShape } from "./remote-control.ts";
 import { tokenCookieName } from "./auth.ts";
 import {
   bootLine,
@@ -1229,3 +1230,183 @@ layer(testServer("https://device.tail123.ts.net:9443"), { excludeTestServices: t
     );
   },
 );
+
+/**
+ * A synthetic tailnet where Tailscale runs and Serve keeps listeners, for phone access switched
+ * from Settings. No real Tailscale is asked.
+ */
+const tailscaleAnswer = (stdout: string) => Effect.succeed({ code: 0, stdout, stderr: "" });
+
+const settingsTailnet = (dnsName: string): TailscaleShape => {
+  const listeners = new Map<number, string>();
+  return {
+    run: (args) => {
+      if (args[0] === "status")
+        return tailscaleAnswer(
+          JSON.stringify({
+            BackendState: "Running",
+            Self: { DNSName: `${dnsName}.` },
+            CertDomains: [dnsName],
+          }),
+        );
+      if (args.join(" ") === "serve status --json")
+        return tailscaleAnswer(
+          JSON.stringify({
+            TCP: Object.fromEntries([...listeners.keys()].map((p) => [p, { HTTPS: true }])),
+            Web: Object.fromEntries(
+              [...listeners].map(([p, proxy]) => [
+                `${dnsName}:${p}`,
+                { Handlers: { "/": { Proxy: proxy } } },
+              ]),
+            ),
+          }),
+        );
+      const port = Number(args.find((arg) => arg.startsWith("--https="))?.slice(8));
+      if (args.at(-1) === "off") listeners.delete(port);
+      else if (args[1] === "--bg") listeners.set(port, args.at(-1)!);
+      return tailscaleAnswer("");
+    },
+  };
+};
+
+const settingsDataDir = mkdtempSync(join(tmpdir(), "gram-remote-settings-"));
+afterAll(() => rmSync(settingsDataDir, { recursive: true, force: true }));
+
+layer(
+  ServerLayer.pipe(
+    Layer.provide(FakeAgentAdapter),
+    Layer.provide(TurnHooks.layerNoop),
+    Layer.provide(gitPlatformTest()),
+    Layer.provide(ServerConfig.layer({ ...TEST_CONFIG, dataDir: settingsDataDir, webRoot })),
+    Layer.provide(Layer.succeed(Tailscale, settingsTailnet("mac.tail123.ts.net"))),
+    Layer.orDie,
+    Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
+  ),
+  { excludeTestServices: true },
+)("phone access switched from Settings, over a real socket", (it) => {
+  it.effect("refuses a claim whose access closed and reopened while its body was read", () =>
+    Effect.gen(function* () {
+      const { port } = yield* serverInfo;
+      const origin = "https://mac.tail123.ts.net:9443";
+      const host = "mac.tail123.ts.net:9443";
+      const local = { cookie: yield* bootCookie, origin: `http://127.0.0.1:${port}` };
+      const toggle = (path: string) =>
+        raw(port, {
+          path,
+          method: "POST",
+          headers: { ...local, "content-type": "application/json" },
+          body: "{}",
+        });
+      expect((yield* toggle("/remote/enable")).status).toBe(200);
+      const mint = yield* raw(port, { path: "/remote/pair", method: "POST", headers: local });
+      const code = new URLSearchParams(new URL(JSON.parse(mint.body).url).hash.slice(1)).get(
+        "pair",
+      )!;
+
+      // A phone's claim: its headers are in, its body (the code) not yet.
+      const claim = httpRequest({
+        host: "127.0.0.1",
+        port,
+        path: "/remote/claim",
+        method: "POST",
+        agent: false,
+        headers: {
+          host,
+          origin,
+          "content-type": "text/plain",
+          "content-length": String(code.length),
+        },
+      });
+      const answered = new Promise<RawResponse>((resolve, reject) => {
+        claim.on("response", (res) => {
+          let body = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk: string) => (body += chunk));
+          res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+        });
+        claim.on("error", reject);
+      });
+      claim.flushHeaders();
+      yield* Effect.sleep("300 millis");
+
+      // Meanwhile access closes and opens again on the same address.
+      expect((yield* toggle("/remote/disable")).status).toBe(200);
+      expect((yield* toggle("/remote/enable")).status).toBe(200);
+      claim.end(code);
+      const claimed = yield* Effect.promise(() => answered);
+      expect(claimed.status).toBe(403);
+      expect(claimed.headers["set-cookie"]).toBeUndefined();
+      yield* toggle("/remote/disable");
+    }),
+  );
+
+  it.effect("removes a browser for good even when access closed and reopened while asked", () =>
+    Effect.gen(function* () {
+      const { port } = yield* serverInfo;
+      const origin = "https://mac.tail123.ts.net:9443";
+      const host = "mac.tail123.ts.net:9443";
+      const local = { cookie: yield* bootCookie, origin: `http://127.0.0.1:${port}` };
+      const post = (path: string, body = "{}") =>
+        raw(port, {
+          path,
+          method: "POST",
+          headers: { ...local, "content-type": "application/json" },
+          body,
+        });
+      expect((yield* post("/remote/enable")).status).toBe(200);
+      // A paired browser, its cookie working.
+      const mint = yield* post("/remote/pair");
+      const code = new URLSearchParams(new URL(JSON.parse(mint.body).url).hash.slice(1)).get(
+        "pair",
+      )!;
+      const claimed = yield* raw(port, {
+        path: "/remote/claim",
+        method: "POST",
+        body: code,
+        headers: { host, origin, "content-type": "text/plain" },
+      });
+      const cookie = claimed.headers["set-cookie"]![0]!.split(";")[0]!;
+      const remoteStatus = () =>
+        raw(port, { path: "/", headers: { host, cookie } }).pipe(Effect.map((r) => r.status));
+      expect(yield* remoteStatus()).toBe(200);
+      const { devices } = JSON.parse((yield* post("/remote/status")).body) as {
+        devices: Array<{ id: string }>;
+      };
+      const body = JSON.stringify({ id: devices[0]!.id });
+
+      // The local app removes it: headers in, the body not yet.
+      const removal = httpRequest({
+        host: "127.0.0.1",
+        port,
+        path: "/remote/revoke",
+        method: "POST",
+        agent: false,
+        headers: {
+          ...local,
+          "content-type": "application/json",
+          "content-length": String(body.length),
+        },
+      });
+      const removed = new Promise<number>((resolve, reject) => {
+        removal.on("response", (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode ?? 0));
+        });
+        removal.on("error", reject);
+      });
+      removal.flushHeaders();
+      yield* Effect.sleep("300 millis");
+
+      // Meanwhile access closes and opens again on the same address.
+      expect((yield* post("/remote/disable")).status).toBe(200);
+      expect((yield* post("/remote/enable")).status).toBe(200);
+      expect(yield* remoteStatus()).toBe(200);
+      removal.end(body);
+      expect(yield* Effect.promise(() => removed)).toBe(200);
+      // Removed means removed: the access serving now refuses its cookie.
+      expect(yield* remoteStatus()).toBe(401);
+      expect(JSON.parse((yield* post("/remote/status")).body).devices).toEqual([]);
+      yield* post("/remote/disable");
+    }),
+  );
+});
