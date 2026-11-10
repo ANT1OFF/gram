@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.19.0](https://github.com/ANT1OFF/gram/compare/v1.18.0...v1.19.0) (2026-11-10)
+
+
+### Features
+
+* Codex workers run in Auto on Codex's auto-review where no outward gate holds ([#370](https://github.com/ANT1OFF/gram/issues/370)) ([5e689fc](https://github.com/ANT1OFF/gram/commit/5e689fc4227d38b8c73a1f42f24d7030b30a16fe))
+* joined machines report their models ([#376](https://github.com/ANT1OFF/gram/issues/376)) ([09fcb66](https://github.com/ANT1OFF/gram/commit/09fcb666463371e18104493c4385661e2a2415d0))
+* mark model slots as following or yours, with Follow recommended and the effort cap ([#380](https://github.com/ANT1OFF/gram/issues/380)) ([6640995](https://github.com/ANT1OFF/gram/commit/664099538dac87cb9c46ab2a68066cfdcf12f265))
+* Recommended setup switch, its Details and the turn-on sheet ([#377](https://github.com/ANT1OFF/gram/issues/377)) ([6588d60](https://github.com/ANT1OFF/gram/commit/6588d609775e8459426a65065ab83c9aecb9f197))
+* retry at higher effort, then the next tier, as a ledger hint ([#378](https://github.com/ANT1OFF/gram/issues/378)) ([f21cc11](https://github.com/ANT1OFF/gram/commit/f21cc11537a6d7a55a613a8919ffa8c4da0ab569))
+* the orchestrator knows the tiers and the effort ladder ([#375](https://github.com/ANT1OFF/gram/issues/375)) ([a976f90](https://github.com/ANT1OFF/gram/commit/a976f90b94dc9185790c6f2dd3bd1a84fa02c8f2))
+
+
+### Bug Fixes
+
+* a Codex-only workspace starts on a Codex orchestrator ([#372](https://github.com/ANT1OFF/gram/issues/372)) ([3ed8e3a](https://github.com/ANT1OFF/gram/commit/3ed8e3a6b95ab7a119c7b98e6de428fdb0540617))
+* helpers follow the cheap tier, title at medium and the rest at low ([#369](https://github.com/ANT1OFF/gram/issues/369)) ([bd3a655](https://github.com/ANT1OFF/gram/commit/bd3a6550453a458ed97667246b5e6620b29f5ff3))
+* order moved-base fixture checks after reconciliation ([#379](https://github.com/ANT1OFF/gram/issues/379)) ([7e5e630](https://github.com/ANT1OFF/gram/commit/7e5e630aaac00acb090a8a1f9e8f0cc1107c873a))
+* preserve event routine wake deadlines during recovery ([#368](https://github.com/ANT1OFF/gram/issues/368)) ([bf3451d](https://github.com/ANT1OFF/gram/commit/bf3451d4cdfc03f51b166dc3d035cc96e8a0b021))
+
 ## [1.18.0](https://github.com/ANT1OFF/gram/compare/v1.17.0...v1.18.0) (2026-11-10)
 
 
