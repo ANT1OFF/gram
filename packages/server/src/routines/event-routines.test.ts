@@ -12,6 +12,7 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import { hasGit } from "../git/test-repo.ts";
@@ -567,9 +568,15 @@ describe.skipIf(!hasGit)("event routines", () => {
       SLOW,
     );
 
-    it.effect(
-      "[2] puts the events of a Run now a crash cut short back to wait",
-      () =>
+    it.effect.each([
+      { suffix: "", delayedPublication: false },
+      {
+        suffix: " when publication finishes after the clock advances",
+        delayedPublication: true,
+      },
+    ])(
+      "[2] puts the events of a Run now a crash cut short back to wait$suffix",
+      ({ delayedPublication }) =>
         Effect.gen(function* () {
           const world = yield* makeWorld;
           const id = yield* withServer(
@@ -592,6 +599,13 @@ describe.skipIf(!hasGit)("event routines", () => {
               return routine.id;
             }),
           );
+          // Hold recovery between its state write and timer registration. The state is already
+          // visible to the test when a loaded runner delays this publication.
+          const published = yield* Deferred.make<void>();
+          if (delayedPublication) {
+            world.onPublish = (event) =>
+              event.type === "routines.changed" ? Deferred.await(published) : Effect.void;
+          }
           yield* sees(world, ev(1), ev(6));
           yield* withServer(
             world,
@@ -611,6 +625,7 @@ describe.skipIf(!hasGit)("event routines", () => {
               );
               expect(back.trigger?.pending?.[0]?.key).toBe("o/r#6");
               yield* TestClock.adjust("15 minutes");
+              yield* Deferred.succeed(published, undefined);
               const [worker] = yield* workersAt(id, 1);
               expect(yield* briefOf(worker!.id)).toContain("o/r#6:");
               expect((yield* routineNow(id)).lastRun).toMatchObject({ outcome: "started" });

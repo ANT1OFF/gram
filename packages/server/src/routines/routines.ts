@@ -596,14 +596,22 @@ export const RoutinesLive = Layer.effect(
         }
       });
 
-    /** Runs the routine once `after` has passed, or at its `nextRunAt`; nothing while it is off. */
-    const arm = (routine: Routine, after?: Duration.Duration): Effect.Effect<void> =>
+    /** Runs at a deadline or after a retry delay, defaulting to `nextRunAt`; nothing while off. */
+    const arm = (
+      routine: Routine,
+      wake?: { readonly at: number } | { readonly after: Duration.Duration },
+    ): Effect.Effect<void> =>
       Effect.gen(function* () {
         const key = timerKey(routine.workspaceId, routine.id);
         const scheduled = routine.enabled && routine.nextRunAt !== undefined;
-        if (!scheduled && after === undefined) return yield* disarm(key);
+        if (!scheduled && wake === undefined) return yield* disarm(key);
         const now = yield* Clock.currentTimeMillis;
-        const wait = after ?? Duration.millis(Math.max(0, routine.nextRunAt! - now));
+        // State writes and publication can finish after a deadline. Compute its remaining wait
+        // here, so time spent in those effects doesn't postpone the next look or cooldown.
+        const wait =
+          wake !== undefined && "after" in wake
+            ? wake.after
+            : Duration.millis(Math.max(0, (wake?.at ?? routine.nextRunAt!) - now));
         armed.add(key);
         yield* FiberMap.run(
           timers,
@@ -1148,7 +1156,7 @@ export const RoutinesLive = Layer.effect(
               yield* write(kept);
               yield* changed(stored.workspaceId);
             }
-            return yield* arm(kept, Duration.millis(Math.max(0, at - now)));
+            return yield* arm(kept, { at });
           });
         const { waiting: _waiting, ...unpaused } = routine;
         if (state.paused !== undefined) {
@@ -1245,9 +1253,9 @@ export const RoutinesLive = Layer.effect(
             const waiting: Routine = { ...stored, waiting: "paused" };
             yield* write(waiting);
             yield* changed(stored.workspaceId);
-            return yield* arm(waiting, ROUTINE_PAUSE_RETRY);
+            return yield* arm(waiting, { after: ROUTINE_PAUSE_RETRY });
           }
-          return yield* arm(stored, ROUTINE_PAUSE_RETRY);
+          return yield* arm(stored, { after: ROUTINE_PAUSE_RETRY });
         }
         if (!isDue) {
           const recovered = yield* settleOnly(stored, state, now);
@@ -1314,7 +1322,7 @@ export const RoutinesLive = Layer.effect(
                 touched = true;
               }
               if (catchUp && routine.claim !== undefined) {
-                yield* arm(routine, ROUTINE_CATCH_UP_DELAY);
+                yield* arm(routine, { after: ROUTINE_CATCH_UP_DELAY });
               }
             }
             for (const charterRoutine of routines) {
@@ -1328,9 +1336,9 @@ export const RoutinesLive = Layer.effect(
               const missed = routine.nextRunAt! <= now;
               const resumed = routine.waiting === "paused" && state.paused === undefined;
               if (catchUp && (missed || routine.claim !== undefined)) {
-                yield* arm(routine, ROUTINE_CATCH_UP_DELAY);
+                yield* arm(routine, { after: ROUTINE_CATCH_UP_DELAY });
               } else if (resumed && started) {
-                yield* arm(routine, Duration.zero);
+                yield* arm(routine, { after: Duration.zero });
               } else if (!armed.has(timerKey(workspaceId, routine.id)) || touched) {
                 yield* arm(routine);
               }
