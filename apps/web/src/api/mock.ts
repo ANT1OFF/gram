@@ -1287,6 +1287,14 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
 
   async steer(threadId: ThreadId, input: UserInput, options?: { interrupt?: boolean }) {
     const runtime = this.#runtime(threadId);
+    // As the server: a folder gone stops the session, so there is no turn to steer into, and the
+    // message is refused as a send would be.
+    if (this.#missingFolders.has(threadId)) {
+      const path = runtime.summary.thread.checkout.path;
+      throw new MockInvalidState(`This thread's folder no longer exists: ${path}`, undefined, {
+        path,
+      });
+    }
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
     }

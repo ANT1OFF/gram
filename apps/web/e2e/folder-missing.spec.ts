@@ -67,3 +67,19 @@ test("a branch gone everywhere is recreated from its PR's head, when asked", asy
   ).toBeVisible();
   await expect(notice).toBeHidden();
 });
+
+test("a send the moment the folder goes, mid-turn, is refused rather than steered in", async ({
+  page,
+}) => {
+  // As the server, the folder gone stops the running turn: nothing is left to steer into.
+  await page.goto("/t/t-flaky");
+  const composer = page.getByLabel("Message", { exact: true });
+  await expect(composer).toBeVisible();
+  await page.evaluate(() => window.gramMock?.simulateMissingFolder("t-flaky" as never));
+  await composer.fill("carry on");
+  await composer.press("ControlOrMeta+Enter");
+  await expect(page.getByTestId("composer-toolbar")).toContainText(
+    "This thread's folder no longer exists",
+  );
+  await expect(composer).toHaveValue("carry on");
+});

@@ -316,6 +316,16 @@ export function simulateMissingFolder(
   };
   runtime.summary = { ...runtime.summary, git };
   core.emit({ type: "git.state", threadId, state: git });
+  // As the server: the folder gone stops the session, and a turn it cut short says so.
+  if (runtime.running) {
+    void core.mock.interrupt(threadId);
+    core.emit({
+      type: "notify",
+      kind: "error",
+      title: `The agent was stopped. This thread's folder no longer exists: ${runtime.summary.thread.checkout.path}`,
+      threadId,
+    });
+  }
 }
 
 /** Dev and e2e hook: the agent commits `commits` more on the branch without pushing. */
