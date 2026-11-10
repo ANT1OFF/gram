@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.18.0](https://github.com/ANT1OFF/gram/compare/v1.17.0...v1.18.0) (2026-11-10)
+
+
+### Features
+
+* a calmer Workers tab, Memory's title alone, and sidebar edges that fit ([#357](https://github.com/ANT1OFF/gram/issues/357)) ([d5cef76](https://github.com/ANT1OFF/gram/commit/d5cef762e61ad3dd900e642ae2510632ad60ce27))
+* a feature with nothing to report is one line in the orchestrator's chat ([#358](https://github.com/ANT1OFF/gram/issues/358)) ([4a182a7](https://github.com/ANT1OFF/gram/commit/4a182a709376f41bb27137cc2a08c667c89417e3))
+* a machine's row is its name and state, with its details and rare actions put away ([#361](https://github.com/ANT1OFF/gram/issues/361)) ([8e4df36](https://github.com/ANT1OFF/gram/commit/8e4df36bc00d6237e359d1e819d466285a520b63))
+* a new thread's form is the prompt and where it runs, with the rest under More options ([#365](https://github.com/ANT1OFF/gram/issues/365)) ([27a0077](https://github.com/ANT1OFF/gram/commit/27a0077bcff503fe8d0be47d8e1471606b6ecf87))
+* docs by the task that wrote them, one doc per subject, and excerpts that say what was found ([#362](https://github.com/ANT1OFF/gram/issues/362)) ([f0d9b3a](https://github.com/ANT1OFF/gram/commit/f0d9b3a4eee69c2dfe96a306fa69c8ea24380473))
+* model slots can follow a tier ([#367](https://github.com/ANT1OFF/gram/issues/367)) ([89bf39d](https://github.com/ANT1OFF/gram/commit/89bf39db11e9e4115b9c7a87b6e1912341de3f18))
+* one frame for a reply's code blocks and tables, their buttons at the corner on hover ([#355](https://github.com/ANT1OFF/gram/issues/355)) ([b9f7700](https://github.com/ANT1OFF/gram/commit/b9f77004a7952ff7fec69ed066493e1d748b4aec))
+* open a running command's output in the right panel ([#340](https://github.com/ANT1OFF/gram/issues/340)) ([017cf3a](https://github.com/ANT1OFF/gram/commit/017cf3a016f8e4b76796b1d690093d4a0d23b891))
+* start a one-off chat in any folder on a joined machine ([#348](https://github.com/ANT1OFF/gram/issues/348)) ([d919aba](https://github.com/ANT1OFF/gram/commit/d919abacacd747c4923f9cc7e47577cb5136bbd7))
+* steer, queue or interrupt a message to a working thread from the composer ([#366](https://github.com/ANT1OFF/gram/issues/366)) ([b6a8f0e](https://github.com/ANT1OFF/gram/commit/b6a8f0e97f91228feda107c3f00ceb00b0e962cb))
+* the recommended model table and resolver ([#360](https://github.com/ANT1OFF/gram/issues/360)) ([e8c9c7c](https://github.com/ANT1OFF/gram/commit/e8c9c7ccbf647f0a3037f373ce411e5da10e8f8b))
+
+
+### Bug Fixes
+
+* a phone says what runs and what waits, instead of Stopped and the state twice ([#356](https://github.com/ANT1OFF/gram/issues/356)) ([78958f9](https://github.com/ANT1OFF/gram/commit/78958f9800ab702a1588892f0f8a7a42f977bea3))
+* a steer cancels nothing, Gram's notices queue, and only an explicit interrupt cuts off tool calls ([#363](https://github.com/ANT1OFF/gram/issues/363)) ([11f8cdd](https://github.com/ANT1OFF/gram/commit/11f8cdd7437cebf03d5af6f3c8f4bc6799f20c55))
+* a whole amber outline on request cards, state dots on feature cards, and a proper empty orchestrator chat ([#352](https://github.com/ANT1OFF/gram/issues/352)) ([618ba18](https://github.com/ANT1OFF/gram/commit/618ba183afdd61d3f8022eff17700b2070cafe3a))
+* buttons say their words once, an update names its version once, and folds take the app's chevron ([#354](https://github.com/ANT1OFF/gram/issues/354)) ([a872961](https://github.com/ANT1OFF/gram/commit/a872961bb82cccc26c1ae64a4a1e80c2a03fb1d7))
+* document spawn_worker's reserved machine names and refuse a blank one ([#343](https://github.com/ANT1OFF/gram/issues/343)) ([bdfae13](https://github.com/ANT1OFF/gram/commit/bdfae1361cd560a49b50fa14043c7b015feef4ba))
+* end a tool a host restart cut off as interrupted, and stop redialling after a leave ([#349](https://github.com/ANT1OFF/gram/issues/349)) ([2dd5061](https://github.com/ANT1OFF/gram/commit/2dd50611fd1d0d39fcbc37022d24bafb506ea949))
+* even columns in History and the Board's Done, one-line file ages in Memory, and a quieter short Inbox ([#353](https://github.com/ANT1OFF/gram/issues/353)) ([4334662](https://github.com/ANT1OFF/gram/commit/4334662eadb647e1ee11b2794c0f48e8206694af))
+* find a joined machine's just-opened PR without waiting for its host's git state ([#347](https://github.com/ANT1OFF/gram/issues/347)) ([96fb4d3](https://github.com/ANT1OFF/gram/commit/96fb4d37e1e5c2523cdbc68fc3942d805ef89793))
+* guide Claude workers away from shell safety prompts ([#364](https://github.com/ANT1OFF/gram/issues/364)) ([860a5f7](https://github.com/ANT1OFF/gram/commit/860a5f7daa10b224ef5a5f37863ca9c2d6c635f0))
+* keep a diff row's file name, drop its zero counts, and stop its actions ghosting over them ([#351](https://github.com/ANT1OFF/gram/issues/351)) ([9da8e34](https://github.com/ANT1OFF/gram/commit/9da8e3497e28ebcaf96bd839a6e0daf920d1ccdf))
+* resume sessions after an orderly host restart, and redial a silent link ([#346](https://github.com/ANT1OFF/gram/issues/346)) ([e1a8be0](https://github.com/ANT1OFF/gram/commit/e1a8be0df4f19d7dce49c5fe7ea37340d99928ab))
+* set Tailscale Serve up again by itself, and say when Tailscale is down here ([#344](https://github.com/ANT1OFF/gram/issues/344)) ([bf2b36c](https://github.com/ANT1OFF/gram/commit/bf2b36ca87d475ca907a09d659bfae632def277c))
+* the PR panel counts what blocks a merge once, and a check's link says Inspect job ([#359](https://github.com/ANT1OFF/gram/issues/359)) ([d22a40f](https://github.com/ANT1OFF/gram/commit/d22a40fcf3713f28a40c45d70f0d94fea8ce1282))
+* verify release checksums without a platform shasum ([#345](https://github.com/ANT1OFF/gram/issues/345)) ([169206f](https://github.com/ANT1OFF/gram/commit/169206f44d71fe55e6320017bd88a1641f60bb3e))
+
+
+### Performance Improvements
+
+* cut a release without rerunning CI's tests or waiting on a coupled Linux build ([#341](https://github.com/ANT1OFF/gram/issues/341)) ([bd21537](https://github.com/ANT1OFF/gram/commit/bd21537914c23bee99c94748ef2997e4abde5b0b))
+
 ## [1.17.0](https://github.com/ANT1OFF/gram/compare/v1.16.0...v1.17.0) (2026-11-09)
 
 
