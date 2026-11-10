@@ -1,4 +1,4 @@
-import type { WorkspaceId } from "@gram/contracts";
+import type { DocMeta, ThreadId, WorkspaceId } from "@gram/contracts";
 import { FileText } from "lucide-react";
 import { useRef } from "react";
 
@@ -41,6 +41,28 @@ export function DocsPanel({ workspaceId }: { workspaceId: WorkspaceId | undefine
   return <DocsList workspaceId={workspaceId} />;
 }
 
+/** The docs one thread published, under its title as it was when it last published. */
+export interface DocGroup {
+  readonly authorThreadId: ThreadId;
+  readonly authorTitle: string;
+  readonly docs: readonly DocMeta[];
+}
+
+/**
+ * A workspace's docs by the task (thread) that published them, in the order the list gives them:
+ * a group stands where its newest doc does, and its docs keep their order.
+ */
+export const docsByAuthor = (docs: readonly DocMeta[]): readonly DocGroup[] => {
+  const groups = new Map<ThreadId, { authorTitle: string; docs: DocMeta[] }>();
+  for (const doc of docs) {
+    const group = groups.get(doc.authorThreadId);
+    if (group === undefined) {
+      groups.set(doc.authorThreadId, { authorTitle: doc.authorTitle, docs: [doc] });
+    } else group.docs.push(doc);
+  }
+  return [...groups].map(([authorThreadId, group]) => ({ authorThreadId, ...group }));
+};
+
 function DocsList({ workspaceId }: { workspaceId: WorkspaceId }) {
   const docs = useDocs(workspaceId);
   const setOpen = useDocPane((s) => s.setOpen);
@@ -50,6 +72,8 @@ function DocsList({ workspaceId }: { workspaceId: WorkspaceId }) {
   if (docs.error) return <QueryError error={docs.error} feature="Docs" />;
   if (docs.data === undefined) return <PanelMessage loading>Reading docs…</PanelMessage>;
   const list = docs.data.docs;
+  const groups = docsByAuthor(list);
+  const grouped = groups.length > 1;
   if (list.length === 0) {
     return (
       <EmptyState
@@ -75,13 +99,43 @@ function DocsList({ workspaceId }: { workspaceId: WorkspaceId }) {
         Reports, plans and analyses this workspace's threads published. They stay in Gram on this
         computer, outside your repos.
       </p>
-      <ul className="flex flex-col gap-1">
-        {list.map((doc) => (
-          <li key={doc.id}>
-            <DocRow doc={doc} now={now} excerpt onOpen={() => setOpen(workspaceId, doc.id)} />
-          </li>
-        ))}
-      </ul>
+      {/* By the task that wrote them, the one that published last first; one task's docs need no
+          heading. Within a task, newest first, as the server lists them. */}
+      {groups.map((group) => (
+        <section
+          key={group.authorThreadId}
+          aria-label={grouped ? group.authorTitle : "Docs"}
+          data-testid="docs-group"
+          className="flex flex-col gap-1"
+        >
+          {grouped && (
+            <h3
+              data-testid="docs-group-title"
+              className="flex items-baseline gap-inset px-0.5 pt-1 text-body"
+            >
+              <span className="min-w-0 truncate font-medium text-foreground">
+                {group.authorTitle}
+              </span>
+              <span className="text-meta text-muted-foreground tabular-nums">
+                {group.docs.length}
+              </span>
+            </h3>
+          )}
+          <ul className="flex flex-col gap-1">
+            {group.docs.map((doc) => (
+              <li key={doc.id}>
+                <DocRow
+                  doc={doc}
+                  now={now}
+                  excerpt
+                  grouped={grouped}
+                  onOpen={() => setOpen(workspaceId, doc.id)}
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
     </section>
   );
 }

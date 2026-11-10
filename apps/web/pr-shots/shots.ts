@@ -4779,6 +4779,68 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "docs-by-task",
+    title:
+      "The Docs tab's list with docs from two tasks: a heading per task, the latest publisher first, a doc saved again saying its version, and an excerpt that passes over a review's header fields",
+    open: async (page) => {
+      const made = await openRealisticMorning(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openOrchestrator(page, made.orchestratorThreadId);
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page.evaluate(
+        ({ search, other }) => {
+          const mock = window.gramMock!;
+          const minute = 60_000;
+          const at = (ago: number) => Date.now() - ago * minute;
+          mock.simulatePublishDoc(
+            other as never,
+            {
+              title: "Cold start: where the first paint goes",
+              content: "# Cold start\n\nMost of the first paint is the theme and the thread list.",
+            } as never,
+            at(52),
+          );
+          const first = mock.simulatePublishDoc(
+            search as never,
+            {
+              title: "Review of #142",
+              content:
+                "# Review of #142\n\n**Reviewed head:** `4be1c09a77d0c1e2f3a4b5c6d7e8f9a0b1c2d3e4`\n\nTwo nits: an unused import, and a misspelt test name.",
+            } as never,
+            at(40),
+          );
+          mock.simulatePublishDoc(
+            search as never,
+            {
+              id: first.id,
+              revision: first.revision,
+              content:
+                "# Review of #142\n\n**Reviewed head:** `9c2e7ab0d1f2e3a4b5c6d7e8f9a0b1c2d3e4f5a6`\n\nBoth nits are fixed; nothing blocks the merge.",
+            } as never,
+            at(12),
+          );
+          mock.simulatePublishDoc(
+            search as never,
+            {
+              title: "Settings search: how matching works",
+              content: "# Matching\n\nEvery word must match a row's label or its description.",
+            } as never,
+            at(25),
+          );
+        },
+        { search: made.searchWorker, other: made.running[0]!.threadId },
+      );
+      await openPanelTab(page.getByTestId("right-panel"), "Docs").catch(async () => {
+        await page.keyboard.press("ControlOrMeta+KeyJ");
+        await openPanelTab(page.getByTestId("right-panel"), "Docs");
+      });
+      await page.getByTestId("docs-list").getByTestId("doc-row").first().waitFor();
+      await page.mouse.move(700, 890);
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("right-panel"),
+  },
+  {
     name: "orchestrator-feature-cards",
     title:
       "The realistic orchestrator's chat at its live features: one line for each with a lone worker at work, a card for the one that waits on its PR",

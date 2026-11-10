@@ -20,8 +20,8 @@ import { useThreadsStore } from "@/stores/threads";
 import { DocCard } from "./doc-card";
 import { PinnedDocChip, pinnedDocOf } from "./doc-chip";
 import { useDocPane } from "./doc-pane-store";
-import { DocsPanel } from "./docs-panel";
-import { DocsStrip } from "./docs-strip";
+import { docsByAuthor, DocsPanel } from "./docs-panel";
+import { docByline, DocsStrip } from "./docs-strip";
 import { withoutRepeatedTitle } from "./doc-view";
 import { WorkersDocs } from "@/orchestration/workers-docs";
 
@@ -177,6 +177,54 @@ describe("DocsStrip", () => {
     unmount();
     renderWithApi(<DocsStrip workspaceId={WS} empty />, api);
     expect((await screen.findByTestId("docs-strip")).textContent).toContain("No docs yet");
+  });
+});
+
+describe("the Docs tab's list", () => {
+  it("groups docs by the task that published them, the latest publisher first", async () => {
+    const { api } = docsApi([
+      meta(1, { title: "Re-review of #348", revision: 3 }),
+      meta(2, {
+        title: "Cold start: first paint",
+        authorThreadId: OTHER,
+        authorTitle: "cold-start",
+      }),
+      meta(3, { title: "Review of #347" }),
+    ]);
+    renderWithApi(<DocsPanel workspaceId={WS} />, api);
+    const groups = await screen.findAllByTestId("docs-group");
+    expect(
+      groups.map((group) => within(group).getByTestId("docs-group-title").textContent),
+    ).toEqual(["cp-artifacts2", "cold-start1"]);
+    const rows = within(groups[0]!).getAllByTestId("doc-row");
+    expect(rows.map((row) => row.dataset["docId"])).toEqual(["doc-1", "doc-3"]);
+    // Under its task's heading a row says when, and which version once it was saved again.
+    expect(rows[0]!.textContent).toContain("10m ago · version 3");
+    expect(rows[0]!.textContent).not.toContain("cp-artifacts");
+  });
+
+  it("needs no heading for one task's docs, and names who wrote each", async () => {
+    const { api } = docsApi([meta(1), meta(2)]);
+    renderWithApi(<DocsPanel workspaceId={WS} />, api);
+    await screen.findAllByTestId("doc-row");
+    expect(screen.queryByTestId("docs-group-title")).toBeNull();
+    expect(screen.getAllByTestId("doc-row")[0]!.textContent).toContain("cp-artifacts · 10m ago");
+  });
+
+  it("orders groups by their newest doc and names your own edit", () => {
+    const groups = docsByAuthor([
+      meta(1, { authorThreadId: OTHER, authorTitle: "cold-start" }),
+      meta(2),
+      meta(3, { authorThreadId: OTHER, authorTitle: "cold-start" }),
+    ]);
+    expect(groups.map((group) => [group.authorTitle, group.docs.map((doc) => doc.id)])).toEqual([
+      ["cold-start", ["doc-1", "doc-3"]],
+      ["cp-artifacts", ["doc-2"]],
+    ]);
+    expect(docByline(meta(1, { updatedBy: "user", revision: 2 }), NOW, true)).toBe(
+      "You · 10m ago · version 2",
+    );
+    expect(docByline(meta(1), NOW, true)).toBe("10m ago");
   });
 });
 
