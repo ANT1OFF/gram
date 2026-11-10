@@ -46,10 +46,12 @@ describe("NewThreadDraft", () => {
       },
     });
     renderWithApi(<NewThreadDraft />, createMockApi({ speed: 0, autoplay: false }));
+    // Its path is under More options, folded while the folder is good.
     await waitFor(() =>
-      expect(screen.getByRole<HTMLInputElement>("combobox", { name: "Project path" }).value).toBe(
-        "~/Documents/code",
-      ),
+      expect(
+        screen.getByRole<HTMLInputElement>("combobox", { name: "Project path", hidden: true })
+          .value,
+      ).toBe("~/Documents/code"),
     );
   });
 });

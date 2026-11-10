@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openMoreOptions } from "./new-thread-options";
 
 /** A synthetic joined machine, online and signed in: no host, tailnet or account behind it. */
 const MACHINE = {
@@ -53,6 +54,8 @@ test("a folder there is typed or browsed through its host, and a credential fold
   await form.getByTestId("where-machine").click();
   await page.getByRole("option", { name: "build box" }).click();
 
+  // The folder's own field is under More options; its home is picked until another is typed.
+  await openMoreOptions(page);
   const field = form.getByRole("combobox", { name: "Folder on build box" });
   await field.fill("~/.ssh");
   await expect(form.getByTestId("folder-problem").first()).toHaveText(

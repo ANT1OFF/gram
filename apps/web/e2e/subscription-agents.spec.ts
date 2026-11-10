@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openMoreOptions } from "./new-thread-options";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -30,6 +31,7 @@ test("Codex starts a thread with its own model and credentials without configuri
       return create.call(api, input);
     };
   });
+  await openMoreOptions(page);
   await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/code/sandbox");
   await form.getByLabel("First prompt").fill("Explain this project.");
   await form.getByRole("button", { name: /Start chat/ }).click();
