@@ -1,6 +1,8 @@
 import { InvalidState, SettingsRpcs, type Palette } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { ThreadStore } from "../../persistence/thread-store.ts";
+import { isLocalApp } from "../../http/local-app.ts";
+import { EMBEDDING_LOCAL_ONLY } from "../../settings/embedding.ts";
 import { makeSettingsWriter } from "../../settings/writer.ts";
 import { logDefects, type Handlers } from "./common.ts";
 import { gatewayHandlers } from "./gateway.ts";
@@ -14,7 +16,16 @@ export const settingsHandlers = Effect.gen(function* () {
 
   return {
     "settings.get": () => store.getSettings,
-    "settings.set": ({ patch }) => writer.set(patch),
+    "settings.set": (
+      { patch },
+      /** The call's transport, which the RPC server always gives; absent in-process. */
+      call?: { readonly headers?: Readonly<Record<string, string | undefined>> },
+    ) =>
+      // The hosted features change who this Gram answers to, so the switch is the local app's: the
+      // transport says which connection this is (`isLocalApp`), not anything the caller sent.
+      patch.experimental?.embedding !== undefined && !isLocalApp(call?.headers)
+        ? Effect.fail(new InvalidState({ message: EMBEDDING_LOCAL_ONLY }))
+        : writer.set(patch),
 
     "palettes.list": () => store.listPalettes,
     // `builtin` is server-owned: a client can't mark a palette built-in or clear the flag.

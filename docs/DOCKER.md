@@ -61,6 +61,14 @@ are much slower across that boundary.
   the container. Previews of an agent's dev server run on the container's loopback and don't open
   from your browser yet.
 
+## Hosted features
+
+The features for running Gram as a service behind another one are off unless **Hosted features**
+is turned on, in Settings → About → Diagnostics. A server with no window takes the same setting
+from its environment when it starts: `GRAM_EMBEDDING=1` turns it on, `GRAM_EMBEDDING=0` turns it
+off, and without the variable the stored setting stays as it is. Only the app on the server's own
+machine changes it; a paired phone can't.
+
 | Build argument        | Default                       | What it sets                                  |
 | --------------------- | ----------------------------- | --------------------------------------------- |
 | `CLAUDE_CODE_VERSION` | the version in the Dockerfile | Claude Code from npm                          |
