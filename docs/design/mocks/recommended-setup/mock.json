@@ -1,0 +1,41 @@
+{
+  "title": "Recommended setup",
+  "slug": "recommended-setup",
+  "status": "approved",
+  "template": "flow",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-10"
+    }
+  ],
+  "directions": [
+    {
+      "name": "2 Turn on",
+      "board": "2-turn-on",
+      "shots": {
+        "dark": "shots/turn-on-dark.png",
+        "light": "shots/turn-on-light.png"
+      }
+    },
+    {
+      "name": "3 On",
+      "board": "3-on",
+      "shots": {
+        "dark": "shots/on-dark.png",
+        "light": "shots/on-light.png"
+      }
+    },
+    {
+      "name": "4 Roster",
+      "board": "4-roster",
+      "shots": {
+        "dark": "shots/roster-dark.png",
+        "light": "shots/roster-light.png"
+      }
+    }
+  ]
+}

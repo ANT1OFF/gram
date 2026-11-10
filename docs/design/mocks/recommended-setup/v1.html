@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Recommended setup · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      /* Settings as the app draws it: a group is one rounded surface of rows, label and words on
+         the left, the control on the right. */
+      .settings {
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        max-width: 760px;
+        width: 100%;
+      }
+      .group {
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-3);
+        display: flex;
+        flex-direction: column;
+      }
+      .group > .set + .set {
+        border-top: 1px solid var(--border-subtle);
+      }
+      .set {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 16px;
+        padding: 12px 16px;
+      }
+      .set .words {
+        flex: 1 1 260px;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .set .words .label {
+        font-weight: 550;
+      }
+      .set .words .desc {
+        color: var(--fg-muted);
+        font-size: var(--text-sm);
+      }
+      .set .control {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .group-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 10px;
+      }
+      .group-head h3 {
+        margin: 0;
+      }
+      /* A model slot's chip: the slot's glyph, the agent and model, its effort. */
+      .slot {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 10px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg, 8px);
+        background: var(--surface-1);
+        font-size: var(--text-sm);
+        white-space: nowrap;
+      }
+      .slot .effort {
+        color: var(--fg-muted);
+      }
+      .glyph {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border-radius: var(--radius-md, 7px);
+        color: var(--fg-muted);
+      }
+      .glyph.follows {
+        color: var(--accent-text);
+      }
+      .glyph .icon {
+        width: 15px;
+        height: 15px;
+      }
+      /* A hover's words, drawn open once so the review can read them. */
+      .hover {
+        position: relative;
+      }
+      .hover .tip {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        z-index: 3;
+        width: max-content;
+        max-width: 260px;
+        padding: 5px 8px;
+        border-radius: var(--radius-md, 7px);
+        background: var(--fg);
+        color: var(--surface-1);
+        font-size: var(--text-xs);
+        line-height: 1.35;
+      }
+      .iconbtn {
+        display: inline-grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border: 0;
+        border-radius: var(--radius-md, 7px);
+        background: transparent;
+        color: var(--fg-muted);
+        cursor: pointer;
+      }
+      .iconbtn:hover {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .iconbtn .icon {
+        width: 15px;
+        height: 15px;
+      }
+      .fold {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        border: 0;
+        background: transparent;
+        color: var(--fg-muted);
+        font: inherit;
+        font-size: var(--text-sm);
+        cursor: pointer;
+        padding: 0;
+      }
+      .fold .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .tiers {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: var(--text-sm);
+      }
+      .tiers th,
+      .tiers td {
+        text-align: left;
+        padding: 6px 8px;
+        vertical-align: top;
+      }
+      .tiers th {
+        color: var(--fg-subtle);
+        font-weight: 550;
+        font-size: var(--text-xs);
+      }
+      .tiers tr + tr td {
+        border-top: 1px solid var(--border-subtle);
+      }
+      .tiers .note {
+        color: var(--fg-muted);
+      }
+      .sheet-rows {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg, 8px);
+      }
+      .sheet-row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 10px 12px;
+      }
+      .sheet-row + .sheet-row {
+        border-top: 1px solid var(--border-subtle);
+      }
+      .sheet-row input {
+        margin-top: 3px;
+        accent-color: var(--accent);
+        width: 15px;
+        height: 15px;
+        flex: none;
+      }
+      .sheet-row .what {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+      .sheet-row .change {
+        color: var(--fg-muted);
+        font-size: var(--text-sm);
+        overflow-wrap: anywhere;
+      }
+      .roster-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 8px;
+        padding: 8px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg, 8px);
+      }
+      .roster-row .note {
+        flex: 1 1 100%;
+        color: var(--fg-muted);
+        font-size: var(--text-sm);
+      }
+      .menu-open {
+        position: relative;
+      }
+      .menu-open .menu {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 4px);
+        z-index: 3;
+        min-width: 200px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        Turning on the recommended setup in an existing install, and how a model slot shows whether
+        it follows the recommendation or is yours. Start at "1 Off", follow the switch; Esc returns.
+        Hover words are drawn open where they matter. The machine has Claude Code and Codex both
+        signed in.
+      </p>
+
+      <!-- 1: Settings → Agents & models, the mode off: today's install. -->
+      <section class="board" data-name="1 Off" data-size="1100x620">
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>Settings
+            </div>
+            <div class="app-body">
+              <nav class="sidebar" aria-label="Settings">
+                <a class="nav-item" href="#">General</a>
+                <a class="nav-item" href="#" aria-current="page">Agents &amp; models</a>
+                <a class="nav-item" href="#" data-goto="4 Roster">Workspaces &amp; merging</a>
+              </nav>
+              <div class="main">
+                <div class="settings">
+                  <div class="group-head">
+                    <h3>New threads</h3>
+                    <span class="muted small">The agent and model a new thread starts on.</span>
+                  </div>
+                  <div class="group">
+                    <div class="set">
+                      <div class="words">
+                        <span class="label">Recommended setup</span>
+                        <span class="desc"
+                          >Gram picks a model for each kind of work and keeps it current with each
+                          release. Models you choose stay yours.</span
+                        >
+                      </div>
+                      <div class="control">
+                        <a href="#" data-goto="2 Turn on" aria-label="Turn on recommended setup"
+                          ><input class="switch" type="checkbox" tabindex="-1"
+                        /></a>
+                      </div>
+                    </div>
+                    <div class="set">
+                      <div class="words">
+                        <span class="label">Default agent and model</span>
+                        <span class="desc"
+                          >What a new thread starts on. You can pick another in /new.</span
+                        >
+                      </div>
+                      <div class="control">
+                        <span class="slot"
+                          ><i data-icon="terminal"></i>Claude Code · Opus
+                          <span class="effort">· High</span></span
+                        >
+                      </div>
+                    </div>
+                    <div class="set">
+                      <div class="words">
+                        <span class="label">Default mode</span>
+                        <span class="desc">How much a new thread asks before it acts.</span>
+                      </div>
+                      <div class="control"><span class="slot">Auto</span></div>
+                    </div>
+                  </div>
+                  <p class="muted small">
+                    With the mode off nothing carries a glyph: every slot is as it was saved.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2: the one-time sheet when an existing install turns it on. -->
+      <section class="board" data-name="2 Turn on" data-size="1100x700">
+        <div class="board-frame">
+          <div class="app" style="position: relative">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>Settings
+            </div>
+            <div class="app-body"><div class="main"></div></div>
+            <div class="scrim">
+              <div
+                class="dialog"
+                role="dialog"
+                aria-labelledby="turn-on-title"
+                style="width: min(560px, 100%)"
+              >
+                <div class="stack">
+                  <h3 id="turn-on-title" style="margin: 0">Follow the recommended setup?</h3>
+                  <span class="muted small"
+                    >Ticked models follow Gram's recommendation from now on and change with its
+                    releases. Unticked ones stay exactly as you set them.</span
+                  >
+                </div>
+                <div class="sheet-rows">
+                  <label class="sheet-row">
+                    <input type="checkbox" checked />
+                    <span class="what">
+                      <strong>New threads</strong>
+                      <span class="change">Not set → Recommended Lead · Opus 5.5 · Low</span>
+                    </span>
+                  </label>
+                  <label class="sheet-row">
+                    <input type="checkbox" checked />
+                    <span class="what">
+                      <strong>Shop · orchestrator</strong>
+                      <span class="change">Opus · High → Recommended Lead · Opus 5.5 · Medium</span>
+                    </span>
+                  </label>
+                  <label class="sheet-row">
+                    <input type="checkbox" />
+                    <span class="what">
+                      <strong>Shop · worker: reviews, bug hunts</strong>
+                      <span class="change">GPT-6.1-Sol · High: yours, kept</span>
+                    </span>
+                  </label>
+                  <label class="sheet-row">
+                    <input type="checkbox" checked />
+                    <span class="what">
+                      <strong>Shop · default worker</strong>
+                      <span class="change">None → Recommended Scoped · GPT-6.1-Sol · Medium</span>
+                    </span>
+                  </label>
+                  <label class="sheet-row">
+                    <input type="checkbox" checked />
+                    <span class="what">
+                      <strong>AI helpers</strong>
+                      <span class="change"
+                        >Automatic → Recommended Cheap · Haiku 5.5 · Medium for titles, Low for the
+                        rest</span
+                      >
+                    </span>
+                  </label>
+                </div>
+                <span class="muted xsmall"
+                  >Ticked: Gram's own past defaults. Unticked: values you picked.</span
+                >
+                <div class="dialog-actions">
+                  <a class="btn ghost" href="#" data-goto="1 Off">Cancel</a>
+                  <a class="btn primary" href="#" data-goto="3 On">Follow recommended</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3: on, with this machine's summary, the Details fold open, and the effort menu. -->
+      <section class="board" data-name="3 On" data-size="1100x780" data-states="folded,details">
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>Settings
+            </div>
+            <div class="app-body">
+              <nav class="sidebar" aria-label="Settings">
+                <a class="nav-item" href="#">General</a>
+                <a class="nav-item" href="#" aria-current="page">Agents &amp; models</a>
+                <a class="nav-item" href="#" data-goto="4 Roster">Workspaces &amp; merging</a>
+              </nav>
+              <div class="main">
+                <div class="settings">
+                  <div class="group-head">
+                    <h3>New threads</h3>
+                    <span class="muted small">The agent and model a new thread starts on.</span>
+                  </div>
+                  <div class="group">
+                    <div class="set">
+                      <div class="words">
+                        <span class="label">Recommended setup</span>
+                        <span class="desc"
+                          >Opus 5.5 leads, GPT-6.1-Sol does scoped work, Haiku 5.5 helps.</span
+                        >
+                        <a class="fold" href="#" data-goto="3 On@details" data-when="folded"
+                          ><i data-icon="right"></i>Details</a
+                        >
+                        <a class="fold" href="#" data-goto="3 On@folded" data-when="details"
+                          ><i data-icon="down"></i>Details</a
+                        >
+                      </div>
+                      <div class="control">
+                        <a href="#" data-goto="5 Turn off" aria-label="Turn off recommended setup"
+                          ><input class="switch" type="checkbox" checked tabindex="-1"
+                        /></a>
+                      </div>
+                      <div data-when="details" style="flex: 1 1 100%">
+                        <table class="tiers">
+                          <thead>
+                            <tr>
+                              <th>Tier</th>
+                              <th>On this Mac</th>
+                              <th>For</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>Lead</td>
+                              <td>Opus 5.5 · Medium</td>
+                              <td class="note">
+                                judgment calls, features across several changes, leading other
+                                agents, anything unsure
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Scoped</td>
+                              <td>GPT-6.1-Sol · Medium</td>
+                              <td class="note">
+                                well-scoped fixes, features from a clear spec, repeated reviews,
+                                docs
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Cheap</td>
+                              <td>Haiku 5.5 · Medium</td>
+                              <td class="note">
+                                classification, routing, reading logs, searching, quick lookups;
+                                helpers run titles at Medium, the rest at Low
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>Top</td>
+                              <td>Fable 5.1 · Medium</td>
+                              <td class="note">
+                                major refactors, migrations, leading many agents, long unattended
+                                runs
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <span class="muted xsmall"
+                          >Recommendations 2026.11. Effort never goes past High.</span
+                        >
+                      </div>
+                    </div>
+                    <div class="set">
+                      <div class="words">
+                        <span class="label">Default agent and model</span>
+                        <span class="desc"
+                          >What a new thread starts on. You can pick another in /new.</span
+                        >
+                      </div>
+                      <div class="control">
+                        <span class="hover">
+                          <span
+                            class="glyph follows"
+                            aria-label="Recommended · Lead tier · updates with Gram"
+                            ><i data-icon="sparkles"></i
+                          ></span>
+                          <span class="tip" data-when="folded"
+                            >Recommended · Lead tier · updates with Gram</span
+                          >
+                        </span>
+                        <span class="slot menu-open"
+                          >Recommended Lead · Opus 5.5 <span class="effort">· Low</span>
+                          <span class="menu" data-when="details" role="listbox" aria-label="Effort">
+                            <span class="menu-item"
+                              >Low <i data-icon="check" style="margin-left: auto"></i
+                            ></span>
+                            <span class="menu-item">Medium</span>
+                            <span class="menu-item">High</span>
+                            <span class="section-label">Ends at High while it follows</span>
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4: a workspace's models, each slot with its glyph. -->
+      <section class="board" data-name="4 Roster" data-size="1100x720">
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>Settings
+            </div>
+            <div class="app-body">
+              <nav class="sidebar" aria-label="Settings">
+                <a class="nav-item" href="#">General</a>
+                <a class="nav-item" href="#" data-goto="3 On">Agents &amp; models</a>
+                <a class="nav-item" href="#" aria-current="page">Workspaces &amp; merging</a>
+              </nav>
+              <div class="main">
+                <div class="settings">
+                  <div class="group-head"><h3>Shop</h3></div>
+                  <div class="group">
+                    <div class="set">
+                      <div class="words">
+                        <span class="label">Orchestrator model</span>
+                        <span class="desc"
+                          >Sets the next orchestrator's model. Use Switch orchestrator to change the
+                          current session.</span
+                        >
+                      </div>
+                      <div class="control">
+                        <span
+                          class="glyph follows"
+                          title="Recommended · Lead tier · updates with Gram"
+                          ><i data-icon="sparkles"></i
+                        ></span>
+                        <span class="slot"
+                          >Recommended Lead · Opus 5.5 <span class="effort">· Medium</span></span
+                        >
+                      </div>
+                    </div>
+                    <div class="set" style="align-items: flex-start">
+                      <div class="words">
+                        <span class="label">Worker models</span>
+                        <span class="desc"
+                          >Models the orchestrator may give workers, each with a note on when to use
+                          it.</span
+                        >
+                      </div>
+                      <div class="stack" style="flex: 1 1 100%; gap: 8px">
+                        <div class="roster-row">
+                          <span
+                            class="glyph follows"
+                            title="Recommended · Scoped tier · updates with Gram"
+                            ><i data-icon="sparkles"></i
+                          ></span>
+                          <span class="slot"
+                            >Recommended Scoped · GPT-6.1-Sol
+                            <span class="effort">· Medium</span></span
+                          >
+                          <span class="badge"><i data-icon="star"></i>Default</span>
+                          <span class="grow"></span>
+                          <button class="iconbtn" aria-label="Remove Recommended Scoped">
+                            <i data-icon="x"></i>
+                          </button>
+                          <span class="note"
+                            >well-scoped fixes, features from a clear spec, repeated reviews,
+                            docs</span
+                          >
+                        </div>
+                        <div class="roster-row">
+                          <span class="hover">
+                            <span class="glyph" aria-label="Your choice · updates leave it alone"
+                              ><i data-icon="pin"></i
+                            ></span>
+                            <span class="tip">Your choice · updates leave it alone</span>
+                          </span>
+                          <span class="slot"
+                            >Codex · GPT-6.1-Sol <span class="effort">· High</span></span
+                          >
+                          <button
+                            class="iconbtn"
+                            aria-label="Follow recommended"
+                            title="Follow recommended"
+                          >
+                            <i data-icon="rotate-ccw"></i>
+                          </button>
+                          <span class="grow"></span>
+                          <button class="iconbtn" aria-label="Remove Codex GPT-6.1-Sol">
+                            <i data-icon="x"></i>
+                          </button>
+                          <span class="note">reviews, bug hunts, audits</span>
+                        </div>
+                        <div class="roster-row">
+                          <span
+                            class="glyph follows"
+                            title="Recommended · Top tier · updates with Gram"
+                            ><i data-icon="sparkles"></i
+                          ></span>
+                          <span class="slot"
+                            >Recommended Top · Fable 5.1 <span class="effort">· Medium</span></span
+                          >
+                          <span class="grow"></span>
+                          <button class="iconbtn" aria-label="Remove Recommended Top">
+                            <i data-icon="x"></i>
+                          </button>
+                          <span class="note"
+                            >major refactors, migrations, leading many agents, long unattended
+                            runs</span
+                          >
+                        </div>
+                        <div class="roster-row">
+                          <span
+                            class="glyph follows"
+                            title="Recommended · Cheap tier · updates with Gram"
+                            ><i data-icon="sparkles"></i
+                          ></span>
+                          <span class="slot" style="border-style: dashed"
+                            >Recommended Cheap · Haiku 5.5
+                            <span class="effort">· Medium</span></span
+                          >
+                          <span class="grow"></span>
+                          <button class="iconbtn" aria-label="Remove Recommended Cheap">
+                            <i data-icon="x"></i>
+                          </button>
+                          <span class="note" style="color: var(--warning-text)"
+                            ><i data-icon="alert"></i> Unavailable: nothing here fills the Cheap
+                            tier: Claude Code (claude-haiku-5-5) isn't listed; update it, or pick a
+                            model for this slot. A worker given it gets the default.</span
+                          >
+                        </div>
+                        <button class="btn sm" style="align-self: flex-start">
+                          <i data-icon="plus"></i>Add a model
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="muted small">
+                    Sparkles: follows the recommendation. Pin: your choice, with Follow recommended
+                    beside it. The words are on hover.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5: turning it off asks once. -->
+      <section class="board" data-name="5 Turn off" data-size="1100x520">
+        <div class="board-frame">
+          <div class="app" style="position: relative">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>Settings
+            </div>
+            <div class="app-body"><div class="main"></div></div>
+            <div class="scrim">
+              <div class="dialog" role="dialog" aria-labelledby="turn-off-title">
+                <div class="stack">
+                  <h3 id="turn-off-title" style="margin: 0">Turn off the recommended setup?</h3>
+                  <span class="muted small"
+                    >Four model slots follow it now. Keep them as your own, on the models they run
+                    today, or leave them following.</span
+                  >
+                </div>
+                <div class="dialog-actions">
+                  <a class="btn ghost" href="#" data-goto="3 On">Cancel</a>
+                  <a class="btn" href="#" data-goto="1 Off">Keep following</a>
+                  <a class="btn primary" href="#" data-goto="1 Off">Keep current models</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6: the welcome row on a new install. -->
+      <section class="board" data-name="6 Welcome" data-size="720x360">
+        <div class="board-frame">
+          <div class="content narrow">
+            <h2>Welcome to Gram</h2>
+            <p class="muted">[Welcome copy as today]</p>
+            <div class="group">
+              <div class="set">
+                <div class="words">
+                  <span class="label">Recommended setup</span>
+                  <span class="desc"
+                    >Opus 5.5 leads, GPT-6.1-Sol does scoped work, Haiku 5.5 helps. Change it any
+                    time in Settings.</span
+                  >
+                </div>
+                <div class="control">
+                  <input class="switch" type="checkbox" checked aria-label="Recommended setup" />
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <span class="grow"></span><a class="btn primary" href="#">[Today's primary action]</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
