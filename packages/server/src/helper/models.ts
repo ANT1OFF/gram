@@ -2,6 +2,7 @@ import {
   gatewayEfforts,
   helperChoice,
   helperFallbackChoice,
+  helperKindEffort,
   type GatewayProfile,
   type HelperKind,
   type ReasoningVariant,
@@ -14,18 +15,10 @@ export interface HelperRoute {
 }
 
 /**
- * The default model's effort per kind. A title gets `high`, as it always has, since it is two calls
- * a thread; the rest run often enough that `low` is the budget.
+ * The default model's effort per kind, as the recommendation's Cheap tier sets it for local helpers:
+ * a title at `medium`, the rest at `low`, which they run often enough to need.
  */
-const KIND_EFFORT: Readonly<Record<HelperKind, ReasoningVariant>> = {
-  title: "high",
-  plan: "low",
-  recap: "low",
-  suggest: "low",
-  wait: "low",
-  notice: "low",
-  stuck: "low",
-};
+const KIND_EFFORT = (kind: HelperKind): ReasoningVariant => helperKindEffort(kind);
 
 /**
  * Azure answers `none` on these with a 400, and on chat completions LiteLLM drops it instead, so
@@ -74,7 +67,7 @@ export const helperRoutes = (
   if (primary !== undefined) {
     // Only the built-in default carries an effort without the user having picked one.
     const byDefault = profile.helperModel === undefined && primary.effort !== undefined;
-    add(primary.model, byDefault ? (options.effort ?? KIND_EFFORT[options.kind]) : primary.effort);
+    add(primary.model, byDefault ? (options.effort ?? KIND_EFFORT(options.kind)) : primary.effort);
   }
   if (fallback !== undefined) add(fallback.model, fallback.effort);
   return routes;

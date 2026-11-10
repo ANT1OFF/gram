@@ -10,6 +10,7 @@ import {
   type HelperStatus,
   type HelperProviderStatus,
   type ReasoningVariant,
+  type AgentModel,
 } from "@gram/contracts";
 import { spin } from "@/motion";
 import { Brain, Info, RefreshCw } from "lucide-react";
@@ -197,6 +198,23 @@ export function LocalHelperSettings({
  * One provider's rows: its model, its effort, and the context it may read. The main one is what
  * helpers run on; the other is the fallback, named so.
  */
+
+/** Capitalised effort, as the effort picker names it: `Medium`. */
+const effortWord = (effort: string) => `${effort[0]!.toUpperCase()}${effort.slice(1)}`;
+
+/**
+ * What "Automatic" runs a helper at on `model`: the recommendation's Cheap tier, titles at medium
+ * and the rest at low, each as the model lists it; the CLI's own default for one without effort.
+ */
+const automaticEffortLabel = (model: AgentModel): string => {
+  const title = localHelperEffort(model, undefined, "title");
+  const rest = localHelperEffort(model, undefined, "recap");
+  if (title === undefined || rest === undefined) return "CLI default effort";
+  return title === rest
+    ? `Automatic — ${effortWord(title)} effort`
+    : `Automatic — ${effortWord(title)} for titles, ${effortWord(rest)} for the rest`;
+};
+
 function LocalProviderRows({
   provider,
   settings,
@@ -243,12 +261,7 @@ function LocalProviderRows({
   const effortOptions = [
     {
       value: "automatic",
-      label:
-        model === undefined
-          ? "Effort unavailable"
-          : localHelperEffort(model) === "high"
-            ? "Automatic — High effort"
-            : "CLI default effort",
+      label: model === undefined ? "Effort unavailable" : automaticEffortLabel(model),
     },
     ...efforts,
   ];
