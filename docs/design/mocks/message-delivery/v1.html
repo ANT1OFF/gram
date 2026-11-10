@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Message delivery directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        width: 100%;
+      }
+      .working {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--status-working, var(--accent));
+      }
+      .slab {
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+        background: var(--surface-1);
+        width: 100%;
+      }
+      .slab .draft {
+        padding: 12px 16px 4px;
+        min-height: 48px;
+        color: var(--fg);
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 8px 8px;
+      }
+      .bar .fill {
+        flex: 1;
+      }
+      .ib {
+        display: inline-grid;
+        place-items: center;
+        min-width: 32px;
+        height: 32px;
+        padding: 0 6px;
+        border: 0;
+        border-radius: var(--radius-md);
+        background: transparent;
+        color: var(--fg-muted);
+      }
+      .ib[aria-pressed="true"] {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.75;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .round {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--on-accent);
+      }
+      .round.quiet {
+        background: var(--fg);
+        color: var(--surface-1);
+      }
+      .round.danger {
+        background: var(--danger);
+        color: var(--on-accent);
+      }
+      .split {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+      }
+      .chev {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 32px;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--fg-muted);
+      }
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        border-radius: var(--radius-md);
+        background: color-mix(in oklab, var(--fg) 6%, transparent);
+      }
+      .seg .ib {
+        min-width: 28px;
+        height: 28px;
+      }
+      .tip {
+        align-self: flex-start;
+        display: inline-block;
+        padding: 6px 8px;
+        border-radius: var(--radius-sm);
+        background: var(--fg);
+        color: var(--surface-1);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .tip kbd,
+      .menu kbd {
+        font: inherit;
+        opacity: 0.7;
+      }
+      .cap {
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .row-v {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      .variant {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .menu {
+        display: flex;
+        flex-direction: column;
+        min-width: 260px;
+        padding: 4px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        background: var(--surface-2, var(--surface-1));
+        box-shadow: var(--shadow-md, none);
+      }
+      .menu button {
+        display: grid;
+        grid-template-columns: 16px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--fg);
+        text-align: left;
+        font-size: 13px;
+      }
+      .menu button[aria-checked="true"] {
+        background: var(--surface-hover);
+      }
+      .menu .sub {
+        display: block;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .handset {
+        width: 340px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 20px;
+        padding: 12px;
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .handset .round,
+      .handset .ib {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+      }
+      .sheet button {
+        min-height: 44px;
+      }
+      .two {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+      .msg-user {
+        align-self: flex-end;
+        max-width: 80%;
+        padding: 10px 14px;
+        border-radius: var(--radius-xl);
+        background: var(--surface-1);
+        color: var(--fg);
+      }
+      .msg-meta {
+        align-self: flex-end;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .queued {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border: 1px dashed var(--border-strong);
+        border-radius: var(--radius-lg);
+        font-size: 13px;
+      }
+      .queued .fill {
+        flex: 1;
+      }
+      .toolrow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        font-size: 13px;
+      }
+      .toolrow .fill {
+        flex: 1;
+        color: var(--fg-muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <!-- The product's lucide glyphs: Send for steer, ListPlus for queue, Square for stop. -->
+      <symbol id="steer" viewBox="0 0 24 24">
+        <path
+          d="M14.5 21.7a.5.5 0 0 0 .9 0l6.5-19a.5.5 0 0 0-.6-.6l-19 6.5a.5.5 0 0 0 0 .9l7.9 3.2a2 2 0 0 1 1.1 1.1z"
+        />
+        <path d="m21.9 2.1-10.9 10.9" />
+      </symbol>
+      <symbol id="queue" viewBox="0 0 24 24">
+        <path d="M11 12H3" />
+        <path d="M16 6H3" />
+        <path d="M16 18H3" />
+        <path d="M18 9v6" />
+        <path d="M21 12h-6" />
+      </symbol>
+      <symbol id="interrupt" viewBox="0 0 24 24">
+        <rect x="4" y="4" width="10" height="10" rx="1.5" />
+        <path d="M14 20h6" />
+        <path d="m17 17 3 3-3 3" />
+      </symbol>
+      <symbol id="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+      <symbol id="x" viewBox="0 0 24 24">
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+      </symbol>
+      <symbol id="slash" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="m5.7 18.3 12.6-12.6" />
+      </symbol>
+    </svg>
+    <main class="mock-canvas">
+      <p class="mock-note">
+        How the user picks steer, queue or interrupt for a message to a working thread. Keys are the
+        same in every direction: ↵ steers, ⌥↵ queues, ⌘. with a draft interrupts (⌘. alone still
+        stops). Pick one of A, B or C by name; "Sent messages" is shared.
+      </p>
+
+      <section class="board" data-name="A One button" data-size="760x520">
+        <div class="board-frame">
+          <div class="content two">
+            <div class="stack" style="flex: 1 1 360px">
+              <div class="working"><span class="dot"></span>Running bun test</div>
+              <div class="slab">
+                <div class="draft">Skip the e2e suite, the unit tests are enough.</div>
+                <div class="bar">
+                  <button class="ib" type="button" aria-label="Attach">+</button>
+                  <span class="fill"></span>
+                  <button class="round" type="button" aria-label="Steer">
+                    <svg class="i"><use href="#steer" /></svg>
+                  </button>
+                </div>
+              </div>
+              <span class="tip"
+                >Steer: after the current tool call, cancels nothing <kbd>↵</kbd><br />Hold ⌥ to
+                queue · ⌘. to interrupt</span
+              >
+              <span class="cap">The button shows what ↵ does now; holding a key changes it.</span>
+              <div class="row-v">
+                <span class="variant"
+                  ><button class="round" type="button" aria-label="Steer">
+                    <svg class="i"><use href="#steer" /></svg></button
+                  >↵ Steer</span
+                >
+                <span class="variant"
+                  ><button class="round quiet" type="button" aria-label="Queue">
+                    <svg class="i"><use href="#queue" /></svg></button
+                  >⌥ held: Queue</span
+                >
+                <span class="variant"
+                  ><button class="round danger" type="button" aria-label="Interrupt">
+                    <svg class="i"><use href="#interrupt" /></svg></button
+                  >⌘ held: Interrupt</span
+                >
+              </div>
+            </div>
+            <div class="handset">
+              <div class="working"><span class="dot"></span>Running bun test</div>
+              <div class="slab">
+                <div class="draft">Skip the e2e suite.</div>
+                <div class="bar">
+                  <span class="fill"></span>
+                  <button class="round" type="button" aria-label="Steer">
+                    <svg class="i"><use href="#steer" /></svg>
+                  </button>
+                </div>
+              </div>
+              <span class="cap">Tap steers. Press and hold for the other two:</span>
+              <div class="menu sheet" role="menu">
+                <button type="button" role="menuitemradio" aria-checked="true">
+                  <svg class="i"><use href="#steer" /></svg><span>Steer</span>
+                </button>
+                <button type="button" role="menuitemradio" aria-checked="false">
+                  <svg class="i"><use href="#queue" /></svg><span>Queue</span>
+                </button>
+                <button type="button" role="menuitemradio" aria-checked="false">
+                  <svg class="i"><use href="#interrupt" /></svg><span>Interrupt</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="B Split button" data-size="760x520">
+        <div class="board-frame">
+          <div class="content two">
+            <div class="stack" style="flex: 1 1 360px">
+              <div class="working"><span class="dot"></span>Running bun test</div>
+              <div class="slab">
+                <div class="draft">Skip the e2e suite, the unit tests are enough.</div>
+                <div class="bar">
+                  <button class="ib" type="button" aria-label="Attach">+</button>
+                  <span class="fill"></span>
+                  <span class="split">
+                    <button
+                      class="chev"
+                      type="button"
+                      aria-label="How to deliver"
+                      aria-expanded="true"
+                    >
+                      <svg class="i"><use href="#chev" /></svg>
+                    </button>
+                    <button class="round" type="button" aria-label="Steer">
+                      <svg class="i"><use href="#steer" /></svg>
+                    </button>
+                  </span>
+                </div>
+              </div>
+              <div class="menu" role="menu" style="align-self: flex-end">
+                <button type="button" role="menuitemradio" aria-checked="true">
+                  <svg class="i"><use href="#steer" /></svg
+                  ><span>Steer<span class="sub">After the current tool call</span></span
+                  ><kbd>↵</kbd>
+                </button>
+                <button type="button" role="menuitemradio" aria-checked="false">
+                  <svg class="i"><use href="#queue" /></svg
+                  ><span>Queue<span class="sub">After the turn ends</span></span
+                  ><kbd>⌥↵</kbd>
+                </button>
+                <button type="button" role="menuitemradio" aria-checked="false">
+                  <svg class="i"><use href="#interrupt" /></svg
+                  ><span>Interrupt<span class="sub">Stops now, cuts off tool calls</span></span
+                  ><kbd>⌘.</kbd>
+                </button>
+              </div>
+              <span class="cap">The chevron opens the three; the round button sends as Steer.</span>
+            </div>
+            <div class="handset">
+              <div class="working"><span class="dot"></span>Running bun test</div>
+              <div class="slab">
+                <div class="draft">Skip the e2e suite.</div>
+                <div class="bar">
+                  <span class="fill"></span>
+                  <button class="ib" type="button" aria-label="How to deliver">
+                    <svg class="i"><use href="#chev" /></svg>
+                  </button>
+                  <button class="round" type="button" aria-label="Steer">
+                    <svg class="i"><use href="#steer" /></svg>
+                  </button>
+                </div>
+              </div>
+              <span class="cap">The chevron is its own 44 px target and opens the same three.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="C Mode toggle" data-size="760x520">
+        <div class="board-frame">
+          <div class="content two">
+            <div class="stack" style="flex: 1 1 360px">
+              <div class="working"><span class="dot"></span>Running bun test</div>
+              <div class="slab">
+                <div class="draft">Skip the e2e suite, the unit tests are enough.</div>
+                <div class="bar">
+                  <button class="ib" type="button" aria-label="Attach">+</button>
+                  <span class="fill"></span>
+                  <span class="seg" role="radiogroup" aria-label="Deliver">
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="true"
+                      aria-label="Steer"
+                    >
+                      <svg class="i"><use href="#steer" /></svg>
+                    </button>
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="false"
+                      aria-label="Queue"
+                    >
+                      <svg class="i"><use href="#queue" /></svg>
+                    </button>
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="false"
+                      aria-label="Interrupt"
+                    >
+                      <svg class="i"><use href="#interrupt" /></svg>
+                    </button>
+                  </span>
+                  <button class="round" type="button" aria-label="Send">
+                    <svg class="i"><use href="#steer" /></svg>
+                  </button>
+                </div>
+              </div>
+              <span class="tip">Queue: after the turn ends <kbd>⌥↵</kbd></span>
+              <span class="cap"
+                >Three icons, shown only while the thread works; the pick resets to Steer after each
+                message.</span
+              >
+            </div>
+            <div class="handset">
+              <div class="working"><span class="dot"></span>Running bun test</div>
+              <div class="slab">
+                <div class="draft">Skip the e2e suite.</div>
+                <div class="bar">
+                  <span class="seg" role="radiogroup" aria-label="Deliver">
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="true"
+                      aria-label="Steer"
+                    >
+                      <svg class="i"><use href="#steer" /></svg>
+                    </button>
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="false"
+                      aria-label="Queue"
+                    >
+                      <svg class="i"><use href="#queue" /></svg>
+                    </button>
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="false"
+                      aria-label="Interrupt"
+                    >
+                      <svg class="i"><use href="#interrupt" /></svg>
+                    </button>
+                  </span>
+                  <span class="fill"></span>
+                  <button class="round" type="button" aria-label="Send">
+                    <svg class="i"><use href="#steer" /></svg>
+                  </button>
+                </div>
+              </div>
+              <span class="cap">Always visible: one tap to switch, no hidden gesture.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="Sent messages" data-size="760x520">
+        <div class="board-frame">
+          <div class="content stack">
+            <div class="msg-user">Skip the e2e suite, the unit tests are enough.</div>
+            <div class="msg-meta">
+              <svg class="i"><use href="#steer" /></svg>Steered · 10:42
+            </div>
+            <div class="toolrow">
+              <svg class="i" style="color: var(--fg-muted)"><use href="#slash" /></svg>Bash<span
+                class="fill"
+                >bun run test:e2e</span
+              ><span class="cap">Interrupted</span>
+            </div>
+            <div class="msg-user">Stop, wrong branch. Switch to feat/cart first.</div>
+            <div class="msg-meta">
+              <svg class="i"><use href="#interrupt" /></svg>Interrupted the turn · 10:44
+            </div>
+            <span class="cap">Queued, above the composer as today, until the turn ends:</span>
+            <div class="queued">
+              <svg class="i"><use href="#queue" /></svg
+              ><span class="fill">Then update the changelog.</span
+              ><span class="cap">Sends when the turn ends</span>
+              <button class="ib" type="button" aria-label="Steer now">
+                <svg class="i"><use href="#steer" /></svg></button
+              ><button class="ib" type="button" aria-label="Remove">
+                <svg class="i"><use href="#x" /></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

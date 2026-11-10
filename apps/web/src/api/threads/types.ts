@@ -58,7 +58,11 @@ export interface ThreadsApi {
   threadHistory(threadId: ThreadId, before: string): Promise<ThreadHistoryPage>;
   createThread(input: CreateThreadInput): Promise<Thread>;
   send(threadId: ThreadId, input: UserInput): Promise<SendResult>;
-  steer(threadId: ThreadId, input: UserInput): Promise<void>;
+  /**
+   * Into the running turn, after the tool calls under way; with `interrupt`, the turn stops now
+   * and the agent answers it.
+   */
+  steer(threadId: ThreadId, input: UserInput, options?: { interrupt?: boolean }): Promise<void>;
   interrupt(threadId: ThreadId): Promise<void>;
   /** Resumes a thread waiting out a provider limit now. */
   resumeLimitWait(threadId: ThreadId): Promise<void>;

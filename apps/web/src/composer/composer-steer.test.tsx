@@ -21,15 +21,20 @@ const THREAD = "t-steer" as ThreadId;
 
 const setup = ({
   steers = true,
+  interrupts = true,
   status = "running",
-}: { steers?: boolean; status?: "running" | "needsApproval" | "needsInput" } = {}) => {
+}: {
+  steers?: boolean;
+  interrupts?: boolean;
+  status?: "running" | "needsApproval" | "needsInput";
+} = {}) => {
   // Invented provider/CLI discovery and an explicitly accepted synthetic session, never host auth.
   sessionStorage.setItem(MOCK_SESSION_EXPIRED_KEY, "0");
   useThreadsStore.setState({
     byId: {
       [THREAD]: {
         status,
-        capabilities: { steer: steers },
+        capabilities: { steer: steers, steerInterrupt: steers && interrupts },
         thread: { id: THREAD, checkout: { path: "/work/repo" } },
       },
     } as never,
@@ -41,8 +46,8 @@ const setup = ({
   return { api, steer, textarea, unmount: view.unmount };
 };
 
-const steerNow = () =>
-  fireEvent.click(screen.getByRole("button", { name: "Queue" }), { metaKey: true });
+// While a turn takes input, the round button steers: after the tool calls under way.
+const steerNow = () => fireEvent.click(screen.getByRole("button", { name: "Steer" }));
 
 afterEach(() => {
   cleanup();
@@ -228,13 +233,14 @@ describe("Composer steer", () => {
     expect(screen.getByText("shot.txt")).toBeTruthy();
   });
 
-  it("is one button: Stop while empty, Queue with a draft, each with its name", () => {
+  it("is one button: Stop while empty, Steer with a draft, each with its name", () => {
     const { textarea } = setup();
     fireEvent.change(textarea, { target: { value: "" } });
     expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Queue" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Steer" })).toBeNull();
+    expect(screen.queryByTestId("delivery-menu")).toBeNull();
     fireEvent.change(textarea, { target: { value: "use vitest" } });
-    expect(screen.getByRole("button", { name: "Queue" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Steer" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
     expect(screen.getByTestId("running-edge")).toBeTruthy();
   });
@@ -275,13 +281,65 @@ describe("Composer steer", () => {
     expect(screen.getByTestId("stop-ring")).toBeTruthy();
   });
 
-  it("turns to Steer while the modifier is down, and back", () => {
+  it("turns to Queue while ⌥ is down and to Interrupt while ⌘ is, and back to Steer", () => {
     const { textarea } = setup();
     fireEvent.change(textarea, { target: { value: "use vitest" } });
-    fireEvent.keyDown(window, { key: "Meta", metaKey: true });
-    expect(screen.getByRole("button", { name: "Steer now" })).toBeTruthy();
-    fireEvent.keyUp(window, { key: "Meta" });
+    fireEvent.keyDown(window, { key: "Alt", altKey: true });
     expect(screen.getByRole("button", { name: "Queue" })).toBeTruthy();
+    fireEvent.keyUp(window, { key: "Alt" });
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true });
+    expect(screen.getByRole("button", { name: "Interrupt" })).toBeTruthy();
+    fireEvent.keyUp(window, { key: "Meta" });
+    expect(screen.getByRole("button", { name: "Steer" })).toBeTruthy();
+  });
+
+  it("steers on Enter, queues on ⌥Enter and interrupts on ⌘. with a draft", async () => {
+    useServerSettings.setState({ settings: DEFAULT_SETTINGS });
+    const { api, steer, textarea } = setup();
+    const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true } as never);
+    const interrupt = vi.spyOn(api, "interrupt").mockResolvedValue(undefined);
+    fireEvent.change(textarea, { target: { value: "skip e2e" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    await waitFor(() => expect(steer).toHaveBeenCalledWith(THREAD, { text: "skip e2e" }));
+    fireEvent.change(textarea, { target: { value: "then the changelog" } });
+    fireEvent.keyDown(textarea, { key: "Enter", altKey: true });
+    await waitFor(() => expect(send).toHaveBeenCalledWith(THREAD, { text: "then the changelog" }));
+    fireEvent.change(textarea, { target: { value: "wrong branch" } });
+    fireEvent.keyDown(textarea, { key: ".", code: "Period", ctrlKey: true });
+    await waitFor(() =>
+      expect(steer).toHaveBeenLastCalledWith(THREAD, { text: "wrong branch" }, { interrupt: true }),
+    );
+    // With a draft, ⌘. stops the turn for it in one step; it never stops it bare.
+    expect(interrupt).not.toHaveBeenCalled();
+  });
+
+  it("offers Steer, Queue and Interrupt from the chevron, each with its key", async () => {
+    const { api, steer, textarea } = setup();
+    const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true } as never);
+    fireEvent.change(textarea, { target: { value: "then the changelog" } });
+    fireEvent.click(screen.getByTestId("delivery-menu"));
+    const items = await screen.findAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      expect.stringMatching(/^SteerAfter the current tool call/),
+      expect.stringMatching(/^QueueAfter the turn ends/),
+      expect.stringMatching(/^InterruptStops the turn now, cutting off tool calls/),
+    ]);
+    fireEvent.click(screen.getByTestId("delivery-queue"));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    fireEvent.change(textarea, { target: { value: "stop" } });
+    fireEvent.click(screen.getByTestId("delivery-menu"));
+    fireEvent.click(await screen.findByTestId("delivery-interrupt"));
+    await waitFor(() =>
+      expect(steer).toHaveBeenCalledWith(THREAD, { text: "stop" }, { interrupt: true }),
+    );
+  });
+
+  it("steers an interrupt into an agent that can't stop for a message, and says so", async () => {
+    const { steer, textarea } = setup({ interrupts: false });
+    fireEvent.change(textarea, { target: { value: "wrong branch" } });
+    fireEvent.keyDown(textarea, { key: ".", code: "Period", ctrlKey: true });
+    await waitFor(() => expect(steer).toHaveBeenCalledWith(THREAD, { text: "wrong branch" }));
+    expect(await screen.findByText(/can't be interrupted for a message/)).toBeTruthy();
   });
 
   it("queues rather than steers for an agent that takes no input mid-turn", async () => {
@@ -289,7 +347,8 @@ describe("Composer steer", () => {
     const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true } as never);
     fireEvent.change(textarea, { target: { value: "use vitest" } });
     fireEvent.keyDown(window, { key: "Meta", metaKey: true });
-    expect(screen.queryByRole("button", { name: "Steer now" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Interrupt" })).toBeNull();
+    expect(screen.queryByTestId("delivery-menu")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Queue" }), { metaKey: true });
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     expect(steer).not.toHaveBeenCalled();
@@ -300,8 +359,9 @@ describe("Composer steer", () => {
     const interrupt = vi.spyOn(api, "interrupt").mockResolvedValue(undefined);
     fireEvent.change(textarea, { target: { value: "use vitest" } });
     fireEvent.contextMenu(screen.getByTestId("send-menu-trigger"));
-    const steer = await screen.findByRole("menuitem", { name: /^Steer now/ });
-    expect(steer.textContent).toMatch(/(⌘|Ctrl)-click$/);
+    const steer = await screen.findByRole("menuitem", { name: /^Steer/ });
+    expect(steer.textContent).toMatch(/(↵|Enter)$/);
+    expect(await screen.findByRole("menuitem", { name: /^Interrupt/ })).toBeTruthy();
     fireEvent.click(await screen.findByRole("menuitem", { name: "Stop" }));
     expect(interrupt).toHaveBeenCalledTimes(1);
     expect(textarea.value).toBe("use vitest");
@@ -353,7 +413,7 @@ describe("Composer diff comments", () => {
     const { api, textarea } = setup();
     const send = vi.spyOn(api, "send").mockRejectedValueOnce(new Error("offline"));
     fireEvent.change(textarea, { target: { value: "then rerun" } });
-    fireEvent.click(screen.getByRole("button", { name: /^(Send|Queue)/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Send|Queue|Steer)$/ }), { altKey: true });
     await waitFor(() => expect(send).toHaveBeenCalled());
     await waitFor(() => expect(textarea.value).toBe("then rerun"));
     expect(useDiffCommentsStore.getState().byThread[THREAD]).toEqual([comment]);
@@ -364,7 +424,7 @@ describe("Composer diff comments", () => {
     const inFlight = Promise.withResolvers<never>();
     vi.spyOn(api, "send").mockReturnValueOnce(inFlight.promise);
     fireEvent.change(textarea, { target: { value: "first" } });
-    fireEvent.click(screen.getByRole("button", { name: /^(Send|Queue)/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Send|Queue|Steer)$/ }), { altKey: true });
     await waitFor(() => expect(textarea.value).toBe(""));
     fireEvent.change(textarea, { target: { value: "second" } });
     inFlight.reject(new Error("offline"));
@@ -376,7 +436,7 @@ describe("Composer diff comments", () => {
     const inFlight = Promise.withResolvers<never>();
     const rename = vi.spyOn(api, "rename").mockReturnValueOnce(inFlight.promise);
     fireEvent.change(textarea, { target: { value: "/rename Retry without sleeps" } });
-    fireEvent.click(screen.getByRole("button", { name: /^(Send|Queue)/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Send|Queue|Steer)$/ }), { altKey: true });
     await waitFor(() => expect(textarea.value).toBe(""));
     expect(rename).toHaveBeenCalledWith(THREAD, "Retry without sleeps");
     fireEvent.change(textarea, { target: { value: "second" } });

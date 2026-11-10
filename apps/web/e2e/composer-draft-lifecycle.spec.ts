@@ -182,7 +182,8 @@ test("late failed send recovers files to the original thread and retry retains e
   await field.fill("First draft A");
   await paste(field, "first.txt");
   await expect(page.getByTestId("attachment-chip")).toHaveAttribute("data-status", "ready");
-  await page.getByRole("button", { name: "Queue", exact: true }).click();
+  // ⌥↵ queues: the send path under test, as Enter now steers into the running turn.
+  await field.press("Alt+Enter");
   await expect(field).toHaveValue("");
   await switchTo(page, "t-release");
   await field.fill("Separate draft B");
@@ -202,7 +203,8 @@ test("late failed send recovers files to the original thread and retry retains e
   expect(receipt.chips.map((chip) => chip.path).toSorted()).toEqual(
     ["/mock/attachments/t-deps/first.txt", "/mock/attachments/t-deps/newer.txt"].toSorted(),
   );
-  await page.getByRole("button", { name: "Queue", exact: true }).click();
+  // ⌥↵ queues: the send path under test, as Enter now steers into the running turn.
+  await field.press("Alt+Enter");
   await expect(field).toHaveValue("");
   await expect(page.getByTestId("attachment-chip")).toHaveCount(0);
   const calls = await page.evaluate(() => window.composerLifecycle.sendCalls);
