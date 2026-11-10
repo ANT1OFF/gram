@@ -180,14 +180,14 @@ describe("resolveTier", () => {
   });
 });
 
-describe("clampEffort", () => {
-  const listed = (values: AgentModel["efforts"]): AgentModel => ({
-    id: "m",
-    displayName: "m",
-    supportsEffort: true,
-    ...(values === undefined ? {} : { efforts: values }),
-  });
+const listed = (values: AgentModel["efforts"]): AgentModel => ({
+  id: "m",
+  displayName: "m",
+  supportsEffort: true,
+  ...(values === undefined ? {} : { efforts: values }),
+});
 
+describe("clampEffort", () => {
   it("never goes above high", () => {
     expect(clampEffort(listed(efforts), "max")).toBe("high");
     expect(clampEffort(listed(efforts), "xhigh")).toBe("high");
