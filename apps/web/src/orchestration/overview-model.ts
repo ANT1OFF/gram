@@ -472,11 +472,25 @@ export const workspaceWorkersText = ({
       : `${live} ${live === 1 ? "worker" : "workers"}`;
 
 /**
+ * The lines too long for a row's edge (7 rem), in the words that fit it: they were cut to "stopped
+ * on an e…" and "Under your cont…", and took the room from the title beside them. The red dot
+ * says a failure stopped it; the hover and the worker's own view keep the whole line.
+ */
+const EDGE_WORDS: Readonly<Record<string, string>> = {
+  "stopped on an error": "failed",
+  "Under your control": "held by you",
+};
+
+/** A worker's line as its sidebar row's edge says it: whole, unless it has a shorter form. */
+export const edgeWords = (line: string): string => EDGE_WORDS[line] ?? line;
+
+/**
  * A wait in the words a row's edge has room for: the hollow dot beside it already says it waits,
- * so "Waiting · checks on #69" is "checks on #69"; a pause or your hold keeps its word.
+ * so "Waiting · checks on #69" is "checks on #69"; a pause keeps its word, and your hold is
+ * "held by you" (`edgeWords`).
  */
 export const waitShort = (label: string): string =>
-  label.startsWith("Waiting · ") ? label.slice("Waiting · ".length) : label;
+  edgeWords(label.startsWith("Waiting · ") ? label.slice("Waiting · ".length) : label);
 
 /** An orchestrator's summary in words: "3 workers · 1 working · 2 need you". */
 export const foldedSummaryText = ({ live, working, asks }: FoldedSummary): string =>

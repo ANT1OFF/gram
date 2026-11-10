@@ -25,21 +25,15 @@ export interface StatusGroupSpec {
   readonly id: StatusGroupId;
   /** Its heading: the state's word, the one every surface says. */
   readonly label: string;
-  /** What would be listed there, said while nothing is. */
-  readonly empty: string;
 }
 
 /** The groups in the panel's order: what needs you first, finished work last. */
 export const STATUS_GROUPS: readonly StatusGroupSpec[] = [
-  { id: "needs", label: STATUS_WORDS.needs, empty: "Approvals, questions and failures for you" },
-  { id: "running", label: STATUS_WORDS.working, empty: "Workers taking a turn now" },
-  {
-    id: "waiting",
-    label: STATUS_WORDS.waiting,
-    empty: "Workers waiting on checks, a review, a wake or a limit",
-  },
-  { id: "stopped", label: STATUS_WORDS.idle, empty: "Workers at rest with nothing running" },
-  { id: "done", label: STATUS_WORDS.done, empty: "Merged and finished workers" },
+  { id: "needs", label: STATUS_WORDS.needs },
+  { id: "running", label: STATUS_WORDS.working },
+  { id: "waiting", label: STATUS_WORDS.waiting },
+  { id: "stopped", label: STATUS_WORDS.idle },
+  { id: "done", label: STATUS_WORDS.done },
 ];
 
 /** The groups that start folded: finished work is looked back at, not watched. */

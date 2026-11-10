@@ -428,9 +428,13 @@ test("⌘⇧D, the orchestrator's header, the palette and Memory all open the Bo
   await palette.getByText("Open board", { exact: true }).first().click();
   await onBoard();
 
-  // Memory's way back.
+  // Memory's way back is the title bar's own Board, over it.
   await chat();
   await goInApp(page, `/w/${made.workspaceId}/memory`);
-  await page.getByTestId("memory-board").click();
+  await expect(page.getByTestId("memory-view")).toBeVisible();
+  await page
+    .getByRole("radiogroup", { name: "View" })
+    .getByRole("radio", { name: /^Board\b/ })
+    .click();
   await onBoard();
 });

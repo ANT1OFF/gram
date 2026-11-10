@@ -302,7 +302,10 @@ test("an answer picks a choice or says it in words, closes the question, and rea
   await expect(closed.locator('[data-question="Q1"]')).toContainText("Retry with backoff");
 
   // Each arrives as an ordinary message quoting the question's id, and says it is closed.
-  await page.getByTestId("memory-orchestrator").click();
+  await page
+    .getByRole("radiogroup", { name: "View" })
+    .getByRole("radio", { name: /^Chat\b/ })
+    .click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
   const sent = page.getByTestId("message-user");
   await expect(sent.filter({ hasText: "Answer to Q1 in questions.md" })).toContainText(

@@ -98,6 +98,7 @@ import {
   soloDisplay,
   stateWordShown,
   steplessLine,
+  edgeWords,
   waitShort,
   workLineText,
   workspaceWorkersText,
@@ -1124,7 +1125,7 @@ function WorkerNow({
       )}
     >
       <span data-testid="overview-worker-now" className="truncate">
-        {nowBesidePrs(row.now, prs)}
+        {nowBesidePrs(edgeWords(row.now), prs)}
       </span>
     </Swap>
   );

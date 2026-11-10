@@ -14,6 +14,7 @@ import {
   useNeedsYouList,
   useNeedsYouStep,
 } from "@/orchestration/use-needs-you";
+import { useOpenBoard } from "@/orchestration/open-board";
 import { useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { nextNeedsYou } from "@/sidebar/grouping";
 import { useThreadsStore } from "@/stores/threads";
@@ -120,18 +121,25 @@ export function QuietLayer() {
 
 /**
  * Chat · Board in the title bar. On a page of its own (Settings, Memory, New) neither is marked
- * (`switcherChecked`), and Chat goes back to the last chat shown.
+ * (`switcherChecked`), Chat goes back to the last chat shown, and Board opens the workspace's.
  */
 export function ViewSwitcher({ className }: { className?: string }) {
   const view = useViewStore((s) => s.view);
   const setView = useViewStore((s) => s.setView);
   const pathname = useLocation({ select: (location) => location.pathname });
   const navigate = useNavigate();
-  const hasWorkspace = useViewWorkspace() !== undefined;
+  const workspace = useViewWorkspace();
+  const hasWorkspace = workspace !== undefined;
+  const openBoard = useOpenBoard();
   const slab = useId();
   const available = APP_VIEWS.filter((each) => viewAvailable(each, hasWorkspace));
   const checked = switcherChecked(view, pathname);
   const pickView = (each: AppView) => {
+    // From a page of its own the Board is its workspace's, over its orchestrator: the view alone
+    // has nothing to draw over there, so the click did nothing on Memory.
+    if (each === "board" && !chatRoute(pathname) && workspace !== undefined) {
+      return openBoard(workspace.workspace.id);
+    }
     setView(each);
     if (each === "chat" && !chatRoute(pathname)) {
       void navigate({ to: useViewStore.getState().lastChat ?? "/" });

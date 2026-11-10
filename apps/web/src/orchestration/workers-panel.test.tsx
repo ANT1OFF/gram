@@ -92,7 +92,12 @@ const heading = (id: string) => within(group(id)).getAllByRole("button")[0]!;
 beforeEach(() => {
   docs = [];
   opened.mockClear();
-  useWorkersPanelStore.setState({ toggled: new Set(), shown: new Set(), doneAll: false });
+  useWorkersPanelStore.setState({
+    toggled: new Set(),
+    shown: new Set(),
+    doneAll: false,
+    docsFolded: false,
+  });
 });
 
 afterEach(() => {
@@ -101,7 +106,7 @@ afterEach(() => {
 });
 
 describe("the Workers tab", () => {
-  it("groups workers by status with quiet counts, Done folded and empty groups saying what goes there", () => {
+  it("groups workers by status with quiet counts, Done folded, and draws no group that holds nothing", () => {
     seed(
       [worker("run", "working", { status: "running" }), worker("shipped", "merged")],
       [summary("run", "running"), summary("shipped", "idle", NOW - 60 * 60_000)],
@@ -119,13 +124,11 @@ describe("the Workers tab", () => {
     expect(heading("done").getAttribute("aria-expanded")).toBe("true");
     expect(within(group("done")).getByText("Title of shipped")).toBeTruthy();
 
-    // An empty group says what would be listed there.
-    expect(within(group("needs")).getByTestId("workers-group-empty").textContent).toBe(
-      "Approvals, questions and failures for you",
-    );
-    expect(within(group("waiting")).getByTestId("workers-group-count").textContent).toBe("0");
-    // Any other empty group is its heading and its 0, not a line of its own.
-    expect(within(group("waiting")).queryByTestId("workers-group-empty")).toBeNull();
+    // A group with nothing in it isn't there: no "Needs you 0", no "Stopped 0".
+    for (const id of ["needs", "waiting", "stopped"]) {
+      expect(screen.queryByTestId(`workers-group-${id}`)).toBeNull();
+    }
+    expect(screen.queryByTestId("workers-needs-elsewhere")).toBeNull();
   });
 
   it("says each worker's state under its title, as the sidebar's row does", () => {
@@ -141,10 +144,10 @@ describe("the Workers tab", () => {
     const empty = screen.getByTestId("workers-empty");
     expect(within(empty).getByTestId("empty-title").textContent).toBe("No workers yet");
     expect(within(empty).getByRole("button", { name: "Message the orchestrator" })).toBeTruthy();
-    expect(screen.queryByTestId("workers-group-empty")).toBeNull();
+    expect(screen.queryByTestId("workers-group-running")).toBeNull();
   });
 
-  it("lists the workspace's docs in the slot above the groups, and nothing there without any", async () => {
+  it("lists the workspace's docs under the groups, one line each, and nothing there without any", async () => {
     seed([worker("run", "working", { status: "running" })], [summary("run", "running")]);
     docs = [
       {
@@ -163,11 +166,18 @@ describe("the Workers tab", () => {
     ];
     const { unmount } = renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
     const strip = await screen.findByTestId("docs-strip");
-    expect(within(strip).getByTestId("doc-row").textContent).toContain("Gap analysis");
-    expect(within(strip).getByTestId("docs-view-all")).toBeTruthy();
-    // Above the status groups, in the tab's one scroll column.
+    const doc = within(strip).getByTestId("doc-row");
+    // Its title and its age, as a worker's row says its own; who wrote it is on its hover.
+    expect(doc.textContent).toBe("Gap analysis5m");
+    expect(doc.getAttribute("title")).toContain("Title of run");
+    // A section like the groups: a heading that folds, with its count.
+    expect(within(strip).getByTestId("workers-group-count").textContent).toBe("1");
+    fireEvent.click(within(strip).getByRole("button", { name: "Docs, 1" }));
+    expect(doc.closest("[hidden]")).toBeTruthy();
+    expect(useWorkersPanelStore.getState().docsFolded).toBe(true);
+    // Under the status groups, in the tab's one scroll column: the workers come first.
     expect(
-      strip.compareDocumentPosition(group("running")) & Node.DOCUMENT_POSITION_FOLLOWING,
+      strip.compareDocumentPosition(group("running")) & Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy();
     unmount();
 
@@ -232,6 +242,7 @@ describe("the Workers tab", () => {
     fireEvent.keyDown(input, { key: "Escape" });
     expect(screen.queryByTestId("workers-panel-search")).toBeNull();
     expect(group("stopped")).toBeTruthy();
+    expect(group("running")).toBeTruthy();
   });
 
   it("shows only the groups the filter picks", () => {
@@ -243,5 +254,9 @@ describe("the Workers tab", () => {
     expect(screen.getByTestId("workers-panel-filter").getAttribute("aria-label")).toBe(
       "Filter: Running",
     );
+    // A filter that picks only groups with nothing in them says so, rather than a bare tab.
+    act(() => useWorkersPanelStore.setState({ shown: new Set(["stopped"]) }));
+    expect(screen.queryByTestId("workers-group-running")).toBeNull();
+    expect(screen.getByTestId("workers-filter-empty").textContent).toBe("No workers in Stopped");
   });
 });

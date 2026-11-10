@@ -1,6 +1,6 @@
 import { Menu } from "@base-ui/react/menu";
 import type { FeatureCardPr, HostId, ThreadId, WorkspaceId } from "@gram/contracts";
-import { CheckIcon, ChevronDown, ListFilter, Search, Server, Workflow, X } from "lucide-react";
+import { CheckIcon, ListFilter, Search, Server, Workflow, X } from "lucide-react";
 import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { create } from "zustand";
 import { useParams } from "@tanstack/react-router";
@@ -30,6 +30,7 @@ import { needsYouThreads } from "./needs-you-items";
 import { useNeedsYouIn } from "./use-needs-you";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { WorkersDocs } from "./workers-docs";
+import { GroupHeading, ROW_GRID, ROW_NOTE } from "./workers-group";
 import { workersByTab } from "./workers-model";
 import {
   DONE_SHOWN,
@@ -60,6 +61,9 @@ interface WorkersPanelState {
   readonly shown: ReadonlySet<StatusGroupId>;
   /** Done's rows past `DONE_SHOWN` are shown. */
   readonly doneAll: boolean;
+  /** The Docs section under the groups is folded. */
+  readonly docsFolded: boolean;
+  toggleDocs: () => void;
   toggle: (id: StatusGroupId) => void;
   setShown: (id: StatusGroupId, on: boolean) => void;
   showAll: () => void;
@@ -71,6 +75,8 @@ export const useWorkersPanelStore = create<WorkersPanelState>()((set) => ({
   toggled: new Set(),
   shown: new Set(),
   doneAll: false,
+  docsFolded: false,
+  toggleDocs: () => set((s) => ({ docsFolded: !s.docsFolded })),
   toggle: (id) =>
     set((s) => {
       const toggled = new Set(s.toggled);
@@ -88,12 +94,6 @@ export const useWorkersPanelStore = create<WorkersPanelState>()((set) => ({
   showAll: () => set({ shown: new Set() }),
   setDoneAll: (doneAll) => set({ doneAll }),
 }));
-
-/**
- * The rows' grid, which a group's heading, empty line and "N more" share: a 10 px mark column, then
- * the title, then its age, so marks centre on one column and words start on one edge.
- */
-const ROW_GRID = "grid w-full grid-cols-[0.625rem_minmax(0,1fr)_auto] gap-x-2 px-1.5";
 
 const folded = (toggled: ReadonlySet<StatusGroupId>, id: StatusGroupId): boolean =>
   FOLDED_BY_DEFAULT.includes(id) !== toggled.has(id);
@@ -146,6 +146,12 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
   // No worker at all, in any group: one empty state, not five groups that each say so.
   const none = !searching && all.every((group) => group.rows.length === 0);
   const messageOrchestrator = useMessageOrchestrator();
+  const listed = groups.filter((group) => group.rows.length > 0);
+  // What needs you outside this workspace, said while Needs you is among the groups shown.
+  const elsewhere =
+    !searching && groups.some((group) => group.id === "needs") ? needs.elsewhere.length : 0;
+  const docsFolded = useWorkersPanelStore((s) => s.docsFolded);
+  const toggleDocs = useWorkersPanelStore((s) => s.toggleDocs);
 
   return (
     <div
@@ -159,7 +165,6 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
         onKeyDown={rowKeys}
         className="flex min-h-0 flex-1 flex-col gap-section overflow-y-auto px-section pt-inset pb-section"
       >
-        <WorkersDocs workspaceId={workspaceId} />
         {none ? (
           <EmptyState
             testId="workers-empty"
@@ -176,18 +181,35 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
             No matches
           </p>
         ) : (
-          groups
-            // A search lists only where it found something; otherwise every group says what it holds.
-            .filter((group) => !searching || group.rows.length > 0)
-            .map((group) => (
+          <>
+            {/* With nothing asking here, what asks elsewhere is one line, under no empty group. */}
+            {elsewhere > 0 && !listed.some((group) => group.id === "needs") && (
+              <ElsewhereLine elsewhere={elsewhere} here={0} />
+            )}
+            {/* Only the groups that hold something: "Stopped 0" said nothing. */}
+            {listed.map((group) => (
               <Group
                 key={group.id}
                 group={group}
                 open={searching}
-                elsewhere={group.id === "needs" && !searching ? needs.elsewhere.length : 0}
-                here={name}
+                elsewhere={group.id === "needs" ? elsewhere : 0}
               />
-            ))
+            ))}
+            {/* A filter that picks only empty groups still says why the tab is bare. */}
+            {listed.length === 0 && elsewhere === 0 && (
+              <p
+                role="status"
+                data-testid="workers-filter-empty"
+                className="text-body text-muted-foreground"
+              >
+                No workers in {filterLabel(shown)}
+              </p>
+            )}
+          </>
+        )}
+        {/* What the workers wrote, after the workers themselves; a search is for workers only. */}
+        {!searching && (
+          <WorkersDocs workspaceId={workspaceId} folded={docsFolded} onToggle={toggleDocs} />
         )}
       </div>
     </div>
@@ -357,21 +379,36 @@ function Check() {
 }
 
 /**
- * One group: its name and quiet count, a chevron that folds it, and its rows or the one line that
- * says what would be there. `open` unfolds it whatever its fold, as a search does. `elsewhere` is
- * how much needs you outside this workspace (`here`), said under Needs you so its count reads as
- * this workspace's share, with the way to the Inbox that lists it all.
+ * What needs you outside this workspace (`elsewhereLine`), with the way to the Inbox that lists it
+ * all: under Needs you's rows, so its count reads as this workspace's share, or alone at the top
+ * when nothing here asks.
+ */
+function ElsewhereLine({ elsewhere, here }: { elsewhere: number; here: number }) {
+  return (
+    <button
+      type="button"
+      data-testid="workers-needs-elsewhere"
+      onClick={() => showInbox({ ask: true })}
+      className={ROW_NOTE}
+    >
+      <span className="col-start-2">{elsewhereLine(elsewhere, here)} · Open Inbox</span>
+    </button>
+  );
+}
+
+/**
+ * One group: its name and quiet count, a chevron that folds it, and its rows. A group with nothing
+ * in it isn't drawn at all. `open` unfolds it whatever its fold, as a search does. `elsewhere` is
+ * how much needs you outside this workspace, said under Needs you.
  */
 function Group({
   group,
   open,
   elsewhere = 0,
-  here,
 }: {
   group: StatusGroup;
   open: boolean;
   elsewhere?: number;
-  here?: string | undefined;
 }) {
   const isFolded = useWorkersPanelStore((s) => !open && folded(s.toggled, group.id));
   const toggle = useWorkersPanelStore((s) => s.toggle);
@@ -389,84 +426,28 @@ function Group({
       data-count={count}
       className="flex flex-col gap-tight"
     >
-      <h3>
-        <button
-          type="button"
-          aria-expanded={!isFolded}
-          aria-controls={body}
-          aria-label={`${group.label}, ${count}`}
-          onClick={() => toggle(group.id)}
-          // Its chevron centred on the rows' dots, its name where their titles start.
-          className={cn(
-            ROW_GRID,
-            "h-7 items-center rounded-xs text-left text-body text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring",
-          )}
-        >
-          <span className="flex justify-center">
-            <ChevronDown
-              aria-hidden
-              className={cn(
-                "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
-                isFolded && "-rotate-90",
-              )}
-            />
-          </span>
-          <span className="flex min-w-0 items-baseline gap-inset">
-            <span className="truncate font-medium text-foreground">{group.label}</span>
-            <span data-testid="workers-group-count" className="text-meta tabular-nums">
-              {count}
-            </span>
-          </span>
-        </button>
-      </h3>
+      <GroupHeading
+        label={group.label}
+        count={count}
+        folded={isFolded}
+        controls={body}
+        onToggle={() => toggle(group.id)}
+      />
       <div id={body} hidden={isFolded} className="flex flex-col">
-        {count === 0 ? (
-          // Only Needs you says it is empty, naming its workspace; any other group's 0 says it.
-          group.id === "needs" && (
-            <p
-              data-testid="workers-group-empty"
-              className={cn(ROW_GRID, "text-meta text-muted-foreground")}
-            >
-              <span className="col-start-2">
-                {group.id === "needs" && here !== undefined
-                  ? `Nothing in ${here} needs you`
-                  : group.empty}
-              </span>
-            </p>
-          )
-        ) : (
-          <>
-            {rows.map((row) => (
-              <Row key={row.threadId} row={row} />
-            ))}
-            {capped && (
-              <button
-                type="button"
-                data-testid="workers-done-more"
-                onClick={() => setDoneAll(true)}
-                className={cn(
-                  ROW_GRID,
-                  "rounded-xs py-1 text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring",
-                )}
-              >
-                <span className="col-start-2">{count - DONE_SHOWN} more</span>
-              </button>
-            )}
-          </>
-        )}
-        {elsewhere > 0 && (
+        {rows.map((row) => (
+          <Row key={row.threadId} row={row} />
+        ))}
+        {capped && (
           <button
             type="button"
-            data-testid="workers-needs-elsewhere"
-            onClick={() => showInbox({ ask: true })}
-            className={cn(
-              ROW_GRID,
-              "rounded-xs py-1 text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring",
-            )}
+            data-testid="workers-done-more"
+            onClick={() => setDoneAll(true)}
+            className={ROW_NOTE}
           >
-            <span className="col-start-2">{elsewhereLine(elsewhere, count)} · Open Inbox</span>
+            <span className="col-start-2">{count - DONE_SHOWN} more</span>
           </button>
         )}
+        {elsewhere > 0 && <ElsewhereLine elsewhere={elsewhere} here={count} />}
       </div>
     </section>
   );
@@ -586,18 +567,19 @@ function MachineTag({ hostId }: { hostId: HostId }) {
 /** The panel's rows have no feature card: their chips come from the thread and the ledger. */
 const NO_CARD_PRS: readonly FeatureCardPr[] = [];
 
+/** The rows the arrow keys move through: the workers, then the docs under them. */
+const KEYED_ROWS = '[data-testid="workers-panel-row"], [data-testid="doc-row"]';
+
 /**
  * ↑↓, Home and End move between the rows shown, as in every list; ⏎ opens the one focused. Off a
  * row (in the search box, on a heading) only ↑↓ from a row count, so typing keeps its keys.
  */
 function rowKeys(event: KeyboardEvent<HTMLElement>) {
-  const from = (event.target as HTMLElement).closest<HTMLElement>(
-    '[data-testid="workers-panel-row"]',
-  );
+  const from = (event.target as HTMLElement).closest<HTMLElement>(KEYED_ROWS);
   if (from === null) return;
-  const rows = [
-    ...event.currentTarget.querySelectorAll<HTMLElement>('[data-testid="workers-panel-row"]'),
-  ].filter((row) => row.closest("[hidden]") === null);
+  const rows = [...event.currentTarget.querySelectorAll<HTMLElement>(KEYED_ROWS)].filter(
+    (row) => row.closest("[hidden]") === null,
+  );
   const at = rows.indexOf(from);
   const next =
     event.key === "ArrowDown"

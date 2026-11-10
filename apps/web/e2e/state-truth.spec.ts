@@ -69,13 +69,8 @@ test("the sidebar, the Workers panel, the Inbox and Quiet agree on what needs yo
   // The Workers panel names its workspace, counts that workspace's share, and says the rest.
   let panel = await workersPanel(page);
   await expect(panel.getByTestId("workers-panel-title")).toHaveText("Workers in Gram");
-  await expect(panel.getByTestId("workers-group-needs")).toHaveAttribute(
-    "data-count",
-    String(gramShare),
-  );
-  await expect(panel.getByTestId("workers-group-empty").first()).toHaveText(
-    "Nothing in Gram needs you",
-  );
+  // Nothing in Gram asks, so there is no "Needs you 0" group: only what asks elsewhere, in a line.
+  await expect(panel.getByTestId("workers-group-needs")).toHaveCount(0);
   await expect(panel.getByTestId("workers-needs-elsewhere")).toHaveText(
     `${total - gramShare} need you elsewhere · Open Inbox`,
   );

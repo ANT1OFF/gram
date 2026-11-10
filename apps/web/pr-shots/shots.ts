@@ -4637,6 +4637,45 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "workers-docs",
+    title:
+      "The Workers tab on the realistic morning, with five docs its workers published: only the groups that hold something, then Docs, one line each",
+    open: async (page) => {
+      const made = await openRealisticMorning(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openOrchestrator(page, made.orchestratorThreadId);
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page.evaluate(
+        ({ thread, titles }) => {
+          const minute = 60_000;
+          titles.forEach((title, i) =>
+            window.gramMock!.simulatePublishDoc(
+              thread as never,
+              { title, content: `# ${title}\n\nWhat was checked, and what is left.` } as never,
+              Date.now() - (titles.length - i) * 9 * minute,
+            ),
+          );
+        },
+        {
+          thread: made.searchWorker,
+          titles: [
+            "Settings search: what the review bot found",
+            "Cold start: where the first paint goes",
+            "Shortcut sheet: keys read from the keymap",
+            "Inline diff comments: the anchoring rules",
+            "Settings search: second review of #142, the two nits and what changed",
+          ],
+        },
+      );
+      await page.keyboard.press("ControlOrMeta+KeyJ");
+      await page.getByTestId("workers-panel").waitFor();
+      await page.getByTestId("workers-panel-row").first().waitFor();
+      await page.getByTestId("docs-strip").waitFor();
+      await page.mouse.move(700, 890);
+      await page.waitForTimeout(400);
+    },
+  },
+  {
     name: "workers-list",
     title: "⌘J: every worker of the workspace, in the right panel's Workers tab",
     open: async (page) => {
