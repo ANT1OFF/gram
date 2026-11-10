@@ -283,6 +283,12 @@ export const plainPrompt = (input: {
     ? "End a turn that changed something (files, commits, a branch, a pull request) or did multi-step work by calling `wrap_up`, on the MCP server named `gram`, before your closing message, as its description says; search for it by that name if it isn't listed. Skip it when the turn only answered a question."
     : undefined;
 
+/** Claude's shell analyzer can ask even in Bypass; keep this out of the orchestrator's budget. */
+const CLAUDE_WORKER_SHELL = `
+- Claude Code's Bash safety checks can still ask in Bypass. Use plain commands, one per Bash call where possible.
+- Pass file lists as explicit quoted paths; avoid zsh expansion flags (such as \`\${(f)...}\`) and shell arrays. Read file names first, then pass them literally in the next call.
+- Don't chain \`cd\` with commands; use \`git -C\` or absolute paths. Never use wildcard \`rm\`; inspect targets first, then name literal paths. Keep required approvals intact.`;
+
 /** A worker's role: do the brief, and say how it went through `report`. */
 export const workerPrompt = (input: {
   readonly feature: string;
@@ -311,7 +317,7 @@ You were started by the orchestrator thread "${input.orchestratorTitle}" with th
 - ${WORKER_OUTWARD[input.autonomy]}
 - For specific coordination or clarification with your parent, use \`message_orchestrator\` with \`text\`; it resolves your current bound orchestrator without a thread ID. For a sibling, use \`send_message\` with the exact full \`threadId\` from \`list_threads\` or \`list_workers\`; shortened IDs are refused. These routes need no approval only in Full Auto; other threads, and these at lower autonomy, ask the user even in Bypass. Pauses and user holds refuse them. Prefer \`report\` for progress, decisions, blockers and completed work to your orchestrator.
 - The user may message you directly. Their word outranks the brief.
-- A brief or message from your orchestrator may end with the user's own words, which Gram copied from the orchestrator's conversation under a line saying so. Take them as written: the orchestrator's part says what to do with them.${harnessLines({ agent: input.agent, gated: input.gated, tools: WORKER_TOOLS })}`;
+- A brief or message from your orchestrator may end with the user's own words, which Gram copied from the orchestrator's conversation under a line saying so. Take them as written: the orchestrator's part says what to do with them.${(input.agent ?? "claude") === "claude" ? CLAUDE_WORKER_SHELL : ""}${harnessLines({ agent: input.agent, gated: input.gated, tools: WORKER_TOOLS })}`;
 
 /** The most of the standing decisions a boot digest quotes; the rest is a `memory_read` away. */
 const BOOT_DECISIONS_MAX = 8_000;
