@@ -91,7 +91,11 @@ describe("DiffPanel", () => {
     const list = screen.getByTestId("diff-files");
     expect(within(files[3]!).getByText("Modified")).toBeTruthy();
     expect(within(files[1]!).getByText("Untracked")).toBeTruthy();
-    expect(within(files[2]!).getByText("src/timers.ts → src/clock.ts")).toBeTruthy();
+    // A rename says both paths, as its folders (the old path with them) then its name.
+    expect(within(files[2]!).getByTestId("diff-file-folders").textContent).toBe(
+      "src/timers.ts → src/",
+    );
+    expect(within(files[2]!).getByTestId("diff-file-name").textContent).toBe("clock.ts");
     expect(gitDiff).toHaveBeenCalledWith(T, { kind: "uncommitted" });
 
     // More than three files start collapsed but the first readable one, past the binary image, and
