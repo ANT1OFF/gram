@@ -17,6 +17,7 @@ import {
   afterMachineRestart,
   MACHINE_RESTART_KEY,
   machineRestartText,
+  machineRestartToolText,
 } from "./machine-restart.ts";
 import { missingThreadFolder } from "../fs/folders.ts";
 import { AgentUnavailable, type Thread, type TurnId, type ThreadId } from "@gram/contracts";
@@ -318,7 +319,20 @@ export const makeSessionLifecycle = ({
                   errorText: "Session ended before the process exited",
                 });
               }
-              if (preliminary.length > 0)
+              // A machine that restarted under the session took its running tools with it (a
+              // foreground shell's process died with the host); none of them is coming back, and
+              // the resumed session doesn't run them again. Said as what is known: no exit code.
+              const cut = restart === undefined ? [] : inFlight.accumulator.unfinishedTools();
+              const errorText =
+                restart === undefined ? "" : machineRestartToolText(restart.machine);
+              for (const toolCallId of cut) {
+                yield* appendChunkLocked(rt, inFlight.messageId, {
+                  type: "tool-output-error",
+                  toolCallId,
+                  errorText,
+                });
+              }
+              if (preliminary.length > 0 || cut.length > 0)
                 yield* appendChunkLocked(rt, inFlight.messageId, { type: "finish" });
             }
           }),

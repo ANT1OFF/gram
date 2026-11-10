@@ -168,7 +168,9 @@ ends, waiting longer each time up to 30 seconds. A connection the main Gram has 
 20 seconds counts as ended too: the main Gram pings every 5 seconds, so a link that broke without
 a word (its tailnet went down, a sleep) is dialled again rather than waited on. On Linux it runs only while you're logged in
 unless you allow it to linger: `loginctl enable-linger "$USER"`. The macOS log is `host.log` in
-the host's folder; on Linux use `journalctl --user -u gram-host`.
+the host's folder; on Linux use `journalctl --user -u gram-host`. A `gram-host run` in a terminal
+of its own, which `gram-host leave` doesn't stop, stops dialling within seconds of the leave, and
+its sessions end with it.
 
 | Command                                            | What it does                                      |
 | -------------------------------------------------- | ------------------------------------------------- |
@@ -329,6 +331,8 @@ and in the same worktree there:
 
 - A turn the restart cut short carries on with a short note telling the agent the machine
   restarted. The transcript shows a quiet line, such as `cachyos restarted · continued the turn`.
+  A tool call the restart cut off, such as a shell command still running, ends as interrupted by
+  the restart, its result unknown; it isn't run again by itself.
 - A thread with messages waiting in its queue sends them, and shows `resumed the session`.
 - An idle thread just rests, and opens again on your next message.
 

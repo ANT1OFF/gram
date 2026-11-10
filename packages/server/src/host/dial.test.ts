@@ -153,7 +153,12 @@ const servedHost = (hostId: string) =>
   });
 
 /** The host dialling `main` for good, on short timings. */
-const dialling = (main: { port: number }) => {
+const dialling = (
+  main: { port: number },
+  joined?: () => boolean,
+  /** Runs once what the host kept across its dials (its sessions among it) has ended. */
+  onEnded: () => void = () => {},
+) => {
   const key = generateHostKey();
   const hostId = hostIdOf(key.publicKey);
   return dialForever(
@@ -162,8 +167,9 @@ const dialling = (main: { port: number }) => {
       hostId,
       key: privateKeyFrom(key.privateKeyPem),
       url: `ws://127.0.0.1:${main.port}/host/connect`,
+      ...(joined === undefined ? {} : { joined }),
     },
-    servedHost(hostId),
+    servedHost(hostId).pipe(Effect.tap(() => Effect.addFinalizer(() => Effect.sync(onEnded)))),
     { retryFirstMs: 50, detachedMs: 60_000, idleMs: 300 },
   );
 };
@@ -188,5 +194,77 @@ describe("dialForever over a link that went quiet", () => {
       expect(main.dials()).toBe(1);
       yield* Fiber.interrupt(fiber);
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+});
+
+describe("dialForever after the machine left", () => {
+  it.live("ends its dial and stops dialling, its sessions ending with it", () =>
+    Effect.gen(function* () {
+      const main = yield* mainGram(100);
+      let left = false;
+      let ended = 0;
+      const fiber = yield* Effect.forkScoped(
+        dialling(
+          main,
+          () => !left,
+          () => void ended++,
+        ),
+      );
+      yield* Effect.sleep("400 millis");
+      expect(main.dials()).toBe(1);
+      // `gram-host leave --no-service` in another terminal: it can't stop this host, which before
+      // this change kept dialling with the key it read at start.
+      left = true;
+      const stopped = yield* Fiber.await(fiber).pipe(Effect.timeout("2 seconds"));
+      expect(stopped._tag).toBe("Success");
+      expect(ended).toBe(1);
+      yield* Effect.sleep("300 millis");
+      expect(main.dials()).toBe(1);
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+
+  // The #349 review: a leave while the host waits to dial again ended nothing until that wait
+  // (up to 30 s) was over, its kept sessions alive meanwhile.
+  it.live("ends what it kept at once when it leaves during the wait between dials", () =>
+    Effect.gen(function* () {
+      const { counts, service } = counted();
+      let left = false;
+      const fiber = yield* Effect.forkScoped(
+        dialForever({ ...refused(), joined: () => !left }, service, {
+          // The longest wait there is, entered straight away.
+          retryFirstMs: 30_000,
+          detachedMs: 60_000,
+        }),
+      );
+      // The refused dial built what the host keeps, then went to wait out its 30 seconds.
+      while (counts.built === 0) yield* Effect.sleep("20 millis");
+      yield* Effect.sleep("200 millis");
+      expect(counts).toEqual({ built: 1, ended: 0 });
+      left = true;
+      // Within the production cadence of a look a second, not the rest of the 30 s.
+      const stopped = yield* Fiber.await(fiber).pipe(Effect.timeout("3 seconds"));
+      expect(stopped._tag).toBe("Success");
+      expect(counts).toEqual({ built: 1, ended: 1 });
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("never dials a Gram it left before it started", () =>
+    Effect.gen(function* () {
+      const main = yield* mainGram(100);
+      const { counts, service } = counted();
+      const key = generateHostKey();
+      yield* dialForever(
+        {
+          origin: `http://127.0.0.1:${main.port}`,
+          hostId: hostIdOf(key.publicKey),
+          key: privateKeyFrom(key.privateKeyPem),
+          url: `ws://127.0.0.1:${main.port}/host/connect`,
+          joined: () => false,
+        },
+        service,
+      ).pipe(Effect.timeout("2 seconds"));
+      expect(main.dials()).toBe(0);
+      expect(counts.built).toBe(counts.ended);
+    }).pipe(Effect.scoped),
   );
 });

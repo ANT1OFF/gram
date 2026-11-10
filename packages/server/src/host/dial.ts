@@ -14,6 +14,11 @@ import { watchedSocket } from "./socket-end.ts";
 /** The first wait after a dial ends, doubled each time up to the last. */
 const RETRY_FIRST_MS = 2_000;
 const RETRY_MOST_MS = 30_000;
+/**
+ * How often a host waiting to dial again looks whether its machine is still joined, so a leave
+ * during that wait (up to `RETRY_MOST_MS`) ends what it kept within about this long.
+ */
+const JOIN_POLL_MS = 1_000;
 /** A connection that lasted this long resets the wait. */
 const STEADY_MS = 60_000;
 /**
@@ -32,6 +37,12 @@ export interface DialOptions {
   /** Where to dial; the origin's `wss:` connect address unless a test says otherwise. */
   readonly url?: string;
   readonly now?: () => number;
+  /**
+   * Whether this machine is still joined as it was when the host started. Once it isn't
+   * (`gram-host leave`, even with the host running in a terminal of its own), the dial ends and
+   * `dialForever` stops: it never dials a Gram the machine left. Always, when left out.
+   */
+  readonly joined?: () => boolean;
 }
 
 export const connectUrl = (origin: string) =>
@@ -62,16 +73,20 @@ export const dialOnce = <R>(
       }),
       served,
     );
-    // Ends a dial the main Gram has gone silent on, so the next one is made.
+    const joined = options.joined ?? (() => true);
+    // Ends a dial the main Gram has gone silent on, so the next one is made, and one of a
+    // machine that has left since, so none is.
     yield* Effect.suspend(() =>
-      now() - heard < idleMs
-        ? Effect.void
-        : Effect.logWarning(
-            "gram-host: nothing from the main Gram for too long; dialling again",
-          ).pipe(
-            Effect.annotateLogs({ silentSeconds: Math.round((now() - heard) / 1000) }),
-            Effect.andThen(Deferred.succeed(ended, undefined)),
-          ),
+      !joined()
+        ? Deferred.succeed(ended, undefined)
+        : now() - heard < idleMs
+          ? Effect.void
+          : Effect.logWarning(
+              "gram-host: nothing from the main Gram for too long; dialling again",
+            ).pipe(
+              Effect.annotateLogs({ silentSeconds: Math.round((now() - heard) / 1000) }),
+              Effect.andThen(Deferred.succeed(ended, undefined)),
+            ),
     ).pipe(
       Effect.repeat(Schedule.spaced(Duration.millis(Math.max(10, Math.floor(idleMs / 4))))),
       Effect.forkScoped,
@@ -115,7 +130,7 @@ export const dialOnce = <R>(
 export const DETACHED_GRACE_MS = 3 * 60_000;
 
 /**
- * Dials the main Gram for good: each time a connection ends or a dial is refused (the machine
+ * Dials the main Gram for as long as the machine stays joined: each time a connection ends or a dial is refused (the machine
  * isn't confirmed yet, the main Gram is closed, the tailnet is down) the host waits and dials
  * again, longer each time up to half a minute. What it serves is built once and kept across dials,
  * so a session keeps running through a dropped connection and the next one picks it up; only
@@ -129,10 +144,12 @@ export const dialForever = <R>(
     readonly detachedMs?: number;
     readonly retryFirstMs?: number;
     readonly idleMs?: number;
+    readonly joinPollMs?: number;
   } = {},
-): Effect.Effect<never, never, R> =>
+): Effect.Effect<void, never, R> =>
   Effect.gen(function* () {
     const now = options.now ?? Date.now;
+    const joined = options.joined ?? (() => true);
     const detachedMs = timing.detachedMs ?? DETACHED_GRACE_MS;
     const retryFirstMs = timing.retryFirstMs ?? RETRY_FIRST_MS;
     let kept: { readonly host: HostService; readonly scope: Scope.Closeable } | undefined;
@@ -158,8 +175,20 @@ export const dialForever = <R>(
     const served = Effect.sync(() => {
       detachedSince = undefined;
     });
+    const joinPollMs = timing.joinPollMs ?? JOIN_POLL_MS;
+    /** Done once the machine has left: looked at every `joinPollMs` meanwhile. */
+    const untilLeft = (): Effect.Effect<void> =>
+      Effect.suspend(() =>
+        joined() ? Effect.sleep(joinPollMs).pipe(Effect.andThen(untilLeft())) : Effect.void,
+      );
     let wait = retryFirstMs;
     while (true) {
+      if (!joined()) {
+        yield* Effect.logWarning("gram-host: this machine left its Gram; the host stops dialling");
+        // What it kept ends now, its sessions with it, not only once the host's scope closes.
+        yield* release;
+        return;
+      }
       if (
         kept !== undefined &&
         detachedSince !== undefined &&
@@ -172,11 +201,13 @@ export const dialForever = <R>(
       const started = now();
       yield* dialOnce(options, keptService, served, timing.idleMs);
       detachedSince ??= now();
+      if (!joined()) continue;
       if (now() - started >= STEADY_MS) wait = retryFirstMs;
       yield* Effect.logInfo("gram-host: not connected; dialling again").pipe(
         Effect.annotateLogs({ inSeconds: Math.round(wait / 1000) }),
       );
-      yield* Effect.sleep(wait);
+      // The wait ends early on a leave: the loop's top then stops the host at once.
+      yield* Effect.raceFirst(Effect.sleep(wait), untilLeft());
       wait = Math.min(wait * 2, RETRY_MOST_MS);
     }
   }).pipe(Effect.scoped);
