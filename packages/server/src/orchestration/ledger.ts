@@ -13,6 +13,7 @@ import {
   prFactsOf,
   reopenedSinceMerge,
   requiredChecksOf,
+  escalationStep,
   samePr,
   workerHasOngoingWork,
   type BoundPr,
@@ -615,6 +616,14 @@ const entryOf = (
     messagesFromOrchestrator: memo?.messages ?? 0,
     ...(facts.wakes === undefined || facts.wakes.length === 0 ? {} : { wakes: facts.wakes }),
     ...(thread.runWatches?.length ? { runWatches: thread.runWatches } : {}),
+    // Its checks failing on an open PR, while it isn't finished: the next step up, as advice.
+    ...(!FINISHED_STATES.has(state) &&
+    pr !== undefined &&
+    pr.state === "open" &&
+    primaryBadge(facts) !== undefined &&
+    requiredChecksOf(primaryBadge(facts)!) === "failing"
+      ? { nextStep: escalationStep(thread.model) }
+      : {}),
   };
 };
 
