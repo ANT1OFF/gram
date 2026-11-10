@@ -1,4 +1,5 @@
 import {
+  aboveHigh,
   AgentKind,
   type AgentModel,
   type GatewayProfile,
@@ -20,6 +21,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -106,6 +108,9 @@ const onModel = (
     keep ? value.variant : undefined,
   );
 };
+
+/** Under a following slot's effort menu, which ends at high. */
+export const FOLLOW_EFFORT_NOTE = "Ends at High while it follows";
 
 /**
  * The prompt box's choices: one chip and its popover, as in a thread's composer (`ComposerChoices`),
@@ -209,9 +214,15 @@ export function AgentFields({
   subscriptionOnly = false,
   mode,
   onPicked,
+  follows = false,
 }: {
   value: AgentChoice;
   onChange: (next: AgentChoice) => void;
+  /**
+   * The slot follows the recommended setup: its effort menu ends at high, since nothing that
+   * follows goes past it. A pinned slot offers every effort the model lists.
+   */
+  follows?: boolean;
   /** Only these agent kinds are offered, for a role not every agent may take; absent offers all. */
   allowed?: readonly AgentKind[] | undefined;
   /**
@@ -249,7 +260,10 @@ export function AgentFields({
   // The local CLI or explicitly chosen gateway supplies its own default. Never guess an account model.
   const listedDefault = defaultModelId(models);
   const shownModel = value.model || listedDefault || "";
-  const efforts = models && !needsKey ? effortOptions(models, shownModel) : [];
+  const listedEfforts = models && !needsKey ? effortOptions(models, shownModel) : [];
+  const efforts = follows
+    ? listedEfforts.filter((option) => !aboveHigh(option.value))
+    : listedEfforts;
   const effortItems = [DEFAULT_EFFORT_OPTION, ...efforts];
   useEffect(() => {
     if (initializeDefault && value.model === "" && listedDefault && !needsKey) {
@@ -422,6 +436,17 @@ export function AgentFields({
                     {o.label}
                   </SelectItem>
                 ))}
+                {follows && (
+                  <>
+                    <SelectSeparator />
+                    <div
+                      data-testid="follow-effort-note"
+                      className="px-2 py-1 text-meta text-muted-foreground"
+                    >
+                      {FOLLOW_EFFORT_NOTE}
+                    </div>
+                  </>
+                )}
               </SelectContent>
             </Select>
           )}
