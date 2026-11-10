@@ -252,7 +252,9 @@
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <!-- The product's lucide glyphs: Send for steer, ListPlus for queue, Square for stop. -->
       <symbol id="steer" viewBox="0 0 24 24">
-        <path d="M14.5 21.7a.5.5 0 0 0 .9 0l6.5-19a.5.5 0 0 0-.6-.6l-19 6.5a.5.5 0 0 0 0 .9l7.9 3.2a2 2 0 0 1 1.1 1.1z" />
+        <path
+          d="M14.5 21.7a.5.5 0 0 0 .9 0l6.5-19a.5.5 0 0 0-.6-.6l-19 6.5a.5.5 0 0 0 0 .9l7.9 3.2a2 2 0 0 1 1.1 1.1z"
+        />
         <path d="m21.9 2.1-10.9 10.9" />
       </symbol>
       <symbol id="queue" viewBox="0 0 24 24">
@@ -268,8 +270,14 @@
         <path d="m17 17 3 3-3 3" />
       </symbol>
       <symbol id="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
-      <symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></symbol>
-      <symbol id="slash" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="m5.7 18.3 12.6-12.6" /></symbol>
+      <symbol id="x" viewBox="0 0 24 24">
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+      </symbol>
+      <symbol id="slash" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="m5.7 18.3 12.6-12.6" />
+      </symbol>
     </svg>
     <main class="mock-canvas">
       <p class="mock-note">
@@ -355,7 +363,12 @@
                   <button class="ib" type="button" aria-label="Attach">+</button>
                   <span class="fill"></span>
                   <span class="split">
-                    <button class="chev" type="button" aria-label="How to deliver" aria-expanded="true">
+                    <button
+                      class="chev"
+                      type="button"
+                      aria-label="How to deliver"
+                      aria-expanded="true"
+                    >
                       <svg class="i"><use href="#chev" /></svg>
                     </button>
                     <button class="round" type="button" aria-label="Steer">
@@ -372,7 +385,8 @@
                 </button>
                 <button type="button" role="menuitemradio" aria-checked="false">
                   <svg class="i"><use href="#queue" /></svg
-                  ><span>Queue<span class="sub">After the turn ends</span></span><kbd>⌥↵</kbd>
+                  ><span>Queue<span class="sub">After the turn ends</span></span
+                  ><kbd>⌥↵</kbd>
                 </button>
                 <button type="button" role="menuitemradio" aria-checked="false">
                   <svg class="i"><use href="#interrupt" /></svg
@@ -413,13 +427,31 @@
                   <button class="ib" type="button" aria-label="Attach">+</button>
                   <span class="fill"></span>
                   <span class="seg" role="radiogroup" aria-label="Deliver">
-                    <button class="ib" type="button" role="radio" aria-pressed="true" aria-label="Steer">
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="true"
+                      aria-label="Steer"
+                    >
                       <svg class="i"><use href="#steer" /></svg>
                     </button>
-                    <button class="ib" type="button" role="radio" aria-pressed="false" aria-label="Queue">
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="false"
+                      aria-label="Queue"
+                    >
                       <svg class="i"><use href="#queue" /></svg>
                     </button>
-                    <button class="ib" type="button" role="radio" aria-pressed="false" aria-label="Interrupt">
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="false"
+                      aria-label="Interrupt"
+                    >
                       <svg class="i"><use href="#interrupt" /></svg>
                     </button>
                   </span>
@@ -440,13 +472,31 @@
                 <div class="draft">Skip the e2e suite.</div>
                 <div class="bar">
                   <span class="seg" role="radiogroup" aria-label="Deliver">
-                    <button class="ib" type="button" role="radio" aria-pressed="true" aria-label="Steer">
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="true"
+                      aria-label="Steer"
+                    >
                       <svg class="i"><use href="#steer" /></svg>
                     </button>
-                    <button class="ib" type="button" role="radio" aria-pressed="false" aria-label="Queue">
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="false"
+                      aria-label="Queue"
+                    >
                       <svg class="i"><use href="#queue" /></svg>
                     </button>
-                    <button class="ib" type="button" role="radio" aria-pressed="false" aria-label="Interrupt">
+                    <button
+                      class="ib"
+                      type="button"
+                      role="radio"
+                      aria-pressed="false"
+                      aria-label="Interrupt"
+                    >
                       <svg class="i"><use href="#interrupt" /></svg>
                     </button>
                   </span>

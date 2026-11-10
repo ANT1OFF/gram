@@ -35,9 +35,14 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => ({
       client["thread.send"]({ threadId, input, clientMessageId: crypto.randomUUID() }),
       connection,
     ),
-  steer: (threadId, input) =>
+  steer: (threadId, input, options) =>
     runMessage(
-      client["thread.steer"]({ threadId, input, clientMessageId: crypto.randomUUID() }),
+      client["thread.steer"]({
+        threadId,
+        input,
+        clientMessageId: crypto.randomUUID(),
+        ...(options?.interrupt === true ? { interrupt: true } : {}),
+      }),
       connection,
     ),
   interrupt: (threadId) => run(client["thread.interrupt"]({ threadId })),

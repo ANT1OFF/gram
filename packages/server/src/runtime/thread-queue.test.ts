@@ -517,6 +517,37 @@ describe("ThreadRuntimes queue", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect("marks a steer and an interrupt on the message the agent took", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const thread = yield* runtimes.create({
+        projectRoot: "/work/repo",
+        checkout: { kind: "main", path: "/work/repo" },
+        input: { text: "one" },
+      });
+      const session = yield* waitFor(
+        "the first send",
+        fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+      );
+      yield* runtimes.steer(thread.id, { text: "skip e2e" });
+      yield* runtimes.steer(thread.id, { text: "wrong branch" }, { interrupt: true });
+      expect(session.steered.map((i) => i.text)).toEqual(["skip e2e", "wrong branch"]);
+      expect(session.steeredInterrupt).toEqual([false, true]);
+      const delivered = (yield* store.listMessages(thread.id)).flatMap((m) =>
+        m.role === "user"
+          ? [[m.parts.find((p) => p.type === "text")?.text, m.metadata?.delivery]]
+          : [],
+      );
+      expect(delivered).toEqual([
+        ["one", undefined],
+        ["skip e2e", "steer"],
+        ["wrong branch", "interrupt"],
+      ]);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect(
     "queues a notice behind a running turn, steers one only when asked, and sends one to an idle thread",
     () =>

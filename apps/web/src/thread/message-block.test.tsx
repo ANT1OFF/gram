@@ -781,6 +781,41 @@ describe("MessageBlock sent time", () => {
     expect(screen.getByTestId("message-copy").getAttribute("aria-label")).toBe("Copy message");
   });
 
+  it("marks a message sent into a running turn as steered or interrupting, beside its time", () => {
+    for (const [delivery, label] of [
+      ["steer", "Steered"],
+      ["interrupt", "Interrupted the turn"],
+    ] as const) {
+      render(
+        {
+          id: `u-${delivery}`,
+          role: "user",
+          metadata: { createdAt: AT, delivery },
+          parts: [{ type: "text", text: "skip e2e" }],
+        },
+        undefined,
+      );
+      const mark = screen.getByTestId("message-delivery");
+      expect(mark.textContent).toBe(label);
+      expect(mark.getAttribute("data-delivery")).toBe(delivery);
+      expect(mark.compareDocumentPosition(screen.getByTestId("message-sent-at"))).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      cleanup();
+    }
+    // A message that started a turn of its own says nothing of how it went.
+    render(
+      {
+        id: "u-plain",
+        role: "user",
+        metadata: { createdAt: AT },
+        parts: [{ type: "text", text: "go" }],
+      },
+      undefined,
+    );
+    expect(screen.queryByTestId("message-delivery")).toBeNull();
+  });
+
   it("dates a notice and a reply in their actions, the reply's after its \u2026", async () => {
     const notice = mockReviewNotice(412);
     render(

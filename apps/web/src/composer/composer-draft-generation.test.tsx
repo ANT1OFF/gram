@@ -138,7 +138,7 @@ it("repair oracle: late failed send recovers original refs across remount plus n
   s.send.mockReturnValueOnce(p.promise);
   type("Sent A");
   await s.paste("old.txt");
-  fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+  fireEvent.click(screen.getByRole("button", { name: "Steer" }), { altKey: true });
   await waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
   s.switchTo(B);
   s.switchTo(A);
@@ -150,7 +150,7 @@ it("repair oracle: late failed send recovers original refs across remount plus n
   s.switchTo(A);
   expect(field().value).toBe("Sent A\n\nNew B");
   expect(screen.getAllByTestId("attachment-chip")).toHaveLength(2);
-  expect(screen.getByRole("button", { name: "Queue" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("button", { name: "Steer" }).hasAttribute("disabled")).toBe(true);
   await act(async () => u.resolve({ path: "/invented/new-ready.txt", name: "new.txt" }));
   expect(
     screen
@@ -164,7 +164,7 @@ it("countercontrol: same-lifetime snapshot conserves files and pending rollback"
   s.send.mockReturnValueOnce(p.promise);
   type("Old");
   await s.paste("old.txt");
-  fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+  fireEvent.click(screen.getByRole("button", { name: "Steer" }), { altKey: true });
   await waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
   s.switchTo(B);
   s.snapshot(10);
@@ -185,8 +185,8 @@ it.each(["send", "steer", "stash"] as const)(
     await s.paste("old.txt");
     if (operation === "stash") stash();
     else
-      fireEvent.click(screen.getByRole("button", { name: "Queue" }), {
-        metaKey: operation === "steer",
+      fireEvent.click(screen.getByRole("button", { name: "Steer" }), {
+        altKey: operation !== "steer",
       });
     await waitFor(() =>
       expect(s[operation === "stash" ? "stashDraft" : operation]).toHaveBeenCalledTimes(1),
@@ -226,7 +226,7 @@ it("countercontrol: removal snapshot fences rollback without affecting another t
   s.send.mockReturnValueOnce(p.promise);
   type("Old");
   await s.paste("old.txt");
-  fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+  fireEvent.click(screen.getByRole("button", { name: "Steer" }), { altKey: true });
   await waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
   s.switchTo(B);
   type("Other");
@@ -275,8 +275,8 @@ it.each(["send", "steer", "stash"] as const)(
     await s.paste("old.txt");
     if (operation === "stash") stash();
     else
-      fireEvent.click(screen.getByRole("button", { name: "Queue" }), {
-        metaKey: operation === "steer",
+      fireEvent.click(screen.getByRole("button", { name: "Steer" }), {
+        altKey: operation !== "steer",
       });
     await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
     s.snapshot(20);
@@ -288,7 +288,7 @@ it.each(["send", "steer", "stash"] as const)(
       screen.getAllByTestId("attachment-chip").map((chip) => chip.getAttribute("title")),
     ).toEqual([`/invented/${A}/new.txt`]);
     expect(screen.queryByText(/invented old lifetime refusal/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Steer" }), { altKey: true });
     await waitFor(() => expect(s.send).toHaveBeenCalledTimes(operation === "send" ? 2 : 1));
     expect(s.send.mock.calls.at(-1)![1]).toMatchObject({
       text: "New lifetime",
@@ -326,7 +326,7 @@ it("a late rewind cannot send into the reopened lifetime or cancel its new edit"
       .getState()
       .startEdit(A, "Old edit", { messageId: "old-message" as never, files: false }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+  fireEvent.click(screen.getByRole("button", { name: "Steer" }), { altKey: true });
   await waitFor(() => expect(rewind).toHaveBeenCalledTimes(1));
   s.snapshot(20);
   act(() =>

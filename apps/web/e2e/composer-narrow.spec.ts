@@ -81,15 +81,16 @@ test("the choices chip stays icons on one row as it narrows, its name every valu
   const edge = await right(message);
   expect(await right(stop)).toBeLessThanOrEqual(edge);
 
-  // With a draft the one button takes Queue, and stays inside the composer however narrow it gets.
+  // With a draft the one button takes Steer, its chevron beside it, and both stay inside the
+  // composer however narrow it gets.
   await message.fill("use the fake clock");
   await squeeze(page, 230);
-  await expect(toolbar.getByRole("button", { name: "Steer now" })).toHaveCount(0);
   // Once the toolbar has laid itself out for the new width, a frame after the resize.
   const edge230 = await right(message);
   await expect
-    .poll(() => right(page.getByRole("button", { name: "Queue", exact: true })))
+    .poll(() => right(page.getByRole("button", { name: "Steer", exact: true })))
     .toBeLessThanOrEqual(edge230);
+  await expect.poll(() => right(page.getByTestId("delivery-menu"))).toBeLessThanOrEqual(edge230);
   // Narrow, every section is still there: Speed's says what Fast costs.
   await openChoices(page, toolbar, "speed");
   await expect(choicesPopup(page)).toContainText("separately billed usage credits");
@@ -149,7 +150,9 @@ test("beside a review in a 1024 px window, the chip keeps its icons and its name
   await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
   await expect(toolbar.getByRole("button", { name: "More composer controls" })).toHaveCount(0);
 });
-test("right-click on Send offers steering and sending into a new draft", async ({ page }) => {
+test("right-click on Send offers the three deliveries and sending into a new draft", async ({
+  page,
+}) => {
   // Steer disappears when the scripted turn reaches approval; keep the turn running until clicked.
   await page.addInitScript(() => {
     window.gramMockHoldGates = true;
@@ -160,9 +163,10 @@ test("right-click on Send offers steering and sending into a new draft", async (
   await page.getByTestId("send-menu-trigger").click({ button: "right" });
   const menu = page.getByTestId("send-menu");
   await expect(menu.getByRole("menuitem", { name: /^Queue/ })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: /^Interrupt/ })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: /Send and start a new draft/ })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Stop", exact: true })).toBeVisible();
-  await menu.getByRole("menuitem", { name: /^Steer now/ }).click();
+  await menu.getByRole("menuitem", { name: /^Steer/ }).click();
   await expect(page.getByLabel("Message", { exact: true })).toHaveValue("");
 });
 
@@ -220,7 +224,7 @@ test("a running turn lights the border, and Steer waits for a draft", async ({ p
   await expect.poll(() => light.evaluate((el) => el.style.translate)).not.toBe(first);
 
   await message.fill("use the fake clock");
-  await expect(page.getByRole("button", { name: "Queue", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Steer", exact: true })).toBeVisible();
   await expect(stop).toBeHidden();
   await message.fill("");
 
@@ -231,7 +235,7 @@ test("a running turn lights the border, and Steer waits for a draft", async ({ p
   await expect(page.getByTestId("running-edge")).toHaveCount(0);
 });
 
-test("one send button: Stop while empty, Queue with a draft, Steer with the modifier", async ({
+test("one send button: Stop while empty, Steer with a draft, Queue on ⌥, Interrupt on ⌘", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -246,13 +250,16 @@ test("one send button: Stop while empty, Queue with a draft, Steer with the modi
 
   const message = page.getByLabel("Message", { exact: true });
   await message.fill("use the fake clock");
-  await expect(button("Queue")).toBeVisible();
+  await expect(button("Steer")).toBeVisible();
   await expect(button("Stop")).toHaveCount(0);
 
-  await page.keyboard.down("Meta");
-  await expect(button("Steer now")).toBeVisible();
-  await button("Steer now").click({ modifiers: ["Meta"] });
-  await page.keyboard.up("Meta");
+  await page.keyboard.down("Alt");
+  await expect(button("Queue")).toBeVisible();
+  await page.keyboard.up("Alt");
+  await page.keyboard.down("ControlOrMeta");
+  await expect(button("Interrupt")).toBeVisible();
+  await page.keyboard.up("ControlOrMeta");
+  await button("Steer").click();
   await expect(message).toHaveValue("");
   await expect(button("Stop")).toBeVisible();
 });

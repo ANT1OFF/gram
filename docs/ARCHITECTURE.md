@@ -73,7 +73,9 @@ CLI/session owners and its [offline scenario guidance](../packages/agents/script
   turn ([Claude session](../packages/agents/src/claude/session.ts)). **Interrupt** stops the turn
   now (priority `now`), cutting off its tool calls, which Claude Code answers with "The user
   doesn't want…"; Gram adds that nobody declined them, and the transcript shows them as
-  interrupted. Only `send_message`'s `mode: "interrupt"` asks for it.
+  interrupted. Only `send_message`'s `mode: "interrupt"` and the user ask for it. The composer offers
+  the same three while a turn takes input: ↵ steers, ⌥↵ queues, ⌘. with a draft interrupts, and
+  the chevron beside Send lists them; the sent message says "Steered" or "Interrupted the turn".
 - A Codex steer joins the running turn or fails; it never starts a new turn, cancels nothing, and
   the runtime keeps an input the agent refused. Codex has no interrupting steer, so an interrupt
   reaches it as a steer ([Codex session](../packages/agents/src/codex/session.ts)).

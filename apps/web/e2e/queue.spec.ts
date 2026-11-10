@@ -36,7 +36,7 @@ test("steers one queued message into the running turn and keeps the rest queued"
   const composer = page.getByLabel("Message", { exact: true });
   for (const text of ["first, for later", "second, needed now"]) {
     await composer.fill(text);
-    await composer.press("ControlOrMeta+Enter");
+    await composer.press("Alt+Enter");
   }
   await queueFromAnotherThread(page, fromOrchestrator("Background: the API is v2."));
 
@@ -153,7 +153,7 @@ test("a message sent to an idle thread goes straight to the feed, never through 
     }).observe(document.body, { childList: true, subtree: true });
   });
   await composer.fill("Bump the lockfile");
-  await composer.press("ControlOrMeta+Enter");
+  await composer.press("Alt+Enter");
 
   await expect(
     page.getByTestId("message-user").filter({ hasText: /^Bump the lockfile/ }),

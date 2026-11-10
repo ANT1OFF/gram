@@ -91,6 +91,12 @@ export const MessageMetadataSchema = Schema.Struct({
    * `server` for Gram's notices. Absent where the server established neither.
    */
   author: Schema.optionalKey(InputAuthor),
+  /**
+   * On a user-role message that went into a running turn, how: `steer` after the tool calls under
+   * way, cancelling nothing; `interrupt` stopping the turn now. Absent on one that started a turn,
+   * sent at rest or from the queue.
+   */
+  delivery: Schema.optionalKey(Schema.Literals(["steer", "interrupt"])),
 });
 export type MessageMetadata = typeof MessageMetadataSchema.Type;
 

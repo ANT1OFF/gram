@@ -71,7 +71,9 @@ const setup = () => {
   };
   return { api, send, steer, upload, textarea, paste };
 };
-const queue = () => fireEvent.click(screen.getByRole("button", { name: /^Queue$/ }));
+// While the turn takes input the button steers; ⌥-click queues.
+const queue = () =>
+  fireEvent.click(screen.getByRole("button", { name: /^Steer$/ }), { altKey: true });
 const newDraft = () => {
   fireEvent.contextMenu(screen.getByTestId("send-menu-trigger"));
   fireEvent.click(screen.getByRole("menuitem", { name: /Send and start a new draft/ }));
@@ -143,7 +145,7 @@ describe("failed send draft recovery", () => {
     const { steer, paste } = setup();
     steer.mockRejectedValueOnce(new Error("synthetic steer refusal"));
     await paste("steer.txt");
-    fireEvent.click(screen.getByRole("button", { name: "Queue" }), { metaKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Steer" }));
     await waitFor(() => expect(screen.getByText(/Couldn't steer/)).toBeTruthy());
     expect(screen.getAllByTestId("attachment-chip")).toHaveLength(1);
     expect(steer.mock.calls[0]![1].attachments).toHaveLength(1);

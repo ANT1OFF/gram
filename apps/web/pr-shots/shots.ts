@@ -2211,6 +2211,52 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "delivery-menu",
+    title: "The chevron's three ways into a running turn: steer, queue, interrupt",
+    open: async (page) => {
+      await openRunningComposer(page);
+      await page.getByLabel("Message", { exact: true }).fill("use the fake clock");
+      await page.getByTestId("delivery-menu").click();
+      await page.getByTestId("delivery-interrupt").waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
+  {
+    name: "delivery-marks",
+    title: "Messages sent into a running turn, marked Steered and Interrupted the turn",
+    open: async (page) => {
+      await page.goto("/");
+      await threadRow(page, "t-deps").waitFor();
+      const id = await page.evaluate(async () => {
+        const mock = window.gramMock!;
+        const [created] = mock.seedLongThreads({ count: 1, turns: 0 });
+        await mock.rename(created!, "Cart API");
+        const at = Date.UTC(2026, 10, 10, 9, 40);
+        const said = (messageId: string, role: "user" | "assistant", text: string, extra = {}) =>
+          mock.simulateMessage(created!, {
+            id: messageId,
+            role,
+            metadata: { createdAt: at + Number(messageId.slice(-1)) * 60_000, ...extra },
+            parts: [{ type: "text", text }],
+          } as never);
+        said("shot-d1", "user", "Run the tests and fix what fails.");
+        said("shot-d2", "assistant", "Running the unit and e2e suites.");
+        said("shot-d3", "user", "Skip the e2e suite, the unit tests are enough.", {
+          delivery: "steer",
+        });
+        said("shot-d4", "assistant", "Skipping e2e. Unit tests pass; now updating the changelog.");
+        said("shot-d5", "user", "Stop, wrong branch. Switch to feat/cart first.", {
+          delivery: "interrupt",
+        });
+        return created!;
+      });
+      await threadRow(page, id).click();
+      await page.getByText("Switch to feat/cart first").waitFor();
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByTestId("transcript"),
+  },
+  {
     name: "turn-running",
     title: "A running turn waiting on an approval",
     open: openFlakyAtApproval,
