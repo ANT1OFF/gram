@@ -3738,6 +3738,66 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("transcript"),
   },
   {
+    name: "interrupted-tool-calls",
+    title: "Two Reads an interrupt cut off, opened, beside the Gram notice that followed them",
+    open: async (page) => {
+      await page.goto("/");
+      await threadRow(page, "t-deps").waitFor();
+      const id = await page.evaluate(async () => {
+        const mock = window.gramMock!;
+        const [created] = mock.seedLongThreads({ count: 1, turns: 0 });
+        await mock.rename(created!, "UI pass");
+        const cutOff =
+          "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed.";
+        const at = Date.UTC(2026, 10, 10, 4, 0);
+        mock.simulateMessage(created!, {
+          id: "shot-cut-user",
+          role: "user",
+          metadata: { createdAt: at },
+          parts: [{ type: "text", text: "Compare the before and after shots." }],
+        });
+        mock.simulateMessage(created!, {
+          id: "shot-cut-reply",
+          role: "assistant",
+          metadata: { createdAt: at + 30_000 },
+          parts: [
+            { type: "text", text: "Reading both shots side by side." },
+            ...["cards-dark.before.png", "cards-dark.after.png"].map((file, n) => ({
+              type: "tool-Read",
+              toolCallId: `shot-cut-${n}`,
+              state: "output-error",
+              input: { file_path: `/work/shots/${file}` },
+              errorText: cutOff,
+            })),
+          ],
+        } as never);
+        mock.simulateMessage(created!, {
+          id: "shot-cut-notice",
+          role: "user",
+          metadata: { createdAt: at + 32_000, author: "server" },
+          parts: [
+            {
+              type: "text",
+              text: "Gram merged acme/web#357 (squash) at b6f1efb: the merge review policy was satisfied and GitHub allowed the merge.",
+            },
+          ],
+        } as never);
+        return created!;
+      });
+      await threadRow(page, id).click();
+      const transcript = page.getByTestId("transcript");
+      await transcript.getByText("Gram merged acme/web#357").waitFor();
+      // The run's fold, then each card in it.
+      await transcript.getByRole("button", { name: /Read 2 files/ }).click();
+      await transcript.getByTestId("tool-card").first().waitFor();
+      for (const row of await transcript.getByTestId("tool-card").all()) {
+        await row.getByRole("button").first().click();
+      }
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("transcript"),
+  },
+  {
     name: "orchestrator-worker-message",
     title: "A worker's message in its orchestrator's transcript, beside the user's own",
     open: async (page) => {

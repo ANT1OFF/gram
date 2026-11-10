@@ -326,7 +326,9 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
    */
   const deliverToWorker = (question: StoredWorkerQuestion, text: string) =>
     runtimes
-      .sendNotice(question.threadId, `question:${question.id}`, { text })
+      // The one notice steered: the answer can change what the worker does now. A steer cancels
+      // nothing, so it lands after the tool call under way.
+      .sendNotice(question.threadId, `question:${question.id}`, { text }, { steer: true })
       .pipe(
         Effect.map((sent): QuestionDelivery =>
           sent.steered ? "steered" : sent.queued ? "queued" : "sent",

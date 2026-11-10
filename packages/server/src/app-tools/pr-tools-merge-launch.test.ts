@@ -165,12 +165,12 @@ const soloPr = (world: World, configured = true) =>
         const fake = yield* FakeAgentControl;
         return yield* waitReal(
           text,
-          Effect.sync(() => {
-            // Sent as a turn, or steered into the one an earlier notice opened.
+          Effect.gen(function* () {
+            // Sent as a turn, or queued behind the one an earlier notice opened: a notice never
+            // steers into a running turn.
             const agent = fake.sessions.findLast((s) => s.options.threadId === worker.thread.id);
-            return [...(agent?.sent ?? []), ...(agent?.steered ?? [])].some((input) =>
-              input.text.includes(text),
-            );
+            const queued = (yield* store.listQueue(worker.thread.id)).map((item) => item.input);
+            return [...(agent?.sent ?? []), ...queued].some((input) => input.text.includes(text));
           }),
         );
       });

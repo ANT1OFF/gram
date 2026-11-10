@@ -63,7 +63,7 @@ export const steerBlocked = (
 const queuedBecause = (origin: MessageOrigin): string | undefined =>
   origin.mode === "queue"
     ? "queued as context"
-    : origin.mode === "steer"
+    : origin.mode === "steer" || origin.mode === "interrupt"
       ? "queued, as it couldn't be steered"
       : undefined;
 

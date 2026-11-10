@@ -193,7 +193,7 @@ describe("orchestration schemas", () => {
       MessageOrigin,
       decode(MessageOrigin)({ threadId: "t1", title: "a", depth: 1, role: "orchestrator" }),
     );
-    for (const mode of ["queue", "steer"]) {
+    for (const mode of ["queue", "steer", "interrupt"]) {
       expectRoundTrip(
         MessageOrigin,
         decode(MessageOrigin)({ threadId: "t1", title: "a", depth: 1, mode }),

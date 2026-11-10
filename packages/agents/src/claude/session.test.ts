@@ -63,6 +63,7 @@ import {
   SHELL_OUTPUT_POLL_MS,
   SHELL_OUTPUT_READ_TIMEOUT_MS,
   SHELL_OUTPUT_TIMEOUTS,
+  INTERRUPT_NOTE,
   type ClaudeHostConfig,
 } from "./session.ts";
 import { fixtureMessages } from "./testing.ts";
@@ -307,6 +308,8 @@ const take = (session: AgentSession, n: number) =>
 
 /** Lets pending promise callbacks and the fake's input loop run. */
 const settle = Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+/** Enough turns of the event loop for the pump to read every message pushed so far. */
+const drain = Effect.forEach(Array.from({ length: 10 }), () => settle, { discard: true });
 
 const query = (h: ReturnType<typeof harness>): FakeQuery => {
   const q = h.queries[0];
@@ -354,6 +357,40 @@ const twoRunningShells = (): Array<SDKMessage> => [
     is_backgrounded: false,
   }),
 ];
+/** One assistant message calling Read once per id: a multi-call tool batch. */
+const batch = (ids: ReadonlyArray<string>): SDKMessage =>
+  ({
+    type: "assistant",
+    message: {
+      id: `msg_${ids.join("_")}`,
+      role: "assistant",
+      model: "m",
+      content: ids.map((id) => ({
+        type: "tool_use",
+        id,
+        name: "Read",
+        input: { file_path: `/repo/${id}.png` },
+      })),
+      usage: { input_tokens: 1, output_tokens: 1 },
+    },
+    parent_tool_use_id: null,
+    session_id: "s",
+    uuid: `a_${ids.join("_")}`,
+  }) as never;
+
+/** The batch's results, each a success. */
+const toolResults = (ids: ReadonlyArray<string>): SDKMessage =>
+  ({
+    type: "user",
+    message: {
+      role: "user",
+      content: ids.map((id) => ({ type: "tool_result", tool_use_id: id, content: "read" })),
+    },
+    parent_tool_use_id: null,
+    session_id: "s",
+    uuid: `u_${ids.join("_")}`,
+  }) as never;
+
 const snapshotsIn = (events: ReadonlyArray<AgentEvent>) =>
   events.flatMap((e) =>
     e.type === "chunk" && e.chunk.type === "tool-output-available" && e.chunk.preliminary === true
@@ -372,6 +409,7 @@ describe("ClaudeHost.open", () => {
         fork: true,
         rewind: "historyAndFiles",
         steer: true,
+        steerInterrupt: true,
         planMode: true,
         approvalScopes: ["once", "session", "always"],
         userQuestions: true,
@@ -1047,26 +1085,125 @@ describe("AgentSession", () => {
     }),
   );
 
-  it.effect("sends turns and steers with priority now", () =>
+  it.effect("steers at priority next, cancelling nothing, and interrupts only when asked", () =>
     Effect.gen(function* () {
       const h = harness();
       const session = yield* openSession().pipe(Effect.provide(h.layer));
       yield* session.send({ text: "hi", attachments: [{ path: "/a.png" }, { path: "/b c.txt" }] });
-      yield* session.steer({ text: "stop and do this" });
+      yield* session.steer({ text: "context for later" });
+      yield* session.steer({ text: "stop and do this" }, { interrupt: true });
       yield* settle;
-      expect(query(h).inputs).toEqual([
-        {
-          type: "user",
-          message: { role: "user", content: 'hi\n\n@/a.png @"/b c.txt"' },
-          parent_tool_use_id: null,
-        },
-        {
-          type: "user",
-          message: { role: "user", content: "stop and do this" },
-          parent_tool_use_id: null,
-          priority: "now",
-        },
+      const [sent, steered, interrupting] = query(h).inputs;
+      expect(sent).toEqual({
+        type: "user",
+        message: { role: "user", content: 'hi\n\n@/a.png @"/b c.txt"' },
+        parent_tool_use_id: null,
+      });
+      // Priority 'next' folds the input in between tool rounds; only 'now' aborts the tools.
+      expect(steered).toMatchObject({
+        type: "user",
+        message: { role: "user", content: "context for later" },
+        parent_tool_use_id: null,
+        priority: "next",
+      });
+      expect(steered?.uuid).toMatch(/^[0-9a-f-]{36}$/);
+      expect(interrupting).toEqual({
+        type: "user",
+        message: { role: "user", content: `stop and do this\n\n${INTERRUPT_NOTE}` },
+        parent_tool_use_id: null,
+        priority: "now",
+      });
+    }),
+  );
+
+  it.effect("a steer during a tool batch leaves the batch running and ends with the turn", () =>
+    Effect.gen(function* () {
+      const h = harness();
+      const session = yield* openSession().pipe(Effect.provide(h.layer));
+      yield* take(session, 2);
+      const q = query(h);
+      const events: AgentEvent[] = [];
+      const collecting = yield* Effect.forkScoped(
+        Stream.runForEach(session.events, (event) => Effect.sync(() => void events.push(event))),
+      );
+      const result = fixtureMessages("p03-session-state-with").find((m) => m.type === "result")!;
+      yield* session.send({ text: "read both" });
+      q.output.push(batch(["toolu_a", "toolu_b"]));
+      yield* drain;
+      // A Gram notice lands while both reads are in flight.
+      yield* session.steer({ text: "Gram merged the PR" });
+      yield* drain;
+      const steerId = q.inputs.at(-1)?.uuid;
+      expect(q.inputs.at(-1)?.priority).toBe("next");
+      q.output.push(toolResults(["toolu_a", "toolu_b"]));
+      // The CLI folded the steer in between tool rounds: one result lists it as consumed.
+      q.output.push({
+        ...result,
+        terminal_reason: "completed",
+        user_message_uuids: [steerId],
+      } as SDKMessage);
+      yield* drain;
+      expect(events.filter((e) => e.type === "turnEnd")).toEqual([
+        { type: "turnEnd", reason: "completed" },
       ]);
+      const outputs = events.flatMap((e) =>
+        e.type === "chunk" && e.chunk.type.startsWith("tool-output") ? [e.chunk] : [],
+      );
+      expect(outputs.map((c) => c.type)).toEqual([
+        "tool-output-available",
+        "tool-output-available",
+      ]);
+      q.output.end();
+      yield* Fiber.join(collecting);
+    }),
+  );
+
+  it.effect("keeps the turn open while a steer waits to run as the turn after", () =>
+    Effect.gen(function* () {
+      const h = harness();
+      const session = yield* openSession().pipe(Effect.provide(h.layer));
+      yield* take(session, 2);
+      const q = query(h);
+      const events: AgentEvent[] = [];
+      const collecting = yield* Effect.forkScoped(
+        Stream.runForEach(session.events, (event) => Effect.sync(() => void events.push(event))),
+      );
+      const messages = fixtureMessages("p03-session-state-with");
+      const result = messages.find((m) => m.type === "result")!;
+      yield* session.send({ text: "work" });
+      yield* session.steer({ text: "update" });
+      yield* drain;
+      const steerId = q.inputs.at(-1)?.uuid;
+      // The turn ended before another tool round: the steer runs as the CLI's next turn.
+      q.output.push({
+        ...result,
+        terminal_reason: "completed",
+        user_message_uuids: ["11111111-1111-4111-8111-111111111111"],
+        queued_turn_count: 1,
+      } as SDKMessage);
+      yield* drain;
+      expect(events.filter((e) => e.type === "turnEnd")).toEqual([]);
+      q.output.push({
+        ...result,
+        terminal_reason: "completed",
+        user_message_uuids: [steerId],
+      } as SDKMessage);
+      yield* drain;
+      expect(events.filter((e) => e.type === "turnEnd")).toEqual([
+        { type: "turnEnd", reason: "completed" },
+      ]);
+      // An older CLI that names no consumed prompts goes by queued_turn_count.
+      yield* session.send({ text: "again" });
+      yield* session.steer({ text: "update" });
+      q.output.push({
+        ...result,
+        terminal_reason: "completed",
+        queued_turn_count: 0,
+      } as SDKMessage);
+      yield* drain;
+      expect(events.filter((e) => e.type === "turnEnd")).toHaveLength(2);
+      q.output.end();
+      yield* Fiber.join(collecting);
     }),
   );
 
@@ -1100,13 +1237,13 @@ describe("AgentSession", () => {
     }),
   );
 
-  it.effect("keeps a priority-now abort and its continuation in one logical turn", () =>
+  it.effect("keeps an interrupting steer's abort and its continuation in one logical turn", () =>
     Effect.gen(function* () {
       const h = harness();
       const session = yield* openSession().pipe(Effect.provide(h.layer));
       yield* take(session, 2);
       yield* session.send({ text: "work" });
-      yield* session.steer({ text: "updated context" });
+      yield* session.steer({ text: "updated context" }, { interrupt: true });
       const q = query(h);
       const messages = fixtureMessages("p03-session-state-with");
       const result = messages.find((m) => m.type === "result")!;
@@ -1114,7 +1251,7 @@ describe("AgentSession", () => {
       q.output.push(task("session_state_changed", "idle-1", { state: "idle" }));
       // A second update during the continuation also aborts only the SDK iteration.
       yield* settle;
-      yield* session.steer({ text: "one more update" });
+      yield* session.steer({ text: "one more update" }, { interrupt: true });
       q.output.push({ ...result, terminal_reason: "aborted_streaming" } as SDKMessage);
       for (const message of messages) q.output.push(message);
       q.output.end();
@@ -1134,7 +1271,7 @@ describe("AgentSession", () => {
       const h = harness();
       const session = yield* openSession().pipe(Effect.provide(h.layer));
       yield* take(session, 2);
-      yield* session.steer({ text: "context" });
+      yield* session.steer({ text: "context" }, { interrupt: true });
       yield* session.interrupt;
       const q = query(h);
       const result = fixtureMessages("p03-session-state-with").find((m) => m.type === "result")!;
@@ -1187,12 +1324,12 @@ describe("AgentSession", () => {
         Stream.runForEach(session.events, (event) => Effect.sync(() => void events.push(event))),
       );
       yield* session.send({ text: "work" });
-      yield* session.steer({ text: "update" });
+      yield* session.steer({ text: "update" }, { interrupt: true });
       q.output.push(reply("a", 2, 3));
       q.output.push(end(4, 5, 0.1, true));
       q.output.push(reply("b", 10, 11));
       yield* settle;
-      yield* session.steer({ text: "update again" });
+      yield* session.steer({ text: "update again" }, { interrupt: true });
       q.output.push(task("session_state_changed", "idle", { state: "idle" }));
       q.output.push(reply("c", 20, 21));
       q.output.push(end(22, 23, 0.3));
@@ -1240,7 +1377,7 @@ describe("AgentSession", () => {
         for (const message of messages.filter((m) => m.type === "assistant"))
           q.output.push(message);
         yield* settle;
-        yield* session.steer({ text: "context" });
+        yield* session.steer({ text: "context" }, { interrupt: true });
         q.output.push(task("session_state_changed", "idle", { state: "idle" }));
         yield* settle;
         yield* TestClock.adjust("30 seconds");
@@ -1277,7 +1414,7 @@ describe("AgentSession", () => {
         const h = harness();
         const session = yield* openSession().pipe(Effect.provide(h.layer));
         yield* take(session, 2);
-        yield* session.steer({ text: "context" });
+        yield* session.steer({ text: "context" }, { interrupt: true });
         const q = query(h);
         const messages = fixtureMessages("p03-session-state-with");
         const result = messages.find((m) => m.type === "result")!;

@@ -66,8 +66,17 @@ CLI/session owners and its [offline scenario guidance](../packages/agents/script
 - Background polling that only matters on screen (the port scan, the usage-limit poll) runs
   while a window is shown and slows down while none is focused
   ([`pollWhileShown`](../packages/server/src/git/activity.ts)).
-- A Codex steer joins the running turn or fails; it never starts a new turn, and the runtime
-  keeps an input the agent refused ([Codex session](../packages/agents/src/codex/session.ts)).
+- Input reaches a running thread in one of three ways. **Queue** waits for the turn to end; Gram's
+  own notices (merges, checks, reviews, monitors) queue, and only a question's answer steers.
+  **Steer** lands once the tool calls under way finish and cancels nothing: Claude takes it at
+  priority `next`, folded in between tool rounds or run as the turn after, in the same logical
+  turn ([Claude session](../packages/agents/src/claude/session.ts)). **Interrupt** stops the turn
+  now (priority `now`), cutting off its tool calls, which Claude Code answers with "The user
+  doesn't want…"; Gram adds that nobody declined them, and the transcript shows them as
+  interrupted. Only `send_message`'s `mode: "interrupt"` asks for it.
+- A Codex steer joins the running turn or fails; it never starts a new turn, cancels nothing, and
+  the runtime keeps an input the agent refused. Codex has no interrupting steer, so an interrupt
+  reaches it as a steer ([Codex session](../packages/agents/src/codex/session.ts)).
 
 ### Database schema
 

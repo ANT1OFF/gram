@@ -150,12 +150,12 @@ const stubDelivery = Effect.gen(function* () {
     sent: 0,
   };
   const mutable = runtimes as { -readonly [K in keyof typeof runtimes]: (typeof runtimes)[K] };
-  mutable.sendNotice = (threadId, key, input) => {
-    if (!key.startsWith("question:")) return original(threadId, key, input);
+  mutable.sendNotice = (threadId, key, input, options) => {
+    if (!key.startsWith("question:")) return original(threadId, key, input, options);
     if (control.hang) {
       return Deferred.succeed(control.entered, undefined).pipe(Effect.andThen(Effect.never));
     }
-    return original(threadId, key, input).pipe(
+    return original(threadId, key, input, options).pipe(
       Effect.tap(() => {
         control.sent++;
         return control.hangAfterSend
