@@ -3,6 +3,7 @@ import {
   type Checkout,
   effectiveCheckout,
   GitError,
+  type GitState,
   hostOf,
   type HostId,
   type HostUnavailable,
@@ -320,17 +321,42 @@ const machineWorktrees = (connection: HostConnection): Worktrees["Service"] => (
 });
 
 /**
+ * A joined machine's git state as this machine takes it: its local git facts only. What GitHub or
+ * this machine says (the origin's repository, PR badges, another worktree's PR, a missing folder)
+ * is never the host's to say, so whatever a host sends of it is dropped here, at the boundary:
+ * a host can't point a thread's PR lookup at another repository or PR.
+ */
+export const localTierOf = (state: GitState): GitState => {
+  const {
+    origin: _origin,
+    pr: _pr,
+    extraPrs: _extraPrs,
+    prElsewhere: _prElsewhere,
+    missingPrs: _missingPrs,
+    workElsewhere: _workElsewhere,
+    missing: _missing,
+    ...local
+  } = state;
+  return local;
+};
+
+/**
  * A machine's checkouts' git state. Only the local tier is read there for now: the PR badge and
  * the rebase signal need the network tier, which runs where the checkout is.
  */
 const machineGit = (connection: HostConnection): GitStateRuntime["Service"] => ({
-  local: connection.git.local,
+  local: (cwd) => Effect.map(connection.git.local(cwd), localTierOf),
   present: connection.git.present,
   snapshot: (cwd, options) =>
-    options.local === undefined ? connection.git.local(cwd) : Effect.succeed(options.local),
+    options.local === undefined
+      ? Effect.map(connection.git.local(cwd), localTierOf)
+      : Effect.succeed(localTierOf(options.local)),
   // A watch ends with the machine's connection, as its watcher there does.
   watch: (paths, options) =>
-    connection.git.watch(paths, options).pipe(Stream.catch(() => Stream.empty)),
+    connection.git.watch(paths, options).pipe(
+      Stream.map((change) => ({ ...change, state: localTierOf(change.state) })),
+      Stream.catch(() => Stream.empty),
+    ),
 });
 
 /**

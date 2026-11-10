@@ -28,10 +28,12 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * read-only, with the prompt's line on when to look; and `routine_create`, whose call from a worker
  * always asks the user. Its description was cut first; measured then at 35,470, about 4% under it.
  * The orchestrator's raised on 2026-11-09, on purpose, for `spawn_worker`'s `machine` (a worker
- * on a joined machine), its line cut to one sentence first.
+ * on a joined machine), its line cut to one sentence first. Raised again on 2026-11-09, on purpose,
+ * for two routing lines (check for a live owner before spawning; start on the likeliest reading),
+ * with the duplicate `title` line cut first; measured then at 61,747.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 61_500,
+  orchestrator: 61_800,
   worker: 36_900,
   plain: 23_550,
 };

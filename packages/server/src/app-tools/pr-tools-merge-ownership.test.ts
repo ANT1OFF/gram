@@ -886,6 +886,241 @@ describe("merge_when_ready", () => {
         }).pipe(Effect.scoped),
     );
 
+    // The cachyos in-thread test: a PR just opened from the worktree there, which no git state its
+    // host publishes names, since that carries neither origin nor PR.
+    it.effect.skipIf(!hasGit)(
+      "finds the PR just opened from its worktree there, its host's git state saying nothing of it",
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          world.joinedMachine = {
+            id: MACHINE,
+            online: true,
+            worktrees: new Map([[WORKTREE, { clone: CLONE, origin: ORIGIN, branch: OWN }]]),
+          };
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const runtimes = yield* ThreadRuntimes;
+              const registry = yield* AppToolRegistry;
+              const { session, thread } = yield* openOrchestrator(world);
+              const worker = yield* spawn(session, { feature: "remote-new-pr" });
+              yield* completeTurn(worker.session);
+              yield* atAutonomy(thread, "full");
+              yield* runtimes.updateThread(worker.thread.id, (t) => ({
+                ...t,
+                checkout: {
+                  kind: "worktree" as const,
+                  path: WORKTREE,
+                  repoRoot: CLONE,
+                  branch: OWN,
+                  hostId: MACHINE,
+                  cloneIdentity: cloneIdentityOf(ORIGIN)!,
+                },
+              }));
+              // Its host's state: local only, no upstream, no origin, no PR.
+              world.states.set(WORKTREE, {
+                repo: true,
+                branch: OWN,
+                changedFiles: 0,
+              } as never);
+              world.openPrs.set(OWN, 12);
+              world.prHeads.set(12, { headRefName: OWN });
+              world.prBadges.set("acme/app#12", armedWorkerBadge(true));
+              const tools = registry.forTransport(worker.thread.id, "worker");
+              const tool = (name: string) => tools.find((t) => t.descriptor.name === name)!;
+              // Before this change: no PR, and merge_when_ready refused for want of one.
+              expect(yield* tool("pr_status").run({})).toMatchObject({
+                pr: { number: 12, url: "https://github.com/acme/app/pull/12" },
+              });
+              expect(world.ghDirs.at(-1)).toBe(world.repo);
+              expect(yield* tool("merge_when_ready").delegatedAtFullAutonomy!({})).toBe(true);
+              yield* tool("merge_when_ready").run({});
+              expect((yield* store.getThread(worker.thread.id)).boundPr).toMatchObject({
+                repo: "acme/app",
+                number: 12,
+                mergeWhenReady: { allowedBy: "autonomy" },
+              });
+            }),
+          );
+        }).pipe(Effect.scoped),
+    );
+
+    // The #347 review: a host that publishes another repository's origin or PR badge must not
+    // redirect a bare #12, or report a foreign PR as this branch's.
+    for (const poison of ["origin", "badge"] as const) {
+      it.effect.skipIf(!hasGit)(
+        `keeps to the recorded repository when its host publishes a poisoned ${poison}`,
+        () =>
+          Effect.gen(function* () {
+            const world = yield* makeWorld;
+            world.joinedMachine = {
+              id: MACHINE,
+              online: true,
+              worktrees: new Map([[WORKTREE, { clone: CLONE, origin: ORIGIN, branch: OWN }]]),
+            };
+            yield* withServer(
+              world,
+              Effect.gen(function* () {
+                const store = yield* ThreadStore;
+                const runtimes = yield* ThreadRuntimes;
+                const registry = yield* AppToolRegistry;
+                const { session, thread } = yield* openOrchestrator(world);
+                const worker = yield* spawn(session, { feature: `remote-poison-${poison}` });
+                yield* completeTurn(worker.session);
+                yield* atAutonomy(thread, "full");
+                yield* runtimes.updateThread(worker.thread.id, (t) => ({
+                  ...t,
+                  checkout: {
+                    kind: "worktree" as const,
+                    path: WORKTREE,
+                    repoRoot: CLONE,
+                    branch: OWN,
+                    hostId: MACHINE,
+                    cloneIdentity: cloneIdentityOf(ORIGIN)!,
+                  },
+                }));
+                // What its host published: another repository's origin, or that one's PR.
+                world.states.set(WORKTREE, {
+                  repo: true,
+                  branch: OWN,
+                  changedFiles: 0,
+                  ...(poison === "origin"
+                    ? { origin: "elsewhere/other" }
+                    : {
+                        pr: {
+                          ...armedWorkerBadge(true),
+                          number: 99,
+                          url: "https://github.com/elsewhere/other/pull/99",
+                        },
+                      }),
+                } as never);
+                world.openPrs.set(OWN, 12);
+                world.prHeads.set(12, { headRefName: OWN });
+                world.prBadges.set("acme/app#12", armedWorkerBadge(true));
+                const tools = registry.forTransport(worker.thread.id, "worker");
+                const tool = (name: string) => tools.find((t) => t.descriptor.name === name)!;
+                // Before this change: #99 of elsewhere/other was this branch's PR.
+                expect(yield* tool("pr_status").run({})).toMatchObject({
+                  pr: { number: 12, url: "https://github.com/acme/app/pull/12" },
+                });
+                // Before this change: a bare #12 resolved to elsewhere/other#12.
+                yield* tool("merge_when_ready").run({ pr: 12 });
+                expect((yield* store.getThread(worker.thread.id)).boundPr).toMatchObject({
+                  repo: "acme/app",
+                  number: 12,
+                });
+              }),
+            );
+          }).pipe(Effect.scoped),
+      );
+    }
+
+    // The #347 re-check: a PR bound here keeps its own badge, which the clone-based discovery
+    // must neither drop (an older worktree has no recorded clone) nor replace with the branch's.
+    const boundCases = {
+      "a worktree older than the clone record": {
+        identity: undefined,
+        bound: { repo: "acme/app", number: 12 },
+        url: "https://github.com/acme/app/pull/12",
+      },
+      "a PR bound in another repository": {
+        identity: cloneIdentityOf(ORIGIN),
+        bound: { repo: "elsewhere/other", number: 99 },
+        url: "https://github.com/elsewhere/other/pull/99",
+      },
+    } as const;
+    for (const [name, setup] of Object.entries(boundCases)) {
+      it.effect.skipIf(!hasGit)(`keeps the bound PR's own status for ${name}`, () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          world.joinedMachine = {
+            id: MACHINE,
+            online: true,
+            worktrees: new Map([[WORKTREE, { clone: CLONE, origin: ORIGIN, branch: OWN }]]),
+          };
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const runtimes = yield* ThreadRuntimes;
+              const registry = yield* AppToolRegistry;
+              const { session } = yield* openOrchestrator(world);
+              const worker = yield* spawn(session, { feature: "remote-bound" });
+              yield* completeTurn(worker.session);
+              yield* runtimes.updateThread(worker.thread.id, (t) => ({
+                ...t,
+                checkout: {
+                  kind: "worktree" as const,
+                  path: WORKTREE,
+                  repoRoot: CLONE,
+                  branch: OWN,
+                  hostId: MACHINE,
+                  ...(setup.identity === undefined ? {} : { cloneIdentity: setup.identity }),
+                },
+                boundPr: { ...setup.bound, monitor: false },
+              }));
+              // The publisher's state: the bound PR's badge, looked up here by the binding.
+              const bound = {
+                ...armedWorkerBadge(true),
+                number: setup.bound.number,
+                url: setup.url,
+              };
+              world.states.set(WORKTREE, {
+                repo: true,
+                branch: OWN,
+                changedFiles: 0,
+                pr: bound,
+              } as never);
+              // The branch's own PR, which must not stand in for the binding.
+              world.openPrs.set(OWN, 12);
+              world.prBadges.set("acme/app#12", armedWorkerBadge(true));
+              const tools = registry.forTransport(worker.thread.id, "worker");
+              const status = tools.find((t) => t.descriptor.name === "pr_status")!;
+              // Before this change: no `pr` at all for the older worktree, and acme/app#12 in
+              // place of elsewhere/other#99 for the other.
+              expect(yield* status.run({})).toMatchObject({
+                bound: { ...setup.bound, monitor: false },
+                pr: { number: setup.bound.number, url: setup.url },
+              });
+            }),
+          );
+        }).pipe(Effect.scoped),
+      );
+    }
+
+    it.effect.skipIf(!hasGit)("finds no PR for a branch with none open there", () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        world.joinedMachine = { id: MACHINE, online: true, worktrees: new Map() };
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const runtimes = yield* ThreadRuntimes;
+            const registry = yield* AppToolRegistry;
+            const { session } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "remote-no-pr" });
+            yield* completeTurn(worker.session);
+            yield* runtimes.updateThread(worker.thread.id, (t) => ({
+              ...t,
+              checkout: {
+                kind: "worktree" as const,
+                path: WORKTREE,
+                repoRoot: CLONE,
+                branch: OWN,
+                hostId: MACHINE,
+                cloneIdentity: cloneIdentityOf(ORIGIN)!,
+              },
+            }));
+            const tools = registry.forTransport(worker.thread.id, "worker");
+            const merge = tools.find((t) => t.descriptor.name === "merge_when_ready")!;
+            const refused = yield* merge.run({}).pipe(Effect.flip);
+            expect(String(refused.message)).toContain("No pull request is bound or open");
+          }),
+        );
+      }).pipe(Effect.scoped),
+    );
+
     // Finding 3: a folder on this machine and one on the joined machine with the same path.
     for (const history of ["observed", "recorded before machines were"] as const) {
       it.effect.skipIf(!hasGit)(
