@@ -17,12 +17,19 @@ export {
   CodexHost,
   CodexHostLayer,
   gatedHomeIsOwned,
+  autoAvailable,
   gateHoldsInMode,
   makeCodexHost,
   policyFor,
   type CodexHostConfig,
 } from "./session.ts";
-export { CODEX_CLI_VERSION, codexVersionWarning, compareCodexVersion } from "./version.ts";
+export {
+  CODEX_AUTO_REVIEW_VERSION,
+  CODEX_CLI_VERSION,
+  codexAutoReviewSupported,
+  codexVersionWarning,
+  compareCodexVersion,
+} from "./version.ts";
 export {
   codexCounts,
   addCodexCounts,

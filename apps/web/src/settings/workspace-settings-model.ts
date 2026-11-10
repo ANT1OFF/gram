@@ -470,7 +470,7 @@ export const sameRoster = (
 const HARNESS_NOTES: Partial<Record<AgentKind, readonly string[]>> = {
   codex: [
     "Uses your local Codex login without a gateway. Supervised and Publish use Gram's own approval home, linked to your CLI login. Preparation must succeed before a gated session starts; existing sessions in your own CLI home need a fresh gated session.",
-    "Starts in Bypass, because Codex has no Auto; the outward gate still asks.",
+    "At Full autonomy, and in plain threads, Auto is Codex's auto-review (Codex 0.166.0 or newer, your own login, not a gateway): Codex runs sandboxed with the network off, and a reviewer agent approves or denies each command the sandbox blocks, such as a commit, a gh call or an install; a denial goes back to the agent. For workers that must never wait on a review, set the worker mode to Bypass. In Supervised and Publish, on a gateway, or on an older Codex, Codex starts in Bypass instead, because auto-review would answer the outward gate in your place; the gate still asks.",
     "Known gap: a command typed into an interactive shell Codex opened is not asked about.",
     "After you change autonomy, a running Codex thread's prompt keeps describing the old level until its next fresh session; what it is actually asked about changes at once.",
     "Codex reports tokens, not cost.",

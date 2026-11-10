@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { codexVersionWarning, compareCodexVersion, parseCodexCliVersion } from "./version.ts";
+import {
+  codexAutoReviewSupported,
+  codexVersionWarning,
+  compareCodexVersion,
+  parseCodexCliVersion,
+} from "./version.ts";
 
 describe("Codex version policy", () => {
   it.each([
@@ -39,4 +44,15 @@ describe("Codex version policy", () => {
     expect(parseCodexCliVersion("codex-cli 0.166.0.1")).toBeUndefined();
     expect(parseCodexCliVersion("codex-cli 0.166.0-alpha.01")).toBeUndefined();
   });
+});
+
+describe("Codex's automatic approvals reviewer", () => {
+  it.each(["0.166.0", "0.166.1", "0.167.0", "1.0.0", "0.167.0-alpha.1"])(
+    "is used from %s on",
+    (version) => expect(codexAutoReviewSupported(version)).toBe(true),
+  );
+  it.each([undefined, "unknown", "0.165.9", "0.162.1", "0.166.0-alpha.1"])(
+    "is not used on %s",
+    (version) => expect(codexAutoReviewSupported(version)).toBe(false),
+  );
 });

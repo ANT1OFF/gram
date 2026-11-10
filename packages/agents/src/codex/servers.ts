@@ -54,6 +54,7 @@ import type { CodexRuntimeSource, ManagedCodex } from "./runtime.ts";
 import { makeThreadOwnership } from "./thread-ownership.ts";
 import { acquireHeld } from "../servers-hold.ts";
 import {
+  codexAutoReviewSupported,
   CODEX_CLI_VERSION,
   codexVersionWarning,
   compareCodexVersion,
@@ -150,6 +151,11 @@ export interface CodexServersShape {
   readonly gateReadyFor?: (home: CodexHome) => boolean;
   /** Prepares the native home and verifies the rule writer, without starting inference. */
   readonly nativeGateReady?: Effect.Effect<boolean>;
+  /**
+   * Whether the executable the next app-server starts from takes the automatic approvals reviewer
+   * (`codexAutoReviewSupported`); false when it can't be resolved. Starts nothing.
+   */
+  readonly autoReviewReady?: Effect.Effect<boolean>;
   /** Retires the profile's app-servers on both homes (its key changed): the next `acquire` starts fresh. */
   readonly invalidate: (profileId: ProfileId) => Effect.Effect<void>;
   /**
@@ -1070,6 +1076,14 @@ export const CodexServersLive = (
                   Effect.catchCause(() => Effect.succeed(false)),
                 ),
               ),
+        autoReviewReady: Effect.gen(function* () {
+          const managed = config.runtime === undefined ? undefined : yield* config.runtime.resolve;
+          if (managed === undefined)
+            return codexAutoReviewSupported((yield* prepare.get).cliVersion);
+          // Only its version was wanted: nothing starts from this hold.
+          managed.release();
+          return codexAutoReviewSupported(managed.version);
+        }).pipe(Effect.catchCause(() => Effect.succeed(false))),
         retireAll: lock.withPermits(1)(
           Effect.suspend(() => {
             const retiring = [...servers.values()];

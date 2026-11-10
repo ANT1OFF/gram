@@ -41,6 +41,7 @@ import {
   budgetVerdict,
   featureBranch,
   featureSlug,
+  gateOfAutonomy,
   taskFeature,
   refusal,
   regroup,
@@ -144,6 +145,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     orchestrationChanged,
     retryingIn,
     nativeGateReady,
+    autoHere,
     hosts,
     creator,
     checkouts,
@@ -675,7 +677,16 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               tool,
               "The task's selected worker changed. Check the task preview and start again.",
             );
-          const mode = startModeFor(chosen.agent, settings, state.charter);
+          const mode = startModeFor(
+            chosen.agent,
+            settings,
+            state.charter,
+            yield* autoHere(
+              chosen.agent,
+              gateOfAutonomy(autonomyOf(state.charter)),
+              chosen.profileId !== undefined,
+            ),
+          );
           const verdict = workerModelVerdict({
             model: chosen,
             autonomy: autonomyOf(state.charter),

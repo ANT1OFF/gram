@@ -528,6 +528,12 @@ export interface OrchestrationShape {
   /** Refuses a model change that would leave a role-bearing or spawned thread on an unadmitted agent. */
   checkModelChange(threadId: ThreadId, model: ModelRef): Effect.Effect<void, InvalidState>;
   /**
+   * The user picked the thread's mode. Called before the pick applies, so the move out of a
+   * reported `default` after an `auto` open (`modeAfterDowngrade`) never overrides it: that move is
+   * for what the agent reports, not for the user's choice.
+   */
+  userChoseMode(threadId: ThreadId): Effect.Effect<void>;
+  /**
    * ⌘⇧T on a closed thread: `create` makes it again with what of its place in a workspace
    * can come back, then an orchestrator claims its slot again and its `workers`, the ones its
    * close detached that are still in the workspace and nobody else's, are its own again. A worker

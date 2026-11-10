@@ -44,6 +44,7 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
     needsUnderGate,
     rosterHere,
     nativeGateReady,
+    autoHere,
     projectsOf,
     findThread,
     taskStartupLock,
@@ -76,8 +77,14 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
           message:
             "The task's selected orchestrator changed. Check the task preview and start again.",
         });
-      const mode = startModeFor(model.agent, settings);
-      const needs = yield* needsUnderGate(model, gateOfAutonomy(autonomyOf(charter)), mode);
+      const gate = gateOfAutonomy(autonomyOf(charter));
+      const mode = startModeFor(
+        model.agent,
+        settings,
+        {},
+        yield* autoHere(model.agent, gate, model.profileId !== undefined),
+      );
+      const needs = yield* needsUnderGate(model, gate, mode);
       if (needs !== undefined)
         return yield* new InvalidState({
           message: `The selected task orchestrator is ${kindName(model.agent)}'s ${model.model}. ${gateNeedsReason(needs, model.agent, mode)} Prepare the native approval home or choose another harness that holds this approval policy.`,
@@ -116,9 +123,15 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
       const roster: ReadonlyArray<RosterModel> = here?.roster ?? [bare];
       const fallback = fallbackOf(roster, orchestrator);
       const gateReady = yield* nativeGateReady("codex");
+      const codexAuto = yield* autoHere("codex", gateOfAutonomy(autonomyOf(charter)));
       const choices = roster.map((entry, index): TaskWorkerChoice => {
         const model = modelRefOf(entry);
-        const mode = startModeFor(model.agent, settings, charter);
+        const mode = startModeFor(
+          model.agent,
+          settings,
+          charter,
+          model.agent === "codex" ? codexAuto && model.profileId === undefined : undefined,
+        );
         const verdict = workerModelVerdict({
           model,
           autonomy: autonomyOf(charter),

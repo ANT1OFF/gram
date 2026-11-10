@@ -145,6 +145,8 @@ export interface FakeAgentControlShape {
   setModelDiscoveryFailure(message: string | undefined): Effect.Effect<void>;
   setSwitchCapability(supported: boolean): Effect.Effect<void>;
   setNativeGateReady(ready: boolean): Effect.Effect<void>;
+  /** What every host answers `autoReviewReady` with; off until set. */
+  setAutoReviewReady(ready: boolean): Effect.Effect<void>;
   setUnavailable(message: string | undefined): Effect.Effect<void>;
   /**
    * Like `claude --resume`: when on, opening with `resumeId` fails unless that session was sent a
@@ -343,6 +345,7 @@ export const makeFakeAgentAdapter = (
       let switchStopDelay: Duration.Input | undefined;
       let switchCapability = true;
       let nativeGateReady = false;
+      let autoReviewReady = false;
       let modelDiscoveryFailure: string | undefined;
       const releasedSwitches = new Set<string>();
       const neverStartedSwitches = new Set<string>();
@@ -808,6 +811,7 @@ export const makeFakeAgentAdapter = (
       const host = (kind: AgentKind): AgentHost => ({
         kind,
         nativeGateReady: Effect.sync(() => nativeGateReady),
+        autoReviewReady: Effect.sync(() => autoReviewReady),
         supportsWorkspaceSwitch: switchCapability,
         checkWorkspaceSwitch: Effect.suspend(() =>
           modelDiscoveryFailure === undefined
@@ -972,6 +976,10 @@ export const makeFakeAgentAdapter = (
         setNativeGateReady: (ready) =>
           Effect.sync(() => {
             nativeGateReady = ready;
+          }),
+        setAutoReviewReady: (ready) =>
+          Effect.sync(() => {
+            autoReviewReady = ready;
           }),
         setSwitchCapability: (supported) =>
           Effect.sync(() => {

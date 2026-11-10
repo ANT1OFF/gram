@@ -100,6 +100,7 @@ import {
   kindName,
   refusal,
   workerModelUnavailable,
+  hasAuto,
   startModeFor,
   type PrWakeFired,
   type PendingReason,
@@ -529,6 +530,22 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           Effect.catchCause(() => Effect.succeed(false)),
         )
       : Effect.succeed(false);
+  /**
+   * Whether a `kind` thread under `gate` opened in `auto` gets an Auto of its own (`hasAuto`):
+   * for Codex, only ungated, off a gateway profile, and when its CLI here has the automatic reviewer.
+   */
+  const autoHere = (
+    kind: AgentKind,
+    gate: OutwardGate | undefined,
+    gateway = false,
+  ): Effect.Effect<boolean> =>
+    kind !== "codex" || gate !== undefined || gateway
+      ? Effect.succeed(hasAuto(kind, { gate, autoReviewReady: false, gateway }))
+      : hosts.get(kind).pipe(
+          Effect.flatMap((host) => host.autoReviewReady ?? Effect.succeed(false)),
+          Effect.catchCause(() => Effect.succeed(false)),
+          Effect.map((autoReviewReady) => hasAuto(kind, { gate, autoReviewReady })),
+        );
   const config = yield* ServerConfig;
   const app = appLabelOf(config);
   // Absent in runtime-only test layers, where there is no git to read drift or changed files from.
@@ -591,7 +608,16 @@ export const makeOrchestrationKit = Effect.gen(function* () {
         };
         const model = entry;
         roster.push(model);
-        const mode = startModeFor(model.agent, settings, charter);
+        const mode = startModeFor(
+          model.agent,
+          settings,
+          charter,
+          yield* autoHere(
+            model.agent,
+            gateOfAutonomy(autonomyOf(charter)),
+            model.profileId !== undefined,
+          ),
+        );
         // A mode the gate can't ask in is as unrunnable as a missing key, so a spawn on it falls
         // back too rather than being refused by `workerModelVerdict`.
         const cantAsk =
@@ -1205,6 +1231,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     checkouts,
     hosts,
     nativeGateReady,
+    autoHere,
     config,
     app,
     proc,
