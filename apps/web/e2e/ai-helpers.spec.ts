@@ -58,7 +58,8 @@ for (const width of [1440, 640]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/settings/ai-helpers");
     const effort = page.getByRole("combobox", { name: "Claude Code / Anthropic helper effort" });
-    await expect(effort).toContainText("High effort");
+    // Automatic is the Cheap tier's per-kind effort, never High.
+    await expect(effort).toContainText("Automatic — Medium for titles, Low for the rest");
     await effort.click();
     await page.getByRole("option", { name: "Low effort", exact: true }).click();
     const model = page.getByRole("combobox", { name: "Claude Code / Anthropic helper model" });
@@ -93,7 +94,7 @@ for (const width of [1440, 640]) {
       page.getByText(/Residual native tools and CLI host instructions/).first(),
     ).toBeVisible();
     const codexEffort = page.getByRole("combobox", { name: "Codex / OpenAI helper effort" });
-    await expect(codexEffort).toContainText("High effort");
+    await expect(codexEffort).toContainText("Automatic — Medium for titles, Low for the rest");
     await codexEffort.click();
     await page.getByRole("option", { name: "Low effort", exact: true }).click();
     await page.reload();
