@@ -122,6 +122,43 @@ describe("publish_doc", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect(
+    "names a thread's earlier docs back to it on a new publish, so a later pass updates one",
+    () =>
+      Effect.gen(function* () {
+        const { tools } = yield* setup;
+        const { publish } = tools(WORKER);
+        const first = (yield* publish.run({ title: "Review of #348", content: "First pass." })) as {
+          id: string;
+          earlier?: unknown;
+          note?: string;
+        };
+        // Its first doc: nothing to point back to.
+        expect(first.earlier).toBeUndefined();
+        expect(first.note).toBeUndefined();
+        const second = (yield* publish.run({
+          title: "Re-review of #348",
+          content: "Second pass.",
+        })) as { earlier?: unknown; note?: string };
+        expect(second.earlier).toEqual([{ id: first.id, title: "Review of #348", revision: 1 }]);
+        expect(second.note).toContain("updates that doc by its id");
+        // Another thread's docs aren't its own to update, so they aren't named.
+        const other = (yield* tools(ORCHESTRATOR).publish.run({
+          title: "Plan",
+          content: "Steps.",
+        })) as { earlier?: unknown };
+        expect(other.earlier).toBeUndefined();
+        // An update names none: it is the one doc already.
+        const updated = (yield* publish.run({
+          id: first.id,
+          revision: 1,
+          content: "Revised.",
+        })) as { earlier?: unknown };
+        expect(updated.earlier).toBeUndefined();
+        expect(publish.descriptor.description).toContain("one doc per subject");
+      }).pipe(Effect.scoped),
+  );
+
   it.effect("shows only the orchestrator's own card when it publishes", () =>
     Effect.gen(function* () {
       const { chunks, tools } = yield* setup;

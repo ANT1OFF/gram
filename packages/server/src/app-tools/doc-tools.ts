@@ -90,8 +90,11 @@ const publishInput = Schema.Struct({
  * pane. An update names the doc and the revision it last saw, so it can't overwrite the user's
  * edit made since. Only the doc's author or the workspace's orchestrator may update a doc.
  */
+/** How many of the caller's earlier docs a new publish names back to it. */
+const EARLIER_DOCS_MAX = 5;
+
 export const publishDocTool = (
-  docs: Pick<DocsShape, "publish">,
+  docs: Pick<DocsShape, "publish" | "list">,
   store: Pick<ThreadStoreShape, "getThread">,
   runtimes: Pick<ThreadRuntimesShape, "emitChunk">,
 ) =>
@@ -108,7 +111,10 @@ export const publishDocTool = (
         `${DOC_MAX_BYTES / 1024} KB). To update one, pass its \`id\` and the \`revision\` this ` +
         "tool or read_doc last gave you, with the whole new `content`; a revision that moved on " +
         "means the user edited it since, so read_doc it and work their edit in. You may update the " +
-        "docs you published; an orchestrator may update its workers' docs too.",
+        "docs you published; an orchestrator may update its workers' docs too. A later pass on the " +
+        "same subject (a re-review, a second version of a report) updates the doc you already " +
+        "published, by its `id`, so the user has one doc per subject and not a pile of versions; " +
+        "publish a new doc only for a new subject.",
     },
     input: publishInput,
     rejectExcessProperties: true,
@@ -131,6 +137,15 @@ export const publishDocTool = (
           .pipe(Effect.mapError(failed(PUBLISH)));
         const card = cardOf(published, published.meta.updatedAt);
         const relayed = yield* showCards(runtimes, thread, card);
+        // A new doc from a thread that has published before: its earlier ones, so the next pass
+        // on the same subject updates one of them rather than adding a version beside it.
+        const earlier =
+          published.action === "published"
+            ? (yield* docs.list(workspaceId).pipe(Effect.orElseSucceed(() => [])))
+                .filter((doc) => doc.authorThreadId === threadId && doc.id !== published.meta.id)
+                .slice(0, EARLIER_DOCS_MAX)
+                .map((doc) => ({ id: doc.id, title: doc.title, revision: doc.revision }))
+            : [];
         return {
           id: published.meta.id,
           title: published.meta.title,
@@ -140,6 +155,12 @@ export const publishDocTool = (
             ? "as a card in your transcript and your orchestrator's chat"
             : "as a card in your transcript",
           next: `To update it, call ${PUBLISH} with id "${published.meta.id}" and revision ${published.meta.revision}.`,
+          ...(earlier.length === 0
+            ? {}
+            : {
+                earlier,
+                note: "You published these before. A later pass on the same subject updates that doc by its id; a new doc is for a new subject.",
+              }),
         };
       }),
   });
