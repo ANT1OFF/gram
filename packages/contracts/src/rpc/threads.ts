@@ -74,8 +74,17 @@ export const ThreadRpcs = RpcGroup.make(
     success: SendResult,
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),
+  /**
+   * Into the running turn: after the tool calls under way, cancelling nothing; with `interrupt`, the
+   * turn stops now and the agent answers it (refused where the agent can't, `steerInterrupt`).
+   */
   Rpc.make("thread.steer", {
-    payload: { ...threadRef, input: UserInput, clientMessageId },
+    payload: {
+      ...threadRef,
+      input: UserInput,
+      clientMessageId,
+      interrupt: Schema.optionalKey(Schema.Boolean),
+    },
     error: errors(ThreadNotFound, InvalidState),
   }),
   Rpc.make("thread.interrupt", {

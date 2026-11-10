@@ -1,0 +1,49 @@
+{
+  "title": "Message delivery while a turn runs",
+  "slug": "message-delivery",
+  "status": "approved",
+  "template": "options",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-10"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A One button",
+      "board": "a-one-button",
+      "shots": {
+        "dark": "shots/a-one-button-dark.png",
+        "light": "shots/a-one-button-light.png"
+      }
+    },
+    {
+      "name": "B Split button",
+      "board": "b-split-button",
+      "shots": {
+        "dark": "shots/b-split-button-dark.png",
+        "light": "shots/b-split-button-light.png"
+      }
+    },
+    {
+      "name": "C Mode toggle",
+      "board": "c-mode-toggle",
+      "shots": {
+        "dark": "shots/c-mode-toggle-dark.png",
+        "light": "shots/c-mode-toggle-light.png"
+      }
+    },
+    {
+      "name": "Sent messages",
+      "board": "sent-messages",
+      "shots": {
+        "dark": "shots/sent-messages-dark.png",
+        "light": "shots/sent-messages-light.png"
+      }
+    }
+  ]
+}

@@ -311,14 +311,14 @@ export const threadHandlers = Effect.gen(function* () {
         sendRpc.errorSchema,
         runtimes.send(threadId, input),
       ),
-    "thread.steer": ({ threadId, input, clientMessageId }) =>
+    "thread.steer": ({ threadId, input, clientMessageId, interrupt }) =>
       store.messageReceipt(
         threadId,
         clientMessageId,
-        ["steer", input],
+        interrupt === true ? ["interrupt", input] : ["steer", input],
         steerRpc.successSchema,
         steerRpc.errorSchema,
-        runtimes.steer(threadId, input),
+        runtimes.steer(threadId, input, interrupt === true ? { interrupt } : undefined),
       ),
     "thread.interrupt": ({ threadId }) => runtimes.interrupt(threadId),
     "thread.resumeLimitWait": ({ threadId }) => runtimes.resumeLimitWait(threadId),

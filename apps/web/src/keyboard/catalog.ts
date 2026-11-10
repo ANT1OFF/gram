@@ -225,9 +225,10 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   {
     id: "composer.send",
     keys: "mod+enter",
-    label: "Send (queues while running)",
+    label: "Send (steers while running)",
     group: "Composer",
   },
+  { id: "composer.queue", keys: "alt+enter", label: "Queue for after the turn", group: "Composer" },
   {
     id: "composer.sendNewDraft",
     keys: "mod+alt+enter",
@@ -239,7 +240,12 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   { id: "composer.effort", keys: "mod+shift+e", label: "Pick effort", group: "Composer" },
   { id: "composer.mode", keys: "mod+shift+a", label: "Pick mode", group: "Composer" },
   { id: "composer.stash", keys: "mod+s", label: "Stash the draft", group: "Composer" },
-  { id: "composer.stop", keys: "mod+.", label: "Stop the turn", group: "Composer" },
+  {
+    id: "composer.stop",
+    keys: "mod+.",
+    label: "Stop the turn (with a draft: interrupt with it)",
+    group: "Composer",
+  },
   {
     id: "composer.dictate",
     keys: DICTATE_KEYS,

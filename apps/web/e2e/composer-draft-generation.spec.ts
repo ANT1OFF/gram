@@ -219,7 +219,8 @@ test("missed close/reopen fences old send failure after remount", async ({ page 
   await open(page);
   await field(page).fill("Old lifetime");
   await paste(page, "old.txt");
-  await page.getByRole("button", { name: "Queue", exact: true }).click();
+  // ⌥↵ queues: the send path under test, as Enter now steers into the running turn.
+  await field(page).press("Alt+Enter");
   await expect(field(page)).toHaveValue("");
   await switchTo(page, B);
   await missedReopen(page);

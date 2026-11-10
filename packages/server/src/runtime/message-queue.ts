@@ -299,6 +299,7 @@ export const makeMessageQueue = ({
           turnId: turn.id,
           createdAt: now,
           ...(input.author === undefined ? {} : { author: input.author }),
+          delivery: options?.interrupt === true ? "interrupt" : "steer",
         },
       } as unknown as GramUIMessage;
       const read = yield* forAgent(rt, input);

@@ -864,7 +864,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     return seedInFlightTurn(this.#scenes, options);
   }
 
-  async #turn(threadId: ThreadId, input: UserInput) {
+  /** `delivery` marks a message steered into the turn that was running, as the server's does. */
+  async #turn(threadId: ThreadId, input: UserInput, delivery?: "steer" | "interrupt") {
     const runtime = this.#runtime(threadId);
     // No session yet and nothing said: this turn opens the session first.
     const fresh =
@@ -882,7 +883,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     this.#putMessage(runtime, {
       id,
       role: "user",
-      metadata: { createdAt: Date.now() },
+      metadata: { createdAt: Date.now(), ...(delivery === undefined ? {} : { delivery }) },
       parts: [
         { type: "text", text: input.text },
         ...(input.attachments ?? []).map((attachment) => ({
@@ -967,8 +968,10 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       runtime.running = false;
     }
     const steer = runtime.steer;
+    const delivery = runtime.steerDelivery;
     const interrupted = runtime.interrupted;
     runtime.steer = undefined;
+    runtime.steerDelivery = undefined;
     runtime.interrupted = false;
     this.#stampTurnEnd(runtime, steer || interrupted ? "interrupted" : "completed");
     // As the server: a turn that completes clears the error an earlier one left.
@@ -988,7 +991,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       runtime.restartAfterTurn = false;
       await this.#restart(runtime);
     }
-    if (steer) return this.#turn(threadId, steer);
+    if (steer) return this.#turn(threadId, steer, delivery);
     const [next, ...rest] = runtime.summary.queue;
     if (next) {
       this.#setQueue(runtime, rest);
@@ -1282,7 +1285,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     return { queued: false };
   }
 
-  async steer(threadId: ThreadId, input: UserInput) {
+  async steer(threadId: ThreadId, input: UserInput, options?: { interrupt?: boolean }) {
     const runtime = this.#runtime(threadId);
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
@@ -1292,6 +1295,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       return;
     }
     runtime.steer = input;
+    runtime.steerDelivery = options?.interrupt === true ? "interrupt" : "steer";
   }
 
   async interrupt(threadId: ThreadId) {
@@ -2293,6 +2297,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       return;
     }
     runtime.steer = item?.input;
+    runtime.steerDelivery = "steer";
     this.#setQueue(
       runtime,
       runtime.summary.queue.filter((q) => q.id !== itemId),

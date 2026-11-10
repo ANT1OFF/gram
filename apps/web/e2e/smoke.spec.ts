@@ -18,7 +18,8 @@ test("streams a scripted thread, approves a request and sends a queued message",
 
   const composer = page.getByLabel("Message", { exact: true });
   await composer.fill("also update the changelog");
-  await composer.press("ControlOrMeta+Enter");
+  // ⌥↵ queues for after the turn; ↵ and ⌘↵ would steer it into the running one.
+  await composer.press("Alt+Enter");
   const queue = page.getByTestId("queue");
   await expect(queue.getByTestId("queue-item")).toContainText("also update the changelog");
 

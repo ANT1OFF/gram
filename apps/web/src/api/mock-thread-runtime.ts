@@ -53,6 +53,8 @@ export interface ThreadRuntime {
   resetRev: number;
   running: boolean;
   steer: UserInput | undefined;
+  /** How `steer` was sent: into the turn, or stopping it. */
+  steerDelivery?: "steer" | "interrupt" | undefined;
   interrupted: boolean;
   /** The gate the turn is held at, which an interrupt lets go as the server's would stop it there. */
   heldAt?: string | undefined;
@@ -94,6 +96,7 @@ export const MOCK_CAPABILITIES: AgentCapabilities = {
   fork: true,
   rewind: "history",
   steer: true,
+  steerInterrupt: true,
   planMode: true,
   approvalScopes: ["once", "session", "always"],
   userQuestions: true,

@@ -17,7 +17,9 @@ const A = "t-lifecycle-a" as ThreadId;
 const B = "t-lifecycle-b" as ThreadId;
 const field = () => screen.getByRole("combobox", { name: "Message" }) as HTMLTextAreaElement;
 const type = (text: string) => fireEvent.change(field(), { target: { value: text } });
-const queue = () => fireEvent.click(screen.getByRole("button", { name: /^Queue$/ }));
+// While the turn takes input the button steers; ⌥-click queues.
+const queue = () =>
+  fireEvent.click(screen.getByRole("button", { name: /^Steer$/ }), { altKey: true });
 const stash = () => {
   act(() => field().focus());
   act(() => {
@@ -127,7 +129,7 @@ describe("composer draft lifetime", () => {
     stash();
     stash();
     // The composer is empty now, so the button no longer offers to send the captured draft.
-    expect(screen.queryByRole("button", { name: /^Queue$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Steer$/ })).toBeNull();
     await s.finishStash();
     expect(s.stashDraft).toHaveBeenCalledTimes(1);
     expect(s.send).not.toHaveBeenCalled();
@@ -171,7 +173,7 @@ describe("composer draft lifetime", () => {
     expect(screen.getByTestId("attachment-chip").getAttribute("data-status")).toBe("uploading");
     // A draft waiting on its upload holds the button: a click must not stop the turn instead.
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
-    expect(screen.getByRole("button", { name: /^Queue$/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: /^Steer$/ }).hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Remove pending.txt" }));
     await act(async () =>
       pendingUpload.resolve({ path: "/invented/pending.txt", name: "pending.txt" }),
@@ -191,7 +193,7 @@ describe("composer draft lifetime", () => {
       type("First draft");
       await s.paste("first.txt");
       if (operation === "send") queue();
-      else fireEvent.click(screen.getByRole("button", { name: "Queue" }), { metaKey: true });
+      else fireEvent.click(screen.getByRole("button", { name: "Steer" }));
       await waitFor(() => expect(s[operation]).toHaveBeenCalledTimes(1));
       const original = s[operation].mock.calls[0]![1].attachments![0]!;
       s.switchTo(B);
@@ -342,7 +344,7 @@ describe("composer transaction ordering", () => {
       await s.paste("old.txt");
       if (operation === "stash") stash();
       else if (operation === "send") queue();
-      else fireEvent.click(screen.getByRole("button", { name: "Queue" }), { metaKey: true });
+      else fireEvent.click(screen.getByRole("button", { name: "Steer" }));
       await waitFor(() =>
         expect(operation === "stash" ? s.stashDraft : s[operation]).toHaveBeenCalledTimes(1),
       );

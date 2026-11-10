@@ -15,7 +15,16 @@ import {
 } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowUp, ListPlus, Send, Square, SquarePen } from "lucide-react";
+import { Menu } from "@base-ui/react/menu";
+import {
+  ArrowUp,
+  ChevronDown,
+  ListPlus,
+  Send,
+  Square,
+  SquareArrowRight,
+  SquarePen,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -41,7 +50,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { shortcutPressed } from "@/keyboard/bindings";
-import { isMac, runShortcut, useShortcut } from "@/keyboard/registry";
+import { runShortcut, useShortcut } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
 import { usePhone } from "@/lib/use-phone";
@@ -73,7 +82,6 @@ import { DiffCommentChips } from "./diff-comment-chips";
 import { ghostOf, nextWord, stepped, typeIntoField, type Ghost } from "./ghost";
 import { usePromptHistory } from "./history";
 import { useAttachments } from "./use-attachments";
-import { STEER_LABEL } from "@/thread/queue-list";
 
 import { MentionMenu } from "./mention-menu";
 import { useIsFavourite, useModelFavourites } from "./model-favourites";
@@ -119,7 +127,7 @@ import {
 } from "./styles";
 import { StashMenu, stashesQueryKey } from "./stash-menu";
 import { useMentions } from "./use-mentions";
-import { useModHeld } from "./use-mod-held";
+import { clickDelivery, useHeldDelivery } from "./use-mod-held";
 import { useTypingPresence } from "./typing-presence";
 import { stopTurn } from "@/thread/stop-store";
 
@@ -198,6 +206,7 @@ export function Composer({
   const sendHint = useShortcutHint("composer.send");
   const newDraftHint = useShortcutHint("composer.sendNewDraft");
   const stopHint = useShortcutHint("composer.stop");
+  const queueHint = useShortcutHint("composer.queue");
 
   const history = usePromptHistory(threadId);
   const status = summary?.status ?? "cold";
@@ -214,6 +223,8 @@ export function Composer({
   // Stop steps back while the turn only waits on an answer; a background agent still works.
   const waitingOnYou = WAITING_ON_YOU.has(status) && !background;
   const steerable = running && summary?.capabilities?.steer === true;
+  // Codex can't stop its turn for a message: there an interrupt goes in as a steer.
+  const interruptible = steerable && summary?.capabilities?.steerInterrupt === true;
   // Some tests render a thread with no model.
   const agent = summary?.thread.model?.agent ?? "claude";
   const canFork = summary?.capabilities?.fork === true;
@@ -537,15 +548,25 @@ export function Composer({
     if (newDraft && attachments.active) void navigate({ to: "/new" });
   };
 
-  const steer = async () => {
+  /** Into the running turn: after its tool calls, or with `interrupt` stopping it now. */
+  const steer = async (interrupt = false) => {
     if (intercept()) return;
     if (!(await connected())) return;
     const taken = take();
     if (!taken) return;
     const { input, giveBack, release, active } = taken;
+    const stops = interrupt && interruptible;
     try {
-      await api.steer(threadId, input);
-      if (active()) flash("Steering…");
+      await (stops ? api.steer(threadId, input, { interrupt: true }) : api.steer(threadId, input));
+      if (active()) {
+        flash(
+          stops
+            ? "Interrupting…"
+            : interrupt
+              ? "This agent can't be interrupted for a message, so it was steered in"
+              : "Steering…",
+        );
+      }
     } catch (error) {
       // The turn can end between the click and the call, so give the message back rather than lose it.
       giveBack();
@@ -555,11 +576,42 @@ export function Composer({
     }
   };
 
+  /**
+   * Sends the draft as `action` says: at rest a send, into a running turn a steer (after its tool
+   * calls, cancelling nothing), a queue (after the turn) or an interrupt (stopping it now).
+   */
+  const deliver = (action: Exclude<SendAction, "stop">) => {
+    switch (action) {
+      case "send":
+      case "queue":
+        return void send();
+      case "steer":
+        return void steer();
+      case "interrupt":
+        return void steer(true);
+    }
+  };
+  /** What the send key does now: a steer while a turn takes input, else a send or a queue. */
+  const sendNow = () => {
+    const action = sendAction({ hasDraft: true, busy, background, steerable, held: undefined });
+    if (action !== "stop") deliver(action);
+  };
+
   useShortcut(
     {
       id: "composer.send",
       keys: "mod+enter",
-      label: "Send (queues while running)",
+      label: "Send (steers while running)",
+      group: "Composer",
+      run: sendNow,
+    },
+    focused,
+  );
+  useShortcut(
+    {
+      id: "composer.queue",
+      keys: "alt+enter",
+      label: "Queue for after the turn",
       group: "Composer",
       run: () => void send(),
     },
@@ -807,7 +859,17 @@ export function Composer({
       shortcutPressed("composer.send", event.nativeEvent)
     ) {
       event.preventDefault();
+      return sendNow();
+    }
+    // ⌥↵ queues for after the turn, under either send key setting; at rest it sends.
+    if (shortcutPressed("composer.queue", event.nativeEvent)) {
+      event.preventDefault();
       return void send();
+    }
+    // ⌘. with a draft for a turn that takes input stops the turn for it; bare, the registry's Stop.
+    if (steerable && hasDraft && shortcutPressed("composer.stop", event.nativeEvent)) {
+      event.preventDefault();
+      return deliver("interrupt");
     }
     if (!plain || event.shiftKey) return;
     const { selectionStart, selectionEnd, value } = event.currentTarget;
@@ -883,21 +945,21 @@ export function Composer({
   // The composer holds something, even if it can't go yet: a draft waiting on an upload isn't Stop.
   const hasDraft = canSend || attachments.uploading;
   const stopLabel = background ? "Stop the background agents" : "Stop";
-  const steerModifier = isMac() ? "⌘" : "Ctrl";
-  const sendHeld = useModHeld(steerable && hasDraft);
-  const action = sendAction({
-    hasDraft,
-    busy,
-    background,
-    steering: steerable && sendHeld,
-  });
+  const held = useHeldDelivery(steerable && hasDraft);
+  const action = sendAction({ hasDraft, busy, background, steerable, held });
   const sendKeyHint = sendKey === "enter" ? "↵" : sendHint;
-  const queueLabel = steerable
-    ? `Queue: sends when the turn ends. ${steerModifier}-click to steer`
-    : "Queue: sends when the turn ends";
+  const queueLabel = "Queue: sends when the turn ends";
+  const deliveryKeys: Record<Delivery, string> = {
+    steer: sendKeyHint ?? "",
+    queue: queueHint ?? "⌥↵",
+    interrupt: stopHint ?? "",
+  };
   // Into a worker the orchestrator directs, the send is also a take-over: its name says so.
   const control = takesControl ? " and take over from the orchestrator" : "";
   const queueControl = takesControl ? `. ${TAKES_OVER_LINE}` : "";
+  const interruptLine = interruptible
+    ? DELIVERY_WORDS.interrupt.line
+    : "Interrupt: this agent can't stop for a message, so it steers in";
   const actionLabels = {
     send: {
       aria: `Send${control}`,
@@ -905,9 +967,16 @@ export function Composer({
     },
     queue: {
       aria: `Queue${control}`,
-      hint: withHint(`${queueLabel}${queueControl}`, sendKeyHint),
+      hint: withHint(`${queueLabel}${queueControl}`, steerable ? queueHint : sendKeyHint),
     },
-    steer: { aria: "Steer now", hint: STEER_LABEL },
+    steer: {
+      aria: `Steer${control}`,
+      hint: withHint(`${DELIVERY_WORDS.steer.line}${queueControl}`, sendKeyHint),
+    },
+    interrupt: {
+      aria: `Interrupt${control}`,
+      hint: withHint(`${interruptLine}${queueControl}`, stopHint),
+    },
     // The word and its key, "Stop (⌘.)": an icon button's tooltip names it and its shortcut.
     stop: {
       aria: "Stop",
@@ -918,25 +987,25 @@ export function Composer({
     {
       id: "composer.stop",
       keys: "mod+.",
-      label: "Stop the turn",
+      label: "Stop the turn (with a draft: interrupt with it)",
       group: "Composer",
-      run: () => void stopTurn(api, threadId),
+      // With a draft for a turn that takes input, the turn stops for it: one step, not stop then send.
+      run: () => (hasDraft && steerable ? deliver("interrupt") : void stopTurn(api, threadId)),
     },
     focused && (busy || background),
   );
   const runAction = (event: MouseEvent<HTMLButtonElement>) => {
-    const steering = steerable && (event.metaKey || event.ctrlKey);
-    switch (sendAction({ hasDraft, busy, background, steering })) {
-      case "send":
-      case "queue":
-        return void send();
-      case "steer":
-        return void steer();
-      case "stop":
-        // The second click of a double click on Send lands here once the composer has emptied.
-        if (event.detail > 1) return;
-        return void stopTurn(api, threadId);
-    }
+    const clicked = sendAction({
+      hasDraft,
+      busy,
+      background,
+      steerable,
+      held: clickDelivery(event),
+    });
+    if (clicked !== "stop") return deliver(clicked);
+    // The second click of a double click on Send lands here once the composer has emptied.
+    if (event.detail > 1) return;
+    return void stopTurn(api, threadId);
   };
 
   const onModel = (value: string) => {
@@ -1215,6 +1284,16 @@ export function Composer({
             )}
             <PendingRestart threadId={threadId} />
             <ContextRing threadId={threadId} countUp={focused} />
+            {/* Into a turn that takes input, the chevron opens the three ways in: steer, queue,
+                interrupt. The round button steers. */}
+            {steerable && hasDraft && (
+              <DeliveryMenu
+                disabled={!canSend}
+                keys={deliveryKeys}
+                interruptLine={interruptLine}
+                onPick={deliver}
+              />
+            )}
             {/* One button for what the composer can do now, its word on hover. Right-click for the
                 rest: Stop stays reachable there while a draft has the button. */}
             <ContextMenu>
@@ -1261,19 +1340,26 @@ export function Composer({
                 </PressScale>
               </ContextMenuTrigger>
               <ContextMenuContent data-testid="send-menu" className="[&_svg]:size-icon-row">
-                <ContextMenuItem disabled={!canSend} onClick={() => void send()}>
-                  {busy ? <ListPlus aria-hidden /> : <ArrowUp aria-hidden />}
-                  {busy ? "Queue" : "Send"}
-                  <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
-                    {sendKeyHint}
-                  </kbd>
-                </ContextMenuItem>
-                {steerable && (
-                  <ContextMenuItem disabled={!canSend} onClick={() => void steer()}>
-                    <Send aria-hidden />
-                    {STEER_LABEL}
+                {steerable ? (
+                  DELIVERIES.map((delivery) => (
+                    <ContextMenuItem
+                      key={delivery}
+                      disabled={!canSend}
+                      onClick={() => deliver(delivery)}
+                    >
+                      <DeliveryGlyph action={delivery} />
+                      {DELIVERY_WORDS[delivery].label}
+                      <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
+                        {deliveryKeys[delivery]}
+                      </kbd>
+                    </ContextMenuItem>
+                  ))
+                ) : (
+                  <ContextMenuItem disabled={!canSend} onClick={() => void send()}>
+                    {busy ? <ListPlus aria-hidden /> : <ArrowUp aria-hidden />}
+                    {busy ? "Queue" : "Send"}
                     <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
-                      {steerModifier}-click
+                      {sendKeyHint}
                     </kbd>
                   </ContextMenuItem>
                 )}
@@ -1299,16 +1385,107 @@ export function Composer({
   );
 }
 
-/** Send, Queue and Steer's glyph; the button's own label says it in words, on hover. */
+/** Send, Queue, Steer and Interrupt's glyph; the button's own label says it in words, on hover. */
 function SendGlyph({ action }: { action: Exclude<SendAction, "stop"> }) {
+  return action === "send" ? (
+    <ArrowUp aria-hidden className="size-icon-row" />
+  ) : (
+    <DeliveryGlyph action={action} />
+  );
+}
+
+/** The three ways into a running turn, in the order the delivery menu lists them. */
+const DELIVERIES = ["steer", "queue", "interrupt"] as const;
+type Delivery = (typeof DELIVERIES)[number];
+
+/** Each way's word and what it does, as the delivery menu and the button's hint say them. */
+const DELIVERY_WORDS: Record<Delivery, { label: string; line: string }> = {
+  steer: { label: "Steer", line: "Steer: after the current tool call, cancelling nothing" },
+  queue: { label: "Queue", line: "Queue: after the turn ends" },
+  interrupt: { label: "Interrupt", line: "Interrupt: stops the turn now, cutting off tool calls" },
+};
+
+function DeliveryGlyph({ action }: { action: Delivery }) {
   switch (action) {
-    case "queue":
-      return <ListPlus aria-hidden className="size-icon-row" />;
     case "steer":
       return <Send aria-hidden className="size-icon-row" />;
-    case "send":
-      return <ArrowUp aria-hidden className="size-icon-row" />;
+    case "queue":
+      return <ListPlus aria-hidden className="size-icon-row" />;
+    case "interrupt":
+      return <SquareArrowRight aria-hidden className="size-icon-row" />;
   }
+}
+
+const DELIVERY_ITEM =
+  "flex cursor-default items-center gap-2.5 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor phone:min-h-11";
+
+/**
+ * The chevron before the round button while a turn takes input: Steer, Queue and Interrupt, each
+ * with its key and what it does. Its own 44 px target on a phone, where no key is held.
+ */
+function DeliveryMenu({
+  disabled,
+  keys,
+  interruptLine,
+  onPick,
+}: {
+  disabled: boolean;
+  keys: Record<Delivery, string>;
+  interruptLine: string;
+  onPick: (delivery: Delivery) => void;
+}) {
+  const lines: Record<Delivery, string> = {
+    steer: "After the current tool call",
+    queue: "After the turn ends",
+    interrupt: interruptLine.replace(/^Interrupt: /, "").replace(/^./, (c) => c.toUpperCase()),
+  };
+  return (
+    <Menu.Root>
+      <Hint
+        label="Steer, queue or interrupt"
+        render={
+          <Menu.Trigger
+            data-testid="delivery-menu"
+            aria-label="Steer, queue or interrupt"
+            disabled={disabled}
+            className={cn(
+              "grid h-8 w-5 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring disabled:opacity-50 data-[popup-open]:text-foreground phone:size-11",
+            )}
+          />
+        }
+      >
+        <ChevronDown aria-hidden className="size-icon-chip" />
+      </Hint>
+      <Menu.Portal>
+        <Menu.Positioner
+          side="top"
+          align="end"
+          sideOffset={6}
+          className="isolate z-50 outline-none"
+        >
+          <Menu.Popup className="min-w-64 max-w-[calc(100vw-1rem)] rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none">
+            {DELIVERIES.map((delivery) => (
+              <Menu.Item
+                key={delivery}
+                data-testid={`delivery-${delivery}`}
+                onClick={() => onPick(delivery)}
+                className={DELIVERY_ITEM}
+              >
+                <DeliveryGlyph action={delivery} />
+                <span className="min-w-0 flex-1">
+                  <span className="block">{DELIVERY_WORDS[delivery].label}</span>
+                  <span className="block text-meta text-muted-foreground">{lines[delivery]}</span>
+                </span>
+                <kbd className="pl-3 font-mono text-caption text-muted-foreground phone:hidden">
+                  {keys[delivery]}
+                </kbd>
+              </Menu.Item>
+            ))}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
 }
 
 /**

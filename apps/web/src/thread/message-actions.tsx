@@ -1,7 +1,17 @@
 import { Menu } from "@base-ui/react/menu";
 import { Popover } from "@base-ui/react/popover";
 import type { MessageId, GramUIMessage, ThreadId, ThreadStatus } from "@gram/contracts";
-import { Copy, Ellipsis, FolderGit2, GitFork, History, Inbox, Pencil } from "lucide-react";
+import {
+  Copy,
+  Ellipsis,
+  FolderGit2,
+  GitFork,
+  History,
+  Inbox,
+  Pencil,
+  Send,
+  SquareArrowRight,
+} from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { useApi } from "@/api/context";
@@ -125,6 +135,41 @@ export function MessageActions({
       {!isUser && <SentAt message={message} />}
       {!isUser && <ReplyTokens message={message} />}
     </div>
+  );
+}
+
+/** How a message went into a running turn, as its mark under the bubble says it. */
+const DELIVERY = {
+  steer: {
+    icon: Send,
+    label: "Steered",
+    hint: "Steered into the running turn, after its tool calls finished. Nothing was cancelled.",
+  },
+  interrupt: {
+    icon: SquareArrowRight,
+    label: "Interrupted the turn",
+    hint: "Stopped the running turn and was answered at once. Tool calls it cut off show as interrupted.",
+  },
+} as const;
+
+/**
+ * "Steered" or "Interrupted the turn" under a message that went into a running turn, always shown
+ * (not with the actions on hover), as "Gram told the agent" is; nothing on any other message.
+ */
+export function DeliveryLine({ message }: { message: GramUIMessage }) {
+  const delivery = message.metadata?.delivery;
+  if (delivery === undefined) return null;
+  const { icon: Icon, label, hint } = DELIVERY[delivery];
+  return (
+    <span
+      data-testid="message-delivery"
+      data-delivery={delivery}
+      title={hint}
+      className="flex items-center justify-end gap-1 text-meta text-muted-foreground"
+    >
+      <Icon aria-hidden className="size-icon-chip" />
+      {label}
+    </span>
   );
 }
 
