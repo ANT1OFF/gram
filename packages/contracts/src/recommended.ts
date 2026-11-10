@@ -347,3 +347,62 @@ export const escalationStep = (model: Pick<ModelRef, "variant">): string => {
     return `checks failing at ${at}: effort stops at high, so next is the next tier up`;
   return `checks failing at ${at}: next is ${EFFORT_ORDER[index + 1]}${index + 1 < high ? ", then high" : ""}, then the next tier up`;
 };
+
+/**
+ * A resolved tier's model as the recommendation names it: Claude's by family and version from the
+ * id it runs ("Opus 5.5"), since an alias row's own name ("Opus") leaves out which; any other by
+ * the name its CLI lists ("GPT-6.1-Sol").
+ */
+export const tierModelName = (resolved: Pick<ResolvedTier, "agent" | "listed">): string => {
+  const { listed } = resolved;
+  if (resolved.agent === "claude") {
+    const named = claudeLabel(bare(listed.resolvedId ?? listed.id).replace(/-\d{8}$/, ""));
+    if (named !== undefined) return named;
+  }
+  return listed.displayName === "" ? listed.id : listed.displayName;
+};
+
+/**
+ * What a joined machine's host reports, as tier resolution may use it: only the table's own Claude
+ * candidates the host says it has (by an id or the id an alias runs), each as the table names it,
+ * with the efforts the host reports. A host's list can only narrow what may run there; it never
+ * supplies a model id of its own, so a forged alias can't put a worker on an unapproved model.
+ */
+export const hostCandidates = (
+  hostModels: ReadonlyArray<Pick<AgentModel, "id" | "resolvedId" | "supportsEffort" | "efforts">>,
+  table: RecommendationTable = RECOMMENDED,
+): ReadonlyArray<AgentModel> => {
+  const ids = [...new Set(TIERS.flatMap((tier) => table.tiers[tier].claude.models))];
+  return ids.flatMap((id) => {
+    const row = hostListing(hostModels, id);
+    return row === undefined
+      ? []
+      : [
+          {
+            id,
+            displayName: id,
+            supportsEffort: row.supportsEffort,
+            ...(row.efforts === undefined ? {} : { efforts: row.efforts }),
+          },
+        ];
+  });
+};
+
+/** A model id without its `[1m]` window or a dated snapshot's suffix: what two ids are compared by. */
+const plainId = (id: string) => bare(id).replace(/-\d{8}$/, "");
+
+/**
+ * The row of a host's list for `model`: by its id, or the id an alias row runs, each side compared
+ * without a `[1m]` window or a date suffix, so a dated or windowed id matches its plain model.
+ */
+export const hostListing = <T extends Pick<AgentModel, "id" | "resolvedId">>(
+  hostModels: ReadonlyArray<T>,
+  model: string,
+): T | undefined => {
+  const wanted = plainId(model);
+  return hostModels.find(
+    (row) =>
+      plainId(row.id) === wanted ||
+      (row.resolvedId !== undefined && plainId(row.resolvedId) === wanted),
+  );
+};

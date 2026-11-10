@@ -4,13 +4,15 @@ import type { AgentModel } from "./models.ts";
 import {
   escalationStep,
   firstChoiceOf,
+  hostCandidates,
+  hostListing,
   isTierRef,
   isUnknownTier,
   ModelSlot,
   RECOMMENDED,
   slotHere,
 } from "./recommended.ts";
-import { DEFAULT_SETTINGS, Settings } from "./settings.ts";
+import { defaultSlotOf, DEFAULT_SETTINGS, Settings, SettingsPatch } from "./settings.ts";
 import {
   applyCharterWrites,
   planSettingsChanges,
@@ -24,6 +26,7 @@ import {
   defaultOrchestratorModel,
   newWorkspaceCharter,
   OrchestratorCharter,
+  RECOMMENDED_ROSTER,
   rosterModelHere,
   rosterName,
   WorkerModel,
@@ -296,5 +299,63 @@ describe("escalationStep", () => {
       "checks failing at max: effort stops at high, so next is the next tier up",
     );
     expect(escalationStep({})).toContain("never past high");
+  });
+});
+
+describe("the recommended setup mode", () => {
+  const on = {
+    ...DEFAULT_SETTINGS,
+    agents: { ...DEFAULT_SETTINGS.agents, recommendedSetup: { enabled: true } },
+  };
+
+  it("starts a new chat on Lead at low only while on and nothing is saved", () => {
+    expect(defaultSlotOf(DEFAULT_SETTINGS)).toBeUndefined();
+    expect(defaultSlotOf(on)).toEqual({ tier: "lead", variant: "low" });
+    const pinned = { agent: "claude" as const, model: "opus" };
+    expect(defaultSlotOf({ ...on, agents: { ...on.agents, defaultModel: pinned } })).toBe(pinned);
+  });
+
+  it("starts a new workspace on Lead, with one of each tier unless a roster is saved", () => {
+    expect(newWorkspaceCharter({ recommended: true })).toMatchObject({
+      orchestratorModel: { tier: "lead" },
+      workerModels: RECOMMENDED_ROSTER,
+    });
+    const own = [{ agent: "claude" as const, model: "sonnet" }];
+    expect(newWorkspaceCharter({ recommended: true, workerModels: own }).workerModels).toBe(own);
+  });
+
+  it("saves through the settings patch, a following default included", () => {
+    const patch = {
+      agents: {
+        recommendedSetup: { enabled: true, seen: "2026.11" },
+        defaultModel: { tier: "lead", variant: "low" },
+      },
+    };
+    expect(roundTrip(SettingsPatch, patch)).toEqual(patch);
+    expect(roundTrip(Settings, on)).toEqual(on);
+  });
+});
+
+const listed = (id: string, resolvedId?: string) => ({
+  id,
+  ...(resolvedId === undefined ? {} : { resolvedId }),
+});
+
+describe("hostListing", () => {
+  it("matches a dated id to its plain candidate, so it fills the tier", () => {
+    expect(hostListing([listed("claude-opus-5-5-20261001")], "claude-opus-5-5")).toBeDefined();
+    expect(
+      hostCandidates([{ ...listed("claude-opus-5-5-20261001"), supportsEffort: false }]),
+    ).toEqual([{ id: "claude-opus-5-5", displayName: "claude-opus-5-5", supportsEffort: false }]);
+  });
+
+  it("accepts a pin exactly equal to a windowed or dated resolved id", () => {
+    expect(
+      hostListing([listed("opus", "claude-opus-5-5[1m]")], "claude-opus-5-5[1m]"),
+    ).toBeDefined();
+    expect(
+      hostListing([listed("opus", "claude-opus-5-5-20261001")], "claude-opus-5-5-20261001"),
+    ).toBeDefined();
+    expect(hostListing([listed("opus", "claude-opus-5-5")], "claude-sonnet-5-5")).toBeUndefined();
   });
 });

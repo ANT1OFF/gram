@@ -18,6 +18,7 @@ import {
   Checkout,
   ModelRef,
   PermissionMode,
+  ReasoningVariant,
   RequestAnswer,
   UserInput,
 } from "../domain.ts";
@@ -112,10 +113,31 @@ export const HostTool = Schema.Struct({
 });
 export type HostTool = typeof HostTool.Type;
 
+const HostModelText = Schema.String.check(Schema.isMaxLength(128));
+
+/**
+ * A model the machine's Claude Code lists, as much as resolving a recommended tier on it needs:
+ * its id, the id an alias runs, its name and the efforts it takes. Nothing about the account.
+ */
+export const HostModel = Schema.Struct({
+  id: HostModelText,
+  displayName: HostModelText,
+  resolvedId: Schema.optionalKey(HostModelText),
+  supportsEffort: Schema.Boolean,
+  efforts: Schema.optionalKey(Schema.Array(ReasoningVariant).check(Schema.isMaxLength(8))),
+});
+export type HostModel = typeof HostModel.Type;
+
 /** `host.status`: what the machine can run now. */
 export const HostStatus = Schema.Struct({
   claudeSignIn: ClaudeSignIn,
   tools: Schema.Array(HostTool).check(Schema.isMaxLength(8)),
+  /**
+   * What its Claude Code lists, for a worker placed there to resolve its tier against this
+   * machine. Absent from a host before 1.19, and when Claude Code couldn't list; the control plane
+   * then resolves against its own lists. A control plane built before it ignores it.
+   */
+  models: Schema.optionalKey(Schema.Array(HostModel).check(Schema.isMaxLength(64))),
 });
 export type HostStatus = typeof HostStatus.Type;
 

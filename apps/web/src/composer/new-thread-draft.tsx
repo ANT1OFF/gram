@@ -8,6 +8,7 @@ import {
   type PermissionMode,
   type Project,
   type WorkspaceState,
+  defaultSlotOf,
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -249,7 +250,10 @@ function ConfiguredNewThreadDraft() {
   const [existingPath, setExistingPath] = useState("");
   // Capture Settings → Agents once, after settings load; later edits don't replace this draft.
   // A default that follows a tier is resolved by the draft once both harnesses have listed.
-  const savedDefaultModel = useServerSettings((s) => s.settings?.agents.defaultModel);
+  // With the recommended setup on and nothing saved, Lead at low (`defaultSlotOf`).
+  const savedDefaultModel = useServerSettings((s) =>
+    s.settings === undefined ? undefined : defaultSlotOf(s.settings),
+  );
   const { choice, setChoice, discovering, unavailable } = useDraftAgentChoice(savedDefaultModel);
   const [mode, setMode] = useState<PermissionMode>(
     () =>

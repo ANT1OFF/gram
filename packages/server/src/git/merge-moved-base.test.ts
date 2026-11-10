@@ -99,6 +99,8 @@ interface Options {
   readonly recheckMs?: number;
   /** How long GitHub takes to answer a read. */
   readonly readMs?: number;
+  /** The synthetic runner's clock before check preparation; wall time by default. */
+  readonly checkNow?: () => number;
   /** A read that fails, for the PR it names. */
   readonly unreadable?: (number: number) => boolean;
 }
@@ -220,7 +222,12 @@ const scenario = <E, R>(
           )
             return known;
           ensured.push([head, base]);
-          const running = { ...record(head, base, "running"), startedAt: Date.now() };
+          // This fake skips real check preparation. Its new start must be later than the
+          // reconciliation cutoff even if both happen in the same wall-clock millisecond.
+          const running = {
+            ...record(head, base, "running"),
+            startedAt: Math.max(options.checkNow?.() ?? Date.now(), (after ?? 0) + 1),
+          };
           records.set(key, running);
           listeners.set(key, [onDone]);
           mostAtOnce = Math.max(mostAtOnce, listeners.size);
@@ -1015,64 +1022,76 @@ describe("armed merges on a base that moved", () => {
       },
     );
 
-    it.live("a later merge cannot use a new pass on an intermediate lagging base", () => {
-      let state = "OPEN";
-      return scenario(
-        {
-          numbers: [5, 6],
-          passed: both,
-          stuckTip: true,
-          recheckMs: 60_000,
-          stateRead: () => state,
-          headRead: () => headOf(9),
-          branchTip: () => tipAfter(2),
-          launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
-        },
-        ({ service, store, threads, launches, ensured, finish, moveTip }) =>
-          Effect.gen(function* () {
-            yield* service.check(threads[0]!);
-            yield* waitReal(
-              "uncertain launch",
-              Effect.sync(() => launches.length === 1),
-            );
-            state = "MERGED";
-            yield* service.resolveFence(threads[0]!, {
-              repo: "example/project",
-              number: 5,
-              head: headOf(5),
-              userApproved: true,
-            });
-            // The independent branch read has T2; PR status still lags at intermediate T1.
-            moveTip();
-            yield* service.check(threads[1]!);
-            yield* waitReal(
-              "check on intermediate tip",
-              Effect.sync(() => ensured.length === 1),
-            );
-            yield* finish(headOf(6), tipAfter(1));
-            yield* waitReal(
-              "divergent fresh tip reads block launch",
-              Effect.map(
-                store.getThread(threads[1]!),
-                (t) => t.boundPr?.mergeWaiting?.why.includes("couldn't be read") === true,
-              ),
-            );
-            expect(launches).toEqual([5]);
-            moveTip();
-            yield* service.mutate(threads[1]!, Effect.void);
-            yield* waitReal(
-              "new check on verified branch tip",
-              Effect.sync(() => ensured.length === 2),
-            );
-            expect(ensured[1]).toEqual([headOf(6), tipAfter(2)]);
-            yield* finish(headOf(6), tipAfter(2));
-            yield* waitReal(
-              "verified merge",
-              Effect.sync(() => launches.length === 2),
-            );
-          }),
-      );
-    });
+    it.live.each([
+      { suffix: "", sameMillisecond: false },
+      { suffix: " when check preparation starts in the cutoff millisecond", sameMillisecond: true },
+    ])(
+      "a later merge cannot use a new pass on an intermediate lagging base$suffix",
+      ({ sameMillisecond }) => {
+        let state = "OPEN";
+        let checkNow = Date.now;
+        return scenario(
+          {
+            numbers: [5, 6],
+            passed: both,
+            stuckTip: true,
+            recheckMs: 60_000,
+            checkNow: () => checkNow(),
+            stateRead: () => state,
+            headRead: () => headOf(9),
+            branchTip: () => tipAfter(2),
+            launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
+          },
+          ({ service, store, threads, launches, ensured, finish, moveTip }) =>
+            Effect.gen(function* () {
+              yield* service.check(threads[0]!);
+              yield* waitReal(
+                "uncertain launch",
+                Effect.sync(() => launches.length === 1),
+              );
+              state = "MERGED";
+              yield* service.resolveFence(threads[0]!, {
+                repo: "example/project",
+                number: 5,
+                head: headOf(5),
+                userApproved: true,
+              });
+              if (sameMillisecond) {
+                const cutoff = (yield* store.listMergeFences)[0]!.verifyAfter!;
+                checkNow = () => cutoff;
+              }
+              // The independent branch read has T2; PR status still lags at intermediate T1.
+              moveTip();
+              yield* service.check(threads[1]!);
+              yield* waitReal(
+                "check on intermediate tip",
+                Effect.sync(() => ensured.length === 1),
+              );
+              yield* finish(headOf(6), tipAfter(1));
+              yield* waitReal(
+                "divergent fresh tip reads block launch",
+                Effect.map(
+                  store.getThread(threads[1]!),
+                  (t) => t.boundPr?.mergeWaiting?.why.includes("couldn't be read") === true,
+                ),
+              );
+              expect(launches).toEqual([5]);
+              moveTip();
+              yield* service.mutate(threads[1]!, Effect.void);
+              yield* waitReal(
+                "new check on verified branch tip",
+                Effect.sync(() => ensured.length === 2),
+              );
+              expect(ensured[1]).toEqual([headOf(6), tipAfter(2)]);
+              yield* finish(headOf(6), tipAfter(2));
+              yield* waitReal(
+                "verified merge",
+                Effect.sync(() => launches.length === 2),
+              );
+            }),
+        );
+      },
+    );
 
     it.live(
       "explicit CLOSED reconciliation clears an acknowledged queue's stale moved-tip barrier",

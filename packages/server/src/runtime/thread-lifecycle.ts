@@ -17,6 +17,7 @@ import {
   type ThreadNotFound,
   type GitError,
   type WorktreeDirty,
+  defaultSlotOf,
 } from "@gram/contracts";
 import type {
   CloseThreadOptions,
@@ -224,7 +225,7 @@ export const makeThreadLifecycle = ({
       const settings = yield* store.getSettings;
       const model =
         input.model ??
-        (yield* slotHereNow(hosts, settings.agents.defaultModel).pipe(
+        (yield* slotHereNow(hosts, defaultSlotOf(settings)).pipe(
           Effect.tap((here) =>
             here.missing === undefined
               ? Effect.void

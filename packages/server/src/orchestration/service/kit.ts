@@ -26,6 +26,7 @@ import {
   type Thread,
   type ThreadId,
   type TurnId,
+  type HostId,
   type RosterModel,
   type WorkerModel,
   type WorkspaceState,
@@ -34,6 +35,8 @@ import {
   type Autonomy,
   connectorEntryProblem,
   InvalidState,
+  hostCandidates,
+  hostListing,
   rosterModelHere,
   rosterName,
 } from "@gram/contracts";
@@ -571,9 +574,16 @@ export const makeOrchestrationKit = Effect.gen(function* () {
    * The roster as it runs here: local entries stay on their own CLI, while explicit gateway
    * entries require their selected profile/key. Setup never changes routing merely because a key
    * was added. An entry that follows a tier is resolved against what this machine lists, never
-   * onto a gateway; one nothing here fills is unavailable, so the default stands in for it.
+   * onto a gateway; one nothing here fills is unavailable, so the default stands in for it. With
+   * `hostId`, a joined machine a worker is placed on, a tier resolves against what that machine's
+   * Claude Code lists, as its host reports it; never onto Codex there, which it can't run. A host
+   * too old to report its models resolves against this machine's lists, as before.
    */
-  const rosterHere = (allowed: ReadonlyArray<WorkerModel>, charter: OrchestratorCharter) =>
+  const rosterHere = (
+    allowed: ReadonlyArray<WorkerModel>,
+    charter: OrchestratorCharter,
+    hostId?: HostId,
+  ) =>
     Effect.gen(function* () {
       const profiles = yield* store.listProfiles;
       const settings = yield* store.getSettings;
@@ -581,12 +591,36 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       const roster: Array<RosterModel> = [];
       const unavailable = new Map<number, string>();
       const following = allowed.some((entry) => "tier" in entry);
-      const available = following ? yield* availableHere(hosts) : {};
+      const placed =
+        hostId === undefined ? undefined : joinedMachines().find((m) => m.id === hostId)?.models;
+      // A machine's own list only narrows which of the table's candidates may run there.
+      const available = !following
+        ? {}
+        : placed !== undefined
+          ? { claude: hostCandidates(placed) }
+          : yield* availableHere(hosts);
+      const machineName =
+        hostId === undefined ? undefined : joinedMachines().find((m) => m.id === hostId)?.name;
       for (const [index, stored] of allowed.entries()) {
         const { entry, missing } = rosterModelHere(stored, available);
         if (missing !== undefined) {
           roster.push(entry);
           unavailable.set(index, missing);
+          continue;
+        }
+        // A pinned model the machine reports it lacks can't run there either.
+        if (
+          placed !== undefined &&
+          !("tier" in stored) &&
+          entry.profileId === undefined &&
+          entry.agent === "claude" &&
+          hostListing(placed, entry.model) === undefined
+        ) {
+          roster.push(entry);
+          unavailable.set(
+            index,
+            `${machineName ?? "that machine"}'s Claude Code doesn't list ${entry.model}; pick another model, or update Claude Code there`,
+          );
           continue;
         }
         const gatewayKind = entry.agent === "codex";

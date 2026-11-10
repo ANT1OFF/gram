@@ -8,6 +8,7 @@ import {
   type Settings,
   type WorkspaceId,
   type WorkspaceState,
+  recommendedSetupOn,
 } from "@gram/contracts";
 
 import type { SaveWorkspaceInput } from "@/api/types";
@@ -126,6 +127,13 @@ export const subscriptionWorkspaceCharter = (
   claude: readonly AgentModel[] | undefined,
   codex: readonly AgentModel[] | undefined,
 ): OrchestratorCharter => {
+  // With the recommended setup on, a new workspace follows Lead, with a roster of each tier.
+  if (settings !== undefined && recommendedSetupOn(settings)) {
+    return newWorkspaceCharter({
+      workerModels: settings.agents.workerModels ?? [],
+      recommended: true,
+    });
+  }
   const selected = settings?.agents.defaultModel ?? localSubscriptionDefault(claude, codex);
   const { orchestratorModel: _default, ...starting } = newWorkspaceCharter({
     workerModels: settings?.agents.workerModels ?? [],

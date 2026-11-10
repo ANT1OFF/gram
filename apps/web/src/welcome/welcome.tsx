@@ -1,4 +1,4 @@
-import type { Project, RepositoryCandidate } from "@gram/contracts";
+import { RECOMMENDED, type Project, type RepositoryCandidate } from "@gram/contracts";
 import { Menu } from "@base-ui/react/menu";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -20,7 +20,7 @@ import {
   Search,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { AgentIcon } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
@@ -41,6 +41,10 @@ import { tildify } from "@/new-thread/path";
 import { useHome } from "@/new-thread/use-folder";
 import { ResumeSessions } from "@/resume/resume-sessions";
 import { useSaveSettings } from "@/settings/use-save-settings";
+import { useAvailableModels } from "@/settings/model-slots";
+import { recommendedSummary } from "@/settings/recommended-setup-model";
+import { useServerSettings } from "@/settings-sync/store";
+import { Switch } from "@/components/ui/switch";
 
 import { matchRepos, RECENT_LIMIT } from "./repo-search";
 import { runsWith, toolRows, type ToolRow, type ToolState } from "./tools";
@@ -56,6 +60,46 @@ import { useFirstRun, useWelcome } from "./welcome-state";
 export function Welcome() {
   const shown = useFirstRun();
   return shown ? <FirstRun /> : null;
+}
+
+/**
+ * A new install's Recommended setup row, on unless switched off here. Looking at it saves nothing:
+ * the choice is saved when the user goes on (Open, or Skip), so the new workspace starts on it.
+ * An install that has set the mode either way sees what it set, and a change here saves at once.
+ */
+function RecommendedSetupWelcome({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  const available = useAvailableModels(on);
+  const summary = recommendedSummary(available);
+  const titleId = useId();
+  // A row, not a <label>: a label around the Switch would click it again as the click bubbles.
+  return (
+    <div
+      data-testid="welcome-recommended"
+      className="flex items-center gap-4 rounded-lg border border-edge px-4 py-3"
+    >
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span id={titleId} className="font-medium">
+          Recommended setup
+        </span>
+        <span className="text-meta text-muted-foreground">
+          {on && summary !== undefined ? summary : "Gram picks a model for each kind of work."}{" "}
+          Change it any time in Settings.
+        </span>
+      </span>
+      <Switch
+        data-testid="welcome-recommended-switch"
+        aria-labelledby={titleId}
+        checked={on}
+        onCheckedChange={onChange}
+      />
+    </div>
+  );
 }
 
 /** What Gram does, in the order it happens. */
@@ -100,7 +144,29 @@ function FirstRun() {
       console.error("welcome: record", e),
     );
 
+  // The Recommended setup: on for a new install unless switched off here, saved as the user goes on.
+  const mode = useServerSettings((s) => s.settings?.agents.recommendedSetup);
+  const [recommended, setRecommended] = useState(true);
+  const recommendedOn = mode === undefined ? recommended : mode.enabled;
+  const changeRecommended = (next: boolean) => {
+    if (mode === undefined) setRecommended(next);
+    else
+      void save({ agents: { recommendedSetup: { ...mode, enabled: next } } }).catch((e: unknown) =>
+        console.error("welcome: recommended setup", e),
+      );
+  };
+  const keepRecommended = () =>
+    mode !== undefined
+      ? Promise.resolve()
+      : save({
+          agents: { recommendedSetup: { enabled: recommended, seen: RECOMMENDED.version } },
+        }).then(
+          () => undefined,
+          (e: unknown) => console.error("welcome: recommended setup", e),
+        );
+
   const start = async (project: Project) => {
+    await keepRecommended();
     await navigate({ to: "/new-workspace", search: { repo: project.id } });
   };
 
@@ -150,7 +216,7 @@ function FirstRun() {
 
   const skip = () => {
     useWelcome.setState({ open: false });
-    void record();
+    void keepRecommended().then(record);
   };
 
   return (
@@ -210,6 +276,7 @@ function FirstRun() {
           {adding && <AddRepository onAdded={(project) => start(project)} />}
         </Expand>
       </div>
+      <RecommendedSetupWelcome on={recommendedOn} onChange={changeRecommended} />
       <div className="flex flex-col gap-3">
         {/* With no agent ready, setting one up leads: its install or sign-in is the primary. */}
         {noAgent && <Readiness lead />}
