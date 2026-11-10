@@ -452,22 +452,25 @@ after a restart onto an older Codex or on a joined machine with one, is moved to
 each reopen. On Codex 0.166.0 or newer, and under the gate on any version, every other mode names
 you as Codex's reviewer, whatever your Codex config says.
 
-**What a Codex worker at Full can no longer do unreviewed.** Before Codex's Auto, a Full worker ran
-in Bypass: `danger-full-access`, no sandbox. In Auto it runs in the `workspace-write` sandbox with
-the network off, so each of these is a sandbox escalation that the reviewer must approve, one
-review at a time:
+**What a Codex worker at Full does differently.** Before Codex's Auto, a Full worker ran in Bypass:
+`danger-full-access`, no sandbox. In Auto it runs in the `workspace-write` sandbox with the network
+off, and what the sandbox blocks becomes an escalation for the reviewer. Measured on Codex 0.167.0
+in a throwaway worktree, with Gram's exact settings, on 2026-11-10:
 
-- every `git commit`, since a worktree's git directory is in the main repository's `.git`, which
-  the sandbox doesn't let it write;
-- `git push` and `git fetch`, `gh`, `bun install` and any other network call;
-- a test that binds a local port.
+| Step                                  | Sandbox                                            | Result                         |
+| ------------------------------------- | -------------------------------------------------- | ------------------------------ |
+| `git commit` in a worktree            | blocked (`Operation not permitted` on the git dir) | escalated, approved, committed |
+| `git push -u origin HEAD`             | ran inside the sandbox                             | pushed                         |
+| `gh pr view`                          | blocked (no connection to `api.github.com`)        | escalated, approved            |
+| `bun install --frozen-lockfile`       | blocked (`EPERM` on its temporary directory)       | escalated, approved, installed |
+| `bunx vitest run` on one focused file | ran inside the sandbox                             | passed                         |
 
-Gram's own tools, `local_check` and `merge_when_ready` included, are unaffected. The reviewer is
-told to deny irreversible actions it can't see the user authorized, so a force push, a branch
-deletion or a `gh pr merge` may be denied. Gram has no way yet to overrule a denial: the worker can
-only work around it or report it. This hasn't been run against a live Codex worker. If your Codex
-workers must push and install without review, set the workspace's worker mode to Bypass in
-Settings → Workspaces, which restores the old behaviour.
+So routine work goes through, at the cost of one review per blocked command. Gram's own tools,
+`local_check` and `merge_when_ready` included, are unaffected. The reviewer is told to deny
+irreversible actions it can't see the user authorized, so a force push, a branch deletion or a
+`gh pr merge` may still be denied, and Gram has no way yet to overrule a denial: the worker can
+only work around it or report it. For workers that must never wait on a review, set the
+workspace's worker mode to Bypass in Settings → Workspaces, which restores the old behaviour.
 
 **Claude Code's Auto** routes most permission prompts to its classifier, including commands its
 shell parser can't analyze, such as zsh expansion flags. A dangerous removal (`rm` of a system,
