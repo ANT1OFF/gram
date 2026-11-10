@@ -32,7 +32,7 @@ import {
   type Thread,
 } from "@gram/contracts";
 import { typedText, userMessage, userParts, authored, typedInput } from "./user-input.ts";
-import type { AgentSession } from "@gram/agents";
+import type { AgentSession, SteerOptions } from "@gram/agents";
 import { randomUUID } from "node:crypto";
 import type { JoinQueued, JoinResult, ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 import { missingThreadFolder } from "../fs/folders.ts";
@@ -273,7 +273,13 @@ export const makeMessageQueue = ({
    * `false` when the agent refused it (Codex, whose turn can end before ours does): nothing was
    * recorded, and the caller keeps the input, queueing it or handing it back.
    */
-  const steerNow = (rt: Runtime, session: AgentSession, turn: Turn, sent: UserInput) =>
+  const steerNow = (
+    rt: Runtime,
+    session: AgentSession,
+    turn: Turn,
+    sent: UserInput,
+    options?: SteerOptions,
+  ) =>
     Effect.gen(function* () {
       if ((yield* switchHold(rt)) !== undefined)
         return yield* new InvalidState({
@@ -296,7 +302,9 @@ export const makeMessageQueue = ({
         },
       } as unknown as GramUIMessage;
       const read = yield* forAgent(rt, input);
-      const taken = yield* session.steer(read).pipe(
+      const taken = yield* (
+        options?.interrupt === true ? session.steer(read, options) : session.steer(read)
+      ).pipe(
         Effect.as(true),
         // Its reason could quote the input, which stays out of the log; its kind can't.
         Effect.catchDefect((defect) =>
@@ -480,6 +488,7 @@ export const makeMessageQueue = ({
     join?: JoinQueued,
     noticeKey?: string,
     joinsWith?: (queued: UserInput) => boolean,
+    steerNotice = false,
   ): Effect.Effect<
     JoinResult & { readonly steered?: boolean; readonly replaced?: boolean },
     ThreadNotFound | InvalidState | AgentUnavailable
@@ -581,6 +590,9 @@ export const makeMessageQueue = ({
             const turn = rt.turn;
             const stale = rt.queue.findIndex((item) => rt.noticeKeys.get(item.id) === noticeKey);
             if (
+              // Only a notice that changes what the agent should do now is steered, and never so
+              // as to cut off a tool call; the rest wait for the turn's end.
+              steerNotice &&
               // One queued ahead of something else keeps its place, so the update never overtakes
               // what was waiting behind the older one.
               (stale < 0 || stale === rt.queue.length - 1) &&
@@ -864,9 +876,16 @@ export const makeQueueMethods = ({
     sendInput(threadId, input, join, undefined, joinsWith).pipe(
       Effect.tap(() => userTyped(threadId, input)),
     ),
-  sendNotice: (threadId, key, input) =>
+  sendNotice: (threadId, key, input, options) =>
     // Marked Gram's in the queue and the transcript, so no restart or steer makes it the user's.
-    sendInput(threadId, { ...input, author: "server" }, undefined, key).pipe(
+    sendInput(
+      threadId,
+      { ...input, author: "server" },
+      undefined,
+      key,
+      undefined,
+      options?.steer === true,
+    ).pipe(
       Effect.map((result) => ({
         queued: result.queued,
         steered: result.steered === true,
@@ -890,26 +909,34 @@ export const makeQueueMethods = ({
         }),
       );
     }).pipe(Effect.ignore),
-  steer: (threadId, sent) =>
+  steer: (threadId, sent, options) =>
     withSession(threadId, (rt, session) => {
       const turn = rt.turn;
       return turn === undefined
         ? Effect.fail(
             new InvalidState({ message: "nothing to steer", threadId, status: rt.status }),
           )
-        : steerNow(rt, session, turn, authored(typedInput(sent))).pipe(
-            Effect.flatMap((taken) =>
-              taken
-                ? Effect.void
-                : Effect.fail(
-                    new InvalidState({
-                      message: "the agent couldn't take mid-turn input; send it instead",
-                      threadId,
-                      status: rt.status,
-                    }),
-                  ),
-            ),
-          );
+        : options?.interrupt === true && rt.capabilities?.steerInterrupt !== true
+          ? Effect.fail(
+              new InvalidState({
+                message: "this agent can't be interrupted for input; stop it and send instead",
+                threadId,
+                status: rt.status,
+              }),
+            )
+          : steerNow(rt, session, turn, authored(typedInput(sent)), options).pipe(
+              Effect.flatMap((taken) =>
+                taken
+                  ? Effect.void
+                  : Effect.fail(
+                      new InvalidState({
+                        message: "the agent couldn't take mid-turn input; send it instead",
+                        threadId,
+                        status: rt.status,
+                      }),
+                    ),
+              ),
+            );
     }).pipe(Effect.tap(() => userTyped(threadId, sent))),
   editQueued: (threadId, itemId, input) =>
     withQueue(threadId, (rt) =>

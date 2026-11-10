@@ -20,6 +20,8 @@ import { ApprovalSlot, ApprovalSlotsOpen } from "./approval-slots";
 import { useAwaitingTools, withApproval } from "./awaiting-tools";
 import {
   basename,
+  CUT_OFF_REASON,
+  cutOffByInterrupt,
   PHASE_DISPLAY,
   toolNameOf,
   toolPhase,
@@ -139,7 +141,8 @@ function ToolShell({
     part.toolCallId,
     awaiting,
   );
-  const display = PHASE_DISPLAY[phase];
+  const cutOff = part.state === "output-error" && cutOffByInterrupt(part.errorText);
+  const display = cutOff ? { ...PHASE_DISPLAY[phase], label: "Interrupted" } : PHASE_DISPLAY[phase];
   const words = labelOf?.(phase) ?? { label: name, raw: undefined };
   // In the orchestrator's chat, one of Gram's own calls that went through ("Started a worker",
   // "Queued to merge when ready") is an event, not work to inspect: a line of muted meta like an
@@ -245,10 +248,16 @@ function ToolShell({
             {/* A subagent's calls inside hold their approvals only while this body is open. */}
             <ApprovalSlotsOpen open={open}>{children}</ApprovalSlotsOpen>
             <ToolImages part={part} size="large" className="flex flex-wrap items-start gap-2" />
-            {part.state === "output-error" && (
-              <pre className="overflow-x-auto font-mono text-meta whitespace-pre-wrap text-destructive">
-                {part.errorText}
-              </pre>
+            {cutOff ? (
+              <p data-testid="tool-cut-off" className="text-meta text-muted-foreground">
+                {CUT_OFF_REASON}
+              </p>
+            ) : (
+              part.state === "output-error" && (
+                <pre className="overflow-x-auto font-mono text-meta whitespace-pre-wrap text-destructive">
+                  {part.errorText}
+                </pre>
+              )
             )}
           </div>
         )}

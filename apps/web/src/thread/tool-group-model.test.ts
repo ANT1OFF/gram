@@ -185,7 +185,25 @@ describe("runState", () => {
       active: running,
       failed: 1,
       cancelled: 0,
+      interrupted: 0,
       awaiting: false,
+    });
+  });
+
+  it("counts calls an interrupt cut off as interrupted, never as failed", () => {
+    const cutOff = {
+      ...tool("Read", {}, "output-error"),
+      errorText:
+        "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed.",
+    } as AnyToolPart;
+    const cancelled = {
+      ...tool("Bash", {}, "output-error"),
+      errorText: "Cancelled",
+    } as AnyToolPart;
+    expect(runState([cutOff, cancelled, tool("Read")])).toMatchObject({
+      failed: 0,
+      cancelled: 1,
+      interrupted: 1,
     });
   });
 

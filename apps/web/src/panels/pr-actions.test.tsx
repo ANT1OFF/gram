@@ -185,7 +185,8 @@ describe("PrActions when blocked", () => {
     const merge = screen.getByRole("button", { name: "Merge…" });
     expect(merge.dataset["blocked"]).toBe("true");
     const reason = screen.getByTestId("pr-merge-blocked");
-    expect(reason.textContent).toBe("Merge blocked · 2 reasons: check, changes requested");
+    // Counted once: the reasons are named in the list right under it.
+    expect(reason.textContent).toBe("Merge blocked · 2 reasons");
     expect(merge.getAttribute("aria-describedby")).toBe(reason.id);
     fireEvent.click(merge);
     await screen.findByTestId("pr-merge-dialog");
@@ -207,9 +208,7 @@ describe("PrActions when blocked", () => {
       />,
       { prMergeOptions: options() },
     );
-    expect(screen.getByTestId("pr-merge-blocked").textContent).toBe(
-      "Merge blocked · 3 reasons: check, changes requested, review bot",
-    );
+    expect(screen.getByTestId("pr-merge-blocked").textContent).toBe("Merge blocked · 3 reasons");
     const lines = within(screen.getByRole("list", { name: "What blocks the merge" }))
       .getAllByRole("listitem")
       .map((item) => item.textContent);
@@ -242,9 +241,7 @@ describe("PrActions when blocked", () => {
       prMergeOptions: options(),
       send,
     });
-    expect(screen.getByTestId("pr-merge-blocked").textContent).toBe(
-      "Merge blocked · 1 reason: conflicts",
-    );
+    expect(screen.getByTestId("pr-merge-blocked").textContent).toBe("Merge blocked · 1 reason");
     fireEvent.click(screen.getByRole("button", { name: "Ask agent to fix conflicts" }));
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith(T, {

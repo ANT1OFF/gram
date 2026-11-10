@@ -21,7 +21,10 @@ import { CwdEvent } from "./worktree-move.ts";
 export const AgentCapabilities = Schema.Struct({
   fork: Schema.Boolean,
   rewind: Schema.Literals(["none", "history", "historyAndFiles"]),
+  /** The agent takes input mid-turn without cancelling the tool calls under way. */
   steer: Schema.Boolean,
+  /** The agent can stop its turn for an input and answer it in the same turn (`steer` interrupt). */
+  steerInterrupt: Schema.optionalKey(Schema.Boolean),
   planMode: Schema.Boolean,
   approvalScopes: Schema.Array(ApprovalScope),
   userQuestions: Schema.Boolean,

@@ -80,14 +80,24 @@ describe("notice provenance", () => {
           "the notice sent",
           Effect.sync(() => session.sent.length === 2),
         );
-        // Steered into that turn.
+        // Steered into that turn, when asked to be.
         expect(
-          yield* runtimes.sendNotice(thread.id, "run:acme/web#2", { text: "run 2 finished" }),
+          yield* runtimes.sendNotice(
+            thread.id,
+            "run:acme/web#2",
+            { text: "run 2 finished" },
+            { steer: true },
+          ),
         ).toMatchObject({ steered: true });
         // One the agent won't take mid-turn waits in the queue, where the user can edit it, and a
         // client can't make it theirs by saying so.
         yield* fake.setSteerFails(true);
-        yield* runtimes.sendNotice(thread.id, "run:acme/web#3", { text: "run 3 finished" });
+        yield* runtimes.sendNotice(
+          thread.id,
+          "run:acme/web#3",
+          { text: "run 3 finished" },
+          { steer: true },
+        );
         const [summary] = yield* runtimes.snapshot;
         const queued = summary?.queue.find((item) => item.input.text === "run 3 finished");
         expect(queued?.input.author).toBe("server");

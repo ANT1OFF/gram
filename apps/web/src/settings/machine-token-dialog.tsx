@@ -121,7 +121,8 @@ export function TokenDialog({
             </li>
             <li>
               <span className="text-foreground">Forget token</span> or{" "}
-              <span className="text-foreground">Remove</span> deletes it from the machine.
+              <span className="text-foreground">Remove</span>, in the machine&apos;s ⋯ menu, deletes
+              it from the machine.
             </li>
           </ul>
           <fieldset className="flex flex-col gap-1.5" data-testid="machines-token-targets">

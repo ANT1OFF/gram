@@ -22,7 +22,8 @@ const senderRole = (origin: MessageOrigin, spawned: boolean) =>
       : undefined;
 
 const DELIVERY = {
-  steer: { label: "steer", hint: "Sent to steer the running turn" },
+  interrupt: { label: "interrupt", hint: "Sent to stop the running turn and be answered now" },
+  steer: { label: "steer", hint: "Sent into the running turn, after its tool calls finish" },
   queue: { label: "queued", hint: "Queued for after the turn" },
 } as const;
 

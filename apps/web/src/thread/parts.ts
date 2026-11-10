@@ -48,6 +48,21 @@ export type ToolPhase =
   | "denied"
   | "cancelled";
 
+/**
+ * What Claude Code answers every tool call an interrupt cut off with (a stop, or a message sent to
+ * interrupt the turn): "The user doesn't want to take this action right now. STOP what you are
+ * doing…", whoever interrupted and though nobody declined anything.
+ */
+const CUT_OFF_TEXT = "The user doesn't want to take this action right now";
+
+/** The call was cut off by an interrupt, which Claude Code words as if the user declined it. */
+export const cutOffByInterrupt = (errorText: string | undefined): boolean =>
+  errorText?.includes(CUT_OFF_TEXT) === true;
+
+/** What an interrupted call says in place of Claude Code's words, which blame the user. */
+export const CUT_OFF_REASON =
+  "The turn was interrupted before this call finished. Nobody declined it, and the agent can run it again.";
+
 export function toolPhase(
   state: AnyToolPart["state"],
   errorText?: string,
@@ -64,7 +79,8 @@ export function toolPhase(
     case "output-available":
       return preliminary ? "running" : "done";
     case "output-error":
-      return errorText === "Cancelled" ? "cancelled" : "error";
+      // An interrupted call stopped like a cancelled one: it didn't fail.
+      return errorText === "Cancelled" || cutOffByInterrupt(errorText) ? "cancelled" : "error";
     case "output-denied":
       return "denied";
   }
