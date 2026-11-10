@@ -1,4 +1,7 @@
 import {
+  defaultSlotOf,
+  isTierRef,
+  RECOMMENDED_NEW_CHAT,
   restartOnMcpChangeOn,
   type ModelRef,
   type PermissionMode,
@@ -29,8 +32,9 @@ import { AGENTS_DEFAULTS, resetFor } from "./defaults";
 import { inputCls, SettingRow, Toggle } from "./fields";
 import { SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
-import { useDefaultModel } from "./model-slots";
+import { slotAfterPick, useDefaultModel } from "./model-slots";
 import { RecommendedSetupRow } from "./recommended-setup";
+import { FollowButton, SlotGlyph } from "./slot-glyph";
 
 const IDLE_MINUTES = { min: 1, max: 1440 } as const;
 
@@ -62,6 +66,9 @@ export function AgentsSection() {
 
   if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
   const agents = settings.agents;
+  // What a new chat starts on: saved, or while the recommended setup is on, Lead at low.
+  const slot = defaultSlotOf(settings);
+  const following = slot !== undefined && isTierRef(slot);
   const choice = defaultHere === undefined ? local.choice : choiceFromModel(defaultHere);
 
   const applyTo = (key: AgentsKey) => (patch: SettingsPatch) => {
@@ -92,13 +99,29 @@ export function AgentsSection() {
             Discovering local agents…
           </p>
         ) : (
-          <AgentFields
-            value={choice}
-            initializeDefault={agents.defaultModel !== undefined}
-            onChange={(next) =>
-              applyTo("defaultModel")({ agents: { defaultModel: choiceModel(next) } })
-            }
-          />
+          <>
+            <SlotGlyph slot={slot} />
+            <AgentFields
+              value={choice}
+              follows={following}
+              initializeDefault={agents.defaultModel !== undefined}
+              onChange={(next) =>
+                applyTo("defaultModel")({
+                  agents: {
+                    defaultModel: following
+                      ? slotAfterPick(slot, defaultHere, choiceModel(next))
+                      : choiceModel(next),
+                  },
+                })
+              }
+            />
+            <FollowButton
+              slot={slot}
+              onFollow={() =>
+                applyTo("defaultModel")({ agents: { defaultModel: RECOMMENDED_NEW_CHAT } })
+              }
+            />
+          </>
         )}
       </SettingRow>
       <SettingRow

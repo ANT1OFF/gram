@@ -1,5 +1,10 @@
 import {
+  aboveHigh,
   defaultOrchestratorModel,
+  defaultSlotOf,
+  isPinned,
+  isTierRef,
+  modelSlotOf,
   WORKER_MODEL_NOTE_MAX,
   type AgentKind,
   type ModelRef,
@@ -7,6 +12,7 @@ import {
   type PinnedWorkerModel,
   type ReasoningVariant,
   type RosterModel,
+  type TierRef,
   type WorkerModel,
 } from "@gram/contracts";
 import { Popover } from "@base-ui/react/popover";
@@ -36,7 +42,9 @@ import { useServerSettings } from "@/settings-sync/store";
 
 import { Field, inputCls, LONG_COPY, WhyDisabled } from "./fields";
 import {
+  followOfPinned,
   sameSlot,
+  slotAfterPick,
   useAvailableModels,
   useDefaultHere,
   useDefaultModel,
@@ -44,6 +52,7 @@ import {
   useSlotHere,
   useSlotModel,
 } from "./model-slots";
+import { FollowButton, SlotGlyph, useRecommendedOn } from "./slot-glyph";
 import {
   addWorkerModel,
   defaultWorkerIndex,
@@ -145,15 +154,19 @@ function UseForField({
  */
 function EffortField({
   model,
+  follows,
   disabled,
   onChange,
 }: {
   model: PinnedWorkerModel;
+  /** The entry follows a tier, so its efforts end at high. */
+  follows: boolean;
   disabled: boolean;
   onChange: (variant: ReasoningVariant | undefined) => void;
 }) {
   const models = useModels(model.agent, model.profileId);
-  const offered = effortOptions(models, model.model);
+  const listed = effortOptions(models, model.model);
+  const offered = follows ? listed.filter((option) => !aboveHigh(option.value)) : listed;
   const options =
     model.variant === undefined || offered.some((option) => option.value === model.variant)
       ? offered
@@ -218,6 +231,20 @@ const withVariant = (
 };
 
 /**
+ * A following roster row at `variant`, still following: the tier's own effort for the model's
+ * default, and pinned instead past high, which a following row never runs at.
+ */
+const followAt = (
+  stored: Extract<WorkerModel, TierRef>,
+  view: PinnedWorkerModel,
+  variant: ReasoningVariant | undefined,
+): WorkerModel => {
+  const { variant: _was, ...rest } = stored;
+  if (variant === undefined) return rest;
+  return aboveHigh(variant) ? withVariant(view, variant) : { ...rest, variant };
+};
+
+/**
  * A roster row as the user pinned it: the model it runs on here and their own note, no longer
  * following its tier. Picking a model, an effort or a speed for a following row pins it.
  */
@@ -244,7 +271,11 @@ function OrchestratorModelField({
   const selectId = useId();
   const inherited = useDefaultHere();
   const defaultModel = inherited.model;
+  const defaultSlot = useServerSettings((state) =>
+    state.settings === undefined ? undefined : defaultSlotOf(state.settings),
+  );
   const own = charter.orchestratorModel;
+  const ownFollows = own !== undefined && isTierRef(own);
   const slot = useSlotHere(own);
   const ownHere = slot.model;
   // Its own slot's reason, or, while it follows the default, the default's.
@@ -261,8 +292,16 @@ function OrchestratorModelField({
       return;
     }
     setPending(undefined);
-    onChange(withOrchestratorModel(charter, choiceModel(next)));
+    onChange(
+      withOrchestratorModel(
+        charter,
+        ownFollows ? slotAfterPick(own, ownHere, choiceModel(next)) : choiceModel(next),
+      ),
+    );
   };
+  // The orchestrator's tier while it follows the recommendation (plan: Lead).
+  const follow = () => onChange(withOrchestratorModel(charter, { tier: "lead" }));
+  const inheriting = own === undefined && pending === undefined;
   const follows =
     defaultModel === undefined
       ? "Follow your default model"
@@ -275,27 +314,41 @@ function OrchestratorModelField({
       keywords={["orchestrator", "model", "opus", "main model", "effort"]}
     >
       <div data-testid="orchestrator-model" className="flex flex-col gap-2">
-        <select
-          id={selectId}
-          data-testid="orchestrator-model-follow"
-          className={cn(inputCls, "w-fit")}
-          value={own === undefined && pending === undefined ? "follow" : "own"}
-          disabled={disabled}
-          onChange={(event) => {
-            if (event.target.value === "follow") {
-              setPending(undefined);
-              onChange(withOrchestratorModel(charter, undefined));
-              return;
-            }
-            pick(ADMITTED_AGENTS.includes(shown.agent) ? shown : START);
-          }}
-        >
-          <option value="follow">{follows}</option>
-          <option value="own">A model of its own</option>
-        </select>
-        {(own !== undefined || pending !== undefined) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Following the default model, it follows whatever the default does. */}
+          {inheriting && <SlotGlyph slot={defaultSlot} />}
+          <select
+            id={selectId}
+            data-testid="orchestrator-model-follow"
+            className={cn(inputCls, "w-fit")}
+            value={inheriting ? "follow" : "own"}
+            disabled={disabled}
+            onChange={(event) => {
+              if (event.target.value === "follow") {
+                setPending(undefined);
+                onChange(withOrchestratorModel(charter, undefined));
+                return;
+              }
+              pick(ADMITTED_AGENTS.includes(shown.agent) ? shown : START);
+            }}
+          >
+            <option value="follow">{follows}</option>
+            <option value="own">A model of its own</option>
+          </select>
+          {inheriting && <FollowButton slot={defaultSlot} disabled={disabled} onFollow={follow} />}
+        </div>
+        {!inheriting && (
           <div className="flex flex-wrap items-center gap-2">
-            <AgentFields value={shown} onChange={pick} allowed={ADMITTED_AGENTS} />
+            {pending === undefined && <SlotGlyph slot={own} />}
+            <AgentFields
+              value={shown}
+              onChange={pick}
+              allowed={ADMITTED_AGENTS}
+              follows={pending === undefined && ownFollows}
+            />
+            {pending === undefined && (
+              <FollowButton slot={own} disabled={disabled} onFollow={follow} />
+            )}
           </div>
         )}
         {missing !== undefined && (
@@ -474,6 +527,9 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
   // nothing here fills (or only a newer Gram knows) says so, as the server passes it over.
   const here = useRosterHere(models);
   const views = here.map((row) => row.entry);
+  // What a pinned row's Follow recommended moves it to needs this machine's lists.
+  const recommendedOn = useRecommendedOn();
+  const available = useAvailableModels(recommendedOn && models.some((model) => isPinned(model)));
   const fallback = defaultWorkerIndex(models);
   const checked = useWorkerModelIssues({ ...charter, workerModels: views });
   const issues: readonly WorkerModelIssue[] = here
@@ -503,6 +559,13 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
     model.profileId === undefined
       ? undefined
       : (profiles?.find((profile) => profile.id === model.profileId)?.name ?? model.profileId);
+  // A pinned row moves back to the tier that runs its model here; none until the lists answer.
+  const followRow = (index: number): (() => void) | undefined => {
+    const stored = models[index];
+    if (stored === undefined || !isPinned(stored) || !available.settled) return undefined;
+    const next = followOfPinned(stored, available);
+    return next === undefined ? undefined : () => replace(index, next);
+  };
   const replace = (index: number, next: WorkerModel) => {
     if (models.some((model, i) => i !== index && sameSlot(model, next))) return;
     onChange(
@@ -573,6 +636,7 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
                     >
                       <div className="flex items-start gap-2">
                         <span className="flex min-h-7 min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-reading">
+                          <SlotGlyph slot={modelSlotOf(stored)} />
                           <AgentIcon
                             agent={model.agent}
                             className="size-icon-row shrink-0 text-muted-foreground"
@@ -588,9 +652,15 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
                           />
                           <EffortField
                             model={model}
+                            follows={isTierRef(stored)}
                             disabled={disabled}
                             onChange={(variant) =>
-                              replace(index, pinView({ ...withVariant(model, variant) }, stored))
+                              replace(
+                                index,
+                                isTierRef(stored)
+                                  ? followAt(stored, pinView(model, stored), variant)
+                                  : pinView({ ...withVariant(model, variant) }, stored),
+                              )
                             }
                           />
                           {profile !== undefined && (
@@ -598,6 +668,11 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
                               {profile}
                             </span>
                           )}
+                          <FollowButton
+                            slot={modelSlotOf(stored)}
+                            disabled={disabled}
+                            onFollow={followRow(index)}
+                          />
                         </span>
                         <span className="flex h-7 shrink-0 items-center gap-1">
                           <Button
