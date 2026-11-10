@@ -54,6 +54,8 @@ const fakeTailscale = (
     dns?: string;
     /** How many `status` calls fail with no answer before they answer again. */
     statusFails?: number;
+    /** How many `serve status` calls fail with no answer before they answer again. */
+    serveStatusFails?: number;
   } = {},
 ) => {
   const listeners = new Map<number, Listener>(
@@ -80,6 +82,10 @@ const fakeTailscale = (
               }),
             ),
           );
+        }
+        if (args.join(" ") === "serve status --json" && (options.serveStatusFails ?? 0) > 0) {
+          options.serveStatusFails = (options.serveStatusFails ?? 0) - 1;
+          return Effect.succeed({ code: 1, stdout: "", stderr: "timed out" });
         }
         if (args.join(" ") === "serve status --json")
           return Effect.succeed(
@@ -730,7 +736,8 @@ describe("independent review of #344", () => {
         options.dns = "renamed.tail123.ts.net";
         yield* TestClock.adjust(RECHECK_MS);
         yield* settled;
-        expect(seen).toEqual([ORIGIN, "https://renamed.tail123.ts.net:9443"]);
+        // Closed on the old name first, then opened on the new one.
+        expect(seen).toEqual([ORIGIN, undefined, "https://renamed.tail123.ts.net:9443"]);
       }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
     }),
   );
@@ -899,5 +906,85 @@ describe("independent review of #344", () => {
         Effect.provide(control(shape, dataDir())),
       );
     }),
+  );
+});
+
+describe("re-review of #344", () => {
+  const ORIGIN = `https://${DNS}:9443`;
+  const RENAMED = "https://renamed.tail123.ts.net:9443";
+
+  it.effect(
+    "retires access recovery closed: a claim or session begun on it gets nothing after",
+    () =>
+      Effect.gen(function* () {
+        const options: { backend?: string } = {};
+        const tailnet = fakeTailscale(options);
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteControl;
+          yield* settled;
+          yield* remote.enable(9443);
+          const before = remote.current()!;
+          // A browser paired before, and a link a phone is about to claim.
+          const token = claimOn(ORIGIN, before, codeOf(before.mint().url)) as string;
+          const code = codeOf(before.mint().url);
+          const session = {
+            method: "GET",
+            url: "/",
+            headers: { host: before.host, origin: ORIGIN },
+            cookies: { [before.cookieName]: token },
+          };
+          expect(before.authorize(session)).toEqual({ kind: "pass" });
+
+          options.backend = "Stopped";
+          yield* TestClock.adjust(RECHECK_MS);
+          yield* settled;
+          options.backend = "Running";
+          yield* TestClock.adjust(RECOVERY_DELAYS_MS[0]);
+          yield* settled;
+          const after = remote.current()!;
+          // Open again at the same address, as a new access.
+          expect(after.origin).toBe(ORIGIN);
+          expect(after).not.toBe(before);
+          // The claim that began on the old one, its body read only now: refused.
+          expect(claimOn(ORIGIN, before, code)).toBeUndefined();
+          expect(claimOn(ORIGIN, after, code)).toBeUndefined();
+          expect(before.authorize(session)).toMatchObject({ kind: "reject", status: 401 });
+          let closedAtOnce = false;
+          before.onDisconnect(before.sessionOf(session) ?? ({ hash: "x" } as never), () => {
+            closedAtOnce = true;
+          });
+          expect(closedAtOnce).toBe(true);
+          // The pairing made before is kept, on the access serving now.
+          expect(after.authorize(session)).toEqual({ kind: "pass" });
+        }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+      }),
+  );
+
+  it.effect(
+    "closes access on the old name at once when Tailscale reports a new one, even if Serve doesn't answer",
+    () =>
+      Effect.gen(function* () {
+        const options: { dns?: string; serveStatusFails?: number } = {};
+        const tailnet = fakeTailscale(options);
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteControl;
+          yield* settled;
+          yield* remote.enable(9443);
+          const seen: Array<string | undefined> = [];
+          remote.watch((origin) => seen.push(origin));
+          // Renamed for certain; Serve's status, asked next, goes unanswered once.
+          options.dns = "renamed.tail123.ts.net";
+          options.serveStatusFails = 1;
+          yield* TestClock.adjust(RECHECK_MS);
+          yield* settled;
+          expect(remote.current()).toBeUndefined();
+          expect(seen).toEqual([ORIGIN, undefined]);
+          // Opened on the new name only once Serve is set up for it.
+          yield* TestClock.adjust(RECOVERY_DELAYS_MS[0]);
+          yield* settled;
+          expect(remote.current()?.origin).toBe(RENAMED);
+          expect(seen).toEqual([ORIGIN, undefined, RENAMED]);
+        }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+      }),
   );
 });

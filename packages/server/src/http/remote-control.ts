@@ -344,7 +344,7 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
           const previous = access;
           if (previous === next) return;
           access = next;
-          previous?.disconnectAll();
+          previous?.close();
           if (previous?.origin === next?.origin) return;
           for (const watcher of watchers) watcher(next?.origin);
         };
@@ -616,6 +616,10 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
             }
             const port =
               access !== undefined ? portOf(access.origin) : (saved?.port ?? SERVE_PORTS[0]);
+            // Tailscale answered with another name: the old address is gone for certain, whatever
+            // Serve says next, so access on it closes now and opens on the new one once served.
+            if (access !== undefined && access.origin !== originFor(state.dnsName, port))
+              setAccess(undefined);
             yield* serve(state.dnsName, port, saved);
             // On this run's port, and on the tailnet name Tailscale reports now.
             open(state.dnsName, port);

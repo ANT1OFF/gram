@@ -131,11 +131,17 @@ export const createRemoteAccess = (
   const cookieName = remoteCookieName(cookiePort);
   let invitation: { code: string; expiresAt: number } | undefined;
   let lastPairing: PairingState | undefined;
+  /**
+   * Set when this access is closed (turned off, or Tailscale went away): a request that began on
+   * it, such as a claim still reading its body, gets nothing from it after.
+   */
+  let closed = false;
   let sessions: RemoteSession[] = store?.read() ?? [];
   /** Live remote connections by session hash; revoking or turning off closes them. */
   const connections = new Map<string, Set<() => void>>();
   const live = () => sessions.filter((session) => now() < session.expiresAt);
   const sessionOf = (request: AuthRequest): RemoteSession | undefined => {
+    if (closed) return undefined;
     const cookie = request.cookies[cookieName];
     if (cookie === undefined) return undefined;
     const hash = sessionHash(cookie);
@@ -201,6 +207,7 @@ export const createRemoteAccess = (
         request.headers["host"] !== host ||
         request.headers["origin"] !== origin ||
         request.method !== "POST" ||
+        closed ||
         sessionOf(request) !== undefined ||
         live().length >= MAX_REMOTE_SESSIONS ||
         invitation === undefined ||
@@ -243,8 +250,23 @@ export const createRemoteAccess = (
     revokeAll: () => forget(sessions),
     /** Closes every open remote connection, keeping the pairings (turning access off). */
     disconnectAll: () => disconnect([...connections.keys()]),
+    /**
+     * Retires this access for good: its open connections close, its pairing link goes, and it
+     * authorizes, pairs and connects nothing more. Pairings stay saved for the access that
+     * replaces it.
+     */
+    close: () => {
+      closed = true;
+      invitation = undefined;
+      disconnect([...connections.keys()]);
+    },
     /** Registers `close` for as long as a connection of `session` stays open. */
     onDisconnect: (session: RemoteSession, close: () => void): (() => void) => {
+      // A connection that arrives after this access closed is closed at once.
+      if (closed) {
+        close();
+        return () => {};
+      }
       const closers = connections.get(session.hash) ?? new Set();
       closers.add(close);
       connections.set(session.hash, closers);
@@ -255,6 +277,7 @@ export const createRemoteAccess = (
       };
     },
     authorize: (request: AuthRequest): AuthDecision => {
+      if (closed) return { kind: "reject", status: 401, message: "unauthorized: access closed" };
       if (
         request.headers["host"] !== host ||
         (request.headers["origin"] !== undefined && request.headers["origin"] !== origin)

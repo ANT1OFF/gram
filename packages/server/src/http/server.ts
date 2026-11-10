@@ -208,7 +208,12 @@ export const AuthMiddleware = HttpRouter.middleware(
             Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(64)),
             Effect.catch(() => Effect.succeed("")),
           );
-          const session = code.length === 64 ? remote.claim(authRequest, code) : undefined;
+          // The access this request came in on must still be the one serving: access closed or
+          // reopened while the body was read (even at the same address) refuses the claim.
+          const session =
+            code.length === 64 && control.current() === remote
+              ? remote.claim(authRequest, code)
+              : undefined;
           if (session === undefined)
             return secureResponse(HttpServerResponse.text("pairing refused", { status: 403 }));
           const response = yield* HttpServerResponse.text("paired").pipe(

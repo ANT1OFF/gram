@@ -51,9 +51,12 @@ Without `GRAM_REMOTE_ORIGIN`, the local app switches access through the Tailscal
 - While Tailscale is stopped, signed out, missing or without HTTPS certificates, or Serve refuses
   Gram's listener, access is closed: no browser session, pairing link or machine dial is
   authorized, and joined machines' connections close. One look that Tailscale doesn't answer is
-  borne before closing, as the CLI can be slow. When Tailscale is back, access opens again on the
-  tailnet name it reports then, so a renamed machine moves access to its new address. Pairings
-  are kept per address; pairing links made before are not.
+  borne before closing, as the CLI can be slow, but a new tailnet name closes access on the old
+  one at once. When Tailscale is back, access opens again on the tailnet name it reports then,
+  so a renamed machine moves access to its new address. Each opening is a new access: a closed
+  one authorizes, pairs and connects nothing more, and a pairing claim that began on it, still
+  sending its code, is refused even when access has reopened at the same address. Pairings are
+  kept per address; pairing links made before are not.
 - A listener shared with Funnel is never Gram's: Gram doesn't serve on it, and turning off or
   stopping never removes it, even when it was Gram's before the user shared it.
 - Turning off removes that listener (only while it is still Gram's alone), even when saving the setting fails, closes every open
