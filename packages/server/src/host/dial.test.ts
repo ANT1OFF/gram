@@ -223,6 +223,31 @@ describe("dialForever after the machine left", () => {
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 
+  // The #349 review: a leave while the host waits to dial again ended nothing until that wait
+  // (up to 30 s) was over, its kept sessions alive meanwhile.
+  it.live("ends what it kept at once when it leaves during the wait between dials", () =>
+    Effect.gen(function* () {
+      const { counts, service } = counted();
+      let left = false;
+      const fiber = yield* Effect.forkScoped(
+        dialForever({ ...refused(), joined: () => !left }, service, {
+          // The longest wait there is, entered straight away.
+          retryFirstMs: 30_000,
+          detachedMs: 60_000,
+        }),
+      );
+      // The refused dial built what the host keeps, then went to wait out its 30 seconds.
+      while (counts.built === 0) yield* Effect.sleep("20 millis");
+      yield* Effect.sleep("200 millis");
+      expect(counts).toEqual({ built: 1, ended: 0 });
+      left = true;
+      // Within the production cadence of a look a second, not the rest of the 30 s.
+      const stopped = yield* Fiber.await(fiber).pipe(Effect.timeout("3 seconds"));
+      expect(stopped._tag).toBe("Success");
+      expect(counts).toEqual({ built: 1, ended: 1 });
+    }).pipe(Effect.scoped),
+  );
+
   it.live("never dials a Gram it left before it started", () =>
     Effect.gen(function* () {
       const main = yield* mainGram(100);

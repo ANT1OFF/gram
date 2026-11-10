@@ -14,6 +14,11 @@ import { watchedSocket } from "./socket-end.ts";
 /** The first wait after a dial ends, doubled each time up to the last. */
 const RETRY_FIRST_MS = 2_000;
 const RETRY_MOST_MS = 30_000;
+/**
+ * How often a host waiting to dial again looks whether its machine is still joined, so a leave
+ * during that wait (up to `RETRY_MOST_MS`) ends what it kept within about this long.
+ */
+const JOIN_POLL_MS = 1_000;
 /** A connection that lasted this long resets the wait. */
 const STEADY_MS = 60_000;
 /**
@@ -139,6 +144,7 @@ export const dialForever = <R>(
     readonly detachedMs?: number;
     readonly retryFirstMs?: number;
     readonly idleMs?: number;
+    readonly joinPollMs?: number;
   } = {},
 ): Effect.Effect<void, never, R> =>
   Effect.gen(function* () {
@@ -169,11 +175,18 @@ export const dialForever = <R>(
     const served = Effect.sync(() => {
       detachedSince = undefined;
     });
+    const joinPollMs = timing.joinPollMs ?? JOIN_POLL_MS;
+    /** Done once the machine has left: looked at every `joinPollMs` meanwhile. */
+    const untilLeft = (): Effect.Effect<void> =>
+      Effect.suspend(() =>
+        joined() ? Effect.sleep(joinPollMs).pipe(Effect.andThen(untilLeft())) : Effect.void,
+      );
     let wait = retryFirstMs;
     while (true) {
       if (!joined()) {
-        // What it kept ends with it, as the finalizer releases it.
         yield* Effect.logWarning("gram-host: this machine left its Gram; the host stops dialling");
+        // What it kept ends now, its sessions with it, not only once the host's scope closes.
+        yield* release;
         return;
       }
       if (
@@ -193,7 +206,8 @@ export const dialForever = <R>(
       yield* Effect.logInfo("gram-host: not connected; dialling again").pipe(
         Effect.annotateLogs({ inSeconds: Math.round(wait / 1000) }),
       );
-      yield* Effect.sleep(wait);
+      // The wait ends early on a leave: the loop's top then stops the host at once.
+      yield* Effect.raceFirst(Effect.sleep(wait), untilLeft());
       wait = Math.min(wait * 2, RETRY_MOST_MS);
     }
   }).pipe(Effect.scoped);
