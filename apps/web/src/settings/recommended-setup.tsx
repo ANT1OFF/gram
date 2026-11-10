@@ -27,8 +27,7 @@ import { useSaveSettings } from "./use-save-settings";
 // The Recommended setup row of Settings → Agents & models, its Details fold, and the two sheets it
 // opens: the one-time turn-on sheet and the turn-off question (mock: recommended-setup v1).
 
-const OFF_TEXT =
-  "Gram picks a model for each kind of work and keeps it current with each release. Models you choose stay yours.";
+const OFF_TEXT = "A model per kind of work, kept current by Gram. Models you pick stay yours.";
 
 const SHEET_CLASS =
   "fixed top-1/2 left-1/2 z-50 flex max-h-[min(40rem,calc(100vh-2rem))] w-[min(35rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-lg border border-edge bg-popover p-5 text-popover-foreground shadow-overlay outline-none transition-[scale,opacity] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";

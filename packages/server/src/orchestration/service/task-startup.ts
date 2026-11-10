@@ -60,8 +60,7 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
       // recommendation names today; one nothing here fills falls through, as an unset one does,
       // and says so (`note`) beside what stands in.
       const own = yield* slotHereNow(hosts, charter.orchestratorModel);
-      const app =
-        own.model === undefined ? yield* slotHereNow(hosts, defaultSlotOf(settings)) : {};
+      const app = own.model === undefined ? yield* slotHereNow(hosts, defaultSlotOf(settings)) : {};
       const preferred = own.model ?? app.model;
       const model = preferred ?? expected ?? (yield* discoverDefaultModel(hosts));
       const missing = own.missing ?? (preferred === undefined ? app.missing : undefined);

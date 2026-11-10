@@ -114,8 +114,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
    */
   const orchestratorSlot = (thread: Thread, state: WorkspaceState) =>
     Effect.gen(function* () {
-      const slot =
-        state.charter.orchestratorModel ?? defaultSlotOf(yield* store.getSettings);
+      const slot = state.charter.orchestratorModel ?? defaultSlotOf(yield* store.getSettings);
       if (slot === undefined || isPinned(slot)) return {};
       const here = yield* slotHereNow(hosts, slot);
       const runsOn = [

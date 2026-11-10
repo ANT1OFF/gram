@@ -106,9 +106,9 @@ describe("the Recommended setup row", () => {
       "Claude Code opus · High → Recommended Lead · Opus 5.5 · Medium",
     );
     await waitFor(() =>
-      expect(
-        screen.getByTestId<HTMLButtonElement>("recommended-turn-on-confirm").disabled,
-      ).toBe(false),
+      expect(screen.getByTestId<HTMLButtonElement>("recommended-turn-on-confirm").disabled).toBe(
+        false,
+      ),
     );
     fireEvent.click(screen.getByTestId("recommended-turn-on-confirm"));
     await waitFor(() => expect(updateSettings).toHaveBeenCalled());
