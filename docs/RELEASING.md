@@ -14,6 +14,9 @@ goes through separate runs, each checked before the next:
 Merging code changes no installed app. An install changes only when its user updates it from a
 published release.
 
+Publishing a release also publishes its [packages and images](PACKAGES.md), when that pipeline
+is switched on.
+
 One release carries both platforms; [Linux files](#linux-files) covers how its AppImage and
 .deb are built and checked. They can't follow the Mac files later: the repository has immutable
 releases, so a published release takes no new asset, and gram-host's installer and in-app update

@@ -13,6 +13,7 @@ export default defineProject({
       "mock-kit/*.test.mjs",
       "check/*.test.mjs",
       "packaging/*.test.mjs",
+      "packages/*.test.mjs",
       "notices/*.test.mjs",
       "sherpa-onnx/*.test.mjs",
     ],
