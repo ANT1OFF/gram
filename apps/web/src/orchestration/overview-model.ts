@@ -338,6 +338,9 @@ const DOT_WORDS: ReadonlySet<string> = new Set(["working", "briefed", "in review
 export const nowLineShown = (row: Pick<OverviewWorkerRow, "now" | "askKey" | "failed">): boolean =>
   row.askKey !== undefined || row.failed || !DOT_WORDS.has(row.now);
 
+/** Whether a now line says more than its row's dot and state word already do. */
+export const nowSaysMore = (now: string): boolean => now !== "" && !DOT_WORDS.has(now);
+
 /**
  * What a worker row's step line says: its plan's headline, else what it runs. A plan's next step
  * older than the worker's last report gives way to the report's own, or to what it runs when the

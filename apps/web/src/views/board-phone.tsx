@@ -8,6 +8,7 @@ import { useState, type MouseEvent } from "react";
 
 import { agentLabel } from "@/agents/agent-label";
 import { cn } from "@/lib/utils";
+import { nowSaysMore, waitShort } from "@/orchestration/overview-model";
 import { WorkerPrChips } from "@/orchestration/overview-pr-chips";
 import { HeldBriefChip } from "@/orchestration/held-brief";
 import { calmTone, type RailRow, type RailWorker } from "@/orchestration/rail-model";
@@ -16,9 +17,11 @@ import { StatusDot } from "@/orchestration/status-dot";
 import { useThreadsStore } from "@/stores/threads";
 
 // The Board on a phone: a card per task rather than the grid's columns or the lanes, which a
-// 390 px window clips. Each card says its dot, title and state, its stage bar, then its station,
-// agent and PR (a card that needs you or failed says why instead of the bar and station); Now, Waiting and Done stand in for the desktop's lines and Done band. A tap opens
-// the worker's thread, or its ask in the Inbox, as the desktop's row does.
+// 390 px window clips. Each card says its dot, title and state, its stage bar, then what it is
+// doing or waits on (its station where it has no more to say) and its PR; a card that needs you
+// or failed says why instead of the bar. Its agent is named only where the Board's workers run
+// different ones, as the sidebar marks it. Now, Waiting and Done stand in for the desktop's lines
+// and Done band. A tap opens the worker's thread, or its ask in the Inbox, as the desktop's row does.
 
 export type PhoneBoardSegment = "now" | "waiting" | "done";
 
@@ -74,13 +77,24 @@ function StageBar({ station }: { station: FeatureStation }) {
   );
 }
 
+/**
+ * What a card says under its stage bar: what its worker does or waits on, in the words the desktop
+ * Board's Now cell has ("tests 31/48", "checks on #142"), and its station where the worker says no
+ * more than its state, which the card's corner already has ("Running" over "Working" said it twice).
+ */
+export const phoneCardLine = (worker: Pick<RailWorker, "now">, station: FeatureStation): string =>
+  nowSaysMore(worker.now) ? waitShort(worker.now) : STATION_LABELS[station];
+
 function TaskCard({
   card,
   asking,
+  showAgent,
   onOpen,
 }: {
   card: PhoneCard;
   asking: boolean;
+  /** The Board's workers run different agents, so each card names its own. */
+  showAgent: boolean;
   onOpen: (threadId: ThreadId, event: MouseEvent) => void;
 }) {
   const { worker, station } = card;
@@ -130,8 +144,8 @@ function TaskCard({
             worker.now
           ) : (
             <>
-              {STATION_LABELS[station]}
-              {agent !== undefined && ` · ${agentLabel(agent)}`}
+              {phoneCardLine(worker, station)}
+              {showAgent && agent !== undefined && ` · ${agentLabel(agent)}`}
             </>
           )}
         </span>
@@ -171,6 +185,12 @@ export function PhoneBoard({
     waiting: by("waiting").length + held.length,
     done: by("done").length,
   };
+  // Whether the cards' workers run different agents: only then is each one's worth naming.
+  const showAgent = useThreadsStore(
+    (s) =>
+      new Set(cards.flatMap((card) => s.byId[card.worker.threadId]?.thread.model?.agent ?? []))
+        .size > 1,
+  );
   const [picked, setPicked] = useState<PhoneBoardSegment | undefined>(undefined);
   // Until one is picked, the first with anything in it.
   const segment = picked ?? SEGMENTS.find(({ id }) => counts[id] > 0)?.id ?? "now";
@@ -210,6 +230,7 @@ export function PhoneBoard({
             key={card.worker.threadId}
             card={card}
             asking={asking.has(card.worker.threadId)}
+            showAgent={showAgent}
             onOpen={onOpen}
           />
         ))}
