@@ -40,13 +40,16 @@ export function CiCheckDetail({
     return null;
   return (
     <div className="w-full ps-5 text-meta">
+      {/* Under its check's own row, which names it: the words are "Inspect job", and the name
+          stays in the button's accessible name. */}
       <button
         type="button"
         aria-expanded={open}
+        aria-label={`${open ? "Hide" : "Inspect"} ${check.name} job`}
         className="text-muted-foreground hover:text-foreground underline underline-offset-2"
         onClick={() => setOpen(!open)}
       >
-        {open ? "Hide" : "Inspect"} {check.name} job
+        {open ? "Hide job" : "Inspect job"}
       </button>
       {open && (
         <JobEvidence

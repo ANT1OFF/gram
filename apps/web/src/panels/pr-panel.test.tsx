@@ -249,7 +249,7 @@ describe("PrPanel", () => {
     const panel = await screen.findByTestId("pr-panel");
 
     expect(within(panel).getByTestId("pr-merge-blocked").textContent).toBe(
-      "Merge blocked · 2 reasons: check, changes requested",
+      "Merge blocked · 2 reasons",
     );
     const next = within(panel).getByTestId("pr-next-action");
     expect(next.textContent).toBe("Inspect test (windows) job");
