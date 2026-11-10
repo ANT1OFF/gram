@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { checksumLines } from "../release-rc/rc-lib.mjs";
 import { LINUX_WORKFLOW, runTitle } from "../release-linux/linux-lib.mjs";
@@ -18,6 +18,19 @@ import { writeLinuxBuild } from "../release-linux/testing/linux-build.mjs";
 import { parseStableArgs } from "./stable-lib.mjs";
 import { committedSource, readPublicNotes, runPhase } from "./stable.mjs";
 import { spawnFakeGitHub } from "./testing/fake-github.mjs";
+
+// Reproduce hosts where /usr/bin/shasum is absent, even when the test host has it.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    spawnSync: (command, ...args) => {
+      if (command === "/usr/bin/shasum")
+        return { status: null, stdout: null, stderr: null, error: new Error("ENOENT") };
+      return actual.spawnSync(command, ...args);
+    },
+  };
+});
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SOURCE = resolve(HERE, "../..");

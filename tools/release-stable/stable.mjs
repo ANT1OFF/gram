@@ -34,12 +34,13 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { REPO, checksumLines } from "../release-rc/rc-lib.mjs";
@@ -176,21 +177,50 @@ const tagCommit = (run, repo, tag) => {
 // ---------------------------------------------------------------------------------------------
 // Verification of downloaded assets, shared by the private draft and the public release.
 
-/** Checks every `name  sha` line of a SHA256SUMS.txt in `dir`, and that it lists `covers`. */
-async function checkSums(dir, covers) {
+/** Parse every `sha  name` line, allowing only the final newline to be empty. */
+function readSums(dir) {
+  const lines = readFileSync(join(dir, "SHA256SUMS.txt"), "utf8").split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  if (!lines.length || (lines.length === 1 && lines[0] === "")) stop("SHA256SUMS.txt is empty.");
   const listed = new Map();
-  for (const line of readFileSync(join(dir, "SHA256SUMS.txt"), "utf8")
-    .split("\n")
-    .filter(Boolean)) {
+  for (const [index, line] of lines.entries()) {
     const match = /^([0-9a-f]{64}) {2}(\S+)$/.exec(line);
-    if (!match) stop(`SHA256SUMS.txt has a malformed line: ${line}`);
-    listed.set(match[2], match[1]);
+    if (!match) stop(`SHA256SUMS.txt has a malformed line ${index + 1}: ${line}`);
+    const [, digest, name] = match;
+    if (
+      isAbsolute(name) ||
+      win32.parse(name).root ||
+      name.split(/[\\/]/).includes("..") ||
+      name.includes("\0")
+    )
+      stop(`SHA256SUMS.txt has an unsafe path: ${name}.`);
+    if (listed.has(name)) stop(`SHA256SUMS.txt has a duplicate entry for ${name}.`);
+    listed.set(name, digest);
   }
+  return listed;
+}
+
+/** Stream-check every listed file inside `dir`, including entries beyond `covers`. */
+export async function checkSums(dir, covers) {
+  const listed = readSums(dir);
   for (const name of covers) if (!listed.has(name)) stop(`SHA256SUMS.txt doesn't list ${name}.`);
+  const root = realpathSync(dir);
   for (const [name, digest] of listed) {
-    if (!existsSync(join(dir, name))) stop(`SHA256SUMS.txt lists ${name}, which isn't there.`);
-    if ((await sha256File(join(dir, name))) !== digest)
-      stop(`${name} doesn't match SHA256SUMS.txt.`);
+    let actual;
+    try {
+      const file = realpathSync(join(root, name));
+      const rel = relative(root, file);
+      if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel))
+        stop(`SHA256SUMS.txt lists ${name}, which resolves outside the asset directory.`);
+      if (!statSync(file).isFile())
+        stop(`SHA256SUMS.txt lists ${name}, which isn't a regular file.`);
+      actual = await sha256File(file);
+    } catch (error) {
+      if (error instanceof ReleaseStop) throw error;
+      if (error.code === "ENOENT") stop(`SHA256SUMS.txt lists ${name}, which isn't there.`);
+      stop(`SHA256SUMS.txt couldn't read ${name}: ${error.code ?? error.message}`);
+    }
+    if (actual !== digest) stop(`${name} doesn't match SHA256SUMS.txt.`);
   }
   return [...listed.keys()].toSorted();
 }
@@ -622,13 +652,9 @@ export async function attachLinux(ctx) {
   // SHA256SUMS.txt: the Mac files it listed, unchanged, and the Linux files (again, after an
   // earlier try of this phase wrote it).
   const sumsPath = join(assets, "SHA256SUMS.txt");
-  const listed = readFileSync(sumsPath, "utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => /^([0-9a-f]{64}) {2}(\S+)$/.exec(line) ?? stop(`SHA256SUMS.txt: ${line}`))
-    .filter(([, , name]) => !names.covered.includes(name));
+  const listed = [...readSums(assets)].filter(([name]) => !names.covered.includes(name));
   const entries = [];
-  for (const [, digest, name] of listed) {
+  for (const [name, digest] of listed) {
     if (!mac.some((asset) => asset.name === name)) stop(`SHA256SUMS.txt lists ${name}.`);
     if ((await sha256File(join(assets, name))) !== digest)
       stop(`the local ${name} no longer matches SHA256SUMS.txt.`);
@@ -638,11 +664,10 @@ export async function attachLinux(ctx) {
     entries.push({ name, sha256: await sha256File(join(assets, name)) });
   chmodSync(sumsPath, 0o644);
   writeFileSync(sumsPath, checksumLines(entries));
-  const shasum = spawnSync("/usr/bin/shasum", ["-a", "256", "-c", "SHA256SUMS.txt"], {
-    cwd: assets,
-    encoding: "utf8",
-  });
-  if (shasum.status !== 0) stop(`shasum -c failed: ${shasum.stdout} ${shasum.stderr}`);
+  await checkSums(
+    assets,
+    entries.map(({ name }) => name),
+  );
 
   const row = async (name) => {
     chmodSync(join(assets, name), 0o444);
