@@ -199,6 +199,9 @@ describe("MockApi", () => {
       events.find((e) => e.type === "thread.request") as { request: { id: RequestId } }
     ).request.id;
 
+    await expect(api.send(T, { text: "queued" })).resolves.toEqual({ queued: true });
+    const queued = (await threadSummary(api, T))!.queue[0]!.id;
+
     api.simulateMissingFolder(T);
     const path = "/Users/dev/code/api/.worktrees/fix-flaky-retry";
     await waitFor(() => events.some((e) => e.type === "notify"), "the stop's notice");
@@ -223,7 +226,21 @@ describe("MockApi", () => {
     await expect(
       api.respond(T, requestId, { kind: "approval", decision: "allow", scope: "once" }),
     ).rejects.toThrow("RequestNotFound");
+    // Nor does anything else go in: a steer, or a queued message steered, is refused as a send is.
     await expect(api.send(T, { text: "carry on" })).rejects.toThrow("folder no longer exists");
+    await expect(api.steer(T, { text: "carry on" })).rejects.toThrow("folder no longer exists");
+    await expect(api.steer(T, { text: "now" }, { interrupt: true })).rejects.toThrow(
+      "folder no longer exists",
+    );
+    await expect(api.queueSteer(T, queued)).rejects.toThrow("folder no longer exists");
+    expect((await threadSummary(api, T))!.queue.map((q) => q.id)).toEqual([queued]);
+    expect(
+      feed.store
+        .getState()
+        .messages.some((m) =>
+          m.parts.some((p) => p.type === "text" && (p.text === "carry on" || p.text === "queued")),
+        ),
+    ).toBe(false);
     abort.abort();
   });
 

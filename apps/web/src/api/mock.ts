@@ -1271,14 +1271,18 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     return thread;
   }
 
+  /** As the server's `refuseMissingFolder`: a thread whose folder is gone takes no input. */
+  #refuseMissingFolder(runtime: ThreadRuntime) {
+    if (!this.#missingFolders.has(runtime.summary.thread.id)) return;
+    const path = runtime.summary.thread.checkout.path;
+    throw new MockInvalidState(`This thread's folder no longer exists: ${path}`, undefined, {
+      path,
+    });
+  }
+
   async send(threadId: ThreadId, input: UserInput) {
     const runtime = this.#runtime(threadId);
-    if (this.#missingFolders.has(threadId)) {
-      const path = runtime.summary.thread.checkout.path;
-      throw new MockInvalidState(`This thread's folder no longer exists: ${path}`, undefined, {
-        path,
-      });
-    }
+    this.#refuseMissingFolder(runtime);
     // As the server's `userTyped`: a notice or another thread's message is not the user stepping in.
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
@@ -1296,6 +1300,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
 
   async steer(threadId: ThreadId, input: UserInput, options?: { interrupt?: boolean }) {
     const runtime = this.#runtime(threadId);
+    // As the server's: a turn whose folder is gone is being stopped, so it takes nothing more.
+    this.#refuseMissingFolder(runtime);
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
     }
@@ -1342,12 +1348,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   async startSession(threadId: ThreadId): Promise<StartSessionResult> {
     const runtime = this.#runtime(threadId);
     const { thread, status } = runtime.summary;
-    if (this.#missingFolders.has(threadId)) {
-      const path = thread.checkout.path;
-      throw new MockInvalidState(`This thread's folder no longer exists: ${path}`, undefined, {
-        path,
-      });
-    }
+    this.#refuseMissingFolder(runtime);
     if (thread.parked) throw new MockInvalidState("the thread is archived");
     if (thread.role === "dream")
       throw new MockInvalidState("a memory update's session opens only for its run");
@@ -2295,6 +2296,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   async queueSteer(threadId: ThreadId, itemId: QueueItemId) {
     const runtime = this.#runtime(threadId);
     this.#queueItem(runtime, itemId);
+    // As the server: refused as a send there would be, into a running turn too.
+    this.#refuseMissingFolder(runtime);
     const item = runtime.summary.queue.find((q) => q.id === itemId);
     // As the server: with nothing running there is nothing to steer into, so it goes now.
     if (!runtime.running) {

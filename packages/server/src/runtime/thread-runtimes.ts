@@ -680,6 +680,7 @@ const make = Effect.gen(function* () {
     withQueue,
     drainQueue,
     withSession,
+    refuseMissingFolder,
   } = makeMessageQueue({
     store,
     hub,
@@ -1262,7 +1263,6 @@ const make = Effect.gen(function* () {
 
   const queueMethods = makeQueueMethods({
     store,
-    checkouts,
     runtimes,
     getRuntime,
     drainQueue,
@@ -1270,6 +1270,7 @@ const make = Effect.gen(function* () {
     userTyped,
     syncQueue,
     withSession,
+    refuseMissingFolder,
     steerNow,
     withQueue,
     switchHold,
