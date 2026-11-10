@@ -117,6 +117,48 @@ switched off, for you to turn on here.
 | `NODE_IMAGE`          | `node:26.13.0-bookworm-slim`  | The image it runs on                          |
 | `BUILD_IMAGE`         | `node:26.13.0-bookworm`       | The image it builds in                        |
 
+### Sign-in through a proxy
+
+With hosted features on, a server can leave sign-in to a proxy you run in front of it: an
+identity-aware proxy or a gateway of your own. The proxy signs people in however it likes, then
+tells Gram who each request is from in a statement it signs. The launch token no longer signs
+anyone in, and isn't printed.
+
+Set all four of these where the server runs. With some of them missing or malformed the server
+refuses to start.
+
+| Variable                 | What it sets                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `GRAM_IDENTITY_KEYS`     | The proxy's Ed25519 public keys, as a JWK Set (`{"keys":[…]}`), each with a `kid` |
+| `GRAM_IDENTITY_ISSUER`   | The `iss` the proxy's statements carry                                            |
+| `GRAM_IDENTITY_AUDIENCE` | The `aud` that names this one server; a statement for another is refused          |
+| `GRAM_PUBLIC_ORIGIN`     | The one `https://` origin browsers use; a request from another origin is refused  |
+
+On every request, WebSocket upgrades included, the proxy sets the `x-gram-identity` header to a
+JWT signed with one of those keys (`alg` `EdDSA`), and removes any `x-gram-identity` the client
+sent. The claims:
+
+- `iss` and `aud`, as configured.
+- `sub`, an id for the person that never changes, and optionally `name` to show.
+- `role`: `member`, who can do everything, or `viewer`, who can read threads, diffs, files in a
+  thread's folders, docs and settings, and change nothing.
+- `iat` and `exp`, at most five minutes apart. Make a new statement per request.
+
+The server holds public keys only, so it can't sign a statement itself. What you have to keep
+true around it:
+
+- The proxy is the only thing that can reach the server's port. A statement is good for a few
+  minutes for whoever holds it, so the hop from the proxy to the server stays private.
+- A WebSocket is checked when it opens and keeps its person and role until it closes. When
+  someone signs out or their role changes, the proxy closes their connections.
+- The agents' own connection to their app tools (`/mcp` on loopback, with each thread's token)
+  is unchanged. Phone access and the Machines page are off behind a proxy.
+
+Each change a member makes is recorded with who made it: the call, the thread or workspace, and
+what identifies the thing changed (a message's id, a request and its allow or deny, the names of
+the settings), never what was typed. The `actor_events` table in the database holds a year of
+them. A message, an answer and a settings change by two people are two people's entries.
+
 ## A headless control plane
 
 With `GRAM_HEADLESS=1` the server runs no work itself. It starts no agent, opens no terminal and
