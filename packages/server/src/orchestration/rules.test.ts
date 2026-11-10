@@ -2113,8 +2113,8 @@ describe("prompts", () => {
       expect(prompt).toContain("`set_stage`");
       expect(prompt).toContain("`set_group`");
       expect(prompt).toContain("Look in memory for this workspace's usual flow");
-      expect(prompt).toContain("Pick each worker's model by those notes");
-      expect(prompt).toContain("tell the user in a few words which model you picked and why");
+      expect(prompt).toContain("Pick each worker's model by matching its brief to those notes");
+      expect(prompt).toContain("tell the user briefly which model you picked and why");
     }
   });
 

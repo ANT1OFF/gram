@@ -30,13 +30,12 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * The orchestrator's raised on 2026-11-09, on purpose, for `spawn_worker`'s `machine` (a worker
  * on a joined machine), its line cut to one sentence first. Raised again on 2026-11-09, on purpose,
  * for two routing lines (check for a live owner before spawning; start on the likeliest reading),
- * with the duplicate `title` line cut first; measured then at 61,747. Raised on 2026-11-10, on
- * purpose, for the recommended model tiers: what each `tier:` roster entry is for, the effort
- * ladder (brief a check, one level up to `high`, then the next tier) and the cross-vendor review;
- * measured then at 62,240.
+ * with the duplicate `title` line cut first; measured then at 61,747. Held on 2026-11-10 for the
+ * recommended model tiers' line (the effort ladder and the cross-vendor review): the worker-model
+ * line lost its example list to make room, since each `tier:` entry carries its own note.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 62_300,
+  orchestrator: 61_800,
   worker: 36_900,
   plain: 23_550,
 };
