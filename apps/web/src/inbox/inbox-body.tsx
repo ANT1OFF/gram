@@ -83,6 +83,12 @@ const selectedIn = (
   return items[Math.min(lastIndex, items.length - 1)];
 };
 
+/**
+ * How many requests a list holds before the category strip heads it: fewer are all in sight, each
+ * under its own section heading, at the Inbox's smallest size too.
+ */
+export const STRIP_FROM = 7;
+
 const CLOSE = {
   size: "icon-xs",
   variant: "ghost",
@@ -334,7 +340,11 @@ export function InboxBody({
     </Hint>
   );
   // The strip, when it shows, sits right under the header: one line between the two, under it.
-  const strip = !showLater && sections.length > 1;
+  // It is there so a long list never hides a category below the fold; a short one has every
+  // section's heading in sight already, and the strip only said them twice. A pick keeps it, as
+  // the way back to All.
+  const strip =
+    !showLater && sections.length > 1 && (total >= STRIP_FROM || shown.length < sections.length);
   return (
     <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
       {phone ? (
@@ -530,22 +540,27 @@ export function InboxBody({
           data-testid="inbox-keys"
           className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 border-t border-shell-divider px-3 py-1.5 text-caption text-muted-foreground"
         >
-          <span>
-            <kbd className="font-sans">j k</kbd> move
-          </span>
-          <span>
-            <kbd className="font-sans">{keyLabel("⏎")}</kbd>{" "}
-            {docked ? "show thread" : "open thread"}
-          </span>
-          <span>
-            <kbd className="font-sans">1–9</kbd> pick
-          </span>
-          <span>
-            <kbd className="font-sans">{keyLabel("⌘⏎")}</kbd> send
-          </span>
-          <span>
-            <kbd className="font-sans">{keyLabel("⌘Z")}</kbd> undo
-          </span>
+          {/* With nothing listed there is nothing to move through, pick or send: only close. */}
+          {total > 0 && (
+            <>
+              <span>
+                <kbd className="font-sans">j k</kbd> move
+              </span>
+              <span>
+                <kbd className="font-sans">{keyLabel("⏎")}</kbd>{" "}
+                {docked ? "show thread" : "open thread"}
+              </span>
+              <span>
+                <kbd className="font-sans">1–9</kbd> pick
+              </span>
+              <span>
+                <kbd className="font-sans">{keyLabel("⌘⏎")}</kbd> send
+              </span>
+              <span>
+                <kbd className="font-sans">{keyLabel("⌘Z")}</kbd> undo
+              </span>
+            </>
+          )}
           <span>
             <kbd className="font-sans">esc</kbd> close
           </span>

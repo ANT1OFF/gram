@@ -203,6 +203,12 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
     if (waitsOn !== undefined && !busy) loadMore(waitsOn);
   }, [waitsOn, busy, loadMore]);
   const rows = shown.groups.flatMap((group) => group.rows);
+  // One width for every row's time, the longest's: a row that finished on another day says its
+  // date too ("14 Jun 08:00"), and a column as wide as each row's own time moved its status left.
+  const timeWidth = rows.reduce(
+    (widest, entry) => Math.max(widest, historyWhen(entry.finishedAt, now).length),
+    0,
+  );
   const starts = groupStarts(shown.groups.map((group) => group.rows.length));
   const activeIndex = Math.min(active, rows.length - 1);
   const cursorEntry = activeIndex < 0 ? undefined : rows[activeIndex];
@@ -344,6 +350,7 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
                     resuming={resuming === entry.threadId}
                     grouped={by === "orchestrator"}
                     when={historyWhen(entry.finishedAt, now)}
+                    timeWidth={timeWidth}
                     whenLong={doneWhenLong(entry.finishedAt, now)}
                     onHover={() => setActive(at)}
                     onOpen={() => pick(entry)}
@@ -415,6 +422,7 @@ function HistoryRow({
   resuming,
   grouped,
   when,
+  timeWidth,
   whenLong,
   onHover,
   onOpen,
@@ -426,6 +434,8 @@ function HistoryRow({
   /** Under its workspace's heading: the row leaves the workspace's name to it. */
   grouped: boolean;
   when: string;
+  /** The longest time in the list, in characters: the width every row's time takes. */
+  timeWidth: number;
   whenLong: string;
   onHover: () => void;
   onOpen: () => void;
@@ -459,6 +469,8 @@ function HistoryRow({
         entry.finishedAt === undefined ? undefined : new Date(entry.finishedAt).toISOString()
       }
       title={whenLong}
+      // A phone's row says its time in its second line, after its words: no column to keep.
+      style={phone ? undefined : { minWidth: `${timeWidth}ch` }}
       className="min-w-10 text-right tabular-nums"
     >
       {when}

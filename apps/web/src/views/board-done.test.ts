@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { railRows, type RailFacts } from "@/orchestration/rail-model";
 
-import { donePr, doneRows } from "./board-done";
+import { doneEnded, donePr, doneRows } from "./board-done";
 
 const worker = (id: string, over: Partial<FeatureCardWorker> = {}): FeatureCardWorker => ({
   threadId: id as ThreadId,
@@ -62,5 +62,19 @@ describe("the Board's Done band", () => {
       state: "merged",
     });
     expect(donePr(rows.find((row) => row.feature === "closed")!)).toBeUndefined();
+  });
+});
+
+describe("doneEnded", () => {
+  // Local times, as the row shows them.
+  const now = new Date(2026, 5, 15, 12, 0).getTime();
+
+  it("says the clock for a row that ended today", () => {
+    expect(doneEnded(new Date(2026, 5, 15, 9, 52).getTime(), now)).toBe("09:52");
+  });
+
+  it("says the day alone for another day, so the column's one line holds it", () => {
+    expect(doneEnded(new Date(2026, 5, 12, 10, 0).getTime(), now)).toBe("12 Jun");
+    expect(doneEnded(new Date(2025, 5, 12, 10, 0).getTime(), now)).toBe("12 Jun 2025");
   });
 });
