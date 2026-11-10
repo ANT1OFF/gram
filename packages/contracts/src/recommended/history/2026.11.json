@@ -1,0 +1,39 @@
+{
+  "version": "2026.11",
+  "tiers": {
+    "cheap": {
+      "note": "classification, routing, reading logs, searching, quick lookups",
+      "effort": "medium",
+      "helpers": {
+        "title": "medium",
+        "plan": "low",
+        "recap": "low",
+        "suggest": "low",
+        "wait": "low",
+        "notice": "low",
+        "stuck": "low"
+      },
+      "claude": { "models": ["claude-haiku-5-5"] },
+      "codex": { "models": ["gpt-6-luna", "gpt-5.6-luna"] }
+    },
+    "scoped": {
+      "note": "well-scoped fixes, features from a clear spec, repeated reviews, docs",
+      "effort": "medium",
+      "claude": { "models": ["claude-sonnet-5-5"] },
+      "codex": { "models": ["gpt-6.1-sol", "gpt-6-sol"] }
+    },
+    "lead": {
+      "note": "judgment calls, features across several changes, leading other agents, anything unsure",
+      "effort": "medium",
+      "claude": { "models": ["claude-opus-5-5"] },
+      "codex": { "models": ["gpt-6.1-sol", "gpt-6-sol"], "effort": "high" }
+    },
+    "top": {
+      "note": "major refactors, migrations, leading many agents, long unattended runs",
+      "effort": "medium",
+      "claude": { "models": ["claude-fable-5-2", "claude-fable-5-1"] },
+      "codex": { "models": ["gpt-6-astra"] }
+    }
+  },
+  "both": { "cheap": "claude", "scoped": "codex", "lead": "claude", "top": "claude" }
+}

@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { AgentKind, ModelRef, type ReasoningVariant } from "./domain.ts";
 import type { AgentModel } from "./models.ts";
 import data from "./recommended/table.json" with { type: "json" };
+import v2026_11 from "./recommended/history/2026.11.json" with { type: "json" };
 
 /** A kind of work, from cheapest to most capable. A following slot stores one of these. */
 export const Tier = Schema.Literals(["cheap", "scoped", "lead", "top"]);
@@ -104,6 +105,31 @@ export const RecommendationTable = Schema.Struct({
 export type RecommendationTable = typeof RecommendationTable.Type;
 
 export const RECOMMENDED: RecommendationTable = Schema.decodeUnknownSync(RecommendationTable)(data);
+
+/**
+ * Every table a Gram release has shipped, oldest first, the current one last: what a user who saw
+ * an older one is told changed since. Changing `table.json` means bumping its `version` and adding
+ * the new table here as `recommended/history/<version>.json`, keeping the older ones; a test holds
+ * the last entry equal to `table.json`.
+ */
+export const RECOMMENDED_HISTORY: ReadonlyArray<RecommendationTable> = [v2026_11].map((table) =>
+  Schema.decodeUnknownSync(RecommendationTable)(table),
+);
+
+/**
+ * What changed in the recommendation since the table version `seen`, one line each
+ * (`tableDiff`): for What's New and the Settings row. Nothing when `seen` is the current table,
+ * unset, or a version this Gram doesn't have (a newer Gram's).
+ */
+export const recommendedChanges = (
+  seen: string | undefined,
+  table: RecommendationTable = RECOMMENDED,
+  history: ReadonlyArray<RecommendationTable> = RECOMMENDED_HISTORY,
+): ReadonlyArray<string> => {
+  if (seen === undefined || seen === table.version) return [];
+  const before = history.find((each) => each.version === seen);
+  return before === undefined ? [] : tableDiff(before, table);
+};
 
 /** What a machine can run: each harness's listed models, absent or empty when it can't. */
 export interface AvailableModels {
