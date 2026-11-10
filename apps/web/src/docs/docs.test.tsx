@@ -148,7 +148,7 @@ describe("DocCard", () => {
 });
 
 describe("DocsStrip", () => {
-  it("shows the latest docs and View all opens the whole list", async () => {
+  it('shows the latest docs, one line each, and "N more" opens the whole list', async () => {
     const { api } = docsApi([1, 2, 3, 4].map((n) => meta(n)));
     useDocPane.setState({ open: { [WS]: "doc-2" as DocId } });
     renderWithApi(<DocsStrip workspaceId={WS} />, api);
@@ -159,7 +159,12 @@ describe("DocsStrip", () => {
       "doc-3",
     ]);
     fireEvent.click(screen.getByTestId("docs-view-all"));
-    expect(screen.getByTestId("docs-view-all").textContent).toBe("View all 4");
+    expect(screen.getByTestId("docs-view-all").textContent).toBe("1 more");
+    expect(screen.getByTestId("docs-view-all").getAttribute("aria-label")).toBe(
+      "1 more docs: view all 4",
+    );
+    // Its heading counts them all.
+    expect(screen.getByRole("button", { name: "Docs, 4" })).toBeTruthy();
     expect(useDocPane.getState().open[WS]).toBeUndefined();
     expect(revealed).toHaveBeenCalledWith("docs");
   });
@@ -248,7 +253,8 @@ describe("WorkersDocs", () => {
     renderWithApi(<WorkersDocs workspaceId={WS} />, api);
     const strip = await screen.findByTestId("docs-strip");
     expect(within(strip).getByTestId("doc-row").dataset["docId"]).toBe("doc-1");
-    expect(within(strip).getByTestId("docs-view-all")).toBeTruthy();
+    // All of them are listed, so there is no "more" to open.
+    expect(within(strip).queryByTestId("docs-view-all")).toBeNull();
   });
 });
 

@@ -8,13 +8,7 @@ import type {
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  ArrowLeft,
-  ChevronRight,
-  BookOpenText,
-  MessageCircleQuestion,
-  Network,
-} from "lucide-react";
+import { ChevronRight, BookOpenText, MessageCircleQuestion } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -31,7 +25,6 @@ import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { Expand, ExpandPresence, NumberTicker, PresenceItem, PresenceList, Swap } from "@/motion";
 import { PanelMessage } from "@/panels/panel-message";
-import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { formatBytes } from "@/thread/orchestration-model";
 
@@ -46,7 +39,6 @@ import {
   memorySize,
   QUESTIONS_FILE,
 } from "./memory-model";
-import { useOpenBoard } from "./open-board";
 import { ClosedQuestion, OpenQuestionList } from "./question-entry";
 import { useQuestions } from "./use-board-actions";
 import { useFocusOnOpen } from "./use-focus-on-open";
@@ -649,7 +641,6 @@ export function MemoryView({
   reviewing: DreamId | undefined;
 }) {
   const api = useApi();
-  const openBoard = useOpenBoard();
   const { workspaces, settled, error } = useWorkspacesQuery();
   const state = workspaces.find((candidate) => candidate.workspace.id === workspaceId);
   const files = useQuery({
@@ -705,7 +696,6 @@ export function MemoryView({
     );
   }
 
-  const orchestratorId = state.workspace.orchestratorThreadId;
   const empty = files.data !== undefined && memoryIsEmpty(files.data);
   // Keep an inline review's scrollable content from extending the root document's scroll range.
   return (
@@ -716,40 +706,13 @@ export function MemoryView({
         reviewing !== undefined && "contain-paint",
       )}
     >
+      {/* Its title alone: the way to the chat and the Board is the title bar's Chat · Board,
+          right above it, which two buttons here only repeated. */}
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3">
         <h1 className="flex min-w-0 items-center gap-2 text-title">
           <BookOpenText aria-hidden className="size-icon-row shrink-0 text-primary" />
           <span className="truncate">Memory · {state.workspace.name}</span>
         </h1>
-        <div className="ml-auto flex items-center gap-2">
-          {orchestratorId !== undefined && (
-            <Button
-              size="sm"
-              variant="ghost"
-              data-testid="memory-orchestrator"
-              nativeButton={false}
-              render={
-                <Link
-                  to="/t/$threadId"
-                  params={{ threadId: orchestratorId }}
-                  onClick={() => useLayoutStore.getState().openThread(orchestratorId)}
-                />
-              }
-            >
-              <Network data-icon="inline-start" />
-              Orchestrator
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            data-testid="memory-board"
-            onClick={() => openBoard(workspaceId)}
-          >
-            <ArrowLeft data-icon="inline-start" />
-            Board
-          </Button>
-        </div>
       </header>
       <Tabs
         value={tab}

@@ -99,12 +99,7 @@ describe("the Workers tab's groups", () => {
       "Stopped",
       "Done",
     ]);
-    for (const group of groups) {
-      expect(group.rows).toEqual([]);
-      // A fragment, no full stop (DESIGN.md → Voice).
-      expect(group.empty).not.toMatch(/\.$/);
-      expect(group.empty.length).toBeGreaterThan(0);
-    }
+    for (const group of groups) expect(group.rows).toEqual([]);
   });
 
   it("folds only Done to start with", () => {

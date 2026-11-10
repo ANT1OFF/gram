@@ -21,6 +21,7 @@ import {
   rowTone,
   tileWorking,
   steplessLine,
+  edgeWords,
   waitShort,
   workLineText,
   workspaceWorkersText,
@@ -464,7 +465,14 @@ describe("an orchestrator's line", () => {
     expect(waitShort("Waiting · checks on #69")).toBe("checks on #69");
     expect(waitShort("Waiting")).toBe("Waiting");
     expect(waitShort("Paused · resets 14:00")).toBe("Paused · resets 14:00");
-    expect(waitShort("Under your control")).toBe("Under your control");
+    expect(waitShort("Under your control")).toBe("held by you");
+  });
+
+  it("says a line too long for a row's edge in the words that fit it", () => {
+    expect(edgeWords("stopped on an error")).toBe("failed");
+    expect(edgeWords("Under your control")).toBe("held by you");
+    expect(edgeWords("asks you")).toBe("asks you");
+    expect(edgeWords("tests 38/52")).toBe("tests 38/52");
   });
 
   it("folds on ← while open and opens on → while folded, as a tree row does", () => {
