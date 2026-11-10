@@ -425,12 +425,28 @@ export const defaultOrchestratorModel = (
   );
 };
 
+/**
+ * The roster a new workspace starts with while the recommended setup is on and none is saved: each
+ * tier once, Scoped the default, every entry carrying its tier's note.
+ */
+export const RECOMMENDED_ROSTER: ReadonlyArray<WorkerModel> = [
+  { tier: "scoped", default: true },
+  { tier: "lead" },
+  { tier: "top" },
+  { tier: "cheap" },
+];
+
 /** What a new workspace's roster starts as: the app's saved one, else none. */
 export interface NewWorkspaceModels {
   /** `agents.workerModels`; absent or empty, workers run on the orchestrator's model. */
   readonly workerModels?: ReadonlyArray<WorkerModel> | undefined;
   /** What this machine's harnesses list, for the orchestrator's default (`defaultOrchestratorModel`). */
   readonly available?: AvailableModels | undefined;
+  /**
+   * The recommended setup is on: the orchestrator follows Lead and, with no roster saved, the
+   * roster is `RECOMMENDED_ROSTER`.
+   */
+  readonly recommended?: boolean | undefined;
 }
 
 /**
@@ -440,11 +456,13 @@ export interface NewWorkspaceModels {
  * each time the server reads the roster (`bindGateway`), so one made usable later takes it up.
  */
 export const newWorkspaceCharter = (saved: NewWorkspaceModels): OrchestratorCharter => {
-  const roster = saved.workerModels ?? [];
+  const own = saved.workerModels ?? [];
+  const roster = own.length === 0 && saved.recommended === true ? RECOMMENDED_ROSTER : own;
   return {
     ...DEFAULT_CHARTER,
     workerMode: "auto",
-    orchestratorModel: defaultOrchestratorModel(saved.available),
+    orchestratorModel:
+      saved.recommended === true ? { tier: "lead" } : defaultOrchestratorModel(saved.available),
     ...(roster.length === 0 ? {} : { workerModels: roster }),
   };
 };

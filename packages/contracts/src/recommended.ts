@@ -332,6 +332,20 @@ export const firstChoiceOf = (
 };
 
 /**
+ * A resolved tier's model as the recommendation names it: Claude's by family and version from the
+ * id it runs ("Opus 5.5"), since an alias row's own name ("Opus") leaves out which; any other by
+ * the name its CLI lists ("GPT-6.1-Sol").
+ */
+export const tierModelName = (resolved: Pick<ResolvedTier, "agent" | "listed">): string => {
+  const { listed } = resolved;
+  if (resolved.agent === "claude") {
+    const named = claudeLabel(bare(listed.resolvedId ?? listed.id).replace(/-\d{8}$/, ""));
+    if (named !== undefined) return named;
+  }
+  return listed.displayName === "" ? listed.id : listed.displayName;
+};
+
+/**
  * What a joined machine's host reports, as tier resolution may use it: only the table's own Claude
  * candidates the host says it has (by an id or the id an alias runs), each as the table names it,
  * with the efforts the host reports. A host's list can only narrow what may run there; it never

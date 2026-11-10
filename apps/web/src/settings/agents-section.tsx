@@ -30,6 +30,7 @@ import { inputCls, SettingRow, Toggle } from "./fields";
 import { SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 import { useDefaultModel } from "./model-slots";
+import { RecommendedSetupRow } from "./recommended-setup";
 
 const IDLE_MINUTES = { min: 1, max: 1440 } as const;
 
@@ -76,6 +77,7 @@ export function AgentsSection() {
       description="The agent and model a new thread starts on."
       testId="agent-settings"
     >
+      <RecommendedSetupRow />
       <SettingRow
         label="Default agent and model"
         description="What a new thread starts on. You can pick another in /new."

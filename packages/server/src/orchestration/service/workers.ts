@@ -10,6 +10,7 @@ import {
   type WorkerReport,
   type WorkspaceState,
   type WorkspaceId,
+  defaultSlotOf,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
@@ -113,8 +114,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
    */
   const orchestratorSlot = (thread: Thread, state: WorkspaceState) =>
     Effect.gen(function* () {
-      const slot =
-        state.charter.orchestratorModel ?? (yield* store.getSettings).agents.defaultModel;
+      const slot = state.charter.orchestratorModel ?? defaultSlotOf(yield* store.getSettings);
       if (slot === undefined || isPinned(slot)) return {};
       const here = yield* slotHereNow(hosts, slot);
       const runsOn = [

@@ -2,8 +2,10 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   AgentUnavailable,
   DEFAULT_CHARTER,
+  DEFAULT_SETTINGS,
   HostId,
   RECOMMENDED,
+  RECOMMENDED_ROSTER,
   type AgentKind,
   type AgentModel,
   type OrchestratorCharter,
@@ -20,6 +22,7 @@ import { FakeAgentAdapter, FakeAgentControl } from "../runtime/fake-agent.ts";
 import { resolveSlot } from "../runtime/model-slots.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { orchestrationHandlers } from "./handler.ts";
+import { subscriptionTaskCharter } from "./task-models.ts";
 import { Orchestration } from "./service.ts";
 import {
   makeWorld,
@@ -366,6 +369,49 @@ describe.skipIf(!hasGit)("a slot that can't run here says so", () => {
       }),
     ),
   );
+});
+
+describe.skipIf(!hasGit)("with the recommended setup on", () => {
+  it.effect("a new chat with nothing saved starts on Lead at low", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const context = yield* Layer.build(serverLayer(world, {}, adapters({ claude: CLAUDE })));
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const project = yield* openProject(world);
+          const settings = yield* store.getSettings;
+          yield* store.putSettings({
+            ...settings,
+            agents: { ...settings.agents, recommendedSetup: { enabled: true } },
+          });
+          const thread = yield* runtimes.create({
+            projectRoot: project.root,
+            checkout: { kind: "main", path: project.root },
+          });
+          expect(thread.model).toEqual({
+            agent: "claude",
+            model: "opus",
+            variant: "low",
+            speed: "standard",
+          });
+        }).pipe(Effect.provide(context));
+      }),
+    ),
+  );
+
+  it("gives a new workspace a Lead orchestrator and one of each tier", () => {
+    const agents = { ...DEFAULT_SETTINGS.agents, recommendedSetup: { enabled: true } };
+    expect(subscriptionTaskCharter(agents)).toMatchObject({
+      orchestratorModel: { tier: "lead" },
+      workerModels: RECOMMENDED_ROSTER,
+    });
+    // Off, as every install before it: the saved default and roster, as before.
+    expect(subscriptionTaskCharter(DEFAULT_SETTINGS.agents)).not.toHaveProperty(
+      "orchestratorModel",
+    );
+  });
 });
 
 /** A joined "build box" whose host reports `models`, or nothing, as an older host does. */
