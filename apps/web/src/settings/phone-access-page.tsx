@@ -10,9 +10,7 @@ import {
   CircleCheck,
   CircleDashed,
   CircleX,
-  Copy,
   Laptop,
-  Plus,
   RefreshCw,
   ShieldAlert,
   Smartphone,
@@ -262,7 +260,6 @@ function AddressRow({ address, note }: { address: string | undefined; note?: str
           void copyText(address).then(() => setCopied(true));
         }}
       >
-        <Copy aria-hidden />
         {copied ? "Copied" : "Copy"}
       </Button>
     </SettingRow>
@@ -372,7 +369,6 @@ function PairedList({
         </span>
         {serving && (
           <Button size="sm" className="ms-auto" onClick={onPair} data-testid="phone-access-pair">
-            <Plus aria-hidden />
             Pair a phone
           </Button>
         )}
@@ -584,7 +580,6 @@ function PairDialog({ status, onClose }: { status: RemoteAccessStatus; onClose: 
                 if (typeof link === "object") void copyText(link.url).then(() => setCopied(true));
               }}
             >
-              <Copy aria-hidden />
               {copied ? "Copied" : "Copy link"}
             </Button>
             <Dialog.Close render={<Button type="button" variant="ghost" size="sm" />}>

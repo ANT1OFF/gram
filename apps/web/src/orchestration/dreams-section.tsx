@@ -24,6 +24,7 @@ import { errorMessage } from "@/api/errors";
 import type { DreamPreviewInput } from "@/api/types";
 import { AgentFields, choiceModel, type AgentChoice } from "@/composer/agent-fields";
 import { choiceFromModel } from "@/composer/default-choice";
+import { FOLD, FoldSummary } from "@/components/fold-summary";
 import { QueryError } from "@/components/not-available";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useModelNames } from "@/composer/models";
@@ -945,10 +946,10 @@ function Review({
           </p>
         )}
         {data.report !== undefined && (
-          <details open className="text-meta">
-            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+          <details open className={cn(FOLD, "text-meta")}>
+            <FoldSummary className="text-muted-foreground">
               REPORT.md: what it merged, dropped and added, and why
-            </summary>
+            </FoldSummary>
             <pre
               data-testid="dream-report-text"
               className="mt-1 max-h-56 overscroll-contain overflow-auto rounded-sm bg-muted/40 p-2 font-mono whitespace-pre-wrap"

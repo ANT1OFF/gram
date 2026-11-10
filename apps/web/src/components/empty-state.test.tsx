@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { Columns3, Plus } from "lucide-react";
+import { Columns3 } from "lucide-react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EmptyState } from "./empty-state";
@@ -16,7 +16,7 @@ describe("EmptyState", () => {
         icon={Columns3}
         title="No features yet"
         line="Each task becomes a feature here."
-        action={{ label: "Message the orchestrator", icon: Plus, onClick }}
+        action={{ label: "Message the orchestrator", onClick }}
       />,
     );
     const empty = screen.getByTestId("board-empty");

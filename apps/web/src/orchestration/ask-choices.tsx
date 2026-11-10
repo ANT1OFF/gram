@@ -1,4 +1,3 @@
-import { Send } from "lucide-react";
 import {
   useId,
   useLayoutEffect,
@@ -266,7 +265,6 @@ export function SendAnswer({
         aria-describedby={why === undefined ? undefined : whyId}
         onClick={onSend}
       >
-        <Send data-icon="inline-start" />
         {label}
         {hint !== undefined && (
           <Kbd hidden className="border-current/40 text-current">

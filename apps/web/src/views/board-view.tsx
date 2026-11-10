@@ -7,7 +7,7 @@ import {
   type WorkspaceId,
   type WorkspaceState,
 } from "@gram/contracts";
-import { Archive, Columns3, Hand, Layers, MessageSquare } from "lucide-react";
+import { Columns3, Hand, Layers } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -625,7 +625,6 @@ function RailBoard({ state }: { state: WorkspaceState }) {
                   line="Finished work is in Done."
                   action={{
                     label: `Show finished (${hidden})`,
-                    icon: Archive,
                     onClick: () => useLayoutStore.getState().toggleBoardArchived(workspaceId),
                   }}
                 />
@@ -637,7 +636,6 @@ function RailBoard({ state }: { state: WorkspaceState }) {
                   line="Each task the orchestrator takes on becomes a feature here, with its workers and PRs."
                   action={{
                     label: "Message the orchestrator",
-                    icon: MessageSquare,
                     onClick: () => messageOrchestrator(workspaceId),
                   }}
                 />

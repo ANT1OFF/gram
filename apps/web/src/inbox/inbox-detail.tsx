@@ -1,6 +1,6 @@
 import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlarmClock, SquareArrowOutUpRight, X } from "lucide-react";
+import { AlarmClock, X } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -458,7 +458,6 @@ export function InboxDetail({
               onClick={() => onOpenThread(item)}
             >
               {docked ? "Show thread" : card ? "Open" : "Open thread"}
-              {!docked && !card && <SquareArrowOutUpRight aria-hidden data-icon="inline-end" />}
             </Button>
             <Hint
               label="Later (1 hour)"

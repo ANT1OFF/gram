@@ -348,7 +348,6 @@ function ErrorCard({
                   disabled={pending}
                   onClick={() => retryLater(text, retryAt)}
                 >
-                  <RotateCw aria-hidden />
                   {`Retry at ${resetText(retryAt, now)}`}
                 </Button>
               )
@@ -393,7 +392,6 @@ function ErrorCard({
                   onClick={() => void retry(text)}
                   disabled={pending}
                 >
-                  <RotateCw aria-hidden />
                   {throttledAgain && due !== undefined ? "Retry now" : "Retry"}
                 </Button>
               )}

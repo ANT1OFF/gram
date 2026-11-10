@@ -1,7 +1,6 @@
 import { generatedKind, type DiffFile, type DiffFileStatus } from "@gram/contracts";
 import {
   ChevronRight,
-  Copy,
   FileMinus,
   FilePen,
   FilePlus,
@@ -441,18 +440,15 @@ function TooLargeNote({
             variant="outline"
             onClick={() => onOpenInEditor(file.path)}
           >
-            <SquareArrowOutUpRight data-icon="inline-start" />
             Open in editor
           </Button>
         )}
         {onReveal && (
           <Button type="button" size="xs" variant="ghost" onClick={() => onReveal(file.path)}>
-            <FolderSearch data-icon="inline-start" />
             Show in Files
           </Button>
         )}
         <Button type="button" size="xs" variant="ghost" onClick={() => void copy()}>
-          <Copy data-icon="inline-start" />
           Copy git diff command
         </Button>
       </div>

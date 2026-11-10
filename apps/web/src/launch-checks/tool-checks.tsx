@@ -19,7 +19,7 @@ import {
   SourceTag,
   VerdictMark,
 } from "./agent-runtime-row";
-import { cliUpdateStep } from "./agent-runtime-model";
+import { cliUpdateStep, newerNote } from "./agent-runtime-model";
 import { CliUpdateButton, CliUpdatePanel } from "./cli-update";
 import { CommandText } from "./command-text";
 import {
@@ -201,6 +201,14 @@ function AgentStatusRow({
   const update = useCliUpdate(agent);
   const [confirming, setConfirming] = useState(false);
   const updating = update.state !== undefined && update.state.state !== "idle";
+  const cliUpdateOffered = runnable !== undefined && !confirming && !updating;
+  // Whether a button on the row already names the release that is out ("Update to 0.159.4"):
+  // Gram's own store's, or the CLI's own update.
+  const updateOffered =
+    runtime !== undefined &&
+    newerNote(runtime)?.kind === "update" &&
+    (runtime.managed?.candidate !== undefined ||
+      (cliUpdateOffered && (runnable.version ?? runtime.newer?.version) !== undefined));
   return (
     <div role="group" aria-label={name} data-testid="agent-check" data-trouble={trouble?.level}>
       {/* On a phone its actions wrap under its name rather than run past the card. */}
@@ -234,9 +242,13 @@ function AgentStatusRow({
               <span className="sr-only">. {trouble.detail.replaceAll("`", "")}</span>
             </Hint>
           )}
-          {trouble === undefined && runtime !== undefined && <NewerMark runtime={runtime} />}
+          {/* "0.159.4 available" steps aside for a button that says "Update to 0.159.4": the
+              row named the version twice, side by side. */}
+          {trouble === undefined && runtime !== undefined && !updateOffered && (
+            <NewerMark runtime={runtime} />
+          )}
           {runtime !== undefined && <ManagedUpdate runtime={runtime} />}
-          {runtime !== undefined && runnable !== undefined && !confirming && !updating && (
+          {runtime !== undefined && cliUpdateOffered && (
             <CliUpdateButton
               runtime={runtime}
               step={runnable}

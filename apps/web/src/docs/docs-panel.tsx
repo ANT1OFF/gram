@@ -1,5 +1,5 @@
 import type { WorkspaceId } from "@gram/contracts";
-import { FileText, MessageSquare } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useRef } from "react";
 
 import { EmptyState } from "@/components/empty-state";
@@ -59,7 +59,6 @@ function DocsList({ workspaceId }: { workspaceId: WorkspaceId }) {
         line="Reports, plans and analyses this workspace's threads publish land here. They stay on this computer, outside your repos."
         action={{
           label: "Message the orchestrator",
-          icon: MessageSquare,
           onClick: () => messageOrchestrator(workspaceId),
         }}
       />

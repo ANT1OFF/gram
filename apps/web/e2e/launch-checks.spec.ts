@@ -584,7 +584,9 @@ test("Settings → Agents shows newer releases, their wait and steps, and update
   await expect(claude.getByTestId("runtime-newer")).toHaveAttribute("data-kind", "waiting");
   await expect(claude).toContainText(/2\.1\.286 after/);
 
-  await expect(codex).toContainText("0.159.4 available");
+  // The release that is out is named once: by the button that updates to it, not beside it too.
+  await expect(codex.getByTestId("runtime-update")).toHaveText("Update to 0.159.4");
+  await expect(codex.getByTestId("runtime-newer")).toHaveCount(0);
 
   await codex.getByRole("button", { name: "Codex details" }).click();
   const details = codex.getByTestId("runtime-details");

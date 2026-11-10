@@ -6,7 +6,6 @@ import {
   CircleX,
   Clock3,
   Copy,
-  Download,
   TriangleAlert,
 } from "lucide-react";
 import { useState } from "react";
@@ -198,7 +197,6 @@ export function ManagedUpdate({ runtime }: { runtime: AgentRuntime }) {
         />
       }
     >
-      <Download aria-hidden />
       {`Update to ${candidate.version}`}
     </Hint>
   );

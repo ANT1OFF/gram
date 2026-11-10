@@ -5,7 +5,9 @@ import type {
 } from "@gram/contracts/agent-support";
 import type { ThreadId } from "@gram/contracts";
 
+import { FOLD, FoldSummary } from "@/components/fold-summary";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import { usePreviewInspectionSupport } from "./browser-inspection-support";
 
@@ -34,11 +36,14 @@ export function HarnessSupportDetails({
   );
   if (observation === undefined) return null;
   return (
-    <details className="text-meta text-muted-foreground" data-testid="harness-support-details">
-      <summary className="cursor-pointer">
+    <details
+      className={cn(FOLD, "text-meta text-muted-foreground")}
+      data-testid="harness-support-details"
+    >
+      <FoldSummary>
         What this agent supports
         {observation.version === undefined ? "" : ` · CLI ${observation.version}`}
-      </summary>
+      </FoldSummary>
       <dl className="mt-2 grid gap-2">
         {OPTIONAL_FEATURES.map(([feature, label]) => {
           const support =
