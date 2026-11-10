@@ -371,20 +371,20 @@ describe("joined machines over the network", () => {
           dial,
           service(hostId, { protocol: HOST_PROTOCOL_VERSION + 1, release: "1.17.0" }),
         );
-        expect(hosts.list(true)[0]).toMatchObject({
+        expect(hosts.list("on")[0]).toMatchObject({
           offline: { kind: "mismatch", protocol: HOST_PROTOCOL_VERSION + 1 },
           release: "1.17.0",
         });
-        expect(hosts.list(true)[0]).not.toHaveProperty("onlineSince");
+        expect(hosts.list("on")[0]).not.toHaveProperty("onlineSince");
         // A release that doesn't read as one isn't kept.
         yield* dialOnce(
           dial,
           service(hostId, { protocol: HOST_PROTOCOL_VERSION + 1, release: "<b>1.17</b>" }),
         );
-        expect(hosts.list(true)[0]).not.toHaveProperty("release");
+        expect(hosts.list("on")[0]).not.toHaveProperty("release");
         // A host from before releases were sent, and short of what this build needs.
         yield* dialOnce(dial, service(hostId, { capabilities: ["files", "git"] }));
-        const offline = hosts.list(true)[0]!.offline;
+        const offline = hosts.list("on")[0]!.offline;
         expect(offline).toMatchObject({ kind: "mismatch", protocol: HOST_PROTOCOL_VERSION });
         expect(offline).toHaveProperty("missing", expect.arrayContaining(["sessions", "repos"]));
         expect(offline).not.toHaveProperty("release");
@@ -395,15 +395,15 @@ describe("joined machines over the network", () => {
     Effect.gen(function* () {
       const { hosts, base } = yield* served;
       const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
-      expect(hosts.list(true)[0]?.offline).toEqual({ kind: "never" });
-      expect(hosts.list(false)[0]?.offline).toEqual({ kind: "tailscale-off" });
+      expect(hosts.list("on")[0]?.offline).toEqual({ kind: "never" });
+      expect(hosts.list("off")[0]?.offline).toEqual({ kind: "tailscale-off" });
       yield* dialOnce(dial, service(hostId, { protocol: HOST_PROTOCOL_VERSION + 1 }));
       const fiber = yield* Effect.forkScoped(
         dialOnce(dial, service(hostId, { release: "1.15.2" })),
       );
       yield* online(hosts, hostId);
-      expect(hosts.list(true)[0]).toMatchObject({ release: "1.15.2" });
-      expect(hosts.list(true)[0]).not.toHaveProperty("offline");
+      expect(hosts.list("on")[0]).toMatchObject({ release: "1.15.2" });
+      expect(hosts.list("on")[0]).not.toHaveProperty("offline");
       expect(hosts.machines.problemOf(hostId)).toBeUndefined();
       yield* Fiber.interrupt(fiber);
     }).pipe(Effect.scoped),
@@ -414,7 +414,7 @@ describe("joined machines over the network", () => {
       const { hosts, base } = yield* served;
       const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
       yield* dialOnce(dial, service(hostId, { hostId: HostId.make(`m-${"0".repeat(24)}`) }));
-      expect(hosts.list(true)[0]?.offline).toMatchObject({ kind: "no-hello" });
+      expect(hosts.list("on")[0]?.offline).toMatchObject({ kind: "no-hello" });
     }).pipe(Effect.scoped),
   );
 
@@ -426,14 +426,14 @@ describe("joined machines over the network", () => {
       const fiber = yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
       yield* online(hosts, hostId);
       yield* Fiber.interrupt(fiber);
-      while (hosts.list(true)[0]?.offline === undefined) yield* Effect.sleep("50 millis");
-      expect(hosts.list(true)[0]?.offline).toMatchObject({ kind: "lost" });
+      while (hosts.list("on")[0]?.offline === undefined) yield* Effect.sleep("50 millis");
+      expect(hosts.list("on")[0]?.offline).toMatchObject({ kind: "lost" });
 
       yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
       yield* online(hosts, hostId);
       hosts.keepOrigin("https://moved.example-tailnet.ts.net");
       yield* Effect.sleep("200 millis");
-      expect(hosts.list(true)[0]?.offline).toMatchObject({ kind: "moved" });
+      expect(hosts.list("on")[0]?.offline).toMatchObject({ kind: "moved" });
 
       // Access turned off and on again before it redials: its connection was lost then. Access
       // moves back to the address it dials first, as only a dial over that address comes online.
@@ -442,8 +442,8 @@ describe("joined machines over the network", () => {
       yield* online(hosts, hostId);
       hosts.keepOrigin(undefined);
       yield* Effect.sleep("200 millis");
-      expect(hosts.list(false)[0]?.offline).toEqual({ kind: "tailscale-off" });
-      expect(hosts.list(true)[0]?.offline).toMatchObject({ kind: "lost" });
+      expect(hosts.list("off")[0]?.offline).toEqual({ kind: "tailscale-off" });
+      expect(hosts.list("on")[0]?.offline).toMatchObject({ kind: "lost" });
 
       // Removed while online: nothing is kept for it.
       hosts.keepOrigin(ORIGIN);

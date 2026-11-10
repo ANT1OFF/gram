@@ -529,13 +529,19 @@ describe("joined machines", () => {
     machines.confirm(id);
     const machine = machines.get(id)!;
     expect(machineView(machine, undefined).offline).toEqual({ kind: "never" });
-    expect(machineView(machine, undefined, { tailscale: false }).offline).toEqual({
+    expect(machineView(machine, undefined, { tailscale: "off" }).offline).toEqual({
       kind: "tailscale-off",
     });
     const lost = { kind: "lost", at: clock.now() } as const;
-    expect(machineView(machine, undefined, { problem: lost, tailscale: true }).offline).toEqual(
+    expect(machineView(machine, undefined, { problem: lost, tailscale: "on" }).offline).toEqual(
       lost,
     );
+    // Switched on but down here: that, rather than the connection it cost.
+    for (const cause of ["stopped", "signed-out", "missing", "no-https", "error", "serve"] as const)
+      expect(machineView(machine, undefined, { problem: lost, tailscale: cause }).offline).toEqual({
+        kind: "tailscale-down",
+        cause,
+      });
     const online = machineView(machine, { since: 5, release: "1.15.2" }, { problem: lost });
     expect(online).toMatchObject({ onlineSince: 5, release: "1.15.2" });
     expect(online).not.toHaveProperty("offline");

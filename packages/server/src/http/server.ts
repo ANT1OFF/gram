@@ -288,6 +288,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                         releaseOfConfig(config),
                         undefined,
                         tokenCapture,
+                        control.dialAccess(),
                       )
                   : isRemote && path === "/ws"
                     ? yield* closedOnRevoke(remote, remote.sessionOf(authRequest), httpEffect)

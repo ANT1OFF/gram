@@ -94,6 +94,16 @@ describe("machines page", () => {
     expect(within(rows[1]!).getByTestId("machines-update")).toBeTruthy();
   });
 
+  it("says Tailscale is stopped here, not that the switch is off, while access is on", async () => {
+    serve([machine({ name: "cachyos", offline: { kind: "tailscale-down", cause: "stopped" } })]);
+    renderPage();
+    const state = await screen.findByTestId("machines-state");
+    expect(state.textContent).toBe("offline");
+    expect(state.getAttribute("aria-description")).toMatch(
+      /^Tailscale is stopped on this (Mac|computer)\.\nTurn it on, and Gram will reconnect machines by itself\.$/,
+    );
+  });
+
   it("updates a machine whose host updates itself from its row, and shows how it goes", async () => {
     const online = machine({
       id: "m-a",

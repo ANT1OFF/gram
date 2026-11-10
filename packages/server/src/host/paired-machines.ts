@@ -505,12 +505,24 @@ export const createPairedMachines = (
 export type PairedMachines = ReturnType<typeof createPairedMachines>;
 
 /**
+ * Why access over Tailscale is switched on but no machine can dial in: Tailscale on this computer
+ * is missing, signed out, stopped, without HTTPS certificates or not answering, or Gram couldn't
+ * set up its Serve listener (`serve`).
+ */
+export type TailscaleDown = "missing" | "signed-out" | "stopped" | "no-https" | "error" | "serve";
+
+/** Whether machines can dial this Gram over Tailscale: on, switched off, or on but down and why. */
+export type DialAccess = "on" | "off" | TailscaleDown;
+
+/**
  * Why a machine is offline, as the settings page says it: its last problem, or that access over
- * Tailscale is off (which no machine can dial), or that it hasn't dialled since this Gram started.
+ * Tailscale is off or down (so no machine can dial), or that it hasn't dialled since this Gram
+ * started.
  */
 export type OfflineReason =
   | MachineProblem
   | { readonly kind: "tailscale-off" }
+  | { readonly kind: "tailscale-down"; readonly cause: TailscaleDown }
   | { readonly kind: "never" };
 
 /** A machine as the settings page lists it: no key, its fingerprint instead. */
@@ -531,16 +543,20 @@ export const machineView = (
    */
   status: {
     readonly problem?: MachineProblem | undefined;
-    readonly tailscale?: boolean;
+    readonly tailscale?: DialAccess;
     readonly update?: MachineUpdate | undefined;
   } = {},
 ) => {
+  const access = status.tailscale ?? "on";
+  // Tailscale down here explains a lost connection better than the loss itself.
   const offline: OfflineReason | undefined =
     online !== undefined
       ? undefined
-      : status.tailscale === false
+      : access === "off"
         ? { kind: "tailscale-off" }
-        : (status.problem ?? { kind: "never" });
+        : access !== "on"
+          ? { kind: "tailscale-down", cause: access }
+          : (status.problem ?? { kind: "never" });
   const release =
     online?.release ?? (status.problem?.kind === "mismatch" ? status.problem.release : undefined);
   return {

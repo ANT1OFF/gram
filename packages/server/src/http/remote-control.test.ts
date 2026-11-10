@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,8 @@ import { ServerConfig } from "../config.ts";
 import { HttpServer } from "../platform/unstable.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import {
+  RECHECK_MS,
+  RECOVERY_DELAYS_MS,
   RemoteControl,
   Tailscale,
   TailscaleMissing,
@@ -370,6 +373,248 @@ describe("phone access switched from Settings", () => {
       }).pipe(Effect.provide(control(tailnet.shape, dir, 5555)));
       expect(tailnet.listeners.has(9443)).toBe(false);
       expect(tailnet.listeners.get(9444)?.proxy).toBe("http://127.0.0.1:1");
+    }),
+  );
+});
+
+/** A run that turned access on at 9443 and quit while Tailscale couldn't take its listener down. */
+const leftBehind = (tailnet: ReturnType<typeof fakeTailscale>, dir: string, port: number) =>
+  Effect.gen(function* () {
+    yield* Effect.gen(function* () {
+      yield* (yield* RemoteControl).enable(9443);
+    }).pipe(Effect.provide(control(tailnet.shape, dir, port)));
+    tailnet.listeners.set(9443, { proxy: `http://127.0.0.1:${port}` });
+  });
+
+const OLD_PORT = 61452;
+const NEW_PORT = 59873;
+
+describe("phone access recovering by itself", () => {
+  it.effect("waits out Tailscale stopped at startup, then re-points Gram's stale listener", () =>
+    Effect.gen(function* () {
+      const options: { backend?: string } = {};
+      const tailnet = fakeTailscale(options);
+      const dir = dataDir();
+      yield* leftBehind(tailnet, dir, OLD_PORT);
+      options.backend = "Stopped";
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        yield* settled;
+        expect(remote.current()).toBeUndefined();
+        expect(remote.dialAccess()).toBe("stopped");
+        const stopped = yield* remote.status;
+        expect(stopped).toMatchObject({ mode: "on", tailscale: { state: "stopped" } });
+        expect(stopped.problem).toMatch(
+          /^Tailscale is stopped on this (Mac|computer)\. Turn it on, and Gram sets up access again by itself\.$/,
+        );
+        // Still the old run's: nothing is changed while Tailscale is stopped.
+        expect(tailnet.listeners.get(9443)?.proxy).toBe(`http://127.0.0.1:${OLD_PORT}`);
+
+        options.backend = "Running";
+        yield* TestClock.adjust(RECOVERY_DELAYS_MS[0]);
+        yield* settled;
+        expect(tailnet.listeners.get(9443)?.proxy).toBe(`http://127.0.0.1:${NEW_PORT}`);
+        expect(remote.current()?.origin).toBe(`https://${DNS}:9443`);
+        expect(remote.dialAccess()).toBe("on");
+        const back = yield* remote.status;
+        expect(back).toMatchObject({ mode: "on", origin: `https://${DNS}:9443` });
+        expect(back).not.toHaveProperty("problem");
+        expect(tailnet.calls.some((call) => call.includes("funnel"))).toBe(false);
+      }).pipe(Effect.provide(control(tailnet.shape, dir, NEW_PORT)));
+    }),
+  );
+
+  it.effect("backs off to a minute apart while Tailscale stays stopped", () =>
+    Effect.gen(function* () {
+      const options: { backend?: string } = {};
+      const tailnet = fakeTailscale(options);
+      const dir = dataDir();
+      yield* leftBehind(tailnet, dir, OLD_PORT);
+      options.backend = "Stopped";
+      tailnet.calls.length = 0;
+      yield* Effect.gen(function* () {
+        yield* RemoteControl;
+        yield* settled;
+        const looks = () => tailnet.calls.filter((call) => call === "status --json").length;
+        expect(looks()).toBe(1);
+        for (const delay of [...RECOVERY_DELAYS_MS, 60_000, 60_000]) {
+          // Just short of the next look: none yet.
+          yield* TestClock.adjust(delay - 1);
+          yield* settled;
+          const before = looks();
+          yield* TestClock.adjust(1);
+          yield* settled;
+          expect(looks()).toBe(before + 1);
+        }
+        // Seven looks over five minutes, and nothing but looks.
+        expect(looks()).toBe(8);
+        expect(tailnet.calls.every((call) => call === "status --json")).toBe(true);
+      }).pipe(Effect.provide(control(tailnet.shape, dir, NEW_PORT)));
+    }),
+  );
+
+  it.effect("tries at once when a status check finds Tailscale back during a backoff", () =>
+    Effect.gen(function* () {
+      const options: { backend?: string } = {};
+      const tailnet = fakeTailscale(options);
+      const dir = dataDir();
+      yield* leftBehind(tailnet, dir, OLD_PORT);
+      options.backend = "Stopped";
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        yield* settled;
+        // Past the first three tries, the next waits 40 s.
+        for (const delay of RECOVERY_DELAYS_MS.slice(0, 3)) {
+          yield* TestClock.adjust(delay);
+          yield* settled;
+        }
+        options.backend = "Running";
+        // Past the status cache, well inside the backoff.
+        yield* TestClock.adjust(16_000);
+        yield* settled;
+        expect(remote.current()).toBeUndefined();
+        yield* remote.status;
+        yield* settled;
+        expect(remote.current()?.origin).toBe(`https://${DNS}:9443`);
+        expect(tailnet.listeners.get(9443)?.proxy).toBe(`http://127.0.0.1:${NEW_PORT}`);
+      }).pipe(Effect.provide(control(tailnet.shape, dir, NEW_PORT)));
+    }),
+  );
+
+  it.effect("leaves other Serve and Funnel entries alone while it takes its own back", () =>
+    Effect.gen(function* () {
+      const options: { backend?: string } = {};
+      const tailnet = fakeTailscale(options);
+      const dir = dataDir();
+      yield* leftBehind(tailnet, dir, OLD_PORT);
+      tailnet.listeners.set(443, { proxy: "http://127.0.0.1:3000" });
+      tailnet.listeners.set(8443, { proxy: "http://127.0.0.1:8080", funnel: true });
+      tailnet.listeners.set(9444, { proxy: `http://127.0.0.1:${OLD_PORT}`, paths: ["/files"] });
+      options.backend = "Stopped";
+      tailnet.calls.length = 0;
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        yield* settled;
+        options.backend = "Running";
+        yield* TestClock.adjust(RECOVERY_DELAYS_MS[0]);
+        yield* settled;
+        expect(remote.current()?.origin).toBe(`https://${DNS}:9443`);
+      }).pipe(Effect.provide(control(tailnet.shape, dir, NEW_PORT)));
+      expect(tailnet.listeners.get(443)).toEqual({ proxy: "http://127.0.0.1:3000" });
+      expect(tailnet.listeners.get(8443)).toEqual({ proxy: "http://127.0.0.1:8080", funnel: true });
+      expect(tailnet.listeners.get(9444)).toEqual({
+        proxy: `http://127.0.0.1:${OLD_PORT}`,
+        paths: ["/files"],
+      });
+      // Only its own port, re-pointed once and taken down on stop.
+      expect(tailnet.calls.filter((call) => call.startsWith("serve --"))).toEqual([
+        `serve --bg --https=9443 http://127.0.0.1:${NEW_PORT}`,
+        "serve --https=9443 off",
+      ]);
+    }),
+  );
+
+  it.effect("puts back its listener when Tailscale loses it, and not one another app took", () =>
+    Effect.gen(function* () {
+      const tailnet = fakeTailscale();
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        yield* remote.enable(9443);
+        tailnet.listeners.delete(9443);
+        yield* TestClock.adjust(RECHECK_MS);
+        yield* settled;
+        expect(tailnet.listeners.get(9443)?.proxy).toBe(`http://127.0.0.1:${LOOPBACK}`);
+        expect(remote.dialAccess()).toBe("on");
+
+        tailnet.listeners.set(9443, { proxy: "http://127.0.0.1:3000" });
+        yield* TestClock.adjust(RECHECK_MS);
+        yield* settled;
+        expect(tailnet.listeners.get(9443)?.proxy).toBe("http://127.0.0.1:3000");
+        expect(remote.dialAccess()).toBe("serve");
+        expect((yield* remote.status).problem).toBe(
+          "Another Tailscale Serve listener uses port 9443",
+        );
+        // Taken back only once it is gone.
+        tailnet.listeners.delete(9443);
+        yield* TestClock.adjust(RECOVERY_DELAYS_MS[0]);
+        yield* settled;
+        expect(tailnet.listeners.get(9443)?.proxy).toBe(`http://127.0.0.1:${LOOPBACK}`);
+        expect(remote.dialAccess()).toBe("on");
+      }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+    }),
+  );
+
+  it.effect("finishes a turn-off Tailscale refused once it can, instead of serving again", () =>
+    Effect.gen(function* () {
+      const tailnet = fakeTailscale();
+      const base = tailnet.shape;
+      let refuseOff = true;
+      const shape: TailscaleShape = {
+        run: (args) =>
+          refuseOff && args.at(-1) === "off"
+            ? Effect.succeed({ code: 1, stdout: "", stderr: "busy" })
+            : base.run(args),
+      };
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        yield* remote.enable(9443);
+        yield* Effect.flip(remote.disable);
+        expect(remote.dialAccess()).toBe("off");
+        yield* TestClock.adjust(RECOVERY_DELAYS_MS[0]);
+        yield* settled;
+        // Still refused: on, saying so, and not serving again.
+        expect(remote.current()).toBeUndefined();
+        expect(yield* remote.status).toMatchObject({ mode: "on" });
+        refuseOff = false;
+        yield* TestClock.adjust(RECOVERY_DELAYS_MS[1]);
+        yield* settled;
+        expect(tailnet.listeners.has(9443)).toBe(false);
+        const off = yield* remote.status;
+        expect(off).toMatchObject({ mode: "off" });
+        expect(off).not.toHaveProperty("problem");
+        expect(remote.current()).toBeUndefined();
+      }).pipe(Effect.provide(control(shape, dataDir())));
+    }),
+  );
+
+  it.effect("says why machines can't dial in while the switch is on", () =>
+    Effect.gen(function* () {
+      const cases = [
+        [{ missing: true }, "missing", /^Gram can't find Tailscale on this (Mac|computer)\./],
+        [
+          { backend: "NeedsLogin" },
+          "signed-out",
+          /^Tailscale is signed out on this (Mac|computer)\. Sign in/,
+        ],
+        [
+          { backend: "Stopped" },
+          "stopped",
+          /^Tailscale is stopped on this (Mac|computer)\. Turn it on/,
+        ],
+        [{ certs: false }, "no-https", /^Turn on HTTPS certificates/],
+      ] as const;
+      for (const [down, cause, message] of cases) {
+        const options: Parameters<typeof fakeTailscale>[0] = {};
+        const tailnet = fakeTailscale(options);
+        const dir = dataDir();
+        yield* leftBehind(tailnet, dir, OLD_PORT);
+        Object.assign(options, down);
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteControl;
+          yield* settled;
+          expect(remote.dialAccess()).toBe(cause);
+          expect((yield* remote.status).problem).toMatch(message);
+        }).pipe(Effect.provide(control(tailnet.shape, dir, NEW_PORT)));
+      }
+      const off = fakeTailscale({ backend: "Stopped" });
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        yield* settled;
+        // Switched off, a stopped Tailscale is no problem of Gram's.
+        expect(remote.dialAccess()).toBe("off");
+        expect(yield* remote.status).not.toHaveProperty("problem");
+        expect(off.calls).toEqual(["status --json"]);
+      }).pipe(Effect.provide(control(off.shape, dataDir())));
     }),
   );
 });

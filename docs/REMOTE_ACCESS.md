@@ -38,6 +38,14 @@ Without `GRAM_REMOTE_ORIGIN`, the local app switches access through the Tailscal
   dead loopback port until the next start re-points it; another program that later takes that
   port would be reachable from the tailnet meanwhile, so turn access off before uninstalling.
   Gram saves the exact target it points its listener at before asking Tailscale, and only a listener with that one `/` proxy and no other handler counts as Gram's; startup re-points only that one, and anything else on the saved port leaves access off with a problem the status reports.
+- While access is switched on, Gram looks again by itself: 5 s after a failed try, doubling to a
+  minute apart, and once a minute while serving. So when Tailscale was stopped or signed out at
+  startup, or Serve lost the listener, Gram serves again on this run's port once Tailscale is
+  back, with no restart or toggle; a status check that finds Tailscale back tries at once. Each
+  look runs only `tailscale status --json` and `tailscale serve status --json`, and changes only
+  Gram's own listener as above. A turn-off Tailscale refused is finished the same way, rather
+  than served again. Until then, Phone access and Settings → Machines say what is wrong here,
+  such as "Tailscale is stopped on this Mac".
 - Turning off removes that listener (only while it is still Gram's alone), even when saving the setting fails, closes every open
   remote connection and keeps the pairings. The remote cookie is named after the Serve port, so
   pairings survive restarts on a new loopback port.

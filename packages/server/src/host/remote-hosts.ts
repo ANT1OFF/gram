@@ -17,6 +17,7 @@ import {
   fileMachineStore,
   fileNonceStore,
   machineView,
+  type DialAccess,
   NO_DIALS,
   type PairedMachine,
   type PairedMachines,
@@ -143,9 +144,9 @@ export interface RemoteHostsShape {
   readonly origin: (id: HostId) => string | undefined;
   /**
    * The joined machines as the settings page lists them, each offline one with why: `tailscale`
-   * false says access over Tailscale is off, so none of them can dial.
+   * says whether access over Tailscale is on, off, or on but down, so none of them can dial.
    */
-  readonly list: (tailscale?: boolean) => ReadonlyArray<ReturnType<typeof machineView>>;
+  readonly list: (tailscale?: DialAccess) => ReadonlyArray<ReturnType<typeof machineView>>;
   /**
    * Pins a dial from `machine` that the route let through over `origin`, before its upgrade
    * starts: turning access off or moving it, or removing the machine, after this drops the dial.
@@ -409,7 +410,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         return checking;
       };
       /** The listing's view of each machine, asking again about any sign-in gone stale. */
-      const view = (machine: PairedMachine, tailscale: boolean | undefined) => {
+      const view = (machine: PairedMachine, tailscale: DialAccess | undefined) => {
         const live = online.get(machine.id);
         if (live !== undefined && (live.status?.at ?? 0) + SIGN_IN_FRESH_MS <= now())
           void checkSignIn(machine.id);
