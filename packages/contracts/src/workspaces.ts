@@ -4,10 +4,23 @@
 
 import * as Schema from "effect/Schema";
 import { DraftId } from "./attachments.ts";
-import { ModelRef, PermissionMode, UserInput } from "./domain.ts";
+import { type AgentKind, ModelRef, PermissionMode, UserInput } from "./domain.ts";
 import { SupportedTaskModelSelection } from "./task-preflight.ts";
 import { HostId, ProjectId, ThreadId, WorkspaceId } from "./ids.ts";
 import { MergeReviewPolicy, RepoMergeReviewPolicies } from "./merge-policy.ts";
+import {
+  type AvailableModels,
+  ModelSlot,
+  RECOMMENDED,
+  type RecommendationTable,
+  resolveTier,
+  setupOf,
+  type Tier,
+  tierAgents,
+  tierEffort,
+  tierName,
+  TierRef,
+} from "./recommended.ts";
 import { FeatureStage, OrchestrationPause } from "./orchestration.ts";
 import { WorkspaceRoutines } from "./routines.ts";
 
@@ -39,25 +52,100 @@ const AtLeastOne = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 /** The longest `useFor` note a worker model may carry; it goes into the orchestrator's context. */
 export const WORKER_MODEL_NOTE_MAX = 300;
 
-/**
- * A model a worker may be spawned on, with what the user wants it used for. A bare `ModelRef` is
- * one too, allowed with no note.
- */
-export const WorkerModel = Schema.Struct({
-  ...ModelRef.fields,
+const WorkerModelNotes = {
   /** The kind of work the user wants on this model, in their words; the orchestrator picks by it. */
   useFor: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(WORKER_MODEL_NOTE_MAX))),
   /** A worker gets this model when the orchestrator names none; the first entry marked wins. */
   default: Schema.optionalKey(Schema.Boolean),
-});
+};
+
+/**
+ * A model a worker may be spawned on, with what the user wants it used for. A bare `ModelRef` is
+ * one too, allowed with no note. An entry that follows a tier is resolved on the machine the
+ * worker runs on; with no note of its own it carries the tier's.
+ */
+export const PinnedWorkerModel = Schema.Struct({ ...ModelRef.fields, ...WorkerModelNotes });
+export type PinnedWorkerModel = typeof PinnedWorkerModel.Type;
+export const WorkerModel = Schema.Union([
+  PinnedWorkerModel,
+  Schema.Struct({ ...TierRef.fields, ...WorkerModelNotes }),
+]);
 export type WorkerModel = typeof WorkerModel.Type;
 
-/** The model a worker model runs on, without the user's note about it. */
+/** The slot a worker model is, without the user's note about it. */
+export const modelSlotOf = ({
+  useFor: _useFor,
+  default: _default,
+  ...slot
+}: WorkerModel): ModelSlot => slot;
+
+/**
+ * A roster entry as it runs on one machine: concrete, with the tier it follows, if it does, and
+ * the harness it keeps to (`tierAgent`) when its slot names one.
+ */
+export type RosterModel = PinnedWorkerModel & {
+  readonly tier?: Tier;
+  readonly tierAgent?: AgentKind;
+};
+
+/** The model a roster entry runs on, without the user's note about it or its tier. */
 export const modelRefOf = ({
   useFor: _useFor,
   default: _default,
+  tier: _tier,
+  tierAgent: _tierAgent,
   ...model
-}: WorkerModel): ModelRef => model;
+}: RosterModel): ModelRef => model;
+
+/**
+ * How the orchestrator names a roster entry: `agent:model` for a pinned one, and `tier:<tier>`
+ * (`tier:<tier>:<agent>` when it keeps to one harness) for one that follows a tier, since two
+ * tiers can resolve to the same model at different efforts.
+ */
+export const rosterName = (entry: RosterModel): string =>
+  entry.tier === undefined
+    ? `${entry.agent}:${entry.model}`
+    : `tier:${entry.tier}${entry.tierAgent === undefined ? "" : `:${entry.tierAgent}`}`;
+
+/**
+ * A roster entry as it runs on a machine that lists `available`. A pinned one is as stored; one
+ * that follows a tier is resolved now and, with no note of its own, carries the tier's. A tier
+ * nothing here fills comes back as its first choice, with `missing` saying why it can't run.
+ */
+export const rosterModelHere = (
+  entry: WorkerModel,
+  available: AvailableModels,
+  table: RecommendationTable = RECOMMENDED,
+): { readonly entry: RosterModel; readonly missing?: string } => {
+  if (!("tier" in entry)) return { entry };
+  const { tier, agent: own, variant, useFor, default: isDefault } = entry;
+  const notes = {
+    useFor: useFor ?? table.tiers[tier].note,
+    ...(isDefault === undefined ? {} : { default: isDefault }),
+    tier,
+    ...(own === undefined ? {} : { tierAgent: own }),
+  };
+  const resolved = resolveTier(
+    table,
+    {
+      tier,
+      ...(own === undefined ? {} : { agent: own }),
+      ...(variant === undefined ? {} : { variant }),
+    },
+    available,
+  );
+  if (resolved !== undefined) return { entry: { ...resolved.ref, ...notes } };
+  const agent = own ?? tierAgents(table, tier, setupOf(available))[0] ?? table.both[tier];
+  return {
+    entry: {
+      agent,
+      model: table.tiers[tier][agent].models[0],
+      variant: variant ?? tierEffort(table, tier, agent),
+      ...notes,
+    },
+    missing: `nothing ${agent === "claude" ? "Claude Code" : "Codex"} lists here fills the ${tierName(tier)} tier (${table.tiers[tier][agent].models.join(", ")}); update it, or pick a model for this entry in Settings → Workspaces`,
+  };
+};
 
 /**
  * How far an orchestrator and its workers go without asking. `supervised` asks before anything
@@ -215,7 +303,7 @@ export const OrchestratorCharter = Schema.Struct({
   /** The models a worker may be spawned on, the roster; absent allows the orchestrator's own only. */
   workerModels: Schema.optionalKey(Schema.Array(WorkerModel)),
   /** The model a new orchestrator opens on; absent follows `agents.defaultModel`. */
-  orchestratorModel: Schema.optionalKey(ModelRef),
+  orchestratorModel: Schema.optionalKey(ModelSlot),
   /**
    * The connectors every thread of the workspace gets, its orchestrator and workers alike; absent
    * gives each what its agent is configured with. Read it through `connectorSetOf`.

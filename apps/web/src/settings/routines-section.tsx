@@ -11,6 +11,7 @@ import {
   type RoutineStatus,
   type WorkspaceRoutine,
   type WorkspaceState,
+  type PinnedWorkerModel,
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Network, Pencil, Trash2 } from "lucide-react";
@@ -538,7 +539,10 @@ function RoutineEditor({
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<RoutineForm>) => setForm((current) => ({ ...current, ...patch }));
   const repos = state.workspace.projectIds;
-  const roster = charter.workerModels ?? [];
+  // A routine records a concrete model, so it names a pinned entry, as the server takes it.
+  const roster = (charter.workerModels ?? []).filter(
+    (entry): entry is PinnedWorkerModel => !("tier" in entry),
+  );
   const repoItems = [
     {
       value: HOME,

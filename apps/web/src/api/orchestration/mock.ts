@@ -4,9 +4,11 @@ import {
   type StartTaskInput,
   type TaskModelSelection,
   type TaskWorkerChoice,
-  type WorkerModel,
   type ThreadId,
   type UserInput,
+  firstChoiceOf,
+  rosterModelHere,
+  type RosterModel,
 } from "@gram/contracts";
 
 import type { createMockOrchestration } from "../mock-orchestration";
@@ -47,17 +49,18 @@ export function createOrchestrationMock(
     const held = world
       .threads()
       .find((row) => row.thread.id === state?.workspace.orchestratorThreadId)?.thread;
-    const orchestrator =
-      held?.model ??
-      state?.charter.orchestratorModel ??
-      settings.agents.defaultModel ??
-      charter.orchestratorModel;
+    const slot =
+      state?.charter.orchestratorModel ?? settings.agents.defaultModel ?? charter.orchestratorModel;
+    const orchestrator = held?.model ?? (slot === undefined ? undefined : firstChoiceOf(slot));
     if (orchestrator === undefined)
       throw new MockInvalidState(
         "This synthetic workspace has no model choice. Select one in Settings → Workspaces & merging.",
       );
     const { variant: _variant, ...bare } = orchestrator;
-    const roster: readonly WorkerModel[] = charter.workerModels ?? [bare];
+    // The synthetic world runs every harness, so a tier is its first choice.
+    const roster: readonly RosterModel[] = charter.workerModels?.map(
+      (row) => rosterModelHere(row, {}).entry,
+    ) ?? [bare];
     const standing = roster.find((row) => row.default === true) ?? roster[0];
     // The synthetic world runs every harness.
     const workerChoices: TaskWorkerChoice[] = roster.map((row) => ({

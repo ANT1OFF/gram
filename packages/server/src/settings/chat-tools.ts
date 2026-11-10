@@ -27,7 +27,6 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { defineAppTool } from "../app-tools/definition.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
-import { rosterOf } from "../orchestration/rules.ts";
 import { CHARTER_MOVED, Orchestration } from "../orchestration/service.ts";
 import { ThreadStore, type SettingsAuditEntry } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
@@ -186,13 +185,12 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
             const state = yield* workspaceInScope(tool, caller, role, workspaceId);
             const project = yield* projectInScope(tool, caller, state, projectId);
             const world = yield* worldOf(state, project);
-            const unavailable =
+            const roster =
               state === undefined || orchestration === undefined
-                ? new Map<number, string>()
+                ? undefined
                 : yield* orchestration
-                    .workerModelAvailability(state.workspace.id)
-                    .pipe(Effect.orElseSucceed(() => new Map<number, string>()));
-            const roster = state?.charter.workerModels;
+                    .workerRoster(state.workspace.id)
+                    .pipe(Effect.orElseSucceed(() => undefined));
             return {
               app: readSettingsRows(world, "app"),
               project: {
@@ -211,7 +209,7 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                       name: state.workspace.name,
                       settings: readSettingsRows(world, "workspace").map((row) =>
                         row.key === "workspace.workerModels" && roster !== undefined
-                          ? { ...row, value: rosterOf(roster, unavailable) }
+                          ? { ...row, value: roster }
                           : row,
                       ),
                       ...(state.paused === undefined ? {} : { pausedReason: state.paused.reason }),

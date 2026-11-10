@@ -66,6 +66,7 @@ import {
   recentTurns,
   applyUserEdit,
   withoutCompletion,
+  firstChoiceOf,
 } from "@gram/contracts";
 
 import { createThreadFeed, syncScheduler } from "@/stores/thread-feed";
@@ -1135,8 +1136,9 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   }
 
   async createThread(input: CreateThreadInput): Promise<Thread> {
+    const saved = (await this.#settings.get()).agents.defaultModel;
     const model = input.model ??
-      (await this.#settings.get()).agents.defaultModel ?? {
+      (saved === undefined ? undefined : firstChoiceOf(saved)) ?? {
         agent: "claude" as const,
         model: "opus",
       };

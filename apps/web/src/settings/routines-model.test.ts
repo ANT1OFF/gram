@@ -2,7 +2,7 @@ import {
   DEFAULT_CHARTER,
   type ProjectId,
   type RoutineId,
-  type WorkerModel,
+  type PinnedWorkerModel,
   type WorkspaceRoutine,
 } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
@@ -17,7 +17,7 @@ import {
 } from "./routines-model";
 
 const shop = "p-shop" as ProjectId;
-const roster: WorkerModel[] = [
+const roster: PinnedWorkerModel[] = [
   { agent: "codex", model: "gpt-6.1-sol", useFor: "reviews", default: true },
 ];
 const triage: WorkspaceRoutine = {

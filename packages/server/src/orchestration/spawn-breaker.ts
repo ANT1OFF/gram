@@ -6,11 +6,13 @@ import type {
   OrchestratorCharter,
   Thread,
   ThreadId,
+  RosterModel,
   WorkerModel,
   WorkspaceId,
   WorkspaceState,
   AgentFailureKind,
 } from "@gram/contracts";
+import { rosterName } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -21,7 +23,7 @@ import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { HELD_RETRY_MS, heldWords } from "./limit-pause.ts";
 import type { OutboxState, StoredHeldBrief, StoredSpawnBreaker } from "./outbox.ts";
-import { admittedForRole, featureSlug, workerModelLabel, type RosterUnavailable } from "./rules.ts";
+import { admittedForRole, featureSlug, type RosterUnavailable } from "./rules.ts";
 import type { Authority, HeldSpawn, SpawnWorkerInput } from "./service/shape.ts";
 
 /** Long enough to absorb a burst and allow a login/network repair, without hourly lockouts. */
@@ -66,7 +68,7 @@ export const makeBreakerState = () => {
 };
 
 type Here = {
-  readonly roster: ReadonlyArray<WorkerModel>;
+  readonly roster: ReadonlyArray<RosterModel>;
   readonly unavailable: RosterUnavailable;
 };
 interface Dependencies {
@@ -83,7 +85,7 @@ interface Dependencies {
     charter: OrchestratorCharter,
     named: string | undefined,
     here?: Here,
-  ) => Effect.Effect<{ model: ModelRef }, AppToolError>;
+  ) => Effect.Effect<{ model: ModelRef; name: string }, AppToolError>;
   readonly rosterHere: (
     roster: ReadonlyArray<WorkerModel>,
     charter: OrchestratorCharter,
@@ -254,7 +256,9 @@ export const makeSpawnBreaker = (deps: Dependencies) =>
         const picked = yield* deps
           .workerModel("spawn_worker", caller, workspace.charter, input.model, here)
           .pipe(Effect.option);
-        return Option.isNone(picked) ? undefined : { model: picked.value.model, here };
+        return Option.isNone(picked)
+          ? undefined
+          : { model: picked.value.model, name: picked.value.name, here };
       });
     return {
       gate: (callerId: ThreadId, input: SpawnWorkerInput): Effect.Effect<HeldSpawn | undefined> =>
@@ -298,7 +302,7 @@ export const makeSpawnBreaker = (deps: Dependencies) =>
             callerId,
             projectName,
             input: Object.fromEntries(
-              Object.entries({ ...rest, model: workerModelLabel(picked.model) }).filter(
+              Object.entries({ ...rest, model: picked.name }).filter(
                 ([, value]) => value !== undefined,
               ),
             ) as StoredHeldBrief["input"],
@@ -328,7 +332,7 @@ export const makeSpawnBreaker = (deps: Dependencies) =>
               ? []
               : [
                   {
-                    model: workerModelLabel(model),
+                    model: rosterName(model),
                     ...(model.useFor ? { useFor: model.useFor } : {}),
                     ...(model.profileId === undefined ? {} : { gateway: true as const }),
                   },

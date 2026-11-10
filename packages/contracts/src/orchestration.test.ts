@@ -60,7 +60,7 @@ import {
   DEFAULT_CHARTER,
   leftOutBy,
   narrowAllowlist,
-  modelRefOf,
+  modelSlotOf,
   newWorkspaceCharter,
   OrchestratorCharter,
   JoinTarget,
@@ -362,7 +362,7 @@ describe("orchestration schemas", () => {
       ],
     });
     expectRoundTrip(OrchestratorCharter, roster);
-    expect(modelRefOf(roster.workerModels![1]!)).toEqual({
+    expect(modelSlotOf(roster.workerModels![1]!)).toEqual({
       agent: "codex",
       model: "gpt-6.1-sol",
       profileId: "gw",

@@ -11,10 +11,12 @@ import {
   type PermissionMode,
   type Project,
   type ProjectId,
+  type PinnedWorkerModel,
   type WorkerModel,
   type Workspace,
 } from "@gram/contracts";
 
+import { sameSlot } from "./model-slots";
 import { agentLabel } from "@/agents/agent-label";
 import type { SaveWorkspaceInput } from "@/api/types";
 import { ADMITTED_AGENTS } from "@/orchestration/admitted";
@@ -144,13 +146,13 @@ export const addWorkerModel = (
   models: readonly WorkerModel[],
   model: WorkerModel,
 ): readonly WorkerModel[] =>
-  models.some((each) => sameModelRef(each, model)) ? models : [...models, model];
+  models.some((each) => sameSlot(each, model)) ? models : [...models, model];
 
 /** A worker model with `note` as what it is for; a blank note is no note. */
-export const withUseFor = (model: WorkerModel, note: string): WorkerModel => {
+export const withUseFor = <T extends WorkerModel>(model: T, note: string): T => {
   const { useFor: _was, ...rest } = model;
   const trimmed = note.trim();
-  return trimmed === "" ? rest : { ...rest, useFor: trimmed };
+  return (trimmed === "" ? rest : { ...rest, useFor: trimmed }) as T;
 };
 
 /** The roster with entry `index`'s note replaced. */
@@ -367,13 +369,16 @@ export interface WorkerModelContext {
 
 /** Local entries use the local CLI; only an explicit profile uses a gateway. Warn without blocking saves. */
 export const workerModelIssues = (
-  charter: Pick<OrchestratorCharter, "workerModels" | "autonomy">,
+  /** The roster as it runs here (`useRosterHere`), entries that follow a tier resolved. */
+  charter: Pick<OrchestratorCharter, "autonomy"> & {
+    readonly workerModels?: readonly PinnedWorkerModel[] | undefined;
+  },
   context: WorkerModelContext = {},
 ): readonly WorkerModelIssue[] => {
   const { profiles, ownModels } = context;
   const lists = (
     profile: NonNullable<WorkerModelContext["profiles"]>[number],
-    model: WorkerModel,
+    model: PinnedWorkerModel,
   ): boolean =>
     (profile.models ?? []).some((each) => each.id === model.model) ||
     (context.customModels?.[model.agent] ?? []).includes(model.model);
@@ -449,7 +454,7 @@ export const sameRoster = (
     roster.every((model, i) => {
       const other = template[i]!;
       return (
-        sameModelRef(model, other) &&
+        sameSlot(model, other) &&
         (model.useFor ?? "") === (other.useFor ?? "") &&
         (model.default === true) === (other.default === true)
       );

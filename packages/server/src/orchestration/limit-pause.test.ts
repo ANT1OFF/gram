@@ -17,6 +17,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl, type FakeSession } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
+import { subscriptionAgents } from "./limit-pause.ts";
 import { Orchestration } from "./service.ts";
 import {
   makeWorld,
@@ -329,4 +330,25 @@ describe.skipIf(!hasGit)("pausing new workers near a limit", () => {
       }),
     ),
   );
+});
+
+describe("subscriptionAgents", () => {
+  it("counts a tier entry on either harness unless it keeps to one, and never a gateway's", () => {
+    expect(
+      [
+        ...subscriptionAgents(
+          {
+            workerModels: [
+              { tier: "scoped" },
+              { agent: "codex", model: "gpt-6.1-sol", profileId: "gw" as never },
+            ],
+          },
+          undefined,
+        ),
+      ].toSorted(),
+    ).toEqual(["claude", "codex"]);
+    expect([
+      ...subscriptionAgents({ workerModels: [{ tier: "top", agent: "claude" }] }, undefined),
+    ]).toEqual(["claude"]);
+  });
 });

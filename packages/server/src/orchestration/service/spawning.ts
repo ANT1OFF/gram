@@ -21,6 +21,9 @@ import {
   type ThreadId,
   type UserInput,
   type WorkspaceId,
+  aboveHigh,
+  modelRefOf,
+  rosterName,
 } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -639,9 +642,9 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                     ? undefined
                     : yield* rosterHere(state.charter.workerModels, state.charter),
                 )
-              : {
+              : yield* Effect.gen(function* () {
                   // The user's pick, checked against the roster as it runs now, else its default.
-                  model: yield* taskWorkers(state.charter, caller.model, byUser.model).pipe(
+                  const model = yield* taskWorkers(state.charter, caller.model, byUser.model).pipe(
                     Effect.mapError((error) => toolError(tool, error.message)),
                     Effect.flatMap((workers) =>
                       workers.worker === undefined
@@ -650,9 +653,19 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                           )
                         : Effect.succeed(workers.worker),
                     ),
-                  ),
-                  instead: undefined,
-                };
+                  );
+                  const entry = (
+                    state.charter.workerModels === undefined
+                      ? undefined
+                      : yield* rosterHere(state.charter.workerModels, state.charter)
+                  )?.roster.find((each) => sameTaskModel(modelRefOf(each), model));
+                  return {
+                    model,
+                    name: entry === undefined ? workerModelLabel(model) : rosterName(entry),
+                    follows: entry?.tier !== undefined,
+                    instead: undefined,
+                  };
+                });
           const chosen = picked.model;
           const hostId =
             input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
@@ -687,10 +700,20 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               `${picked.instead.of} is unavailable here (${picked.instead.why}), so this worker runs on ${workerModelLabel(chosen)}. Tell the user.`,
             );
           }
-          const effort =
-            input.effort !== undefined && efforts.includes(input.effort) ? input.effort : undefined;
-          if (input.effort !== undefined && effort === undefined) {
-            warnings.push(`${chosen.model} doesn't take effort ${input.effort}; it was left out.`);
+          // An entry that follows a tier keeps the recommendation's ceiling: an effort asked above
+          // high runs at high. A pinned entry takes any effort its model lists.
+          const asked =
+            picked.follows && input.effort !== undefined && aboveHigh(input.effort)
+              ? "high"
+              : input.effort;
+          if (asked !== input.effort) {
+            warnings.push(
+              `${picked.name} follows the recommendation, whose effort stops at high, so this worker runs at high rather than ${input.effort}.`,
+            );
+          }
+          const effort = asked !== undefined && efforts.includes(asked) ? asked : undefined;
+          if (asked !== undefined && effort === undefined) {
+            warnings.push(`${chosen.model} doesn't take effort ${asked}; it was left out.`);
           }
           // A charter entry comes whole, its effort included. Without a list the model is the
           // orchestrator's own, whose effort was chosen for orchestrating and isn't handed on.

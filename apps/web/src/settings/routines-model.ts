@@ -12,7 +12,7 @@ import {
   type RoutineEventKind,
   type RoutineRun,
   type RoutineState,
-  type WorkerModel,
+  type PinnedWorkerModel,
   type WorkspaceRoutine,
 } from "@gram/contracts";
 
@@ -199,7 +199,7 @@ export const routineOfForm = (
   options: {
     readonly editing?: WorkspaceRoutine | undefined;
     readonly others: readonly WorkspaceRoutine[];
-    readonly roster: readonly WorkerModel[];
+    readonly roster: readonly PinnedWorkerModel[];
   },
 ): { readonly routine: WorkspaceRoutine } | { readonly error: string } => {
   const name = form.name.trim();

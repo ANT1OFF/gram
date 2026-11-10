@@ -1,7 +1,7 @@
-import type { WorkerModel } from "@gram/contracts";
+import type { PinnedWorkerModel } from "@gram/contracts";
 
 /** A saved roster with a gateway model that names no profile: Opus, Sol and Haiku. */
-export const SOL_ROSTER: ReadonlyArray<WorkerModel> = [
+export const SOL_ROSTER: ReadonlyArray<PinnedWorkerModel> = [
   {
     speed: "standard",
     agent: "claude",

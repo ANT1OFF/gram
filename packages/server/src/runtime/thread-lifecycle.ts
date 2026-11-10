@@ -32,6 +32,7 @@ import {
   type GetRuntime,
 } from "./runtime-state.ts";
 import { discoverDefaultModel } from "./default-model.ts";
+import { resolveSlot } from "./model-slots.ts";
 import { basename } from "node:path";
 import { samePath } from "@gram/git";
 import type { AgentHosts } from "./agent-hosts.ts";
@@ -222,7 +223,9 @@ export const makeThreadLifecycle = ({
     Effect.gen(function* () {
       const settings = yield* store.getSettings;
       const model =
-        input.model ?? settings.agents.defaultModel ?? (yield* discoverDefaultModel(hosts));
+        input.model ??
+        (yield* resolveSlot(hosts, settings.agents.defaultModel)) ??
+        (yield* discoverDefaultModel(hosts));
       const project = yield* store.ensureProject({
         root: input.projectRoot,
         name: basename(input.projectRoot) || input.projectRoot,

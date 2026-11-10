@@ -19,6 +19,7 @@ import {
 } from "../persistence/automatic-dream-state.ts";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { AgentHosts } from "../runtime/agent-hosts.ts";
+import { resolveSlot } from "../runtime/model-slots.ts";
 import type { ThreadArchive } from "./archive.ts";
 import { readOutbox } from "./outbox.ts";
 import { admittedForRole } from "./rules.ts";
@@ -36,7 +37,7 @@ export const defaultDreamModel = (
   hosts: AgentHosts["Service"],
 ): Effect.Effect<ModelRef> =>
   Effect.gen(function* () {
-    const preferred = settings.agents.defaultModel;
+    const preferred = yield* resolveSlot(hosts, settings.agents.defaultModel);
     if (preferred !== undefined)
       return admittedForRole(preferred.agent, "dream")
         ? preferred

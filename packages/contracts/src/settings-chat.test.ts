@@ -13,7 +13,7 @@ import {
   type SettingsChange,
   type SettingsWorld,
 } from "./settings-chat.ts";
-import { DEFAULT_CHARTER, type WorkspaceState } from "./workspaces.ts";
+import { DEFAULT_CHARTER, type PinnedWorkerModel, type WorkspaceState } from "./workspaces.ts";
 
 const workspace: WorkspaceState = {
   workspace: {
@@ -153,7 +153,7 @@ describe("settings by chat: planning", () => {
       "workspace.workerModels",
     ]);
     expect(charterAfter(result)?.maxConcurrentWorkers).toBe(4);
-    const roster = charterAfter(result)?.workerModels ?? [];
+    const roster = (charterAfter(result)?.workerModels ?? []) as ReadonlyArray<PinnedWorkerModel>;
     expect(roster.map((model) => `${model.agent}:${model.model}`)).toEqual([
       "claude:opus",
       "codex:gpt-6.1-sol",
@@ -258,9 +258,11 @@ describe("settings by chat: planning", () => {
     const result = plan([
       { op: "add", key: "agents.workerModels", item: { agent: "codex", model: "gpt-5.5" } },
     ]);
-    expect(settingsAfter(result)?.agents.workerModels?.map((model) => model.model)).toEqual([
-      "gpt-5.5",
-    ]);
+    expect(
+      ((settingsAfter(result)?.agents.workerModels ?? []) as ReadonlyArray<PinnedWorkerModel>).map(
+        (model) => model.model,
+      ),
+    ).toEqual(["gpt-5.5"]);
   });
 
   it("refuses values the Settings schemas refuse, naming the key", () => {

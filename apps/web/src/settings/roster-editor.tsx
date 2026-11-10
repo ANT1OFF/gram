@@ -4,7 +4,9 @@ import {
   type AgentKind,
   type ModelRef,
   type OrchestratorCharter,
+  type PinnedWorkerModel,
   type ReasoningVariant,
+  type RosterModel,
   type WorkerModel,
 } from "@gram/contracts";
 import { Popover } from "@base-ui/react/popover";
@@ -33,13 +35,13 @@ import { ADMITTED_AGENTS } from "@/orchestration/admitted";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { Field, inputCls, LONG_COPY, WhyDisabled } from "./fields";
+import { sameSlot, useDefaultModel, useRosterHere, useSlotModel } from "./model-slots";
 import {
   addWorkerModel,
   defaultWorkerIndex,
   DREAM_HARNESS_NOTE,
   HARNESS_GENERAL_NOTE,
   harnessNotes,
-  sameModelRef,
   withDefaultWorker,
   withOrchestratorModel,
   withUseFor,
@@ -86,10 +88,12 @@ const modelName = (model: ModelRef): string => `${agentLabel(model.agent)} ${mod
  */
 function UseForField({
   model,
+  placeholder = NOTE_PLACEHOLDER,
   disabled,
   onCommit,
 }: {
-  model: WorkerModel;
+  model: PinnedWorkerModel;
+  placeholder?: string | undefined;
   disabled: boolean;
   onCommit: (note: string) => void;
 }) {
@@ -109,7 +113,7 @@ function UseForField({
       data-testid="worker-model-note"
       aria-label={`What ${modelName(model)} is for`}
       className={cn(inputCls, "h-7 max-w-none text-meta")}
-      placeholder={NOTE_PLACEHOLDER}
+      placeholder={placeholder}
       maxLength={WORKER_MODEL_NOTE_MAX}
       spellCheck={false}
       value={draft}
@@ -136,7 +140,7 @@ function EffortField({
   disabled,
   onChange,
 }: {
-  model: WorkerModel;
+  model: PinnedWorkerModel;
   disabled: boolean;
   onChange: (variant: ReasoningVariant | undefined) => void;
 }) {
@@ -178,9 +182,9 @@ function WorkerSpeedField({
   disabled,
   onChange,
 }: {
-  model: WorkerModel;
+  model: PinnedWorkerModel;
   disabled: boolean;
-  onChange: (model: WorkerModel) => void;
+  onChange: (model: PinnedWorkerModel) => void;
 }) {
   const models = useModels(model.agent, model.profileId);
   return (
@@ -197,9 +201,21 @@ function WorkerSpeedField({
 }
 
 /** `model` at `variant`, or at its model's own default effort. */
-const withVariant = (model: WorkerModel, variant: ReasoningVariant | undefined): WorkerModel => {
+const withVariant = (
+  model: PinnedWorkerModel,
+  variant: ReasoningVariant | undefined,
+): PinnedWorkerModel => {
   const { variant: _was, ...rest } = model;
   return variant === undefined ? rest : { ...rest, variant };
+};
+
+/**
+ * A roster row as the user pinned it: the model it runs on here and their own note, no longer
+ * following its tier. Picking a model, an effort or a speed for a following row pins it.
+ */
+const pinView = (view: RosterModel, stored: WorkerModel): PinnedWorkerModel => {
+  const { tier: _tier, tierAgent: _tierAgent, useFor: _useFor, ...model } = view;
+  return stored.useFor === undefined ? model : { ...model, useFor: stored.useFor };
 };
 
 /**
@@ -218,10 +234,11 @@ function OrchestratorModelField({
   onChange: (charter: OrchestratorCharter) => void;
 }) {
   const selectId = useId();
-  const defaultModel = useServerSettings((state) => state.settings?.agents.defaultModel);
+  const defaultModel = useDefaultModel();
   const own = charter.orchestratorModel;
+  const ownHere = useSlotModel(own);
   const [pending, setPending] = useState<AgentChoice>();
-  const shown = pending ?? choiceFromModel(own ?? defaultModel ?? DEFAULT_ORCHESTRATOR_MODEL);
+  const shown = pending ?? choiceFromModel(ownHere ?? defaultModel ?? DEFAULT_ORCHESTRATOR_MODEL);
   const pick = (next: AgentChoice) => {
     // A gateway agent's model is filled in once its models are listed; nothing is saved before.
     if (next.model === "") {
@@ -335,7 +352,7 @@ const ownIds = (listed: ReturnType<typeof useModelsSettled>) =>
 
 /** What an entry is checked against: the profiles, and what Codex offer on their own. */
 function useWorkerModelIssues(
-  charter: Pick<OrchestratorCharter, "workerModels" | "autonomy">,
+  charter: Parameters<typeof workerModelIssues>[0],
 ): readonly WorkerModelIssue[] {
   const api = useApi();
   const { data: profiles } = useQuery({
@@ -413,9 +430,10 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
     queryFn: () => api.listProfiles(),
   });
   const [adding, setAdding] = useState(false);
+  const orchestratorHere = useSlotModel(charter.orchestratorModel);
+  const defaultHere = useDefaultModel();
   const startingChoice = (): AgentChoice => {
-    const selected =
-      charter.orchestratorModel ?? useServerSettings.getState().settings?.agents.defaultModel;
+    const selected = orchestratorHere ?? defaultHere;
     return {
       agent: selected?.agent ?? "claude",
       model: "",
@@ -426,18 +444,20 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
   const [choice, setChoice] = useState<AgentChoice>(startingChoice);
   const [note, setNote] = useState("");
   const models = charter.workerModels ?? [];
+  // Rows show what each entry runs on here; an entry that follows a tier is resolved.
+  const views = useRosterHere(models);
   const fallback = defaultWorkerIndex(models);
-  const issues = useWorkerModelIssues(charter);
+  const issues = useWorkerModelIssues({ ...charter, workerModels: views });
   // Checked before it is added, so an entry that can't run here says so while it is only a choice.
   const candidate = choice.model === "" ? undefined : withUseFor(choiceModel(choice), note);
   const candidateIssue = useWorkerModelIssues({
     ...charter,
-    workerModels: candidate === undefined ? models : [...models, candidate],
+    workerModels: candidate === undefined ? views : [...views, candidate],
   }).find((issue) => candidate !== undefined && issue.index === models.length);
   // The default model is what an orchestrator following it, and a worker with no roster, runs on.
-  const defaultAgent = useServerSettings((state) => state.settings?.agents.defaultModel?.agent);
+  const defaultAgent = defaultHere?.agent;
   const notes = harnessNotes(
-    [...models, ...(charter.orchestratorModel === undefined ? [] : [charter.orchestratorModel])],
+    [...views, ...(orchestratorHere === undefined ? [] : [orchestratorHere])],
     defaultAgent,
   );
   const profileName = (model: ModelRef): string | undefined =>
@@ -445,7 +465,7 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
       ? undefined
       : (profiles?.find((profile) => profile.id === model.profileId)?.name ?? model.profileId);
   const replace = (index: number, next: WorkerModel) => {
-    if (models.some((model, i) => i !== index && sameModelRef(model, next))) return;
+    if (models.some((model, i) => i !== index && sameSlot(model, next))) return;
     onChange(
       withWorkerModels(
         charter,
@@ -488,7 +508,8 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
           {models.length > 0 && (
             <ul className="flex flex-col gap-1.5">
               <PresenceList>
-                {models.map((model, index) => {
+                {views.map((model, index) => {
+                  const stored = models[index]!;
                   const issue = issues.find((each) => each.index === index);
                   const profile = profileName(model);
                   const isDefault = index === fallback;
@@ -503,6 +524,7 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
                       ])}
                       data-testid="worker-model"
                       data-agent={model.agent}
+                      data-tier={model.tier}
                       data-default={isDefault || undefined}
                       data-unavailable={issue?.unavailable === undefined ? undefined : true}
                       className={cn(
@@ -523,12 +545,14 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
                           <WorkerSpeedField
                             model={model}
                             disabled={disabled}
-                            onChange={(next) => replace(index, next)}
+                            onChange={(next) => replace(index, pinView({ ...next }, stored))}
                           />
                           <EffortField
                             model={model}
                             disabled={disabled}
-                            onChange={(variant) => replace(index, withVariant(model, variant))}
+                            onChange={(variant) =>
+                              replace(index, pinView({ ...withVariant(model, variant) }, stored))
+                            }
                           />
                           {profile !== undefined && (
                             <span className="shrink-0 text-meta text-muted-foreground">
@@ -578,7 +602,12 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
                         </span>
                       </div>
                       <UseForField
-                        model={model}
+                        model={pinView(model, stored)}
+                        placeholder={
+                          model.tier !== undefined && stored.useFor === undefined
+                            ? model.useFor
+                            : undefined
+                        }
                         disabled={disabled}
                         onCommit={(next) =>
                           onChange(withWorkerModels(charter, withWorkerNote(models, index, next)))

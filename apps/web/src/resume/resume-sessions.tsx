@@ -12,9 +12,9 @@ import { Button } from "@/components/ui/button";
 import { useAvailableAgents } from "@/composer/agent-fields";
 import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 import { flushServerEvents, useThreadsStore } from "@/stores/threads";
+import { useDefaultModel } from "@/settings/model-slots";
 
 const SESSION_LIMIT = 50;
 
@@ -94,7 +94,7 @@ export function resumeModel(agent: AgentKind, defaultModel: ModelRef | undefined
 }
 
 export function useResumeModel() {
-  const defaultModel = useServerSettings((s) => s.settings?.agents.defaultModel);
+  const defaultModel = useDefaultModel();
   return (agent: AgentKind) => resumeModel(agent, defaultModel);
 }
 

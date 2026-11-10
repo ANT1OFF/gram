@@ -26,6 +26,7 @@ import {
   type ModelRef,
   type OrchestratorCharter,
   type ThreadId,
+  type PinnedWorkerModel,
   type WorkspaceRoutine,
   type WorkspaceState,
 } from "@gram/contracts";
@@ -89,7 +90,11 @@ const shown = (routine: WorkspaceRoutine, nextRunAt: number | undefined) => ({
 /** One of the charter's worker models, by `agent:model` or a bare id one entry has. */
 const modelOf = (tool: string, charter: OrchestratorCharter, named: string) =>
   Effect.gen(function* () {
-    const roster = charter.workerModels ?? [];
+    // A routine records a concrete model, so it names a pinned entry; one that follows a tier is
+    // resolved on each spawn instead, and a routine without `model` gets the default that way.
+    const roster = (charter.workerModels ?? []).filter(
+      (entry): entry is PinnedWorkerModel => !("tier" in entry),
+    );
     const matches = roster.filter(
       (entry) => workerModelLabel(entry) === named || entry.model === named,
     );

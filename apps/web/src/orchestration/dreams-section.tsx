@@ -34,7 +34,6 @@ import { cn } from "@/lib/utils";
 import { ExpandPresence, PresenceItem, PresenceList, Shimmer } from "@/motion";
 import { PanelMessage } from "@/panels/panel-message";
 import { useLayoutStore } from "@/stores/layout";
-import { useServerSettings } from "@/settings-sync/store";
 import { projectNameOf } from "@/settings/workspace-settings-model";
 import { StatePill } from "@/thread/orchestration-cards";
 import { diffStat, lineDiff, usd } from "@/thread/orchestration-model";
@@ -71,6 +70,7 @@ import {
   type ScopedPreview,
 } from "./memory-model";
 import { InlineConfirm } from "./inline-confirm";
+import { useDefaultModel } from "@/settings/model-slots";
 
 const SECTION = "flex flex-col gap-2 rounded-(--radius-md) border border-edge bg-card/40 p-3";
 const INPUT =
@@ -121,7 +121,7 @@ function StartFlow({
   const [includeMemory, setIncludeMemory] = useState(false);
   const [projectIds, setProjectIds] = useState<readonly ProjectId[]>(state.workspace.projectIds);
   const [ownModel, setOwnModel] = useState(false);
-  const defaultModel = useServerSettings((s) => s.settings?.agents.defaultModel);
+  const defaultModel = useDefaultModel();
   const nameOf = useModelNames([defaultModel]);
   const [choice, setChoice] = useState<AgentChoice>(() => choiceFromModel(defaultModel));
   const selectedModel = ownModel

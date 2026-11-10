@@ -61,6 +61,7 @@ import {
   isOpenQuestion,
   workerAnswerMessage,
   workerDismissMessage,
+  firstChoiceOf,
 } from "@gram/contracts";
 
 import { createChannel } from "./channel";
@@ -375,7 +376,8 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       title: `Orchestrator · ${state.workspace.name}`,
       mode: orchestrationMode(settings),
     });
-    const own = state.charter.orchestratorModel;
+    const saved = state.charter.orchestratorModel;
+    const own = saved === undefined ? undefined : firstChoiceOf(saved);
     const thread: Thread = {
       ...created,
       role: "orchestrator",
