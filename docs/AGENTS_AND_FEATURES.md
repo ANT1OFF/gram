@@ -425,6 +425,36 @@ re-enables lockfile overlap advice. This affects advisory overlap only, not Git
 conflict detection, file counts or merge checks. Configure each workspace to suit
 its repositories; no project-specific files are excluded by default.
 
+## Permission modes by harness
+
+The composer's modes mean the same thing on both harnesses: **Ask** asks before each edit and
+command, **Accept edits** asks only before commands, **Plan** reads and plans, **Auto** lets the
+agent's own reviewer decide and asks you only when it can't, and **Bypass** never asks. How each
+CLI holds them differs:
+
+| Mode                    | Claude Code                                                            | Codex                                                                                                                              |
+| ----------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Ask, Accept edits, Plan | Claude Code's own mode                                                 | `on-request` approvals in the `workspace-write` sandbox (no network); you review each request                                      |
+| Auto                    | Claude Code's auto mode: its classifier decides each permission prompt | `on-request` in the sandbox with `approvals_reviewer = "auto_review"`, a Codex reviewer agent that approves or denies each request |
+| Bypass                  | `bypassPermissions`                                                    | `never` with `danger-full-access`; under the outward gate `untrusted`, so Gram sees every command                                  |
+
+**Codex's Auto** needs Codex 0.166.0 or newer and a thread with no outward gate: a plain thread, or
+an orchestrator or worker at Full autonomy. Its reviewer answers in your place, so a request it
+decides never becomes a card. A denial goes back to the agent, which tries a safer way or says
+what stayed blocked, and the thread shows the denial and the reviewer's reason as a notice. So
+does a review that timed out, whose action didn't run. Under Supervised and Publish the reviewer
+would answer the outward gate's push or merge for you, so there, and on an older Codex, `auto` is
+not Codex's Auto. Orchestrators and workers whose mode would be `auto` start in Bypass instead,
+where the gate still asks, as before. A thread switched to `auto` there runs and shows `default`
+(Ask). On Codex 0.166.0 or newer, and under the gate on any version, every other mode names you
+as Codex's reviewer, whatever your Codex config says.
+
+**Claude Code's Auto** routes most permission prompts to its classifier, including commands its
+shell parser can't analyze, such as zsh expansion flags. A dangerous removal (`rm` of a system,
+home or workspace directory, or of a target it can't resolve) is never the classifier's to allow.
+Where nobody can be shown a dialog, as in Gram's sessions, Claude Code denies it and tells the agent
+not to work around it. This is read from Claude Code 2.1.319, not measured live.
+
 ## App-tool approval results
 
 Supervised and Publish workspaces can run Codex orchestrators and workers on your

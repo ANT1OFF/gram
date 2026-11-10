@@ -19,6 +19,8 @@ import { startupDiagnostic } from "./startup-diagnostic.ts";
 import type { ServerNotification } from "./protocol/ServerNotification.ts";
 import type { FileUpdateChange } from "./protocol/v2/FileUpdateChange.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
+import type { ItemGuardianApprovalReviewCompletedNotification } from "./protocol/v2/ItemGuardianApprovalReviewCompletedNotification.ts";
+import type { GuardianApprovalReviewAction } from "./protocol/v2/GuardianApprovalReviewAction.ts";
 import {
   addCodexCounts,
   codexCounts,
@@ -93,6 +95,11 @@ export interface CodexMapper {
   flush(): Array<AgentEvent>;
   /** The status for an approval card going up, when `answersApprovals` kept Codex's own flag back. */
   awaitingApproval(): Array<AgentEvent>;
+  /**
+   * True while Codex's automatic approvals reviewer (`auto_review`) is deciding a request of this
+   * thread's: Codex flags `waitingOnApproval` then, though nobody but the reviewer is asked.
+   */
+  autoReviewing(): boolean;
   /**
    * The session sent `thread/compact/start` (`true`): the next compaction is the user's, not
    * Codex's; or the request failed (`false`). A turn ending takes it back too.
@@ -332,10 +339,65 @@ const chunk = (t: Turn, c: Chunk): AgentEvent => ({
   chunk: c,
 });
 
+const clip = (text: string, max = 120): string =>
+  text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+
+/** What Codex's automatic reviewer was asked about, in a few words. */
+const reviewedAction = (action: GuardianApprovalReviewAction): string => {
+  switch (action.type) {
+    case "command":
+      return `\`${clip(action.command)}\``;
+    case "execve":
+      return `\`${clip([action.program, ...action.argv.slice(1)].join(" "))}\``;
+    case "writeStdin":
+      return "input to a running command";
+    case "applyPatch":
+      return action.files.length === 1
+        ? "an edit to 1 file"
+        : `an edit to ${action.files.length} files`;
+    case "networkAccess":
+      return `network access to ${action.host}`;
+    case "mcpToolCall":
+      return `${action.toolTitle ?? action.toolName} on ${action.connectorName ?? action.server}`;
+    case "requestPermissions":
+      return "more permissions";
+  }
+};
+
+/**
+ * The notice for a finished automatic review, or none: an approval ran as asked, and an aborted
+ * review went with its turn. A denial and a review that couldn't finish didn't run, and the agent
+ * was told so.
+ */
+export const autoReviewNotice = (
+  p: Pick<ItemGuardianApprovalReviewCompletedNotification, "review" | "action">,
+): AgentEvent | undefined => {
+  const what = reviewedAction(p.action);
+  const why = p.review.rationale?.trim();
+  switch (p.review.status) {
+    case "denied":
+      return {
+        type: "notice",
+        level: "warning",
+        message: `Codex's auto-review denied ${what}${why ? `: ${why}` : "."}`,
+      };
+    case "timedOut":
+      return {
+        type: "notice",
+        level: "warning",
+        message: `Codex's auto-review timed out on ${what}, so it didn't run.`,
+      };
+    default:
+      return undefined;
+  }
+};
+
 export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
   const gateway = options.gateway === true;
   let turn: Turn | undefined;
   let lastStatus: AgentStatus | undefined;
+  /** `item/autoApprovalReview/started` reviews with no `completed` yet; a turn's end drops them. */
+  const reviews = new Set<string>();
   let idlePending = false;
   const usageLedger = makeCodexUsageLedger(options.freshSession);
   let contextWindow: number | undefined;
@@ -572,6 +634,7 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
   ) => {
     const t = turn;
     if (t === undefined) return;
+    reviews.clear();
     for (const [id, activity] of compactions) {
       // An item with no completion never establishes a successful compaction.
       observeCompaction(id, t.id, activity, reason === "completed" ? "unfinished" : reason);
@@ -1008,6 +1071,26 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
         }
         break;
       }
+      // Codex's automatic approvals reviewer (`auto_review`) answers in the user's place, so none of
+      // it is a card. Its decision reaches the agent as the tool's result; a denial or a review that
+      // couldn't finish is a notice too, so the user sees what was held back and why.
+      case "item/autoApprovalReview/started":
+        reviews.add(notification.params.reviewId);
+        if (lastStatus === "awaitingApproval" && options.answersApprovals?.() === true)
+          out.push(...status("running"));
+        break;
+      case "item/autoApprovalReview/completed": {
+        reviews.delete(notification.params.reviewId);
+        const notice = autoReviewNotice(notification.params);
+        if (notice !== undefined) out.push(notice);
+        break;
+      }
+      // Every later command of the turn goes to the reviewer before it runs; nothing to show.
+      case "autoApprovalReview/strictReviewRequired":
+        break;
+      case "guardianWarning":
+        out.push({ type: "notice", level: "warning", message: notification.params.message });
+        break;
       case "serverRequest/resolved":
         out.push({
           type: "requestResolved",
@@ -1098,6 +1181,7 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
     map,
     changes: (itemId) => fileChanges.get(itemId),
     awaitingApproval: () => status("awaitingApproval"),
+    autoReviewing: () => reviews.size > 0,
     compactionRequested: (pending) => {
       manualCompaction = pending;
     },

@@ -360,6 +360,47 @@ describe.skipIf(!hasGit)("orchestration service", () => {
     ),
   );
 
+  for (const [autonomy, autoReviewReady, expected] of [
+    ["full", true, "auto"],
+    ["full", false, "bypassPermissions"],
+    ["supervised", true, "bypassPermissions"],
+    ["publish", true, "bypassPermissions"],
+  ] as const)
+    it.effect(
+      `starts a Codex worker at ${autonomy}, automatic reviewer ${autoReviewReady}, in ${expected}`,
+      () =>
+        inServer((world) =>
+          Effect.gen(function* () {
+            const fake = yield* FakeAgentControl;
+            yield* fake.setNativeGateReady(true);
+            yield* fake.setAutoReviewReady(autoReviewReady);
+            const orchestration = yield* Orchestration;
+            const project = yield* openProject(world);
+            const native = { agent: "codex", model: "fake-opus" } as const;
+            const state = yield* orchestration.saveWorkspace({
+              name: "Codex auto",
+              projectIds: [project.id],
+              homeProjectId: project.id,
+            });
+            yield* orchestration.setCharter(state.workspace.id, {
+              ...DEFAULT_CHARTER,
+              autonomy,
+              orchestratorModel: { agent: "claude", model: "fake-opus" },
+              workerModels: [{ ...native, default: true }],
+              workerMode: "auto",
+            });
+            const root = yield* orchestration.open({ projectId: project.id });
+            const session = yield* waitSent(root.id, 1);
+            yield* completeTurn(session);
+            const worker = yield* spawn(session, { feature: "native", model: "codex:fake-opus" });
+            expect(worker.thread.model).toEqual(native);
+            expect(worker.session.options.permissionMode).toBe(expected);
+            expect(worker.thread.mode).toBe(expected);
+          }),
+        ),
+      GIT_HEAVY,
+    );
+
   for (const autonomy of ["supervised", "publish"] as const) {
     for (const ready of [true, false]) {
       it.effect(

@@ -354,8 +354,9 @@ const plainCardText = (text: string): string =>
  * is asked in every mode, Bypass included, and for the one call only: the tool has said this call
  * is not one the mode or an earlier answer covers.
  *
- * An orchestrator or a worker is asked in every mode, and for the one call only. Codex has no Auto,
- * so such a thread *starts* in `bypassPermissions`: skipped there, a spawn over the charter's cap
+ * An orchestrator or a worker is asked in every mode, and for the one call only. Codex under the
+ * outward gate has no Auto (`hasAuto`), so such a thread *starts* in `bypassPermissions`, and in any
+ * mode Codex's automatic reviewer never sees these cards: skipped there, a spawn over the charter's cap
  * and a message to somebody else's thread would go unasked, and an answer remembered for the
  * session would turn "one worker more" into a standing grant for a thread nobody watches.
  *

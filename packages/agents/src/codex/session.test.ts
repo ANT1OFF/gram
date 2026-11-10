@@ -35,6 +35,7 @@ import {
   gatedHomeIsOwned,
   gateHoldsInMode,
   policyFor,
+  autoAvailable,
   unconfinedServers,
 } from "./session.ts";
 import { startupDiagnostic } from "./startup-diagnostic.ts";
@@ -457,6 +458,7 @@ describe("CodexHost.open", () => {
             model: "gpt-5.5",
             approvalPolicy: "on-request",
             sandbox: "workspace-write",
+            approvalsReviewer: "user",
             config: {
               mcp_servers: {
                 gram: {
@@ -937,14 +939,33 @@ describe("policyFor and the outward gate's helpers", () => {
       ["plan", sandboxed],
     ] as const;
     for (const [mode, policy] of table) {
+      // A CLI with no automatic reviewer is given no reviewer ungated, as before it existed.
       expect(policyFor(mode)).toEqual(policy);
       expect(policyFor(mode, false)).toEqual(policy);
-      expect(policyFor(mode, true)).toEqual(
-        mode === "bypassPermissions"
-          ? { approvalPolicy: "untrusted", sandbox: "danger-full-access" }
-          : policy,
-      );
+      expect(policyFor(mode, false, false)).toEqual(policy);
+      // Gated, the user reviews whatever the CLI, and only bypass changes its policy.
+      for (const autoReviewer of [false, true])
+        expect(policyFor(mode, true, autoReviewer)).toEqual({
+          ...(mode === "bypassPermissions"
+            ? { approvalPolicy: "untrusted", sandbox: "danger-full-access" }
+            : policy),
+          approvalsReviewer: "user",
+        });
+      // Ungated on a CLI with the reviewer: Auto is its automatic reviewer, every other mode the user.
+      expect(policyFor(mode, false, true)).toEqual({
+        ...policy,
+        approvalsReviewer: mode === "auto" ? "auto_review" : "user",
+      });
       expect(gateHoldsInMode(mode)).toBe(mode !== "dontAsk");
+    }
+  });
+
+  it("has Auto only ungated, on a CLI with the automatic reviewer", () => {
+    expect(autoAvailable(false, true)).toBe(true);
+    expect(autoAvailable(false, false)).toBe(false);
+    for (const gate of [true, "all", "irreversible"] as const) {
+      expect(autoAvailable(gate, true)).toBe(false);
+      expect(autoAvailable(gate, false)).toBe(false);
     }
   });
 
@@ -955,6 +976,155 @@ describe("policyFor and the outward gate's helpers", () => {
     expect(gatedHomeIsOwned("gateway", false)).toBe(false);
     expect(gatedHomeIsOwned("user", true)).toBe(false);
   });
+});
+
+const autoReview = (
+  phase: "started" | "completed",
+  reviewId: string,
+  status: string,
+  action: Record<string, unknown> = {
+    type: "command",
+    source: "shell",
+    command: "curl https://example.com",
+    cwd: "/repo",
+  },
+) =>
+  ({
+    method: `item/autoApprovalReview/${phase}`,
+    params: {
+      threadId: "thr_1",
+      turnId: "turn_9",
+      startedAtMs: 0,
+      ...(phase === "completed" ? { completedAtMs: 1, decisionSource: "agent" } : {}),
+      reviewId,
+      targetItemId: "call_1",
+      review: {
+        status,
+        riskLevel: status === "inProgress" ? null : "high",
+        userAuthorization: null,
+        rationale: status === "denied" ? "Sends workspace data to an unknown host." : null,
+      },
+      action,
+    },
+  }) as unknown as ServerNotification;
+
+describe("CodexSession in Auto", () => {
+  it.effect(
+    "opens an ungated auto session on Codex's automatic reviewer, which raises no card",
+    () =>
+      Effect.gen(function* () {
+        const h = harness();
+        const session = yield* openSession({ permissionMode: "auto" }).pipe(
+          Effect.provide(h.layer),
+        );
+        expect(h.calls[0]).toEqual([
+          "thread/start",
+          expect.objectContaining({
+            approvalPolicy: "on-request",
+            sandbox: "workspace-write",
+            approvalsReviewer: "auto_review",
+          }),
+        ]);
+        // Codex flags the thread as waiting while its reviewer decides; nobody else is asked.
+        h.push(autoReview("started", "rev_1", "inProgress"));
+        h.push(threadStatus("waitingOnApproval"));
+        h.push(autoReview("completed", "rev_1", "denied"));
+        h.push(threadStatus());
+        const events = yield* drain(session, 2);
+        expect(events).toEqual([
+          { type: "status", status: "running" },
+          {
+            type: "notice",
+            level: "warning",
+            message:
+              "Codex's auto-review denied `curl https://example.com`: Sends workspace data to an unknown host.",
+          },
+        ]);
+        expect(h.responses).toEqual([]);
+      }),
+  );
+
+  it.effect("shows a request that still reaches Gram during a review as a card", () =>
+    Effect.gen(function* () {
+      const h = harness();
+      const session = yield* openSession({ permissionMode: "auto" }).pipe(Effect.provide(h.layer));
+      h.push(autoReview("started", "rev_1", "inProgress"));
+      h.push(threadStatus("waitingOnApproval"));
+      h.push(commandRequest(4, "npm install"));
+      const events = yield* drain(session, 3);
+      expect(events[0]).toEqual({ type: "status", status: "running" });
+      expect(events[1]).toEqual({ type: "status", status: "awaitingApproval" });
+      expect(events[2]).toMatchObject({ type: "request", request: { kind: "approval" } });
+    }),
+  );
+
+  for (const [label, options] of [
+    ["under the outward gate", { model: gatewayModel, outwardGate: "all" as const }],
+    ["on a CLI older than the reviewer", { cliVersion: "0.160.0" }],
+    ["on a CLI whose version is unknown", { cliVersion: null }],
+    ["on a prerelease of the reviewer's version", { cliVersion: "0.166.0-alpha.1" }],
+  ] as const)
+    it.effect(`runs and reports auto as default ${label}`, () =>
+      Effect.gen(function* () {
+        const { model, outwardGate, ...rest } = {
+          model: undefined,
+          outwardGate: undefined,
+          cliVersion: undefined,
+          ...options,
+        };
+        const h = harness({
+          gateReady: true,
+          ...(rest.cliVersion === undefined ? {} : { cliVersion: rest.cliVersion }),
+        });
+        const session = yield* openSession({
+          permissionMode: "auto",
+          ...(model === undefined ? {} : { model }),
+          ...(outwardGate === undefined ? {} : { outwardGate }),
+        }).pipe(Effect.provide(h.layer));
+        const opened = h.calls[0]?.[1];
+        expect(opened).toMatchObject({ approvalPolicy: "on-request", sandbox: "workspace-write" });
+        if (outwardGate === undefined) expect(opened).not.toHaveProperty("approvalsReviewer");
+        else expect(opened).toMatchObject({ approvalsReviewer: "user" });
+        expect(yield* take(session, 4)).toContainEqual({ type: "mode", mode: "default" });
+
+        // A switch to auto there is reported as default too, and changes nothing Codex is told.
+        yield* session.setMode("auto");
+        yield* session.send({ text: "go" });
+        const turn = h.calls.filter(([m]) => m === "turn/start").at(-1)?.[1];
+        expect(turn).not.toHaveProperty("approvalPolicy");
+        expect(turn).not.toMatchObject({ approvalsReviewer: "auto_review" });
+      }),
+    );
+
+  it.effect("moves the reviewer with a mode switch, from the next turn", () =>
+    Effect.gen(function* () {
+      const h = harness();
+      const session = yield* openSession({ permissionMode: "default" }).pipe(
+        Effect.provide(h.layer),
+      );
+      expect(h.calls[0]?.[1]).toMatchObject({ approvalsReviewer: "user" });
+      yield* session.send({ text: "one" });
+      yield* session.setMode("auto");
+      yield* session.send({ text: "two" });
+      yield* session.setMode("acceptEdits");
+      yield* session.send({ text: "three" });
+      yield* session.setMode("bypassPermissions");
+      yield* session.send({ text: "four" });
+      const turns = h.calls.filter(([m]) => m === "turn/start").map(([, p]) => p);
+      expect(turns[0]).not.toHaveProperty("approvalPolicy");
+      expect(turns[1]).toMatchObject({
+        approvalPolicy: "on-request",
+        approvalsReviewer: "auto_review",
+        sandboxPolicy: { type: "workspaceWrite" },
+      });
+      expect(turns[2]).toMatchObject({ approvalPolicy: "on-request", approvalsReviewer: "user" });
+      expect(turns[3]).toMatchObject({
+        approvalPolicy: "never",
+        approvalsReviewer: "user",
+        sandboxPolicy: { type: "dangerFullAccess" },
+      });
+    }),
+  );
 });
 
 describe("CodexSession under the outward gate", () => {
@@ -986,6 +1156,7 @@ describe("CodexSession under the outward gate", () => {
         cwd: "/repo",
         approvalPolicy: "never",
         sandbox: "danger-full-access",
+        approvalsReviewer: "user",
       });
     }),
   );
@@ -1275,7 +1446,7 @@ describe("CodexSession under the outward gate", () => {
         permissionMode: "bypassPermissions",
       }).pipe(Effect.provide(h.layer));
       expect(h.openings).toEqual([["gateway", undefined]]);
-      expect(h.calls[0]?.[1]).not.toHaveProperty("approvalsReviewer");
+      expect(h.calls[0]?.[1]).toMatchObject({ approvalsReviewer: "user" });
       h.push(commandRequest(0, "git push"));
       expect(yield* drain(session, 1)).toEqual([
         { type: "request", request: expect.objectContaining({ scopes: ["once", "always"] }) },

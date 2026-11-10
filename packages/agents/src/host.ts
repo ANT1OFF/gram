@@ -398,6 +398,11 @@ export interface ListModelsOptions {
 export interface AgentHost {
   /** Fresh preparation check for a native login under Gram's outward gate; absent refuses. */
   readonly nativeGateReady?: Effect.Effect<boolean>;
+  /**
+   * Codex: whether its CLI here has the automatic approvals reviewer an ungated `auto` session runs
+   * on (`autoAvailable`), read without starting one. Absent: no such reviewer.
+   */
+  readonly autoReviewReady?: Effect.Effect<boolean>;
   /** Whether this build/platform offers the opt-in graceful workspace-switch contract. */
   readonly supportsWorkspaceSwitch?: boolean;
   /** Fresh subscription readiness; never treats a cached model catalog as authentication proof. */

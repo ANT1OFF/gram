@@ -104,10 +104,17 @@ export const ADMITTED: Readonly<Record<OrchestrationRole, ReadonlyArray<AgentKin
 const GATE_NEEDS_OWNED_HOME: ReadonlyArray<AgentKind> = ["codex"];
 
 /**
- * Agent kinds with no Auto. Codex's `auto` is the sandboxed on-request policy, where every network
- * need is a card. It does not report the downgrade `modeAfterDowngrade` waits for.
+ * Whether a thread of `kind` opened in `auto` gets its harness's own Auto, where the agent's
+ * classifier decides and the user is asked only when it can't. Claude Code's is its auto mode.
+ * Codex's is its automatic approvals reviewer (`approvalsReviewer: "auto_review"`), which only an
+ * ungated session on a CLI that has it gets (`autoReviewReady`): under the outward gate the reviewer
+ * would answer a push in the user's place. Anywhere else Codex's `auto` would be its sandboxed
+ * on-request policy, where every network need is a card.
  */
-const NO_AUTO: ReadonlyArray<AgentKind> = ["codex"];
+export const hasAuto = (
+  kind: AgentKind,
+  input: { readonly gate: OutwardGate | undefined; readonly autoReviewReady: boolean },
+): boolean => kind !== "codex" || (input.gate === undefined && input.autoReviewReady);
 
 /** Both supported Dream harnesses retain their existing gate requirements. */
 const DREAM_NEEDS_NO_GATE: ReadonlyArray<AgentKind> = [];
@@ -323,20 +330,22 @@ export const startMode = (
 ): PermissionMode => charter.workerMode ?? orchestrationMode(settings);
 
 /**
- * The mode an orchestrator or worker of `kind` starts in. A kind with no Auto (`NO_AUTO`) starts
- * where `modeAfterDowngrade` would have moved it, in `bypassPermissions`, in which its gate still
- * asks: a thread nobody watches that stops at every edit is no use. So does a charter's `auto`,
- * which a new workspace's names. Any other mode the charter names for workers stands, and an
- * orchestrator is given no charter to read one from.
+ * The mode an orchestrator or worker of `kind` starts in. One whose kind has no Auto here
+ * (`hasAuto`, which `auto` says: Claude, and Codex only where the caller found it) starts where
+ * `modeAfterDowngrade` would have moved it, in `bypassPermissions`, in which its gate still asks: a
+ * thread nobody watches that stops at every edit is no use. So does a charter's `auto`, which a new
+ * workspace's names. Any other mode the charter names for workers stands, and an orchestrator is
+ * given no charter to read one from.
  */
 export const startModeFor = (
   kind: AgentKind,
   settings: Settings,
   charter: Pick<OrchestratorCharter, "workerMode"> = {},
-): PermissionMode =>
-  NO_AUTO.includes(kind) && (charter.workerMode === undefined || charter.workerMode === "auto")
-    ? "bypassPermissions"
-    : startMode(settings, charter);
+  auto: boolean = kind !== "codex",
+): PermissionMode => {
+  const mode = startMode(settings, charter);
+  return !auto && mode === "auto" ? "bypassPermissions" : mode;
+};
 
 // ---------------------------------------------------------------------------------------------
 // Worker models

@@ -91,6 +91,7 @@ import {
   stageUpdate,
   startMode,
   startModeFor,
+  hasAuto,
   tidyNotes,
   toolAudience,
   USER_HOLD_IDLE_MS,
@@ -551,6 +552,37 @@ describe("modes", () => {
     expect(startModeFor("claude", settingsWith("default"))).toBe("auto");
     expect(startModeFor("claude", settingsWith("bypassPermissions"))).toBe("bypassPermissions");
     expect(startModeFor("codex", settingsWith("default"))).toBe("bypassPermissions");
+  });
+
+  it("gives Codex its Auto only ungated, on a CLI with the automatic reviewer; Claude always", () => {
+    for (const autoReviewReady of [false, true]) {
+      expect(hasAuto("claude", { gate: undefined, autoReviewReady })).toBe(true);
+      expect(hasAuto("claude", { gate: "all", autoReviewReady })).toBe(true);
+      for (const gate of ["all", "irreversible"] as const)
+        expect(hasAuto("codex", { gate, autoReviewReady })).toBe(false);
+    }
+    expect(hasAuto("codex", { gate: undefined, autoReviewReady: false })).toBe(false);
+    expect(hasAuto("codex", { gate: undefined, autoReviewReady: true })).toBe(true);
+  });
+
+  it("starts Codex in Auto where the caller found it, and keeps bypass elsewhere", () => {
+    for (const defaultMode of modes) {
+      const settings = settingsWith(defaultMode);
+      const auto = defaultMode === "bypassPermissions" ? "bypassPermissions" : "auto";
+      expect(startModeFor("codex", settings, {}, true)).toBe(auto);
+      expect(startModeFor("codex", settings, { workerMode: "auto" }, true)).toBe("auto");
+      expect(startModeFor("codex", settings, { workerMode: "auto" }, false)).toBe(
+        "bypassPermissions",
+      );
+      // A mode the charter names that isn't Auto stands either way.
+      for (const workerMode of ["default", "acceptEdits", "plan", "bypassPermissions"] as const)
+        for (const has of [false, true])
+          expect(startModeFor("codex", settings, { workerMode }, has)).toBe(workerMode);
+      // Claude without Auto would be held to bypass as Codex is; nothing says so today.
+      expect(startModeFor("claude", settings, { workerMode: "auto" }, false)).toBe(
+        "bypassPermissions",
+      );
+    }
   });
 
   it("sends a model with no Auto to bypass, and leaves every other report alone", () => {

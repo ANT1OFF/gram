@@ -77,6 +77,7 @@ import { isServerRequest, type CodexRpc, type CodexRpcError } from "./rpc.ts";
 import { makeCodexHelper } from "./helper.ts";
 import { CodexServers, SERVER_WIDE, type CodexServer, type CodexServersConfig } from "./servers.ts";
 import { toCodexTranscript } from "./transcript.ts";
+import { codexAutoReviewSupported } from "./version.ts";
 
 /**
  * What a Codex thread supports.
@@ -181,14 +182,24 @@ const catalogModel = (model: Model): AgentModel => {
 };
 
 /**
- * Codex's approval policy and sandbox for a permission mode, and what changes when the session is
- * under the outward gate (`OpenSessionOptions.outwardGate`). Measured on codex 0.154.0:
+ * Codex's approval policy, sandbox and approvals reviewer for a permission mode, and what changes
+ * when the session is under the outward gate (`OpenSessionOptions.outwardGate`) or its CLI takes the
+ * automatic reviewer (`codexAutoReviewSupported`). Policy and sandbox measured on codex 0.154.0:
  *
- * | Mode                                     | Ungated                          | Gated                              |
- * | ---------------------------------------- | -------------------------------- | ---------------------------------- |
- * | `bypassPermissions`                      | `never` + `danger-full-access`   | `untrusted` + `danger-full-access` |
- * | `default`, `acceptEdits`, `auto`, `plan` | `on-request` + `workspace-write` | the same                           |
- * | `dontAsk`                                | `never` + `workspace-write`      | the same                           |
+ * | Mode                             | Ungated                          | Gated                              |
+ * | -------------------------------- | -------------------------------- | ---------------------------------- |
+ * | `bypassPermissions`              | `never` + `danger-full-access`   | `untrusted` + `danger-full-access` |
+ * | `auto`                           | `on-request` + `workspace-write` | the same                           |
+ * | `default`, `acceptEdits`, `plan` | `on-request` + `workspace-write` | the same                           |
+ * | `dontAsk`                        | `never` + `workspace-write`      | the same                           |
+ *
+ * The reviewer (who answers an approval request) is `user` in every gated session, and in every
+ * ungated one on a CLI that has the automatic reviewer, except `auto` there: `auto_review`, a Codex
+ * subagent that approves or denies each request and hands a denial back to the agent, which goes on
+ * another way or says what stayed blocked. Nothing reaches the client then, and the user is asked
+ * only by the agent's own words. That is Gram's Auto. On an older CLI the reviewer is left to the
+ * home's config, as before it existed, and `auto` is not Auto: the session reports `default`
+ * (`autoAvailable`).
  *
  * - Bypass: `never` with full access runs `git push` with no request, so a gated session never sends
  *   it. Under `untrusted` Codex asks about every command and every patch with the whole command line
@@ -198,6 +209,9 @@ const catalogModel = (model: Model): AgentModel => {
  *   a request whose card shows the command, once-only. Nothing is accepted unseen here: in a sandbox
  *   an escalation request differs from a plain one by nothing but a `reason` the model writes, so
  *   accepting on the command alone would grant every escalation.
+ * - Gated `auto`: the automatic reviewer would answer the outward request in the user's place, and
+ *   the gate never see it, so a gated session has no Auto and names the user whatever the home's
+ *   config says.
  * - `dontAsk`: nothing can ask. The sandbox still blocks the network, but the gate doesn't hold
  *   (`gateHoldsInMode`).
  *
@@ -208,19 +222,39 @@ const catalogModel = (model: Model): AgentModel => {
 export const policyFor = (
   mode: PermissionMode,
   outwardGate: boolean | OutwardGate = false,
-): { readonly approvalPolicy: AskForApproval; readonly sandbox: SandboxMode } => {
+  autoReviewer = false,
+): {
+  readonly approvalPolicy: AskForApproval;
+  readonly sandbox: SandboxMode;
+  readonly approvalsReviewer?: ApprovalsReviewer;
+} => {
+  const gated = gateLevel(outwardGate) !== undefined;
+  const reviewer: { readonly approvalsReviewer?: ApprovalsReviewer } = gated
+    ? { approvalsReviewer: "user" }
+    : autoReviewer
+      ? { approvalsReviewer: mode === "auto" ? "auto_review" : "user" }
+      : {};
   switch (mode) {
     case "bypassPermissions":
       return {
-        approvalPolicy: gateLevel(outwardGate) === undefined ? "never" : "untrusted",
+        approvalPolicy: gated ? "untrusted" : "never",
         sandbox: "danger-full-access",
+        ...reviewer,
       };
     case "dontAsk":
-      return { approvalPolicy: "never", sandbox: "workspace-write" };
+      return { approvalPolicy: "never", sandbox: "workspace-write", ...reviewer };
     default:
-      return { approvalPolicy: "on-request", sandbox: "workspace-write" };
+      return { approvalPolicy: "on-request", sandbox: "workspace-write", ...reviewer };
   }
 };
+
+/**
+ * Whether `auto` is Codex's automatic reviewer here: ungated, on a CLI that has it. Elsewhere a
+ * session opened or switched to `auto` runs and reports `default`, which orchestration moves to
+ * `bypassPermissions` (`modeAfterDowngrade`).
+ */
+export const autoAvailable = (outwardGate: boolean | OutwardGate, autoReviewer: boolean): boolean =>
+  gateLevel(outwardGate) === undefined && autoReviewer;
 
 /**
  * Whether the outward gate can hold in `mode`: every mode but `dontAsk`, whose `never` policy leaves
@@ -751,7 +785,12 @@ export const makeCodexHost = (
           });
       }
       const needs = [o.cwd, ...server.generated];
-      let mode: PermissionMode = o.permissionMode ?? "default";
+      const autoReviewer = codexAutoReviewSupported(server.cliVersion);
+      /** `auto` where it isn't Auto (`autoAvailable`) runs, and is reported, as `default`. */
+      const runnable = (wanted: PermissionMode): PermissionMode =>
+        wanted === "auto" && !autoAvailable(gated, autoReviewer) ? "default" : wanted;
+      let mode: PermissionMode = runnable(o.permissionMode ?? "default");
+      const downgradedAtOpen = mode !== (o.permissionMode ?? "default");
       let model = o.model;
       if (model?.speed === "fast") {
         const problem = fastSelectionProblem(
@@ -836,9 +875,6 @@ export const makeCodexHost = (
         ...(confined === undefined ? {} : { apps: confined.apps, features: confined.features }),
         ...(roots.length === 0 ? {} : { sandbox_workspace_write: { writable_roots: [...roots] } }),
       };
-      // A reviewer other than the user (`auto_review`) would answer the outward request in the
-      // user's place, so a gated session names the user whatever the home's config says.
-      const reviewer = gated ? { approvalsReviewer: "user" as const } : {};
       const settings: ThreadSettings = {
         cwd: o.cwd,
         ...(home === "owned" ? { modelProvider: "openai", allowProviderModelFallback: false } : {}),
@@ -846,8 +882,7 @@ export const makeCodexHost = (
         ...(model?.speed === undefined
           ? {}
           : { serviceTier: model.speed === "fast" ? "priority" : "default" }),
-        ...policyFor(mode, gated),
-        ...reviewer,
+        ...policyFor(mode, gated, autoReviewer),
         ...(Object.keys(threadConfig).length === 0 ? {} : { config: threadConfig }),
         ...(o.instructions === undefined ? {} : { developerInstructions: o.instructions }),
       };
@@ -915,6 +950,9 @@ export const makeCodexHost = (
       const emit = (event: AgentEvent): void => {
         Queue.offerUnsafe(events, event);
       };
+      // As Claude Code does with a mode it can't run: the thread shows what runs, and orchestration
+      // moves a session it opened in `auto` on (`modeAfterDowngrade`).
+      if (downgradedAtOpen) emit({ type: "mode", mode });
       const pending = new Map<RequestId, ServerRequest>();
       const run = yield* FiberSet.makeRuntime();
       let compactionTurnId: string | undefined;
@@ -927,7 +965,10 @@ export const makeCodexHost = (
         diagnosticScope,
         diagnosticCwd: o.cwd,
         newMessageId: () => MessageId.make(newId()),
-        answersApprovals: () => gated && gateAnswersInMode(mode) && !cardUp(),
+        // Codex flags `waitingOnApproval` while its automatic reviewer decides too; only a card is
+        // the user's to answer.
+        answersApprovals: () =>
+          !cardUp() && ((gated && gateAnswersInMode(mode)) || mapper.autoReviewing()),
         gateway: server.gateway,
         onCompaction: (phase) => {
           if (phase.phase === "started") compactionTurnId = phase.turnId;
@@ -993,7 +1034,7 @@ export const makeCodexHost = (
         }
         pending.set(card.id, request);
         // Codex's own `waitingOnApproval` flag came before the request and was kept back.
-        if (gated && card.kind === "approval") {
+        if (card.kind === "approval" && (gated || mapper.autoReviewing())) {
           for (const event of mapper.awaitingApproval()) emit(event);
         }
         emit({ type: "request", request: card });
@@ -1123,7 +1164,7 @@ export const makeCodexHost = (
       const turnParams = (input: UserInput, messageId: string | undefined): TurnStartParams => {
         const currentModel =
           model === undefined || model.model === "default" ? started.model : model.model;
-        const policy = policyFor(mode, gated);
+        const policy = policyFor(mode, gated, autoReviewer);
         const plan = mode === "plan";
         // The collaboration mode sticks to the thread, so leaving plan mode has to be said too.
         const collaboration =
@@ -1151,7 +1192,9 @@ export const makeCodexHost = (
           ...(policyChanged
             ? {
                 approvalPolicy: policy.approvalPolicy,
-                ...reviewer,
+                ...(policy.approvalsReviewer === undefined
+                  ? {}
+                  : { approvalsReviewer: policy.approvalsReviewer }),
                 sandboxPolicy: sandboxPolicy(policy.sandbox, roots),
               }
             : {}),
@@ -1308,12 +1351,20 @@ export const makeCodexHost = (
           }),
         setMode: (next) =>
           Effect.sync(() => {
-            const [from, to] = [policyFor(mode, gated), policyFor(next, gated)];
-            if (to.approvalPolicy !== from.approvalPolicy || to.sandbox !== from.sandbox) {
+            const runs = runnable(next);
+            const [from, to] = [
+              policyFor(mode, gated, autoReviewer),
+              policyFor(runs, gated, autoReviewer),
+            ];
+            if (
+              to.approvalPolicy !== from.approvalPolicy ||
+              to.sandbox !== from.sandbox ||
+              to.approvalsReviewer !== from.approvalsReviewer
+            ) {
               policyChanged = true;
             }
-            mode = next;
-            emit({ type: "mode", mode: next });
+            mode = runs;
+            emit({ type: "mode", mode: runs });
           }),
         setModel: (next) =>
           Effect.gen(function* () {
@@ -1492,6 +1543,7 @@ export const makeCodexHost = (
     return {
       kind: "codex",
       nativeGateReady: servers.nativeGateReady ?? Effect.succeed(false),
+      autoReviewReady: servers.autoReviewReady ?? Effect.succeed(false),
       supportsWorkspaceSwitch: process.platform !== "win32",
       checkWorkspaceSwitch: Effect.gen(function* () {
         const server = yield* acquireHeld(servers.acquire(undefined, "user"));

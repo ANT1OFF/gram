@@ -1,7 +1,7 @@
 import { fileEditsOf, MessageId, type AgentEvent } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 import { codexFailure, httpFailure } from "../failure.ts";
-import { hunksOf, makeCodexMapper, type CodexCompactionPhase } from "./mapper.ts";
+import { autoReviewNotice, hunksOf, makeCodexMapper, type CodexCompactionPhase } from "./mapper.ts";
 import type { ServerNotification } from "./protocol/ServerNotification.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import { codexFixture, serverMessages } from "./testing.ts";
@@ -1065,5 +1065,120 @@ describe("Codex startup diagnostic identity", () => {
         params,
       })[0],
     );
+  });
+});
+
+const review = (status: string, rationale: string | null = null) =>
+  ({ status, riskLevel: null, userAuthorization: null, rationale }) as never;
+const command = { type: "command", source: "shell", command: "rm -rf build", cwd: "/r" } as const;
+const denied = (action: unknown) =>
+  (
+    autoReviewNotice({ review: review("denied"), action: action as never }) as {
+      message: string;
+    }
+  ).message;
+
+describe("Codex's automatic approvals reviewer", () => {
+  it("says what a denial or a timeout held back, and nothing for the rest", () => {
+    expect(
+      autoReviewNotice({
+        review: review("denied", " Deletes outside the task. "),
+        action: command,
+      }),
+    ).toEqual({
+      type: "notice",
+      level: "warning",
+      message: "Codex's auto-review denied `rm -rf build`: Deletes outside the task.",
+    });
+    expect(autoReviewNotice({ review: review("denied"), action: command })?.type).toBe("notice");
+    expect(autoReviewNotice({ review: review("timedOut"), action: command })).toMatchObject({
+      message: "Codex's auto-review timed out on `rm -rf build`, so it didn't run.",
+    });
+    for (const status of ["approved", "aborted", "inProgress"])
+      expect(autoReviewNotice({ review: review(status), action: command })).toBeUndefined();
+  });
+
+  it("names each kind of action in a few words", () => {
+    expect(
+      denied({
+        type: "execve",
+        source: "shell",
+        program: "/bin/rm",
+        argv: ["rm", "-rf", "x"],
+        cwd: "/r",
+      }),
+    ).toBe("Codex's auto-review denied `/bin/rm -rf x`.");
+    expect(
+      denied({ type: "writeStdin", approvalId: "a", processId: "p", stdin: "y", cwd: "/r" }),
+    ).toContain("input to a running command");
+    expect(denied({ type: "applyPatch", cwd: "/r", files: ["a", "b"] })).toContain(
+      "an edit to 2 files",
+    );
+    expect(denied({ type: "applyPatch", cwd: "/r", files: ["a"] })).toContain("an edit to 1 file");
+    expect(
+      denied({
+        type: "networkAccess",
+        target: "t",
+        host: "example.com",
+        protocol: "https",
+        port: 443,
+      }),
+    ).toContain("network access to example.com");
+    expect(
+      denied({
+        type: "mcpToolCall",
+        server: "gh",
+        toolName: "merge",
+        connectorId: null,
+        connectorName: null,
+        toolTitle: null,
+      }),
+    ).toContain("merge on gh");
+    expect(denied({ type: "requestPermissions", reason: null, permissions: {} })).toContain(
+      "more permissions",
+    );
+    expect(denied({ ...command, command: "x".repeat(300) }).length).toBeLessThan(200);
+  });
+
+  it("tracks reviews in progress until they finish or their turn ends, and shows a warning", () => {
+    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("m"), threadId: "thread" });
+    const notify = (method: string, params: Record<string, unknown>) =>
+      mapper.map({ method, params: { threadId: "thread", ...params } } as ServerNotification);
+    const reviewed = (phase: string, reviewId: string, status: string) =>
+      notify(`item/autoApprovalReview/${phase}`, {
+        turnId: "turn",
+        startedAtMs: 0,
+        completedAtMs: 1,
+        decisionSource: "agent",
+        reviewId,
+        targetItemId: null,
+        review: review(status),
+        action: command,
+      });
+    notify("turn/started", { turn: { id: "turn", status: "inProgress", items: [], error: null } });
+    expect(reviewed("started", "a", "inProgress")).toEqual([]);
+    expect(mapper.autoReviewing()).toBe(true);
+    expect(reviewed("completed", "a", "approved")).toEqual([]);
+    expect(mapper.autoReviewing()).toBe(false);
+    reviewed("started", "b", "inProgress");
+    // Another thread's review is not this one's.
+    mapper.map({
+      method: "item/autoApprovalReview/started",
+      params: { threadId: "other", reviewId: "c" },
+    } as unknown as ServerNotification);
+    reviewed("completed", "b", "approved");
+    expect(mapper.autoReviewing()).toBe(false);
+    reviewed("started", "d", "inProgress");
+    expect(mapper.autoReviewing()).toBe(true);
+    notify("turn/completed", {
+      turn: { id: "turn", status: "interrupted", items: [], error: null },
+    });
+    expect(mapper.autoReviewing()).toBe(false);
+    expect(
+      notify("autoApprovalReview/strictReviewRequired", { turnId: "turn", startedAtMs: 0 }),
+    ).toEqual([]);
+    expect(notify("guardianWarning", { message: "Reviewer is degraded." })).toEqual([
+      { type: "notice", level: "warning", message: "Reviewer is degraded." },
+    ]);
   });
 });
