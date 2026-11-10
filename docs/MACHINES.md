@@ -61,6 +61,9 @@ What does hold:
   machine.** It does so over the machine's own signed connection. A paired phone can still start
   chats in projects and worktrees as before, but it can't list another machine's folders, check
   them, or start a chat in one: the server refuses those from any connection but the app's own.
+  Once such a chat exists, a paired phone can continue it, resume it or fork it, like any other
+  thread: the phone works in the folder the app chose, but only the app can choose a chat's
+  machine and folder.
 - **You choose a folder outside the host's clones for one chat at a time.** Nothing an agent
   starts, a worker or a task chip, gets such a folder: workers always get a new worktree there, and
   a task chip from such a chat starts from New task instead. A fork of the chat stays in its
