@@ -15,6 +15,7 @@ import {
   ModelRef,
 } from "./domain.ts";
 import { MergeReviewPolicy } from "./merge-policy.ts";
+import { FollowEffort, isTierRef, type ModelSlot, tierName, type TierRef } from "./recommended.ts";
 import {
   noticeActionsOn,
   notifyAboutOf,
@@ -41,6 +42,7 @@ import {
   WORKER_BRIEF_FOOTER_MAX,
   WORKER_MODEL_NOTE_MAX,
   WorkerBriefFooter,
+  type RosterModel,
   type WorkerModel,
   type WorkspaceState,
 } from "./workspaces.ts";
@@ -140,16 +142,21 @@ export interface SettingsWorld {
  * the orchestrator's own, else one of the same model id, else the first. The one rule both
  * `spawn_worker` and a proposal's card use.
  */
-export const workerFallback = (
-  allowed: ReadonlyArray<WorkerModel>,
+export const workerFallback = <T extends WorkerModel | RosterModel>(
+  allowed: ReadonlyArray<T>,
   own: Pick<ModelRef, "agent" | "model"> | undefined,
-): WorkerModel | undefined =>
+): T | undefined =>
   allowed.find((each) => each.default === true) ??
   (own === undefined
     ? undefined
-    : (allowed.find((each) => each.agent === own.agent && each.model === own.model) ??
-      allowed.find((each) => each.model === own.model))) ??
+    : (allowed.find(
+        (each) => "model" in each && each.agent === own.agent && each.model === own.model,
+      ) ?? allowed.find((each) => "model" in each && each.model === own.model))) ??
   allowed[0];
+
+/** A slot's concrete model, when it is pinned to one; a following slot has none until resolved. */
+const pinnedOf = (slot: ModelSlot | undefined): ModelRef | undefined =>
+  slot === undefined || isTierRef(slot) ? undefined : slot;
 
 interface Entry {
   readonly key: string;
@@ -190,7 +197,7 @@ const pref = (
 const charterOf = (world: SettingsWorld): OrchestratorCharter | undefined =>
   world.workspace?.charter;
 
-const orchestratorModelOf = (world: SettingsWorld): ModelRef | undefined =>
+const orchestratorModelOf = (world: SettingsWorld): ModelSlot | undefined =>
   charterOf(world)?.orchestratorModel ?? world.settings.agents.defaultModel;
 
 const ws = (
@@ -445,6 +452,12 @@ const isModelRef = (value: unknown): value is ModelRef =>
   typeof (value as ModelRef).agent === "string" &&
   typeof (value as ModelRef).model === "string";
 
+const isTierValue = (value: unknown): value is TierRef =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as TierRef).tier === "string" &&
+  !("model" in value);
+
 /**
  * `claude:opus · high · fast · profile p1`: every field a model ref stores. A speed is shown whenever
  * one is set, since an absent one keeps the CLI's and `standard` turns an inherited fast off.
@@ -457,8 +470,20 @@ export const modelText = (model: ModelRef): string =>
     ...(model.profileId === undefined ? [] : [`profile ${model.profileId}`]),
   ].join(" · ");
 
+/** `Recommended Lead · codex · high`: a following slot, which Gram resolves on each machine. */
+export const tierText = (slot: TierRef): string =>
+  [
+    `Recommended ${tierName(slot.tier)}`,
+    ...(slot.agent === undefined ? [] : [slot.agent]),
+    ...(slot.variant === undefined ? [] : [slot.variant]),
+  ].join(" · ");
+
+/** A slot as the card shows it, pinned or following. */
+export const slotText = (slot: ModelSlot): string =>
+  isTierRef(slot) ? tierText(slot) : modelText(slot);
+
 const workerText = (model: WorkerModel): string =>
-  `${modelText(model)}${model.default === true ? " · default" : ""}${
+  `${slotText(model)}${model.default === true ? " · default" : ""}${
     model.useFor === undefined || model.useFor.trim() === "" ? "" : ` — ${model.useFor.trim()}`
   }`;
 
@@ -482,6 +507,7 @@ const valueText = (entry: Entry, value: unknown): string => {
   if (typeof value === "boolean") return value ? "on" : "off";
   if (typeof value === "string" || typeof value === "number") return String(value);
   if (isModelRef(value)) return modelText(value);
+  if (isTierValue(value)) return tierText(value);
   if (isRoutine(value)) return routineText(value);
   if (Array.isArray(value)) {
     if (value.length === 0) return entry.unset ?? "none";
@@ -492,7 +518,9 @@ const valueText = (entry: Entry, value: unknown): string => {
 
 /** A worker model's identity in a list: `agent:model`, with `@profileId` when it has one. */
 const identity = (model: WorkerModel): string =>
-  `${model.agent}:${model.model}${model.profileId === undefined ? "" : `@${model.profileId}`}`;
+  isTierRef(model)
+    ? `tier:${model.tier}${model.agent === undefined ? "" : `:${model.agent}`}`
+    : `${model.agent}:${model.model}${model.profileId === undefined ? "" : `@${model.profileId}`}`;
 
 // ─── settings_read ────────────────────────────────────────────────────────────────────────────
 
@@ -635,11 +663,15 @@ const mergePatch = (into: Record<string, unknown>, add: Record<string, unknown>)
   }
 };
 
-/** The entries `match` names in `list`: by `agent:model`, and by profile when it gives one. */
+/**
+ * The entries `match` names in `list`: by `agent:model`, and by profile when it gives one; a
+ * following entry by `tier:<tier>`, or `tier:<tier>:<agent>` when it keeps to one harness.
+ */
 const matching = (list: ReadonlyArray<WorkerModel>, match: string): ReadonlyArray<number> => {
   const wanted = match.trim().toLowerCase();
   const [label, profile] = wanted.split("@");
   return list.flatMap((model, index) => {
+    if (isTierRef(model)) return identity(model) === wanted ? [index] : [];
     if (`${model.agent}:${model.model}`.toLowerCase() !== label) return [];
     if (profile !== undefined && (model.profileId ?? "").toLowerCase() !== profile) return [];
     return [index];
@@ -768,7 +800,7 @@ export const planSettingsChanges = (
           errors.push(`${key}: ${firstLine(decoded.failure.message)}`);
           continue;
         }
-        const item = decoded.success as WorkerModel;
+        const item: typeof WorkerModelAdd.Type = decoded.success;
         if (list.some((model) => identity(model) === identity(item))) {
           errors.push(`${key} already has ${identity(item)}; use update to change it.`);
           continue;
@@ -804,6 +836,22 @@ export const planSettingsChanges = (
         continue;
       }
       const update = decoded.success;
+      const following = isTierRef(list[index]!);
+      if (
+        following &&
+        update.variant !== undefined &&
+        update.variant !== null &&
+        !FollowEffort.literals.includes(update.variant as FollowEffort)
+      ) {
+        errors.push(
+          `${key}: ${change.match} follows the recommendation, whose effort stops at high; pin a model to go above it.`,
+        );
+        continue;
+      }
+      if (following && update.speed !== undefined) {
+        errors.push(`${key}: ${change.match} follows the recommendation, which sets no speed.`);
+        continue;
+      }
       const next: Record<string, unknown> = { ...list[index]! };
       for (const [field, value] of Object.entries(update)) {
         if (value === null) delete next[field];
@@ -812,7 +860,9 @@ export const planSettingsChanges = (
       if (update.default === false) delete next["default"];
       list[index] = next as WorkerModel;
       if (update.default === true) withoutDefault(list, index);
-      if (update.variant !== undefined || update.speed !== undefined) models.push(list[index]!);
+      const changed = list[index]!;
+      if (!isTierRef(changed) && (update.variant !== undefined || update.speed !== undefined))
+        models.push(changed);
       continue;
     }
 
@@ -967,7 +1017,7 @@ export const planSettingsChanges = (
       case "workspace.orchestratorEffort": {
         // Only on a model this workspace pins: an effort on the inherited default would pin that
         // model as a side effect, and depend on an app setting the card can't hold still.
-        const base = into["orchestratorModel"] as ModelRef | undefined;
+        const base = into["orchestratorModel"] as ModelSlot | undefined;
         if (base === undefined) {
           errors.push(
             `${key}: this workspace's orchestrator follows the app's default model, so there is no model here to set the effort of. Set workspace.orchestratorModel with a variant instead.`,
@@ -977,6 +1027,15 @@ export const planSettingsChanges = (
         if (value === null) {
           const { variant: _, ...rest } = base;
           into["orchestratorModel"] = rest;
+          break;
+        }
+        if (isTierRef(base)) {
+          const decoded = decodeWith(FollowEffort, value);
+          if (Result.isFailure(decoded)) {
+            errors.push(
+              `${key}: this orchestrator follows the recommendation, whose effort stops at high: expected one of ${FollowEffort.literals.join(", ")}.`,
+            );
+          } else into["orchestratorModel"] = { ...base, variant: decoded.success };
           break;
         }
         const decoded = decodeWith(ReasoningVariant, value);
@@ -1256,9 +1315,9 @@ const fallbackText = (entry: Entry, world: SettingsWorld): string => {
   if (list === undefined || list.length === 0) {
     return own === undefined
       ? "the orchestrator's own model"
-      : `${modelText(own)} (the orchestrator's own)`;
+      : `${slotText(own)} (the orchestrator's own)`;
   }
-  const fallback = workerFallback(list, own);
+  const fallback = workerFallback(list, pinnedOf(own));
   return fallback === undefined ? "none" : identity(fallback);
 };
 

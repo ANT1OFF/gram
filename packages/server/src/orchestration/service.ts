@@ -28,7 +28,7 @@ import * as Stream from "effect/Stream";
 import { withOwnedBranch } from "../git/worker-pr.ts";
 import { contextPct, workerErrorOf } from "./ledger.ts";
 import { makeIdleCompactor } from "./idle-compact.ts";
-import { contextNote, userHoldLapsesAt } from "./rules.ts";
+import { contextNote, rosterOf, userHoldLapsesAt } from "./rules.ts";
 import { type OrchestrationShape } from "./service/shape.ts";
 import {
   makeOrchestrationKit,
@@ -117,7 +117,6 @@ export const OrchestrationLive = Layer.effect(
       publisher,
       composerPresence,
       rosterHere,
-      rosterAvailability,
       signals,
       requestTimers,
       orchestrators,
@@ -763,10 +762,18 @@ export const OrchestrationLive = Layer.effect(
       changeCharter,
       changePaused,
       launchUnlessPaused,
-      workerModelAvailability: (workspaceId) =>
+      workerRoster: (workspaceId) =>
         store
           .getWorkspace(workspaceId)
-          .pipe(Effect.flatMap((state) => rosterAvailability(state.charter))),
+          .pipe(
+            Effect.flatMap((state) =>
+              state.charter.workerModels === undefined
+                ? Effect.succeed(undefined)
+                : rosterHere(state.charter.workerModels, state.charter).pipe(
+                    Effect.map((here) => rosterOf(here.roster, here.unavailable)),
+                  ),
+            ),
+          ),
       ledger,
       watchLedger,
       featureCards,

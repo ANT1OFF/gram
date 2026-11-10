@@ -26,6 +26,7 @@ import {
   type Thread,
   type ThreadId,
   type TurnId,
+  type RosterModel,
   type WorkerModel,
   type WorkspaceState,
   type WorkspaceId,
@@ -33,6 +34,7 @@ import {
   type Autonomy,
   connectorEntryProblem,
   InvalidState,
+  rosterModelHere,
 } from "@gram/contracts";
 import { Proc, samePathKey, samePath, basename, tryRepoRoots } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -58,6 +60,7 @@ import { AgentHosts } from "../../runtime/agent-hosts.ts";
 import { makeThreadCreator } from "../../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../../runtime/hooks.ts";
 import { selectableModels } from "../../runtime/model-efforts.ts";
+import { availableHere } from "../../runtime/model-slots.ts";
 import { UsageLimitPoller } from "../../usage/limit-poller.ts";
 import { UsageLimitReadings } from "../../usage/limit-readings.ts";
 import { ThreadPlans } from "../../plans/service.ts";
@@ -209,11 +212,13 @@ export const footerLine = (footer: string): string =>
     .map((line) => `  > ${line}`)
     .join("\n")}`;
 
-/** The models the orchestrator may start a worker on: the charter's roster, else its own. */
-export const allowedWorkerModels = (
-  caller: Pick<Thread, "model">,
-  charter: OrchestratorCharter,
-): ReadonlyArray<WorkerModel> => charter.workerModels ?? [caller.model];
+/**
+ * The models the orchestrator may start a worker on with no roster: its own. A roster is read
+ * through `rosterHere`, which resolves the entries that follow a tier on this machine.
+ */
+const ownWorkerModel = (caller: Pick<Thread, "model">): ReadonlyArray<RosterModel> => [
+  caller.model,
+];
 
 /**
  * Refuses a charter whose connector set holds an entry `connectorEntryProblem` won't keep: its
@@ -238,16 +243,16 @@ export const refuseConnectorEntries = (charter: OrchestratorCharter) => {
 export const workerModel = (
   tool: string,
   caller: Pick<Thread, "model">,
-  charter: OrchestratorCharter,
+  _charter: OrchestratorCharter,
   named: string | undefined,
   here?: {
-    /** The charter's roster as it runs here (`rosterHere`), in its order. */
-    readonly roster: ReadonlyArray<WorkerModel>;
+    /** The charter's roster as it runs here (`rosterHere`), in its order; absent with none. */
+    readonly roster: ReadonlyArray<RosterModel>;
     readonly unavailable: RosterUnavailable;
   },
 ) =>
   Effect.gen(function* () {
-    const allowed = here?.roster ?? allowedWorkerModels(caller, charter);
+    const allowed = here?.roster ?? ownWorkerModel(caller);
     const unavailable = here?.unavailable ?? new Map<number, string>();
     const match = matchWorkerModel(allowed, named, caller.model, unavailable);
     if (!match.ok) {
@@ -548,16 +553,25 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   /**
    * The roster as it runs here: local entries stay on their own CLI, while explicit gateway
    * entries require their selected profile/key. Setup never changes routing merely because a key
-   * was added.
+   * was added. An entry that follows a tier is resolved against what this machine lists, never
+   * onto a gateway; one nothing here fills is unavailable, so the default stands in for it.
    */
   const rosterHere = (allowed: ReadonlyArray<WorkerModel>, charter: OrchestratorCharter) =>
     Effect.gen(function* () {
       const profiles = yield* store.listProfiles;
       const settings = yield* store.getSettings;
       const own = new Map<AgentKind, ReadonlyArray<string> | undefined>();
-      const roster: Array<WorkerModel> = [];
+      const roster: Array<RosterModel> = [];
       const unavailable = new Map<number, string>();
-      for (const [index, entry] of allowed.entries()) {
+      const following = allowed.some((entry) => "tier" in entry);
+      const available = following ? yield* availableHere(hosts) : {};
+      for (const [index, stored] of allowed.entries()) {
+        const { entry, missing } = rosterModelHere(stored, available);
+        if (missing !== undefined) {
+          roster.push(entry);
+          unavailable.set(index, missing);
+          continue;
+        }
         const gatewayKind = entry.agent === "codex";
         if (gatewayKind && entry.profileId === undefined && !own.has(entry.agent)) {
           own.set(
@@ -599,11 +613,14 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       return { roster, unavailable: unavailable as RosterUnavailable };
     });
 
-  /** Which of a roster's entries can't be spawned on here, and why. */
-  const rosterAvailability = (charter: OrchestratorCharter) =>
-    rosterHere(charter.workerModels ?? [], charter).pipe(
-      Effect.map(({ unavailable }) => unavailable),
-    );
+  /** The roster `caller` picks workers from, as it runs here: the charter's, else its own model. */
+  const rosterFor = (caller: Pick<Thread, "model">, charter: OrchestratorCharter) =>
+    charter.workerModels === undefined
+      ? Effect.succeed({
+          roster: ownWorkerModel(caller),
+          unavailable: new Map<number, string>() as RosterUnavailable,
+        })
+      : rosterHere(charter.workerModels, charter);
 
   const debounce = config.orchestrationDebounce ?? DEFAULT_WAKE_DEBOUNCE;
   const maxWait = Duration.times(debounce, WAKE_MAX_WAIT_WINDOWS);
@@ -1198,7 +1215,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     composerPresence,
     creator,
     rosterHere,
-    rosterAvailability,
+    rosterFor,
     debounce,
     maxWait,
     signals,

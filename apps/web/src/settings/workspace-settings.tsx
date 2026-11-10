@@ -8,6 +8,8 @@ import {
   type Settings,
   type WorkerModel,
   type WorkspaceState,
+  isTierRef,
+  tierText,
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -328,7 +330,11 @@ function Defaults({ settings }: { settings: Settings }) {
 const rosterLine = (models: readonly WorkerModel[]): string =>
   models.length === 0
     ? "None: workers run on the orchestrator's model."
-    : models.map((model) => `${agentLabel(model.agent)} ${model.model}`).join(", ");
+    : models
+        .map((model) =>
+          isTierRef(model) ? tierText(model) : `${agentLabel(model.agent)} ${model.model}`,
+        )
+        .join(", ");
 
 /** The worker models a new workspace starts with, copied from a workspace; none until then. */
 function StartingRosterRow({ settings }: { settings: Settings }) {

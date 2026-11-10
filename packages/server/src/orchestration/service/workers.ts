@@ -25,13 +25,7 @@ import {
   userHoldLapsesAt,
   workerMergesOwnAtFull,
 } from "../rules.ts";
-import {
-  heldOf,
-  workersOf,
-  allowedWorkerModels,
-  pausedFeatureOf,
-  type OrchestrationKit,
-} from "./kit.ts";
+import { heldOf, workersOf, pausedFeatureOf, type OrchestrationKit } from "./kit.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Digests } from "./digests.ts";
@@ -56,7 +50,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
   const {
     requireAuthority,
     app,
-    rosterAvailability,
+    rosterFor,
     findThread,
     listeningWorkspace,
     store,
@@ -102,9 +96,8 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         ...(app === undefined ? {} : { app }),
         ...machinesListed(kit.joinedMachines()),
         autonomy: autonomyOf(state.charter),
-        workerModels: rosterOf(
-          allowedWorkerModels(thread, state.charter),
-          yield* rosterAvailability(state.charter),
+        workerModels: yield* rosterFor(thread, state.charter).pipe(
+          Effect.map((here) => rosterOf(here.roster, here.unavailable)),
         ),
       };
     });

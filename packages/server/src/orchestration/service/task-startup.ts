@@ -6,7 +6,7 @@ import {
   type ModelRef,
   type OrchestratorCharter,
   type ProjectId,
-  type WorkerModel,
+  type RosterModel,
   type StartTaskInput,
   type TaskModelSelection,
   type TaskWorkerChoice,
@@ -14,6 +14,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { discoverDefaultModel } from "../../runtime/default-model.ts";
+import { resolveSlot } from "../../runtime/model-slots.ts";
 import { subscriptionTaskCharter } from "../task-models.ts";
 import { sameTaskModel, sameTaskSelection } from "../task-selection.ts";
 import {
@@ -53,7 +54,11 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
   const openModel = (charter: OrchestratorCharter, expected?: ModelRef) =>
     Effect.gen(function* () {
       const settings = yield* store.getSettings;
-      const preferred = charter.orchestratorModel ?? settings.agents.defaultModel;
+      // A slot that follows a tier is resolved now, so the orchestrator opens on the model the
+      // recommendation names today; one nothing here fills falls through, as an unset one does.
+      const preferred =
+        (yield* resolveSlot(hosts, charter.orchestratorModel)) ??
+        (yield* resolveSlot(hosts, settings.agents.defaultModel));
       const model = preferred ?? expected ?? (yield* discoverDefaultModel(hosts));
       if (!admittedForRole(model.agent, "orchestrator"))
         return yield* new InvalidState({
@@ -101,7 +106,7 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
       // Match worker creation: without a roster, inherit the harness/model but not the
       // orchestrator's role-specific effort. Explicit roster entries retain their effort.
       const { variant: _variant, ...bare } = orchestrator;
-      const roster: ReadonlyArray<WorkerModel> = here?.roster ?? [bare];
+      const roster: ReadonlyArray<RosterModel> = here?.roster ?? [bare];
       const fallback = fallbackOf(roster, orchestrator);
       const gateReady = yield* nativeGateReady("codex");
       const choices = roster.map((entry, index): TaskWorkerChoice => {

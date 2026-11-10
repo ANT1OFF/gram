@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as Schema from "effect/Schema";
 import { ModelRef } from "./domain.ts";
 import { fastSelectionProblem, modelSpeeds, type AgentModel } from "./models.ts";
-import { modelRefOf, WorkerModel } from "./workspaces.ts";
+import { modelSlotOf, WorkerModel } from "./workspaces.ts";
 
 const models: readonly AgentModel[] = [
   {
@@ -22,7 +22,7 @@ describe("independent speed preferences", () => {
       default: true,
       useFor: "Synthetic implementation",
     });
-    expect(modelRefOf(worker)).toEqual(model);
+    expect(modelSlotOf(worker)).toEqual(model);
     expect(
       Schema.decodeUnknownSync(ModelRef)({ agent: "claude", model: "opus" }),
     ).not.toHaveProperty("speed");

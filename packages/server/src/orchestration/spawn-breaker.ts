@@ -6,6 +6,7 @@ import type {
   OrchestratorCharter,
   Thread,
   ThreadId,
+  RosterModel,
   WorkerModel,
   WorkspaceId,
   WorkspaceState,
@@ -66,7 +67,7 @@ export const makeBreakerState = () => {
 };
 
 type Here = {
-  readonly roster: ReadonlyArray<WorkerModel>;
+  readonly roster: ReadonlyArray<RosterModel>;
   readonly unavailable: RosterUnavailable;
 };
 interface Dependencies {

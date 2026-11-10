@@ -266,7 +266,6 @@ export const threadHandlers = Effect.gen(function* () {
         if (resumeSessionId !== undefined && !/^[A-Za-z0-9_-]{1,128}$/.test(resumeSessionId)) {
           return yield* new InvalidState({ message: `Not a session id: ${resumeSessionId}` });
         }
-        const selected = model ?? (yield* store.getSettings).agents.defaultModel;
         if (checkout.kind === "machineFolder" && resumeSessionId !== undefined) {
           return yield* new InvalidState({
             message: "A past session resumes on this machine, not in a folder on another.",
@@ -291,7 +290,8 @@ export const threadHandlers = Effect.gen(function* () {
             id,
             projectRoot: root,
             checkout: resolved,
-            ...(selected === undefined ? {} : { model: selected }),
+            // With none picked, `create` takes the saved default, resolving one that follows a tier.
+            ...(model === undefined ? {} : { model }),
             ...(mode === undefined ? {} : { mode }),
             ...(title === undefined ? {} : { title }),
             ...(firstInput === undefined ? {} : { input: firstInput }),

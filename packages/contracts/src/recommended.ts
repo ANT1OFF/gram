@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { AgentKind, type ModelRef, type ReasoningVariant } from "./domain.ts";
+import { AgentKind, ModelRef, type ReasoningVariant } from "./domain.ts";
 import type { AgentModel } from "./models.ts";
 import data from "./recommended/table.json" with { type: "json" };
 
@@ -23,6 +23,13 @@ export const TierRef = Schema.Struct({
   variant: Schema.optionalKey(FollowEffort),
 });
 export type TierRef = typeof TierRef.Type;
+
+/** A model slot: following a tier, or pinned to the model and effort the user chose. */
+export const ModelSlot = Schema.Union([ModelRef, TierRef]);
+export type ModelSlot = typeof ModelSlot.Type;
+
+export const isTierRef = <T extends object>(slot: T): slot is Extract<T, { readonly tier: Tier }> =>
+  "tier" in slot;
 
 const VendorPick = Schema.Struct({
   /** In order of preference; an older CLI falls back to a later one within the tier. */
@@ -206,4 +213,35 @@ export const tableDiff = (
     }
   }
   return lines;
+};
+
+/**
+ * What a slot runs on, here: a pinned slot as the user set it, a following one resolved now.
+ * Undefined for an unset slot, or a tier nothing on this machine fills.
+ */
+export const slotModel = (
+  slot: ModelSlot | undefined,
+  available: AvailableModels,
+  table: RecommendationTable = RECOMMENDED,
+): ModelRef | undefined => {
+  if (slot === undefined) return undefined;
+  if (!isTierRef(slot)) return slot;
+  return resolveTier(table, slot, available)?.ref;
+};
+
+/**
+ * A slot as its tier's first choice on its harness (or the one the setup with both installed
+ * puts first), for a world that runs every model: synthetic previews and fixtures, never a machine.
+ */
+export const firstChoiceOf = (
+  slot: ModelSlot,
+  table: RecommendationTable = RECOMMENDED,
+): ModelRef => {
+  if (!isTierRef(slot)) return slot;
+  const agent = slot.agent ?? table.both[slot.tier];
+  return {
+    agent,
+    model: table.tiers[slot.tier][agent].models[0],
+    variant: slot.variant ?? tierEffort(table, slot.tier, agent),
+  };
 };

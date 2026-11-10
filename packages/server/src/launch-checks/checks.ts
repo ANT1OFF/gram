@@ -13,6 +13,7 @@ import type {
   Thread,
   ToolCheck,
 } from "@gram/contracts";
+import { isTierRef } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { installerOf } from "../agent-runtime/policy.ts";
 
@@ -102,9 +103,19 @@ export const inferredAgentOf = (checks: LaunchChecks): AgentKind | undefined => 
   return undefined;
 };
 
-/** The saved default model's agent, else the one `inferredAgentOf` reads off the CLIs. */
+/**
+ * The saved default model's agent, else the one `inferredAgentOf` reads off the CLIs. A default
+ * that follows a tier on no one harness goes where what's installed takes it, as an unset one does.
+ */
 const defaultAgentOf = (settings: Settings, checks: LaunchChecks): AgentKind | undefined =>
   settings.agents.defaultModel?.agent ?? inferredAgentOf(checks);
+
+/** The saved default as a model ref, when it names its harness: a pinned one, or one kept to a harness. */
+const savedDefaultOf = (settings: Settings): ModelRef | undefined => {
+  const saved = settings.agents.defaultModel;
+  if (saved === undefined || !isTierRef(saved)) return saved;
+  return saved.agent === undefined ? undefined : { agent: saved.agent, model: "default" };
+};
 
 /**
  * CLI problems are worth raising for agents the user selected as a default or used in threads,
@@ -131,7 +142,7 @@ export const localAgentsInUseOf = (
   checks: LaunchChecks,
 ): AgentKind[] => {
   const models: ModelRef[] = threads.map((thread) => thread.model);
-  const saved = settings.agents.defaultModel;
+  const saved = savedDefaultOf(settings);
   const inferred = saved === undefined ? inferredAgentOf(checks) : undefined;
   if (saved !== undefined) models.push(saved);
   else if (inferred !== undefined) models.push({ agent: inferred, model: "default" });

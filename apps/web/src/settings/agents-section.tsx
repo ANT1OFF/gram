@@ -29,6 +29,7 @@ import { AGENTS_DEFAULTS, resetFor } from "./defaults";
 import { inputCls, SettingRow, Toggle } from "./fields";
 import { SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
+import { useDefaultModel } from "./model-slots";
 
 const IDLE_MINUTES = { min: 1, max: 1440 } as const;
 
@@ -55,12 +56,12 @@ export function AgentsSection() {
   const settings = useServerSettings((s) => s.settings);
   const save = useSaveSettings();
   const local = useLocalDefaultChoice(settings?.agents.defaultModel === undefined);
+  const defaultHere = useDefaultModel();
   const [failed, setFailed] = useState<{ key: AgentsKey; message: string }>();
 
   if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
   const agents = settings.agents;
-  const choice =
-    agents.defaultModel === undefined ? local.choice : choiceFromModel(agents.defaultModel);
+  const choice = defaultHere === undefined ? local.choice : choiceFromModel(defaultHere);
 
   const applyTo = (key: AgentsKey) => (patch: SettingsPatch) => {
     setFailed(undefined);

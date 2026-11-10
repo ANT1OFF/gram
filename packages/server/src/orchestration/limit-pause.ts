@@ -37,6 +37,7 @@ export const usedPct = (utilization: number): number =>
 /**
  * The agents whose own logins the workspace's threads run on: the orchestrator's and each roster
  * entry's that names no gateway profile. A gateway's limits are its own, not the subscription's.
+ * An entry that follows a tier on no one harness may run on either.
  */
 export const subscriptionAgents = (
   charter: Pick<OrchestratorCharter, "workerModels">,
@@ -44,8 +45,10 @@ export const subscriptionAgents = (
 ): ReadonlySet<string> =>
   new Set(
     [...(orchestrator === undefined ? [] : [orchestrator]), ...(charter.workerModels ?? [])]
-      .filter((model) => model.profileId === undefined)
-      .map((model) => model.agent),
+      .filter((model) => !("profileId" in model) || model.profileId === undefined)
+      .flatMap((model) =>
+        model.agent === undefined ? (["claude", "codex"] as const) : [model.agent],
+      ),
   );
 
 /**

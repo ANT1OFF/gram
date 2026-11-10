@@ -43,6 +43,7 @@ import {
   type DreamResolution,
   type DreamReview,
   type FsError,
+  isTierRef,
   type ImportPreview,
   type ModelRef,
   type Project,
@@ -1088,7 +1089,12 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             closedThreadsKept: closed.length,
             archivedThreads: archived.length,
             includeMemory: input.includeMemory === true,
-            throughGateway: model?.profileId !== undefined && admittedForRole(model.agent, "dream"),
+            // A following slot is never on a gateway.
+            throughGateway:
+              model !== undefined &&
+              !isTierRef(model) &&
+              model.profileId !== undefined &&
+              admittedForRole(model.agent, "dream"),
           });
           if (!dreaming) return counted;
           const version = (yield* memory

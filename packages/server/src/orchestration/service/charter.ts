@@ -32,7 +32,6 @@ import {
   CHARTER_MOVED,
   ROUTE_AT_LIMIT_LINE,
   footerLine,
-  allowedWorkerModels,
   refuseConnectorEntries,
   type OrchestrationKit,
   underKeysOf,
@@ -137,7 +136,7 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
     needsUnderGate,
     workspacesChanged,
     orchestrationChanged,
-    rosterAvailability,
+    rosterFor,
     updateOutbox,
     reload,
     runtimes,
@@ -172,9 +171,10 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
           message: `The routine "${outside.name}" names a project that isn't one of this workspace's.`,
         });
       }
+      // One that follows a tier on no one harness is checked when it resolves (`openModel`).
       const orchestratorModel = charter.orchestratorModel;
       if (
-        orchestratorModel !== undefined &&
+        orchestratorModel?.agent !== undefined &&
         !admittedForRole(orchestratorModel.agent, "orchestrator")
       ) {
         return yield* new InvalidState({
@@ -240,16 +240,13 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
       ) {
         // The boot digest named the roster once; a session that is already open hears of the
         // change in its next digest rather than keep picking from the old list.
-        const roster = yield* findThread(holder).pipe(
-          Effect.map((thread) =>
-            thread === undefined ? undefined : allowedWorkerModels(thread, charter),
-          ),
-        );
-        if (roster !== undefined) {
+        const thread = yield* findThread(holder);
+        if (thread !== undefined) {
+          const here = yield* rosterFor(thread, charter);
           const note = rosterText(
             "The user changed your worker models. From now on, pick from these (agent:model, then what the user wants it used for):",
-            roster,
-            yield* rosterAvailability(charter),
+            here.roster,
+            here.unavailable,
           );
           yield* updateOutbox(workspaceId, (outbox) => [withNotes(outbox, [note]), undefined]);
           yield* wake(workspaceId, "the user changed the worker models", true);

@@ -87,6 +87,7 @@ import {
   worktreeCheckout,
   WorktreeFields,
 } from "./worktree-fields";
+import { useDefaultModel } from "@/settings/model-slots";
 
 type CheckoutKind = CheckoutRequest["kind"];
 
@@ -214,7 +215,7 @@ function ConfiguredNewThreadDraft() {
   };
   const [existingPath, setExistingPath] = useState("");
   // Capture Settings → Agents once, after settings load; later edits don't replace this draft.
-  const savedDefaultModel = useServerSettings((s) => s.settings?.agents.defaultModel);
+  const savedDefaultModel = useDefaultModel();
   const { choice, setChoice, discovering } = useDraftAgentChoice(savedDefaultModel);
   const [mode, setMode] = useState<PermissionMode>(
     () =>

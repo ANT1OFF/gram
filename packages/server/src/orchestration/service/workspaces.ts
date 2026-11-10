@@ -182,7 +182,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
             }
             yield* refuseConnectorEntries(given);
             const own = given.orchestratorModel;
-            if (own !== undefined && !admittedForRole(own.agent, "orchestrator")) {
+            if (own?.agent !== undefined && !admittedForRole(own.agent, "orchestrator")) {
               return yield* new InvalidState({
                 message: `${kindName(own.agent)} threads can't be orchestrators yet.`,
               });

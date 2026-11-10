@@ -45,7 +45,7 @@ import { type WakeInput } from "../../wakes/thread-wakes.ts";
 import { type CreateThreadInput } from "../../runtime/thread-runtimes.ts";
 import { type RouteAlternative, type RouteOffer } from "../limit-pause.ts";
 import { type SentRequest } from "../outbox.ts";
-import { type RosterEntry, type RosterUnavailable } from "../rules.ts";
+import { type RosterEntry } from "../rules.ts";
 
 /** A thread with authority, and the workspace it has it over. */
 export interface Authority {
@@ -406,10 +406,13 @@ export interface OrchestrationShape {
     launch: Effect.Effect<A, E, R>,
   ): Effect.Effect<A | undefined, E, R>;
   /**
-   * Which of the workspace's worker models can't be spawned on here, by their index in the
-   * charter's roster, and why: what `list_workers` marks `unavailable`.
+   * The workspace's worker models as they run here, entries that follow a tier resolved, each
+   * marked `unavailable` with why when it can't be spawned on: what `list_workers` shows.
+   * Undefined when the charter names none.
    */
-  workerModelAvailability(workspaceId: WorkspaceId): Effect.Effect<RosterUnavailable, NotFound>;
+  workerRoster(
+    workspaceId: WorkspaceId,
+  ): Effect.Effect<ReadonlyArray<RosterEntry> | undefined, NotFound>;
   ledger(workspaceId: WorkspaceId): Effect.Effect<OrchestratorLedger, NotFound>;
   /**
    * The ledger now, then again whenever something it shows changes, `LEDGER_WATCH_DEBOUNCE` after

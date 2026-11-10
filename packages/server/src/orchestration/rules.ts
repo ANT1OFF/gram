@@ -66,7 +66,7 @@ import {
   type WorkerReport,
   type WorkerError,
   type WorkerReportState,
-  type WorkerModel,
+  type RosterModel,
   type WorkerState,
   type WorkspaceId,
   workerFallback,
@@ -360,14 +360,14 @@ export type WorkerModelMatch =
 export type RosterUnavailable = ReadonlyMap<number, string>;
 
 /** The entry a worker gets when the orchestrator names none, if the user marked one. */
-const defaultWorkerModel = (allowed: ReadonlyArray<WorkerModel>): WorkerModel | undefined =>
+const defaultWorkerModel = (allowed: ReadonlyArray<RosterModel>): RosterModel | undefined =>
   allowed.find((each) => each.default === true);
 
 /** The entry a worker gets with nothing named: the one marked default, else the orchestrator's own, else the first. */
 export const fallbackOf = (
-  allowed: ReadonlyArray<WorkerModel>,
+  allowed: ReadonlyArray<RosterModel>,
   own: Pick<ModelRef, "agent" | "model">,
-): WorkerModel | undefined => workerFallback(allowed, own);
+): RosterModel | undefined => workerFallback(allowed, own);
 
 /**
  * `spawn_worker.model` against the models a charter allows. A bare id is tried first, since a
@@ -379,12 +379,12 @@ export const fallbackOf = (
  * profile and effort come with it, and without the user's note about it.
  */
 export const matchWorkerModel = (
-  allowed: ReadonlyArray<WorkerModel>,
+  allowed: ReadonlyArray<RosterModel>,
   named: string | undefined,
   own: Pick<ModelRef, "agent" | "model">,
   unavailable: RosterUnavailable = new Map(),
 ): WorkerModelMatch => {
-  let picked: WorkerModel | undefined;
+  let picked: RosterModel | undefined;
   if (named === undefined) {
     picked = fallbackOf(allowed, own);
   } else {
@@ -497,7 +497,7 @@ export interface RosterEntry {
  * it is put on one line; only the first entry marked default is called one, as only it is used.
  */
 export const rosterOf = (
-  allowed: ReadonlyArray<WorkerModel>,
+  allowed: ReadonlyArray<RosterModel>,
   unavailable: RosterUnavailable = new Map(),
 ): ReadonlyArray<RosterEntry> => {
   const fallback = defaultWorkerModel(allowed);
@@ -522,7 +522,7 @@ export const rosterLine = (entry: RosterEntry): string =>
 /** The roster as a charter line and an indented line per model, for the boot digest and a change note. */
 export const rosterText = (
   lead: string,
-  allowed: ReadonlyArray<WorkerModel>,
+  allowed: ReadonlyArray<RosterModel>,
   unavailable: RosterUnavailable = new Map(),
 ): string =>
   [lead, ...rosterOf(allowed, unavailable).map((entry) => `  - ${rosterLine(entry)}`)].join("\n");

@@ -20,6 +20,7 @@ import {
   type SpeechModelId,
 } from "./speech.ts";
 import { VocabularyList, type VocabularyEntry } from "./vocabulary.ts";
+import { ModelSlot } from "./recommended.ts";
 import { connectorEntryProblem, WorkerModel } from "./workspaces.ts";
 
 /** Glass is the only look. */
@@ -204,7 +205,8 @@ export type ComposerSettings = typeof ComposerSettings.Type;
 export const AgentSettings = Schema.Struct({
   /** Keep the system awake during open turns. Absent means on; the display may still sleep. */
   keepAwake: Schema.optionalKey(Schema.Boolean),
-  defaultModel: Schema.optionalKey(ModelRef),
+  /** A new chat's model: pinned, or following a tier. Absent follows the CLI's own default. */
+  defaultModel: Schema.optionalKey(ModelSlot),
   /** Absent until a model is added; read through `customModelsOf`. */
   customModels: Schema.optionalKey(Schema.Array(CustomModel)),
   defaultMode: PermissionMode,

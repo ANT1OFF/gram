@@ -19,6 +19,7 @@ import {
   type ThreadId,
   type TurnId,
   type UserInput,
+  type RosterModel,
   type WorkerReport,
   type WorkspaceState,
   type WorkspaceId,
@@ -102,7 +103,8 @@ const routineLines = (charter: OrchestratorCharter): ReadonlyArray<string> => {
 const charterLines = (
   charter: OrchestratorCharter,
   mode: Thread["mode"],
-  unavailable: RosterUnavailable,
+  /** The charter's roster as it runs here (`rosterHere`). */
+  here: { readonly roster: ReadonlyArray<RosterModel>; readonly unavailable: RosterUnavailable },
 ): ReadonlyArray<string> => [
   `at most ${charter.maxConcurrentWorkers} workers at once; one more asks the user`,
   ...(charter.pauseAtLimitPct === undefined
@@ -122,8 +124,8 @@ const charterLines = (
     ? `workers start in ${mode} mode on your own model`
     : rosterText(
         `workers start in ${mode} mode, on one of these worker models (agent:model, then what the user wants it used for):`,
-        charter.workerModels,
-        unavailable,
+        here.roster,
+        here.unavailable,
       ),
 ];
 
@@ -169,7 +171,7 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
     readOutbox,
     signalUnreadable,
     memory,
-    rosterAvailability,
+    rosterHere,
     appActivity,
     app,
     updateOutbox,
@@ -365,7 +367,7 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
               charterLines: charterLines(
                 state.charter,
                 startMode(settings, state.charter),
-                yield* rosterAvailability(state.charter),
+                yield* rosterHere(state.charter.workerModels ?? [], state.charter),
               ),
             })
           : [];
