@@ -217,8 +217,10 @@ export function PrActions({
     <div className="flex flex-col gap-1.5">
       {summary !== undefined && (
         <div data-testid="pr-blockers" className="flex flex-col gap-1">
-          {/* One heading: that the merge is blocked, how many things block it and of what kind.
-              Each one's own words follow, and the header above leaves out what this repeats. */}
+          {/* One heading: that the merge is blocked and how many things block it. Each one's own
+              words follow right under it, so the heading doesn't name their kinds too: in a narrow
+              panel that second naming was what got cut short ("3 reasons: check, changes re…").
+              The merge dialog, which has no list, keeps the kinds. */}
           <p
             id={reasonId}
             data-testid="pr-merge-blocked"
@@ -227,7 +229,7 @@ export function PrActions({
             <Ban aria-hidden className="size-icon-row shrink-0 self-center" />
             <span className="shrink-0 font-medium">Merge blocked</span>{" "}
             <span className="min-w-0 truncate text-muted-foreground">
-              · <span data-testid="pr-blocker-count">{summary.count}</span>: {summary.categories}
+              · <span data-testid="pr-blocker-count">{summary.count}</span>
             </span>
           </p>
           <ul
