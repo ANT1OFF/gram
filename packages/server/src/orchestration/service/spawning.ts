@@ -668,7 +668,11 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             chosen.agent,
             settings,
             state.charter,
-            yield* autoHere(chosen.agent, gateOfAutonomy(autonomyOf(state.charter))),
+            yield* autoHere(
+              chosen.agent,
+              gateOfAutonomy(autonomyOf(state.charter)),
+              chosen.profileId !== undefined,
+            ),
           );
           const verdict = workerModelVerdict({
             model: chosen,

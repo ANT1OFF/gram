@@ -563,6 +563,10 @@ describe("modes", () => {
     }
     expect(hasAuto("codex", { gate: undefined, autoReviewReady: false })).toBe(false);
     expect(hasAuto("codex", { gate: undefined, autoReviewReady: true })).toBe(true);
+    expect(hasAuto("codex", { gate: undefined, autoReviewReady: true, gateway: true })).toBe(false);
+    expect(hasAuto("claude", { gate: undefined, autoReviewReady: false, gateway: true })).toBe(
+      true,
+    );
   });
 
   it("starts Codex in Auto where the caller found it, and keeps bypass elsewhere", () => {

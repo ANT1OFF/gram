@@ -108,13 +108,20 @@ const GATE_NEEDS_OWNED_HOME: ReadonlyArray<AgentKind> = ["codex"];
  * classifier decides and the user is asked only when it can't. Claude Code's is its auto mode.
  * Codex's is its automatic approvals reviewer (`approvalsReviewer: "auto_review"`), which only an
  * ungated session on a CLI that has it gets (`autoReviewReady`): under the outward gate the reviewer
- * would answer a push in the user's place. Anywhere else Codex's `auto` would be its sandboxed
- * on-request policy, where every network need is a card.
+ * would answer a push in the user's place. Nor does a gateway profile's (`gateway`), where nobody has
+ * checked that the reviewer's own model resolves; if it didn't, every request would be denied.
+ * Anywhere else Codex's `auto` would be its sandboxed on-request policy, where every network need
+ * is a card.
  */
 export const hasAuto = (
   kind: AgentKind,
-  input: { readonly gate: OutwardGate | undefined; readonly autoReviewReady: boolean },
-): boolean => kind !== "codex" || (input.gate === undefined && input.autoReviewReady);
+  input: {
+    readonly gate: OutwardGate | undefined;
+    readonly autoReviewReady: boolean;
+    readonly gateway?: boolean;
+  },
+): boolean =>
+  kind !== "codex" || (input.gate === undefined && input.autoReviewReady && input.gateway !== true);
 
 /** Both supported Dream harnesses retain their existing gate requirements. */
 const DREAM_NEEDS_NO_GATE: ReadonlyArray<AgentKind> = [];

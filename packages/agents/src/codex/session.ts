@@ -785,7 +785,9 @@ export const makeCodexHost = (
           });
       }
       const needs = [o.cwd, ...server.generated];
-      const autoReviewer = codexAutoReviewSupported(server.cliVersion);
+      // Not on a gateway profile: nobody has checked that the reviewer's own model resolves there,
+      // and where it doesn't every escalation is denied (`hasAuto`).
+      const autoReviewer = home !== "gateway" && codexAutoReviewSupported(server.cliVersion);
       /** `auto` where it isn't Auto (`autoAvailable`) runs, and is reported, as `default`. */
       const runnable = (wanted: PermissionMode): PermissionMode =>
         wanted === "auto" && !autoAvailable(gated, autoReviewer) ? "default" : wanted;
@@ -950,6 +952,13 @@ export const makeCodexHost = (
       const emit = (event: AgentEvent): void => {
         Queue.offerUnsafe(events, event);
       };
+      /**
+       * Whether something other than the user answers this session's approval requests: the gate
+       * in bypass, or Codex's automatic reviewer in Auto.
+       */
+      const answersItself = (): boolean =>
+        (gated && gateAnswersInMode(mode)) ||
+        (mode === "auto" && autoAvailable(gated, autoReviewer));
       // As Claude Code does with a mode it can't run: the thread shows what runs, and orchestration
       // moves a session it opened in `auto` on (`modeAfterDowngrade`).
       if (downgradedAtOpen) emit({ type: "mode", mode });
@@ -965,10 +974,10 @@ export const makeCodexHost = (
         diagnosticScope,
         diagnosticCwd: o.cwd,
         newMessageId: () => MessageId.make(newId()),
-        // Codex flags `waitingOnApproval` while its automatic reviewer decides too; only a card is
-        // the user's to answer.
-        answersApprovals: () =>
-          !cardUp() && ((gated && gateAnswersInMode(mode)) || mapper.autoReviewing()),
+        // Codex flags `waitingOnApproval` while its automatic reviewer decides too, perhaps before
+        // the review's `started`; only a card is the user's to answer, and a card going up says so
+        // itself (`handleRequest`).
+        answersApprovals: () => !cardUp() && (answersItself() || mapper.autoReviewing()),
         gateway: server.gateway,
         onCompaction: (phase) => {
           if (phase.phase === "started") compactionTurnId = phase.turnId;
@@ -1034,7 +1043,7 @@ export const makeCodexHost = (
         }
         pending.set(card.id, request);
         // Codex's own `waitingOnApproval` flag came before the request and was kept back.
-        if (card.kind === "approval" && (gated || mapper.autoReviewing())) {
+        if (card.kind === "approval" && (gated || answersItself() || mapper.autoReviewing())) {
           for (const event of mapper.awaitingApproval()) emit(event);
         }
         emit({ type: "request", request: card });

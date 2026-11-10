@@ -458,7 +458,6 @@ describe("CodexHost.open", () => {
             model: "gpt-5.5",
             approvalPolicy: "on-request",
             sandbox: "workspace-write",
-            approvalsReviewer: "user",
             config: {
               mcp_servers: {
                 gram: {
@@ -1044,6 +1043,25 @@ describe("CodexSession in Auto", () => {
       }),
   );
 
+  it.effect("holds back Codex's waiting flag when it comes before the review it is for", () =>
+    Effect.gen(function* () {
+      const h = harness();
+      const session = yield* openSession({ permissionMode: "auto" }).pipe(Effect.provide(h.layer));
+      h.push(threadStatus("waitingOnApproval"));
+      h.push(autoReview("started", "rev_1", "inProgress"));
+      h.push(autoReview("completed", "rev_1", "denied"));
+      // The same denial again in the turn is not shown twice.
+      h.push(autoReview("started", "rev_2", "inProgress"));
+      h.push(autoReview("completed", "rev_2", "denied"));
+      h.push(threadStatus());
+      const events = yield* drain(session, 2);
+      expect(events).toEqual([
+        { type: "status", status: "running" },
+        expect.objectContaining({ type: "notice", level: "warning" }),
+      ]);
+    }),
+  );
+
   it.effect("shows a request that still reaches Gram during a review as a card", () =>
     Effect.gen(function* () {
       const h = harness();
@@ -1063,6 +1081,7 @@ describe("CodexSession in Auto", () => {
     ["on a CLI older than the reviewer", { cliVersion: "0.160.0" }],
     ["on a CLI whose version is unknown", { cliVersion: null }],
     ["on a prerelease of the reviewer's version", { cliVersion: "0.166.0-alpha.1" }],
+    ["on a gateway profile", { model: gatewayModel }],
   ] as const)
     it.effect(`runs and reports auto as default ${label}`, () =>
       Effect.gen(function* () {
@@ -1446,7 +1465,8 @@ describe("CodexSession under the outward gate", () => {
         permissionMode: "bypassPermissions",
       }).pipe(Effect.provide(h.layer));
       expect(h.openings).toEqual([["gateway", undefined]]);
-      expect(h.calls[0]?.[1]).toMatchObject({ approvalsReviewer: "user" });
+      // A gateway home has no automatic reviewer, so it is told no reviewer, as before.
+      expect(h.calls[0]?.[1]).not.toHaveProperty("approvalsReviewer");
       h.push(commandRequest(0, "git push"));
       expect(yield* drain(session, 1)).toEqual([
         { type: "request", request: expect.objectContaining({ scopes: ["once", "always"] }) },

@@ -14,7 +14,7 @@ import { admittedForRole, outwardGateFor, mcpListsFor, toolAudience } from "../r
 import { worktreesOf, type OrchestrationKit } from "./kit.ts";
 /** The session policy each thread opens with. */
 export const makeSessionPolicy = (kit: OrchestrationKit) => {
-  const { store, findWorkspace, findThread } = kit;
+  const { store, findWorkspace, findThread, openedInAuto } = kit;
 
   // ---------------------------------------------------------------------------------------
   // Session policy
@@ -124,5 +124,21 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
       return { audience: "plain", outwardGate, ...confined };
     });
 
-  return { policyFor };
+  /**
+   * Every open of an orchestrator or a worker in `auto`, not only the first: a reopen can land
+   * where its harness has no Auto (a Codex session under a gate the workspace gained, a CLI that
+   * fell below the reviewer, an older joined machine), which it reports as `default`, and
+   * `modeAfterDowngrade` moves it on to `bypassPermissions` (`observers.ts`).
+   */
+  const opening = (thread: Thread): Effect.Effect<void> =>
+    Effect.sync(() => {
+      if (thread.mode !== "auto") return;
+      if (
+        thread.role === "orchestrator" ||
+        (thread.role === undefined && thread.spawnedBy !== undefined)
+      )
+        openedInAuto.add(thread.id);
+    });
+
+  return { policyFor, opening };
 };

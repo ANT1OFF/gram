@@ -66,7 +66,12 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
             "The task's selected orchestrator changed. Check the task preview and start again.",
         });
       const gate = gateOfAutonomy(autonomyOf(charter));
-      const mode = startModeFor(model.agent, settings, {}, yield* autoHere(model.agent, gate));
+      const mode = startModeFor(
+        model.agent,
+        settings,
+        {},
+        yield* autoHere(model.agent, gate, model.profileId !== undefined),
+      );
       const needs = yield* needsUnderGate(model, gate, mode);
       if (needs !== undefined)
         return yield* new InvalidState({
@@ -113,7 +118,7 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
           model.agent,
           settings,
           charter,
-          model.agent === "codex" ? codexAuto : undefined,
+          model.agent === "codex" ? codexAuto && model.profileId === undefined : undefined,
         );
         const verdict = workerModelVerdict({
           model,

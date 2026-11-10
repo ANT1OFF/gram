@@ -42,7 +42,9 @@ export const codexVersionWarning = (
 /**
  * The oldest Codex CLI Gram runs `auto` on, as `approvalsReviewer: "auto_review"`: the version
  * `protocol/` was generated from, where it was measured. An older, prerelease or unreadable version
- * is not given a reviewer it may not know; `auto` there reports `default`.
+ * is not given a reviewer it may not know; `auto` there reports `default`. Any newer CLI passes, though
+ * the `item/autoApprovalReview/*` payloads are `[UNSTABLE]`: the skew warning covers that, and the
+ * mapper falls back to "a request" for an action kind it doesn't know.
  */
 export const CODEX_AUTO_REVIEW_VERSION = "0.166.0";
 

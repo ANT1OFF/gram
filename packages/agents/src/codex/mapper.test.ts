@@ -1138,6 +1138,13 @@ describe("Codex's automatic approvals reviewer", () => {
       "more permissions",
     );
     expect(denied({ ...command, command: "x".repeat(300) }).length).toBeLessThan(200);
+    // A kind a newer CLI adds, and a command with backticks in it.
+    expect(denied({ type: "somethingNew" })).toBe("Codex's auto-review denied a request.");
+    expect(denied({ ...command, command: "echo `date`" })).toBe(
+      "Codex's auto-review denied `` echo `date` ``.",
+    );
+    const long = autoReviewNotice({ review: review("denied", "y".repeat(2000)), action: command });
+    expect((long as { message: string }).message.length).toBeLessThan(400);
   });
 
   it("tracks reviews in progress until they finish or their turn ends, and shows a warning", () => {
@@ -1180,5 +1187,29 @@ describe("Codex's automatic approvals reviewer", () => {
     expect(notify("guardianWarning", { message: "Reviewer is degraded." })).toEqual([
       { type: "notice", level: "warning", message: "Reviewer is degraded." },
     ]);
+    // Once per turn: the same warning or denial again is not shown twice.
+    expect(notify("guardianWarning", { message: "Reviewer is degraded." })).toEqual([]);
+    notify("turn/started", { turn: { id: "turn2", status: "inProgress", items: [], error: null } });
+    const deny = () =>
+      notify("item/autoApprovalReview/completed", {
+        turnId: "turn2",
+        reviewId: "e",
+        review: review("denied"),
+        action: command,
+      });
+    expect(deny()).toHaveLength(1);
+    expect(deny()).toEqual([]);
+    notify("turn/completed", {
+      turn: { id: "turn2", status: "completed", items: [], error: null },
+    });
+    notify("turn/started", { turn: { id: "turn3", status: "inProgress", items: [], error: null } });
+    expect(
+      notify("item/autoApprovalReview/completed", {
+        turnId: "turn3",
+        reviewId: "f",
+        review: review("denied"),
+        action: command,
+      }),
+    ).toHaveLength(1);
   });
 });

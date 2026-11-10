@@ -356,7 +356,7 @@ export const OrchestrationLive = Layer.effect(
 
     const { guardSend, checkSend, checkWorkerMessage, noteMessage, sendOnce } = makeSends(kit);
 
-    const { policyFor } = makeSessionPolicy(kit);
+    const { policyFor, opening } = makeSessionPolicy(kit);
 
     const { openModel, taskWorkers, taskPreflight, withTaskStartup } = makeTaskStartup(kit);
 
@@ -695,7 +695,7 @@ export const OrchestrationLive = Layer.effect(
     yield* kit.conditions.register(conditionHost);
     // Before the boot signal: a worker the boot continues opens its session there, and a session
     // keeps the policy it opened with, so one opened earlier would run without its role's tools.
-    yield* runtimes.setSessionPolicy({ forThread: policyFor });
+    yield* runtimes.setSessionPolicy({ forThread: policyFor, opening });
 
     yield* signals.offer({ type: "boot" });
     yield* signals.take.pipe(

@@ -527,11 +527,15 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       : Effect.succeed(false);
   /**
    * Whether a `kind` thread under `gate` opened in `auto` gets an Auto of its own (`hasAuto`):
-   * for Codex, only ungated and when its CLI here has the automatic reviewer.
+   * for Codex, only ungated, off a gateway profile, and when its CLI here has the automatic reviewer.
    */
-  const autoHere = (kind: AgentKind, gate: OutwardGate | undefined): Effect.Effect<boolean> =>
-    kind !== "codex" || gate !== undefined
-      ? Effect.succeed(hasAuto(kind, { gate, autoReviewReady: false }))
+  const autoHere = (
+    kind: AgentKind,
+    gate: OutwardGate | undefined,
+    gateway = false,
+  ): Effect.Effect<boolean> =>
+    kind !== "codex" || gate !== undefined || gateway
+      ? Effect.succeed(hasAuto(kind, { gate, autoReviewReady: false, gateway }))
       : hosts.get(kind).pipe(
           Effect.flatMap((host) => host.autoReviewReady ?? Effect.succeed(false)),
           Effect.catchCause(() => Effect.succeed(false)),
@@ -594,7 +598,11 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           model.agent,
           settings,
           charter,
-          yield* autoHere(model.agent, gateOfAutonomy(autonomyOf(charter))),
+          yield* autoHere(
+            model.agent,
+            gateOfAutonomy(autonomyOf(charter)),
+            model.profileId !== undefined,
+          ),
         );
         // A mode the gate can't ask in is as unrunnable as a missing key, so a spawn on it falls
         // back too rather than being refused by `workerModelVerdict`.

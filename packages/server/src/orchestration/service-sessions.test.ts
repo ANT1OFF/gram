@@ -401,6 +401,98 @@ describe.skipIf(!hasGit)("orchestration service", () => {
       GIT_HEAVY,
     );
 
+  // A reopen can land where Codex has no Auto: under a gate the workspace gained, on a CLI that
+  // dropped below the reviewer after a restart, or on an older joined machine. Each reports
+  // `default`, and each is moved on to bypass as a first open is, not left in Ask.
+  for (const reopen of ["a restart", "autonomy lowered to publish"] as const)
+    it.effect(
+      `moves a Codex worker reopened in auto by ${reopen} to bypass`,
+      () =>
+        inServer((world) =>
+          Effect.gen(function* () {
+            const fake = yield* FakeAgentControl;
+            yield* fake.setNativeGateReady(true);
+            yield* fake.setAutoReviewReady(true);
+            const store = yield* ThreadStore;
+            const runtimes = yield* ThreadRuntimes;
+            const orchestration = yield* Orchestration;
+            const project = yield* openProject(world);
+            yield* store.upsertProfile({
+              id: "litellm" as ProfileId,
+              name: "LiteLLM",
+              baseURL: "http://127.0.0.1:4000",
+              keyRef: "vault:synthetic-unused",
+              models: [],
+            });
+            // A gateway worker may be lowered to Publish while live; a native one at Full runs
+            // in the user's own home and may not. Codex's Auto skips gateways, so the gateway
+            // worker's stored `auto` stands for one that started in it.
+            const workerModel =
+              reopen === "a restart"
+                ? ({ agent: "codex", model: "fake-opus" } as const)
+                : ({
+                    agent: "codex",
+                    model: "fake-opus",
+                    profileId: "litellm" as ProfileId,
+                  } as const);
+            const state = yield* orchestration.saveWorkspace({
+              name: "Codex reopen",
+              projectIds: [project.id],
+              homeProjectId: project.id,
+            });
+            const charter = {
+              ...DEFAULT_CHARTER,
+              autonomy: "full" as const,
+              orchestratorModel: { agent: "claude", model: "fake-opus" } as const,
+              workerModels: [{ ...workerModel, default: true }],
+              workerMode: "auto" as const,
+            };
+            yield* orchestration.setCharter(state.workspace.id, charter);
+            const root = yield* orchestration.open({ projectId: project.id });
+            const session = yield* waitSent(root.id, 1);
+            yield* completeTurn(session);
+            const worker = yield* spawn(session, {
+              feature: "native",
+              model: "codex:fake-opus",
+            });
+            yield* stopSilently(worker.session);
+            if (reopen === "a restart") {
+              expect(worker.thread.mode).toBe("auto");
+              // The session closes and opens again on the same conversation, as after a host
+              // restart or on a joined machine.
+              yield* runtimes.restartSession(worker.thread.id);
+            } else {
+              expect(worker.thread.mode).toBe("bypassPermissions");
+              expect(worker.thread.model.profileId).toBe("litellm");
+              // The fake host reports no home; a real gateway session runs on the gateway's.
+              yield* store.updateThread(worker.thread.id, (t) => ({
+                ...t,
+                mode: "auto",
+                codexHome: "gateway",
+              }));
+              yield* orchestration.setCharter(state.workspace.id, {
+                ...charter,
+                autonomy: "publish",
+              });
+            }
+            const reopened = yield* waitReal(
+              "the worker's reopened session",
+              sessionsOf(worker.thread.id).pipe(Effect.map((sessions) => sessions[1])),
+            );
+            expect(reopened.options.permissionMode).toBe("auto");
+            if (reopen !== "a restart") expect(reopened.options.outwardGate).toBe("irreversible");
+            yield* reopened.emit({ type: "mode", mode: "default" });
+            yield* waitReal(
+              "the reopened worker's move to bypass",
+              Effect.sync(() => reopened.modes.includes("bypassPermissions")),
+            );
+            yield* settle;
+            expect((yield* store.getThread(worker.thread.id)).mode).toBe("bypassPermissions");
+          }),
+        ),
+      GIT_HEAVY,
+    );
+
   for (const autonomy of ["supervised", "publish"] as const) {
     for (const ready of [true, false]) {
       it.effect(

@@ -90,6 +90,7 @@ export interface SessionLifecycleDeps {
   readonly setRetrying: (rt: Runtime, retrying: boolean, detail?: string) => Effect.Effect<void>;
   readonly clearPendingRequests: ServerApprovals["clearPendingRequests"];
   readonly policyFor: SessionPolicies["policyFor"];
+  readonly opening: SessionPolicies["opening"];
   readonly setPendingRestart: SessionRestarts["setPendingRestart"];
   readonly resumeOptions: ResumePlans["resumeOptions"];
   readonly handleEvent: AgentEvents["handleEvent"];
@@ -130,6 +131,7 @@ export const makeSessionLifecycle = ({
   setRetrying,
   clearPendingRequests,
   policyFor,
+  opening,
   setPendingRestart,
   resumeOptions,
   handleEvent,
@@ -450,6 +452,7 @@ export const makeSessionLifecycle = ({
       const host = yield* hosts.get(thread.model.agent);
       const resume = yield* resumeOptions(thread, resumeAt);
       const policy = yield* policyFor(thread);
+      yield* opening(thread);
       rt.capabilities = host.capabilities;
       rt.cwd = thread.checkout.path;
       rt.quota = `${thread.model.agent}/${thread.model.profileId ?? ""}`;

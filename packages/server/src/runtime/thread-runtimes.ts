@@ -310,7 +310,7 @@ const make = Effect.gen(function* () {
       { discard: true },
     );
 
-  const { policyFor, methods: policyMethods } = makeSessionPolicy({ store });
+  const { policyFor, opening, methods: policyMethods } = makeSessionPolicy({ store });
   // Present in the full server; tests without the HTTP layer run agents without MCP endpoints.
   const mcpTokens = yield* Effect.serviceOption(McpTokens);
   const httpServer = yield* Effect.serviceOption(HttpServer.HttpServer);
@@ -965,6 +965,7 @@ const make = Effect.gen(function* () {
     setRetrying,
     clearPendingRequests,
     policyFor,
+    opening,
     setPendingRestart,
     resumeOptions,
     handleEvent,

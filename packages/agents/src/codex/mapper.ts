@@ -342,13 +342,21 @@ const chunk = (t: Turn, c: Chunk): AgentEvent => ({
 const clip = (text: string, max = 120): string =>
   text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 
+/** `text` as inline code, fenced past any backticks it holds. */
+const code = (text: string): string => {
+  const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((run) => run[0].length));
+  const fence = "`".repeat(longest + 1);
+  const pad = longest > 0 ? " " : "";
+  return `${fence}${pad}${text}${pad}${fence}`;
+};
+
 /** What Codex's automatic reviewer was asked about, in a few words. */
 const reviewedAction = (action: GuardianApprovalReviewAction): string => {
   switch (action.type) {
     case "command":
-      return `\`${clip(action.command)}\``;
+      return code(clip(action.command));
     case "execve":
-      return `\`${clip([action.program, ...action.argv.slice(1)].join(" "))}\``;
+      return code(clip([action.program, ...action.argv.slice(1)].join(" ")));
     case "writeStdin":
       return "input to a running command";
     case "applyPatch":
@@ -361,13 +369,16 @@ const reviewedAction = (action: GuardianApprovalReviewAction): string => {
       return `${action.toolTitle ?? action.toolName} on ${action.connectorName ?? action.server}`;
     case "requestPermissions":
       return "more permissions";
+    // A kind a newer CLI added; the payload is [UNSTABLE].
+    default:
+      return "a request";
   }
 };
 
 /**
  * The notice for a finished automatic review, or none: an approval ran as asked, and an aborted
  * review went with its turn. A denial and a review that couldn't finish didn't run, and the agent
- * was told so.
+ * was told so. The reviewer's rationale is model text, so it is clipped like the command.
  */
 export const autoReviewNotice = (
   p: Pick<ItemGuardianApprovalReviewCompletedNotification, "review" | "action">,
@@ -379,7 +390,7 @@ export const autoReviewNotice = (
       return {
         type: "notice",
         level: "warning",
-        message: `Codex's auto-review denied ${what}${why ? `: ${why}` : "."}`,
+        message: `Codex's auto-review denied ${what}${why ? `: ${clip(why, 300)}` : "."}`,
       };
     case "timedOut":
       return {
@@ -398,6 +409,16 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
   let lastStatus: AgentStatus | undefined;
   /** `item/autoApprovalReview/started` reviews with no `completed` yet; a turn's end drops them. */
   const reviews = new Set<string>();
+  /**
+   * The auto-review and reviewer-warning notices shown this turn: an agent retrying around a
+   * denial gets the same one once, not a transcript full of it.
+   */
+  const reviewNotices = new Set<string>();
+  const reviewNotice = (notice: AgentEvent, out: Array<AgentEvent>): void => {
+    if (notice.type !== "notice" || reviewNotices.has(notice.message)) return;
+    reviewNotices.add(notice.message);
+    out.push(notice);
+  };
   let idlePending = false;
   const usageLedger = makeCodexUsageLedger(options.freshSession);
   let contextWindow: number | undefined;
@@ -635,6 +656,7 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
     const t = turn;
     if (t === undefined) return;
     reviews.clear();
+    reviewNotices.clear();
     for (const [id, activity] of compactions) {
       // An item with no completion never establishes a successful compaction.
       observeCompaction(id, t.id, activity, reason === "completed" ? "unfinished" : reason);
@@ -1082,14 +1104,17 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
       case "item/autoApprovalReview/completed": {
         reviews.delete(notification.params.reviewId);
         const notice = autoReviewNotice(notification.params);
-        if (notice !== undefined) out.push(notice);
+        if (notice !== undefined) reviewNotice(notice, out);
         break;
       }
       // Every later command of the turn goes to the reviewer before it runs; nothing to show.
       case "autoApprovalReview/strictReviewRequired":
         break;
       case "guardianWarning":
-        out.push({ type: "notice", level: "warning", message: notification.params.message });
+        reviewNotice(
+          { type: "notice", level: "warning", message: notification.params.message },
+          out,
+        );
         break;
       case "serverRequest/resolved":
         out.push({

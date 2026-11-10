@@ -44,6 +44,11 @@ export interface SessionPolicy {
  */
 export interface SessionPolicyPort {
   forThread(thread: Thread): Effect.Effect<SessionPolicy>;
+  /**
+   * Told once per session open, as the thread stands then (its mode is the one the session opens
+   * in), under the same lock rules as `forThread`. Not called for `audienceOf`'s lookups.
+   */
+  opening?(thread: Thread): Effect.Effect<void>;
 }
 
 export const PLAIN_POLICY: SessionPolicy = { audience: "plain", outwardGate: undefined };
@@ -80,6 +85,20 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
           ),
         );
 
+  /** A session of `thread` is opening; a failing port changes nothing about the open. */
+  const opening = (thread: Thread): Effect.Effect<void> =>
+    sessionPolicy?.opening === undefined
+      ? Effect.void
+      : sessionPolicy
+          .opening(thread)
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("session policy opening hook failed").pipe(
+                Effect.annotateLogs({ threadId: thread.id, cause: Cause.pretty(cause) }),
+              ),
+            ),
+          );
+
   const methods: Pick<ThreadRuntimesShape, "setSessionPolicy" | "audienceOf"> = {
     setSessionPolicy: (port) =>
       Effect.sync(() => {
@@ -96,7 +115,7 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
       ),
   };
 
-  return { policyFor, methods };
+  return { policyFor, opening, methods };
 };
 
 /** What `makeSessionPolicy` gives the rest of `ThreadRuntimes`. */
