@@ -15,7 +15,15 @@ import { showFileAt } from "@/panels/files/files-store";
 import { PatchView } from "@/panels/patch-view";
 
 import { useFileRefsScope } from "./file-ref-link";
-import { basename, partEdits, PHASE_DISPLAY, toolPhase, type AnyToolPart } from "./parts";
+import {
+  basename,
+  CUT_OFF_REASON,
+  cutOffByInterrupt,
+  partEdits,
+  PHASE_DISPLAY,
+  toolPhase,
+  type AnyToolPart,
+} from "./parts";
 
 /** Diff rows an opened edit shows before "Show more". */
 const EDIT_ROW_BUDGET = 30;
@@ -79,7 +87,13 @@ export function FileEditCard({ part }: { part: AnyToolPart }) {
     part.state === "output-available" && part.preliminary === true,
   );
   const edits = partEdits(part);
-  const error = part.state === "output-error" ? part.errorText : undefined;
+  // A call an interrupt cut off says so plainly, never in Claude Code's words that blame the user.
+  const error =
+    part.state !== "output-error"
+      ? undefined
+      : cutOffByInterrupt(part.errorText)
+        ? CUT_OFF_REASON
+        : part.errorText;
   if (edits.length === 0) {
     // The call hasn't named its file yet.
     return (
@@ -126,7 +140,10 @@ function FileEditRow({
   // Only a finished call changed the file; one waiting, refused or failed is still "Editing".
   const verb = FILE_EDIT_VERB[edit.kind][phase === "done" ? "done" : "doing"];
   const name = basename(edit.movedTo ?? edit.path);
-  const display = PHASE_DISPLAY[phase];
+  const display =
+    error === CUT_OFF_REASON
+      ? { ...PHASE_DISPLAY[phase], label: "Interrupted" }
+      : PHASE_DISPLAY[phase];
   const openable = edit.hunks.length > 0 || error !== undefined;
   // A deleted file is gone, and a credential file isn't previewed from a link.
   const linked = scope !== undefined && edit.kind !== "delete" && !isCredentialPath(edit.path);
@@ -212,7 +229,12 @@ function FileEditRow({
               </div>
             )}
             {error !== undefined && (
-              <pre className="mt-1 overflow-x-auto font-mono text-meta whitespace-pre-wrap text-destructive">
+              <pre
+                className={cn(
+                  "mt-1 overflow-x-auto font-mono text-meta whitespace-pre-wrap",
+                  phase === "cancelled" ? "text-muted-foreground" : "text-destructive",
+                )}
+              >
                 {error}
               </pre>
             )}

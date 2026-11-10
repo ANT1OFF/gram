@@ -82,7 +82,9 @@ import { toCodexTranscript } from "./transcript.ts";
  * What a Codex thread supports.
  * - `rewind: "history"`: `thread/revert` drops later turns from the history only; files stay as
  *   they are (Codex has no file snapshots).
- * - `steer`: `turn/steer` adds input to the running turn, answered at the next model call.
+ * - `steer`: `turn/steer` adds input to the running turn, answered at the next model call. It
+ *   cancels nothing. Codex has no interrupting steer (`steerInterrupt`), so Gram's `interrupt`
+ *   delivery reaches a Codex thread as a steer.
  * - `planMode`: Codex's plan collaboration mode, where it can also ask questions.
  * - `approvalScopes`: accept once, for the session, or always (an exec policy amendment for
  *   commands).

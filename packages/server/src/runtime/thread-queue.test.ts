@@ -518,7 +518,7 @@ describe("ThreadRuntimes queue", () => {
   );
 
   it.effect(
-    "steers a notice into a running turn, keeping its payload, and sends one to an idle thread",
+    "queues a notice behind a running turn, steers one only when asked, and sends one to an idle thread",
     () =>
       Effect.gen(function* () {
         const runtimes = yield* ThreadRuntimes;
@@ -535,11 +535,20 @@ describe("ThreadRuntimes queue", () => {
         );
         yield* runtimes.send(thread.id, { text: "mine" });
 
-        const steered = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(1));
+        // Informational: it waits for the turn's end and cuts nothing off.
+        const queued = yield* runtimes.sendNotice(thread.id, "merged:o/r#7", { text: "merged #7" });
+        expect(queued).toEqual({ queued: true, steered: false, replaced: false });
+        expect(session.steered).toEqual([]);
+
+        const steered = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(1), {
+          steer: true,
+        });
         expect(steered).toEqual({ queued: false, steered: true, replaced: false });
         expect(session.steered).toEqual([notice(1)]);
+        // A steer, never an interrupt.
+        expect(session.steeredInterrupt).toEqual([false]);
         const [during] = yield* runtimes.snapshot;
-        expect(during?.queue.map((q) => q.input.text)).toEqual(["mine"]);
+        expect(during?.queue.map((q) => q.input.text)).toEqual(["mine", "merged #7"]);
         const parts = (yield* store.listMessages(thread.id)).flatMap((m) => m.parts);
         expect(parts).toContainEqual(
           expect.objectContaining({ type: "data-review-notice", data: notice(1).notice }),
@@ -552,12 +561,22 @@ describe("ThreadRuntimes queue", () => {
         );
         yield* session.completeTurn();
         yield* waitFor(
+          "the queued notice",
+          Effect.sync(() => session.sent.length === 3),
+        );
+        yield* session.completeTurn();
+        yield* waitFor(
           "the idle thread",
           runtimes.snapshot.pipe(Effect.map(([s]) => s?.status === "idle")),
         );
         const woke = yield* runtimes.sendNotice(thread.id, "ci:o/r#7", { text: "CI passed on #7" });
         expect(woke).toEqual({ queued: false, steered: false, replaced: false });
-        expect(session.sent.map((i) => i.text)).toEqual(["one", "mine", "CI passed on #7"]);
+        expect(session.sent.map((i) => i.text)).toEqual([
+          "one",
+          "mine",
+          "merged #7",
+          "CI passed on #7",
+        ]);
 
         // Archived, it is woken by no monitor.
         yield* runtimes.updateThread(thread.id, (t) => ({ ...t, parked: true }));
@@ -565,7 +584,7 @@ describe("ThreadRuntimes queue", () => {
           .sendNotice(thread.id, "ci:o/r#7", { text: "CI failed on #7" })
           .pipe(Effect.flip);
         expect(refused).toMatchObject({ _tag: "InvalidState", message: "the thread is archived" });
-        expect(session.sent).toHaveLength(3);
+        expect(session.sent).toHaveLength(4);
       }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
@@ -681,22 +700,28 @@ describe("ThreadRuntimes queue", () => {
           Effect.map(([s]) => s?.queue.map((q) => q.input.text)),
         );
         yield* fake.setSteerFails(true);
-        const failed = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(1));
+        const failed = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(1), {
+          steer: true,
+        });
         expect(failed).toEqual({ queued: true, steered: false, replaced: false });
         expect(yield* texts).toEqual([notice(1).text]);
 
         yield* fake.setSteerFails(false);
-        const steered = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(2));
+        const steered = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(2), {
+          steer: true,
+        });
         expect(steered).toEqual({ queued: false, steered: true, replaced: true });
         expect(session.steered.map((i) => i.text)).toEqual([notice(2).text]);
         expect(yield* texts).toEqual([]);
 
         yield* fake.setSteerFails(true);
-        yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(3));
+        yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(3), { steer: true });
         yield* runtimes.send(thread.id, { text: "mine" });
         yield* fake.setSteerFails(false);
         // Steering it would put the PR ahead of what the user queued after the older update.
-        const kept = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(4));
+        const kept = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(4), {
+          steer: true,
+        });
         expect(kept).toEqual({ queued: true, steered: false, replaced: true });
         expect(yield* texts).toEqual([notice(4).text, "mine"]);
         expect(session.steered).toHaveLength(1);
@@ -717,7 +742,9 @@ describe("ThreadRuntimes queue", () => {
         fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
       );
       yield* fake.setSteerFails(true);
-      const failed = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(1));
+      const failed = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(1), {
+        steer: true,
+      });
       expect(failed).toEqual({ queued: true, steered: false, replaced: false });
       // The agent never took it, so the turn it was steered into doesn't show it.
       expect(yield* userTexts(thread.id)).toEqual(["one"]);

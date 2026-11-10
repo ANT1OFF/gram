@@ -99,8 +99,16 @@ export const joinMessages: JoinQueued = ({ input, queuedAt, messages }, next, no
 interface SendInput {
   readonly threadId: string;
   readonly text: string;
-  readonly mode?: "queue" | "steer";
+  readonly mode?: DeliveryMode;
 }
+
+/**
+ * How a message reaches a running thread. `queue`: after its turn ends. `steer`: into the turn,
+ * once the tool calls under way finish, cancelling nothing. `interrupt`: the turn stops now, cutting
+ * off its tool calls, and the agent answers the message; for a stop or a correction only.
+ */
+type DeliveryMode = "queue" | "steer" | "interrupt";
+const DELIVERY_MODES = ["queue", "steer", "interrupt"] as const;
 
 interface ParentRoute {
   readonly threadId: ThreadId;
@@ -381,20 +389,30 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         if (parentRoute !== undefined) yield* checkParentRoute(caller, parentRoute);
         if (workerSend) yield* orchestration!.checkWorkerMessage(caller, target.thread.id);
         const canSteer = target.capabilities?.steer === true && target.status === "running";
-        const steer = asked === "steer";
+        const steer = asked === "steer" || asked === "interrupt";
+        // An agent that can't stop its turn for a message (Codex) takes it as a steer, which lands
+        // at its next step anyway.
+        const interrupt = asked === "interrupt" && target.capabilities?.steerInterrupt === true;
+        const notes: Array<string> = [];
+        if (asked === "interrupt" && canSteer && !interrupt) {
+          notes.push(
+            "That agent can't be interrupted for a message, so it was steered in instead.",
+          );
+        }
         const steered =
           steer &&
           canSteer &&
-          (yield* runtimes.steer(target.thread.id, input).pipe(
-            Effect.as(true),
-            // The turn can end between the snapshot and the steer; to a worker that is a queued
-            // message, not a failed send.
-            Effect.catchTag("InvalidState", (e) =>
-              delegated ? Effect.succeed(false) : Effect.fail(e),
-            ),
-          ));
+          (yield* runtimes
+            .steer(target.thread.id, input, interrupt ? { interrupt } : undefined)
+            .pipe(
+              Effect.as(true),
+              // The turn can end between the snapshot and the steer; to a worker that is a queued
+              // message, not a failed send.
+              Effect.catchTag("InvalidState", (e) =>
+                delegated ? Effect.succeed(false) : Effect.fail(e),
+              ),
+            ));
         let delivered: "sent" | "queued" | "steered" = "steered";
-        const notes: Array<string> = [];
         let waitedSeconds: number | undefined;
         if (!steered) {
           const result: JoinResult = delegated
@@ -406,7 +424,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
               )
             : yield* runtimes.send(target.thread.id, input);
           delivered = result.queued ? "queued" : "sent";
-          if (mode === "steer") {
+          if (mode === "steer" || mode === "interrupt") {
             notes.push("That thread can't be steered right now, so the message was queued.");
           }
           if (result.joined !== undefined) {
@@ -444,13 +462,13 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "send_message",
         class: "crossThread",
         description:
-          'Use `message` for message text (`text` and `content` are aliases). Send it to another Gram thread by the exact full threadId from list_threads or list_workers; shortened IDs are refused. For your parent, use message_orchestrator without an ID. A message queues until the thread is idle, or with mode "steer" arrives mid-turn once its running tool call finishes, where the agent supports it. To your own running worker it steers unless mode "queue": steer what changes what it should do now, queue context for after its current step. A queued message to your own worker joins your earlier one still waiting, and the result says how long it has waited. Your own workers need no approval. In Full Auto a current worker may also message its bound workspace orchestrator or a current sibling worker without approval; these queue by default and keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces and user-held workers refuse these messages. Other targets, and worker sends outside Full Auto, ask approval per call, even in Bypass. `clientRequestId` retries an own-worker or Full Auto send without sending it twice. An orchestrator\'s `userMessages` (1–5) appends the user\'s latest messages word for word, for a paste the worker needs exactly. Link a thread for the user as [title](#threadId).',
+          'Use `message` for message text (`text` and `content` are aliases). Send it to another Gram thread by the exact full threadId from list_threads or list_workers; shortened IDs are refused. For your parent, use message_orchestrator without an ID. `mode`: "queue" (after the turn), "steer" (mid-turn after the tool calls under way; cancels nothing) or "interrupt" (stops the turn now, cutting off tool calls; urgent stops only). Default queue; to your own running worker, steer. Your own workers need no approval. In Full Auto a current worker may also message its bound workspace orchestrator or a current sibling worker without approval; these queue by default and keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces and user-held workers refuse these messages. Other targets, and worker sends outside Full Auto, ask approval per call, even in Bypass. `clientRequestId` retries an own-worker or Full Auto send without sending it twice. An orchestrator\'s `userMessages` (1–5) appends the user\'s latest messages word for word, for a paste the worker needs exactly. Link a thread for the user as [title](#threadId).',
       },
       input: inputAliases(
         Schema.Struct({
           threadId: Schema.NonEmptyString,
           text: Schema.NonEmptyString,
-          mode: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
+          mode: Schema.optionalKey(Schema.Literals(DELIVERY_MODES)),
           clientRequestId: Schema.optionalKey(Schema.String),
           userMessages: Schema.optionalKey(
             Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: USER_MESSAGES_MAX })),
@@ -474,7 +492,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
       needsApproval: (caller, _input, target) => sendNeedsApproval(caller, target),
       describe: (_caller, { targetTitle, text, mode }) =>
         Effect.succeed(
-          `Send to “${targetTitle}”${mode === "steer" ? " (steer)" : ""}: ${truncate(text, CARD_TEXT_CAP)}`,
+          `Send to “${targetTitle}”${mode === undefined || mode === "queue" ? "" : ` (${mode})`}: ${truncate(text, CARD_TEXT_CAP)}`,
         ),
       handle: (caller, { threadId, text, mode, clientRequestId }, { carded }) =>
         deliver(
@@ -537,7 +555,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "broadcast_message",
         class: "crossThread",
         description:
-          'Use `message` for message text (`text` and `content` are aliases). Send one message to each of your live workers, or to those of one `feature`, or to the `threadIds` named: for what they all need to hear, such as main moving or a changed convention. Each gets it as from send_message, steered unless mode "queue", and through the same per-worker limit. A worker the user holds, or one that refuses, is listed under `skipped` with why; the rest are sent.',
+          "Use `message` for message text (`text` and `content` are aliases). Send one message to each of your live workers, or to those of one `feature`, or to the `threadIds` named: for what they all need to hear, such as main moving or a changed convention. Each gets it as from send_message, steered unless another mode, and through the same per-worker limit. A worker the user holds, or one that refuses, is listed under `skipped` with why; the rest are sent.",
       },
       audience: ["orchestrator"],
       input: inputAliases(
@@ -545,7 +563,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           text: Schema.NonEmptyString,
           feature: Schema.optionalKey(Schema.String),
           threadIds: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
-          mode: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
+          mode: Schema.optionalKey(Schema.Literals(DELIVERY_MODES)),
         }),
         { text: ["message", "content"] },
       ),

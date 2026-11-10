@@ -972,7 +972,7 @@ describe.skipIf(!hasGit)("GitStatePublisher", () => {
     }).pipe(Effect.scoped, Effect.provide(publisherLayer())),
   );
 
-  it.live("steers a CI message into a running turn whose agent can take it", () =>
+  it.live("queues a CI message behind a running turn, never steering it, for the turn's end", () =>
     Effect.gen(function* () {
       const root = repo();
       const runtimes = yield* ThreadRuntimes;
@@ -996,12 +996,21 @@ describe.skipIf(!hasGit)("GitStatePublisher", () => {
       yield* publisher.refresh(root, { remote: true });
       current.badge = badge({ checks: "failing" });
       yield* publisher.refresh(root, { remote: true });
-      const steered = yield* eventually(
-        "the steered CI message",
-        Effect.sync(() => session.steered[0]),
+      const queued = yield* eventually(
+        "the queued CI message",
+        runtimes.snapshot.pipe(
+          Effect.map((all) => all.find((s) => s.thread.id === thread.id)?.queue[0]),
+        ),
       );
-      expect(steered.text).toBe("CI failed on #7: build");
+      expect(queued.input.text).toBe("CI failed on #7: build");
+      expect(session.steered).toEqual([]);
       expect(session.sent.map((i) => i.text)).toEqual(["work"]);
+      yield* session.completeTurn();
+      yield* eventually(
+        "the CI message sent",
+        Effect.sync(() => session.sent.length === 2),
+      );
+      expect(session.sent[1]?.text).toBe("CI failed on #7: build");
     }).pipe(Effect.scoped, Effect.provide(publisherLayer())),
   );
 

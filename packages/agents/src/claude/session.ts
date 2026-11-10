@@ -7,6 +7,7 @@ import type {
   PermissionResult,
   Query,
   SDKMessage,
+  SDKResultMessage,
   SDKUserMessage,
   SettingSource,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -244,6 +245,7 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = {
   fork: true,
   rewind: "historyAndFiles",
   steer: true,
+  steerInterrupt: true,
   planMode: true,
   approvalScopes: ["once", "session", "always"],
   userQuestions: true,
@@ -295,7 +297,7 @@ const isUuid = (id: string): id is UUID => UUID_PATTERN.test(id);
 
 const userMessage = (
   input: UserInput,
-  options: { readonly priority?: "now"; readonly uuid?: UUID } = {},
+  options: { readonly priority?: "now" | "next"; readonly uuid?: UUID } = {},
 ): SDKUserMessage => ({
   type: "user",
   message: { role: "user", content: promptText(input) },
@@ -303,6 +305,14 @@ const userMessage = (
   ...(options.priority === undefined ? {} : { priority: options.priority }),
   ...(options.uuid === undefined ? {} : { uuid: options.uuid }),
 });
+
+/**
+ * Added to what an interrupting steer tells the agent. The CLI answers every tool call the
+ * interrupt cut off with its own "The user doesn't want to take this action right now…", which
+ * Gram can't replace; this says it was not so.
+ */
+export const INTERRUPT_NOTE =
+  "(This message interrupted your turn. A tool call cut off by it was not declined by the user: run it again if you still need it.)";
 
 interface Pending {
   readonly request: PendingRequest;
@@ -1070,10 +1080,35 @@ export const makeClaudeHost = (
       // mapper tracks the same tasks by tool-use id, for the transcript; this is the handle to stop
       // one, kept here because only the session holds the query.
       const backgroundTasks = new Set<string>();
-      // CLI 2.1.286 returns an aborted result before continuing a priority-now input.
-      // That result ends an SDK iteration, not the logical turn the runtime is still following.
-      let steers = 0;
+      // An interrupting steer goes at priority 'now': the CLI aborts the running iteration (what it
+      // cut off reads "The user doesn't want to take this action…") and returns an aborted result
+      // before continuing with the input (CLI 2.1.286). That result ends an SDK iteration, not the
+      // logical turn the runtime is still following.
+      let interrupts = 0;
+      // A plain steer goes at priority 'next' under its own uuid and cancels nothing: the CLI folds
+      // it into the running turn between tool rounds, or, if the turn ends first, runs it as the
+      // turn after. Each waits here until a result lists it among the prompts it consumed.
+      const pendingSteers = new Set<string>();
       let continuingSteer = false;
+      /**
+       * Takes the steers `result` consumed off the list, and says whether one still waits, so the
+       * CLI runs it as the turn after this one: the logical turn goes on. A result that names no
+       * consumed prompts (an older CLI) goes by `queued_turn_count`, and without that the steer
+       * counts as taken.
+       */
+      const steerStillWaits = (result: SDKResultMessage): boolean => {
+        if (pendingSteers.size === 0) return false;
+        const consumed =
+          result.user_message_uuids ??
+          (result.user_message_uuid === undefined ? undefined : [result.user_message_uuid]);
+        if (consumed === undefined) {
+          const waits = (result.queued_turn_count ?? 0) > 0;
+          if (!waits) pendingSteers.clear();
+          return waits;
+        }
+        for (const id of consumed) pendingSteers.delete(id);
+        return pendingSteers.size > 0;
+      };
       if (init.fast_mode_state !== undefined || speed !== undefined) reportSpeed(init);
 
       let continuationDeadline: number | undefined;
@@ -1154,11 +1189,12 @@ export const makeClaudeHost = (
         }
         const terminal = message.type === "result" ? message.terminal_reason : undefined;
         const continues =
-          (steers > 0 || continuingSteer) &&
-          (terminal === "aborted_tools" || terminal === "aborted_streaming");
+          ((interrupts > 0 || continuingSteer) &&
+            (terminal === "aborted_tools" || terminal === "aborted_streaming")) ||
+          (message.type === "result" && steerStillWaits(message));
         observeTurn(message, continues);
         if (message.type === "result") {
-          steers = 0;
+          interrupts = 0;
           continuingSteer = continues;
           // A late result after a result-less idle still describes the same SDK iteration.
           resultlessIdle = false;
@@ -1167,19 +1203,23 @@ export const makeClaudeHost = (
           if (
             event.type === "turnEnd" &&
             (continues ||
-              ((steers > 0 || continuingSteer) &&
+              ((interrupts > 0 || continuingSteer) &&
                 message.type === "system" &&
                 message.subtype === "session_state_changed" &&
                 message.state === "idle"))
           ) {
             if (!continues) {
-              steers = 0;
+              interrupts = 0;
               continuingSteer = true;
               resultlessIdle = true;
             }
             continue;
           }
-          if ((steers > 0 || continuingSteer) && event.type === "status" && event.status === "idle")
+          if (
+            (interrupts > 0 || continuingSteer) &&
+            event.type === "status" &&
+            event.status === "idle"
+          )
             continue;
           if (event.type === "turnEnd") toolGate.turnEnded();
           if (
@@ -1255,7 +1295,8 @@ export const makeClaudeHost = (
           if (next === undefined) {
             continuingSteer = false;
             continuationDeadline = undefined;
-            steers = 0;
+            interrupts = 0;
+            pendingSteers.clear();
             resetUsage();
             mapper.continued();
             emit({ type: "turnEnd", reason: "interrupted" });
@@ -1276,7 +1317,8 @@ export const makeClaudeHost = (
                 threadId: o.threadId,
                 subtype: next.value.subtype,
                 terminalReason: next.value.terminal_reason,
-                steers,
+                interrupts,
+                steers: pendingSteers.size,
               }),
             );
           }
@@ -1416,11 +1458,22 @@ export const makeClaudeHost = (
             );
           });
         },
-        steer: (message) =>
+        steer: (message, steerOptions) =>
           Effect.sync(() => {
-            steers++;
             turnStarts();
-            input.push(userMessage(message, { priority: "now" }));
+            if (steerOptions?.interrupt === true) {
+              interrupts++;
+              input.push(
+                userMessage(
+                  { ...message, text: `${message.text}\n\n${INTERRUPT_NOTE}` },
+                  { priority: "now" },
+                ),
+              );
+              return;
+            }
+            const uuid = randomUUID();
+            pendingSteers.add(uuid);
+            input.push(userMessage(message, { priority: "next", uuid }));
           }),
         // One `stopTask` each. A task that ended in the meantime rejects, which is the outcome
         // wanted; its `task_notification` takes it off the list either way.
@@ -1445,7 +1498,8 @@ export const makeClaudeHost = (
             : Effect.succeed(false),
         ...(gated ? { closeToolGate: Effect.sync(() => void toolGate.close()) } : {}),
         interrupt: Effect.sync(() => {
-          steers = 0;
+          interrupts = 0;
+          pendingSteers.clear();
           continuingSteer = false;
           continuationDeadline = undefined;
         }).pipe(

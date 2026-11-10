@@ -133,6 +133,28 @@ describe("ToolShell", () => {
     expect(screen.getByTestId("tool-card").textContent).not.toContain("Running");
   });
 
+  it("shows a call an interrupt cut off as interrupted, neutral, never as the user declining", () => {
+    const part = {
+      type: "tool-Read",
+      toolCallId: "cut-off-read",
+      state: "output-error",
+      input: { file_path: "/repo/orchestrator-feature-cards-dark.before.png" },
+      errorText:
+        "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed.",
+    } as AnyToolPart;
+    card(new Set(), { part, messages: [] });
+    const row = screen.getByRole("button", { name: /Read/ });
+    expect(row.textContent).toContain("Interrupted");
+    expect(row.textContent).not.toContain("Error");
+    // Neutral, not the destructive tone of a failure.
+    expect(row.querySelector(".text-destructive")).toBeNull();
+    fireEvent.click(row);
+    expect(screen.getByTestId("tool-cut-off").textContent).toBe(
+      "The turn was interrupted before this call finished. Nobody declined it, and the agent can run it again.",
+    );
+    expect(screen.getByTestId("tool-card").textContent).not.toContain("The user doesn't want");
+  });
+
   it("renders a closed card's output only once it's opened, then keeps it", () => {
     const bash = {
       type: "tool-Bash",

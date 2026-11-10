@@ -31,7 +31,10 @@ export function ToolGroup({
   run,
   ...card
 }: { run: readonly RunPart[] } & Omit<ToolCardProps, "part">) {
-  const { active, waiting, failed, cancelled, awaiting } = runState(run, useAwaitingTools());
+  const { active, waiting, failed, cancelled, interrupted, awaiting } = runState(
+    run,
+    useAwaitingTools(),
+  );
   const edits = runEdits(run);
   // A run waiting on the user is open until the user says otherwise, even when the ask came later.
   const [toggled, setToggled] = useState<boolean>();
@@ -90,6 +93,7 @@ export function ToolGroup({
           </span>
         )}
         {cancelled > 0 && <span className="shrink-0">· {cancelled} cancelled</span>}
+        {interrupted > 0 && <span className="shrink-0">· {interrupted} interrupted</span>}
         <ChevronRight
           aria-hidden
           className={cn(
