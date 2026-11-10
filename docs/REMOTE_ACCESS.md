@@ -56,7 +56,8 @@ Without `GRAM_REMOTE_ORIGIN`, the local app switches access through the Tailscal
   so a renamed machine moves access to its new address. Each opening is a new access: a closed
   one authorizes, pairs and connects nothing more, and a pairing claim that began on it, still
   sending its code, is refused even when access has reopened at the same address. Pairings are
-  kept per address; pairing links made before are not.
+  kept per address, in one set every access on that address shares, so removing a browser holds
+  whichever access the removal began on; pairing links made before are not kept.
 - A listener shared with Funnel is never Gram's: Gram doesn't serve on it, and turning off or
   stopping never removes it, even when it was Gram's before the user shared it.
 - Turning off removes that listener (only while it is still Gram's alone), even when saving the setting fails, closes every open

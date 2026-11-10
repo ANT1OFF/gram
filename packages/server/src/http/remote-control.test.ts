@@ -988,3 +988,53 @@ describe("re-review of #344", () => {
       }),
   );
 });
+
+describe("third re-review of #344", () => {
+  const ORIGIN = `https://${DNS}:9443`;
+
+  for (const all of [false, true])
+    it.effect(
+      `removes ${all ? "every browser" : "a browser"} through an access recovery replaced, for good`,
+      () =>
+        Effect.gen(function* () {
+          const options: { backend?: string } = {};
+          const tailnet = fakeTailscale(options);
+          yield* Effect.gen(function* () {
+            const remote = yield* RemoteControl;
+            yield* settled;
+            yield* remote.enable(9443);
+            const before = remote.current()!;
+            const token = claimOn(ORIGIN, before, codeOf(before.mint().url)) as string;
+            const session = {
+              method: "GET",
+              url: "/",
+              headers: { host: before.host, origin: ORIGIN },
+              cookies: { [before.cookieName]: token },
+            };
+            // A removal that began on the access serving then.
+            const id = before.devices()[0]!.id;
+
+            options.backend = "Stopped";
+            yield* TestClock.adjust(RECHECK_MS);
+            yield* settled;
+            options.backend = "Running";
+            yield* TestClock.adjust(RECOVERY_DELAYS_MS[0]);
+            yield* settled;
+            const after = remote.current()!;
+            expect(after).not.toBe(before);
+            expect(after.authorize(session)).toEqual({ kind: "pass" });
+            let closed = false;
+            after.onDisconnect(after.sessionOf(session)!, () => {
+              closed = true;
+            });
+
+            // It finishes on the old access, which recovery has replaced.
+            if (all) before.revokeAll();
+            else expect(before.revoke(id)).toBe(true);
+            expect(after.authorize(session)).toMatchObject({ kind: "reject", status: 401 });
+            expect(after.devices()).toEqual([]);
+            expect(closed).toBe(true);
+          }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+        }),
+    );
+});

@@ -1339,4 +1339,74 @@ layer(
       yield* toggle("/remote/disable");
     }),
   );
+
+  it.effect("removes a browser for good even when access closed and reopened while asked", () =>
+    Effect.gen(function* () {
+      const { port } = yield* serverInfo;
+      const origin = "https://mac.tail123.ts.net:9443";
+      const host = "mac.tail123.ts.net:9443";
+      const local = { cookie: yield* bootCookie, origin: `http://127.0.0.1:${port}` };
+      const post = (path: string, body = "{}") =>
+        raw(port, {
+          path,
+          method: "POST",
+          headers: { ...local, "content-type": "application/json" },
+          body,
+        });
+      expect((yield* post("/remote/enable")).status).toBe(200);
+      // A paired browser, its cookie working.
+      const mint = yield* post("/remote/pair");
+      const code = new URLSearchParams(new URL(JSON.parse(mint.body).url).hash.slice(1)).get(
+        "pair",
+      )!;
+      const claimed = yield* raw(port, {
+        path: "/remote/claim",
+        method: "POST",
+        body: code,
+        headers: { host, origin, "content-type": "text/plain" },
+      });
+      const cookie = claimed.headers["set-cookie"]![0]!.split(";")[0]!;
+      const remoteStatus = () =>
+        raw(port, { path: "/", headers: { host, cookie } }).pipe(Effect.map((r) => r.status));
+      expect(yield* remoteStatus()).toBe(200);
+      const { devices } = JSON.parse((yield* post("/remote/status")).body) as {
+        devices: Array<{ id: string }>;
+      };
+      const body = JSON.stringify({ id: devices[0]!.id });
+
+      // The local app removes it: headers in, the body not yet.
+      const removal = httpRequest({
+        host: "127.0.0.1",
+        port,
+        path: "/remote/revoke",
+        method: "POST",
+        agent: false,
+        headers: {
+          ...local,
+          "content-type": "application/json",
+          "content-length": String(body.length),
+        },
+      });
+      const removed = new Promise<number>((resolve, reject) => {
+        removal.on("response", (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode ?? 0));
+        });
+        removal.on("error", reject);
+      });
+      removal.flushHeaders();
+      yield* Effect.sleep("300 millis");
+
+      // Meanwhile access closes and opens again on the same address.
+      expect((yield* post("/remote/disable")).status).toBe(200);
+      expect((yield* post("/remote/enable")).status).toBe(200);
+      expect(yield* remoteStatus()).toBe(200);
+      removal.end(body);
+      expect(yield* Effect.promise(() => removed)).toBe(200);
+      // Removed means removed: the access serving now refuses its cookie.
+      expect(yield* remoteStatus()).toBe(401);
+      expect(JSON.parse((yield* post("/remote/status")).body).devices).toEqual([]);
+      yield* post("/remote/disable");
+    }),
+  );
 });

@@ -11,7 +11,13 @@ import * as Semaphore from "effect/Semaphore";
 import { HttpServer } from "../platform/unstable.ts";
 import { ServerConfig } from "../config.ts";
 import type { DialAccess } from "../host/paired-machines.ts";
-import { createRemoteAccess, remoteOrigin, type RemoteAccess } from "./remote-access.ts";
+import {
+  createRemoteAccess,
+  remoteOrigin,
+  remotePairings,
+  type RemoteAccess,
+  type RemotePairings,
+} from "./remote-access.ts";
 import { fileRemoteSessionStore, privateJsonFile } from "./remote-sessions.ts";
 
 export class TailscaleMissing extends Data.TaggedError("TailscaleMissing")<{}> {}
@@ -490,18 +496,21 @@ export class RemoteControl extends Context.Service<RemoteControl, RemoteControlS
             if (applied === port) applied = undefined;
           });
 
+        /**
+         * Each address's pairings, loaded once and shared by every access opened on it this run,
+         * so a removal made through an access that has since closed holds on the one serving now.
+         */
+        const pairingsOn = new Map<string, RemotePairings>();
         /** Serves access on `dnsName`, replacing access open on any other address. */
         const open = (dnsName: string, port: number) => {
           const origin = originFor(dnsName, port);
           if (access?.origin === origin) return;
-          setAccess(
-            createRemoteAccess(
-              origin,
-              port,
-              Date.now,
-              fileRemoteSessionStore(config.dataDir, origin, port),
-            ),
-          );
+          let pairings = pairingsOn.get(origin);
+          if (pairings === undefined) {
+            pairings = remotePairings(fileRemoteSessionStore(config.dataDir, origin, port));
+            pairingsOn.set(origin, pairings);
+          }
+          setAccess(createRemoteAccess(origin, port, Date.now, pairings));
         };
 
         const pickPort = (dnsName: string, requested: number | undefined, saved?: ServeSetting) =>
