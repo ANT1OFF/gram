@@ -162,6 +162,9 @@ describe("first run", () => {
     const toggle = welcome.getByTestId("welcome-recommended-switch");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);
+    // One click turns it off, once: nothing around the switch clicks it again.
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.getAttribute("aria-labelledby")).toBeTruthy();
     expect(updateSettings).not.toHaveBeenCalled();
     fireEvent.click(welcome.getByRole("button", { name: "Skip" }));
     await waitFor(() =>

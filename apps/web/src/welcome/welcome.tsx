@@ -20,7 +20,7 @@ import {
   Search,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { AgentIcon } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
@@ -76,20 +76,29 @@ function RecommendedSetupWelcome({
 }) {
   const available = useAvailableModels(on);
   const summary = recommendedSummary(available);
+  const titleId = useId();
+  // A row, not a <label>: a label around the Switch would click it again as the click bubbles.
   return (
-    <label
+    <div
       data-testid="welcome-recommended"
       className="flex items-center gap-4 rounded-lg border border-edge px-4 py-3"
     >
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="font-medium">Recommended setup</span>
+        <span id={titleId} className="font-medium">
+          Recommended setup
+        </span>
         <span className="text-meta text-muted-foreground">
           {on && summary !== undefined ? summary : "Gram picks a model for each kind of work."}{" "}
           Change it any time in Settings.
         </span>
       </span>
-      <Switch data-testid="welcome-recommended-switch" checked={on} onCheckedChange={onChange} />
-    </label>
+      <Switch
+        data-testid="welcome-recommended-switch"
+        aria-labelledby={titleId}
+        checked={on}
+        onCheckedChange={onChange}
+      />
+    </div>
   );
 }
 
