@@ -1,0 +1,257 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import * as NodeSocket from "@effect/platform-node/NodeSocket";
+import { describe, expect, it } from "@effect/vitest";
+import { type HostBusy, HOST_PROTOCOL_VERSION, LOCAL_HOST_ID, ThreadId } from "@gram/contracts";
+import { Proc, ProcLive, wipRef, Worktrees, WorktreesLive } from "@gram/git";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
+import { hasGit, makeRepo, removeDir, run, tempDir, write } from "../git/test-repo.ts";
+import { makeAdmission } from "./admission.ts";
+import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
+import { filesOn } from "./files.ts";
+import { gitOn } from "./git.ts";
+import { connectHost, HOST_SERVES, type HostService, serveHost } from "./protocol.ts";
+import { reposOn } from "./repos.ts";
+import { noAgents, sessionsOnHost } from "./sessions.ts";
+import { STOPPING, stopOn } from "./stop.ts";
+import { terminalsOnHost } from "./terminals.ts";
+import { streamPair } from "./test-stream.ts";
+
+const IDLE: HostBusy = { turns: 0, terminals: 0, clones: 0, checks: 0 };
+const THREAD = ThreadId.make("thread-1");
+const live = Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)));
+
+/** A repository with uncommitted work and a bare `origin` beside it, removed with the scope. */
+const worktree = Effect.gen(function* () {
+  const dir = tempDir();
+  yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+  const repo = makeRepo(dir);
+  const origin = join(dir, "origin.git");
+  run(dir, "init", "--bare", "--quiet", origin);
+  run(repo, "remote", "add", "origin", origin);
+  write(join(repo, "tracked.txt"), "work in progress\n");
+  write(join(repo, "new.txt"), "untracked\n");
+  return { repo, origin };
+});
+
+describe.skipIf(!hasGit)("a host readied to stop", () => {
+  it.live("keeps each folder's work in progress on the remote and says it is idle", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      const head = run(repo, "rev-parse", "HEAD").trim();
+      const stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission: makeAdmission(),
+      });
+      const prepared = yield* stop.prepare({
+        // Named twice: kept once.
+        checkouts: [
+          { threadId: THREAD, cwd: repo },
+          { threadId: THREAD, cwd: repo },
+        ],
+      });
+      expect(prepared).toMatchObject({ idle: true, busy: IDLE });
+      expect(prepared.kept).toEqual([
+        {
+          threadId: THREAD,
+          cwd: repo,
+          ref: wipRef(THREAD),
+          commit: expect.stringMatching(/^[0-9a-f]{40}$/),
+          pushed: true,
+        },
+      ]);
+      expect(run(origin, "show", `${wipRef(THREAD)}:tracked.txt`)).toBe("work in progress\n");
+      expect(run(origin, "show", `${wipRef(THREAD)}:new.txt`)).toBe("untracked\n");
+      // The branch and the files are as they were.
+      expect(run(repo, "rev-parse", "HEAD").trim()).toBe(head);
+      expect(run(repo, "status", "--porcelain")).toContain("tracked.txt");
+      expect(stop.stopping()).toBe(true);
+      yield* stop.cancel;
+      expect(stop.stopping()).toBe(false);
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("changes nothing while something runs, unless the stop is forced", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      const busy: HostBusy = { ...IDLE, turns: 1 };
+      const stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(busy),
+        admission: makeAdmission(),
+      });
+      const checkouts = [{ threadId: THREAD, cwd: repo }];
+      expect(yield* stop.prepare({ checkouts })).toEqual({ idle: false, busy, kept: [] });
+      expect(stop.stopping()).toBe(false);
+      expect(run(repo, "for-each-ref", "refs/gram/")).toBe("");
+
+      // A machine about to be taken away: kept anyway, and still not idle.
+      const forced = yield* stop.prepare({ checkouts, force: true });
+      expect(forced).toMatchObject({ idle: false, kept: [{ pushed: true }] });
+      expect(run(origin, "show", `${wipRef(THREAD)}:new.txt`)).toBe("untracked\n");
+      expect(stop.stopping()).toBe(true);
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("isn't idle with work let in and unanswered, or under an update", () =>
+    Effect.gen(function* () {
+      const admission = makeAdmission();
+      const stop = stopOn({ proc: yield* Proc, busy: Effect.succeed(IDLE), admission });
+      admission.close();
+      expect(yield* stop.prepare({ checkouts: [] })).toMatchObject({
+        idle: false,
+        note: "It is updating Gram.",
+      });
+      admission.open();
+      const held = yield* Effect.forkScoped(admission.admit(Effect.never, () => "refused"));
+      yield* Effect.yieldNow;
+      expect(yield* stop.prepare({ checkouts: [] })).toMatchObject({
+        idle: false,
+        note: "It is starting work.",
+      });
+      yield* Fiber.interrupt(held);
+      expect(yield* stop.prepare({ checkouts: [] })).toMatchObject({ idle: true });
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("says why a folder wasn't kept, and keeps the others", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* worktree;
+      const plain = mkdtempSync(join(tmpdir(), "gram-stop-plain-"));
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(plain)));
+      const stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission: makeAdmission(),
+        admit: (cwd) =>
+          cwd === "/refused" ? Effect.fail({ message: "Not this folder." }) : Effect.void,
+      });
+      const prepared = yield* stop.prepare({
+        checkouts: [
+          { threadId: THREAD, cwd: "/refused" },
+          { threadId: ThreadId.make("thread-2"), cwd: plain },
+          { threadId: ThreadId.make("thread-3"), cwd: repo },
+        ],
+        remote: "nowhere",
+      });
+      expect(prepared.idle).toBe(true);
+      expect(prepared.kept[0]).toEqual({
+        threadId: THREAD,
+        cwd: "/refused",
+        pushed: false,
+        note: "Not this folder.",
+      });
+      expect(prepared.kept[1]).toMatchObject({ pushed: false });
+      expect(prepared.kept[1]?.note).toContain("not a git repository");
+      // Committed here though the remote couldn't be reached.
+      expect(prepared.kept[2]).toMatchObject({ ref: wipRef("thread-3"), pushed: false });
+      expect(prepared.kept[2]?.note).toBeTruthy();
+      expect(
+        (yield* Effect.flip(stop.prepare({ checkouts: [], remote: "--upload-pack=x" }))).message,
+      ).toBe("That isn't a remote to push to.");
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("takes work again once the hold has passed without a stop", () =>
+    Effect.gen(function* () {
+      let now = 1_000;
+      const stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission: makeAdmission(),
+        now: () => now,
+        holdMs: 500,
+      });
+      yield* stop.prepare({ checkouts: [] });
+      now = 1_499;
+      expect(stop.stopping()).toBe(true);
+      now = 1_500;
+      expect(stop.stopping()).toBe(false);
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("is asked over the host protocol, and refuses new work until it is cancelled", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      const proc = yield* Proc;
+      const admission = makeAdmission();
+      const { host, control } = yield* streamPair;
+      const service: HostService = {
+        hello: {
+          protocol: HOST_PROTOCOL_VERSION,
+          hostId: LOCAL_HOST_ID,
+          capabilities: HOST_SERVES,
+          platform: process.platform,
+          pid: 4242,
+        },
+        files: filesOn(proc),
+        reads: fileReadsOn(proc),
+        attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-stop-attached-"))),
+        repos: reposOn(proc, "/nonexistent/gram-host-repos"),
+        worktrees: yield* Worktrees,
+        git: gitOn(proc),
+        terminals: yield* terminalsOnHost,
+        sessions: yield* sessionsOnHost(noAgents),
+        scan: Effect.succeed({ listening: new Map(), children: new Map() }),
+        admission,
+        stop: stopOn({ proc, busy: Effect.succeed(IDLE), admission }),
+      };
+      yield* Effect.forkScoped(
+        serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(host)), service),
+      );
+      const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)));
+      const open = connection.sessions
+        .open({ handle: "h-1", agent: "claude", threadId: THREAD, cwd: repo })
+        .pipe(Effect.flip);
+
+      const prepared = yield* connection.stop.prepare({
+        checkouts: [{ threadId: THREAD, cwd: repo }],
+      });
+      expect(prepared).toMatchObject({ idle: true, kept: [{ pushed: true }] });
+      expect(run(origin, "rev-parse", wipRef(THREAD)).trim()).toBe(prepared.kept[0]?.commit);
+      expect((yield* open).message).toBe(STOPPING);
+
+      yield* connection.stop.cancel;
+      // Past the gate again: what it fails with now is the host having no agents.
+      expect((yield* open).message).not.toBe(STOPPING);
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("reads a host built before the call as one that can't be readied", () =>
+    Effect.gen(function* () {
+      const proc = yield* Proc;
+      const { host, control } = yield* streamPair;
+      const service: HostService = {
+        hello: {
+          protocol: HOST_PROTOCOL_VERSION,
+          hostId: LOCAL_HOST_ID,
+          capabilities: HOST_SERVES,
+          platform: process.platform,
+          pid: 4242,
+        },
+        files: filesOn(proc),
+        reads: fileReadsOn(proc),
+        attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-stop-attached-"))),
+        repos: reposOn(proc, "/nonexistent/gram-host-repos"),
+        worktrees: yield* Worktrees,
+        git: gitOn(proc),
+        terminals: yield* terminalsOnHost,
+        sessions: yield* sessionsOnHost(noAgents),
+        scan: Effect.succeed({ listening: new Map(), children: new Map() }),
+      };
+      yield* Effect.forkScoped(
+        serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(host)), service),
+      );
+      const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)));
+      const refused = yield* Effect.flip(connection.stop.prepare({ checkouts: [] }));
+      expect(refused._tag).toBe("HostFailed");
+      // The connection is still good.
+      expect(connection.gone()).toBe(false);
+      yield* connection.stop.cancel;
+    }).pipe(Effect.scoped, live),
+  );
+});

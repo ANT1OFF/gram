@@ -15,6 +15,7 @@ import {
   AnswerUndelivered,
   type HostAgentReload,
   type HostStatus,
+  type HostStopPrepared,
   type HostUpdateCheck,
   type HostUpdateProgress,
   HostUpdateRefused,
@@ -72,6 +73,7 @@ import { NOT_A_CLAUDE_TOKEN } from "./host-config.ts";
 import type { HostGit } from "./git.ts";
 import type { HostRepos } from "./repos.ts";
 import { type Admission, UPDATING } from "./admission.ts";
+import { type HostStop, type StopRequest, STOPPING } from "./stop.ts";
 import type { HostSessionsService } from "./sessions.ts";
 import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
 import type {
@@ -134,6 +136,8 @@ export interface HostService {
   readonly update?: HostUpdater;
   /** Whether it takes new work now; an update closes it before the restart (`admission.ts`). */
   readonly admission?: Admission;
+  /** Its readiness to be stopped with its disk kept (`stop.ts`). */
+  readonly stop?: HostStop;
 }
 
 /** A host's update of itself, as it serves `host.update.*`. */
@@ -236,10 +240,17 @@ const noFolders = new HostFailed({ message: "This host doesn't list its folders.
 /** The protocol's handlers over a host's own folders, worktrees, git state and scan. */
 const handlersFor = (host: HostService) => {
   /** New work, refused while an update has closed the gate. */
-  const gated = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  const admitted = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     host.admission === undefined
       ? effect
       : host.admission.admit(effect, () => new HostFailed({ message: UPDATING }));
+  /** New work, refused too while the host is readied to stop. */
+  const gated = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Effect.suspend(() =>
+      host.stop?.stopping() === true
+        ? Effect.fail(new HostFailed({ message: STOPPING }))
+        : admitted(effect),
+    );
   return HostRpcs.toLayer(
     HostRpcs.of({
       "host.hello": () => Effect.succeed(host.hello),
@@ -281,6 +292,11 @@ const handlersFor = (host: HostService) => {
             message: "This host doesn't update itself.",
           }),
         ),
+      "host.stop.prepare": (request) =>
+        host.stop === undefined
+          ? Effect.fail(new HostFailed({ message: "This host can't be readied to stop." }))
+          : host.stop.prepare(request),
+      "host.stop.cancel": () => host.stop?.cancel ?? Effect.void,
       "host.ports.scan": () =>
         host.scan.pipe(
           Effect.map(scanToWire),
@@ -670,6 +686,16 @@ export interface HostConnection {
       release: string,
     ) => Stream.Stream<HostUpdateProgress, HostUpdateRefused | HostUnavailable>;
   };
+  /**
+   * Readies it to be stopped with its disk kept, and takes that back. A host built before these
+   * calls, or one that doesn't answer, fails with `HostFailed` or `HostUnavailable`.
+   */
+  readonly stop: {
+    readonly prepare: (
+      request: StopRequest,
+    ) => Effect.Effect<HostStopPrepared, HostFailed | HostUnavailable>;
+    readonly cancel: Effect.Effect<void, HostFailed | HostUnavailable>;
+  };
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
 }
@@ -791,6 +817,13 @@ const STATUS_TIMEOUT = "30 seconds";
 
 /** A host that can't say what it can run. */
 export const UNKNOWN_STATUS: HostStatus = { claudeSignIn: "unknown", tools: [] };
+
+/** What a stop call says when the host didn't take it. */
+export const HOST_STOP_UNANSWERED =
+  "This machine's gram-host can't be readied to stop. It may be older than this Gram.";
+
+/** How long a host gets to commit and push its threads' work in progress before a stop. */
+const STOP_TIMEOUT = "10 minutes";
 
 /** How long a host gets to say hello before it counts as not answering. */
 const HELLO_TIMEOUT = "5 seconds";
@@ -1333,6 +1366,42 @@ export const connectHost = (
         }),
         Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
       ),
+      stop: {
+        // An older host's unknown-request defect is a failed call, not a broken stream.
+        prepare: (request) =>
+          guarded(
+            client["host.stop.prepare"](
+              defined({
+                checkouts: request.checkouts,
+                force: request.force,
+                remote: request.remote,
+              }),
+            ),
+          ).pipe(
+            Effect.timeoutOrElse({
+              duration: STOP_TIMEOUT,
+              orElse: () => Effect.fail(unavailable(HOST_NOT_ANSWERING)),
+            }),
+            Effect.catchCause((cause) => {
+              const error = Cause.squash(cause);
+              return Effect.fail(
+                error instanceof HostFailed || error instanceof HostUnavailable
+                  ? error
+                  : new HostFailed({ message: HOST_STOP_UNANSWERED }),
+              );
+            }),
+          ),
+        cancel: guarded(client["host.stop.cancel"]()).pipe(
+          Effect.catchCause((cause) => {
+            const error = Cause.squash(cause);
+            return Effect.fail(
+              error instanceof HostUnavailable
+                ? error
+                : new HostFailed({ message: HOST_STOP_UNANSWERED }),
+            );
+          }),
+        ),
+      },
       ...(hello.capabilities.includes("update")
         ? {
             update: {
