@@ -1,5 +1,5 @@
 import {
-  DEFAULT_ORCHESTRATOR_MODEL,
+  defaultOrchestratorModel,
   WORKER_MODEL_NOTE_MAX,
   type AgentKind,
   type ModelRef,
@@ -37,6 +37,7 @@ import { useServerSettings } from "@/settings-sync/store";
 import { Field, inputCls, LONG_COPY, WhyDisabled } from "./fields";
 import {
   sameSlot,
+  useAvailableModels,
   useDefaultHere,
   useDefaultModel,
   useRosterHere,
@@ -249,7 +250,10 @@ function OrchestratorModelField({
   // Its own slot's reason, or, while it follows the default, the default's.
   const missing = own === undefined ? inherited.missing : slot.missing;
   const [pending, setPending] = useState<AgentChoice>();
-  const shown = pending ?? choiceFromModel(ownHere ?? defaultModel ?? DEFAULT_ORCHESTRATOR_MODEL);
+  // Nothing saved: what a new workspace opens on here, a Codex orchestrator on Codex alone.
+  const installed = useAvailableModels(own === undefined && defaultModel === undefined);
+  const shown =
+    pending ?? choiceFromModel(ownHere ?? defaultModel ?? defaultOrchestratorModel(installed));
   const pick = (next: AgentChoice) => {
     // A gateway agent's model is filled in once its models are listed; nothing is saved before.
     if (next.model === "") {
