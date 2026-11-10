@@ -14,6 +14,10 @@ placed on it; its session, checkout, git state and terminals then run there. The
 previews and attachments work on that machine ([its files](#its-files-and-attachments)); its turn
 checkpoints, PR badge and port chips don't reach that machine yet.
 
+A Gram that runs as a service can also take hosts that another system starts and registers by
+key, over ordinary TLS with no Tailscale and nothing to confirm: see
+[provisioned hosts](PROVISIONED_HOSTS.md).
+
 ## Start a thread on a machine
 
 Once a machine is confirmed, **Machine** shows first under Where it runs on New → Chat, and beside

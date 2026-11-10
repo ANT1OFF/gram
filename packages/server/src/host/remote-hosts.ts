@@ -15,6 +15,7 @@ import {
   dialNoncesLastSeen,
   type DialNonceStore,
   fileMachineStore,
+  isProvisioned,
   fileNonceStore,
   machineView,
   type DialAccess,
@@ -175,9 +176,17 @@ export interface RemoteHostsShape {
   readonly setAutomaticUpdates: (on: boolean) => void;
   /** Forgets the machine and closes its connection; false when it wasn't joined. */
   readonly remove: (id: HostId) => boolean;
+  /** The address provisioned hosts dial, when this Gram listens for them. */
+  readonly provisionedOrigin: string | undefined;
   /**
-   * Closes every connection that didn't dial `origin`, and any still saying hello: all of them
-   * when access over Tailscale is off (`undefined`). The machines stay joined.
+   * Closes every provisioned host's connection and any of their dials still saying hello, for
+   * when provisioned hosts are turned off. They stay registered.
+   */
+  readonly closeProvisioned: () => void;
+  /**
+   * Closes every joined machine's connection that didn't dial `origin`, and any still saying
+   * hello: all of them when access over Tailscale is off (`undefined`). The machines stay joined,
+   * and provisioned hosts, which dial their own listener, aren't touched.
    */
   readonly keepOrigin: (origin: string | undefined) => void;
 }
@@ -196,6 +205,11 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       readonly retryMs?: number;
       /** Where the automatic-updates switch is kept; in memory when left out. */
       readonly automatic?: AutomaticStore;
+      /**
+       * The address provisioned hosts dial, when this Gram has a listener for them. Their dials
+       * and connections are held to it alone and don't follow access over Tailscale.
+       */
+      readonly provisionedOrigin?: string | undefined;
     } = {},
   ) =>
     Effect.gen(function* () {
@@ -270,10 +284,18 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
        */
       let kept: string | null | undefined;
       /** Whether the access a dial was admitted under still holds. */
-      const stillAdmitted = ({ machine, origin, generation }: AdmittedDial) =>
-        generationOf(machine.id) === generation &&
-        (kept === undefined || kept === origin) &&
-        machines.get(machine.id)?.confirmedAt !== undefined;
+      const stillAdmitted = ({ machine, origin, generation }: AdmittedDial) => {
+        const current = machines.get(machine.id);
+        return (
+          generationOf(machine.id) === generation &&
+          current?.confirmedAt !== undefined &&
+          // A provisioned host on its own listener's address, whatever access over Tailscale is;
+          // a joined machine on the address that access is kept on.
+          (isProvisioned(current)
+            ? options.provisionedOrigin !== undefined && origin === options.provisionedOrigin
+            : origin !== options.provisionedOrigin && (kept === undefined || kept === origin))
+        );
+      };
       const attach = (dial: AdmittedDial, socket: Socket.Socket) =>
         Effect.gen(function* () {
           const { machine, origin } = dial;
@@ -444,6 +466,15 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           }),
         origin: (id) => online.get(id)?.origin,
         list: (tailscale) => machines.list().map((machine) => view(machine, tailscale)),
+        provisionedOrigin: options.provisionedOrigin,
+        closeProvisioned: () => {
+          for (const machine of machines.list()) {
+            if (!isProvisioned(machine)) continue;
+            if (online.has(machine.id)) machines.note(machine.id, { kind: "lost", at: now() });
+            bump(machine.id);
+            close(machine.id);
+          }
+        },
         admit: (machine, origin) => ({ machine, origin, generation: generationOf(machine.id) }),
         attach,
         checkSignIn,
@@ -462,6 +493,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         keepOrigin: (origin) => {
           kept = origin ?? null;
           for (const machine of machines.list()) {
+            // Its listener isn't the tailnet's: access turned off or moved leaves it connected.
+            if (isProvisioned(machine)) continue;
             const live = online.get(machine.id);
             if (live !== undefined && live.origin === origin) continue;
             // Onto another address, which it doesn't dial. Turned off, the list says so itself, and
@@ -494,6 +527,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         {
           release: releaseOfConfig(config),
           automatic: fileAutomaticStore(dataDir),
+          provisionedOrigin: config.provisionedHosts?.origin,
         },
       );
     }),

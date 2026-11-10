@@ -4,7 +4,9 @@ import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { GramRpcs } from "@gram/contracts";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Schedule from "effect/Schedule";
 import * as Option from "effect/Option";
 import * as ByteSize from "effect/ByteSize";
 import * as Layer from "effect/Layer";
@@ -70,7 +72,7 @@ import type { GitPlatform } from "../git/platform.ts";
 import { LoopStallLog } from "../logging/loop-stalls.ts";
 import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { withEmbeddingSeed } from "../settings/embedding.ts";
+import { embeddingEnabled, withEmbeddingSeed } from "../settings/embedding.ts";
 import { PreviewFiles } from "../preview/files.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
@@ -113,6 +115,7 @@ import {
   HOST_PATHS,
   hostRoute,
   MACHINE_MANAGEMENT_PATHS,
+  provisionedRoute,
   machineManagement,
   placedOnMachine,
 } from "./machine-routes.ts";
@@ -120,6 +123,14 @@ import { releaseOfConfig, RemoteHosts } from "../host/remote-hosts.ts";
 import { authTarget } from "./auth-target.ts";
 import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } from "./auth.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
+import {
+  type ProvisionedListener,
+  ViaProvisionedListener,
+  withProvisionedListener,
+} from "./provisioned-listener.ts";
+
+/** How often connected provisioned hosts are checked against the hosted-features switch. */
+const PROVISIONED_SWITCH_POLL = Duration.seconds(3);
 
 /** The per-launch secret carried by the boot URL. */
 export class LaunchToken extends Context.Service<LaunchToken, { readonly token: string }>()(
@@ -154,6 +165,23 @@ export const AuthMiddleware = HttpRouter.middleware(
     // and dials follow it, so none outlives the address it came in on.
     if (remoteHosts !== undefined) control.watch((origin) => remoteHosts.keepOrigin(origin));
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
+    /**
+     * Whether provisioned hosts are on: one of the hosted features, read at each dial and each
+     * registration so the switch holds at once.
+     */
+    const provisionedOn =
+      store === undefined
+        ? Effect.succeed(false)
+        : Effect.provideService(embeddingEnabled, ThreadStore, store);
+    // Hosts already connected when the switch goes off are dropped within a few seconds; they
+    // stay registered, and their dials are refused until it is on again.
+    if (remoteHosts?.provisionedOrigin !== undefined)
+      yield* provisionedOn.pipe(
+        Effect.tap((on) => (on ? Effect.void : Effect.sync(remoteHosts.closeProvisioned))),
+        Effect.catchCause(() => Effect.void),
+        Effect.repeat(Schedule.spaced(PROVISIONED_SWITCH_POLL)),
+        Effect.forkScoped,
+      );
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
       "cache-control": "no-store",
@@ -171,6 +199,22 @@ export const AuthMiddleware = HttpRouter.middleware(
         };
         const target = authTarget(request.url);
         const path = target?.path;
+        // The provisioned-host listener serves a host's dial and its sessions' app tools, by their
+        // own proofs, and nothing a browser or the local app reaches: decided before any of it.
+        if (yield* ViaProvisionedListener)
+          return HttpServerResponse.setHeaders(
+            yield* provisionedRoute(remoteHosts, path, yield* provisionedOn, (origin) =>
+              Effect.gen(function* () {
+                return remoteHosts !== undefined &&
+                  (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers, origin))
+                  ? yield* httpEffect
+                  : HttpServerResponse.text("unauthorized: not a thread on a provisioned host", {
+                      status: 401,
+                    });
+              }),
+            ),
+            securityHeaders,
+          );
         const remote = control.current();
         const isRemote = remote !== undefined && request.headers["host"] === remote.host;
         const secureResponse = (response: HttpServerResponse.HttpServerResponse) =>
@@ -239,7 +283,7 @@ export const AuthMiddleware = HttpRouter.middleware(
             request.method === "POST" &&
             request.headers["origin"] === undefined &&
             remoteHosts !== undefined &&
-            (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers));
+            (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers, remote.origin));
           return secureResponse(
             allowed
               ? yield* httpEffect
@@ -294,6 +338,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                         workerHosts === undefined
                           ? undefined
                           : (id) => workerHosts.machine(id).folders,
+                        yield* provisionedOn,
                       )
                   : isRemote && path === "/ws"
                     ? yield* closedOnRevoke(
@@ -582,12 +627,25 @@ const createHttpListener = () => {
 
 /** The HTTP + WebSocket server on 127.0.0.1, with the core services it serves. */
 export const ServerLayer: Layer.Layer<
-  HttpServer.HttpServer | LaunchToken | McpTokens | ThreadRuntimes | ThreadStore | EventHub,
+  | HttpServer.HttpServer
+  | ProvisionedListener
+  | LaunchToken
+  | McpTokens
+  | ThreadRuntimes
+  | ThreadStore
+  | EventHub,
   unknown,
   AgentHosts | ServerConfig | GitPlatform | TurnHooks
 > = Layer.unwrap(
   Effect.gen(function* () {
-    const { port, listenHost } = yield* ServerConfig;
+    const { port, listenHost, provisionedHosts } = yield* ServerConfig;
+    /** The app's own listener, and the provisioned hosts' TLS one beside it when configured. */
+    const listeners = (options: NodeHttpServer.Options) =>
+      withProvisionedListener(
+        NodeHttpServer.layerServer(createHttpListener, options),
+        provisionedHosts,
+        options,
+      );
     return HttpRouter.serve(Layer.mergeAll(RpcRoutes, StaticRoutes, McpRoute, AuthMiddleware), {
       disableListenLog: true,
       disableLogger: true,
@@ -598,8 +656,9 @@ export const ServerLayer: Layer.Layer<
       Layer.provideMerge(RemoteHosts.layer),
       Layer.provideMerge(McpTokens.layer),
       Layer.provideMerge(LaunchToken.layer),
+      Layer.provideMerge(NodeHttpServer.layerHttpServices),
       Layer.provideMerge(
-        NodeHttpServer.layer(createHttpListener, {
+        listeners({
           host: listenHost ?? LOOPBACK_HOST,
           port,
           // Close request/WebSocket scopes before awaiting the listener's final close. The
