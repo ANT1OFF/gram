@@ -43,9 +43,19 @@ Without `GRAM_REMOTE_ORIGIN`, the local app switches access through the Tailscal
   startup, or Serve lost the listener, Gram serves again on this run's port once Tailscale is
   back, with no restart or toggle; a status check that finds Tailscale back tries at once. Each
   look runs only `tailscale status --json` and `tailscale serve status --json`, and changes only
-  Gram's own listener as above. A turn-off Tailscale refused is finished the same way, rather
-  than served again. Until then, Phone access and Settings → Machines say what is wrong here,
-  such as "Tailscale is stopped on this Mac".
+  Gram's own listener as above. Gram runs one Tailscale CLI call at a time, and a status check
+  reuses a look already under way. A turn-off Tailscale refused is finished the same way, rather
+  than served again, and a turn-off whose setting couldn't be saved stays off until Gram
+  restarts. Until then, Phone access and Settings → Machines say what is wrong here, such as
+  "Tailscale is stopped on this Mac".
+- While Tailscale is stopped, signed out, missing or without HTTPS certificates, or Serve refuses
+  Gram's listener, access is closed: no browser session, pairing link or machine dial is
+  authorized, and joined machines' connections close. One look that Tailscale doesn't answer is
+  borne before closing, as the CLI can be slow. When Tailscale is back, access opens again on the
+  tailnet name it reports then, so a renamed machine moves access to its new address. Pairings
+  are kept per address; pairing links made before are not.
+- A listener shared with Funnel is never Gram's: Gram doesn't serve on it, and turning off or
+  stopping never removes it, even when it was Gram's before the user shared it.
 - Turning off removes that listener (only while it is still Gram's alone), even when saving the setting fails, closes every open
   remote connection and keeps the pairings. The remote cookie is named after the Serve port, so
   pairings survive restarts on a new loopback port.

@@ -1,8 +1,10 @@
 import { afterAll, describe, expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ServerConfig } from "../config.ts";
@@ -12,6 +14,7 @@ import {
   RECHECK_MS,
   RECOVERY_DELAYS_MS,
   RemoteControl,
+  RemoteRefused,
   Tailscale,
   TailscaleMissing,
   type TailscaleRun,
@@ -47,6 +50,10 @@ const fakeTailscale = (
     listeners?: Record<number, Listener>;
     missing?: boolean;
     refuseServe?: string;
+    /** This machine's tailnet name; the default `DNS`. */
+    dns?: string;
+    /** How many `status` calls fail with no answer before they answer again. */
+    statusFails?: number;
   } = {},
 ) => {
   const listeners = new Map<number, Listener>(
@@ -58,16 +65,22 @@ const fakeTailscale = (
       Effect.suspend(() => {
         calls.push(args.join(" "));
         if (options.missing) return Effect.fail(new TailscaleMissing());
-        if (args[0] === "status")
+        const dns = options.dns ?? DNS;
+        if (args[0] === "status") {
+          if ((options.statusFails ?? 0) > 0) {
+            options.statusFails = (options.statusFails ?? 0) - 1;
+            return Effect.succeed({ code: 1, stdout: "", stderr: "timed out" });
+          }
           return Effect.succeed(
             ok(
               JSON.stringify({
                 BackendState: options.backend ?? "Running",
-                Self: { DNSName: `${DNS}.` },
-                CertDomains: options.certs === false ? null : [DNS],
+                Self: { DNSName: `${dns}.` },
+                CertDomains: options.certs === false ? null : [dns],
               }),
             ),
           );
+        }
         if (args.join(" ") === "serve status --json")
           return Effect.succeed(
             ok(
@@ -75,7 +88,7 @@ const fakeTailscale = (
                 TCP: Object.fromEntries([...listeners.keys()].map((p) => [p, { HTTPS: true }])),
                 Web: Object.fromEntries(
                   [...listeners].map(([p, l]) => [
-                    `${DNS}:${p}`,
+                    `${dns}:${p}`,
                     {
                       Handlers: {
                         "/": { Proxy: l.proxy },
@@ -87,7 +100,7 @@ const fakeTailscale = (
                   ]),
                 ),
                 AllowFunnel: Object.fromEntries(
-                  [...listeners].filter(([, l]) => l.funnel).map(([p]) => [`${DNS}:${p}`, true]),
+                  [...listeners].filter(([, l]) => l.funnel).map(([p]) => [`${dns}:${p}`, true]),
                 ),
               }),
             ),
@@ -615,6 +628,276 @@ describe("phone access recovering by itself", () => {
         expect(yield* remote.status).not.toHaveProperty("problem");
         expect(off.calls).toEqual(["status --json"]);
       }).pipe(Effect.provide(control(off.shape, dataDir())));
+    }),
+  );
+});
+
+const statusLooks = (calls: ReadonlyArray<string>) =>
+  calls.filter((call) => call === "status --json").length;
+
+/** A pairing code from a link `mint()` made, and a claim of it as a phone's browser would. */
+const codeOf = (url: string) => new URLSearchParams(new URL(url).hash.slice(1)).get("pair")!;
+const claimOn = (
+  origin: string,
+  claimer: { claim: (request: never, code: string) => unknown },
+  code: string,
+) =>
+  claimer.claim(
+    {
+      method: "POST",
+      url: "/remote/claim",
+      headers: { host: new URL(origin).host, origin },
+      cookies: {},
+    } as never,
+    code,
+  );
+
+describe("independent review of #344", () => {
+  const ORIGIN = `https://${DNS}:9443`;
+
+  it.effect("closes access, and its watchers hear, once recovery sees Tailscale stopped", () =>
+    Effect.gen(function* () {
+      const options: { backend?: string } = {};
+      const tailnet = fakeTailscale(options);
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        // Startup's first look, then the user turns access on.
+        yield* settled;
+        yield* remote.enable(9443);
+        const seen: Array<string | undefined> = [];
+        remote.watch((origin) => seen.push(origin));
+        expect(seen).toEqual([ORIGIN]);
+        // An invitation made while serving, not yet used.
+        const code = codeOf(remote.current()!.mint().url);
+
+        options.backend = "Stopped";
+        yield* TestClock.adjust(RECHECK_MS);
+        yield* settled;
+        expect(remote.dialAccess()).toBe("stopped");
+        // Nothing left to authorize a dial or a claim against.
+        expect(remote.current()).toBeUndefined();
+        expect(seen).toEqual([ORIGIN, undefined]);
+        expect((yield* remote.status).mode).toBe("on");
+
+        options.backend = "Running";
+        yield* TestClock.adjust(RECOVERY_DELAYS_MS[0]);
+        yield* settled;
+        expect(remote.current()?.origin).toBe(ORIGIN);
+        expect(seen).toEqual([ORIGIN, undefined, ORIGIN]);
+        // The invitation went with the access it was made on.
+        expect(claimOn(ORIGIN, remote.current()!, code)).toBeUndefined();
+      }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+    }),
+  );
+
+  it.effect("moves access to the new tailnet name when Tailscale comes back renamed", () =>
+    Effect.gen(function* () {
+      const options: { backend?: string; dns?: string } = {};
+      const tailnet = fakeTailscale(options);
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        // Startup's first look, then the user turns access on.
+        yield* settled;
+        yield* remote.enable(9443);
+        const seen: Array<string | undefined> = [];
+        remote.watch((origin) => seen.push(origin));
+        options.backend = "Stopped";
+        yield* TestClock.adjust(RECHECK_MS);
+        yield* settled;
+        options.backend = "Running";
+        options.dns = "renamed.tail123.ts.net";
+        yield* TestClock.adjust(RECOVERY_DELAYS_MS[0]);
+        yield* settled;
+        const renamed = "https://renamed.tail123.ts.net:9443";
+        expect(remote.current()?.origin).toBe(renamed);
+        expect(seen).toEqual([ORIGIN, undefined, renamed]);
+        expect(yield* remote.status).toMatchObject({ mode: "on", origin: renamed });
+      }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+    }),
+  );
+
+  it.effect("moves access when the tailnet name changes without Tailscale stopping", () =>
+    Effect.gen(function* () {
+      const options: { dns?: string } = {};
+      const tailnet = fakeTailscale(options);
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        // Startup's first look, then the user turns access on.
+        yield* settled;
+        yield* remote.enable(9443);
+        const seen: Array<string | undefined> = [];
+        remote.watch((origin) => seen.push(origin));
+        options.dns = "renamed.tail123.ts.net";
+        yield* TestClock.adjust(RECHECK_MS);
+        yield* settled;
+        expect(seen).toEqual([ORIGIN, "https://renamed.tail123.ts.net:9443"]);
+      }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+    }),
+  );
+
+  it.effect("bears one unanswered look, and closes access on the second", () =>
+    Effect.gen(function* () {
+      const options: { statusFails?: number } = {};
+      const tailnet = fakeTailscale(options);
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        // Startup's first look, then the user turns access on.
+        yield* settled;
+        yield* remote.enable(9443);
+        options.statusFails = 2;
+        yield* TestClock.adjust(RECHECK_MS);
+        yield* settled;
+        expect(remote.current()?.origin).toBe(ORIGIN);
+        yield* TestClock.adjust(RECOVERY_DELAYS_MS[0]);
+        yield* settled;
+        expect(remote.current()).toBeUndefined();
+        expect(remote.dialAccess()).toBe("error");
+        yield* TestClock.adjust(RECOVERY_DELAYS_MS[1]);
+        yield* settled;
+        expect(remote.current()?.origin).toBe(ORIGIN);
+      }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+    }),
+  );
+
+  it.effect("keeps a turn-off off when saving it failed, rather than serving again", () =>
+    Effect.gen(function* () {
+      const tailnet = fakeTailscale();
+      const dir = dataDir();
+      const folder = join(dir, "remote-access");
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        // Startup's first look, then the user turns access on.
+        yield* settled;
+        yield* remote.enable(9443);
+        // Readable, but no new file can be made in it: the save of `enabled: false` fails.
+        chmodSync(folder, 0o500);
+        const error = yield* Effect.flip(remote.disable).pipe(
+          Effect.ensuring(Effect.sync(() => chmodSync(folder, 0o700))),
+        );
+        expect(error).toBeInstanceOf(RemoteRefused);
+        expect(error.message).toContain("couldn't be saved");
+        expect(tailnet.listeners.has(9443)).toBe(false);
+        expect(remote.dialAccess()).toBe("off");
+
+        for (const delay of [RECHECK_MS, RECHECK_MS, RECHECK_MS]) {
+          yield* TestClock.adjust(delay);
+          yield* settled;
+        }
+        expect(tailnet.listeners.has(9443)).toBe(false);
+        expect(remote.current()).toBeUndefined();
+        expect((yield* remote.status).mode).toBe("off");
+        // Turning on again is the user's to do, and works.
+        expect((yield* remote.enable(9443)).origin).toBe(ORIGIN);
+      }).pipe(Effect.provide(control(tailnet.shape, dir)));
+    }),
+  );
+
+  it.effect("never removes a listener the user shared with Funnel while a turn-off waited", () =>
+    Effect.gen(function* () {
+      const options: { backend?: string } = {};
+      const tailnet = fakeTailscale(options);
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        // Startup's first look, then the user turns access on.
+        yield* settled;
+        yield* remote.enable(8443);
+        options.backend = "Stopped";
+        // Tailscale is stopped, so the listener stays until recovery can remove it.
+        yield* Effect.flip(remote.disable);
+        // Meanwhile the user shares that listener with Funnel: it is theirs now.
+        tailnet.listeners.set(8443, { ...tailnet.listeners.get(8443)!, funnel: true });
+        options.backend = "Running";
+        yield* TestClock.adjust(RECOVERY_DELAYS_MS[0]);
+        yield* settled;
+        expect(tailnet.listeners.get(8443)).toEqual({
+          proxy: `http://127.0.0.1:${LOOPBACK}`,
+          funnel: true,
+        });
+        expect(yield* remote.status).toMatchObject({ mode: "off" });
+      }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+      expect(tailnet.calls).not.toContain("serve --https=8443 off");
+    }),
+  );
+
+  it.effect("never removes a Funnel-shared listener on turn-off or on shutdown", () =>
+    Effect.gen(function* () {
+      const tailnet = fakeTailscale();
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        // Startup's first look, then the user turns access on.
+        yield* settled;
+        yield* remote.enable(8443);
+        tailnet.listeners.set(8443, { ...tailnet.listeners.get(8443)!, funnel: true });
+        yield* remote.disable;
+        expect(tailnet.listeners.get(8443)?.funnel).toBe(true);
+      }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+      yield* Effect.gen(function* () {
+        tailnet.listeners.delete(8443);
+        yield* (yield* RemoteControl).enable(8443);
+        tailnet.listeners.set(8443, { ...tailnet.listeners.get(8443)!, funnel: true });
+      }).pipe(Effect.provide(control(tailnet.shape, dataDir())));
+      // The shutdown finalizer left it too.
+      expect(tailnet.listeners.get(8443)?.funnel).toBe(true);
+      expect(tailnet.calls).not.toContain("serve --https=8443 off");
+    }),
+  );
+
+  it.effect("runs one Tailscale CLI call at a time across status checks and recovery", () =>
+    Effect.gen(function* () {
+      const tailnet = fakeTailscale();
+      let inFlight = 0;
+      let most = 0;
+      let gate: Deferred.Deferred<void> | undefined;
+      const shape: TailscaleShape = {
+        run: (args) =>
+          Effect.gen(function* () {
+            inFlight += 1;
+            most = Math.max(most, inFlight);
+            if (gate !== undefined && args[0] === "status") yield* Deferred.await(gate);
+            return yield* tailnet.shape.run(args);
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                inFlight -= 1;
+              }),
+            ),
+          ),
+      };
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteControl;
+        // Startup's first look, then the user turns access on.
+        yield* settled;
+        yield* remote.enable(9443);
+        const before = statusLooks(tailnet.calls);
+        // Recovery's look hangs, past the status cache.
+        gate = yield* Deferred.make<void>();
+        yield* TestClock.adjust(RECHECK_MS);
+        yield* settled;
+        expect(inFlight).toBe(1);
+        // Two status checks meanwhile: neither starts a second call.
+        const first = yield* Effect.forkScoped(remote.status);
+        const second = yield* Effect.forkScoped(remote.status);
+        yield* settled;
+        expect(inFlight).toBe(1);
+        const open = gate;
+        gate = undefined;
+        yield* Deferred.succeed(open, undefined);
+        yield* Fiber.join(first);
+        yield* Fiber.join(second);
+        yield* settled;
+        expect(most).toBe(1);
+        // They reused recovery's look.
+        expect(statusLooks(tailnet.calls) - before).toBe(1);
+      }).pipe(
+        // A failed assertion still lets the held calls finish, so the scope can close.
+        Effect.ensuring(
+          Effect.suspend(() =>
+            gate === undefined ? Effect.void : Deferred.succeed(gate, undefined),
+          ),
+        ),
+        Effect.scoped,
+        Effect.provide(control(shape, dataDir())),
+      );
     }),
   );
 });
