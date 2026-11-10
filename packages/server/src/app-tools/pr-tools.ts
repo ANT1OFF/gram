@@ -61,6 +61,7 @@ import {
   withMachines,
 } from "../git/worker-pr.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { MachineBranchPr } from "../git/machine-branch-pr.ts";
 import { ThreadPrLookup } from "../git/thread-pr.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -153,6 +154,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
     const store = yield* ThreadStore;
     const refreshes = yield* GitRefresh;
     const threadPr = yield* ThreadPrLookup;
+    const machineBranchPr = yield* MachineBranchPr;
     const publisher = yield* GitStatePublisher;
     const proc = yield* Proc;
     // The joined machines' hosts, which read a worker's worktree there for its PR's ownership.
@@ -187,18 +189,22 @@ export const PrAppToolsLive = Layer.effectDiscard(
       );
 
     /**
-     * The branch's PR. A thread on another machine has it only as published: its checkout isn't
-     * this machine's, and a folder at the same path here would be another repository.
+     * The branch's PR. A thread on another machine has it as published, else as GitHub has it for
+     * the repository its worktree cloned (`MachineBranchPr`): its checkout isn't this machine's,
+     * and a folder at the same path here would be another repository.
      */
     const currentPr = (thread: Thread) =>
       isLocalHost(thread.checkout)
         ? threadPr.badge(thread.checkout.path)
-        : Effect.map(publisher.stateForThread(thread), (state) => state?.pr);
-    /** The checkout's `origin` as `owner/repo`, read by git here only for a checkout here. */
+        : machineBranchPr.pr(thread);
+    /**
+     * The checkout's `origin` as `owner/repo`, read by git here only for a checkout here; for one
+     * on another machine, as published, else its clone's project's here.
+     */
     const originOf = (thread: Thread) =>
       isLocalHost(thread.checkout)
         ? originOwnerRepo(thread.checkout.path).pipe(Effect.provideService(Proc, proc))
-        : Effect.map(publisher.stateForThread(thread), (state) => state?.origin);
+        : machineBranchPr.origin(thread);
 
     const reviewPolicyFor = (thread: Thread, repo: string) =>
       Effect.gen(function* () {
