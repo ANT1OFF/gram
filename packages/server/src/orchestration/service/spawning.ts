@@ -24,6 +24,7 @@ import {
   aboveHigh,
   modelRefOf,
   rosterName,
+  hostListing,
 } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -220,6 +221,15 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             `${name}: Claude Code is not installed. Install it there, then use Settings → Machines → Sign in before spawning a worker.`,
           ),
         );
+      // A machine that reported its models runs only those: a pinned model it lacks is refused.
+      if (machine?.models !== undefined && hostListing(machine.models, chosen.model) === undefined)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}'s Claude Code doesn't list ${chosen.model}. Pick a model it lists, or update Claude Code there.`,
+          ),
+        );
       if (machine?.claudeSignIn === "notSignedIn")
         return yield* toolError(
           tool,
@@ -237,6 +247,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       const hostId = yield* machineNamed("spawn_worker", input.machine);
       if (hostId === undefined) return;
       const { thread, state } = yield* requireAuthority("spawn_worker", callerId);
+      // A tier resolves against what that machine lists, as the spawn itself will.
       const chosen = yield* workerModel(
         "spawn_worker",
         thread,
@@ -244,7 +255,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         input.model,
         state.charter.workerModels === undefined
           ? undefined
-          : yield* rosterHere(state.charter.workerModels, state.charter),
+          : yield* rosterHere(state.charter.workerModels, state.charter, hostId),
       );
       yield* admitMachineModel("spawn_worker", hostId, chosen.model);
     });
@@ -632,6 +643,9 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           // before this handler ran (`spawnNeedsApproval`), and they said yes to this one. Nothing
           // else about a spawn is rationed.
           const settings = yield* store.getSettings;
+          // Where it runs, first: a tier resolves against what that machine lists.
+          const hostId =
+            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
           // Without a roster the one model is the orchestrator's own, which it runs on.
           const picked =
             byUser === undefined
@@ -642,7 +656,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   input.model,
                   state.charter.workerModels === undefined
                     ? undefined
-                    : yield* rosterHere(state.charter.workerModels, state.charter),
+                    : yield* rosterHere(state.charter.workerModels, state.charter, hostId),
                 )
               : yield* Effect.gen(function* () {
                   // The user's pick, checked against the roster as it runs now, else its default.
@@ -669,8 +683,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   };
                 });
           const chosen = picked.model;
-          const hostId =
-            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
           yield* admitMachineModel(tool, hostId, chosen);
           if (byUser?.model !== undefined && !sameTaskModel(chosen, byUser.model))
             return yield* toolError(
@@ -698,13 +710,23 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             gateHoldsInMode: gateHoldsIn(chosen.agent, mode),
           });
           if (!verdict.ok) return yield* toolError(tool, refusal(verdict.code, verdict.reason));
+          // The efforts of the machine it runs on: a joined machine's own report where it gave
+          // one, else this machine's list.
+          const placedModels =
+            hostId === undefined
+              ? undefined
+              : joinedMachines().find((m) => m.id === hostId)?.models;
           const efforts =
             input.effort === undefined
               ? []
-              : yield* selectableModels(store, hosts, chosen.agent, chosen.profileId).pipe(
-                  Effect.map((models) => models.find((m) => m.id === chosen.model)?.efforts ?? []),
-                  Effect.orElseSucceed((): ReadonlyArray<ReasoningVariant> => []),
-                );
+              : placedModels !== undefined
+                ? (hostListing(placedModels, chosen.model)?.efforts ?? [])
+                : yield* selectableModels(store, hosts, chosen.agent, chosen.profileId).pipe(
+                    Effect.map(
+                      (models) => models.find((m) => m.id === chosen.model)?.efforts ?? [],
+                    ),
+                    Effect.orElseSucceed((): ReadonlyArray<ReasoningVariant> => []),
+                  );
           const warnings: Array<string> = [];
           if (picked.instead !== undefined) {
             warnings.push(
