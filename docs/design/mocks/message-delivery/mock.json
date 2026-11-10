@@ -1,10 +1,10 @@
 {
   "title": "Message delivery while a turn runs",
   "slug": "message-delivery",
-  "status": "draft",
+  "status": "approved",
   "template": "options",
   "current": 1,
-  "approved": null,
+  "approved": 1,
   "versions": [
     {
       "n": 1,
