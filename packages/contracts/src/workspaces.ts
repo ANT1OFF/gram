@@ -18,8 +18,12 @@ import {
   type Tier,
   tierAgents,
   tierEffort,
-  tierName,
   TierRef,
+  UnknownTierRef,
+  firstChoiceOf,
+  isTierRef,
+  tierMissingWhy,
+  unknownTierWhy,
 } from "./recommended.ts";
 import { FeatureStage, OrchestrationPause } from "./orchestration.ts";
 import { WorkspaceRoutines } from "./routines.ts";
@@ -69,6 +73,8 @@ export type PinnedWorkerModel = typeof PinnedWorkerModel.Type;
 export const WorkerModel = Schema.Union([
   PinnedWorkerModel,
   Schema.Struct({ ...TierRef.fields, ...WorkerModelNotes }),
+  // A tier only a newer Gram knows: kept as stored, and unavailable here.
+  Schema.Struct({ ...UnknownTierRef.fields, ...WorkerModelNotes }),
 ]);
 export type WorkerModel = typeof WorkerModel.Type;
 
@@ -86,6 +92,8 @@ export const modelSlotOf = ({
 export type RosterModel = PinnedWorkerModel & {
   readonly tier?: Tier;
   readonly tierAgent?: AgentKind;
+  /** The tier it follows when only a newer Gram knows it: never run, so the default stands in. */
+  readonly unknownTier?: string;
 };
 
 /** The model a roster entry runs on, without the user's note about it or its tier. */
@@ -94,6 +102,7 @@ export const modelRefOf = ({
   default: _default,
   tier: _tier,
   tierAgent: _tierAgent,
+  unknownTier: _unknownTier,
   ...model
 }: RosterModel): ModelRef => model;
 
@@ -102,10 +111,12 @@ export const modelRefOf = ({
  * (`tier:<tier>:<agent>` when it keeps to one harness) for one that follows a tier, since two
  * tiers can resolve to the same model at different efforts.
  */
-export const rosterName = (entry: RosterModel): string =>
-  entry.tier === undefined
+export const rosterName = (entry: RosterModel): string => {
+  const tier = entry.tier ?? entry.unknownTier;
+  return tier === undefined
     ? `${entry.agent}:${entry.model}`
-    : `tier:${entry.tier}${entry.tierAgent === undefined ? "" : `:${entry.tierAgent}`}`;
+    : `tier:${tier}${entry.tierAgent === undefined ? "" : `:${entry.tierAgent}`}`;
+};
 
 /**
  * A roster entry as it runs on a machine that lists `available`. A pinned one is as stored; one
@@ -118,6 +129,22 @@ export const rosterModelHere = (
   table: RecommendationTable = RECOMMENDED,
 ): { readonly entry: RosterModel; readonly missing?: string } => {
   if (!("tier" in entry)) return { entry };
+  if (!isTierRef(entry)) {
+    // Kept for the newer Gram that wrote it; here it is unavailable, as Lead's first choice so
+    // the entry still has a model to show, and the default stands in for it.
+    const stand = firstChoiceOf({ tier: "lead" }, table);
+    const kept = entry.agent === "claude" || entry.agent === "codex" ? entry.agent : undefined;
+    return {
+      entry: {
+        ...stand,
+        ...(entry.useFor === undefined ? {} : { useFor: entry.useFor }),
+        ...(entry.default === undefined ? {} : { default: entry.default }),
+        unknownTier: entry.tier,
+        ...(kept === undefined ? {} : { tierAgent: kept }),
+      },
+      missing: unknownTierWhy(entry.tier),
+    };
+  }
   const { tier, agent: own, variant, useFor, default: isDefault } = entry;
   const notes = {
     useFor: useFor ?? table.tiers[tier].note,
@@ -143,7 +170,11 @@ export const rosterModelHere = (
       variant: variant ?? tierEffort(table, tier, agent),
       ...notes,
     },
-    missing: `nothing ${agent === "claude" ? "Claude Code" : "Codex"} lists here fills the ${tierName(tier)} tier (${table.tiers[tier][agent].models.join(", ")}); update it, or pick a model for this entry in Settings → Workspaces`,
+    missing: tierMissingWhy(
+      table,
+      { tier, ...(own === undefined ? {} : { agent: own }) },
+      available,
+    ),
   };
 };
 

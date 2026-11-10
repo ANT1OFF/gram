@@ -584,6 +584,7 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
             const effort = localHelperEffort(
               model,
               settings.helpers?.[provider === "claude" ? "claudeEffort" : "codexEffort"],
+              job.kind,
             );
             if (!localHelperEffortSupported(model, effort)) {
               lastOutcome = `${provider}: saved effort unavailable`;

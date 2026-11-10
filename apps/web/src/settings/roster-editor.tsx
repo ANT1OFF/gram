@@ -35,7 +35,14 @@ import { ADMITTED_AGENTS } from "@/orchestration/admitted";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { Field, inputCls, LONG_COPY, WhyDisabled } from "./fields";
-import { sameSlot, useDefaultModel, useRosterHere, useSlotModel } from "./model-slots";
+import {
+  sameSlot,
+  useDefaultHere,
+  useDefaultModel,
+  useRosterHere,
+  useSlotHere,
+  useSlotModel,
+} from "./model-slots";
 import {
   addWorkerModel,
   defaultWorkerIndex,
@@ -234,9 +241,13 @@ function OrchestratorModelField({
   onChange: (charter: OrchestratorCharter) => void;
 }) {
   const selectId = useId();
-  const defaultModel = useDefaultModel();
+  const inherited = useDefaultHere();
+  const defaultModel = inherited.model;
   const own = charter.orchestratorModel;
-  const ownHere = useSlotModel(own);
+  const slot = useSlotHere(own);
+  const ownHere = slot.model;
+  // Its own slot's reason, or, while it follows the default, the default's.
+  const missing = own === undefined ? inherited.missing : slot.missing;
   const [pending, setPending] = useState<AgentChoice>();
   const shown = pending ?? choiceFromModel(ownHere ?? defaultModel ?? DEFAULT_ORCHESTRATOR_MODEL);
   const pick = (next: AgentChoice) => {
@@ -282,6 +293,17 @@ function OrchestratorModelField({
           <div className="flex flex-wrap items-center gap-2">
             <AgentFields value={shown} onChange={pick} allowed={ADMITTED_AGENTS} />
           </div>
+        )}
+        {missing !== undefined && (
+          <IssueNote
+            issue={{
+              index: -1,
+              message:
+                own === undefined
+                  ? `Your default model is unavailable: ${missing}. The orchestrator opens on what Gram finds installed instead.`
+                  : `Unavailable: ${missing[0]!.toUpperCase()}${missing.slice(1)}. The orchestrator opens on your default model instead.`,
+            }}
+          />
         )}
       </div>
     </Field>
@@ -444,10 +466,23 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
   const [choice, setChoice] = useState<AgentChoice>(startingChoice);
   const [note, setNote] = useState("");
   const models = charter.workerModels ?? [];
-  // Rows show what each entry runs on here; an entry that follows a tier is resolved.
-  const views = useRosterHere(models);
+  // Rows show what each entry runs on here; an entry that follows a tier is resolved, and one
+  // nothing here fills (or only a newer Gram knows) says so, as the server passes it over.
+  const here = useRosterHere(models);
+  const views = here.map((row) => row.entry);
   const fallback = defaultWorkerIndex(models);
-  const issues = useWorkerModelIssues({ ...charter, workerModels: views });
+  const checked = useWorkerModelIssues({ ...charter, workerModels: views });
+  const issues: readonly WorkerModelIssue[] = here
+    .map((row, index): WorkerModelIssue | undefined =>
+      row.missing === undefined
+        ? checked.find((each) => each.index === index)
+        : {
+            index,
+            message: `Unavailable: ${row.missing[0]!.toUpperCase()}${row.missing.slice(1)}. A worker given it gets the default.`,
+            unavailable: { fix: "workspaces" },
+          },
+    )
+    .filter((issue) => issue !== undefined);
   // Checked before it is added, so an entry that can't run here says so while it is only a choice.
   const candidate = choice.model === "" ? undefined : withUseFor(choiceModel(choice), note);
   const candidateIssue = useWorkerModelIssues({

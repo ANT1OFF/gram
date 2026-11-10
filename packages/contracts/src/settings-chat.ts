@@ -15,7 +15,15 @@ import {
   ModelRef,
 } from "./domain.ts";
 import { MergeReviewPolicy } from "./merge-policy.ts";
-import { FollowEffort, isTierRef, type ModelSlot, tierName, type TierRef } from "./recommended.ts";
+import {
+  FollowEffort,
+  isPinned,
+  isTierRef,
+  type ModelSlot,
+  tierName,
+  type TierRef,
+  type UnknownTierRef,
+} from "./recommended.ts";
 import {
   noticeActionsOn,
   notifyAboutOf,
@@ -156,7 +164,7 @@ export const workerFallback = <T extends WorkerModel | RosterModel>(
 
 /** A slot's concrete model, when it is pinned to one; a following slot has none until resolved. */
 const pinnedOf = (slot: ModelSlot | undefined): ModelRef | undefined =>
-  slot === undefined || isTierRef(slot) ? undefined : slot;
+  slot === undefined || !isPinned(slot) ? undefined : slot;
 
 interface Entry {
   readonly key: string;
@@ -470,17 +478,22 @@ export const modelText = (model: ModelRef): string =>
     ...(model.profileId === undefined ? [] : [`profile ${model.profileId}`]),
   ].join(" · ");
 
-/** `Recommended Lead · codex · high`: a following slot, which Gram resolves on each machine. */
-export const tierText = (slot: TierRef): string =>
+/**
+ * `Recommended Lead · codex · high`: a following slot, which Gram resolves on each machine. One on
+ * a tier only a newer Gram knows reads `Recommended "huge" (needs a newer Gram)`.
+ */
+export const tierText = (slot: TierRef | UnknownTierRef): string =>
   [
-    `Recommended ${tierName(slot.tier)}`,
+    isTierRef(slot)
+      ? `Recommended ${tierName(slot.tier)}`
+      : `Recommended "${slot.tier}" (needs a newer Gram)`,
     ...(slot.agent === undefined ? [] : [slot.agent]),
     ...(slot.variant === undefined ? [] : [slot.variant]),
   ].join(" · ");
 
 /** A slot as the card shows it, pinned or following. */
 export const slotText = (slot: ModelSlot): string =>
-  isTierRef(slot) ? tierText(slot) : modelText(slot);
+  isPinned(slot) ? modelText(slot) : tierText(slot);
 
 const workerText = (model: WorkerModel): string =>
   `${slotText(model)}${model.default === true ? " · default" : ""}${
@@ -518,7 +531,7 @@ const valueText = (entry: Entry, value: unknown): string => {
 
 /** A worker model's identity in a list: `agent:model`, with `@profileId` when it has one. */
 const identity = (model: WorkerModel): string =>
-  isTierRef(model)
+  !isPinned(model)
     ? `tier:${model.tier}${model.agent === undefined ? "" : `:${model.agent}`}`
     : `${model.agent}:${model.model}${model.profileId === undefined ? "" : `@${model.profileId}`}`;
 
@@ -671,7 +684,7 @@ const matching = (list: ReadonlyArray<WorkerModel>, match: string): ReadonlyArra
   const wanted = match.trim().toLowerCase();
   const [label, profile] = wanted.split("@");
   return list.flatMap((model, index) => {
-    if (isTierRef(model)) return identity(model) === wanted ? [index] : [];
+    if (!isPinned(model)) return identity(model) === wanted ? [index] : [];
     if (`${model.agent}:${model.model}`.toLowerCase() !== label) return [];
     if (profile !== undefined && (model.profileId ?? "").toLowerCase() !== profile) return [];
     return [index];
@@ -836,7 +849,7 @@ export const planSettingsChanges = (
         continue;
       }
       const update = decoded.success;
-      const following = isTierRef(list[index]!);
+      const following = !isPinned(list[index]!);
       if (
         following &&
         update.variant !== undefined &&
@@ -861,7 +874,7 @@ export const planSettingsChanges = (
       list[index] = next as WorkerModel;
       if (update.default === true) withoutDefault(list, index);
       const changed = list[index]!;
-      if (!isTierRef(changed) && (update.variant !== undefined || update.speed !== undefined))
+      if (isPinned(changed) && (update.variant !== undefined || update.speed !== undefined))
         models.push(changed);
       continue;
     }
@@ -1027,6 +1040,12 @@ export const planSettingsChanges = (
         if (value === null) {
           const { variant: _, ...rest } = base;
           into["orchestratorModel"] = rest;
+          break;
+        }
+        if (!isPinned(base) && !isTierRef(base)) {
+          errors.push(
+            `${key}: this orchestrator follows a tier only a newer version of Gram knows; set workspace.orchestratorModel instead.`,
+          );
           break;
         }
         if (isTierRef(base)) {

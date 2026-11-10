@@ -18,6 +18,7 @@ import {
   type TurnId,
   type RequestId,
   type QuestionRequest,
+  localHelperEffort,
 } from "@gram/contracts";
 import type { LanguageModel } from "ai";
 import * as Effect from "effect/Effect";
@@ -433,10 +434,15 @@ describe("local helper routing and consent", () => {
                   .trim()
                   .split("\n")
                   .map((line) => JSON.parse(line) as Record<string, unknown>);
+              // Each kind at the Cheap tier's effort, as this model lists it: a title at
+              // medium where it can, the rest at low; never high on Gram's own choice.
+              const listed = discoveredModels.find((row) => row.id === model);
+              const kinds = ["title", "plan", "recap", "suggest", "wait"] as const;
               expect(rows.filter((r) => r.model).map((r) => [r.model, r.effort])).toEqual([
-                ...Array.from({ length: 5 }, () => [model, "high"]),
+                ...kinds.map((kind) => [model, localHelperEffort(listed, undefined, kind)]),
                 [model, "low"],
               ]);
+              expect(rows.some((r) => r.effort === "high")).toBe(false);
               expect(rows.filter((r) => r.userSent)).toHaveLength(6);
               expect(h.calls).toHaveLength(0);
               for (const row of rows.filter((entry) => "apiEnvironment" in entry)) {
@@ -451,7 +457,7 @@ describe("local helper routing and consent", () => {
         ),
     );
   it.effect(
-    "a supported Codex helper contract receives discovered Luna High and saved effort independently",
+    "a supported Codex helper contract receives discovered Luna at the plan's low and saved effort independently",
     () =>
       provide(
         Effect.gen(function* () {
@@ -471,13 +477,13 @@ describe("local helper routing and consent", () => {
             undefined,
             [discovered],
           );
-          expect(yield* h.scheduler.schedule(planJob("codex-high"))).toMatchObject({
+          expect(yield* h.scheduler.schedule(planJob("codex-default"))).toMatchObject({
             _tag: "Done",
             model: "gpt-6-luna",
           });
           expect(h.localCalls[0]?.call).toMatchObject({
             model: "gpt-6-luna",
-            effort: "high",
+            effort: "low",
             speed: "standard",
           });
           yield* h.store.updateSettings((s) => ({
@@ -507,15 +513,23 @@ describe("local helper routing and consent", () => {
     ),
   );
   it.effect(
-    "uses the displayed High default and explicit saved effort after persistence reload",
+    "uses the displayed per-kind default and explicit saved effort after persistence reload",
     () =>
       provide(
         Effect.gen(function* () {
           const h = yield* localHarness({ claudeContext: "conversation" });
-          expect(yield* h.scheduler.schedule(planJob("high-default"))).toMatchObject({
+          expect(yield* h.scheduler.schedule(planJob("plan-default"))).toMatchObject({
             _tag: "Done",
           });
-          expect(h.localCalls[0]?.call.effort).toBe("high");
+          expect(h.localCalls[0]?.call.effort).toBe("low");
+          yield* h.store.updateSettings((s) => ({
+            ...s,
+            helpers: { ...s.helpers, claudeEffort: "high" },
+          }));
+          expect(yield* h.scheduler.schedule(planJob("saved-high"))).toMatchObject({
+            _tag: "Done",
+          });
+          expect(h.localCalls[1]?.call.effort).toBe("high");
           yield* h.store.updateSettings((s) => ({
             ...s,
             helpers: { ...s.helpers, claudeEffort: "low" },
@@ -523,7 +537,7 @@ describe("local helper routing and consent", () => {
           const settings = yield* h.store.getSettings;
           expect(settings.helpers?.claudeEffort).toBe("low");
           expect(yield* h.scheduler.schedule(planJob("saved-low"))).toMatchObject({ _tag: "Done" });
-          expect(h.localCalls[1]?.call.effort).toBe("low");
+          expect(h.localCalls[2]?.call.effort).toBe("low");
         }),
       ),
   );
@@ -564,7 +578,7 @@ describe("local helper routing and consent", () => {
     ),
   );
   it.effect(
-    "prefers actual discovered Haiku at High effort and records no subscription USD estimate",
+    "prefers actual discovered Haiku at the plan's low effort and records no subscription USD estimate",
     () =>
       provide(
         Effect.gen(function* () {
@@ -579,7 +593,7 @@ describe("local helper routing and consent", () => {
           });
           expect(
             h.localCalls.map((c) => [c.provider, c.call.model, c.call.effort, c.call.speed]),
-          ).toEqual([["claude", "haiku", "high", "standard"]]);
+          ).toEqual([["claude", "haiku", "low", "standard"]]);
           expect(h.calls).toHaveLength(0);
           expect((yield* h.scheduler.status).costUsd).toBe(0);
           expect((yield* h.scheduler.status).lines[0]?.model).toBe("local:claude:haiku");
@@ -1063,7 +1077,8 @@ describe("helper scheduler", () => {
           model: "gpt-6-luna",
         });
         expect(calls.map(modelOf)).toEqual(["claude-haiku-5.5-eu", "gpt-6-luna"]);
-        expect(calls[1]!.reasoningEffort).toBe("high");
+        // The automatic fallback runs a plan at the kind's low, as the primary would.
+        expect(calls[1]!.reasoningEffort).toBe("low");
         // Haiku 5.5 is backing off, so the next job goes straight to Luna.
         yield* scheduler.schedule(planJob("b2"));
         expect(calls.map(modelOf)).toEqual(["claude-haiku-5.5-eu", "gpt-6-luna", "gpt-6-luna"]);
@@ -1085,7 +1100,8 @@ describe("helper scheduler", () => {
         yield* scheduler.schedule(planJob("b2"));
         expect(calls.map((c) => [modelOf(c), c.reasoningEffort])).toEqual([
           ["claude-haiku-5.5-eu", "low"],
-          ["gpt-6-luna", "high"],
+          // The automatic fallback at the plan's low too.
+          ["gpt-6-luna", "low"],
           // Not backed off, but not asked at `low` again.
           ["claude-haiku-5.5-eu", undefined],
         ]);
@@ -1228,7 +1244,8 @@ describe("helper scheduler", () => {
           Option.some("Fix the login test"),
         );
         expect(calls[0]!.prompt).toMatch(/^<conversation>\n\nUser:\nthe login test fails/);
-        expect(calls[0]!.reasoningEffort).toBe("high");
+        // A title runs at the Cheap tier's medium, not high.
+        expect(calls[0]!.reasoningEffort).toBe("medium");
       }),
     ),
   );
@@ -1326,8 +1343,22 @@ const failure = (error: unknown) => classifyFailure(error).failure;
 
 describe("helper models", () => {
   it("routes the default, the user's picks, and never sends `none` where it's refused", () => {
+    // The automatic primary and fallback alike run at the Cheap tier's effort for the kind.
     expect(helperRoutes(EXAMPLE, { kind: "title" })).toEqual([
-      { model: "claude-haiku-5.5-eu", effort: "high" },
+      { model: "claude-haiku-5.5-eu", effort: "medium" },
+      { model: "gpt-6-luna", effort: "medium" },
+    ]);
+    expect(helperRoutes(EXAMPLE, { kind: "recap" })).toEqual([
+      { model: "claude-haiku-5.5-eu", effort: "low" },
+      { model: "gpt-6-luna", effort: "low" },
+    ]);
+    // A fallback the user configured keeps their effort exactly, high included.
+    const ownFallback: GatewayProfile = {
+      ...EXAMPLE,
+      helperFallback: { model: "gpt-6-luna", effort: "high" },
+    };
+    expect(helperRoutes(ownFallback, { kind: "recap" })).toEqual([
+      { model: "claude-haiku-5.5-eu", effort: "low" },
       { model: "gpt-6-luna", effort: "high" },
     ]);
     // Haiku 5.5 can't turn its thinking off, so a job's `none` goes out as `low`.

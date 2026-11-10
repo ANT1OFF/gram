@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import type { ReasoningVariant } from "./domain.ts";
 import { AgentModel, type AgentModel as ListedModel } from "./models.ts";
+import { clampEffort, findListed, RECOMMENDED, type FollowEffort } from "./recommended.ts";
 
 /** A helper destination chosen independently from a coding thread's agent or gateway. */
 export const HelperSource = Schema.Literals(["automatic", "claude", "codex", "gateway"]);
@@ -24,7 +25,10 @@ export const HelperProviderStatus = Schema.Struct({
 });
 export type HelperProviderStatus = typeof HelperProviderStatus.Type;
 
-/** Only actual discovered identities are selected, including a CLI alias's resolved identity. */
+/**
+ * Only actual discovered identities are selected, including a CLI alias's resolved identity. With
+ * none saved, the recommendation's Cheap tier for the provider: its first choice the CLI lists.
+ */
 export const localHelperModel = (
   provider: "claude" | "codex",
   models: ReadonlyArray<ListedModel>,
@@ -32,13 +36,11 @@ export const localHelperModel = (
 ): ListedModel | undefined => {
   if (saved !== undefined)
     return models.find((row) => row.id === saved || row.resolvedId === saved);
-  if (provider === "codex")
-    return models.find((row) => row.id === "gpt-6-luna" || row.resolvedId === "gpt-6-luna");
-  return models.find(
-    (row) =>
-      /^claude-haiku-5-5(?:-|$)/.test(row.resolvedId ?? row.id) ||
-      ((row.resolvedId ?? row.id) === "haiku" && /^Haiku 5\.5(?:\s|$)/.test(row.displayName)),
-  );
+  for (const id of RECOMMENDED.tiers.cheap[provider].models) {
+    const listed = findListed(provider, models, id);
+    if (listed !== undefined) return listed;
+  }
+  return undefined;
 };
 
 /** A kind of helper-model job; each has its own switch, cache row and budget line. */
@@ -126,12 +128,21 @@ export const HelperPresenceFields = {
   typing: Schema.Boolean,
 };
 
-/** Same effective effort for Settings and generation. Unlisted explicit choices are never replaced. */
+/** The effort Gram picks for a helper kind: the Cheap tier's, title at medium and the rest at low. */
+export const helperKindEffort = (kind?: HelperKind): FollowEffort =>
+  (kind === undefined ? undefined : RECOMMENDED.tiers.cheap.helpers?.[kind]) ??
+  RECOMMENDED.tiers.cheap.effort;
+
+/**
+ * Same effective effort for Settings and generation: the saved one, else the kind's (clamped to
+ * what the model lists). Unlisted explicit choices are never replaced.
+ */
 export const localHelperEffort = (
   model: ListedModel | undefined,
   saved?: ReasoningVariant,
+  kind?: HelperKind,
 ): ReasoningVariant | undefined =>
-  saved ?? (model?.supportsEffort && model.efforts?.includes("high") ? "high" : undefined);
+  saved ?? (model === undefined ? undefined : clampEffort(model, helperKindEffort(kind)));
 
 export const localHelperEffortSupported = (
   model: ListedModel,

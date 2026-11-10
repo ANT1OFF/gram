@@ -116,7 +116,7 @@ describe("AiHelpersSection", () => {
     expect((await picker("Helper context to Codex / OpenAI")).textContent).toContain("No context");
   });
 
-  it("renders exact High defaults without saving, then persists independent effort and model choices on reload", async () => {
+  it("renders the Cheap tier's per-kind defaults without saving, then persists independent effort and model choices on reload", async () => {
     const user = userEvent.setup();
     const api = mockApi();
     useServerSettings.setState({ settings: DEFAULT_SETTINGS });
@@ -144,7 +144,7 @@ describe("AiHelpersSection", () => {
     const view = renderWithApi(<AiHelpersSection />, api);
     await waitFor(async () =>
       expect((await picker("Claude Code / Anthropic helper effort")).textContent).toContain(
-        "High effort",
+        "Automatic — Medium for titles, Low for the rest",
       ),
     );
     expect(update).not.toHaveBeenCalled();
@@ -156,7 +156,10 @@ describe("AiHelpersSection", () => {
     await waitFor(async () =>
       expect((await picker("Codex / OpenAI helper model")).textContent).toContain("GPT-6 Luna"),
     );
-    expect((await picker("Codex / OpenAI helper effort")).textContent).toContain("High effort");
+    // Luna lists low and high only: a title's medium steps down to low.
+    expect((await picker("Codex / OpenAI helper effort")).textContent).toContain(
+      "Automatic — Low effort",
+    );
     await user.click(await picker("Codex / OpenAI helper effort"));
     await user.click(screen.getByRole("option", { name: "High effort" }));
     await waitFor(() => expect(update).toHaveBeenCalledWith({ helpers: { codexEffort: "high" } }));

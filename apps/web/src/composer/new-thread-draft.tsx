@@ -11,7 +11,7 @@ import {
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronRight, History, RotateCw } from "lucide-react";
+import { ChevronRight, History, RotateCw, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -61,7 +61,9 @@ import { useServerSettings } from "@/settings-sync/store";
 
 import { inOpenFence } from "./mention";
 import { enterSends } from "./send-key";
-import { AgentFields, choiceModel, gatewayReady } from "./agent-fields";
+import { AgentFields, choiceModel, gatewayReady, type AgentChoice } from "./agent-fields";
+import { agentLabel } from "@/agents/agent-display";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { modeSection } from "./choice-sections";
 import { ComposerChoices } from "./choices";
 import { useModels } from "./models";
@@ -131,6 +133,34 @@ const labelCls = "text-meta font-medium text-muted-foreground";
  * The inline `/new` draft: where the thread runs, on what, and the first prompt. While workspaces
  * are on it is the one-off thread (⌘T), one pick of the target away from New task.
  */
+/**
+ * The composer row's warning when the saved default follows a tier nothing here fills: a glyph,
+ * its words on hover, naming why and what this chat uses instead.
+ */
+function DefaultUnavailable({ why, choice }: { why: string; choice: AgentChoice }) {
+  const words = `Your default model can't run here: ${why}. This chat uses ${agentLabel(choice.agent)} ${choice.model}.`;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            role="img"
+            tabIndex={0}
+            aria-label={words}
+            data-testid="draft-default-unavailable"
+            className="flex size-8 items-center justify-center rounded-md text-warning outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        }
+      >
+        <TriangleAlert aria-hidden className="size-icon-row" />
+      </TooltipTrigger>
+      <TooltipContent role="tooltip" className="max-w-sm">
+        {words}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function NewThreadDraft() {
   const ready = useServerSettings((s) => s.settings !== undefined);
   return ready ? <ConfiguredNewThreadDraft /> : <p role="status">Loading agent preferences…</p>;
@@ -220,7 +250,7 @@ function ConfiguredNewThreadDraft() {
   // Capture Settings → Agents once, after settings load; later edits don't replace this draft.
   // A default that follows a tier is resolved by the draft once both harnesses have listed.
   const savedDefaultModel = useServerSettings((s) => s.settings?.agents.defaultModel);
-  const { choice, setChoice, discovering } = useDraftAgentChoice(savedDefaultModel);
+  const { choice, setChoice, discovering, unavailable } = useDraftAgentChoice(savedDefaultModel);
   const [mode, setMode] = useState<PermissionMode>(
     () =>
       useServerSettings.getState().settings?.agents.defaultMode ??
@@ -625,6 +655,9 @@ function ConfiguredNewThreadDraft() {
                         mode={modeChoice}
                         onPicked={onPicked}
                       />
+                    )}
+                    {!discovering && unavailable !== undefined && (
+                      <DefaultUnavailable why={unavailable} choice={choice} />
                     )}
                     <span
                       aria-live="polite"

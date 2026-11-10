@@ -4,6 +4,7 @@
 import {
   autonomyOf,
   InvalidState,
+  isPinned,
   type Thread,
   type ThreadId,
   type WorkerReport,
@@ -18,9 +19,11 @@ import { redactText } from "../../logging/redact.ts";
 import { filterWorkers, ledgerOf, visibleFeatures, type WorkerFacts } from "../ledger.ts";
 import { wakesOf, withNotes } from "../outbox.ts";
 import { ledgerQuestions } from "../worker-questions.ts";
+import { slotHereNow } from "../../runtime/model-slots.ts";
 import {
   fullAutonomyAllows,
   rosterOf,
+  workerModelLabel,
   USER_HOLD_IDLE_MS,
   userHoldLapsesAt,
   workerMergesOwnAtFull,
@@ -54,6 +57,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
     findThread,
     listeningWorkspace,
     store,
+    hosts,
     updateMemo,
     holdTimers,
     orchestrationChanged,
@@ -99,6 +103,30 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         workerModels: yield* rosterFor(thread, state.charter).pipe(
           Effect.map((here) => rosterOf(here.roster, here.unavailable)),
         ),
+        ...(yield* orchestratorSlot(thread, state)),
+      };
+    });
+
+  /**
+   * The orchestrator's own model slot, when it follows a tier: which, what the orchestrator runs
+   * on, and why that isn't the tier's model when nothing here fills it (it opened on what stood in).
+   */
+  const orchestratorSlot = (thread: Thread, state: WorkspaceState) =>
+    Effect.gen(function* () {
+      const slot =
+        state.charter.orchestratorModel ?? (yield* store.getSettings).agents.defaultModel;
+      if (slot === undefined || isPinned(slot)) return {};
+      const here = yield* slotHereNow(hosts, slot);
+      const runsOn = [
+        workerModelLabel(thread.model),
+        ...(thread.model.variant === undefined ? [] : [thread.model.variant]),
+      ].join(" · ");
+      return {
+        orchestratorModel: {
+          follows: `tier:${slot.tier}${slot.agent === undefined ? "" : `:${slot.agent}`}`,
+          runsOn,
+          ...(here.missing === undefined ? {} : { unavailable: here.missing }),
+        },
       };
     });
 

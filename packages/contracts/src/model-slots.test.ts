@@ -1,7 +1,14 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 import type { AgentModel } from "./models.ts";
-import { firstChoiceOf, ModelSlot, RECOMMENDED } from "./recommended.ts";
+import {
+  firstChoiceOf,
+  isTierRef,
+  isUnknownTier,
+  ModelSlot,
+  RECOMMENDED,
+  slotHere,
+} from "./recommended.ts";
 import { DEFAULT_SETTINGS, Settings } from "./settings.ts";
 import {
   applyCharterWrites,
@@ -14,6 +21,7 @@ import {
   DEFAULT_CHARTER,
   OrchestratorCharter,
   rosterModelHere,
+  rosterName,
   WorkerModel,
   type WorkspaceState,
 } from "./workspaces.ts";
@@ -72,7 +80,7 @@ describe("model slots", () => {
   it("refuse a following slot above high, which only a pinned one may hold", () => {
     expect(() => decode(ModelSlot)({ tier: "top", variant: "xhigh" })).toThrow();
     expect(() => decode(WorkerModel)({ tier: "top", variant: "max" })).toThrow();
-    expect(() => decode(ModelSlot)({ tier: "huge" })).toThrow();
+    expect(() => decode(ModelSlot)({ tier: "lead", agent: "gemini" })).toThrow();
     expect(decode(ModelSlot)({ agent: "claude", model: "opus", variant: "max" })).toEqual({
       agent: "claude",
       model: "opus",
@@ -198,5 +206,41 @@ describe("settings by chat on following slots", () => {
     expect(
       after([{ op: "set", key: "workspace.orchestratorEffort", value: "high" }]).orchestratorModel,
     ).toEqual({ tier: "lead", variant: "high" });
+  });
+});
+
+describe("a slot on a tier only a newer Gram knows", () => {
+  it("decodes, and keeps what was stored, so the workspace still reads", () => {
+    const charter = {
+      ...DEFAULT_CHARTER,
+      orchestratorModel: { tier: "huge", agent: "codex", variant: "ultra" },
+      workerModels: [{ tier: "huge", useFor: "Synthetic note", default: true }],
+    };
+    expect(roundTrip(OrchestratorCharter, charter)).toEqual(charter);
+    const slot = decode(ModelSlot)({ tier: "huge" });
+    expect(isUnknownTier(slot)).toBe(true);
+    expect(isTierRef(slot)).toBe(false);
+  });
+
+  it("never resolves: it is unavailable, with why", () => {
+    expect(slotHere({ tier: "huge" }, { codex: [sol] })).toEqual({
+      missing: expect.stringContaining('"huge" tier, which only a newer version of Gram knows'),
+    });
+    const here = rosterModelHere({ tier: "huge", default: true }, { codex: [sol] });
+    expect(rosterName(here.entry)).toBe("tier:huge");
+    expect(here.entry).toMatchObject({ default: true, unknownTier: "huge" });
+    expect(here.missing).toContain("only a newer version of Gram knows");
+  });
+});
+
+describe("slotHere", () => {
+  it("says why a known tier can't run here", () => {
+    expect(slotHere({ tier: "top" }, { codex: [sol] })).toEqual({
+      missing: expect.stringContaining("nothing here fills the Top tier: Codex (gpt-6-astra)"),
+    });
+    expect(slotHere({ tier: "scoped" }, { codex: [sol] }).model).toMatchObject({
+      model: "gpt-6.1-sol",
+    });
+    expect(slotHere(undefined, {})).toEqual({});
   });
 });

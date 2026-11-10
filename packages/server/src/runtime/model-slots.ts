@@ -1,6 +1,6 @@
 import {
   isTierRef,
-  slotModel,
+  slotHere,
   type AvailableModels,
   type ModelRef,
   type ModelSlot,
@@ -27,14 +27,24 @@ export const availableHere = (hosts: AgentHosts["Service"]): Effect.Effect<Avail
   });
 
 /**
- * What a slot runs on here and now: a pinned one as saved, a following one resolved through the
- * recommendation against what this machine lists, listing only then. Undefined for an unset slot
- * or a tier nothing here fills, so the caller's own fallback (discovery) takes over.
+ * A slot as it stands here and now (`slotHere`): a pinned one as saved, a following one resolved
+ * through the recommendation against what this machine lists, listing only then. One that can't
+ * run here comes back with why, for the caller to say beside whatever stands in.
+ */
+export const slotHereNow = (
+  hosts: AgentHosts["Service"],
+  slot: ModelSlot | undefined,
+): Effect.Effect<{ readonly model?: ModelRef; readonly missing?: string }> =>
+  slot === undefined || !isTierRef(slot)
+    ? Effect.succeed(slotHere(slot, {}))
+    : availableHere(hosts).pipe(Effect.map((available) => slotHere(slot, available)));
+
+/**
+ * What a slot runs on here and now. Undefined for an unset slot or one that can't run here, so the
+ * caller's own fallback (discovery) takes over; `slotHereNow` also says why.
  */
 export const resolveSlot = (
   hosts: AgentHosts["Service"],
   slot: ModelSlot | undefined,
 ): Effect.Effect<ModelRef | undefined> =>
-  slot === undefined || !isTierRef(slot)
-    ? Effect.succeed(slot)
-    : availableHere(hosts).pipe(Effect.map((available) => slotModel(slot, available)));
+  slotHereNow(hosts, slot).pipe(Effect.map((here) => here.model));

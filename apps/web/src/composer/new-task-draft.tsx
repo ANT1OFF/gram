@@ -10,7 +10,7 @@ import {
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderGit2, GitBranch } from "lucide-react";
+import { FolderGit2, GitBranch, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -349,7 +349,7 @@ export function NewTaskDraft({
     setError(undefined);
     // The worker picked from the roster is the one the server checks and starts.
     const chosenWorker = way === "direct" && shownWorker !== undefined ? workerModel : undefined;
-    const { workerChoices: _choices, ...shown } = selection.data;
+    const { workerChoices: _choices, orchestratorNote: _note, ...shown } = selection.data;
     try {
       const thread = await api.startTask({
         target:
@@ -707,6 +707,17 @@ export function NewTaskDraft({
           {orchestratorModel !== undefined && way === "plan" && (
             <p className="text-meta text-muted-foreground">
               {`Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)}`}
+            </p>
+          )}
+          {/* Its slot follows a tier nothing here fills: why, beside what stands in. */}
+          {selection.data?.orchestratorNote !== undefined && (
+            <p
+              role="status"
+              data-testid="task-orchestrator-note"
+              className="flex items-start gap-1.5 text-meta text-warning"
+            >
+              <TriangleAlert aria-hidden className="mt-px size-icon-row shrink-0" />
+              <span>{selection.data.orchestratorNote}</span>
             </p>
           )}
           {/* A direct worker's workspace still opens its orchestrator, so one that can't run

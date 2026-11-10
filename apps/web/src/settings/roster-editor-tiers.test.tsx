@@ -115,4 +115,36 @@ describe("RosterEditor with entries that follow a tier", () => {
     });
     expect(current.workerModels?.[0]).toMatchObject({ tier: "scoped" });
   });
+
+  it("says why an entry, or the orchestrator, can't run here", async () => {
+    current = {
+      maxConcurrentWorkers: 1,
+      // Nothing here lists Fable or Astra, and only a newer Gram knows "huge".
+      orchestratorModel: { tier: "top" },
+      workerModels: [{ tier: "top" }, { tier: "huge" }, { tier: "scoped", default: true }],
+    };
+    render(view(current));
+    await waitFor(() => expect(screen.getAllByTestId("worker-model-warning")).toHaveLength(3));
+    const [orchestrator, top, huge] = screen.getAllByTestId("worker-model-warning");
+    expect(orchestrator!.textContent).toContain("Nothing here fills the Top tier: Claude Code");
+    expect(top!.textContent).toContain("Nothing here fills the Top tier: Claude Code");
+    expect(huge!.textContent).toContain("only a newer version of Gram knows");
+    const rows = screen.getAllByTestId("worker-model");
+    expect(rows.map((row) => row.dataset["unavailable"])).toEqual(["true", "true", undefined]);
+  });
+
+  it("keeps an inherited default's reason when the orchestrator follows it", async () => {
+    useServerSettings.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        agents: { ...DEFAULT_SETTINGS.agents, defaultModel: { tier: "top" } },
+      },
+    });
+    current = { maxConcurrentWorkers: 1 };
+    render(view(current));
+    const warning = await screen.findByTestId("worker-model-warning");
+    expect(warning.textContent).toContain(
+      "Your default model is unavailable: nothing here fills the Top tier",
+    );
+  });
 });

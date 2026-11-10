@@ -16,6 +16,7 @@ import {
   settingsHold,
   type SettingsRequirement,
   type WorkspaceId,
+  slotAgent,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { type SettingsAuditEntry } from "../../persistence/thread-store.ts";
@@ -172,13 +173,10 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
         });
       }
       // One that follows a tier on no one harness is checked when it resolves (`openModel`).
-      const orchestratorModel = charter.orchestratorModel;
-      if (
-        orchestratorModel?.agent !== undefined &&
-        !admittedForRole(orchestratorModel.agent, "orchestrator")
-      ) {
+      const orchestratorAgent = slotAgent(charter.orchestratorModel);
+      if (orchestratorAgent !== undefined && !admittedForRole(orchestratorAgent, "orchestrator")) {
         return yield* new InvalidState({
-          message: `${kindName(orchestratorModel.agent)} threads can't be orchestrators yet.`,
+          message: `${kindName(orchestratorAgent)} threads can't be orchestrators yet.`,
         });
       }
       yield* refuseConnectorEntries(charter);

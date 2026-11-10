@@ -18,7 +18,15 @@ import { resolveSlot } from "../runtime/model-slots.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { orchestrationHandlers } from "./handler.ts";
 import { Orchestration } from "./service.ts";
-import { makeWorld, openOrchestrator, openProject, serverLayer, spawn } from "./test-harness.ts";
+import {
+  makeWorld,
+  openOrchestrator,
+  openProject,
+  outboxOf,
+  serverLayer,
+  spawn,
+  waitSent,
+} from "./test-harness.ts";
 
 const efforts = ["low", "medium", "high", "xhigh", "max"] as const;
 const row = (id: string, resolvedId?: string): AgentModel => ({
@@ -258,6 +266,99 @@ describe.skipIf(!hasGit)("spawning on a roster entry that follows a tier", () =>
             })
             .pipe(Effect.flip);
           expect(refused.message).toContain("tier:<tier>");
+        }).pipe(Effect.provide(context));
+      }),
+    ),
+  );
+});
+
+describe.skipIf(!hasGit)("a slot that can't run here says so", () => {
+  // Claude only, with no Fable: nothing here fills Top.
+  const NO_TOP = { claude: CLAUDE };
+
+  it.effect("keeps a workspace stored on a tier only a newer Gram knows, and opens around it", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const context = yield* Layer.build(serverLayer(world, {}, adapters(NO_TOP)));
+        yield* Effect.gen(function* () {
+          const orchestration = yield* Orchestration;
+          const store = yield* ThreadStore;
+          const project = yield* openProject(world);
+          const stored = charter({
+            orchestratorModel: { tier: "huge", variant: "ultra" },
+            workerModels: [
+              { tier: "huge", useFor: "Synthetic note" },
+              { agent: "claude", model: "sonnet", default: true },
+            ],
+          });
+          const state = yield* orchestration.saveWorkspace({
+            name: "Synthetic",
+            projectIds: [project.id],
+            homeProjectId: project.id,
+            charter: stored,
+          });
+          // It reads back, exactly as the newer Gram wrote it.
+          expect((yield* store.getWorkspace(state.workspace.id)).charter).toMatchObject({
+            orchestratorModel: stored.orchestratorModel,
+            workerModels: stored.workerModels,
+          });
+          expect((yield* store.listWorkspaces).map((each) => each.workspace.id)).toContain(
+            state.workspace.id,
+          );
+          const handlers = yield* orchestrationHandlers;
+          const selection = yield* handlers["workspace.taskPreflight"]({
+            target: { workspaceId: state.workspace.id },
+            direct: { projectId: project.id },
+          });
+          expect(selection.orchestrator.agent).toBe("claude");
+          expect(selection.orchestratorNote).toContain("only a newer version of Gram knows");
+          expect(selection.workerChoices?.[0]).toMatchObject({
+            unavailable: expect.stringContaining('"huge" tier'),
+          });
+          expect(selection.worker).toMatchObject({ model: "sonnet" });
+        }).pipe(Effect.provide(context));
+      }),
+    ),
+  );
+
+  it.effect("tells the preview, the orchestrator and list_workers why it stood in", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const context = yield* Layer.build(serverLayer(world, {}, adapters(NO_TOP)));
+        yield* Effect.gen(function* () {
+          const orchestration = yield* Orchestration;
+          const project = yield* openProject(world);
+          const state = yield* orchestration.saveWorkspace({
+            name: "Synthetic",
+            projectIds: [project.id],
+            homeProjectId: project.id,
+            charter: charter({ orchestratorModel: { tier: "top" } }),
+          });
+          const handlers = yield* orchestrationHandlers;
+          const target = { workspaceId: state.workspace.id };
+          const selection = yield* handlers["workspace.taskPreflight"]({ target });
+          expect(selection.orchestrator).toMatchObject({ agent: "claude", model: "opus" });
+          expect(selection.orchestratorNote).toContain("nothing here fills the Top tier");
+          expect(selection.orchestratorNote).toContain("It opens on claude:opus instead");
+          const thread = yield* handlers["workspace.startTask"]({
+            target,
+            selection,
+            input: { text: "Synthetic task" },
+          });
+          const session = yield* waitSent(thread.id, 1);
+          // A note its next digest carries, as a roster change is.
+          expect((yield* outboxOf(state.workspace.id)).notes.join("\n")).toContain(
+            "nothing here fills the Top tier",
+          );
+          expect(yield* session.callTool("list_workers", {})).toMatchObject({
+            orchestratorModel: {
+              follows: "tier:top",
+              runsOn: "claude:opus",
+              unavailable: expect.stringContaining("nothing here fills the Top tier"),
+            },
+          });
         }).pipe(Effect.provide(context));
       }),
     ),

@@ -686,6 +686,15 @@ export interface OrchestrationShape {
     OrchestratorLedger & {
       readonly autonomy: Autonomy;
       readonly workerModels: ReadonlyArray<RosterEntry>;
+      /**
+       * The orchestrator's own slot, when it follows a tier: `tier:lead`, what this session runs
+       * on, and why that isn't the tier's model when nothing here fills it.
+       */
+      readonly orchestratorModel?: {
+        readonly follows: string;
+        readonly runsOn: string;
+        readonly unavailable?: string;
+      };
       /** The running Gram app's version and build (`appLabelOf`), when known. */
       readonly app?: string;
       /** The joined machines `spawn_worker`'s `machine` can name, when any is joined. */

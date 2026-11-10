@@ -8,7 +8,7 @@ import {
   type Settings,
   type WorkerModel,
   type WorkspaceState,
-  isTierRef,
+  isPinned,
   tierText,
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
@@ -332,7 +332,7 @@ const rosterLine = (models: readonly WorkerModel[]): string =>
     ? "None: workers run on the orchestrator's model."
     : models
         .map((model) =>
-          isTierRef(model) ? tierText(model) : `${agentLabel(model.agent)} ${model.model}`,
+          isPinned(model) ? `${agentLabel(model.agent)} ${model.model}` : tierText(model),
         )
         .join(", ");
 
