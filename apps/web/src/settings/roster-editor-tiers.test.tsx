@@ -71,7 +71,7 @@ afterEach(() => {
 });
 
 describe("RosterEditor with entries that follow a tier", () => {
-  it("shows what each runs on here, and pins one only when its model settings change", async () => {
+  it("shows what each runs on here, and keeps one following at an effort picked", async () => {
     current = {
       maxConcurrentWorkers: 1,
       workerModels: [
@@ -102,17 +102,28 @@ describe("RosterEditor with entries that follow a tier", () => {
     });
     rerender(view(current));
 
-    // An effort picked pins it to the model it runs on here.
+    // An effort picked keeps it following, at that effort; the menu ends at high.
+    const effort = within(screen.getAllByTestId("worker-model")[1]!).getByTestId<HTMLSelectElement>(
+      "worker-model-effort",
+    );
+    await waitFor(() =>
+      expect([...effort.options].map((option) => option.value)).toEqual([
+        "default",
+        "low",
+        "medium",
+        "high",
+      ]),
+    );
+    fireEvent.change(effort, { target: { value: "high" } });
+    expect(current.workerModels?.[1]).toEqual({ tier: "lead", agent: "claude", variant: "high" });
+    rerender(view(current));
+
+    // The model's default effort is the tier's own again.
     fireEvent.change(
       within(screen.getAllByTestId("worker-model")[1]!).getByTestId("worker-model-effort"),
-      { target: { value: "high" } },
+      { target: { value: "default" } },
     );
-    expect(current.workerModels?.[1]).toEqual({
-      agent: "claude",
-      model: "opus",
-      variant: "high",
-      speed: "standard",
-    });
+    expect(current.workerModels?.[1]).toEqual({ tier: "lead", agent: "claude" });
     expect(current.workerModels?.[0]).toMatchObject({ tier: "scoped" });
   });
 
@@ -146,5 +157,86 @@ describe("RosterEditor with entries that follow a tier", () => {
     expect(warning.textContent).toContain(
       "Your default model is unavailable: nothing here fills the Top tier",
     );
+  });
+});
+
+const on = {
+  ...DEFAULT_SETTINGS,
+  agents: { ...DEFAULT_SETTINGS.agents, recommendedSetup: { enabled: true } },
+};
+
+describe("RosterEditor with the recommended setup on", () => {
+  it("marks each slot as following or yours, with the words on hover only", async () => {
+    useServerSettings.setState({ settings: on });
+    current = {
+      maxConcurrentWorkers: 1,
+      orchestratorModel: { tier: "lead" },
+      workerModels: [
+        { tier: "scoped", default: true },
+        { agent: "codex", model: "gpt-6.1-sol", variant: "high", useFor: "Synthetic reviews" },
+      ],
+    };
+    const { rerender } = render(view(current));
+    await waitFor(() => expect(screen.getAllByTestId("slot-follow")).toHaveLength(1));
+    const orchestrator = screen.getByTestId("orchestrator-model");
+    const glyph = within(orchestrator).getByTestId("slot-glyph");
+    expect(glyph.dataset["follows"]).toBe("true");
+    expect(glyph.getAttribute("aria-label")).toBe("Recommended · Lead tier · updates with Gram");
+    // The words aren't on the row: only the glyph's label carries them.
+    expect(orchestrator.textContent).not.toContain("updates with Gram");
+
+    const [scoped, pinned] = screen.getAllByTestId("worker-model");
+    expect(within(scoped!).getByTestId("slot-glyph").getAttribute("aria-label")).toBe(
+      "Recommended · Scoped tier · updates with Gram",
+    );
+    expect(within(scoped!).queryByTestId("slot-follow")).toBeNull();
+    const pin = within(pinned!).getByTestId("slot-glyph");
+    expect(pin.dataset["follows"]).toBeUndefined();
+    expect(pin.getAttribute("aria-label")).toBe("Your choice · updates leave it alone");
+    // A pinned row offers every effort its model lists.
+    expect(
+      [...within(pinned!).getByTestId<HTMLSelectElement>("worker-model-effort").options].map(
+        (option) => option.value,
+      ),
+    ).toContain("xhigh");
+
+    // Follow recommended moves it to the tier that runs Sol at high here, on Codex, keeping its note.
+    fireEvent.click(within(pinned!).getByRole("button", { name: "Follow recommended" }));
+    expect(current.workerModels?.[1]).toEqual({
+      tier: "lead",
+      agent: "codex",
+      useFor: "Synthetic reviews",
+    });
+    rerender(view(current));
+    await waitFor(() => expect(screen.queryByTestId("slot-follow")).toBeNull());
+  });
+
+  it("moves a pinned orchestrator back to Lead", async () => {
+    useServerSettings.setState({ settings: on });
+    current = {
+      maxConcurrentWorkers: 1,
+      orchestratorModel: { agent: "claude", model: "opus", variant: "xhigh" },
+    };
+    render(view(current));
+    const orchestrator = screen.getByTestId("orchestrator-model");
+    expect(within(orchestrator).getByTestId("slot-glyph").getAttribute("aria-label")).toBe(
+      "Your choice · updates leave it alone",
+    );
+    fireEvent.click(within(orchestrator).getByRole("button", { name: "Follow recommended" }));
+    expect(current.orchestratorModel).toEqual({ tier: "lead" });
+  });
+
+  it("shows no glyphs while the mode is off", async () => {
+    current = {
+      maxConcurrentWorkers: 1,
+      orchestratorModel: { agent: "claude", model: "opus" },
+      workerModels: [{ tier: "scoped" }, { agent: "claude", model: "sonnet" }],
+    };
+    render(view(current));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("worker-model")[0]!.dataset["agent"]).toBe("codex"),
+    );
+    expect(screen.queryByTestId("slot-glyph")).toBeNull();
+    expect(screen.queryByTestId("slot-follow")).toBeNull();
   });
 });

@@ -7,6 +7,7 @@ import {
   type AgentKind,
   type Autonomy,
   type ModelRef,
+  type ModelSlot,
   type OrchestratorCharter,
   type PermissionMode,
   type Project,
@@ -187,7 +188,7 @@ export const defaultWorkerIndex = (models: readonly WorkerModel[]): number | und
 /** The charter with an orchestrator model of its own, or following the default model again. */
 export const withOrchestratorModel = (
   charter: OrchestratorCharter,
-  model: ModelRef | undefined,
+  model: ModelSlot | undefined,
 ): OrchestratorCharter => {
   const { orchestratorModel: _was, ...rest } = charter;
   return model === undefined ? rest : { ...rest, orchestratorModel: model };

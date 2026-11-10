@@ -2146,6 +2146,93 @@ const MACHINE_SHOTS: readonly Shot[] = [
   },
 ];
 
+/**
+ * The recommended setup on, over a synthetic Claude Code that lists Opus, Sonnet and Haiku 5.5 by
+ * the ids they run (no Fable, so Top can't be filled here), and Claude alone.
+ */
+const seedRecommendedOn = async (page: Page) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem("gram.mock.agents", "claude");
+    sessionStorage.setItem(
+      "gram.mock.launchChecks",
+      JSON.stringify({ claudeSignIn: "signedIn", ghSignedIn: false }),
+    );
+  });
+  await seedMockSettings(page, {
+    agents: { recommendedSetup: { enabled: true, seen: "2026.11" } },
+  });
+};
+
+const RECOMMENDED_CLAUDE = [
+  ["opus", "Opus 5.5", "claude-opus-5-5"],
+  ["sonnet", "Sonnet 5.5", "claude-sonnet-5-5"],
+  ["haiku", "Haiku 5.5", "claude-haiku-5-5"],
+].map(([id, displayName, resolvedId]) => ({
+  id: id!,
+  displayName: displayName!,
+  resolvedId: resolvedId!,
+  supportsEffort: true,
+  efforts: ["low", "medium", "high", "xhigh", "max"] as const,
+}));
+
+/**
+ * An invented workspace's Models with the recommended setup on (mock: recommended-setup v1, board
+ * 4): the orchestrator and three worker models following tiers, one pinned with a note of its own,
+ * and Top, which nothing here fills.
+ */
+const openRecommendedRoster = async (page: Page) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await seedRecommendedOn(page);
+  await page.goto("/settings/workspaces");
+  await page.getByTestId("workspace-settings").waitFor();
+  await page.evaluate(async (models) => {
+    const api = window.gramMock!;
+    api.seedClaudeAccountModels(models as never);
+    const made = await api.simulateOrchestration("board");
+    const state = (await api.listWorkspaces()).find(
+      (each) => each.workspace.id === made.workspaceId,
+    )!;
+    await api.setOrchestratorCharter(made.workspaceId, {
+      ...state.charter,
+      orchestratorModel: { tier: "lead" },
+      workerModels: [
+        { tier: "scoped", default: true },
+        {
+          agent: "claude",
+          model: "opus",
+          speed: "standard",
+          variant: "high",
+          useFor: "reviews, bug hunts, audits",
+        },
+        { tier: "top" },
+        { tier: "cheap" },
+      ],
+    });
+  }, RECOMMENDED_CLAUDE);
+  await page
+    .getByRole("listitem", { name: "Workspace agent-platform" })
+    .getByTestId("workspace-link")
+    .click();
+  await page.getByTestId("worker-models").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(600);
+};
+
+/** Settings → Agents & models with the recommended setup on (board 3): the default follows Lead. */
+const openRecommendedDefault = async (page: Page) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await seedRecommendedOn(page);
+  // Seeded before Agents & models lists them, then opened in the page as a user would.
+  await page.goto("/settings/workspaces");
+  await page.getByTestId("workspace-settings").waitFor();
+  await page.evaluate(
+    (models) => window.gramMock!.seedClaudeAccountModels(models as never),
+    RECOMMENDED_CLAUDE,
+  );
+  await page.getByRole("link", { name: "Agents & models" }).click();
+  await page.getByTestId("agent-settings").waitFor();
+  await page.waitForTimeout(600);
+};
+
 export const SHOTS: readonly Shot[] = [
   ...MACHINE_SHOTS,
   ...PHONE_ACCESS_SHOTS,
@@ -3428,6 +3515,46 @@ export const SHOTS: readonly Shot[] = [
         .locator("section")
         .filter({ has: page.getByTestId("worker-models") }),
   })),
+  {
+    name: "recommended-roster",
+    title:
+      "Workspace settings → Models with the recommended setup on: a glyph before each slot, Follow recommended beside the pinned one",
+    open: openRecommendedRoster,
+    element: (page) =>
+      page
+        .getByTestId("workspace-page")
+        .locator("section")
+        .filter({ has: page.getByTestId("worker-models") }),
+  },
+  {
+    name: "recommended-roster-hover",
+    title: "The same, hovering the pinned row's glyph: its words",
+    modes: ["dark"],
+    open: async (page) => {
+      await openRecommendedRoster(page);
+      await page.getByRole("img", { name: "Your choice · updates leave it alone" }).hover();
+      await page.locator('[data-slot="tooltip-content"][data-open]').waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
+  {
+    name: "recommended-default",
+    title:
+      "Settings → Agents & models with the recommended setup on: the default model follows Lead",
+    open: openRecommendedDefault,
+    element: (page) => page.getByTestId("agent-settings"),
+  },
+  {
+    name: "recommended-default-effort",
+    title: "The default model's effort menu, open: it ends at High while it follows",
+    modes: ["dark"],
+    open: async (page) => {
+      await openRecommendedDefault(page);
+      await page.getByRole("combobox", { name: /Effort/ }).click();
+      await page.getByRole("listbox").waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
   {
     name: "workspace-models-notes",
     title: "Workspace settings → Models: How Codex differs, opened",
