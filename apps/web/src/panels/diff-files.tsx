@@ -60,11 +60,35 @@ export const FILE_STATUS: Record<
   },
 };
 
-/** A file's own actions, over the row's end while it is hovered or one of them has focus. */
+/**
+ * A file's own actions, in place of its status and counts while the row is hovered or one of them
+ * has focus. The panel is translucent, so they are never drawn over text: the counts give way
+ * (`ROW_FACTS`) to a gap as wide as the actions (`ACTIONS_ROOM`), which the path ends before.
+ */
 const ROW_ACTIONS =
-  "absolute inset-y-0 right-0 flex items-center bg-panel opacity-0 focus-within:opacity-100 group-hover/file:opacity-100";
+  "absolute inset-y-0 right-0 flex items-center opacity-0 focus-within:opacity-100 group-hover/file:opacity-100";
 const ROW_ACTION =
   "me-2 shrink-0 rounded-sm p-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
+/** A row's status letter and counts, gone while its actions show in their place. */
+const ROW_FACTS =
+  "flex shrink-0 items-center gap-2 group-hover/file:hidden group-has-[[data-row-actions]:focus-within]/file:hidden";
+/** The gap under the actions while they show: one, two or three of them (`ROW_ACTION` is 2 rem). */
+const ACTIONS_ROOM = ["", "w-6", "w-14", "w-22"] as const;
+const ROOM_SHOWN =
+  "hidden shrink-0 group-hover/file:block group-has-[[data-row-actions]:focus-within]/file:block";
+
+/**
+ * A path as a row shows it: its folders, which give way first, and the file's name, which is what
+ * tells two rows of one folder apart. A rename keeps its old path with the folders.
+ */
+export function pathParts(file: Pick<DiffFile, "path" | "oldPath">): {
+  folders: string;
+  name: string;
+} {
+  const shown = file.oldPath ? `${file.oldPath} → ${file.path}` : file.path;
+  const cut = shown.lastIndexOf("/") + 1;
+  return { folders: shown.slice(0, cut), name: shown.slice(cut) };
+}
 
 /** ↑ / ↓ on a file header move to the previous / next file's header, past any open patch. */
 function moveBetweenHeaders(event: KeyboardEvent<HTMLButtonElement>) {
@@ -184,6 +208,10 @@ function DiffFileRow({
   const bodyId = useId();
   const rowRef = useRef<HTMLLIElement>(null);
   const status = FILE_STATUS[file.status];
+  const path = pathParts(file);
+  const actions = [onReveal, onOpenInEditor, onRevealInFileManager].filter(
+    (action) => action !== undefined,
+  ).length as 0 | 1 | 2 | 3;
 
   if (focusKey !== focusedKey) {
     setFocusedKey(focusKey);
@@ -248,26 +276,46 @@ function DiffFileRow({
             )}
           />
           <status.icon aria-hidden className={cn("size-icon-row shrink-0", status.tone)} />
-          <span className="min-w-0 flex-1 truncate font-mono" title={file.path}>
-            {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
-          </span>
-          <span
-            title={status.label}
-            className={cn("shrink-0 font-mono font-semibold", status.tone)}
-          >
-            <span aria-hidden>{status.letter}</span>
-            <span className="sr-only">{status.label}</span>
-          </span>
-          <span className="shrink-0 font-mono tabular-nums">
-            <span className="text-success">
-              +<NumberTicker value={file.additions} />
-            </span>{" "}
-            <span className="text-destructive">
-              −<NumberTicker value={file.deletions} />
+          {/* Short of room the folders are cut, never the name: the name shrinks only once they
+              are down to their ellipsis. Their share of the shrinking is a million to one, so the
+              name's rounds to nothing; at a thousand to one it lost a fraction of a pixel, which
+              is enough to cut its last letters. */}
+          <span className="flex min-w-0 flex-1 font-mono" title={file.path}>
+            {path.folders !== "" && (
+              <span data-testid="diff-file-folders" className="min-w-4 shrink-[1000000] truncate">
+                {path.folders}
+              </span>
+            )}
+            <span data-testid="diff-file-name" className="min-w-0 truncate">
+              {path.name}
             </span>
           </span>
+          <span className={ROW_FACTS}>
+            <span title={status.label} className={cn("font-mono font-semibold", status.tone)}>
+              <span aria-hidden>{status.letter}</span>
+              <span className="sr-only">{status.label}</span>
+            </span>
+            {/* A count of nothing is left out, as the file tree leaves it: "+52", never "+52 −0",
+                and a binary file, which has no lines to count, shows its letter alone. */}
+            {(file.additions > 0 || file.deletions > 0) && (
+              <span data-testid="diff-file-counts" className="font-mono tabular-nums">
+                {file.additions > 0 && (
+                  <span className="text-success">
+                    +<NumberTicker value={file.additions} />
+                  </span>
+                )}
+                {file.additions > 0 && file.deletions > 0 && " "}
+                {file.deletions > 0 && (
+                  <span className="text-destructive">
+                    −<NumberTicker value={file.deletions} />
+                  </span>
+                )}
+              </span>
+            )}
+          </span>
+          {actions > 0 && <span aria-hidden className={cn(ROOM_SHOWN, ACTIONS_ROOM[actions])} />}
         </button>
-        <div className={ROW_ACTIONS}>
+        <div data-row-actions className={ROW_ACTIONS}>
           {onReveal && (
             <button
               type="button"

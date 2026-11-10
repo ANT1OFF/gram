@@ -25,6 +25,46 @@ const timeClick = (page: Page, selector: string) =>
     return performance.now() - start;
   }, selector);
 
+test("a file row keeps its name in a narrow panel, and its actions never sit over its counts", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/t/t-flaky");
+  const panel = page.getByTestId("diff-panel");
+  const renamed = panel.locator("[data-testid='diff-file'][data-path='src/clock.ts']");
+  await expect(renamed).toBeVisible();
+  // Dragged as narrow as it goes, the folders (and a rename's old path) are what give way.
+  await dragPanelEdge(page, 600);
+  const cut = (testId: string) =>
+    renamed.getByTestId(testId).evaluate((node) => node.scrollWidth > node.clientWidth);
+  await expect(renamed.getByTestId("diff-file-name")).toHaveText("clock.ts");
+  expect(await cut("diff-file-name")).toBe(false);
+  expect(await cut("diff-file-folders")).toBe(true);
+
+  // A count of nothing is left out: the untracked doc added three lines, the image none to count.
+  const counts = (path: string) =>
+    panel.locator(`[data-testid='diff-file'][data-path='${path}']`).getByTestId("diff-file-counts");
+  // (Each number is a ticker, whose text is its digit wheels, so the rows are told by their signs.)
+  const numbers = (path: string) => counts(path).locator("number-flow-react");
+  await expect(numbers("docs/testing.md")).toHaveCount(1);
+  await expect(counts("docs/testing.md")).toContainText("+");
+  await expect(counts("docs/testing.md")).not.toContainText("−");
+  await expect(counts("assets/retry-timeline.png")).toHaveCount(0);
+  await expect(numbers("src/clock.ts")).toHaveCount(2);
+
+  // Under the pointer the actions take the counts' place rather than draw over them.
+  await page.mouse.move(0, 0);
+  await expect(counts("src/clock.ts")).toBeVisible();
+  await renamed.locator("[data-diff-file-header]").hover();
+  await expect(counts("src/clock.ts")).toBeHidden();
+  const actions = renamed.locator("[data-row-actions]");
+  await expect(actions).toHaveCSS("opacity", "1");
+  // The path ends before them: the panel is translucent, so text under them would show through.
+  const name = (await renamed.getByTestId("diff-file-name").boundingBox())!;
+  const first = (await actions.getByRole("button").first().boundingBox())!;
+  expect(name.x + name.width).toBeLessThanOrEqual(first.x);
+});
+
 test("the file tree jumps to a file, and n / p step through its hunks", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto("/t/t-flaky");

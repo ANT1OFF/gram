@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { mockDiff, withoutWhitespaceChanges } from "@/api/mock-git";
 
-import { DiffFileList } from "./diff-files";
+import { DiffFileList, pathParts } from "./diff-files";
 import { ROW_BUDGET } from "./patch-view";
 
 afterEach(cleanup);
@@ -35,7 +35,59 @@ const sized = (path: string, lines: number): DiffFile => ({
 
 const patch = () => screen.getByTestId("patch");
 
+/** A node's words as a reader sees them: a ticker carries its own stylesheet beside its digits. */
+const words = (node: Element | null) => {
+  if (node === null) return undefined;
+  const copy = node.cloneNode(true) as Element;
+  for (const style of copy.querySelectorAll("style")) style.remove();
+  return copy.textContent;
+};
+
+describe("pathParts", () => {
+  it("splits a path into its folders and the file's name", () => {
+    expect(pathParts({ path: "apps/web/src/settings/settings-nav.tsx" })).toEqual({
+      folders: "apps/web/src/settings/",
+      name: "settings-nav.tsx",
+    });
+    expect(pathParts({ path: "README.md" })).toEqual({ folders: "", name: "README.md" });
+  });
+
+  it("keeps a rename's old path with the folders", () => {
+    expect(pathParts({ path: "src/clock.ts", oldPath: "src/timers.ts" })).toEqual({
+      folders: "src/timers.ts → src/",
+      name: "clock.ts",
+    });
+  });
+});
+
 describe("DiffFileList", () => {
+  it("says a path whole, as its folders then its name", () => {
+    render(<DiffFileList files={[file("apps/web/src/settings/settings-search.ts")]} />);
+    const row = screen.getByTestId("diff-file");
+    expect(screen.getByTestId("diff-file-folders").textContent).toBe("apps/web/src/settings/");
+    expect(screen.getByTestId("diff-file-name").textContent).toBe("settings-search.ts");
+    expect(row.querySelector("[data-diff-file-header]")!.textContent).toContain(
+      "apps/web/src/settings/settings-search.ts",
+    );
+  });
+
+  it("leaves out a count of nothing, and both for a file with no lines to count", () => {
+    render(
+      <DiffFileList
+        files={[
+          { ...file("added.ts"), status: "added", additions: 52, deletions: 0 },
+          { ...file("removed.ts"), status: "deleted", additions: 0, deletions: 7 },
+          { ...file("both.ts"), additions: 1840, deletions: 912 },
+          { ...file("logo.png"), status: "added", additions: 0, deletions: 0, binary: true },
+        ]}
+      />,
+    );
+    const counts = screen
+      .getAllByTestId("diff-file")
+      .map((row) => words(row.querySelector('[data-testid="diff-file-counts"]')));
+    expect(counts).toEqual(["+52", "−7", "+1,840 −912", undefined]);
+  });
+
   it("moves between file headers with ↑ / ↓, stopping at the ends", () => {
     render(<DiffFileList files={[file("a.ts"), file("b.ts"), file("c.ts")]} />);
     const headers = screen
