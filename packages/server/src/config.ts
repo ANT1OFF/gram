@@ -8,6 +8,7 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { embedFromEnv, type EmbedConfigShape } from "./embedding/config.ts";
 import { remoteOrigin } from "./http/remote-access.ts";
 import { defaultDataDir } from "./logging/data-dir.ts";
 
@@ -63,6 +64,11 @@ export interface ServerConfigShape {
    * the stored setting as it is.
    */
   readonly embedding?: boolean;
+  /**
+   * The outside services an embedding deployment configured (`embedding/config.ts`). Inert until
+   * the hosted features setting is on.
+   */
+  readonly embed?: EmbedConfigShape;
 }
 
 /**
@@ -110,6 +116,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     const appBuild = env["GRAM_APP_BUILD"];
     const debounceMs = Number(env["GRAM_ORCHESTRATION_DEBOUNCE_MS"]);
     const listenHost = listenHostFrom(env);
+    const embed = embedFromEnv(env);
     return {
       dataDir: defaultDataDir(env),
       ...(env["GRAM_REMOTE_ORIGIN"] !== undefined
@@ -136,6 +143,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
         : env["GRAM_EMBEDDING"] === "0"
           ? { embedding: false }
           : {}),
+      ...(embed === undefined ? {} : { embed }),
     };
   };
 }

@@ -69,6 +69,8 @@ from its environment when it starts: `GRAM_EMBEDDING=1` turns it on, `GRAM_EMBED
 off, and without the variable the stored setting stays as it is. Only the app on the server's own
 machine changes it; a paired phone can't.
 
+What a deployment configures once it is on is in [running Gram behind another service](EMBEDDING.md).
+
 | Build argument        | Default                       | What it sets                                  |
 | --------------------- | ----------------------------- | --------------------------------------------- |
 | `CLAUDE_CODE_VERSION` | the version in the Dockerfile | Claude Code from npm                          |
