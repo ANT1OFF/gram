@@ -16,6 +16,7 @@ import * as Option from "effect/Option";
 import type { HostAttachments, HostFileReads } from "./file-reads.ts";
 import type { HostRepoIdentify } from "./protocol.ts";
 import { filesOn, type HostFiles } from "./files.ts";
+import type { HostFolders } from "./folders.ts";
 import { LocalHostProcess } from "./local-process.ts";
 import { RemoteHosts } from "./remote-hosts.ts";
 import { type MachineParts, placedHost } from "./placed.ts";
@@ -97,6 +98,12 @@ export interface WorkerHost {
    * threads' files the server reads itself, and for a host whose build doesn't serve them.
    */
   readonly reads?: HostFileReads | undefined;
+  /**
+   * Another machine's folders, for a one-off thread the user places in one: listed for the picker
+   * and checked there. Absent for this machine, whose folders the server lists itself, and for a
+   * host whose build doesn't serve them.
+   */
+  readonly folders?: HostFolders | undefined;
   /** Another machine's store for the files users attach to its sessions; absent as `reads` is. */
   readonly attachments?: HostAttachments | undefined;
   /**

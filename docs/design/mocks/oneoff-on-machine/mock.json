@@ -1,0 +1,41 @@
+{
+  "title": "One-off chat on any machine",
+  "slug": "oneoff-on-machine",
+  "status": "approved",
+  "template": "options",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-10"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Machine first",
+      "board": "a-machine-first",
+      "shots": {
+        "dark": "shots/a-machine-first-dark.png",
+        "light": "shots/a-machine-first-light.png"
+      }
+    },
+    {
+      "name": "B Folder by machine",
+      "board": "b-folder-by-machine",
+      "shots": {
+        "dark": "shots/b-folder-by-machine-dark.png",
+        "light": "shots/b-folder-by-machine-light.png"
+      }
+    },
+    {
+      "name": "C One place picker",
+      "board": "c-one-place-picker",
+      "shots": {
+        "dark": "shots/c-one-place-picker-dark.png",
+        "light": "shots/c-one-place-picker-light.png"
+      }
+    }
+  ]
+}

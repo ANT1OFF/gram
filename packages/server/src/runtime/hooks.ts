@@ -120,6 +120,10 @@ export interface CheckoutServiceShape {
   ): Effect.Effect<RestoredWorktree, GitError | InvalidState | CheckoutInUse>;
 }
 
+/** A `machineFolder` request placed on this machine, whose folders are a `current` checkout. */
+export const THIS_MACHINE_FOLDER =
+  "A folder on this machine is the thread's current checkout, not a machine folder.";
+
 const releaseNoGit = (removeWorktree: ReleaseCheckoutOptions["removeWorktree"]) =>
   removeWorktree === undefined
     ? Effect.void
@@ -149,6 +153,8 @@ export class CheckoutService extends Context.Service<CheckoutService, CheckoutSe
             return Effect.fail(
               new InvalidState({ message: "creating a worktree needs the git runtime" }),
             );
+          case "machineFolder":
+            return Effect.fail(new InvalidState({ message: THIS_MACHINE_FOLDER }));
         }
       },
       checkRelease: (_thread, { removeWorktree }) => releaseNoGit(removeWorktree),

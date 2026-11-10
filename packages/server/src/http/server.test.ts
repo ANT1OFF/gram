@@ -1,7 +1,7 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { NodeWS } from "@effect/platform-node/NodeSocket";
 import { afterAll, describe, expect, it as test, layer, vi } from "@effect/vitest";
-import { DEFAULT_SETTINGS, GramRpcs, type ThreadId } from "@gram/contracts";
+import { DEFAULT_SETTINGS, GramRpcs, HostId, type ThreadId } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -43,6 +43,8 @@ import {
   Socket,
 } from "../platform/unstable.ts";
 import { logDefects } from "../rpc/handlers/common.ts";
+import { MACHINE_FOLDER_LOCAL_ONLY } from "../rpc/handlers/threads.ts";
+import { LOCAL_APP_HEADER } from "./local-app.ts";
 import { FakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -1179,11 +1181,14 @@ layer(testServer("https://device.tail123.ts.net:9443"), { excludeTestServices: t
         });
         const cookie = claimed.headers["set-cookie"]![0]!.split(";")[0]!;
         const json = { "content-type": "application/json" };
-        // The phone reaches none of the routes that update machines or switch it.
+        // The phone reaches none of the routes that update machines or switch it, nor lists or
+        // checks a joined machine's folders.
         for (const path of [
           "/machines/update",
           "/machines/update-all",
           "/machines/automatic-updates",
+          "/machines/folders/browse",
+          "/machines/folders/check",
         ])
           expect(
             (yield* raw(port, {
@@ -1226,6 +1231,88 @@ layer(testServer("https://device.tail123.ts.net:9443"), { excludeTestServices: t
         expect(after.updates).not.toHaveProperty("machines");
         const listed = yield* raw(port, { path: "/machines/list", method: "POST", headers: local });
         expect(JSON.parse(listed.body).automaticUpdates).toBe(false);
+      }),
+    );
+
+    // Failed on b6a8cc89 in the independent review: a paired phone's `thread.create` with a
+    // `machineFolder` checkout started the joined machine's session, though the folder routes
+    // refused the phone.
+    it.effect("starts a chat in a joined machine's folder only from the local app", () =>
+      Effect.gen(function* () {
+        const { port } = yield* serverInfo;
+        const localCookie = yield* bootCookie;
+        const local = { cookie: localCookie, origin: `http://127.0.0.1:${port}` };
+        const mint = yield* raw(port, { path: "/remote/pair", method: "POST", headers: local });
+        const code = new URLSearchParams(new URL(JSON.parse(mint.body).url).hash.slice(1)).get(
+          "pair",
+        )!;
+        const origin = "https://device.tail123.ts.net:9443";
+        const host = "device.tail123.ts.net:9443";
+        const claimed = yield* raw(port, {
+          path: "/remote/claim",
+          method: "POST",
+          body: code,
+          headers: { host, origin, "content-type": "text/plain" },
+        });
+        const cookie = claimed.headers["set-cookie"]![0]!.split(";")[0]!;
+        /** An RPC client over a real WebSocket upgraded with `headers`. */
+        const clientWith = (headers: Record<string, string>) =>
+          Effect.gen(function* () {
+            const context = yield* Layer.build(
+              RpcClient.layerProtocolSocket().pipe(
+                Layer.provide(Socket.layerWebSocket(`ws://127.0.0.1:${port}/ws`)),
+                Layer.provide(
+                  Layer.succeed(Socket.WebSocketConstructor)(
+                    (url) =>
+                      new (NodeWS.WebSocket as unknown as new (
+                        url: string,
+                        init: { headers: Record<string, string> },
+                      ) => globalThis.WebSocket)(url, { headers }),
+                  ),
+                ),
+                Layer.provide(RpcSerialization.layerJson),
+              ),
+            );
+            return yield* RpcClient.make(GramRpcs).pipe(Effect.provideContext(context));
+          });
+        const phone = yield* clientWith({
+          host,
+          origin,
+          cookie,
+          // What a phone can say of itself: the header, never this run's secret.
+          [LOCAL_APP_HEADER]: "0".repeat(64),
+        });
+        const request = {
+          projectRoot: "/home/dev/scratch",
+          checkout: {
+            kind: "machineFolder" as const,
+            hostId: HostId.make("m-0123456789abcdef01234567"),
+            path: "~/scratch",
+          },
+        };
+        const refused = yield* phone["thread.create"](request).pipe(Effect.flip);
+        expect(refused).toMatchObject({ _tag: "InvalidState", message: MACHINE_FOLDER_LOCAL_ONLY });
+        // Nor by naming the header on the message itself.
+        const forged = yield* phone["thread.create"](request, {
+          headers: { [LOCAL_APP_HEADER]: "0".repeat(64) },
+        }).pipe(Effect.flip);
+        expect(forged).toMatchObject({ _tag: "InvalidState", message: MACHINE_FOLDER_LOCAL_ONLY });
+        // A project thread is the phone's to start as before: it gets past this to the folder.
+        const missing = `/nonexistent/gram-phone-${port}`;
+        const folder = yield* phone["thread.create"]({
+          projectRoot: missing,
+          checkout: { kind: "current" },
+        }).pipe(Effect.flip);
+        expect(folder).toMatchObject({ _tag: "NotFound" });
+
+        // The local app's own connection gets past the guard, to the machine (not joined here).
+        const app = yield* clientWith({
+          host: `127.0.0.1:${port}`,
+          origin: `http://127.0.0.1:${port}`,
+          cookie: localCookie,
+        });
+        const there = yield* app["thread.create"](request).pipe(Effect.flip);
+        expect(there).not.toMatchObject({ message: MACHINE_FOLDER_LOCAL_ONLY });
       }),
     );
   },

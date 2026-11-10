@@ -1,8 +1,9 @@
-import type { FolderEntry, FolderListing } from "@gram/contracts";
+import type { FolderEntry, FolderListing, HostFolderChecked, HostId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
+import type { Api } from "@/api/types";
 
 import { folderProblem, type FolderProblem } from "./fs-errors";
 import { baseName, splitForCompletion } from "./path";
@@ -19,6 +20,26 @@ function useDebouncedValue<T>(value: T, ms: number): T {
     return () => clearTimeout(id);
   }, [value, ms]);
   return ms <= 0 ? value : debounced;
+}
+
+/**
+ * Where folders are listed: this Mac's, or a joined machine's through its host (`hostId`), never
+ * this disk for that. Each has its own query key, so the two never share an answer.
+ */
+const browsing = (api: Api, hostId: HostId | undefined) =>
+  hostId === undefined
+    ? {
+        key: ["fs.browse"] as const,
+        browse: (path: string, limit?: number) => api.browse(path, limit),
+      }
+    : {
+        key: ["fs.browseOn", hostId] as const,
+        browse: (path: string, limit?: number) => api.browseOn(hostId, path, limit),
+      };
+
+/** `browsing` as a hook. */
+export function useBrowsing(hostId?: HostId) {
+  return browsing(useApi(), hostId);
 }
 
 export type FolderStatus =
@@ -56,12 +77,13 @@ export function useCompletions(
   prefix: string,
   enabled: boolean,
   debounceMs = 120,
+  hostId?: HostId,
 ): readonly FolderEntry[] {
-  const api = useApi();
+  const { key, browse } = useBrowsing(hostId);
   const debounced = useDebouncedValue(prefix, debounceMs);
   const query = useQuery({
-    queryKey: ["fs.browse", debounced],
-    queryFn: () => api.browse(debounced),
+    queryKey: [...key, debounced],
+    queryFn: () => browse(debounced),
     enabled: enabled && debounced.trim() !== "",
     retry: false,
     staleTime: 5_000,
@@ -74,12 +96,12 @@ export function useCompletions(
   return query.data.entries.filter((entry) => entry.name.toLowerCase().startsWith(leaf));
 }
 
-/** The user's home folder, from listing `~/`, for showing paths as `~/…`. */
-export function useHome(): string | undefined {
-  const api = useApi();
+/** The user's home folder (on `hostId`, else here), from listing `~/`, for showing it as `~`. */
+export function useHome(hostId?: HostId): string | undefined {
+  const { browse } = useBrowsing(hostId);
   const { data } = useQuery({
-    queryKey: ["fs.home"],
-    queryFn: async () => (await api.browse("~/", 1)).path,
+    queryKey: hostId === undefined ? ["fs.home"] : ["fs.home", hostId],
+    queryFn: async () => (await browse("~/", 1)).path,
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -90,17 +112,51 @@ export function useHome(): string | undefined {
  * Whether a listed folder is itself a git repo. Listings only flag their entries, so this looks the
  * folder up in its parent by name.
  */
-export function useIsGitRepo(folder: FolderListing | undefined): boolean | undefined {
-  const api = useApi();
+export function useIsGitRepo(
+  folder: FolderListing | undefined,
+  hostId?: HostId,
+): boolean | undefined {
+  const { key, browse } = useBrowsing(hostId);
   const probe = folder?.parent
     ? `${withTrailingSlash(folder.parent)}${baseName(folder.path)}`
     : undefined;
   const { data } = useQuery({
-    queryKey: ["fs.browse", probe],
-    queryFn: () => api.browse(probe!),
+    queryKey: [...key, probe],
+    queryFn: () => browse(probe!),
     enabled: probe !== undefined,
     retry: false,
     staleTime: 5_000,
   });
   return data?.entries.find((entry) => entry.path === folder?.path)?.isGitRepo;
+}
+
+export type MachineFolderStatus =
+  | { state: "empty" }
+  | { state: "checking" }
+  | { state: "valid"; folder: HostFolderChecked }
+  | { state: "invalid"; problem: FolderProblem };
+
+/**
+ * Whether a one-off thread may run in `path` on the joined machine `hostId`, checked there by its
+ * host as the user types: the real folder and its branch, or why not.
+ */
+export function useMachineFolderStatus(
+  hostId: HostId | undefined,
+  path: string,
+  debounceMs = 200,
+): MachineFolderStatus {
+  const api = useApi();
+  const trimmed = path.trim();
+  const debounced = useDebouncedValue(trimmed, debounceMs);
+  const query = useQuery({
+    queryKey: ["machines.folders.check", hostId, debounced],
+    queryFn: () => api.checkFolderOn(hostId!, debounced),
+    enabled: hostId !== undefined && debounced !== "",
+    retry: false,
+    staleTime: 5_000,
+  });
+  if (hostId === undefined || trimmed === "") return { state: "empty" };
+  if (debounced !== trimmed || query.status === "pending") return { state: "checking" };
+  if (query.status === "error") return { state: "invalid", problem: folderProblem(query.error) };
+  return { state: "valid", folder: query.data };
 }

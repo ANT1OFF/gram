@@ -8,6 +8,8 @@ import type {
   FsPreview,
   FsResolveResult,
   FsSearchResult,
+  HostFolderChecked,
+  HostId,
   OutputKind,
   ProjectVocabulary,
   Revealed,
@@ -23,6 +25,13 @@ export interface FilesApi {
    * segment filters the parent by prefix. Rejects with `NotFound` or `InvalidState`.
    */
   browse(path: string, limit?: number): Promise<FolderListing>;
+  /**
+   * `browse` on a joined machine, through its host: `~` is its home, and a credential folder or
+   * Gram Host's own is never listed. Rejects with `NotFound` or `InvalidState`.
+   */
+  browseOn(hostId: HostId, path: string, limit?: number): Promise<FolderListing>;
+  /** Whether a one-off thread may run in `path` on a joined machine, as its host checks it. */
+  checkFolderOn(hostId: HostId, path: string): Promise<HostFolderChecked>;
   /** A folder's files and folders for the Files panel. Rejects with `NotFound` / `InvalidState`. */
   fsList(
     path: string,

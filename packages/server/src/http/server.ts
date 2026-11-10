@@ -74,6 +74,7 @@ import { PreviewFiles } from "../preview/files.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
   HttpPlatform,
@@ -144,6 +145,8 @@ export const AuthMiddleware = HttpRouter.middleware(
     const control = yield* RemoteControl;
     // Absent only in tests that serve the middleware alone: no machine can join or dial in then.
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
+    // A joined machine's folders for the one-off chat's picker, reached only from the local app.
+    const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const tokenCapture =
       remoteHosts === undefined ? undefined : yield* claudeTokenCaptureFor(remoteHosts);
     // Access opened, closed or moved, by the switch or by recovery: joined machines' connections
@@ -287,10 +290,24 @@ export const AuthMiddleware = HttpRouter.middleware(
                         undefined,
                         tokenCapture,
                         control.dialAccess(),
+                        workerHosts === undefined
+                          ? undefined
+                          : (id) => workerHosts.machine(id).folders,
                       )
                   : isRemote && path === "/ws"
-                    ? yield* closedOnRevoke(remote, remote.sessionOf(authRequest), httpEffect)
-                    : yield* httpEffect;
+                    ? yield* closedOnRevoke(
+                        remote,
+                        remote.sessionOf(authRequest),
+                        asCaller(httpEffect, unmarkLocalApp(request)),
+                      )
+                    : // The local app's own connection, which the RPC handlers can tell apart
+                      // from a phone's (`isLocalApp`); anything else says nothing of itself.
+                      yield* asCaller(
+                        httpEffect,
+                        !isRemote && path === "/ws"
+                          ? markLocalApp(request)
+                          : unmarkLocalApp(request),
+                      );
             break;
           case "boot":
             response = yield* HttpServerResponse.redirect("/", { status: 302 }).pipe(
@@ -331,6 +348,12 @@ export const AuthMiddleware = HttpRouter.middleware(
   }),
   { global: true },
 );
+
+/** `effect` served as `request`, the caller as the auth middleware decided it is. */
+const asCaller = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  request: HttpServerRequest.HttpServerRequest,
+) => Effect.provideService(effect, HttpServerRequest.HttpServerRequest, request);
 
 /**
  * Gives a file response's stream an `'error'` listener as soon as it exists. Effect's Node

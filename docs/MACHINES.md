@@ -7,32 +7,84 @@ ports and Claude sessions. The machine you already use keeps Gram's threads, dec
 settings; the other machine runs `gram-host`, which dials it over Tailscale. The joined machine
 opens no port of its own.
 
-A machine can join, be confirmed and stay connected; Settings → Machines lists it. A new thread
-in a new worktree can be placed on it, and its session, checkout, git state and terminals then run
-there. The Workers tab tags each worker that runs on another machine. Gram's own
+A machine can join, be confirmed and stay connected; Settings → Machines lists it. A one-off
+chat can run in a folder there, its home by default, and a new thread in a new worktree can be
+placed on it; its session, checkout, git state and terminals then run there. The Workers tab tags each worker that runs on another machine. Gram's own
 [local check](#its-local-checks) of its pull request runs there too. Its Files panel, file
 previews and attachments work on that machine ([its files](#its-files-and-attachments)); its turn
 checkpoints, PR badge and port chips don't reach that machine yet.
 
 ## Start a thread on a machine
 
-Once a machine is confirmed, **Machine** shows under Where it runs, beside the folder of a new
-thread and beside the repository when New task starts a worker. It reads "This machine" until you
-pick another. The menu marks a machine that is offline or whose Claude Code isn't signed in.
+Once a machine is confirmed, **Machine** shows first under Where it runs on New → Chat, and beside
+the repository when New task starts a worker. It reads "This machine" until you pick another. The
+menu marks a machine that is offline or whose Claude Code isn't signed in.
 
-- Picking a joined machine makes the checkout a new worktree, made from that machine's own clone.
-  Current checkout and Existing worktree are off while it is picked, since their folders are on
-  this machine.
-- A line under Where it runs says where the thread will run. When the machine is offline, lacks
-  Claude Code or Git, or isn't signed in, the line says so, with **Check again** (and the sign-in
-  icon when signing in is the fix), and Start waits until it can start there.
+- **A chat in a folder there.** Picking a joined machine puts the chat in its home folder (`~`
+  there). The Folder chip beside it lists that machine's home and the folders its recent chats ran
+  in, and **Another folder on <machine>…** opens a path field and a browser of its folders under
+  More options. Type a path (`~/scratch`, `/srv/media`) or browse; every listing and check is that
+  machine's own, done by its host, never this machine's disk.
+- The line under Where it runs names the machine and the folder's real path before you start
+  ("Runs on cachyos in /home/dev, as it is"). The thread's header shows the machine and the folder
+  afterwards, with the whole path on hover.
+- The chat runs in the folder as it is: no worktree is made. Outside a git repository there is no
+  diff, pull request, checkpoint or local check, as for a chat in a plain folder on this machine.
+- **A new worktree there.** The Folder chip's **New worktree on <machine>, from** lists the
+  recent repositories on this machine: picking one makes a new worktree of the joined machine's own
+  clone of its `origin` ([its repositories](#its-repositories)). Current checkout and Existing
+  worktree are off while it is picked, since their folders are on this machine.
+- When the machine is offline, lacks Claude Code or Git, or isn't signed in, the line says so, with
+  **Check again** (and the sign-in icon when signing in is the fix), and Start waits until it can
+  start there.
 - A folded New task, one going back to the workspace the last task went to, names the machine in
   the line beside Start. Its Change opens the picker.
 - You can also ask the orchestrator to put a worker there: `spawn_worker` takes the machine's name
   or id, in any case. `local` and `this machine` are reserved for this machine: naming either, like
   naming none, runs the worker here, and a machine can't join under either name. A blank or unknown
   name is refused, with the joined machines listed. The orchestrator itself always runs on this
-  machine.
+  machine, and a worker always runs in a new worktree: only you pick a folder on a joined machine,
+  one chat at a time.
+
+### Which folders a chat may use there
+
+**The folder guard prevents mistakes; it doesn't isolate you from the agent.** A session on a
+joined machine runs as that machine's user, with that user's permissions. From any folder,
+including a worker's worktree, it can read whatever that user can read, `~/.ssh` included, through
+its shell. Gram doesn't sandbox it, and the folder you pick doesn't change that. What the guard
+does is keep you from starting a chat in, or browsing into, a folder that is plainly no place for
+one.
+
+What does hold:
+
+- **Only the Gram app on this computer can list, check or start a chat in a folder on a joined
+  machine.** It does so over the machine's own signed connection. A paired phone can still start
+  chats in projects and worktrees as before, but it can't list another machine's folders, check
+  them, or start a chat in one: the server refuses those from any connection but the app's own.
+- **You choose a folder outside the host's clones for one chat at a time.** Nothing an agent
+  starts, a worker or a task chip, gets such a folder: workers always get a new worktree there, and
+  a task chip from such a chat starts from New task instead. A fork of the chat stays in its
+  folder.
+- **A picked folder never owns anything.** A chat in a folder you picked never gets the ownership
+  of a worker's worktree (full-auto merges, its pull request, the local check), even when that
+  folder is inside one of the host's clones. That ownership comes only from the record Gram keeps
+  of the worktrees it made.
+
+The guard itself, on the joined machine's host:
+
+- It refuses credential folders and anything in them (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`,
+  `~/.docker`, `~/.config/gh`, `~/.config/gcloud`, keyrings and the like). It refuses the agents'
+  login folders (`~/.claude`, `~/.codex`, and `CLAUDE_CONFIG_DIR` or `CODEX_HOME` where set) and
+  Gram Host's own folder (`~/.config/gram-host` on Linux, `~/Library/Application Support/Gram
+  Host` on a Mac, or `GRAM_HOST_HOME`) with its clones. It also refuses the whole filesystem (`/`).
+- It compares real folders rather than how a path is written, so a link to one of those folders
+  or another spelling of its name is refused too. When it can't read where one of those folders is
+  (a permission or disk error), it refuses rather than guess.
+- It runs when the folder browser lists a folder, when you pick a folder, and each time a session
+  opens there. A worker's session in a worktree of the host's clones is let through.
+- The browser lists folders only, never files, at most 500 of them, and gives up on a folder or
+  mount that doesn't answer within a few seconds.
+- A host from an older release doesn't list its folders. Update it before you pick a folder there.
 
 ## What you need
 

@@ -36,6 +36,7 @@ import type { AttachmentsOnMachine } from "./carry-attachments.ts";
 import type { HostConnection } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
+import { olderHost } from "./folders.ts";
 import { cloneFolderOf, cloneIdentityOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
@@ -159,6 +160,21 @@ export const machineCheckouts = (
   return {
     prepare: (request, openCheckouts, projectRoot) =>
       Effect.gen(function* () {
+        // A folder the user picked there for this thread alone, checked by the machine itself:
+        // the host refuses a credential folder or its own, and resolves links where they are.
+        if (request.kind === "machineFolder") {
+          const folders = connection.folders;
+          if (folders === undefined)
+            return yield* new InvalidState({ message: olderHost(machine) });
+          const found = yield* folders.check(request.path);
+          const checkout: Checkout = {
+            kind: "main",
+            path: found.path,
+            hostId: machine.id,
+            ...(found.branch === undefined ? {} : { branch: found.branch }),
+          };
+          return checkout;
+        }
         if (request.kind !== "newWorktree")
           return yield* new InvalidState({
             message: `A worker on ${machine.name} works in a new worktree there.`,
@@ -441,6 +457,7 @@ export const machineWorkerHost = (
       worktrees: machineWorktrees(connection),
       git: machineGit(connection),
       files: connection.files,
+      folders: connection.folders,
       terminals,
       ports: { scan: connection.scan, terminalBusy: terminalBusyOn(connection, shells) },
       process: connection.hello,

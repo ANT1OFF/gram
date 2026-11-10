@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, Server } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
@@ -156,7 +156,14 @@ export function MachinePicker({
  * Why the picked machine can't take the thread now, said before it starts rather than after, with
  * the fixes: Sign in (the same terminal as Settings → Machines) and Check again.
  */
-export function MachineNote({ machine }: { machine: JoinedMachine | undefined }) {
+export function MachineNote({
+  machine,
+  ready,
+}: {
+  machine: JoinedMachine | undefined;
+  /** What it says once the machine can take the thread; a new worktree of its clone when absent. */
+  ready?: ReactNode;
+}) {
   const queryClient = useQueryClient();
   const [signingIn, setSigningIn] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -172,7 +179,7 @@ export function MachineNote({ machine }: { machine: JoinedMachine | undefined })
         className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground"
       >
         {blocker === undefined ? (
-          `The thread runs on ${machine.name}, in a new worktree of its own clone.`
+          (ready ?? `The thread runs on ${machine.name}, in a new worktree of its own clone.`)
         ) : (
           <>
             <span className="flex items-center gap-1 text-destructive">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isCredentialPath } from "./credential-paths.ts";
+import { isCredentialFolder, isCredentialPath } from "./credential-paths.ts";
 
 describe("isCredentialPath", () => {
   it("refuses env files, keys and login files wherever they are", () => {
@@ -83,5 +83,35 @@ describe("isCredentialPath", () => {
     ]) {
       expect(isCredentialPath(path), path).toBe(false);
     }
+  });
+});
+
+describe("isCredentialFolder", () => {
+  it("is a credential folder or anything inside one", () => {
+    for (const path of [
+      "/home/dev/.ssh",
+      "/home/dev/.aws/sso",
+      "/Users/dev/.config/gh",
+      "C:\\Users\\dev\\.ssh",
+    ])
+      expect(isCredentialFolder(path), path).toBe(true);
+  });
+
+  it("is an agent's login folder, while a file there is judged as any other file", () => {
+    for (const path of ["/home/dev/.claude", "/home/dev/.codex/sessions", "/Users/dev/.CLAUDE"])
+      expect(isCredentialFolder(path), path).toBe(true);
+    // Previewing an agent's settings file stays as it was: only its login files are refused.
+    expect(isCredentialPath("/home/dev/.claude/settings.json")).toBe(false);
+    expect(isCredentialPath("/home/dev/.claude/.credentials.json")).toBe(true);
+  });
+
+  it("isn't a home, a project, or a dotfolder that holds none", () => {
+    for (const path of [
+      "/home/dev",
+      "/home/dev/code/ssh-tools",
+      "/home/dev/.config",
+      "/home/dev/.config/nvim",
+    ])
+      expect(isCredentialFolder(path), path).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import {
   type Checkout,
   type CheckoutInUse,
   type CheckoutRequest,
+  checkoutRequestHost,
   type GitError,
   type HostId,
   hostOf,
@@ -88,7 +89,7 @@ export const makeThreadCreator = (deps: {
   const prepare: ThreadCreator["prepare"] = (request, projectRoot) =>
     Effect.gen(function* () {
       // The checkouts held on the machine the request is placed on.
-      const on = request.kind === "newWorktree" ? (request.hostId ?? LOCAL_HOST_ID) : LOCAL_HOST_ID;
+      const on = checkoutRequestHost(request) ?? LOCAL_HOST_ID;
       const open = heldCheckoutPaths(yield* deps.store.listThreads, on);
       return yield* deps.checkouts.prepare(request, open, projectRoot);
     }).pipe(

@@ -64,6 +64,7 @@ import { copyMarkdown } from "./message-actions";
 import { forkedFromText } from "./fork-text";
 import { trackWrappedChips } from "./header-chips";
 import { LabelChip, useThreadLabel } from "./label-chip";
+import { MachineChip } from "./machine-chip";
 import { FolderMissingNotice } from "./folder-missing-notice";
 import { LapsedConnectorsNotice } from "./lapsed-connectors-notice";
 import { MergedCleanupNotice } from "./merged-cleanup-notice";
@@ -504,6 +505,7 @@ export function ThreadView({
           >
             <WorkerNowChip thread={thread} prOnStrip={prOnStrip} />
             <OrchestratorChips thread={thread} inTitlebar={inTitlebar} />
+            <MachineChip thread={thread} className={hideSm} />
             {thread.forkedFrom && (
               <ForkedFrom from={thread.forkedFrom} title={sourceTitle} hideClass={hideMd} />
             )}

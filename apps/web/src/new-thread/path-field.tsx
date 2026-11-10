@@ -1,4 +1,4 @@
-import type { FolderEntry } from "@gram/contracts";
+import type { FolderEntry, HostId } from "@gram/contracts";
 import { Folder, FolderGit2 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
@@ -15,17 +15,29 @@ interface PathFieldProps {
   value: string;
   onChange: (value: string) => void;
   debounceMs?: number;
+  /** A joined machine whose folders are suggested, through its host; this Mac's when absent. */
+  hostId?: HostId | undefined;
+  /** The field's name; "Project path" when absent. */
+  label?: string;
+  placeholder?: string;
 }
 
 /**
  * The project path input: folder suggestions as you type, Tab to complete the common prefix,
  * ↑↓ and ⏎ to pick a suggestion, Esc to dismiss. `~` is expanded by the server.
  */
-export function PathField({ value, onChange, debounceMs }: PathFieldProps) {
+export function PathField({
+  value,
+  onChange,
+  debounceMs,
+  hostId,
+  label = "Project path",
+  placeholder = "~/Documents/code/my-repo",
+}: PathFieldProps) {
   const listId = useId();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
-  const matches = useCompletions(value, open, debounceMs);
+  const matches = useCompletions(value, open, debounceMs, hostId);
   const showList = open && matches.length > 0;
   const transition = usePresetTransition("snappy");
   const { dir, leaf } = splitForCompletion(value);
@@ -75,14 +87,14 @@ export function PathField({ value, onChange, debounceMs }: PathFieldProps) {
     <div className="relative min-w-0 flex-1">
       <input
         role="combobox"
-        aria-label="Project path"
+        aria-label={label}
         aria-autocomplete="list"
         aria-expanded={showList}
         aria-controls={listId}
         aria-activedescendant={showList && active >= 0 ? `${listId}-${active}` : undefined}
         autoComplete="off"
         spellCheck={false}
-        placeholder="~/Documents/code/my-repo"
+        placeholder={placeholder}
         className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         value={value}
         onChange={(event) => change(event.target.value)}

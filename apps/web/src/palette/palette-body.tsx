@@ -1,6 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import {
   helperOn,
+  isFolderProject,
   waitIsKept,
   type ThreadId,
   type ThreadSearchHit,
@@ -447,7 +448,8 @@ export function PaletteBody({
           run: () => showDoc(boardWorkspace, doc.id),
         }));
 
-  const projectItems: PaletteItem[] = projects.map((project) => ({
+  // This Mac's folders: a joined machine's project is no folder here.
+  const projectItems: PaletteItem[] = projects.filter(isFolderProject).map((project) => ({
     id: `project:${project.id}`,
     label: project.name,
     hint: project.root,
@@ -677,7 +679,9 @@ export function PaletteBody({
       label: "Check out PR…",
       keywords: "pull request review branch",
       run: () => {
-        const projectRoot = projects.find((p) => p.id === currentProjectId)?.root;
+        const projectRoot = projects
+          .filter(isFolderProject)
+          .find((p) => p.id === currentProjectId)?.root;
         useThreadDialogs
           .getState()
           .open(

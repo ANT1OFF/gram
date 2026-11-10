@@ -121,6 +121,9 @@ export const FileRpcs = RpcGroup.make(
    * ending in `/` lists that folder; otherwise the last segment is a case-insensitive name prefix
    * matched within its parent. Dotfolders appear only when that prefix starts with `.`. At most
    * `limit` entries (default 500), with `truncated` set when more matched.
+   *
+   * This machine's folders only: a joined machine's are listed by its host, from the local app
+   * alone (`/machines/folders/browse`).
    */
   Rpc.make("fs.browse", {
     payload: {

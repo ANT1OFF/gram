@@ -21,7 +21,7 @@ import {
   RequestAnswer,
   UserInput,
 } from "../domain.ts";
-import { FsFile, FsListing } from "../fs.ts";
+import { FolderListing, FsFile, FsListing, HostFolderChecked } from "../fs.ts";
 import { GitState } from "../git.ts";
 import { ClaudeSignIn } from "../launch-checks.ts";
 import { HostId, ProfileId, RequestId, TerminalId, ThreadId } from "../ids.ts";
@@ -78,6 +78,12 @@ export const HostCapability = Schema.Literals([
    * release's own download, and says how its last update went (`host.update.check`).
    */
   "update",
+  /**
+   * Lists and checks folders anywhere on the machine for a one-off thread the user places there
+   * (`host.folders.*`), refusing credential folders and the host's own. Optional: without it, a
+   * thread on the machine runs only in a new worktree of its clone.
+   */
+  "folders",
 ]);
 export type HostCapability = typeof HostCapability.Type;
 
@@ -525,6 +531,24 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.files.fetch", {
     payload: { path: Schema.String, cwd: Schema.String, maxBytes: PositiveInt },
     success: HostFetchedFile,
+    error: listErrors,
+  }),
+  /**
+   * Folders for a one-off thread's picker, as `fs.browse` lists them, on the host: `~` is the
+   * host's home, and a credential folder or the host's own is never listed, nor listed into.
+   */
+  Rpc.make("host.folders.browse", {
+    payload: { input: Schema.String, limit: PositiveInt },
+    success: FolderListing,
+    error: listErrors,
+  }),
+  /**
+   * Whether a one-off thread may run in `path` on the host: an existing folder, its links
+   * resolved, that is neither a credential folder nor the host's own, with its branch if it is on one.
+   */
+  Rpc.make("host.folders.check", {
+    payload: { path: Schema.String },
+    success: HostFolderChecked,
     error: listErrors,
   }),
   /**

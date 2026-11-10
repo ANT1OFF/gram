@@ -1,4 +1,11 @@
-import type { FolderAccessDenial, FolderListing, Project, ProjectId } from "@gram/contracts";
+import {
+  isCredentialFolder,
+  type FolderAccessDenial,
+  type FolderListing,
+  type HostFolderChecked,
+  type Project,
+  type ProjectId,
+} from "@gram/contracts";
 
 export const MOCK_HOME = "/Users/dev";
 export const MOCK_FOLDER_LIMIT = 500;
@@ -41,6 +48,34 @@ const TREE = dir({
   }),
 });
 
+/** A joined machine's home in the mock, a Linux one's. */
+export const MOCK_MACHINE_HOME = "/home/dev";
+/** Its Gram Host's own folder, which a one-off thread never runs in. */
+const MOCK_MACHINE_HOST_HOME = `${MOCK_MACHINE_HOME}/.config/gram-host`;
+
+/** Every joined machine's disk in the mock: one synthetic Linux home. */
+const MACHINE_TREE = dir({
+  home: dir({
+    dev: dir({
+      ".ssh": dir({ id_ed25519: file }),
+      ".config": dir({ "gram-host": dir({ repos: dir() }), nvim: dir() }),
+      Downloads: dir(),
+      scratch: dir({ "notes.md": file }),
+      code: dir({ dotfiles: repo(), homelab: repo(), sandbox: dir() }),
+    }),
+  }),
+  srv: dir({ media: dir() }),
+});
+
+/** A folder tree and its home: this Mac's, or a joined machine's. */
+interface MockDisk {
+  readonly tree: Node;
+  readonly home: string;
+}
+
+const MAC: MockDisk = { tree: TREE, home: MOCK_HOME };
+const MACHINE: MockDisk = { tree: MACHINE_TREE, home: MOCK_MACHINE_HOME };
+
 /** Shaped like the contract's `NotFound` for a missing folder. */
 export class MockNotFound extends Error {
   readonly _tag = "NotFound";
@@ -75,14 +110,14 @@ const parentOf = (path: string) => `/${segments(path).slice(0, -1).join("/")}`;
 const join = (parent: string, name: string) => (parent === "/" ? `/${name}` : `${parent}/${name}`);
 
 /** Expands `~`, resolves `.` / `..` and trailing slashes; relative paths start at home. */
-export function resolveMockPath(path: string): string {
+export function resolveMockPath(path: string, home: string = MOCK_HOME): string {
   const trimmed = path.trim();
   const expanded =
     trimmed === "~" || trimmed.startsWith("~/")
-      ? MOCK_HOME + trimmed.slice(1)
+      ? home + trimmed.slice(1)
       : trimmed.startsWith("/")
         ? trimmed
-        : `${MOCK_HOME}/${trimmed}`;
+        : `${home}/${trimmed}`;
   const out: string[] = [];
   for (const segment of segments(expanded)) {
     if (segment === ".") continue;
@@ -92,16 +127,16 @@ export function resolveMockPath(path: string): string {
   return `/${out.join("/")}`;
 }
 
-function lookup(path: string): Node | undefined {
-  let node: Node | undefined = TREE;
+function lookup(path: string, tree: Node = TREE): Node | undefined {
+  let node: Node | undefined = tree;
   for (const segment of segments(path)) node = node?.children?.[segment];
   return node;
 }
 
 /** An existing, readable folder for `input`, rejecting as the server's `resolveFolder` does. */
-export function resolveMockFolder(input: string): string {
-  const path = resolveMockPath(input);
-  const node = lookup(path);
+export function resolveMockFolder(input: string, disk: MockDisk = MAC): string {
+  const path = resolveMockPath(input, disk.home);
+  const node = lookup(path, disk.tree);
   if (!node) throw new MockNotFound(path);
   if (node.kind !== "dir") throw new MockInvalidState(`Not a folder: ${path}`);
   if (node.denied) {
@@ -117,14 +152,18 @@ export function resolveMockFolder(input: string): string {
  * `fs.browse`: a path ending in `/` (or `~`) lists that folder; otherwise its last segment filters
  * the parent by case-insensitive prefix. Folders only; dotfolders only for a `.` prefix.
  */
-export function browseMockFs(input: string, limit = MOCK_FOLDER_LIMIT): FolderListing {
+export function browseMockFs(
+  input: string,
+  limit = MOCK_FOLDER_LIMIT,
+  disk: MockDisk = MAC,
+): FolderListing {
   const trimmed = input.trim() === "" ? "~/" : input.trim();
   const listWhole = trimmed === "~" || trimmed.endsWith("/");
-  const expanded = resolveMockPath(trimmed);
-  const folder = resolveMockFolder(listWhole ? expanded : parentOf(expanded));
+  const expanded = resolveMockPath(trimmed, disk.home);
+  const folder = resolveMockFolder(listWhole ? expanded : parentOf(expanded), disk);
   const prefix = listWhole ? "" : (segments(expanded).at(-1) ?? "");
   const lowered = prefix.toLowerCase();
-  const matches = Object.entries(lookup(folder)?.children ?? {})
+  const matches = Object.entries(lookup(folder, disk.tree)?.children ?? {})
     .filter(
       ([name, node]) => node.kind === "dir" && (!name.startsWith(".") || prefix.startsWith(".")),
     )
@@ -133,12 +172,41 @@ export function browseMockFs(input: string, limit = MOCK_FOLDER_LIMIT): FolderLi
   return {
     path: folder,
     ...(folder === "/" ? {} : { parent: parentOf(folder) }),
-    ...(lookup(folder)?.git === true ? { git: "repository" as const } : {}),
+    ...(lookup(folder, disk.tree)?.git === true ? { git: "repository" as const } : {}),
     entries: matches
       .slice(0, limit)
       .map(([name, node]) => ({ name, path: join(folder, name), isGitRepo: node.git === true })),
     truncated: matches.length > limit,
   };
+}
+
+/** Why a joined machine's host hides `path` from its picker, as `hiddenFolder` does there. */
+const machineHidden = (path: string): string | undefined =>
+  isCredentialFolder(path)
+    ? `Gram doesn't run a chat in ${path}: it holds keys or credentials.`
+    : path === MOCK_MACHINE_HOST_HOME || path.startsWith(`${MOCK_MACHINE_HOST_HOME}/`)
+      ? `Gram doesn't run a chat in ${path}: it is Gram Host's own folder.`
+      : undefined;
+
+/** `/machines/folders/browse`: a joined machine's listing from its host, refusals and all. */
+export function browseMockMachine(input: string, limit = MOCK_FOLDER_LIMIT): FolderListing {
+  const listing = browseMockFs(input, limit, MACHINE);
+  const hidden = machineHidden(listing.path);
+  if (hidden !== undefined) throw new MockInvalidState(hidden);
+  return {
+    ...listing,
+    entries: listing.entries.filter((entry) => machineHidden(entry.path) === undefined),
+  };
+}
+
+/** `/machines/folders/check`: whether a one-off thread may run in `input` on the joined machine. */
+export function checkMockMachineFolder(input: string): HostFolderChecked {
+  const path = resolveMockPath(input, MOCK_MACHINE_HOME);
+  if (path === "/") throw new MockInvalidState("Gram doesn't run a chat in the whole filesystem.");
+  const hidden = machineHidden(path);
+  if (hidden !== undefined) throw new MockInvalidState(hidden);
+  resolveMockFolder(path, MACHINE);
+  return lookup(path, MACHINE_TREE)?.git === true ? { path, branch: "main" } : { path };
 }
 
 /** Puts a fresh repository at `path`, as a clone would; its parent folders are made as needed. */

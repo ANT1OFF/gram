@@ -67,6 +67,7 @@ import {
 import type { HostAttachments, HostFileReads } from "./file-reads.ts";
 import type { HostCheckRequest, HostChecks } from "./checks.ts";
 import type { HostFiles } from "./files.ts";
+import type { HostFolders } from "./folders.ts";
 import { NOT_A_CLAUDE_TOKEN } from "./host-config.ts";
 import type { HostGit } from "./git.ts";
 import type { HostRepos } from "./repos.ts";
@@ -107,6 +108,11 @@ export interface HostClaudeToken {
 export interface HostService {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  /**
+   * Its folders for a one-off thread placed there: listed for the picker, checked to start in.
+   * Every built host has them; a test's may leave them out, and its calls are then refused.
+   */
+  readonly folders?: HostFolders;
   /** Its threads' files scoped and read where they are. */
   readonly reads: HostFileReads;
   /** The files users attach to its sessions. */
@@ -161,6 +167,7 @@ export const HOST_SERVES: ReadonlyArray<HostCapability> = [
   "attachments",
   "checks",
   "repo-identity",
+  "folders",
 ];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
@@ -224,6 +231,8 @@ type Defined<A> = {
 const defined = <A extends object>(value: A): Defined<A> =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Defined<A>;
 
+const noFolders = new HostFailed({ message: "This host doesn't list its folders." });
+
 /** The protocol's handlers over a host's own folders, worktrees, git state and scan. */
 const handlersFor = (host: HostService) => {
   /** New work, refused while an update has closed the gate. */
@@ -247,6 +256,10 @@ const handlersFor = (host: HostService) => {
       "host.files.resolve": ({ paths, roots, outside }) =>
         host.reads.resolve(paths, roots, outside),
       "host.files.vocabulary": ({ root }) => host.reads.vocabulary(root),
+      "host.folders.browse": ({ input, limit }) =>
+        host.folders === undefined ? Effect.fail(noFolders) : host.folders.browse(input, limit),
+      "host.folders.check": ({ path }) =>
+        host.folders === undefined ? Effect.fail(noFolders) : host.folders.check(path),
       "host.files.fetch": ({ path, cwd, maxBytes }) => host.reads.fetch(path, cwd, maxBytes),
       "host.attachments.put": ({ threadId, name, data }) =>
         host.attachments.put(threadId, name, data),
@@ -622,6 +635,8 @@ export interface HostChecksConnection {
 export interface HostConnection {
   readonly hello: HostHello;
   readonly files: HostFiles;
+  /** Absent for a host from a build that doesn't serve `folders`. */
+  readonly folders: HostFolders | undefined;
   /** Absent for a host from a build that doesn't serve `file-reads`. */
   readonly reads: HostFileReads | undefined;
   /** Absent for a host from a build that doesn't serve `attachments`. */
@@ -947,6 +962,16 @@ export const connectHost = (
         ),
       fetch: (path, cwd, maxBytes) =>
         guarded(client["host.files.fetch"]({ path, cwd, maxBytes })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+    };
+    const folders: HostFolders = {
+      browse: (input, limit) =>
+        guarded(client["host.folders.browse"]({ input, limit })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+        ),
+      check: (path) =>
+        guarded(client["host.folders.check"]({ path })).pipe(
           Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
         ),
     };
@@ -1276,6 +1301,7 @@ export const connectHost = (
       hello,
       files,
       claude,
+      folders: hello.capabilities.includes("folders") ? folders : undefined,
       reads: hello.capabilities.includes("file-reads") ? reads : undefined,
       attachments: hello.capabilities.includes("attachments") ? attachments : undefined,
       ...(hello.capabilities.includes("checks") ? { checks } : {}),

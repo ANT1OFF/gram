@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
+import { foldersOn, gatedSessions } from "./folders.ts";
 import { gitOn } from "./git.ts";
 import { claudeTokenIn } from "./claude-token.ts";
 import { checksOn } from "./checks.ts";
@@ -103,7 +104,11 @@ const hostService = (
     const proc = yield* Proc;
     const agents = yield* AgentHosts;
     const terminals = yield* terminalsOnHost;
-    const sessions = yield* sessionsOnHost(agents.get);
+    const folders = foldersOn(proc);
+    // A joined machine's sessions open only in a folder its gate lets through; this machine's own
+    // host runs this machine's threads wherever the user opened them, as the server did.
+    const opened = yield* sessionsOnHost(agents.get);
+    const sessions = hostId === LOCAL_HOST_ID ? opened : gatedSessions(opened, folders.gate);
     let clones = 0;
     const checks = yield* checksOn(proc, join(hostHome(), "checks"));
     const repos = reposOn(proc, hostRepos());
@@ -146,6 +151,7 @@ const hostService = (
         ...(RELEASE === undefined ? {} : { release: RELEASE }),
       },
       files: filesOn(proc),
+      folders,
       reads: fileReadsOn(proc),
       attachments: yield* attachmentsOnHost(hostAttachments()),
       repos: {

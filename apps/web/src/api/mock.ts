@@ -28,6 +28,7 @@ import type {
   PendingRequest,
   PermissionMode,
   Project,
+  ProjectId,
   PrStatus,
   QueueItemId,
   RequestAnswer,
@@ -56,6 +57,7 @@ import type {
 import {
   derivedTitle,
   effectiveCheckout,
+  machineProjectRoot,
   mcpTargetOf,
   normalizeThreadPrs,
   NotFound,
@@ -196,7 +198,13 @@ import {
 import type { ThreadsApi } from "./threads/types";
 import { createWorktreesMock, PENDING_RULES } from "./worktrees/mock";
 import type { DataPart, MockWorld } from "./mock-world";
-import { isMockRepo, MockInvalidState, mockProject, resolveMockFolder } from "./mock-fs";
+import {
+  checkMockMachineFolder,
+  isMockRepo,
+  MockInvalidState,
+  mockProject,
+  resolveMockFolder,
+} from "./mock-fs";
 import { MockPreview } from "./mock-preview";
 import { mockToolClock, mockToolTime } from "./mock-tool-times";
 import {
@@ -1142,6 +1150,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
         });
       }
     }
+    if (input.checkout.kind === "machineFolder") return this.#createOnMachine(input, model);
     const project = this.#openProject(input.projectRoot);
     if (input.checkout.kind === "newWorktree" && !isMockRepo(project.root)) {
       // The server's `worktrees.create` answer for a folder without git.
@@ -1175,6 +1184,61 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       lastActivityAt: Date.now(),
       ...(input.resumeSessionId ? { agentSessionId: input.resumeSessionId } : {}),
       ...(input.resumeSessionId && input.codexHome ? { codexHome: input.codexHome } : {}),
+    };
+    this.#add({
+      thread,
+      status: "idle",
+      pendingRequests: [],
+      queue: [],
+      capabilities: MOCK_CAPABILITIES,
+    });
+    this.#emit({ type: "thread.upsert", thread });
+    this.#emit({ type: "thread.status", threadId: thread.id, status: "idle" });
+    if (input.input) {
+      const adopted = adoptDraft(input.input, input.draftId, thread.id);
+      this.#composer.moveUploads(input.input.attachments, adopted.attachments);
+      void this.#turn(thread.id, adopted);
+    }
+    return thread;
+  }
+
+  /**
+   * A one-off thread in a folder on a joined machine, as the server starts one: the machine's host
+   * checks the folder, and the thread belongs to that machine's project.
+   */
+  #createOnMachine(input: CreateThreadInput, model: ModelRef): Thread {
+    const checkout = input.checkout;
+    if (checkout.kind !== "machineFolder") throw new Error("Not a machine folder.");
+    const found = checkMockMachineFolder(checkout.path);
+    const root = machineProjectRoot(checkout.hostId);
+    const project =
+      this.#projects.find((p) => p.root === root) ??
+      ({
+        id: `p-${this.#ids()}` as ProjectId,
+        root,
+        name: checkout.hostId,
+        bookmarked: false,
+      } satisfies Project);
+    this.#projects = [project, ...this.#projects.filter((p) => p.root !== root)];
+    const thread: Thread = {
+      id: `t-${this.#ids()}` as ThreadId,
+      projectId: project.id,
+      title: input.title ?? derivedTitle(input.input?.text),
+      userNamed: input.title !== undefined,
+      model,
+      mode: input.mode ?? "default",
+      checkout: {
+        kind: "main",
+        path: found.path,
+        hostId: checkout.hostId,
+        ...(found.branch === undefined ? {} : { branch: found.branch }),
+      },
+      labels: [],
+      pinned: false,
+      parked: false,
+      unread: false,
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
     };
     this.#add({
       thread,
