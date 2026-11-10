@@ -17,7 +17,7 @@ import {
   Hand,
   type LucideIcon,
 } from "lucide-react";
-import type { MouseEvent, ReactNode } from "react";
+import { use, type MouseEvent, type ReactNode } from "react";
 
 import { useApi } from "@/api/context";
 import { openExternalUrl } from "@/api/open-external";
@@ -31,7 +31,13 @@ import { PulseOnce, Swap } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
 
 import { useBesideLink } from "./beside-link";
-import { useCardWorkerTone } from "./card-tones";
+import {
+  calmCard,
+  CardFactsContext,
+  cardWorkerTone,
+  stageLineShown,
+  useCardWorkerTone,
+} from "./card-tones";
 import { openFeatureSheet } from "./feature-sheet-store";
 import { HeldBriefLine } from "./held-brief";
 import { peek } from "./peek-store";
@@ -372,6 +378,50 @@ function MergedFeatureLine({ card }: { card: FeatureCard }) {
   );
 }
 
+/**
+ * A feature with nothing to report (`calmCard`), flat: its name, its one worker's dot and name,
+ * and what the worker does. The same parts as the card's header and worker line, on one line.
+ */
+function CalmFeatureLine({ card, worker }: { card: FeatureCard; worker: FeatureCardWorker }) {
+  return (
+    <div
+      role="group"
+      aria-label={`Feature ${card.feature}`}
+      data-testid="feature-card"
+      data-calm="true"
+      data-feature={card.feature}
+      data-version={card.version}
+      data-station={card.station}
+      className="flex min-w-0 items-center gap-x-2 py-0.5 text-meta text-muted-foreground"
+    >
+      <button
+        type="button"
+        data-testid="feature-card-open"
+        onClick={() => openFeatureSheet(card.workspaceId, card.feature)}
+        className="max-w-[40%] min-w-0 shrink-0 truncate rounded-sm text-left font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {card.feature}
+      </button>
+      <span
+        data-testid="feature-card-worker"
+        data-station={worker.station}
+        data-dot="working"
+        className="flex min-w-0 items-center gap-2"
+      >
+        <StatusDot state="working" still />
+        <span className="flex min-w-0" title={worker.model}>
+          <WorkerLink threadId={worker.threadId} className="font-normal">
+            {worker.title}
+          </WorkerLink>
+        </span>
+        <Swap swapKey={worker.now} className="min-w-0 shrink-[2] truncate">
+          <span data-testid="feature-card-now">{worker.now}</span>
+        </Swap>
+      </span>
+    </div>
+  );
+}
+
 function LiveFeatureCard({
   card,
   workerTitle,
@@ -379,7 +429,9 @@ function LiveFeatureCard({
   card: FeatureCard;
   workerTitle?: (threadId: ThreadId) => string | undefined;
 }) {
-  const summary = useFeatureSummary(card);
+  const facts = use(CardFactsContext);
+  const calm = calmCard(card, (worker) => cardWorkerTone(worker, facts));
+  const summary = useFeatureSummary(card, !calm);
   const overlaps = overlapsOf(card);
   const foreign = foreignOverlaps(card);
   // Merged, or every worker parked: nothing on it moves any more. A held brief still will.
@@ -389,6 +441,8 @@ function LiveFeatureCard({
   // A minute's clock is enough to notice a card going quiet; a finished one needs none.
   const now = useNow(!finished, undefined, 60_000);
   const stale = featureCardStale(card, finished, now);
+  // Nothing to report and not gone quiet: one line, no box. A stale card keeps its box and time.
+  if (calm && !stale) return <CalmFeatureLine card={card} worker={card.workers[0]!} />;
   return (
     <article
       aria-label={`Feature ${card.feature}`}
@@ -444,7 +498,8 @@ function LiveFeatureCard({
           {summary}
         </p>
       )}
-      <StageLine card={card} />
+      {/* Only where it says more than the worker lines under it do. */}
+      {stageLineShown(card) && <StageLine card={card} />}
       <ul className="flex flex-col gap-0.5">
         {card.workers.map((worker) => (
           <WorkerLine key={worker.threadId} worker={worker} />
