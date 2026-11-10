@@ -134,6 +134,10 @@ export interface DialNonceStore {
 export const NO_DIALS: DialNonces = { nonces: [], floor: 0, seen: 0 };
 
 const NAME = /^[\p{L}\p{N} ._'-]{1,64}$/u;
+/** Names that mean this machine, in any case: `spawn_worker` runs here on them, and none can join. */
+export const LOCAL_MACHINE_NAMES = ["local", "this machine"] as const;
+export const namesThisMachine = (name: string) =>
+  (LOCAL_MACHINE_NAMES as ReadonlyArray<string>).includes(name.trim().toLowerCase());
 const PLATFORM = /^[a-z0-9]{1,16}$/;
 
 const isMachine = (value: unknown): value is PairedMachine => {
@@ -381,7 +385,7 @@ export const createPairedMachines = (
         return { kind: "refused", status: 403, message: "That join link isn't valid any more." };
       if (!NAME.test(request.name) || !PLATFORM.test(request.platform))
         return { kind: "refused", status: 400, message: "The machine's name isn't valid." };
-      if (["local", "this machine"].includes(request.name.trim().toLowerCase()))
+      if (namesThisMachine(request.name))
         return {
           kind: "refused",
           status: 400,

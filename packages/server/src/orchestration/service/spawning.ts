@@ -30,6 +30,7 @@ import { heldCheckoutPaths } from "../../runtime/create-in-checkout.ts";
 import { selectableModels } from "../../runtime/model-efforts.ts";
 import { limitQueuedNote } from "../../runtime/limit-wait.ts";
 import { finishedWorkers } from "../ledger.ts";
+import { LOCAL_MACHINE_NAMES, namesThisMachine } from "../../host/paired-machines.ts";
 import { type RouteOffer } from "../limit-pause.ts";
 import { withBriefFooter } from "../user-words.ts";
 import { emptyWorkerMemo, withNotes, workerThreadId, type WorkerMemo } from "../outbox.ts";
@@ -149,13 +150,21 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   } = kit;
   /**
    * The joined machine `named` (its name, any case, or its id), for `spawn_worker`'s `machine`;
-   * `undefined` for this one.
+   * `undefined` for this one, named by one of `LOCAL_MACHINE_NAMES`. A blank name is refused.
    */
   const machineNamed = (tool: string, named: string) =>
     Effect.gen(function* () {
       const wanted = named.trim().toLowerCase();
       const machines = joinedMachines();
-      if (wanted === "" || wanted === "local" || wanted === "this machine") {
+      if (wanted === "")
+        return yield* toolError(
+          tool,
+          refusal(
+            "unknown_machine",
+            `machine is blank. Name a joined machine, or omit machine (or say ${LOCAL_MACHINE_NAMES.map((n) => `“${n}”`).join(" or ")}) to run here.`,
+          ),
+        );
+      if (namesThisMachine(wanted)) {
         const legacy = machines.filter((m) => m.name.trim().toLowerCase() === wanted);
         if (legacy.length > 0)
           return yield* toolError(
@@ -180,7 +189,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         refusal(
           found.length === 0 ? "unknown_machine" : "ambiguous_machine",
           found.length === 0
-            ? `No joined machine is named “${named}”. ${known}`
+            ? `No joined machine is named “${named}”. ${known} Omit machine, or say “local”, to run on this machine.`
             : `More than one joined machine is named “${named}”; name it by its id.`,
         ),
       );
