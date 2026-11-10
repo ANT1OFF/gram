@@ -401,6 +401,32 @@ describe.skipIf(!hasGit)("orchestration service", () => {
       GIT_HEAVY,
     );
 
+  // The downgrade is for the mode the agent reports, never for the user's pick: after an idle
+  // reopen (a restart, a connector or autonomy change) a user who picks Ask keeps Ask.
+  it.effect("leaves a user's mode pick alone after a worker's idle reopen in auto", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const runtimes = yield* ThreadRuntimes;
+        const handlers = yield* threadHandlers;
+        const { session } = yield* openOrchestrator(world);
+        const worker = yield* spawn(session, { feature: "mail-trigger" });
+        expect(worker.thread.mode).toBe("auto");
+        yield* stopSilently(worker.session);
+        yield* runtimes.restartSession(worker.thread.id);
+        const reopened = yield* waitReal(
+          "the worker's reopened session",
+          sessionsOf(worker.thread.id).pipe(Effect.map((sessions) => sessions[1])),
+        );
+        expect(reopened.options.permissionMode).toBe("auto");
+        yield* handlers["thread.setMode"]({ threadId: worker.thread.id, mode: "default" });
+        yield* settle;
+        expect((yield* store.getThread(worker.thread.id)).mode).toBe("default");
+        expect(reopened.modes).toEqual(["default"]);
+      }),
+    ),
+  );
+
   // A reopen can land where Codex has no Auto: under a gate the workspace gained, on a CLI that
   // dropped below the reviewer after a restart, or on an older joined machine. Each reports
   // `default`, and each is moved on to bypass as a first open is, not left in Ask.

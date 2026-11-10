@@ -788,6 +788,10 @@ export const OrchestrationLive = Layer.effect(
       cancelSwitch,
       retrySwitch,
       checkModelChange,
+      userChoseMode: (threadId) =>
+        Effect.sync(() => {
+          kit.openedInAuto.delete(threadId);
+        }),
       reopen,
       authorityOf,
       memoryReaderOf: (threadId) =>

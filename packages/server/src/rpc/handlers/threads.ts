@@ -329,7 +329,11 @@ export const threadHandlers = Effect.gen(function* () {
     "thread.respond": ({ threadId, requestId, answer }) =>
       runtimes.respond(threadId, requestId, answer),
     "thread.respondMany": ({ answers }) => runtimes.respondMany(answers),
-    "thread.setMode": ({ threadId, mode }) => runtimes.setMode(threadId, mode),
+    // The user's own pick, which the orchestration's auto downgrade must leave alone.
+    "thread.setMode": ({ threadId, mode }) =>
+      (orchestration === undefined ? Effect.void : orchestration.userChoseMode(threadId)).pipe(
+        Effect.andThen(runtimes.setMode(threadId, mode)),
+      ),
     "thread.setModel": ({ threadId, model }) =>
       // Admission is an invariant of a role-bearing or spawned thread, so the user's own picker
       // is held to it too.
