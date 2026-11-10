@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { AgentModel } from "./models.ts";
 import {
   firstChoiceOf,
+  hostCandidates,
+  hostListing,
   isTierRef,
   isUnknownTier,
   ModelSlot,
@@ -311,5 +313,29 @@ describe("the recommended setup mode", () => {
     };
     expect(roundTrip(SettingsPatch, patch)).toEqual(patch);
     expect(roundTrip(Settings, on)).toEqual(on);
+  });
+});
+
+const listed = (id: string, resolvedId?: string) => ({
+  id,
+  ...(resolvedId === undefined ? {} : { resolvedId }),
+});
+
+describe("hostListing", () => {
+  it("matches a dated id to its plain candidate, so it fills the tier", () => {
+    expect(hostListing([listed("claude-opus-5-5-20261001")], "claude-opus-5-5")).toBeDefined();
+    expect(
+      hostCandidates([{ ...listed("claude-opus-5-5-20261001"), supportsEffort: false }]),
+    ).toEqual([{ id: "claude-opus-5-5", displayName: "claude-opus-5-5", supportsEffort: false }]);
+  });
+
+  it("accepts a pin exactly equal to a windowed or dated resolved id", () => {
+    expect(
+      hostListing([listed("opus", "claude-opus-5-5[1m]")], "claude-opus-5-5[1m]"),
+    ).toBeDefined();
+    expect(
+      hostListing([listed("opus", "claude-opus-5-5-20261001")], "claude-opus-5-5-20261001"),
+    ).toBeDefined();
+    expect(hostListing([listed("opus", "claude-opus-5-5")], "claude-sonnet-5-5")).toBeUndefined();
   });
 });
