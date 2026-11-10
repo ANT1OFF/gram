@@ -125,7 +125,6 @@ export function MessageActions({
   return (
     <div data-testid="message-actions" data-floating={floating || undefined} className={place}>
       {/* On the side towards the conversation, so the buttons keep their place at the edge. */}
-      {isUser && <Delivery message={message} />}
       {isUser && <SentAt message={message} />}
       <CopyAction
         testId="message-copy"
@@ -153,8 +152,11 @@ const DELIVERY = {
   },
 } as const;
 
-/** "Steered" or "Interrupted the turn" on a message that went into a running turn; nothing else. */
-function Delivery({ message }: { message: GramUIMessage }) {
+/**
+ * "Steered" or "Interrupted the turn" under a message that went into a running turn, always shown
+ * (not with the actions on hover), as "Gram told the agent" is; nothing on any other message.
+ */
+export function DeliveryLine({ message }: { message: GramUIMessage }) {
   const delivery = message.metadata?.delivery;
   if (delivery === undefined) return null;
   const { icon: Icon, label, hint } = DELIVERY[delivery];
@@ -163,7 +165,7 @@ function Delivery({ message }: { message: GramUIMessage }) {
       data-testid="message-delivery"
       data-delivery={delivery}
       title={hint}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-meta text-muted-foreground"
+      className="flex items-center justify-end gap-1 text-meta text-muted-foreground"
     >
       <Icon aria-hidden className="size-icon-chip" />
       {label}
