@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RailRow, RailTone, RailWorker } from "@/orchestration/rail-model";
 
-import { PhoneBoard, phoneCards, phoneSegmentOf } from "./board-phone";
+import { useThreadsStore } from "@/stores/threads";
+
+import { PhoneBoard, phoneCardLine, phoneCards, phoneSegmentOf } from "./board-phone";
 
 vi.mock("@/orchestration/overview-pr-chips", () => ({ WorkerPrChips: () => null }));
 vi.mock("@/orchestration/held-brief", () => ({
@@ -50,10 +52,26 @@ const rows = [
 ];
 const done = [row("old", { merged: [worker("e", "merged")] }, { settled: true })];
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useThreadsStore.setState({ byId: {} });
+});
 
 const segment = (id: string) =>
   screen.getAllByRole("radio").find((each) => each.dataset["segment"] === id)!;
+
+/** Which agent each thread runs on. */
+const agents = (pairs: Record<string, string>) =>
+  useThreadsStore.setState({
+    byId: Object.fromEntries(
+      Object.entries(pairs).map(([id, agent]) => [id, { thread: { model: { agent } } }]),
+    ) as never,
+  });
+
+/** The first card's line under its stage bar. */
+const firstLine = () =>
+  screen.getAllByTestId("phone-board-card")[0]!.querySelector("[data-testid=phone-board-line]")
+    ?.textContent;
 
 describe("phone board", () => {
   it("makes a card per worker, in the stations' order, with its station", () => {
@@ -96,6 +114,26 @@ describe("phone board", () => {
     expect(stuck!.dataset["tone"]).toBe("needs");
     expect(stuck!.querySelector("[data-testid=phone-board-stage]")).toBeNull();
     expect(stuck!.querySelector("[data-testid=phone-board-line]")?.textContent).toBe("editing");
+  });
+
+  it("says what a worker does or waits on under its bar, and its station when it says no more", () => {
+    expect(phoneCardLine({ now: "tests 31/48" }, "working")).toBe("tests 31/48");
+    expect(phoneCardLine({ now: "Waiting · checks on #142" }, "checks")).toBe("checks on #142");
+    // "working" is what the card's corner already says ("Running"): the station, said once.
+    expect(phoneCardLine({ now: "working" }, "working")).toBe("Working");
+    expect(phoneCardLine({ now: "" }, "review")).toBe("Review");
+  });
+
+  it("names a card's agent only where the Board's workers run different ones", () => {
+    agents({ a: "claude", b: "claude" });
+    const { unmount } = render(
+      <PhoneBoard rows={rows} done={done} asking={new Set()} onOpen={() => {}} />,
+    );
+    expect(firstLine()).toBe("editing");
+    unmount();
+    agents({ a: "claude", b: "codex" });
+    render(<PhoneBoard rows={rows} done={done} asking={new Set()} onOpen={() => {}} />);
+    expect(firstLine()).toBe("editing · Claude Code");
   });
 
   it("opens on the first segment with anything in it", () => {
