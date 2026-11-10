@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Continue in another agent · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      /* A thread as the app draws it: the title bar, the reading column, the composer. */
+      .thread {
+        position: relative;
+      }
+      .titlebar .title {
+        font-weight: 550;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .titlebar .push {
+        margin-left: auto;
+      }
+      .barbtn {
+        display: inline-grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border: 0;
+        border-radius: var(--radius-xs, 8px);
+        background: transparent;
+        color: var(--fg-muted);
+        flex: none;
+      }
+      .barbtn[aria-expanded="true"],
+      .barbtn:hover {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .col {
+        flex: 1;
+        min-height: 0;
+        width: 100%;
+        max-width: 720px;
+        margin: 0 auto;
+        position: relative;
+        padding: 16px 16px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .stream {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        overflow: hidden;
+      }
+      .bubble {
+        align-self: flex-end;
+        max-width: 80%;
+        padding: 8px 12px;
+        border-radius: var(--radius-sm, 12px);
+        background: var(--surface-3);
+        line-height: 1.5;
+      }
+      .reply {
+        line-height: 1.55;
+        max-width: 70ch;
+      }
+      .reply p {
+        margin: 0;
+      }
+      .reply p + p {
+        margin-top: 8px;
+      }
+      .meta {
+        color: var(--fg-muted);
+        font-size: var(--text-sm);
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .meta .icon {
+        width: 14px;
+        height: 14px;
+      }
+
+      /* The composer, rounder as in the product, its toolbar icons only. */
+      .cmp {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px 10px 8px 14px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 22px;
+        background: var(--surface-3);
+      }
+      .cmp .ph {
+        min-height: 40px;
+        color: var(--fg-subtle);
+      }
+      .cmp .tools {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 32px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: var(--radius-xs, 8px);
+        background: transparent;
+        color: var(--fg-muted);
+      }
+      .chip[aria-expanded="true"],
+      .chip:hover {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .send,
+      .stop {
+        margin-left: auto;
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 50%;
+        background: var(--accent);
+        color: var(--on-accent);
+      }
+      .stop {
+        background: var(--fg);
+        color: var(--surface-1);
+      }
+      .stop i.sq {
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        background: currentColor;
+      }
+      .mark {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: currentColor;
+      }
+      .mark.chipsize {
+        width: 14px;
+        height: 14px;
+      }
+
+      /* The choices popover: one section per dimension, one open at a time. */
+      .pop {
+        position: absolute;
+        left: 16px;
+        bottom: 122px;
+        z-index: 4;
+        width: min(320px, calc(100% - 32px));
+        padding: 4px;
+        border-radius: var(--radius-sm, 12px);
+        background: var(--surface-3);
+        box-shadow: var(--shadow-overlay);
+        border: 1px solid var(--border-subtle);
+        display: flex;
+        flex-direction: column;
+      }
+      .sec + .sec {
+        margin-top: 4px;
+        padding-top: 4px;
+        border-top: 1px solid var(--border-subtle);
+      }
+      .sec-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        height: 32px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: var(--radius-xs, 8px);
+        background: transparent;
+        color: var(--fg);
+        font: inherit;
+        text-align: left;
+      }
+      .sec-head .lbl {
+        color: var(--fg-muted);
+      }
+      .sec-head.open .lbl {
+        color: var(--fg);
+        font-weight: 550;
+      }
+      .sec-head .val {
+        margin-left: auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sec-head kbd {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+      }
+      .pop .search {
+        margin: 2px 4px 6px;
+      }
+      .grp {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 8px;
+        color: var(--fg-muted);
+      }
+      .grp + .opt,
+      .opt + .grp {
+        margin-top: 0;
+      }
+      .grp.next {
+        margin-top: 4px;
+        padding-top: 4px;
+        border-top: 1px solid var(--border-subtle);
+        height: 30px;
+      }
+      .opt {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 32px;
+        padding: 0 8px;
+        border-radius: var(--radius-xs, 8px);
+        color: var(--fg);
+        text-decoration: none;
+      }
+      .opt:hover,
+      .opt.cursor {
+        background: var(--surface-hover);
+      }
+      .opt .icon {
+        margin-left: auto;
+        color: var(--accent-text);
+      }
+      .opt.off {
+        color: var(--fg-muted);
+        opacity: 0.55;
+        pointer-events: none;
+      }
+
+      /* A hover's words, drawn open once so the review can read them. */
+      .hover {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+      }
+      .tip {
+        position: absolute;
+        z-index: 6;
+        width: max-content;
+        max-width: 280px;
+        padding: 5px 8px;
+        border-radius: var(--radius-xs, 8px);
+        background: var(--fg);
+        color: var(--surface-1);
+        font-size: var(--text-xs);
+        font-weight: 400;
+        line-height: 1.35;
+        white-space: normal;
+      }
+      .tip.right {
+        left: calc(100% + 8px);
+        top: 50%;
+        transform: translateY(-50%);
+      }
+      .tip.below {
+        top: calc(100% + 6px);
+        left: 50%;
+        transform: translateX(-50%);
+      }
+      .tip.left {
+        right: calc(100% + 8px);
+        top: 50%;
+        transform: translateY(-50%);
+      }
+
+      /* The thread's "…" menu. */
+      .menu-at {
+        position: absolute;
+        right: 12px;
+        top: 42px;
+        z-index: 4;
+        min-width: 240px;
+      }
+      .menu .menu-item .icon {
+        color: var(--fg-muted);
+      }
+      .menu .menu-item.off {
+        display: flex;
+      }
+      .menu .menu-item.off .dim {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        opacity: 0.5;
+      }
+      .menu .menu-item.off .tip.below {
+        left: auto;
+        right: 0;
+        max-width: 230px;
+        transform: none;
+      }
+      .menu .sep {
+        height: 1px;
+        margin: 4px -4px;
+        background: var(--border-subtle);
+      }
+
+      /* An approval, as the thread shows it. */
+      .ask {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--status-needs-mark);
+        border-radius: var(--radius-sm, 12px);
+        background: var(--surface-3);
+      }
+      .ask .head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--status-needs);
+        font-weight: 550;
+      }
+
+      /* The confirm sheet. */
+      .sheet {
+        width: min(460px, 100%);
+      }
+      .sheet h3 {
+        margin: 0;
+      }
+      .pick {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .pick label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: var(--text-sm);
+        color: var(--fg-muted);
+      }
+      .pick .model {
+        flex: 1 1 200px;
+      }
+      .pick .effort {
+        flex: 0 1 140px;
+      }
+      .with-mark {
+        position: relative;
+      }
+      .with-mark .mark {
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--fg);
+        pointer-events: none;
+      }
+      .with-mark select {
+        padding-left: 32px;
+      }
+      .lines {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .line {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        font-size: var(--text-sm);
+        color: var(--fg-muted);
+        line-height: 20px;
+      }
+      .line > .hover,
+      .line > .icon {
+        flex: none;
+        height: 20px;
+      }
+      .line .icon {
+        width: 16px;
+        height: 16px;
+      }
+      .line .yes .icon {
+        color: var(--fg);
+      }
+      .line .bypass .icon {
+        color: var(--warning);
+      }
+      .line strong {
+        color: var(--fg);
+        font-weight: 550;
+      }
+      .sheet .check {
+        font-size: var(--text-sm);
+      }
+
+      /* The handoff divider, a chapter line, and what the new agent was given. */
+      .hand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: var(--fg-muted);
+        font-size: var(--text-sm);
+        font-weight: 550;
+      }
+      .hand::before,
+      .hand::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--border-subtle);
+      }
+      .hand a {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: inherit;
+        text-decoration: none;
+        padding: 2px 6px;
+        border-radius: var(--radius-2xs, 4px);
+      }
+      .hand a:hover {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .hand .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .given {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px 14px;
+        border-radius: var(--radius-sm, 12px);
+        background: var(--surface-3);
+        font-size: var(--text-sm);
+      }
+      .given h4 {
+        margin: 0;
+        font-size: var(--text-sm);
+        font-weight: 550;
+        color: var(--fg-muted);
+      }
+      .given .note dd {
+        color: var(--fg);
+      }
+      .given dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 4px 12px;
+        margin: 0;
+      }
+      .given dt {
+        color: var(--fg-muted);
+      }
+      .given dd {
+        margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .notes-reply dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 4px 12px;
+        margin: 0;
+      }
+      .notes-reply dt {
+        font-weight: 550;
+      }
+      .notes-reply dd {
+        margin: 0;
+      }
+      .queued {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        align-self: flex-end;
+        color: var(--fg-muted);
+        font-size: var(--text-sm);
+      }
+      .queued .icon {
+        width: 14px;
+        height: 14px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <!-- The agents' own marks, as the product inlines them (apps/web/src/agents/agent-marks.tsx). -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="m-claude" viewBox="0 0 24 24">
+        <path
+          d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"
+        />
+      </symbol>
+      <symbol id="m-codex" viewBox="0 0 24 24">
+        <path
+          d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"
+        />
+      </symbol>
+      <!-- Lucide arrow-left-right, the switch's glyph in the thread menu today. -->
+      <symbol
+        id="i-swap"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M8 3 4 7l4 4" />
+        <path d="M4 7h16" />
+        <path d="m16 21 4-4-4-4" />
+        <path d="M20 17H4" />
+      </symbol>
+    </svg>
+
+    <main class="mock-canvas">
+      <p class="mock-note">
+        Carrying a solo thread or a worker from Claude Code into Codex. Two ways in (the choices
+        chip's Model section and the thread's "…" menu) open one short sheet; the transcript then
+        shows where the new agent took over. Hover words are drawn open where they matter. Start at
+        "1 Model group", pick GPT-6.1-Sol and follow Continue; Esc returns.
+      </p>
+
+      <!-- 1: the choices chip's popover, the other agent's models as a group of their own. -->
+      <section
+        class="board"
+        data-name="1 Model group"
+        data-size="960x680"
+        data-states="offered,running,signed-out"
+      >
+        <div class="board-frame">
+          <div class="app thread">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="title">Sort History by last activity</span>
+              <button class="barbtn push" type="button" aria-label="More" title="More">
+                <i data-icon="more"></i>
+              </button>
+            </div>
+            <div class="col">
+              <div class="stream">
+                <div class="bubble">
+                  Sort History by last activity, newest first, and keep pinned threads on top.
+                </div>
+                <div class="reply">
+                  <p>
+                    The comparator sorts by last activity now, newest first, and its tests pass.
+                    Pinned-first is next: the threads store doesn't say when a thread was pinned
+                    yet.
+                  </p>
+                </div>
+                <div class="meta" data-when="running">
+                  <span class="spinner" aria-hidden="true"></span>Reading the threads store…
+                </div>
+              </div>
+              <div class="cmp">
+                <div class="ph">Message…</div>
+                <div class="tools">
+                  <button
+                    class="chip"
+                    type="button"
+                    aria-expanded="true"
+                    aria-label="Claude · Claude Opus 5.5 (⌘⇧M). Effort: High (⌘⇧E). Mode: Auto (⌘⇧A)"
+                  >
+                    <svg class="mark"><use href="#m-claude" /></svg>
+                  </button>
+                  <button
+                    class="send"
+                    type="button"
+                    aria-label="Send"
+                    data-when="offered,signed-out"
+                  >
+                    <i data-icon="up"></i>
+                  </button>
+                  <button class="stop" type="button" aria-label="Stop" data-when="running">
+                    <i class="sq"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div class="pop" role="dialog" aria-label="Model and mode">
+                <div class="sec">
+                  <button class="sec-head open" type="button" aria-expanded="true">
+                    <span class="lbl">Model</span><span class="val">Claude Opus 5.5</span
+                    ><kbd>⌘⇧M</kbd>
+                  </button>
+                  <label class="search">
+                    <i data-icon="search"></i>
+                    <input class="input" type="search" placeholder="Search models" />
+                  </label>
+                  <div role="listbox" aria-label="Model">
+                    <div class="grp">
+                      <span class="hover"
+                        ><svg class="mark chipsize" aria-label="Claude Code">
+                          <use href="#m-claude" /></svg
+                      ></span>
+                    </div>
+                    <a class="opt" href="#" role="option" aria-selected="true"
+                      >Opus 5.5<i data-icon="check"></i
+                    ></a>
+                    <a class="opt" href="#" role="option">Sonnet 5.5</a>
+                    <a class="opt" href="#" role="option">Haiku 5.5</a>
+                    <a class="opt" href="#" role="option">Fable 5.1</a>
+
+                    <div class="grp next">
+                      <span class="hover">
+                        <svg
+                          class="mark chipsize"
+                          aria-label="Continue in Codex: new session with a handoff"
+                        >
+                          <use href="#m-codex" />
+                        </svg>
+                        <span class="tip right" data-when="offered"
+                          >Continue in Codex: new session with a handoff</span
+                        >
+                        <span class="tip right" data-when="running"
+                          >Wait for this turn to finish, or stop it, then switch.</span
+                        >
+                        <span class="tip right" data-when="signed-out"
+                          >Sign in to Codex in Settings → Agents.</span
+                        >
+                      </span>
+                    </div>
+                    <a
+                      class="opt cursor"
+                      href="#"
+                      role="option"
+                      data-goto="3 Sheet@normal"
+                      data-when="offered"
+                      >GPT-6.1-Sol…</a
+                    >
+                    <a
+                      class="opt"
+                      href="#"
+                      role="option"
+                      data-goto="3 Sheet@normal"
+                      data-when="offered"
+                      >GPT-6 Luna…</a
+                    >
+                    <span
+                      class="opt off"
+                      role="option"
+                      aria-disabled="true"
+                      data-when="running,signed-out"
+                      >GPT-6.1-Sol…</span
+                    >
+                    <span
+                      class="opt off"
+                      role="option"
+                      aria-disabled="true"
+                      data-when="running,signed-out"
+                      >GPT-6 Luna…</span
+                    >
+                  </div>
+                </div>
+                <div class="sec">
+                  <button class="sec-head" type="button" aria-expanded="false">
+                    <span class="lbl">Effort</span><span class="val">High</span><kbd>⌘⇧E</kbd>
+                  </button>
+                </div>
+                <div class="sec">
+                  <button class="sec-head" type="button" aria-expanded="false">
+                    <span class="lbl">Mode</span><span class="val">Auto</span><kbd>⌘⇧A</kbd>
+                  </button>
+                </div>
+                <div class="sec">
+                  <button class="sec-head" type="button" aria-expanded="false">
+                    <span class="lbl">Speed</span><span class="val">CLI default</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2: the thread's "…" menu, its first item. -->
+      <section
+        class="board"
+        data-name="2 Thread menu"
+        data-size="960x520"
+        data-states="offered,approval"
+      >
+        <div class="board-frame">
+          <div class="app thread">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="title">Sort History by last activity</span>
+              <button
+                class="barbtn push"
+                type="button"
+                aria-label="More"
+                aria-expanded="true"
+                title="More"
+              >
+                <i data-icon="more"></i>
+              </button>
+            </div>
+            <div class="col">
+              <div class="stream">
+                <div class="bubble">
+                  Sort History by last activity, newest first, and keep pinned threads on top.
+                </div>
+                <div class="reply">
+                  <p>
+                    The comparator sorts by last activity now, newest first, and its tests pass.
+                  </p>
+                </div>
+                <div class="ask" data-when="approval">
+                  <div class="head"><i data-icon="shield"></i>Run a command?</div>
+                  <code class="mono small">bun run test history-sort</code>
+                  <div class="row wrap">
+                    <button class="btn primary sm" type="button">Allow once</button>
+                    <button class="btn sm" type="button">Always allow this rule…</button>
+                    <button class="btn ghost sm" type="button">Deny</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="menu menu-at" role="menu" aria-label="Thread">
+              <a
+                class="menu-item"
+                href="#"
+                role="menuitem"
+                data-goto="3 Sheet@normal"
+                data-when="offered"
+                ><svg class="icon"><use href="#i-swap" /></svg>Continue in Codex…</a
+              >
+              <span
+                class="menu-item off hover"
+                role="menuitem"
+                aria-disabled="true"
+                data-when="approval"
+                ><span class="dim"
+                  ><svg class="icon"><use href="#i-swap" /></svg>Continue in Codex…</span
+                ><span class="tip below"
+                  >Answer the open approval first. It can't move to Codex.</span
+                ></span
+              >
+              <div class="sep" role="separator"></div>
+              <a class="menu-item" href="#" role="menuitem"
+                ><i data-icon="external"></i>Open folder in editor</a
+              >
+              <a class="menu-item" href="#" role="menuitem"
+                ><i data-icon="branch"></i>Fork thread</a
+              >
+              <span class="menu-item muted" role="menuitem">[The rest of the menu as today]</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3: the confirm sheet, from either way in. -->
+      <section
+        class="board"
+        data-name="3 Sheet"
+        data-size="960x620"
+        data-states="normal,limit,worker"
+      >
+        <div class="board-frame">
+          <div class="app" style="position: relative">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="title" data-when="normal,limit">Sort History by last activity</span>
+              <span class="title" data-when="worker">Usage clocks</span>
+            </div>
+            <div class="app-body"><div class="main"></div></div>
+            <div class="scrim" style="place-items: start center; padding-top: 72px">
+              <div class="dialog sheet" role="dialog" aria-labelledby="sheet-title">
+                <h3 id="sheet-title">Continue in Codex</h3>
+
+                <div class="pick">
+                  <label class="model"
+                    >Model
+                    <span class="with-mark">
+                      <svg class="mark"><use href="#m-codex" /></svg>
+                      <select class="select">
+                        <option>GPT-6.1-Sol</option>
+                        <option>GPT-6 Luna</option>
+                      </select>
+                    </span>
+                  </label>
+                  <label class="effort"
+                    >Effort
+                    <select class="select">
+                      <option>Low</option>
+                      <option>Medium</option>
+                      <option selected>High</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="lines">
+                  <div class="line" data-when="limit">
+                    <span class="hover" title="Claude's usage"><i data-icon="clock"></i></span>
+                    <span
+                      >Claude is out of usage until 15:00, so Codex's first turn writes the note
+                      from the transcript and does no other work.</span
+                    >
+                  </div>
+                  <div class="line">
+                    <span class="hover yes" title="What Codex gets"><i data-icon="check"></i></span>
+                    <span data-when="normal,worker"
+                      >A note from Claude, the plan, open asks, the last turns, and the branch and
+                      PR.</span
+                    >
+                    <span data-when="limit"
+                      >The last turns (about 24k tokens), the plan, open asks, and the branch and
+                      PR.</span
+                    >
+                  </div>
+                  <div class="line">
+                    <span class="hover" title="What doesn't carry over"><i data-icon="x"></i></span>
+                    <span
+                      >Claude's tool output, reasoning and cache: the first reply is slower.</span
+                    >
+                  </div>
+                  <div class="line" data-when="worker">
+                    <span class="hover" title="This worker's pull request"
+                      ><i data-icon="pr"></i
+                    ></span>
+                    <span
+                      >Its PR, merge when ready and checks stay with this worker, and its
+                      orchestrator is told.</span
+                    >
+                  </div>
+                  <div class="line" data-when="worker">
+                    <span class="hover bypass" title="Mode changes"><i data-icon="lock"></i></span>
+                    <span
+                      >Codex runs this worker in Bypass. Its Auto needs Codex 0.166 or newer.</span
+                    >
+                  </div>
+                </div>
+
+                <label class="check" data-when="normal,worker">
+                  <input type="checkbox" checked />Ask Claude for a handoff note first
+                </label>
+
+                <div class="dialog-actions">
+                  <a class="btn ghost" href="#" data-goto="1 Model group@offered">Cancel</a>
+                  <a
+                    class="btn primary"
+                    href="#"
+                    data-goto="4 Divider@normal"
+                    data-when="normal,worker"
+                    >Continue</a
+                  >
+                  <a class="btn primary" href="#" data-goto="4 Divider@limit" data-when="limit"
+                    >Continue</a
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4: the transcript after the switch. -->
+      <section
+        class="board"
+        data-name="4 Divider"
+        data-size="960x780"
+        data-states="normal,given,limit"
+      >
+        <div class="board-frame">
+          <div class="app thread">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="title">Sort History by last activity</span>
+              <button class="barbtn push" type="button" aria-label="More" title="More">
+                <i data-icon="more"></i>
+              </button>
+            </div>
+            <div class="col">
+              <div class="stream">
+                <div class="bubble">
+                  Sort History by last activity, newest first, and keep pinned threads on top.
+                </div>
+                <div class="reply">
+                  <p>
+                    The comparator sorts by last activity now, newest first, and its tests pass.
+                    Pinned-first is next: the threads store doesn't say when a thread was pinned
+                    yet.
+                  </p>
+                </div>
+
+                <div class="hand" role="separator" aria-label="Continued in Codex">
+                  <span class="hover">
+                    <a href="#" data-goto="4 Divider@given" data-when="normal,limit"
+                      ><i data-icon="right"></i>Continued in Codex · GPT-6.1-Sol · 14:02</a
+                    >
+                    <a href="#" data-goto="4 Divider@normal" data-when="given"
+                      ><i data-icon="down"></i>Continued in Codex · GPT-6.1-Sol · 14:02</a
+                    >
+                    <span class="tip below" data-when="normal"
+                      >Before: Claude Code · Opus 5.5 · session [session id]</span
+                    >
+                  </span>
+                </div>
+
+                <!-- What Codex was given, read only. -->
+                <div class="given" data-when="given">
+                  <h4>What Codex was given</h4>
+                  <div class="stack" style="gap: 4px">
+                    <span class="muted">Note · by Claude</span>
+                    <dl class="note">
+                      <dt>Goal</dt>
+                      <dd>History sorts by last activity, newest first, pinned threads on top.</dd>
+                      <dt>Done</dt>
+                      <dd>The comparator and its tests.</dd>
+                      <dt>In progress</dt>
+                      <dd>Pinned-first; the threads store has no pin time yet.</dd>
+                      <dt>Next</dt>
+                      <dd>Add the pin time, then the History list test.</dd>
+                      <dt>Traps</dt>
+                      <dd>Archived threads have no activity stamp, so they sort last.</dd>
+                    </dl>
+                  </div>
+                  <dl>
+                    <dt>Plan</dt>
+                    <dd>Step 2 of 3 · Pinned threads first</dd>
+                    <dt>Branch</dt>
+                    <dd><span class="mono">feat/history-sort</span> · 2 commits · clean</dd>
+                    <dt>PR</dt>
+                    <dd>None yet</dd>
+                    <dt>Turns</dt>
+                    <dd>The first request and the last 6 turns, tools as one line each</dd>
+                  </dl>
+                </div>
+
+                <!-- Normal mode: the next exchange is ordinary work. -->
+                <div class="bubble" data-when="normal,given">Carry on with pinned-first.</div>
+                <div class="reply" data-when="normal,given">
+                  <p>
+                    Picking up from Claude's note: I'll add the pin time to the threads store first,
+                    then the History list test.
+                  </p>
+                </div>
+
+                <!-- Limit mode: Codex's first turn is the note, and no work. -->
+                <div class="meta" data-when="limit">
+                  Claude was out of usage · this turn writes the note, no work
+                </div>
+                <div class="reply notes-reply" data-when="limit">
+                  <dl>
+                    <dt>Goal</dt>
+                    <dd>History sorts by last activity, newest first, pinned threads on top.</dd>
+                    <dt>Done</dt>
+                    <dd>The comparator and its tests.</dd>
+                    <dt>In progress</dt>
+                    <dd>Pinned-first; the threads store has no pin time yet.</dd>
+                    <dt>Next</dt>
+                    <dd>Add the pin time, then the History list test.</dd>
+                    <dt>Traps</dt>
+                    <dd>Archived threads have no activity stamp.</dd>
+                  </dl>
+                </div>
+                <div class="queued" data-when="limit">
+                  <i data-icon="clock"></i>1 queued message sends when this turn ends
+                </div>
+              </div>
+              <div class="cmp">
+                <div class="ph">Message…</div>
+                <div class="tools">
+                  <span class="hover">
+                    <button
+                      class="chip"
+                      type="button"
+                      aria-label="Codex · GPT-6.1-Sol (⌘⇧M). Effort: High (⌘⇧E). Mode: Auto (⌘⇧A)"
+                    >
+                      <svg class="mark"><use href="#m-codex" /></svg>
+                    </button>
+                  </span>
+                  <button class="send" type="button" aria-label="Send" data-when="normal,given">
+                    <i data-icon="up"></i>
+                  </button>
+                  <button class="stop" type="button" aria-label="Stop" data-when="limit">
+                    <i class="sq"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
