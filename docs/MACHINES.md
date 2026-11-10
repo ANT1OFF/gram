@@ -28,8 +28,11 @@ pick another. The menu marks a machine that is offline or whose Claude Code isn'
   icon when signing in is the fix), and Start waits until it can start there.
 - A folded New task, one going back to the workspace the last task went to, names the machine in
   the line beside Start. Its Change opens the picker.
-- You can also ask the orchestrator to put a worker there: `spawn_worker` takes the machine's name.
-  The orchestrator itself always runs on this machine.
+- You can also ask the orchestrator to put a worker there: `spawn_worker` takes the machine's name
+  or id, in any case. `local` and `this machine` are reserved for this machine: naming either, like
+  naming none, runs the worker here, and a machine can't join under either name. A blank or unknown
+  name is refused, with the joined machines listed. The orchestrator itself always runs on this
+  machine.
 
 ## What you need
 

@@ -10,7 +10,7 @@ import { FakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { AppToolRegistry, bindAppTools } from "../app-tools/registry.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { Orchestration } from "./service.ts";
-import { makeWorld, openOrchestrator, serverLayer } from "./test-harness.ts";
+import { makeWorld, openOrchestrator, serverLayer, spawn } from "./test-harness.ts";
 
 const MACHINE = {
   id: HostId.make("m-0123456789abcdef01234567"),
@@ -146,6 +146,47 @@ describe("spawn admission on a joined machine", () => {
       }).pipe(Effect.scoped),
     );
   }
+  it.effect("runs the reserved names here, and refuses a blank or unknown one with how to", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const context = yield* Layer.build(
+        serverLayer(world, {}, agents).pipe(Layer.provide(remote)),
+      );
+      yield* Effect.gen(function* () {
+        const { session } = yield* openOrchestrator(world);
+        const store = yield* ThreadStore;
+        for (const [feature, machine] of [
+          ["here-local", " LOCAL "],
+          ["here-this", "This Machine"],
+        ] as const) {
+          const { thread } = yield* spawn(session, { feature, machine });
+          expect(thread.checkout.hostId).toBeUndefined();
+        }
+        const before = yield* store.listThreads;
+        const refuse = (machine: string) =>
+          session
+            .callTool("spawn_worker", {
+              project: "shop",
+              feature: "nowhere",
+              title: "Nowhere",
+              brief: "Synthetic",
+              machine,
+            })
+            .pipe(
+              Effect.flip,
+              Effect.map((error) => error.message),
+            );
+        const blank = yield* refuse("   ");
+        expect(blank).toMatch(/^unknown_machine: machine is blank/);
+        expect(blank).toContain("omit machine");
+        const unknown = yield* refuse("this Mac");
+        expect(unknown).toMatch(/^unknown_machine: No joined machine is named “this Mac”/);
+        expect(unknown).toContain("Joined machines: build box.");
+        expect(unknown).toContain("say “local”, to run on this machine");
+        expect(yield* store.listThreads).toEqual(before);
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
   for (const status of ["notSignedIn", "notInstalled"] as const) {
     it.effect(`refuses a joined machine reported as ${status} before preparing a checkout`, () =>
       Effect.gen(function* () {
