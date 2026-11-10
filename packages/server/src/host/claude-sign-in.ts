@@ -115,9 +115,8 @@ export const hostStatusOf = (
     return {
       claudeSignIn,
       tools: [claudeTool, git],
-      ...(listed === undefined || listed.length === 0
-        ? {}
-        : { models: listed.slice(0, MODELS_SENT).map(hostModelOf) }),
+      // An empty list is a fact (nothing runs here); only a listing that failed sends no key.
+      ...(listed === undefined ? {} : { models: listed.slice(0, MODELS_SENT).map(hostModelOf) }),
     };
   });
 

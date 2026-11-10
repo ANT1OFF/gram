@@ -24,6 +24,7 @@ import {
   aboveHigh,
   modelRefOf,
   rosterName,
+  hostListing,
 } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -218,6 +219,15 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           refusal(
             "not_admitted",
             `${name}: Claude Code is not installed. Install it there, then use Settings → Machines → Sign in before spawning a worker.`,
+          ),
+        );
+      // A machine that reported its models runs only those: a pinned model it lacks is refused.
+      if (machine?.models !== undefined && hostListing(machine.models, chosen.model) === undefined)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}'s Claude Code doesn't list ${chosen.model}. Pick a model it lists, or update Claude Code there.`,
           ),
         );
       if (machine?.claudeSignIn === "notSignedIn")
@@ -700,13 +710,23 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             gateHoldsInMode: gateHoldsIn(chosen.agent, mode),
           });
           if (!verdict.ok) return yield* toolError(tool, refusal(verdict.code, verdict.reason));
+          // The efforts of the machine it runs on: a joined machine's own report where it gave
+          // one, else this machine's list.
+          const placedModels =
+            hostId === undefined
+              ? undefined
+              : joinedMachines().find((m) => m.id === hostId)?.models;
           const efforts =
             input.effort === undefined
               ? []
-              : yield* selectableModels(store, hosts, chosen.agent, chosen.profileId).pipe(
-                  Effect.map((models) => models.find((m) => m.id === chosen.model)?.efforts ?? []),
-                  Effect.orElseSucceed((): ReadonlyArray<ReasoningVariant> => []),
-                );
+              : placedModels !== undefined
+                ? (hostListing(placedModels, chosen.model)?.efforts ?? [])
+                : yield* selectableModels(store, hosts, chosen.agent, chosen.profileId).pipe(
+                    Effect.map(
+                      (models) => models.find((m) => m.id === chosen.model)?.efforts ?? [],
+                    ),
+                    Effect.orElseSucceed((): ReadonlyArray<ReasoningVariant> => []),
+                  );
           const warnings: Array<string> = [];
           if (picked.instead !== undefined) {
             warnings.push(

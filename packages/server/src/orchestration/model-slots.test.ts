@@ -7,6 +7,7 @@ import {
   type AgentKind,
   type AgentModel,
   type OrchestratorCharter,
+  type ThreadId,
 } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -380,8 +381,15 @@ const box = (models?: ReadonlyArray<AgentModel>) =>
     ],
   } as unknown as RemoteHostsShape);
 
-/** Spawns a Lead worker on the build box; what the spawn returned, or why it was refused. */
-const spawnOnBox = (models?: ReadonlyArray<AgentModel>) =>
+/**
+ * Spawns a worker on the build box from `roster` (a Lead tier by default), with `effort` if given:
+ * what the spawn returned, or why it was refused, and the model the worker was made on.
+ */
+const spawnOnBox = (
+  models?: ReadonlyArray<AgentModel>,
+  roster: OrchestratorCharter["workerModels"] = [{ tier: "lead", default: true }],
+  effort?: string,
+) =>
   Effect.scoped(
     Effect.gen(function* () {
       const world = yield* makeWorld;
@@ -394,20 +402,26 @@ const spawnOnBox = (models?: ReadonlyArray<AgentModel>) =>
         yield* (yield* Orchestration).setCharter(workspaceId, {
           ...DEFAULT_CHARTER,
           autonomy: "publish",
-          workerModels: [{ tier: "lead", default: true }],
+          workerModels: roster,
         });
-        return yield* session
+        const outcome = yield* session
           .callTool("spawn_worker", {
             project: "shop",
             feature: "on-the-box",
             title: "On the box",
             brief: "Synthetic work",
             machine: "build box",
+            ...(effort === undefined ? {} : { effort }),
           })
           .pipe(
-            Effect.map((result) => JSON.stringify(result)),
-            Effect.catch((error) => Effect.succeed(error.message)),
+            Effect.map((result) => result as { readonly threadId?: ThreadId }),
+            Effect.catch((error) => Effect.succeed({ refused: error.message })),
           );
+        const made =
+          "threadId" in outcome && outcome.threadId !== undefined
+            ? (yield* (yield* ThreadStore).getThread(outcome.threadId)).model
+            : undefined;
+        return { said: JSON.stringify(outcome), made };
       }).pipe(Effect.provide(context));
     }),
   );
@@ -417,8 +431,10 @@ describe.skipIf(!hasGit)("a worker placed on a joined machine resolves its tier 
     Effect.gen(function* () {
       // The box has Sonnet alone: Lead can't run there, though Opus runs here.
       const refused = yield* spawnOnBox([row("sonnet", "claude-sonnet-5-5")]);
-      expect(refused).not.toContain('"threadId"');
-      expect(refused).toContain("nothing here fills the Lead tier: Claude Code (claude-opus-5-5)");
+      expect(refused.made).toBeUndefined();
+      expect(refused.said).toContain(
+        "nothing here fills the Lead tier: Claude Code (claude-opus-5-5)",
+      );
     }),
   );
 
@@ -426,8 +442,47 @@ describe.skipIf(!hasGit)("a worker placed on a joined machine resolves its tier 
     Effect.gen(function* () {
       // No `models`: Lead resolves here, on Opus, and the worker is made on it.
       const spawned = yield* spawnOnBox(undefined);
-      expect(spawned).not.toContain("Lead tier");
-      expect(spawned).toContain('"model":"claude:opus"');
+      expect(spawned.said).not.toContain("Lead tier");
+      expect(spawned.made).toMatchObject({ agent: "claude", model: "opus" });
+    }),
+  );
+
+  it.effect("runs the table's own model, whatever id a host's alias row claims", () =>
+    Effect.gen(function* () {
+      // A forged row: an id of its own, claiming to run Opus 5.5.
+      const forged = { ...row("arbitrary-unapproved-model", "claude-opus-5-5"), displayName: "x" };
+      const spawned = yield* spawnOnBox([forged]);
+      expect(spawned.made).toMatchObject({ agent: "claude", model: "claude-opus-5-5" });
+      expect(spawned.said).not.toContain("arbitrary-unapproved-model");
+    }),
+  );
+
+  it.effect("refuses a pinned model the machine says it lacks, saying why", () =>
+    Effect.gen(function* () {
+      const refused = yield* spawnOnBox(
+        [row("sonnet", "claude-sonnet-5-5")],
+        [{ agent: "claude", model: "opus", default: true }],
+      );
+      expect(refused.made).toBeUndefined();
+      expect(refused.said).toContain("build box's Claude Code doesn't list opus");
+    }),
+  );
+
+  it.effect("takes an effort only as that machine's model lists it", () =>
+    Effect.gen(function* () {
+      // Here Opus takes high; on the box only low.
+      const lowOnly = { ...row("opus", "claude-opus-5-5"), efforts: ["low"] as const };
+      const spawned = yield* spawnOnBox([lowOnly], undefined, "high");
+      expect(spawned.made).toMatchObject({ model: "claude-opus-5-5", variant: "low" });
+      expect(spawned.said).toContain("doesn't take effort high");
+    }),
+  );
+
+  it.effect("runs nothing there when its list is known to be empty", () =>
+    Effect.gen(function* () {
+      const refused = yield* spawnOnBox([]);
+      expect(refused.made).toBeUndefined();
+      expect(refused.said).toContain("Lead tier");
     }),
   );
 });

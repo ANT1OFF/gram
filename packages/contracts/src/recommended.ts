@@ -330,3 +330,40 @@ export const firstChoiceOf = (
     variant: slot.variant ?? tierEffort(table, slot.tier, agent),
   };
 };
+
+/**
+ * What a joined machine's host reports, as tier resolution may use it: only the table's own Claude
+ * candidates the host says it has (by an id or the id an alias runs), each as the table names it,
+ * with the efforts the host reports. A host's list can only narrow what may run there; it never
+ * supplies a model id of its own, so a forged alias can't put a worker on an unapproved model.
+ */
+export const hostCandidates = (
+  hostModels: ReadonlyArray<Pick<AgentModel, "id" | "resolvedId" | "supportsEffort" | "efforts">>,
+  table: RecommendationTable = RECOMMENDED,
+): ReadonlyArray<AgentModel> => {
+  const ids = [...new Set(TIERS.flatMap((tier) => table.tiers[tier].claude.models))];
+  return ids.flatMap((id) => {
+    const row = hostListing(hostModels, id);
+    return row === undefined
+      ? []
+      : [
+          {
+            id,
+            displayName: id,
+            supportsEffort: row.supportsEffort,
+            ...(row.efforts === undefined ? {} : { efforts: row.efforts }),
+          },
+        ];
+  });
+};
+
+/** The row of a host's list for `model`: by its id, or the id an alias row runs. */
+export const hostListing = <T extends Pick<AgentModel, "id" | "resolvedId">>(
+  hostModels: ReadonlyArray<T>,
+  model: string,
+): T | undefined =>
+  hostModels.find(
+    (row) =>
+      row.id === model ||
+      (row.resolvedId !== undefined && bare(row.resolvedId).replace(/-\d{8}$/, "") === model),
+  );

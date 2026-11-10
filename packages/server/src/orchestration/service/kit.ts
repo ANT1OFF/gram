@@ -35,6 +35,8 @@ import {
   type Autonomy,
   connectorEntryProblem,
   InvalidState,
+  hostCandidates,
+  hostListing,
   rosterModelHere,
   rosterName,
 } from "@gram/contracts";
@@ -591,16 +593,34 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       const following = allowed.some((entry) => "tier" in entry);
       const placed =
         hostId === undefined ? undefined : joinedMachines().find((m) => m.id === hostId)?.models;
+      // A machine's own list only narrows which of the table's candidates may run there.
       const available = !following
         ? {}
         : placed !== undefined
-          ? { claude: placed.map((model) => ({ ...model })) }
+          ? { claude: hostCandidates(placed) }
           : yield* availableHere(hosts);
+      const machineName =
+        hostId === undefined ? undefined : joinedMachines().find((m) => m.id === hostId)?.name;
       for (const [index, stored] of allowed.entries()) {
         const { entry, missing } = rosterModelHere(stored, available);
         if (missing !== undefined) {
           roster.push(entry);
           unavailable.set(index, missing);
+          continue;
+        }
+        // A pinned model the machine reports it lacks can't run there either.
+        if (
+          placed !== undefined &&
+          !("tier" in stored) &&
+          entry.profileId === undefined &&
+          entry.agent === "claude" &&
+          hostListing(placed, entry.model) === undefined
+        ) {
+          roster.push(entry);
+          unavailable.set(
+            index,
+            `${machineName ?? "that machine"}'s Claude Code doesn't list ${entry.model}; pick another model, or update Claude Code there`,
+          );
           continue;
         }
         const gatewayKind = entry.agent === "codex";

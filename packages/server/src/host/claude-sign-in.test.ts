@@ -160,12 +160,24 @@ describe("a machine's status", () => {
         Effect.succeed(Array.from({ length: 80 }, (_, i) => ({ ...opus, id: `m${i}` }))),
       );
       expect(many.models).toHaveLength(64);
-      // Nothing listed, or couldn't list: no key, as an older host sends.
+      // Couldn't list: no key, as an older host sends. Listed nothing: an empty list, a fact.
       expect(
         yield* hostStatusOf(Effect.succeed("signedIn"), nothing, Effect.succeed(undefined)),
       ).not.toHaveProperty("models");
+      expect(
+        (yield* hostStatusOf(Effect.succeed("signedIn"), nothing, Effect.succeed([]))).models,
+      ).toEqual([]);
     }),
   );
+
+  it("refuses a status whose models a host could not have sent", () => {
+    const base = { claudeSignIn: "signedIn", tools: [] };
+    const model = { id: "opus", displayName: "Opus", supportsEffort: true };
+    const decode = Schema.decodeUnknownSync(HostStatus);
+    expect(() => decode({ ...base, models: Array.from({ length: 65 }, () => model) })).toThrow();
+    expect(() => decode({ ...base, models: [{ ...model, id: "x".repeat(129) }] })).toThrow();
+    expect(() => decode({ ...base, models: [{ ...model, efforts: ["huge"] }] })).toThrow();
+  });
 
   it("decodes across the version skew both ways", () => {
     // An older host's status, with no models, decodes here.
