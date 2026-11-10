@@ -1,20 +1,24 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ChevronRight,
   CircleAlert,
   CircleArrowUp,
   CircleCheck,
   Clock,
+  KeyRound,
   Monitor,
   RefreshCw,
   ShieldAlert,
+  Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Hint } from "@/components/hint";
 import { Spinner } from "@/motion/spinner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { formatDay } from "@/lib/time";
+import { cn } from "@/lib/utils";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
 
 import { copyText } from "./copy-text";
@@ -42,6 +46,7 @@ import {
   updating,
 } from "./machine-status";
 import { Toggle } from "./fields";
+import { RowMenuButton, type RowAction } from "./row-menu";
 import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
 
 export { MACHINES_KEY } from "./machines-api";
@@ -66,13 +71,16 @@ const message = (error: unknown) =>
 const platformName = (platform: string) =>
   platform === "darwin" ? "macOS" : platform === "linux" ? "Linux" : platform;
 
-/** How a joined machine reads in its row: waiting for you, online, offline, or needing an update. */
+/**
+ * How a joined machine reads in its row: waiting for you, online, offline, or needing an update.
+ * When it joined is in its details, with its fingerprint.
+ */
 export function machineState(
   machine: JoinedMachine,
   now = Date.now(),
   status: Pick<MachinesStatus, "release" | "protocol"> = {},
 ): string {
-  return `Joined ${formatDay(machine.joinedAt, now)} · ${machineHealth(machine, status, now).label}`;
+  return machineHealth(machine, status, now).label;
 }
 
 type Pending = {
@@ -357,6 +365,22 @@ function MachineRow({
   const updateLine = machineUpdateLine(machine, now);
   const problem = online ? machineSignInProblem(machine) : undefined;
   const tools = online ? machineToolsLine(machine) : undefined;
+  const needsSignIn = online && machineNeedsSignIn(machine);
+  // What is looked up, not watched: when it joined, its key's fingerprint and its token. Open from
+  // the start on a machine that waits to be confirmed, whose fingerprint is what is being checked.
+  const [details, setDetails] = useState(!machine.confirmed);
+  const detailsId = useId();
+  // The token from this Mac is offered on the row where the machine needs a sign-in; a machine
+  // that is signed in keeps it, with Forget token and Remove, in its menu.
+  const actions: RowAction[] = [
+    ...(online && machine.claudeTokenSetAt === undefined && !needsSignIn
+      ? [{ label: "Use a token from this Mac", icon: KeyRound, onSelect: onToken }]
+      : []),
+    ...(machine.claudeTokenSetAt !== undefined
+      ? [{ label: "Forget token", icon: KeyRound, onSelect: onForget, disabled: !online }]
+      : []),
+    { label: "Remove", icon: Trash2, onSelect: onRemove, danger: true },
+  ];
   return (
     <div className="flex flex-col gap-2" data-testid="machines-row">
       <div className="flex min-h-9 items-center gap-3">
@@ -375,8 +399,8 @@ function MachineRow({
               />
             )}
           </span>
+          {/* One line: whether it is here, and what it runs. */}
           <span className="text-meta text-muted-foreground">
-            Joined {formatDay(machine.joinedAt, now)} ·{" "}
             {hint === undefined ? (
               <span data-testid="machines-state">{health.label}</span>
             ) : (
@@ -402,17 +426,13 @@ function MachineRow({
                 )}
               </Hint>
             )}
+            {tools !== undefined && (
+              <>
+                {" · "}
+                <span data-testid="machines-tools">{tools}</span>
+              </>
+            )}
           </span>
-          {machine.claudeTokenSetAt !== undefined && (
-            <span className="text-meta text-muted-foreground" data-testid="machines-token-line">
-              Claude: token from this Mac, sent {formatDay(machine.claudeTokenSetAt, now)}
-            </span>
-          )}
-          {tools !== undefined && (
-            <span className="text-meta text-muted-foreground" data-testid="machines-tools">
-              {tools}
-            </span>
-          )}
           {updateLine !== undefined && (
             <span
               className={`flex items-center gap-1 text-meta ${updateLine.tone === "failed" ? "text-destructive" : "text-muted-foreground"}`}
@@ -440,34 +460,19 @@ function MachineRow({
               {problem}
             </span>
           )}
-          <span className="font-mono text-meta text-muted-foreground" title="Key fingerprint">
-            {machine.fingerprint}
-          </span>
         </span>
-        <span className="ms-auto flex shrink-0 gap-1">
+        <span className="ms-auto flex shrink-0 items-center gap-1">
           {!machine.confirmed && (
             <Button size="sm" onClick={onConfirm}>
               Confirm
             </Button>
           )}
-          {online && machineNeedsSignIn(machine) && !signingIn && (
+          {needsSignIn && !signingIn && (
             <SignInButton machine={machine} onClick={onSignIn} testId="machines-sign-in" />
           )}
-          {online && machine.claudeTokenSetAt === undefined && (
+          {needsSignIn && machine.claudeTokenSetAt === undefined && (
             <Button size="sm" variant="ghost" onClick={onToken} data-testid="machines-token">
               Use a token from this Mac
-            </Button>
-          )}
-          {machine.claudeTokenSetAt !== undefined && (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!online}
-              title={online ? undefined : "It's offline"}
-              onClick={onForget}
-              data-testid="machines-token-forget"
-            >
-              Forget token
             </Button>
           )}
           {updateTo !== undefined && (
@@ -488,11 +493,50 @@ function MachineRow({
               <CircleArrowUp />
             </Hint>
           )}
-          <Button size="sm" variant="ghost" onClick={onRemove}>
-            Remove
-          </Button>
+          <Hint
+            label={details ? "Hide details" : "Details"}
+            render={
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label={`${machine.name} details`}
+                aria-expanded={details}
+                aria-controls={detailsId}
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setDetails((open) => !open)}
+                data-testid="machines-details-toggle"
+              />
+            }
+          >
+            <ChevronRight
+              aria-hidden
+              className={cn("transition-transform duration-(--dur-fast)", details && "rotate-90")}
+            />
+          </Hint>
+          <RowMenuButton label={`${machine.name} actions`} actions={actions} />
         </span>
       </div>
+      {details && (
+        <dl
+          id={detailsId}
+          data-testid="machines-details"
+          className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-0.5 ps-7 text-meta text-muted-foreground"
+        >
+          <dt>Joined</dt>
+          <dd>{formatDay(machine.joinedAt, now)}</dd>
+          <dt>Key fingerprint</dt>
+          <dd className="font-mono break-all">{machine.fingerprint}</dd>
+          {machine.claudeTokenSetAt !== undefined && (
+            <>
+              <dt>Claude</dt>
+              <dd data-testid="machines-token-line">
+                Token from this Mac, sent {formatDay(machine.claudeTokenSetAt, now)}
+              </dd>
+            </>
+          )}
+        </dl>
+      )}
       {signingIn && <MachineSignIn machine={machine} onClose={onSignInClosed} />}
     </div>
   );

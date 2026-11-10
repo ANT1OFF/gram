@@ -52,15 +52,11 @@ afterEach(() => {
 
 describe("machines page", () => {
   it("says whether a joined machine waits for you, is online, or is offline", () => {
-    expect(machineState(machine({ confirmed: false }), NOW)).toBe(
-      "Joined 12 Jun · waiting for you to confirm it",
-    );
-    expect(machineState(machine(), NOW)).toBe("Joined 12 Jun · offline");
-    expect(machineState(machine({ onlineSince: NOW - 10_000 }), NOW)).toBe(
-      "Joined 12 Jun · online",
-    );
+    expect(machineState(machine({ confirmed: false }), NOW)).toBe("waiting for you to confirm it");
+    expect(machineState(machine(), NOW)).toBe("offline");
+    expect(machineState(machine({ onlineSince: NOW - 10_000 }), NOW)).toBe("online");
     expect(machineState(machine({ onlineSince: NOW - 2 * 3_600_000 }), NOW)).toBe(
-      "Joined 12 Jun · online for 2 hours",
+      "online for 2 hours",
     );
   });
 
@@ -256,10 +252,58 @@ describe("machines page", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull());
   });
 
+  it("keeps a row to its name and state: when it joined and its fingerprint are behind Details", async () => {
+    serve([machine({ onlineSince: NOW })]);
+    renderPage();
+    const row = await screen.findByTestId("machines-row");
+    expect(within(row).getByTestId("machines-state").textContent).toMatch(/^online/);
+    expect(within(row).queryByTestId("machines-details")).toBeNull();
+    expect(row.textContent).not.toContain("0123-4567-89AB-CDEF-0123");
+    const toggle = within(row).getByRole("button", { name: "build box details" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const details = within(row).getByTestId("machines-details");
+    expect(details.textContent).toContain("Joined12 Jun");
+    expect(details.textContent).toContain("Key fingerprint0123-4567-89AB-CDEF-0123");
+  });
+
+  it("opens the details of a machine that waits to be confirmed: its fingerprint is what is checked", async () => {
+    serve([machine({ confirmed: false })]);
+    renderPage();
+    const row = await screen.findByTestId("machines-row");
+    expect(within(row).getByTestId("machines-details").textContent).toContain(
+      "0123-4567-89AB-CDEF-0123",
+    );
+  });
+
+  it("offers the token on the row only where the machine needs a sign-in, else in its menu", async () => {
+    const signedIn = machine({ onlineSince: NOW, claudeSignIn: "signedIn" });
+    const not = machine({
+      id: "m-1123456789abcdef01234567",
+      name: "new box",
+      onlineSince: NOW,
+      claudeSignIn: "notSignedIn",
+    });
+    serve([signedIn, not]);
+    renderPage();
+    const [first, second] = await screen.findAllByTestId("machines-row");
+    expect(within(first!).queryByTestId("machines-token")).toBeNull();
+    expect(within(second!).getByTestId("machines-token").textContent).toBe(
+      "Use a token from this Mac",
+    );
+    // Signed in, it is still a click away, with Remove.
+    fireEvent.click(within(first!).getByRole("button", { name: "build box actions" }));
+    expect(await screen.findByRole("menuitem", { name: "Use a token from this Mac" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Remove" })).toBeTruthy();
+  });
+
   it("removes a machine after asking", async () => {
     const calls = serve([machine({ onlineSince: NOW })]);
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    // Remove is in the row's menu, behind a confirm.
+    fireEvent.click(await screen.findByRole("button", { name: "build box actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Remove" }));
     fireEvent.click(
       within(screen.getByTestId("machines-remove")).getByRole("button", { name: "Remove" }),
     );
