@@ -56,17 +56,24 @@ const KIND_WORD: Record<BackgroundTaskKind, string> = {
  * What the thread has running besides its turn, one line each above the composer, the most recent
  * first: its subagents at work and the shells and other tasks the agent left in the background. More
  * than `STRIP_ROWS` fold into one "N running" line, which opens to list them all. A subagent's line
- * jumps to its card, as ⌥⌘J does, and a background task's has Stop, and Copy for its whole command.
+ * jumps to its card, as ⌥⌘J does; a command's opens it, with its output, in the right panel's
+ * Command tab (`shownRow` is the one shown there), and has Copy for its whole command. A background
+ * task's has Stop.
  * Empty, it takes no room. Its clock is its own, so the elapsed times tick without the transcript
  * re-rendering, and it holds still while the pane is out of sight.
  */
 export function SubagentStrip({
   rows,
+  shownRow,
   onJump,
+  onOpen,
   onStop,
 }: {
   rows: readonly StripRow[];
+  /** The line whose command the right panel's Command tab shows. */
+  shownRow?: string | undefined;
   onJump: (run: RunningSubagent) => void;
+  onOpen?: (row: StripRow) => void;
   onStop: (taskId: string) => Promise<void>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -122,20 +129,38 @@ export function SubagentStrip({
           {(!folded || open) &&
             rows.map((row) => {
               const Icon = WORK_ICON[row.kind];
+              const shown = row.key === shownRow;
               return (
                 <PresenceItem as="li" key={row.key} className="pb-1.5">
                   <div
                     data-testid="subagent-strip-row"
                     data-kind={row.kind}
                     data-tool-call-id={row.jump?.toolCallId}
-                    className={ROW}
+                    data-shown={shown || undefined}
+                    className={cn(ROW, shown && "bg-muted")}
                   >
                     <Jump
                       run={row.jump}
                       onJump={onJump}
+                      open={
+                        row.output === undefined || onOpen === undefined
+                          ? undefined
+                          : { shown, onOpen: () => onOpen(row) }
+                      }
                       label={
                         row.jump === undefined ? (
-                          <WorkHint rows={[row]} now={undefined} named />
+                          <WorkHint
+                            rows={[row]}
+                            now={undefined}
+                            named
+                            action={
+                              row.output === undefined || onOpen === undefined
+                                ? undefined
+                                : shown
+                                  ? "Hide its output"
+                                  : "Show its output"
+                            }
+                          />
                         ) : (
                           withHint("Running. Jump to its card", row === firstJump ? hint : "")
                         )
@@ -171,7 +196,9 @@ export function SubagentStrip({
                         />
                       )}
                     </Jump>
-                    {row.command !== undefined && <CopyButton command={row.command} />}
+                    {row.command !== undefined && (
+                      <CopyButton command={row.command} testId="subagent-strip-copy" />
+                    )}
                     {row.taskId !== undefined && (
                       <StopButton taskId={row.taskId} label={row.label} onStop={onStop} />
                     )}
@@ -193,11 +220,14 @@ function WorkHint({
   rows,
   now,
   named = false,
+  action,
 }: {
   rows: readonly StripRow[];
   now: number | undefined;
   /** Say what kind of work a line is when nothing describes it, as a lone line's tooltip does. */
   named?: boolean;
+  /** What a click on the line does, said last. */
+  action?: string | undefined;
 }) {
   const more = rows.length - HINT_ROWS;
   return (
@@ -226,6 +256,7 @@ function WorkHint({
         );
       })}
       {more > 1 && <li className="opacity-70">and {more} more</li>}
+      {action && <li className="opacity-70">{action}</li>}
     </ul>
   );
 }
@@ -235,7 +266,7 @@ const code = (text: string) => (
 );
 
 /** Copies a task's whole command, which the line and its tooltip show only the start of. */
-function CopyButton({ command }: { command: string }) {
+export function CopyButton({ command, testId }: { command: string; testId: string }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -249,7 +280,7 @@ function CopyButton({ command }: { command: string }) {
       render={
         <button
           type="button"
-          data-testid="subagent-strip-copy"
+          data-testid={testId}
           aria-label={label}
           onClick={() => {
             void copyMarkdown(command).then((ok) => setCopied(ok));
@@ -272,15 +303,20 @@ function CopyButton({ command }: { command: string }) {
   );
 }
 
-/** A line's body: a button that jumps to the card where there is one, plain otherwise. */
+/**
+ * A line's body: a button that jumps to the card where there is one, or that shows a command in the
+ * Command tab (pressed while it shows there), plain otherwise.
+ */
 function Jump({
   run,
   onJump,
+  open,
   label,
   children,
 }: {
   run: RunningSubagent | undefined;
   onJump: (run: RunningSubagent) => void;
+  open: { shown: boolean; onOpen: () => void } | undefined;
   label: ReactNode;
   children: ReactNode;
 }) {
@@ -288,10 +324,18 @@ function Jump({
     <Hint
       label={label}
       render={
-        run === undefined ? (
-          <span className={JUMP} />
-        ) : (
+        run !== undefined ? (
           <button type="button" className={JUMP} onClick={() => onJump(run)} />
+        ) : open !== undefined ? (
+          <button
+            type="button"
+            data-testid="subagent-strip-open"
+            aria-pressed={open.shown}
+            className={JUMP}
+            onClick={open.onOpen}
+          />
+        ) : (
+          <span className={JUMP} />
         )
       }
     >
@@ -301,14 +345,16 @@ function Jump({
 }
 
 /** Stops one background task; the line goes when the agent reports it gone. */
-function StopButton({
+export function StopButton({
   taskId,
   label,
   onStop,
+  testId = "subagent-strip-stop",
 }: {
   taskId: string;
   label: string;
   onStop: (taskId: string) => Promise<void>;
+  testId?: string;
 }) {
   const [stopping, setStopping] = useState(false);
   return (
@@ -317,7 +363,7 @@ function StopButton({
       render={
         <button
           type="button"
-          data-testid="subagent-strip-stop"
+          data-testid={testId}
           aria-label={`Stop ${label}`}
           disabled={stopping}
           onClick={() => {

@@ -7,7 +7,6 @@ import { createPortal } from "react-dom";
 
 import { useApi } from "@/api/context";
 import { PinnedDocChip } from "@/docs/doc-chip";
-import { errorMessage } from "@/api/errors";
 import { needsYou } from "@/sidebar/grouping";
 import { activityLine, statusHint, threadStatusOf } from "@/sidebar/status";
 import { mergeStateMarkOf, PrBadge, PrChip, reviewDecisionMarkOf } from "@/components/git-badges";
@@ -58,6 +57,8 @@ import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
 
 import { messageMarkdown } from "./copy-markdown";
+import { sameCommand, toggleCommandView, useCommandViewStore } from "./command-view-store";
+import { useStopTask } from "./use-stop-task";
 import { FindBar } from "./find-bar";
 import { copyMarkdown } from "./message-actions";
 import { forkedFromText } from "./fork-text";
@@ -86,6 +87,7 @@ import {
   runningSubagents,
   stripRows,
   type RunningSubagent,
+  type StripRow,
 } from "./subagent-strip-model";
 import { TableOfContents } from "./table-of-contents";
 import { ThreadMenu } from "./thread-menu";
@@ -196,19 +198,31 @@ export function ThreadView({
     () => stripRows(running, background ?? [], canStop),
     [running, background, canStop],
   );
-  const api = useApi();
-  const stopTask = (taskId: string) =>
-    api.stopTask(threadId, taskId).catch((error: unknown) => {
-      // Gone already, which is what Stop was for.
-      if (Reflect.get(error as object, "_tag") === "NotFound") return;
-      useThreadsStore.getState().applyEvent({
-        type: "notify",
-        kind: "error",
-        title: "Couldn't stop it",
-        body: errorMessage(error),
-      });
-      throw error;
-    });
+  const stopTask = useStopTask(threadId);
+  // A command's line opens it in the right panel's Command tab, and marks it while it shows there.
+  const commandOf = (row: StripRow) =>
+    row.output === undefined
+      ? undefined
+      : {
+          threadId,
+          ...row.output,
+          command: row.command ?? row.label,
+          startedAt: row.startedAt,
+        };
+  const shownCommand = useCommandViewStore((s) =>
+    s.shown && s.open?.threadId === threadId ? s.open : undefined,
+  );
+  const shownRow =
+    shownCommand === undefined
+      ? undefined
+      : stripLines.find((row) => {
+          const open = commandOf(row);
+          return open !== undefined && sameCommand(shownCommand, open);
+        })?.key;
+  const openCommand = (row: StripRow) => {
+    const open = commandOf(row);
+    if (open !== undefined) toggleCommandView(open);
+  };
   const [chapterJump, setChapterJump] = useState<JumpRequest>();
   const jumpToChapter = (messageId: string) => {
     const index = shown.findIndex((message) => message.id === messageId);
@@ -716,7 +730,13 @@ export function ThreadView({
         <EditBanner threadId={threadId} />
         <PinnedDocChip threadId={threadId} />
         <PrStrip threadId={threadId} focused={focused} />
-        <SubagentStrip rows={stripLines} onJump={jumpToSubagent} onStop={stopTask} />
+        <SubagentStrip
+          rows={stripLines}
+          shownRow={shownRow}
+          onJump={jumpToSubagent}
+          onOpen={openCommand}
+          onStop={stopTask}
+        />
         {thread.role === "orchestrator" && <UndoLine />}
         <TurnCompleteSheen key={threadId} status={status}>
           <ThreadComposer

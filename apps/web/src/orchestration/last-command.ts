@@ -75,7 +75,7 @@ const commandOf = (
   };
 };
 
-const numberField = (output: unknown, keys: readonly string[]): number | null => {
+export const numberField = (output: unknown, keys: readonly string[]): number | null => {
   if (typeof output !== "object" || output === null) return null;
   for (const key of keys) {
     const value: unknown = Reflect.get(output, key);
@@ -87,7 +87,7 @@ const numberField = (output: unknown, keys: readonly string[]): number | null =>
 const OUTPUT_TAIL = 8_000;
 
 /** A command's output as it came back: stdout then stderr, or the text it came back as. */
-const rawOutput = (part: AnyToolPart): string => {
+export const rawOutput = (part: AnyToolPart): string => {
   if (part.state === "output-error") return part.errorText;
   if (part.state !== "output-available") return "";
   const output: unknown = part.output;
@@ -106,7 +106,7 @@ const rawOutput = (part: AnyToolPart): string => {
 };
 
 /** Output as plain text, its tail only. */
-const tail = (text: string): string => {
+export const tail = (text: string): string => {
   // Cleaned from a little more than is kept, so a sequence cut in half at the edge is dropped too.
   const clean = terminalText(text.length <= OUTPUT_TAIL * 2 ? text : text.slice(-OUTPUT_TAIL * 2));
   return clean.length <= OUTPUT_TAIL ? clean : clean.slice(-OUTPUT_TAIL);
