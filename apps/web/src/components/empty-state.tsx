@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { drawOn } from "@/motion";
 
-/** The one thing to do from an empty state: a verb, and what it does. */
+/**
+ * The one thing to do from an empty state: a verb, and what it does. Its words alone: a glyph
+ * beside them only said them again (History beside "Open History", a plus beside "New task").
+ */
 export interface EmptyAction {
   readonly label: ReactNode;
-  readonly icon?: LucideIcon | undefined;
   readonly onClick: () => void;
   readonly testId?: string | undefined;
   /** The filled primary: only where it is the one way in to the whole app (home, nothing set up). */
@@ -44,7 +46,6 @@ export function EmptyState({
   /** Anything after the action, such as a way to what is put away. */
   children?: ReactNode;
 }) {
-  const ActionIcon = action?.icon;
   return (
     <div
       role="status"
@@ -72,7 +73,6 @@ export function EmptyState({
           className="mt-3"
           onClick={action.onClick}
         >
-          {ActionIcon && <ActionIcon data-icon="inline-start" />}
           {action.label}
         </Button>
       )}

@@ -4,9 +4,7 @@ import {
   CircleArrowUp,
   CircleCheck,
   Clock,
-  Copy,
   Monitor,
-  Plus,
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
@@ -179,7 +177,6 @@ export function MachinesPage() {
           onClick={() => setAdding(true)}
           data-testid="machines-add"
         >
-          <Plus aria-hidden />
           Add a machine
         </Button>
       </div>
@@ -808,7 +805,6 @@ function CopyButton({ text, label }: { text: string; label: string }) {
         void copyText(text).then(() => setCopied(true));
       }}
     >
-      <Copy aria-hidden />
       {copied ? "Copied" : label}
     </Button>
   );

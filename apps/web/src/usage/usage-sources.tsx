@@ -4,6 +4,8 @@ import { useState } from "react";
 
 import { agentLabel } from "@/agents/agent-label";
 import { errorMessage } from "@/api/errors";
+import { FOLD, FoldSummary } from "@/components/fold-summary";
+import { cn } from "@/lib/utils";
 import { Toggle } from "@/settings/fields";
 import { useSaveSettings } from "@/settings/use-save-settings";
 import { useServerSettings } from "@/settings-sync/store";
@@ -87,14 +89,14 @@ function Coverage({ data }: { data: UsageOverview }) {
     data.missingUsageTurns + data.invalidUsageTurns + data.unattributedTurns + data.openTurns;
   return (
     <details
-      className="mt-3 text-meta leading-relaxed text-muted-foreground"
+      className={cn(FOLD, "mt-3 text-meta leading-relaxed text-muted-foreground")}
       data-testid="usage-coverage"
     >
-      <summary className="w-fit cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+      <FoldSummary>
         Coverage · {number(data.recordedTurns)} {history === undefined ? "turns" : "records"}{" "}
         counted
         {excluded === 0 ? "" : ` · ${number(excluded)} not counted`}
-      </summary>
+      </FoldSummary>
       <div className="mt-3 grid max-w-3xl gap-4">
         {history !== undefined && <HistoryCoverage data={data} />}
         <section aria-labelledby="usage-coverage-title">

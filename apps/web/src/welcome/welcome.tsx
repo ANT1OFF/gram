@@ -3,7 +3,6 @@ import { Menu } from "@base-ui/react/menu";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  ArrowRight,
   ChevronDown,
   ChevronRight,
   Circle,
@@ -231,7 +230,6 @@ function FirstRun() {
                 <FolderGit2 data-icon="inline-start" />
               )}
               {noAgent ? `Set up ${picked.name}` : `Open ${picked.name}`}
-              {!noAgent && <ArrowRight data-icon="inline-end" />}
             </Button>
           ) : (
             // Nothing to pick: a folder on disk is the way in, a clone the other.

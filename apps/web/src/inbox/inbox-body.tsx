@@ -3,7 +3,6 @@ import {
   AlarmClock,
   Bell,
   CircleCheck,
-  History,
   Inbox as InboxIcon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -748,12 +747,10 @@ function Empty({ laterCount }: { laterCount: number }) {
     laterCount > 0
       ? {
           label: `${laterCount} put away for later`,
-          icon: AlarmClock,
           onClick: () => useInboxStore.getState().setLater(true),
         }
       : {
           label: "Open History",
-          icon: History,
           onClick: () => {
             useInboxStore.getState().close();
             useHistoryStore.getState().show();

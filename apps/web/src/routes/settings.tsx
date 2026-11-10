@@ -235,7 +235,14 @@ function PageSection({
         data-settings-page={page.path}
         className="flex flex-col gap-6 text-reading"
       >
-        <header className={cn("flex items-start gap-3", subpage && !searching && "hidden")}>
+        {/* On a phone the page's actions go under its description, which keeps the column's
+            width: beside the heading, "Restore defaults" squeezed it into three short lines. */}
+        <header
+          className={cn(
+            "flex items-start gap-3 phone:flex-col phone:gap-1",
+            subpage && !searching && "hidden",
+          )}
+        >
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             {sub && !searching && (
               <Link
@@ -281,7 +288,8 @@ function PageSection({
             )}
           </div>
           {!searching && (Actions || restore.button) && (
-            <div className="flex shrink-0 items-center gap-1">
+            // A phone's button is padded 16 px: pulled back so its words start on the text's edge.
+            <div className="flex shrink-0 items-center gap-1 phone:-ms-4">
               {restore.button}
               {Actions && <Actions />}
             </div>

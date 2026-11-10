@@ -1,15 +1,6 @@
 import { Menu } from "@base-ui/react/menu";
 import type { FeatureCardPr, HostId, ThreadId, WorkspaceId } from "@gram/contracts";
-import {
-  CheckIcon,
-  ChevronDown,
-  ListFilter,
-  MessageSquare,
-  Search,
-  Server,
-  Workflow,
-  X,
-} from "lucide-react";
+import { CheckIcon, ChevronDown, ListFilter, Search, Server, Workflow, X } from "lucide-react";
 import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { create } from "zustand";
 import { useParams } from "@tanstack/react-router";
@@ -177,7 +168,6 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
             line="The orchestrator briefs a worker for each piece of a task; each shows here by where it stands."
             action={{
               label: "Message the orchestrator",
-              icon: MessageSquare,
               onClick: () => messageOrchestrator(workspaceId),
             }}
           />

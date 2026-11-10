@@ -1,5 +1,5 @@
 import type { AgentRuntime, CliUpdateState, GatewayAgentTool, InstallStep } from "@gram/contracts";
-import { CircleX, Download, TriangleAlert } from "lucide-react";
+import { CircleX, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { agentLabel } from "@/agents/agent-display";
@@ -35,7 +35,6 @@ export function CliUpdateButton({
       label={<CommandText text={`Run \`${step.command}\` for you, after you confirm`} />}
       render={<Button size="xs" variant="outline" data-testid="cli-update" onClick={onClick} />}
     >
-      <Download aria-hidden />
       {updateLabel(runtime, step)}
     </Hint>
   );

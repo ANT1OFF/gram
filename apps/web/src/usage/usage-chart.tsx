@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { FOLD, FoldSummary } from "@/components/fold-summary";
 import { cn } from "@/lib/utils";
 
 import {
@@ -245,10 +246,8 @@ export function DailyTable({
   families: readonly Family[];
 }) {
   return (
-    <details className="mt-3 text-meta">
-      <summary className="w-fit cursor-pointer rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
-        Daily values (UTC)
-      </summary>
+    <details className={cn(FOLD, "mt-3 text-meta")}>
+      <FoldSummary className="text-muted-foreground">Daily values (UTC)</FoldSummary>
       <div className="mt-3 max-h-72 overflow-auto">
         <table className="w-full text-left tabular-nums" data-testid="usage-daily-table">
           <caption className="sr-only">

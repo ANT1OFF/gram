@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { FolderGit2, MessageSquarePlus, SquareDashed } from "lucide-react";
+import { FolderGit2, SquareDashed } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
@@ -45,7 +45,6 @@ function HomeEmpty() {
         line="Open a repository to make one: its orchestrator hands your tasks to agents and follows each one to a pull request."
         action={{
           label: "Open a repository",
-          icon: FolderGit2,
           testId: "home-open-repository",
           primary: true,
           onClick: () => void navigate({ to: "/new-workspace" }),
@@ -66,7 +65,6 @@ function HomeEmpty() {
             <ShortcutKbd id="thread.new" cap />
           </>
         ),
-        icon: MessageSquarePlus,
         testId: "home-new-task",
         onClick: () => void navigate({ to: "/new" }),
       }}

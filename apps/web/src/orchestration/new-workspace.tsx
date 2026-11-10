@@ -367,7 +367,8 @@ function SheetForm({
           id={taskId}
           data-testid="new-workspace-task"
           rows={3}
-          className={`${inputCls} h-auto min-h-18 resize-y py-1.5`}
+          // As wide as the rows above it: a settings field's own width stopped it short of them.
+          className={`${inputCls} h-auto max-w-none min-h-18 resize-y py-1.5`}
           value={draft.task}
           placeholder="Optional"
           onChange={(event) => {
