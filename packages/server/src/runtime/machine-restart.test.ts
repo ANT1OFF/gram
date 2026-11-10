@@ -43,6 +43,7 @@ import {
   MACHINE_RESTART_CONTINUATIONS,
   MACHINE_RESTART_WINDOW_MS,
   machineRestartText,
+  machineRestartToolText,
   type RestartFacts,
 } from "./machine-restart.ts";
 import { makeRuntimeTestLayer, replyStart } from "./test-harness.ts";
@@ -292,6 +293,12 @@ const sessionRestarts = (threadId: ThreadId) =>
     );
   });
 
+/** The `bash-1` tool part among `messages`, as the thread has it. */
+const bashOf = (messages: ReadonlyArray<{ readonly parts: ReadonlyArray<unknown> }>) =>
+  messages
+    .flatMap((m) => m.parts as ReadonlyArray<Record<string, unknown>>)
+    .find((part) => part["toolCallId"] === "bash-1");
+
 describe("a joined machine whose host restarts mid-turn", () => {
   it.live(
     "resumes the same Claude session there and continues the turn",
@@ -347,6 +354,13 @@ describe("a joined machine whose host restarts mid-turn", () => {
             input: { command: "bunx vitest run" },
           },
         });
+        const runtimes = yield* ThreadRuntimes;
+        yield* eventually(
+          "the shell running",
+          runtimes
+            .liveMessages(thread.id)
+            .pipe(Effect.map((all) => bashOf(all)?.["state"] === "input-available")),
+        );
         yield* machine.stopInOrder;
         yield* Effect.sleep("100 millis");
         yield* machine.start;
@@ -362,6 +376,12 @@ describe("a joined machine whose host restarts mid-turn", () => {
         // The agent is told its turn was cut and its shells stopped, not left to guess.
         expect(second.sent[0]).toMatchObject({ text: machineRestartText(NAME) });
         expect((yield* store.getThread(thread.id)).lastError).toBeUndefined();
+        // The shell the restart killed reads as stopped, not running, and claims no exit code.
+        // Before this change it stayed `input-available`, which the thread shows as Running.
+        expect(bashOf(yield* store.listMessages(thread.id))).toMatchObject({
+          state: "output-error",
+          errorText: machineRestartToolText(NAME),
+        });
       }).pipe(Effect.ensuring(machine.stop), Effect.scoped, Effect.provide(onMachine(machine)));
     },
     30_000,

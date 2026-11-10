@@ -173,6 +173,13 @@ export class MessageAccumulator {
     );
   }
 
+  /** Tool calls the agent took up and gave no result for: still reading as running. */
+  unfinishedTools(): readonly string[] {
+    return [...this.toolParts.entries()].flatMap(([id, part]) =>
+      part["state"] === "input-streaming" || part["state"] === "input-available" ? [id] : [],
+    );
+  }
+
   private mergeMetadata(metadata: unknown) {
     if (typeof metadata !== "object" || metadata === null) return;
     const incoming = metadata as Record<string, unknown>;

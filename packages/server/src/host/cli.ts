@@ -197,6 +197,21 @@ const joined = (home: string) => {
 };
 
 /**
+ * Whether `home` still holds the join `config` names: the same Gram and the same machine id. A
+ * `gram-host leave` forgets it, and a host running in a terminal of its own, which `leave` doesn't
+ * stop, then stops dialling. A file that can't be read just now counts as still there.
+ */
+export const stillJoined =
+  (home: string, config: { readonly origin: string; readonly hostId: string }) => () => {
+    try {
+      const now = readHostConfig(home);
+      return now !== undefined && now.origin === config.origin && now.hostId === config.hostId;
+    } catch {
+      return true;
+    }
+  };
+
+/**
  * Leaves the Gram this machine joined: stops its service (`stopService`), then forgets the join
  * and its key. When the service may still be running, the join is kept, so the machine still has
  * what it needs to stop it, and nothing claims it left.
@@ -241,7 +256,12 @@ export const runCli = <R>(
         return Effect.forkScoped(recoverHere(home, host.release)).pipe(
           Effect.andThen(
             dialForever(
-              { origin: found.config.origin, hostId: found.config.hostId, key: found.key },
+              {
+                origin: found.config.origin,
+                hostId: found.config.hostId,
+                key: found.key,
+                joined: stillJoined(home, found.config),
+              },
               host.service(HostIdSchema.make(found.config.hostId), home),
             ),
           ),

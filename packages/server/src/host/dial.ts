@@ -32,6 +32,12 @@ export interface DialOptions {
   /** Where to dial; the origin's `wss:` connect address unless a test says otherwise. */
   readonly url?: string;
   readonly now?: () => number;
+  /**
+   * Whether this machine is still joined as it was when the host started. Once it isn't
+   * (`gram-host leave`, even with the host running in a terminal of its own), the dial ends and
+   * `dialForever` stops: it never dials a Gram the machine left. Always, when left out.
+   */
+  readonly joined?: () => boolean;
 }
 
 export const connectUrl = (origin: string) =>
@@ -62,16 +68,20 @@ export const dialOnce = <R>(
       }),
       served,
     );
-    // Ends a dial the main Gram has gone silent on, so the next one is made.
+    const joined = options.joined ?? (() => true);
+    // Ends a dial the main Gram has gone silent on, so the next one is made, and one of a
+    // machine that has left since, so none is.
     yield* Effect.suspend(() =>
-      now() - heard < idleMs
-        ? Effect.void
-        : Effect.logWarning(
-            "gram-host: nothing from the main Gram for too long; dialling again",
-          ).pipe(
-            Effect.annotateLogs({ silentSeconds: Math.round((now() - heard) / 1000) }),
-            Effect.andThen(Deferred.succeed(ended, undefined)),
-          ),
+      !joined()
+        ? Deferred.succeed(ended, undefined)
+        : now() - heard < idleMs
+          ? Effect.void
+          : Effect.logWarning(
+              "gram-host: nothing from the main Gram for too long; dialling again",
+            ).pipe(
+              Effect.annotateLogs({ silentSeconds: Math.round((now() - heard) / 1000) }),
+              Effect.andThen(Deferred.succeed(ended, undefined)),
+            ),
     ).pipe(
       Effect.repeat(Schedule.spaced(Duration.millis(Math.max(10, Math.floor(idleMs / 4))))),
       Effect.forkScoped,
@@ -109,7 +119,7 @@ export const dialOnce = <R>(
 export const DETACHED_GRACE_MS = 3 * 60_000;
 
 /**
- * Dials the main Gram for good: each time a connection ends or a dial is refused (the machine
+ * Dials the main Gram for as long as the machine stays joined: each time a connection ends or a dial is refused (the machine
  * isn't confirmed yet, the main Gram is closed, the tailnet is down) the host waits and dials
  * again, longer each time up to half a minute. What it serves is built once and kept across dials,
  * so a session keeps running through a dropped connection and the next one picks it up; only
@@ -124,9 +134,10 @@ export const dialForever = <R>(
     readonly retryFirstMs?: number;
     readonly idleMs?: number;
   } = {},
-): Effect.Effect<never, never, R> =>
+): Effect.Effect<void, never, R> =>
   Effect.gen(function* () {
     const now = options.now ?? Date.now;
+    const joined = options.joined ?? (() => true);
     const detachedMs = timing.detachedMs ?? DETACHED_GRACE_MS;
     const retryFirstMs = timing.retryFirstMs ?? RETRY_FIRST_MS;
     let kept: { readonly host: HostService; readonly scope: Scope.Closeable } | undefined;
@@ -154,6 +165,11 @@ export const dialForever = <R>(
     });
     let wait = retryFirstMs;
     while (true) {
+      if (!joined()) {
+        // What it kept ends with it, as the finalizer releases it.
+        yield* Effect.logWarning("gram-host: this machine left its Gram; the host stops dialling");
+        return;
+      }
       if (
         kept !== undefined &&
         detachedSince !== undefined &&
@@ -166,6 +182,7 @@ export const dialForever = <R>(
       const started = now();
       yield* dialOnce(options, keptService, served, timing.idleMs);
       detachedSince ??= now();
+      if (!joined()) continue;
       if (now() - started >= STEADY_MS) wait = retryFirstMs;
       yield* Effect.logInfo("gram-host: not connected; dialling again").pipe(
         Effect.annotateLogs({ inSeconds: Math.round(wait / 1000) }),
