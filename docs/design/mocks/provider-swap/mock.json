@@ -1,0 +1,65 @@
+{
+  "title": "Continue in another agent",
+  "slug": "provider-swap",
+  "status": "draft",
+  "template": "flow",
+  "current": 1,
+  "approved": null,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-11"
+    }
+  ],
+  "directions": [
+    {
+      "name": "1 Model group",
+      "board": "1-model-group",
+      "shots": {
+        "dark": "shots/model-group-dark.png",
+        "light": "shots/model-group-light.png"
+      }
+    },
+    {
+      "name": "2 Thread menu",
+      "board": "2-thread-menu",
+      "shots": {
+        "dark": "shots/thread-menu-dark.png",
+        "light": "shots/thread-menu-light.png"
+      }
+    },
+    {
+      "name": "3 Sheet",
+      "board": "3-sheet",
+      "shots": {
+        "dark": "shots/sheet-dark.png",
+        "light": "shots/sheet-light.png"
+      }
+    },
+    {
+      "name": "3 Sheet · limit",
+      "board": "3-sheet",
+      "shots": {
+        "dark": "shots/sheet-limit-dark.png",
+        "light": "shots/sheet-limit-light.png"
+      }
+    },
+    {
+      "name": "4 Divider",
+      "board": "4-divider",
+      "shots": {
+        "dark": "shots/divider-dark.png",
+        "light": "shots/divider-light.png"
+      }
+    },
+    {
+      "name": "4 Divider · limit",
+      "board": "4-divider",
+      "shots": {
+        "dark": "shots/divider-limit-dark.png",
+        "light": "shots/divider-limit-light.png"
+      }
+    }
+  ]
+}
