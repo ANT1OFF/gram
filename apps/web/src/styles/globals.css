@@ -355,3 +355,43 @@
 [data-transcript] [data-streamdown="heading-1"] {
   font-size: calc(1.875rem * var(--transcript-scale, 1));
 }
+
+/* One frame for a block of code or a table in a reply (and in a doc): streamdown draws each as a
+   box in a padded box, under a band that holds the language and the copy and download buttons.
+   Only the inner frame stays, the code's or the table's own; the band is gone, and the buttons
+   float at the block's corner while the pointer or focus is in it, as a message's own actions do.
+   On touch, where nothing hovers, they stay in sight. Unlayered, so it wins over the utilities
+   streamdown's markup carries. The table's full-screen view (`role="presentation"`) keeps its bar. */
+:is([data-streamdown="code-block"], [data-streamdown="table-wrapper"]:not([role="presentation"])) {
+  position: relative;
+  gap: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+[data-streamdown="code-block-header"] {
+  display: none;
+}
+/* A table's buttons: the wrapper's first child while it has them, a row before the table's frame. */
+[data-streamdown="table-wrapper"]:not([role="presentation"]) > div:first-child:not(:last-child) {
+  position: absolute;
+  top: 0.375rem;
+  right: 0.375rem;
+  z-index: 1;
+  padding: 0.125rem 0.25rem;
+  border: 1px solid var(--color-edge);
+  border-radius: var(--radius-xs);
+  background: var(--color-popover);
+}
+@media (hover: hover) {
+  [data-streamdown="code-block"] [data-streamdown="code-block-actions"],
+  [data-streamdown="table-wrapper"]:not([role="presentation"]) > div:first-child:not(:last-child) {
+    opacity: 0;
+    transition: opacity var(--dur-fast);
+  }
+  [data-streamdown="code-block"]:is(:hover, :focus-within) [data-streamdown="code-block-actions"],
+  [data-streamdown="table-wrapper"]:not([role="presentation"]):is(:hover, :focus-within)
+    > div:first-child:not(:last-child) {
+    opacity: 1;
+  }
+}
