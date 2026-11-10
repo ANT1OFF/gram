@@ -100,3 +100,13 @@ export function isCredentialPath(path: string): boolean {
     (file) => lower === file.at(-1) && contains(folders.slice(1 - file.length), file.slice(0, -1)),
   );
 }
+
+/**
+ * Whether `path` is a credential folder (`~/.ssh`, `~/.aws`, …) or inside one, judged on the path
+ * alone as `isCredentialPath` judges a file. A session never runs there, and a folder picker never
+ * offers one.
+ */
+export function isCredentialFolder(path: string): boolean {
+  const segments = path.split(/[\\/]+/).filter((segment) => segment !== "");
+  return CREDENTIAL_FOLDERS.some((folder) => contains(segments, folder));
+}

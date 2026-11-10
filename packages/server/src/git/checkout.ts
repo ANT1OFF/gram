@@ -22,7 +22,7 @@ import * as Layer from "effect/Layer";
 import { folderExists, resolveFolder } from "../fs/folders.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { heldCheckoutPaths, usedCheckoutPaths } from "../runtime/create-in-checkout.ts";
-import { CheckoutService } from "../runtime/hooks.ts";
+import { CheckoutService, THIS_MACHINE_FOLDER } from "../runtime/hooks.ts";
 import { changedFileCount, removalError, toGitError } from "./mapping.ts";
 
 /**
@@ -117,6 +117,8 @@ export const GitCheckoutLive = Layer.effect(
               );
             return created.checkout;
           }
+          case "machineFolder":
+            return yield* new InvalidState({ message: THIS_MACHINE_FOLDER });
           case "existingWorktree": {
             const path = yield* resolveFolder(request.path);
             const list = yield* worktrees

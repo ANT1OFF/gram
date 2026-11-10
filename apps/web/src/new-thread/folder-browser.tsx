@@ -1,10 +1,9 @@
-import type { FolderEntry } from "@gram/contracts";
+import type { FolderEntry, HostId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUp, ChevronRight, CircleAlert, Folder, FolderGit2 } from "lucide-react";
 import * as m from "motion/react-m";
 import { Fragment, useEffect, useId, useState, type KeyboardEvent } from "react";
 
-import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { folderAccessDenial } from "@/api/folder-access";
 import { FolderAccessRecovery } from "@/components/folder-access-recovery";
@@ -15,26 +14,42 @@ import { folderProblem } from "./fs-errors";
 import { GitBadge } from "./git-badge";
 import { breadcrumbs, tildify } from "./path";
 import { useProjectPickerStore } from "./store";
-import { useHome, useIsGitRepo, withTrailingSlash } from "./use-folder";
+import { useBrowsing, useHome, useIsGitRepo, withTrailingSlash } from "./use-folder";
 
 /**
  * Navigates folders from the picker's `browsePath`: parent, breadcrumb, a keyboard-driven folder
  * list (⏎ or double-click enters, ⌫ goes up), and "Choose this folder".
  */
-export function FolderBrowser({ onChoose }: { onChoose: (path: string) => void }) {
-  const api = useApi();
-  const home = useHome();
-  const browsePath = withTrailingSlash(useProjectPickerStore((s) => s.browsePath));
-  const browseTo = useProjectPickerStore((s) => s.browseTo);
+export function FolderBrowser({
+  onChoose,
+  hostId,
+  startAt = "~",
+}: {
+  onChoose: (path: string) => void;
+  /**
+   * A joined machine whose folders are browsed, through its host, from `startAt` there; this
+   * Mac's from the picker's last place when absent.
+   */
+  hostId?: HostId | undefined;
+  startAt?: string;
+}) {
+  const home = useHome(hostId);
+  const { key, browse } = useBrowsing(hostId);
+  const storedPath = useProjectPickerStore((s) => s.browsePath);
+  const storeBrowseTo = useProjectPickerStore((s) => s.browseTo);
+  // Another machine's place is this browser's own: the picker's remembers this Mac's.
+  const [machinePath, setMachinePath] = useState(startAt);
+  const browsePath = withTrailingSlash(hostId === undefined ? storedPath : machinePath);
+  const browseTo = hostId === undefined ? storeBrowseTo : setMachinePath;
   const query = useQuery({
-    queryKey: ["fs.browse", browsePath],
-    queryFn: () => api.browse(browsePath),
+    queryKey: [...key, browsePath],
+    queryFn: () => browse(browsePath),
     retry: false,
     placeholderData: (previous) => previous,
   });
   const folder = query.status === "error" ? undefined : query.data;
   const denial = query.status === "error" ? folderAccessDenial(query.error) : undefined;
-  const isGitRepo = useIsGitRepo(folder);
+  const isGitRepo = useIsGitRepo(folder, hostId);
   const up = () => {
     if (folder?.parent) browseTo(folder.parent);
   };

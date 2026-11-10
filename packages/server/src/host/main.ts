@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
+import { foldersOn } from "./folders.ts";
 import { gitOn } from "./git.ts";
 import { claudeTokenIn } from "./claude-token.ts";
 import { checksOn } from "./checks.ts";
@@ -146,6 +147,7 @@ const hostService = (
         ...(RELEASE === undefined ? {} : { release: RELEASE }),
       },
       files: filesOn(proc),
+      folders: foldersOn(proc),
       reads: fileReadsOn(proc),
       attachments: yield* attachmentsOnHost(hostAttachments()),
       repos: {

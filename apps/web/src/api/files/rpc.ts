@@ -5,6 +5,9 @@ import type { FilesApi } from "./types";
 export const filesRpc = ({ client }: RpcContext): FilesApi => ({
   browse: (path, limit) =>
     run(client["fs.browse"](limit === undefined ? { path } : { path, limit })),
+  browseOn: (hostId, path, limit) =>
+    run(client["fs.browse"](limit === undefined ? { path, hostId } : { path, limit, hostId })),
+  checkFolderOn: (hostId, path) => run(client["fs.checkFolder"]({ hostId, path })),
   fsList: (path, options = {}) => run(client["fs.list"]({ path, ...options })),
   fsFile: (path, options = {}) => run(client["fs.file"]({ path, ...options })),
   fsSearch: (threadId, query, options = {}) =>

@@ -1,6 +1,7 @@
 import {
   AgentUnavailable,
   type Checkout,
+  checkoutRequestHost,
   effectiveCheckout,
   GitError,
   type HostId,
@@ -29,6 +30,7 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import type { CheckoutServiceShape } from "../runtime/hooks.ts";
 import type { Terminals } from "../terminal/terminals.ts";
 import type { HostFiles } from "./files.ts";
+import { type HostFolders, olderHost } from "./folders.ts";
 import { noteForeignCheckouts } from "./foreign-paths.ts";
 import type { WorkerHost, WorkerHostsShape } from "./worker-host.ts";
 
@@ -91,6 +93,11 @@ export const ambiguousPath = (path: string) =>
 export type MachineParts = Pick<WorkerHost, "git" | "worktrees" | "files"> & {
   /** Whether the checkout's folder is there: true unless that machine says it is gone. */
   readonly present: (path: string) => Effect.Effect<boolean>;
+  /**
+   * The machine's folders for a one-off thread's picker, listed and checked there: refused for
+   * this machine, whose folders `fs.browse` lists, and for an offline machine or an older host.
+   */
+  readonly folders: HostFolders;
 };
 
 /**
@@ -259,7 +266,32 @@ export const placedHost = (
       names: (root) => onPath(root, invalid, (host) => host.files.names(root)),
     };
 
-    return { git, worktrees, files, present: (path) => presentOn(path, local.checkouts.present) };
+    /** The machine's own folders, never this one's: `~` there is its home. */
+    const onFolders = <A>(
+      path: string,
+      run: (folders: HostFolders) => Effect.Effect<A, NotFound | InvalidState>,
+    ) =>
+      Effect.flatMap(placeOf(path), (id) =>
+        id === undefined || id === LOCAL_HOST_ID
+          ? Effect.fail(invalid("That isn't a joined machine."))
+          : Effect.flatMap(hostFor(id, invalid), (host) =>
+              host.folders === undefined
+                ? Effect.fail(invalid(olderHost({ name: host.name ?? id })))
+                : run(host.folders),
+            ),
+      );
+    const folders: HostFolders = {
+      browse: (input, limit) => onFolders(input, (on) => on.browse(input, limit)),
+      check: (path) => onFolders(path, (on) => on.check(path)),
+    };
+
+    return {
+      git,
+      worktrees,
+      files,
+      folders,
+      present: (path) => presentOn(path, local.checkouts.present),
+    };
   };
 
   /** Each path where the threads say it is. */
@@ -284,19 +316,14 @@ export const placedHost = (
   const checkouts: CheckoutServiceShape = {
     // Placed where the request says; a request that names no machine is this machine's.
     prepare: (request, openCheckouts, projectRoot) =>
-      Effect.flatMap(
-        hostFor(
-          request.kind === "newWorktree" ? (request.hostId ?? LOCAL_HOST_ID) : LOCAL_HOST_ID,
-          invalid,
-        ),
-        (host) =>
-          host.checkouts.prepare(request, openCheckouts, projectRoot).pipe(
-            Effect.tap(() =>
-              Effect.sync(() => {
-                if (host.id !== LOCAL_HOST_ID) placedNow = true;
-              }),
-            ),
+      Effect.flatMap(hostFor(checkoutRequestHost(request) ?? LOCAL_HOST_ID, invalid), (host) =>
+        host.checkouts.prepare(request, openCheckouts, projectRoot).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              if (host.id !== LOCAL_HOST_ID) placedNow = true;
+            }),
           ),
+        ),
       ),
     // A close that removes nothing needs no machine: a thread on one that is offline, or was
     // removed, still closes. One that would remove its worktree there is refused while it's away.

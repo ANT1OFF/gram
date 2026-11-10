@@ -36,3 +36,22 @@ export class HostUnavailable extends Schema.TaggedError<HostUnavailable>()("Host
   hostId: HostId,
   message: Schema.String,
 }) {}
+
+const MACHINE_PROJECT = "gram-host:";
+
+/**
+ * The project a joined machine's one-off threads belong to: one per machine, its root this key
+ * rather than a folder, so no path on that machine is ever taken for one on this disk. Each such
+ * thread's own folder is its checkout, with the machine's `hostId`.
+ */
+export const machineProjectRoot = (hostId: HostId): string => `${MACHINE_PROJECT}${hostId}`;
+
+/** The joined machine a project stands for (`machineProjectRoot`); `undefined` for a folder here. */
+export const machineOfProject = (project: { readonly root: string }): HostId | undefined =>
+  project.root.startsWith(MACHINE_PROJECT) && project.root.length > MACHINE_PROJECT.length
+    ? HostId.make(project.root.slice(MACHINE_PROJECT.length))
+    : undefined;
+
+/** A project that is a folder on this machine, not a joined machine's (`machineProjectRoot`). */
+export const isFolderProject = (project: { readonly root: string }): boolean =>
+  machineOfProject(project) === undefined;

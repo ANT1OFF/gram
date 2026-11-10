@@ -1,3 +1,4 @@
+import { isFolderProject } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -29,10 +30,12 @@ export function CheckoutPrDialog({
 }) {
   const api = useApi();
   const openThread = useOpenThread();
-  const { data: projects = [] } = useQuery({
+  const { data: listed = [] } = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
   });
+  // A pull request is checked out from a repository here, never a joined machine's project.
+  const projects = listed.filter(isFolderProject);
   const [root, setRoot] = useState(projectRoot);
   const [value, setValue] = useState(prRef ?? "");
   const [pending, setPending] = useState(false);

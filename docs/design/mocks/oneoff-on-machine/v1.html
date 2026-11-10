@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>One-off chat on any machine directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .form {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 20px 24px;
+        min-height: inherit;
+        background: var(--surface-2);
+      }
+      .title {
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0;
+      }
+      .slab {
+        border: 1px solid var(--border-subtle);
+        border-radius: 22px;
+        background: var(--surface-3);
+        padding: 12px 14px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .slab p {
+        margin: 0;
+        color: var(--fg);
+      }
+      .slab .tools {
+        display: flex;
+        gap: 6px;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .lbl {
+        font-size: var(--text-xs);
+        font-weight: 550;
+        color: var(--fg-muted);
+      }
+      .where {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 16px;
+      }
+      .stop {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        min-width: 0;
+        padding: 0 8px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--surface-3);
+        color: var(--fg);
+        font: inherit;
+        font-size: var(--text-xs);
+      }
+      .chip[aria-expanded="true"] {
+        border-color: var(--focus-ring);
+      }
+      .chip .icon,
+      .menu-item .icon,
+      .list-row .icon {
+        width: 14px;
+        height: 14px;
+        color: var(--fg-muted);
+      }
+      .svg-ic {
+        width: 14px;
+        height: 14px;
+        flex: none;
+        color: var(--fg-muted);
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .pop {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: 380px;
+        max-width: 100%;
+        padding: 4px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--surface-3);
+        box-shadow: var(--shadow-overlay, 0 8px 24px rgb(0 0 0 / 0.18));
+        font-size: var(--text-sm);
+      }
+      .pop .menu-item {
+        min-height: 30px;
+        font-size: var(--text-sm);
+      }
+      .pop .sep {
+        height: 1px;
+        margin: 4px 0;
+        background: var(--border-subtle);
+      }
+      .pop .state {
+        margin-left: auto;
+        font-size: var(--text-xs);
+        color: var(--fg-subtle);
+      }
+      .pop .menu-item[aria-disabled="true"] {
+        color: var(--fg-subtle);
+      }
+      .pathrow {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+      }
+      .pathrow .input {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        min-height: 28px;
+        padding: 4px 8px;
+      }
+      .crumbs {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 2px 8px;
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+      }
+      .crumbs b {
+        color: var(--fg);
+        font-weight: 500;
+      }
+      .note {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+        margin: 0;
+      }
+      .note.bad {
+        color: var(--danger-text);
+      }
+      .mono {
+        font-family: var(--font-mono);
+      }
+      .foot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px;
+      }
+      .foot .grow {
+        flex: 1;
+      }
+      .start {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+      }
+      .muted {
+        color: var(--fg-muted);
+      }
+      .subtle {
+        color: var(--fg-subtle);
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        How a Chat picks its machine and its folder there, home by default. Each board shows the
+        form's top with the picker open on cachyos. Pick one by name.
+      </p>
+
+      <!-- A: the Machine chip always shows for Chat, first; the Folder chip lists that machine's folders. -->
+      <section class="board" data-name="A Machine first" data-size="640x640">
+        <div class="board-frame">
+          <form class="form" aria-label="New thread">
+            <h3 class="title">New task</h3>
+            <div class="slab">
+              <p class="muted">Tidy up the dotfiles and check the disk usage of ~/Downloads.</p>
+              <div class="tools"><span>Claude · Opus 5.5</span><span>· Ask</span></div>
+            </div>
+            <div class="stack" style="gap: 8px">
+              <span class="lbl">Where it runs</span>
+              <div class="where">
+                <span class="stop"
+                  >Machine
+                  <button class="chip" type="button" title="Machine">
+                    <svg class="svg-ic" viewBox="0 0 24 24" aria-hidden="true">
+                      <rect width="20" height="8" x="2" y="2" rx="2" />
+                      <rect width="20" height="8" x="2" y="14" rx="2" />
+                      <path d="M6 6h.01M6 18h.01" />
+                    </svg>
+                    cachyos <i data-icon="down"></i>
+                  </button>
+                </span>
+                <span class="stop"
+                  >Folder
+                  <button class="chip" type="button" aria-expanded="true">
+                    <i data-icon="folder"></i><span class="mono">~</span> <i data-icon="down"></i>
+                  </button>
+                </span>
+              </div>
+              <div class="pop" style="margin-left: 112px">
+                <div class="section-label">On cachyos</div>
+                <button class="menu-item" type="button" aria-selected="true">
+                  <i data-icon="home"></i><span class="mono">~</span><span class="state">home</span
+                  ><i data-icon="check"></i>
+                </button>
+                <button class="menu-item" type="button">
+                  <i data-icon="folder"></i><span class="mono">~/scratch</span
+                  ><span class="state">yesterday</span>
+                </button>
+                <button class="menu-item" type="button">
+                  <i data-icon="folder"></i><span class="mono">~/code/dotfiles</span
+                  ><span class="state">git · 3 days</span>
+                </button>
+                <div class="sep"></div>
+                <button class="menu-item" type="button">
+                  <i data-icon="search"></i>Another folder on cachyos…
+                </button>
+              </div>
+              <p class="note">
+                Runs on cachyos in <span class="mono">/home/johan</span>, as it is: no worktree,
+                diff or pull request outside a repository.
+              </p>
+            </div>
+            <div class="stack" style="gap: 8px">
+              <span class="lbl">Who does it</span>
+              <div class="segmented">
+                <button type="button">Task</button><button type="button">Team</button
+                ><button type="button" aria-pressed="true">Chat</button>
+              </div>
+            </div>
+            <div class="start">
+              <button class="btn primary sm" type="button">Start chat</button>
+              <span>You approve edits and commands.</span>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- B: no new chip. The Folder chip's menu has a section per machine. -->
+      <section class="board" data-name="B Folder by machine" data-size="640x640">
+        <div class="board-frame">
+          <form class="form" aria-label="New thread">
+            <h3 class="title">New task</h3>
+            <div class="slab">
+              <p class="muted">Tidy up the dotfiles and check the disk usage of ~/Downloads.</p>
+              <div class="tools"><span>Claude · Opus 5.5</span><span>· Ask</span></div>
+            </div>
+            <div class="stack" style="gap: 8px">
+              <span class="lbl">Where it runs</span>
+              <div class="where">
+                <span class="stop"
+                  >Folder
+                  <button class="chip" type="button" aria-expanded="true">
+                    <svg class="svg-ic" viewBox="0 0 24 24" aria-hidden="true">
+                      <rect width="20" height="8" x="2" y="2" rx="2" />
+                      <rect width="20" height="8" x="2" y="14" rx="2" />
+                      <path d="M6 6h.01M6 18h.01" />
+                    </svg>
+                    cachyos <span class="subtle">·</span> <span class="mono">~</span>
+                    <i data-icon="down"></i>
+                  </button>
+                </span>
+              </div>
+              <div class="pop" style="margin-left: 44px">
+                <div class="section-label">This Mac</div>
+                <button class="menu-item" type="button">
+                  <i data-icon="folder"></i>gram<span class="state">git · 10:42</span>
+                </button>
+                <button class="menu-item" type="button">
+                  <i data-icon="folder"></i>notes<span class="state">yesterday</span>
+                </button>
+                <div class="section-label">cachyos</div>
+                <button class="menu-item" type="button" aria-selected="true">
+                  <i data-icon="home"></i><span class="mono">~</span><span class="state">home</span
+                  ><i data-icon="check"></i>
+                </button>
+                <button class="menu-item" type="button">
+                  <i data-icon="folder"></i><span class="mono">~/scratch</span
+                  ><span class="state">yesterday</span>
+                </button>
+                <button class="menu-item" type="button">
+                  <i data-icon="search"></i>Another folder on cachyos…
+                </button>
+                <div class="section-label">tower</div>
+                <button
+                  class="menu-item"
+                  type="button"
+                  aria-disabled="true"
+                  title="tower is offline. Start Gram Host there."
+                >
+                  <i data-icon="home"></i><span class="mono">~</span
+                  ><span class="state">offline</span>
+                </button>
+                <div class="sep"></div>
+                <button class="menu-item" type="button">
+                  <i data-icon="search"></i>Another folder on this Mac…
+                </button>
+              </div>
+              <p class="note">
+                Runs on cachyos in <span class="mono">/home/johan</span>, as it is: no worktree,
+                diff or pull request outside a repository.
+              </p>
+            </div>
+            <div class="start">
+              <button class="btn primary sm" type="button">Start chat</button>
+              <span>You approve edits and commands.</span>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- C: one Where chip; its popover picks the machine, then types or browses the folder there. -->
+      <section class="board" data-name="C One place picker" data-size="640x640">
+        <div class="board-frame">
+          <form class="form" aria-label="New thread">
+            <h3 class="title">New task</h3>
+            <div class="slab">
+              <p class="muted">Tidy up the dotfiles and check the disk usage of ~/Downloads.</p>
+              <div class="tools"><span>Claude · Opus 5.5</span><span>· Ask</span></div>
+            </div>
+            <div class="stack" style="gap: 8px">
+              <span class="lbl">Where it runs</span>
+              <div class="where">
+                <button class="chip" type="button" aria-expanded="true">
+                  <svg class="svg-ic" viewBox="0 0 24 24" aria-hidden="true">
+                    <rect width="20" height="8" x="2" y="2" rx="2" />
+                    <rect width="20" height="8" x="2" y="14" rx="2" />
+                    <path d="M6 6h.01M6 18h.01" />
+                  </svg>
+                  cachyos <span class="subtle">·</span> <span class="mono">~/code</span>
+                  <i data-icon="down"></i>
+                </button>
+              </div>
+              <div class="pop">
+                <div class="segmented" role="radiogroup" aria-label="Machine" style="margin: 4px">
+                  <button type="button" role="radio" aria-checked="false">This Mac</button
+                  ><button type="button" role="radio" aria-checked="true" aria-pressed="true">
+                    cachyos</button
+                  ><button
+                    type="button"
+                    role="radio"
+                    aria-checked="false"
+                    disabled
+                    title="tower is offline. Start Gram Host there."
+                  >
+                    tower · offline
+                  </button>
+                </div>
+                <div class="pathrow">
+                  <input class="input" aria-label="Folder on cachyos" value="~/code/" />
+                  <button
+                    class="btn sm icon ghost"
+                    type="button"
+                    title="Parent folder"
+                    aria-label="Parent folder"
+                  >
+                    <i data-icon="up"></i>
+                  </button>
+                </div>
+                <div class="crumbs">~ <i data-icon="right"></i> <b>code</b></div>
+                <button class="menu-item" type="button">
+                  <i data-icon="folder"></i>dotfiles<span class="state">git</span>
+                </button>
+                <button class="menu-item" type="button">
+                  <i data-icon="folder"></i>homelab<span class="state">git</span>
+                </button>
+                <button class="menu-item" type="button"><i data-icon="folder"></i>sandbox</button>
+                <div class="foot">
+                  <span class="grow subtle small">Recent: ~ · ~/scratch</span>
+                  <button class="btn sm primary" type="button">Use ~/code</button>
+                </div>
+              </div>
+              <p class="note">
+                Runs on cachyos in <span class="mono">/home/johan/code</span>, as it is.
+              </p>
+            </div>
+            <div class="start">
+              <button class="btn primary sm" type="button">Start chat</button>
+              <span>You approve edits and commands.</span>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- The refusal, the same in every direction. -->
+      <section class="board" data-name="Refused folder" data-size="640x200">
+        <div class="board-frame">
+          <div class="form" style="gap: 8px">
+            <span class="lbl">Where it runs</span>
+            <div class="where">
+              <span class="stop"
+                >Machine <button class="chip" type="button">cachyos <i data-icon="down"></i></button
+              ></span>
+              <span class="stop"
+                >Folder
+                <button class="chip" type="button">
+                  <i data-icon="folder"></i><span class="mono">~/.ssh</span>
+                  <i data-icon="down"></i></button
+              ></span>
+            </div>
+            <p class="note bad" role="alert">
+              <i data-icon="alert"></i>Gram doesn't run a chat in ~/.ssh: it holds keys and
+              credentials. Pick another folder.
+            </p>
+            <div class="start">
+              <button class="btn primary sm" type="button" disabled>Start chat</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

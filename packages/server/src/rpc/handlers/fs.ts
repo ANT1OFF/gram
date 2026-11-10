@@ -4,6 +4,7 @@ import {
   effectiveCheckout,
   hostOf,
   isLocalHost,
+  LOCAL_HOST_ID,
   previewFileKind,
   FileRpcs,
   FsError,
@@ -38,6 +39,9 @@ import type { HostFileReads, OutsideAllowed } from "../../host/file-reads.ts";
 import { machineNames } from "../../host/machine-name.ts";
 import { SEARCH_MAX_PAGE, SEARCH_PAGE } from "../../fs/search.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
+
+/** At most this many folders in a joined machine's listing, as `fs.browse` lists this one's. */
+const BROWSE_LIMIT = 500;
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import { filesWrittenBy, PreviewFiles } from "../../preview/files.ts";
@@ -234,7 +238,18 @@ export const fsHandlers = Effect.gen(function* () {
     Effect.flatMap(machine.reads, (reads) => reads.scope(path, [effectiveCheckout(thread).path]));
 
   return {
-    "fs.browse": ({ path, limit }) => browseFolders(path, limit === undefined ? {} : { limit }),
+    // A joined machine's folders are listed and checked by its host, never on this disk: a path
+    // there may not exist here, and under `/home` on macOS reading it waits on autofs.
+    "fs.browse": ({ path, limit, hostId }) =>
+      hostId === undefined || hostId === LOCAL_HOST_ID
+        ? browseFolders(path, limit === undefined ? {} : { limit })
+        : hosts.machine(hostId).folders.browse(path, limit ?? BROWSE_LIMIT),
+    "fs.checkFolder": ({ hostId, path }) =>
+      hostId === LOCAL_HOST_ID
+        ? Effect.fail(
+            new InvalidState({ message: "A folder on this machine is checked as it is browsed." }),
+          )
+        : hosts.machine(hostId).folders.check(path),
 
     /** `path`, when given, is the typed text to complete; otherwise `root` is listed. */
     "fs.tree": ({ root, path }) => {

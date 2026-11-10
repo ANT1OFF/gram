@@ -67,3 +67,12 @@ export const FolderListing = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export type FolderListing = typeof FolderListing.Type;
+
+/** A folder on the host a session may run in, as `host.folders.check` found it. */
+export const HostFolderChecked = Schema.Struct({
+  /** Its real path there, links resolved. */
+  path: Schema.String,
+  /** The branch checked out there, when it is on one. */
+  branch: Schema.optionalKey(Schema.String),
+});
+export type HostFolderChecked = typeof HostFolderChecked.Type;

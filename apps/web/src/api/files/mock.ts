@@ -18,7 +18,7 @@ import {
   resolveMockFileRefs,
   searchMockFiles,
 } from "../mock-files";
-import { browseMockFs } from "../mock-fs";
+import { browseMockFs, browseMockMachine, checkMockMachineFolder } from "../mock-fs";
 import { mockOutputImage, mockOutputText, pageMockOutputs } from "../mock-outputs";
 import type { MockWorld } from "../mock-world";
 import type { FilesApi } from "./types";
@@ -148,6 +148,15 @@ export function createFilesMock(world: MockWorld): FilesApi & FilesMockControls 
     browse: async (path, limit) => {
       await world.delay(20);
       return browseMockFs(path, limit);
+    },
+    // Every joined machine in the mock has the same synthetic Linux home.
+    browseOn: async (_hostId, path, limit) => {
+      await world.delay(20);
+      return browseMockMachine(path, limit);
+    },
+    checkFolderOn: async (_hostId, path) => {
+      await world.delay(20);
+      return checkMockMachineFolder(path);
     },
     fsList: async (path, options = {}) => {
       await world.delay(20);

@@ -4,7 +4,11 @@ import {
   GitError,
   InvalidState,
   isLocalHost,
+  checkoutRequestHost,
+  type HostId,
   LOCAL_HOST_ID,
+  machineOfProject,
+  machineProjectRoot,
   NotFound,
   plainWaitText,
   ThreadId,
@@ -50,6 +54,7 @@ import { closeAtRest } from "../../runtime/close-at-rest.ts";
 import { TerminalGate } from "../../terminal/gate.ts";
 import { makeThreadCreator } from "../../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../../runtime/hooks.ts";
+import { WorkerHosts } from "../../host/worker-host.ts";
 import { ThreadRuntimes, type ForkPlan } from "../../runtime/thread-runtimes.ts";
 import type { Handlers } from "./common.ts";
 import { taskCheckoutRequest } from "./task-checkout.ts";
@@ -98,6 +103,8 @@ export const threadHandlers = Effect.gen(function* () {
     helper === undefined ? Effect.void : helper.recordEvent("wait", event);
   const hub = yield* EventHub;
   const checkouts = yield* CheckoutService;
+  // Absent in runtime-only test layers, where no machine is joined.
+  const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
   const checkpoints = yield* Checkpoints;
   const config = yield* ServerConfig;
   // Absent in runtime-only test layers, where no branch is ever deleted.
@@ -154,6 +161,24 @@ export const threadHandlers = Effect.gen(function* () {
       ? { refresh: (cwd: string) => gitRefresh.value.request(cwd, false) }
       : {}),
   });
+
+  /**
+   * The project of a joined machine's one-off threads (`machineProjectRoot`), named for the
+   * machine, made the first time one starts there.
+   */
+  const machineProject = (hostId: HostId) =>
+    Effect.gen(function* () {
+      const root = machineProjectRoot(hostId);
+      const named =
+        hosts === undefined
+          ? undefined
+          : yield* hosts.get(hostId).pipe(
+              Effect.map((host) => host.name),
+              Effect.orElseSucceed(() => undefined),
+            );
+      yield* store.ensureProject({ root, name: named ?? hostId });
+      return root;
+    });
 
   const creator = makeThreadCreator({ store, checkouts, runtimes });
   const prepareCheckout = creator.prepare;
@@ -238,9 +263,18 @@ export const threadHandlers = Effect.gen(function* () {
           return yield* new InvalidState({ message: `Not a session id: ${resumeSessionId}` });
         }
         const selected = model ?? (yield* store.getSettings).agents.defaultModel;
+        if (checkout.kind === "machineFolder" && resumeSessionId !== undefined) {
+          return yield* new InvalidState({
+            message: "A past session resumes on this machine, not in a folder on another.",
+          });
+        }
         // Check the folders first, so a typo reads "Folder not found" rather than a git or
-        // platform failure from deeper in.
-        const root = yield* resolveFolder(projectRoot);
+        // platform failure from deeper in. A folder on another machine is its host's to check
+        // (`prepare`), never this disk's: its thread belongs to that machine's project.
+        const root =
+          checkout.kind === "machineFolder"
+            ? yield* machineProject(checkout.hostId)
+            : yield* resolveFolder(projectRoot);
         const request: CheckoutRequest =
           checkout.kind === "existingWorktree"
             ? { ...checkout, path: yield* resolveFolder(checkout.path) }
@@ -497,7 +531,7 @@ export const threadHandlers = Effect.gen(function* () {
         if (checkout !== undefined) {
           const elsewhere = forkHostRefusal(
             plan.source,
-            checkout.kind === "newWorktree" ? (checkout.hostId ?? LOCAL_HOST_ID) : LOCAL_HOST_ID,
+            checkoutRequestHost(checkout) ?? LOCAL_HOST_ID,
           );
           if (elsewhere !== undefined) return yield* elsewhere;
         }
@@ -515,6 +549,14 @@ export const threadHandlers = Effect.gen(function* () {
         const project = (yield* store.listProjects).find((p) => p.id === parent.projectId);
         if (project === undefined) {
           return yield* new NotFound({ entity: "project", id: parent.projectId });
+        }
+        // A one-off thread on a joined machine has no repository here to branch from, and its
+        // folder is that machine's: its chips are for the user to start by hand there.
+        if (machineOfProject(project) !== undefined) {
+          return yield* new InvalidState({
+            message:
+              "A task from a chat on another machine starts from New task: pick the machine and folder there.",
+          });
         }
         // Where the parent is working now, not where it was created: a thread that moved into
         // another worktree offers its chips from there, and `current` means beside it.

@@ -25,8 +25,23 @@ export const CheckoutRequest = Schema.Union([
     hostId: Schema.optionalKey(HostId),
   }),
   Schema.Struct({ kind: Schema.Literal("existingWorktree"), path: Schema.String }),
+  /**
+   * A folder on a joined machine, used as it is: a one-off thread's, picked by the user for this
+   * thread alone. The machine's host checks it there and refuses a credential folder or its own.
+   * Only `thread.create` takes it: nothing an agent starts (a worker, a task chip) runs outside the
+   * machine's repositories folder.
+   */
+  Schema.Struct({
+    kind: Schema.Literal("machineFolder"),
+    hostId: HostId,
+    path: Schema.String,
+  }),
 ]);
 export type CheckoutRequest = typeof CheckoutRequest.Type;
+
+/** The machine a checkout request is placed on: the one it names, else this one (`undefined`). */
+export const checkoutRequestHost = (request: CheckoutRequest): HostId | undefined =>
+  request.kind === "newWorktree" || request.kind === "machineFolder" ? request.hostId : undefined;
 
 export const SendResult = Schema.Struct({
   /** True when a turn was running and the input joined the queue. */

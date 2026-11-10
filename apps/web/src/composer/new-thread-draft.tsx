@@ -1,5 +1,7 @@
 import {
   DEFAULT_SETTINGS,
+  HostId,
+  isFolderProject,
   sendKeyOf,
   type CheckoutRequest,
   type DraftId,
@@ -10,7 +12,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { History, RotateCw } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-preflight";
@@ -31,8 +33,13 @@ import {
   machineBlocker,
   useJoinedMachines,
 } from "@/new-thread/machine-picker";
+import {
+  MachineFolderChip,
+  MachineFolderField,
+  machineFolderLine,
+} from "@/new-thread/machine-folder";
 import { ProjectPicker } from "@/new-thread/project-picker";
-import { useFolderStatus, useIsGitRepo } from "@/new-thread/use-folder";
+import { useFolderStatus, useIsGitRepo, useMachineFolderStatus } from "@/new-thread/use-folder";
 import { FolderPicker } from "@/new-thread/where-chips";
 import { ChatAuthorityLine } from "@/new-thread/authority-line";
 import { NewFormHeader, WHO_ENTRY, WhereStop, type Who } from "@/new-thread/who-does-it";
@@ -113,6 +120,7 @@ const CHECKOUTS: { value: CheckoutKind; label: string }[] = [
 
 const SETUP_STAGES: Record<CheckoutKind, string[]> = {
   current: ["Start agent"],
+  machineFolder: ["Check folder", "Start agent"],
   newWorktree: ["Fetch", "Create worktree", "Copy includes", "Seed permissions", "Start agent"],
   existingWorktree: ["Start agent"],
 };
@@ -136,10 +144,15 @@ function ConfiguredNewThreadDraft() {
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
   });
-  const recents = projects.toSorted(
-    (a, b) =>
-      Number(b.bookmarked) - Number(a.bookmarked) || (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0),
-  );
+  // This Mac's folders: a joined machine's one-off threads have a project of their own that is
+  // no folder here (`machineProjectRoot`), and its folders are its Folder chip's.
+  const recents = projects
+    .filter(isFolderProject)
+    .toSorted(
+      (a, b) =>
+        Number(b.bookmarked) - Number(a.bookmarked) ||
+        (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0),
+    );
 
   const [typedRoot, setTypedRoot] = useDraftProjectRoot();
   const defaultFolder = useServerSettings((s) => s.settings?.agents.defaultFolder);
@@ -173,18 +186,32 @@ function ConfiguredNewThreadDraft() {
 
   const [pickedCheckout, setCheckout] = useState<CheckoutKind>("newWorktree");
   const [worktree, setWorktree] = useState(initialWorktreeChoice);
-  // Another machine runs a thread only in a new worktree of its own clone, so picking one is that.
+  // A joined machine runs the thread in a folder there, its home unless another is picked, or in
+  // a new worktree of its own clone of a repository of this Mac picked from its Folder menu.
   const joined = useJoinedMachines();
-  const machine = notRepo ? undefined : joined?.find((m) => m.id === worktree.machine);
-  const checkout: CheckoutKind = notRepo
-    ? "current"
-    : machine !== undefined
-      ? "newWorktree"
-      : pickedCheckout;
-  const pickMachine = useCallback((next: string | undefined) => {
+  const pickedMachine = joined?.find((m) => m.id === worktree.machine);
+  /** The folder on the picked machine; `undefined` while a repository of this Mac is picked. */
+  const [machinePath, setMachinePath] = useState<string>();
+  const onMachine = pickedMachine !== undefined && machinePath !== undefined;
+  const machineStatus = useMachineFolderStatus(
+    onMachine ? HostId.make(pickedMachine.id) : undefined,
+    machinePath ?? "",
+  );
+  const checkedOnMachine = machineStatus.state === "valid" ? machineStatus.folder : undefined;
+  /** The machine a new worktree is made on, from a repository of this Mac. */
+  const worktreeMachine = onMachine ? undefined : pickedMachine;
+  const machine = onMachine ? pickedMachine : notRepo ? undefined : worktreeMachine;
+  const checkout: CheckoutKind = onMachine
+    ? "machineFolder"
+    : notRepo
+      ? "current"
+      : machine !== undefined
+        ? "newWorktree"
+        : pickedCheckout;
+  const pickMachine = (next: string | undefined) => {
     setWorktree((current) => ({ ...current, machine: next }));
-    if (next !== undefined) setCheckout("newWorktree");
-  }, []);
+    setMachinePath(next === undefined ? undefined : "~");
+  };
   const [existingPath, setExistingPath] = useState("");
   // Capture Settings → Agents once, after settings load; later edits don't replace this draft.
   const savedDefaultModel = useServerSettings((s) => s.settings?.agents.defaultModel);
@@ -201,7 +228,10 @@ function ConfiguredNewThreadDraft() {
   const [draftId] = useState(() => carried?.draftId ?? (crypto.randomUUID() as DraftId));
   const attachments = useAttachments({ draftId }, carried?.attachments);
   // A chosen existing worktree is where the agent will run; a new one starts from the project.
-  const mentionFolder = (checkout === "existingWorktree" ? existingPath.trim() : "") || projectRoot;
+  // A folder on another machine offers no mentions: its files are listed there, for its threads.
+  const mentionFolder = onMachine
+    ? ""
+    : (checkout === "existingWorktree" ? existingPath.trim() : "") || projectRoot;
   const mentions = useMentions({
     id: "mention-menu-new-thread",
     text: prompt,
@@ -250,6 +280,12 @@ function ConfiguredNewThreadDraft() {
         return { kind: "existingWorktree", path: existingPath.trim() };
       case "newWorktree":
         return worktreeCheckout({ ...worktree, machine: machine?.id });
+      case "machineFolder":
+        return {
+          kind: "machineFolder",
+          hostId: HostId.make(pickedMachine?.id ?? ""),
+          path: checkedOnMachine?.path ?? machinePath?.trim() ?? "",
+        };
     }
   };
 
@@ -288,7 +324,9 @@ function ConfiguredNewThreadDraft() {
   const unacknowledged = users.length > 0 && !refused && acknowledged !== requestKey;
 
   const valid =
-    projectRoot !== "" &&
+    (onMachine ? checkedOnMachine !== undefined : projectRoot !== "") &&
+    // A new worktree on a machine is made from a repository here.
+    (worktreeMachine === undefined || !notRepo) &&
     ready &&
     !preflight.blocked &&
     (!hasImages || !imagePreflight.blocked) &&
@@ -311,7 +349,8 @@ function ConfiguredNewThreadDraft() {
     setError(undefined);
     try {
       const thread = await api.createThread({
-        projectRoot,
+        // A folder on another machine: the server files it under that machine, never this disk.
+        projectRoot: onMachine ? (checkedOnMachine?.path ?? "") : projectRoot,
         checkout: checkoutRequest(),
         model: choiceModel(choice),
         mode,
@@ -347,13 +386,17 @@ function ConfiguredNewThreadDraft() {
   const pickWho = (who: Who) => {
     if (who === "me" || attachments.uploading) return;
     carryDraft({ text: prompt, draftId, attachments: attachments.ready });
-    prefillTaskTarget(folderTarget(project, workspaces));
+    prefillTaskTarget(onMachine ? undefined : folderTarget(project, workspaces));
     useTaskDraftStore.getState().rememberEntry(WHO_ENTRY[who]);
     void navigate({ to: "/new-task", search: who === "worker" ? { way: "direct" } : {} });
   };
 
   const browse = () =>
     focusIfConnected(formRef.current?.querySelector('[aria-label="Project path"]'));
+  const browseMachine = () =>
+    focusIfConnected(
+      formRef.current?.querySelector(`[aria-label="Folder on ${pickedMachine?.name ?? ""}"]`),
+    );
 
   useShortcut({
     id: "draft.create",
@@ -394,15 +437,8 @@ function ConfiguredNewThreadDraft() {
             disabled={attachments.uploading}
             where={
               <>
-                <WhereStop label="Folder">
-                  <FolderPicker
-                    folder={projectRoot}
-                    projects={recents}
-                    onPickFolder={setTypedRoot}
-                    onBrowse={browse}
-                  />
-                </WhereStop>
-                {!notRepo && (joined?.length ?? 0) > 0 && (
+                {/* The machine first, once one is joined: the Folder chip lists its folders. */}
+                {(joined?.length ?? 0) > 0 && (
                   <WhereStop label="Machine">
                     <MachinePicker
                       machines={joined}
@@ -411,9 +447,47 @@ function ConfiguredNewThreadDraft() {
                     />
                   </WhereStop>
                 )}
+                <WhereStop label="Folder">
+                  {pickedMachine === undefined ? (
+                    <FolderPicker
+                      folder={projectRoot}
+                      projects={recents}
+                      onPickFolder={setTypedRoot}
+                      onBrowse={browse}
+                    />
+                  ) : (
+                    <MachineFolderChip
+                      machine={pickedMachine}
+                      folder={machinePath}
+                      repo={projectRoot}
+                      repos={recents.filter((p) => p.repoRoot !== undefined)}
+                      onPickFolder={setMachinePath}
+                      onPickRepo={(root) => {
+                        setTypedRoot(root);
+                        setMachinePath(undefined);
+                        setCheckout("newWorktree");
+                      }}
+                      onBrowse={() => {
+                        if (machinePath === undefined) setMachinePath("~");
+                        setTimeout(browseMachine);
+                      }}
+                    />
+                  )}
+                </WhereStop>
               </>
             }
-            line={machine === undefined ? undefined : <MachineNote machine={machine} />}
+            line={
+              onMachine ? (
+                <MachineNote
+                  machine={pickedMachine}
+                  ready={machineFolderLine(pickedMachine, machineStatus)}
+                />
+              ) : worktreeMachine !== undefined && notRepo ? (
+                `A new worktree on ${worktreeMachine.name} is made from a git repository. Pick one, or a folder on ${worktreeMachine.name}.`
+              ) : machine === undefined ? undefined : (
+                <MachineNote machine={machine} />
+              )
+            }
             goal={
               <div className="flex flex-col gap-2">
                 <span className={labelCls}>What needs doing</span>
@@ -572,71 +646,74 @@ function ConfiguredNewThreadDraft() {
               onRetry={imagePreflight.recheck}
             />
           )}
-          {/* Where it runs: the one control for the folder itself or a worktree, and its branch. */}
-          <fieldset className="flex flex-col gap-2">
-            <legend className={labelCls}>Checkout</legend>
-            <div role="radiogroup" aria-label="Checkout" className="flex gap-1">
-              {CHECKOUTS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={checkout === option.value}
-                  disabled={
-                    (notRepo && option.value !== "current") ||
-                    (machine !== undefined && option.value !== "newWorktree")
-                  }
-                  title={
-                    machine !== undefined && option.value !== "newWorktree"
-                      ? `A thread on ${machine.name} runs in a new worktree there.`
-                      : undefined
-                  }
-                  onClick={() => setCheckout(option.value)}
-                  className="rounded-md border border-border px-2 py-1 text-reading aria-checked:border-ring aria-checked:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            {notRepo && (
-              <p data-testid="checkout-note" className="text-meta text-muted-foreground">
-                Not a git repository, so the thread runs in the folder itself. Run git init to use
-                worktrees.
-              </p>
-            )}
-            {checkout === "current" && !notRepo && projectRoot !== "" && (
-              <CurrentCheckoutFreshness repoPath={projectRoot} />
-            )}
-            {checkout === "newWorktree" && (
-              <WorktreeFields repoPath={repoPath} value={worktree} onChange={setWorktree} />
-            )}
-            {checkout === "existingWorktree" && (
-              <ExistingWorktrees
-                repoPath={repoPath}
-                value={existingPath}
-                onChange={setExistingPath}
-              />
-            )}
-            {users.length > 0 && (
-              <div ref={noticeRef}>
-                <CheckoutInUseNotice
-                  users={users}
-                  repo={!notRepo}
-                  refused={refused}
-                  {...(checkout === "newWorktree"
-                    ? {
-                        onUseAnotherBranch: () =>
-                          setWorktree((current) => ({ ...current, name: randomBranchName() })),
-                      }
-                    : { onUseNewWorktree: () => setCheckout("newWorktree") })}
-                  onCreateAnyway={() => {
-                    setAcknowledged(requestKey);
-                    void create(true);
-                  }}
-                />
+          {/* Where it runs: the one control for the folder itself or a worktree, and its branch. A
+              folder on another machine runs as it is, as its line under the chips says. */}
+          {!onMachine && (
+            <fieldset className="flex flex-col gap-2">
+              <legend className={labelCls}>Checkout</legend>
+              <div role="radiogroup" aria-label="Checkout" className="flex gap-1">
+                {CHECKOUTS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={checkout === option.value}
+                    disabled={
+                      (notRepo && option.value !== "current") ||
+                      (machine !== undefined && option.value !== "newWorktree")
+                    }
+                    title={
+                      machine !== undefined && option.value !== "newWorktree"
+                        ? `A thread on ${machine.name} runs in a new worktree there.`
+                        : undefined
+                    }
+                    onClick={() => setCheckout(option.value)}
+                    className="rounded-md border border-border px-2 py-1 text-reading aria-checked:border-ring aria-checked:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
-            )}
-          </fieldset>
+              {notRepo && (
+                <p data-testid="checkout-note" className="text-meta text-muted-foreground">
+                  Not a git repository, so the thread runs in the folder itself. Run git init to use
+                  worktrees.
+                </p>
+              )}
+              {checkout === "current" && !notRepo && projectRoot !== "" && (
+                <CurrentCheckoutFreshness repoPath={projectRoot} />
+              )}
+              {checkout === "newWorktree" && (
+                <WorktreeFields repoPath={repoPath} value={worktree} onChange={setWorktree} />
+              )}
+              {checkout === "existingWorktree" && (
+                <ExistingWorktrees
+                  repoPath={repoPath}
+                  value={existingPath}
+                  onChange={setExistingPath}
+                />
+              )}
+              {users.length > 0 && (
+                <div ref={noticeRef}>
+                  <CheckoutInUseNotice
+                    users={users}
+                    repo={!notRepo}
+                    refused={refused}
+                    {...(checkout === "newWorktree"
+                      ? {
+                          onUseAnotherBranch: () =>
+                            setWorktree((current) => ({ ...current, name: randomBranchName() })),
+                        }
+                      : { onUseNewWorktree: () => setCheckout("newWorktree") })}
+                    onCreateAnyway={() => {
+                      setAcknowledged(requestKey);
+                      void create(true);
+                    }}
+                  />
+                </div>
+              )}
+            </fieldset>
+          )}
           {stage !== "draft" && (
             <ol aria-label="Setup progress" className="flex flex-wrap items-center gap-2 text-meta">
               {SETUP_STAGES[checkout].map((step) => (
@@ -661,9 +738,18 @@ function ConfiguredNewThreadDraft() {
           aria-label="More options"
           className="flex flex-col gap-5 border-t border-border pt-6"
         >
-          <ProjectPicker value={pathValue} onChange={setTypedRoot} status={folderStatus} />
+          {onMachine ? (
+            <MachineFolderField
+              machine={pickedMachine}
+              value={machinePath}
+              onChange={setMachinePath}
+              status={machineStatus}
+            />
+          ) : (
+            <ProjectPicker value={pathValue} onChange={setTypedRoot} status={folderStatus} />
+          )}
 
-          {folder && (
+          {folder && !onMachine && (
             <div className="flex flex-col gap-2">
               {/* Resumed sessions run on the agent fields' choice, effort included. */}
               <div className="flex flex-wrap items-center gap-1">
