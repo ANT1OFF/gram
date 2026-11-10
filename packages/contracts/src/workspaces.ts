@@ -408,10 +408,29 @@ export const DEFAULT_ORCHESTRATOR_MODEL: ModelRef = {
   variant: "high",
 };
 
+/**
+ * What a new workspace's orchestrator opens on with nothing saved, by what is installed: Claude's
+ * Opus at high (`DEFAULT_ORCHESTRATOR_MODEL`) wherever Claude Code is, or nothing has listed yet;
+ * on a machine with Codex alone, the recommendation's Lead on Codex (Sol at high), so a Codex-only
+ * workspace never starts on a Claude orchestrator.
+ */
+export const defaultOrchestratorModel = (
+  available: AvailableModels = {},
+  table: RecommendationTable = RECOMMENDED,
+): ModelRef => {
+  if (setupOf(available) !== "codex") return DEFAULT_ORCHESTRATOR_MODEL;
+  return (
+    resolveTier(table, { tier: "lead", agent: "codex" }, available)?.ref ??
+    DEFAULT_ORCHESTRATOR_MODEL
+  );
+};
+
 /** What a new workspace's roster starts as: the app's saved one, else none. */
 export interface NewWorkspaceModels {
   /** `agents.workerModels`; absent or empty, workers run on the orchestrator's model. */
   readonly workerModels?: ReadonlyArray<WorkerModel> | undefined;
+  /** What this machine's harnesses list, for the orchestrator's default (`defaultOrchestratorModel`). */
+  readonly available?: AvailableModels | undefined;
 }
 
 /**
@@ -425,7 +444,7 @@ export const newWorkspaceCharter = (saved: NewWorkspaceModels): OrchestratorChar
   return {
     ...DEFAULT_CHARTER,
     workerMode: "auto",
-    orchestratorModel: DEFAULT_ORCHESTRATOR_MODEL,
+    orchestratorModel: defaultOrchestratorModel(saved.available),
     ...(roster.length === 0 ? {} : { workerModels: roster }),
   };
 };

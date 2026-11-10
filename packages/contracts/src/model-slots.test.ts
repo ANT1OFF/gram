@@ -19,6 +19,9 @@ import {
 } from "./settings-chat.ts";
 import {
   DEFAULT_CHARTER,
+  DEFAULT_ORCHESTRATOR_MODEL,
+  defaultOrchestratorModel,
+  newWorkspaceCharter,
   OrchestratorCharter,
   rosterModelHere,
   rosterName,
@@ -242,5 +245,36 @@ describe("slotHere", () => {
       model: "gpt-6.1-sol",
     });
     expect(slotHere(undefined, {})).toEqual({});
+  });
+});
+
+describe("a new workspace's orchestrator with nothing saved", () => {
+  const opus: AgentModel = {
+    id: "opus",
+    displayName: "Opus",
+    supportsEffort: true,
+    efforts: ["low", "medium", "high"],
+    resolvedId: "claude-opus-5-5",
+  };
+  const high: AgentModel = { ...sol, efforts: ["low", "medium", "high"] };
+
+  it("is Opus at high wherever Claude Code is, and before anything lists", () => {
+    expect(defaultOrchestratorModel({})).toEqual(DEFAULT_ORCHESTRATOR_MODEL);
+    expect(defaultOrchestratorModel({ claude: [opus] })).toEqual(DEFAULT_ORCHESTRATOR_MODEL);
+    expect(defaultOrchestratorModel({ claude: [opus], codex: [high] })).toEqual(
+      DEFAULT_ORCHESTRATOR_MODEL,
+    );
+  });
+
+  it("is Codex's Lead, Sol at high, on a machine with Codex alone", () => {
+    expect(defaultOrchestratorModel({ codex: [high] })).toEqual({
+      agent: "codex",
+      model: "gpt-6.1-sol",
+      variant: "high",
+      speed: "standard",
+    });
+    expect(newWorkspaceCharter({ available: { codex: [high] } }).orchestratorModel).toMatchObject({
+      agent: "codex",
+    });
   });
 });
