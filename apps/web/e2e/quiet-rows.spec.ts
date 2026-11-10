@@ -107,6 +107,27 @@ test("merged features are flat lines, and a stack of them is one row", async ({ 
   await expect(page.locator('[data-testid="feature-card"]:not([data-flat])').first()).toBeVisible();
 });
 
+test("a feature with nothing to report is one line, and one that waits keeps its card", async ({
+  page,
+}) => {
+  await openRealistic(page);
+  // The morning's three workers at work, each alone on its feature with no PR yet: a line each,
+  // its name, its worker and what the worker does, with no box and no stage line.
+  const calm = page.locator('[data-testid="feature-card"][data-calm="true"]');
+  await expect(calm).toHaveCount(3);
+  const first = calm.first();
+  await expect(first.getByTestId("worker-link")).toBeVisible();
+  await expect(first.getByTestId("feature-card-now")).not.toBeEmpty();
+  await expect(first.getByTestId("feature-card-stations")).toHaveCount(0);
+  expect(await first.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("0px");
+  // The one waiting on its PR's checks has something to say: its card, with its PR.
+  const waiting = page
+    .locator('[data-testid="feature-card"]:not([data-flat]):not([data-calm])')
+    .filter({ has: page.getByTestId("pr-chip") });
+  await expect(waiting.first()).toBeVisible();
+  expect(await waiting.first().evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("1px");
+});
+
 test("Jump to latest shows only with something below the view", async ({ page }) => {
   const made = await openRealistic(page);
   await threadRow(page, made.searchWorker).click();

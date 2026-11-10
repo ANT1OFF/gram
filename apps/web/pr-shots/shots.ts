@@ -4781,6 +4781,23 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("right-panel"),
   },
   {
+    name: "orchestrator-feature-cards",
+    title:
+      "The realistic orchestrator's chat at its live features: one line for each with a lone worker at work, a card for the one that waits on its PR",
+    open: async (page) => {
+      const made = await openRealisticMorning(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openOrchestrator(page, made.orchestratorThreadId);
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      const card = page.getByTestId("feature-card").first();
+      await card.waitFor();
+      await card.evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await page.mouse.move(700, 890);
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("transcript"),
+  },
+  {
     name: "workers-list",
     title: "⌘J: every worker of the workspace, in the right panel's Workers tab",
     open: async (page) => {

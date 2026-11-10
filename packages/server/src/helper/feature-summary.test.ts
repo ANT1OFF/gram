@@ -8,7 +8,7 @@ import type {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 
-import { makeFeatureSummaries, validFeatureSummary } from "./feature-summary.ts";
+import { makeFeatureSummaries, validFeatureSummary, worthSummary } from "./feature-summary.ts";
 import type { HelperJob, HelperResult } from "./scheduler.ts";
 
 const W = "w-1" as WorkspaceId;
@@ -38,7 +38,22 @@ const card = (patch: Partial<FeatureCard> = {}): FeatureCard => ({
   ...patch,
 });
 
-const harness = (cards: FeatureCard[], result: HelperResult<{ summary: string }>) => {
+const REPORTED = [
+  { threadId: A, state: "progress", summary: "Endpoint up; waits on the form.", at: 5 },
+] satisfies WorkerReport[];
+
+/** One worker at work that has not reported and has no PR: all its card says already. */
+const lone = (): FeatureCard =>
+  card({
+    station: "working",
+    workers: [{ ...card().workers[0]!, state: "working", station: "working", prs: [] }],
+  });
+
+const harness = (
+  cards: FeatureCard[],
+  result: HelperResult<{ summary: string }>,
+  reports: WorkerReport[] = REPORTED,
+) => {
   const jobs: HelperJob<unknown, unknown>[] = [];
   const written: FeatureCardSummary[] = [];
   const summaries = makeFeatureSummaries({
@@ -49,10 +64,7 @@ const harness = (cards: FeatureCard[], result: HelperResult<{ summary: string }>
       }),
     orchestratorOf: () => Effect.succeed(O),
     cards: () => Effect.succeed(cards),
-    latestReports: () =>
-      Effect.succeed([
-        { threadId: A, state: "progress", summary: "Endpoint up; waits on the form.", at: 5 },
-      ] satisfies WorkerReport[]),
+    latestReports: () => Effect.succeed(reports),
     putSummary: (_workspace, _feature, summary) =>
       Effect.sync(() => {
         written.push(summary);
@@ -125,6 +137,51 @@ describe("feature card summary", () => {
         expect(off.written).toEqual([]);
       }),
   );
+
+  it.effect(
+    "makes no call for a lone worker at work with no report and no PR: nothing to add to its card",
+    () =>
+      Effect.gen(function* () {
+        const quiet = harness(
+          [lone()],
+          { _tag: "Done", value: { summary: "It is in progress." }, cached: false },
+          [],
+        );
+        expect(yield* quiet.summaries(W, "mail-trigger")).toBeUndefined();
+        expect(quiet.jobs).toEqual([]);
+        expect(quiet.written).toEqual([]);
+        // Once it reports, there is something to say.
+        const reported = harness([lone()], {
+          _tag: "Done",
+          value: { summary: "Endpoint up; the form is next." },
+          cached: false,
+        });
+        expect(yield* reported.summaries(W, "mail-trigger")).toEqual({
+          text: "Endpoint up; the form is next.",
+          version: 3,
+        });
+      }),
+  );
+
+  it.effect("writes no sentence when the helper answers that the card says it all", () =>
+    Effect.gen(function* () {
+      const empty = harness([card()], { _tag: "Done", value: { summary: " " }, cached: false });
+      expect(yield* empty.summaries(W, "mail-trigger")).toBeUndefined();
+      expect(empty.written).toEqual([]);
+    }),
+  );
+
+  it("is worth a sentence once a worker reports, opens a PR, leaves work or shares the feature", () => {
+    expect(worthSummary(lone(), [])).toBe(false);
+    expect(worthSummary(lone(), REPORTED)).toBe(true);
+    expect(worthSummary(card(), [])).toBe(true);
+    const asking = card({
+      workers: [{ ...lone().workers[0]!, state: "question" }],
+    });
+    expect(worthSummary(asking, [])).toBe(true);
+    const two = card({ workers: [lone().workers[0]!, { ...lone().workers[0]!, threadId: O }] });
+    expect(worthSummary(two, [])).toBe(true);
+  });
 
   it("keeps one plain sentence only", () => {
     expect(validFeatureSummary("Endpoint in review, waiting on #88.")).toBe(

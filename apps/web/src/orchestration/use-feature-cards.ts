@@ -75,15 +75,16 @@ export function useFeatureCards(workspaceId: WorkspaceId | undefined): readonly 
 /**
  * The helper's sentence for `card`'s current version: the one the card carries, else asked for
  * once per version (served from the server's cache when only now lines moved). `undefined` with
- * helpers off; the card is complete without it.
+ * helpers off, or for a card with nothing to sum up; the card is complete without it.
  */
-export function useFeatureSummary(card: FeatureCard): string | undefined {
+export function useFeatureSummary(card: FeatureCard, wanted = true): string | undefined {
   const api = useApi();
   const carried = currentSummary(card);
   const { data } = useQuery({
     queryKey: ["featureSummary", card.workspaceId, card.feature, card.version] as const,
     queryFn: () => api.featureSummary(card.workspaceId, card.feature),
-    enabled: carried === undefined,
+    // Not asked for by a view that won't show it (a card drawn as its one calm line).
+    enabled: wanted && carried === undefined,
     staleTime: Infinity,
     retry: false,
   });

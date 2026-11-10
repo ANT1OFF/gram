@@ -51,6 +51,7 @@ export * from "./ids.ts";
 export * from "./agent-browse.ts";
 export * from "./link-trust.ts";
 export * from "./models.ts";
+export * from "./recommended.ts";
 export * from "./issues.ts";
 export * from "./orchestration.ts";
 export * from "./routines.ts";
