@@ -2153,6 +2153,25 @@ describe("prompts", () => {
     );
   });
 
+  it("guides Claude workers toward shell forms that avoid routine safety prompts", () => {
+    for (const autonomy of ["supervised", "publish", "full"] as const) {
+      for (const agent of [undefined, "claude"] as const) {
+        const prompt = workerPrompt({ feature: "f", orchestratorTitle: "o", autonomy, agent });
+        expect(prompt).toContain("Bash safety checks can still ask in Bypass");
+        expect(prompt).toContain("plain commands, one per Bash call where possible");
+        expect(prompt).toContain("file lists as explicit quoted paths");
+        expect(prompt).toContain(
+          "avoid zsh expansion flags (such as `${(f)...}`) and shell arrays",
+        );
+        expect(prompt).toContain("Don't chain `cd` with commands; use `git -C` or absolute paths");
+        expect(prompt).toContain("Never use wildcard `rm`");
+        expect(prompt).toContain("Keep required approvals intact");
+      }
+    }
+    expect(workerOn("codex")).not.toContain("Bash safety checks");
+    expect(roleOn("claude")).not.toContain("Bash safety checks");
+  });
+
   it("points a worker's write-ups to publish_doc rather than a file in the repo", () => {
     for (const agent of ["claude", "codex"] as const) {
       expect(workerOn(agent)).toContain("goes to `publish_doc`, not a file in the repo");

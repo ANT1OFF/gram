@@ -88,6 +88,10 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             checkout: { kind: "worktree", branch: "feat/fix-the-flaky-retry-test" },
           });
           const brief = yield* waitSent(worker.id, 1);
+          expect(brief.options.instructions).toContain(
+            "Bash safety checks can still ask in Bypass",
+          );
+          expect(session.options.instructions).not.toContain("Bash safety checks");
           // The user's own words, as its brief: the worker is the orchestrator's, not taken over.
           expect(brief.sent[0]).toEqual({ text: "Fix the flaky retry test\nIt fails on Windows." });
           yield* settle;
