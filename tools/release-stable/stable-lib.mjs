@@ -30,6 +30,7 @@ export function parseStableArgs(argv) {
       options.run = value();
       if (!/^\d+$/.test(options.run)) throw new Error(`--run takes a run id, not ${options.run}.`);
     } else if (arg === "--dispatch") options.dispatch = true;
+    else if (arg === "--without-linux") options.withoutLinux = true;
     else if (arg === "--help" || arg === "-h") options.help = true;
     else if (!arg.startsWith("-") && options.phase === undefined) options.phase = arg;
     else throw new Error(`Unknown argument: ${arg}`);
@@ -50,6 +51,8 @@ export function parseStableArgs(argv) {
     throw new Error("--run and --dispatch are for linux.");
   if (options.run !== undefined && options.dispatch)
     throw new Error("Use --run <id> or --dispatch, not both.");
+  if (options.withoutLinux && !["validate", "update-check", "publish"].includes(options.phase))
+    throw new Error("--without-linux is for validate, update-check and publish.");
   return options;
 }
 

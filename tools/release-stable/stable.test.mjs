@@ -166,6 +166,8 @@ const seams = (overrides = {}) => ({
     appChecks.push({ zip, sha256: sha256(readFileSync(zip)), version: state.version });
     return { stub: "macOS checks need a signed build" };
   },
+  // Sigstore's verdict needs a real attestation: a stand-in that verifies every file.
+  verifyAttestation: (files) => attestedAll(files),
   ...overrides,
 });
 
@@ -173,7 +175,12 @@ const seams = (overrides = {}) => ({
  * A synthetic GitHub holding `previous` (a published stable release, or none for a first release)
  * and this release's draft, and the work dir `release:rc --stable` would leave for it.
  */
-async function setUp({ previous = "0.3.1", repo = {}, linux = false, linuxPending = false } = {}) {
+async function setUp({
+  previous = "0.3.1",
+  repo = {},
+  linuxPending = false,
+  linux = !linuxPending,
+} = {}) {
   github = await spawnFakeGitHub({
     [REPO]: { private: false, tokens: [LOGIN], head: SHA, ...repo },
   });
@@ -285,6 +292,33 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
     expect(loaded.some((path) => path.includes("electron-updater"))).toBe(true);
     expect(loaded.filter((path) => /node_modules\/electron\//.test(path))).toEqual([]);
   });
+
+  it("refuses a draft that records no Linux files, unless told to publish it Mac-only", async () => {
+    await again({ linux: false });
+    for (const phase of ["validate", "update-check", "publish"])
+      await expect(runPhase(options(phase), seams())).rejects.toThrow(
+        /records no Linux files: .*Pass --without-linux/,
+      );
+    const macOnly = (phase, extra = []) => options(phase, ["--without-linux", ...extra]);
+    await runPhase(macOnly("validate"), seams());
+    await runPhase(macOnly("update-check"), seams());
+    await runPhase(macOnly("publish"), seams());
+    const state = await github.state();
+    expect(state.repos[REPO].releases.find((r) => r.tag_name === `v${VERSION}`).draft).toBe(false);
+    // The flag never waves through a draft that has the Linux files, nor one missing some.
+    await again();
+    await expect(runPhase(macOnly("validate"), seams())).rejects.toThrow(
+      /--without-linux is for a draft without Linux files/,
+    );
+    const full = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
+    writeFileSync(
+      join(work, "release.json"),
+      JSON.stringify({ ...full, assets: full.assets.filter((a) => a.name !== DEB) }),
+    );
+    await expect(runPhase(options("validate"), seams())).rejects.toThrow(
+      new RegExp(`assets lack ${DEB.replaceAll(".", "\\.")}`),
+    );
+  }, 120_000);
 
   it("validates, checks and publishes with your own login", async () => {
     await runPhase(options("validate"), seams());
@@ -574,6 +608,30 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
     await runPhase(options("validate"), seams({ verifyAttestation: attestedAll }));
   }, 120_000);
 
+  it("keeps an adopted replacement run across a failed upload, and resumes it", async () => {
+    await again({ linuxPending: true });
+    // Run 78, dispatched for this release by hand, passes; the .deb's upload answer is lost.
+    env.FAKE_GH_DROP_RESPONSE = `name=${DEB.replaceAll(".", "\\.")} `;
+    const replacement = () =>
+      seams({ linuxGh: linuxRun([passedRun(1)], { id: 78 }).run, linuxWait });
+    await expect(runPhase(options("linux", ["--run", "78"]), replacement())).rejects.toThrow(
+      new RegExp(`uploading ${DEB.replaceAll(".", "\\.")}`),
+    );
+    delete env.FAKE_GH_DROP_RESPONSE;
+    const state = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
+    expect(state.linuxPending).toMatchObject({
+      runId: 78,
+      nonce: "fedcba9876543210",
+      runUrl: `https://github.com/${REPO}/actions/runs/78`,
+    });
+    // A plain retry takes run 78 again; run 77, recorded before, is gone.
+    await runPhase(options("linux"), replacement());
+    const done = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
+    expect(done.linux.runId).toBe(78);
+    expect(done.linuxPending).toBeUndefined();
+    await runPhase(options("validate"), seams());
+  }, 120_000);
+
   it("dispatches a new Linux build only while main is still the release commit", async () => {
     await again({ linuxPending: true, repo: { head: "b".repeat(40) } });
     const gh = linuxRun([passedRun(1)]);
@@ -622,28 +680,30 @@ const failedRun = (attempt) => ({ attempt, status: "completed", conclusion: "fai
 const passedRun = (attempt) => ({ attempt, status: "completed", conclusion: "success" });
 
 /**
- * The release workflow's run LINUX_RUN for this release, as `gh run view` shows it look after
- * look (`views`, the last repeating), with its artifact and attestations; the `gh` the linux phase
- * uses for the workflow's runs.
+ * The release workflow's run `id` (LINUX_RUN unless given) for this release, as `gh run view`
+ * shows it look after look (`views`, the last repeating), with its artifact and attestations; the
+ * `gh` the linux phase uses for the workflow's runs. Any other run isn't there.
  */
-function linuxRun(views) {
+function linuxRun(views, { id = LINUX_RUN } = {}) {
   const calls = [];
   let look = 0;
   const run = (args) => {
     calls.push(args.join(" "));
     if (args[0] === "api" && args[1] === `repos/${REPO}/actions/workflows/release-linux.yml`)
       return ok({ id: 9, path: LINUX_WORKFLOW });
+    if (args[0] === "run" && args[2] !== String(id))
+      return { status: 1, stdout: "", stderr: "HTTP 404: Not Found" };
     if (args[0] === "run" && args[1] === "view") {
       const at = views[Math.min(look++, views.length - 1)];
       const passed = at.conclusion === "success";
       return ok({
-        databaseId: LINUX_RUN,
-        displayTitle: runTitle(VERSION, NONCE),
+        databaseId: id,
+        displayTitle: runTitle(VERSION, id === LINUX_RUN ? NONCE : "fedcba9876543210"),
         event: "workflow_dispatch",
         headBranch: "main",
         headSha: SHA,
         workflowDatabaseId: 9,
-        url: `https://github.com/${REPO}/actions/runs/${LINUX_RUN}`,
+        url: `https://github.com/${REPO}/actions/runs/${id}`,
         jobs: [
           { name: "build", conclusion: passed ? "success" : "failure" },
           { name: "sherpa-onnx", conclusion: "success" },
@@ -667,7 +727,7 @@ function linuxRun(views) {
       writeLinuxBuild(args[args.indexOf("--dir") + 1], {
         version: VERSION,
         sourceCommit: SHA,
-        runId: LINUX_RUN,
+        runId: id,
       });
       return { status: 0, stdout: "", stderr: "" };
     }

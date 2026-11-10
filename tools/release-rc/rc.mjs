@@ -449,7 +449,7 @@ const ciRun = (() => {
   );
   return found;
 })();
-/** What main's check run proved, once its lanes passed (before the assets are written). */
+/** What main's check run proved, once it concluded success (before the assets are written). */
 let ciEvidence;
 // ---------------------------------------------------------------------------------------------
 // Check: install, scaffold, docs, release metadata, static, then the tests once.
@@ -909,8 +909,8 @@ if (
   (await sha256File(join(app, "Contents/Resources/app.asar")))
 )
   fail("the extracted app.asar differs from the package.");
-// CI's tests on this commit, which ran while the Mac built and signed: they must all have passed
-// before BUILD-INFO.json says so and anything is uploaded.
+// Main's check run on this commit, which ran while the Mac built and signed: it must have concluded
+// success, every required job passed, before BUILD-INFO.json says so and anything is uploaded.
 if (ciRun) {
   const ciBegin = Date.now();
   try {

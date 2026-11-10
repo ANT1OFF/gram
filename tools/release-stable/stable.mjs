@@ -11,6 +11,9 @@
 //   bun run release:stable publish      --work <dir> [--dry-run] [--notes <file>]
 //                                       publish the draft as latest, with curated notes
 //
+// validate, update-check and publish refuse a draft without the Linux files; --without-linux,
+// passed to each, takes a Mac-only one deliberately (it can never get them once published).
+//
 // Publishing replaces the draft's build notes with notes for people using the app: the version's
 // What's New cards, or a notes file committed in the release's source, both read from the release
 // commit and passed through a fail-closed leak check. On a public repository it then reads the
@@ -496,12 +499,28 @@ const privateDraft = (ctx, state) => {
   return release;
 };
 
-/** Refuses a draft whose Linux files are still to come (`release:stable linux`). */
-const requireLinux = (state) => {
+/**
+ * Refuses a draft without its Linux files: still to come (`release:stable linux`), or never
+ * recorded at all. Releases are immutable once published, and joined Linux machines update their
+ * gram-host from that version's own release, so a Mac-only release can never get them. Only
+ * `--without-linux` takes one, deliberately; it refuses a draft that has the Linux files.
+ */
+const requireLinux = (state, { withoutLinux = false } = {}) => {
   if (state.linuxPending)
     stop(
       `the draft has no Linux files yet (${state.linuxPending.problem}); run release:stable linux first.`,
     );
+  if (!state.linux) {
+    if (!withoutLinux)
+      stop(
+        `${STATE_FILE} records no Linux files: a release published without them can never get them, and joined Linux machines couldn't update to it. Pass --without-linux to publish a Mac-only release deliberately.`,
+      );
+    return;
+  }
+  if (withoutLinux) stop("--without-linux is for a draft without Linux files; this one has them.");
+  const names = state.assets.map((asset) => asset.name);
+  const missing = linuxAssetNames(state.version).all.filter((name) => !names.includes(name));
+  if (missing.length) stop(`${STATE_FILE}'s assets lack ${missing.join(", ")}.`);
 };
 
 /**
@@ -550,6 +569,21 @@ export async function attachLinux(ctx) {
     ctx.say(`  linux build: run ${build.runId} (${build.nonce})`);
   } else build = { repo: REPO, version, sha, nonce: pending.nonce, dryRun: false };
 
+  // The run this try took, kept before anything else can fail, so a plain retry picks it up again
+  // (an adopted or newly dispatched one included), not the run recorded before.
+  const keep = (fields) =>
+    writeJson(join(ctx.work, STATE_FILE), {
+      ...state,
+      linuxPending: {
+        nonce: build.nonce,
+        runId: build.runId ?? null,
+        runUrl: build.runId === pending.runId ? pending.runUrl : null,
+        problem: pending.problem,
+        ...fields,
+      },
+    });
+  keep({});
+
   const assets = join(ctx.work, "assets");
   for (const name of names.all) rmSync(join(assets, name), { force: true });
   let built;
@@ -563,18 +597,18 @@ export async function attachLinux(ctx) {
       ...ctx.linuxWait,
     });
   } catch (error) {
-    // The run to pick up next time.
-    writeJson(join(ctx.work, STATE_FILE), {
-      ...state,
-      linuxPending: {
-        nonce: build.nonce,
-        runId: error.runId ?? build.runId ?? pending.runId ?? null,
-        runUrl: error.runUrl ?? pending.runUrl ?? null,
-        problem: error.message,
-      },
+    keep({
+      runId: error.runId ?? build.runId ?? null,
+      runUrl: error.runUrl ?? null,
+      problem: error.message,
     });
     stop(`the Linux build: ${error.message}`);
   }
+  keep({
+    runId: built.runId,
+    runUrl: built.runUrl,
+    problem: `run ${built.runId} passed; its files aren't all on the draft yet`,
+  });
   const { appImage, deb } = linuxPackageNames(version);
   await ctx.writeManifest({
     source: ctx.source,
@@ -681,7 +715,7 @@ export async function attachLinux(ctx) {
 /** validate: downloads every asset of the private draft into a new directory and verifies it. */
 export async function validate(ctx) {
   const state = loadState(ctx.work);
-  requireLinux(state);
+  requireLinux(state, ctx);
   const release = privateDraft(ctx, state);
   const dir = mkdtempSync(join(ctx.work, "validate-"));
   for (const asset of release.assets) {
@@ -763,7 +797,7 @@ export async function updateCheck(ctx) {
       ...(linuxTargets.length ? { linux } : {}),
     });
   }
-  requireLinux(state);
+  requireLinux(state, ctx);
   privateDraft(ctx, state);
   const both = (target) => ({
     asServed: expectChecks(ctx.updateCheck(base(target)), "notThis", state, release.assets, target),
@@ -843,7 +877,7 @@ const latestProblem = (ctx, state) => {
  */
 export async function publish(ctx) {
   const state = loadState(ctx.work);
-  requireLinux(state);
+  requireLinux(state, ctx);
   requirePassed(ctx.work, "validate", state);
   requirePassed(ctx.work, "update-check", state);
   const repo = releaseRepo(ctx);
@@ -1155,6 +1189,7 @@ export async function runPhase(options, seams = {}) {
     readNotes: seams.readNotes ?? readPublicNotes,
     run: options.run,
     dispatch: options.dispatch === true,
+    withoutLinux: options.withoutLinux === true,
     // A synthetic GitHub's origins, in tests only.
     api: seams.api ?? "https://api.github.com",
     uploads: seams.uploads ?? "https://uploads.github.com",

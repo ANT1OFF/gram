@@ -15,7 +15,7 @@ const ok = (value) => ({ status: 0, stdout: JSON.stringify(value), stderr: "" })
 const done = (name, conclusion = "success") => ({ name, status: "completed", conclusion });
 const running = (name) => ({ name, status: "in_progress", conclusion: "" });
 
-/** The lanes of a main push run as check.yml names them, all passed, plus the rest of the run. */
+/** The check lanes of a main push run as check.yml names them. */
 const LANES = [
   "check static",
   "check tests 1/2",
@@ -24,6 +24,7 @@ const LANES = [
   "macos tests 2/3",
   "macos tests 3/3",
 ];
+/** A main push run whose check lanes passed while an e2e shard still runs. */
 const view = (over = {}) => ({
   databaseId: 501,
   event: "push",
@@ -37,6 +38,17 @@ const view = (over = {}) => ({
   jobs: [done("classify"), ...LANES.map((name) => done(name)), running("e2e 4/8")],
   ...over,
 });
+/** The same run concluded success: every job passed, the docs-only lane skipped as on any push. */
+const ALL = [
+  done("classify"),
+  done("docs", "skipped"),
+  ...LANES.map((name) => done(name)),
+  done("e2e 4/8"),
+  done("macos package"),
+  done("qualification"),
+];
+const finished = (over = {}) =>
+  view({ status: "completed", conclusion: "success", jobs: ALL, ...over });
 
 describe("main's check run as the release check", () => {
   it("takes the newest push run on main at the commit", () => {
@@ -51,20 +63,24 @@ describe("main's check run as the release check", () => {
     expect(pickCheckRun([], SHA)).toBeUndefined();
   });
 
-  it("passes once every shard of the check lanes passed, with the rest of the run still going", () => {
-    const state = checkRunState(view(), { sha: SHA, workflowId: 3 });
+  it("passes only once the run concluded success, recording every job's result", () => {
+    const state = checkRunState(finished(), { sha: SHA, workflowId: 3 });
     expect(state.problems).toEqual([]);
     expect(state.pending).toEqual([]);
-    expect(state.jobs.map((job) => job.name)).toEqual(LANES);
+    expect(state.jobs).toEqual(ALL.map(({ name, conclusion }) => ({ name, conclusion })));
   });
 
-  it("waits for lanes still running, or not created yet", () => {
-    const some = view({
-      jobs: [done("check static"), running("check tests 1/2"), done("check tests 2/2")],
-    });
-    expect(checkRunState(some, { sha: SHA, workflowId: 3 })).toEqual({
+  it("waits while any job runs, though the check lanes passed, and for jobs not created yet", () => {
+    expect(checkRunState(view(), { sha: SHA, workflowId: 3 })).toEqual({
       problems: [],
-      pending: ["check tests 1/2", "macos tests"],
+      pending: ["e2e 4/8"],
+      jobs: [],
+    });
+    // Every job listed so far done, but the run not: more jobs are to come.
+    const early = view({ jobs: [done("classify"), done("check static")] });
+    expect(checkRunState(early, { sha: SHA, workflowId: 3 })).toEqual({
+      problems: [],
+      pending: ["the run", "check tests", "macos tests"],
       jobs: [],
     });
   });
@@ -86,6 +102,22 @@ describe("main's check run as the release check", () => {
     expect(checkRunState(failing, { sha: SHA, workflowId: 3 }).problems).toEqual([
       'its job "e2e 2/8" ended failure',
     ]);
+    // A required job that skipped, though the run says success.
+    const e2eSkipped = finished({
+      jobs: ALL.map((job) => (job.name === "e2e 4/8" ? done(job.name, "skipped") : job)),
+    });
+    expect(checkRunState(e2eSkipped, { sha: SHA, workflowId: 3 }).problems).toEqual([
+      'its job "e2e 4/8" is skipped',
+    ]);
+    // Only the check lanes, all passed, in a run that didn't conclude success.
+    const neutral = view({
+      status: "completed",
+      conclusion: "neutral",
+      jobs: LANES.map((name) => done(name)),
+    });
+    expect(checkRunState(neutral, { sha: SHA, workflowId: 3 }).problems).toEqual([
+      "it ended neutral",
+    ]);
     const skipped = view({
       jobs: view().jobs.map((job) =>
         job.name === "macos tests 2/3" ? done(job.name, "skipped") : job,
@@ -94,19 +126,11 @@ describe("main's check run as the release check", () => {
     expect(checkRunState(skipped, { sha: SHA, workflowId: 3 }).problems).toEqual([
       'its job "macos tests 2/3" is skipped',
     ]);
-    const missing = view({
-      status: "completed",
-      conclusion: "success",
-      jobs: view().jobs.filter((job) => job.name !== "check tests 2/2"),
-    });
+    const missing = finished({ jobs: ALL.filter((job) => job.name !== "check tests 2/2") });
     expect(checkRunState(missing, { sha: SHA, workflowId: 3 }).problems).toEqual([
       'its "check tests" shards are check tests 1/2',
     ]);
-    const none = view({
-      status: "completed",
-      conclusion: "success",
-      jobs: view().jobs.filter((job) => !job.name.startsWith("macos tests")),
-    });
+    const none = finished({ jobs: ALL.filter((job) => !job.name.startsWith("macos tests")) });
     expect(checkRunState(none, { sha: SHA, workflowId: 3 }).problems).toEqual([
       'it has no "macos tests" job',
     ]);
@@ -161,10 +185,9 @@ describe("finding and waiting for main's check run", () => {
     );
   });
 
-  it("waits for the lanes, then returns the evidence BUILD-INFO.json records", async () => {
-    const gh = fakeGh({
-      views: [view({ jobs: [running("check static")] }), view({ attempt: 2 })],
-    });
+  it("waits for the whole run, then returns the evidence BUILD-INFO.json records", async () => {
+    // The check lanes passing early isn't enough: it waits for the e2e shard and the conclusion.
+    const gh = fakeGh({ views: [view(), view(), finished({ attempt: 2 })] });
     const said = [];
     const evidence = await waitForCheckRun(
       { workflowId: 3, runId: 501 },
@@ -178,17 +201,17 @@ describe("finding and waiting for main's check run", () => {
       event: "push",
       branch: "main",
       sourceCommit: SHA,
-      jobs: LANES.map((name) => ({ name, conclusion: "success" })),
+      conclusion: "success",
+      jobs: ALL.map(({ name, conclusion }) => ({ name, conclusion })),
     });
-    expect(said).toEqual([
-      "  waiting for main's check run: check static, check tests, macos tests",
-    ]);
+    expect(gh.calls.filter((call) => call.startsWith("run view"))).toHaveLength(3);
+    expect(said).toEqual(["  waiting for main's check run: e2e 4/8"]);
     expect(describeCheckRun(evidence)).toBe(
-      `main CI run 501 (attempt 2) passed check static, 2 check tests and 3 macos tests shards at ${SHA.slice(0, 12)}`,
+      `main CI run 501 (attempt 2) concluded success at ${SHA.slice(0, 12)}: 10 jobs passed, check static, 2 check tests and 3 macos tests shards among them`,
     );
   });
 
-  it("stops when a job fails while waiting, or the lanes run out of time", async () => {
+  it("stops when a job fails while waiting, or the run runs out of time", async () => {
     const failing = fakeGh({
       views: [
         view({ jobs: [running("check static")] }),

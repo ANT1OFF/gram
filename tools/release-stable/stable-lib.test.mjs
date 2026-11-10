@@ -34,6 +34,10 @@ describe("arguments", () => {
       /not both/,
     );
     expect(() => parseStableArgs(["validate", "--work", "w", "--run", "7"])).toThrow(/for linux/);
+    expect(parseStableArgs(["publish", "--work", "w", "--without-linux"]).withoutLinux).toBe(true);
+    expect(() => parseStableArgs(["linux", "--work", "w", "--without-linux"])).toThrow(
+      /for validate, update-check and publish/,
+    );
     expect(() => parseStableArgs(["release", "--work", "w"])).toThrow(/Name a phase/);
     expect(() => parseStableArgs(["public", "--work", "w"])).toThrow(/Name a phase/);
     expect(() => parseStableArgs(["validate"])).toThrow(/--work/);
