@@ -4,8 +4,8 @@
 
 ## Target
 
-The build (cut 5 of the plan "Plan: swap a thread's provider") must match `v1.html`. Status:
-waiting for the user's review. Boards and states:
+The build (cut 5 of the plan "Plan: swap a thread's provider") must match `v1.html`, approved
+2026-11-11. Boards and states:
 
 - **1 Model group** (`offered`, `running`, `signed-out`): the choices chip's popover, Model
   section open.
@@ -46,7 +46,10 @@ waiting for the user's review. Boards and states:
 
 ## Decisions
 
-- None yet: v1 is waiting for review. See [decisions.md](decisions.md).
+- v1 approved as drawn (WQ58, 2026-11-11). Each group's heading is the agent's mark with its
+  words on hover, and the other agent's models end in "…". The sheet's lines lead with a glyph
+  whose words are on hover, with the limit line first. A worker's PR binding and the
+  orchestrator's notice share one line.
 
 ## Parts
 
