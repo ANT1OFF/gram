@@ -19,6 +19,7 @@ import {
   type WorkspaceState,
   type WorkspaceId,
   type AppToolError,
+  rosterName,
 } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -65,13 +66,7 @@ import {
   type LimitHold,
   type StoredHeldBrief,
 } from "../outbox.ts";
-import {
-  admittedForRole,
-  budgetVerdict,
-  featureSlug,
-  refusal,
-  workerModelLabel,
-} from "../rules.ts";
+import { admittedForRole, budgetVerdict, featureSlug, refusal } from "../rules.ts";
 import { workerModel, toolError, type OrchestrationKit, underKeysOf } from "./kit.ts";
 import {
   type SpawnWorkerInput,
@@ -632,7 +627,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         }
         return [
           {
-            model: workerModelLabel(entry),
+            model: rosterName(entry),
             ...(entry.useFor === undefined || entry.useFor.trim() === ""
               ? {}
               : { useFor: entry.useFor.trim() }),
@@ -643,7 +638,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       if (alternatives.length === 0) return undefined;
       return {
         workspaceId: state.workspace.id,
-        model: workerModelLabel(chosen),
+        model: picked.value.name,
         reached: limitReached(limitsOf(chosen.agent)),
         alternatives,
       };
@@ -937,7 +932,8 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
           ? undefined
           : yield* rosterHere(state.charter.workerModels, state.charter),
       );
-      const model = workerModelLabel(picked.model);
+      // By the entry's name, so the release finds the same entry, a tier's included.
+      const model = picked.name;
       const now = yield* Clock.currentTimeMillis;
       const nextInput = { ...held.input, model };
       const limit = yield* heldLimit(caller, state, nextInput);

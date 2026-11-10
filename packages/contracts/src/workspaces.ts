@@ -4,7 +4,7 @@
 
 import * as Schema from "effect/Schema";
 import { DraftId } from "./attachments.ts";
-import { ModelRef, PermissionMode, UserInput } from "./domain.ts";
+import { type AgentKind, ModelRef, PermissionMode, UserInput } from "./domain.ts";
 import { SupportedTaskModelSelection } from "./task-preflight.ts";
 import { HostId, ProjectId, ThreadId, WorkspaceId } from "./ids.ts";
 import { MergeReviewPolicy, RepoMergeReviewPolicies } from "./merge-policy.ts";
@@ -79,16 +79,33 @@ export const modelSlotOf = ({
   ...slot
 }: WorkerModel): ModelSlot => slot;
 
-/** A roster entry as it runs on one machine: concrete, with the tier it follows, if it does. */
-export type RosterModel = PinnedWorkerModel & { readonly tier?: Tier };
+/**
+ * A roster entry as it runs on one machine: concrete, with the tier it follows, if it does, and
+ * the harness it keeps to (`tierAgent`) when its slot names one.
+ */
+export type RosterModel = PinnedWorkerModel & {
+  readonly tier?: Tier;
+  readonly tierAgent?: AgentKind;
+};
 
 /** The model a roster entry runs on, without the user's note about it or its tier. */
 export const modelRefOf = ({
   useFor: _useFor,
   default: _default,
   tier: _tier,
+  tierAgent: _tierAgent,
   ...model
 }: RosterModel): ModelRef => model;
+
+/**
+ * How the orchestrator names a roster entry: `agent:model` for a pinned one, and `tier:<tier>`
+ * (`tier:<tier>:<agent>` when it keeps to one harness) for one that follows a tier, since two
+ * tiers can resolve to the same model at different efforts.
+ */
+export const rosterName = (entry: RosterModel): string =>
+  entry.tier === undefined
+    ? `${entry.agent}:${entry.model}`
+    : `tier:${entry.tier}${entry.tierAgent === undefined ? "" : `:${entry.tierAgent}`}`;
 
 /**
  * A roster entry as it runs on a machine that lists `available`. A pinned one is as stored; one
@@ -106,6 +123,7 @@ export const rosterModelHere = (
     useFor: useFor ?? table.tiers[tier].note,
     ...(isDefault === undefined ? {} : { default: isDefault }),
     tier,
+    ...(own === undefined ? {} : { tierAgent: own }),
   };
   const resolved = resolveTier(
     table,

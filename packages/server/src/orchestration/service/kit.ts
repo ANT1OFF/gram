@@ -35,6 +35,7 @@ import {
   connectorEntryProblem,
   InvalidState,
   rosterModelHere,
+  rosterName,
 } from "@gram/contracts";
 import { Proc, samePathKey, samePath, basename, tryRepoRoots } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -106,7 +107,6 @@ import {
   type RosterUnavailable,
   userHoldLapsesAt,
   matchWorkerModel,
-  workerModelLabel,
 } from "../rules.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import { RemoteHosts } from "../../host/remote-hosts.ts";
@@ -256,13 +256,13 @@ export const workerModel = (
     const unavailable = here?.unavailable ?? new Map<number, string>();
     const match = matchWorkerModel(allowed, named, caller.model, unavailable);
     if (!match.ok) {
-      const labels = allowed.map(workerModelLabel).join(", ");
+      const labels = allowed.map(rosterName).join(", ");
       return yield* toolError(
         tool,
         refusal(
           "not_admitted",
           match.why === "ambiguous"
-            ? `${named} names more than one of the charter's worker models. Say which, as agent:model. Allowed: ${labels}.`
+            ? `${named} names more than one of the charter's worker models. Say which by its name: agent:model, or tier:<tier> for one that follows a tier. Allowed: ${labels}.`
             : match.why === "unavailable"
               ? `The selected worker model cannot run here, so no worker is spawned. ${match.reasons}. Tell the user.`
               : `The charter doesn't allow workers on ${named ?? "that model"}. Allowed: ${labels}.`,
@@ -275,7 +275,7 @@ export const workerModel = (
         refusal("not_admitted", `${match.model.agent} threads can't be workers yet.`),
       );
     }
-    return { model: match.model, instead: match.instead };
+    return { model: match.model, name: match.name, follows: match.follows, instead: match.instead };
   });
 
 /** What the consumer fiber works through, one at a time, in the order things happened. */

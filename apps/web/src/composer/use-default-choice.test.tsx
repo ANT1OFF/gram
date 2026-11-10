@@ -162,3 +162,93 @@ describe("new-thread local default discovery", () => {
     );
   });
 });
+
+describe("new-thread draft on a default that follows a tier", () => {
+  const efforts = ["low", "medium", "high", "xhigh"] as const;
+  // Synthetic lists shaped like each CLI's: Claude's default is Opus, Codex lists Sol.
+  const listed = (agent: AgentKind) => ({
+    models:
+      agent === "claude"
+        ? [
+            {
+              id: "default",
+              displayName: "Default",
+              supportsEffort: true,
+              efforts,
+              isDefault: true,
+              resolvedId: "claude-opus-5-5",
+            },
+            {
+              id: "opus",
+              displayName: "Opus",
+              supportsEffort: true,
+              efforts,
+              resolvedId: "claude-opus-5-5",
+            },
+          ]
+        : [{ id: "gpt-6.1-sol", displayName: "GPT-6.1-Sol", supportsEffort: true, efforts }],
+  });
+
+  it("waits on a cold cache for what it resolves to, not the CLI default", async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const listModels = vi.fn(async (agent: AgentKind) => {
+      await gate;
+      return listed(agent);
+    });
+    const { result } = renderHook(() => useDraftAgentChoice({ tier: "scoped" }), {
+      wrapper: wrapper(listModels),
+    });
+    expect(result.current.discovering).toBe(true);
+    await act(async () => finish());
+    await waitFor(() => expect(result.current.discovering).toBe(false));
+    expect(result.current.choice).toEqual({
+      agent: "codex",
+      model: "gpt-6.1-sol",
+      variant: "medium",
+      speed: "standard",
+    });
+  });
+
+  it("keeps the slot's own effort, and falls back to discovery only when nothing fills the tier", async () => {
+    const listModels = vi.fn(async (agent: AgentKind) => listed(agent));
+    const lead = renderHook(() => useDraftAgentChoice({ tier: "lead", variant: "low" }), {
+      wrapper: wrapper(listModels),
+    });
+    await waitFor(() =>
+      expect(lead.result.current.choice).toEqual({
+        agent: "claude",
+        model: "opus",
+        variant: "low",
+        speed: "standard",
+      }),
+    );
+    lead.unmount();
+    const top = renderHook(() => useDraftAgentChoice({ tier: "top" }), {
+      wrapper: wrapper(listModels),
+    });
+    await waitFor(() => expect(top.result.current.discovering).toBe(false));
+    expect(top.result.current.choice).toMatchObject({ agent: "claude", model: "default" });
+  });
+
+  it("keeps a choice the user made while it resolved", async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const listModels = vi.fn(async (agent: AgentKind) => {
+      await gate;
+      return listed(agent);
+    });
+    const { result } = renderHook(() => useDraftAgentChoice({ tier: "scoped" }), {
+      wrapper: wrapper(listModels),
+    });
+    const mine = { agent: "claude", model: "opus", speed: "standard" } as const;
+    act(() => result.current.setChoice(mine));
+    await act(async () => finish());
+    await waitFor(() => expect(listModels).toHaveBeenCalled());
+    expect(result.current.choice).toEqual(mine);
+  });
+});

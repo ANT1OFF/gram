@@ -67,6 +67,7 @@ import {
   type WorkerError,
   type WorkerReportState,
   type RosterModel,
+  rosterName,
   type WorkerState,
   type WorkspaceId,
   workerFallback,
@@ -350,6 +351,10 @@ export type WorkerModelMatch =
   | {
       readonly ok: true;
       readonly model: ModelRef;
+      /** How the entry it runs on is named (`rosterName`), for a brief held to spawn later. */
+      readonly name: string;
+      /** The entry follows a tier, so an effort asked of it stops at high. */
+      readonly follows: boolean;
       /** Set when the entry named, or the default, is unavailable and another stood in for it. */
       readonly instead?: { readonly of: string; readonly why: string } | undefined;
     }
@@ -371,8 +376,10 @@ export const fallbackOf = (
 
 /**
  * `spawn_worker.model` against the models a charter allows. A bare id is tried first, since a
- * model id may itself hold a colon, and must then name one entry only; otherwise `agent:model`
- * names the entry of that kind. With nothing named it is the entry the user marked the default,
+ * model id may itself hold a colon, and must then name one entry only; otherwise an entry's name
+ * (`rosterName`: `agent:model`, or `tier:<tier>` for one that follows a tier), else `agent:model`
+ * of what an entry runs on here. Several entries that run on the very same model and effort are
+ * one choice; ones that differ are ambiguous. With nothing named it is the entry the user marked the default,
  * else the one matching the orchestrator's own model, else the first. An entry that is unavailable
  * here (`unavailable`) is stood in for by that same choice among the available ones, so a roster
  * naming a model that isn't set up doesn't stop spawning. The entry comes back whole, so its
@@ -390,14 +397,35 @@ export const matchWorkerModel = (
   } else {
     const wanted = named.trim();
     const bare = allowed.filter((each) => each.model === wanted);
+    const byName = allowed.filter((each) => rosterName(each) === wanted.toLowerCase());
     const found =
-      bare.length > 0 ? bare : allowed.filter((each) => workerModelLabel(each) === wanted);
-    if (found.length > 1) return { ok: false, why: "ambiguous" };
-    picked = found[0];
+      bare.length > 0
+        ? bare
+        : byName.length > 0
+          ? byName
+          : allowed.filter((each) => workerModelLabel(each) === wanted);
+    const first = found[0];
+    if (
+      first !== undefined &&
+      found.some(
+        (each) =>
+          JSON.stringify(modelRefOf(each)) !== JSON.stringify(modelRefOf(first)) ||
+          (each.tier === undefined) !== (first.tier === undefined),
+      )
+    ) {
+      return { ok: false, why: "ambiguous" };
+    }
+    picked = first;
   }
   if (picked === undefined) return { ok: false, why: "unknown" };
   const why = unavailable.get(allowed.indexOf(picked));
-  if (why === undefined) return { ok: true, model: modelRefOf(picked) };
+  if (why === undefined)
+    return {
+      ok: true,
+      model: modelRefOf(picked),
+      name: rosterName(picked),
+      follows: picked.tier !== undefined,
+    };
   const usable = allowed.filter((_, index) => !unavailable.has(index));
   const instead = fallbackOf(usable, own);
   if (instead === undefined) {
@@ -405,11 +433,17 @@ export const matchWorkerModel = (
       ok: false,
       why: "unavailable",
       reasons: allowed
-        .map((each, index) => `${workerModelLabel(each)}: ${unavailable.get(index)}`)
+        .map((each, index) => `${rosterName(each)}: ${unavailable.get(index)}`)
         .join("; "),
     };
   }
-  return { ok: true, model: modelRefOf(instead), instead: { of: workerModelLabel(picked), why } };
+  return {
+    ok: true,
+    model: modelRefOf(instead),
+    name: rosterName(instead),
+    follows: instead.tier !== undefined,
+    instead: { of: rosterName(picked), why },
+  };
 };
 
 /** A gateway profile as the roster checks read it. */
@@ -485,7 +519,10 @@ export const workerModelUnavailable = (
 
 /** One worker model as `list_workers` shows it: how to name it, and what the user said it is for. */
 export interface RosterEntry {
+  /** How to name it to `spawn_worker` (`rosterName`). */
   readonly model: string;
+  /** For one that follows a tier, what it runs on here: `codex:gpt-6.1-sol · medium`. */
+  readonly runsOn?: string | undefined;
   readonly useFor?: string | undefined;
   readonly default?: true | undefined;
   /** Why it can't be spawned on here; a spawn on it gets the default instead. */
@@ -505,7 +542,15 @@ export const rosterOf = (
     const note = each.useFor?.replace(/\s+/g, " ").trim() ?? "";
     const why = unavailable.get(index);
     return {
-      model: workerModelLabel(each),
+      model: rosterName(each),
+      ...(each.tier === undefined
+        ? {}
+        : {
+            runsOn: [
+              workerModelLabel(each),
+              ...(each.variant === undefined ? [] : [each.variant]),
+            ].join(" · "),
+          }),
       ...(note === "" ? {} : { useFor: note }),
       ...(each === fallback ? { default: true as const } : {}),
       ...(why === undefined ? {} : { unavailable: why }),
@@ -513,9 +558,12 @@ export const rosterOf = (
   });
 };
 
-/** A roster entry as a line of prose: `codex:gpt-6-sol (default): reviews, audits`. */
+/**
+ * A roster entry as a line of prose: `codex:gpt-6-sol (default): reviews, audits`, or for one that
+ * follows a tier `tier:scoped → codex:gpt-6.1-sol · medium (default): …`.
+ */
 export const rosterLine = (entry: RosterEntry): string =>
-  `${entry.model}${entry.default === true ? " (default)" : ""}${
+  `${entry.model}${entry.runsOn === undefined ? "" : ` → ${entry.runsOn}`}${entry.default === true ? " (default)" : ""}${
     entry.useFor === undefined ? "" : `: ${entry.useFor}`
   }${entry.unavailable === undefined ? "" : ` [unavailable: ${entry.unavailable}]`}`;
 

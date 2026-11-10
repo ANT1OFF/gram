@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   AgentUnavailable,
+  DEFAULT_CHARTER,
   RECOMMENDED,
   type AgentKind,
   type AgentModel,
@@ -17,7 +18,7 @@ import { resolveSlot } from "../runtime/model-slots.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { orchestrationHandlers } from "./handler.ts";
 import { Orchestration } from "./service.ts";
-import { makeWorld, openProject, serverLayer } from "./test-harness.ts";
+import { makeWorld, openOrchestrator, openProject, serverLayer, spawn } from "./test-harness.ts";
 
 const efforts = ["low", "medium", "high", "xhigh", "max"] as const;
 const row = (id: string, resolvedId?: string): AgentModel => ({
@@ -51,7 +52,12 @@ const adapters = (lists: Partial<Record<AgentKind, AgentModel[]>>) =>
         AgentHosts,
         AgentHosts.fromHosts([
           { ...claude, listModels: listedBy(lists, "claude") },
-          { ...codex, listModels: listedBy(lists, "codex") },
+          // A prepared native home, so a Codex worker can ask under a gated autonomy.
+          {
+            ...codex,
+            listModels: listedBy(lists, "codex"),
+            nativeGateReady: Effect.succeed(true),
+          },
         ]),
       ).pipe(Context.add(FakeAgentControl, fake));
     }),
@@ -172,6 +178,86 @@ describe.skipIf(!hasGit)("model slots that follow a tier", () => {
             variant: "low",
             speed: "standard",
           });
+        }).pipe(Effect.provide(context));
+      }),
+    ),
+  );
+});
+
+describe.skipIf(!hasGit)("spawning on a roster entry that follows a tier", () => {
+  it.effect("keeps an effort asked of it at high, while a pinned entry takes max", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const context = yield* Layer.build(serverLayer(world, {}, adapters({ claude: CLAUDE })));
+        yield* Effect.gen(function* () {
+          const { session, workspaceId } = yield* openOrchestrator(world);
+          yield* (yield* Orchestration).setCharter(workspaceId, {
+            ...DEFAULT_CHARTER,
+            autonomy: "publish",
+            workerModels: [
+              { tier: "lead", default: true },
+              { agent: "claude", model: "sonnet" },
+            ],
+          });
+          const following = yield* spawn(session, { feature: "capped", effort: "max" });
+          expect(following.thread.model).toEqual({
+            agent: "claude",
+            model: "opus",
+            variant: "high",
+            speed: "standard",
+          });
+          expect(following.result.warning).toContain("stops at high");
+          const pinned = yield* spawn(session, {
+            feature: "pinned",
+            model: "claude:sonnet",
+            effort: "max",
+          });
+          expect(pinned.thread.model).toMatchObject({ model: "sonnet", variant: "max" });
+        }).pipe(Effect.provide(context));
+      }),
+    ),
+  );
+
+  it.effect("names two tiers that resolve to the same model apart", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const context = yield* Layer.build(
+          serverLayer(world, {}, adapters({ claude: CLAUDE, codex: CODEX })),
+        );
+        yield* Effect.gen(function* () {
+          const { session, workspaceId } = yield* openOrchestrator(world);
+          yield* (yield* Orchestration).setCharter(workspaceId, {
+            ...DEFAULT_CHARTER,
+            autonomy: "publish",
+            workerModels: [
+              { tier: "scoped", agent: "codex", default: true },
+              { tier: "lead", agent: "codex" },
+            ],
+          });
+          const listed = (yield* session.callTool("list_workers", {})) as {
+            readonly workerModels: ReadonlyArray<{
+              readonly model: string;
+              readonly runsOn?: string;
+            }>;
+          };
+          expect(listed.workerModels).toMatchObject([
+            { model: "tier:scoped:codex", runsOn: "codex:gpt-6.1-sol · medium", default: true },
+            { model: "tier:lead:codex", runsOn: "codex:gpt-6.1-sol · high" },
+          ]);
+          const lead = yield* spawn(session, { feature: "lead", model: "tier:lead:codex" });
+          expect(lead.thread.model).toMatchObject({ model: "gpt-6.1-sol", variant: "high" });
+          const refused = yield* session
+            .callTool("spawn_worker", {
+              project: "shop",
+              feature: "either",
+              title: "Either",
+              brief: "Synthetic work",
+              model: "codex:gpt-6.1-sol",
+            })
+            .pipe(Effect.flip);
+          expect(refused.message).toContain("tier:<tier>");
         }).pipe(Effect.provide(context));
       }),
     ),

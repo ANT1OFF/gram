@@ -13,6 +13,10 @@ export const FollowEffort = Schema.Literals(["none", "low", "medium", "high"]);
 export type FollowEffort = typeof FollowEffort.Type;
 const EFFORT_ORDER: ReadonlyArray<FollowEffort> = FollowEffort.literals;
 
+/** An effort past the recommendation's ceiling: `xhigh` or `max`. */
+export const aboveHigh = (effort: ReasoningVariant): boolean =>
+  !EFFORT_ORDER.includes(effort as FollowEffort);
+
 /**
  * A slot that follows the recommendation: resolved through the table each time it's used, on the
  * machine it runs on. `agent` keeps it on one harness, `variant` at one effort, still following.

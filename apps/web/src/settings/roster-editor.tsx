@@ -214,7 +214,7 @@ const withVariant = (
  * following its tier. Picking a model, an effort or a speed for a following row pins it.
  */
 const pinView = (view: RosterModel, stored: WorkerModel): PinnedWorkerModel => {
-  const { tier: _tier, useFor: _useFor, ...model } = view;
+  const { tier: _tier, tierAgent: _tierAgent, useFor: _useFor, ...model } = view;
   return stored.useFor === undefined ? model : { ...model, useFor: stored.useFor };
 };
 

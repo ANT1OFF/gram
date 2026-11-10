@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  rosterModelHere,
   combinePrFacts,
   prFactsOf,
   DEFAULT_CHARTER,
@@ -2707,6 +2708,14 @@ const gateway = (id: string, keyRef: string, ids: ReadonlyArray<string>, isDefau
   models: ids.map((each) => ({ id: each })),
 });
 
+/** A match on a pinned entry: its model, named by `agent:model`. */
+const pinnedMatch = (model: ModelRef) => ({
+  ok: true,
+  model,
+  name: workerModelLabel(model),
+  follows: false,
+});
+
 describe("worker models", () => {
   const opus: ModelRef = { agent: "claude", model: "opus" };
   const sonnet: ModelRef = { agent: "claude", model: "sonnet", variant: "high" };
@@ -2734,27 +2743,20 @@ describe("worker models", () => {
     ["agent:model", [opus, twin], "codex:opus", twin],
     ["agent:model for the other kind", [opus, twin], "claude:opus", opus],
   ] as const)("matches %s", (_, allowed, named, expected) => {
-    expect(matchWorkerModel(allowed, named, opus)).toEqual({ ok: true, model: expected });
+    expect(matchWorkerModel(allowed, named, opus)).toEqual(pinnedMatch(expected));
   });
 
   it("keeps the entry whole, so its profile and effort come along", () => {
-    expect(matchWorkerModel([sonnet, gpt], "codex:gpt-5.5", opus)).toEqual({
-      ok: true,
-      model: gpt,
-    });
-    expect(matchWorkerModel([sonnet], "sonnet", opus)).toEqual({ ok: true, model: sonnet });
+    expect(matchWorkerModel([sonnet, gpt], "codex:gpt-5.5", opus)).toEqual(pinnedMatch(gpt));
+    expect(matchWorkerModel([sonnet], "sonnet", opus)).toEqual(pinnedMatch(sonnet));
   });
 
   it("gives an unnamed worker the default, and never hands on the note", () => {
     const reviews = { ...gpt, useFor: "reviews", default: true };
-    expect(matchWorkerModel([sonnet, opus, reviews], undefined, opus)).toEqual({
-      ok: true,
-      model: gpt,
-    });
-    expect(matchWorkerModel([{ ...opus, useFor: "building" }], "opus", opus)).toEqual({
-      ok: true,
-      model: opus,
-    });
+    expect(matchWorkerModel([sonnet, opus, reviews], undefined, opus)).toEqual(pinnedMatch(gpt));
+    expect(matchWorkerModel([{ ...opus, useFor: "building" }], "opus", opus)).toEqual(
+      pinnedMatch(opus),
+    );
   });
 
   it("shows the roster with each note on one line and only the first default", () => {
@@ -2780,11 +2782,10 @@ describe("worker models", () => {
     const roster = [{ ...opus, default: true }, sol];
     const noKey = new Map([[1, "its gateway profile has no key"]]);
     expect(matchWorkerModel(roster, "codex:gpt-6-sol", opus, noKey)).toEqual({
-      ok: true,
-      model: opus,
+      ...pinnedMatch(opus),
       instead: { of: "codex:gpt-6-sol", why: "its gateway profile has no key" },
     });
-    expect(matchWorkerModel(roster, undefined, opus, noKey)).toEqual({ ok: true, model: opus });
+    expect(matchWorkerModel(roster, undefined, opus, noKey)).toEqual(pinnedMatch(opus));
     // A default that isn't set up passes to the next choice among the ones that are.
     const flipped = [opus, { ...sol, default: true }];
     expect(matchWorkerModel(flipped, undefined, opus, new Map([[1, "x"]]))).toMatchObject({
@@ -3576,5 +3577,50 @@ describe("userAwayMinutes", () => {
     expect(userAwayMinutes(0, 29 * 60_000 + 59_999)).toBeUndefined();
     expect(userAwayMinutes(0, 30 * 60_000)).toBe(30);
     expect(userAwayMinutes(60_000, 96 * 60_000 + 30_000)).toBe(95);
+  });
+});
+
+describe("a roster whose entries follow tiers", () => {
+  // Codex only: Scoped and Lead both run on Sol, at medium and at high.
+  const sol = {
+    id: "gpt-6.1-sol",
+    displayName: "GPT-6.1-Sol",
+    supportsEffort: true,
+    efforts: ["low", "medium", "high"] as const,
+  };
+  const roster = [{ tier: "scoped" as const, default: true }, { tier: "lead" as const }].map(
+    (entry) => rosterModelHere(entry, { codex: [sol] }).entry,
+  );
+  const own = { agent: "codex" as const, model: "gpt-6.1-sol" };
+
+  it("lists each by a name that tells them apart, with what it runs on", () => {
+    expect(rosterOf(roster).map(rosterLine)).toEqual([
+      `tier:scoped → codex:gpt-6.1-sol · medium (default): ${roster[0]!.useFor}`,
+      `tier:lead → codex:gpt-6.1-sol · high: ${roster[1]!.useFor}`,
+    ]);
+  });
+
+  it("spawns on the one named, and refuses a model name both run on", () => {
+    expect(matchWorkerModel(roster, "tier:lead", own)).toMatchObject({
+      ok: true,
+      model: { model: "gpt-6.1-sol", variant: "high" },
+      name: "tier:lead",
+      follows: true,
+    });
+    expect(matchWorkerModel(roster, "codex:gpt-6.1-sol", own)).toEqual({
+      ok: false,
+      why: "ambiguous",
+    });
+    expect(matchWorkerModel(roster, "gpt-6.1-sol", own)).toEqual({ ok: false, why: "ambiguous" });
+    expect(matchWorkerModel(roster, undefined, own)).toMatchObject({ name: "tier:scoped" });
+  });
+
+  it("takes a pinned entry by its own name where a tier runs on the same model", () => {
+    const pinned = { agent: "codex" as const, model: "gpt-6.1-sol", variant: "max" as const };
+    expect(matchWorkerModel([roster[0]!, pinned], "codex:gpt-6.1-sol", own)).toMatchObject({
+      ok: true,
+      model: pinned,
+      follows: false,
+    });
   });
 });
