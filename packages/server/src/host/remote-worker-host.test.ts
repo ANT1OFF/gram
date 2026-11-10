@@ -6,6 +6,7 @@ import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it } from "@effect/vitest";
 import type { AgentHost } from "@gram/agents";
 import {
+  type GitState,
   HOST_PROTOCOL_VERSION,
   HostId,
   HostUnavailable,
@@ -29,7 +30,7 @@ import { ThreadRuntimes, type ThreadRuntimesShape } from "../runtime/thread-runt
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import { filesOn } from "./files.ts";
-import { gitOn } from "./git.ts";
+import { gitOn, type HostGit } from "./git.ts";
 import {
   connectHost,
   HOST_CAPABILITIES,
@@ -80,6 +81,8 @@ const machine = (
   onTerminals?: (terminals: HostTerminalsService) => void,
   /** The machine's worktree code as its host runs it: a test's host can answer otherwise. */
   worktreesThere: (honest: HostWorktrees) => HostWorktrees = (honest) => honest,
+  /** The machine's git state as its host reads it: a test's host can claim more. */
+  gitThere: (honest: HostGit) => HostGit = (honest) => honest,
 ) =>
   Effect.gen(function* () {
     const { host, control } = yield* streamPair;
@@ -99,7 +102,7 @@ const machine = (
           attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
           repos: reposOn(proc, repos, env),
           worktrees: worktreesThere(cloneWorktrees(proc, yield* Worktrees, env)),
-          git: gitOn(proc),
+          git: gitThere(gitOn(proc)),
           terminals: yield* terminalsOnHost.pipe(
             Effect.tap((t) => Effect.sync(() => onTerminals?.(t))),
           ),
@@ -522,6 +525,68 @@ const closeOnMachine = (get: (id: HostId) => Effect.Effect<WorkerHost, HostUnava
     );
     return { closed, refused: Option.getOrUndefined(result) };
   });
+
+describe("a joined machine's git state", () => {
+  const POISON = {
+    origin: "elsewhere/other",
+    pr: {
+      number: 99,
+      state: "OPEN",
+      url: "https://github.com/elsewhere/other/pull/99",
+      title: "not this worktree's",
+      isDraft: false,
+      checks: "passing",
+      headMatches: true,
+      aheadOfPr: false,
+    },
+    prElsewhere: {
+      number: 98,
+      title: "another worktree's",
+      url: "https://github.com/elsewhere/other/pull/98",
+      repo: "elsewhere/other",
+      branch: "feat/other",
+      worktreePath: "/x",
+    },
+    missingPrs: [{ repo: "acme/widgets", number: 12 }],
+  } as const;
+  const claimed = (state: GitState) => ({ ...state, ...POISON }) as GitState;
+
+  it.live("keeps only its local facts: what a host claims of origin or PRs is dropped", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const repo = makeRepo(dir);
+      // A host that says its checkout's origin is another repository, with that one's PRs.
+      const { connection } = yield* machine(
+        join(dir, "repos"),
+        {},
+        undefined,
+        undefined,
+        undefined,
+        (honest) => ({
+          ...honest,
+          local: (cwd) => Effect.map(honest.local(cwd), claimed),
+          watch: (paths, options) =>
+            Stream.map(honest.watch(paths, options), (change) => ({
+              ...change,
+              state: claimed(change.state),
+            })),
+        }),
+      );
+      const host = yield* machineWorkerHost(MACHINE, connection, yield* deps());
+      const forbidden = ["origin", "pr", "extraPrs", "prElsewhere", "missingPrs", "missing"];
+      const local = yield* host.git.local(repo);
+      expect(local.branch).toBe("main");
+      for (const key of forbidden) expect(local).not.toHaveProperty(key);
+      const snapshot = yield* host.git.snapshot(repo, { remote: true });
+      for (const key of forbidden) expect(snapshot).not.toHaveProperty(key);
+      const watched = yield* host.git
+        .watch([repo], { debounceMs: 50, cooldownMs: 100 })
+        .pipe(Stream.take(1), Stream.runCollect, Effect.timeout("15 seconds"));
+      for (const key of forbidden) expect(watched[0]!.state).not.toHaveProperty(key);
+    }).pipe(Effect.scoped, Effect.provide(Live)),
+  );
+});
 
 describe("a joined machine's terminals at rest", () => {
   it.live("are read on that machine, so a command running there keeps the thread open", () =>

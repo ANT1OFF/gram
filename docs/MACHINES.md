@@ -351,7 +351,10 @@ or `gram-host service install`.
 - The Changes panel's diff, push, creating a PR, applying a review suggestion, fast-forwarding to
   upstream and undoing a turn run git on this machine, so a worker on another machine refuses them
   and says so; ask its agent, or use its terminal. PR reads and actions that name the repository
-  (checks, reviews, merge, labels) work, with the PR bound to the thread.
+  (checks, reviews, merge, labels) work, with the PR bound to the thread. Until one is bound,
+  `pr_status`, `merge_when_ready` and `pr_review_monitor` find the open PR of the worker's branch
+  on GitHub, in the repository its worktree cloned (a workspace project's origin here, matched as
+  for ownership below), so a PR just opened there is found at once.
 - Under full auto, a worker there merges its own pull request without a card, as one here does,
   and Gram's local check of it runs without one. Ownership goes by what this Gram recorded when it
   made the worktree there: the machine, the identity of the origin it cloned (which must be a

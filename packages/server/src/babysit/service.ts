@@ -7,6 +7,7 @@ import {
   DEFAULT_BABYSIT_ROUNDS,
   effectiveCheckout,
   initialBabysitState,
+  isLocalHost,
   InvalidState,
   MONITOR_MARK_REVIEWS_MAX,
   ORCHESTRATOR_HAS_NO_PR,
@@ -43,6 +44,7 @@ import { upsertsChanging } from "../events/upsert-changes.ts";
 import { asBackground } from "../github/budget.ts";
 import { bindMainPr, isBadgeOf, markOf, unmarked, withMonitorMark } from "../git/extra-prs.ts";
 import { GitRefresh, GitServerConfig } from "../git/platform.ts";
+import { MachineBranchPr } from "../git/machine-branch-pr.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { PrReviews } from "../git/review.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -149,6 +151,7 @@ export const BabysitLive = Layer.effect(
     const pr = yield* Pr;
     const config = yield* GitServerConfig;
     const refreshes = yield* GitRefresh;
+    const machineBranchPr = yield* MachineBranchPr;
 
     const seen = new Map<ThreadId, MonitorSnapshot>();
     /** Why each thread's pending notice is due; cleared when it's delivered. */
@@ -207,6 +210,27 @@ export const BabysitLive = Layer.effect(
               ? published
               : undefined,
         };
+      });
+
+    /**
+     * For a thread on another machine with no PR bound or published, its branch's open PR as
+     * GitHub has it (`MachineBranchPr`): asked only to bind one, as it costs a lookup each time.
+     */
+    const onMachine = (threadId: ThreadId) =>
+      Effect.gen(function* () {
+        const thread = yield* store.getThread(threadId);
+        const checkout = effectiveCheckout(thread);
+        if (thread.role === "orchestrator" || isLocalHost(checkout) || thread.boundPr !== undefined)
+          return undefined;
+        const badge = yield* machineBranchPr.pr(thread);
+        const repo = badge === undefined ? undefined : repoFromPrUrl(badge.url);
+        if (badge === undefined || repo === undefined) return undefined;
+        return {
+          thread,
+          bound: { repo, number: badge.number, monitor: false },
+          cwd: checkout.path,
+          badge,
+        } satisfies PrTarget;
       });
 
     /** `found`'s badge read with its reviews, or its unread one when GitHub won't say just now. */
@@ -906,7 +930,8 @@ export const BabysitLive = Layer.effect(
     const setReviewMonitor: BabysitShape["setReviewMonitor"] = (threadId, enabled) =>
       Effect.gen(function* () {
         if (enabled) yield* refuseOrchestrator(threadId);
-        const found = yield* target(threadId);
+        const found =
+          (yield* target(threadId)) ?? (enabled ? yield* onMachine(threadId) : undefined);
         if (found === undefined) {
           if (!enabled) return undefined;
           return yield* new InvalidState({

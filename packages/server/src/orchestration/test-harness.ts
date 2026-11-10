@@ -86,6 +86,8 @@ export interface World {
   readonly ghCalls: Array<ReadonlyArray<string>>;
   /** The folder each of `ghCalls` ran in. */
   readonly ghDirs: Array<string>;
+  /** What `gh pr list --head` finds open, by head branch, in whichever repo it is asked about. */
+  readonly openPrs: Map<string, number>;
   /** What `gh pr view` says of a PR by number, in whichever repo it is asked about; unknown fails. */
   readonly prHeads: Map<
     number,
@@ -222,6 +224,7 @@ export const makeWorld = Effect.gen(function* () {
     ghCalls: [],
     ghDirs: [],
     prHeads: new Map(),
+    openPrs: new Map(),
     stall: undefined,
     prBadges: new Map(),
     freshPrReads: [],
@@ -333,6 +336,12 @@ const fakeGh = (world: World) => {
     }
     world.ghCalls.push([bin, ...args]);
     world.ghDirs.push(cwd);
+    if (args[0] === "pr" && args[1] === "list") {
+      const branch = args.find((arg) => arg.startsWith("--head="))?.slice("--head=".length);
+      const number = branch === undefined ? undefined : world.openPrs.get(branch);
+      const listed = number === undefined ? [] : [{ number, isCrossRepository: false }];
+      return { status: 0, stdout: JSON.stringify(listed), stderr: "", truncated: false };
+    }
     if (args[0] === "pr" && args[1] === "view" && !args.includes("--jq")) {
       const head = world.prHeads.get(Number(args[2]));
       const repo = args[args.indexOf("--repo") + 1];

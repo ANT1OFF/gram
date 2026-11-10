@@ -12,7 +12,15 @@ import type {
   ServerEvent,
   ThreadId,
 } from "@gram/contracts";
-import { applySuggestion, containsCommit, Pr, ProcLive, type PrDetailResponse } from "@gram/git";
+import { HostId } from "@gram/contracts";
+import {
+  applySuggestion,
+  containsCommit,
+  Pr,
+  Proc,
+  ProcLive,
+  type PrDetailResponse,
+} from "@gram/git";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -22,6 +30,7 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { EventHub } from "../events/event-hub.ts";
+import { cloneIdentityOf } from "../host/repos.ts";
 import { gatedHubLayer, makePublishGate, type PublishGate } from "../events/gated-hub.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { GitStatePublisher, type GitStateObserver } from "../git/publisher.ts";
@@ -53,6 +62,8 @@ const world: {
   /** `sha>head` → whether head contains sha; absent means unknown locally. */
   ancestry: Map<string, boolean>;
   calls: Array<string>;
+  /** What the publisher's `lookupPr` finds of a PR by number. */
+  lookedUp: PrStatus | undefined;
 } = {
   observer: undefined,
   state: undefined,
@@ -65,6 +76,7 @@ const world: {
   checksAsked: [],
   ancestry: new Map(),
   calls: [],
+  lookedUp: undefined,
 };
 
 /** Clears the fakes; the observer stays, since each test's layer registers it before the test runs. */
@@ -79,6 +91,7 @@ const reset = () => {
   world.checksAsked = [];
   world.ancestry = new Map();
   world.calls = [];
+  world.lookedUp = undefined;
 };
 
 const FakePublisher = Layer.succeed(GitStatePublisher, {
@@ -98,7 +111,8 @@ const FakePublisher = Layer.succeed(GitStatePublisher, {
     }),
   watchPrs: () => Effect.void,
   watchedBadge: () => Effect.succeed(undefined),
-  lookupPr: () => Effect.succeed(Option.none()),
+  lookupPr: () =>
+    Effect.sync(() => (world.lookedUp === undefined ? Option.none() : Option.some(world.lookedUp))),
 });
 
 const MockPr = Layer.succeed(Pr, {
@@ -1563,5 +1577,95 @@ describe.skipIf(!hasGit)("containsCommit", () => {
       expect(yield* containsCommit(repo, second, first)).toBe(false);
       expect(yield* containsCommit(repo, "f".repeat(40), second)).toBeUndefined();
     }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+});
+
+describe("pr_review_monitor on a joined machine", () => {
+  const ORIGIN = "https://github.com/acme/web.git";
+  /** Git and gh as they answer here: every project's origin is acme/web, #12 is the branch's. */
+  const asked: Array<ReadonlyArray<string>> = [];
+  const FakeProc = Layer.succeed(Proc, {
+    run: (bin, args) =>
+      Effect.sync(() => {
+        asked.push([bin, ...args]);
+        const stdout =
+          bin === "git"
+            ? `${ORIGIN}\n`
+            : args[0] === "pr" && args[1] === "list" && args.includes("--head=feat/remote")
+              ? JSON.stringify([{ number: 12, isCrossRepository: false }])
+              : "[]";
+        return { status: 0, stdout, stderr: "", truncated: false };
+      }),
+  });
+  const OnMachineLayer = BabysitLive.pipe(
+    Layer.provideMerge(FakePublisher),
+    Layer.provideMerge(makeRuntimeTestLayer()),
+    Layer.provideMerge(
+      gitPlatformTest({
+        pr: MockPr,
+        prReviews: FakeReviews,
+        proc: FakeProc,
+        config: { monitorSettleDelay: Duration.seconds(30) },
+      }),
+    ),
+  );
+
+  it.effect("binds the PR just opened from its worktree there, which its host's state lacks", () =>
+    Effect.gen(function* () {
+      reset();
+      asked.length = 0;
+      const runtimes = yield* ThreadRuntimes;
+      const thread = yield* runtimes.create({
+        projectRoot: "/projects/web",
+        checkout: { kind: "main", path: "/projects/web" },
+      });
+      yield* runtimes.updateThread(thread.id, (t) => ({
+        ...t,
+        checkout: {
+          kind: "worktree" as const,
+          path: "/home/invented/gram-host/worktrees/web/feat-remote",
+          branch: "feat/remote",
+          hostId: HostId.make("m-0123456789abcdef01234567"),
+          cloneIdentity: cloneIdentityOf(ORIGIN)!,
+        },
+      }));
+      // Its host's state: local only, so no origin and no PR.
+      world.state = { repo: true, branch: "feat/remote", changedFiles: 0 } as GitState;
+      world.lookedUp = badge();
+      const babysit = yield* Babysit;
+      // Before this change: "No pull request found for this thread's branch".
+      expect(yield* babysit.setReviewMonitor(thread.id, true)).toMatchObject({
+        repo: "acme/web",
+        number: 12,
+        reviewMonitor: true,
+      });
+      expect(asked).toContainEqual(
+        expect.arrayContaining(["gh", "pr", "list", "--head=feat/remote"]),
+      );
+    }).pipe(Effect.scoped, Effect.provide(OnMachineLayer)),
+  );
+
+  it.effect("still refuses when no PR is open for its branch there", () =>
+    Effect.gen(function* () {
+      reset();
+      const runtimes = yield* ThreadRuntimes;
+      const thread = yield* runtimes.create({
+        projectRoot: "/projects/web",
+        checkout: { kind: "main", path: "/projects/web" },
+      });
+      yield* runtimes.updateThread(thread.id, (t) => ({
+        ...t,
+        checkout: {
+          kind: "worktree" as const,
+          path: "/home/invented/gram-host/worktrees/web/feat-other",
+          branch: "feat/other",
+          hostId: HostId.make("m-0123456789abcdef01234567"),
+          cloneIdentity: cloneIdentityOf(ORIGIN)!,
+        },
+      }));
+      world.state = { repo: true, branch: "feat/other", changedFiles: 0 } as GitState;
+      const refused = yield* (yield* Babysit).setReviewMonitor(thread.id, true).pipe(Effect.flip);
+      expect(refused.message).toContain("No pull request found");
+    }).pipe(Effect.scoped, Effect.provide(OnMachineLayer)),
   );
 });
