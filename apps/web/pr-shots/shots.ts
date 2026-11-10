@@ -3656,6 +3656,49 @@ export const SHOTS: readonly Shot[] = [
     },
     element: (page) => page.getByTestId("transcript"),
   },
+  {
+    name: "transcript-code-hover",
+    title:
+      "The same reply with the pointer on its code block: one frame, its copy and download at the corner",
+    open: async (page) => {
+      await openThread(page);
+      await page.getByTestId("approval-allow").click();
+      const code = page.locator('[data-streamdown="code-block-body"]').filter({
+        hasText: "tickAsync",
+      });
+      await code.locator("span[style]").first().waitFor();
+      await expect(page.getByTestId("pane-status")).toHaveText("Stopped");
+      await code.scrollIntoViewIfNeeded();
+      await code.hover();
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByTestId("transcript"),
+  },
+  {
+    name: "transcript-table",
+    title: "A table in a reply: its own frame alone, no band over it",
+    open: async (page) => {
+      await page.goto("/t/t-deps");
+      await threadRow(page, "t-deps").waitFor();
+      await page.locator('[data-streamdown="table-wrapper"]').first().waitFor();
+      await page.mouse.move(10, 890);
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByTestId("transcript"),
+  },
+  {
+    name: "transcript-table-hover",
+    title: "The same table with the pointer on it: copy, download and full screen at its corner",
+    open: async (page) => {
+      await page.goto("/t/t-deps");
+      await threadRow(page, "t-deps").waitFor();
+      const table = page.locator('[data-streamdown="table-wrapper"]').first();
+      await table.waitFor();
+      await table.locator("td").last().hover();
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByTestId("transcript"),
+  },
   ...(
     [
       ["claude", "t-edits", "Claude's Edit, MultiEdit and Write calls in a transcript"],

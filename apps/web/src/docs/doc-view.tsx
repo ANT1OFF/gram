@@ -8,7 +8,6 @@ import { errorMessage, isNotFound } from "@/api/errors";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { QueryError } from "@/components/not-available";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { PanelMessage } from "@/panels/panel-message";
@@ -188,16 +187,12 @@ export function DocView({
       {draft === undefined ? (
         // Styled by the transcript's own rules (`data-transcript`): the reading size and measure
         // set in Settings → Appearance → Reading, and its scale of headings, code and tables.
-        // Without its toolbar a table's frame is a box around a box: only the table's own edge
-        // stays, and its cells pad by a list's step so a narrow panel wraps them less.
+        // A table keeps only its own edge, as everywhere (globals.css), and here its cells pad
+        // by a list's step so a narrow panel wraps them less.
         <div
           data-transcript=""
           data-testid="doc-body"
-          className={cn(
-            "min-w-0",
-            "[&_[data-streamdown=table-wrapper]]:border-0 [&_[data-streamdown=table-wrapper]]:bg-transparent [&_[data-streamdown=table-wrapper]]:p-0",
-            "[&_[data-streamdown=table-cell]]:px-list [&_[data-streamdown=table-header-cell]]:px-list",
-          )}
+          className="min-w-0 [&_[data-streamdown=table-cell]]:px-list [&_[data-streamdown=table-header-cell]]:px-list"
         >
           <div
             data-slot="message-content"
