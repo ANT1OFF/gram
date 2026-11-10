@@ -8,6 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { cloneIdentityOf } from "../host/repos.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { isBadgeOf } from "./extra-prs.ts";
 import { GitStatePublisher } from "./publisher.ts";
 
 /** Whether `a` names `owner/repo` `b`; GitHub's names don't go by case. */
@@ -119,10 +120,22 @@ export const MachineBranchPr = Effect.gen(function* () {
     Effect.map(here(cloneProjectOf(thread)), (project) => project?.repo);
 
   /**
-   * The badge of its branch's open PR in its clone's project's repository: as published when the
-   * badge is of that repository (looked up here, never the host's word), else from GitHub.
+   * The badge of a PR bound to the thread here: as the publisher has it, looked up on GitHub by
+   * the binding (a joined machine's own PR fields never reach it, `localTierOf`). Only a badge of
+   * that very PR, whatever repository it is in and whether or not the worktree's clone was
+   * recorded; never the branch's PR in its place.
    */
-  const pr = (thread: Thread): Effect.Effect<PrStatus | undefined> =>
+  const boundBadge = (thread: Thread, bound: { readonly repo: string; readonly number: number }) =>
+    Effect.map(publisher.stateForThread(thread), (state) =>
+      state?.pr !== undefined && isBadgeOf(state.pr, bound) ? state.pr : undefined,
+    );
+
+  /**
+   * Finds the open PR of an unbound thread's branch, in its clone's project's repository: as
+   * published when the badge is of that repository (looked up here, never the host's word), else
+   * from GitHub. Nothing without a recorded clone a project here matches.
+   */
+  const discover = (thread: Thread): Effect.Effect<PrStatus | undefined> =>
     Effect.gen(function* () {
       const project = yield* here(cloneProjectOf(thread));
       if (project === undefined) return undefined;
@@ -141,6 +154,14 @@ export const MachineBranchPr = Effect.gen(function* () {
         ? found
         : undefined;
     });
+
+  /**
+   * The PR the thread's tools act on: its bound PR's badge when one is bound (`boundBadge`), else
+   * the branch's PR found from the recorded clone (`discover`). The two never stand in for each
+   * other.
+   */
+  const pr = (thread: Thread): Effect.Effect<PrStatus | undefined> =>
+    thread.boundPr === undefined ? discover(thread) : boundBadge(thread, thread.boundPr);
 
   return { origin, pr };
 });

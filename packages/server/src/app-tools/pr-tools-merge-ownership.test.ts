@@ -959,6 +959,78 @@ describe("merge_when_ready", () => {
       );
     }
 
+    // The #347 re-check: a PR bound here keeps its own badge, which the clone-based discovery
+    // must neither drop (an older worktree has no recorded clone) nor replace with the branch's.
+    const boundCases = {
+      "a worktree older than the clone record": {
+        identity: undefined,
+        bound: { repo: "acme/app", number: 12 },
+        url: "https://github.com/acme/app/pull/12",
+      },
+      "a PR bound in another repository": {
+        identity: cloneIdentityOf(ORIGIN),
+        bound: { repo: "elsewhere/other", number: 99 },
+        url: "https://github.com/elsewhere/other/pull/99",
+      },
+    } as const;
+    for (const [name, setup] of Object.entries(boundCases)) {
+      it.effect.skipIf(!hasGit)(`keeps the bound PR's own status for ${name}`, () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          world.joinedMachine = {
+            id: MACHINE,
+            online: true,
+            worktrees: new Map([[WORKTREE, { clone: CLONE, origin: ORIGIN, branch: OWN }]]),
+          };
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const runtimes = yield* ThreadRuntimes;
+              const registry = yield* AppToolRegistry;
+              const { session } = yield* openOrchestrator(world);
+              const worker = yield* spawn(session, { feature: "remote-bound" });
+              yield* completeTurn(worker.session);
+              yield* runtimes.updateThread(worker.thread.id, (t) => ({
+                ...t,
+                checkout: {
+                  kind: "worktree" as const,
+                  path: WORKTREE,
+                  repoRoot: CLONE,
+                  branch: OWN,
+                  hostId: MACHINE,
+                  ...(setup.identity === undefined ? {} : { cloneIdentity: setup.identity }),
+                },
+                boundPr: { ...setup.bound, monitor: false },
+              }));
+              // The publisher's state: the bound PR's badge, looked up here by the binding.
+              const bound = {
+                ...armedWorkerBadge(true),
+                number: setup.bound.number,
+                url: setup.url,
+              };
+              world.states.set(WORKTREE, {
+                repo: true,
+                branch: OWN,
+                changedFiles: 0,
+                pr: bound,
+              } as never);
+              // The branch's own PR, which must not stand in for the binding.
+              world.openPrs.set(OWN, 12);
+              world.prBadges.set("acme/app#12", armedWorkerBadge(true));
+              const tools = registry.forTransport(worker.thread.id, "worker");
+              const status = tools.find((t) => t.descriptor.name === "pr_status")!;
+              // Before this change: no `pr` at all for the older worktree, and acme/app#12 in
+              // place of elsewhere/other#99 for the other.
+              expect(yield* status.run({})).toMatchObject({
+                bound: { ...setup.bound, monitor: false },
+                pr: { number: setup.bound.number, url: setup.url },
+              });
+            }),
+          );
+        }).pipe(Effect.scoped),
+      );
+    }
+
     it.effect.skipIf(!hasGit)("finds no PR for a branch with none open there", () =>
       Effect.gen(function* () {
         const world = yield* makeWorld;
