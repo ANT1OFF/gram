@@ -413,14 +413,43 @@ const handlersFor = (host: HostService) => {
 /**
  * Serves `host` on `socket` until the other end closes it. One connection, one control plane: a
  * host never accepts a second caller on the same stream.
+ *
+ * Stopped from this side (the host process shutting down in order: `systemctl restart`, an
+ * update, an installer rerun), the socket closes before the RPC server ends the calls still
+ * running. Ended first, those calls would answer as interrupted over a connection still up, and
+ * the control plane would take each session's events as over rather than wait for the host to dial
+ * in again and resume the session there. Closed first, the connection drops as any other does.
  */
-export const serveHost = (socket: Socket.Socket, host: HostService): Effect.Effect<void> =>
+export const serveHost = (
+  socket: Socket.Socket,
+  host: HostService,
+  /** Whether whoever owns the socket saw it end, which a stop then needn't close. */
+  socketEnded: () => boolean = () => false,
+): Effect.Effect<void> =>
   Effect.gen(function* () {
     const closed = yield* Deferred.make<void>();
+    /** Open, and no read has failed: a close can go out. Any other write waits for good. */
+    let up = false;
+    const downOnError = <A, E, R>(read: Effect.Effect<A, E, R>) =>
+      Effect.tapError(read, () =>
+        Effect.sync(() => {
+          up = false;
+        }),
+      );
+    const served: Socket.Socket = {
+      ...socket,
+      reader: downOnError(socket.reader).pipe(
+        Effect.map((reader) => {
+          up = true;
+          return { ...reader, pull: downOnError(reader.pull) };
+        }),
+      ),
+    };
+    const writer = yield* socket.writer;
     const oneConnection = Layer.succeed(SocketServer.SocketServer, {
       address: NetAddress.unixPathAddress("host-stream"),
       run: (handler) =>
-        handler(socket).pipe(
+        handler(served).pipe(
           Effect.ignore,
           Effect.andThen(Deferred.succeed(closed, undefined)),
           Effect.andThen(Effect.never),
@@ -434,7 +463,20 @@ export const serveHost = (socket: Socket.Socket, host: HostService): Effect.Effe
         Layer.provide(RpcSerialization.layerNdjson),
       ),
     );
-    yield* Deferred.await(closed);
+    // Run before the scope closes the server. A normal close: a code above 1000 destroys a plain
+    // stream with an error no one listens for any more. Bounded, for a stream that went unseen.
+    const closeFirst = Effect.suspend(() =>
+      !up || socketEnded()
+        ? Effect.void
+        : writer
+            .write(new Socket.CloseEvent(1000, "The host is stopping."))
+            .pipe(
+              Effect.interruptible,
+              Effect.timeoutOrElse({ duration: "1 second", orElse: () => Effect.void }),
+              Effect.ignore,
+            ),
+    );
+    yield* Deferred.await(closed).pipe(Effect.onInterrupt(() => closeFirst));
   }).pipe(Effect.scoped);
 
 /** A host's git state as the control plane reaches it: a watch ends when the host goes. */
@@ -792,6 +834,13 @@ export const connectHost = (
     // Marks the host ended as soon as it goes, not only when a call next races against it.
     yield* Effect.forkScoped(Effect.ignore(gone));
     /**
+     * A call the host interrupted itself reads as the host going: one built before it closed its
+     * socket first ends its calls that way as it stops (`serveHost`), over a connection still up
+     * for a moment. Taken as a session's own end, that failed the turn rather than wait for the
+     * redial. The connection isn't marked ended, since its socket says whether it is.
+     */
+    const stoppedByHost = () => unavailable("The host stopped while it answered.");
+    /**
      * A call raced against the host going. A broken stream ends the host too, since nothing
      * reopens it; once it has ended, a call fails before it starts.
      */
@@ -802,6 +851,13 @@ export const connectHost = (
         ended
           ? goneNow
           : Effect.raceFirst(call, gone).pipe(
+              // Only an interruption that came back from the host: one of the caller's own never
+              // reaches this.
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.fail(stoppedByHost())
+                  : Effect.failCause(cause),
+              ),
               Effect.tapError((error) =>
                 error._tag === "RpcClientError" ? markEnded(failureText(error)) : Effect.void,
               ),
@@ -979,7 +1035,8 @@ export const connectHost = (
     };
     /**
      * A stream from the host that fails, rather than hangs, once the host has gone: a `NotFound`
-     * stays itself, anything else ends the host and reads as `HostUnavailable`.
+     * stays itself, anything else ends the host and reads as `HostUnavailable`, as does a stream
+     * the host interrupted itself (`stoppedByHost`).
      */
     const hostStream = <A, E>(
       stream: Stream.Stream<A, E>,
@@ -997,6 +1054,11 @@ export const connectHost = (
                         Effect.fail(unavailable(HOST_NOT_ANSWERING)),
                       ),
                     ),
+              ),
+              Stream.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Stream.fail(stoppedByHost())
+                  : Stream.failCause(cause),
               ),
               Stream.interruptWhen(gone),
             ),

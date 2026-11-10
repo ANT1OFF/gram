@@ -106,7 +106,9 @@ can still reuse a different repository origin or silently choose a default base.
 | Linux    | systemd user unit `~/.config/systemd/user/gram-host.service`             |
 
 It starts at login, restarts when it stops, and dials the main Gram again whenever the connection
-ends, waiting longer each time up to 30 seconds. On Linux it runs only while you're logged in
+ends, waiting longer each time up to 30 seconds. A connection the main Gram has sent nothing on for
+20 seconds counts as ended too: the main Gram pings every 5 seconds, so a link that broke without
+a word (its tailnet went down, a sleep) is dialled again rather than waited on. On Linux it runs only while you're logged in
 unless you allow it to linger: `loginctl enable-linger "$USER"`. The macOS log is `host.log` in
 the host's folder; on Linux use `journalctl --user -u gram-host`.
 

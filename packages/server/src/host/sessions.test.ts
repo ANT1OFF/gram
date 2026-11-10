@@ -71,8 +71,15 @@ const scriptedAgent = (kind: AgentKind, where: string) =>
     const opened: Array<OpenSessionOptions> = [];
     const closed: Array<string> = [];
     const events = yield* Queue.unbounded<AgentEvent, Cause.Done>();
-    /** When set, an open waits on it, and a send once the agent has it. */
-    const gate: { open?: Deferred.Deferred<void>; send?: Deferred.Deferred<void> } = {};
+    /**
+     * When set, an open waits on it, and a send once the agent has it. With `endOnClose`, a
+     * session whose scope closes says `ended` as the Claude adapter does when it is interrupted.
+     */
+    const gate: {
+      open?: Deferred.Deferred<void>;
+      send?: Deferred.Deferred<void>;
+      endOnClose?: boolean;
+    } = {};
     const host: AgentHost = {
       kind,
       capabilities: CAPABILITIES,
@@ -82,7 +89,18 @@ const scriptedAgent = (kind: AgentKind, where: string) =>
           if (gate.open !== undefined) yield* Deferred.await(gate.open);
           opened.push(options);
           calls.push(`${where}: open`);
-          yield* Effect.addFinalizer(() => Effect.sync(() => void closed.push(where)));
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              closed.push(where);
+              if (gate.endOnClose === true) {
+                Queue.offerUnsafe(events, {
+                  type: "ended",
+                  reason: "error: InterruptError: All fibers interrupted without error",
+                });
+                Queue.endUnsafe(events);
+              }
+            }),
+          );
           options.onConnectorsSeen?.({
             detailed: true,
             whole: false,
@@ -374,6 +392,9 @@ const redialling = Effect.gen(function* () {
   const inServer = yield* scriptedAgent("claude", "server");
   /** Where the machine keeps what users attach to its sessions. */
   const attachedOnMachine = mkdtempSync(join(tmpdir(), "gram-host-attached-"));
+  /** What the first host process keeps across its dials, closed when it shuts down. */
+  const kept = yield* Scope.make();
+  yield* Effect.addFinalizer(() => Scope.close(kept, Exit.void));
   let service = {
     hello: {
       protocol: HOST_PROTOCOL_VERSION,
@@ -393,20 +414,37 @@ const redialling = Effect.gen(function* () {
       agent === "claude"
         ? Effect.succeed(onHost.host)
         : Effect.fail(new AgentUnavailable({ agent, message: "not here" })),
-    ),
+    ).pipe(Scope.provide(kept)),
     scan: Effect.succeed({ listening: new Map(), children: new Map() }),
   };
-  let live: { connection: HostConnection; hostEnd: { destroy: () => void } } | undefined;
+  let live:
+    | {
+        connection: HostConnection;
+        hostEnd: { destroy: () => void };
+        serving: Fiber.Fiber<void>;
+      }
+    | undefined;
   const dial = Effect.gen(function* () {
     const { host: hostEnd, control } = yield* streamPair;
-    yield* Effect.forkScoped(
+    const serving = yield* Effect.forkScoped(
       serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(hostEnd)), service),
     );
     const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)), {
       hostId: MACHINE,
     });
-    live = { connection, hostEnd };
+    live = { connection, hostEnd, serving };
     return live;
+  });
+  /**
+   * The host process stops in order, as on SIGTERM (`systemctl restart`, an update, an installer
+   * rerun): `dialForever`'s dial ends first (its RPC server, then its socket), then what it kept.
+   */
+  const shutDown = Effect.gen(function* () {
+    if (live !== undefined) {
+      yield* Fiber.interrupt(live.serving);
+      live.hostEnd.destroy();
+    }
+    yield* Scope.close(kept, Exit.void);
   });
   const current = Effect.suspend(() =>
     live === undefined || live.connection.gone()
@@ -440,7 +478,16 @@ const redialling = Effect.gen(function* () {
           ),
         ),
     );
-  return { onHost, dial, restarted, first, agent, sessions: service.sessions, attachedOnMachine };
+  return {
+    onHost,
+    dial,
+    restarted,
+    shutDown,
+    first,
+    agent,
+    sessions: service.sessions,
+    attachedOnMachine,
+  };
 });
 
 const notice = (message: string): AgentEvent => ({ type: "notice", level: "info", message });
@@ -502,6 +549,23 @@ describe("a joined machine's sessions across a dropped connection", () => {
       expect(said(events)).toEqual(["before", "ended"]);
       expect(events.at(-1)).toEqual(machineRestartedEnded("box"));
       expect(events.at(-1)).toMatchObject({ restartedMachine: "box" });
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("end saying the machine restarted when its host shut down in order mid-turn", () =>
+    Effect.gen(function* () {
+      const { onHost, dial, restarted, shutDown, agent } = yield* redialling;
+      onHost.gate.endOnClose = true;
+      const session = yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+      const collected = yield* Effect.forkScoped(Stream.runCollect(session.events));
+      yield* Queue.offer(onHost.events, notice("before"));
+      yield* Effect.sleep("200 millis");
+      yield* shutDown;
+      yield* restarted;
+      yield* dial;
+      const events = yield* Fiber.join(collected);
+      expect(said(events)).toEqual(["before", "ended"]);
+      expect(events.at(-1)).toEqual(machineRestartedEnded("box"));
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 
