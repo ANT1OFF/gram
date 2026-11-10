@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import { RuntimeSourceChoice } from "./agent-runtime.ts";
 import { ChimeSound } from "./chime.ts";
-import { AgentKind, ModelRef, PermissionMode, ReasoningVariant } from "./domain.ts";
+import { AgentKind, PermissionMode, ReasoningVariant } from "./domain.ts";
 import {
   HelperContextScope,
   HelperLocalFallback,
@@ -20,7 +20,7 @@ import {
   type SpeechModelId,
 } from "./speech.ts";
 import { VocabularyList, type VocabularyEntry } from "./vocabulary.ts";
-import { ModelSlot } from "./recommended.ts";
+import { ModelSlot, type TierRef } from "./recommended.ts";
 import { connectorEntryProblem, WorkerModel } from "./workspaces.ts";
 
 /** Glass is the only look. */
@@ -202,7 +202,22 @@ export const ComposerSettings = Schema.Struct({
 });
 export type ComposerSettings = typeof ComposerSettings.Type;
 
+/**
+ * The recommended setup mode: whether new model slots (a new chat's default, a new workspace's
+ * orchestrator and roster) start following the recommendation's tiers. Slots already set, pinned
+ * or following, keep what they are either way. `seen` is the recommendation version the user last
+ * saw, once they confirmed turning it on: the turn-on sheet shows only before that, and What's New
+ * lists what changed since it.
+ */
+export const RecommendedSetup = Schema.Struct({
+  enabled: Schema.Boolean,
+  seen: Schema.optionalKey(Schema.String),
+});
+export type RecommendedSetup = typeof RecommendedSetup.Type;
+
 export const AgentSettings = Schema.Struct({
+  /** Absent: off, as every install before it; a new install's welcome turns it on. */
+  recommendedSetup: Schema.optionalKey(RecommendedSetup),
   /** Keep the system awake during open turns. Absent means on; the display may still sleep. */
   keepAwake: Schema.optionalKey(Schema.Boolean),
   /** A new chat's model: pinned, or following a tier. Absent follows the CLI's own default. */
@@ -775,6 +790,20 @@ export const reviewBotsOf = (settings: Settings): ReadonlyArray<ReviewBot> =>
 export const codexRuntimeOf = (settings: Settings): RuntimeSourceChoice =>
   settings.agents.codexRuntime ?? "path";
 
+/** Whether new model slots start following the recommendation; off unless turned on. */
+export const recommendedSetupOn = (settings: Pick<Settings, "agents">): boolean =>
+  settings.agents.recommendedSetup?.enabled === true;
+
+/** What a new chat starts on while the mode is on and nothing is saved: Lead, at low effort. */
+export const RECOMMENDED_NEW_CHAT: TierRef = { tier: "lead", variant: "low" };
+
+/**
+ * The new-chat default slot: the one saved, pinned or following; else, with the recommended setup
+ * on, Lead at low effort; else none, and the CLI's own default stands.
+ */
+export const defaultSlotOf = (settings: Pick<Settings, "agents">): ModelSlot | undefined =>
+  settings.agents.defaultModel ?? (recommendedSetupOn(settings) ? RECOMMENDED_NEW_CHAT : undefined);
+
 /** Whether a session restarts once idle after its agent's MCP config changes; on unless turned off. */
 export const restartOnMcpChangeOn = (settings: Settings): boolean =>
   settings.agents.restartOnMcpChange !== false;
@@ -920,7 +949,8 @@ export const SettingsPatch = Schema.Struct({
   composer: Schema.optionalKey(Schema.Struct({ sendKey: Schema.optionalKey(SendKey) })),
   agents: Schema.optionalKey(
     Schema.Struct({
-      defaultModel: clearable(ModelRef),
+      defaultModel: clearable(ModelSlot),
+      recommendedSetup: Schema.optionalKey(RecommendedSetup),
       /** Replaces the whole list. */
       customModels: Schema.optionalKey(Schema.Array(CustomModel)),
       defaultFolder: clearable(Schema.String),

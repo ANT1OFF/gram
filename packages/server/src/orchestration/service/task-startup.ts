@@ -11,6 +11,7 @@ import {
   type TaskModelSelection,
   type TaskWorkerChoice,
   modelRefOf,
+  defaultSlotOf,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { discoverDefaultModel } from "../../runtime/default-model.ts";
@@ -60,7 +61,7 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
       // and says so (`note`) beside what stands in.
       const own = yield* slotHereNow(hosts, charter.orchestratorModel);
       const app =
-        own.model === undefined ? yield* slotHereNow(hosts, settings.agents.defaultModel) : {};
+        own.model === undefined ? yield* slotHereNow(hosts, defaultSlotOf(settings)) : {};
       const preferred = own.model ?? app.model;
       const model = preferred ?? expected ?? (yield* discoverDefaultModel(hosts));
       const missing = own.missing ?? (preferred === undefined ? app.missing : undefined);

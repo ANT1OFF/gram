@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { DEFAULT_SETTINGS, type LaunchChecks, type Settings } from "@gram/contracts";
+import { DEFAULT_SETTINGS, RECOMMENDED, type LaunchChecks, type Settings } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -147,9 +147,29 @@ describe("first run", () => {
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/new-workspace", search: { repo: "p-api" } }),
     );
-    // Leaving the sheet with Esc comes back here; the sheet records it done.
+    // Leaving the sheet with Esc comes back here; the sheet records it done. Going on keeps the
+    // Recommended setup, on, so the new workspace starts on it; nothing else is recorded.
     expect(screen.getByTestId("welcome")).toBeTruthy();
+    expect(updateSettings.mock.calls).toEqual([
+      [{ agents: { recommendedSetup: { enabled: true, seen: RECOMMENDED.version } } }],
+    ]);
+  });
+
+  it("keeps the Recommended setup off when switched off here, and saves it only on going on", async () => {
+    const { render, updateSettings } = load(withOnboarding({}));
+    render();
+    const welcome = within(await screen.findByTestId("welcome"));
+    const toggle = welcome.getByTestId("welcome-recommended-switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
     expect(updateSettings).not.toHaveBeenCalled();
+    fireEvent.click(welcome.getByRole("button", { name: "Skip" }));
+    await waitFor(() =>
+      expect(updateSettings.mock.calls).toEqual([
+        [{ agents: { recommendedSetup: { enabled: false, seen: RECOMMENDED.version } } }],
+        [{ onboarding: { welcomeSeen: true } }],
+      ]),
+    );
   });
 
   it("adds a repository found in the default folder before opening the sheet on it", async () => {

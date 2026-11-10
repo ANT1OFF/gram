@@ -1,4 +1,5 @@
 import {
+  defaultSlotOf,
   isPinned,
   isTierRef,
   rosterModelHere,
@@ -53,7 +54,11 @@ export function useSlotModel(slot: ModelSlot | undefined): ModelRef | undefined 
  * slot that inherits it to say so too.
  */
 export function useDefaultHere(): ReturnType<typeof slotHere> {
-  return useSlotHere(useServerSettings((state) => state.settings?.agents.defaultModel));
+  return useSlotHere(
+    useServerSettings((state) =>
+      state.settings === undefined ? undefined : defaultSlotOf(state.settings),
+    ),
+  );
 }
 
 /** The new-chat default as it runs here, resolved when it follows a tier. */

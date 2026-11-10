@@ -330,3 +330,17 @@ export const firstChoiceOf = (
     variant: slot.variant ?? tierEffort(table, slot.tier, agent),
   };
 };
+
+/**
+ * A resolved tier's model as the recommendation names it: Claude's by family and version from the
+ * id it runs ("Opus 5.5"), since an alias row's own name ("Opus") leaves out which; any other by
+ * the name its CLI lists ("GPT-6.1-Sol").
+ */
+export const tierModelName = (resolved: Pick<ResolvedTier, "agent" | "listed">): string => {
+  const { listed } = resolved;
+  if (resolved.agent === "claude") {
+    const named = claudeLabel(bare(listed.resolvedId ?? listed.id).replace(/-\d{8}$/, ""));
+    if (named !== undefined) return named;
+  }
+  return listed.displayName === "" ? listed.id : listed.displayName;
+};

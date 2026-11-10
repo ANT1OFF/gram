@@ -8,6 +8,7 @@ import {
   type Thread,
   type WorkspaceId,
   type WorkspaceState,
+  defaultSlotOf,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -37,7 +38,7 @@ export const defaultDreamModel = (
   hosts: AgentHosts["Service"],
 ): Effect.Effect<ModelRef> =>
   Effect.gen(function* () {
-    const preferred = yield* resolveSlot(hosts, settings.agents.defaultModel);
+    const preferred = yield* resolveSlot(hosts, defaultSlotOf(settings));
     if (preferred !== undefined)
       return admittedForRole(preferred.agent, "dream")
         ? preferred
