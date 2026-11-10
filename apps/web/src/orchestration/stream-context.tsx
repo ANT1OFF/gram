@@ -3,7 +3,9 @@ import { createContext, use, useMemo, type ReactNode } from "react";
 
 import { useAllActivity } from "@/stores/all-activity";
 
+import { CardFactsContext } from "./card-tones";
 import { FeatureCardView } from "./feature-card";
+import { useRailFacts } from "./feature-sheet";
 import { cardRows, planRuns, planStream, quietCard, type StreamPlan } from "./stream-model";
 import { UpdateBlock, UpdateRun } from "./update-block";
 import { useFeatureCards } from "./use-feature-cards";
@@ -92,7 +94,17 @@ export function OrchestratorStreamProvider({
   stream: OrchestratorStream | undefined;
   children: ReactNode;
 }) {
-  return <OrchestratorStreamContext value={stream}>{children}</OrchestratorStreamContext>;
+  // The cards' workers take their dots from the workspace's own facts (`card-tones.ts`), read
+  // once here: every card of a stream is its workspace's.
+  const workspaceId = stream?.cards.values().next().value?.workspaceId;
+  const facts = useRailFacts(workspaceId);
+  return (
+    <OrchestratorStreamContext value={stream}>
+      <CardFactsContext value={workspaceId === undefined ? undefined : facts}>
+        {children}
+      </CardFactsContext>
+    </OrchestratorStreamContext>
+  );
 }
 
 /**

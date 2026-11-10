@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { openOrchestrator } from "./thread-row";
+
 // A finished worker whose conversation isn't stored here (the realistic mock seeds none for its
 // merged workers) shows what Gram kept of it, not "No messages yet"; a thread that never started
 // still says that.
@@ -54,7 +56,7 @@ test('a finished worker with no messages shows its outcome, not "No messages yet
   );
   const pr = outcome.getByTestId("thread-outcome-pr");
   await expect(pr).toContainText("#61");
-  await expect(page.getByText("No messages yet.")).toHaveCount(0);
+  await expect(page.getByTestId("transcript-empty")).toHaveCount(0);
   // Its PR is a click away.
   await pr.click();
   await expect(page.getByRole("tab", { name: "PR", exact: true })).toHaveAttribute(
@@ -107,4 +109,26 @@ test("a finished worker's outcome finds it in History, or resumes from its repor
   await expect(brief).toHaveValue(/^Pick up where "Release notes for 0.9" left off\./);
   await expect(brief).toHaveValue(/0\.9 notes cover undo, empty states and the new shortcuts\./);
   await expect(page.getByRole("button", { name: /^Start/ }).first()).toBeVisible();
+});
+
+test("a new orchestrator's empty chat says so as every empty view does, with what to do", async ({
+  page,
+}) => {
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
+  await page.goto("/");
+  await page.getByTestId("overview-sidebar").waitFor();
+  const orchestrator = await page.evaluate(async () => {
+    const mock = window.gramMock!;
+    const home = mock.world.projects()[0]!;
+    const state = await mock.saveWorkspace({
+      name: home.name,
+      projectIds: [home.id],
+      homeProjectId: home.id,
+    });
+    return (await mock.openOrchestrator({ workspaceId: state.workspace.id })).id;
+  });
+  await openOrchestrator(page, orchestrator);
+  const empty = page.getByTestId("transcript-empty");
+  await expect(empty.getByTestId("empty-title")).toHaveText("No messages yet");
+  await expect(empty.getByTestId("empty-line")).toContainText("Say what needs doing");
 });

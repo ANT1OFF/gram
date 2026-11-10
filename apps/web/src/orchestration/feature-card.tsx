@@ -31,11 +31,12 @@ import { PulseOnce, Swap } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
 
 import { useBesideLink } from "./beside-link";
+import { useCardWorkerTone } from "./card-tones";
 import { openFeatureSheet } from "./feature-sheet-store";
 import { HeldBriefLine } from "./held-brief";
 import { peek } from "./peek-store";
+import { StatusDot } from "./status-dot";
 import { useFeatureSummary } from "./use-feature-cards";
-import { stationDotClass } from "./overview-model";
 import { quietCard } from "./stream-model";
 
 // A feature's live card and the stream's one-line events (contracts `feature-cards.ts`). A card is
@@ -230,17 +231,18 @@ function StageLine({ card }: { card: FeatureCard }) {
 
 function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
   const failed = worker.flag === "error";
+  // Its state's dot, the one its sidebar row, the Board and Workers draw: amber beside "asks
+  // you", never the running blue of the station it stands at, which the stage line above says.
+  const tone = useCardWorkerTone(worker);
   return (
     <li
       data-testid="feature-card-worker"
       data-station={worker.station}
+      data-dot={tone}
       className="flex min-w-0 items-center gap-2 text-meta"
     >
-      <span
-        aria-hidden
-        title={STATION_LABELS[worker.station]}
-        className={cn("size-1.5 shrink-0 rounded-full", stationDotClass(worker.station, failed))}
-      />
+      {/* Still: a card sits in the transcript, where nothing moves while it stands. */}
+      <StatusDot state={tone} still />
       <span className="flex w-36 min-w-0 shrink-0" title={worker.model}>
         <WorkerLink threadId={worker.threadId}>{worker.title}</WorkerLink>
       </span>

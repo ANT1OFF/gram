@@ -7,6 +7,7 @@ import {
   OrchestratorStreamProvider,
   type OrchestratorStream,
 } from "@/orchestration/stream-context";
+import { renderWithApi } from "@/panels/test-utils";
 
 import type { AnyToolPart } from "./parts";
 import { ToolCard } from "./tool-cards";
@@ -397,13 +398,13 @@ describe("Gram's own events in the orchestrator's chat", () => {
         renderSubagent={() => null}
       />
     );
-    return render(
-      orchestrator ? (
-        <OrchestratorStreamProvider stream={stream}>{row}</OrchestratorStreamProvider>
-      ) : (
-        row
-      ),
-    );
+    // The chat's provider reads its workspace's workers for its cards' dots, so it has an API.
+    return orchestrator
+      ? renderWithApi(
+          <OrchestratorStreamProvider stream={stream}>{row}</OrchestratorStreamProvider>,
+          {} as never,
+        )
+      : render(row);
   };
 
   it("draws a finished Gram call as a quiet meta line, not a card", () => {

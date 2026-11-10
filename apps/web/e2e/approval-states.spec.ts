@@ -68,3 +68,26 @@ test("answered with a click, focus goes on to the composer rather than the page"
   await expect(card).toHaveCount(0);
   await expect(page.getByLabel("Message", { exact: true })).toBeFocused();
 });
+
+test("the card's amber outline is whole: no side of it is clipped by the message it sits in", async ({
+  page,
+}) => {
+  await page.goto("/t/t-flaky");
+  const card = page.getByTestId("approval-card");
+  await card.waitFor();
+  // The ring is drawn on the card's own edge. A pixel outside it, the message's content, which
+  // clips what overhangs it, cut its left and right sides and left the top and bottom.
+  const ring = page.getByTestId("approval-place").getByTestId("attention-ring");
+  await expect(ring).toHaveCSS("box-shadow", /inset/);
+  const clipped = await ring.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    for (let node = element.parentElement; node; node = node.parentElement) {
+      if (getComputedStyle(node).overflowX === "visible") continue;
+      const clip = node.getBoundingClientRect();
+      // Whether any clipping box around it is narrower than the ring.
+      if (clip.left > box.left || clip.right < box.right) return true;
+    }
+    return false;
+  });
+  expect(clipped).toBe(false);
+});

@@ -137,6 +137,17 @@ test("a worker spawned and not yet begun reads Starting everywhere, never Stoppe
       .getByTestId("feature-card-now"),
   ).toHaveText("starting…");
 
+  // On a card a worker's dot is its state's, as everywhere else: amber beside one that asks, never
+  // the running blue of the station it stands at.
+  for (const id of made.waiting) {
+    await expect(
+      page
+        .getByTestId("feature-card-worker")
+        .filter({ has: page.locator(`a[href$="/t/${id}"]`) })
+        .first(),
+    ).toHaveAttribute("data-dot", "needs");
+  }
+
   // The Workers panel lists it as running, its state in words Starting.
   const panel = await workersPanel(page);
   const listed = panel
