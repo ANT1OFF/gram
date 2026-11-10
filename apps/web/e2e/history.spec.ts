@@ -84,6 +84,11 @@ test("History lists finished workers, done and archived threads and past session
   await expect(row(page, made.earlier.at(-1)!).getByTestId("history-time")).toHaveText(
     /^\d{1,2} \w{3}( \d{4})? \d{2}:\d{2}$/,
   );
+  // Its status still starts where today's row's does: the time column is one width for the list,
+  // so a date in it doesn't push "merged" left.
+  const statusLeft = async (threadId: string) =>
+    (await row(page, threadId).getByTestId("history-outcome").boundingBox())!.x;
+  expect(await statusLeft(made.earlier.at(-1)!)).toBeCloseTo(await statusLeft(made.doneToday), 0);
 
   // A click opens the thread where it was, and History goes.
   await merged.click();

@@ -3,7 +3,7 @@ import { CircleCheck, GitMerge, GitPullRequest } from "lucide-react";
 import { useState, type MouseEvent } from "react";
 
 import { Button } from "@/components/ui/button";
-import { formatStamp } from "@/lib/time";
+import { formatDay, formatStamp } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { RailRow } from "@/orchestration/rail-model";
 import { useThreadsStore } from "@/stores/threads";
@@ -87,6 +87,12 @@ export function DoneBand({
   );
 }
 
+/** When a Done row ended, in a date column's words: `09:52` today, else its day (`12 Jun`). */
+export const doneEnded = (ended: number, now = Date.now()): string => {
+  const stamp = formatStamp(ended, now);
+  return stamp.includes(" ") ? formatDay(ended, now) : stamp;
+};
+
 /**
  * One finished line: its title (a click from its thread), how it ended and when, the first line of
  * its last report with its repos, and its PR under Pull request.
@@ -132,10 +138,16 @@ function DoneRow({
           </button>
         )}
       </span>
-      <span data-testid="board-done-ended" className="text-muted-foreground tabular-nums">
+      {/* One line in the Stage column's width: the clock today, the date alone on another day
+          (the column has no room for both, and wrapped), with the whole stamp on hover. */}
+      <span
+        data-testid="board-done-ended"
+        title={ended === undefined ? undefined : `${outcome} ${formatStamp(ended)}`}
+        className="truncate text-muted-foreground tabular-nums"
+      >
         {outcome}
         {ended !== undefined && (
-          <time dateTime={new Date(ended).toISOString()}> {formatStamp(ended)}</time>
+          <time dateTime={new Date(ended).toISOString()}> {doneEnded(ended)}</time>
         )}
       </span>
       <span

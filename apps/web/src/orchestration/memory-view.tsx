@@ -453,8 +453,12 @@ function Files({
                       over cap
                     </span>
                   )}
-                  <span className="w-12 shrink-0 text-right text-muted-foreground tabular-nums">
-                    {agoText(file.modifiedAt, now).replace(" ago", "")}
+                  {/* The compact age, on one line: "3h", and "now" for what "just now" is. */}
+                  <span
+                    data-testid="memory-file-age"
+                    className="w-12 shrink-0 text-right whitespace-nowrap text-muted-foreground tabular-nums"
+                  >
+                    {agoText(file.modifiedAt, now).replace(" ago", "").replace("just now", "now")}
                   </span>
                 </button>
               </PresenceItem>

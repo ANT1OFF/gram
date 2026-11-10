@@ -642,3 +642,29 @@ test("a question whose options carry screenshots shows them in the detail, besid
   await hybrid.locator("button").first().click();
   await expect(page.getByRole("dialog", { name: /C Hybrid/ })).toBeVisible();
 });
+
+test("a short list has no category strip: its section headings already say it", async ({
+  page,
+}) => {
+  // The realistic morning: one error and one question, each under its own heading, both in sight.
+  await page.setViewportSize(WIDE);
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.orchestration", "realistic"));
+  await page.goto("/");
+  await openInbox(page);
+  await expect(inbox(page).getByTestId("inbox-section")).toHaveCount(2);
+  await expect(inbox(page).getByTestId("inbox-item")).toHaveCount(2);
+  // The strip would only say "Errors 1 · Questions 1" over headings that say the same.
+  await expect(inbox(page).getByTestId("needs-you-strip")).toHaveCount(0);
+  await expect(inbox(page).getByTestId("inbox-keys")).toContainText("j k move");
+});
+
+test("an empty Inbox lists only the key that works", async ({ page }) => {
+  await page.setViewportSize(WIDE);
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
+  await page.goto("/");
+  await page.getByTestId("overview-sidebar").waitFor();
+  await page.keyboard.press("ControlOrMeta+Shift+I");
+  await expect(inbox(page).getByTestId("inbox-empty")).toBeVisible();
+  // Nothing to move through, pick, send or take back.
+  await expect(inbox(page).getByTestId("inbox-keys")).toHaveText("esc close");
+});
