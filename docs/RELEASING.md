@@ -277,21 +277,26 @@ same, and the release tools require all three jobs to have passed.
 
 ## Where the time goes
 
-Measured on the 1.14.0 to 1.17.0 cuts, from `release:rc` starting to `publish`:
+Measured from `release:rc` starting to `publish`: the left column on the 1.14.0 to 1.17.0 cuts,
+which ran the tests on the Mac, and the right on the current cut, measured on 1.18.0 where it
+says so:
 
-| Phase                                               | Before                                                                                                            | Now (estimate)                                                               |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Local Vitest run                                    | 5m 43s to 10m 56s                                                                                                 | none: main's CI run, 8.5 to 12 minutes after the merge, while the Mac builds |
-| Static stages, build, package, notarize, smoke, ZIP | 2m 10s to 4m 20s                                                                                                  | the same                                                                     |
-| Linux run (dispatch to done)                        | 7m 13s to 11m 46s, with its sherpa-onnx rebuild (3m 06s) first                                                    | about 4 to 5 minutes, the rebuild beside the build                           |
-| Waiting on Linux after the Mac part                 | 1m 05s to 4m 27s                                                                                                  | about none                                                                   |
-| Draft upload, validate, update check, publish       | 1m 30s to 2m 30s                                                                                                  | the same                                                                     |
-| A failed Linux run                                  | the whole `release:rc` again, with `main` frozen (1.16.0: about 63 minutes)                                       | one rerun of its failed jobs, about 5 minutes, `main` open                   |
-| A test that flakes under load                       | the whole `release:rc` again and a new Linux run (1.17.0: 22 minutes from merge to publish, `main` frozen for 21) | can't happen here: the tests aren't rerun on the Mac                         |
+| Phase                                               | Tests on the Mac                                                                                                  | Now                                                                                               |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Local Vitest run                                    | 5m 43s to 10m 56s                                                                                                 | none: main's push CI run on the release commit, while the Mac builds (1.18.0: about 21.5 minutes) |
+| Static stages, build, package, notarize, smoke, ZIP | 2m 10s to 4m 20s                                                                                                  | the same                                                                                          |
+| Linux run (dispatch to done)                        | 7m 13s to 11m 46s, with its sherpa-onnx rebuild (3m 06s) first                                                    | about 4 to 5 minutes, the rebuild beside the build                                                |
+| Waiting on Linux after the Mac part                 | 1m 05s to 4m 27s                                                                                                  | about none                                                                                        |
+| Draft upload, validate, update check, publish       | 1m 30s to 2m 30s                                                                                                  | the same                                                                                          |
+| A failed Linux run                                  | the whole `release:rc` again, with `main` frozen (1.16.0: about 63 minutes)                                       | one rerun of its failed jobs, about 5 minutes, `main` open                                        |
+| A test that flakes under load                       | the whole `release:rc` again and a new Linux run (1.17.0: 22 minutes from merge to publish, `main` frozen for 21) | can't happen here: the tests aren't rerun on the Mac                                              |
 
-So a clean cut goes from 11 to 18 minutes to about 10 to 13 minutes after the release PR merges,
-bounded by main's CI run rather than by the Mac or the Linux build, and `main` is frozen
-for about a minute instead of the whole cut.
+A clean cut takes about 25 minutes from the release PR's merge to `publish` (1.18.0: 24m 39s),
+and `main` is frozen for about 3 minutes, until the Linux build is dispatched (1.17.0, which reran
+the whole cut: 21 minutes). The critical path is `main`'s push CI run on the release commit, about
+21.5 minutes, bound by runner availability rather than by the Mac or the Linux build. A heavy PR
+merged in that window queues its own CI runs for the same runners, so hold heavy merges until that
+run's jobs have all started.
 
 ## Record and limits
 
