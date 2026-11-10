@@ -828,6 +828,64 @@ describe("merge_when_ready", () => {
       );
     }
 
+    // Review of #348, finding 3: a one-off chat's folder on the machine is the user's pick, never
+    // a worktree Gram made there, even where it is one of the host's clone's worktrees with the
+    // branch, and its host honestly says so.
+    it.effect.skipIf(!hasGit)(
+      "never makes a picked folder on the machine its own, even on a worktree of the host's clone",
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          world.joinedMachine = {
+            id: MACHINE,
+            online: true,
+            worktrees: new Map([[WORKTREE, { clone: CLONE, origin: ORIGIN, branch: OWN }]]),
+          };
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const runtimes = yield* ThreadRuntimes;
+              const registry = yield* AppToolRegistry;
+              const { session, thread } = yield* openOrchestrator(world);
+              const worker = yield* spawn(session, { feature: "picked-folder" });
+              yield* completeTurn(worker.session);
+              yield* atAutonomy(thread, "full");
+              // What a machineFolder request records: the folder as it is, with no clone record.
+              yield* runtimes.updateThread(worker.thread.id, (t) => ({
+                ...t,
+                checkout: { kind: "main" as const, path: WORKTREE, branch: OWN, hostId: MACHINE },
+                boundPr: { repo: "acme/app", number: 12, monitor: false },
+              }));
+              world.prHeads.set(12, { headRefName: OWN });
+              const tools = registry.forTransport(worker.thread.id, "worker");
+              const merge = tools.find((t) => t.descriptor.name === "merge_when_ready")!;
+              const check = tools.find((t) => t.descriptor.name === "local_check")!;
+              expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(false);
+              expect(yield* check.delegatedAtFullAutonomy!({})).toBe(false);
+              const call = yield* Effect.forkScoped(merge.run({}).pipe(Effect.flip));
+              const card = yield* waitReal(
+                "the approval card",
+                store.listRequests(worker.thread.id).pipe(Effect.map((all) => all[0])),
+              );
+              if (card.kind !== "approval") throw new Error("not an approval");
+              expect(card.autonomyNote).toBe(
+                "full auto, PR ownership unverified: its repository isn't a workspace project the worker has a worktree in",
+              );
+              yield* runtimes.respond(worker.thread.id, card.id, {
+                kind: "approval",
+                decision: "deny",
+                scope: "once",
+              });
+              expect(yield* Fiber.join(call)).toMatchObject({ approvalRequired: true });
+              expect(
+                (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+              ).toBeUndefined();
+            }),
+          );
+        }).pipe(Effect.scoped),
+    );
+
     // Finding 3: a folder on this machine and one on the joined machine with the same path.
     for (const history of ["observed", "recorded before machines were"] as const) {
       it.effect.skipIf(!hasGit)(

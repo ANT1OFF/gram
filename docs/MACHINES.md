@@ -48,31 +48,42 @@ menu marks a machine that is offline or whose Claude Code isn't signed in.
 
 ### Which folders a chat may use there
 
-A joined machine already runs whatever its sessions do, as its own user, so a chat in its home can
-read what that user can. Gram keeps a few lines anyway:
+**The folder guard prevents mistakes; it doesn't isolate you from the agent.** A session on a
+joined machine runs as that machine's user, with that user's permissions. From any folder,
+including a worker's worktree, it can read whatever that user can read, `~/.ssh` included, through
+its shell. Gram doesn't sandbox it, and the folder you pick doesn't change that. What the guard
+does is keep you from starting a chat in, or browsing into, a folder that is plainly no place for
+one.
 
-- A folder outside the host's clones is used only for a chat you start there and pick the folder
-  for (a fork of it stays in that folder). Nothing an agent starts, a worker or a task chip, runs
-  outside the machine's repositories folder: a task chip from such a chat starts from New task
-  instead.
-- The host refuses a credential folder or anything in one (`~/.ssh`, `~/.aws`, `~/.gnupg`,
-  `~/.kube`, `~/.docker`, `~/.config/gh`, `~/.config/gcloud`, keyrings and the like), the agents'
-  login folders (`~/.claude`, `~/.codex`, and `CLAUDE_CONFIG_DIR` or `CODEX_HOME` where set), its
-  own folder (`~/.config/gram-host` on Linux, `~/Library/Application Support/Gram Host` on a Mac,
-  or `GRAM_HOST_HOME`) with its clones, and the whole filesystem (`/`).
-- It decides on the folder itself, not how it is written: it resolves the real path and compares
-  that folder and each of its parents with where those folders really are, by device and inode. A
-  link into one, a link in a parent, another spelling of a name (case, Unicode form) and a
-  credential folder moved elsewhere behind a link are all refused.
-- The same check runs for a listing (before anything in the folder is read), for the folder's
-  check before the chat starts, and every time a session opens there, a restart included. A
-  folder swapped for a link to a refused one after it was picked is refused when the session
-  opens, and one swapped while the agent starts stops it. A worker's session in a worktree of the
-  host's clones is the one use of Gram Host's folder let through.
-- Its folder browser never lists those folders, lists folders only, never files, and lists at
-  most 500 of them from at most 5,000 entries read, with a deadline, so a huge folder or a stuck
-  mount doesn't hold the host up.
-- A host from an older release doesn't list its folders: the chat asks you to update it first.
+What does hold:
+
+- **Only the main Gram app can list or check folders on a joined machine.** It asks over the
+  machine's own signed connection. A paired phone can't list or check another machine's folders:
+  those requests answer only the app on this machine.
+- **You choose a folder outside the host's clones for one chat at a time.** Nothing an agent
+  starts, a worker or a task chip, gets such a folder: workers always get a new worktree there, and
+  a task chip from such a chat starts from New task instead. A fork of the chat stays in its
+  folder.
+- **A picked folder never owns anything.** A chat in a folder you picked never gets the ownership
+  of a worker's worktree (full-auto merges, its pull request, the local check), even when that
+  folder is inside one of the host's clones. That ownership comes only from the record Gram keeps
+  of the worktrees it made.
+
+The guard itself, on the joined machine's host:
+
+- It refuses credential folders and anything in them (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`,
+  `~/.docker`, `~/.config/gh`, `~/.config/gcloud`, keyrings and the like). It refuses the agents'
+  login folders (`~/.claude`, `~/.codex`, and `CLAUDE_CONFIG_DIR` or `CODEX_HOME` where set) and
+  Gram Host's own folder (`~/.config/gram-host` on Linux, `~/Library/Application Support/Gram
+  Host` on a Mac, or `GRAM_HOST_HOME`) with its clones. It also refuses the whole filesystem (`/`).
+- It compares real folders rather than how a path is written, so a link to one of those folders
+  or another spelling of its name is refused too. When it can't read where one of those folders is
+  (a permission or disk error), it refuses rather than guess.
+- It runs when the folder browser lists a folder, when you pick a folder, and each time a session
+  opens there. A worker's session in a worktree of the host's clones is let through.
+- The browser lists folders only, never files, at most 500 of them, and gives up on a folder or
+  mount that doesn't answer within a few seconds.
+- A host from an older release doesn't list its folders. Update it before you pick a folder there.
 
 ## What you need
 

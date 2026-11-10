@@ -1,4 +1,11 @@
-import { mkdirSync, realpathSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  realpathSync,
+  renameSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import * as fsp from "node:fs/promises";
 import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
@@ -260,6 +267,76 @@ describe("the gate compares folders, not spellings", () => {
   );
 });
 
+/**
+ * Re-review of #348, findings 4 and 5: a protected folder that can't be read refuses, and one that
+ * is two protected folders at once keeps the strictest protection.
+ */
+describe("the gate fails closed", () => {
+  it.live("refuses when a protected folder's identity can't be read", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      const parent = join(dir, "unsearchable-parent");
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          chmodSync(parent, 0o700);
+          removeDir(dir);
+        }),
+      );
+      // A configured login folder behind a parent this user can't search, leading to a store that
+      // is readable under another name.
+      const store = join(dir, "synthetic-login-store");
+      mkdirSync(store);
+      mkdirSync(parent);
+      symlinkSync(store, join(parent, "login"));
+      chmodSync(parent, 0o000);
+      const unreadable = yield* Effect.promise(() =>
+        fsp.stat(join(parent, "login")).then(
+          () => false,
+          (error: { readonly code?: string }) => error.code === "EACCES" || error.code === "EPERM",
+        ),
+      );
+      if (!unreadable) return; // Run as a user every folder is readable to: nothing to show.
+      const folders = foldersOn(yield* Proc, {
+        ...home(dir),
+        agentHomes: [join(parent, "login")],
+      });
+      const answer = yield* verdict(folders, store);
+      expect(answer).toBe(
+        `Gram couldn't read ${join(parent, "login")} on this machine, so it can't tell whether this folder is one it keeps chats out of.`,
+      );
+      // Every use is refused while it can't be read, not only that folder.
+      expect(yield* verdict(folders, "~/scratch")).toBe(answer);
+      const agent = recordingAgent();
+      const sessions = gatedSessions(
+        yield* sessionsOnHost(() => Effect.succeed(agent.host)),
+        folders.gate,
+      );
+      expect((yield* sessions.open(request(store)).pipe(Effect.flip)).message).toBe(answer);
+      expect(agent.openedIn).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.live("keeps a credential folder's protection where it is also the host's clones", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const bounds = home(dir);
+      // An agent's login folder configured, through a link, as the very folder of the clones.
+      symlinkSync(bounds.hostRepos, join(dir, "login-alias"));
+      const folders = foldersOn(yield* Proc, { ...bounds, agentHomes: [join(dir, "login-alias")] });
+      const agent = recordingAgent();
+      const sessions = gatedSessions(
+        yield* sessionsOnHost(() => Effect.succeed(agent.host)),
+        folders.gate,
+      );
+      const worktree = join(bounds.hostRepos, "widgets", ".worktrees", "feat-x");
+      const refused = yield* sessions.open(request(worktree)).pipe(Effect.flip);
+      expect(refused.message).toBe(keys(worktree));
+      expect(agent.openedIn).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+});
+
 /** A fake agent that records where each session really opened, and runs `during` as it opens. */
 const recordingAgent = (during: () => void = () => {}) => {
   const openedIn: Array<string> = [];
@@ -290,7 +367,7 @@ const request = (cwd: string, handle = "h-1") => ({
   cwd,
 });
 
-/** Review #348, finding 3: a checked folder is checked again where a session opens in it. */
+/** A checked folder is checked again every time a session opens in it. */
 describe("a joined machine's sessions", () => {
   it.live("never open in a folder swapped for a link to a refused one after its check", () =>
     Effect.gen(function* () {
@@ -315,29 +392,6 @@ describe("a joined machine's sessions", () => {
         message: keys(join(bounds.home, ".ssh")),
       });
       expect(agent.openedIn).toEqual([]);
-    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
-  );
-
-  it.live("are stopped when the folder is swapped while the agent starts", () =>
-    Effect.gen(function* () {
-      const dir = tempDir();
-      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
-      const bounds = home(dir);
-      const folders = foldersOn(yield* Proc, bounds);
-      const scratch = join(bounds.home, "scratch");
-      const agent = recordingAgent(() => {
-        renameSync(scratch, join(bounds.home, "scratch-original"));
-        symlinkSync(join(bounds.home, ".aws"), scratch);
-      });
-      const sessions = gatedSessions(
-        yield* sessionsOnHost(() => Effect.succeed(agent.host)),
-        folders.gate,
-      );
-      const refused = yield* sessions.open(request(scratch)).pipe(Effect.flip);
-      expect(refused._tag).toBe("HostFailed");
-      // It was closed: the handle is free, and nothing of it is open.
-      expect(sessions.busy()).toBe(0);
-      expect((yield* sessions.session("h-1").pipe(Effect.flip))._tag).toBe("HostFailed");
     }).pipe(Effect.scoped, Effect.provide(ProcLive)),
   );
 

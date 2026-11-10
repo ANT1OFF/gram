@@ -99,6 +99,19 @@ interface Protected {
 
 const identity = (info: Stats) => `${info.dev}:${info.ino}`;
 
+/** Which protection wins where one folder is two protected folders at once. */
+const STRICTNESS: Readonly<Record<Protected["kind"], number>> = {
+  clones: 0,
+  own: 1,
+  credentials: 2,
+};
+
+/** Whether a stat failed because nothing is there, rather than because it couldn't be read. */
+const absent = (error: unknown) => {
+  const code = (error as { readonly code?: unknown } | undefined)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+};
+
 const credentials = (path: string) =>
   `Gram doesn't run a chat in ${path}: it holds keys or credentials.`;
 const own = (path: string) => `Gram doesn't run a chat in ${path}: it is Gram Host's own folder.`;
@@ -132,12 +145,23 @@ export interface Admitted {
  * inode, the real folder of a credential folder, an agent's login folder or Gram Host's own. Those
  * are resolved on the machine at each use, so neither a link, a parent's link, another spelling of
  * a name (case, Unicode form) nor a credential folder moved elsewhere behind a link gets through.
+ * A protected folder whose identity can't be read (its parent unreadable, an I/O error) refuses,
+ * rather than protecting nothing; only one that isn't there protects nothing.
+ *
+ * It is a guard against a mistake, not a sandbox: a session there runs as the machine's user and
+ * can read whatever that user can, from any folder. Who may list folders and open sessions on the
+ * host (the main Gram over its signed connection) is the boundary; this keeps a chat from being
+ * started in, or a picker from listing, a folder that is plainly no place for one.
  *
  * A worker's session in a worktree of the host's clones is the one use of Gram Host's folder let
- * through: that is where the host makes them.
+ * through: that is where the host makes them. Where a session runs grants it nothing: a worktree's
+ * ownership comes only from what the main Gram recorded as it made it (`checkWorkerPr`).
  */
 export const folderGate = (bounds: FolderBounds, io: FolderIo = NODE_IO) => {
-  /** The protected folders as they are now; one that isn't there protects nothing. */
+  /**
+   * The protected folders as they are now. One that isn't there protects nothing; one whose
+   * identity can't be read refuses every use until it can be, since it may be the very folder.
+   */
   const protectedNow = Effect.forEach(
     [
       ...CREDENTIAL_FOLDERS_IN_HOME.map((parts) => ({
@@ -149,18 +173,34 @@ export const folderGate = (bounds: FolderBounds, io: FolderIo = NODE_IO) => {
       { path: bounds.hostRepos, kind: "clones" as const },
     ],
     ({ path, kind }) =>
-      Effect.tryPromise(() => io.stat(path)).pipe(
+      Effect.tryPromise({ try: () => io.stat(path), catch: (error) => error }).pipe(
         Effect.map((info): ReadonlyArray<Protected> => [{ id: identity(info), kind }]),
-        Effect.orElseSucceed((): ReadonlyArray<Protected> => []),
+        Effect.catch((error) =>
+          absent(error)
+            ? Effect.succeed<ReadonlyArray<Protected>>([])
+            : Effect.fail(
+                refused(
+                  `Gram couldn't read ${path} on this machine, so it can't tell whether this folder is one it keeps chats out of.`,
+                ),
+              ),
+        ),
       ),
     { concurrency: 8 },
   ).pipe(Effect.map((found) => found.flat()));
 
-  /** The protected folders by identity, as they are now. */
-  const guardedNow = Effect.map(
-    protectedNow,
-    (found) => new Map(found.map((folder) => [folder.id, folder.kind])),
-  );
+  /**
+   * The protected folders by identity, as they are now. A folder that is two of them at once (an
+   * agent's login folder that is also the host's clones, say) keeps the strictest.
+   */
+  const guardedNow = Effect.map(protectedNow, (found) => {
+    const kinds = new Map<string, Protected["kind"]>();
+    for (const folder of found) {
+      const before = kinds.get(folder.id);
+      if (before === undefined || STRICTNESS[folder.kind] > STRICTNESS[before])
+        kinds.set(folder.id, folder.kind);
+    }
+    return kinds;
+  });
 
   const admit = (
     input: string,
@@ -316,37 +356,19 @@ export const foldersOn = (
 };
 
 /**
- * A joined machine's sessions, each opened only in a folder its gate lets through, checked when it
- * opens (a restart opens it again, and is checked again) and once more when it has started: a
- * folder, or a parent, swapped for a link to a refused one between the pick and the start is
- * refused, and one swapped while the agent started is closed. Whether it is a one-off chat's
- * folder or a worker's worktree, the host decides from where it really is, not from the request.
+ * A joined machine's sessions, each opened only in a folder its gate lets through, checked every
+ * time it opens (a restart opens it again, and is checked again). A guard against a mistake, as
+ * the gate is: a folder swapped under a running check isn't chased, since the session could read
+ * that folder from anywhere anyway.
  */
 export const gatedSessions = (
   sessions: HostSessionsService,
   gate: FolderGate,
-): HostSessionsService => {
-  const admitted = (cwd: string) =>
-    gate
-      .admit(cwd, "session")
-      .pipe(Effect.mapError((error) => new HostFailed({ message: error.message })));
-  return {
-    ...sessions,
-    open: (request) =>
-      Effect.gen(function* () {
-        const before = yield* admitted(request.cwd);
-        const opened = yield* sessions.open(request);
-        yield* admitted(request.cwd).pipe(
-          Effect.filterOrFail(
-            (now) => now.id === before.id,
-            () =>
-              new HostFailed({
-                message: `${request.cwd} changed while its session started, so it was stopped.`,
-              }),
-          ),
-          Effect.tapError(() => sessions.close(request.handle)),
-        );
-        return opened;
-      }),
-  };
-};
+): HostSessionsService => ({
+  ...sessions,
+  open: (request) =>
+    gate.admit(request.cwd, "session").pipe(
+      Effect.mapError((error) => new HostFailed({ message: error.message })),
+      Effect.andThen(sessions.open(request)),
+    ),
+});

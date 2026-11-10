@@ -11,8 +11,8 @@ import {
   FsResolveResult,
 } from "../fs-files.ts";
 import { FsSearchFields, FsSearchResult } from "../fs-search.ts";
-import { FolderListing, FsListing, FsTree, FsFile, HostFolderChecked } from "../fs.ts";
-import { HostId, ThreadId } from "../ids.ts";
+import { FolderListing, FsListing, FsTree, FsFile } from "../fs.ts";
+import { ThreadId } from "../ids.ts";
 import { Doc, DocList, DocMeta, DocReadFields, DocSaveFields, DocsListFields } from "../docs.ts";
 import { WorkspaceOutputsFields, WorkspaceOutputsPage } from "../outputs.ts";
 import { FileImage } from "../thread-ui.ts";
@@ -122,26 +122,15 @@ export const FileRpcs = RpcGroup.make(
    * matched within its parent. Dotfolders appear only when that prefix starts with `.`. At most
    * `limit` entries (default 500), with `truncated` set when more matched.
    *
-   * With `hostId`, a joined machine's folders, listed by its host there (`~` is its home), for a
-   * one-off thread placed on it: never a credential folder or the host's own.
+   * This machine's folders only: a joined machine's are listed by its host, from the local app
+   * alone (`/machines/folders/browse`).
    */
   Rpc.make("fs.browse", {
     payload: {
       path: Schema.String,
       limit: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
-      hostId: Schema.optionalKey(HostId),
     },
     success: FolderListing,
-    error: errors(NotFound, InvalidState),
-  }),
-  /**
-   * Whether a one-off thread may run in `path` on the joined machine `hostId`, as its host checks
-   * it there: the folder, links resolved, and its branch; or why not (`~/.ssh`, Gram Host's own
-   * folder, the whole filesystem, a missing folder).
-   */
-  Rpc.make("fs.checkFolder", {
-    payload: { hostId: HostId, path: Schema.String },
-    success: HostFolderChecked,
     error: errors(NotFound, InvalidState),
   }),
   /**

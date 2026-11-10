@@ -1,14 +1,23 @@
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
-import { HOST_PROTOCOL_VERSION } from "@gram/contracts";
+import {
+  HOST_PROTOCOL_VERSION,
+  type HostFolderChecked,
+  type HostId,
+  InvalidState,
+  NotFound,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { removeDir, tempDir } from "../git/test-repo.ts";
 import { fingerprintOf, generateHostKey, hostIdOf } from "../host/machine-keys.ts";
 import { memoryMachineStore } from "../host/paired-machines.ts";
+import type { HostFolders } from "../host/folders.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import {
+  MACHINES_FOLDERS_BROWSE_PATH,
+  MACHINES_FOLDERS_CHECK_PATH,
   MACHINES_LIST_PATH,
   MACHINES_SSH_JOIN_PATH,
   MACHINES_UPDATE_PATH,
@@ -33,7 +42,11 @@ const post = (
   hosts: RemoteHosts["Service"],
   path: string,
   body: unknown,
-  options: { readonly remote?: RemoteAccess | undefined; readonly ssh?: string } = {},
+  options: {
+    readonly remote?: RemoteAccess | undefined;
+    readonly ssh?: string;
+    readonly folders?: (id: HostId) => HostFolders;
+  } = {},
 ) =>
   machineManagement(
     hosts,
@@ -41,6 +54,8 @@ const post = (
     path,
     "1.15.2",
     options.ssh,
+    undefined,
+    options.folders,
   ).pipe(
     Effect.provideService(
       HttpServerRequest.HttpServerRequest,
@@ -82,6 +97,106 @@ const joined = (hosts: RemoteHosts["Service"], name = "cachyos") => {
   hosts.machines.confirm(id);
   return { id, fingerprint: fingerprintOf(key.publicKey) };
 };
+
+/** Stands in for the machine's host: what it was asked, and its answers. */
+const fakeFolders =
+  (asked: Array<string>) =>
+  (id: HostId): HostFolders => ({
+    browse: (input, limit) =>
+      Effect.sync(() => void asked.push(`${id} browse ${input} ${limit}`)).pipe(
+        Effect.as({ path: "/home/dev", entries: [], truncated: false }),
+      ),
+    check: (path): Effect.Effect<HostFolderChecked, NotFound | InvalidState> => {
+      asked.push(`${id} check ${path}`);
+      if (path === "~/.ssh")
+        return Effect.fail(
+          new InvalidState({ message: "Gram doesn't run a chat in /home/dev/.ssh." }),
+        );
+      if (path === "~/gone")
+        return Effect.fail(
+          new NotFound({
+            entity: "project",
+            id: "/home/dev/gone",
+            message: "Folder not found: /home/dev/gone",
+          }),
+        );
+      return Effect.succeed({ path: "/home/dev/scratch" });
+    },
+  });
+
+describe("a joined machine's folders, for the local app", () => {
+  it.effect("are listed and checked by the machine's host, refusals as the contract's errors", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const { id } = joined(hosts);
+      const asked: Array<string> = [];
+      const folders = fakeFolders(asked);
+      const listed = yield* post(
+        hosts,
+        MACHINES_FOLDERS_BROWSE_PATH,
+        { id, path: "~/" },
+        { folders },
+      );
+      expect(listed).toEqual({
+        status: 200,
+        body: { path: "/home/dev", entries: [], truncated: false },
+      });
+      const checked = yield* post(
+        hosts,
+        MACHINES_FOLDERS_CHECK_PATH,
+        { id, path: "~/scratch" },
+        { folders },
+      );
+      expect(checked).toEqual({ status: 200, body: { path: "/home/dev/scratch" } });
+      expect(
+        yield* post(hosts, MACHINES_FOLDERS_CHECK_PATH, { id, path: "~/.ssh" }, { folders }),
+      ).toEqual({
+        status: 422,
+        body: { _tag: "InvalidState", message: "Gram doesn't run a chat in /home/dev/.ssh." },
+      });
+      expect(
+        yield* post(hosts, MACHINES_FOLDERS_CHECK_PATH, { id, path: "~/gone" }, { folders }),
+      ).toEqual({
+        status: 404,
+        body: {
+          _tag: "NotFound",
+          entity: "project",
+          id: "/home/dev/gone",
+          message: "Folder not found: /home/dev/gone",
+        },
+      });
+      expect(asked).toEqual([
+        `${id} browse ~/ 500`,
+        `${id} check ~/scratch`,
+        `${id} check ~/.ssh`,
+        `${id} check ~/gone`,
+      ]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("answer nothing for a machine that isn't joined and confirmed", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const asked: Array<string> = [];
+      const folders = fakeFolders(asked);
+      const unknown = yield* post(
+        hosts,
+        MACHINES_FOLDERS_BROWSE_PATH,
+        { id: "m-ffffffffffffffffffffffff", path: "~/" },
+        { folders },
+      );
+      expect(unknown.status).toBe(404);
+      const { id } = joined(hosts);
+      expect((yield* post(hosts, MACHINES_FOLDERS_BROWSE_PATH, { id, path: "~/" })).status).toBe(
+        404,
+      );
+      expect((yield* post(hosts, MACHINES_FOLDERS_CHECK_PATH, { id }, { folders })).status).toBe(
+        400,
+      );
+      expect(asked).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+});
 
 describe("Settings → Machines", () => {
   it.effect("lists this Gram's release and protocol, and the command that updates a machine", () =>

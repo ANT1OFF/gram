@@ -146,6 +146,8 @@ export const AuthMiddleware = HttpRouter.middleware(
     const control = yield* RemoteControl;
     // Absent only in tests that serve the middleware alone: no machine can join or dial in then.
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
+    // A joined machine's folders for the one-off chat's picker, reached only from the local app.
+    const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const tokenCapture =
       remoteHosts === undefined ? undefined : yield* claudeTokenCaptureFor(remoteHosts);
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
@@ -288,6 +290,9 @@ export const AuthMiddleware = HttpRouter.middleware(
                         releaseOfConfig(config),
                         undefined,
                         tokenCapture,
+                        workerHosts === undefined
+                          ? undefined
+                          : (id) => workerHosts.machine(id).folders,
                       )
                   : isRemote && path === "/ws"
                     ? yield* closedOnRevoke(remote, remote.sessionOf(authRequest), httpEffect)

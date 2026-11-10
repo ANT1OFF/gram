@@ -7,7 +7,9 @@ import {
   HostFailed,
   HostId,
   hostOf,
+  type InvalidState,
   LOCAL_HOST_ID,
+  type NotFound,
 } from "@gram/contracts";
 import {
   type ClaudeTokenCapture,
@@ -29,6 +31,7 @@ import {
   SSH_TARGET,
 } from "../host/ssh-join.ts";
 import { installScript, updateCommand } from "../host/install-script.ts";
+import { type HostFolders, MAX_LISTED } from "../host/folders.ts";
 import type { RemoteHostsShape } from "../host/remote-hosts.ts";
 import type { McpTokens } from "../app-tools/mcp-tokens.ts";
 import type { ThreadStore } from "../persistence/thread-store.ts";
@@ -60,8 +63,18 @@ export const MACHINES_AUTOMATIC_UPDATES_PATH = "/machines/automatic-updates";
 /** Asks a machine for its Claude Code sign-in again, as after its Sign in terminal ends. */
 export const MACHINES_CHECK_SIGN_IN_PATH = "/machines/check-sign-in";
 
+/**
+ * A joined machine's folders for a one-off chat's picker, listed there by its host. Local app
+ * only: a paired phone never lists or checks another machine's folders.
+ */
+export const MACHINES_FOLDERS_BROWSE_PATH = "/machines/folders/browse";
+/** Whether a one-off chat may run in a folder on a joined machine, checked there by its host. */
+export const MACHINES_FOLDERS_CHECK_PATH = "/machines/folders/check";
+
 /** Machines settings: only the local app may call them, never a paired browser or a machine. */
 export const MACHINE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
+  MACHINES_FOLDERS_BROWSE_PATH,
+  MACHINES_FOLDERS_CHECK_PATH,
   MACHINES_LIST_PATH,
   MACHINES_JOIN_LINK_PATH,
   MACHINES_CONFIRM_PATH,
@@ -130,6 +143,8 @@ const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body
 const refuse = (message: string, status = 403) => HttpServerResponse.text(message, { status });
 
 const JOIN_BODY_MAX = 512;
+/** A folder request's body: a machine's id, a path and a limit. */
+const FOLDER_BODY_MAX = 8_192;
 
 /** A small JSON object body of at most `max` bytes, or undefined for anything else. */
 const jsonBody = (max: number) =>
@@ -311,6 +326,8 @@ export const machineManagement = (
   ssh?: string,
   /** The `claude setup-token` capture; without one, its routes refuse. */
   capture?: ClaudeTokenCapture,
+  /** A joined machine's folders through its host; without them, the folder routes refuse. */
+  folders?: (id: HostId) => HostFolders,
 ) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -319,6 +336,38 @@ export const machineManagement = (
     switch (path) {
       case MACHINES_LIST_PATH:
         return json(machinesStatus(hosts, remote, appVersion));
+      case MACHINES_FOLDERS_BROWSE_PATH:
+      case MACHINES_FOLDERS_CHECK_PATH: {
+        const body = yield* jsonBody(FOLDER_BODY_MAX);
+        const id = body?.["id"];
+        const folder = body?.["path"];
+        const limit = body?.["limit"];
+        if (typeof id !== "string" || typeof folder !== "string")
+          return json({ message: "Say which machine and which folder." }, 400);
+        const machine = hosts.machines.get(id);
+        if (machine === undefined || machine.confirmedAt === undefined || folders === undefined)
+          return refuse("no such machine", 404);
+        const on = folders(HostId.make(id));
+        const answer: Effect.Effect<unknown, NotFound | InvalidState> =
+          path === MACHINES_FOLDERS_BROWSE_PATH
+            ? on.browse(folder, typeof limit === "number" && limit > 0 ? limit : MAX_LISTED)
+            : on.check(folder);
+        return yield* answer.pipe(
+          Effect.map((value) => json(value)),
+          // The contract's error as the page reads it: its tag, its words and, for a missing
+          // folder, which one.
+          Effect.catch((error) =>
+            Effect.succeed(
+              json(
+                error._tag === "NotFound"
+                  ? { _tag: "NotFound", entity: "project", id: error.id, message: error.message }
+                  : { _tag: "InvalidState", message: error.message },
+                error._tag === "NotFound" ? 404 : 422,
+              ),
+            ),
+          ),
+        );
+      }
       case MACHINES_JOIN_LINK_PATH:
         if (remote === undefined)
           return json(

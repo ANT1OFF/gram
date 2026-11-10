@@ -149,7 +149,7 @@ export function useMachineFolderStatus(
   const trimmed = path.trim();
   const debounced = useDebouncedValue(trimmed, debounceMs);
   const query = useQuery({
-    queryKey: ["fs.checkFolder", hostId, debounced],
+    queryKey: ["machines.folders.check", hostId, debounced],
     queryFn: () => api.checkFolderOn(hostId!, debounced),
     enabled: hostId !== undefined && debounced !== "",
     retry: false,

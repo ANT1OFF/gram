@@ -188,7 +188,7 @@ const machineHidden = (path: string): string | undefined =>
       ? `Gram doesn't run a chat in ${path}: it is Gram Host's own folder.`
       : undefined;
 
-/** `fs.browse` with a joined machine's `hostId`: its host's listing, refusals and all. */
+/** `/machines/folders/browse`: a joined machine's listing from its host, refusals and all. */
 export function browseMockMachine(input: string, limit = MOCK_FOLDER_LIMIT): FolderListing {
   const listing = browseMockFs(input, limit, MACHINE);
   const hidden = machineHidden(listing.path);
@@ -199,7 +199,7 @@ export function browseMockMachine(input: string, limit = MOCK_FOLDER_LIMIT): Fol
   };
 }
 
-/** `fs.checkFolder`: whether a one-off thread may run in `input` on the joined machine. */
+/** `/machines/folders/check`: whether a one-off thread may run in `input` on the joined machine. */
 export function checkMockMachineFolder(input: string): HostFolderChecked {
   const path = resolveMockPath(input, MOCK_MACHINE_HOME);
   if (path === "/") throw new MockInvalidState("Gram doesn't run a chat in the whole filesystem.");

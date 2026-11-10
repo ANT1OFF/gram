@@ -1178,11 +1178,14 @@ layer(testServer("https://device.tail123.ts.net:9443"), { excludeTestServices: t
         });
         const cookie = claimed.headers["set-cookie"]![0]!.split(";")[0]!;
         const json = { "content-type": "application/json" };
-        // The phone reaches none of the routes that update machines or switch it.
+        // The phone reaches none of the routes that update machines or switch it, nor lists or
+        // checks a joined machine's folders.
         for (const path of [
           "/machines/update",
           "/machines/update-all",
           "/machines/automatic-updates",
+          "/machines/folders/browse",
+          "/machines/folders/check",
         ])
           expect(
             (yield* raw(port, {
