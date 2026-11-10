@@ -32,7 +32,7 @@ import {
   type GetRuntime,
 } from "./runtime-state.ts";
 import { discoverDefaultModel } from "./default-model.ts";
-import { resolveSlot } from "./model-slots.ts";
+import { slotHereNow } from "./model-slots.ts";
 import { basename } from "node:path";
 import { samePath } from "@gram/git";
 import type { AgentHosts } from "./agent-hosts.ts";
@@ -224,7 +224,16 @@ export const makeThreadLifecycle = ({
       const settings = yield* store.getSettings;
       const model =
         input.model ??
-        (yield* resolveSlot(hosts, settings.agents.defaultModel)) ??
+        (yield* slotHereNow(hosts, settings.agents.defaultModel).pipe(
+          Effect.tap((here) =>
+            here.missing === undefined
+              ? Effect.void
+              : Effect.logInfo("new thread: its default model can't run here").pipe(
+                  Effect.annotateLogs({ why: here.missing }),
+                ),
+          ),
+          Effect.map((here) => here.model),
+        )) ??
         (yield* discoverDefaultModel(hosts));
       const project = yield* store.ensureProject({
         root: input.projectRoot,

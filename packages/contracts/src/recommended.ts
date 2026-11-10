@@ -28,12 +28,54 @@ export const TierRef = Schema.Struct({
 });
 export type TierRef = typeof TierRef.Type;
 
-/** A model slot: following a tier, or pinned to the model and effort the user chose. */
-export const ModelSlot = Schema.Union([ModelRef, TierRef]);
+const knownTier = (tier: string): tier is Tier => (TIERS as ReadonlyArray<string>).includes(tier);
+
+/**
+ * A slot that follows a tier this version of Gram doesn't know, as a newer Gram (or a newer table)
+ * stored it. Kept exactly as stored so nothing is lost, and never resolved: it is unavailable here,
+ * and whatever stands in for an unavailable slot is used. A known tier never decodes as one, so a
+ * known tier above high is still refused.
+ */
+export const UnknownTierRef = Schema.Struct({
+  tier: Schema.String.check(
+    Schema.makeFilter(
+      (tier: string) => !knownTier(tier) || "Expected a tier this Gram doesn't know.",
+    ),
+  ),
+  agent: Schema.optionalKey(Schema.String),
+  variant: Schema.optionalKey(Schema.String),
+});
+export type UnknownTierRef = typeof UnknownTierRef.Type;
+
+/**
+ * A model slot: following a tier, or pinned to the model and effort the user chose; or following
+ * a tier from a newer Gram, which this one keeps but can't resolve.
+ */
+export const ModelSlot = Schema.Union([ModelRef, TierRef, UnknownTierRef]);
 export type ModelSlot = typeof ModelSlot.Type;
 
+/** Whether a slot follows a tier this Gram knows, and so resolves through its table. */
 export const isTierRef = <T extends object>(slot: T): slot is Extract<T, { readonly tier: Tier }> =>
-  "tier" in slot;
+  "tier" in slot && typeof slot.tier === "string" && knownTier(slot.tier);
+
+/** Whether a slot follows a tier only a newer Gram knows: kept, never resolved. */
+export const isUnknownTier = <T extends object>(
+  slot: T,
+): slot is Extract<T, { readonly tier: string }> =>
+  "tier" in slot && typeof slot.tier === "string" && !knownTier(slot.tier);
+
+/** Whether a slot is pinned to the model and effort the user chose, following no tier. */
+export const isPinned = <T extends object>(
+  slot: T,
+): slot is Exclude<T, { readonly tier: string }> => !("tier" in slot);
+
+/** The harness a slot names, if it names one this Gram knows: its own, or the one it keeps to. */
+export const slotAgent = (slot: ModelSlot | undefined): AgentKind | undefined =>
+  slot === undefined || isUnknownTier(slot) ? undefined : slot.agent;
+
+/** Why a slot on a tier only a newer Gram knows can't run here. */
+export const unknownTierWhy = (tier: string): string =>
+  `it follows the "${tier}" tier, which only a newer version of Gram knows; update Gram, or pick a model for it`;
 
 const VendorPick = Schema.Struct({
   /** In order of preference; an older CLI falls back to a later one within the tier. */
@@ -229,8 +271,45 @@ export const slotModel = (
   table: RecommendationTable = RECOMMENDED,
 ): ModelRef | undefined => {
   if (slot === undefined) return undefined;
-  if (!isTierRef(slot)) return slot;
-  return resolveTier(table, slot, available)?.ref;
+  if (isPinned(slot)) return slot;
+  return isTierRef(slot) ? resolveTier(table, slot, available)?.ref : undefined;
+};
+
+/** Why nothing on this machine fills a tier, ending in its fix. */
+export const tierMissingWhy = (
+  table: RecommendationTable,
+  ref: TierRef,
+  available: AvailableModels,
+): string => {
+  const agents = tierAgents(table, ref.tier, setupOf(available), ref.agent);
+  if (agents.length === 0)
+    return `nothing here fills the ${tierName(ref.tier)} tier: neither Claude Code nor Codex lists any models; install one and sign in`;
+  const named = agents
+    .map(
+      (agent) =>
+        `${agent === "claude" ? "Claude Code" : "Codex"} (${table.tiers[ref.tier][agent].models.join(", ")})`,
+    )
+    .join(" or ");
+  return `nothing here fills the ${tierName(ref.tier)} tier: ${named} isn't listed; update it, or pick a model for this slot`;
+};
+
+/**
+ * A slot as it stands on this machine: the model it runs on, or, for one that follows a tier this
+ * machine can't fill (or only a newer Gram knows), why, so its caller can say so beside whatever
+ * stands in. Nothing for an unset slot.
+ */
+export const slotHere = (
+  slot: ModelSlot | undefined,
+  available: AvailableModels,
+  table: RecommendationTable = RECOMMENDED,
+): { readonly model?: ModelRef; readonly missing?: string } => {
+  if (slot === undefined) return {};
+  if (isPinned(slot)) return { model: slot };
+  if (!isTierRef(slot)) return { missing: unknownTierWhy(slot.tier) };
+  const resolved = resolveTier(table, slot, available);
+  return resolved === undefined
+    ? { missing: tierMissingWhy(table, slot, available) }
+    : { model: resolved.ref };
 };
 
 /**
@@ -241,7 +320,9 @@ export const firstChoiceOf = (
   slot: ModelSlot,
   table: RecommendationTable = RECOMMENDED,
 ): ModelRef => {
-  if (!isTierRef(slot)) return slot;
+  if (isPinned(slot)) return slot;
+  // A tier only a newer Gram knows stands in as Lead, the default tier.
+  if (!isTierRef(slot)) return firstChoiceOf({ tier: "lead" }, table);
   const agent = slot.agent ?? table.both[slot.tier];
   return {
     agent,

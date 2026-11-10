@@ -140,6 +140,33 @@ describe("new-task authoritative preflight", () => {
   });
 });
 
+describe("an orchestrator slot that can't run here", () => {
+  it("says why beside what opens instead, and starts on the selection alone", async () => {
+    const selection: TaskModelSelection = {
+      orchestrator: { agent: "claude", model: "synthetic-model" },
+      orchestratorNote:
+        "The orchestrator's model can't run here: nothing here fills the Top tier. It opens on claude:synthetic-model instead.",
+    };
+    const { start } = setup(async () => selection);
+    const note = await screen.findByTestId("task-orchestrator-note");
+    expect(note.textContent).toContain("nothing here fills the Top tier");
+    fireEvent.change(screen.getByLabelText("What needs doing"), {
+      target: { value: "Synthetic task" },
+    });
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: /Start workspace and send/ }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.submit(screen.getByRole("form", { name: "New task" }));
+    await screen.findByText("Synthetic start boundary");
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ selection: { orchestrator: selection.orchestrator } }),
+    );
+  });
+});
+
 describe("worker entry intent", () => {
   it("preflights direct mode immediately, preserves text on entry changes and submits the server selection", async () => {
     const selection: TaskModelSelection = {

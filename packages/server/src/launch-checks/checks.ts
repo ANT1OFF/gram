@@ -13,7 +13,7 @@ import type {
   Thread,
   ToolCheck,
 } from "@gram/contracts";
-import { isTierRef } from "@gram/contracts";
+import { isPinned, isTierRef } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { installerOf } from "../agent-runtime/policy.ts";
 
@@ -108,13 +108,18 @@ export const inferredAgentOf = (checks: LaunchChecks): AgentKind | undefined => 
  * that follows a tier on no one harness goes where what's installed takes it, as an unset one does.
  */
 const defaultAgentOf = (settings: Settings, checks: LaunchChecks): AgentKind | undefined =>
-  settings.agents.defaultModel?.agent ?? inferredAgentOf(checks);
+  savedDefaultOf(settings)?.agent ?? inferredAgentOf(checks);
 
-/** The saved default as a model ref, when it names its harness: a pinned one, or one kept to a harness. */
+/**
+ * The saved default as a model ref, when it names its harness: a pinned one, or one kept to a
+ * harness. One on a tier only a newer Gram knows counts as unset.
+ */
 const savedDefaultOf = (settings: Settings): ModelRef | undefined => {
   const saved = settings.agents.defaultModel;
-  if (saved === undefined || !isTierRef(saved)) return saved;
-  return saved.agent === undefined ? undefined : { agent: saved.agent, model: "default" };
+  if (saved === undefined || isPinned(saved)) return saved;
+  return isTierRef(saved) && saved.agent !== undefined
+    ? { agent: saved.agent, model: "default" }
+    : undefined;
 };
 
 /**

@@ -13,6 +13,7 @@ import {
   type ProjectId,
   type ThreadId,
   type WorkspaceState,
+  slotAgent,
 } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -22,7 +23,7 @@ import * as Schema from "effect/Schema";
 import { randomUUID } from "node:crypto";
 import { subscriptionTaskCharter } from "../task-models.ts";
 import { sameTaskModel } from "../task-selection.ts";
-import { outboxForNewOrchestrator } from "../outbox.ts";
+import { outboxForNewOrchestrator, withNotes } from "../outbox.ts";
 import { admittedForRole, kindName } from "../rules.ts";
 import {
   OUTBOX_UNREADABLE_DETAIL,
@@ -181,10 +182,10 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
               });
             }
             yield* refuseConnectorEntries(given);
-            const own = given.orchestratorModel;
-            if (own?.agent !== undefined && !admittedForRole(own.agent, "orchestrator")) {
+            const own = slotAgent(given.orchestratorModel);
+            if (own !== undefined && !admittedForRole(own, "orchestrator")) {
               return yield* new InvalidState({
-                message: `${kindName(own.agent)} threads can't be orchestrators yet.`,
+                message: `${kindName(own)} threads can't be orchestrators yet.`,
               });
             }
           }
@@ -479,7 +480,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       if (home === undefined) {
         return yield* new NotFound({ entity: "project", id: workspace.homeProjectId });
       }
-      const { model, mode } = yield* openModel(state.charter, selected);
+      const { model, mode, note } = yield* openModel(state.charter, selected);
       const thread = yield* creator
         .createIn({ kind: "current" }, home.root, {
           title: `Orchestrator · ${workspace.name}`,
@@ -528,8 +529,9 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       // Opening another orchestrator ends the set-aside pause as Resume would, and lets go too.
       if (endedSetAside) yield* releaseSetAside(workspace.id);
       const latestSeq = yield* store.latestWorkerReportSeq(workspace.id);
+      // A slot it couldn't open on is told to it, as a roster change is, so it can tell the user.
       yield* updateOutbox(workspace.id, (outbox) => [
-        outboxForNewOrchestrator(outbox, latestSeq),
+        withNotes(outboxForNewOrchestrator(outbox, latestSeq), note === undefined ? [] : [note]),
         undefined,
       ]);
       yield* memory

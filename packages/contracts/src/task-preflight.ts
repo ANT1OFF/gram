@@ -28,6 +28,11 @@ export const TaskModelSelection = Schema.Struct({
   worker: Schema.optionalKey(ModelRef),
   /** For a direct task, the models its worker may be started on, in the roster's order. */
   workerChoices: Schema.optionalKey(Schema.Array(TaskWorkerChoice)),
+  /**
+   * Why the orchestrator doesn't open on the model its slot follows (a tier nothing here fills),
+   * naming what it opens on instead, for the preview to show. Absent when it opens as its slot says.
+   */
+  orchestratorNote: Schema.optionalKey(Schema.String),
 });
 export type TaskModelSelection = typeof TaskModelSelection.Type;
 

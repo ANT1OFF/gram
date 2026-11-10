@@ -8,6 +8,7 @@ import {
   type ThreadSummary,
   type WaitItem,
   type WorkspaceId,
+  slotAgent,
 } from "@gram/contracts";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
@@ -731,7 +732,7 @@ export function PaletteBody({
           void navigate({ to: "/new" });
           return;
         }
-        const agent = thread?.model.agent ?? settings?.agents.defaultModel?.agent ?? "claude";
+        const agent = thread?.model.agent ?? slotAgent(settings?.agents.defaultModel) ?? "claude";
         latestSession(api, agent, root)
           .then(async (session) => {
             if (session === undefined) {

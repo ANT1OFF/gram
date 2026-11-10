@@ -252,3 +252,42 @@ describe("new-thread draft on a default that follows a tier", () => {
     expect(result.current.choice).toEqual(mine);
   });
 });
+
+describe("new-thread draft on a default that can't run here", () => {
+  const listed = (agent: AgentKind) => ({
+    models:
+      agent === "claude"
+        ? [
+            {
+              id: "opus",
+              displayName: "Opus",
+              supportsEffort: false,
+              isDefault: true,
+              resolvedId: "claude-opus-5-5",
+            },
+          ]
+        : [],
+  });
+
+  it.each([
+    [{ tier: "top" } as const, "nothing here fills the Top tier"],
+    [{ tier: "huge" } as const, "only a newer version of Gram knows"],
+  ])("falls back to discovery for %o and says why", async (saved, why) => {
+    const listModels = vi.fn(async (agent: AgentKind) => listed(agent));
+    const { result } = renderHook(() => useDraftAgentChoice(saved), {
+      wrapper: wrapper(listModels),
+    });
+    await waitFor(() => expect(result.current.discovering).toBe(false));
+    expect(result.current.choice).toMatchObject({ agent: "claude", model: "opus" });
+    expect(result.current.unavailable).toContain(why);
+  });
+
+  it("says nothing for a pinned default", async () => {
+    const listModels = vi.fn(async (agent: AgentKind) => listed(agent));
+    const { result } = renderHook(() => useDraftAgentChoice({ agent: "claude", model: "opus" }), {
+      wrapper: wrapper(listModels),
+    });
+    expect(result.current.unavailable).toBeUndefined();
+    expect(listModels).not.toHaveBeenCalled();
+  });
+});

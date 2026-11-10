@@ -14,7 +14,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { discoverDefaultModel } from "../../runtime/default-model.ts";
-import { resolveSlot } from "../../runtime/model-slots.ts";
+import { slotHereNow } from "../../runtime/model-slots.ts";
 import { subscriptionTaskCharter } from "../task-models.ts";
 import { sameTaskModel, sameTaskSelection } from "../task-selection.ts";
 import {
@@ -55,11 +55,18 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
     Effect.gen(function* () {
       const settings = yield* store.getSettings;
       // A slot that follows a tier is resolved now, so the orchestrator opens on the model the
-      // recommendation names today; one nothing here fills falls through, as an unset one does.
-      const preferred =
-        (yield* resolveSlot(hosts, charter.orchestratorModel)) ??
-        (yield* resolveSlot(hosts, settings.agents.defaultModel));
+      // recommendation names today; one nothing here fills falls through, as an unset one does,
+      // and says so (`note`) beside what stands in.
+      const own = yield* slotHereNow(hosts, charter.orchestratorModel);
+      const app =
+        own.model === undefined ? yield* slotHereNow(hosts, settings.agents.defaultModel) : {};
+      const preferred = own.model ?? app.model;
       const model = preferred ?? expected ?? (yield* discoverDefaultModel(hosts));
+      const missing = own.missing ?? (preferred === undefined ? app.missing : undefined);
+      const note =
+        missing === undefined
+          ? undefined
+          : `The orchestrator's ${own.missing === undefined ? "default " : ""}model can't run here: ${missing}. It opens on ${workerModelLabel(model)} instead.`;
       if (!admittedForRole(model.agent, "orchestrator"))
         return yield* new InvalidState({
           message: `${kindName(model.agent)} cannot orchestrate. Choose an admitted harness explicitly in Settings → Workspaces.`,
@@ -75,7 +82,7 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
         return yield* new InvalidState({
           message: `The selected task orchestrator is ${kindName(model.agent)}'s ${model.model}. ${gateNeedsReason(needs, model.agent, mode)} Prepare the native approval home or choose another harness that holds this approval policy.`,
         });
-      return { model, mode };
+      return { model, mode, ...(note === undefined ? {} : { note }) };
     });
 
   /**
@@ -216,7 +223,8 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
     Effect.gen(function* () {
       const context = yield* taskContext(input);
       const { charter, holder, projectIds } = context;
-      const orchestrator = holder?.model ?? (yield* openModel(charter)).model;
+      const opened = holder === undefined ? yield* openModel(charter) : undefined;
+      const orchestrator = holder?.model ?? opened!.model;
       if (input.direct !== undefined && !projectIds.includes(input.direct.projectId))
         return yield* new InvalidState({
           message: "The selected worker repository isn't one of this workspace's repositories.",
@@ -230,6 +238,7 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
         ...(holder === undefined ? {} : { orchestratorThreadId: holder.id }),
         ...(workers?.worker === undefined ? {} : { worker: workers.worker }),
         ...(workers === undefined ? {} : { workerChoices: workers.choices }),
+        ...(opened?.note === undefined ? {} : { orchestratorNote: opened.note }),
       };
       const fresh = Effect.gen(function* () {
         const current = yield* taskContext(input);
