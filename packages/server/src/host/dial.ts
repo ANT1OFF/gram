@@ -1,8 +1,10 @@
 import type { KeyObject } from "node:crypto";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import { Socket } from "../platform/unstable.ts";
 import { HOST_CONNECT_PATH, signedConnectHeaders } from "./machine-keys.ts";
@@ -14,6 +16,13 @@ const RETRY_FIRST_MS = 2_000;
 const RETRY_MOST_MS = 30_000;
 /** A connection that lasted this long resets the wait. */
 const STEADY_MS = 60_000;
+/**
+ * How long a dial may go with nothing from the main Gram before it counts as gone: the main Gram's
+ * RPC client pings every five seconds (`connectHost`), so this is four pings missed. A link that
+ * broke without a word (the main Gram's tailnet went down, a sleep, a NAT forgot it) never fails a
+ * read, and its socket would wait on it for good, the host never dialling again.
+ */
+export const READ_IDLE_MS = 20_000;
 
 export interface DialOptions {
   /** The main Gram's origin, which every dial is signed for. */
@@ -29,8 +38,8 @@ export const connectUrl = (origin: string) =>
   `${origin.replace(/^https:/, "wss:").replace(/^http:/, "ws:")}${HOST_CONNECT_PATH}`;
 
 /**
- * One dial: a WebSocket to the main Gram, signed afresh, serving the host until the socket closes
- * or the dial is refused. What `service` builds in the dial's scope ends with it; `dialForever`
+ * One dial: a WebSocket to the main Gram, signed afresh, serving the host until the socket closes,
+ * the dial is refused, or the main Gram has said nothing for `idleMs`. What `service` builds in the dial's scope ends with it; `dialForever`
  * hands it one it keeps across dials.
  */
 export const dialOnce = <R>(
@@ -38,22 +47,62 @@ export const dialOnce = <R>(
   service: Effect.Effect<HostService, never, Scope.Scope | R>,
   /** Runs on each message the main Gram sends: the dial got through and is being served. */
   served: Effect.Effect<void> = Effect.void,
+  idleMs: number = READ_IDLE_MS,
 ): Effect.Effect<void, never, R> =>
   Effect.gen(function* () {
+    const now = options.now ?? Date.now;
     const ended = yield* Deferred.make<void>();
+    /** Set as the socket ends, before `ended` stops the serving: a stop then closes nothing. */
+    let socketEnded = false;
+    /** When the main Gram last sent anything, or when the dial started. */
+    let heard = now();
+    const received = Effect.andThen(
+      Effect.sync(() => {
+        heard = now();
+      }),
+      served,
+    );
+    // Ends a dial the main Gram has gone silent on, so the next one is made.
+    yield* Effect.suspend(() =>
+      now() - heard < idleMs
+        ? Effect.void
+        : Effect.logWarning(
+            "gram-host: nothing from the main Gram for too long; dialling again",
+          ).pipe(
+            Effect.annotateLogs({ silentSeconds: Math.round((now() - heard) / 1000) }),
+            Effect.andThen(Deferred.succeed(ended, undefined)),
+          ),
+    ).pipe(
+      Effect.repeat(Schedule.spaced(Duration.millis(Math.max(10, Math.floor(idleMs / 4))))),
+      Effect.forkScoped,
+    );
     const socket = yield* Socket.makeWebSocket(options.url ?? connectUrl(options.origin), {
-      headers: signedConnectHeaders(
-        options.key,
-        options.origin,
-        options.hostId,
-        (options.now ?? Date.now)(),
-      ),
+      headers: signedConnectHeaders(options.key, options.origin, options.hostId, now()),
       openTimeout: "15 seconds",
     });
     const host = yield* service;
-    // Served until the socket ends: refused, closed by the main Gram, or broken.
+    // Served until the socket ends (refused, closed by the main Gram, or broken) or goes silent.
     yield* Effect.raceFirst(
-      serveHost(watchedSocket(socket, Deferred.succeed(ended, undefined), served), host),
+      serveHost(
+        watchedSocket(
+          socket,
+          Effect.andThen(
+            Effect.sync(() => {
+              socketEnded = true;
+            }),
+            Deferred.succeed(ended, undefined),
+          ),
+          received,
+        ),
+        host,
+        {
+          socketEnded: () => socketEnded,
+          // A WebSocket's own close: the main Gram reads it as the connection ending.
+          closeFirst: Effect.flatMap(socket.writer, (writer) =>
+            writer.write(new Socket.CloseEvent(1000, "The host is stopping.")),
+          ).pipe(Effect.ignore, Effect.scoped),
+        },
+      ),
       Deferred.await(ended),
     );
   }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
@@ -76,7 +125,11 @@ export const DETACHED_GRACE_MS = 3 * 60_000;
 export const dialForever = <R>(
   options: DialOptions,
   service: Effect.Effect<HostService, never, Scope.Scope | R>,
-  timing: { readonly detachedMs?: number; readonly retryFirstMs?: number } = {},
+  timing: {
+    readonly detachedMs?: number;
+    readonly retryFirstMs?: number;
+    readonly idleMs?: number;
+  } = {},
 ): Effect.Effect<never, never, R> =>
   Effect.gen(function* () {
     const now = options.now ?? Date.now;
@@ -117,7 +170,7 @@ export const dialForever = <R>(
         detachedSince = undefined;
       }
       const started = now();
-      yield* dialOnce(options, keptService, served);
+      yield* dialOnce(options, keptService, served, timing.idleMs);
       detachedSince ??= now();
       if (now() - started >= STEADY_MS) wait = retryFirstMs;
       yield* Effect.logInfo("gram-host: not connected; dialling again").pipe(

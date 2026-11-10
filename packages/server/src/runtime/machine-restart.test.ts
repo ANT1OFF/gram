@@ -67,6 +67,7 @@ const fakeMachine = () => {
         readonly service: Scope.Closeable;
         readonly dial: Scope.Closeable;
         readonly serving: Fiber.Fiber<unknown, unknown>;
+        readonly hostEnd: { readonly end: () => void };
       }
     | undefined;
   let pid = 100;
@@ -141,7 +142,7 @@ const fakeMachine = () => {
       ),
       { hostId: MACHINE, gone: Deferred.await(ended) },
     );
-    live = { connection, service: serviceScope, dial, serving };
+    live = { connection, service: serviceScope, dial, serving, hostEnd };
   });
   /** The host process ends as a restart ends it, taking its sessions with it. */
   const stop = Effect.suspend(() => {
@@ -153,7 +154,23 @@ const fakeMachine = () => {
       yield* Scope.close(ending.service, Exit.void);
     });
   });
-  return { current, start, stop, opened, agents };
+  /**
+   * The host process stops in order, as on SIGTERM (`systemctl restart`, an update, an installer
+   * rerun): its dial ends (the RPC server, then a stream that flushes what was written to it),
+   * then the sessions it kept.
+   */
+  const stopInOrder = Effect.suspend(() => {
+    const ending = live;
+    if (ending === undefined) return Effect.void;
+    return Effect.gen(function* () {
+      yield* Fiber.interrupt(ending.serving);
+      ending.hostEnd.end();
+      yield* Effect.sleep("50 millis");
+      yield* Scope.close(ending.dial, Exit.void);
+      yield* Scope.close(ending.service, Exit.void);
+    });
+  });
+  return { current, start, stop, stopInOrder, opened, agents };
 };
 
 /**
@@ -306,6 +323,45 @@ describe("a joined machine whose host restarts mid-turn", () => {
         ]);
         const kept = yield* store.getThread(thread.id);
         expect(kept.lastError).toBeUndefined();
+      }).pipe(Effect.ensuring(machine.stop), Effect.scoped, Effect.provide(onMachine(machine)));
+    },
+    30_000,
+  );
+
+  it.live(
+    "resumes and continues it after a host that stopped in order, its running shell cut off",
+    () => {
+      const machine = fakeMachine();
+      return Effect.gen(function* () {
+        const { thread, first } = yield* midTurn(machine);
+        const store = yield* ThreadStore;
+        const sessionId = (yield* store.getThread(thread.id)).agentSessionId;
+        // A foreground shell command runs as the service restarts.
+        yield* first.emit({
+          type: "chunk",
+          messageId: REPLY("reply-1"),
+          chunk: {
+            type: "tool-input-available",
+            toolCallId: "bash-1",
+            toolName: "Bash",
+            input: { command: "bunx vitest run" },
+          },
+        });
+        yield* machine.stopInOrder;
+        yield* Effect.sleep("100 millis");
+        yield* machine.start;
+
+        // Before this change the thread failed here with the host's InterruptError.
+        const second = yield* nthSession(thread.id, 2);
+        expect(second.options.resumeId).toBe(sessionId);
+        yield* second.emit({ type: "status", status: "idle" });
+        yield* eventually(
+          "the continuation",
+          Effect.sync(() => second.sent.length === 1),
+        );
+        // The agent is told its turn was cut and its shells stopped, not left to guess.
+        expect(second.sent[0]).toMatchObject({ text: machineRestartText(NAME) });
+        expect((yield* store.getThread(thread.id)).lastError).toBeUndefined();
       }).pipe(Effect.ensuring(machine.stop), Effect.scoped, Effect.provide(onMachine(machine)));
     },
     30_000,

@@ -23,8 +23,12 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import { type GitStateChange, Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -326,6 +330,79 @@ describe("host protocol", () => {
       write(join(repo, "tracked.txt"), "changed\n");
       const edited = yield* Queue.take(changes).pipe(Effect.timeout("20 seconds"));
       expect(edited).toMatchObject({ path: repo, state: { changedFiles: 1, branch: "main" } });
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+});
+
+describe("a host stopped from its own side", () => {
+  // On Linux, destroying a Unix stream with data unread resets it, and a peer whose listeners
+  // were gone threw an uncaught ECONNRESET: ten of them failed CI's test job at #346's first head.
+  it.live("leaves a plain stream to its owner, and runs the owner's close first", () =>
+    Effect.gen(function* () {
+      const { host, control } = yield* streamPair;
+      const order: Array<string> = [];
+      const service = {
+        hello: hello(),
+        files: filesOn(yield* Proc),
+        reads: fileReadsOn(yield* Proc),
+        attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
+        repos: reposOn(yield* Proc, REPOS),
+        worktrees: yield* Worktrees,
+        git: gitOn(yield* Proc),
+        terminals: yield* terminalsOnHost,
+        sessions: yield* sessionsOnHost(noAgents),
+        scan: Effect.succeed(SCAN),
+      } satisfies HostService;
+      const plain = yield* Effect.forkScoped(
+        serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(host)), service),
+      );
+      const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)));
+      expect(connection.hello.pid).toBe(4242);
+      yield* Fiber.interrupt(plain);
+      // Before this change the stop destroyed it, which is what reset it under its peer.
+      expect(host.destroyed).toBe(false);
+
+      const second = yield* streamPair;
+      const owned = yield* Effect.forkScoped(
+        serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(second.host)), service, {
+          closeFirst: Effect.sync(() => void order.push("closed first")),
+        }),
+      );
+      yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(second.control)));
+      yield* Fiber.interrupt(owned);
+      expect(order).toEqual(["closed first"]);
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+});
+
+/** The error `exit` failed with, or `undefined` for a success or an interruption. */
+const failureOf = (exit: Exit.Exit<unknown, unknown>) =>
+  Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined;
+
+describe("a host whose calls it interrupted itself", () => {
+  // A host built before it closed its socket first (1.17.0 and older) ends a session's events as
+  // interrupted when it shuts down in order. Over the connection still up, that read as the
+  // session's own end, so a restart failed the turn instead of resuming it after the redial.
+  it.live("reads as gone, so a session waits for the redial", () =>
+    Effect.gen(function* () {
+      const sessions = yield* sessionsOnHost(noAgents);
+      const host = yield* connected(
+        {},
+        {
+          sessions: {
+            ...sessions,
+            events: () => Stream.fromEffect(Effect.interrupt),
+            deliver: () => Effect.interrupt,
+          },
+        },
+      );
+      const events = yield* Effect.exit(Stream.runCollect(host.sessions.events("h", 0)));
+      expect(failureOf(events)).toMatchObject({ _tag: "HostUnavailable" });
+      // A call it interrupted fails as one the host didn't answer, rather than interrupt its caller.
+      const sent = yield* Effect.exit(host.sessions.send("h", { text: "hi" }, { deliveryId: "d" }));
+      expect(failureOf(sent)).toMatchObject({ _tag: "HostFailed" });
+      // The connection itself stands: its socket says whether the host went.
+      expect(host.gone()).toBe(false);
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 });
