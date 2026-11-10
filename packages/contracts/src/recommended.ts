@@ -357,13 +357,21 @@ export const hostCandidates = (
   });
 };
 
-/** The row of a host's list for `model`: by its id, or the id an alias row runs. */
+/** A model id without its `[1m]` window or a dated snapshot's suffix: what two ids are compared by. */
+const plainId = (id: string) => bare(id).replace(/-\d{8}$/, "");
+
+/**
+ * The row of a host's list for `model`: by its id, or the id an alias row runs, each side compared
+ * without a `[1m]` window or a date suffix, so a dated or windowed id matches its plain model.
+ */
 export const hostListing = <T extends Pick<AgentModel, "id" | "resolvedId">>(
   hostModels: ReadonlyArray<T>,
   model: string,
-): T | undefined =>
-  hostModels.find(
+): T | undefined => {
+  const wanted = plainId(model);
+  return hostModels.find(
     (row) =>
-      row.id === model ||
-      (row.resolvedId !== undefined && bare(row.resolvedId).replace(/-\d{8}$/, "") === model),
+      plainId(row.id) === wanted ||
+      (row.resolvedId !== undefined && plainId(row.resolvedId) === wanted),
   );
+};
