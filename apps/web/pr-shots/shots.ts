@@ -1817,6 +1817,19 @@ const PHONE_ACCESS_SHOTS: readonly Shot[] = [
       }),
   },
   {
+    name: "phones-on-tailscale-stopped",
+    title:
+      "Phones and browsers, on, while Tailscale is stopped on this Mac: says so, and that it comes back",
+    open: (page) =>
+      stagePhoneAccess(page, {
+        mode: "on",
+        tailscale: { state: "stopped" },
+        devices: PHONE_DEVICES.slice(0, 2),
+        problem:
+          "Tailscale is stopped on this Mac. Turn it on, and Gram sets up access again by itself.",
+      }),
+  },
+  {
     name: "phones-no-tailscale",
     title: "Phones and browsers, Tailscale not installed",
     open: (page) => stagePhoneAccess(page, { mode: "off", tailscale: { state: "missing" } }),
@@ -2042,7 +2055,33 @@ const openNewWithMachines = async (page: Page, pick?: string) => {
   await page.waitForTimeout(400);
 };
 
+/** Settings → Machines with old-box offline for `offline`, its reason's hover open. */
+const openMachineOffline = async (page: Page, offline: Record<string, unknown>) => {
+  await page.route(/\/machines\/(list|check-sign-in)$/, (route) =>
+    route.fulfill({
+      json: {
+        machines: JOINED_MACHINES.map((machine) =>
+          machine.id === "m-synthetic-old" ? { ...machine, offline } : machine,
+        ),
+      },
+    }),
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/settings/machines");
+  await page.getByTestId("machines-list").waitFor();
+  const row = page.getByTestId("machines-row").filter({ hasText: "old-box" });
+  await row.getByTestId("machines-state").hover();
+  await page.locator('[data-slot="tooltip-content"][data-open]').waitFor();
+  await page.waitForTimeout(400);
+};
+
 const MACHINE_SHOTS: readonly Shot[] = [
+  {
+    name: "machines-tailscale-stopped",
+    title:
+      "Settings → Machines, access on but Tailscale stopped on this Mac: old-box's hover says so",
+    open: (page) => openMachineOffline(page, { kind: "tailscale-down", cause: "stopped" }),
+  },
   {
     name: "machine-new-thread",
     title:

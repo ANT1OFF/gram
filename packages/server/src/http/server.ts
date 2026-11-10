@@ -103,8 +103,6 @@ import {
   SESSION_LIFETIME_MS,
   REMOTE_CONNECT_PATH,
   REMOTE_CLAIM_PATH,
-  REMOTE_DISABLE_PATH,
-  REMOTE_ENABLE_PATH,
 } from "./remote-access.ts";
 import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./remote-routes.ts";
 import { RemoteControl } from "./remote-control.ts";
@@ -150,6 +148,9 @@ export const AuthMiddleware = HttpRouter.middleware(
     const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const tokenCapture =
       remoteHosts === undefined ? undefined : yield* claudeTokenCaptureFor(remoteHosts);
+    // Access opened, closed or moved, by the switch or by recovery: joined machines' connections
+    // and dials follow it, so none outlives the address it came in on.
+    if (remoteHosts !== undefined) control.watch((origin) => remoteHosts.keepOrigin(origin));
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
@@ -209,7 +210,12 @@ export const AuthMiddleware = HttpRouter.middleware(
             Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(64)),
             Effect.catch(() => Effect.succeed("")),
           );
-          const session = code.length === 64 ? remote.claim(authRequest, code) : undefined;
+          // The access this request came in on must still be the one serving: access closed or
+          // reopened while the body was read (even at the same address) refuses the claim.
+          const session =
+            code.length === 64 && control.current() === remote
+              ? remote.claim(authRequest, code)
+              : undefined;
           if (session === undefined)
             return secureResponse(HttpServerResponse.text("pairing refused", { status: 403 }));
           const response = yield* HttpServerResponse.text("paired").pipe(
@@ -271,15 +277,7 @@ export const AuthMiddleware = HttpRouter.middleware(
           case "pass":
             response =
               path !== undefined && REMOTE_MANAGEMENT_PATHS.has(path)
-                ? yield* remoteManagement(control, path, isRemote ? remote : undefined).pipe(
-                    // Access turned off, or onto another address: joined machines dial again.
-                    Effect.tap(() =>
-                      Effect.sync(() => {
-                        if (path === REMOTE_ENABLE_PATH || path === REMOTE_DISABLE_PATH)
-                          remoteHosts?.keepOrigin(control.current()?.origin);
-                      }),
-                    ),
-                  )
+                ? yield* remoteManagement(control, path, isRemote ? remote : undefined)
                 : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
                   ? isRemote || remoteHosts === undefined
                     ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
@@ -290,6 +288,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                         releaseOfConfig(config),
                         undefined,
                         tokenCapture,
+                        control.dialAccess(),
                         workerHosts === undefined
                           ? undefined
                           : (id) => workerHosts.machine(id).folders,

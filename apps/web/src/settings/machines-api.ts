@@ -108,12 +108,21 @@ const isUpdate = (value: unknown): value is MachineUpdate => {
 };
 
 /**
+ * Why access over Tailscale is on but no machine can dial in: Tailscale on this computer is
+ * missing, signed out, stopped, without HTTPS certificates or not answering, or Gram couldn't set
+ * up its Serve listener (`serve`).
+ */
+export type TailscaleDown = "missing" | "signed-out" | "stopped" | "no-https" | "error" | "serve";
+
+/**
  * Why a joined machine is offline: the last reason it dropped or was refused since this Gram
- * started, that access over Tailscale is off, or that it hasn't dialled since. Times are epoch ms.
+ * started, that access over Tailscale is off or down here, or that it hasn't dialled since. Times
+ * are epoch ms.
  */
 export type OfflineReason =
   | { readonly kind: "never" }
   | { readonly kind: "tailscale-off" }
+  | { readonly kind: "tailscale-down"; readonly cause: TailscaleDown }
   | { readonly kind: "unconfirmed"; readonly at: number }
   | { readonly kind: "bad-signature"; readonly at: number }
   /** Its clock against this machine's: positive when it is ahead. */
@@ -276,6 +285,7 @@ const isMachine = (value: unknown): value is JoinedMachine => {
 const REASONS = new Set([
   "never",
   "tailscale-off",
+  "tailscale-down",
   "unconfirmed",
   "bad-signature",
   "clock",
@@ -285,11 +295,15 @@ const REASONS = new Set([
   "moved",
 ]);
 
+const DOWN_CAUSES = new Set(["missing", "signed-out", "stopped", "no-https", "error", "serve"]);
+
 const isOffline = (value: unknown): value is OfflineReason => {
   if (typeof value !== "object" || value === null) return false;
   const r = value as Record<string, unknown>;
   if (typeof r["kind"] !== "string" || !REASONS.has(r["kind"])) return false;
   if (r["kind"] === "never" || r["kind"] === "tailscale-off") return true;
+  if (r["kind"] === "tailscale-down")
+    return typeof r["cause"] === "string" && DOWN_CAUSES.has(r["cause"]);
   if (typeof r["at"] !== "number") return false;
   if (r["kind"] === "clock") return typeof r["skewMs"] === "number";
   if (r["kind"] === "mismatch")

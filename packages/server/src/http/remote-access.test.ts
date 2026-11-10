@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createRemoteAccess,
+  remotePairings,
   deviceLabel,
   PAIR_LIFETIME_MS,
   remoteCookieName,
@@ -302,5 +303,31 @@ describe("private browser access", () => {
     expect(access.authorize(request({ cookies: { [access.cookieName]: phone } }))).toMatchObject({
       status: 401,
     });
+  });
+});
+
+describe("pairings shared by the accesses of one address", () => {
+  it("holds a pairing or removal made on any of them, and closes only its own connections", () => {
+    const pairings = remotePairings();
+    const first = createRemoteAccess(ORIGIN, PORT, Date.now, pairings);
+    const token = claim(first, codeOf(first.mint().url))!;
+    const cookies = { [remoteCookieName(PORT)]: token };
+    first.close();
+    const second = createRemoteAccess(ORIGIN, PORT, Date.now, pairings);
+    expect(second.authorize(request({ cookies }))).toEqual({ kind: "pass" });
+    const session = second.sessionOf(request({ cookies }))!;
+    let open = true;
+    second.onDisconnect(session, () => {
+      open = false;
+    });
+    // Closing an access closes its own connections, not the next one's.
+    first.close();
+    first.disconnectAll();
+    expect(open).toBe(true);
+    // A removal through the closed one holds on the one serving.
+    expect(first.revoke(second.devices()[0]!.id)).toBe(true);
+    expect(open).toBe(false);
+    expect(second.authorize(request({ cookies }))).toMatchObject({ kind: "reject", status: 401 });
+    expect(second.devices()).toEqual([]);
   });
 });

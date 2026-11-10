@@ -181,6 +181,8 @@ keeps each machine's last reason since it started, in memory only:
 | --------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | It hasn't dialled in since Gram started | Nothing reached this Gram from it                                            | `gram-host status` there                                    |
 | Access over Tailscale is off            | No machine can dial in                                                       | Turn it on in Phone access                                  |
+| Tailscale is stopped on this Mac        | Access is on, but Tailscale here is stopped, signed out or missing           | Turn it on; Gram reconnects machines by itself              |
+| Gram couldn't set up Tailscale Serve    | Access is on, but Serve refused Gram's listener                              | Phone access says why                                       |
 | Clock is 3 min ahead (or behind)        | A dial it signed was more than two minutes off this machine's clock          | Fix the time there                                          |
 | A dial wasn't signed by its key         | A dial named it with a signature its key didn't make, or for another address | Remove it, `gram-host leave` there, and add it again        |
 | It dialled in but didn't answer         | It never said hello, in time or as itself                                    | Rerun the installer there                                   |

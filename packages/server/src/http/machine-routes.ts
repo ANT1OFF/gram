@@ -31,6 +31,7 @@ import {
   SSH_TARGET,
 } from "../host/ssh-join.ts";
 import { installScript, updateCommand } from "../host/install-script.ts";
+import type { DialAccess } from "../host/paired-machines.ts";
 import { type HostFolders, MAX_LISTED } from "../host/folders.ts";
 import type { RemoteHostsShape } from "../host/remote-hosts.ts";
 import type { McpTokens } from "../app-tools/mcp-tokens.ts";
@@ -290,10 +291,11 @@ const machinesStatus = (
   hosts: RemoteHostsShape,
   remote: RemoteAccess | undefined,
   release: string | undefined,
+  access: DialAccess | undefined,
 ) => {
   const joinLink = hosts.machines.joinOpen();
   return {
-    machines: hosts.list(remote !== undefined),
+    machines: hosts.list(access ?? (remote !== undefined ? "on" : "off")),
     ...(joinLink === undefined ? {} : { joinLink }),
     protocol: HOST_PROTOCOL_VERSION,
     ...(release === undefined ? {} : { release }),
@@ -326,6 +328,8 @@ export const machineManagement = (
   ssh?: string,
   /** The `claude setup-token` capture; without one, its routes refuse. */
   capture?: ClaudeTokenCapture,
+  /** Whether machines can dial in, and why not; read from `remote` when left out. */
+  access?: DialAccess,
   /** A joined machine's folders through its host; without them, the folder routes refuse. */
   folders?: (id: HostId) => HostFolders,
 ) =>
@@ -335,7 +339,7 @@ export const machineManagement = (
       return refuse("forbidden");
     switch (path) {
       case MACHINES_LIST_PATH:
-        return json(machinesStatus(hosts, remote, appVersion));
+        return json(machinesStatus(hosts, remote, appVersion, access));
       case MACHINES_FOLDERS_BROWSE_PATH:
       case MACHINES_FOLDERS_CHECK_PATH: {
         const body = yield* jsonBody(FOLDER_BODY_MAX);
@@ -410,7 +414,7 @@ export const machineManagement = (
           } catch {
             // Only what its update runs is lost; the move itself happened.
           }
-          return json({ ...machinesStatus(hosts, remote, appVersion), joined, output });
+          return json({ ...machinesStatus(hosts, remote, appVersion, access), joined, output });
         }
         if (joined === undefined)
           return json(
@@ -432,7 +436,7 @@ export const machineManagement = (
         // Joined with the printed key, then stopped (its service didn't start, say): it is confirmed,
         // and the person reads what went wrong.
         return json({
-          ...machinesStatus(hosts, remote, appVersion),
+          ...machinesStatus(hosts, remote, appVersion, access),
           joined: joined.id,
           ...(failure === undefined
             ? {}
@@ -451,14 +455,14 @@ export const machineManagement = (
         } catch {
           return json({ message: "The change couldn't be saved." }, 500);
         }
-        return json(machinesStatus(hosts, remote, appVersion));
+        return json(machinesStatus(hosts, remote, appVersion, access));
       }
       case MACHINES_UPDATE_ALL_PATH: {
         // Only this Gram's own release, over each machine's own connection; one too old to update
         // itself keeps its Update, which runs the installer.
         for (const machine of hosts.machines.list())
           if (machine.confirmedAt !== undefined) hosts.update(machine.id);
-        return json(machinesStatus(hosts, remote, appVersion));
+        return json(machinesStatus(hosts, remote, appVersion, access));
       }
       case MACHINES_UPDATE_PATH: {
         const id = (yield* jsonBody(256))?.["id"];
@@ -470,7 +474,7 @@ export const machineManagement = (
           const asked = hosts.update(machine.id);
           if (asked.kind === "started" || asked.kind === "current")
             return json({
-              ...machinesStatus(hosts, remote, appVersion),
+              ...machinesStatus(hosts, remote, appVersion, access),
               output: "",
               started: true,
             });
@@ -513,14 +517,14 @@ export const machineManagement = (
             },
             409,
           );
-        return json({ ...machinesStatus(hosts, remote, appVersion), output });
+        return json({ ...machinesStatus(hosts, remote, appVersion, access), output });
       }
       case MACHINES_CHECK_SIGN_IN_PATH: {
         const id = (yield* jsonBody(256))?.["id"];
         if (typeof id !== "string" || hosts.machines.get(id) === undefined)
           return refuse("no such machine", 404);
         yield* Effect.promise(() => hosts.checkSignIn(HostId.make(id)));
-        return json(machinesStatus(hosts, remote, appVersion));
+        return json(machinesStatus(hosts, remote, appVersion, access));
       }
       case MACHINES_CONFIRM_PATH:
       case MACHINES_REMOVE_PATH: {
@@ -533,7 +537,7 @@ export const machineManagement = (
           } catch {
             return json({ message: "The change couldn't be saved." }, 500);
           }
-          return json(machinesStatus(hosts, remote, appVersion));
+          return json(machinesStatus(hosts, remote, appVersion, access));
         }
         /**
          * Held for the whole removal: no run starts for it and nothing is sent to it, and every
@@ -550,7 +554,7 @@ export const machineManagement = (
             return json({ message: "The change couldn't be saved." }, 500);
           }
           return json({
-            ...machinesStatus(hosts, remote, appVersion),
+            ...machinesStatus(hosts, remote, appVersion, access),
             ...(tokenLeft ? { tokenLeft: true } : {}),
           });
         });
@@ -573,7 +577,7 @@ export const machineManagement = (
             },
             409,
           );
-        return json(machinesStatus(hosts, remote, appVersion));
+        return json(machinesStatus(hosts, remote, appVersion, access));
       }
       case MACHINES_TOKEN_START_PATH: {
         if (capture === undefined) return refuse("forbidden");

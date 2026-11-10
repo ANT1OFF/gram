@@ -117,52 +117,99 @@ export const deviceLabel = (userAgent: string | undefined): string => {
 export type RemoteAccess = ReturnType<typeof createRemoteAccess>;
 
 /**
+ * The browsers paired on one address and the connections they have open, shared by every access
+ * opened on that address. Pairing, removing and listing go through this, never through one
+ * access's own copy, so a removal made on an access that has since closed still holds on the one
+ * that replaced it.
+ */
+export interface RemotePairings {
+  /** The saved sessions, written to `store` on every change. */
+  sessions: RemoteSession[];
+  readonly store: RemoteSessionStore | undefined;
+  /** Open remote connections by session hash, whichever access they came in on. */
+  readonly connections: Map<string, Set<() => void>>;
+}
+
+/** The pairings `store` keeps (in memory alone without one), for every access on its address. */
+export const remotePairings = (store?: RemoteSessionStore): RemotePairings => ({
+  sessions: store?.read() ?? [],
+  store,
+  connections: new Map(),
+});
+
+/**
  * One ephemeral invitation and up to eight durable, expiring browser sessions. `cookiePort` names
  * the cookie: the loopback port under `GRAM_REMOTE_ORIGIN`, the Serve port when settings turn it on.
+ * `pairings` are the address's, shared with any access opened on it before or after this one; a
+ * store alone gives this access pairings of its own.
  */
 export const createRemoteAccess = (
   origin: string,
   cookiePort: number,
   now = Date.now,
-  store?: RemoteSessionStore,
+  pairings: RemotePairings | RemoteSessionStore = remotePairings(),
 ) => {
   remoteOrigin(origin);
   const host = new URL(origin).host;
   const cookieName = remoteCookieName(cookiePort);
   let invitation: { code: string; expiresAt: number } | undefined;
   let lastPairing: PairingState | undefined;
-  let sessions: RemoteSession[] = store?.read() ?? [];
-  /** Live remote connections by session hash; revoking or turning off closes them. */
-  const connections = new Map<string, Set<() => void>>();
-  const live = () => sessions.filter((session) => now() < session.expiresAt);
+  /**
+   * Set when this access is closed (turned off, or Tailscale went away): a request that began on
+   * it, such as a claim still reading its body, gets nothing from it after.
+   */
+  let closed = false;
+  const shared = "connections" in pairings ? pairings : remotePairings(pairings);
+  const { store, connections } = shared;
+  /** This access's own connections, which closing it closes; the others' stay open. */
+  const mine = new Set<() => void>();
+  const live = () => shared.sessions.filter((session) => now() < session.expiresAt);
   const sessionOf = (request: AuthRequest): RemoteSession | undefined => {
+    if (closed) return undefined;
     const cookie = request.cookies[cookieName];
     if (cookie === undefined) return undefined;
     const hash = sessionHash(cookie);
-    return sessions.find((session) => now() < session.expiresAt && tokensEqual(hash, session.hash));
+    return shared.sessions.find(
+      (session) => now() < session.expiresAt && tokensEqual(hash, session.hash),
+    );
   };
   const save = (next: RemoteSession[]) => {
     store?.write(next);
-    sessions = next;
+    shared.sessions = next;
   };
+  /** Closes the connections of `hashes`, on every access of this address. */
   const disconnect = (hashes: ReadonlyArray<string>) => {
     for (const hash of hashes) {
       const closers = connections.get(hash);
       connections.delete(hash);
-      for (const close of closers ?? []) close();
+      for (const close of closers ?? []) {
+        mine.delete(close);
+        close();
+      }
+    }
+  };
+  /** Closes the connections that came in on this access alone. */
+  const disconnectMine = () => {
+    for (const close of mine) {
+      mine.delete(close);
+      for (const [hash, closers] of connections) {
+        closers.delete(close);
+        if (closers.size === 0) connections.delete(hash);
+      }
+      close();
     }
   };
   const forget = (gone: ReadonlyArray<RemoteSession>) => {
-    sessions = sessions.filter((session) => !gone.includes(session));
+    shared.sessions = shared.sessions.filter((session) => !gone.includes(session));
     disconnect(gone.map((session) => session.hash));
-    store?.write(sessions);
+    store?.write(shared.sessions);
   };
   const touch = (session: RemoteSession) => {
     const seen = now() - (now() % LAST_SEEN_STEP_MS);
     if (session.lastSeenAt !== undefined && session.lastSeenAt >= seen) return;
     try {
       save(
-        sessions.map((existing) =>
+        shared.sessions.map((existing) =>
           existing === session ? { ...existing, lastSeenAt: seen } : existing,
         ),
       );
@@ -201,6 +248,7 @@ export const createRemoteAccess = (
         request.headers["host"] !== host ||
         request.headers["origin"] !== origin ||
         request.method !== "POST" ||
+        closed ||
         sessionOf(request) !== undefined ||
         live().length >= MAX_REMOTE_SESSIONS ||
         invitation === undefined ||
@@ -235,26 +283,44 @@ export const createRemoteAccess = (
      * changed first, so a removal holds even when saving it throws (until a restart re-reads it).
      */
     revoke: (id: string): boolean => {
-      const gone = sessions.filter((session) => deviceId(session) === id);
+      const gone = shared.sessions.filter((session) => deviceId(session) === id);
       if (gone.length === 0) return false;
       forget(gone);
       return true;
     },
-    revokeAll: () => forget(sessions),
-    /** Closes every open remote connection, keeping the pairings (turning access off). */
-    disconnectAll: () => disconnect([...connections.keys()]),
+    revokeAll: () => forget(shared.sessions),
+    /** Closes this access's open remote connections, keeping the pairings (turning access off). */
+    disconnectAll: disconnectMine,
+    /**
+     * Retires this access for good: its open connections close, its pairing link goes, and it
+     * authorizes, pairs and connects nothing more. Pairings stay saved for the access that
+     * replaces it.
+     */
+    close: () => {
+      closed = true;
+      invitation = undefined;
+      disconnectMine();
+    },
     /** Registers `close` for as long as a connection of `session` stays open. */
     onDisconnect: (session: RemoteSession, close: () => void): (() => void) => {
+      // A connection that arrives after this access closed is closed at once.
+      if (closed) {
+        close();
+        return () => {};
+      }
       const closers = connections.get(session.hash) ?? new Set();
       closers.add(close);
+      mine.add(close);
       connections.set(session.hash, closers);
       return () => {
         closers.delete(close);
+        mine.delete(close);
         if (closers.size === 0 && connections.get(session.hash) === closers)
           connections.delete(session.hash);
       };
     },
     authorize: (request: AuthRequest): AuthDecision => {
+      if (closed) return { kind: "reject", status: 401, message: "unauthorized: access closed" };
       if (
         request.headers["host"] !== host ||
         (request.headers["origin"] !== undefined && request.headers["origin"] !== origin)
