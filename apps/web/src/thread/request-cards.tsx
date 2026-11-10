@@ -742,7 +742,9 @@ function CardShell({
   );
   if (compact) return card;
   return (
-    <AttentionPulse active trigger={testId} className="rounded-(--radius-lg)">
+    // Inset: under its tool's row the card sits in the message's content, which clips a ring
+    // drawn outside it.
+    <AttentionPulse active inset trigger={testId} className="rounded-(--radius-lg)">
       {card}
     </AttentionPulse>
   );

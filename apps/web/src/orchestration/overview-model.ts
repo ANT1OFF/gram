@@ -328,19 +328,6 @@ export const rowWaiting = (
 ): WaitingOn | undefined =>
   row.askKey === undefined && !row.failed && calmTone(tone) ? row.waiting : undefined;
 
-/**
- * A worker's dot on its feature card, by its station: a failure, merged, briefed, else at work. The
- * card shows where each worker stands, not what it does this minute, which the tone says.
- */
-export const stationDotClass = (station: FeatureStation, failed: boolean): string =>
-  failed
-    ? "bg-destructive"
-    : station === "merged"
-      ? "bg-merged"
-      : station === "briefed"
-        ? "bg-muted-foreground/50"
-        : "bg-status-working";
-
 /** Now lines that only say what a row's dot says. */
 const DOT_WORDS: ReadonlySet<string> = new Set(["working", "briefed", "in review", "idle"]);
 

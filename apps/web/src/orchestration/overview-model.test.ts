@@ -19,7 +19,6 @@ import {
   overviewSummary,
   stateWordShown,
   rowTone,
-  stationDotClass,
   tileWorking,
   steplessLine,
   waitShort,
@@ -479,15 +478,6 @@ describe("an orchestrator's line", () => {
     for (const mod of ["altKey", "metaKey", "ctrlKey", "shiftKey"] as const) {
       expect(foldByKey(key("ArrowLeft", { [mod]: true }), false)).toBeUndefined();
     }
-  });
-});
-
-describe("stationDotClass", () => {
-  it("draws the feature card's station colours", () => {
-    expect(stationDotClass("working", false)).toBe("bg-status-working");
-    expect(stationDotClass("briefed", false)).toBe("bg-muted-foreground/50");
-    expect(stationDotClass("merged", false)).toBe("bg-merged");
-    expect(stationDotClass("review", true)).toBe("bg-destructive");
   });
 });
 

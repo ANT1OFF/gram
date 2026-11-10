@@ -10,6 +10,12 @@ interface AttentionPulseProps {
   active: boolean;
   /** Change to replay the pulses. */
   trigger?: string | number;
+  /**
+   * Draw the still ring on the children's own edge rather than a pixel outside it: for a card in
+   * a box that clips what overhangs it (a message's content does), where the ring outside lost
+   * its sides and showed along the top and bottom only.
+   */
+  inset?: boolean;
   className?: string;
   children: ReactNode;
 }
@@ -18,7 +24,13 @@ interface AttentionPulseProps {
  * Rings its children in the needs-attention colour while `active`: the ring pulses outward twice,
  * then stays still. Reduced fades without scaling; Off shows only the still ring.
  */
-export function AttentionPulse({ active, trigger = 0, className, children }: AttentionPulseProps) {
+export function AttentionPulse({
+  active,
+  trigger = 0,
+  inset = false,
+  className,
+  children,
+}: AttentionPulseProps) {
   const level = useMotionLevel();
   const look = useLookMotion();
   return (
@@ -28,7 +40,11 @@ export function AttentionPulse({ active, trigger = 0, className, children }: Att
         <>
           <span
             aria-hidden
-            className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-status-needs-mark"
+            data-testid="attention-ring"
+            className={cn(
+              "pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-status-needs-mark",
+              inset && "ring-inset",
+            )}
           />
           {level !== "off" && (
             <m.span

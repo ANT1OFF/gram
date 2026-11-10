@@ -9,10 +9,19 @@ import type {
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { CircleCheck, CircleDashed, CircleX, GitBranch, type LucideIcon } from "lucide-react";
+import {
+  CircleCheck,
+  CircleDashed,
+  CircleX,
+  GitBranch,
+  MessageSquare,
+  Network,
+  type LucideIcon,
+} from "lucide-react";
 
 import { useApi } from "@/api/context";
 import { carryDraft } from "@/composer/draft-prefill";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { useHistoryStore } from "@/history/history-view";
 import { formatStamp } from "@/lib/time";
@@ -246,10 +255,20 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
   const prDetail = prResult?.detail;
 
   if (thread === undefined || !threadDidWork(thread, entry)) {
+    // The shared empty state, as the Board, the Inbox and the panel's tabs say theirs. An
+    // orchestrator's adds what to do here; any other thread's composer already says it.
+    const orchestrator = thread?.role === "orchestrator";
     return (
-      <p data-testid="transcript-empty" className="p-6 text-reading text-muted-foreground">
-        No messages yet.
-      </p>
+      <EmptyState
+        testId="transcript-empty"
+        icon={orchestrator ? Network : MessageSquare}
+        title="No messages yet"
+        {...(orchestrator
+          ? {
+              line: "Say what needs doing. The orchestrator hands it to workers and follows each one to a pull request.",
+            }
+          : {})}
+      />
     );
   }
 
