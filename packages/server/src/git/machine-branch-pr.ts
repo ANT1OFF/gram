@@ -3,12 +3,15 @@
 // so a branch's PR there was found only once bound; a PR just opened from that worktree read as
 // none, and the PR tools refused it.
 import { effectiveCheckout, isLocalHost, type PrStatus, type Thread } from "@gram/contracts";
-import { gh, git, originOwnerRepo, Proc } from "@gram/git";
+import { gh, git, originOwnerRepo, Proc, repoFromPrUrl } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { cloneIdentityOf } from "../host/repos.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { GitStatePublisher } from "./publisher.ts";
+
+/** Whether `a` names `owner/repo` `b`; GitHub's names don't go by case. */
+const sameRepo = (a: string | undefined, b: string) => a?.toLowerCase() === b.toLowerCase();
 
 /** A project here whose origin is the one a worktree on another machine cloned. */
 export interface CloneProject {
@@ -108,27 +111,35 @@ export const MachineBranchPr = Effect.gen(function* () {
   const here = <A>(effect: Effect.Effect<A, never, ThreadStore | Proc>) =>
     effect.pipe(Effect.provideService(ThreadStore, store), Effect.provideService(Proc, proc));
 
-  /** The thread's origin as `owner/repo`: as published, else its clone's project's here. */
+  /**
+   * The thread's origin as `owner/repo`: its clone's project's here, and only that. Whatever its
+   * host published of an origin is never taken (`localTierOf` drops it at the boundary as well).
+   */
   const origin = (thread: Thread): Effect.Effect<string | undefined> =>
-    Effect.gen(function* () {
-      const published = (yield* publisher.stateForThread(thread))?.origin;
-      if (published !== undefined) return published;
-      return (yield* here(cloneProjectOf(thread)))?.repo;
-    });
+    Effect.map(here(cloneProjectOf(thread)), (project) => project?.repo);
 
-  /** The badge of its branch's open PR: as published, else looked up on GitHub from here. */
+  /**
+   * The badge of its branch's open PR in its clone's project's repository: as published when the
+   * badge is of that repository (looked up here, never the host's word), else from GitHub.
+   */
   const pr = (thread: Thread): Effect.Effect<PrStatus | undefined> =>
     Effect.gen(function* () {
-      const published = yield* publisher.stateForThread(thread);
-      if (published?.pr !== undefined) return published.pr;
-      const branch = published?.branch ?? effectiveCheckout(thread).branch;
-      if (branch === undefined || branch.startsWith("-")) return undefined;
       const project = yield* here(cloneProjectOf(thread));
       if (project === undefined) return undefined;
+      const published = yield* publisher.stateForThread(thread);
+      const badge = published?.pr;
+      if (badge !== undefined && sameRepo(repoFromPrUrl(badge.url), project.repo)) return badge;
+      const branch = published?.branch ?? effectiveCheckout(thread).branch;
+      if (branch === undefined || branch.startsWith("-")) return undefined;
       const number = yield* here(openPrNumber(project.root, project.repo, branch));
       if (number === undefined) return undefined;
-      const found = yield* publisher.lookupPr(thread, { repo: project.repo, number });
-      return Option.getOrUndefined(found);
+      const found = Option.getOrUndefined(
+        yield* publisher.lookupPr(thread, { repo: project.repo, number }),
+      );
+      // Only a badge of the asked repository counts.
+      return found !== undefined && sameRepo(repoFromPrUrl(found.url), project.repo)
+        ? found
+        : undefined;
     });
 
   return { origin, pr };

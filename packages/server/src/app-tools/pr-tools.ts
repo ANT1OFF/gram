@@ -528,7 +528,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
             bound?.number === target
               ? bound.repo
               : ((branch === undefined ? undefined : repoFromPrUrl(branch.url)) ??
-                state?.origin ??
+                // Another machine's published origin is never taken: its record says (`originOf`).
+                (isLocalHost(thread.checkout) ? state?.origin : undefined) ??
                 (yield* originOf(thread)));
           // A card that can't name the repo would leave gh to pick one the user never saw.
           if (repo === undefined) {

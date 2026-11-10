@@ -889,6 +889,76 @@ describe("merge_when_ready", () => {
         }).pipe(Effect.scoped),
     );
 
+    // The #347 review: a host that publishes another repository's origin or PR badge must not
+    // redirect a bare #12, or report a foreign PR as this branch's.
+    for (const poison of ["origin", "badge"] as const) {
+      it.effect.skipIf(!hasGit)(
+        `keeps to the recorded repository when its host publishes a poisoned ${poison}`,
+        () =>
+          Effect.gen(function* () {
+            const world = yield* makeWorld;
+            world.joinedMachine = {
+              id: MACHINE,
+              online: true,
+              worktrees: new Map([[WORKTREE, { clone: CLONE, origin: ORIGIN, branch: OWN }]]),
+            };
+            yield* withServer(
+              world,
+              Effect.gen(function* () {
+                const store = yield* ThreadStore;
+                const runtimes = yield* ThreadRuntimes;
+                const registry = yield* AppToolRegistry;
+                const { session, thread } = yield* openOrchestrator(world);
+                const worker = yield* spawn(session, { feature: `remote-poison-${poison}` });
+                yield* completeTurn(worker.session);
+                yield* atAutonomy(thread, "full");
+                yield* runtimes.updateThread(worker.thread.id, (t) => ({
+                  ...t,
+                  checkout: {
+                    kind: "worktree" as const,
+                    path: WORKTREE,
+                    repoRoot: CLONE,
+                    branch: OWN,
+                    hostId: MACHINE,
+                    cloneIdentity: cloneIdentityOf(ORIGIN)!,
+                  },
+                }));
+                // What its host published: another repository's origin, or that one's PR.
+                world.states.set(WORKTREE, {
+                  repo: true,
+                  branch: OWN,
+                  changedFiles: 0,
+                  ...(poison === "origin"
+                    ? { origin: "elsewhere/other" }
+                    : {
+                        pr: {
+                          ...armedWorkerBadge(true),
+                          number: 99,
+                          url: "https://github.com/elsewhere/other/pull/99",
+                        },
+                      }),
+                } as never);
+                world.openPrs.set(OWN, 12);
+                world.prHeads.set(12, { headRefName: OWN });
+                world.prBadges.set("acme/app#12", armedWorkerBadge(true));
+                const tools = registry.forTransport(worker.thread.id, "worker");
+                const tool = (name: string) => tools.find((t) => t.descriptor.name === name)!;
+                // Before this change: #99 of elsewhere/other was this branch's PR.
+                expect(yield* tool("pr_status").run({})).toMatchObject({
+                  pr: { number: 12, url: "https://github.com/acme/app/pull/12" },
+                });
+                // Before this change: a bare #12 resolved to elsewhere/other#12.
+                yield* tool("merge_when_ready").run({ pr: 12 });
+                expect((yield* store.getThread(worker.thread.id)).boundPr).toMatchObject({
+                  repo: "acme/app",
+                  number: 12,
+                });
+              }),
+            );
+          }).pipe(Effect.scoped),
+      );
+    }
+
     it.effect.skipIf(!hasGit)("finds no PR for a branch with none open there", () =>
       Effect.gen(function* () {
         const world = yield* makeWorld;
