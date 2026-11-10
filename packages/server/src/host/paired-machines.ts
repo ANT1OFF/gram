@@ -582,6 +582,11 @@ export const machineView = (
           claudeSignIn: online.status.status.claudeSignIn,
           claudeSignInCheckedAt: online.status.at,
           tools: online.status.status.tools,
+          // What its Claude Code lists, for resolving a worker's tier there; absent from an
+          // older host, which then resolves against this machine's lists.
+          ...(online.status.status.models === undefined
+            ? {}
+            : { models: online.status.status.models }),
         }),
     ...(offline === undefined ? {} : { offline }),
     ...(release === undefined ? {} : { release }),

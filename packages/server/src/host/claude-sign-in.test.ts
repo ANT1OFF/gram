@@ -1,6 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { AgentHost } from "@gram/agents";
-import { AgentUnavailable, HostId, LOCAL_HOST_ID, type TerminalId } from "@gram/contracts";
+import {
+  AgentUnavailable,
+  HostId,
+  HostStatus,
+  LOCAL_HOST_ID,
+  type TerminalId,
+} from "@gram/contracts";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { onMachineUnavailable } from "../runtime/host-agent-sessions.ts";
 import {
@@ -120,6 +127,62 @@ describe("a machine's status", () => {
       expect(unknown.tools[0]).toEqual({ tool: "claude", found: false });
     }),
   );
+  it.effect("carries what its Claude Code lists, cut to what the wire takes", () =>
+    Effect.gen(function* () {
+      const opus = {
+        id: "opus",
+        displayName: "Opus",
+        resolvedId: "claude-opus-5-5",
+        supportsEffort: true,
+        efforts: ["low", "medium", "high", "xhigh", "max"] as const,
+        description: "Synthetic description the wire doesn't carry",
+        isDefault: true,
+      };
+      const status = yield* hostStatusOf(
+        Effect.succeed("signedIn"),
+        nothing,
+        Effect.succeed([opus, { ...opus, id: "x".repeat(300) }]),
+      );
+      expect(status.models).toEqual([
+        {
+          id: "opus",
+          displayName: "Opus",
+          resolvedId: "claude-opus-5-5",
+          supportsEffort: true,
+          efforts: ["low", "medium", "high", "xhigh", "max"],
+        },
+        expect.objectContaining({ id: "x".repeat(128) }),
+      ]);
+      expect(Schema.decodeUnknownSync(HostStatus)(status)).toEqual(status);
+      const many = yield* hostStatusOf(
+        Effect.succeed("signedIn"),
+        nothing,
+        Effect.succeed(Array.from({ length: 80 }, (_, i) => ({ ...opus, id: `m${i}` }))),
+      );
+      expect(many.models).toHaveLength(64);
+      // Nothing listed, or couldn't list: no key, as an older host sends.
+      expect(
+        yield* hostStatusOf(Effect.succeed("signedIn"), nothing, Effect.succeed(undefined)),
+      ).not.toHaveProperty("models");
+    }),
+  );
+
+  it("decodes across the version skew both ways", () => {
+    // An older host's status, with no models, decodes here.
+    const old = { claudeSignIn: "signedIn", tools: [] };
+    expect(Schema.decodeUnknownSync(HostStatus)(old)).toEqual(old);
+    // A control plane before it reads the newer status as the struct it knew, ignoring models.
+    const before = Schema.Struct({
+      claudeSignIn: Schema.String,
+      tools: Schema.Array(Schema.Unknown),
+    });
+    expect(
+      Schema.decodeUnknownSync(before)({
+        ...old,
+        models: [{ id: "opus", displayName: "Opus", supportsEffort: false }],
+      }),
+    ).toEqual(old);
+  });
 });
 
 /** Finds every id as its own joined machine, as a server with them does. */

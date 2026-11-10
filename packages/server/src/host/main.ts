@@ -176,6 +176,12 @@ const hostService = (
           Effect.flatMap(claudeSignInOf),
           Effect.orElseSucceed(() => "unknown" as const),
         ),
+        undefined,
+        // What its Claude Code lists, for a worker placed here to resolve its tier against.
+        agents.get("claude").pipe(
+          Effect.flatMap((host) => host.listModels()),
+          Effect.orElseSucceed(() => undefined),
+        ),
       ),
       checks,
       ...(updater === undefined ? {} : { update: updater, admission }),

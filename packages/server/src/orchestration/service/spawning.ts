@@ -237,6 +237,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       const hostId = yield* machineNamed("spawn_worker", input.machine);
       if (hostId === undefined) return;
       const { thread, state } = yield* requireAuthority("spawn_worker", callerId);
+      // A tier resolves against what that machine lists, as the spawn itself will.
       const chosen = yield* workerModel(
         "spawn_worker",
         thread,
@@ -244,7 +245,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         input.model,
         state.charter.workerModels === undefined
           ? undefined
-          : yield* rosterHere(state.charter.workerModels, state.charter),
+          : yield* rosterHere(state.charter.workerModels, state.charter, hostId),
       );
       yield* admitMachineModel("spawn_worker", hostId, chosen.model);
     });
@@ -632,6 +633,9 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           // before this handler ran (`spawnNeedsApproval`), and they said yes to this one. Nothing
           // else about a spawn is rationed.
           const settings = yield* store.getSettings;
+          // Where it runs, first: a tier resolves against what that machine lists.
+          const hostId =
+            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
           // Without a roster the one model is the orchestrator's own, which it runs on.
           const picked =
             byUser === undefined
@@ -642,7 +646,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   input.model,
                   state.charter.workerModels === undefined
                     ? undefined
-                    : yield* rosterHere(state.charter.workerModels, state.charter),
+                    : yield* rosterHere(state.charter.workerModels, state.charter, hostId),
                 )
               : yield* Effect.gen(function* () {
                   // The user's pick, checked against the roster as it runs now, else its default.
@@ -669,8 +673,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   };
                 });
           const chosen = picked.model;
-          const hostId =
-            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
           yield* admitMachineModel(tool, hostId, chosen);
           if (byUser?.model !== undefined && !sameTaskModel(chosen, byUser.model))
             return yield* toolError(

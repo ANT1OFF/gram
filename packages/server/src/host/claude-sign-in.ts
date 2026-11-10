@@ -5,6 +5,8 @@ import {
   type AgentUnavailableReason,
   type ClaudeSignIn,
   type HostId,
+  type AgentModel,
+  type HostModel,
   type HostStatus,
   type HostTool,
   InvalidState,
@@ -76,25 +78,47 @@ export const probeTool = (tool: HostTool["tool"], run: ShellRun = loginShell): P
     () => ({ tool, found: false }),
   );
 
+/** How many listed models a status carries, and how long each string may be, as the wire takes. */
+const MODELS_SENT = 64;
+const MODEL_TEXT = 128;
+
+/** A listed model as `HostStatus.models` carries it: identity, name and efforts, cut to the wire. */
+export const hostModelOf = (model: AgentModel): HostModel => ({
+  id: model.id.slice(0, MODEL_TEXT),
+  displayName: model.displayName.slice(0, MODEL_TEXT),
+  ...(model.resolvedId === undefined ? {} : { resolvedId: model.resolvedId.slice(0, MODEL_TEXT) }),
+  supportsEffort: model.supportsEffort,
+  ...(model.efforts === undefined ? {} : { efforts: model.efforts.slice(0, 8) }),
+});
+
 /**
- * What this machine can run: its Claude sign-in and whether `claude` and `git` are there. A Claude
- * that answered about its sign-in is installed, whatever the login shell's PATH says.
+ * What this machine can run: its Claude sign-in, whether `claude` and `git` are there, and what
+ * its Claude Code lists (`models`, when it could list). A Claude that answered about its sign-in
+ * is installed, whatever the login shell's PATH says.
  */
 export const hostStatusOf = (
   signIn: Effect.Effect<ClaudeSignIn>,
   run: ShellRun = loginShell,
+  models: Effect.Effect<ReadonlyArray<AgentModel> | undefined> = Effect.succeed(undefined),
 ): Effect.Effect<HostStatus> =>
   Effect.gen(function* () {
-    const [claudeSignIn, claude, git] = yield* Effect.all(
+    const [claudeSignIn, claude, git, listed] = yield* Effect.all(
       [
         signIn,
         Effect.promise(() => probeTool("claude", run)),
         Effect.promise(() => probeTool("git", run)),
+        models,
       ],
       { concurrency: "unbounded" },
     );
     const claudeTool = claudeSignIn === "unknown" ? claude : { ...claude, found: true };
-    return { claudeSignIn, tools: [claudeTool, git] };
+    return {
+      claudeSignIn,
+      tools: [claudeTool, git],
+      ...(listed === undefined || listed.length === 0
+        ? {}
+        : { models: listed.slice(0, MODELS_SENT).map(hostModelOf) }),
+    };
   });
 
 /** The line the Sign in terminal types for the user, who runs it with Return. */

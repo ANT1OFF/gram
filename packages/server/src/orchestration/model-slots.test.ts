@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   AgentUnavailable,
   DEFAULT_CHARTER,
+  HostId,
   RECOMMENDED,
   type AgentKind,
   type AgentModel,
@@ -11,6 +12,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { hasGit } from "../git/test-repo.ts";
+import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "../runtime/fake-agent.ts";
@@ -362,5 +364,70 @@ describe.skipIf(!hasGit)("a slot that can't run here says so", () => {
         }).pipe(Effect.provide(context));
       }),
     ),
+  );
+});
+
+/** A joined "build box" whose host reports `models`, or nothing, as an older host does. */
+const box = (models?: ReadonlyArray<AgentModel>) =>
+  Layer.succeed(RemoteHosts, {
+    list: () => [
+      {
+        id: HostId.make("m-0123456789abcdef01234567"),
+        name: "build box",
+        confirmed: true,
+        ...(models === undefined ? {} : { models }),
+      },
+    ],
+  } as unknown as RemoteHostsShape);
+
+/** Spawns a Lead worker on the build box; what the spawn returned, or why it was refused. */
+const spawnOnBox = (models?: ReadonlyArray<AgentModel>) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      // This machine lists Opus; the box's own Claude Code lists what it is given.
+      const context = yield* Layer.build(
+        serverLayer(world, {}, adapters({ claude: CLAUDE })).pipe(Layer.provide(box(models))),
+      );
+      return yield* Effect.gen(function* () {
+        const { session, workspaceId } = yield* openOrchestrator(world);
+        yield* (yield* Orchestration).setCharter(workspaceId, {
+          ...DEFAULT_CHARTER,
+          autonomy: "publish",
+          workerModels: [{ tier: "lead", default: true }],
+        });
+        return yield* session
+          .callTool("spawn_worker", {
+            project: "shop",
+            feature: "on-the-box",
+            title: "On the box",
+            brief: "Synthetic work",
+            machine: "build box",
+          })
+          .pipe(
+            Effect.map((result) => JSON.stringify(result)),
+            Effect.catch((error) => Effect.succeed(error.message)),
+          );
+      }).pipe(Effect.provide(context));
+    }),
+  );
+
+describe.skipIf(!hasGit)("a worker placed on a joined machine resolves its tier there", () => {
+  it.effect("against what that machine lists, not this one's", () =>
+    Effect.gen(function* () {
+      // The box has Sonnet alone: Lead can't run there, though Opus runs here.
+      const refused = yield* spawnOnBox([row("sonnet", "claude-sonnet-5-5")]);
+      expect(refused).not.toContain('"threadId"');
+      expect(refused).toContain("nothing here fills the Lead tier: Claude Code (claude-opus-5-5)");
+    }),
+  );
+
+  it.effect("against this machine's lists when its host is too old to report them", () =>
+    Effect.gen(function* () {
+      // No `models`: Lead resolves here, on Opus, and the worker is made on it.
+      const spawned = yield* spawnOnBox(undefined);
+      expect(spawned).not.toContain("Lead tier");
+      expect(spawned).toContain('"model":"claude:opus"');
+    }),
   );
 });
