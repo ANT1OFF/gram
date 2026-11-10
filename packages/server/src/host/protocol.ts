@@ -410,12 +410,24 @@ const handlersFor = (host: HostService) => {
   }
 };
 
+/** What a stop of `serveHost` from this side does first, as its socket's owner says. */
+export interface ServeHostOptions {
+  /** Whether the owner saw the socket end already, so there is nothing left to close. */
+  readonly socketEnded?: () => boolean;
+  /**
+   * Closes the socket before the RPC server ends the calls still running. Only the owner knows
+   * how to close it well: a WebSocket with its close frame (`dialOnce`); a plain stream has none
+   * here, since destroying one with data unread resets it under its peer.
+   */
+  readonly closeFirst?: Effect.Effect<void>;
+}
+
 /**
  * Serves `host` on `socket` until the other end closes it. One connection, one control plane: a
  * host never accepts a second caller on the same stream.
  *
  * Stopped from this side (the host process shutting down in order: `systemctl restart`, an
- * update, an installer rerun), the socket closes before the RPC server ends the calls still
+ * update, an installer rerun), `closeFirst` runs before the RPC server ends the calls still
  * running. Ended first, those calls would answer as interrupted over a connection still up, and
  * the control plane would take each session's events as over rather than wait for the host to dial
  * in again and resume the session there. Closed first, the connection drops as any other does.
@@ -423,8 +435,7 @@ const handlersFor = (host: HostService) => {
 export const serveHost = (
   socket: Socket.Socket,
   host: HostService,
-  /** Whether whoever owns the socket saw it end, which a stop then needn't close. */
-  socketEnded: () => boolean = () => false,
+  options: ServeHostOptions = {},
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     const closed = yield* Deferred.make<void>();
@@ -445,7 +456,6 @@ export const serveHost = (
         }),
       ),
     };
-    const writer = yield* socket.writer;
     const oneConnection = Layer.succeed(SocketServer.SocketServer, {
       address: NetAddress.unixPathAddress("host-stream"),
       run: (handler) =>
@@ -463,18 +473,15 @@ export const serveHost = (
         Layer.provide(RpcSerialization.layerNdjson),
       ),
     );
-    // Run before the scope closes the server. A normal close: a code above 1000 destroys a plain
-    // stream with an error no one listens for any more. Bounded, for a stream that went unseen.
+    // Run before the scope closes the server. Bounded, for a stream that went unseen.
     const closeFirst = Effect.suspend(() =>
-      !up || socketEnded()
+      options.closeFirst === undefined || !up || options.socketEnded?.() === true
         ? Effect.void
-        : writer
-            .write(new Socket.CloseEvent(1000, "The host is stopping."))
-            .pipe(
-              Effect.interruptible,
-              Effect.timeoutOrElse({ duration: "1 second", orElse: () => Effect.void }),
-              Effect.ignore,
-            ),
+        : options.closeFirst.pipe(
+            Effect.interruptible,
+            Effect.timeoutOrElse({ duration: "1 second", orElse: () => Effect.void }),
+            Effect.ignore,
+          ),
     );
     yield* Deferred.await(closed).pipe(Effect.onInterrupt(() => closeFirst));
   }).pipe(Effect.scoped);

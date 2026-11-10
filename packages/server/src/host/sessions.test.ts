@@ -427,7 +427,10 @@ const redialling = Effect.gen(function* () {
   const dial = Effect.gen(function* () {
     const { host: hostEnd, control } = yield* streamPair;
     const serving = yield* Effect.forkScoped(
-      serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(hostEnd)), service),
+      serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(hostEnd)), service, {
+        // As `dialOnce` closes its WebSocket: the connection ends before the server does.
+        closeFirst: Effect.sync(() => hostEnd.destroy()),
+      }),
     );
     const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)), {
       hostId: MACHINE,

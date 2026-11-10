@@ -95,7 +95,13 @@ export const dialOnce = <R>(
           received,
         ),
         host,
-        () => socketEnded,
+        {
+          socketEnded: () => socketEnded,
+          // A WebSocket's own close: the main Gram reads it as the connection ending.
+          closeFirst: Effect.flatMap(socket.writer, (writer) =>
+            writer.write(new Socket.CloseEvent(1000, "The host is stopping.")),
+          ).pipe(Effect.ignore, Effect.scoped),
+        },
       ),
       Deferred.await(ended),
     );

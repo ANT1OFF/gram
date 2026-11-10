@@ -26,6 +26,7 @@ import { type GitStateChange, Proc, ProcLive, Worktrees, WorktreesLive } from "@
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -329,6 +330,47 @@ describe("host protocol", () => {
       write(join(repo, "tracked.txt"), "changed\n");
       const edited = yield* Queue.take(changes).pipe(Effect.timeout("20 seconds"));
       expect(edited).toMatchObject({ path: repo, state: { changedFiles: 1, branch: "main" } });
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+});
+
+describe("a host stopped from its own side", () => {
+  // On Linux, destroying a Unix stream with data unread resets it, and a peer whose listeners
+  // were gone threw an uncaught ECONNRESET: ten of them failed CI's test job at #346's first head.
+  it.live("leaves a plain stream to its owner, and runs the owner's close first", () =>
+    Effect.gen(function* () {
+      const { host, control } = yield* streamPair;
+      const order: Array<string> = [];
+      const service = {
+        hello: hello(),
+        files: filesOn(yield* Proc),
+        reads: fileReadsOn(yield* Proc),
+        attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
+        repos: reposOn(yield* Proc, REPOS),
+        worktrees: yield* Worktrees,
+        git: gitOn(yield* Proc),
+        terminals: yield* terminalsOnHost,
+        sessions: yield* sessionsOnHost(noAgents),
+        scan: Effect.succeed(SCAN),
+      } satisfies HostService;
+      const plain = yield* Effect.forkScoped(
+        serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(host)), service),
+      );
+      const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)));
+      expect(connection.hello.pid).toBe(4242);
+      yield* Fiber.interrupt(plain);
+      // Before this change the stop destroyed it, which is what reset it under its peer.
+      expect(host.destroyed).toBe(false);
+
+      const second = yield* streamPair;
+      const owned = yield* Effect.forkScoped(
+        serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(second.host)), service, {
+          closeFirst: Effect.sync(() => void order.push("closed first")),
+        }),
+      );
+      yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(second.control)));
+      yield* Fiber.interrupt(owned);
+      expect(order).toEqual(["closed first"]);
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 });
