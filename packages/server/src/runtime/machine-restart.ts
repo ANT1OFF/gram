@@ -15,6 +15,10 @@ export const machineRestartText = (machine: string): string =>
   "This is the same conversation, resumed there. Anything that was running with it (shells, " +
   "background tasks, subagents) stopped. Continue where you left off.";
 
+/** What a tool call the restart cut off ends with: it was stopped, how it ended is unknown. */
+export const machineRestartToolText = (machine: string): string =>
+  `Interrupted: ${machine} restarted while this ran, so it stopped before it finished. Its result is unknown.`;
+
 /**
  * What a session's end on a restarted machine leaves the thread to do:
  * - `continue`: open the same conversation there again and carry on the cut turn, or the queue;

@@ -4,9 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { removeDir, tempDir } from "../git/test-repo.ts";
-import { runCli } from "./cli.ts";
+import { runCli, stillJoined } from "./cli.ts";
 import { hostIdOf } from "./machine-keys.ts";
-import { readHostConfig } from "./host-config.ts";
+import { forgetJoined, readHostConfig, writeJoined } from "./host-config.ts";
 
 const ORIGIN = "https://studio.example-tailnet.ts.net";
 const LINK = `${ORIGIN}/host/join#code=${"a".repeat(64)}`;
@@ -53,6 +53,27 @@ describe("join preflight", () => {
       await Effect.runPromise(runCli(["join", LINK, "--name", "build box", "--no-service"], host));
       expect(fetch).toHaveBeenCalledOnce();
       expect(readHostConfig(home)).toMatchObject({ name: "build box", origin: ORIGIN });
+    } finally {
+      removeDir(dir);
+    }
+  });
+});
+
+describe("a running host's join", () => {
+  it("reads as left once `gram-host leave` forgets it, or the machine joins another Gram", () => {
+    const dir = tempDir();
+    const home = join(dir, "host");
+    try {
+      const config = { version: 1 as const, origin: ORIGIN, hostId: "m-0123", name: "box" };
+      writeJoined(home, config, "synthetic, not a key\n");
+      const joined = stillJoined(home, config);
+      expect(joined()).toBe(true);
+      writeJoined(home, { ...config, origin: "https://other.example-tailnet.ts.net" }, "x\n");
+      expect(joined()).toBe(false);
+      writeJoined(home, config, "x\n");
+      expect(joined()).toBe(true);
+      forgetJoined(home);
+      expect(joined()).toBe(false);
     } finally {
       removeDir(dir);
     }
