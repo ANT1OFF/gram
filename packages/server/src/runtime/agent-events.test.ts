@@ -1026,6 +1026,46 @@ describe("ThreadRuntimes agent events", () => {
     }).pipe(Effect.provide(makeRuntimeTestLayer(TurnHooks.layerNoop, CheckoutsOnDisk))),
   );
 
+  it.effect("refuses a steer into a turn whose folder was deleted, and stops it", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const fake = yield* FakeAgentControl;
+      const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "gram-gone-steer-"));
+      const thread = yield* runtimes.create({
+        projectRoot: dir,
+        checkout: { kind: "main", path: dir },
+        input: { text: "one" },
+      });
+      const session = yield* waitFor(
+        "the first send",
+        fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+      );
+      const messageId = "m-gone-steer" as MessageId;
+      yield* session.emit({ type: "chunk", messageId, chunk: { type: "start", messageId } });
+      yield* waitFor(
+        "running",
+        runtimes.status(thread.id).pipe(Effect.map((s) => s === "running")),
+      );
+      expect(yield* runtimes.send(thread.id, { text: "queued" })).toEqual({ queued: true });
+      const [summary] = (yield* runtimes.snapshot).filter((t) => t.thread.id === thread.id);
+      const queued = summary!.queue[0]!.id;
+
+      // Gone before the turn's next event: nothing has stopped it yet, so the turn still runs.
+      fs.rmSync(dir, { recursive: true, force: true });
+      const message = `This thread's folder no longer exists: ${dir}`;
+      const steered = yield* runtimes.steer(thread.id, { text: "two" }).pipe(Effect.flip);
+      expect(steered).toMatchObject({ message, folderMissing: { path: dir } });
+      const fromQueue = yield* runtimes.steerQueued(thread.id, queued).pipe(Effect.flip);
+      expect(fromQueue).toMatchObject({ message, folderMissing: { path: dir } });
+      expect(session.steered).toEqual([]);
+      // The refusal stops the session, as a send's does.
+      yield* waitFor(
+        "the session stopped",
+        runtimes.status(thread.id).pipe(Effect.map((s) => s === "cold" && session.closed)),
+      );
+    }).pipe(Effect.provide(makeRuntimeTestLayer(TurnHooks.layerNoop, CheckoutsOnDisk))),
+  );
+
   it.effect("stops a session whose old folder goes after a move, though the new one is there", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;
