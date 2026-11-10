@@ -169,6 +169,24 @@ export function dispatchArgs({ repo = LINUX_REPO, version, sha, nonce, dryRun = 
 export const runTitle = (version, nonce) => `Linux release ${version} (${nonce})`;
 
 /**
+ * The nonce in a dispatched run's name for `version`, or undefined when the name isn't one the
+ * release tooling gives (`runTitle`): how an existing run is adopted by its id.
+ */
+export function runNonce(title, version) {
+  const match = /^Linux release (\S+) \(([0-9a-f]{16})\)$/.exec(title ?? "");
+  return match && match[1] === version ? match[2] : undefined;
+}
+
+/**
+ * `gh run rerun` for the failed jobs of a run, and the jobs that need them. A rerun keeps the run's
+ * commit, ref and inputs, so it builds the same release commit however far main has moved since.
+ */
+export const rerunArgs = ({ repo = LINUX_REPO, runId }) => {
+  if (!/^\d+$/.test(String(runId))) throw new Error(`Not a run id: ${runId}`);
+  return ["run", "rerun", String(runId), "--failed", "--repo", repo];
+};
+
+/**
  * The one dispatched run of the release workflow named for `version` and `nonce`, on main at
  * `sha`, from `gh run list --json …` output; undefined while it hasn't appeared. Two such runs, or
  * one at another commit, throw.
@@ -186,10 +204,14 @@ export function matchRun(list, { version, sha, nonce }) {
   return run;
 }
 
+/** The jobs every release run must pass: the packages, and the sherpa-onnx rebuild beside them. */
+export const LINUX_JOBS = ["build", "sherpa-onnx"];
+
 /**
  * Why a finished run (`gh run view --json …`) didn't build this release, or nothing: it must have
  * succeeded, be the release workflow's (`workflowId`, GitHub's id for LINUX_WORKFLOW) dispatch on
- * main at `sha`, and (unless a dry run) have run its attestation job.
+ * main at `sha`, have passed its build and its sherpa-onnx rebuild, and (unless a dry run) have
+ * run its attestation job.
  */
 export function runProblems(view, { sha, workflowId, dryRun = false }) {
   const problems = [];
@@ -203,8 +225,9 @@ export function runProblems(view, { sha, workflowId, dryRun = false }) {
       `it is workflow ${view.workflowDatabaseId}, not ${LINUX_WORKFLOW} (${workflowId})`,
     );
   const jobs = new Map((view.jobs ?? []).map((job) => [job.name, job.conclusion]));
-  if (jobs.get("build") !== "success")
-    problems.push(`its build job is ${jobs.get("build") ?? "missing"}`);
+  for (const name of LINUX_JOBS)
+    if (jobs.get(name) !== "success")
+      problems.push(`its ${name} job is ${jobs.get(name) ?? "missing"}`);
   const attest = jobs.get("attest");
   if (dryRun ? attest === "success" : attest !== "success")
     problems.push(`its attest job is ${attest ?? "missing"}${dryRun ? " in a dry run" : ""}`);

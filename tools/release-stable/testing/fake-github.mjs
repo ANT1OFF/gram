@@ -1,7 +1,8 @@
 // A synthetic GitHub for the stable release tool's tests: the slice of the REST API, the upload
 // host and the release download URLs the tool and the app's feeds use, in memory. Writes need a
-// token the repository accepts; anonymous reads never see drafts or draft assets. `fake-gh.mjs`
-// is the `gh` that talks to it.
+// token the repository accepts; anonymous reads never see drafts or draft assets. Releases are
+// immutable, as the real repository's are: a published release takes no new asset and loses none.
+// `fake-gh.mjs` is the `gh` that talks to it.
 //
 // The tool runs `gh` synchronously, so the server runs in a process of its own
 // (`spawnFakeGitHub`), and the tests read and seed it through `/_fake/*`.
@@ -142,6 +143,8 @@ async function startFakeGitHub(repos) {
     if (upload && req.method === "POST" && rest[2] === "assets") {
       const release = findRelease(rest[1]);
       if (!release) return json(res, 404, { message: "Not Found" });
+      if (!release.draft)
+        return json(res, 422, { message: "Cannot upload assets to an immutable release." });
       const assetName = url.searchParams.get("name");
       if (release.assets.some((a) => a.name === assetName))
         return json(res, 422, { message: "already_exists" });
@@ -182,6 +185,15 @@ async function startFakeGitHub(repos) {
       }
       const { bytes: _bytes, ...shown } = asset;
       return json(res, 200, shown);
+    }
+    if (req.method === "DELETE" && rest[1] === "assets") {
+      const release = repo.releases.find((r) => r.assets.some((a) => a.id === Number(rest[2])));
+      if (!release) return json(res, 404, { message: "Not Found" });
+      if (!release.draft)
+        return json(res, 422, { message: "Cannot delete assets of an immutable release." });
+      release.assets = release.assets.filter((a) => a.id !== Number(rest[2]));
+      res.writeHead(204);
+      return res.end();
     }
     if (req.method === "GET" && rest.length === 2) {
       const release = findRelease(rest[1]);

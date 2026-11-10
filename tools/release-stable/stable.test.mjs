@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { checksumLines } from "../release-rc/rc-lib.mjs";
+import { LINUX_WORKFLOW, runTitle } from "../release-linux/linux-lib.mjs";
 import { writeLinuxBuild } from "../release-linux/testing/linux-build.mjs";
 import { parseStableArgs } from "./stable-lib.mjs";
 import { committedSource, readPublicNotes, runPhase } from "./stable.mjs";
@@ -48,6 +49,7 @@ let ghLog;
 let said;
 let appChecks;
 
+const NONCE = "0123456789abcdef";
 const APPIMAGE = `gram_${VERSION}_x86_64.AppImage`;
 const DEB = `gram_${VERSION}_amd64.deb`;
 const LINUX_RUN = 77;
@@ -164,6 +166,8 @@ const seams = (overrides = {}) => ({
     appChecks.push({ zip, sha256: sha256(readFileSync(zip)), version: state.version });
     return { stub: "macOS checks need a signed build" };
   },
+  // Sigstore's verdict needs a real attestation: a stand-in that verifies every file.
+  verifyAttestation: (files) => attestedAll(files),
   ...overrides,
 });
 
@@ -171,7 +175,12 @@ const seams = (overrides = {}) => ({
  * A synthetic GitHub holding `previous` (a published stable release, or none for a first release)
  * and this release's draft, and the work dir `release:rc --stable` would leave for it.
  */
-async function setUp({ previous = "0.3.1", repo = {}, linux = false } = {}) {
+async function setUp({
+  previous = "0.3.1",
+  repo = {},
+  linuxPending = false,
+  linux = !linuxPending,
+} = {}) {
   github = await spawnFakeGitHub({
     [REPO]: { private: false, tokens: [LOGIN], head: SHA, ...repo },
   });
@@ -226,6 +235,16 @@ async function setUp({ previous = "0.3.1", repo = {}, linux = false } = {}) {
       teamId: TEAM,
       minimumMacOS: "13.0",
       assets,
+      ...(linuxPending
+        ? {
+            linuxPending: {
+              nonce: NONCE,
+              runId: LINUX_RUN,
+              runUrl: `https://github.com/${REPO}/actions/runs/${LINUX_RUN}`,
+              problem: "its build job is failure",
+            },
+          }
+        : {}),
       ...(linux
         ? {
             linux: {
@@ -273,6 +292,33 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
     expect(loaded.some((path) => path.includes("electron-updater"))).toBe(true);
     expect(loaded.filter((path) => /node_modules\/electron\//.test(path))).toEqual([]);
   });
+
+  it("refuses a draft that records no Linux files, unless told to publish it Mac-only", async () => {
+    await again({ linux: false });
+    for (const phase of ["validate", "update-check", "publish"])
+      await expect(runPhase(options(phase), seams())).rejects.toThrow(
+        /records no Linux files: .*Pass --without-linux/,
+      );
+    const macOnly = (phase, extra = []) => options(phase, ["--without-linux", ...extra]);
+    await runPhase(macOnly("validate"), seams());
+    await runPhase(macOnly("update-check"), seams());
+    await runPhase(macOnly("publish"), seams());
+    const state = await github.state();
+    expect(state.repos[REPO].releases.find((r) => r.tag_name === `v${VERSION}`).draft).toBe(false);
+    // The flag never waves through a draft that has the Linux files, nor one missing some.
+    await again();
+    await expect(runPhase(macOnly("validate"), seams())).rejects.toThrow(
+      /--without-linux is for a draft without Linux files/,
+    );
+    const full = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
+    writeFileSync(
+      join(work, "release.json"),
+      JSON.stringify({ ...full, assets: full.assets.filter((a) => a.name !== DEB) }),
+    );
+    await expect(runPhase(options("validate"), seams())).rejects.toThrow(
+      new RegExp(`assets lack ${DEB.replaceAll(".", "\\.")}`),
+    );
+  }, 120_000);
 
   it("validates, checks and publishes with your own login", async () => {
     await runPhase(options("validate"), seams());
@@ -479,6 +525,130 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
     expect(state.repos[REPO].latestId).toBe(published.id);
   }, 60_000);
 
+  it("attaches the Linux files to a draft left with the Mac files, after a rerun, then publishes it all", async () => {
+    await again({ linuxPending: true });
+    // Nothing goes on while the Linux files are still to come.
+    await expect(runPhase(options("validate"), seams())).rejects.toThrow(
+      /no Linux files yet \(its build job is failure\); run release:stable linux first/,
+    );
+    await expect(runPhase(options("publish"), seams())).rejects.toThrow(/release:stable linux/);
+
+    const gh = linuxRun([failedRun(1), failedRun(1), passedRun(2)]);
+    const linuxSeams = seams({ linuxGh: gh.run, linuxWait, verifyAttestation: attestedAll });
+    const got = await runPhase(options("linux"), linuxSeams);
+    expect(got.runId).toBe(LINUX_RUN);
+    // Reran at the same commit, never dispatched anew.
+    expect(gh.calls.filter((call) => /^(run rerun|workflow run)/.test(call))).toEqual([
+      `run rerun ${LINUX_RUN} --failed --repo ${REPO}`,
+    ]);
+    const state = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
+    expect(state.linuxPending).toBeUndefined();
+    expect(state.linux).toMatchObject({ runId: LINUX_RUN, appImage: APPIMAGE, attested: true });
+    expect(state.assets.map((a) => a.name)).toEqual([
+      ZIP,
+      "BUILD-INFO.json",
+      "BUNDLE-INVENTORY.json",
+      "BUNDLE-SHA256SUMS.txt",
+      "WEB-SHA256SUMS.txt",
+      "SHA256SUMS.txt",
+      "latest-mac.yml",
+      APPIMAGE,
+      DEB,
+      "LINUX-BUILD.json",
+      "latest-linux.yml",
+    ]);
+    const sums = readFileSync(join(work, "assets", "SHA256SUMS.txt"), "utf8");
+    expect(sums).toContain(`  ${APPIMAGE}\n`);
+    expect(sums).toContain(`  ${ZIP}\n`);
+    const draft = (await github.state()).repos[REPO].releases.find((r) => r.id === state.releaseId);
+    expect(draft.assets.map((a) => a.name).toSorted()).toEqual(
+      state.assets.map((a) => a.name).toSorted(),
+    );
+
+    // From here it is an ordinary draft carrying both platforms.
+    await runPhase(options("validate"), linuxSeams);
+    const checked = await runPhase(options("update-check"), linuxSeams);
+    expect(checked.linux.appimage.simulated.map((r) => r.status)).toEqual([
+      "available",
+      "available",
+    ]);
+    await runPhase(options("publish"), linuxSeams);
+    await expect(runPhase(options("linux"), linuxSeams)).rejects.toThrow(
+      /already has the Linux files/,
+    );
+  }, 120_000);
+
+  it("keeps the run to pick up after a stop, and resumes an interrupted upload", async () => {
+    await again({ linuxPending: true });
+    const failing = linuxRun([failedRun(1), failedRun(1), failedRun(2)]);
+    await expect(
+      runPhase(options("linux"), seams({ linuxGh: failing.run, linuxWait })),
+    ).rejects.toThrow(/the Linux build: .*it ended failure/);
+    let state = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
+    expect(state.linuxPending).toMatchObject({ runId: LINUX_RUN, nonce: NONCE });
+    expect(state.linux).toBeUndefined();
+    const before = (await github.state()).repos[REPO].releases.find(
+      (r) => r.id === state.releaseId,
+    );
+    expect(before.assets).toHaveLength(7);
+
+    // The answer to the new SHA256SUMS.txt's upload is lost: GitHub took it, the phase stopped.
+    env.FAKE_GH_DROP_RESPONSE = "name=SHA256SUMS\\.txt ";
+    const seamsNow = () =>
+      seams({ linuxGh: linuxRun([passedRun(2)]).run, linuxWait, verifyAttestation: attestedAll });
+    await expect(runPhase(options("linux"), seamsNow())).rejects.toThrow(
+      /uploading SHA256SUMS\.txt/,
+    );
+    delete env.FAKE_GH_DROP_RESPONSE;
+    await runPhase(options("linux"), seamsNow());
+    state = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
+    const after = (await github.state()).repos[REPO].releases.find((r) => r.id === state.releaseId);
+    expect(after.assets).toHaveLength(11);
+    expect(after.assets.filter((a) => a.name === "SHA256SUMS.txt")).toHaveLength(1);
+    await runPhase(options("validate"), seams({ verifyAttestation: attestedAll }));
+  }, 120_000);
+
+  it("keeps an adopted replacement run across a failed upload, and resumes it", async () => {
+    await again({ linuxPending: true });
+    // Run 78, dispatched for this release by hand, passes; the .deb's upload answer is lost.
+    env.FAKE_GH_DROP_RESPONSE = `name=${DEB.replaceAll(".", "\\.")} `;
+    const replacement = () =>
+      seams({ linuxGh: linuxRun([passedRun(1)], { id: 78 }).run, linuxWait });
+    await expect(runPhase(options("linux", ["--run", "78"]), replacement())).rejects.toThrow(
+      new RegExp(`uploading ${DEB.replaceAll(".", "\\.")}`),
+    );
+    delete env.FAKE_GH_DROP_RESPONSE;
+    const state = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
+    expect(state.linuxPending).toMatchObject({
+      runId: 78,
+      nonce: "fedcba9876543210",
+      runUrl: `https://github.com/${REPO}/actions/runs/78`,
+    });
+    // A plain retry takes run 78 again; run 77, recorded before, is gone.
+    await runPhase(options("linux"), replacement());
+    const done = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
+    expect(done.linux.runId).toBe(78);
+    expect(done.linuxPending).toBeUndefined();
+    await runPhase(options("validate"), seams());
+  }, 120_000);
+
+  it("dispatches a new Linux build only while main is still the release commit", async () => {
+    await again({ linuxPending: true, repo: { head: "b".repeat(40) } });
+    const gh = linuxRun([passedRun(1)]);
+    await expect(
+      runPhase(options("linux", ["--dispatch"]), seams({ linuxGh: gh.run, linuxWait })),
+    ).rejects.toThrow(/main is at b{40}, not the release commit/);
+    expect(gh.calls.filter((call) => call.startsWith("workflow run"))).toEqual([]);
+    // Nor does it touch a draft whose Mac files changed.
+    await again({ linuxPending: true });
+    const state = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
+    state.assets[0].sha256 = "0".repeat(64);
+    writeFileSync(join(work, "release.json"), JSON.stringify(state));
+    await expect(
+      runPhase(options("linux"), seams({ linuxGh: linuxRun([passedRun(1)]).run, linuxWait })),
+    ).rejects.toThrow(/the private draft changed/);
+  }, 60_000);
+
   it("won't publish before validation, nor after the draft changed", async () => {
     await expect(runPhase(options("publish"), seams())).rejects.toThrow(
       /run release:stable validate first/,
@@ -493,6 +663,78 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
     );
   }, 60_000);
 });
+
+/** A `gh` call that printed `value` as JSON. */
+const ok = (value) => ({ status: 0, stdout: JSON.stringify(value), stderr: "" });
+
+/** No waiting between a Linux run's polls. */
+const linuxWait = { sleep: async () => {}, pollMs: 0 };
+
+/** Sigstore's verdict, as a stand-in: every file verified. */
+const attestedAll = (files) => ({
+  problems: [],
+  verified: files.map(({ name, sha256: digest }) => ({ name, sha256: digest, attestations: 1 })),
+});
+
+const failedRun = (attempt) => ({ attempt, status: "completed", conclusion: "failure" });
+const passedRun = (attempt) => ({ attempt, status: "completed", conclusion: "success" });
+
+/**
+ * The release workflow's run `id` (LINUX_RUN unless given) for this release, as `gh run view`
+ * shows it look after look (`views`, the last repeating), with its artifact and attestations; the
+ * `gh` the linux phase uses for the workflow's runs. Any other run isn't there.
+ */
+function linuxRun(views, { id = LINUX_RUN } = {}) {
+  const calls = [];
+  let look = 0;
+  const run = (args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "api" && args[1] === `repos/${REPO}/actions/workflows/release-linux.yml`)
+      return ok({ id: 9, path: LINUX_WORKFLOW });
+    if (args[0] === "run" && args[2] !== String(id))
+      return { status: 1, stdout: "", stderr: "HTTP 404: Not Found" };
+    if (args[0] === "run" && args[1] === "view") {
+      const at = views[Math.min(look++, views.length - 1)];
+      const passed = at.conclusion === "success";
+      return ok({
+        databaseId: id,
+        displayTitle: runTitle(VERSION, id === LINUX_RUN ? NONCE : "fedcba9876543210"),
+        event: "workflow_dispatch",
+        headBranch: "main",
+        headSha: SHA,
+        workflowDatabaseId: 9,
+        url: `https://github.com/${REPO}/actions/runs/${id}`,
+        jobs: [
+          { name: "build", conclusion: passed ? "success" : "failure" },
+          { name: "sherpa-onnx", conclusion: "success" },
+          { name: "attest", conclusion: passed ? "success" : "skipped" },
+        ],
+        ...at,
+      });
+    }
+    if (args[0] === "run" && args[1] === "rerun") return { status: 0, stdout: "", stderr: "" };
+    if (args[0] === "workflow" && args[1] === "run") return { status: 0, stdout: "", stderr: "" };
+    // Sigstore's verdict, as a stand-in: an attestation naming the file's digest.
+    if (args[0] === "attestation")
+      return ok([
+        {
+          verificationResult: {
+            statement: { subject: [{ digest: { sha256: sha256(readFileSync(args[2])) } }] },
+          },
+        },
+      ]);
+    if (args[0] === "run" && args[1] === "download") {
+      writeLinuxBuild(args[args.indexOf("--dir") + 1], {
+        version: VERSION,
+        sourceCommit: SHA,
+        runId: id,
+      });
+      return { status: 0, stdout: "", stderr: "" };
+    }
+    return { status: 99, stdout: "", stderr: `unexpected gh ${args.join(" ")}` };
+  };
+  return { run, calls };
+}
 
 /**
  * A git repository standing in for the release's source: committed hand-written notes and a

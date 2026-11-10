@@ -3,10 +3,16 @@
 // signs, notarizes, smokes and makes the assets once, then leaves a private draft and its state in
 // the work dir. This tool takes that draft the rest of the way, one phase per run:
 //
+//   bun run release:stable linux        --work <dir> [--run <id> | --dispatch]
+//                                       attach the Linux files to a draft release:rc left without
+//                                       them: reruns or adopts the Linux build, or dispatches one
 //   bun run release:stable validate     --work <dir>   fresh download of every draft asset, verified
 //   bun run release:stable update-check --work <dir>   read-only update check as the previous release
 //   bun run release:stable publish      --work <dir> [--dry-run] [--notes <file>]
 //                                       publish the draft as latest, with curated notes
+//
+// validate, update-check and publish refuse a draft without the Linux files; --without-linux,
+// passed to each, takes a Mac-only one deliberately (it can never get them once published).
 //
 // Publishing replaces the draft's build notes with notes for people using the app: the version's
 // What's New cards, or a notes file committed in the release's source, both read from the release
@@ -18,6 +24,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   closeSync,
   copyFileSync,
   createReadStream,
@@ -35,13 +42,20 @@ import { createRequire } from "node:module";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { REPO } from "../release-rc/rc-lib.mjs";
+import { REPO, checksumLines } from "../release-rc/rc-lib.mjs";
+import { writeUpdaterManifest } from "../release-rc/updater-manifest.mjs";
 import {
   LINUX_BUILD_INFO,
   checkLinuxBuild,
   linuxAssetNames,
+  linuxPackageNames,
   verifyAttestations,
 } from "../release-linux/linux-lib.mjs";
+import {
+  adoptLinuxBuild,
+  collectLinuxBuild,
+  startLinuxBuild,
+} from "../release-linux/linux-release.mjs";
 import {
   STATE_FILE,
   parseStableArgs,
@@ -485,9 +499,223 @@ const privateDraft = (ctx, state) => {
   return release;
 };
 
+/**
+ * Refuses a draft without its Linux files: still to come (`release:stable linux`), or never
+ * recorded at all. Releases are immutable once published, and joined Linux machines update their
+ * gram-host from that version's own release, so a Mac-only release can never get them. Only
+ * `--without-linux` takes one, deliberately; it refuses a draft that has the Linux files.
+ */
+const requireLinux = (state, { withoutLinux = false } = {}) => {
+  if (state.linuxPending)
+    stop(
+      `the draft has no Linux files yet (${state.linuxPending.problem}); run release:stable linux first.`,
+    );
+  if (!state.linux) {
+    if (!withoutLinux)
+      stop(
+        `${STATE_FILE} records no Linux files: a release published without them can never get them, and joined Linux machines couldn't update to it. Pass --without-linux to publish a Mac-only release deliberately.`,
+      );
+    return;
+  }
+  if (withoutLinux) stop("--without-linux is for a draft without Linux files; this one has them.");
+  const names = state.assets.map((asset) => asset.name);
+  const missing = linuxAssetNames(state.version).all.filter((name) => !names.includes(name));
+  if (missing.length) stop(`${STATE_FILE}'s assets lack ${missing.join(", ")}.`);
+};
+
+/**
+ * linux: the Linux files for a draft release:rc left with the Mac files only (`linuxPending` in
+ * release.json). It reruns the failed jobs of the recorded run, or adopts `--run <id>` (a run of
+ * the release workflow dispatched for this version at the release commit), or with `--dispatch`
+ * starts a new one, which needs main's head to still be the release commit. A rerun keeps the
+ * run's commit, so main may have moved. The files get the same checks as in release:rc, then go
+ * onto the draft beside a SHA256SUMS.txt that now lists them too; the draft must still hold
+ * exactly the Mac files release:rc uploaded. Run it again after any stop: it picks up the run
+ * and the uploads where they were.
+ */
+export async function attachLinux(ctx) {
+  const state = loadState(ctx.work);
+  if (state.linux) stop(`the draft already has the Linux files of run ${state.linux.runId}.`);
+  const pending = state.linuxPending;
+  if (!pending) stop(`${STATE_FILE} records no Linux build to finish.`);
+  const { version, sourceCommit: sha } = state;
+  const names = linuxAssetNames(version);
+  const linuxNames = new Set([...names.all, "SHA256SUMS.txt"]);
+
+  // The Mac files exactly as uploaded; Linux files and a new SHA256SUMS.txt only from an earlier
+  // try of this phase.
+  const draftNow = () =>
+    ghJson(ctx.gh.own, ["api", `repos/${REPO}/releases/${state.releaseId}`], "the private draft");
+  const release = draftNow();
+  const mac = state.assets.filter((asset) => asset.name !== "SHA256SUMS.txt");
+  const problems = releaseProblems(
+    { ...release, assets: release.assets.filter((asset) => !linuxNames.has(asset.name)) },
+    { tag: state.tag, target: state.sourceCommit, draft: true, assets: mac },
+  );
+  if (problems.length) stop(`the private draft changed: ${problems.join("; ")}.`);
+
+  const gh = ctx.linuxGh;
+  let build;
+  if (ctx.dispatch) {
+    const head = ghJson(ctx.gh.own, ["api", `repos/${REPO}/commits/main`], "main's head").sha;
+    if (head !== sha)
+      stop(
+        `main is at ${head}, not the release commit ${sha}: a new dispatch would build another commit. Rerun the release's own run instead (drop --dispatch).`,
+      );
+    build = startLinuxBuild({ gh, version, sha });
+    ctx.say(`  linux build dispatched (${build.nonce})`);
+  } else if (ctx.run ?? pending.runId) {
+    build = adoptLinuxBuild({ gh, version, sha, runId: ctx.run ?? pending.runId });
+    ctx.say(`  linux build: run ${build.runId} (${build.nonce})`);
+  } else build = { repo: REPO, version, sha, nonce: pending.nonce, dryRun: false };
+
+  // The run this try took, kept before anything else can fail, so a plain retry picks it up again
+  // (an adopted or newly dispatched one included), not the run recorded before.
+  const keep = (fields) =>
+    writeJson(join(ctx.work, STATE_FILE), {
+      ...state,
+      linuxPending: {
+        nonce: build.nonce,
+        runId: build.runId ?? null,
+        runUrl: build.runId === pending.runId ? pending.runUrl : null,
+        problem: pending.problem,
+        ...fields,
+      },
+    });
+  keep({});
+
+  const assets = join(ctx.work, "assets");
+  for (const name of names.all) rmSync(join(assets, name), { force: true });
+  let built;
+  try {
+    built = await collectLinuxBuild(build, {
+      gh,
+      into: mkdtempSync(join(ctx.work, "linux-")),
+      assets,
+      say: ctx.say,
+      reruns: 1,
+      ...ctx.linuxWait,
+    });
+  } catch (error) {
+    keep({
+      runId: error.runId ?? build.runId ?? null,
+      runUrl: error.runUrl ?? null,
+      problem: error.message,
+    });
+    stop(`the Linux build: ${error.message}`);
+  }
+  keep({
+    runId: built.runId,
+    runUrl: built.runUrl,
+    problem: `run ${built.runId} passed; its files aren't all on the draft yet`,
+  });
+  const { appImage, deb } = linuxPackageNames(version);
+  await ctx.writeManifest({
+    source: ctx.source,
+    assets,
+    version,
+    zipName: appImage,
+    releaseDate: now(),
+    target: "appimage",
+  });
+
+  // SHA256SUMS.txt: the Mac files it listed, unchanged, and the Linux files (again, after an
+  // earlier try of this phase wrote it).
+  const sumsPath = join(assets, "SHA256SUMS.txt");
+  const listed = readFileSync(sumsPath, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => /^([0-9a-f]{64}) {2}(\S+)$/.exec(line) ?? stop(`SHA256SUMS.txt: ${line}`))
+    .filter(([, , name]) => !names.covered.includes(name));
+  const entries = [];
+  for (const [, digest, name] of listed) {
+    if (!mac.some((asset) => asset.name === name)) stop(`SHA256SUMS.txt lists ${name}.`);
+    if ((await sha256File(join(assets, name))) !== digest)
+      stop(`the local ${name} no longer matches SHA256SUMS.txt.`);
+    entries.push({ name, sha256: digest });
+  }
+  for (const name of names.covered)
+    entries.push({ name, sha256: await sha256File(join(assets, name)) });
+  chmodSync(sumsPath, 0o644);
+  writeFileSync(sumsPath, checksumLines(entries));
+  const shasum = spawnSync("/usr/bin/shasum", ["-a", "256", "-c", "SHA256SUMS.txt"], {
+    cwd: assets,
+    encoding: "utf8",
+  });
+  if (shasum.status !== 0) stop(`shasum -c failed: ${shasum.stdout} ${shasum.stderr}`);
+
+  const row = async (name) => {
+    chmodSync(join(assets, name), 0o444);
+    return {
+      name,
+      bytes: statSync(join(assets, name)).size,
+      sha256: await sha256File(join(assets, name)),
+    };
+  };
+  const table = [];
+  for (const asset of state.assets)
+    table.push(asset.name === "SHA256SUMS.txt" ? await row(asset.name) : asset);
+  for (const name of names.all) table.push(await row(name));
+
+  // Onto the draft (still mutable): each Linux file and the new SHA256SUMS.txt, replacing a copy
+  // that differs. Published, the release can't change any more (immutable releases).
+  for (const name of [...names.all, "SHA256SUMS.txt"]) {
+    const want = table.find((asset) => asset.name === name);
+    const there = draftNow().assets.find((asset) => asset.name === name);
+    if (there?.digest === `sha256:${want.sha256}` && there.size === want.bytes) continue;
+    if (there) {
+      const removed = ctx.gh.own([
+        "api",
+        "--method",
+        "DELETE",
+        `repos/${REPO}/releases/assets/${there.id}`,
+      ]);
+      if (removed.status !== 0) stop(`replacing ${name} on the draft: ${removed.stderr}`);
+    }
+    const uploaded = ctx.gh.own([
+      "api",
+      "--method",
+      "POST",
+      "-H",
+      "Content-Type: application/octet-stream",
+      `${ctx.uploads}/repos/${REPO}/releases/${state.releaseId}/assets?name=${encodeURIComponent(name)}`,
+      "--input",
+      join(assets, name),
+    ]);
+    if (uploaded.status !== 0) stop(`uploading ${name} to the draft: ${uploaded.stderr}`);
+  }
+  const after = releaseProblems(draftNow(), {
+    tag: state.tag,
+    target: state.sourceCommit,
+    draft: true,
+    assets: table,
+  });
+  if (after.length) stop(`the draft doesn't match the local assets: ${after.join("; ")}.`);
+
+  const { linuxPending: _done, ...rest } = state;
+  writeJson(join(ctx.work, STATE_FILE), {
+    ...rest,
+    assets: table,
+    linux: {
+      runId: built.runId,
+      runUrl: built.runUrl,
+      appImage,
+      deb,
+      manifest: names.manifest,
+      attested: true,
+      attestations: built.attestations,
+    },
+  });
+  ctx.say(
+    `  attached ${names.all.join(", ")} from run ${built.runId} (${built.attestations.length} attested) and the new SHA256SUMS.txt; every GitHub digest matches`,
+  );
+  return { runId: built.runId, runUrl: built.runUrl, assets: table };
+}
+
 /** validate: downloads every asset of the private draft into a new directory and verifies it. */
 export async function validate(ctx) {
   const state = loadState(ctx.work);
+  requireLinux(state, ctx);
   const release = privateDraft(ctx, state);
   const dir = mkdtempSync(join(ctx.work, "validate-"));
   for (const asset of release.assets) {
@@ -569,6 +797,7 @@ export async function updateCheck(ctx) {
       ...(linuxTargets.length ? { linux } : {}),
     });
   }
+  requireLinux(state, ctx);
   privateDraft(ctx, state);
   const both = (target) => ({
     asServed: expectChecks(ctx.updateCheck(base(target)), "notThis", state, release.assets, target),
@@ -648,6 +877,7 @@ const latestProblem = (ctx, state) => {
  */
 export async function publish(ctx) {
   const state = loadState(ctx.work);
+  requireLinux(state, ctx);
   requirePassed(ctx.work, "validate", state);
   requirePassed(ctx.work, "update-check", state);
   const repo = releaseRepo(ctx);
@@ -921,7 +1151,7 @@ function publishOrReconcile(run, patch, release, what, say) {
   }
 }
 
-const PHASE_RUNNERS = { validate, "update-check": updateCheck, publish };
+const PHASE_RUNNERS = { linux: attachLinux, validate, "update-check": updateCheck, publish };
 
 /** An anonymous GET with Node's fetch: no cookies, no Authorization header, redirects followed. */
 const anonymousGet = async (url, accept) => {
@@ -957,8 +1187,12 @@ export async function runPhase(options, seams = {}) {
     notes: options.notes,
     // The release commit's notes; a test gives a source of its own.
     readNotes: seams.readNotes ?? readPublicNotes,
+    run: options.run,
+    dispatch: options.dispatch === true,
+    withoutLinux: options.withoutLinux === true,
     // A synthetic GitHub's origins, in tests only.
     api: seams.api ?? "https://api.github.com",
+    uploads: seams.uploads ?? "https://uploads.github.com",
     web: seams.web ?? "https://github.com",
     anonymous: seams.anonymous ?? anonymousGet,
     say: seams.say ?? ((line) => process.stdout.write(`${line}\n`)),
@@ -977,6 +1211,10 @@ export async function runPhase(options, seams = {}) {
   };
   ctx.verifyAttestation =
     seams.verifyAttestation ?? ((files, how) => verifyAttestations(ctx.gh.own, files, how));
+  // The Linux workflow's runs (`gh run`, `gh workflow run`, `gh attestation verify`), with your login.
+  ctx.linuxGh = seams.linuxGh ?? ctx.gh.own;
+  ctx.linuxWait = seams.linuxWait ?? {};
+  ctx.writeManifest = seams.writeManifest ?? writeUpdaterManifest;
   return await PHASE_RUNNERS[options.phase](ctx);
 }
 

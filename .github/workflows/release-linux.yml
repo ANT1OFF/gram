@@ -3,9 +3,11 @@ name: Linux release build
 # The x64 AppImage and .deb of a stable release, built on a GitHub-hosted runner from the exact
 # release commit. `bun run release:rc --stable` dispatches it on main right after its preconditions
 # (HEAD is origin/main), waits for it while the Mac build runs, downloads the artifact, verifies the
-# attestations and attaches the files to the same draft with your own `gh` login. Nothing here
-# writes to a release or holds a write token: `build` runs the repository's code with a read-only
-# token, and `attest`, which may mint an OIDC token for the attestation, runs no repository code.
+# attestations and attaches the files to the same draft with your own `gh` login; a failed run is
+# rerun (`gh run rerun --failed`), which keeps its commit however far main has moved. Nothing here
+# writes to a release or holds a write token: `build` and `sherpa-onnx` run the repository's code
+# with a read-only token, and `attest`, which may mint an OIDC token for the attestation, runs no
+# repository code, and only once both have passed.
 #
 # A pull request that changes this workflow, tools/release-linux/ or the sherpa-onnx build it ships
 # (tools/sherpa-onnx/) runs the same build as a dry run, without the attestation, so the release
@@ -103,19 +105,6 @@ jobs:
             [ "$field" = "$VERSION" ] || { echo "version fields say $root/$desktop/$manifest, not $VERSION"; exit 1; }
           done
           echo "version=$VERSION" >>"$GITHUB_OUTPUT"
-      # The shipped sherpa-onnx files are committed (tools/sherpa-onnx/linux-x64) and the install
-      # below copies them in; nothing makes the PR that changed them pass its byte-identical
-      # rebuild, so the release build rebuilds them from their pinned sources and requires the
-      # same bytes before packaging them. Docker only, no cache; about four minutes.
-      - name: Rebuild sherpa-onnx linux-x64 and compare with the committed files
-        run: |
-          set -euo pipefail
-          SHERPA_ONNX_OUT="$RUNNER_TEMP/sherpa-onnx-rebuild" tools/sherpa-onnx/build-linux-x64.sh
-          committed=tools/sherpa-onnx/linux-x64
-          diff <(ls "$committed") <(ls "$RUNNER_TEMP/sherpa-onnx-rebuild")
-          for file in "$committed"/*; do
-            cmp "$file" "$RUNNER_TEMP/sherpa-onnx-rebuild/$(basename "$file")"
-          done
       # Keep package-manager and build caches disabled. Electron checksums come from the pinned
       # npm package. Cache only builder archives: each is re-hashed against its pinned toolset
       # checksum before extraction. Extracted toolsets and their .state fast paths are not trusted.
@@ -218,12 +207,42 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  # The shipped sherpa-onnx files are committed (tools/sherpa-onnx/linux-x64) and the build's
+  # install copies them in; nothing makes the PR that changed them pass its byte-identical rebuild,
+  # so the release rebuilds them from their pinned sources here and requires the same bytes. It
+  # runs beside `build` (about three minutes, Docker only, no cache) from the same commit, and
+  # `attest` waits for both: no package is attested unless the files it carries rebuilt the same.
+  sherpa-onnx:
+    name: sherpa-onnx
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # The event's own commit, as in `build`: on a dispatch, `build` checks it is the release's.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rebuild sherpa-onnx linux-x64 and compare with the committed files
+        run: |
+          set -euo pipefail
+          SHERPA_ONNX_OUT="$RUNNER_TEMP/sherpa-onnx-rebuild" tools/sherpa-onnx/build-linux-x64.sh
+          committed=tools/sherpa-onnx/linux-x64
+          diff <(ls "$committed") <(ls "$RUNNER_TEMP/sherpa-onnx-rebuild")
+          for file in "$committed"/*; do
+            cmp "$file" "$RUNNER_TEMP/sherpa-onnx-rebuild/$(basename "$file")"
+          done
+
   # The attestation: an OIDC token proves this workflow, on main at the release commit, on a
   # GitHub-hosted runner, built these exact bytes. This job checks out nothing and runs no
   # repository code; it only compares the downloaded files with the build's digests and signs.
   attest:
     name: attest
-    needs: build
+    needs: [build, sherpa-onnx]
     if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
     runs-on: ubuntu-24.04
     timeout-minutes: 10

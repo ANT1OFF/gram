@@ -319,7 +319,7 @@ export function renderNotes({
     stable
       ? `Draft of ${version} for macOS on Apple silicon, built from \`${sha}\`. \`release:stable publish\` replaces these notes.`
       : `Private prerelease ${version} for macOS on Apple silicon, built from \`${sha}\`.`,
-    check ? `Full local check: ${check}.` : undefined,
+    check ? `Full check: ${check}.` : undefined,
     "Checksums for all six assets are in SHA256SUMS.txt; the updater verifies them before installing.",
     signed
       ? `Signed installs update through Electron's updater from ${updaterManifestName(version)}, which names the signed ZIP and its SHA-512.`
@@ -393,13 +393,13 @@ export function renderRecord({
   return [
     `# Gram ${version} release`,
     "",
-    `Cut with \`tools/release-rc/rc.mjs\`: one local check, build, package, smoke and publish.`,
+    `Cut with \`tools/release-rc/rc.mjs\`: one check, build, package, smoke and publish.`,
     "",
     "## Source and result",
     "",
     `- Source: \`${sha}\` on main${previousTag ? `; changes since ${previousTag}` : ""}.`,
     `- Release: [v${version}](${url}), ${draft ? "draft (not published)" : `prerelease, not latest, published ${publishedAt}`}.`,
-    `- Full local check: ${check}.`,
+    `- Full check: ${check}.`,
     `- Package verifier, native probe and fake-agent smoke passed; the ZIP extracted with the updater's own reader matched every bundle hash.`,
     `- GitHub's asset digests matched the local SHA256SUMS after upload.`,
     ...(signed
@@ -429,11 +429,18 @@ export function renderRecord({
 }
 
 /**
+ * Where the release check's tests come from: `ci` takes main's push run of check.yml on the release
+ * commit (tools/release-rc/ci-check.mjs), `local` runs the Vitest suite here, and `auto` takes CI
+ * when that run exists and runs locally otherwise.
+ */
+export const CHECK_MODES = ["auto", "ci", "local"];
+
+/**
  * Arguments of `release:rc`; throws on anything unknown, and on a stable `--latest`. `--stable`
  * takes the stable path's first phase: a signed build and a private draft, nothing published.
  */
 export function parseArgs(argv) {
-  const options = { draft: false, publish: true, signing: "auto", stable: false };
+  const options = { draft: false, publish: true, signing: "auto", stable: false, check: "auto" };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const value = () => {
@@ -452,6 +459,14 @@ export function parseArgs(argv) {
     else if (arg === "--signed" || arg === "--unsigned") {
       if (options.signing !== "auto") throw new Error("Use --signed or --unsigned, not both.");
       options.signing = arg.slice(2);
+    } else if (arg === "--check") {
+      options.check = value();
+      if (!CHECK_MODES.includes(options.check))
+        throw new Error(`--check takes ${CHECK_MODES.join(", ")}, not ${options.check}.`);
+    } else if (arg === "--linux-run") {
+      options.linuxRun = value();
+      if (!/^\d+$/.test(options.linuxRun))
+        throw new Error(`--linux-run takes a run id, not ${options.linuxRun}.`);
     } else if (arg === "--identity") options.identity = value();
     else if (arg === "--notary-profile") options.notaryProfile = value();
     else if (arg === "--help" || arg === "-h") options.help = true;
@@ -464,6 +479,8 @@ export function parseArgs(argv) {
   if (options.draft && !options.publish) throw new Error("Use --draft or --no-publish, not both.");
   if (options.firstRelease && !options.stable)
     throw new Error("--first-release is for a stable release (--stable).");
+  if (options.linuxRun && !options.stable)
+    throw new Error("--linux-run is for a stable release (--stable).");
   if (options.stable) {
     if (!options.version) throw new Error("--stable needs the version, e.g. 1.0.0.");
     if (options.signing === "unsigned") throw new Error("--stable builds are always signed.");

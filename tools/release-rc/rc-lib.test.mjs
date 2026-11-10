@@ -124,6 +124,14 @@ describe("stable versions", () => {
     });
     expect(() => parseArgs(["1.0.0-rc.1", "--first-release"])).toThrow(/for a stable release/);
     expect(() => parseArgs(["--stable", "1.0.0", "--unsigned"])).toThrow(/always signed/);
+    // The check's tests come from main's CI by default when there is a run, or always run here.
+    expect(parseArgs(["--stable", "1.0.0"]).check).toBe("auto");
+    expect(parseArgs(["--stable", "1.0.0", "--check", "local"]).check).toBe("local");
+    expect(() => parseArgs(["--stable", "1.0.0", "--check", "none"])).toThrow(/auto, ci, local/);
+    // A retry adopts the release's Linux run by its id.
+    expect(parseArgs(["--stable", "1.0.0", "--linux-run", "42"]).linuxRun).toBe("42");
+    expect(() => parseArgs(["--stable", "1.0.0", "--linux-run", "x"])).toThrow(/a run id/);
+    expect(() => parseArgs(["1.0.0-rc.1", "--linux-run", "42"])).toThrow(/stable release/);
   });
 
   it("marks a stable build's notes as a draft's, for publish to replace", () => {

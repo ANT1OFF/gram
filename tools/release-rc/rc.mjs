@@ -7,15 +7,17 @@
 //                      [--signed | --unsigned] [--identity <name>]
 //                      [--notary-profile <name>] [--source <checkout>] [--work <empty dir>]
 //                      [--bun <pinned bun>]
-//   bun run release:rc --stable <version> [--dry-run] [--work <empty dir>] …
+//   bun run release:rc --stable <version> [--dry-run] [--work <empty dir>]
+//                      [--check auto|ci|local] [--linux-run <run id>] …
 //
 // `--stable` is the stable path's first phase: the same check, build, signing (required),
 // smoke and assets, with latest-mac.yml, then a private draft that is neither prerelease nor
 // latest, and `release.json` in the work dir. It also dispatches the Linux x64 build
-// (.github/workflows/release-linux.yml) on GitHub for the same commit, waits for it, verifies its
-// attestations and attaches the AppImage, .deb, LINUX-BUILD.json and latest-linux.yml to the same
-// draft; with --dry-run that build runs without an attestation and nothing is uploaded. `bun run release:stable` takes it from there
-// (docs/RELEASING.md).
+// (.github/workflows/release-linux.yml) for the same commit (or adopts run --linux-run), and
+// attaches its checked files to the same draft. A Linux build that fails even after one rerun of
+// its failed jobs leaves the draft with the Mac files, for `release:stable linux` to finish.
+// The check's tests come from main's CI run on the release commit when there is one (--check).
+// `bun run release:stable` takes it from there (docs/RELEASING.md).
 //
 // The version is stamped into the package only (electron-builder extraMetadata); nothing is
 // committed to main. Check, build and smoke run with a temporary HOME, stores and stub provider
@@ -73,8 +75,13 @@ import {
 import { writeUpdaterManifest } from "./updater-manifest.mjs";
 import { withReleaseCheckSlot } from "./check-slot.mjs";
 import { preflightNotary } from "./notary-preflight.mjs";
+import { CheckRunRefused, describeCheckRun, findCheckRun, waitForCheckRun } from "./ci-check.mjs";
 import { linuxAssetNames, linuxPackageNames } from "../release-linux/linux-lib.mjs";
-import { collectLinuxBuild, startLinuxBuild } from "../release-linux/linux-release.mjs";
+import {
+  adoptLinuxBuild,
+  collectLinuxBuild,
+  startLinuxBuild,
+} from "../release-linux/linux-release.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const started = Date.now();
@@ -118,7 +125,7 @@ if (options.help) {
   say(
     readFileSync(fileURLToPath(import.meta.url), "utf8")
       .split("\n")
-      .slice(1, 22)
+      .slice(1, 20)
       .join("\n"),
   );
   process.exit(0);
@@ -174,9 +181,16 @@ if (!stable && repo.isPrivate !== true)
 if (repo.defaultBranchRef?.name !== "main") fail(`${REPO}'s default branch is not main.`);
 git("fetch", "--quiet", "--tags", "origin", "main");
 const sha = git("rev-parse", "HEAD");
-if (sha !== git("rev-parse", "origin/main"))
+// A new Linux dispatch builds main's head, so it needs HEAD to be that. Adopting a run already
+// dispatched for the release commit (--linux-run) needs only the commit to be on main.
+if (options.linuxRun) {
+  if (tryRun("git", ["merge-base", "--is-ancestor", sha, "origin/main"], { cwd: source }).status)
+    fail(`HEAD ${sha.slice(0, 8)} is not on origin/main.`);
+} else if (sha !== git("rev-parse", "origin/main"))
   fail(
-    `HEAD ${sha.slice(0, 8)} is not origin/main ${git("rev-parse", "origin/main").slice(0, 8)}.`,
+    `HEAD ${sha.slice(0, 8)} is not origin/main ${git("rev-parse", "origin/main").slice(0, 8)}${
+      stable ? " (to retry a cut after main moved, pass --linux-run <the release's Linux run>)" : ""
+    }.`,
   );
 
 const releaseTags = run("gh", [
@@ -396,67 +410,108 @@ const ghRun = (args) => tryRun("gh", args);
 const linuxBuild = (() => {
   if (!stable) return undefined;
   try {
+    if (options.linuxRun) {
+      if (!options.publish)
+        fail("--linux-run takes a real release's run; --dry-run dispatches its own.");
+      const adopted = adoptLinuxBuild({ gh: ghRun, version, sha, runId: options.linuxRun });
+      say(`  linux build: adopted run ${adopted.runId} (${adopted.nonce})`);
+      return adopted;
+    }
     const dispatched = startLinuxBuild({ gh: ghRun, version, sha, dryRun: !options.publish });
     say(`  linux build dispatched (${dispatched.nonce}${dispatched.dryRun ? ", dry run" : ""})`);
+    if (!dispatched.dryRun) say("  main may move again: a retry reruns this run, at this commit");
     return dispatched;
   } catch (error) {
     return fail(error.message);
   }
 })();
+
+// The check's tests: main's push run of check.yml on this exact commit, when it exists, in place
+// of a local Vitest run (tools/release-rc/ci-check.mjs). A failed run stops the release.
+const ciRun = (() => {
+  if (options.check === "local") return undefined;
+  let found;
+  try {
+    found = findCheckRun({ gh: ghRun, repo: REPO, sha });
+  } catch (error) {
+    if (error instanceof CheckRunRefused)
+      return fail(`${error.message}. Fix main, or pass --check local to run the whole check here.`);
+    if (options.check === "ci") return fail(`${error.message}; pass --check local to run it here.`);
+    say(`  check: couldn't read main's check runs (${error.message}); the whole check runs here`);
+    return undefined;
+  }
+  if (!found && options.check === "ci")
+    fail(`main has no check run at ${sha.slice(0, 8)} yet; wait for it, or pass --check local.`);
+  say(
+    found
+      ? `  check: tests from main's check run ${found.url}`
+      : `  check: no check run on main at ${sha.slice(0, 8)}; the whole check runs here`,
+  );
+  return found;
+})();
+/** What main's check run proved, once it concluded success (before the assets are written). */
+let ciEvidence;
 // ---------------------------------------------------------------------------------------------
 // Check: install, scaffold, docs, release metadata, static, then the tests once.
 say("▸ Check");
-const { check, checkText } = await withReleaseCheckSlot(
-  () => {
-    step("install", "bun", ["install", "--frozen-lockfile"]);
-    step("scaffold", "bun", ["run", "check:scaffold"]);
-    step("docs", "bun", ["run", "check:docs"]);
-    step("release-metadata", "node", ["tools/check-release-please.mjs"]);
-    step("static", "bun", ["run", "check:static"]);
-    const testRun = (name, files) => {
-      const report = join(work, "probes", `${name}.json`);
-      const r = step(
-        name,
-        "bun",
-        [
-          "run",
-          "test",
-          "--reporter=default",
-          "--reporter=json",
-          `--outputFile.json=${report}`,
-          ...files,
-        ],
-        { allowFail: true },
+const staticStages = () => {
+  step("install", "bun", ["install", "--frozen-lockfile"]);
+  step("scaffold", "bun", ["run", "check:scaffold"]);
+  step("docs", "bun", ["run", "check:docs"]);
+  step("release-metadata", "node", ["tools/check-release-please.mjs"]);
+  step("static", "bun", ["run", "check:static"]);
+};
+/** One Vitest run of `files` (all of them when empty), summarized from its JSON report. */
+const testRun = (name, files) => {
+  const report = join(work, "probes", `${name}.json`);
+  const r = step(
+    name,
+    "bun",
+    [
+      "run",
+      "test",
+      "--reporter=default",
+      "--reporter=json",
+      `--outputFile.json=${report}`,
+      ...files,
+    ],
+    { allowFail: true },
+  );
+  if (!existsSync(report)) {
+    process.stderr.write(r.output.split("\n").slice(-40).join("\n"));
+    fail(`${name} wrote no report; log: ${join(work, "logs", `${name}.log`)}`);
+  }
+  return summarizeVitest(JSON.parse(readFileSync(report, "utf8")), source);
+};
+/** The whole check here: the static stages, then the tests once (timeouts rerun once). */
+const localCheck = () => {
+  staticStages();
+  const tests = testRun("tests", []);
+  const result = { tests, rerun: undefined };
+  if (!tests.success) {
+    const files = rerunFiles(tests);
+    if (!files)
+      fail(
+        `tests failed (${describeTests(tests)}): ${tests.failedFiles.join(", ") || "no file attributed"}. ` +
+          `Only up to three files that all timed out are rerun. Log: ${join(work, "logs/tests.log")}`,
       );
-      if (!existsSync(report)) {
-        process.stderr.write(r.output.split("\n").slice(-40).join("\n"));
-        fail(`${name} wrote no report; log: ${join(work, "logs", `${name}.log`)}`);
-      }
-      return summarizeVitest(JSON.parse(readFileSync(report, "utf8")), source);
-    };
-    const tests = testRun("tests", []);
-    const result = { tests, rerun: undefined };
-    if (!tests.success) {
-      const files = rerunFiles(tests);
-      if (!files)
-        fail(
-          `tests failed (${describeTests(tests)}): ${tests.failedFiles.join(", ") || "no file attributed"}. ` +
-            `Only up to three files that all timed out are rerun. Log: ${join(work, "logs/tests.log")}`,
-        );
-      say(`  timeouts in ${files.join(", ")}; rerunning only those once`);
-      result.rerun = { files, ...testRun("tests-rerun", files) };
-      if (!result.rerun.success)
-        fail(`the rerun failed too (${describeTests(result.rerun)}); see ${join(work, "logs")}.`);
-    }
-    const text =
-      `${describeTests(tests)}` +
-      (result.rerun
-        ? `; ${result.rerun.files.length} timed-out file(s) passed on one rerun (${describeTests(result.rerun)})`
-        : "");
-    return { check: result, checkText: text };
-  },
-  { source, say },
-);
+    say(`  timeouts in ${files.join(", ")}; rerunning only those once`);
+    result.rerun = { files, ...testRun("tests-rerun", files) };
+    if (!result.rerun.success)
+      fail(`the rerun failed too (${describeTests(result.rerun)}); see ${join(work, "logs")}.`);
+  }
+  const text =
+    `${describeTests(tests)}` +
+    (result.rerun
+      ? `; ${result.rerun.files.length} timed-out file(s) passed on one rerun (${describeTests(result.rerun)})`
+      : "");
+  return { check: result, checkText: text };
+};
+// With CI's tests, only the static stages run here: seconds, so no check slot is taken. Their
+// evidence is collected before the assets are written (below).
+let { check, checkText } = ciRun
+  ? (staticStages(), { check: undefined, checkText: undefined })
+  : await withReleaseCheckSlot(localCheck, { source, say });
 
 // ---------------------------------------------------------------------------------------------
 // Build and package once, with the version stamped into the package only.
@@ -753,25 +808,33 @@ const writeBuildInfo = async (zipVerification) => {
       electronBuilder: catalog["electron-builder"],
       arch: "arm64",
     },
-    fullLocalCheck: {
-      sourceCommit: sha,
-      tests: {
-        passed: check.tests.passed,
-        failed: check.tests.failed,
-        skipped: check.tests.skipped,
-      },
-      ...(check.rerun
-        ? {
-            rerun: {
-              files: check.rerun.files,
-              passed: check.rerun.passed,
-              failed: check.rerun.failed,
-              reason: "timeouts only",
-            },
-          }
-        : {}),
-      result: "pass",
-    },
+    fullCheck: ciRun
+      ? {
+          kind: "github-actions",
+          localStages: ["install", "scaffold", "docs", "release-metadata", "static"],
+          ...ciEvidence,
+          result: ciEvidence ? "pass" : "pending",
+        }
+      : {
+          kind: "local",
+          sourceCommit: sha,
+          tests: {
+            passed: check.tests.passed,
+            failed: check.tests.failed,
+            skipped: check.tests.skipped,
+          },
+          ...(check.rerun
+            ? {
+                rerun: {
+                  files: check.rerun.files,
+                  passed: check.rerun.passed,
+                  failed: check.rerun.failed,
+                  reason: "timeouts only",
+                },
+              }
+            : {}),
+          result: "pass",
+        },
     package: {
       appAsarSha256: await sha256File(join(app, "Contents/Resources/app.asar")),
       asarOutputsExact: inspection.asarOutputs,
@@ -846,6 +909,24 @@ if (
   (await sha256File(join(app, "Contents/Resources/app.asar")))
 )
   fail("the extracted app.asar differs from the package.");
+// Main's check run on this commit, which ran while the Mac built and signed: it must have concluded
+// success, every required job passed, before BUILD-INFO.json says so and anything is uploaded.
+if (ciRun) {
+  const ciBegin = Date.now();
+  try {
+    ciEvidence = await waitForCheckRun(ciRun, { gh: ghRun, repo: REPO, sha, say });
+  } catch (error) {
+    fail(`${error.message}. Nothing was uploaded; pass --check local to run the whole check here.`);
+  }
+  checkText = describeCheckRun(ciEvidence);
+  steps.push({
+    name: "ci-check",
+    command: `${ciEvidence.url} (waited)`,
+    exit: 0,
+    seconds: Math.round(seconds(ciBegin) * 10) / 10,
+  });
+  say(`  ci check … ok (${checkText})`);
+}
 await writeBuildInfo(
   "pass: extracted with the updater's bounded ZIP reader; every file hash, mode, symlink, plist and ASAR version matched" +
     (signing.signed
@@ -865,7 +946,11 @@ steps.push({
 
 // The Linux files, from the dispatched run: checked here (names, sizes, SHA-256s, the build record,
 // each package's attestation) before any of them is listed or uploaded.
+// One rerun of its failed jobs covers GitHub's transient failures (HTTP 504s from a download, say).
+// Past that, a real draft goes ahead with the Mac files, and `release:stable linux` adopts or
+// reruns the run and attaches its files later: the signed, notarized Mac build isn't thrown away.
 let linux;
+let linuxPending;
 if (linuxBuild) {
   say("  waiting for the Linux build …");
   const linuxBegin = Date.now();
@@ -875,21 +960,32 @@ if (linuxBuild) {
       into: join(work, "linux"),
       assets,
       say,
+      reruns: 1,
     });
   } catch (error) {
-    fail(`linux build: ${error.message}`);
+    if (!options.publish) fail(`linux build: ${error.message}`);
+    linuxPending = {
+      nonce: linuxBuild.nonce,
+      runId: error.runId ?? linuxBuild.runId ?? null,
+      runUrl: error.runUrl ?? null,
+      problem: error.message,
+    };
+    for (const name of linuxAssetNames(version).covered)
+      rmSync(join(assets, name), { force: true });
+    say(`  linux build … not attached: ${error.message}`);
   }
   steps.push({
     name: "linux-build",
-    command: `${linux.runUrl} + gh attestation verify`,
-    exit: 0,
+    command: linux ? `${linux.runUrl} + gh attestation verify` : "pending",
+    exit: linux ? 0 : 1,
     seconds: Math.round(seconds(linuxBegin) * 10) / 10,
   });
-  say(
-    `  linux build … ok (${linux.files.map((file) => file.name).join(", ")}${
-      linuxBuild.dryRun ? ", dry run: no attestation" : `, ${linux.attestations.length} attested`
-    })`,
-  );
+  if (linux)
+    say(
+      `  linux build … ok (${linux.files.map((file) => file.name).join(", ")}${
+        linuxBuild.dryRun ? ", dry run: no attestation" : `, ${linux.attestations.length} attested`
+      })`,
+    );
 }
 
 const covered = [];
@@ -991,6 +1087,7 @@ const writeState = (release) =>
         minimumMacOS: inspection.minimumMacOS,
         notesPath,
         assets: local,
+        ...(linuxPending ? { linuxPending } : {}),
         ...(linux
           ? {
               linux: {
@@ -1090,9 +1187,14 @@ say(`  ${release.html_url} · all ${uploads.length} GitHub digests match the loc
 if (stable) {
   writeState(release);
   say(
-    `\nDrafted ${tag} (stable draft, not latest): ${release.html_url}\n` +
-      `Next: bun run release:stable validate --work ${work}, then update-check; publish only ` +
-      "once authorized (docs/RELEASING.md).",
+    linuxPending
+      ? `\nDrafted ${tag} with the Mac files only (stable draft, not latest): ${release.html_url}\n` +
+          `The Linux build didn't come through: ${linuxPending.problem}\n` +
+          `Next: bun run release:stable linux --work ${work} (reruns or adopts it), then validate, ` +
+          "update-check and publish (docs/RELEASING.md)."
+      : `\nDrafted ${tag} (stable draft, not latest): ${release.html_url}\n` +
+          `Next: bun run release:stable validate --work ${work}, then update-check; publish only ` +
+          "once authorized (docs/RELEASING.md).",
   );
   process.exit(0);
 }
