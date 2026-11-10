@@ -13,7 +13,16 @@ test("a single agent chat opens on the prompt-first controls, not scrolled down 
   await expect(page.getByRole("radio", { name: "Chat", exact: true })).toBeChecked();
   await expect(page.getByRole("button", { name: "Folder", exact: true })).toBeInViewport();
   await expect(page.getByLabel("First prompt")).toBeInViewport();
-  await expect(page.getByLabel("Project path")).not.toBeFocused();
+  // A folder to start in is there already (the one used last, in the Folder chip), so typing
+  // starts in the prompt; the folder's path and past sessions are folded under More options.
+  await expect(page.getByLabel("First prompt")).toBeFocused();
+  const more = page.getByTestId("new-more-options");
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByLabel("Project path")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Resume a past session…" })).toBeHidden();
+  await more.click();
+  await expect(page.getByLabel("Project path")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume a past session…" })).toBeVisible();
 });
 
 test("the in chip holds bookmarks and recents, Checkout is the one worktree control, and Create comes last", async ({

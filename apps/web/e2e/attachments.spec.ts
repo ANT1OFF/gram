@@ -1,4 +1,5 @@
 import { expect, test, type Locator } from "@playwright/test";
+import { openMoreOptions } from "./new-thread-options";
 
 const PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -52,6 +53,7 @@ test("a screenshot pasted into /new moves into the thread and its first message 
   page,
 }) => {
   await page.goto("/new");
+  await openMoreOptions(page);
   const path = page.getByRole("combobox", { name: "Project path" });
   await path.fill("~/Documents/code/gram");
   await expect(page.getByTestId("folder-status")).toContainText("git");

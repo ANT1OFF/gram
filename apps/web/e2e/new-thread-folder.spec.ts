@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { openMoreOptions } from "./new-thread-options";
 
 test("a folder without git runs in place, with worktree options disabled", async ({ page }) => {
   await page.goto("/new");
   const form = page.getByRole("form", { name: "New thread" });
+  await openMoreOptions(page);
   await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/code/sandbox");
 
   await expect(form.getByTestId("checkout-note")).toContainText("Not a git repository");

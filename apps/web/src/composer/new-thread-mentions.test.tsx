@@ -23,6 +23,8 @@ const setup = (folder: string) => {
   const api = createMockApi({ speed: 0, autoplay: false });
   const fsFiles = vi.spyOn(api, "fsFiles");
   renderWithApi(<NewThreadDraft />, api);
+  // The path field is under More options, folded once a folder resolves.
+  fireEvent.click(screen.getByTestId("new-more-options"));
   const path = screen.getByRole("combobox", { name: "Project path" });
   // React drops a change to the value the input already holds, so `folder` of "" would leave the
   // field untyped and fall back to the most recent project once its query landed.
@@ -32,7 +34,9 @@ const setup = (folder: string) => {
   return { fsFiles, prompt, user: userEvent.setup() };
 };
 
-const folderChecked = () => screen.findByRole("button", { name: /Resume a past session/ });
+// Under More options, which folds once the folder is good: there, though not in sight.
+const folderChecked = () =>
+  screen.findByRole("button", { name: /Resume a past session/, hidden: true });
 const files = () => screen.queryByRole("listbox", { name: "Files" });
 const offered = () =>
   within(screen.getByRole("listbox", { name: "Files" }))
@@ -118,7 +122,9 @@ describe("New thread draft @ mentions", () => {
     // Past the folder check's debounce and the projects query, which is when an untyped field used
     // to fall back to a recent project and open the list.
     await new Promise((resolve) => setTimeout(resolve, 900));
-    expect(screen.getByRole<HTMLInputElement>("combobox", { name: "Project path" }).value).toBe("");
+    expect(
+      screen.getByRole<HTMLInputElement>("combobox", { name: "Project path", hidden: true }).value,
+    ).toBe("");
     expect(files()).toBeNull();
     expect(fsFiles).not.toHaveBeenCalled();
     expect(prompt.value).toBe("@src");

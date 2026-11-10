@@ -1,11 +1,13 @@
 import { expect, test } from "@playwright/test";
 
 import { clipboardText } from "./clipboard";
+import { openMoreOptions } from "./new-thread-options";
 
 test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
 test("a folder the system won't let Gram read shows the recovery card", async ({ page }) => {
   await page.goto("/new");
+  await openMoreOptions(page);
   const path = page.getByRole("combobox", { name: "Project path" });
   await path.fill("~/Documents/Private");
 
@@ -38,6 +40,7 @@ test("a folder the system won't let Gram read shows the recovery card", async ({
 
 test("the folder browser offers recovery for a denied folder", async ({ page }) => {
   await page.goto("/new");
+  await openMoreOptions(page);
   await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/");
   // Browse opens at the checked folder, so wait for the check before opening it.
   await expect(page.getByTestId("folder-status")).toContainText("~/Documents");

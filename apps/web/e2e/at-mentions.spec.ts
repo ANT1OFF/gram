@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openMoreOptions } from "./new-thread-options";
 
 test("@ offers the thread's files, opens folders and inserts a mention", async ({ page }) => {
   await page.goto("/t/t-flaky");
@@ -36,6 +37,7 @@ test("@ offers the thread's files, opens folders and inserts a mention", async (
 test("the new-thread draft offers the chosen folder's files", async ({ page }) => {
   await page.goto("/new");
   const form = page.getByRole("form", { name: "New thread" });
+  await openMoreOptions(page);
   await page.getByRole("combobox", { name: "Project path" }).fill("/Users/dev/code/web");
   await expect(form.getByRole("button", { name: /Resume a past session/ })).toBeVisible();
   const prompt = form.getByRole("combobox", { name: "First prompt" });

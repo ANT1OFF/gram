@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { threadRow } from "./thread-row";
+import { openMoreOptions } from "./new-thread-options";
 
 test("Ctrl+Tab switches to the last thread once Ctrl is released", async ({ page }) => {
   await page.goto("/t/t-flaky");
@@ -70,5 +71,6 @@ test("⌘T drafts a new thread in the current thread's folder", async ({ page })
   await expect(page.getByTestId("pane-header")).toContainText("Fix flaky retry test");
   await page.keyboard.press("ControlOrMeta+t");
   await expect(page).toHaveURL(/\/new$/);
+  await openMoreOptions(page);
   await expect(page.getByRole("combobox", { name: "Project path" })).toHaveValue(/^\/Users\/dev\//);
 });

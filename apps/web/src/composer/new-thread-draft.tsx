@@ -11,8 +11,8 @@ import {
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { History, RotateCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ChevronRight, History, RotateCw } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-preflight";
@@ -159,7 +159,11 @@ function ConfiguredNewThreadDraft() {
   // Unknown until settings load; see `Composer`.
   const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
   const formRef = useRef<HTMLFormElement>(null);
-  const startsWithProject = useRef(typedRoot !== undefined || defaultFolder !== undefined);
+  // A folder to start in: one typed or carried here, the default, or the one used last, which
+  // the Folder chip shows already. Then typing starts in the prompt.
+  const startsWithProject = useRef(
+    typedRoot !== undefined || defaultFolder !== undefined || recents.length > 0,
+  );
 
   // Arriving here (⌘T, New thread) leaves focus on the page it came from: go where typing starts.
   useEffect(() => {
@@ -391,12 +395,22 @@ function ConfiguredNewThreadDraft() {
     void navigate({ to: "/new-task", search: who === "worker" ? { way: "direct" } : {} });
   };
 
-  const browse = () =>
-    focusIfConnected(formRef.current?.querySelector('[aria-label="Project path"]'));
-  const browseMachine = () =>
-    focusIfConnected(
-      formRef.current?.querySelector(`[aria-label="Folder on ${pickedMachine?.name ?? ""}"]`),
-    );
+  // The folder's path field and the ways to resume are the form's rarely used half: the Folder
+  // chip above picks the folder. They stay folded until asked for, or until the folder needs
+  // fixing (none picked, or one that can't be used), which only the path field can do.
+  const [optionsAsked, setOptionsAsked] = useState(false);
+  const optionsId = useId();
+  const folderNeedsFixing = onMachine
+    ? machineStatus.state === "invalid" || machineStatus.state === "empty"
+    : folderStatus.state === "invalid" || folderStatus.state === "empty";
+  const optionsOpen = optionsAsked || folderNeedsFixing;
+  /** Opens the folded options, then puts focus in `selector` once it is drawn. */
+  const focusOption = (selector: string) => {
+    setOptionsAsked(true);
+    setTimeout(() => focusIfConnected(formRef.current?.querySelector(selector)));
+  };
+  const browse = () => focusOption('[aria-label="Project path"]');
+  const browseMachine = () => focusOption(`[aria-label="Folder on ${pickedMachine?.name ?? ""}"]`);
 
   useShortcut({
     id: "draft.create",
@@ -736,42 +750,66 @@ function ConfiguredNewThreadDraft() {
 
         <section
           aria-label="More options"
-          className="flex flex-col gap-5 border-t border-border pt-6"
+          className="flex flex-col gap-5 border-t border-border pt-4"
         >
-          {onMachine ? (
-            <MachineFolderField
-              machine={pickedMachine}
-              value={machinePath}
-              onChange={setMachinePath}
-              status={machineStatus}
+          <button
+            type="button"
+            aria-expanded={optionsOpen}
+            aria-controls={optionsId}
+            data-testid="new-more-options"
+            // While the folder needs fixing it stays open: its field is the way to fix it.
+            disabled={folderNeedsFixing}
+            onClick={() => setOptionsAsked((open) => !open)}
+            className="flex min-h-7 w-fit items-center gap-1 rounded-sm px-1 text-meta font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:hover:text-muted-foreground"
+          >
+            <ChevronRight
+              aria-hidden
+              className={cn(
+                "size-icon-chip transition-transform duration-(--dur-fast)",
+                optionsOpen && "rotate-90",
+              )}
             />
-          ) : (
-            <ProjectPicker value={pathValue} onChange={setTypedRoot} status={folderStatus} />
-          )}
+            More options
+            <span className="font-normal">· the folder&apos;s path, past sessions</span>
+          </button>
+          <div id={optionsId} hidden={!optionsOpen} className="flex flex-col gap-5">
+            {onMachine ? (
+              <MachineFolderField
+                machine={pickedMachine}
+                value={machinePath}
+                onChange={setMachinePath}
+                status={machineStatus}
+              />
+            ) : (
+              <ProjectPicker value={pathValue} onChange={setTypedRoot} status={folderStatus} />
+            )}
 
-          {folder && !onMachine && (
-            <div className="flex flex-col gap-2">
-              {/* Resumed sessions run on the agent fields' choice, effort included. */}
-              <div className="flex flex-wrap items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-expanded={resuming}
-                  onClick={() => setResuming((open) => !open)}
-                >
-                  <History data-icon="inline-start" />
-                  {resuming ? "Hide past sessions" : "Resume a past session…"}
-                </Button>
-                <ContinueLatest
-                  projectRoot={projectRoot}
-                  model={choiceModel(choice)}
-                  disabled={!ready}
-                />
+            {folder && !onMachine && (
+              <div className="flex flex-col gap-2">
+                {/* Resumed sessions run on the agent fields' choice, effort included. */}
+                <div className="flex flex-wrap items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-expanded={resuming}
+                    onClick={() => setResuming((open) => !open)}
+                  >
+                    <History data-icon="inline-start" />
+                    {resuming ? "Hide past sessions" : "Resume a past session…"}
+                  </Button>
+                  <ContinueLatest
+                    projectRoot={projectRoot}
+                    model={choiceModel(choice)}
+                    disabled={!ready}
+                  />
+                </div>
+                {resuming && (
+                  <ResumeSessions projectRoot={projectRoot} model={choiceModel(choice)} />
+                )}
               </div>
-              {resuming && <ResumeSessions projectRoot={projectRoot} model={choiceModel(choice)} />}
-            </div>
-          )}
+            )}
+          </div>
         </section>
 
         {/* Last, after everything it starts with. */}

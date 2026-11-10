@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { openLayout } from "./layout";
 import { openOrchestrator } from "./thread-row";
+import { openMoreOptions } from "./new-thread-options";
 
 test("layout preset keys, an empty pane's quick open, and a project's new thread", async ({
   page,
@@ -58,6 +59,7 @@ test("layout preset keys, an empty pane's quick open, and a project's new thread
     .click();
   await expect(palette).toBeHidden();
   await expect(page).toHaveURL(/\/new$/);
+  await openMoreOptions(page);
   await expect(page.getByRole("combobox", { name: "Project path" })).toHaveValue(/docs/);
 });
 
