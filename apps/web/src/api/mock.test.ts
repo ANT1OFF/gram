@@ -183,6 +183,50 @@ describe("MockApi", () => {
     abort.abort();
   });
 
+  it("stops a turn whose folder went, as the server's publisher does, and rests the thread cold", async () => {
+    const api = createMockApi({ speed: 0 });
+    const abort = new AbortController();
+    const events: ApiServerEvent[] = [];
+    void (async () => {
+      for await (const event of api.events(abort.signal)) events.push(event);
+    })();
+    const feed = createThreadFeed({ scheduler: syncScheduler });
+    void (async () => {
+      for await (const event of api.threadFeed(T, abort.signal)) feed.apply(event);
+    })();
+    await waitFor(() => events.some((e) => e.type === "thread.request"), "approval request");
+    const requestId = (
+      events.find((e) => e.type === "thread.request") as { request: { id: RequestId } }
+    ).request.id;
+
+    api.simulateMissingFolder(T);
+    const path = "/Users/dev/code/api/.worktrees/fix-flaky-retry";
+    await waitFor(() => events.some((e) => e.type === "notify"), "the stop's notice");
+    const from = events.findIndex((e) => e.type === "git.state" && e.state.missing === true);
+    expect(events.slice(from, from + 4)).toMatchObject([
+      { type: "git.state", threadId: T, state: { missing: true } },
+      { type: "thread.requestResolved", threadId: T, requestId },
+      { type: "thread.status", threadId: T, status: "cold" },
+      {
+        type: "notify",
+        kind: "error",
+        title: `The agent was stopped. This thread's folder no longer exists: ${path}`,
+        threadId: T,
+      },
+    ]);
+    await waitFor(() => feed.store.getState().streamingMessageIds.length === 0, "turn end");
+    // Nothing the script had left ran, and the turn's end didn't wake the thread back to idle.
+    expect(
+      events.filter((e) => e.type === "thread.status" && e.threadId === T).at(-1),
+    ).toMatchObject({ status: "cold" });
+    expect(await threadSummary(api, T)).toMatchObject({ status: "cold", pendingRequests: [] });
+    await expect(
+      api.respond(T, requestId, { kind: "approval", decision: "allow", scope: "once" }),
+    ).rejects.toThrow("RequestNotFound");
+    await expect(api.send(T, { text: "carry on" })).rejects.toThrow("folder no longer exists");
+    abort.abort();
+  });
+
   it("follows a /model the way the server follows the agent's own switch", async () => {
     const api = createMockApi({ speed: 0, autoplay: false });
     const abort = new AbortController();
