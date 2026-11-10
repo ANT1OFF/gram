@@ -330,3 +330,20 @@ export const firstChoiceOf = (
     variant: slot.variant ?? tierEffort(table, slot.tier, agent),
   };
 };
+
+/**
+ * The next step for a worker whose checks are failing, in the order the orchestrator is taught:
+ * one effort level up, never past high, then the next tier up at its own effort. "checks failing at
+ * medium: next is high, then the next tier up". Where it is already at high, or past it on a pinned
+ * model, only the next tier is left.
+ */
+export const escalationStep = (model: Pick<ModelRef, "variant">): string => {
+  const at = model.variant;
+  if (at === undefined)
+    return "checks failing at the model's default effort: next is one effort level up, never past high, then the next tier up";
+  const index = EFFORT_ORDER.indexOf(at as FollowEffort);
+  const high = EFFORT_ORDER.length - 1;
+  if (index === -1 || index >= high)
+    return `checks failing at ${at}: effort stops at high, so next is the next tier up`;
+  return `checks failing at ${at}: next is ${EFFORT_ORDER[index + 1]}${index + 1 < high ? ", then high" : ""}, then the next tier up`;
+};

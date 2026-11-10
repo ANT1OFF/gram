@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 import type { AgentModel } from "./models.ts";
 import {
+  escalationStep,
   firstChoiceOf,
   isTierRef,
   isUnknownTier,
@@ -276,5 +277,24 @@ describe("a new workspace's orchestrator with nothing saved", () => {
     expect(newWorkspaceCharter({ available: { codex: [high] } }).orchestratorModel).toMatchObject({
       agent: "codex",
     });
+  });
+});
+
+describe("escalationStep", () => {
+  it("goes one effort level up to high, then to the next tier, never past high", () => {
+    expect(escalationStep({ variant: "low" })).toBe(
+      "checks failing at low: next is medium, then high, then the next tier up",
+    );
+    expect(escalationStep({ variant: "medium" })).toBe(
+      "checks failing at medium: next is high, then the next tier up",
+    );
+    expect(escalationStep({ variant: "high" })).toBe(
+      "checks failing at high: effort stops at high, so next is the next tier up",
+    );
+    // A pinned model past the ceiling isn't told to go higher still.
+    expect(escalationStep({ variant: "max" })).toBe(
+      "checks failing at max: effort stops at high, so next is the next tier up",
+    );
+    expect(escalationStep({})).toContain("never past high");
   });
 });

@@ -507,6 +507,11 @@ export const WorkerLedgerEntry = Schema.Struct({
   wakes: Schema.optionalKey(Schema.Array(PendingWake)),
   /** Run monitors still awaiting completion, independent of merged PR state. */
   runWatches: Schema.optionalKey(Schema.Array(RunWatch)),
+  /**
+   * While its pull request's required checks fail: the next step, one effort level up and never
+   * past high, then the next tier (`escalationStep`). Advice; nothing acts on it.
+   */
+  nextStep: Schema.optionalKey(Schema.String),
 });
 export type WorkerLedgerEntry = typeof WorkerLedgerEntry.Type;
 
@@ -1172,6 +1177,7 @@ const workerLine = (worker: WorkerLedgerEntry): string => {
     ...(worker.branch === undefined ? [] : [`branch ${inline(worker.branch)}`]),
     ...(worker.worktreeMissing === true ? ["worktree missing"] : []),
     ...(worker.pr === undefined ? [] : [prText(worker.pr)]),
+    ...(worker.nextStep === undefined ? [] : [worker.nextStep]),
     ...(worker.morePrs ?? []).map(prText),
     ...(worker.alsoIn ?? []).map(alsoInText),
     ...(worker.costUsd === undefined ? [] : [usd(worker.costUsd)]),
