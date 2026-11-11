@@ -247,18 +247,33 @@ export const makeServerLending = (
         clearTimeout(timer);
       }
       // This connection's own fiber: one started since for the same workspace is left alone.
-      if (entry.fiber !== undefined) await Effect.runPromise(Fiber.interrupt(entry.fiber));
+      // Bounded, so a connection whose close never finishes can't keep the workspace from
+      // being dialled again.
+      if (entry.fiber !== undefined) {
+        let timer: NodeJS.Timeout | undefined;
+        await Promise.race([
+          Effect.runPromise(Fiber.interrupt(entry.fiber)),
+          new Promise((later) => {
+            timer = setTimeout(later, LENDING_HANG_UP_MOST_MS);
+          }),
+        ]);
+        clearTimeout(timer);
+      }
       if (running.get(id) === entry) running.delete(id);
-      // Lent again while it hung up: it is dialled now.
-      sync();
+      // Lent again while it hung up: it is dialled now, unless lending was stopped.
+      lendAgain();
     };
 
-    const sync = () => {
-      if (over) return;
+    /** Set by `stop`, and cleared only by the next `sync` from outside. */
+    let stopped = false;
+
+    const lendAgain = () => {
+      if (over || stopped) return;
       if (!options.present()) options.grants.withdraw({ origin: options.origin });
       const lent = new Set(mayLend() ? options.workspaces().map((workspace) => workspace.id) : []);
       for (const id of running.keys())
-        if (!lent.has(id)) void end(id, options.limits.paused() ? "paused" : "away");
+        if (!lent.has(id))
+          void end(id, options.limits.paused() ? "paused" : "away").catch(() => undefined);
       for (const id of lent) {
         if (running.has(id)) continue;
         const entry: Running = {};
@@ -277,8 +292,12 @@ export const makeServerLending = (
     };
 
     return {
-      sync,
+      sync: () => {
+        stopped = false;
+        lendAgain();
+      },
       stop: async (why) => {
+        stopped = true;
         if (why === "away") options.grants.withdraw({ origin: options.origin });
         await Promise.all([...running.keys()].map((id) => end(id, why)));
       },

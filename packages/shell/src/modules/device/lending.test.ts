@@ -420,6 +420,19 @@ describe.skipIf(process.platform === "win32")("lending to a hosted server", () =
     await close();
   });
 
+  it("stays stopped after a stop, until the next sync", async () => {
+    const { lending, dials, close } = await setUp();
+    lending.sync();
+    await until(() => dials.length === 1, "a dial");
+    await lending.stop("away");
+    await new Promise((later) => setTimeout(later, 100));
+    expect(dials).toHaveLength(1);
+    expect(lending.running()).toEqual([]);
+    lending.sync();
+    await until(() => dials.length === 2, "a dial after sync");
+    await close();
+  });
+
   it("waits longer after each dial that fails", async () => {
     const { lending, dials, close } = await setUp({ dialFails: true });
     lending.sync();
