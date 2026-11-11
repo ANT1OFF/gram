@@ -153,6 +153,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     openedInAuto,
     briefedByUser,
     joinedMachines,
+    headless,
   } = kit;
   /**
    * The joined machine `named` (its name, any case, or its id), for `spawn_worker`'s `machine`;
@@ -200,6 +201,19 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         ),
       );
     });
+  /**
+   * The machine a worker is placed on: the one `named`, else this one (`undefined`), which a
+   * headless Gram, running no work itself, replaces with its default machine. With none that can
+   * take it there, the spawn is refused with why.
+   */
+  const placedMachine = (tool: string, named: string | undefined) =>
+    Effect.gen(function* () {
+      const hostId = named === undefined ? undefined : yield* machineNamed(tool, named);
+      if (hostId !== undefined || headless === undefined) return hostId;
+      return yield* headless.machine.pipe(
+        Effect.mapError((error) => toolError(tool, refusal("unknown_machine", error.message))),
+      );
+    });
   const admitMachineModel = (tool: string, hostId: HostId | undefined, chosen: ModelRef) =>
     Effect.gen(function* () {
       if (hostId === undefined) return;
@@ -243,8 +257,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   // because a roster or machine may change while a card is awaiting its answer.
   const checkSpawnMachine: OrchestrationShape["checkSpawnMachine"] = (callerId, input) =>
     Effect.gen(function* () {
-      if (input.machine === undefined) return;
-      const hostId = yield* machineNamed("spawn_worker", input.machine);
+      const hostId = yield* placedMachine("spawn_worker", input.machine);
       if (hostId === undefined) return;
       const { thread, state } = yield* requireAuthority("spawn_worker", callerId);
       // A tier resolves against what that machine lists, as the spawn itself will.
@@ -644,8 +657,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           // else about a spawn is rationed.
           const settings = yield* store.getSettings;
           // Where it runs, first: a tier resolves against what that machine lists.
-          const hostId =
-            input.machine === undefined ? undefined : yield* machineNamed(tool, input.machine);
+          const hostId = yield* placedMachine(tool, input.machine);
           // Without a roster the one model is the orchestrator's own, which it runs on.
           const picked =
             byUser === undefined

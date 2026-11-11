@@ -61,6 +61,14 @@ are much slower across that boundary.
   the container. Previews of an agent's dev server run on the container's loopback and don't open
   from your browser yet.
 
+| Build argument        | Default                       | What it sets                                  |
+| --------------------- | ----------------------------- | --------------------------------------------- |
+| `CLAUDE_CODE_VERSION` | the version in the Dockerfile | Claude Code from npm                          |
+| `CODEX_VERSION`       | unset                         | Codex from npm, when set                      |
+| `GH_VERSION`          | `2.103.3`                     | The GitHub CLI's release; empty leaves it out |
+| `NODE_IMAGE`          | `node:26.13.0-bookworm-slim`  | The image it runs on                          |
+| `BUILD_IMAGE`         | `node:26.13.0-bookworm`       | The image it builds in                        |
+
 ## Hosted features
 
 The features for running Gram as a service behind another one are off unless **Hosted features**
@@ -69,10 +77,30 @@ from its environment when it starts: `GRAM_EMBEDDING=1` turns it on, `GRAM_EMBED
 off, and without the variable the stored setting stays as it is. Only the app on the server's own
 machine changes it; a paired phone can't.
 
-| Build argument        | Default                       | What it sets                                  |
-| --------------------- | ----------------------------- | --------------------------------------------- |
-| `CLAUDE_CODE_VERSION` | the version in the Dockerfile | Claude Code from npm                          |
-| `CODEX_VERSION`       | unset                         | Codex from npm, when set                      |
-| `GH_VERSION`          | `2.103.3`                     | The GitHub CLI's release; empty leaves it out |
-| `NODE_IMAGE`          | `node:26.13.0-bookworm-slim`  | The image it runs on                          |
-| `BUILD_IMAGE`         | `node:26.13.0-bookworm`       | The image it builds in                        |
+## A headless control plane
+
+With `GRAM_HEADLESS=1` the server runs no work itself. It starts no agent, opens no terminal and
+makes no worktree in the container; every thread, an orchestrator's included, runs on a
+[joined machine](MACHINES.md). It is one of the hosted features, so the server only starts with
+`GRAM_EMBEDDING=1` set as well (or the setting already stored on), and says so when it isn't.
+
+```yaml
+services:
+  gram:
+    environment:
+      GRAM_EMBEDDING: "1"
+      GRAM_HEADLESS: "1"
+```
+
+- A thread whose request names no machine goes on the confirmed machine online now that joined
+  first. A worker's `machine` and the composer's Machine select still pick another.
+- An orchestrator works in the machine's own clone of its project, on the clone's default branch.
+  Workers get worktrees of that clone, as they do on any joined machine.
+- With no machine joined, or none online, starting a thread is refused with the reason. Opening a
+  terminal here, or a thread in a worktree of this machine, is always refused.
+- The models offered are the ones the default machine's Claude Code lists. The launch checks for
+  local tools don't run.
+- Not on a machine yet, so not available headless: Codex sessions, sessions through a gateway
+  profile, memory updates, and handing an orchestrator over to a new session.
+- The server still keeps a folder for each project (added or cloned in the container), which it
+  reads the project's remote and branches from. Nothing is run in it.
