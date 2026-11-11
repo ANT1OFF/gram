@@ -112,6 +112,24 @@ export interface AgentEventsDeps {
   readonly setCurrentCheckout: ThreadRuntimesShape["setCurrentCheckout"];
 }
 
+/**
+ * What the old session of a switch began while stopping, that the switch can't carry to its
+ * target: a question or approval, a turn (one the agent opened itself), subagent or background
+ * work. `undefined` while it stays at rest.
+ */
+const startedDuringStop = (rt: Runtime, event: AgentEvent): string | undefined =>
+  event.type === "request"
+    ? event.request.kind === "question"
+      ? "asked a question"
+      : "asked for an approval"
+    : rt.turn !== undefined
+      ? "started a turn"
+      : rt.activity.subagentsRunning
+        ? "started a subagent"
+        : rt.background.length > 0
+          ? "started background work"
+          : undefined;
+
 /** The handler every live session's events go through, one at a time under the runtime lock. */
 export const makeAgentEvents = ({
   store,
@@ -252,6 +270,10 @@ export const makeAgentEvents = ({
         // Before the event, so a status change it causes already carries the new line.
         const changed = rt.activity.apply(event, rt.cwd);
         yield* applyEvent(rt, event);
+        // The old session of a switch began something while it stopped: the switch rolls back.
+        // Read from the runtime after every event, not from chosen event types, and latched, as
+        // the stop's teardown clears the turn and activity before the switch looks.
+        if (rt.switchFence !== undefined) rt.switchFence.arrived ??= startedDuringStop(rt, event);
         if (changed) yield* scheduleActivity(rt);
         const tasksDone = tasksRunning && rt.background.length === 0;
         if ((subagentsRunning || tasksDone) && evictable(rt)) yield* startIdleTimer(rt);

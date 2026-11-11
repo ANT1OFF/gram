@@ -84,6 +84,7 @@ import { makeMessageQueue, makeQueueMethods } from "./message-queue.ts";
 import { makeThreadLifecycle, makeCloseMethods } from "./thread-lifecycle.ts";
 import { makeAgentEvents } from "./agent-events.ts";
 import { makeSessionSwitch, makeSwitchMethods } from "./session-switch.ts";
+import { AGENT_NAMES, makeAgentSwitch } from "./agent-switch.ts";
 import { makeSessionLifecycle } from "./session-lifecycle.ts";
 import type { InputUndelivered } from "./undelivered.ts";
 
@@ -195,8 +196,6 @@ const turnsHere = (
       ),
   };
 };
-
-const AGENT_NAMES = { claude: "Claude Code", codex: "Codex" } as const;
 
 /**
  * A model pick stays on the thread's own agent: its session, `agentSessionId` and `codexHome`
@@ -330,7 +329,12 @@ const make = Effect.gen(function* () {
       { discard: true },
     );
 
-  const { policyFor, opening, methods: policyMethods } = makeSessionPolicy({ store });
+  const {
+    policyFor,
+    opening,
+    modeAfterSwitch,
+    methods: policyMethods,
+  } = makeSessionPolicy({ store });
   // Present in the full server; tests without the HTTP layer run agents without MCP endpoints.
   const mcpTokens = yield* Effect.serviceOption(McpTokens);
   const httpServer = yield* Effect.serviceOption(HttpServer.HttpServer);
@@ -1257,6 +1261,9 @@ const make = Effect.gen(function* () {
     cancelIdleTimer,
     publishUpsert,
     isShuttingDown: () => shuttingDown,
+    hasSessionFiber: (threadId) => FiberMap.hasUnsafe(sessions, threadId),
+    drainQueue,
+    modeAfterSwitch,
     openSession: (rt, thread, resumeAt, switchAttempt) =>
       openSession(rt, thread, resumeAt, switchAttempt),
   });
@@ -1356,11 +1363,38 @@ const make = Effect.gen(function* () {
     publishUpsert,
     drainQueue,
     becomeIdle,
+    modeAfterSwitch,
   });
+
+  const agentSwitch = makeAgentSwitch({
+    store,
+    hosts,
+    hub,
+    getRuntime,
+    switches: yield* FiberMap.make<ThreadId>(),
+    refuseMissingFolder,
+    runtimes: { ...switchMethods, switchSession, emitChunk: feedMethods.emitChunk, updateThread },
+    afterRelease: (rt) =>
+      locked(
+        rt,
+        Effect.gen(function* () {
+          if (rt.turn !== undefined) return;
+          yield* becomeIdle(rt);
+          yield* drainQueue(rt);
+        }),
+      ),
+  });
+  // A plain thread's or worker's switch the last run cut off; the orchestrator's is its handoff's.
+  yield* Effect.forEach(
+    (yield* store.listThreads).filter((thread) => thread.sessionSwitch !== undefined),
+    agentSwitch.resumeAtBoot,
+    { discard: true },
+  );
 
   const service = ThreadRuntimes.of({
     ...switchMethods,
     switchSession,
+    switchAgent: agentSwitch.switchAgent,
     cutAtBoot: cutOff,
     ...queueMethods,
     create,

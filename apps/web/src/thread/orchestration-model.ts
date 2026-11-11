@@ -291,6 +291,7 @@ const HANDOFF_REASON: Record<Handoff["reason"], string> = {
   context: "context was filling up",
   compactions: "too many compactions",
   user: "you asked for one",
+  switch: "continued in another agent",
 };
 
 /** The handoff divider's words. */

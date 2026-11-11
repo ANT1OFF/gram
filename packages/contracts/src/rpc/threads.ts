@@ -149,6 +149,16 @@ export const ThreadRpcs = RpcGroup.make(
     payload: { ...threadRef, model: ModelRef },
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),
+  /**
+   * Moves the thread to the other agent on `target`: a fresh session there, with a divider in the
+   * transcript. Returns once the switch is claimed; `sessionSwitch` follows it. On a failed switch
+   * it tries again, onto `target`. `InvalidState`: the thread can't move now, with why.
+   */
+  Rpc.make("thread.switchAgent", {
+    payload: { ...threadRef, target: ModelRef },
+    success: Thread,
+    error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
+  }),
   /** `InvalidState`: a turn is running, or the message has no agent ids to resume from. */
   Rpc.make("thread.fork", {
     payload: {
