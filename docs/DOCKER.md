@@ -7,7 +7,7 @@ agents to work on Linux, Docker Desktop then gives you a Linux machine to run th
 from your browser. The image is also the starting point for running Gram in a cluster later.
 
 The image is built from source here. [Packages and images](PACKAGES.md) covers the published
-images, once publishing is switched on, and the image of the worker host alone.
+images and the image of the worker host alone.
 
 ## Run it
 

@@ -1,5 +1,5 @@
 // The packages workflow's publishing rules, read from the file itself so an edit can't drop one
-// quietly: nothing uploads without the switch, only main and releases publish, and the token that
+// quietly: only main and releases publish, the switch stops both, and the token that
 // writes packages never meets an install.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -21,9 +21,9 @@ const job = (name) => {
 };
 
 describe("packages.yml", () => {
-  it("publishes only with the switch on, from main or a published release", () => {
+  it("publishes only from main or a published release, and not with the switch off", () => {
     expect(text).toContain(
-      "PUBLISHING: ${{ vars.GRAM_PUBLISH_PACKAGES == 'true' && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}",
+      "PUBLISHING: ${{ vars.GRAM_PUBLISH_PACKAGES != 'false' && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}",
     );
     expect(text).toMatch(/\n {2}push:\n {4}branches: \[main\]\n/);
     expect(text).toMatch(/\n {2}release:\n {4}types: \[published\]\n/);

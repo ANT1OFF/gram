@@ -6,9 +6,8 @@ Gram's core can be used without the desktop app: as registry packages, to embed 
 program, and as container images, to host it yourself. This page covers what is published, how a
 consumer depends on it, and the pipeline that publishes it.
 
-**Publishing is off.** The pipeline builds and checks everything on every run, and uploads
-nothing until the repository's owner [switches it on](#switching-it-on). Until then no package or
-image exists in any registry.
+Packages go to GitHub Packages and images to `ghcr.io`, under the repository owner's account. Only
+`main` and published releases upload; the repository's owner can [switch that off](#switches).
 
 ## What is published
 
@@ -130,7 +129,7 @@ Dockerfile or a published package's manifest. Every run:
 3. rehearses the publish with `--dry-run`;
 4. builds both images on both architectures and starts the host one.
 
-Only a push to `main` and a published release go on to upload, and only when the switch is on.
+Only a push to `main` and a published release go on to upload, unless the switch is off.
 A version the registry already has is left alone, so a failed run can be run again. The job that
 holds the package-writing token installs nothing and runs one dependency-free script over the
 tarballs the first job checked, each against its recorded hash.
@@ -144,18 +143,18 @@ bun run packages:verify
 
 The tarballs land in `out/packages/`. Neither command publishes.
 
-## Switching it on
+## Switches
 
-These are the owner's decisions; nothing in the repository makes them.
+Repository variables decide whether and where it publishes. They are the owner's to set.
 
 | Repository variable     | Value    | Effect                                                                            |
 | ----------------------- | -------- | --------------------------------------------------------------------------------- |
-| `GRAM_PUBLISH_PACKAGES` | `true`   | Canaries from `main` and versions from releases go to GitHub Packages and `ghcr`  |
+| `GRAM_PUBLISH_PACKAGES` | `false`  | Nothing is uploaded: every run only builds and checks                             |
 | `GRAM_RELEASE_REGISTRY` | `npm`    | Releases' packages go to npm instead of GitHub Packages. Canaries never go to npm |
 | `GRAM_NPM_SCOPE`        | `@scope` | The npm scope releases are published in; required with the line above             |
 
-With only the first set, everything goes to GitHub Packages under the repository owner's scope,
-with the workflow's own token: no secret is needed. Publishing to npm also needs the scope to
+With none set, canaries from `main` and versions from releases go to GitHub Packages and `ghcr.io`
+under the repository owner's scope, with the workflow's own token: no secret is needed. Publishing to npm also needs the scope to
 exist there, and either a trusted publisher set up for this workflow on each package or an
 `NPM_TOKEN` secret. The npm path has not been exercised.
 

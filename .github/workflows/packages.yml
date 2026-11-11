@@ -5,12 +5,13 @@ name: Packages and images
 # docs/PACKAGES.md.
 #
 # Every run packs the packages, installs them in an empty project and builds both images. Only two
-# events publish, and only while the repository variable GRAM_PUBLISH_PACKAGES is `true`:
+# events publish, both to GitHub Packages and ghcr.io with the workflow's own token:
 #
 # - a push to main publishes a canary (`<next patch>-canary.<commit time>.g<commit>`, tag `canary`);
 # - a published GitHub release publishes that version (tag `latest`).
 #
-# Without the variable nothing is ever uploaded. A pull request that changes this workflow, the
+# Setting the repository variable GRAM_PUBLISH_PACKAGES to `false` stops both: nothing is uploaded
+# while it says so. No other branch or event ever uploads. A pull request that changes this workflow, the
 # packaging tools, the Dockerfile or a published package's manifest runs the same build as a dry
 # run, as does a manual run.
 #
@@ -41,8 +42,8 @@ concurrency:
 permissions: {}
 
 env:
-  # The one switch: `true` publishes from main and from releases, anything else publishes nothing.
-  PUBLISHING: ${{ vars.GRAM_PUBLISH_PACKAGES == 'true' && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+  # Main and releases publish, unless the one switch says `false`.
+  PUBLISHING: ${{ vars.GRAM_PUBLISH_PACKAGES != 'false' && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
 
 jobs:
   pack:
