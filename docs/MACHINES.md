@@ -14,6 +14,10 @@ placed on it; its session, checkout, git state and terminals then run there. The
 previews and attachments work on that machine ([its files](#its-files-and-attachments)); its turn
 checkpoints, PR badge and port chips don't reach that machine yet.
 
+A Gram that runs as a service can also take hosts that another system starts and registers by
+key, over ordinary TLS with no Tailscale and nothing to confirm: see
+[provisioned hosts](PROVISIONED_HOSTS.md).
+
 ## Start a thread on a machine
 
 Once a machine is confirmed, **Machine** shows first under Where it runs on New → Chat, and beside
@@ -88,6 +92,10 @@ The guard itself, on the joined machine's host:
 - The browser lists folders only, never files, at most 500 of them, and gives up on a folder or
   mount that doesn't answer within a few seconds.
 - A host from an older release doesn't list its folders. Update it before you pick a folder there.
+
+A Gram started as a [headless control plane](DOCKER.md#a-headless-control-plane) has no "This
+machine": every thread runs on a joined one, and one that names none goes on the machine that
+joined first of those online.
 
 ## What you need
 

@@ -9,6 +9,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { remoteOrigin } from "./http/remote-access.ts";
+import { type ProvisionedHostsConfig, provisionedHostsFrom } from "./host/provisioned.ts";
 import { defaultDataDir } from "./logging/data-dir.ts";
 
 export interface ServerConfigShape {
@@ -30,6 +31,11 @@ export interface ServerConfigShape {
   readonly extraOrigins: ReadonlyArray<string>;
   /** Explicit HTTPS Tailscale Serve origin; absent keeps remote access disabled. */
   readonly remoteOrigin?: string;
+  /**
+   * The listener provisioned hosts dial over TLS (`host/provisioned.ts`); absent, as it is unless
+   * its environment is set, there is none and no host can be provisioned.
+   */
+  readonly provisionedHosts?: ProvisionedHostsConfig;
   /** Overrides the `agents.idleEvictMinutes` setting when set. */
   readonly idleEvictAfter: Duration.Duration | undefined;
   readonly interruptWatchdog: Duration.Duration;
@@ -57,6 +63,19 @@ export interface ServerConfigShape {
    * `GRAM_ORCHESTRATION_DEBOUNCE_MS` shortens it so the e2e flows don't wait it out.
    */
   readonly orchestrationDebounce?: Duration.Duration;
+  /**
+   * `GRAM_EMBEDDING`: `1` turns the hosted features setting (`experimental.embedding`) on when the
+   * server starts and `0` turns it off, for a server with no window to change it in. Absent leaves
+   * the stored setting as it is.
+   */
+  readonly embedding?: boolean;
+  /**
+   * `GRAM_HEADLESS=1`: a control plane with no agent host of its own. Every session, an
+   * orchestrator's included, runs on a joined machine, and nothing is started on this one: no
+   * agent, no terminal, no worktree. One of the hosted features, so the server refuses to start
+   * this way unless they are on (`host/headless.ts`).
+   */
+  readonly headless?: boolean;
 }
 
 /**
@@ -104,11 +123,13 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     const appBuild = env["GRAM_APP_BUILD"];
     const debounceMs = Number(env["GRAM_ORCHESTRATION_DEBOUNCE_MS"]);
     const listenHost = listenHostFrom(env);
+    const provisionedHosts = provisionedHostsFrom(env);
     return {
       dataDir: defaultDataDir(env),
       ...(env["GRAM_REMOTE_ORIGIN"] !== undefined
         ? { remoteOrigin: remoteOrigin(env["GRAM_REMOTE_ORIGIN"])! }
         : {}),
+      ...(provisionedHosts === undefined ? {} : { provisionedHosts }),
       port: Number.isInteger(port) && port >= 0 && port < 65536 ? port : 0,
       ...(listenHost === undefined ? {} : { listenHost }),
       webRoot: env["GRAM_WEB_ROOT"] || undefined,
@@ -125,6 +146,12 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
       ...(Number.isFinite(debounceMs) && debounceMs > 0
         ? { orchestrationDebounce: Duration.millis(debounceMs) }
         : {}),
+      ...(env["GRAM_HEADLESS"] === "1" ? { headless: true } : {}),
+      ...(env["GRAM_EMBEDDING"] === "1"
+        ? { embedding: true }
+        : env["GRAM_EMBEDDING"] === "0"
+          ? { embedding: false }
+          : {}),
     };
   };
 }

@@ -1,4 +1,4 @@
-import type { LogLevel, SettingsPatch } from "@gram/contracts";
+import { embeddingOn, type LogLevel, type SettingsPatch } from "@gram/contracts";
 import { useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -9,7 +9,7 @@ import { useServerSettings } from "@/settings-sync/store";
 
 import { copyText } from "./copy-text";
 import { DIAGNOSTICS_DEFAULTS, resetFor } from "./defaults";
-import { OptionGroup, SettingRow } from "./fields";
+import { OptionGroup, SettingRow, Toggle } from "./fields";
 import { SettingsGroup } from "./settings-group";
 import { useDiagnostics, useFeature } from "./use-diagnostics";
 import { useSaveSettings } from "./use-save-settings";
@@ -51,6 +51,7 @@ export function DiagnosticsSection() {
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
   const [levelError, setLevelError] = useState<string>();
+  const [hostedError, setHostedError] = useState<string>();
 
   const saveLevel = (patch: SettingsPatch) => {
     setLevelError(undefined);
@@ -138,6 +139,26 @@ export function DiagnosticsSection() {
             </Button>
           )}
         </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup
+        label="Hosting"
+        description="For a Gram that runs as a service for other people, not on your own computer."
+      >
+        <Toggle
+          label="Hosted features"
+          description="Run this Gram as a service behind another one. Leave it off on your own computer."
+          keywords={["embedding", "hosted", "self-hosted", "headless", "control plane", "server"]}
+          checked={settings !== undefined && embeddingOn(settings)}
+          disabled={!settings}
+          disabledReason="Loading settings…"
+          error={hostedError}
+          onChange={(embedding) => {
+            setHostedError(undefined);
+            save({ experimental: { embedding } }).catch((e: unknown) =>
+              setHostedError(errorMessage(e)),
+            );
+          }}
+        />
       </SettingsGroup>
     </div>
   );

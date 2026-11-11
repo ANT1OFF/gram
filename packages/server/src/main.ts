@@ -117,12 +117,16 @@ const fakeAgent = process.env["GRAM_FAKE_AGENT"] === "1";
 /** Servers the fake `claude mcp` holds, so a live check can add one and see the session list it. */
 const fakeMcpServers: FakeMcpServers = new Map();
 
-const Agents: Layer.Layer<AgentHosts, never, AgentNeeds> = fakeAgent
-  ? makeFakeAgentAdapter({
-      ...(process.env["GRAM_FAKE_AGENT_REPLY"] === "echo" ? { reply: "echo" as const } : {}),
-      mcpServers: fakeMcpServers,
-    })
-  : ClaudeAgents;
+// A headless control plane (`GRAM_HEADLESS=1`) is given no agents: no CLI is looked for or started
+// on this machine, and the server offers what its joined machines run (`host/headless.ts`).
+const Agents: Layer.Layer<AgentHosts, never, AgentNeeds> = config.headless
+  ? AgentHosts.layerNone
+  : fakeAgent
+    ? makeFakeAgentAdapter({
+        ...(process.env["GRAM_FAKE_AGENT_REPLY"] === "echo" ? { reply: "echo" as const } : {}),
+        mcpServers: fakeMcpServers,
+      })
+    : ClaudeAgents;
 
 // The fake never writes a real Claude Code config.
 const McpCliLayer = fakeAgent ? Layer.succeed(McpCli, makeFakeMcpCli(fakeMcpServers)) : McpCliLive;
@@ -232,6 +236,7 @@ const program = Effect.gen(function* () {
       arch: process.arch,
       port,
       logDir,
+      ...(config.headless ? { headless: true } : {}),
     },
     "server started",
   );
