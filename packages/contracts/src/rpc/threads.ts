@@ -69,6 +69,18 @@ export const ThreadRpcs = RpcGroup.make(
     success: Thread,
     error: errors(NotFound, AgentUnavailable, GitError, InvalidState, CheckoutInUse),
   }),
+  /**
+   * Starts a thread from a profile supplied whole (`ThreadProfile`): its charter, files and
+   * skills, agent and model, its one MCP server, its autonomy and where it works. One of the
+   * hosted features: `InvalidState` unless `experimental.embedding` is on, and for a profile that
+   * can't be applied, naming why, with nothing made. `profile` is decoded strictly by the handler
+   * (`decodeThreadProfile`), so a key this version doesn't know is refused rather than dropped.
+   */
+  Rpc.make("thread.createFromProfile", {
+    payload: { profile: Schema.Unknown },
+    success: Thread,
+    error: errors(NotFound, AgentUnavailable, GitError, InvalidState),
+  }),
   Rpc.make("thread.send", {
     payload: { ...threadRef, input: UserInput, clientMessageId },
     success: SendResult,

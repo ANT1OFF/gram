@@ -842,6 +842,11 @@ export const makeCodexHost = (
             .filter(([name, enabled]) => !enabled || (confined === undefined && !(name in leftOut)))
             .map(([name, enabled]) => [name, { enabled }]),
         ),
+        // The one server the session was given by address (`mcpServer`), unless it is confined.
+        // `enabled` because a same-named table of the user's could otherwise switch it off.
+        ...(o.mcpServer === undefined || confined !== undefined
+          ? {}
+          : { [o.mcpServer.name]: { enabled: true, url: o.mcpServer.url } }),
         // App tools: one MCP server per thread, bound to it by the thread's bearer token. The
         // registry gates its own tools, so Codex doesn't ask again.
         ...(o.mcp === undefined
@@ -937,7 +942,10 @@ export const makeCodexHost = (
           o.mcp !== undefined,
         ).filter(
           (name) =>
-            Object.hasOwn(leftOut, name) || (!configured.has(name) && listsLeaveOut(o, { name })),
+            // The server the session was given by address is on because it was asked for: the
+            // thread's table carries its url, whatever a same-named table of the user's says.
+            name !== o.mcpServer?.name &&
+            (Object.hasOwn(leftOut, name) || (!configured.has(name) && listsLeaveOut(o, { name }))),
         );
         if (kept.length > 0) {
           return yield* new AgentUnavailable({

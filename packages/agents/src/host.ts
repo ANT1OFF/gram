@@ -118,6 +118,13 @@ export interface OpenSessionOptions {
    */
   readonly mcpAllowlist?: ReadonlyArray<string>;
   /**
+   * One more MCP server the session is given beside Gram's own, by address alone: a remote
+   * (streamable HTTP) server, reached with no credential of Gram's. It is still subject to
+   * the lists, so a session held to it names its `url` in `mcpAllowlist`. A confined session
+   * (`confineWrites`) never gets it. A host that can't add a server ignores it.
+   */
+  readonly mcpServer?: { readonly name: string; readonly url: string };
+  /**
    * MCP servers the session leaves out, entries as `mcpAllowlist` takes them; a server both lists
    * name is left out. Gram's own server is never on it. A host that can't leave a server
    * out ignores it, and says so where the set is edited.

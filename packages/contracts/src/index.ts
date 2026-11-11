@@ -95,6 +95,7 @@ export * from "./thread-plan.ts";
 export * from "./terminal.ts";
 export * from "./thread-summary.ts";
 export * from "./threads.ts";
+export * from "./thread-profile.ts";
 export * from "./plan-merge.ts";
 export * from "./plan-headline.ts";
 export * from "./pr-context.ts";
