@@ -5,11 +5,13 @@
 //
 //   node tools/packages/verify.mjs [--out out/packages]
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+
+import { PREBUILT } from "./lib.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const { values } = parseArgs({
@@ -39,7 +41,14 @@ try {
         name: "gram-packages-consumer",
         private: true,
         type: "module",
-        dependencies: { ...tarballs, effect: catalog.effect },
+        // The peers the packages name, at the exact versions they name.
+        dependencies: {
+          ...tarballs,
+          effect: catalog.effect,
+          react: catalog.react,
+          "react-dom": catalog["react-dom"],
+        },
+        devDependencies: { "@types/react": catalog["@types/react"] },
         overrides: tarballs,
       },
       null,
@@ -61,6 +70,9 @@ try {
     );
   // The server's `main` starts the server on import; it is started below instead.
   const mains = new Set(["@gram/server/main"]);
+  // A browser bundle doesn't load under Node: its entries are typechecked and its files checked.
+  const browser = new Set(PREBUILT.map((each) => each.folder));
+  const forBrowser = new Set();
   const specifiers = packed.packages.flatMap((entry) => {
     const manifest = installed(entry);
     if (manifest.name !== entry.name || manifest.version !== entry.version) {
@@ -71,17 +83,31 @@ try {
         if (/^(workspace|catalog):/.test(spec)) throw new Error(`${entry.name}: ${name}@${spec}`);
       }
     }
-    return Object.keys(manifest.exports).map((key) => `${entry.workspaceName}${key.slice(1)}`);
+    return Object.entries(manifest.exports).flatMap(([key, target]) => {
+      const files = typeof target === "string" ? [target] : Object.values(target);
+      for (const file of files) {
+        if (!existsSync(join(project, "node_modules", entry.workspaceName, file))) {
+          throw new Error(`${entry.name}: export ${key} names ${file}, which isn't installed`);
+        }
+      }
+      // A stylesheet: nothing to import or typecheck.
+      if (typeof target === "string") return [];
+      const specifier = `${entry.workspaceName}${key.slice(1)}`;
+      if (browser.has(entry.folder)) forBrowser.add(specifier);
+      return [specifier];
+    });
   });
   writeFileSync(
     join(project, "imports.mjs"),
     specifiers
-      .filter((specifier) => !mains.has(specifier))
+      .filter((specifier) => !mains.has(specifier) && !forBrowser.has(specifier))
       .map((specifier) => `await import(${JSON.stringify(specifier)});`)
       .join("\n"),
   );
   run(process.execPath, ["imports.mjs"], { stdio: "inherit" });
-  console.log(`${specifiers.length - mains.size} entries import under plain Node`);
+  console.log(
+    `${specifiers.length - mains.size - forBrowser.size} entries import under plain Node`,
+  );
 
   step("read the published types");
   // `any` is what a declaration that fails to resolve turns into, so no export may be `any`.
@@ -104,6 +130,7 @@ try {
         module: "nodenext",
         moduleResolution: "nodenext",
         target: "es2024",
+        lib: ["ES2024", "DOM"],
         strict: true,
         noEmit: true,
         skipLibCheck: true,

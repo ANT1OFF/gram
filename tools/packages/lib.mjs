@@ -174,17 +174,25 @@ export const sourceKind = (path) => {
 };
 
 /** The registry page's text for one package. */
-export const readme = ({ name, workspaceName, folder, repository, commit, version }) =>
+export const readme = ({
+  name,
+  workspaceName,
+  folder,
+  source = `packages/${folder}`,
+  repository,
+  commit,
+  version,
+}) =>
   [
     `# ${name}`,
     "",
     `Gram's \`${folder}\` package (\`${workspaceName}\` in its source), built from`,
-    `[${repository}](https://github.com/${repository}/tree/${commit}/packages/${folder}) at`,
+    `[${repository}](https://github.com/${repository}/tree/${commit}/${source}) at`,
     `\`${commit.slice(0, 9)}\` as version ${version}.`,
     "",
     "It is published for embedding and self-hosting Gram. The packages are released together:",
-    "depend on one exact version of each, and on the exact `effect` version this one names as",
-    `a peer. See [the packaging guide](https://github.com/${repository}/blob/${commit}/docs/PACKAGES.md).`,
+    "depend on one exact version of each, and on the exact versions this one names as peers.",
+    `See [the packaging guide](https://github.com/${repository}/blob/${commit}/docs/PACKAGES.md).`,
     "",
   ].join("\n");
 
@@ -199,12 +207,69 @@ export const distTag = ({ version, canary }) => {
 export const publishOrder = (packages) =>
   packages
     .map((entry) => {
-      const index = PUBLISHED.indexOf(entry.folder);
+      const index = [...PUBLISHED, ...PREBUILT.map((each) => each.folder)].indexOf(entry.folder);
       if (index < 0) throw new Error(`${entry.folder} isn't a published package`);
       return [index, entry];
     })
     .toSorted(([a], [b]) => a - b)
     .map(([, entry]) => entry);
+
+/**
+ * Packages a build of their own writes whole, manifest included: the folder it is named by, where
+ * its source lives, the directory the build leaves, and the command that makes it. The web app's
+ * is a browser bundle, so it is packed as it stands with only its name and version set.
+ */
+export const PREBUILT = [
+  {
+    folder: "web",
+    source: "apps/web",
+    directory: "apps/web/dist-embed",
+    build: "bun run --filter @gram/web build:embed",
+  },
+];
+
+/**
+ * The manifest a prebuilt package is published with: its own, renamed into the scope and given
+ * the version of this pack. Its build must already have left nothing a registry can't resolve.
+ */
+export const prebuiltManifest = ({
+  manifest,
+  source,
+  version,
+  scope,
+  repository,
+  commit,
+  built,
+}) => {
+  if (!EXACT.test(version)) throw new Error(`Not an exact version: ${version}`);
+  for (const section of ["dependencies", "peerDependencies"]) {
+    for (const [name, spec] of Object.entries(manifest[section] ?? {})) {
+      if (!EXACT.test(spec)) {
+        throw new Error(`${manifest.name}: ${name} must be an exact version, not ${spec}`);
+      }
+    }
+  }
+  if (manifest.exports === undefined) throw new Error(`${manifest.name} has no exports`);
+  return {
+    ...manifest,
+    name: publishedName(manifest.name, scope),
+    version,
+    description: manifest.description ?? "Gram's web app, built to be mounted in another app",
+    repository: {
+      type: "git",
+      url: `git+https://github.com/${repository}.git`,
+      directory: source,
+    },
+    publishConfig: { access: "public" },
+    gram: { commit, built },
+  };
+};
+
+/** Every file a manifest's exports name. */
+export const exportedFiles = (exports) =>
+  Object.values(exports).flatMap((target) =>
+    typeof target === "string" ? [target] : Object.values(target),
+  );
 
 /** The native modules a host bundle leaves to `require`: they load their own binaries. */
 export const NATIVE = ["@parcel/watcher", "node-pty"];

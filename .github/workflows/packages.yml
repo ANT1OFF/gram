@@ -1,6 +1,6 @@
 name: Packages and images
 
-# Gram's core as registry packages (contracts, themes, git, agents, server) and two images (the
+# Gram's core as registry packages (contracts, themes, git, agents, server, web) and two images (the
 # server with the web app, and the worker host alone), for embedding and self-hosting. See
 # docs/PACKAGES.md.
 #
@@ -33,6 +33,7 @@ on:
       - docker/**
       - .dockerignore
       - packages/*/package.json
+      - apps/web/scripts/build-embed.mjs
   workflow_dispatch:
 
 concurrency:
@@ -101,6 +102,8 @@ jobs:
         env:
           # Native TypeScript is Go: bound its heap so the build stays predictable.
           GOMEMLIMIT: 2GiB
+      - name: Build the web app's package
+        run: bun run --filter @gram/web build:embed
       - name: Pack
         id: pack
         env:
