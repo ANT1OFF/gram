@@ -126,6 +126,69 @@ describe("the asks, one at a time", () => {
     expect(fake.shown).toHaveLength(1);
   });
 
+  it("never sticks: a withdrawal while drawing, a failed draw, a window gone, a view that throws", async () => {
+    // Withdrawn while the window was still drawing it: marked again once drawn, and a refusal
+    // lets it go.
+    let draw: (() => void) | undefined;
+    let fail: (() => void) | undefined;
+    const withdrawn: Array<string> = [];
+    const shown: Array<string> = [];
+    const clock = { at: 0 };
+    let views = 0;
+    const queue = makeAskQueue({
+      surface: {
+        show: (show) =>
+          new Promise<void>((done, failed) => {
+            shown.push(show);
+            draw = done;
+            fail = () => failed(new Error("gone"));
+          }),
+        withdraw: (show) => withdrawn.push(show),
+        hide: () => undefined,
+      },
+      view: (asked) => {
+        views += 1;
+        if (asked.approval.requestId === "broken") throw new Error("no view");
+        return askView({ request: asked, machine: "this computer" });
+      },
+      notify: () => {
+        throw new Error("no notifications");
+      },
+      elapsed: () => clock.at,
+    });
+    const takeBack = new AbortController();
+    const first = queue.ask(request("r1"), takeBack.signal);
+    const second = queue.ask(request("r2"), new AbortController().signal);
+    const third = queue.ask(request("r3"), new AbortController().signal);
+    const broken = queue.ask(request("broken"), new AbortController().signal);
+    const fourth = queue.ask(request("r4"), new AbortController().signal);
+    await tick();
+    takeBack.abort();
+    expect(await first).toEqual({ allowed: false });
+    draw?.();
+    await tick();
+    expect(withdrawn).toEqual([shown[0], shown[0]]);
+    queue.answered(shown[0] ?? "", "refuse");
+    await tick();
+    expect(shown).toHaveLength(2);
+    // A draw that fails after nothing answered: refused, and the next is drawn.
+    fail?.();
+    expect(await second).toEqual({ allowed: false });
+    await tick();
+    expect(shown).toHaveLength(3);
+    // The window goes with the ask on it: refused, and the next is drawn.
+    queue.gone();
+    expect(await third).toEqual({ allowed: false });
+    // A view that throws is refused, and the queue moves on past it.
+    expect(await broken).toEqual({ allowed: false });
+    await tick();
+    expect(shown).toHaveLength(4);
+    expect(views).toBe(5);
+    clock.at += ASK_ARM_MS;
+    queue.answered(shown[3] ?? "", "allow");
+    expect(await fourth).toEqual({ allowed: true, hash: "hash-r4" });
+  });
+
   it("refuses an ask the window couldn't draw", async () => {
     const clock = { at: 0 };
     const queue = makeAskQueue({

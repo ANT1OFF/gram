@@ -810,3 +810,15 @@ person dismisses it, so nothing slides in under their pointer. What a command ru
 small shell parser: the programs, code from the folder, network, elevation, paths outside the
 folder, and "Gram couldn't read this command whole" where it can't. These are facts, never a
 verdict.
+
+The review of the ask window changed four things. The command reader now says it can't read
+what bash expands in ways it can't follow: `$((` that names a value or holds a substitution,
+`${…}` with a default, indirection or transformation, an unquoted here-document holding a
+substitution, `$'…'`, and brace expansion; it names assignments before a program, a `cd` out of
+the folder, and programs behind more wrappers (`find -exec`, `setsid`, `busybox`, `su -c`), and
+refuses wrapper options it doesn't know. The queue can't stick: a window that closes, crashes,
+hangs or reloads takes its ask with it as refused, and a withdrawal that crosses a draw is sent
+again. Allow also needs the pointer to have moved since the second ended and to have pressed on
+Allow after that, the window opens in the corner farthest from the pointer, and losing focus
+starts the second again. What the server says is drawn one line a piece, cut at 160 characters,
+with a warning for look-alike letters, and the command's own words in a fact are quoted.

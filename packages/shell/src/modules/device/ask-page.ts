@@ -3,7 +3,9 @@
  * It has no bridge. Its answer is its title, `gram-ask:<show>:<answer>:<n>`, which the main
  * process reads from this window's own web contents alone, so no other page can answer for it.
  * Allow takes a pointer click, and only once the content has been on screen for a full second;
- * any new content re-arms that second. The main process checks the second again.
+ * any new content, or the window going out of sight or losing focus, re-arms that second. The
+ * pointer must also have moved since, and pressed on Allow after it, so a steady click on a spot
+ * the ask then appears under counts for nothing. The main process checks the second again.
  */
 
 export const ASK_TITLE_PREFIX = "gram-ask:";
@@ -25,6 +27,8 @@ const script = `
   let shownAt = 0;
   let count = 0;
   let armed = false;
+  let moved = false;
+  let pressed = false;
   let timer = 0;
   const $ = (id) => document.getElementById(id);
   const answer = (kind) => {
@@ -37,18 +41,20 @@ const script = `
     node.textContent = value;
     return node;
   };
-  const drawn = (display) => {
+  const drawn = (display, oneLine) => {
     const box = document.createDocumentFragment();
     for (const piece of display.pieces) {
       if (piece.kind === "newline") {
         box.appendChild(text("span", "nl", "\\u21b5"));
-        box.appendChild(document.createElement("br"));
+        if (!oneLine) box.appendChild(document.createElement("br"));
       } else box.appendChild(text("span", piece.kind === "escape" ? "esc" : "", piece.text));
     }
     return box;
   };
   const disarm = () => {
     armed = false;
+    moved = false;
+    pressed = false;
     clearTimeout(timer);
     $("allow").disabled = true;
   };
@@ -76,7 +82,7 @@ const script = `
       const row = text("div", "row", "");
       row.appendChild(text("span", "label", item.label));
       const value = text("span", "value", "");
-      value.appendChild(drawn(item.display));
+      value.appendChild(drawn(item.display, true));
       row.appendChild(value);
       says.appendChild(row);
     }
@@ -106,9 +112,19 @@ const script = `
     // Out of sight and back is new content to the person: the second starts again.
     if (document.body.dataset.state === "asking") arm();
   });
+  window.addEventListener("blur", () => {
+    // Their attention went elsewhere: when it comes back, so does the second.
+    if (document.body.dataset.state === "asking") arm();
+  });
+  document.addEventListener("pointermove", (event) => {
+    if (event.isTrusted && armed) moved = true;
+  });
+  $("allow").addEventListener("pointerdown", (event) => {
+    pressed = event.isTrusted && armed && moved;
+  });
   $("allow").addEventListener("click", (event) => {
     // A pointer click only: a key pressed on a focused button clicks with no detail.
-    if (!event.isTrusted || event.detail < 1 || !armed) return;
+    if (!event.isTrusted || event.detail < 1 || !armed || !moved || !pressed) return;
     if (performance.now() - shownAt < ${ASK_ARM_MS}) return;
     disarm();
     answer("allow");
@@ -140,7 +156,10 @@ export const askPage = (colors: AskColors): string => `<!doctype html>
   .row { display: flex; gap: 8px; margin: 2px 0; }
   .label { color: ${colors.muted}; min-width: 84px; flex: none; }
   .value { overflow-wrap: anywhere; }
-  .says { border-left: 2px solid ${colors.border}; padding-left: 8px; margin: 8px 0; }
+  .says {
+    border-left: 2px solid ${colors.border}; padding-left: 8px; margin: 8px 0;
+    max-height: 120px; overflow: auto;
+  }
   .says-title, .facts-title, .target-label { color: ${colors.muted}; font-size: 12px; margin: 10px 0 4px; }
   #warnings { color: ${colors.warning}; margin: 0 0 8px; padding-left: 18px; }
   #warnings:empty { display: none; }

@@ -1,5 +1,5 @@
 import { type CommandDisplay, displayCommand } from "@gram/contracts";
-import { commandFacts, commandFactText } from "./command-facts.ts";
+import { commandFacts, commandFactText, shownWord } from "./command-facts.ts";
 import type { AskRequest } from "./gate.ts";
 
 /**
@@ -43,6 +43,17 @@ const bytes = (size: number): string =>
       ? `${(size / 1024).toFixed(1)} KB`
       : `${(size / 1024 / 1024).toFixed(1)} MB`;
 
+/** Most of what the server says that is drawn: the rest is cut, so the command stays in view. */
+export const ASK_SAYS_MOST = 160;
+
+/** The server's word, cut short, each line break drawn as a mark on the one line. */
+const saying = (text: string): CommandDisplay => {
+  const characters = Array.from(text);
+  return displayCommand(
+    characters.length > ASK_SAYS_MOST ? `${characters.slice(0, ASK_SAYS_MOST).join("")}...` : text,
+  );
+};
+
 export interface AskViewFor {
   readonly request: AskRequest;
   /** "this Mac" or "this computer". */
@@ -57,12 +68,12 @@ export const askView = ({ request, machine, local = time, folderChanged }: AskVi
   const { approval } = request;
   const kind = approval.kind;
   const says = [
-    { label: "Workspace", display: displayCommand(approval.workspace) },
-    { label: "Thread", display: displayCommand(request.thread.title) },
-    { label: "Asked by", display: displayCommand(request.actorName) },
+    { label: "Workspace", display: saying(approval.workspace) },
+    { label: "Thread", display: saying(request.thread.title) },
+    { label: "Asked by", display: saying(request.actorName) },
     ...(request.reason === undefined || request.reason === ""
       ? []
-      : [{ label: "Why", display: displayCommand(request.reason) }]),
+      : [{ label: "Why", display: saying(request.reason) }]),
   ];
   const warnings: Array<string> = [];
   if (request.display.hidden) warnings.push("This has characters you can't see, drawn as codes.");
@@ -72,6 +83,10 @@ export const askView = ({ request, machine, local = time, folderChanged }: AskVi
     warnings.push("The server says someone else also wrote to this thread since you did.");
   if (says.some(({ display }) => display.hidden))
     warnings.push("What the server says has characters you can't see, drawn as codes.");
+  if (says.some(({ display }) => display.nonAscii))
+    warnings.push(
+      "What the server says has letters outside plain English text, which can look like others.",
+    );
   let facts: ReadonlyArray<string> = [];
   if (kind === "exec") {
     const parsed = commandFacts(approval.command, {
@@ -80,7 +95,7 @@ export const askView = ({ request, machine, local = time, folderChanged }: AskVi
     });
     facts = [
       ...(parsed.parsed ? [] : ["Gram couldn't read this command whole. Read it yourself."]),
-      ...(parsed.programs.length > 0 ? [`Runs ${parsed.programs.join(", ")}`] : []),
+      ...(parsed.programs.length > 0 ? [`Runs ${parsed.programs.map(shownWord).join(", ")}`] : []),
       ...parsed.facts.map(commandFactText),
       ...(folderChanged === true
         ? ["The folder changed since you last allowed a command here."]

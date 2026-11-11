@@ -98,8 +98,59 @@ test.describe("the ask window's page", () => {
     await page.keyboard.press("Enter");
     await page.keyboard.press("Space");
     expect(answers(titles)).toEqual([]);
-    await allow.click();
+    // A pointer that hasn't moved since the ask came up: its clicks count for nothing.
+    const box = (await allow.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.evaluate(
+      (shown) =>
+        (window as unknown as { showAsk: (id: string, v: unknown) => void }).showAsk(
+          "show-cccccccc",
+          shown,
+        ),
+      view("npm test"),
+    );
+    await page.waitForTimeout(ASK_ARM_MS + 200);
+    for (let click = 0; click < 3; click += 1) {
+      await page.mouse.down();
+      await page.mouse.up();
+    }
+    expect(answers(titles)).toEqual([]);
+    // Moved, then pressed on Allow: that is the person's click.
+    await page.mouse.move(box.x + box.width / 2 + 3, box.y + box.height / 2 + 1);
+    await page.mouse.down();
+    await page.mouse.up();
     await expect.poll(() => answers(titles)).toEqual(["allow"]);
+    expect(askAnswerOf(await page.title())?.show).toBe("show-cccccccc");
+  });
+
+  test("draws what the server says on one line a piece", async ({ page }) => {
+    const shown = {
+      ...view("ls"),
+      says: [
+        {
+          label: "Thread",
+          display: {
+            pieces: [
+              { kind: "text", text: "Fix" },
+              { kind: "newline" },
+              { kind: "text", text: "Server  evil" },
+            ],
+            hidden: false,
+            nonAscii: false,
+          },
+        },
+      ],
+    };
+    await page.evaluate(
+      (drawn) =>
+        (window as unknown as { showAsk: (id: string, v: unknown) => void }).showAsk(
+          "show-dddddddd",
+          drawn,
+        ),
+      shown,
+    );
+    await expect(page.locator("#says .nl")).toHaveText("\u21b5");
+    await expect(page.locator("#says br")).toHaveCount(0);
   });
 
   test("starts the second again for new content, and keeps a withdrawn ask until dismissed", async ({

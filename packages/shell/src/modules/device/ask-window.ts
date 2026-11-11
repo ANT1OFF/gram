@@ -1,4 +1,4 @@
-import { BrowserWindow, type WebContents } from "electron";
+import { BrowserWindow, screen, type WebContents } from "electron";
 import { type AskColors, askAnswerOf, askPage, type AskPageAnswer } from "./ask-page.ts";
 import type { AskSurface } from "./ask-queue.ts";
 import type { AskView } from "./ask-view.ts";
@@ -6,7 +6,7 @@ import type { AskView } from "./ask-view.ts";
 /**
  * The windows the main process owns for decisions: the ask, and later the lending sheet. Nothing
  * the app does to "all windows" may touch them (reload, hide, theme, vibrancy, notifications), so
- * those loops ask `isDecisionWindow` first.
+ * those loops must ask `isDecisionWindow` first (done where the window is installed).
  */
 const decisionWindows = new WeakSet<WebContents>();
 
@@ -16,9 +16,27 @@ export const isDecisionWindow = (win: { readonly webContents: WebContents }): bo
 export interface AskWindowOptions {
   readonly colors: () => AskColors;
   readonly answered: (show: string, answer: AskPageAnswer) => void;
+  /** The window went: closed, crashed, hung, reloaded, or failed to load. */
+  readonly gone: () => void;
   /** A session partition of the ask's own, never the app's: no cookies, storage or cache shared. */
   readonly partition?: string;
 }
+
+const WIDTH = 520;
+const HEIGHT = 560;
+const MARGIN = 24;
+
+/** The corner of the screen farthest from the pointer, so the ask never opens under it. */
+const awayFromPointer = (): { x: number; y: number } => {
+  const pointer = screen.getCursorScreenPoint();
+  const area = screen.getDisplayNearestPoint(pointer).workArea;
+  const right = pointer.x < area.x + area.width / 2;
+  const bottom = pointer.y < area.y + area.height / 2;
+  return {
+    x: Math.round(right ? area.x + area.width - WIDTH - MARGIN : area.x + MARGIN),
+    y: Math.round(bottom ? area.y + area.height - HEIGHT - MARGIN : area.y + MARGIN),
+  };
+};
 
 /** The ask, drawn in a window of its own that never takes the person's focus. */
 export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
@@ -29,8 +47,9 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
     if (win !== undefined && !win.isDestroyed() && loaded !== undefined) return { win, loaded };
     const colors = options.colors();
     const next = new BrowserWindow({
-      width: 520,
-      height: 560,
+      width: WIDTH,
+      height: HEIGHT,
+      ...awayFromPointer(),
       show: false,
       resizable: true,
       minimizable: false,
@@ -70,15 +89,33 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
       const answer = askAnswerOf(title);
       if (answer !== undefined) options.answered(answer.show, answer.answer);
     });
+    // A window that crashed, hung, reloaded or failed to load is closed whole, never reused:
+    // its ask goes with it, and the next ask opens a fresh one.
+    let finished = false;
+    const end = () => {
+      if (!next.isDestroyed()) next.destroy();
+    };
+    contents.on("render-process-gone", end);
+    contents.on("unresponsive", end);
+    contents.on("did-start-loading", () => {
+      if (finished) end();
+    });
     next.on("closed", () => {
       if (win === next) {
         win = undefined;
         loaded = undefined;
       }
+      options.gone();
     });
     const ready = new Promise<void>((done, failed) => {
-      contents.once("did-finish-load", () => done());
-      contents.once("did-fail-load", () => failed(new Error("The ask didn't load.")));
+      contents.once("did-finish-load", () => {
+        finished = true;
+        done();
+      });
+      contents.once("did-fail-load", () => {
+        failed(new Error("The ask didn't load."));
+        end();
+      });
     });
     void next.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(askPage(colors))}`);
     win = next;
@@ -93,8 +130,12 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
       await opened.win.webContents.executeJavaScript(
         `window.showAsk(${JSON.stringify(show)}, ${JSON.stringify(view)})`,
       );
-      // Shown without taking focus from what the person is typing in.
-      if (!opened.win.isVisible()) opened.win.showInactive();
+      // Shown without taking focus from what the person is typing in, away from their pointer.
+      if (!opened.win.isVisible()) {
+        const { x, y } = awayFromPointer();
+        opened.win.setPosition(x, y);
+        opened.win.showInactive();
+      }
     },
     withdraw: (show, why) => {
       if (win === undefined || win.isDestroyed()) return;
