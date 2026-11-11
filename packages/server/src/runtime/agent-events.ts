@@ -24,6 +24,8 @@ import {
 } from "./runtime-state.ts";
 import {
   type AgentEvent,
+  type ApprovalRequest,
+  type PendingRequest,
   checkoutRoots,
   type UsageSummary,
   type ServerEvent,
@@ -43,6 +45,18 @@ import { selectableModels } from "./model-efforts.ts";
 import { UNKNOWN_FAILURE } from "./thread-error.ts";
 import { samePath } from "@gram/git";
 import type { AgentHosts } from "./agent-hosts.ts";
+import {
+  DECISION_UNAVAILABLE,
+  refusalText,
+  type Decided,
+  type DecisionHookShape,
+} from "../embedding/decision-hook.ts";
+import type { EventSinkShape } from "../embedding/event-sink.ts";
+import {
+  requestActions,
+  type HookedRequests,
+  type RequestAction,
+} from "../embedding/hooked-requests.ts";
 import type { EarlyReleases } from "./limit-wait.ts";
 import type { makeRateLimitGate } from "./rate-limits.ts";
 import type { AgentSession } from "@gram/agents";
@@ -63,6 +77,12 @@ import type { MessageQueue } from "./message-queue.ts";
 export interface AgentEventsDeps {
   readonly store: ThreadStoreShape;
   readonly hub: EventHubShape;
+  /** The decision hook, where one is configured, and the requests it holds (`decideRequest`). */
+  readonly decisions: DecisionHookShape | undefined;
+  readonly hooked: HookedRequests;
+  readonly eventSink: EventSinkShape | undefined;
+  /** Runs a decision off the event loop of the session that asked, for as long as the service lives. */
+  readonly forkDecision: (decision: Effect.Effect<void>) => Effect.Effect<void>;
   readonly config: ServerConfigShape;
   readonly hooks: TurnHooksShape;
   readonly checkouts: CheckoutServiceShape;
@@ -116,6 +136,10 @@ export interface AgentEventsDeps {
 export const makeAgentEvents = ({
   store,
   hub,
+  decisions,
+  hooked,
+  eventSink,
+  forkDecision,
   config,
   hooks,
   checkouts,
@@ -201,6 +225,125 @@ export const makeAgentEvents = ({
         );
       }
       yield* becomeIdle(rt);
+    });
+
+  /** Puts an agent's request in front of the user. Holds the lock. */
+  const raiseCard = (rt: Runtime, request: PendingRequest) =>
+    Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      yield* store.putRequest(rt.threadId, request, now);
+      yield* hub.publish({ type: "thread.request", threadId: rt.threadId, request });
+      yield* setStatus(rt, request.kind === "question" ? "needsInput" : "needsApproval");
+    });
+
+  /**
+   * Puts an agent's outward request to the decision hook, each thing it does in turn: allowed, it
+   * is answered for the agent with no card; refused, it is denied with the reason, which the
+   * thread is told too; and what the hook says to ask about becomes the card it would have been,
+   * whose approval is put to the hook again (`server-approvals.ts`). A request withdrawn
+   * meanwhile, or whose session has gone, is left alone. Takes the lock only once the hook has
+   * answered.
+   */
+  const decideRequest = (
+    rt: Runtime,
+    /** The session that asked: a later one of the thread never made this request. */
+    asking: AgentSession | undefined,
+    hook: DecisionHookShape,
+    request: ApprovalRequest,
+    actions: ReadonlyArray<RequestAction>,
+  ) =>
+    Effect.gen(function* () {
+      const thread = yield* store.getThread(rt.threadId).pipe(Effect.option);
+      let refused:
+        | { readonly action: RequestAction["action"]; readonly decided: Decided }
+        | undefined;
+      let asked: Decided | undefined;
+      /** Every answer but a refusal, by action, for the second call if this becomes a card. */
+      const answers: Array<RequestAction & { readonly decided: Decided }> = [];
+      if (Option.isNone(thread)) {
+        refused = {
+          action: actions[0]!.action,
+          decided: { id: "", decision: "refuse", reason: DECISION_UNAVAILABLE },
+        };
+      } else {
+        for (const each of actions) {
+          const decided = yield* hook.decide({ ...each, initiator: "agent", thread: thread.value });
+          if (decided.decision === "refuse") {
+            refused = { action: each.action, decided };
+            break;
+          }
+          answers.push({ ...each, decided });
+          if (decided.decision === "ask") asked ??= decided;
+        }
+      }
+      yield* locked(
+        rt,
+        Effect.gen(function* () {
+          if (!hooked.deciding.delete(request.id)) return;
+          const session = rt.session;
+          if (session === undefined || (asking !== undefined && session !== asking)) return;
+          const refusal =
+            refused === undefined ? undefined : refusalText(refused.action, refused.decided.reason);
+          if (refused !== undefined || asked === undefined) {
+            const delivered = yield* session
+              .respond(
+                request.id,
+                refusal === undefined
+                  ? { kind: "approval", decision: "allow", scope: "once" }
+                  : { kind: "approval", decision: "deny", scope: "once", message: refusal },
+              )
+              .pipe(
+                Effect.as(true),
+                Effect.catch(() => Effect.succeed(false)),
+              );
+            if (delivered) {
+              if (refusal !== undefined) {
+                yield* hub.publish({
+                  type: "notify",
+                  kind: "info",
+                  title: refusal,
+                  threadId: rt.threadId,
+                });
+              }
+              if (rt.turn !== undefined && (yield* store.listRequests(rt.threadId)).length === 0) {
+                yield* setStatus(rt, "running");
+              }
+              return;
+            }
+            // The agent didn't take the answer, so it still waits: a card, whose approval the
+            // hook is asked about again, lets a person retry it without deciding in its place.
+          }
+          // On `ask`, an approval is put to the hook again for the actions it said to ask about,
+          // each under its own first call. A card raised because an answer wasn't delivered asks
+          // again about them all.
+          const basis = asked ?? refused?.decided ?? answers[0]?.decided;
+          if (basis === undefined) return;
+          const again = answers.filter((each) => each.decided.decision === "ask");
+          hooked.asked.set(request.id, {
+            threadId: rt.threadId,
+            actions:
+              asked !== undefined && refused === undefined && again.length > 0
+                ? again.map(({ decided, ...each }) => ({ ...each, decisionId: decided.id }))
+                : actions.map((each) => ({
+                    ...each,
+                    decisionId:
+                      answers.find((a) => a.action === each.action)?.decided.id ?? basis.id,
+                  })),
+          });
+          if (eventSink !== undefined) {
+            yield* eventSink.noteAsk(request.id, {
+              decisionId: basis.id,
+              ...(basis.assignees === undefined ? {} : { assignees: basis.assignees }),
+              ...(basis.title === undefined ? {} : { title: basis.title }),
+            });
+          }
+          const why = refusal ?? basis.reason;
+          yield* raiseCard(rt, {
+            ...request,
+            ...(why === undefined || why.trim() === "" ? {} : { decisionReason: why }),
+          });
+        }),
+      );
     });
 
   const handleEvent = (rt: Runtime, event: AgentEvent) =>
@@ -564,17 +707,26 @@ export const makeAgentEvents = ({
           return;
         }
         case "request": {
-          const now = yield* Clock.currentTimeMillis;
-          yield* store.putRequest(rt.threadId, event.request, now);
-          yield* hub.publish({
-            type: "thread.request",
-            threadId: rt.threadId,
-            request: event.request,
-          });
-          yield* setStatus(rt, event.request.kind === "question" ? "needsInput" : "needsApproval");
+          const { request } = event;
+          if (
+            request.kind === "approval" &&
+            decisions !== undefined &&
+            (yield* decisions.enabled)
+          ) {
+            const actions = requestActions(request);
+            if (actions.length > 0) {
+              // Asked off this loop: the card, if there is to be one, goes up when it answers.
+              hooked.deciding.set(request.id, rt.threadId);
+              yield* forkDecision(decideRequest(rt, rt.session, decisions, request, actions));
+              return;
+            }
+          }
+          yield* raiseCard(rt, request);
           return;
         }
         case "requestResolved": {
+          hooked.deciding.delete(event.requestId);
+          hooked.asked.delete(event.requestId);
           if (yield* store.removeRequest(rt.threadId, event.requestId)) {
             yield* hub.publish({
               type: "thread.requestResolved",
