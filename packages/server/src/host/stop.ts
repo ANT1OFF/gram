@@ -11,6 +11,7 @@ import {
   type HostStopPrepared,
 } from "@gram/contracts";
 import {
+  isInside,
   isPushRemote,
   Proc,
   type ProcShape,
@@ -19,6 +20,7 @@ import {
   snapshotWip,
   tryRepoRoots,
 } from "@gram/git";
+import { homedir } from "node:os";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import type { Admission } from "./admission.ts";
@@ -65,6 +67,8 @@ export interface StopDeps {
   ) => Effect.Effect<{ readonly path: string }, { readonly message: string }>;
   /** The transports a push may use; `wip.ts`'s when left out. */
   readonly protocols?: string;
+  /** The machine's home folder, for tests; the user's own otherwise. */
+  readonly home?: string;
   readonly now?: () => number;
   readonly holdMs?: number;
 }
@@ -115,11 +119,18 @@ export const stopOn = (deps: StopDeps): HostStop => {
       );
       if (roots === undefined)
         return yield* Effect.fail(new NotKept(`${path} is not a git repository`));
-      if (!samePath(roots.top, path)) {
-        const top = yield* admit(roots.top);
-        if (!samePath(top, roots.top))
-          return yield* Effect.fail(new NotKept(`${roots.top} isn't a folder of its own.`));
-      }
+      // Git commits the repository's whole working tree. Where a gate guards folders, only a
+      // working tree that is the folder let through is kept: one rooted above it (a repository
+      // of the home folder, say, or `core.worktree` pointed elsewhere) holds what the gate never
+      // looked at. Nor one that holds the home folder, whichever folder was named.
+      if (deps.admit !== undefined && !samePath(roots.top, path))
+        return yield* Effect.fail(
+          new NotKept(`${path} is inside a repository rooted at ${roots.top}, so it isn't kept.`),
+        );
+      if (deps.admit !== undefined && isInside(roots.top, deps.home ?? homedir()))
+        return yield* Effect.fail(
+          new NotKept(`${roots.top} holds this machine's home folder, so it isn't kept.`),
+        );
       return roots;
     });
 
@@ -142,10 +153,10 @@ export const stopOn = (deps: StopDeps): HostStop => {
                 "Another folder of this thread is a worktree of the same repository, and one is kept per repository.",
               ),
             );
-          written.add(roots.common);
           const snapshot = yield* snapshotWip(roots.top, checkout.threadId).pipe(
             Effect.mapError((error) => new NotKept(error.message)),
           );
+          written.add(roots.common);
           const local = { ...base, ref: snapshot.ref, commit: snapshot.commit };
           return yield* pushWip(roots.top, snapshot, remote, deps.protocols).pipe(
             Effect.match({
@@ -220,6 +231,9 @@ export const stopOn = (deps: StopDeps): HostStop => {
         .pipe(Effect.catch(() => keeping));
       if (cancels !== cancelled)
         return { idle: false, busy, kept, note: "The stop was taken back meanwhile." };
+      // The hold ran out under the pushes: work may have been let in since the look.
+      if (!stopping())
+        return { idle: false, busy, kept, note: "Keeping its work took too long; ask again." };
       // The hold runs from the answer: the pushes may have taken most of one.
       heldUntil = now() + holdMs;
       return { idle, busy, kept };

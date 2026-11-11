@@ -168,35 +168,36 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
     }).pipe(Effect.scoped, live),
   );
 
-  it.live("keeps nothing of a repository whose working tree is above the folder let through", () =>
-    Effect.gen(function* () {
-      const { repo, origin } = yield* worktree;
-      mkdirSync(join(repo, "inner"));
-      const stop = stopOn({
-        proc: yield* Proc,
-        busy: Effect.succeed(IDLE),
-        admission: makeAdmission(),
-        protocols: FILE,
-        // Only the inner folder is one a session could open.
-        admit: (cwd) =>
-          cwd === join(repo, "inner")
-            ? Effect.succeed({ path: cwd })
-            : Effect.fail({ message: "That folder holds credentials." }),
-      });
-      const prepared = yield* stop.prepare({
-        checkouts: [{ threadId: THREAD, cwd: join(repo, "inner") }],
-      });
-      expect(prepared.kept).toEqual([
-        {
-          threadId: THREAD,
-          cwd: join(repo, "inner"),
-          pushed: false,
-          note: "That folder holds credentials.",
-        },
-      ]);
-      expect(run(repo, "for-each-ref", "refs/gram/")).toBe("");
-      expect(run(origin, "for-each-ref")).toBe("");
-    }).pipe(Effect.scoped, live),
+  it.live(
+    "keeps nothing of a repository rooted above the folder let through, or holding home",
+    () =>
+      Effect.gen(function* () {
+        const { repo, origin } = yield* worktree;
+        mkdirSync(join(repo, "inner"));
+        const proc = yield* Proc;
+        // A gate that lets everything through: what it never looked at is still not committed.
+        const gated = (home: string) =>
+          stopOn({
+            proc,
+            busy: Effect.succeed(IDLE),
+            admission: makeAdmission(),
+            protocols: FILE,
+            home,
+            admit: (cwd) => Effect.succeed({ path: cwd }),
+          });
+        const inner = yield* gated("/nonexistent/home").prepare({
+          checkouts: [{ threadId: THREAD, cwd: join(repo, "inner") }],
+        });
+        expect(inner.kept[0]).toMatchObject({ pushed: false });
+        expect(inner.kept[0]?.note).toContain("is inside a repository rooted at");
+        const home = yield* gated(join(repo, "inner")).prepare({
+          checkouts: [{ threadId: THREAD, cwd: repo }],
+        });
+        expect(home.kept[0]).toMatchObject({ pushed: false });
+        expect(home.kept[0]?.note).toContain("holds this machine's home folder");
+        expect(run(repo, "for-each-ref", "refs/gram/")).toBe("");
+        expect(run(origin, "for-each-ref")).toBe("");
+      }).pipe(Effect.scoped, live),
   );
 
   it.live("runs git where the gate says the folder is, and keeps one folder per repository", () =>
@@ -259,6 +260,19 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       yield* stop.prepare({ checkouts: [] });
       now = 1_800;
       expect(stop.stopping()).toBe(true);
+      // A hold that ran out before the answer: not idle, since work may have been let in.
+      onLook = Effect.void;
+      const slow = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission: makeAdmission(),
+        now: () => (now += 600),
+        holdMs: 500,
+      });
+      expect(yield* slow.prepare({ checkouts: [] })).toMatchObject({
+        idle: false,
+        note: "Keeping its work took too long; ask again.",
+      });
       // Held, then asked again while busy, with a cancel during the look: not held after it.
       busy = { ...IDLE, turns: 1 };
       onLook = stop.cancel;
