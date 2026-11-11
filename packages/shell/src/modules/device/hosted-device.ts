@@ -138,7 +138,12 @@ export interface HostedDeviceState {
 export type Done = { readonly ok: true } | { readonly ok: false; readonly why: string };
 
 export interface LendChoice {
-  readonly folders: ReadonlyArray<{ readonly path: string; readonly label: string }>;
+  readonly folders: ReadonlyArray<{
+    readonly path: string;
+    readonly label: string;
+    /** The folder as it was when shown: a different one at the same path since isn't it. */
+    readonly seen?: { readonly device: number; readonly inode: number };
+  }>;
   readonly readOnly: boolean;
 }
 
@@ -830,7 +835,11 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         const checked = await checkLendable(chosen.path, options.bounds);
         if (!checked.ok) return { ok: false, why: `${chosen.path}: ${checked.why}` };
         // The folder shown is the folder lent: a path that now leads elsewhere isn't it.
-        if (checked.path !== chosen.path)
+        if (
+          checked.path !== chosen.path ||
+          (chosen.seen !== undefined &&
+            (chosen.seen.device !== checked.device || chosen.seen.inode !== checked.inode))
+        )
           return { ok: false, why: `${chosen.path} changed since you chose it. Choose it again.` };
         folders.set(folderId(), {
           label: chosen.label,

@@ -729,6 +729,21 @@ describe("this machine as a personal device", () => {
       await device.lend(origin, "w1", { folders: [{ path: link, label: "app" }], readOnly: false }),
     ).toMatchObject({ ok: false });
   });
+
+  it("lends no folder that isn't the one shown, though it has the same path", async () => {
+    const { device } = await setUp();
+    await device.signIn(origin);
+    const real = await fs.realpath(project);
+    const shown = await fs.stat(real);
+    await fs.rename(real, `${real}-moved`);
+    await fs.mkdir(real);
+    expect(
+      await device.lend(origin, "w1", {
+        folders: [{ path: real, label: "app", seen: { device: shown.dev, inode: shown.ino } }],
+        readOnly: false,
+      }),
+    ).toMatchObject({ ok: false, why: expect.stringContaining("changed since you chose it") });
+  });
 });
 
 const optionsFor = async (): Promise<HostedDeviceOptions> => ({

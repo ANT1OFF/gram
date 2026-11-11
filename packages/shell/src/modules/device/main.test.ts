@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, statSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -112,7 +112,16 @@ describe("the decisions Settings opens", () => {
     expect(await decide.lend(ORIGIN, "w1")).toEqual({ ok: true });
     expect(asked).toEqual(["Lend this folder?"]);
     expect(calls).toEqual([
-      `lend ${ORIGIN} w1 ${JSON.stringify({ folders: [{ path: APP, label: "app" }], readOnly: true })}`,
+      `lend ${ORIGIN} w1 ${JSON.stringify({
+        folders: [
+          {
+            path: APP,
+            label: "app",
+            seen: { device: statSync(APP).dev, inode: statSync(APP).ino },
+          },
+        ],
+        readOnly: true,
+      })}`,
     ]);
   });
 
@@ -260,6 +269,17 @@ describe("what a decision shows is what it grants", () => {
     expect(dialog.detail.split("\n").filter((line) => line.startsWith("Reads only"))).toEqual([]);
     expect(dialog.detail).not.toContain("\u202e");
     expect(dialog.detail).toContain("A folder's name has characters you can't see");
+  });
+
+  it("says so when a folder's spaces can't be drawn as they are", () => {
+    for (const path of ["/work/app ", "/work/a  b"]) {
+      expect(lendDialog(ORIGIN, workspace(), [path], "this Mac").detail).toContain(
+        "A folder's name has characters you can't see",
+      );
+    }
+    expect(lendDialog(ORIGIN, workspace(), ["/work/a b"], "this Mac").detail).not.toContain(
+      "can't see",
+    );
   });
 
   it("resumes as shown: the same folders, and reads only when it said so", async () => {

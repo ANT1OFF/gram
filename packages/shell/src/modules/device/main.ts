@@ -2,7 +2,7 @@
 // person answers in dialogs the shell draws, and the bridge Settings reads it through. It imports
 // `electron`, so only the main process loads it.
 
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { basename } from "node:path";
 
 import { displayCommand } from "@gram/contracts";
@@ -80,9 +80,22 @@ const workspaceLines = (origin: string, workspace: Workspace): Array<string> => 
   ];
 };
 
-/** Folder paths, one a line, each drawn as a server's words are: a name can hold anything. */
+/**
+ * A folder path as a dialog shows it: drawn as a server's words are, since a name can hold
+ * anything, and unusual too when spaces had to be merged or trimmed to draw it, since the path
+ * shown is then not quite the path lent.
+ */
+const pathWords = (path: string): { readonly text: string; readonly unusual: boolean } => {
+  const words = serverWords(path);
+  const spaced = displayCommand(path)
+    .pieces.map((piece) => (piece.kind === "newline" ? " " : piece.text))
+    .join("");
+  return { text: words.text, unusual: words.unusual || spaced !== words.text };
+};
+
+/** Folder paths, one a line. */
 const folderLines = (paths: ReadonlyArray<string>): Array<string> => {
-  const drawn = paths.map(serverWords);
+  const drawn = paths.map(pathWords);
   return [
     ...drawn.map((path) => path.text),
     ...(drawn.some((path) => path.unusual)
@@ -240,15 +253,26 @@ export const deviceDecisionsFor = (
       if (picked === undefined || picked.length === 0) return CANCELLED;
       // Shown, and lent, as the folders really are: a link picked is the folder it leads to.
       let paths: Array<string>;
+      let seen: Array<{ device: number; inode: number }>;
       try {
         paths = await Promise.all(picked.map((path) => realpath(path)));
+        seen = await Promise.all(
+          paths.map(async (path) => {
+            const stats = await stat(path);
+            return { device: stats.dev, inode: stats.ino };
+          }),
+        );
       } catch {
         return { ok: false, why: "Gram can't open a folder you chose." };
       }
       const answer = await decisions.ask(lendDialog(origin, workspace, paths, machine));
       if (answer.response !== 0) return CANCELLED;
       const choice: LendChoice = {
-        folders: paths.map((path) => ({ path, label: basename(path) || path })),
+        folders: paths.map((path, index) => ({
+          path,
+          label: basename(path) || path,
+          seen: seen[index]!,
+        })),
         readOnly: workspace.policy === "read" || answer.checkboxChecked,
       };
       return device.lend(origin, id, choice);
