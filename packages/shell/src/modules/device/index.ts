@@ -10,3 +10,7 @@ export * from "./log.ts";
 export * from "./runner.ts";
 export * from "./gate.ts";
 export * from "./serve.ts";
+export * from "./dial.ts";
+export * from "./settings.ts";
+export * from "./dpop.ts";
+export * from "./hosted.ts";

@@ -211,6 +211,15 @@ address, in the browser. If the rule is ever relaxed, the issuer check of
 | `POST devices_endpoint/challenge` then `POST devices_endpoint`                                         | access token, scope `device:register`, signed challenge | `{ deviceId }`; the id is derived from the public key                  |
 | `DELETE devices_endpoint/<deviceId>`                                                                   | access token, scope `device:register`                   | forgets the device; the app does this on **Sign out**                  |
 
+Gram's token answer adds one field to OAuth's: `sub`, the person's subject id, which the dial
+signs and the gate checks each request's actor against. A renewal that names another person ends
+the sign-in. The app signs in once for `workspaces device:register device:connect` and narrows
+each renewal to one scope; renewals go one at a time, since each rotates the refresh token, and
+the rotated token is in the keychain before it is used. A token is used for fifteen minutes at
+most, whatever the server says. The registration's signature covers, length-prefixed,
+`"gram-device-register-v1"`, the origin, the subject, the public key and the challenge, and the
+id the server answers with must be the one derived from that key.
+
 Access tokens are scoped and never shared between uses: `workspaces` and `workspace:<id>` for the
 hosted view's connection, `device:register`, and `device:connect`. The `device:*` tokens are
 sender-constrained to the device key ([DPoP, RFC 9449](https://www.rfc-editor.org/rfc/rfc9449)),

@@ -163,6 +163,25 @@ export const deviceDialBytes = (dial: DeviceDial): Uint8Array =>
     dial.nonce,
   ]);
 
+/** What a device signs to register its key: a challenge the server just gave this person. */
+export interface DeviceRegistration {
+  readonly origin: string;
+  readonly subject: string;
+  /** The raw Ed25519 public key, base64url. */
+  readonly publicKey: string;
+  readonly challenge: string;
+}
+
+/** The bytes a registration's signature covers. */
+export const deviceRegistrationBytes = (registration: DeviceRegistration): Uint8Array =>
+  lengthPrefixed([
+    "gram-device-register-v1",
+    registration.origin,
+    registration.subject,
+    registration.publicKey,
+    registration.challenge,
+  ]);
+
 /** The headers a device proves itself with when it dials. */
 export const DEVICE_ID_HEADER = "x-gram-device-id";
 export const DEVICE_TIME_HEADER = "x-gram-device-time";
@@ -498,3 +517,28 @@ export const HostedWorkspace = Schema.Struct({
   devices: HostedDevicePolicy,
 });
 export type HostedWorkspace = typeof HostedWorkspace.Type;
+
+/** The workspaces endpoint's answer. */
+export const HostedWorkspaces = Schema.Array(HostedWorkspace).check(Schema.isMaxLength(500));
+
+/** `POST devices_endpoint/challenge`'s answer: something new to sign, for this person alone. */
+export const HostedDeviceChallenge = Schema.Struct({
+  challenge: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{22,128}$/)),
+});
+
+/** `POST devices_endpoint`'s answer: the id the server derived from the key. */
+export const HostedDeviceRegistered = Schema.Struct({ deviceId: DeviceId });
+
+/**
+ * A token endpoint's answer, as Gram reads it: OAuth's fields, and `sub`, the person's subject
+ * id, which Gram's protocol adds so a device knows whom it signs for.
+ */
+export const HostedTokenAnswer = Schema.Struct({
+  access_token: Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,4096}$/)),
+  token_type: Schema.String.check(Schema.isMaxLength(32)),
+  expires_in: Schema.Number.check(Schema.isFinite()),
+  refresh_token: Schema.optional(Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,4096}$/))),
+  scope: Schema.optional(Schema.String.check(Schema.isMaxLength(1024))),
+  sub: Id,
+});
+export type HostedTokenAnswer = typeof HostedTokenAnswer.Type;
