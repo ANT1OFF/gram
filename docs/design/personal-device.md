@@ -797,3 +797,16 @@ Carried to the wiring: the headers are made afresh for each dial (an Effect WebS
 headers it was made with, so a reconnect would repeat the nonce). A lending settings file copied
 back from earlier still checks out; a generation number kept beside the key will catch that,
 and resuming lending already goes through the lending sheet.
+
+### The ask window as built
+
+The ask is a page of its own, loaded from a `data:` address in a session partition of its own,
+with no bridge to the app. It draws only text it is handed, and answers through its own title,
+which the main process reads from that window alone. Allow takes a pointer click on content that
+has been on screen a full second; new content, or the window going out of sight and back, starts
+the second again, and the main process checks the second itself. Asks are shown one at a time,
+without taking focus, and one the server takes back stays on screen, marked withdrawn, until the
+person dismisses it, so nothing slides in under their pointer. What a command runs is read by a
+small shell parser: the programs, code from the folder, network, elevation, paths outside the
+folder, and "Gram couldn't read this command whole" where it can't. These are facts, never a
+verdict.
