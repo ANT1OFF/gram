@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, type WebContents } from "electron";
+import { app, BrowserWindow, screen, type WebContents } from "electron";
 import { type AskColors, askAnswerOf, askPage, type AskPageAnswer } from "./ask-page.ts";
 import type { AskSurface } from "./ask-queue.ts";
 import type { AskView } from "./ask-view.ts";
@@ -16,8 +16,8 @@ export const isDecisionWindow = (win: { readonly webContents: WebContents }): bo
 export interface AskWindowOptions {
   readonly colors: () => AskColors;
   readonly answered: (show: string, answer: AskPageAnswer) => void;
-  /** The window went: closed, crashed, hung, reloaded, or failed to load. */
-  readonly gone: () => void;
+  /** The window that drew this show went: closed, crashed, hung, reloaded, or failed to load. */
+  readonly gone: (show: string) => void;
   /** A session partition of the ask's own, never the app's: no cookies, storage or cache shared. */
   readonly partition?: string;
 }
@@ -26,15 +26,15 @@ const WIDTH = 520;
 const HEIGHT = 560;
 const MARGIN = 24;
 
-/** The corner of the screen farthest from the pointer, so the ask never opens under it. */
-const awayFromPointer = (): { x: number; y: number } => {
+/** The corner of the screen farthest from the pointer, so the ask doesn't open under it. */
+const awayFromPointer = (width = WIDTH, height = HEIGHT): { x: number; y: number } => {
   const pointer = screen.getCursorScreenPoint();
   const area = screen.getDisplayNearestPoint(pointer).workArea;
   const right = pointer.x < area.x + area.width / 2;
   const bottom = pointer.y < area.y + area.height / 2;
   return {
-    x: Math.round(right ? area.x + area.width - WIDTH - MARGIN : area.x + MARGIN),
-    y: Math.round(bottom ? area.y + area.height - HEIGHT - MARGIN : area.y + MARGIN),
+    x: Math.round(right ? area.x + Math.max(0, area.width - width - MARGIN) : area.x + MARGIN),
+    y: Math.round(bottom ? area.y + Math.max(0, area.height - height - MARGIN) : area.y + MARGIN),
   };
 };
 
@@ -42,8 +42,16 @@ const awayFromPointer = (): { x: number; y: number } => {
 export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
   let win: BrowserWindow | undefined;
   let loaded: Promise<void> | undefined;
+  /** The show last drawn in each window, for when that window goes. */
+  const drawn = new WeakMap<BrowserWindow, string>();
+  // Once the app quits, no ask opens a window: each is refused.
+  let quitting = false;
+  app.once("before-quit", () => {
+    quitting = true;
+  });
 
   const open = (): { win: BrowserWindow; loaded: Promise<void> } => {
+    if (quitting) throw new Error("The app is quitting.");
     if (win !== undefined && !win.isDestroyed() && loaded !== undefined) return { win, loaded };
     const colors = options.colors();
     const next = new BrowserWindow({
@@ -55,6 +63,9 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
       minimizable: false,
       maximizable: false,
       fullscreenable: false,
+      // A click on the ask while another app has focus reaches it, as on other systems; the
+      // page still wants the pointer moved and pressed after its second.
+      acceptFirstMouse: true,
       alwaysOnTop: true,
       skipTaskbar: false,
       title: "Gram is asking",
@@ -105,7 +116,8 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
         win = undefined;
         loaded = undefined;
       }
-      options.gone();
+      const show = drawn.get(next);
+      if (show !== undefined) options.gone(show);
     });
     const ready = new Promise<void>((done, failed) => {
       contents.once("did-finish-load", () => {
@@ -127,12 +139,14 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
     show: async (show, view: AskView) => {
       const opened = open();
       await opened.loaded;
+      drawn.set(opened.win, show);
       await opened.win.webContents.executeJavaScript(
         `window.showAsk(${JSON.stringify(show)}, ${JSON.stringify(view)})`,
       );
       // Shown without taking focus from what the person is typing in, away from their pointer.
       if (!opened.win.isVisible()) {
-        const { x, y } = awayFromPointer();
+        const [width, height] = opened.win.getSize();
+        const { x, y } = awayFromPointer(width, height);
         opened.win.setPosition(x, y);
         opened.win.showInactive();
       }

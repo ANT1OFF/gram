@@ -120,6 +120,8 @@ const script = `
     if (event.isTrusted && armed) moved = true;
   });
   $("allow").addEventListener("pointerdown", (event) => {
+    // A finger or a pen can't hover: their press after the second is their move.
+    if (event.isTrusted && armed && event.pointerType !== "mouse") moved = true;
     pressed = event.isTrusted && armed && moved;
   });
   $("allow").addEventListener("click", (event) => {

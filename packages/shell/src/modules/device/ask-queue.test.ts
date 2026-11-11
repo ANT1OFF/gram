@@ -177,7 +177,10 @@ describe("the asks, one at a time", () => {
     await tick();
     expect(shown).toHaveLength(3);
     // The window goes with the ask on it: refused, and the next is drawn.
-    queue.gone();
+    // A window gone late, for an ask no longer on screen, changes nothing.
+    queue.gone(shown[1] ?? "");
+    expect(shown).toHaveLength(3);
+    queue.gone(shown[2] ?? "");
     expect(await third).toEqual({ allowed: false });
     // A view that throws is refused, and the queue moves on past it.
     expect(await broken).toEqual({ allowed: false });

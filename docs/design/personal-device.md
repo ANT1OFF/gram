@@ -822,3 +822,11 @@ again. Allow also needs the pointer to have moved since the second ended and to 
 Allow after that, the window opens in the corner farthest from the pointer, and losing focus
 starts the second again. What the server says is drawn one line a piece, cut at 160 characters,
 with a warning for look-alike letters, and the command's own words in a fact are quoted.
+
+A second review found more that bash runs without showing it, and those are in: arithmetic in
+any form (`((…))`, `[[ … ]]`, `$[…]`, subscripts, `let`, `declare -i`, `printf -v`, `test -v`)
+and programs that run others in ways the reader doesn't follow (`watch`, `strace`, `flock` and
+the like) leave the command unread; `trap` is read as the text it runs; names are matched
+without case, as a disk that ignores case finds them; a pattern such as `.?` that can match `..`
+counts as leaving the folder; and a window closing is tied to the ask it drew, so a late close
+can't refuse the next one, and no ask window opens once the app is quitting.
