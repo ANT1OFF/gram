@@ -250,7 +250,12 @@ export const AuthMiddleware = HttpRouter.middleware(
           (yield* fronted.active) &&
           // A person's request never goes there, so one that names a person isn't let by.
           !(path === MCP_PATH && !isRemote && request.headers[IDENTITY_HEADER] === undefined) &&
-          !(isRemote && path !== undefined && (path === HOST_MCP_PATH || HOST_PATHS.has(path)))
+          !(
+            isRemote &&
+            path !== undefined &&
+            (path === HOST_MCP_PATH || HOST_PATHS.has(path)) &&
+            request.headers[IDENTITY_HEADER] === undefined
+          )
             ? fronted.config
             : undefined;
         const secureResponse = (response: HttpServerResponse.HttpServerResponse) =>

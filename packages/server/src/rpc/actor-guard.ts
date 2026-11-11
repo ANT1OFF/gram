@@ -54,7 +54,8 @@ export class FrontedSignIn extends Context.Service<
  * they read: `fs.browse`, `fs.tree`, `fs.list`, `fs.files`, `sessions.*`, `worktree.*`,
  * `git.branches` and the other git calls that take a path, pull request lookups, terminals,
  * connector and gateway configuration, diagnostics, and `thread.recap`, `thread.whyStuck`,
- * `thread.suggestions` and `orchestrator.featureSummary`, which ask a model. A viewer still gets
+ * `thread.suggestions` and `orchestrator.featureSummary`, which ask a model, and `models.list`,
+ * which asks the agents' own accounts. A viewer still gets
  * git and pull request state, and suggestions, as events.
  *
  * The RPC server calls a handler before this guard wraps what it returns, so a handler must do
@@ -73,7 +74,6 @@ export const VIEWER_RPCS: ReadonlySet<string> = new Set([
   "keybindings.get",
   "labels.list",
   "palettes.list",
-  "models.list",
   "projects.list",
   "workspace.list",
   "workspace.outputs",
@@ -135,6 +135,7 @@ export const UNRECORDED_RPCS: ReadonlySet<string> = new Set([
   "fs.tree",
   "fs.vocabulary",
   "git.prCheckDiagnostic",
+  "models.list",
   "models.suggestions",
   "pr.mergeOptions",
   "pr.reviewerSuggestions",
@@ -281,26 +282,26 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           if (VIEWER_RPCS.has(action)) return yield* effect;
           if (actor.role !== "member") return yield* Effect.die(new Error(VIEWER_REFUSAL));
           if (UNRECORDED_RPCS.has(action)) return yield* effect;
-          const record = (failed: boolean, result?: unknown) =>
+          const record = (outcome?: "failed" | "interrupted", result?: unknown) =>
             store.appendActorEvents(
               actorEventsOf(actor, action, payload, Date.now(), result).map((entry) =>
-                failed ? { ...entry, data: { ...entry.data, failed: true } } : entry,
+                outcome === undefined
+                  ? entry
+                  : { ...entry, data: { ...entry.data, [outcome]: true } },
               ),
             );
           // A stream runs for as long as its caller listens, so what it starts is recorded first.
           if (RpcSchema.isStreamSchema(rpc.successSchema))
-            return yield* Effect.andThen(record(false), effect);
+            return yield* Effect.andThen(record(), effect);
           // Recorded once the call has ended, and not interrupted between: a change that happened
-          // always has its entry. A call that failed may have changed something on the way, so
-          // it is recorded as failed; one cut off before it ended leaves none.
+          // always has its entry. A call that failed, or that its caller cut off, may have
+          // changed something on the way, so it is recorded as that.
           return yield* Effect.uninterruptibleMask((restore) =>
             restore(effect).pipe(
               Effect.onExit((exit) =>
                 Exit.isSuccess(exit)
-                  ? record(false, exit.value)
-                  : Cause.hasInterruptsOnly(exit.cause)
-                    ? Effect.void
-                    : record(true),
+                  ? record(undefined, exit.value)
+                  : record(Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failed"),
               ),
             ),
           );
