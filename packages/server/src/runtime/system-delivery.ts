@@ -4,6 +4,13 @@ import type { TurnId, ThreadStatus, UserInput } from "@gram/contracts";
 import type * as Effect from "effect/Effect";
 
 /**
+ * The key of the handoff a thread's switch gives its new session. While a plain thread's or
+ * worker's switch is `ready`, it is the one delivery that may go: nothing reaches the new session
+ * before it.
+ */
+export const SWITCH_HANDOFF_KEY = "switch-handoff";
+
+/**
  * Why a system delivery didn't reach the agent. `ended` and `error` are the thread's status, when
  * it was asked or when it got there with the delivery still waiting; `buildFailed` is `build`
  * dying; `sendFailed` is `AgentSession.send` dying; `turnError` is the adapter ending the turn in

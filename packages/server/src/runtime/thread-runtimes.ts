@@ -1414,6 +1414,8 @@ const make = Effect.gen(function* () {
     switchAgent: agentSwitch.switchAgent,
     cutAtBoot: cutOff,
     ...queueMethods,
+    // A switch a restart left owing its new session the handoff gives it first.
+    sendQueuedAtBoot: agentSwitch.handOverOwed.pipe(Effect.andThen(queueMethods.sendQueuedAtBoot)),
     create,
     stopTask,
     send,

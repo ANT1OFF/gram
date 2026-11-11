@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { LimitCleared, LimitWait, ThreadError } from "./agent-failure.ts";
+import { LimitCleared, LimitWait, THREAD_ERROR_TEXT_MAX, ThreadError } from "./agent-failure.ts";
 import { BabysitState, HumanReviewNotice, ReviewNotice } from "./babysit.ts";
 import { CodexHome } from "./codex-home.ts";
 import { ChecksRollup, PrState } from "./git.ts";
@@ -635,6 +635,24 @@ export const SessionSwitch = Schema.Struct({
     Schema.Struct({
       note: SwitchNoteMode,
       text: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(HANDOFF_NOTE_MAX_CHARS))),
+      /**
+       * Limit mode's: why the old agent couldn't write the note, by its own report. `detail` is
+       * the provider's error, untrusted, which only ever goes inside the handoff's fence.
+       */
+      limit: Schema.optionalKey(
+        Schema.Struct({
+          reason: Schema.Literals(["usage", "failed"]),
+          until: Schema.optionalKey(Schema.Number),
+          detail: Schema.optionalKey(
+            Schema.String.check(Schema.isMaxLength(THREAD_ERROR_TEXT_MAX)),
+          ),
+        }),
+      ),
+      /**
+       * The turn that carried the handoff to the new session, once the agent took it. Absent at
+       * `ready`, a restart still owes the new session its handoff before anything else goes.
+       */
+      delivered: Schema.optionalKey(TurnId),
     }),
   ),
   /**

@@ -46,6 +46,7 @@ import type { FeedWriter } from "./feed-writer.ts";
 import type { TurnLifecycle } from "./turn-lifecycle.ts";
 import type { LimitResume } from "./limit-resume.ts";
 import { isUndelivered } from "./undelivered.ts";
+import { SWITCH_HANDOFF_KEY, type SystemDelivery } from "./system-delivery.ts";
 
 /** What the queue and deliveries read and change beside a thread's `Runtime`. */
 export interface MessageQueueDeps {
@@ -350,10 +351,15 @@ export const makeMessageQueue = ({
    * and the thread stays idle. The turn id is made before the turn, so `build` can record the turn
    * that will carry its input before anything is sent.
    */
-  const deliverNext = (rt: Runtime, session: AgentSession): Effect.Effect<boolean> =>
+  const deliverNext = (rt: Runtime, session: AgentSession, only?: string): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       for (;;) {
-        const next = rt.deliveries.entries().next().value;
+        const next: readonly [string, SystemDelivery] | undefined =
+          only === undefined
+            ? rt.deliveries.entries().next().value
+            : rt.deliveries.has(only)
+              ? [only, rt.deliveries.get(only)!]
+              : undefined;
         if (next === undefined) return false;
         const [key, delivery] = next;
         rt.deliveries.delete(key);
@@ -481,6 +487,11 @@ export const makeMessageQueue = ({
       if (rt.deliveries.size === 0 || isShuttingDown()) return;
       const change = yield* switchHold(rt);
       if (change !== undefined && change.phase !== "ready") return;
+      // A plain thread's or worker's switch at `ready` lets only its own handoff go, so nothing
+      // reaches the new session before it; the rest wait for the switch to let go. The
+      // orchestrator's (no `handoff`) lets its boot digest through as before.
+      const only = change?.handoff === undefined ? undefined : SWITCH_HANDOFF_KEY;
+      if (only !== undefined && !rt.deliveries.has(only)) return;
       // A cold thread being closed has no session for the close to stop, so it must not get one.
       if (rt.closing) return yield* failPendingDeliveries(rt, "ended");
       // Held for `whileAtRest`, which pumps again once it lets go.
@@ -491,7 +502,7 @@ export const makeMessageQueue = ({
         case "ended":
           return yield* failPendingDeliveries(rt, rt.status);
         case "running":
-          return yield* steerDeliveries(rt);
+          return only === undefined ? yield* steerDeliveries(rt) : undefined;
         // Not into a turn waiting on the user: the agent would read it before their answer.
         case "starting":
         case "needsApproval":
@@ -508,7 +519,7 @@ export const makeMessageQueue = ({
               (rt.queue.length === 0 || change?.phase === "ready") &&
               !rt.reopenOnIdle
             ) {
-              yield* deliverNext(rt, rt.session);
+              yield* deliverNext(rt, rt.session, only);
             }
             return;
           }
