@@ -43,6 +43,11 @@ export interface ClaudeEnvironmentShape {
   readonly invalidate: Effect.Effect<void>;
   /** `claude auth status --json` must report a subscription login. */
   readonly checkAuth: (prepared: PreparedClaude) => Effect.Effect<void, AgentUnavailable>;
+  /**
+   * Claude Code's own key auth (an API key, `ANTHROPIC_AUTH_TOKEN` or an `apiKeyHelper`) is this
+   * machine's operator's choice, so sessions aren't held to the subscription login.
+   */
+  readonly keyAuth?: boolean;
 }
 
 export class ClaudeEnvironment extends Context.Service<ClaudeEnvironment, ClaudeEnvironmentShape>()(
@@ -63,6 +68,12 @@ export interface ClaudeEnvironmentConfig {
    * env as probed (`buildChildEnv` keeps an inherited token too: it is a subscription login).
    */
   readonly oauthToken?: () => string | undefined;
+  /**
+   * Accept Claude Code's own key auth instead of requiring the subscription login. Only a
+   * provisioned host whose operator asked for it passes this (`GRAM_HOST_CLAUDE_KEY_AUTH`): the
+   * platform that started it points Claude Code at its own model endpoint.
+   */
+  readonly keyAuth?: boolean;
 }
 
 /** The variable Claude Code reads a `claude setup-token` token from. */
@@ -231,7 +242,9 @@ export const ClaudeEnvironmentLive = (
           ),
           Effect.flatMap((output) => {
             const problem = checkAuthStatus(output.stdout);
-            return problem === undefined ? Effect.void : Effect.fail(authUnavailable(problem));
+            return problem === undefined || (problem === "api-key-auth" && config.keyAuth === true)
+              ? Effect.void
+              : Effect.fail(authUnavailable(problem));
           }),
         );
 
@@ -252,6 +265,7 @@ export const ClaudeEnvironmentLive = (
               ),
         invalidate: prepared.reset,
         checkAuth,
+        keyAuth: config.keyAuth === true,
       } satisfies ClaudeEnvironmentShape;
     }),
   );
