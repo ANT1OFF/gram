@@ -125,11 +125,9 @@ export function watchTree(
   const groups = new Map<number, string>();
   const shared = rootRow.pgid === root ? undefined : rootRow.pgid;
   // Linux can adopt orphans into an ancestor subreaper instead of PID 1. Record ancestors by
-  // birth identity, never by process name or an unfenced parent pid. macOS has no subreapers: an
-  // orphan goes to launchd, so an ancestor's new child is only ever one it started itself (a
-  // helper, a `git`), never the server's, and is no reason to refuse.
+  // birth identity, never by process name or an unfenced parent pid.
   const ancestors = new Map<number, string>();
-  for (let pid = rootRow.ppid; deps.platform !== "darwin" && pid > 1 && !ancestors.has(pid);) {
+  for (let pid = rootRow.ppid; pid > 1 && !ancestors.has(pid);) {
     const row = first.get(pid);
     if (row === undefined) break;
     ancestors.set(pid, row.start);

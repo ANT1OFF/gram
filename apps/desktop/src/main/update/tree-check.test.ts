@@ -189,24 +189,23 @@ describe("update tree check", () => {
       },
     );
 
-    it("still refuses another new child of the app in its group on Linux", async () => {
-      const other: Proc = [104, 50, 50, T2];
-      const { deps } = fake(sequence(LIVE, LIVE, LIVE, [...GONE, other]), "linux", PS);
-      const watch = watchTree(100, deps, none)!;
-      expect(await watch.freeze()).toBe(true);
-      expect(await watch.survivors()).toBeUndefined();
-    });
+    it.each(["darwin", "linux"])(
+      "still refuses another new live child of the app in its group, without signaling it (%s)",
+      async (platform) => {
+        const other: Proc = [104, 50, 50, T2];
+        const { deps, signals } = fake(sequence(LIVE, LIVE, LIVE, [...GONE, other]), platform, PS);
+        const watch = watchTree(100, deps, none)!;
+        expect(await watch.freeze()).toBe(true);
+        expect(await watch.survivors()).toBeUndefined();
+        expect(signals.some((signal) => signal.endsWith(" 104"))).toBe(false);
+      },
+    );
 
-    it("leaves a helper the app starts alone on macOS, where only launchd adopts", async () => {
-      const helper: Proc = [104, 50, 50, T2];
-      const { deps, signals } = fake(
-        sequence(LIVE, [...LIVE, helper], [...LIVE, helper], [...GONE, helper]),
-        "darwin",
-        PS,
-      );
+    it("refuses such a child that shows up during the freeze too (darwin)", async () => {
+      const other: Proc = [104, 50, 50, T2];
+      const { deps, signals } = fake(sequence(LIVE, [...LIVE, other]), "darwin", PS);
       const watch = watchTree(100, deps, none)!;
-      expect(await watch.freeze()).toBe(true);
-      expect(await watch.survivors()).toBe(0);
+      expect(await watch.freeze()).toBe(false);
       expect(signals.some((signal) => signal.endsWith(" 104"))).toBe(false);
     });
   });
