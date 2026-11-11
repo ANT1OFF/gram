@@ -57,14 +57,22 @@ const sinkPort = await new Promise<number>((resolve) => {
   receiver.listen(0, "127.0.0.1", () => resolve((receiver.address() as { port: number }).port));
 });
 
-const server = (embedding: boolean, socketLifetimeMs?: number) =>
-  ServerLayer.pipe(
+/** Each server's own data folder, removed when the file's tests end. */
+const dataDirs: string[] = [];
+
+const server = (embedding: boolean, socketLifetimeMs?: number) => {
+  const dataDir = mkdtempSync(join(tmpdir(), "gram-fronted-data-"));
+  dataDirs.push(dataDir);
+  return ServerLayer.pipe(
     Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo" })),
     Layer.provide(TurnHooks.layerNoop),
     Layer.provide(gitPlatformTest()),
     Layer.provide(
       ServerConfig.layer({
         ...TEST_CONFIG,
+        // A start from a profile writes the thread's folder under the data folder, so it must be
+        // one this user can write: the shared test path isn't on CI's runners.
+        dataDir,
         frontedIdentity: {
           ...proxy.config,
           ...(socketLifetimeMs === undefined ? {} : { socketLifetimeMs }),
@@ -75,6 +83,7 @@ const server = (embedding: boolean, socketLifetimeMs?: number) =>
     ),
     Layer.orDie,
   );
+};
 
 const info = Effect.gen(function* () {
   const { token } = yield* LaunchToken;
@@ -202,7 +211,7 @@ const vera = { sub: "user-vera", name: "Vera", role: "viewer" };
 describe("sign-in through a fronting proxy", () => {
   const dirs: string[] = [];
   afterAll(() => {
-    for (const dir of dirs) removeDir(dir);
+    for (const dir of [...dirs, ...dataDirs]) removeDir(dir);
   });
 
   layer(server(true), { excludeTestServices: true })("with the hosted features on", (it) => {
