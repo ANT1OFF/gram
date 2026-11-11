@@ -105,15 +105,10 @@ export const makeDecisionHook = (
   enabled: on,
   decide: (question) =>
     Effect.gen(function* () {
-      // The signed-in person this call is made for, when there is one: the one who pressed the
-      // button, or the one who approved the card on the second call.
+      // The signed-in person this call is made for, when there is one. Who approved a card is
+      // the caller's to say (`approval.answeredBy`): it is not always this call's person.
       const person = yield* ActingPerson;
-      const approval =
-        question.approval === undefined ||
-        question.approval.answeredBy !== undefined ||
-        person === undefined
-          ? question.approval
-          : { ...question.approval, answeredBy: person };
+      const approval = question.approval;
       const request: DecisionRequest = {
         v: EMBEDDING_WIRE_VERSION,
         id: randomUUID(),

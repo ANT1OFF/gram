@@ -345,6 +345,8 @@ export const makeServerApprovals = ({
         return answer;
       }
       const thread = yield* store.getThread(threadId).pipe(Effect.option);
+      // This runs in the call of whoever answered the card.
+      const answeredBy = yield* ActingPerson;
       for (const each of asked.actions) {
         const decided: Decided = Option.isNone(thread)
           ? { id: "", decision: "refuse", reason: DECISION_UNAVAILABLE }
@@ -352,7 +354,11 @@ export const makeServerApprovals = ({
               ...each,
               initiator: "agent",
               thread: thread.value,
-              approval: { decisionId: each.decisionId, askId: requestId },
+              approval: {
+                decisionId: each.decisionId,
+                askId: requestId,
+                ...(answeredBy === undefined ? {} : { answeredBy }),
+              },
             });
         if (decided.decision === "allow") continue;
         const refusal = refusalText(
