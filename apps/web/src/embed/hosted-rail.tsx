@@ -15,6 +15,7 @@ import { TopLeftNav } from "@/shell/top-left-nav";
 import { useLayoutStore } from "@/stores/layout";
 import { OVERVIEW_ROOT } from "@/views/shell-layout";
 
+import { useHostAttention } from "./attention";
 import { EmbedRailNavigation, EmbedSwitcher, RAIL_TILE } from "./slots";
 import { StripOpen, useStripOpen } from "./strip-open";
 
@@ -155,13 +156,26 @@ export function HostedRail() {
 
 /** The switcher, Needs you and Search: the open sidebar's head. */
 function StripHead() {
-  const { count, parts, openAsks } = useNeedsYouPill();
+  const own = useNeedsYouPill();
+  // The embedding app's own count of what needs someone, where it gives one.
+  const host = useHostAttention();
+  const count = host?.count ?? own.count;
   const searchHint = useShortcutHint("palette.open");
   const paletteOpen = useLayoutStore((s) => s.paletteOpen);
   return (
     <div className="flex flex-col items-center gap-px">
       <EmbedSwitcher placement="rail" className="mb-2" />
-      <Tile label={needsYouSpoken(count, parts)} testId="hosted-rail-needs-you" onClick={openAsks}>
+      <Tile
+        label={
+          host === undefined
+            ? needsYouSpoken(own.count, own.parts)
+            : count > 0
+              ? host.words
+              : "Needs you"
+        }
+        testId="hosted-rail-needs-you"
+        onClick={host?.open ?? own.openAsks}
+      >
         <Inbox aria-hidden className="size-icon-row" />
         {count > 0 && (
           <span
