@@ -1614,6 +1614,107 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     }
   }
 
+  /**
+   * Like the server's `switchAgent`, briefly: the same refusals the UI greys for, then the divider
+   * with a synthetic note and facts, and the thread on its new agent with a fresh session. Limit
+   * mode (a limit wait or a failed last turn) has the new agent write the note in its first turn.
+   */
+  async switchAgent(threadId: ThreadId, target: ModelRef, options?: { readonly note?: boolean }) {
+    const runtime = this.#runtime(threadId);
+    const { thread, status, pendingRequests } = runtime.summary;
+    if (target.agent === thread.model.agent)
+      throw refuse("This thread already runs there. Pick one of its models instead.");
+    if (thread.role === "orchestrator")
+      throw refuse("Switch the orchestrator from its own Switch orchestrator… action.");
+    if (thread.sessionSwitch !== undefined || !["idle", "cold", "error"].includes(status))
+      throw refuse("Wait for this turn to finish, or stop it, then switch.");
+    if (pendingRequests.length > 0) throw refuse("Answer the open approval first.");
+    const from = thread.model.agent;
+    const waiting = thread.limitWait !== undefined && thread.limitWait.cleared === undefined;
+    const failed = !waiting && (thread.lastError !== undefined || status === "error");
+    const limit = waiting ? ("usage" as const) : failed ? ("failed" as const) : undefined;
+    const noteMode = limit !== undefined ? "limit" : options?.note === false ? "none" : "outgoing";
+    const id = this.#ids();
+    const change = {
+      id,
+      previous: thread.model,
+      target,
+      mode: thread.mode,
+      phase: noteMode === "outgoing" ? ("checkpoint" as const) : ("stopping" as const),
+      oldExited: false,
+    };
+    this.#update(runtime, { sessionSwitch: change });
+    this.#setStatus(runtime, noteMode === "outgoing" ? "running" : "idle");
+    await this.#delay(150);
+    const note = [
+      `- **Goal:** ${thread.title}`,
+      "- **Done:** what the last turns show.",
+      "- **In progress:** the step the last turn was on.",
+      "- **Next:** carry on from the last turn.",
+      "- **Traps:** none noted.",
+    ].join("\n");
+    const checkout = effectiveCheckout(thread);
+    const facts = [
+      `- Title: ${thread.title}`,
+      "",
+      "### Worktree",
+      "",
+      `- Path: ${checkout.path}`,
+      `- Branch: ${runtime.summary.git?.branch ?? "none (detached or unknown)"}`,
+      "- Tree: clean",
+      "",
+      "### Recent turns",
+      "",
+      "- The first request and the last turns, tools as one line each",
+    ].join("\n");
+    const {
+      sessionSwitch: _switch,
+      limitWait: _wait,
+      lastError: _error,
+      ...rest
+    } = runtime.summary.thread;
+    runtime.summary = {
+      ...runtime.summary,
+      thread: { ...rest, model: target, agentSessionId: `mock-session-${this.#ids()}` },
+    };
+    this.#emit({ type: "thread.upsert", thread: runtime.summary.thread });
+    this.#putMessage(runtime, {
+      id: this.#ids(),
+      role: "assistant",
+      metadata: { createdAt: Date.now() },
+      parts: [
+        {
+          type: "data-handoff",
+          id: this.#ids(),
+          data: {
+            reason: "switch",
+            switchId: id,
+            previousAgent: from,
+            previousModel: thread.model.model,
+            model: target.model,
+            // A seeded thread has had turns but no session id of its own in the mock.
+            previousAgentSessionId: thread.agentSessionId ?? `mock-session-${thread.id}`,
+            noteMode,
+            ...(limit === undefined ? {} : { limit }),
+            ...(noteMode === "none"
+              ? {}
+              : { note: { text: note, by: limit ? target.agent : from } }),
+            facts,
+            at: Date.now(),
+          },
+        },
+      ],
+    });
+    if (limit !== undefined)
+      this.#putMessage(runtime, {
+        id: this.#ids(),
+        role: "assistant",
+        metadata: { createdAt: Date.now() },
+        parts: [{ type: "text", text: note }],
+      });
+    this.#setStatus(runtime, "idle");
+  }
+
   async rename(threadId: ThreadId, title: string) {
     this.#update(this.#runtime(threadId), { title, userNamed: true });
   }

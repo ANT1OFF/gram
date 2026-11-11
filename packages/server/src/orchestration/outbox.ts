@@ -35,6 +35,7 @@ const SnapshotEntry = Schema.Struct({
   state: WorkerState,
   feature: Schema.String,
   title: Schema.String,
+  agent: Schema.optionalKey(Schema.Literals(["claude", "codex"])),
   interface: Schema.optionalKey(Schema.String),
   overlapsWith: Schema.Array(Schema.String),
   actionKey: Schema.optionalKey(Schema.String),
@@ -53,6 +54,7 @@ export const storedSnapshot = (snapshot: DigestSnapshot): typeof Snapshot.Type =
       ([
         threadId,
         {
+          agent,
           interface: contract,
           turnEnds,
           quietKey,
@@ -65,6 +67,7 @@ export const storedSnapshot = (snapshot: DigestSnapshot): typeof Snapshot.Type =
         threadId,
         {
           ...entry,
+          ...(agent === undefined ? {} : { agent }),
           ...(actionKey === undefined ? {} : { actionKey }),
           ...(reportKey === undefined ? {} : { reportKey }),
           ...(contract === undefined ? {} : { interface: contract }),

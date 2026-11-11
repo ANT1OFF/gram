@@ -1013,6 +1013,8 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           expect(after.features[0]?.workers[0]).toEqual({
             threadId: a.thread.id,
             title: "Runner",
+            // Named, since the user may have moved it to the other agent.
+            agent: "claude",
             state: "working",
             status: expect.any(String),
             project: "shop",

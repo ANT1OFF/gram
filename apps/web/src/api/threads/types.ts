@@ -91,6 +91,17 @@ export interface ThreadsApi {
   respondMany(answers: readonly RespondManyAnswer[]): Promise<readonly RespondManyResult[]>;
   setMode(threadId: ThreadId, mode: PermissionMode): Promise<void>;
   setModel(threadId: ThreadId, model: ModelRef): Promise<void>;
+  /**
+   * Moves a plain thread or a worker to the other agent on `target` ("Continue in Codex…"): a
+   * fresh session there, given a handoff. Resolves once the switch is claimed; `sessionSwitch`
+   * follows it. `note: false` skips the old session's note turn. Rejects with `InvalidState`, in
+   * words the user reads, when the thread can't move now.
+   */
+  switchAgent(
+    threadId: ThreadId,
+    target: ModelRef,
+    options?: { readonly note?: boolean },
+  ): Promise<void>;
   rename(threadId: ThreadId, title: string): Promise<void>;
   /** Gives the thread a folder outside its checkout; resolves to the folder granted. */
   addDirectory(threadId: ThreadId, path: string): Promise<string>;

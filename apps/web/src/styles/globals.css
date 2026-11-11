@@ -143,6 +143,13 @@
 [data-transcript] [data-streamdown="heading-1"] {
   font-size: calc(1.875rem * var(--transcript-scale, 1));
 }
+/* What a switched thread's new agent was given (`HandoffDivider`'s fold) is a record, not a reply:
+   its Markdown's headings read as bold lines at the fold's own size. */
+[data-transcript] [data-handoff-given] [data-streamdown^="heading-"] {
+  margin: 0.5rem 0 0.125rem;
+  font-size: inherit;
+  font-weight: 500;
+}
 
 /* One frame for a block of code or a table in a reply (and in a doc): streamdown draws each as a
    box in a padded box, under a band that holds the language and the copy and download buttons.

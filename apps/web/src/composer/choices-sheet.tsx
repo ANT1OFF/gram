@@ -1,6 +1,6 @@
 import { Drawer } from "@base-ui/react/drawer";
 import { CheckIcon, X } from "lucide-react";
-import { type ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -144,40 +144,62 @@ function ModelRows({
   onPick: (option: ChoiceOption) => void;
 }) {
   const options = section.options ?? [];
+  const heads = section.search?.heads;
   return (
     <div role="listbox" aria-label={section.label} className="flex flex-col">
-      {options.map((option) => {
+      {options.map((option, index) => {
         const selected = option.value === section.value;
         const icon = option.icon ?? section.search?.rowIcon;
+        // Another agent's group starts with its mark and, with no hover here, its words.
+        const head =
+          option.group !== undefined &&
+          option.group !== options[index - 1]?.group &&
+          index > 0 &&
+          heads?.[option.group] !== undefined
+            ? heads[option.group]
+            : undefined;
         return (
-          <button
-            key={option.value}
-            type="button"
-            role="option"
-            aria-selected={selected}
-            aria-disabled={option.disabled || undefined}
-            data-choice-row
-            onClick={() => onPick(option)}
-            className={cn(
-              "flex min-h-13 w-full items-center gap-3 border-b border-border px-1 py-1.5 text-left outline-none last:border-b-0 focus-visible:focus-ring-inset",
-              option.disabled && "pointer-events-none opacity-50",
+          <Fragment key={option.value}>
+            {head !== undefined && (
+              <div
+                role="presentation"
+                data-testid="model-group-head"
+                className="flex items-center gap-2 border-t border-border px-1 pt-3 pb-1 text-meta text-muted-foreground"
+              >
+                <span aria-hidden className="flex shrink-0 items-center">
+                  {head.mark}
+                </span>
+                {head.hint}
+              </div>
             )}
-          >
-            {icon !== undefined && (
-              <span aria-hidden className="flex shrink-0 items-center text-muted-foreground">
-                {icon}
-              </span>
-            )}
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-reading font-medium">{option.label}</span>
-              {option.description !== undefined && (
-                <span className="truncate text-meta text-muted-foreground">
-                  {option.description}
+            <button
+              type="button"
+              role="option"
+              aria-selected={selected}
+              aria-disabled={option.disabled || undefined}
+              data-choice-row
+              onClick={() => onPick(option)}
+              className={cn(
+                "flex min-h-13 w-full items-center gap-3 border-b border-border px-1 py-1.5 text-left outline-none last:border-b-0 focus-visible:focus-ring-inset",
+                option.disabled && "pointer-events-none opacity-50",
+              )}
+            >
+              {icon !== undefined && (
+                <span aria-hidden className="flex shrink-0 items-center text-muted-foreground">
+                  {icon}
                 </span>
               )}
-            </span>
-            {selected && <CheckIcon aria-hidden className="size-icon-row shrink-0 text-link" />}
-          </button>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-reading font-medium">{option.label}</span>
+                {option.description !== undefined && (
+                  <span className="truncate text-meta text-muted-foreground">
+                    {option.description}
+                  </span>
+                )}
+              </span>
+              {selected && <CheckIcon aria-hidden className="size-icon-row shrink-0 text-link" />}
+            </button>
+          </Fragment>
         );
       })}
     </div>

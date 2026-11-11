@@ -444,6 +444,8 @@ export const WorkerLedgerEntry = Schema.Struct({
   project: Schema.String,
   threadId: ThreadId,
   title: Schema.String,
+  /** The agent it runs on now; the user may have moved it to the other one. */
+  agent: Schema.optionalKey(Schema.Literals(["claude", "codex"])),
   branch: Schema.optionalKey(Schema.String),
   state: WorkerState,
   /** What `state` was worked out from beside `status` and `pendingRequests`; absent in older ledgers. */
@@ -1559,6 +1561,9 @@ export const Handoff = Schema.Struct({
   reason: Schema.Literals(["context", "compactions", "user", "switch"]),
   /** A switch's: the agent the thread left. */
   previousAgent: Schema.optionalKey(Schema.Literals(["claude", "codex"])),
+  /** A switch's: the model id the thread left, and the one it continued on. */
+  previousModel: Schema.optionalKey(Schema.String),
+  model: Schema.optionalKey(Schema.String),
   /** A switch's: the attempt (`SessionSwitch.id`) that wrote it, so a restart writes it once. */
   switchId: Schema.optionalKey(Schema.String),
   /**
@@ -1567,6 +1572,8 @@ export const Handoff = Schema.Struct({
    * `none`, the user left it out.
    */
   noteMode: Schema.optionalKey(SwitchNoteMode),
+  /** Limit mode's: why the old agent wrote no note, out of usage or its last turn failed. */
+  limit: Schema.optionalKey(Schema.Literals(["usage", "failed"])),
   /** A switch's handoff note, once written, and who wrote it. */
   note: Schema.optionalKey(HandoffNote),
   /** A switch's facts from Gram's own state, exactly as the new session was given them. */

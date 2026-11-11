@@ -73,7 +73,9 @@ import { useDiffComments, useDiffCommentsStore, withDiffComments } from "@/store
 import { useDraftStore } from "@/stores/drafts";
 import { useSuggestionsStore } from "@/stores/suggestions";
 import { useThreadsStore } from "@/stores/threads";
+import { continueHint, SWITCH_PREFIX } from "@/thread/agent-switch-model";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
+import { useSwitchOffer } from "@/thread/use-switch-offer";
 
 import { AttachmentChips } from "./attachment-chips";
 import { ContextRing } from "./context-ring";
@@ -94,6 +96,7 @@ import {
   modelOptions,
   unlistedWarning,
   useModels,
+  useModelsSettled,
   useProviderLabel,
   useRefreshModels,
 } from "./models";
@@ -945,6 +948,39 @@ export function Composer({
         ? accountModelWarning(models, model.model)
         : undefined;
   const isFavourite = useIsFavourite(model?.agent ?? "claude");
+  // The other agent's models, a group of their own below this one's: a pick opens "Continue in
+  // Codex" and changes nothing by itself. Only while the other CLI is installed.
+  const offer = useSwitchOffer(threadId);
+  const otherAgent = offer.offered ? offer.to : undefined;
+  const otherModels = useModelsSettled(otherAgent ?? "codex", otherAgent !== undefined).models;
+  const otherRow = (id: string, label: string): PickerOption<string> => ({
+    value: `${SWITCH_PREFIX}${id}`,
+    label: `${label}…`,
+    group: agentLabel(otherAgent ?? "codex"),
+    icon: <AgentIcon agent={otherAgent ?? "codex"} className="size-icon-row" />,
+    opens: true,
+    disabled: offer.offered && offer.refusal !== undefined,
+  });
+  // Signed out, it lists no models: one greyed row stands for them, its mark saying why.
+  const otherChoices: PickerOption<string>[] =
+    otherAgent === undefined
+      ? []
+      : otherModels !== undefined && otherModels.length > 0
+        ? otherModels.map((m) => otherRow(m.id, m.displayName))
+        : [otherRow("", agentLabel(otherAgent))];
+  const heads =
+    model === undefined || otherAgent === undefined || otherChoices.length === 0
+      ? undefined
+      : {
+          [provider]: {
+            mark: <AgentIcon agent={model.agent} className="size-icon-chip" />,
+            hint: provider,
+          },
+          [agentLabel(otherAgent)]: {
+            mark: <AgentIcon agent={otherAgent} className="size-icon-chip" />,
+            hint: (offer.offered ? offer.refusal : undefined) ?? continueHint(otherAgent),
+          },
+        };
 
   // The composer holds something, even if it can't go yet: a draft waiting on an upload isn't Stop.
   const hasDraft = canSend || attachments.uploading;
@@ -1014,6 +1050,13 @@ export function Composer({
 
   const onModel = (value: string) => {
     if (!model) return;
+    if (value.startsWith(SWITCH_PREFIX)) {
+      const picked = value.slice(SWITCH_PREFIX.length);
+      useThreadDialogs
+        .getState()
+        .open({ kind: "continueIn", threadId, ...(picked === "" ? {} : { model: picked }) });
+      return;
+    }
     const { variant: current, ...rest } = model;
     const variant = effortAfterSwitch(models, value, current);
     // The server's refusal is the whole message: for a worker it names the charter's list, and for
@@ -1068,7 +1111,7 @@ export function Composer({
   const choices: ChoiceSection[] = [
     modelSection({
       value: model?.model,
-      options: modelChoices,
+      options: otherChoices.length === 0 ? modelChoices : [...modelChoices, ...otherChoices],
       onChange: onModel,
       warning: modelWarning,
       shortcut: { id: "composer.model", keys: "mod+shift+m" },
@@ -1076,6 +1119,7 @@ export function Composer({
         rowIcon: <AgentIcon agent={model.agent} className="size-icon-row" />,
         favourite: isFavourite,
         onToggleFavourite: (value) => useModelFavourites.getState().toggle(model.agent, value),
+        heads,
       },
     }),
     effortSection({
