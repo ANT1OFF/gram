@@ -29,6 +29,7 @@ import { makeMachineUpdates, RETRY_MS, type UpdateRequest } from "./machine-upda
 import * as Schedule from "effect/Schedule";
 import * as FiberSet from "effect/FiberSet";
 import { watchedSocket } from "./socket-end.ts";
+import { makeStopMarks, type StopMarks } from "./stop-marks.ts";
 
 /** The release a host said it runs, kept only when it reads as a release: it is shown as text. */
 const releaseOf = (hello: HostHello): string | undefined =>
@@ -182,6 +183,11 @@ export interface RemoteHostsShape {
   /** The address provisioned hosts dial, when this Gram listens for them. */
   readonly provisionedOrigin: string | undefined;
   /**
+   * The machines readied to stop with their disks kept, and what waits on one to be started
+   * (`stop-marks.ts`). A machine that dials in is no longer stopped.
+   */
+  readonly stops: StopMarks;
+  /**
    * Closes every provisioned host's connection and any of their dials still saying hello, for
    * when provisioned hosts are turned off. They stay registered.
    */
@@ -218,6 +224,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
     Effect.gen(function* () {
       const machines = createPairedMachines(store, now, nonces);
       const online = new Map<HostId, Online>();
+      const stops = makeStopMarks(now);
       const root = yield* Effect.scope;
       // The server's own logger and the rest, for a check started outside an effect.
       const context = yield* Effect.context<never>();
@@ -389,6 +396,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             };
             entry = live;
             online.set(machine.id, live);
+            stops.back(machine.id);
             machines.note(machine.id, undefined);
             yield* Effect.logInfo("machines: a joined machine is online").pipe(
               Effect.annotateLogs({ hostId: machine.id, platform: opened.value.hello.platform }),
@@ -398,6 +406,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             // whether it updates now.
             runFork(updates.connected(machine.id, opened.value));
             yield* Deferred.await(ended).pipe(Effect.ignore);
+            if (online.get(machine.id) === live) stops.away(machine.id);
             yield* Effect.logInfo("machines: a joined machine went offline").pipe(
               Effect.annotateLogs({ hostId: machine.id }),
             );
@@ -484,9 +493,11 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         update: updates.request,
         automaticUpdates: automaticOn,
         setAutomaticUpdates: (on) => automaticStore.write(on),
+        stops,
         remove: (id) => {
           bump(id);
           updates.forget(id);
+          stops.forget(id);
           try {
             return machines.remove(id);
           } finally {

@@ -331,18 +331,30 @@ export const makeTurnLifecycle = ({
     return Duration.minutes(settings.agents.idleEvictMinutes);
   });
 
-  const stopSession = (rt: Runtime, reason: NonNullable<Runtime["stopping"]>) =>
+  /**
+   * Stops the thread's session. With `when`, only if it holds, looked at under the same lock that
+   * marks the session as stopping, so nothing starts on it in between; false when it didn't.
+   */
+  const stopSession = (
+    rt: Runtime,
+    reason: NonNullable<Runtime["stopping"]>,
+    when?: () => boolean,
+  ) =>
     Effect.gen(function* () {
-      yield* locked(
+      const stop = yield* locked(
         rt,
         Effect.sync(() => {
+          if (when !== undefined && !when()) return false;
           if (rt.session !== undefined || FiberMap.hasUnsafe(sessions, rt.threadId)) {
             rt.stopping = reason;
           }
+          return true;
         }),
       );
+      if (!stop) return false;
       // Outside the lock: the session fiber's exit handler takes it.
       yield* FiberMap.remove(sessions, rt.threadId);
+      return true;
     });
 
   const startIdleTimer = (rt: Runtime) =>

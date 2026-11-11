@@ -98,6 +98,7 @@ import { RpcHandlersLayer } from "../rpc/handlers/index.ts";
 import type { AgentHosts } from "../runtime/agent-hosts.ts";
 import type { TurnHooks } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { HOST_STOP_PATHS, hostStopRoute } from "./host-stop-routes.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { WorkspaceOutputs } from "../outputs/workspace-outputs.ts";
 import {
@@ -187,6 +188,12 @@ export const AuthMiddleware = HttpRouter.middleware(
         Effect.repeat(Schedule.spaced(PROVISIONED_SWITCH_POLL)),
         Effect.forkScoped,
       );
+    // Stopping a joined machine and resuming its threads: a hosted feature, local app only.
+    const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
+    const stopDeps =
+      remoteHosts === undefined || store === undefined || runtimes === undefined
+        ? undefined
+        : { hosts: remoteHosts, store, runtimes, settings: store };
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
       "cache-control": "no-store",
@@ -329,36 +336,40 @@ export const AuthMiddleware = HttpRouter.middleware(
             response =
               path !== undefined && REMOTE_MANAGEMENT_PATHS.has(path)
                 ? yield* remoteManagement(control, path, isRemote ? remote : undefined)
-                : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
-                  ? isRemote || remoteHosts === undefined
+                : path !== undefined && HOST_STOP_PATHS.has(path)
+                  ? isRemote || stopDeps === undefined
                     ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
-                    : yield* machineManagement(
-                        remoteHosts,
-                        control.current(),
-                        path,
-                        releaseOfConfig(config),
-                        undefined,
-                        tokenCapture,
-                        control.dialAccess(),
-                        workerHosts === undefined
-                          ? undefined
-                          : (id) => workerHosts.machine(id).folders,
-                        yield* provisionedOn,
-                      )
-                  : isRemote && path === "/ws"
-                    ? yield* closedOnRevoke(
-                        remote,
-                        remote.sessionOf(authRequest),
-                        asCaller(httpEffect, unmarkLocalApp(request)),
-                      )
-                    : // The local app's own connection, which the RPC handlers can tell apart
-                      // from a phone's (`isLocalApp`); anything else says nothing of itself.
-                      yield* asCaller(
-                        httpEffect,
-                        !isRemote && path === "/ws"
-                          ? markLocalApp(request)
-                          : unmarkLocalApp(request),
-                      );
+                    : yield* hostStopRoute(stopDeps, path)
+                  : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
+                    ? isRemote || remoteHosts === undefined
+                      ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
+                      : yield* machineManagement(
+                          remoteHosts,
+                          control.current(),
+                          path,
+                          releaseOfConfig(config),
+                          undefined,
+                          tokenCapture,
+                          control.dialAccess(),
+                          workerHosts === undefined
+                            ? undefined
+                            : (id) => workerHosts.machine(id).folders,
+                          yield* provisionedOn,
+                        )
+                    : isRemote && path === "/ws"
+                      ? yield* closedOnRevoke(
+                          remote,
+                          remote.sessionOf(authRequest),
+                          asCaller(httpEffect, unmarkLocalApp(request)),
+                        )
+                      : // The local app's own connection, which the RPC handlers can tell apart
+                        // from a phone's (`isLocalApp`); anything else says nothing of itself.
+                        yield* asCaller(
+                          httpEffect,
+                          !isRemote && path === "/ws"
+                            ? markLocalApp(request)
+                            : unmarkLocalApp(request),
+                        );
             break;
           case "boot":
             response = yield* HttpServerResponse.redirect("/", { status: 302 }).pipe(

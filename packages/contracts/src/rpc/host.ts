@@ -186,6 +186,8 @@ export const HostStopPrepared = Schema.Struct({
   kept: Schema.Array(HostStopKept),
   /** Why it isn't idle when `busy` doesn't say, such as an update under way. */
   note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+  /** The stop didn't hold (taken back, or its hold ran out): the host takes work again. */
+  released: Schema.optionalKey(Schema.Boolean),
 });
 export type HostStopPrepared = typeof HostStopPrepared.Type;
 

@@ -72,6 +72,8 @@ import {
   BUSY,
   makeTurnId,
   locked,
+  evictable,
+  NOTHING_RUNNING,
   guarded,
   replyOf,
   type GetRuntime,
@@ -1338,8 +1340,29 @@ const make = Effect.gen(function* () {
     becomeIdle,
   });
 
+  const restSession: ThreadRuntimesShape["restSession"] = (threadId) =>
+    Effect.gen(function* () {
+      const rt = runtimes.get(threadId);
+      if (rt === undefined) return "none";
+      const rested = yield* stopSession(
+        rt,
+        "evict",
+        () => evictable(rt) && rt.background.length === 0 && rt.queue.length === 0,
+      );
+      if (rested) return "rested";
+      return yield* locked(
+        rt,
+        Effect.sync(() =>
+          rt.session === undefined && rt.launch === undefined && NOTHING_RUNNING.has(rt.status)
+            ? ("none" as const)
+            : ("working" as const),
+        ),
+      );
+    });
+
   const service = ThreadRuntimes.of({
     ...switchMethods,
+    restSession,
     switchSession,
     cutAtBoot: cutOff,
     ...queueMethods,
