@@ -44,7 +44,8 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
   let loaded: Promise<void> | undefined;
   /** The show last drawn in each window, for when that window goes. */
   const drawn = new WeakMap<BrowserWindow, string>();
-  // Once the app quits, no ask opens a window: each is refused.
+  // Once the app quits, no ask opens a window: each is refused. (Nothing cancels a quit today;
+  // whatever does must clear this.)
   let quitting = false;
   app.once("before-quit", () => {
     quitting = true;
@@ -128,6 +129,8 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
         failed(new Error("The ask didn't load."));
         end();
       });
+      // Gone before it loaded: what waited on it is refused, not left waiting.
+      next.once("closed", () => failed(new Error("The ask window went.")));
     });
     void next.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(askPage(colors))}`);
     win = next;
@@ -138,8 +141,9 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
   return {
     show: async (show, view: AskView) => {
       const opened = open();
-      await opened.loaded;
+      // Set before the wait, so a window that goes while loading still says which ask it took.
       drawn.set(opened.win, show);
+      await opened.loaded;
       await opened.win.webContents.executeJavaScript(
         `window.showAsk(${JSON.stringify(show)}, ${JSON.stringify(view)})`,
       );

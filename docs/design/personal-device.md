@@ -830,3 +830,12 @@ the like) leave the command unread; `trap` is read as the text it runs; names ar
 without case, as a disk that ignores case finds them; a pattern such as `.?` that can match `..`
 counts as leaving the folder; and a window closing is tied to the ask it drew, so a late close
 can't refuse the next one, and no ask window opens once the app is quitting.
+
+A third review found the earlier fixes holding and no ordinary command made unreadable, and
+asked for a few more, which are in: every sed and awk script is named as a script that can run
+commands and write files; an interpreter given a glued script (`-e'…'`) or fed a file or a
+here-document is named as running it; options between `bash -c` and its text leave the command
+unread; options that run commands (`tar --checkpoint-action`, `split --filter`, `ssh`'s
+`ProxyCommand` and the like) are named; and a window that goes while loading refuses its ask.
+The reader stays a list of facts: programs with exec options it doesn't know still read as
+themselves, which is why the command is always shown whole above them.

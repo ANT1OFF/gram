@@ -30,7 +30,9 @@ export type CommandFact =
   /** `NAME=value program`: the program runs with these set, which can change what it runs. */
   | { readonly kind: "sets-environment"; readonly names: ReadonlyArray<string> }
   /** `cd` somewhere outside the folder, home, or a place only known when it runs. */
-  | { readonly kind: "leaves-folder"; readonly to?: string };
+  | { readonly kind: "leaves-folder"; readonly to?: string }
+  /** A script in the program's own language, which can run commands and write files. */
+  | { readonly kind: "script"; readonly program: string };
 
 export interface CommandFacts {
   /** False when the command isn't one this parse can read whole: it then says so. */
@@ -291,6 +293,21 @@ const NOT_FOLLOWED = new Set([
 /** Builtins whose `-i`, or a subscript in a name, make bash read values as arithmetic. */
 const DECLARERS = new Set(["declare", "typeset", "local", "readonly", "export"]);
 const SEDS = new Set(["sed", "gsed"]);
+/** Options through which a program runs a command of its own. */
+const RUNS_OPTIONS: Readonly<Record<string, RegExp>> = {
+  tar: /^--(checkpoint-action|to-command|use-compress-program|info-script|new-volume-script)|^-[a-zA-Z]*[IF]/,
+  split: /^--filter/,
+  sort: /^--compress-program/,
+  zip: /^-[a-zA-Z]*TT|^--unzip-command/,
+  vim: /^[-+]c|^\+|^--cmd/,
+  vi: /^[-+]c|^\+|^--cmd/,
+  nvim: /^[-+]c|^\+|^--cmd/,
+  man: /^-[a-zA-Z]*P|^--pager/,
+  less: /^\+|^--?(lesspipe|init)/,
+  ssh: /ProxyCommand|LocalCommand|KnownHostsCommand/i,
+  rsync: /^-[a-zA-Z]*e|^--rsh|^--rsync-path/,
+  git: /^--(upload-pack|receive-pack|exec)/,
+};
 
 /** Reserved words after which a command starts. */
 const COMMAND_STARTERS = new Set(["if", "then", "else", "elif", "do", "while", "until", "!", "{"]);
@@ -761,10 +778,11 @@ const simple = (
       if (text?.expands === true) throw new Unreadable();
       if (text !== undefined && text.text !== "") evaluated(text.text, name, found, place, depth);
     }
-    if (
-      SEDS.has(name) &&
-      args.some((arg) => /\/[gIiMmpw0-9]*e|(^|[;{}\n]\s*)e(\s|$|;)/.test(arg.text))
-    )
+    // sed's scripts can run commands (`e`) and read and write files (`r`, `w`) by any address
+    // or delimiter: every sed script is named as one.
+    if (SEDS.has(name)) found.facts.push({ kind: "script", program: name });
+    const runsOption = RUNS_OPTIONS[name];
+    if (runsOption !== undefined && args.some((arg) => runsOption.test(arg.text)))
       found.facts.push({ kind: "evaluates", program: name });
     if (ELEVATORS.has(name)) found.facts.push({ kind: "elevates", program: name });
     if (NETWORK.has(name)) found.facts.push({ kind: "network", program: name });
@@ -786,7 +804,7 @@ const simple = (
       found.facts.push({ kind: "evaluates", program: name });
       if (args.some((arg) => arg.expands)) found.facts.push({ kind: "program-expanded" });
     }
-    if (AWKS.has(name)) found.facts.push({ kind: "evaluates", program: name });
+    if (AWKS.has(name)) found.facts.push({ kind: "script", program: name });
     if (name === "find") {
       // `-exec` and its kin run a program for each file found.
       for (let at = 0; at < args.length; at += 1) {
@@ -804,16 +822,23 @@ const simple = (
       const flag = args.findIndex((arg) =>
         shell
           ? /^-[a-zA-Z]*c$/.test(arg.text)
-          : /^-[a-zA-Z]*[ceEpr]$/.test(arg.text) || /^--(eval|print|command)(=|$)/.test(arg.text),
+          : // A glued script, `-e'…'`, is a script too.
+            /^-[a-zA-Z]*[ceEpr]/.test(arg.text) || /^--(eval|print|command)(=|$)/.test(arg.text),
       );
+      // A shell reading its commands from its input runs whatever is fed to it.
+      const reads = shell && args.some((arg) => /^-[a-zA-Z]*s/.test(arg.text));
       if (flag >= 0) {
         found.facts.push({ kind: "evaluates", program: name });
-        const script = args[args[flag + 1]?.text === "--" ? flag + 2 : flag + 1];
+        // Options may come between `-c` and its text: not followed.
+        const following = args[flag + 1]?.text ?? "";
+        if (shell && /^[-+]/.test(following) && following !== "--") throw new Unreadable();
+        const script = args[following === "--" ? flag + 2 : flag + 1];
         if (script !== undefined && shell) {
           if (script.expands) found.facts.push({ kind: "program-expanded" });
           else walk(script.text, found, place, depth + 1);
         }
-      } else if (sub !== undefined)
+      } else if (reads) found.facts.push({ kind: "evaluates", program: name });
+      else if (sub !== undefined)
         found.facts.push({ kind: "runs-folder-code", program: `${name} ${sub}` });
     }
     if (name === "su") {
@@ -905,6 +930,8 @@ const walk = (text: string, found: Found, place: CommandPlace, depth: number) =>
   };
   let words: Array<Word> = [];
   let afterPipe = false;
+  /** Its input comes from a file or a here-document: into an interpreter, that is a script. */
+  let fedIn = false;
   let redirect: string | undefined;
   let skipping: "for" | undefined;
   const end = () => {
@@ -912,10 +939,11 @@ const walk = (text: string, found: Found, place: CommandPlace, depth: number) =>
       const named = simple(words, found, place, depth);
       for (const word of words) readInner(word);
       const program = named.find(isInterpreter);
-      if (afterPipe && program !== undefined)
+      if ((afterPipe || fedIn) && program !== undefined)
         found.facts.push({ kind: "pipe-to-interpreter", program });
     }
     words = [];
+    fedIn = false;
   };
   for (const [at, token] of tokens.entries()) {
     if (token.kind === "op") {
@@ -925,6 +953,7 @@ const walk = (text: string, found: Found, place: CommandPlace, depth: number) =>
       if (token.op === "(" && after?.kind === "op" && after.op === "(") throw new Unreadable();
       if (REDIRECTS.has(token.op) || token.op === "<<" || token.op === "<<-") {
         redirect = token.op;
+        if (["<", "<<", "<<-", "<>"].includes(token.op)) fedIn = true;
         continue;
       }
       if (skipping === "for" && (token.op === ";" || token.op === "\n")) {
@@ -999,10 +1028,21 @@ const dedupe = (found: Found): ReadonlyArray<CommandFact> => {
  * when it holds anything but plain name characters, so it can't read as the fact's own words.
  */
 export const shownWord = (text: string): string => {
-  const flat = displayCommand(text)
-    .pieces.map((piece) => (piece.kind === "newline" ? "\\n" : piece.text))
+  const { pieces } = displayCommand(text);
+  const plain = pieces.map((piece) => (piece.kind === "newline" ? "\\n" : piece.text)).join("");
+  if (/^[A-Za-z0-9._/+@:%=~-]+$/.test(plain)) return plain;
+  // In quotes, the word's own backslashes and quotes are escaped; the codes for hidden
+  // characters are not, so they read as codes.
+  const quoted = pieces
+    .map((piece) =>
+      piece.kind === "newline"
+        ? "\\n"
+        : piece.kind === "escape"
+          ? piece.text
+          : piece.text.replaceAll("\\", "\\\\").replaceAll('"', '\\"'),
+    )
     .join("");
-  return /^[A-Za-z0-9._/+@:%=~-]+$/.test(flat) ? flat : `"${flat.replaceAll('"', '\\"')}"`;
+  return `"${quoted}"`;
 };
 
 /** How the ask words a fact. Plain text, drawn as text. */
@@ -1037,6 +1077,8 @@ export const commandFactText = (fact: CommandFact): string => {
       return "Carries text written into the command";
     case "sets-environment":
       return `Sets ${fact.names.join(", ")} for the program it runs, which can change what runs`;
+    case "script":
+      return `Runs a script in ${shownWord(fact.program)}'s own language, which can run commands and write files`;
     case "leaves-folder":
       return fact.to === undefined
         ? "Moves to a folder only known when it runs"

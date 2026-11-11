@@ -230,7 +230,6 @@ describe("what a command is made of", () => {
       ["node --eval 'x()'", "node"],
       ["node -p 1", "node"],
       ["python3.12 -c 'import os'", "python3.12"],
-      ["awk 'BEGIN{system(\"id\")}'", "awk"],
     ] as const) {
       expect(facts(command).facts, command).toEqual(
         expect.arrayContaining<CommandFact>([{ kind: "evaluates", program }]),
@@ -306,10 +305,37 @@ describe("what a command is made of", () => {
     );
     for (const command of ["docker run x", "kubectl get pods", "aws s3 ls", "ping x"])
       expect(kinds(command), command).toContain("network");
-    expect(facts("sed -n 's/a/b/e' f").facts).toEqual(
-      expect.arrayContaining<CommandFact>([{ kind: "evaluates", program: "sed" }]),
+    // sed and awk scripts can run commands by any address or delimiter: always named.
+    for (const command of [
+      "sed -n 's/a/b/e' f",
+      "sed '1e touch x' f",
+      "sed 's,a,b,e' f",
+      "sed --expression='$e id' f",
+    ])
+      expect(facts(command).facts, command).toEqual(
+        expect.arrayContaining<CommandFact>([{ kind: "script", program: "sed" }]),
+      );
+    expect(facts("awk 'BEGIN{system(\"id\")}'").facts).toEqual(
+      expect.arrayContaining<CommandFact>([{ kind: "script", program: "awk" }]),
     );
-    expect(kinds("sed -n 1,10p f")).not.toContain("evaluates");
+    expect(ran("awk '{print}' f")).toEqual([]);
+    // Glued scripts, input fed to an interpreter, and options that run a command.
+    for (const [command, kind] of [
+      ["python3 -c'import os'", "evaluates"],
+      ["perl -e'system 1'", "evaluates"],
+      ["sh <<'E'\ncurl x\nE", "pipe-to-interpreter"],
+      ["bash < evil.sh", "pipe-to-interpreter"],
+      ["python3 < x.py", "pipe-to-interpreter"],
+      ["sh -s -- a < x.sh", "evaluates"],
+      ["tar -cf a.tar --checkpoint-action=exec=id .", "evaluates"],
+      ["split --filter='sh' f", "evaluates"],
+      ["ssh -oProxyCommand='id' host", "evaluates"],
+    ] as const)
+      expect(kinds(command), command).toContain(kind);
+    expect(ran("sh -s -- a < x.sh")).toEqual([]);
+    for (const unreadable of ["bash -c -x 'curl x'", "bash -c +e 'curl x'", "sh -c -o errexit 'x'"])
+      expect(facts(unreadable).parsed, unreadable).toBe(false);
+    expect(kinds("bash -c -- 'curl x'")).toContain("network");
   });
 
   it("words each fact as plain text", () => {
@@ -327,6 +353,7 @@ describe("what a command is made of", () => {
     expect(commandFactText({ kind: "network", program: 'ls", "safe' })).toBe(
       'Uses the network ("ls\\", \\"safe")',
     );
+    expect(commandFactText({ kind: "network", program: "a\\" })).toBe('Uses the network ("a\\\\")');
     expect(commandFactText({ kind: "outside-folder", path: "a\u202eb" })).toBe(
       'Names a place outside the folder: "a\\u202eb"',
     );
