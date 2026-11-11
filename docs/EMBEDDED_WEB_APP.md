@@ -75,8 +75,10 @@ hosted features on and sample threads in it. It needs no server at all, which ma
 build and test the pages around Gram.
 
 The answer is a handle: `shell` says `"on"` or `"off"` (whether the server took your additions),
-`update` replaces the navigation and the switcher, `navigate` moves the window to a path under the
-app, and `unmount` takes the app off the page.
+`update` replaces what it names of the navigation, the switcher and `threads` and keeps the rest
+(`update({ navigation })` changes counts and keeps the switcher; a key given as `undefined` takes
+that part away), `navigate` moves the window to a path under the app, and `unmount` takes the app
+off the page.
 
 ## What you can add
 
@@ -89,10 +91,21 @@ group that lists the page. A path that Gram has itself (`/`, `/t`, `/w`, `/new`,
 `/new-workspace`, `/settings`, `/usage`) is refused when the app mounts, as is one added twice.
 Routes are read once, at mount.
 
-**Navigation groups.** Each group is a heading and its destinations. They are listed at the foot
-of the sidebar above History, in the phone's drawer, as icons in the compact sidebar (a
-destination without an `icon` shows its first letter), and in the command palette under the
-group's name. A destination's `to` may be one of your pages or one of Gram's.
+**Navigation groups.** Each group is an optional heading and its destinations. A group's
+`placement` is `main`, at the top of the sidebar's list under Needs you and search and above the
+workspaces and threads, or `foot` (the default), at the foot of the sidebar above History. They
+are listed the same way in the phone's drawer, as icons in the compact sidebar (a destination
+without an `icon` shows its first letter; `main` groups above the workspaces' tiles), and in the
+command palette under the group's name. A destination's `to` may be one of your pages or one of
+Gram's, and it is marked while the window is at it or under it. A destination's `count` (above 0)
+is drawn at the row's end, and as a dot on its compact tile.
+
+**Gram's threads.** `threads: "hidden"` leaves the workspaces and threads out of the sidebar, the
+drawer and the compact sidebar, for an app whose own places lead. Needs you, search and the
+palette still reach every thread, and a thread still opens from its address.
+
+An address under the app with no page shows "Nothing here" with the path and a way home, in the
+shell.
 
 **A switcher.** `workspaceSwitcher` is a component of yours, for whatever your app switches
 between: organisations, or workspaces that live on other Gram servers. It is drawn at the head of

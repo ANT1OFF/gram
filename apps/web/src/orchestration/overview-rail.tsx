@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { CARD_SURFACE } from "@/reviews/pr-display";
 import { OVERVIEW_STOP, overviewStops } from "@/shell/focus-regions";
 import { EmbedRailNavigation, EmbedSwitcher } from "@/embed/slots";
+import { navigationAt, useEmbedShell, useThreadsListed } from "@/embed/store";
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useSwitchWorkspace } from "@/shell/workspace-switcher";
@@ -89,6 +90,9 @@ export function OverviewRail() {
   const hideHint = useShortcutHint("sidebar.toggle");
   // Under macOS's window buttons the title bar's row is theirs; the toggle leads the column below.
   const underLights = useWindowLights((s) => s.inset > 0);
+  // An app in front of Gram may put its places above the workspaces, or leave the workspaces out.
+  const threadsListed = useThreadsListed();
+  const mainPlaces = useEmbedShell((s) => navigationAt(s.navigation, "main").length > 0);
   const hide = (
     <Hint
       label={withHint("Hide sidebar", hideHint)}
@@ -147,10 +151,17 @@ export function OverviewRail() {
         </Hint>
         <EmbedSwitcher placement="rail" />
         <RailNeedsYou />
-        <Separator />
-        <WorkspaceTiles />
-        <Separator />
-        <SoloTile />
+        {/* The places an app in front of Gram puts first, above the workspaces. */}
+        {mainPlaces && <Separator />}
+        <EmbedRailNavigation placement="main" />
+        {threadsListed && (
+          <>
+            <Separator />
+            <WorkspaceTiles />
+            <Separator />
+            <SoloTile />
+          </>
+        )}
       </div>
       <EmbedRailNavigation />
     </aside>

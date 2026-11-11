@@ -546,8 +546,7 @@ export function PaletteBody({
         return {
           id,
           label: item.label,
-          hint: group.label,
-          keywords: group.label,
+          ...(group.label === undefined ? {} : { hint: group.label, keywords: group.label }),
           icon: "command" as const,
           run: go(id, () => void navigate({ to: item.to as "/" })),
         };

@@ -28,7 +28,7 @@ import type {
   ShellRoute,
   UseShellLocation,
 } from "./contract";
-import { routeProblem, shellFor, useEmbedShell } from "./store";
+import { EMPTY_SHELL, routeProblem, shellFor, useEmbedShell } from "./store";
 import { bootTheme } from "./theme-boot";
 
 /** An added page, in the conversation's place: it scrolls on its own, as Usage does. */
@@ -98,6 +98,7 @@ export const mountGram: MountGram = async (options) => {
     useEmbedShell.setState({
       navigation: shell.navigation ?? [],
       workspaceSwitcher: shell.workspaceSwitcher,
+      threads: shell.threads ?? "shown",
       titles: Object.fromEntries(
         (shell.routes ?? []).flatMap((route) =>
           route.title === undefined ? [] : [[route.path, route.title]],
@@ -121,16 +122,18 @@ export const mountGram: MountGram = async (options) => {
       shell: hosted ? "on" : "off",
       update: (next) => {
         if (!hosted) return;
+        // Only what `next` names: a host that updates its counts keeps its switcher.
         useEmbedShell.setState({
-          navigation: next.navigation ?? [],
-          workspaceSwitcher: next.workspaceSwitcher,
+          ...("navigation" in next ? { navigation: next.navigation ?? [] } : {}),
+          ...("workspaceSwitcher" in next ? { workspaceSwitcher: next.workspaceSwitcher } : {}),
+          ...("threads" in next ? { threads: next.threads ?? "shown" } : {}),
         });
       },
       navigate: (to) => router.navigate({ to: to as "/" }),
       unmount: () => {
         stopKeyboard();
         root.unmount();
-        useEmbedShell.setState({ navigation: [], workspaceSwitcher: undefined, titles: {} });
+        useEmbedShell.setState(EMPTY_SHELL);
       },
     };
     return handle;

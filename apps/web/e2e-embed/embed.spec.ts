@@ -112,10 +112,15 @@ test("the switcher is the embedding app's, in the sidebar and then in the title 
   expect(errors).toEqual([]);
 });
 
+type Update = { embed: { update: (next: object) => void } };
+
 test("the navigation and the switcher can be replaced after mounting", async ({ page }) => {
   await mounted(page);
+  const switcher = page.locator('[data-testid="embed-switcher"][data-placement="sidebar"]');
+  await expect(switcher).toBeVisible();
+  // What `update` names is replaced; the switcher, not named, stays.
   await page.evaluate(() => {
-    (window as unknown as { embed: { update: (next: object) => void } }).embed.update({
+    (window as unknown as Update).embed.update({
       navigation: [
         {
           id: "build",
@@ -128,9 +133,100 @@ test("the navigation and the switcher can be replaced after mounting", async ({ 
   const navigation = page.getByTestId("embed-navigation");
   await expect(navigation.getByRole("heading", { name: "Build" })).toBeVisible();
   await expect(navigation.getByRole("heading", { name: "Govern" })).toHaveCount(0);
-  await expect(page.getByTestId("embed-switcher")).toHaveCount(0);
+  await expect(page.getByTestId("embed-navigation-main")).toHaveCount(0);
+  await expect(switcher).toBeVisible();
   await navigation.getByRole("link", { name: "Agents" }).click();
   await expect(page.getByTestId("fixture-agent")).toHaveText("Agent a-1");
+
+  // Named as undefined, it is taken away.
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ workspaceSwitcher: undefined });
+  });
+  await expect(page.getByTestId("embed-switcher")).toHaveCount(0);
+  await expect(navigation.getByRole("heading", { name: "Build" })).toBeVisible();
+});
+
+test("a group can lead the sidebar, above the threads, with counts", async ({ page }) => {
+  const errors = await mounted(page);
+  const main = page.getByTestId("embed-navigation-main");
+  await expect(main.getByRole("heading", { name: "Build" })).toBeVisible();
+  const runs = main.getByRole("link", { name: /Runs/ });
+  await expect(runs.getByTestId("embed-navigation-count")).toHaveText("3");
+  // Above the workspaces and threads, below Needs you and search.
+  const top = async (testId: string) =>
+    (await page.getByTestId(testId).first().boundingBox())?.y ?? Number.NaN;
+  expect(await top("embed-navigation-main")).toBeGreaterThan(await top("overview-search"));
+  expect(await top("embed-navigation-main")).toBeLessThan(await top("overview-section-solo"));
+
+  // A count changes through `update`; a group with no heading lists its rows alone.
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      navigation: [
+        {
+          id: "build",
+          placement: "main",
+          items: [{ id: "runs", label: "Runs", to: "/govern/agents/a-1", count: 0 }],
+        },
+      ],
+    });
+  });
+  await expect(main.getByRole("heading")).toHaveCount(0);
+  await expect(main.getByTestId("embed-navigation-count")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      navigation: [
+        {
+          id: "build",
+          label: "Build",
+          placement: "main",
+          items: [{ id: "runs", label: "Runs", to: "/govern/agents/a-1", count: 12 }],
+        },
+      ],
+    });
+  });
+  await expect(main.getByTestId("embed-navigation-count")).toHaveText("12");
+
+  // Compact: the group's tiles above the workspaces', a dot on the one with a count.
+  await page.getByTestId("overview-compact").click();
+  const railMain = page.getByTestId("embed-rail-navigation-main");
+  const tile = railMain.getByRole("link", { name: "Build: Runs, 12" });
+  await expect(tile.getByTestId("embed-navigation-dot")).toBeVisible();
+  expect(await top("embed-rail-navigation-main")).toBeLessThan(await top("overview-tile"));
+  expect(errors).toEqual([]);
+});
+
+test("the sidebar can leave Gram's workspaces and threads out", async ({ page }) => {
+  const errors = await mounted(page);
+  await expect(page.getByTestId("overview-section-solo")).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ threads: "hidden" });
+  });
+  await expect(page.getByTestId("overview-section-solo")).toHaveCount(0);
+  await expect(page.getByTestId("overview-section-doneToday")).toHaveCount(0);
+  // The host's places and Gram's search stay.
+  await expect(page.getByTestId("embed-navigation-main")).toBeVisible();
+  await expect(page.getByTestId("overview-search")).toBeVisible();
+  await page.getByTestId("overview-compact").click();
+  await expect(page.getByTestId("embed-rail-navigation-main")).toBeVisible();
+  await expect(page.getByTestId("overview-tile")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ threads: "shown" });
+  });
+  await expect(page.getByTestId("overview-tile").first()).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("an address with no page says so in the shell, with the way home", async ({ page }) => {
+  const errors = await mounted(page, "/govern/nowhere");
+  const notFound = page.getByTestId("not-found");
+  await expect(notFound.getByTestId("empty-title")).toHaveText("Nothing here");
+  await expect(notFound).toContainText("/govern/nowhere");
+  // The shell is still around it.
+  await expect(page.getByTestId("overview-sidebar")).toBeVisible();
+  await page.getByTestId("not-found-home").click();
+  await expect(page.getByTestId("not-found")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/$/);
+  expect(errors).toEqual([]);
 });
 
 test("the app runs under a path of the embedding app's choosing", async ({ page }) => {

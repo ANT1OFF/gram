@@ -176,6 +176,14 @@ const GOVERN = {
   ],
 };
 
+// The places this app works in, at the top of the sidebar: a count of what waits on one.
+const BUILD = {
+  id: "build",
+  label: "Build",
+  placement: "main" as const,
+  items: [{ id: "runs", label: "Runs", to: "/govern/agents/a-1", count: 3 }],
+};
+
 mountGram({
   element,
   server: "mock",
@@ -186,7 +194,7 @@ mountGram({
       { path: "/govern/limits", title: "Limits", component: Limits },
       { path: "/govern/agents/$agentId", component: Agent },
     ],
-    navigation: [GOVERN],
+    navigation: [BUILD, GOVERN],
     workspaceSwitcher: Switcher,
   },
 })
