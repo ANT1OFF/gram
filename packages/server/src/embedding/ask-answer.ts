@@ -60,15 +60,22 @@ export const answerAsk = (
     if (request.method !== "POST") return refusal(405, "MethodNotAllowed", "method not allowed");
     if (actor.role !== "member")
       return refusal(403, "Forbidden", "read-only: a viewer can't change anything here");
-    if (
-      Number(request.headers["content-length"] ?? ASK_ANSWER_MAX_BYTES + 1) > ASK_ANSWER_MAX_BYTES
-    )
+    const length = request.headers["content-length"];
+    if (length !== undefined && Number(length) > ASK_ANSWER_MAX_BYTES)
       return refusal(413, "TooLarge", "the answer is too large");
-    const body = yield* request.text.pipe(
+    const bytes = yield* request.arrayBuffer.pipe(
       Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(ASK_ANSWER_MAX_BYTES)),
       Effect.catch(() => Effect.succeed(undefined)),
     );
-    if (body === undefined) return refusal(400, "BadRequest", "the answer could not be read");
+    if (bytes === undefined) return refusal(400, "BadRequest", "the answer could not be read");
+    // Kept exactly as sent, as the proxy hashed it: no BOM dropped, and no bytes that aren't
+    // UTF-8 replaced (those are refused, since the proof could never match them).
+    let body: string;
+    try {
+      body = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+    } catch {
+      return refusal(400, "BadRequest", "the answer is not UTF-8");
+    }
     const parsed = decodeBody(body);
     if (parsed._tag === "None")
       return refusal(400, "BadRequest", "expected {threadId, requestId, answer}");

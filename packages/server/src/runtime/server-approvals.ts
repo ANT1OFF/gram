@@ -266,6 +266,32 @@ export const makeServerApprovals = ({
       );
     });
 
+  /**
+   * Tells the sink who is answering `requestId` and how, for its `ask.resolved`. Called under the
+   * thread's lock, once the card is known to be still waiting and this answer is the one taken,
+   * so the note (and the signed request it may carry) is always the delivered answer's. Taken back
+   * when the delivery fails.
+   */
+  const noteAnswer = (requestId: RequestId, answer: RequestAnswer) =>
+    Effect.gen(function* () {
+      if (eventSink === undefined) return;
+      const answeredBy = yield* ActingPerson;
+      const proof = yield* AnswerProofRef;
+      const decision =
+        answer.kind === "question"
+          ? undefined
+          : answer.decision === "allow" || answer.decision === "approve"
+            ? ("approve" as const)
+            : ("reject" as const);
+      yield* eventSink.noteAnswer(requestId, {
+        ...(decision === undefined ? {} : { decision }),
+        ...(answeredBy === undefined ? {} : { answeredBy }),
+        ...(proof === undefined ? {} : { proof }),
+      });
+    });
+  const unnoteAnswer = (requestId: RequestId) =>
+    eventSink === undefined ? Effect.void : eventSink.noteAnswer(requestId, undefined);
+
   /** Answers a card the server raised with `requestApproval`. */
   const respondToServer = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
     Effect.gen(function* () {
@@ -287,8 +313,10 @@ export const makeServerApprovals = ({
             }
             serverRequests.delete(requestId);
             const answeredBy = yield* ActingPerson;
+            yield* noteAnswer(requestId, answer);
             yield* Effect.gen(function* () {
               if (!(yield* store.removeRequest(threadId, requestId))) {
+                yield* unnoteAnswer(requestId);
                 return yield* new RequestNotFound({ threadId, requestId });
               }
               serverApprovalOrigins.delete(requestId);
@@ -385,25 +413,31 @@ export const makeServerApprovals = ({
     // The hook is asked before the lock is taken, so a slow endpoint holds up nothing else of
     // the thread; whether the card still waits is read under the lock, as it always was.
     confirmedByHook(threadId, requestId, given).pipe(
-      Effect.flatMap((answer) => deliverToSession(threadId, requestId, answer)),
+      Effect.flatMap((answer) => deliverToSession(threadId, requestId, answer, given)),
     );
 
-  const deliverToSession = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
+  /** `given` is the person's own answer, which the sink reports; `answer` is what the agent gets. */
+  const deliverToSession = (
+    threadId: ThreadId,
+    requestId: RequestId,
+    answer: RequestAnswer,
+    given: RequestAnswer = answer,
+  ) =>
     withSession(threadId, (rt, session) =>
       Effect.gen(function* () {
         const waiting = yield* store.listRequests(threadId);
         if (!waiting.some((request) => request.id === requestId)) {
           return yield* new RequestNotFound({ threadId, requestId });
         }
+        yield* noteAnswer(requestId, given);
         // Removed only once the agent has the answer: one that didn't arrive leaves the card up,
         // to be answered again, rather than a thread that reads running while the agent waits.
-        yield* session
-          .respond(requestId, answer)
-          .pipe(
-            Effect.mapError(
-              (error) => new InvalidState({ message: error.message, threadId, status: rt.status }),
-            ),
-          );
+        yield* session.respond(requestId, answer).pipe(
+          Effect.mapError(
+            (error) => new InvalidState({ message: error.message, threadId, status: rt.status }),
+          ),
+          Effect.tapError(() => unnoteAnswer(requestId)),
+        );
         hooked.asked.delete(requestId);
         // The adapter may have reported it resolved already, which published the event.
         if (yield* store.removeRequest(threadId, requestId)) {
@@ -419,29 +453,7 @@ export const makeServerApprovals = ({
       ? respondToServer(threadId, requestId, answer)
       : respondToSession(threadId, requestId, answer);
 
-  const respond: ThreadRuntimesShape["respond"] = (threadId, requestId, answer) => {
-    if (eventSink === undefined) return deliver(threadId, requestId, answer);
-    // The sink's `ask.resolved` says who answered and how. It is written from the event the
-    // delivery publishes, so the answer is noted first and taken back if it wasn't delivered.
-    return Effect.gen(function* () {
-      const answeredBy = yield* ActingPerson;
-      const proof = yield* AnswerProofRef;
-      const decision =
-        answer.kind === "question"
-          ? undefined
-          : answer.decision === "allow" || answer.decision === "approve"
-            ? ("approve" as const)
-            : ("reject" as const);
-      yield* eventSink.noteAnswer(requestId, {
-        ...(decision === undefined ? {} : { decision }),
-        ...(answeredBy === undefined ? {} : { answeredBy }),
-        ...(proof === undefined ? {} : { proof }),
-      });
-      return yield* deliver(threadId, requestId, answer).pipe(
-        Effect.onError(() => eventSink.noteAnswer(requestId, undefined)),
-      );
-    });
-  };
+  const respond: ThreadRuntimesShape["respond"] = deliver;
 
   return { clearPendingRequests, requestApproval, respond };
 };
