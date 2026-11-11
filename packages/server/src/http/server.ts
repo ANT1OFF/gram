@@ -7,7 +7,9 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { GramRpcs } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Schedule from "effect/Schedule";
 import * as Option from "effect/Option";
 import * as ByteSize from "effect/ByteSize";
@@ -85,6 +87,7 @@ import { ActorGuard, FrontedSignIn } from "../rpc/actor-guard.ts";
 import { markActor, unmarkActor } from "./actor.ts";
 import {
   IDENTITY_HEADER,
+  SERVICE_ROLE,
   SOCKET_LIFETIME_MS,
   verifyIdentity,
   type Actor,
@@ -136,11 +139,14 @@ import {
   HOST_PATHS,
   hostRoute,
   MACHINE_MANAGEMENT_PATHS,
+  MACHINES_LIST_PATH,
+  MACHINES_PROVISION_PATH,
+  MACHINES_REMOVE_PATH,
   provisionedRoute,
   machineManagement,
   placedOnMachine,
 } from "./machine-routes.ts";
-import { releaseOfConfig, RemoteHosts } from "../host/remote-hosts.ts";
+import { releaseOfConfig, RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { authTarget } from "./auth-target.ts";
 import {
   authorize,
@@ -158,6 +164,20 @@ import {
 
 /** How often the provisioned-host listener and its hosts are held to the hosted-features switch. */
 const PROVISIONED_SWITCH_POLL = Duration.seconds(3);
+
+/**
+ * What a fronting platform's own statement (`role` `service`) reaches, and all it reaches: the
+ * hosts it provisions and stops, and a workspace's way in and out. A person's statement reaches none of
+ * them. Before naming another path here, see that its handler needs no person: nothing behind
+ * these has a role to check or a window to answer.
+ */
+export const SERVICE_PATHS: ReadonlySet<string> = new Set([
+  MACHINES_PROVISION_PATH,
+  MACHINES_REMOVE_PATH,
+  MACHINES_LIST_PATH,
+  ...HOST_STOP_PATHS,
+  ...WORKSPACE_TRANSFER_PATHS,
+]);
 
 /** The per-launch secret carried by the boot URL. */
 export class LaunchToken extends Context.Service<LaunchToken, { readonly token: string }>()(
@@ -229,6 +249,21 @@ export const AuthMiddleware = HttpRouter.middleware(
       "x-content-type-options": "nosniff",
       "referrer-policy": "no-referrer",
     };
+    const manageMachines = (hosts: RemoteHostsShape, path: string, provisionedOnly = false) =>
+      Effect.flatMap(provisionedOn, (on) =>
+        machineManagement(
+          hosts,
+          control.current(),
+          path,
+          releaseOfConfig(config),
+          undefined,
+          tokenCapture,
+          control.dialAccess(),
+          workerHosts === undefined ? undefined : (id) => workerHosts.machine(id).folders,
+          on,
+          provisionedOnly,
+        ),
+      );
     return (httpEffect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
@@ -305,13 +340,82 @@ export const AuthMiddleware = HttpRouter.middleware(
               HttpServerResponse.text("unauthorized: signed identity required", { status: 401 }),
             );
           }
+          // The platform in front, for itself: it registers and removes the hosts it starts and
+          // moves workspaces in and out, and reaches nothing a person does. Each call is on
+          // record with how it was answered.
+          if ("service" in stated) {
+            const servicePath = target.path;
+            // Only the paths named for it, only the one this statement was made for, and from
+            // the public origin as the rest of a fronted server is.
+            if (
+              !SERVICE_PATHS.has(servicePath) ||
+              stated.service.path !== servicePath ||
+              origin !== identity.origin
+            ) {
+              yield* Effect.logWarning("refused a service statement where it has no business").pipe(
+                Effect.annotateLogs({ caller: stated.service.id, path: servicePath }),
+              );
+              return secureResponse(
+                HttpServerResponse.text("forbidden: not for a service", { status: 403 }),
+              );
+            }
+            const { id: serviceId, name: serviceName } = stated.service;
+            const asService = unmarkLocalApp(
+              request.modify({ headers: Headers.remove(request.headers, IDENTITY_HEADER) }),
+            );
+            const answered = yield* (
+              HOST_STOP_PATHS.has(servicePath)
+                ? stopDeps === undefined
+                  ? Effect.succeed(
+                      HttpServerResponse.text("forbidden: no machines here", { status: 403 }),
+                    )
+                  : hostStopRoute(stopDeps, servicePath).pipe(
+                      Effect.provideService(HttpServerRequest.HttpServerRequest, asService),
+                    )
+                : MACHINE_MANAGEMENT_PATHS.has(servicePath)
+                  ? remoteHosts === undefined
+                    ? Effect.succeed(
+                        HttpServerResponse.text("forbidden: no machines here", { status: 403 }),
+                      )
+                    : manageMachines(remoteHosts, servicePath, true).pipe(
+                        Effect.provideService(HttpServerRequest.HttpServerRequest, asService),
+                      )
+                  : asCaller(httpEffect, asService)
+            ).pipe(
+              Effect.onExit((exit) =>
+                store === undefined
+                  ? Effect.void
+                  : store
+                      .appendActorEvents([
+                        {
+                          at: Date.now(),
+                          actor: { id: serviceId, name: serviceName, role: SERVICE_ROLE },
+                          action: servicePath,
+                          data: Exit.isSuccess(exit)
+                            ? { status: exit.value.status }
+                            : Cause.hasInterruptsOnly(exit.cause)
+                              ? { interrupted: true }
+                              : { failed: true },
+                        },
+                      ])
+                      .pipe(
+                        // The call has happened either way: its answer isn't lost to the record.
+                        Effect.catchCause((cause) =>
+                          Effect.logError("a service call went unrecorded", cause),
+                        ),
+                      ),
+              ),
+            );
+            return secureResponse(answered);
+          }
           // Phone access, joining machines and moving a workspace are for this machine's own
-          // sign-in, which a fronted server doesn't have. The agents' and hosts' routes take a thread's token or a host's
-          // proof, never a person: a person let through to them would act with neither a role
-          // nor a record.
+          // sign-in or the platform's, never a person signed in through the proxy. The agents'
+          // and hosts' routes take a thread's token or a host's proof, never a person: a person
+          // let through to them would act with neither a role nor a record.
           if (
             REMOTE_MANAGEMENT_PATHS.has(target.path) ||
             MACHINE_MANAGEMENT_PATHS.has(target.path) ||
+            HOST_STOP_PATHS.has(target.path) ||
             WORKSPACE_TRANSFER_PATHS.has(target.path) ||
             HOST_PATHS.has(target.path) ||
             target.path === MCP_PATH ||
@@ -465,19 +569,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                     : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
                       ? isRemote || remoteHosts === undefined
                         ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
-                        : yield* machineManagement(
-                            remoteHosts,
-                            control.current(),
-                            path,
-                            releaseOfConfig(config),
-                            undefined,
-                            tokenCapture,
-                            control.dialAccess(),
-                            workerHosts === undefined
-                              ? undefined
-                              : (id) => workerHosts.machine(id).folders,
-                            yield* provisionedOn,
-                          )
+                        : yield* manageMachines(remoteHosts, path)
                       : isRemote && path === "/ws"
                         ? yield* closedOnRevoke(
                             remote,
