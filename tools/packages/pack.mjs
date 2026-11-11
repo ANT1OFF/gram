@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Packs the published workspace packages as registry tarballs, from an existing build
-// (`bun run typecheck` emits each package's `dist`). Publishes nothing.
+// (`bun run typecheck` emits each package's `dist`, and `build:embed` the web app's). Publishes
+// nothing.
 //
 //   node tools/packages/pack.mjs --canary --scope @owner [--out out/packages]
 //   node tools/packages/pack.mjs --release v1.2.3 --scope @owner
@@ -25,6 +26,9 @@ import { parseArgs } from "node:util";
 import {
   BINS,
   canaryVersion,
+  exportedFiles,
+  PREBUILT,
+  prebuiltManifest,
   EXTRA_FILES,
   publishManifest,
   PUBLISHED,
@@ -83,6 +87,26 @@ const manifests = Object.fromEntries(
 );
 const published = Object.values(manifests).map((manifest) => manifest.name);
 const packed = [];
+/** One staged folder as a tarball: no scripts run, and no registry or login is read. */
+const pack = (folder, workspaceName, name, stage) => {
+  const [{ filename }] = JSON.parse(
+    execFileSync("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", out], {
+      cwd: stage,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "inherit"],
+    }),
+  );
+  return {
+    folder,
+    workspaceName,
+    name,
+    version,
+    tarball: filename,
+    sha256: createHash("sha256")
+      .update(readFileSync(join(out, filename)))
+      .digest("hex"),
+  };
+};
 for (const folder of PUBLISHED) {
   const source = join(root, "packages", folder);
   const stage = join(out, "stage", folder);
@@ -151,24 +175,49 @@ for (const folder of PUBLISHED) {
   );
   cpSync(join(root, "LICENSE"), join(stage, "LICENSE"));
 
-  // The tarball only: no scripts run, and no registry or login is read.
-  const [{ filename }] = JSON.parse(
-    execFileSync("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", out], {
-      cwd: stage,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "inherit"],
+  packed.push(pack(folder, manifests[folder].name, manifest.name, stage));
+}
+
+const built = { typescript: workspace.workspaces.catalog.typescript, node: process.versions.node };
+for (const { folder, source, directory, build } of PREBUILT) {
+  const from = join(root, directory);
+  if (!existsSync(join(from, "package.json"))) {
+    throw new Error(`${folder}: ${directory} isn't built. Run \`${build}\` first.`);
+  }
+  const own = json(`${directory}/package.json`);
+  // The build stamps the workspace's version: another one means it is left from an older tree.
+  if (own.version !== workspace.version) {
+    throw new Error(`${folder}: ${directory} was built as ${own.version}. Run \`${build}\` again.`);
+  }
+  const stage = join(out, "stage", folder);
+  cpSync(from, stage, { recursive: true });
+  const manifest = prebuiltManifest({
+    manifest: own,
+    source,
+    version,
+    scope: values.scope,
+    repository,
+    commit,
+    built,
+  });
+  for (const file of exportedFiles(manifest.exports)) {
+    if (!existsSync(join(stage, file))) throw new Error(`${folder}: export ${file} is missing`);
+  }
+  writeFileSync(join(stage, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  writeFileSync(
+    join(stage, "README.md"),
+    readme({
+      name: manifest.name,
+      workspaceName: own.name,
+      folder,
+      source,
+      repository,
+      commit,
+      version,
     }),
   );
-  packed.push({
-    folder,
-    workspaceName: manifests[folder].name,
-    name: manifest.name,
-    version,
-    tarball: filename,
-    sha256: createHash("sha256")
-      .update(readFileSync(join(out, filename)))
-      .digest("hex"),
-  });
+  cpSync(join(root, "LICENSE"), join(stage, "LICENSE"));
+  packed.push(pack(folder, own.name, manifest.name, stage));
 }
 
 writeFileSync(

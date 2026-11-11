@@ -35,6 +35,10 @@ the token opens no other path. These calls are let past the loopback `Host` chec
 reaches the server by its address inside the deployment: keep the server's port off any network a
 browser or an untrusted workload can reach. Bodies are JSON objects of at most 256 KB.
 
+With [sign-in through a proxy](DOCKER.md#sign-in-through-a-proxy) on, these calls still take the
+token alone and need no signed statement. A request that carries a statement is a person's, and a
+person has no path under `/embed/v1/`: the proxy doesn't route them.
+
 | Status | Meaning                                                  |
 | ------ | -------------------------------------------------------- |
 | `200`  | Done; the body says what was done                        |

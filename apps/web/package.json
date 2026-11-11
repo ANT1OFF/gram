@@ -8,8 +8,10 @@
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite",
     "build": "vite build",
+    "build:embed": "node scripts/build-embed.mjs",
     "preview": "vite preview",
     "e2e": "playwright test",
+    "e2e:embed": "playwright test --config e2e-embed/playwright.config.ts",
     "pr:shots": "node scripts/pr-shots.mjs",
     "e2e:real": "playwright test --config e2e-real/playwright.config.ts"
   },

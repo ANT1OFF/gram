@@ -302,6 +302,15 @@ export const AuthMiddleware = HttpRouter.middleware(
           (yield* fronted.active) &&
           // A person's request never goes there, so one that names a person isn't let by.
           !(path === MCP_PATH && !isRemote && request.headers[IDENTITY_HEADER] === undefined) &&
+          // Nor does the deployment's own service, which proves itself with its bearer token
+          // below. With a statement on it, the request is a person's, and reaches no such path.
+          !(
+            embedInbound !== undefined &&
+            !isRemote &&
+            path !== undefined &&
+            path.startsWith(EMBED_PREFIX) &&
+            request.headers[IDENTITY_HEADER] === undefined
+          ) &&
           !(
             isRemote &&
             path !== undefined &&

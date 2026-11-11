@@ -321,7 +321,7 @@ export const threadHandlers = Effect.gen(function* () {
           ? create(input)
           : withDraftAttachments(attachmentsDir(config.dataDir), draftId, id, input, create);
       }),
-    "thread.createFromProfile": ({ profile }) => profiles.start(profile),
+    "thread.createFromProfile": ({ profile, threadId }) => profiles.start(profile, threadId),
     "thread.send": ({ threadId, input, clientMessageId }) =>
       store.messageReceipt(
         threadId,

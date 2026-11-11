@@ -57,7 +57,7 @@ import {
   privateKeyFrom,
   signedConnectHeaders,
 } from "./machine-keys.ts";
-import { HOST_SERVES, type HostService, serveHost } from "./protocol.ts";
+import { HOST_FEATURES, HOST_SERVES, type HostService, serveHost } from "./protocol.ts";
 import { appToolsAt } from "./remote-app-tools.ts";
 import { reposOn } from "./repos.ts";
 import { sessionsOnHost } from "./sessions.ts";
@@ -178,6 +178,7 @@ const machineService = (
         protocol: HOST_PROTOCOL_VERSION,
         hostId,
         capabilities: HOST_SERVES,
+        features: HOST_FEATURES,
         platform: process.platform,
         pid: process.pid,
       },

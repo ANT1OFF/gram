@@ -27,6 +27,7 @@ import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 import { CARD_SURFACE } from "@/reviews/pr-display";
 import { OVERVIEW_STOP, overviewStops } from "@/shell/focus-regions";
+import { EmbedRailNavigation, EmbedSwitcher } from "@/embed/slots";
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useSwitchWorkspace } from "@/shell/workspace-switcher";
@@ -144,12 +145,14 @@ export function OverviewRail() {
         >
           <UnfoldHorizontal />
         </Hint>
+        <EmbedSwitcher placement="rail" />
         <RailNeedsYou />
         <Separator />
         <WorkspaceTiles />
         <Separator />
         <SoloTile />
       </div>
+      <EmbedRailNavigation />
     </aside>
   );
 }

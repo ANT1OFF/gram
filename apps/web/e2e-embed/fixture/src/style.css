@@ -1,0 +1,6 @@
+/* The fixture app's own styles: Tailwind's utilities for its own sources only, named by Gram's
+   theme. No base styles of its own: the page's are Gram's, from the package's stylesheet. */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source("./");
+@import "gram-web/theme.css";
