@@ -628,6 +628,69 @@ export const SessionSwitch = Schema.Struct({
 });
 export type SessionSwitch = typeof SessionSwitch.Type;
 
+/**
+ * How much a thread started from a profile does outwardly without asking: the levels a workspace's
+ * autonomy has (`Autonomy` in `workspaces.ts`, which a test holds this to).
+ */
+export const ProfileAutonomy = Schema.Literals(["supervised", "publish", "full"]);
+export type ProfileAutonomy = typeof ProfileAutonomy.Type;
+
+/** The most a profile's charter holds, in characters. */
+export const PROFILE_CHARTER_MAX = 64_000;
+
+/**
+ * The one MCP server a thread started from a profile is given beside Gram's own, by address.
+ * Never a credential: whoever runs the session authenticates it to the server some other way.
+ */
+export const ProfileConnectorServer = Schema.Struct({
+  /** A server name both agents take; never Gram's own (`profileProblems`). */
+  name: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,64}$/)),
+  /** An http or https address with no user, query or fragment (`connectorEntryProblem`). */
+  url: Schema.String.check(Schema.isMaxLength(300)),
+});
+export type ProfileConnectorServer = typeof ProfileConnectorServer.Type;
+
+/**
+ * What a thread started from a profile (`thread.createFromProfile`) keeps of it: what every
+ * session it opens is given again, and who supplied it. The files the profile laid into the
+ * thread's folder are there and not here.
+ */
+export const ThreadProfileBinding = Schema.Struct({
+  /** The profile's own name, as its supplier calls it. */
+  name: Schema.optionalKey(Schema.String),
+  /**
+   * What the profile was made from, in its supplier's words: opaque here, kept so the supplier can
+   * tell which of its records a thread came from.
+   */
+  source: Schema.optionalKey(
+    Schema.Struct({ id: Schema.String, version: Schema.optionalKey(Schema.String) }),
+  ),
+  /** Standing instructions, added to the agent's system prompt at every session open. */
+  charter: Schema.String.check(Schema.isMaxLength(PROFILE_CHARTER_MAX)),
+  /** Absent is `publish`; read it through `profileAutonomyOf`. */
+  autonomy: Schema.optionalKey(ProfileAutonomy),
+  /**
+   * The thread's one MCP server beside Gram's own. Absent, its sessions get no other server at
+   * all, whatever the agent on that machine is configured with.
+   */
+  server: Schema.optionalKey(ProfileConnectorServer),
+  /**
+   * The models the profile names to fall back to, in order. Recorded as supplied: nothing switches
+   * a thread's model by them yet.
+   */
+  fallbacks: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({ model: Schema.String, effort: Schema.optionalKey(ReasoningVariant) }),
+    ),
+  ),
+});
+export type ThreadProfileBinding = typeof ThreadProfileBinding.Type;
+
+/** The level a thread's profile works at: `publish` when it names none. */
+export const profileAutonomyOf = (
+  binding: Pick<ThreadProfileBinding, "autonomy">,
+): ProfileAutonomy => binding.autonomy ?? "publish";
+
 export const Thread = Schema.Struct({
   id: ThreadId,
   /**
@@ -749,6 +812,11 @@ export const Thread = Schema.Struct({
   ),
   /** What the thread is for the server beyond a plain conversation; absent for a plain thread. */
   role: Schema.optionalKey(ThreadRole),
+  /**
+   * The profile the thread was started from (`thread.createFromProfile`), which its sessions open
+   * by; absent for every other thread. Set when the thread is made and never changed after.
+   */
+  profile: Schema.optionalKey(ThreadProfileBinding),
   /**
    * The workspace the thread belongs to: the one an orchestrator runs, or the one a worker was
    * spawned in or joined (`thread.joinWorkspace`, `adopt_thread`). A worker keeps it when its

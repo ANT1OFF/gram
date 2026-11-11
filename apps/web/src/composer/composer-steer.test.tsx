@@ -23,10 +23,13 @@ const setup = ({
   steers = true,
   interrupts = true,
   status = "running",
+  missing = false,
 }: {
   steers?: boolean;
   interrupts?: boolean;
   status?: "running" | "needsApproval" | "needsInput";
+  /** Its folder reads missing (`GitState.missing`). */
+  missing?: boolean;
 } = {}) => {
   // Invented provider/CLI discovery and an explicitly accepted synthetic session, never host auth.
   sessionStorage.setItem(MOCK_SESSION_EXPIRED_KEY, "0");
@@ -36,6 +39,7 @@ const setup = ({
         status,
         capabilities: { steer: steers, steerInterrupt: steers && interrupts },
         thread: { id: THREAD, checkout: { path: "/work/repo" } },
+        ...(missing ? { git: { repo: true, worktree: true, missing: true } } : {}),
       },
     } as never,
   });
@@ -352,6 +356,23 @@ describe("Composer steer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Queue" }), { metaKey: true });
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     expect(steer).not.toHaveBeenCalled();
+  });
+
+  it("sends rather than steers into a turn whose folder is gone, keeping the draft with why", async () => {
+    useServerSettings.setState({ settings: DEFAULT_SETTINGS });
+    const { api, steer, textarea } = setup({ missing: true });
+    // As the server refuses any send to a thread whose folder is gone, mid-turn too.
+    const send = vi
+      .spyOn(api, "send")
+      .mockRejectedValue(new Error("This thread's folder no longer exists: /work/repo"));
+    expect(screen.queryByRole("button", { name: "Steer" })).toBeNull();
+    fireEvent.change(textarea, { target: { value: "carry on" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    await waitFor(() => expect(send).toHaveBeenCalledWith(THREAD, { text: "carry on" }));
+    expect(steer).not.toHaveBeenCalled();
+    await waitFor(() => expect(textarea.value).toBe("carry on"));
+    expect(screen.getByText(/Couldn't send: This thread's folder no longer exists/)).toBeTruthy();
+    expect(screen.queryByText("Steering…")).toBeNull();
   });
 
   it("keeps Stop in the right-click menu while a draft has the button", async () => {

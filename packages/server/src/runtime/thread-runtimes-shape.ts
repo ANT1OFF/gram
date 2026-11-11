@@ -73,6 +73,11 @@ export interface CreateThreadInput {
   readonly workspaceId?: NonNullable<Thread["workspaceId"]>;
   readonly spawnedBy?: NonNullable<Thread["spawnedBy"]>;
   readonly additionalDirectories?: ReadonlyArray<string>;
+  /**
+   * What the thread keeps of the profile it is started from (`Thread.profile`). Server-only: only
+   * `thread.createFromProfile` gives one.
+   */
+  readonly profile?: NonNullable<Thread["profile"]>;
   /** Worktrees in other repos the thread holds beside `checkout` (`Thread.extraCheckouts`). */
   readonly extraCheckouts?: ReadonlyArray<Checkout>;
   /**

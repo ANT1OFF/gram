@@ -376,6 +376,11 @@ export const HostSessionOpen = Schema.Struct({
   pinCwd: Schema.optionalKey(Schema.Boolean),
   mcpAllowlist: Schema.optionalKey(Schema.Array(Schema.String)),
   mcpDenylist: Schema.optionalKey(Schema.Array(Schema.String)),
+  /**
+   * One more MCP server for the session, by address. A host built before it was sent drops it,
+   * and the session then opens without that server, never with more than it was meant to have.
+   */
+  mcpServer: Schema.optionalKey(Schema.Struct({ name: Schema.String, url: Schema.String })),
   mcpNoneWithoutToolSearch: Schema.optionalKey(Schema.Boolean),
   noBlockingAsk: Schema.optionalKey(Schema.Boolean),
   peerMessaging: Schema.optionalKey(Schema.Boolean),

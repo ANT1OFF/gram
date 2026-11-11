@@ -523,6 +523,7 @@ export const makeSessionLifecycle = ({
             ...(policy.pinCwd === true ? { pinCwd: true } : {}),
             ...(policy.mcpAllowlist === undefined ? {} : { mcpAllowlist: policy.mcpAllowlist }),
             ...(policy.mcpDenylist === undefined ? {} : { mcpDenylist: policy.mcpDenylist }),
+            ...(policy.mcpServer === undefined ? {} : { mcpServer: policy.mcpServer }),
             ...(policy.mcpNoneWithoutToolSearch === true ? { mcpNoneWithoutToolSearch: true } : {}),
             ...(policy.noBlockingAsk === true ? { noBlockingAsk: true } : {}),
             ...(policy.peerMessaging === true ? { peerMessaging: true } : {}),

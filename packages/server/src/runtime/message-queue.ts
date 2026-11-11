@@ -472,6 +472,23 @@ export const makeMessageQueue = ({
       yield* publishMessage(rt, userMessage(input, id, turnId, createdAt), turnId);
     });
 
+  /**
+   * A thread whose folder is gone has nowhere to run: refuses with the path a client can offer to
+   * restore, and stops a session still open there. Run under the lock, before any send or steer.
+   */
+  const refuseMissingFolder = (rt: Runtime) =>
+    Effect.gen(function* () {
+      const path = (yield* store.getThread(rt.threadId)).checkout.path;
+      if (yield* checkouts.present(path)) return;
+      yield* forkStopInMissing(rt);
+      return yield* new InvalidState({
+        message: missingThreadFolder(path),
+        threadId: rt.threadId,
+        status: rt.status,
+        folderMissing: { path },
+      });
+    });
+
   /** Tells observers of an input the user typed, once `send` or `steer` has taken it. */
   const userTyped = (threadId: ThreadId, input: UserInput) =>
     Effect.gen(function* () {
@@ -510,18 +527,8 @@ export const makeMessageQueue = ({
               status: rt.status,
             });
           }
-          // A thread whose folder is gone has nowhere to run: say so, with the path a client can
-          // offer to restore, rather than start an agent that fails to spawn or fails every tool.
-          const path = (yield* store.getThread(threadId)).checkout.path;
-          if (!(yield* checkouts.present(path))) {
-            yield* forkStopInMissing(rt);
-            return yield* new InvalidState({
-              message: missingThreadFolder(path),
-              threadId,
-              status: rt.status,
-              folderMissing: { path },
-            });
-          }
+          // Rather than start an agent that fails to spawn or fails every tool.
+          yield* refuseMissingFolder(rt);
           // A monitor's notice never wakes an archived thread. Read under the lock, so an archive
           // written while the notice waited its turn stops it before any send, steer or open.
           if (noticeKey !== undefined && (yield* store.getThread(threadId)).parked) {
@@ -781,6 +788,7 @@ export const makeMessageQueue = ({
     withQueue,
     drainQueue,
     withSession,
+    refuseMissingFolder,
   };
 };
 
@@ -790,7 +798,6 @@ export type MessageQueue = ReturnType<typeof makeMessageQueue>;
 /** What the queue's `ThreadRuntimes` methods read beside the queue itself. */
 export interface QueueMethodsDeps {
   readonly store: ThreadStoreShape;
-  readonly checkouts: CheckoutServiceShape;
   readonly runtimes: ReadonlyMap<ThreadId, Runtime>;
   readonly getRuntime: GetRuntime;
   readonly drainQueue: MessageQueue["drainQueue"];
@@ -798,6 +805,7 @@ export interface QueueMethodsDeps {
   readonly userTyped: MessageQueue["userTyped"];
   readonly syncQueue: MessageQueue["syncQueue"];
   readonly withSession: MessageQueue["withSession"];
+  readonly refuseMissingFolder: MessageQueue["refuseMissingFolder"];
   readonly steerNow: MessageQueue["steerNow"];
   readonly withQueue: MessageQueue["withQueue"];
   readonly switchHold: MessageQueue["switchHold"];
@@ -808,7 +816,6 @@ export interface QueueMethodsDeps {
 /** The `ThreadRuntimes` methods that queue, edit, steer or deliver a thread's input. */
 export const makeQueueMethods = ({
   store,
-  checkouts,
   runtimes,
   getRuntime,
   drainQueue,
@@ -816,6 +823,7 @@ export const makeQueueMethods = ({
   userTyped,
   syncQueue,
   withSession,
+  refuseMissingFolder,
   steerNow,
   withQueue,
   switchHold,
@@ -913,31 +921,36 @@ export const makeQueueMethods = ({
   steer: (threadId, sent, options) =>
     withSession(threadId, (rt, session) => {
       const turn = rt.turn;
-      return turn === undefined
-        ? Effect.fail(
-            new InvalidState({ message: "nothing to steer", threadId, status: rt.status }),
-          )
-        : options?.interrupt === true && rt.capabilities?.steerInterrupt !== true
-          ? Effect.fail(
-              new InvalidState({
-                message: "this agent can't be interrupted for input; stop it and send instead",
-                threadId,
-                status: rt.status,
-              }),
-            )
-          : steerNow(rt, session, turn, authored(typedInput(sent)), options).pipe(
-              Effect.flatMap((taken) =>
-                taken
-                  ? Effect.void
-                  : Effect.fail(
-                      new InvalidState({
-                        message: "the agent couldn't take mid-turn input; send it instead",
-                        threadId,
-                        status: rt.status,
-                      }),
-                    ),
-              ),
-            );
+      // As a send is: the turn running there is being stopped, and would fail every tool it calls.
+      return refuseMissingFolder(rt).pipe(
+        Effect.andThen(() =>
+          turn === undefined
+            ? Effect.fail(
+                new InvalidState({ message: "nothing to steer", threadId, status: rt.status }),
+              )
+            : options?.interrupt === true && rt.capabilities?.steerInterrupt !== true
+              ? Effect.fail(
+                  new InvalidState({
+                    message: "this agent can't be interrupted for input; stop it and send instead",
+                    threadId,
+                    status: rt.status,
+                  }),
+                )
+              : steerNow(rt, session, turn, authored(typedInput(sent)), options).pipe(
+                  Effect.flatMap((taken) =>
+                    taken
+                      ? Effect.void
+                      : Effect.fail(
+                          new InvalidState({
+                            message: "the agent couldn't take mid-turn input; send it instead",
+                            threadId,
+                            status: rt.status,
+                          }),
+                        ),
+                  ),
+                ),
+        ),
+      );
     }).pipe(Effect.tap(() => userTyped(threadId, sent))),
   editQueued: (threadId, itemId, input) =>
     withQueue(threadId, (rt) =>
@@ -997,19 +1010,11 @@ export const makeQueueMethods = ({
               message:
                 "This queued input is held for the orchestrator switch. Wait for it to finish or cancel it before steering.",
             });
+          // Refused as a send there would be, into a running turn too: it is being stopped.
+          yield* refuseMissingFolder(rt);
           const turn = rt.turn;
           const session = rt.session;
           if (turn === undefined && NOTHING_RUNNING.has(rt.status) && !rt.closing && !rt.reserved) {
-            // Refused as a send there would be.
-            const path = (yield* store.getThread(threadId)).checkout.path;
-            if (!(yield* checkouts.present(path))) {
-              return yield* new InvalidState({
-                message: missingThreadFolder(path),
-                threadId,
-                status: rt.status,
-                folderMissing: { path },
-              });
-            }
             // Nothing to steer into, so the item goes now, ahead of the rest. Sent by hand, a
             // monitor's notice is the user's, which no archive holds back and no newer replaces.
             rt.noticeKeys.delete(itemId);

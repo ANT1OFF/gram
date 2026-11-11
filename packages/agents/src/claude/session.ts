@@ -588,6 +588,12 @@ export const makeClaudeHost = (
               ),
             )
           : [];
+      // The one server the session was given by address, as a remote server of this session
+      // alone: nothing is written to the user's or the folder's config. Never when confined.
+      const extraServer =
+        o.mcpServer === undefined || o.confineWrites === true
+          ? undefined
+          : { [o.mcpServer.name]: { type: "http" as const, url: o.mcpServer.url } };
       // WebSearch is read once, for the model the session opens on; `needsReopenFor` reopens the
       // session on a switch across the EU boundary, the only kind that changes it.
       const disallowedTools = [
@@ -970,7 +976,15 @@ export const makeClaudeHost = (
         ...(o.resumeId !== undefined && o.resumeAt !== undefined
           ? { resumeSessionAt: o.resumeAt }
           : {}),
-        ...(appServer === undefined ? {} : { mcpServers: { [APP_TOOL_SERVER]: appServer.config } }),
+        ...(appServer === undefined && extraServer === undefined
+          ? {}
+          : {
+              mcpServers: {
+                ...extraServer,
+                // Last, so no server a session is given can stand in for Gram's own.
+                ...(appServer === undefined ? {} : { [APP_TOOL_SERVER]: appServer.config }),
+              },
+            }),
         ...(o.additionalDirectories === undefined
           ? {}
           : { additionalDirectories: [...o.additionalDirectories] }),

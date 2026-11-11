@@ -56,6 +56,7 @@ import { makeThreadCreator } from "../../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../../runtime/hooks.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { isLocalApp } from "../../http/local-app.ts";
+import { makeProfileStarter } from "../../thread-profiles/start.ts";
 
 /** What a phone, or any caller but the local app, hears when it asks for a machine folder. */
 export const MACHINE_FOLDER_LOCAL_ONLY =
@@ -186,6 +187,7 @@ export const threadHandlers = Effect.gen(function* () {
     });
 
   const creator = makeThreadCreator({ store, checkouts, runtimes });
+  const profiles = makeProfileStarter({ store, runtimes, dataDir: config.dataDir });
   const prepareCheckout = creator.prepare;
 
   /**
@@ -302,6 +304,7 @@ export const threadHandlers = Effect.gen(function* () {
           ? create(input)
           : withDraftAttachments(attachmentsDir(config.dataDir), draftId, id, input, create);
       }),
+    "thread.createFromProfile": ({ profile }) => profiles.start(profile),
     "thread.send": ({ threadId, input, clientMessageId }) =>
       store.messageReceipt(
         threadId,

@@ -325,6 +325,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   readonly #threads = new Map<string, ThreadRuntime>();
   readonly #events = new Set<Channel<ApiServerEvent>>();
   readonly #waiters = new Map<string, (answer: RequestAnswer) => void>();
+  /** Ends a script's wait on its request unanswered, as a session that stops clears its requests. */
+  readonly #dropRequest = new Map<string, () => void>();
   /** Scripts held at a gate, by gate name. */
   readonly #gates = new Map<string, () => void>();
   /** Gates released before a script reached them. */
@@ -793,9 +795,10 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
             step.request.kind === "approval" ? "needsApproval" : "needsInput",
           );
           this.#emit({ type: "thread.request", threadId, request: step.request });
-          const answer = await new Promise<RequestAnswer>((resolve) =>
-            this.#waiters.set(step.request.id, resolve),
-          );
+          const answer = await new Promise<RequestAnswer>((resolve, reject) => {
+            this.#waiters.set(step.request.id, resolve);
+            this.#dropRequest.set(step.request.id, () => reject(new Interrupted()));
+          }).finally(() => this.#dropRequest.delete(step.request.id));
           this.#setStatus(runtime, "running");
           await this.#runSteps(runtime, step.onAnswer(answer));
           break;
@@ -974,6 +977,12 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     runtime.steerDelivery = undefined;
     runtime.interrupted = false;
     this.#stampTurnEnd(runtime, steer || interrupted ? "interrupted" : "completed");
+    // `#stopInMissingFolder` stopped it and rested the thread cold: nothing more runs there.
+    if (runtime.folderGone === true) {
+      runtime.folderGone = false;
+      this.#update(runtime, { lastActivityAt: Date.now() });
+      return;
+    }
     // As the server: a turn that completes clears the error an earlier one left.
     if (
       !steer &&
@@ -1262,9 +1271,18 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     return thread;
   }
 
+  /** As the server's `refuseMissingFolder`: a thread whose folder is gone takes no input. */
+  #refuseMissingFolder(runtime: ThreadRuntime) {
+    if (!this.#missingFolders.has(runtime.summary.thread.id)) return;
+    const path = runtime.summary.thread.checkout.path;
+    throw new MockInvalidState(`This thread's folder no longer exists: ${path}`, undefined, {
+      path,
+    });
+  }
+
   async send(threadId: ThreadId, input: UserInput) {
     const runtime = this.#runtime(threadId);
-    this.#refuseInMissingFolder(threadId);
+    this.#refuseMissingFolder(runtime);
     // As the server's `userTyped`: a notice or another thread's message is not the user stepping in.
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
@@ -1280,18 +1298,10 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     return { queued: false };
   }
 
-  /** As the server: a thread whose folder is gone takes no message, sent or steered. */
-  #refuseInMissingFolder(threadId: ThreadId) {
-    if (!this.#missingFolders.has(threadId)) return;
-    const path = this.#runtime(threadId).summary.thread.checkout.path;
-    throw new MockInvalidState(`This thread's folder no longer exists: ${path}`, undefined, {
-      path,
-    });
-  }
-
   async steer(threadId: ThreadId, input: UserInput, options?: { interrupt?: boolean }) {
     const runtime = this.#runtime(threadId);
-    this.#refuseInMissingFolder(threadId);
+    // As the server's: a turn whose folder is gone is being stopped, so it takes nothing more.
+    this.#refuseMissingFolder(runtime);
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
     }
@@ -1338,12 +1348,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   async startSession(threadId: ThreadId): Promise<StartSessionResult> {
     const runtime = this.#runtime(threadId);
     const { thread, status } = runtime.summary;
-    if (this.#missingFolders.has(threadId)) {
-      const path = thread.checkout.path;
-      throw new MockInvalidState(`This thread's folder no longer exists: ${path}`, undefined, {
-        path,
-      });
-    }
+    this.#refuseMissingFolder(runtime);
     if (thread.parked) throw new MockInvalidState("the thread is archived");
     if (thread.role === "dream")
       throw new MockInvalidState("a memory update's session opens only for its run");
@@ -2291,6 +2296,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   async queueSteer(threadId: ThreadId, itemId: QueueItemId) {
     const runtime = this.#runtime(threadId);
     this.#queueItem(runtime, itemId);
+    // As the server: refused as a send there would be, into a running turn too.
+    this.#refuseMissingFolder(runtime);
     const item = runtime.summary.queue.find((q) => q.id === itemId);
     // As the server: with nothing running there is nothing to steer into, so it goes now.
     if (!runtime.running) {
@@ -2426,7 +2433,40 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     threadId: ThreadId,
     options: { branchGone?: { repo: string; number: number } } = {},
   ) {
-    return simulateMissingFolder(this.#scenes, threadId, options);
+    simulateMissingFolder(this.#scenes, threadId, options);
+    this.#stopInMissingFolder(this.#runtime(threadId));
+  }
+
+  /**
+   * As the server's git publisher, the moment a thread's folder reads missing: its open session
+   * stops, a turn in it ends interrupted with its requests dropped, the user is told when one was
+   * running, and the thread rests cold. A Ctrl+Enter after that sends, and the send says why not.
+   */
+  #stopInMissingFolder(runtime: ThreadRuntime) {
+    const { thread, status, pendingRequests } = runtime.summary;
+    if (status === "cold" || status === "ended" || status === "error") return;
+    const midTurn = runtime.running;
+    if (midTurn) {
+      runtime.folderGone = true;
+      runtime.interrupted = true;
+      if (runtime.heldAt !== undefined) this.release(runtime.heldAt);
+      this.#abortInflight(runtime);
+    }
+    for (const request of pendingRequests) {
+      this.#waiters.delete(request.id);
+      this.#dropRequest.get(request.id)?.();
+      this.#emit({ type: "thread.requestResolved", threadId: thread.id, requestId: request.id });
+    }
+    runtime.summary = { ...runtime.summary, pendingRequests: [] };
+    this.#setStatus(runtime, "cold");
+    if (midTurn) {
+      this.#emit({
+        type: "notify",
+        kind: "error",
+        title: `The agent was stopped. This thread's folder no longer exists: ${thread.checkout.path}`,
+        threadId: thread.id,
+      });
+    }
   }
 
   /** `simulateUnpushed` (`mock-scenarios.ts`). */
