@@ -233,6 +233,8 @@ each turn's usage, and every decision the hook made.
   in the POST it answers is not believed, and the same events are sent again.
 - If the receiver takes nothing while 200,000 events wait, the backlog is given up and a new
   `source` id starts at 1 with `sink.started`.
+- A card's closing says how: `answered`, with the person's `approve` or `reject` and (with
+  sign-in through a fronting proxy) who they are, or `withdrawn` when it went unanswered.
 - Nothing is recorded while hosted features are off. Transcript messages aren't sent yet.
 
 ## A headless control plane

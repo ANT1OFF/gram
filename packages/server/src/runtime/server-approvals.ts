@@ -1,5 +1,6 @@
 // Approval cards the server raises and answers itself (`requestApproval`), rather than an agent session.
 
+import type { EventSinkShape } from "../embedding/event-sink.ts";
 import { ActingPerson } from "../embedding/person.ts";
 import * as Cause from "effect/Cause";
 import {
@@ -98,6 +99,8 @@ export interface ServerApprovalsDeps {
   /** The decision hook, where one is configured, and the cards it sent to a person. */
   readonly decisions: DecisionHookShape | undefined;
   readonly hooked: HookedRequests;
+  /** The event sink, where one is configured, told who answered a card and how. */
+  readonly eventSink: EventSinkShape | undefined;
   readonly getRuntime: GetRuntime;
   readonly serverRequests: Map<RequestId, ServerApprovalRequest>;
   readonly serverApprovalOrigins: Map<RequestId, ThreadId>;
@@ -117,6 +120,7 @@ export const makeServerApprovals = ({
   hub,
   decisions,
   hooked,
+  eventSink,
   getRuntime,
   serverRequests,
   serverApprovalOrigins,
@@ -409,10 +413,32 @@ export const makeServerApprovals = ({
       }),
     );
 
-  const respond: ThreadRuntimesShape["respond"] = (threadId, requestId, answer) =>
+  const deliver = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
     serverApprovalOrigins.has(requestId)
       ? respondToServer(threadId, requestId, answer)
       : respondToSession(threadId, requestId, answer);
+
+  const respond: ThreadRuntimesShape["respond"] = (threadId, requestId, answer) => {
+    if (eventSink === undefined) return deliver(threadId, requestId, answer);
+    // The sink's `ask.resolved` says who answered and how. It is written from the event the
+    // delivery publishes, so the answer is noted first and taken back if it wasn't delivered.
+    return Effect.gen(function* () {
+      const answeredBy = yield* ActingPerson;
+      const decision =
+        answer.kind === "question"
+          ? undefined
+          : answer.decision === "allow" || answer.decision === "approve"
+            ? ("approve" as const)
+            : ("reject" as const);
+      yield* eventSink.noteAnswer(requestId, {
+        ...(decision === undefined ? {} : { decision }),
+        ...(answeredBy === undefined ? {} : { answeredBy }),
+      });
+      return yield* deliver(threadId, requestId, answer).pipe(
+        Effect.onError(() => eventSink.noteAnswer(requestId, undefined)),
+      );
+    });
+  };
 
   return { clearPendingRequests, requestApproval, respond };
 };

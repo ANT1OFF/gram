@@ -56,11 +56,25 @@ export interface AskNote {
   readonly title?: string;
 }
 
+/** A person's answer to a card, for its `ask.resolved`. */
+export interface AnswerNote {
+  readonly decision?: "approve" | "reject";
+  readonly answeredBy?: string;
+}
+
+/** Answers kept for an `ask.resolved` that never came: the oldest go past this many. */
+const ANSWER_NOTES_KEPT = 1000;
+
 export interface EventSinkShape {
   /** Records one event, if the sink is on. Never fails: a sink that can't write logs it. */
   record(event: SinkRecord): Effect.Effect<void>;
   /** Kept for the `ask.opened` of the approval `requestId`, which is published after this. */
   noteAsk(requestId: RequestId, note: AskNote): Effect.Effect<void>;
+  /**
+   * A person is answering `requestId`: kept for its `ask.resolved`, which is published after
+   * this. `undefined` takes it back, for an answer that wasn't taken.
+   */
+  noteAnswer(requestId: RequestId, note: AnswerNote | undefined): Effect.Effect<void>;
   /** A workspace's feature cards that changed, as the orchestration reconciled them. */
   featureCards(cards: ReadonlyArray<FeatureCard>): Effect.Effect<void>;
   /**
@@ -147,6 +161,7 @@ export const makeEventSink = (
     const workspaces = new Map<string, string>();
     const models = new Map<string, string>();
     const askNotes = new Map<string, AskNote>();
+    const answerNotes = new Map<string, AnswerNote>();
     let refreshCards: ((workspaceId: WorkspaceId) => Effect.Effect<void>) | undefined;
     let on = false;
     let checkedAt = Number.NEGATIVE_INFINITY;
@@ -287,15 +302,27 @@ export const makeEventSink = (
             },
           ];
         }
-        case "thread.requestResolved":
+        case "thread.requestResolved": {
           askNotes.delete(event.requestId);
+          const answer = answerNotes.get(event.requestId);
+          answerNotes.delete(event.requestId);
           return [
             {
               type: "ask.resolved",
               ...scoped(event.threadId),
-              data: { id: event.requestId, how: "resolved" },
+              ...(answer?.answeredBy === undefined
+                ? {}
+                : { actor: { kind: "person" as const, id: answer.answeredBy } }),
+              data: {
+                id: event.requestId,
+                // Resolved with no answer on record: nobody answered it.
+                how: answer === undefined ? "withdrawn" : "answered",
+                ...(answer?.decision === undefined ? {} : { decision: answer.decision }),
+                ...(answer?.answeredBy === undefined ? {} : { answeredBy: answer.answeredBy }),
+              },
             },
           ];
+        }
         case "thread.usage": {
           const { tokens, costUsd } = event.usage;
           const model = models.get(event.threadId);
@@ -445,6 +472,15 @@ export const makeEventSink = (
     return {
       record,
       noteAsk: (requestId, note) => Effect.sync(() => void askNotes.set(requestId, note)),
+      noteAnswer: (requestId, note) =>
+        Effect.sync(() => {
+          answerNotes.delete(requestId);
+          if (note === undefined) return;
+          answerNotes.set(requestId, note);
+          if (answerNotes.size > ANSWER_NOTES_KEPT) {
+            answerNotes.delete(answerNotes.keys().next().value!);
+          }
+        }),
       featureCards: (cards) =>
         Effect.gen(function* () {
           if (!(yield* isOn)) return;
@@ -480,6 +516,7 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
   static readonly off: EventSinkShape = {
     record: () => Effect.void,
     noteAsk: () => Effect.void,
+    noteAnswer: () => Effect.void,
     featureCards: () => Effect.void,
     setFeatureCardRefresh: () => Effect.void,
   };
