@@ -953,17 +953,21 @@ export function Composer({
   const offer = useSwitchOffer(threadId);
   const otherAgent = offer.offered ? offer.to : undefined;
   const otherModels = useModelsSettled(otherAgent ?? "codex", otherAgent !== undefined).models;
+  const otherRow = (id: string, label: string): PickerOption<string> => ({
+    value: `${SWITCH_PREFIX}${id}`,
+    label: `${label}…`,
+    group: agentLabel(otherAgent ?? "codex"),
+    icon: <AgentIcon agent={otherAgent ?? "codex"} className="size-icon-row" />,
+    opens: true,
+    disabled: offer.offered && offer.refusal !== undefined,
+  });
+  // Signed out, it lists no models: one greyed row stands for them, its mark saying why.
   const otherChoices: PickerOption<string>[] =
     otherAgent === undefined
       ? []
-      : (otherModels ?? []).map((m) => ({
-          value: `${SWITCH_PREFIX}${m.id}`,
-          label: `${m.displayName}…`,
-          group: agentLabel(otherAgent),
-          icon: <AgentIcon agent={otherAgent} className="size-icon-row" />,
-          opens: true,
-          disabled: offer.offered && offer.refusal !== undefined,
-        }));
+      : otherModels !== undefined && otherModels.length > 0
+        ? otherModels.map((m) => otherRow(m.id, m.displayName))
+        : [otherRow("", agentLabel(otherAgent))];
   const heads =
     model === undefined || otherAgent === undefined || otherChoices.length === 0
       ? undefined
@@ -1047,11 +1051,10 @@ export function Composer({
   const onModel = (value: string) => {
     if (!model) return;
     if (value.startsWith(SWITCH_PREFIX)) {
-      useThreadDialogs.getState().open({
-        kind: "continueIn",
-        threadId,
-        model: value.slice(SWITCH_PREFIX.length),
-      });
+      const picked = value.slice(SWITCH_PREFIX.length);
+      useThreadDialogs
+        .getState()
+        .open({ kind: "continueIn", threadId, ...(picked === "" ? {} : { model: picked }) });
       return;
     }
     const { variant: current, ...rest } = model;
