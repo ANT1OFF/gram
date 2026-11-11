@@ -478,6 +478,19 @@ test.describe("on a phone", () => {
     const title = page.getByTestId("phone-title");
     await expect(title.getByRole("heading")).toHaveText("Limits");
     await expect(page.getByTestId("phone-title-line")).toHaveText("Govern");
+    // With the threads left out, the drawer is the app's menu, and its search is for more than them.
+    await page.evaluate(() => {
+      (window as unknown as Update).embed.update({ threads: "hidden" });
+    });
+    await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
+    await page.getByTestId("phone-menu").click();
+    await expect(page.getByRole("dialog", { name: "Menu" })).toBeVisible();
+    await expect(page.getByTestId("phone-drawer").getByTestId("overview-search")).toContainText(
+      "Search",
+    );
+    await expect(page.getByTestId("phone-drawer").getByTestId("overview-search")).not.toContainText(
+      "Search threads",
+    );
     expect(errors).toEqual([]);
   });
 });
