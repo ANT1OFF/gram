@@ -1,5 +1,5 @@
 // A stand-in for an app in front of Gram: it mounts the built package (`dist-embed`) against the
-// in-memory server and adds two pages, a navigation group and a switcher, as docs/EMBEDDING.md
+// in-memory server and adds two pages, a navigation group and a switcher, as docs/EMBEDDED_WEB_APP.md
 // describes. Opened under `/w/acme`, it serves the app under that path.
 import {
   mountGram,

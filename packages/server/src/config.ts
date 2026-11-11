@@ -8,10 +8,54 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { embedFromEnv, scrubEmbedSecrets, type EmbedConfigShape } from "./embedding/config.ts";
 import { frontedIdentityFrom, type FrontedIdentityConfig } from "./http/fronted-identity.ts";
 import { remoteOrigin } from "./http/remote-access.ts";
 import { type ProvisionedHostsConfig, provisionedHostsFrom } from "./host/provisioned.ts";
 import { defaultDataDir } from "./logging/data-dir.ts";
+
+/** An endpoint outside the server that an embedding deployment points it at. */
+export interface EndpointConfig {
+  /** An `http:` or `https:` URL. */
+  readonly url: string;
+  /** Sent as `Authorization: Bearer`; never logged. */
+  readonly token?: string;
+}
+
+/** `url` as an endpoint, or `undefined` for anything but a whole `http(s)` URL without credentials. */
+export const endpointFrom = (
+  url: string | undefined,
+  token: string | undefined,
+): EndpointConfig | undefined => {
+  if (url === undefined || url.trim() === "") return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return undefined;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
+  // A credential belongs in the token, which is never logged; a URL is.
+  if (parsed.username !== "" || parsed.password !== "") return undefined;
+  if (parsed.hash !== "") return undefined;
+  // A token is one header value: printable, with no spaces. Anything else can't be sent, and the
+  // error for it would quote it.
+  if (token && !/^[\x21-\x7e]+$/.test(token)) return undefined;
+  return { url: parsed.toString(), ...(token ? { token } : {}) };
+};
+
+/** An endpoint that was configured but can't be used, which is not the same as none. */
+export const ENDPOINT_UNUSABLE = "unusable";
+export type EndpointSetting = EndpointConfig | typeof ENDPOINT_UNUSABLE;
+
+/** `endpointFrom`, telling a URL that was given and can't be used from one that wasn't given. */
+export const endpointSetting = (
+  url: string | undefined,
+  token: string | undefined,
+): EndpointSetting | undefined =>
+  url === undefined || url.trim() === ""
+    ? undefined
+    : (endpointFrom(url, token) ?? ENDPOINT_UNUSABLE);
 
 export interface ServerConfigShape {
   /** Directory holding the database (`DATABASE_FILE`) and logs. */
@@ -76,12 +120,28 @@ export interface ServerConfigShape {
    */
   readonly embedding?: boolean;
   /**
+   * The outside services an embedding deployment configured (`embedding/config.ts`). Inert until
+   * the hosted features setting is on.
+   */
+  readonly embed?: EmbedConfigShape;
+  /**
    * `GRAM_HEADLESS=1`: a control plane with no agent host of its own. Every session, an
    * orchestrator's included, runs on a joined machine, and nothing is started on this one: no
    * agent, no terminal, no worktree. One of the hosted features, so the server refuses to start
    * this way unless they are on (`host/headless.ts`).
    */
   readonly headless?: boolean;
+  /**
+   * Asked before each outward action (`embedding/decision-hook.ts`): `GRAM_DECISION_HOOK_URL`,
+   * with `GRAM_DECISION_HOOK_TOKEN`. Absent, nothing is asked. Given but unusable, everything
+   * the hook would be asked about is refused: a mistyped URL must not turn the hook off.
+   */
+  readonly decisionHook?: EndpointSetting;
+  /**
+   * Sent what happens, in order (`embedding/event-sink.ts`): `GRAM_EVENT_SINK_URL`, with
+   * `GRAM_EVENT_SINK_TOKEN`. Absent or unusable, nothing is recorded or sent.
+   */
+  readonly eventSink?: EndpointSetting;
 }
 
 /**
@@ -129,9 +189,17 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     const appBuild = env["GRAM_APP_BUILD"];
     const debounceMs = Number(env["GRAM_ORCHESTRATION_DEBOUNCE_MS"]);
     const listenHost = listenHostFrom(env);
+    const embed = embedFromEnv(env);
+    // Read once, here; no child process inherits them from the server's own environment.
+    if (env === process.env) scrubEmbedSecrets(env);
     const provisionedHosts = provisionedHostsFrom(env);
     // Throws on a partial or malformed configuration: such a server must not start.
     const frontedIdentity = frontedIdentityFrom(env);
+    const decisionHook = endpointSetting(
+      env["GRAM_DECISION_HOOK_URL"],
+      env["GRAM_DECISION_HOOK_TOKEN"],
+    );
+    const eventSink = endpointSetting(env["GRAM_EVENT_SINK_URL"], env["GRAM_EVENT_SINK_TOKEN"]);
     return {
       dataDir: defaultDataDir(env),
       ...(env["GRAM_REMOTE_ORIGIN"] !== undefined
@@ -161,6 +229,9 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
         : env["GRAM_EMBEDDING"] === "0"
           ? { embedding: false }
           : {}),
+      ...(embed === undefined ? {} : { embed }),
+      ...(decisionHook === undefined ? {} : { decisionHook }),
+      ...(eventSink === undefined ? {} : { eventSink }),
     };
   };
 }

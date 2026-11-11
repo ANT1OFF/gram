@@ -3,7 +3,8 @@ name: Application checks
 on:
   pull_request:
   push:
-    branches: [main]
+    # An integration branch collects pull requests before main, so it is checked as main is.
+    branches: [main, "integration/**"]
   workflow_dispatch:
 
 concurrency:
@@ -202,7 +203,7 @@ jobs:
         env:
           GRAM_E2E_SERVER: preview
       # The embeddable package's acceptance run, in one shard: the package is built as it ships and
-      # mounted by a separate app that adds pages of its own (docs/EMBEDDING.md).
+      # mounted by a separate app that adds pages of its own (docs/EMBEDDED_WEB_APP.md).
       - name: Mount the embeddable package in another app
         if: env.SHARD == '1'
         run: bun run --filter @gram/web e2e:embed

@@ -348,6 +348,14 @@ export const OrchestrationLive = Layer.effect(
 
     const { survey, ledger, watchLedger, featureCards, watchFeatureCards, dependencyBadgesOf } =
       makeLedgerWatch(kit);
+    if (kit.eventSink !== undefined) {
+      yield* kit.eventSink.setFeatureCardRefresh((workspaceId) =>
+        featureCards(workspaceId).pipe(
+          Effect.asVoid,
+          Effect.catchCause(() => Effect.void),
+        ),
+      );
+    }
 
     const {
       lookupProject,

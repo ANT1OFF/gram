@@ -6,6 +6,7 @@ import {
   frontedIdentityFrom,
   IDENTITY_ENV,
   MAX_LIFETIME_SECONDS,
+  SERVICE_TYP,
   verifyIdentity,
 } from "./fronted-identity.ts";
 import { makeTestProxy, signStatement } from "./fronted-identity.testing.ts";
@@ -25,6 +26,36 @@ describe("a fronting proxy's signed identity", () => {
     expect(check(proxy.statement({ role: "viewer", name: undefined }))).toEqual({
       ok: true,
       actor: { id: "user-ada", name: "user-ada", role: "viewer" },
+    });
+  });
+
+  test("names the platform itself apart from any person, by its header and for one path", () => {
+    const service = { header: { typ: SERVICE_TYP } };
+    const claims = { sub: "platform", name: undefined, role: "service", path: "/machines/list" };
+    expect(check(proxy.statement(claims, service))).toEqual({
+      ok: true,
+      service: { id: "platform", name: "platform", path: "/machines/list" },
+    });
+    // The role alone, as a proxy copying it from a directory would state it, is nobody.
+    expect(check(proxy.statement(claims))).toEqual({ ok: false, reason: "role" });
+    expect(check(proxy.statement(claims, { header: { typ: "JWT" } }))).toEqual({
+      ok: false,
+      reason: "role",
+    });
+    // The header alone makes no person a service, and a service needs its path.
+    for (const role of ["member", "viewer", undefined, "Service"])
+      expect(check(proxy.statement({ ...claims, role }, service))).toEqual({
+        ok: false,
+        reason: "role",
+      });
+    for (const path of [undefined, "", "machines/list", "/machines/list?x", 7])
+      expect(check(proxy.statement({ ...claims, path }, service))).toEqual({
+        ok: false,
+        reason: "role",
+      });
+    expect(check(proxy.statement({ ...claims, sub: undefined }, service))).toEqual({
+      ok: false,
+      reason: "subject",
     });
   });
 

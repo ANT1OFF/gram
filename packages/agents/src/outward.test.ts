@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { OutwardGate } from "./host.ts";
-import { gateAsks, gateLevel, isOutwardCommand, outwardKind, type OutwardKind } from "./outward.ts";
+import {
+  gateAsks,
+  gateLevel,
+  isOutwardCommand,
+  outwardActions,
+  outwardKind,
+  type OutwardKind,
+} from "./outward.ts";
 
 const OUTWARD: ReadonlyArray<readonly [string, string, OutwardKind]> = [
   ["a plain push", "git push", "publish"],
@@ -266,5 +273,42 @@ describe("gateAsks", () => {
 
   it.each(CASES)("at %s, for %s: %s", (level, kind, asks) => {
     expect(gateAsks(level, kind)).toBe(asks);
+  });
+});
+
+describe("outwardActions", () => {
+  it("names each outward thing a line does, once, in order", () => {
+    expect(outwardActions("git push origin feat")).toEqual(["push"]);
+    expect(outwardActions("git push -u origin feat && gh pr create --fill")).toEqual([
+      "push",
+      "pr.open",
+    ]);
+    expect(outwardActions("gh pr merge 12 --squash; gh pr merge 13")).toEqual(["pr.merge"]);
+    expect(outwardActions("gh -R acme/app pr close 4")).toEqual(["pr.close"]);
+    expect(outwardActions("gh release create v1 && gh workflow run ci.yml")).toEqual([
+      "release",
+      "workflow.run",
+    ]);
+    expect(outwardActions("sh -c 'git push'")).toEqual(["push"]);
+    expect(outwardActions("eval gh repo delete acme/app")).toEqual(["repo.delete"]);
+  });
+
+  it("finds nothing where the gate finds nothing", () => {
+    expect(outwardActions("git commit -m 'git push later'")).toEqual([]);
+    expect(outwardActions("gh pr view 12")).toEqual([]);
+    expect(outwardActions("ls")).toEqual([]);
+  });
+
+  it("agrees with outwardKind on whether a line is outward at all", () => {
+    for (const line of [
+      "git push",
+      "git status",
+      "gh pr create",
+      "gh pr list",
+      "echo $(git push)",
+      "git subtree push --prefix=a origin b",
+    ]) {
+      expect(outwardActions(line)!.length > 0).toBe(outwardKind(line) !== undefined);
+    }
   });
 });

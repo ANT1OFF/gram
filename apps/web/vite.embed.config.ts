@@ -9,7 +9,7 @@ import { defineConfig, esmExternalRequirePlugin } from "vite";
  * The web app as a module another app mounts (`src/embed/index.ts`), in `dist-embed`: one entry,
  * `gram-web.js`, one stylesheet, `gram-web.css`, and beside them the chunks and assets they load.
  * React is left for the embedding app to bring, so its own pages render in the same tree as Gram's.
- * See docs/EMBEDDING.md.
+ * See docs/EMBEDDED_WEB_APP.md.
  */
 const REACT = [/^react($|\/)/, /^react-dom($|\/)/];
 

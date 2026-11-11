@@ -115,6 +115,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import { Timers } from "../embedding/timers.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { fence } from "../git/untrusted-fence.ts";
 import { redactText } from "../logging/redact.ts";
@@ -545,6 +546,8 @@ export const RoutinesLive = Layer.effect(
     const hub = yield* EventHub;
     const orchestration = yield* Orchestration;
     const sources = yield* RoutineEventSources;
+    // A sleep here; with an outside scheduler, each routine's next run is registered there too.
+    const clock = yield* Timers;
     /** Per workspace and routine id, the timer that runs it when it falls due. */
     const timers = yield* FiberMap.make<string>();
     /** The keys `timers` holds a timer under, which `FiberMap` doesn't list. */
@@ -608,15 +611,17 @@ export const RoutinesLive = Layer.effect(
         const now = yield* Clock.currentTimeMillis;
         // State writes and publication can finish after a deadline. Compute its remaining wait
         // here, so time spent in those effects doesn't postpone the next look or cooldown.
-        const wait =
+        const at =
           wake !== undefined && "after" in wake
-            ? wake.after
-            : Duration.millis(Math.max(0, (wake?.at ?? routine.nextRunAt!) - now));
+            ? now + Duration.toMillis(wake.after)
+            : (wake?.at ?? routine.nextRunAt!);
         armed.add(key);
         yield* FiberMap.run(
           timers,
           key,
-          Effect.sleep(wait).pipe(Effect.andThen(due(routine.workspaceId, routine.id))),
+          clock
+            .until(`routine:${routine.workspaceId}:${routine.id}`, at)
+            .pipe(Effect.andThen(due(routine.workspaceId, routine.id))),
         );
       });
 

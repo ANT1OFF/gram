@@ -1,5 +1,5 @@
 // Builds the web app as a package another app mounts: `dist-embed`, with its entry, stylesheet,
-// types and a manifest. See docs/EMBEDDING.md.
+// types and a manifest. See docs/EMBEDDED_WEB_APP.md.
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
