@@ -503,6 +503,7 @@ const make = Effect.gen(function* () {
 
   const {
     settleDelivery,
+    noteDeliveryStart,
     settleNote,
     failPendingDeliveries,
     setStatus,
@@ -927,6 +928,7 @@ const make = Effect.gen(function* () {
     openTurn,
     markRunning,
     settleDelivery,
+    noteDeliveryStart,
     settleNote,
     recordFailure,
     keepError,

@@ -240,6 +240,8 @@ export interface Runtime {
         readonly turnId: TurnId;
         readonly delivery: SystemDelivery;
         readonly steered?: { readonly key: string };
+        /** The agent natively began the turn (`SystemDelivery.started`), told once. */
+        readonly started?: true;
       }
     | undefined;
   /**

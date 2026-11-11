@@ -1594,3 +1594,65 @@ describe("switchAgent's handoff after an archive evicts its new session (review 
     }),
   );
 });
+
+describe("switchAgent's handoff refused by the agent (review rev 5 of #433)", () => {
+  it.effect("a refused handoff is tried again within its bound, the work held throughout", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const { thread, session } = yield* idleThread;
+      // As Codex answers a rejected `turn/start`: no turn ever began.
+      yield* fake.setSendRefusal((input) => isHandoff(input.text));
+      yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
+      yield* runtimes.send(thread.id, { text: "WORK_REQUIRING_HANDOFF" });
+      const failed = yield* waitFor(
+        "the switch failed after its tries",
+        store
+          .getThread(thread.id)
+          .pipe(Effect.map((t) => t.sessionSwitch?.phase === "failed" && t)),
+      );
+      expect(failed.sessionSwitch!.handoff?.delivered).toBeUndefined();
+      const inputs = fake.sessions
+        .filter((s) => s.options.threadId === thread.id && s !== session)
+        .flatMap((s) => s.sent);
+      expect(inputs.map((input) => input.text)).not.toContain("WORK_REQUIRING_HANDOFF");
+      expect(inputs.filter((input) => isHandoff(input.text))).toHaveLength(3);
+      expect((yield* store.listQueue(thread.id)).map((item) => item.input.text)).toContain(
+        "WORK_REQUIRING_HANDOFF",
+      );
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("a handoff refused once and then taken goes before the work", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const { thread, session } = yield* idleThread;
+      let refusals = 0;
+      yield* fake.setSendRefusal((input) => isHandoff(input.text) && refusals++ === 0);
+      yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
+      yield* runtimes.send(thread.id, { text: "WORK_REQUIRING_HANDOFF" });
+      const next = yield* waitFor(
+        "the second handoff",
+        fake
+          .latest(thread.id)
+          .pipe(
+            Effect.map(
+              (s) =>
+                s !== session && s.sent.filter((input) => isHandoff(input.text)).length === 2 && s,
+            ),
+          ),
+      );
+      for (let i = 0; i < 50; i++) yield* Effect.yieldNow;
+      expect(next.sent.map((input) => input.text)).not.toContain("WORK_REQUIRING_HANDOFF");
+      yield* next.completeTurn(READY);
+      yield* waitFor(
+        "the work after the taken handoff",
+        Effect.sync(() => next.sent.some((input) => input.text === "WORK_REQUIRING_HANDOFF")),
+      );
+      expect((yield* store.getThread(thread.id)).sessionSwitch).toBeUndefined();
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+});

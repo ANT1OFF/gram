@@ -136,6 +136,11 @@ export interface FakeAgentControlShape {
    * the input: the window a crash leaves between the runtime's handing it over and the agent's.
    */
   setSendHangs(on: boolean): Effect.Effect<void>;
+  /**
+   * Refuses the sends `refuse` matches as Codex refuses a rejected `turn/start`: a notice, the
+   * turn ended in error and idle, and no turn start, so the input never reached a turn.
+   */
+  setSendRefusal(refuse: ((input: UserInput) => boolean) | undefined): Effect.Effect<void>;
   /** The `steer` capability sessions opened from now on report; `false` for an agent that can't. */
   setSteerCapability(supported: boolean): Effect.Effect<void>;
   /** Whether sessions opened from now on have a tool gate (`closeToolGate`); Codex has none. */
@@ -367,6 +372,7 @@ export const makeFakeAgentAdapter = (
       /** Every switch startup id an open was given: single use for the host's lifetime, as natively. */
       const usedStartups = new Set<string>();
       let openDelay: Duration.Input | undefined;
+      let sendRefusal: ((input: UserInput) => boolean) | undefined;
       let refusedModes: ReadonlyArray<PermissionMode> = [];
       let respondFailure: string | undefined;
       const modeDelays = new Map<PermissionMode, Duration.Input>();
@@ -696,8 +702,21 @@ export const makeFakeAgentAdapter = (
                       transcripts.add(agentSessionId);
                     }),
               ).pipe(
-                Effect.andThen(emit({ type: "status", status: "running" })),
-                Effect.andThen(options.reply === "echo" ? echo(input) : Effect.void),
+                Effect.andThen(
+                  sendRefusal?.(input) === true
+                    ? emit(
+                        {
+                          type: "notice",
+                          level: "error",
+                          message: "Codex didn't accept the message: refused",
+                        },
+                        { type: "turnEnd", reason: "error", error: "refused" },
+                        { type: "status", status: "idle" },
+                      )
+                    : emit({ type: "status", status: "running" }).pipe(
+                        Effect.andThen(options.reply === "echo" ? echo(input) : Effect.void),
+                      ),
+                ),
               ),
             steer: (input, steerOptions) =>
               Effect.suspend(() =>
@@ -1011,6 +1030,10 @@ export const makeFakeAgentAdapter = (
         setSendHangs: (on) =>
           Effect.sync(() => {
             sendHangs = on;
+          }),
+        setSendRefusal: (refuse) =>
+          Effect.sync(() => {
+            sendRefusal = refuse;
           }),
         setToolGate: (supported) =>
           Effect.sync(() => {

@@ -75,6 +75,13 @@ export interface SystemDelivery {
    * agent took the steer.
    */
   accepted(turnId: TurnId): Effect.Effect<void>;
+  /**
+   * The agent natively began the turn that carries it, before or without accepting it as above:
+   * its own turn start, or the first event of the turn (`DeliveryStart` lists what counts), which
+   * a refusal (Codex's rejected `turn/start`) never sends. Called at most once, ahead of `accepted`
+   * or `failed`, which are still called as they would be. Optional: most deliveries need only those.
+   */
+  started?(turnId: TurnId): Effect.Effect<void>;
   /** It did not reach the agent; `turnId` is absent when no turn was opened for it. */
   failed(turnId: TurnId | undefined, reason: SystemDeliveryFailure): Effect.Effect<void>;
 }

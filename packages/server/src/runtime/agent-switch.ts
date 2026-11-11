@@ -317,6 +317,7 @@ export const makeAgentSwitch = ({
     key: string,
     build: (turnId: TurnId) => Effect.Effect<UserInput | undefined>,
     accepted: (turnId: TurnId) => Effect.Effect<void> = () => Effect.void,
+    started?: (turnId: TurnId) => Effect.Effect<void>,
   ) =>
     Effect.gen(function* () {
       const done = yield* Deferred.make<Outcome>();
@@ -334,6 +335,7 @@ export const makeAgentSwitch = ({
             return input;
           }),
         accepted,
+        ...(started === undefined ? {} : { started }),
         failed: (turnId, reason) =>
           Deferred.succeed(done, { failed: reason, turnId: turnId ?? carried }).pipe(Effect.asVoid),
       });
@@ -575,19 +577,13 @@ export const makeAgentSwitch = ({
             ),
             Effect.orElseSucceed(() => undefined),
           ),
+        // Delivered only once the agent natively took it: began the turn or accepted its input
+        // (`SystemDelivery.started`, `accepted`). A refusal, like Codex rejecting `turn/start`,
+        // is neither: the claim and the queue stay, and `finish` tries again within its bound. A
+        // turn that began and then failed was delivered, and is never given it again.
+        (turnId) => markDelivered(threadId, attemptId, turnId),
         (turnId) => markDelivered(threadId, attemptId, turnId),
       );
-      // Sent is delivered, whatever the turn came to: the input is in the new session's
-      // conversation, so a turn that then failed or lost its session is never given it again.
-      // Only one that never reached the agent is.
-      if (
-        outcome.turnId !== undefined &&
-        !(
-          "failed" in outcome &&
-          (outcome.failed === "sendFailed" || outcome.failed === "buildFailed")
-        )
-      )
-        yield* markDelivered(threadId, attemptId, outcome.turnId);
       if (noteMode === "limit") {
         const written = yield* noteFrom(threadId, outcome, thread.model.agent);
         if (written !== undefined) yield* addNote(threadId, key, written);
