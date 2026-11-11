@@ -1,4 +1,4 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useMatches, useRouterState } from "@tanstack/react-router";
 import { createElement } from "react";
 
 import { Hint } from "@/components/hint";
@@ -136,5 +136,40 @@ export function EmbedRailNavigation() {
         }),
       )}
     </nav>
+  );
+}
+
+/**
+ * The name of the added page the window is on, or undefined on one of Gram's own and on an added
+ * page that brought no name. Always undefined in Gram on its own.
+ */
+export function useEmbedPageTitle(): string | undefined {
+  const titles = useEmbedShell((s) => s.titles);
+  // The deepest match is the page; its `fullPath` is the path the page was added under.
+  const path = useMatches({ select: (matches) => matches.at(-1)?.fullPath as string | undefined });
+  return path === undefined ? undefined : titles[path];
+}
+
+/**
+ * The heading of the group whose destination the window is at, or undefined at none: on a phone,
+ * the line under an added page's name says where it is listed.
+ */
+export function useEmbedPageGroup(): string | undefined {
+  const groups = useEmbedShell((s) => s.navigation);
+  const pathname = usePathname();
+  return shownNavigation(groups).find((group) =>
+    group.items.some((item) => navigationCurrent(pathname, item.to)),
+  )?.label;
+}
+
+/** An added page's name in the title bar, where Gram's own pages name the workspace. */
+export function EmbedPageTitle({ title }: { title: string }) {
+  return (
+    <h1
+      data-testid="embed-page-title"
+      className="min-w-0 truncate px-2 text-body font-medium text-foreground"
+    >
+      {title}
+    </h1>
   );
 }

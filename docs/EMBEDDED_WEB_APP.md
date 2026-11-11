@@ -83,7 +83,9 @@ app, and `unmount` takes the app off the page.
 **Pages.** Each of `routes` is a path and a React component. The page is drawn in the
 conversation's place, with Gram's sidebar and title bar around it, and scrolls on its own. A path
 is written the way Gram's router writes them (`/agents/$agentId`), and the component is given the
-parameters as `params`. A path that Gram has itself (`/`, `/t`, `/w`, `/new`, `/new-task`,
+parameters as `params`. Give a page a `title`: while it is open the title bar says it where Gram's
+own pages name the workspace and its views, and a phone's header says it over the heading of the
+group that lists the page. A path that Gram has itself (`/`, `/t`, `/w`, `/new`, `/new-task`,
 `/new-workspace`, `/settings`, `/usage`) is refused when the app mounts, as is one added twice.
 Routes are read once, at mount.
 
@@ -105,7 +107,14 @@ a `navigate`.
 ## Pages that look like Gram's
 
 `@gram/web/kit` exports Gram's own controls: `Button`, `ButtonGroup`, `Badge`, `Alert`, `Switch`,
-`Tabs`, `Select`, `Collapsible`, `Tooltip`, `Hint` and the class joiner `cn`. They are the
+`Tabs`, `Select`, `Collapsible`, `Tooltip`, `Hint`, `Input` (with `invalid`), `InputGroup` (a
+field with a `prefix` or `suffix` such as a unit), `Meter` (a share from 0 to 1, amber from 90%
+and red when spent, or the `tone` you give it), `Popover` (hung from a `trigger` button, as the
+title bar's are) and the class joiner `cn`. For a page of settings it has the pieces Settings is
+built from: `Page` (the column with the page's title, a line on what it is for and its actions),
+`SettingsGroup` (a titled card), `SettingRow` (a setting's name and description with its control
+at the right, and an `error` under it), `Field` (a label over its control), `OptionGroup` (a
+segmented control) and `Toggle` (a row with a switch). They are the
 components the app itself draws, from the same build, so their styles are already in
 `gram-web.css` and a tooltip of yours opens under the app's own provider. The list grows as
 pages need more; a control added to it keeps its props.
@@ -130,13 +139,14 @@ Leave Tailwind's base styles out, as above: the page's are Gram's. Follow
 
 - Layout, drafts and theme are kept in the browser's storage for the origin, not per server. Two
   servers shown from one origin share them.
-- The title of the window is Gram's.
+- The browser tab's title is Gram's.
 
 ## Checking it
 
 `bun run --filter @gram/web e2e:embed` builds the package, builds a
 [separate app](../apps/web/e2e-embed/fixture/src/main.tsx) that consumes only the build, and
 drives it in a browser: the whole app mounts, an added page opens from the sidebar, the palette
-and its address, the switcher moves between the sidebar and the title bar, a page of its own uses
-the kit and the theme's names, and all of it works
+and its address and is named in the title bar and on a phone, the switcher moves between the
+sidebar and the title bar, pages of its own use the kit (a page of settings among them) and the
+theme's names, and all of it works
 under a base path. CI runs it in the first e2e shard.

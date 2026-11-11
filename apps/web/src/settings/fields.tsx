@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { inputCls } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -16,8 +17,7 @@ import { DraftActions, dropUndo, offerUndo, SaveHint, UndoSave } from "./save-hi
 import { SavedMark, touchHandlers } from "./saved-mark";
 import { useSettingSearch } from "./search-scope";
 
-export const inputCls =
-  "h-8 w-full max-w-md rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+export { inputCls };
 
 /** A text input on the right of a `SettingRow`: a fixed width, narrower when the row is. */
 export const rowInputCls = cn(inputCls, "w-64 max-w-full");

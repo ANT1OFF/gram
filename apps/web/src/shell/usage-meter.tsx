@@ -6,6 +6,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { agentLabel } from "@/agents/agent-label";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { Meter } from "@/components/ui/meter";
 import { agoText } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { PulseOnce } from "@/motion";
@@ -490,28 +491,14 @@ const TONE_TEXT = {
   spent: "text-destructive hover:text-destructive",
 } as const;
 
-const TONE_FILL = {
-  neutral: "bg-muted-foreground",
-  warning: "bg-warning",
-  spent: "bg-destructive",
-} as const;
-
 /** A thin track whose fill glides to each new reading; amber from 90%, red once spent. */
 export function LimitBar({ limit, className }: { limit: UsageLimit; className?: string }) {
-  const percent = limitPercent(limit.utilization);
   return (
-    <span
-      aria-hidden
-      className={cn("block h-1 shrink-0 overflow-hidden rounded-full bg-foreground/15", className)}
-    >
-      <span
-        data-testid="usage-meter-fill"
-        className={cn(
-          "block h-full rounded-full transition-[width] duration-(--dur-move-base) ease-(--ease-spring)",
-          TONE_FILL[limitTone(limit)],
-        )}
-        style={{ width: `${percent}%` }}
-      />
-    </span>
+    <Meter
+      value={limitPercent(limit.utilization) / 100}
+      tone={limitTone(limit)}
+      fillTestId="usage-meter-fill"
+      {...(className === undefined ? {} : { className })}
+    />
   );
 }
