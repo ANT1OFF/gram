@@ -31,10 +31,12 @@ A person with the hosted-features setting on, in the desktop app:
 - Lend this Mac: off, on with folders, a folder Gram refuses (`~/.ssh`, the home folder), the
   organisation allowing reading only, the organisation turning devices off, and Resume lending
   after a restart.
-- What the folder list does and doesn't limit, said where folders are picked.
-- The ask: the server, workspace, thread, who started the turn, the folder, the whole command,
-  the agent's reason marked as the agent's; a look-closely warning; a command with hidden
-  characters; more asks waiting.
+- The lending sheet: a window of Gram's own where lending is turned on or resumed and folders
+  are added, saying what the folder list does and doesn't limit and what the organisation sees.
+- The ask, also a window of Gram's own: the server, the workspace, the thread, that you wrote to
+  it from this Mac, the folder, the whole command, what the command is made of, the agent's
+  reason marked as the agent's; a command with hidden characters; reading a file; a request the
+  server withdrew.
 - The thread's side: waiting for you on this Mac, ran with output, you didn't allow it, this Mac
   went offline, and a turn started by someone else being refused.
 - That this Mac is being lent, wherever the person is in the app, with Stop lending.
@@ -52,8 +54,10 @@ A person with the hosted-features setting on, in the desktop app:
 Defaults picked; each is an open decision in the design note.
 
 - Lending turns off when Gram quits, and the next launch offers Resume lending. Default: yes.
-- The only rules that skip the ask are reads inside a lent folder, and one exact command for one
-  thread until Gram closes. Default: yes.
+- Nothing skips the ask in this version: every command and every file is asked. Default: yes.
+  The security review cut "read files without asking" and "allow this exact command".
+- A thread can ask for ten minutes after you write to it from this Mac. Default: ten.
 - Only the thread the person writes to can use their Mac, not workers it spawns. Default: yes.
-- The ask is a separate small window rather than a card in the thread. Default: yes; the thread
-  shows a row that says a command is waiting, with no button that allows it.
+- The ask and the lending sheet are separate small windows, with no keyboard shortcut that
+  allows. Default: yes; the thread shows a row that says a command is waiting, with no button
+  that allows it.
