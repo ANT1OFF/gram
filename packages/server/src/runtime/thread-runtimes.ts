@@ -11,6 +11,7 @@ import {
   InvalidState,
   NotFound,
   AgentUnavailable,
+  type ModelRef,
   type GitError,
   type QueuedInput,
   type Thread,
@@ -194,6 +195,25 @@ const turnsHere = (
       ),
   };
 };
+
+const AGENT_NAMES = { claude: "Claude Code", codex: "Codex" } as const;
+
+/**
+ * A model pick stays on the thread's own agent: its session, `agentSessionId` and `codexHome`
+ * belong to that agent, so a model of the other one would be written onto a session that can't run
+ * it. Moving a thread to the other agent is a session switch, not a model change.
+ */
+const otherAgentRefusal = (
+  threadId: ThreadId,
+  current: ModelRef,
+  next: ModelRef,
+): InvalidState | undefined =>
+  next.agent === current.agent
+    ? undefined
+    : new InvalidState({
+        threadId,
+        message: `${next.model} is a ${AGENT_NAMES[next.agent]} model and this thread runs in ${AGENT_NAMES[current.agent]}. A model change stays on the thread's agent.`,
+      });
 
 const make = Effect.gen(function* () {
   const store = yield* ThreadStore;
@@ -1443,6 +1463,8 @@ const make = Effect.gen(function* () {
             threadId,
             message: "Wait for the orchestrator switch before changing its model.",
           });
+        const otherAgent = otherAgentRefusal(threadId, before.model, model);
+        if (otherAgent !== undefined) return yield* otherAgent;
         if (model.speed === "fast") {
           const host = yield* hosts.get(model.agent);
           const problem = fastSelectionProblem(
@@ -1468,6 +1490,8 @@ const make = Effect.gen(function* () {
                 message:
                   "The orchestrator changed while this model selection waited. Review the current session and select again.",
               });
+            const movedAgent = otherAgentRefusal(threadId, current.model, model);
+            if (movedAgent !== undefined) return yield* movedAgent;
             const thread = yield* store.updateThread(threadId, (t) => ({
               ...t,
               model,
