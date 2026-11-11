@@ -138,7 +138,17 @@ export interface HostedDeviceState {
 export type Done = { readonly ok: true } | { readonly ok: false; readonly why: string };
 
 export interface LendChoice {
-  readonly folders: ReadonlyArray<{ readonly path: string; readonly label: string }>;
+  readonly folders: ReadonlyArray<{
+    readonly path: string;
+    readonly label: string;
+    /** The folder as it was when shown: a different one at the same path since isn't it. */
+    readonly seen?: { readonly device: number; readonly inode: number };
+  }>;
+  readonly readOnly: boolean;
+}
+
+export interface ResumeShown {
+  readonly folders: ReadonlyArray<string>;
   readonly readOnly: boolean;
 }
 
@@ -151,8 +161,11 @@ export interface HostedDevice {
   readonly refresh: (origin: string) => Promise<Done>;
   /** A decision: only from the lending sheet. */
   readonly lend: (origin: string, workspace: string, choice: LendChoice) => Promise<Done>;
-  /** A decision: only from the lending sheet. */
-  readonly resume: (origin: string, workspace: string) => Promise<Done>;
+  /**
+   * A decision: only from the lending sheet. `shown` is what the person was shown: the folders,
+   * which must still be the ones lent, and whether it said reads only, which is then kept.
+   */
+  readonly resume: (origin: string, workspace: string, shown?: ResumeShown) => Promise<Done>;
   /** Takes authority away: the local window may call it. */
   readonly stop: (origin: string, workspace: string) => Promise<void>;
   /** A decision: only from the lending sheet. */
@@ -367,7 +380,8 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
   let writing: Promise<void> = Promise.resolve();
   const save = (): Promise<void> => {
     const keys = fileKeys;
-    if (keys === undefined || unavailable !== undefined) return Promise.resolve();
+    // Closed, nothing more is written: a newer device may hold the file now.
+    if (keys === undefined || unavailable !== undefined || closed) return Promise.resolve();
     writing = writing
       .catch(() => undefined)
       .then(() =>
@@ -820,6 +834,13 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       for (const chosen of choice.folders) {
         const checked = await checkLendable(chosen.path, options.bounds);
         if (!checked.ok) return { ok: false, why: `${chosen.path}: ${checked.why}` };
+        // The folder shown is the folder lent: a path that now leads elsewhere isn't it.
+        if (
+          checked.path !== chosen.path ||
+          (chosen.seen !== undefined &&
+            (chosen.seen.device !== checked.device || chosen.seen.inode !== checked.inode))
+        )
+          return { ok: false, why: `${chosen.path} changed since you chose it. Choose it again.` };
         folders.set(folderId(), {
           label: chosen.label,
           path: checked.path,
@@ -868,11 +889,16 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       return { ok: true };
     },
 
-    resume: async (origin, workspace) => {
+    resume: async (origin, workspace, shown) => {
       const server = known(origin);
       const lent = server?.lent.get(workspace);
       if (server === undefined || lent === undefined || lent.state !== "resume")
         return { ok: false, why: "Nothing to resume." };
+      // The folders the person was shown are the ones lent again, or nothing is.
+      const same = (ids: ReadonlyArray<string>) =>
+        ids.length === lent.folders.size && ids.every((id) => lent.folders.has(id));
+      if (shown !== undefined && !same(shown.folders))
+        return { ok: false, why: "What was lent changed. Try again." };
       if (server.keeper.signedOut()) return { ok: false, why: "Sign in there again first." };
       if (!mayLend()) return { ok: false, why: "Lending isn't available on this computer." };
       // What the organisation allows there must be known before anything is lent again.
@@ -895,6 +921,10 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       }
       if (server.lent.get(workspace) !== lent || !mayLend())
         return { ok: false, why: "Nothing to resume." };
+      if (shown !== undefined && !same(shown.folders))
+        return { ok: false, why: "What was lent changed. Try again." };
+      // Shown as reads only, it stays so, whatever the organisation allows later.
+      if (shown?.readOnly === true) lent.readOnly = true;
       lent.state = "on";
       sync(server);
       return { ok: true };
@@ -911,7 +941,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
 
     liftPause: async (origin) => {
       const server = known(origin);
-      if (server === undefined || !server.limits.paused()) return;
+      if (closed || server === undefined || !server.limits.paused()) return;
       server.limits.lift();
       await save().catch(() => undefined);
       sync(server);

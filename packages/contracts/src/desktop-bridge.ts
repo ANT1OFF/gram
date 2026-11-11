@@ -320,6 +320,36 @@ export interface NotificationStatus {
   } | null;
 }
 
+/** This machine as a personal device of hosted servers, as Settings shows it. */
+export interface HostedDeviceView {
+  /** Why lending can't be offered on this computer; signing in may still work. */
+  readonly unavailable?: "no-keyring" | "no-lock-signal" | "settings-edited";
+  readonly servers: ReadonlyArray<{
+    readonly origin: string;
+    /** The server's own words. */
+    readonly name: string;
+    readonly signedIn: boolean;
+    readonly paused: boolean;
+    readonly problem?: string;
+    readonly workspaces: ReadonlyArray<{
+      readonly id: string;
+      readonly name: string;
+      readonly organisation: string;
+      readonly policy: "off" | "read" | "on";
+      readonly lending: "off" | "on" | "resume";
+      readonly readOnly: boolean;
+      readonly folders: ReadonlyArray<{
+        readonly id: string;
+        readonly label: string;
+        readonly path: string;
+      }>;
+      readonly connected: boolean;
+    }>;
+  }>;
+}
+
+export type HostedDeviceDone = { readonly ok: true } | { readonly ok: false; readonly why: string };
+
 export interface DesktopBridge extends DesktopWindows {
   readonly platform: "darwin" | "win32" | "linux" | (string & {});
   /** Absolute filesystem path of a dropped/selected `File`. */
@@ -399,6 +429,24 @@ export interface DesktopBridge extends DesktopWindows {
     list(): Promise<readonly string[]>;
     remove(host: string): Promise<void>;
     onChange(callback: (hosts: readonly string[]) => void): () => void;
+  };
+  /**
+   * This machine as a personal device of hosted servers, while the hosted features are on:
+   * `state` is null while there is none. The page can read it, sign in, sign out and stop
+   * lending; lending, resuming, lifting a pause and starting afresh only open a decision the
+   * shell draws and the person answers there, so the page can never choose them itself.
+   */
+  readonly hostedDevice?: {
+    state(): Promise<HostedDeviceView | null>;
+    signIn(server: string): Promise<HostedDeviceDone>;
+    signOut(origin: string): Promise<void>;
+    refresh(origin: string): Promise<HostedDeviceDone>;
+    lend(origin: string, workspace: string): Promise<HostedDeviceDone>;
+    resume(origin: string, workspace: string): Promise<HostedDeviceDone>;
+    stop(origin: string, workspace: string): Promise<void>;
+    liftPause(origin: string): Promise<HostedDeviceDone>;
+    startAfresh(): Promise<HostedDeviceDone>;
+    onChange(callback: () => void): () => void;
   };
   /**
    * "Agent may browse": the public hosts agents may open and read in the Preview pane without a

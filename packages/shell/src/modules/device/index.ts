@@ -21,4 +21,5 @@ export * from "./ask-page.ts";
 export * from "./ask-queue.ts";
 export * from "./hosted-device.ts";
 export * from "./presence.ts";
-// The ask window itself is Electron's: import `./ask-window.ts` from the main process.
+// The ask window, the decision dialogs and the Settings bridge are Electron's: the main process
+// imports them from `./main.ts`.

@@ -914,3 +914,20 @@ Every loop over the app's windows goes through `appWindows()` (and the focused o
 
 Still to come: the lending sheet, the activity window, and Settings → Hosted, the windows that
 call the device's decisions.
+
+### Settings and the decisions, as built
+
+Settings → Machines shows "Lend this Mac to hosted workspaces" (this computer, off macOS) under
+the other machines, only in the desktop app with hosted features on: each server signed in to,
+its workspaces with what the organisation allows, what is lent, and a field to sign in to
+another. The page reads the device through `window.gram.hostedDevice`, which main serves only to
+the app's own pages and never to a decision window. Sign out and Stop lending act at once. Lend,
+Resume lending, Lift the pause and Start afresh only ask main to put the decision to the person,
+in dialogs the operating system draws: the folder picker, then a confirmation that lists the
+folders, the workspace, its organisation and the server, with "Reads only: no commands" where
+commands are allowed. The server's words in each are drawn on one line with hidden codes shown
+as codes. The page can't choose folders or answer a dialog.
+
+These stand in for the mock's lending sheet window and its own Settings group for now: the
+decisions are the same, drawn by the system instead of in a window of Gram's. The activity
+window is still to come.

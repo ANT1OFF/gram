@@ -51,6 +51,6 @@ Approved as the defaults in [section 10 of the design note](../../personal-devic
 - The hosted view's own web contents and its reduced bridge aren't drawn: they change nothing a
   person sees.
 - "This Mac" becomes "this computer" off macOS.
-- The pause and lending being unavailable are drawn in [v2](v2.html) (states paused,
-  no-keyring and no-lock-signal on "2 Lend this Mac", lift-pause on "The lending sheet"), awaiting
-  review.
+- The pause and lending being unavailable are drawn in [v2](v2.html), approved on 11 November
+  2026: states paused, no-keyring and no-lock-signal on "2 Lend this Mac", lift-pause on "The
+  lending sheet".

@@ -16,6 +16,7 @@ import { createLogger, defaultDataDir, logDirFor } from "@gram/server/logging";
 import { readUpdatePrefs } from "@gram/server/updates";
 import {
   app,
+  BrowserWindow,
   dialog,
   ipcMain,
   Menu,
@@ -86,16 +87,20 @@ import {
   vaultSecrets,
   watchPresence,
 } from "@gram/shell/modules/device";
-import { makeAskWindow } from "@gram/shell/modules/device/ask-window";
+import {
+  confirmServerDialog,
+  dialogDecisions,
+  installHostedDeviceIpc,
+  machineWord,
+  makeAskWindow,
+} from "@gram/shell/modules/device/main";
 import {
   agentHomes,
   askColorsFor,
-  confirmServerDialog,
   createDeviceHost,
   deviceDataDir,
   embeddingFromMessage,
   machineName,
-  machineWord,
 } from "./hosted-device.ts";
 import { APP_ID } from "./app-id.ts";
 import { devAllowedOrigins, devBootUrl, logLevelFromMessage } from "./boot.ts";
@@ -235,8 +240,11 @@ const vaultCrypto = makeMacVaultCrypto(
  * This machine as a personal device of a hosted control plane, made only while the hosted
  * features setting is on (the server says so) and closed when it goes off or the app quits.
  */
+/** Tells Settings the device changed; set once the bridge is served. */
+let deviceChanged = (): void => undefined;
 const deviceHost = createDeviceHost({
   ready: () => app.whenReady(),
+  changed: () => deviceChanged(),
   failed: (error) =>
     log.error({ source: "device", err: error }, "the personal device didn't start"),
   make: async () => {
@@ -291,6 +299,7 @@ const deviceHost = createDeviceHost({
             : "linux",
         now: () => Date.now(),
         elapsed: () => performance.now(),
+        changed: () => deviceChanged(),
       });
       return { device, end: ended };
     } catch (error) {
@@ -804,6 +813,16 @@ async function runApp() {
   const ipc = createShellIpc(ipcMain, (event) =>
     isTrustedSenderUrl(event.senderFrame?.url, trustedOrigins()),
   );
+  // Settings → Machines reads the personal device here; its decisions open dialogs the shell draws.
+  deviceChanged = installHostedDeviceIpc(ipc, {
+    device: () => deviceHost.device(),
+    decisions: (sender) =>
+      dialogDecisions(() => {
+        const win = BrowserWindow.fromWebContents(sender);
+        return win === null || win.isDestroyed() ? undefined : win;
+      }),
+    machine: machineWord(process.platform),
+  }).changed;
   // Reports are read from the windows made below, by then.
   const connections = installConnection(ipc, {
     log,
