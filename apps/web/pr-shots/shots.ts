@@ -2384,7 +2384,7 @@ const openOrchestratorSettingsRow = async (page: Page) => {
 const ORCHESTRATOR_CONTINUE_IN_SHOTS: readonly Shot[] = [
   {
     name: "orchestrator-continue-in-menu",
-    title: "The orchestrator's \"…\": Continue in Codex… first, where Switch orchestrator… was",
+    title: 'The orchestrator\'s "…": Continue in Codex… first, where Switch orchestrator… was',
     open: openOrchestratorMenu,
   },
   {
@@ -4950,7 +4950,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "orchestrator-menu-switch",
-    title: "The title bar's \"…\" on the orchestrator, its thread menu open",
+    title: 'The title bar\'s "…" on the orchestrator, its thread menu open',
     modes: ["dark"],
     open: async (page) => {
       await openOverviewHome(page, 1440, { panel: false });
