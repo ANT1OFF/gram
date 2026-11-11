@@ -343,6 +343,56 @@ layer(server({ embedding: true, embed }), { excludeTestServices: true })(
         );
       }).pipe(Effect.scoped),
     );
+
+    it.effect("holds the settings it is supplied against a change from inside", () =>
+      Effect.gen(function* () {
+        const at = yield* port;
+        const app = yield* appClient;
+        expect((yield* app["settings.get"]()).logLevel).toBe("info");
+
+        const put = yield* call(at, "/embed/v1/settings", {
+          token: TOKEN,
+          method: "PUT",
+          body: { settings: { logLevel: "debug", notifications: { sounds: false } } },
+        });
+        expect(JSON.parse(put.body)).toEqual({ supplied: ["logLevel", "notifications.sounds"] });
+        const now = yield* app["settings.get"]();
+        expect(now.logLevel).toBe("debug");
+        expect(now.notifications.sounds).toBe(false);
+
+        // The user's own window can't change either, and is told whose they are.
+        const refused = yield* Effect.flip(app["settings.set"]({ patch: { logLevel: "warn" } }));
+        expect(refused).toMatchObject({
+          _tag: "InvalidState",
+          message: expect.stringContaining("logLevel is set by the service that runs this Gram"),
+        });
+        // What isn't supplied still changes, beside a supplied value repeated as it stands.
+        const changed = yield* app["settings.set"]({
+          patch: { notifications: { sounds: false, native: false } },
+        });
+        expect(changed.notifications).toMatchObject({ sounds: false, native: false });
+        expect(changed.logLevel).toBe("debug");
+
+        // The switch for all of this is never supplied.
+        const flag = yield* call(at, "/embed/v1/settings", {
+          token: TOKEN,
+          method: "PUT",
+          body: { settings: { experimental: { embedding: false } } },
+        });
+        expect(flag.status).toBe(400);
+
+        // Supplying nothing gives the settings back to the user, at the values they last had.
+        const cleared = yield* call(at, "/embed/v1/settings", {
+          token: TOKEN,
+          method: "PUT",
+          body: { settings: {} },
+        });
+        expect(cleared.status).toBe(200);
+        const read = yield* call(at, "/embed/v1/settings", { token: TOKEN, method: "GET" });
+        expect(JSON.parse(read.body)).toEqual({ settings: null });
+        expect((yield* app["settings.set"]({ patch: { logLevel: "info" } })).logLevel).toBe("info");
+      }).pipe(Effect.scoped),
+    );
   },
 );
 

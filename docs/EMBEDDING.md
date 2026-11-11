@@ -131,3 +131,25 @@ What to rely on:
   30 seconds after its time.
 - A routine that watches for events registers each of its looks, a few minutes apart, so such a
   routine keeps waking a server that would otherwise idle.
+
+## Settings supplied from outside
+
+The deployment can set some of the settings for this server. A supplied setting reads as supplied to everything inside, and nothing inside can change it: the Settings page, a paired phone and an agent's `settings_propose` are each refused, with a message that says the service that runs this Gram set it.
+
+```
+PUT /embed/v1/settings
+{ "settings": { "logLevel": "info", "updates": { "channel": "stable" } } }
+→ { "supplied": ["logLevel", "updates.channel"] }
+
+GET /embed/v1/settings
+→ { "settings": { "logLevel": "info", "updates": { "channel": "stable" } } }
+```
+
+- The body is a settings patch, the shape the app's own saves have: a section's fields, or a top-level key. `null` for an optional field keeps it cleared.
+- Each `PUT` replaces everything supplied before. `{ "settings": {} }` supplies nothing, and `GET` then answers `null`.
+- The answer lists what was taken. A setting this build doesn't know is left out of it rather than refused, so a deployment can tell which of its settings are in force.
+- What is supplied is kept in the server's database and holds through a restart. It is applied only while the hosted features are on.
+- A setting that is no longer supplied keeps the value it last had, and can be changed inside again.
+- `experimental.embedding` can't be supplied: it is what turns this on (`GRAM_EMBEDDING`).
+
+The Settings page doesn't yet mark a supplied setting: a change to one fails with the message above.

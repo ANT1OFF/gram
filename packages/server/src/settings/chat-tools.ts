@@ -32,6 +32,7 @@ import { ThreadStore, type SettingsAuditEntry } from "../persistence/thread-stor
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { askUser, checkModels, fail } from "./approval.ts";
+import { suppliedPathAmong, suppliedRefusal } from "./supplied.ts";
 import { makeSettingsWriter } from "./writer.ts";
 
 export interface SettingsToolsOptions {
@@ -250,6 +251,14 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
             if (proposed.scope === "workspace" && orchestration === undefined) {
               return yield* fail(tool, "Workspaces can't be changed here.");
             }
+            if (proposed.scope === "app") {
+              // Refused before the card: the user couldn't approve it into effect either.
+              const held = yield* suppliedPathAmong(
+                store,
+                proposed.writes.map((write) => write.path),
+              );
+              if (held !== undefined) return yield* fail(tool, suppliedRefusal(held));
+            }
             // The target is fixed now, by id: a rename, or another workspace taking this one's
             // name, never moves the approval elsewhere.
             const pinned = proposed.scope === "workspace" ? state?.workspace.id : undefined;
@@ -332,6 +341,12 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               );
             let auditSeq: number;
             if (proposed.scope === "app") {
+              // Supplied while the card waited: nothing is written and nothing is recorded.
+              const held = yield* suppliedPathAmong(
+                store,
+                proposed.writes.map((write) => write.path),
+              );
+              if (held !== undefined) return yield* fail(tool, suppliedRefusal(held));
               const done = yield* writer.commit(proposed.writes, audit, { announce: true });
               if (done === undefined) return yield* moved();
               auditSeq = done.auditSeq;

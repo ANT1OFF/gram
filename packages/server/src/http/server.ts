@@ -48,6 +48,7 @@ import { Embedding } from "../embedding/embedding.ts";
 import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
 import { RepoEventsInboundLive } from "../embedding/repo-events.ts";
 import { TimersLive } from "../embedding/timers.ts";
+import { SuppliedSettingsLive } from "../settings/supplied.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { TerminalGate } from "../terminal/gate.ts";
 import { HostTerminals } from "../terminal/host-terminals.ts";
@@ -471,6 +472,7 @@ export const ServerCore = Layer.unwrap(
         DevServerAppToolsLive,
         ThreadAssistLive,
         RepoEventsInboundLive,
+        SuppliedSettingsLive,
       )
         // Above the merges, which it asks again when a dependency merges; a `pipe` takes twenty.
         .pipe(Layer.provideMerge(PrDependenciesLive))
