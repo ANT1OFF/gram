@@ -1,3 +1,4 @@
+import { ActingPerson } from "../embedding/person.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -273,11 +274,13 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
     Effect.gen(function* () {
       const fronted = yield* FrontedSignIn;
       const store = yield* ThreadStore;
-      return ActorGuard.of((effect, { rpc, payload, headers }) =>
+      return ActorGuard.of((call, { rpc, payload, headers }) =>
         Effect.gen(function* () {
-          if (!(yield* fronted.active)) return yield* effect;
+          if (!(yield* fronted.active)) return yield* call;
           const actor = actorOf(headers);
           if (actor === undefined) return yield* Effect.die(new Error(NO_ACTOR_REFUSAL));
+          // The call runs as this person, for what asks who acted (`embedding/person.ts`).
+          const effect = Effect.provideService(call, ActingPerson, actor.id);
           const action = rpc._tag;
           if (VIEWER_RPCS.has(action)) return yield* effect;
           if (actor.role !== "member") return yield* Effect.die(new Error(VIEWER_REFUSAL));

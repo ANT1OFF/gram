@@ -1,5 +1,6 @@
 // Approval cards the server raises and answers itself (`requestApproval`), rather than an agent session.
 
+import { ActingPerson } from "../embedding/person.ts";
 import * as Cause from "effect/Cause";
 import {
   type ThreadId,
@@ -46,6 +47,8 @@ export const respondFailure = (cause: Cause.Cause<unknown>): string => {
 /** Internal result provenance; client RequestAnswer schemas have no resolution field. */
 export type ServerApprovalAnswer = ApprovalAnswer & {
   readonly resolution?: AppToolApprovalResolution;
+  /** The signed-in person who answered, where the server knows one (`embedding/person.ts`). */
+  readonly answeredBy?: string;
 };
 
 export interface ServerApprovalRequest {
@@ -278,6 +281,7 @@ export const makeServerApprovals = ({
               });
             }
             serverRequests.delete(requestId);
+            const answeredBy = yield* ActingPerson;
             yield* Effect.gen(function* () {
               if (!(yield* store.removeRequest(threadId, requestId))) {
                 return yield* new RequestNotFound({ threadId, requestId });
@@ -308,6 +312,7 @@ export const makeServerApprovals = ({
                     scope: failed ? "once" : answer.scope,
                     ...(!failed && answer.message !== undefined ? { message: answer.message } : {}),
                     resolution,
+                    ...(failed || answeredBy === undefined ? {} : { answeredBy }),
                   });
                 }),
               ),
@@ -340,6 +345,8 @@ export const makeServerApprovals = ({
         return answer;
       }
       const thread = yield* store.getThread(threadId).pipe(Effect.option);
+      // This runs in the call of whoever answered the card.
+      const answeredBy = yield* ActingPerson;
       for (const each of asked.actions) {
         const decided: Decided = Option.isNone(thread)
           ? { id: "", decision: "refuse", reason: DECISION_UNAVAILABLE }
@@ -347,7 +354,11 @@ export const makeServerApprovals = ({
               ...each,
               initiator: "agent",
               thread: thread.value,
-              approval: { decisionId: each.decisionId, askId: requestId },
+              approval: {
+                decisionId: each.decisionId,
+                askId: requestId,
+                ...(answeredBy === undefined ? {} : { answeredBy }),
+              },
             });
         if (decided.decision === "allow") continue;
         const refusal = refusalText(
