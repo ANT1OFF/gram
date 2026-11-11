@@ -35,6 +35,7 @@ import {
   keepMicrophoneReadyOf,
   speechModeOf,
   voiceInputOn,
+  embeddingOn,
   restartOnMcpChangeOn,
   reviewRequestHolds,
   reviewRequestsAwaitBot,
@@ -341,6 +342,22 @@ describe("workspaces.orchestratorConnectors", () => {
         Schema.decodeUnknownSync(SettingsPatch)({ workspaces: { orchestratorConnectors: [bad] } }),
       ).toThrow();
     }
+  });
+});
+
+describe("hosted features", () => {
+  it("are off unless turned on, and turn off again", () => {
+    expect(embeddingOn(DEFAULT_SETTINGS)).toBe(false);
+    const patch = Schema.decodeUnknownSync(SettingsPatch)({ experimental: { embedding: true } });
+    const on = applySettingsPatch(DEFAULT_SETTINGS, patch);
+    expectRoundTrip(Settings, on);
+    expect(embeddingOn(on)).toBe(true);
+    // Beside the other experimental switch, which it leaves as it was.
+    const both = applySettingsPatch(on, { experimental: { voiceInput: true } });
+    expect(embeddingOn(both)).toBe(true);
+    expect(embeddingOn(applySettingsPatch(both, { experimental: { embedding: false } }))).toBe(
+      false,
+    );
   });
 });
 

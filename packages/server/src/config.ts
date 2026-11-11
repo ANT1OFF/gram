@@ -57,6 +57,12 @@ export interface ServerConfigShape {
    * `GRAM_ORCHESTRATION_DEBOUNCE_MS` shortens it so the e2e flows don't wait it out.
    */
   readonly orchestrationDebounce?: Duration.Duration;
+  /**
+   * `GRAM_EMBEDDING`: `1` turns the hosted features setting (`experimental.embedding`) on when the
+   * server starts and `0` turns it off, for a server with no window to change it in. Absent leaves
+   * the stored setting as it is.
+   */
+  readonly embedding?: boolean;
 }
 
 /**
@@ -125,6 +131,11 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
       ...(Number.isFinite(debounceMs) && debounceMs > 0
         ? { orchestrationDebounce: Duration.millis(debounceMs) }
         : {}),
+      ...(env["GRAM_EMBEDDING"] === "1"
+        ? { embedding: true }
+        : env["GRAM_EMBEDDING"] === "0"
+          ? { embedding: false }
+          : {}),
     };
   };
 }

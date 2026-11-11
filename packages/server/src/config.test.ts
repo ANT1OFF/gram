@@ -23,6 +23,13 @@ describe("ServerConfig.fromEnv", () => {
     ).not.toHaveProperty("listenHost");
   });
 
+  it("takes the hosted features setting from GRAM_EMBEDDING only as 1 or 0", () => {
+    expect(ServerConfig.fromEnv({ GRAM_EMBEDDING: "1" }).embedding).toBe(true);
+    expect(ServerConfig.fromEnv({ GRAM_EMBEDDING: "0" }).embedding).toBe(false);
+    expect(ServerConfig.fromEnv({ GRAM_EMBEDDING: "true" })).not.toHaveProperty("embedding");
+    expect(ServerConfig.fromEnv({})).not.toHaveProperty("embedding");
+  });
+
   it("flags the fake agent only for GRAM_FAKE_AGENT=1", () => {
     expect(ServerConfig.fromEnv({ GRAM_FAKE_AGENT: "1" }).fakeAgent).toBe(true);
     expect(ServerConfig.fromEnv({ GRAM_FAKE_AGENT: "0" })).not.toHaveProperty("fakeAgent");

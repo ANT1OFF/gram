@@ -70,6 +70,7 @@ import type { GitPlatform } from "../git/platform.ts";
 import { LoopStallLog } from "../logging/loop-stalls.ts";
 import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { withEmbeddingSeed } from "../settings/embedding.ts";
 import { PreviewFiles } from "../preview/files.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
@@ -548,10 +549,12 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           Layer.provideMerge(
-            ThreadStore.layerSqlite(databaseFile, {
-              checkpointOffLoop: databaseFile !== ":memory:",
-              writerOffLoop: databaseFile !== ":memory:",
-            }),
+            withEmbeddingSeed(
+              ThreadStore.layerSqlite(databaseFile, {
+                checkpointOffLoop: databaseFile !== ":memory:",
+                writerOffLoop: databaseFile !== ":memory:",
+              }),
+            ),
           ),
         )
     );
