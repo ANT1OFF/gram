@@ -1628,7 +1628,9 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           expect(yield* refusal({ threadId: plain.id })).toMatch(/^not_your_worker: /);
           expect(yield* tool.needsApproval!({ ...input, threadId: plain.id })).toBe(false);
 
-          yield* told.completeTurn();
+          // A silent turn gets an automatic wrap-up: finish that too before waiting for idle.
+          // Otherwise the wait can miss idle between these turns and leave the fake running.
+          yield* stopSilently(told);
           yield* waitStatus(worker.thread.id, "idle");
           yield* runtimes.send(worker.thread.id, { text: "Leave the warehouse alone for now." });
           yield* waitReal(
