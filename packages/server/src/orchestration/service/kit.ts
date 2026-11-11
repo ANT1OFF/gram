@@ -51,6 +51,7 @@ import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 import { appLabelOf, ServerConfig } from "../../config.ts";
 import { type Coalescing, makeCoalescingQueue } from "../../events/backlog.ts";
+import { Timers } from "../../embedding/timers.ts";
 import { EventHub } from "../../events/event-hub.ts";
 import { AppActivity } from "../../git/activity.ts";
 import { LocalChecks } from "../../git/local-checks.ts";
@@ -694,6 +695,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const holdTimers = yield* FiberMap.make<ThreadId>();
   /** Per `schedule_wake`, by its id, the timer that fires it. */
   const wakeAlarms = yield* FiberMap.make<string>();
+  /** What a scheduled wake waits on: a sleep, registered with an outside scheduler where one is. */
+  const wakeClock = yield* Timers;
   /**
    * Per worker question in triage, by `questionTimerKey`, the timer that forwards it to the user.
    * Ids are numbered per workspace, so every workspace has its own `WQ1`.
@@ -1286,6 +1289,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     switchJobs,
     holdTimers,
     wakeAlarms,
+    wakeClock,
     questionTimers,
     limitAlarms,
     pauseFence,

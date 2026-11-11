@@ -3,19 +3,21 @@
 // platform's services call it.
 
 import { afterAll, describe, expect, layer } from "@effect/vitest";
-import type { PrStatus, ServerEvent } from "@gram/contracts";
+import { GramRpcs, type PrStatus, type ServerEvent } from "@gram/contracts";
 import { Pr } from "@gram/git";
 import { captureLogs } from "@gram/agents/testing/logs";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import { request as httpRequest } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
+import type { AddressInfo } from "node:net";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { eventually, makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
-import { HttpServer } from "../platform/unstable.ts";
-import { ServerLayer, serverPort } from "../http/server.ts";
+import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
+import { LaunchToken, ServerLayer, serverPort } from "../http/server.ts";
+import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
@@ -29,6 +31,8 @@ afterAll(() => removeDir(tmp));
 interface Answer {
   readonly status: number;
   readonly body: string;
+  /** The first cookie the answer set, if any. */
+  readonly cookie: string;
 }
 
 const call = (
@@ -64,7 +68,13 @@ const call = (
             let body = "";
             res.setEncoding("utf8");
             res.on("data", (chunk: string) => (body += chunk));
-            res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+            res.on("end", () =>
+              resolve({
+                status: res.statusCode ?? 0,
+                body,
+                cookie: res.headers["set-cookie"]?.[0] ?? "",
+              }),
+            );
           },
         );
         req.on("error", reject);
@@ -73,6 +83,61 @@ const call = (
   );
 
 const port = Effect.map(HttpServer.HttpServer, serverPort);
+
+/** The app's own connection: the launch cookie from loopback, over `/ws`. */
+const appClient = Effect.gen(function* () {
+  const at = yield* port;
+  const { token } = yield* LaunchToken;
+  const boot = yield* call(at, `/?boot=${token}`, { method: "GET", host: `127.0.0.1:${at}` });
+  expect(boot.status).toBe(302);
+  const cookie = boot.cookie.split(";")[0] ?? "";
+  const protocol = yield* Layer.build(
+    RpcClient.layerProtocolSocket().pipe(
+      Layer.provide(Socket.layerWebSocket(`ws://127.0.0.1:${at}/ws`)),
+      Layer.provide(
+        Layer.succeed(Socket.WebSocketConstructor)(
+          (url) =>
+            new (globalThis.WebSocket as unknown as new (
+              url: string,
+              init: { headers: Record<string, string> },
+            ) => globalThis.WebSocket)(url, { headers: { cookie } }),
+        ),
+      ),
+      Layer.provide(RpcSerialization.layerJson),
+    ),
+  );
+  return yield* RpcClient.make(GramRpcs).pipe(Effect.provideContext(protocol));
+});
+
+const SCHEDULER_TOKEN = "scheduler-acceptance-token-0123456789";
+
+/**
+ * The deployment's scheduler: it keeps each timer it is told of, and calls the server back when
+ * `ring` says a timer's time has come.
+ */
+const scheduler = {
+  timers: new Map<string, number>(),
+  calls: [] as Array<{ readonly method: string; readonly path: string; readonly auth?: string }>,
+};
+const schedulerServer = createServer((req, res) => {
+  let text = "";
+  req.on("data", (chunk: Buffer) => (text += chunk.toString()));
+  req.on("end", () => {
+    const key = decodeURIComponent((req.url ?? "").replace("/v1/timers/", ""));
+    scheduler.calls.push({
+      method: req.method ?? "",
+      path: req.url ?? "",
+      ...(req.headers.authorization === undefined ? {} : { auth: req.headers.authorization }),
+    });
+    if (req.method === "PUT")
+      scheduler.timers.set(key, (JSON.parse(text) as { atMs: number }).atMs);
+    if (req.method === "DELETE") scheduler.timers.delete(key);
+    res.writeHead(200).end();
+  });
+});
+await new Promise<void>((resolve) => schedulerServer.listen(0, "127.0.0.1", resolve));
+afterAll(() => void schedulerServer.close());
+const schedulerUrl = `http://127.0.0.1:${(schedulerServer.address() as AddressInfo).port}/v1`;
 
 const badge = (checks: PrStatus["checks"]): PrStatus => ({
   number: 7,
@@ -110,7 +175,11 @@ const server = (config: Partial<Parameters<typeof ServerConfig.layer>[0]>) =>
     Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
   );
 
-const embed = { repoEvents: "pushed" as const, inboundToken: TOKEN };
+const embed = {
+  repoEvents: "pushed" as const,
+  inboundToken: TOKEN,
+  scheduler: { url: schedulerUrl, token: SCHEDULER_TOKEN },
+};
 
 const repoEvent = { events: [{ repo: "acme/web", number: 7, kind: "check" }] };
 
@@ -215,6 +284,63 @@ layer(server({ embedding: true, embed }), { excludeTestServices: true })(
           Effect.sync(() => shown.at(-1) === "passing"),
         );
         expect(github.asked).toBeGreaterThan(asked);
+      }).pipe(Effect.scoped),
+    );
+
+    it.effect("registers a snooze with the scheduler, which brings the thread back", () =>
+      Effect.gen(function* () {
+        const at = yield* port;
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const app = yield* appClient;
+        const thread = yield* runtimes.create({
+          projectRoot: tmp,
+          checkout: { kind: "main", path: tmp },
+        });
+        const key = `snooze:${thread.id}`;
+
+        // The user snoozes it for a few seconds: the server keeps the snooze, and tells the
+        // scheduler only its key and its time.
+        const until = Date.now() + 2_500;
+        yield* app["thread.snooze"]({ threadId: thread.id, until });
+        yield* eventually(
+          "the timer registered",
+          Effect.sync(() => scheduler.timers.get(key) === until),
+        );
+        expect(scheduler.calls.every((each) => each.auth === `Bearer ${SCHEDULER_TOKEN}`)).toBe(
+          true,
+        );
+        const listed = yield* call(at, "/embed/v1/timers", { token: TOKEN, method: "GET" });
+        expect(JSON.parse(listed.body)).toMatchObject({ timers: [{ key, atMs: until }] });
+
+        // Its time comes, by the scheduler's clock, and the scheduler calls.
+        yield* Effect.sleep(`${Math.max(0, until - Date.now())} millis`);
+        const fired = yield* call(at, "/embed/v1/timers/fire", { token: TOKEN, body: { key } });
+        expect(JSON.parse(fired.body)).toEqual({ fired: true });
+        // Back and unread within moments: the wait's own fallback is half a minute away.
+        const back = yield* eventually(
+          "the thread back",
+          Effect.map(store.getThread(thread.id), (found) =>
+            found.snoozedUntil === undefined ? found : undefined,
+          ),
+          5_000,
+        );
+        expect(back.unread).toBe(true);
+        // A second call for it finds nothing waiting, so the scheduler drops it.
+        const again = yield* call(at, "/embed/v1/timers/fire", { token: TOKEN, body: { key } });
+        expect(JSON.parse(again.body)).toEqual({ fired: false });
+
+        // A snooze the user takes back is taken back from the scheduler too.
+        yield* app["thread.snooze"]({ threadId: thread.id, until: Date.now() + 3_600_000 });
+        yield* eventually(
+          "the second timer registered",
+          Effect.sync(() => scheduler.timers.has(key)),
+        );
+        yield* app["thread.snooze"]({ threadId: thread.id, until: null });
+        yield* eventually(
+          "the timer withdrawn",
+          Effect.sync(() => !scheduler.timers.has(key)),
+        );
       }).pipe(Effect.scoped),
     );
   },

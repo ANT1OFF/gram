@@ -47,6 +47,7 @@ import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
 import { Embedding } from "../embedding/embedding.ts";
 import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
 import { RepoEventsInboundLive } from "../embedding/repo-events.ts";
+import { TimersLive } from "../embedding/timers.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { TerminalGate } from "../terminal/gate.ts";
 import { HostTerminals } from "../terminal/host-terminals.ts";
@@ -567,7 +568,10 @@ export const ServerCore = Layer.unwrap(
               AppActivityLive,
               ProcessRoots.layer,
               // The seams an embedding deployment uses, inert while the hosted features are off.
-              EmbedInbound.layer.pipe(Layer.provideMerge(Embedding.layer)),
+              TimersLive.pipe(
+                Layer.provideMerge(EmbedInbound.layer),
+                Layer.provideMerge(Embedding.layer),
+              ),
             ),
           ),
           Layer.provideMerge(

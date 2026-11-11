@@ -11,10 +11,12 @@ whatever its environment says.
 The seams are configured from the server's environment, never from settings, and a malformed
 value stops the server at start rather than half-configuring it.
 
-| Variable           | What it sets                                                                   |
-| ------------------ | ------------------------------------------------------------------------------ |
-| `GRAM_EMBED_TOKEN` | The bearer token the platform's services send on `/embed/v1/*`                 |
-| `GRAM_REPO_EVENTS` | `pushed`: repository events arrive on `/embed/v1/repo-events`; needs the token |
+| Variable               | What it sets                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| `GRAM_EMBED_TOKEN`     | The bearer token the platform's services send on `/embed/v1/*`                 |
+| `GRAM_REPO_EVENTS`     | `pushed`: repository events arrive on `/embed/v1/repo-events`; needs the token |
+| `GRAM_SCHEDULER_URL`   | Where wakes, snoozes and routine runs are registered; needs the token          |
+| `GRAM_SCHEDULER_TOKEN` | The bearer token sent to the scheduler                                         |
 
 Tokens are at least 32 characters with no whitespace. The server takes them out of its own
 environment once it has read them, so no agent, terminal or `git` process it starts inherits one.
@@ -77,3 +79,55 @@ What changes while events are pushed:
 - A person opening a thread, and any action that needs a fresh answer (a merge, a rerun), still
   read at once.
 - Watched workflow runs (`run_monitor`), review requests and event routines keep their own timers.
+
+## An outside scheduler
+
+A wake an agent set, a snooze and a routine's next run each wait for a time. The server waits in
+its own process, which is enough while it runs. A server that is stopped while idle fires nothing,
+so with `GRAM_SCHEDULER_URL` set each wait is also registered with the deployment's scheduler,
+which starts the server if it has to and calls back when the time comes.
+
+The server tells the scheduler a key and a time, and nothing of what the wait is for:
+
+```http
+PUT <GRAM_SCHEDULER_URL>/timers/<key>
+Authorization: Bearer <GRAM_SCHEDULER_TOKEN>
+
+{ "key": "wake:6f0c…", "at": "2026-01-01T09:00:00.000Z", "atMs": 1767258000000 }
+```
+
+```http
+DELETE <GRAM_SCHEDULER_URL>/timers/<key>
+```
+
+`PUT` replaces whatever the key held, and `DELETE` of a key the scheduler doesn't hold may answer
+`404`. Keys are `wake:<id>`, `workspace-wake:<id>`, `snooze:<thread>` and
+`routine:<workspace>:<routine>`, percent-encoded in the path. Redirects are not followed.
+
+When a timer's time comes, the scheduler calls the server:
+
+```http
+POST /embed/v1/timers/fire
+Authorization: Bearer <GRAM_EMBED_TOKEN>
+
+{ "key": "wake:6f0c…" }
+```
+
+The answer is `{ "fired": true }`, or `{ "fired": false }` when nothing waits on that key: the wait
+was cancelled or has fired already, and the scheduler drops it. `GET /embed/v1/timers` lists what
+is waiting now, as `{ "timers": [{ "key", "at", "atMs" }] }`, for a scheduler that wants to check
+its copy.
+
+What to rely on:
+
+- **The server's store stays the record.** What is due, and for whom, is decided by the server from
+  its own database. A call for a time that hasn't come by the server's clock is waited out, not
+  obeyed, so a scheduler can't fire a wake early.
+- **A restart re-registers.** A server that starts arms every stored wait again: whatever fell due
+  while it was down fires at once, and the rest are registered again with `PUT`. Start the server
+  before calling `fire`, or call again when it answers.
+- **A scheduler that is down delays, and loses nothing.** A registration that fails is retried
+  every 30 seconds while the server runs, and a wait whose call never comes ends by itself
+  30 seconds after its time.
+- A routine that watches for events registers each of its looks, a few minutes apart, so such a
+  routine keeps waking a server that would otherwise idle.
