@@ -180,6 +180,8 @@ export interface DeviceGate {
    * a lock, the person stepping away, lending stopping, a pause or a quit.
    */
   readonly stopAll: (why: "away" | "paused") => void;
+  /** Settles when every request under way has its answer. */
+  readonly idle: () => Promise<void>;
 }
 
 const askFields = (payload: RequestBy & { readonly reason?: string }) => ({
@@ -754,10 +756,17 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     cancel: (requestId) => {
       requests.get(requestId)?.controller.abort();
     },
+    idle: async () => {
+      await Promise.allSettled(
+        [...requests.values()].filter((request) => !request.done).map((request) => request.answer),
+      );
+    },
     stopAll: (why) => {
       for (const request of requests.values()) {
         if (request.done) continue;
-        stoppedWith.set(request.controller.signal, why);
+        // The first reason stands: a pause followed by the hang-up it causes is still a pause.
+        if (!stoppedWith.has(request.controller.signal))
+          stoppedWith.set(request.controller.signal, why);
         request.controller.abort();
       }
     },

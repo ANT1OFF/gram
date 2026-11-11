@@ -87,6 +87,7 @@ const fakeGate = () => {
     cancel: (id) => {
       cancelled.push(id);
     },
+    idle: async () => undefined,
     stopAll: (why) => {
       stopped.push(why);
       order.push(`stopped ${why}`);
