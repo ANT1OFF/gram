@@ -98,6 +98,7 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
     pinCwd: o.pinCwd,
     mcpAllowlist: o.mcpAllowlist,
     mcpDenylist: o.mcpDenylist,
+    mcpServer: o.mcpServer === undefined ? undefined : { ...o.mcpServer },
     mcpNoneWithoutToolSearch: o.mcpNoneWithoutToolSearch,
     noBlockingAsk: o.noBlockingAsk,
     peerMessaging: o.peerMessaging,

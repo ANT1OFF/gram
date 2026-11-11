@@ -73,12 +73,18 @@ export const makeClosedReopener = (
         const { checkout } = thread;
         const projectRoot =
           checkout.kind === "worktree" ? (checkout.repoRoot ?? checkout.path) : checkout.path;
-        if (folderMissing) {
+        // A thread started from a profile has a folder of its own under a project it shares
+        // (`thread-profiles/start.ts`), so it comes back there rather than as a project of one.
+        const shared =
+          thread.profile === undefined || checkout.kind !== "main"
+            ? undefined
+            : (yield* store.listProjects).find((project) => project.id === thread.projectId)?.root;
+        if (folderMissing || shared !== undefined) {
           const held = heldCheckoutPaths(yield* store.listThreads, hostOf(checkout));
           if (held.some((path) => samePath(path, checkout.path))) {
             return yield* new InvalidState({ message: "That checkout is already open elsewhere." });
           }
-          return { projectRoot, checkout };
+          return { projectRoot: shared ?? projectRoot, checkout };
         }
         // Folders first, so a typo reads "Folder not found" rather than a git or platform failure.
         const root = yield* resolve(projectRoot);
@@ -138,6 +144,8 @@ export const makeClosedReopener = (
               }),
           ...(additionalDirectories.length === 0 ? {} : { additionalDirectories }),
           ...(extraCheckouts.length === 0 ? {} : { extraCheckouts }),
+          // Its charter and its one MCP server hold after a close as they did before it.
+          ...(thread.profile === undefined ? {} : { profile: thread.profile }),
           ...fields,
           // A missing folder reopens cold: there's nowhere to run a provider.
           ...(folderMissing ? { deferOpen: true } : {}),

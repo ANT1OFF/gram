@@ -3,6 +3,7 @@ import type { Thread } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
+import { withProfile } from "../thread-profiles/policy.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
 /** What a thread's role adds to every agent session it opens. */
@@ -27,6 +28,8 @@ export interface SessionPolicy {
   readonly pinCwd?: boolean | undefined;
   /** The only MCP servers beside Gram's own (`OpenSessionOptions.mcpAllowlist`). */
   readonly mcpAllowlist?: ReadonlyArray<string> | undefined;
+  /** One more MCP server, by address (`OpenSessionOptions.mcpServer`). */
+  readonly mcpServer?: { readonly name: string; readonly url: string } | undefined;
   /** MCP servers the session leaves out (`OpenSessionOptions.mcpDenylist`). */
   readonly mcpDenylist?: ReadonlyArray<string> | undefined;
   /** None of the user's servers without tool search (`OpenSessionOptions.mcpNoneWithoutToolSearch`). */
@@ -66,6 +69,10 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
   let sessionPolicy: SessionPolicyPort | undefined;
   /** Policy failure keeps strict gates, guided native approvals, and every Dream's bounded bridge. */
   const policyFor = (thread: Thread): Effect.Effect<SessionPolicy> =>
+    // A profile's charter, gate and MCP server hold whatever the port says, and when it fails.
+    Effect.map(rolePolicyFor(thread), (policy) => withProfile(policy, thread));
+
+  const rolePolicyFor = (thread: Thread): Effect.Effect<SessionPolicy> =>
     sessionPolicy === undefined
       ? Effect.succeed(PLAIN_POLICY)
       : sessionPolicy.forThread(thread).pipe(

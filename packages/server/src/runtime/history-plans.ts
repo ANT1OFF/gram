@@ -340,6 +340,8 @@ export const makeHistoryMethods = ({
           ...(source.agentSessionId === undefined ? {} : { agentSessionId: source.agentSessionId }),
           ...(source.codexHome === undefined ? {} : { codexHome: source.codexHome }),
         },
+        // A fork of a thread started from a profile is held to the same charter and MCP server.
+        ...(source.profile === undefined ? {} : { profile: source.profile }),
         unread: false,
         createdAt: now,
         lastActivityAt: now,

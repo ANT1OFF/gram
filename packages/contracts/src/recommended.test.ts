@@ -5,6 +5,8 @@ import type { AgentModel } from "./models.ts";
 import {
   clampEffort,
   RECOMMENDED,
+  RECOMMENDED_HISTORY,
+  recommendedChanges,
   RecommendationTable,
   resolveTier,
   setupOf,
@@ -220,5 +222,43 @@ describe("tableDiff", () => {
       "Top on Codex: gpt-6-astra · medium → gpt-6-astra · high",
     ]);
     expect(tableDiff(RECOMMENDED, RECOMMENDED)).toEqual([]);
+  });
+});
+
+describe("RECOMMENDED_HISTORY", () => {
+  it("ends with the table this Gram ships, so a changed table bumps its version and is kept", () => {
+    expect(RECOMMENDED_HISTORY.at(-1)).toEqual(RECOMMENDED);
+    const versions = RECOMMENDED_HISTORY.map((table) => table.version);
+    expect(new Set(versions).size).toBe(versions.length);
+    expect(versions).toEqual(versions.toSorted());
+  });
+});
+
+describe("recommendedChanges", () => {
+  const next = {
+    ...RECOMMENDED,
+    version: "2027.01",
+    tiers: {
+      ...RECOMMENDED.tiers,
+      scoped: {
+        ...RECOMMENDED.tiers.scoped,
+        codex: { models: ["gpt-6.2-sol", "gpt-6.1-sol"] as const },
+      },
+    },
+  } as RecommendationTable;
+  const history = [RECOMMENDED, next];
+
+  it("lists what changed since the table the user saw", () => {
+    expect(recommendedChanges(RECOMMENDED.version, next, history)).toEqual([
+      "Scoped on Codex: gpt-6.1-sol · medium → gpt-6.2-sol · medium",
+    ]);
+  });
+
+  it("says nothing for the current table, an unset one, or one this Gram doesn't have", () => {
+    expect(recommendedChanges("2027.01", next, history)).toEqual([]);
+    expect(recommendedChanges(undefined, next, history)).toEqual([]);
+    expect(recommendedChanges("2099.01", next, history)).toEqual([]);
+    // Today's table is the only one shipped, so nobody is told of a change yet.
+    expect(recommendedChanges(RECOMMENDED.version)).toEqual([]);
   });
 });
