@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.21.0](https://github.com/ANT1OFF/gram/compare/v1.20.0...v1.21.0) (2026-11-11)
+
+
+### Features
+
+* a provisioned host's operator can allow Claude Code's key auth, and lent-computer requests in Settings ([#456](https://github.com/ANT1OFF/gram/issues/456)) ([b3b18de](https://github.com/ANT1OFF/gram/commit/b3b18ded377370dd8a4c8977043beb25edaabcb4))
+* Continue in… for threads and workers ([#449](https://github.com/ANT1OFF/gram/issues/449)) ([9b2fadb](https://github.com/ANT1OFF/gram/commit/9b2fadb8f4d7c88b2e926a9fb59572f11c657513))
+* profile threads started by a fronting platform, lending from Settings, and embedding shell pieces ([#452](https://github.com/ANT1OFF/gram/issues/452)) ([26f7f78](https://github.com/ANT1OFF/gram/commit/26f7f78e5bd51ceb92384923e233c7fd7b631d7f))
+* the orchestrator's switch carries a note and recent turns ([#451](https://github.com/ANT1OFF/gram/issues/451)) ([1c341a3](https://github.com/ANT1OFF/gram/commit/1c341a31f7743b5a9b7b50e3b2ee7d1a82914c0e))
+
 ## [1.20.0](https://github.com/ANT1OFF/gram/compare/v1.19.0...v1.20.0) (2026-11-11)
 
 
