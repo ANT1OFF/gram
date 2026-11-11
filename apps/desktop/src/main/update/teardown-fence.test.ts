@@ -189,7 +189,6 @@ const orphans = () => {
 const start = async (
   mode: "fast" | "hang" | "essential" | "orphans" | "terminal-orphans",
   killRootOnly = false,
-  sharedGroup = false,
 ) => {
   const pids: number[] = [];
   const lines: string[] = [];
@@ -197,8 +196,7 @@ const start = async (
   const host = createServerHost({
     fork: () => {
       // An explicit environment: nothing of the host's provider, auth or CLI state.
-      // Its own process group, as a stand-in, so no other test's processes share it; or, as
-      // Gram's server shares the app's, this test process's group (`sharedGroup`).
+      // Its own process group, as a stand-in, so no other test's processes share it.
       child = fork(script, [], {
         env: {
           PATH: "/usr/bin:/bin",
@@ -208,7 +206,7 @@ const start = async (
           FENCE_TERMINAL: join(dir, "terminal.cjs"),
         },
         stdio: ["ignore", "pipe", "pipe", "ipc"],
-        detached: !sharedGroup,
+        detached: true,
       });
       started.push(child.pid!);
       return {
@@ -284,21 +282,21 @@ describe.skipIf(process.platform === "win32")("update teardown fence", () => {
     expect([root(), ...pids].some(alive)).toBe(false);
   }, 30_000);
 
-  // Gram's server is a utility process in the app's own process group, and the check's `ps` reads
-  // run from the app: each read lists itself, a new child of the app in that group. Run where the
-  // check runs in Gram, it must still pass the forced path, not refuse it as unverified. On macOS
-  // only: on Linux a test runner starting its next worker in this group is a real ambiguity.
-  it.runIf(process.platform === "darwin")(
-    "proceeds past a hanging finalizer with the server in the app's own process group",
-    async () => {
-      const { host, pids, root } = await start("hang", false, true);
-      const stopped: UpdateTeardown[] = [];
-      await stopForUpdate(host, (teardown) => stopped.push(teardown));
-      expect(stopped).toMatchObject([{ path: "forced", killed: 2 }]);
-      expect([root(), ...pids].some(alive)).toBe(false);
-    },
-    30_000,
-  );
+  // Gram's server is a utility process in the app's own process group, and the check's reads run
+  // from the app, so a read that lists itself lists a new child of the app in that group: what the
+  // check refuses as untellable unless it drops the read's own row by its pid (`readTable`). A
+  // stand-in can't share this process's group here: the test runner starts its workers in it, which
+  // the check rightly refuses. So the fact it rests on is checked against the real `ps` instead.
+  it("reads a real table that lists the read itself, under this process, by the pid it reports", () => {
+    const read = runSync("/bin/ps", ["-A", "-o", "pid=,ppid=,pgid=,lstart="], 2_000);
+    expect(read?.status).toBe(0);
+    expect(read?.pid).toBeGreaterThan(1);
+    const own = read!.stdout
+      .split("\n")
+      .map((line) => line.trim().split(/\s+/))
+      .find(([pid]) => pid === String(read!.pid));
+    expect(own?.[1]).toBe(String(process.pid));
+  });
 
   it("refuses when an essential is reported failed, naming it", async () => {
     const { host } = await start("essential");

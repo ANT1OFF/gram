@@ -30,6 +30,11 @@ import { inServer, texts, sessionsOf } from "./service-kit.ts";
 
 /** A kind outside the contract, for the guards that must refuse one. */
 const UNADMITTED = "unadmitted" as string as AgentKind;
+/** A roster with a Codex worker model beside the orchestrator's own, so a worker starts on Codex. */
+const BOTH_AGENTS = [
+  { agent: "claude", model: "fake-opus", default: true },
+  { agent: "codex", model: "fake-opus" },
+] as const;
 
 describe.skipIf(!hasGit)("orchestration service", () => {
   it.effect(
@@ -679,8 +684,15 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             "Prepare the native approval home and start a fresh session, or choose a prepared gateway home.",
           );
 
-          yield* handlers["thread.setModel"]({ threadId: worker.thread.id, model: viaGateway });
-          expect((yield* store.getThread(worker.thread.id)).model).toEqual(viaGateway);
+          // The gate admits the gateway path. Moving a Claude worker onto it is still a change of
+          // agent, which a model change refuses whatever the gate says.
+          yield* orchestration.checkModelChange(worker.thread.id, viaGateway);
+          const otherAgent = yield* handlers["thread.setModel"]({
+            threadId: worker.thread.id,
+            model: viaGateway,
+          }).pipe(Effect.flip);
+          expect(otherAgent.message).toContain("A model change stays on the thread's agent.");
+          expect((yield* store.getThread(worker.thread.id)).model.agent).toBe("claude");
 
           // At full there is no gate, so the user's own Codex home will do.
           yield* orchestration.setCharter(workspaceId, { ...DEFAULT_CHARTER, autonomy: "full" });
@@ -697,14 +709,15 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         Effect.gen(function* () {
           const store = yield* ThreadStore;
           const orchestration = yield* Orchestration;
-          const handlers = yield* threadHandlers;
           const { session, thread, workspaceId } = yield* openOrchestrator(world);
-          const full = { ...DEFAULT_CHARTER, autonomy: "full" as const };
-          yield* atAutonomy(thread, "full");
-          const stuck = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
+          const full = { ...DEFAULT_CHARTER, autonomy: "full" as const, workerModels: BOTH_AGENTS };
+          yield* atAutonomy(thread, "full", { workerModels: BOTH_AGENTS });
+          const stuck = yield* spawn(session, {
+            feature: "mail-trigger",
+            title: "Mail trigger",
+            model: "codex:fake-opus",
+          });
           const fine = yield* spawn(session, { feature: "docs", title: "Docs" });
-          const direct = { agent: "codex", model: "gpt-5.5" } as ModelRef;
-          yield* handlers["thread.setModel"]({ threadId: stuck.thread.id, model: direct });
 
           for (const autonomy of ["publish", "supervised"] as const) {
             const refused = yield* orchestration
@@ -740,27 +753,16 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const orchestration = yield* Orchestration;
           const { session, thread, workspaceId, project } = yield* openOrchestrator(world);
           // At full, so a Codex worker needs no gateway profile to ask before a push.
-          yield* atAutonomy(thread, "full");
+          yield* atAutonomy(thread, "full", { workerModels: BOTH_AGENTS });
           const worker = yield* spawn(session, { feature: "mail-trigger" });
           yield* stopSilently(worker.session);
-          const codexWorker = yield* spawn(session, { feature: "docs" });
+          const codexWorker = yield* spawn(session, { feature: "docs", model: "codex:fake-opus" });
+          expect(codexWorker.session.options.model?.agent).toBe("codex");
           yield* stopSilently(codexWorker.session);
           yield* store.updateSettings((settings) => ({
             ...settings,
             agents: { ...settings.agents, restartOnMcpChange: false },
           }));
-          yield* (yield* threadHandlers)["thread.setModel"]({
-            threadId: codexWorker.thread.id,
-            model: { agent: "codex", model: "gpt-5.5" } as ModelRef,
-          });
-          // Another agent takes a session of its own, which opens at the reload.
-          yield* (yield* ThreadRuntimes).reloadSession(codexWorker.thread.id);
-          yield* waitReal(
-            "the Codex worker's session",
-            sessionsOf(codexWorker.thread.id).pipe(
-              Effect.map((sessions) => sessions.at(-1)?.options.model?.agent === "codex"),
-            ),
-          );
           yield* completeTurn(session);
           const charter = (yield* store.getWorkspace(workspaceId)).charter;
 

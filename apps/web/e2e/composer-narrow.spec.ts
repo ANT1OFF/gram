@@ -1,6 +1,13 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { chipFace, choicesChip, choicesPopup, openChoices, pickChoice } from "./composer-choices";
+import {
+  chipFace,
+  chipModelName,
+  choicesChip,
+  choicesPopup,
+  openChoices,
+  pickChoice,
+} from "./composer-choices";
 import { seedTheme } from "./seed-theme";
 
 /** An element's right edge; off the scale when it isn't laid out at all. */
@@ -26,10 +33,10 @@ const rowSpread = (page: Page) =>
   });
 
 // In a narrow pane the toolbar used to clip Stop and Send past the pane's edge; four chips crowded
-// Send, then one chip of words folded through shorter words to a row of its own. Now the chip is
-// icons with its words on hover (Johan, 2026-11-08): one width at every width, on one row, its name
-// always saying every value, and nothing folds into "…".
-test("the choices chip stays icons on one row as it narrows, its name every value", async ({
+// Send, then one chip of words folded through shorter words to a row of its own, then icons alone
+// (2026-11-08). Now it says the model's name beside the mark and the mode in its glyph
+// (2026-11-11), on one row at every width, the name truncating rather than going.
+test("the choices chip names the model on one row as it narrows, its name every value", async ({
   page,
 }) => {
   // Held running, so Stop and Steer stay offered: the script's later approval takes Steer away.
@@ -47,8 +54,8 @@ test("the choices chip stays icons on one row as it narrows, its name every valu
   await expect(chip).toHaveAccessibleName(
     /^Claude Opus \(.+\) · Effort: Model default \(.+\) · Mode: Ask \(.+\) · Speed: CLI default$/,
   );
-  // The agent's mark alone: nothing set matters for safety or cost, and its name says the rest.
-  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
+  // The mark, the model's name without the vendor the mark says, and Ask's lock.
+  await expect.poll(() => chipFace(chip)).toEqual({ words: "Opus", glyphs: ["mode:default"] });
   await chip.hover();
   const tooltip = page.locator('[data-slot="tooltip-content"]');
   await expect(tooltip).toContainText("Mode: Ask");
@@ -65,9 +72,12 @@ test("the choices chip stays icons on one row as it narrows, its name every valu
   await expect(gauge).toHaveAccessibleName(/^Context: \d+% of the window used$/);
   expect((await gauge.boundingBox())!.width).toBe(32);
 
-  // Narrower, the chip is the same icons, on the one row with Send and Stop, its name every value.
+  // Narrower, the chip says the same, on the one row with Send and Stop, its name every value, and
+  // the model's name stays in sight.
   const says = async () => {
-    await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
+    await expect.poll(() => chipFace(chip)).toEqual({ words: "Opus", glyphs: ["mode:default"] });
+    await expect(chipModelName(chip)).toBeVisible();
+    expect((await chipModelName(chip).boundingBox())!.width).toBeGreaterThan(8);
     await expect(chip).toHaveAccessibleName(/ · Mode: Ask \(.+\) · Speed: CLI default$/);
     expect(await rowSpread(page)).toBeLessThanOrEqual(1);
   };
@@ -107,8 +117,9 @@ test("the choices chip stays icons on one row as it narrows, its name every valu
   await modes.getByRole("option", { name: "Plan", exact: true }).click();
   await squeeze(page, 720);
   await expect(chip).toHaveAccessibleName(/ · Mode: Plan \(.+\) · /);
-  // Plan asks for more, not less: no caution glyph.
-  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
+  // Plan draws its own glyph, out of the caution colour: it asks for more, not less.
+  await expect.poll(() => chipFace(chip)).toEqual({ words: "Opus", glyphs: ["mode:plan"] });
+  await expect(chip).not.toHaveAttribute("data-warning", "true");
 });
 
 /** Drags the right panel's edge `dx` pixels, negative towards the left. */
@@ -128,7 +139,7 @@ async function dragPanel(page: Page, dx: number) {
 // A 1024 px window with a review beside the chat leaves the composer some 490 px: room for the
 // chip's words in full or compact, far from the narrowest. The four chips once took the gauge
 // alone for effort here while Mode still said "Ask".
-test("beside a review in a 1024 px window, the chip keeps its icons and its name", async ({
+test("beside a review in a 1024 px window, the chip keeps the model's name and its glyph", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1024, height: 900 });
@@ -147,7 +158,8 @@ test("beside a review in a 1024 px window, the chip keeps its icons and its name
   await expect.poll(() => toolbar.evaluate((el) => el.clientWidth)).toBeGreaterThan(400);
   const chip = choicesChip(toolbar);
   await expect(chip).toHaveAccessibleName(/ · Effort: Model default \(.+\) · Mode: Ask \(.+\) · /);
-  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
+  await expect.poll(() => chipFace(chip)).toEqual({ words: "Opus", glyphs: ["mode:default"] });
+  await expect(chipModelName(chip)).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "More composer controls" })).toHaveCount(0);
 });
 test("right-click on Send offers the three deliveries and sending into a new draft", async ({

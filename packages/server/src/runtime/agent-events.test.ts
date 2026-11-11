@@ -366,6 +366,36 @@ describe("ThreadRuntimes agent events", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect("refuses a model of the other agent, live or idle, and changes nothing", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore;
+      const runtimes = yield* ThreadRuntimes;
+      const fake = yield* FakeAgentControl;
+      const { thread, session } = yield* createRunning;
+      const saved = yield* store.getThread(thread.id);
+      expect(saved.model.agent).toBe("claude");
+      const codex = { agent: "codex", model: "gpt-5.5" } as const;
+
+      const live = yield* runtimes.setModel(thread.id, codex).pipe(Effect.flip);
+      expect(live).toMatchObject({ _tag: "InvalidState" });
+      expect(live.message).toBe(
+        "gpt-5.5 is a Codex model and this thread runs in Claude Code. A model change stays on the thread's agent.",
+      );
+
+      yield* session.completeTurn();
+      yield* waitFor("idle", runtimes.status(thread.id).pipe(Effect.map((s) => s === "idle")));
+      const idle = yield* runtimes.setModel(thread.id, codex).pipe(Effect.flip);
+      expect(idle.message).toContain("A model change stays on the thread's agent.");
+
+      // Nothing was written, switched live or reopened.
+      const after = yield* store.getThread(thread.id);
+      expect(after.model).toEqual(saved.model);
+      expect(after.agentSessionId).toBe(saved.agentSessionId);
+      expect(session.models).toEqual([]);
+      expect(yield* fake.latest(thread.id)).toBe(session);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("disables an unsupported Fast preference after a CLI-side model switch", () =>
     Effect.gen(function* () {
       const store = yield* ThreadStore;

@@ -605,18 +605,21 @@ export const RoutinesLive = Layer.effect(
         const key = timerKey(routine.workspaceId, routine.id);
         const scheduled = routine.enabled && routine.nextRunAt !== undefined;
         if (!scheduled && wake === undefined) return yield* disarm(key);
-        const now = yield* Clock.currentTimeMillis;
-        // State writes and publication can finish after a deadline. Compute its remaining wait
-        // here, so time spent in those effects doesn't postpone the next look or cooldown.
-        const wait =
-          wake !== undefined && "after" in wake
-            ? wake.after
-            : Duration.millis(Math.max(0, (wake?.at ?? routine.nextRunAt!) - now));
         armed.add(key);
         yield* FiberMap.run(
           timers,
           key,
-          Effect.sleep(wait).pipe(Effect.andThen(due(routine.workspaceId, routine.id))),
+          Effect.gen(function* () {
+            // Keep the deadline absolute until this timer starts. The arming fiber can yield
+            // before FiberMap.run registers its replacement, after writes and publication too.
+            const now = yield* Clock.currentTimeMillis;
+            const wait =
+              wake !== undefined && "after" in wake
+                ? wake.after
+                : Duration.millis(Math.max(0, (wake?.at ?? routine.nextRunAt!) - now));
+            yield* Effect.sleep(wait);
+            yield* due(routine.workspaceId, routine.id);
+          }),
         );
       });
 
