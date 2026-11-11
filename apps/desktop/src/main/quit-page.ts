@@ -1,13 +1,19 @@
 /** The title Quit Now gives the page; the page has no other way to reach main. */
 export const QUIT_NOW_TITLE = "quit-now";
 
-/** The progress window's page, in the theme's colours; its Quit Now button sets the title. */
-export function quitPage(colors: { readonly background: string; readonly foreground: string }) {
+/**
+ * The progress window's page, in the theme's colours, under `heading`; its Quit Now button, shown
+ * with `quitNow`, sets the title.
+ */
+export function quitPage(
+  colors: { readonly background: string; readonly foreground: string },
+  { heading = "Quitting Gram…", quitNow = true }: { heading?: string; quitNow?: boolean } = {},
+) {
   const { background: bg, foreground: fg } = colors;
   return `<!doctype html>
 <html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
-<title>Quitting Gram</title>
+<title>${heading.replace(/…$/, "")}</title>
 <style>
 html,body{margin:0;height:100%;background:${bg};color:${fg};
   font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
@@ -25,12 +31,12 @@ button{-webkit-app-region:no-drag;font:inherit;color:inherit;padding:4px 14px;bo
   border:1px solid color-mix(in srgb,${fg} 24%,transparent);background:color-mix(in srgb,${fg} 8%,transparent)}
 button:hover{background:color-mix(in srgb,${fg} 14%,transparent)}
 </style></head>
-<body><h1><span class="spin"></span>Quitting Gram…</h1>
+<body><h1><span class="spin"></span>${heading}</h1>
 <p id="detail">Saving your threads…</p>
-<div class="row"><button id="now" title="Stop everything now, without waiting">Quit Now</button></div>
+${quitNow ? '<div class="row"><button id="now" title="Stop everything now, without waiting">Quit Now</button></div>' : ""}
 <script>
 const QUIT_NOW = ${JSON.stringify(QUIT_NOW_TITLE)};
-document.getElementById("now").addEventListener("click", () => { document.title = QUIT_NOW; });
+document.getElementById("now")?.addEventListener("click", () => { document.title = QUIT_NOW; });
 window.setDetail = (text) => { document.getElementById("detail").textContent = text; };
 </script></body></html>`;
 }
