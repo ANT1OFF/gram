@@ -20,6 +20,7 @@ import { gitOn } from "./git.ts";
 import { claudeTokenIn } from "./claude-token.ts";
 import { checksOn } from "./checks.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
+import { threadPlacesOnHost } from "./thread-places.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import { hostAttachments, hostHome, hostRepos, readClaudeToken } from "./host-config.ts";
 import { reposOn } from "./repos.ts";
@@ -162,6 +163,7 @@ const hostService = (
       folders,
       reads: fileReadsOn(proc),
       attachments: yield* attachmentsOnHost(hostAttachments()),
+      threadPlaces: threadPlacesOnHost(proc, hostRepos()),
       repos: {
         ensure: (url) =>
           Effect.acquireUseRelease(

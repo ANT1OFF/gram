@@ -43,11 +43,30 @@ that the thread may also work in. The profile's files and skills are laid in the
 
 - A file the repository already has at that path stays as it is. The repository's own wins.
 - Nothing is written through a link, so no file lands outside the worktree.
-- What was laid is named in the clone's `info/exclude`, so it shows in no `git status` and an
+- What was laid is named in an exclude file of that worktree alone, so it shows in no `git status` and an
   agent's commit doesn't carry the supplier's files into the repository's history.
 
 If any repository can't be cloned or can't give a worktree, no thread is started and the
 worktrees made so far are removed. The clones stay for the next thread.
+
+## On a headless control plane
+
+A [headless control plane](DOCKER.md#a-headless-control-plane) runs no work itself, so a thread
+started from a profile goes on the joined machine that takes whatever names none: the confirmed
+machine online now that joined first. With none, the call is refused with the reason and nothing
+is made.
+
+- For a workplace of `none` or `scratch`, the machine's host makes the thread's folder under
+  `.threads` in the folder it keeps its clones in, and writes the profile's files there. It is
+  the one part of the host's own folders a session may open in, as a worker's worktree is.
+- For a workplace of repositories, the worktrees are made on the machine from its own clones, as
+  a worker's are, and the machine's host lays the files in the first, with the same rules as
+  here: never over a file the repository has, never through a link, and kept out of its status.
+- The host checks every path and the size of the files itself, whatever the control plane
+  checked, and writes only in a thread's own new folder or in a worktree really inside its
+  clones.
+- A machine whose host is older than this refuses the thread, and says to update it.
+- A start that fails takes the folder, or the worktrees, back from the machine.
 
 ## What a profile never carries
 
@@ -64,6 +83,10 @@ charter bind the agent, not the supplier. What stays out of a supplier's hands: 
 leaves the thread's folder or enters a `.git`, and the MCP hold is applied over whatever those
 files say.
 
+On a headless control plane those files land on a joined machine, so a hook a supplier lays runs
+as that machine's user, with its git credentials, instead of in the server. The trust is the
+same; what it reaches is the machine.
+
 A profile only ever narrows a session. If the thread's role already keeps the profile's server
 out, by an allowlist that doesn't name it or a denylist that does, the session opens without it.
 
@@ -79,8 +102,14 @@ composer.
 
 ## Limits
 
-- A thread is made on this machine only. Placing one on a joined machine is not built yet.
-- A thread's folder stays under `profile-threads` in the data folder when the thread is closed.
+- A thread's folder stays where it was made when the thread is closed: under `profile-threads`
+  in the data folder, or under `.threads` in a joined machine's clones.
+- A profile names no machine. Only a headless control plane places these threads on a joined
+  machine, and always on its default one.
+- A headless control plane still clones a workplace's repositories itself, to read their remote
+  and branches, so it needs credentials for them as well as the machine does.
+- What a headless control plane can't run yet, a profile can't ask for there: Codex, and a model
+  on a gateway profile.
 - `fallbacks` are recorded and nothing switches a thread's model by them yet.
 - The one MCP server is passed to Claude Code as a remote server of that session and to Codex as
   a server in the thread's own config. Both are covered by tests on synthetic sessions, not by a

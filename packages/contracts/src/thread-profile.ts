@@ -147,6 +147,9 @@ export const profilePathProblem = (path: string): string | undefined => {
   // oxlint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f\\]/.test(path))
     return `${JSON.stringify(path)} has a backslash or a control character in it.`;
+  // Invisible and direction characters make one name read as another (`.g\u200cit` is `.git` on
+  // some disks).
+  if (/\p{Cf}/u.test(path)) return `${JSON.stringify(path)} has an invisible character in it.`;
   if (path.startsWith("/") || /^[A-Za-z]:/.test(path))
     return `${path} is absolute; a file's path is relative to the thread's folder.`;
   // What names a drive, a stream or a wildcard somewhere: a path means one file everywhere.

@@ -27,6 +27,7 @@ import { GitState } from "../git.ts";
 import { ClaudeSignIn } from "../launch-checks.ts";
 import { HostId, ProfileId, RequestId, TerminalId, ThreadId } from "../ids.ts";
 import { TerminalEvent, TerminalInfo, TerminalOpened } from "../terminal.ts";
+import { ProfileFile } from "../thread-profile.ts";
 import { FileImage } from "../thread-ui.ts";
 import { WorktreeList } from "../worktrees.ts";
 import { PositiveInt } from "./shared.ts";
@@ -85,6 +86,12 @@ export const HostCapability = Schema.Literals([
    * thread on the machine runs only in a new worktree of its clone.
    */
   "folders",
+  /**
+   * Makes a folder of the host's own for a thread started from a profile, and lays a profile's
+   * files there or in a worktree of the host's clones (`host.threadPlaces.*`). Optional: a host
+   * without it takes no such thread.
+   */
+  "thread-places",
 ]);
 export type HostCapability = typeof HostCapability.Type;
 
@@ -627,6 +634,27 @@ export const HostRpcs = RpcGroup.make(
   }),
   /** Deletes what the host holds of `threadId`'s attachments: the thread is gone. */
   Rpc.make("host.attachments.remove", { payload: { threadId: ThreadId } }),
+  /**
+   * Makes `threadId`'s own folder under the host's thread folders, new and empty, lays `files` in
+   * it and answers where it is. The host checks each path itself, and refuses an id it already
+   * has a folder for.
+   */
+  Rpc.make("host.threadPlaces.make", {
+    payload: { threadId: ThreadId, files: Schema.Array(ProfileFile) },
+    success: Schema.Struct({ path: Schema.String }),
+    error: readErrors,
+  }),
+  /**
+   * Lays `files` in `checkout`, a worktree of the host's clones: never over a file already there
+   * nor through a link, and named in an exclude file of that worktree alone. Answers which it wrote.
+   */
+  Rpc.make("host.threadPlaces.lay", {
+    payload: { checkout: Schema.String, files: Schema.Array(ProfileFile) },
+    success: Schema.Struct({ laid: Schema.Array(Schema.String) }),
+    error: readErrors,
+  }),
+  /** Deletes `threadId`'s own folder, made by `host.threadPlaces.make`: the thread never started. */
+  Rpc.make("host.threadPlaces.remove", { payload: { threadId: ThreadId } }),
   /** One sweep of the host's listening ports and processes. */
   Rpc.make("host.ports.scan", { success: HostPortScan, error: HostFailed }),
   /**

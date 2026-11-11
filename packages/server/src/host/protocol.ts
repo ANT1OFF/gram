@@ -66,6 +66,7 @@ import {
   SocketServer,
 } from "../platform/unstable.ts";
 import type { HostAttachments, HostFileReads } from "./file-reads.ts";
+import type { HostThreadPlaces } from "./thread-places.ts";
 import type { HostCheckRequest, HostChecks } from "./checks.ts";
 import type { HostFiles } from "./files.ts";
 import type { HostFolders } from "./folders.ts";
@@ -119,6 +120,11 @@ export interface HostService {
   readonly reads: HostFileReads;
   /** The files users attach to its sessions. */
   readonly attachments: HostAttachments;
+  /**
+   * Its places for threads started from a profile. Every built host has them; a test's may leave
+   * them out, and its calls are then refused.
+   */
+  readonly threadPlaces?: HostThreadPlaces;
   /** The clones it keeps of repositories, for the workers placed on it. */
   readonly repos: HostRepos;
   readonly worktrees: HostWorktrees;
@@ -172,6 +178,7 @@ export const HOST_SERVES: ReadonlyArray<HostCapability> = [
   "checks",
   "repo-identity",
   "folders",
+  "thread-places",
 ];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
@@ -236,6 +243,9 @@ const defined = <A extends object>(value: A): Defined<A> =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Defined<A>;
 
 const noFolders = new HostFailed({ message: "This host doesn't list its folders." });
+const noThreadPlaces = new HostFailed({
+  message: "This host makes no folders for threads started from a profile.",
+});
 
 /** The protocol's handlers over a host's own folders, worktrees, git state and scan. */
 const handlersFor = (host: HostService) => {
@@ -275,6 +285,16 @@ const handlersFor = (host: HostService) => {
       "host.attachments.put": ({ threadId, name, data }) =>
         host.attachments.put(threadId, name, data),
       "host.attachments.remove": ({ threadId }) => host.attachments.remove(threadId),
+      "host.threadPlaces.make": ({ threadId, files }) =>
+        host.threadPlaces === undefined
+          ? Effect.fail(noThreadPlaces)
+          : host.threadPlaces.make(threadId, files),
+      "host.threadPlaces.lay": ({ checkout, files }) =>
+        host.threadPlaces === undefined
+          ? Effect.fail(noThreadPlaces)
+          : host.threadPlaces.lay(checkout, files),
+      "host.threadPlaces.remove": ({ threadId }) =>
+        host.threadPlaces === undefined ? Effect.void : host.threadPlaces.remove(threadId),
       // Never a defect: one from a handler breaks the whole connection, not just this call.
       "host.status": () =>
         (host.status ?? Effect.succeed(UNKNOWN_STATUS)).pipe(
@@ -657,6 +677,8 @@ export interface HostConnection {
   readonly reads: HostFileReads | undefined;
   /** Absent for a host from a build that doesn't serve `attachments`. */
   readonly attachments: HostAttachments | undefined;
+  /** Absent for a host from a build that doesn't serve `thread-places`. */
+  readonly threadPlaces: HostThreadPlaces | undefined;
   readonly repos: {
     readonly ensure: (url: string) => Effect.Effect<{ readonly path: string }, WorktreeError>;
     /** Absent for a host from a build that doesn't serve `repo-identity`. */
@@ -1017,6 +1039,19 @@ export const connectHost = (
       remove: (threadId) =>
         guarded(client["host.attachments.remove"]({ threadId })).pipe(Effect.ignore),
     };
+    const threadPlaces: HostThreadPlaces = {
+      make: (threadId, laid) =>
+        guarded(client["host.threadPlaces.make"]({ threadId, files: laid })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      lay: (checkout, laid) =>
+        guarded(client["host.threadPlaces.lay"]({ checkout, files: laid })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      // A host that went keeps the folder; nothing runs in it, and its id is never used again.
+      remove: (threadId) =>
+        guarded(client["host.threadPlaces.remove"]({ threadId })).pipe(Effect.ignore),
+    };
     const worktreeCall = <A, E extends { readonly _tag: string; readonly message?: string }>(
       call: Effect.Effect<A, E>,
     ) =>
@@ -1353,6 +1388,7 @@ export const connectHost = (
       folders: hello.capabilities.includes("folders") ? folders : undefined,
       reads: hello.capabilities.includes("file-reads") ? reads : undefined,
       attachments: hello.capabilities.includes("attachments") ? attachments : undefined,
+      threadPlaces: hello.capabilities.includes("thread-places") ? threadPlaces : undefined,
       ...(hello.capabilities.includes("checks") ? { checks } : {}),
       repos: {
         ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })),

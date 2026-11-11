@@ -17,6 +17,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import type { HostAttachments, HostFileReads } from "./file-reads.ts";
+import type { HostThreadPlaces } from "./thread-places.ts";
 import type { HostRepoIdentify } from "./protocol.ts";
 import { filesOn, type HostFiles } from "./files.ts";
 import type { HostFolders } from "./folders.ts";
@@ -111,6 +112,11 @@ export interface WorkerHost {
   readonly folders?: HostFolders | undefined;
   /** Another machine's store for the files users attach to its sessions; absent as `reads` is. */
   readonly attachments?: HostAttachments | undefined;
+  /**
+   * Another machine's places for threads started from a profile: a folder of its own made there,
+   * a profile's files laid there. Absent for this machine, and for a host whose build has none.
+   */
+  readonly threadPlaces?: HostThreadPlaces | undefined;
   /**
    * What a worker's worktree on another machine is now, read there to confirm what this machine
    * recorded when it made it. Absent for this machine, and for a host whose build doesn't serve it.
