@@ -1177,6 +1177,7 @@ export const makeClaudeHost = (
           message.type === "system" &&
           message.subtype === "init" &&
           gateway === undefined &&
+          environment.keyAuth !== true &&
           message.apiKeySource !== "none"
         ) {
           endedReason = "api-key-auth";

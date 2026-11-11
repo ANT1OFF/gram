@@ -157,3 +157,48 @@ describe("a token-bearing Claude child as the Agent SDK spawns it", () => {
     }
   });
 });
+
+/** A `claude` that says it is signed in with a key, under a folder of its own. */
+const keyFixture = () => {
+  const base = fixture();
+  writeFileSync(
+    base.binary,
+    `#!${process.execPath}\nif (process.argv[2] === "auth") console.log(JSON.stringify({ loggedIn: true, authMethod: "apiKey", apiProvider: "firstParty" }));\nelse console.log("2.1.311 (Claude Code)");\n`,
+  );
+  return base;
+};
+
+const check = (keyAuth: boolean | undefined) => {
+  const { binary, shell, done } = keyFixture();
+  return Effect.gen(function* () {
+    yield* Effect.addFinalizer(() => Effect.sync(done));
+    const environment = yield* ClaudeEnvironment;
+    const prepared = yield* environment.prepare;
+    return {
+      keyAuth: environment.keyAuth,
+      result: yield* Effect.exit(environment.checkAuth(prepared)),
+    };
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      ClaudeEnvironmentLive({
+        shell,
+        binaryPath: binary,
+        ...(keyAuth === undefined ? {} : { keyAuth }),
+      }).pipe(Layer.provide(sdk)),
+    ),
+  );
+};
+
+describe("Claude Code's own key auth", () => {
+  it.effect("is refused unless the machine's operator allowed it", () =>
+    Effect.gen(function* () {
+      const refused = yield* check(undefined);
+      expect(refused.keyAuth).toBe(false);
+      expect(refused.result._tag).toBe("Failure");
+      const allowed = yield* check(true);
+      expect(allowed.keyAuth).toBe(true);
+      expect(allowed.result._tag).toBe("Success");
+    }),
+  );
+});
