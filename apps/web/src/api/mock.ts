@@ -1264,12 +1264,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
 
   async send(threadId: ThreadId, input: UserInput) {
     const runtime = this.#runtime(threadId);
-    if (this.#missingFolders.has(threadId)) {
-      const path = runtime.summary.thread.checkout.path;
-      throw new MockInvalidState(`This thread's folder no longer exists: ${path}`, undefined, {
-        path,
-      });
-    }
+    this.#refuseInMissingFolder(threadId);
     // As the server's `userTyped`: a notice or another thread's message is not the user stepping in.
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
@@ -1285,8 +1280,18 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     return { queued: false };
   }
 
+  /** As the server: a thread whose folder is gone takes no message, sent or steered. */
+  #refuseInMissingFolder(threadId: ThreadId) {
+    if (!this.#missingFolders.has(threadId)) return;
+    const path = this.#runtime(threadId).summary.thread.checkout.path;
+    throw new MockInvalidState(`This thread's folder no longer exists: ${path}`, undefined, {
+      path,
+    });
+  }
+
   async steer(threadId: ThreadId, input: UserInput, options?: { interrupt?: boolean }) {
     const runtime = this.#runtime(threadId);
+    this.#refuseInMissingFolder(threadId);
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
     }
