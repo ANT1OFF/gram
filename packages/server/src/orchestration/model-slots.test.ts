@@ -417,6 +417,8 @@ describe.skipIf(!hasGit)("with the recommended setup on", () => {
 /** A joined "build box" whose host reports `models`, or nothing, as an older host does. */
 const box = (models?: ReadonlyArray<AgentModel>) =>
   Layer.succeed(RemoteHosts, {
+    // No machine's link is registered, so a call for this machine's own paths looks nothing up.
+    machines: { list: () => [] },
     list: () => [
       {
         id: HostId.make("m-0123456789abcdef01234567"),
