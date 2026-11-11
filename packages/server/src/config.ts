@@ -8,6 +8,7 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { embedFromEnv, scrubEmbedSecrets, type EmbedConfigShape } from "./embedding/config.ts";
 import { frontedIdentityFrom, type FrontedIdentityConfig } from "./http/fronted-identity.ts";
 import { remoteOrigin } from "./http/remote-access.ts";
 import { type ProvisionedHostsConfig, provisionedHostsFrom } from "./host/provisioned.ts";
@@ -119,6 +120,11 @@ export interface ServerConfigShape {
    */
   readonly embedding?: boolean;
   /**
+   * The outside services an embedding deployment configured (`embedding/config.ts`). Inert until
+   * the hosted features setting is on.
+   */
+  readonly embed?: EmbedConfigShape;
+  /**
    * `GRAM_HEADLESS=1`: a control plane with no agent host of its own. Every session, an
    * orchestrator's included, runs on a joined machine, and nothing is started on this one: no
    * agent, no terminal, no worktree. One of the hosted features, so the server refuses to start
@@ -183,6 +189,9 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     const appBuild = env["GRAM_APP_BUILD"];
     const debounceMs = Number(env["GRAM_ORCHESTRATION_DEBOUNCE_MS"]);
     const listenHost = listenHostFrom(env);
+    const embed = embedFromEnv(env);
+    // Read once, here; no child process inherits them from the server's own environment.
+    if (env === process.env) scrubEmbedSecrets(env);
     const provisionedHosts = provisionedHostsFrom(env);
     // Throws on a partial or malformed configuration: such a server must not start.
     const frontedIdentity = frontedIdentityFrom(env);
@@ -220,6 +229,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
         : env["GRAM_EMBEDDING"] === "0"
           ? { embedding: false }
           : {}),
+      ...(embed === undefined ? {} : { embed }),
       ...(decisionHook === undefined ? {} : { decisionHook }),
       ...(eventSink === undefined ? {} : { eventSink }),
     };

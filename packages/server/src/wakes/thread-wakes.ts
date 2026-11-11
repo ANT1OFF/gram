@@ -38,6 +38,7 @@ import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import { Timers } from "../embedding/timers.ts";
 import { EventHub, isThreadRemoved } from "../events/event-hub.ts";
 import { isBadgeOf } from "../git/extra-prs.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
@@ -174,6 +175,8 @@ export const ThreadWakesLive = Layer.effect(
     const hub = yield* EventHub;
     const publisher = yield* GitStatePublisher;
     const conditions = yield* WakeConditions;
+    // A sleep here; with an outside scheduler, the wait is registered there too.
+    const timers = yield* Timers;
     /** Per wake id, the fiber that fires it. */
     const alarms = yield* FiberMap.make<string>();
     /** Each armed wake's thread, so a thread's removal can stop its alarms. */
@@ -203,9 +206,12 @@ export const ThreadWakesLive = Layer.effect(
         yield* FiberMap.run(
           alarms,
           wake.id,
-          Effect.sleep(after ?? Duration.millis(Math.max(0, wake.at - now))).pipe(
-            Effect.andThen(fire(wake.id, fired)),
-          ),
+          timers
+            .until(
+              `wake:${wake.id}`,
+              after === undefined ? wake.at : now + Duration.toMillis(after),
+            )
+            .pipe(Effect.andThen(fire(wake.id, fired))),
         );
       });
 
@@ -276,13 +282,10 @@ export const ThreadWakesLive = Layer.effect(
     /** Brings the snoozed thread back at `until`, the snooze it holds then deciding. */
     const armSnooze = (threadId: ThreadId, until: number): Effect.Effect<void> =>
       Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis;
         yield* FiberMap.run(
           alarms,
           snoozeKey(threadId),
-          Effect.sleep(Duration.millis(Math.max(0, until - now))).pipe(
-            Effect.andThen(endSnooze(threadId, false)),
-          ),
+          timers.until(snoozeKey(threadId), until).pipe(Effect.andThen(endSnooze(threadId, false))),
         );
       });
 

@@ -48,6 +48,12 @@ import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { OrchestratorAppToolsLive } from "../orchestration/tools.ts";
 import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
+import { Embedding } from "../embedding/embedding.ts";
+import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
+import { RepoEventsInboundLive } from "../embedding/repo-events.ts";
+import { ObjectStoreLive } from "../embedding/object-store.ts";
+import { TimersLive } from "../embedding/timers.ts";
+import { SuppliedSettingsLive } from "../settings/supplied.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { TerminalGate } from "../terminal/gate.ts";
 import { HostTerminals } from "../terminal/host-terminals.ts";
@@ -185,6 +191,8 @@ export const AuthMiddleware = HttpRouter.middleware(
     // and dials follow it, so none outlives the address it came in on.
     if (remoteHosts !== undefined) control.watch((origin) => remoteHosts.keepOrigin(origin));
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
+    // Absent in tests that serve the middleware alone.
+    const embedInbound = Option.getOrUndefined(yield* Effect.serviceOption(EmbedInbound));
     /**
      * Whether provisioned hosts are on: one of the hosted features, read at each dial and each
      * registration so the switch holds at once.
@@ -334,6 +342,20 @@ export const AuthMiddleware = HttpRouter.middleware(
           return secureResponse(
             HttpServerResponse.text("forbidden: request target", { status: 403 }),
           );
+        // An embedding platform's own service: its bearer token alone, before the loopback checks,
+        // since it reaches the server by its address inside the deployment. `undefined` while the
+        // hosted features are off, and the request is then any other.
+        // Never over phone access: a request that came in by Tailscale is a person's device.
+        if (
+          embedInbound !== undefined &&
+          !isRemote &&
+          request.headers["tailscale-user-login"] === undefined &&
+          path !== undefined &&
+          path.startsWith(EMBED_PREFIX)
+        ) {
+          const answered = yield* embedInbound.respond(request, path);
+          if (answered !== undefined) return secureResponse(answered);
+        }
         // Remote bootstrap has no app assets and exposes no data. The secret is a fragment.
         if (isRemote && path === REMOTE_CONNECT_PATH && request.method === "GET") {
           if (
@@ -610,6 +632,8 @@ export const ServerCore = Layer.unwrap(
         BrowserAppToolsLive.pipe(Layer.provide(PanePort.layer)),
         DevServerAppToolsLive,
         ThreadAssistLive,
+        RepoEventsInboundLive,
+        SuppliedSettingsLive,
       )
         // Above the merges, which it asks again when a dependency merges; a `pipe` takes twenty.
         .pipe(Layer.provideMerge(PrDependenciesLive))
@@ -690,7 +714,9 @@ export const ServerCore = Layer.unwrap(
           // and port scan, and the machines joined to it. One host process serves this machine's
           // worker host, the worktrees its checkouts make, and the Claude sessions it can run.
           // `CheckoutService` above here makes each thread's checkout on the machine it is placed on.
-          Layer.provideMerge(WorkerHosts.placedCheckouts),
+          // Beside it, attachments, docs and outputs mirrored to an embedding deployment's object
+          // store, under the outputs and the handlers that read through it.
+          Layer.provideMerge(Layer.mergeAll(WorkerHosts.placedCheckouts, ObjectStoreLive)),
           Layer.provideMerge(
             WorkerHosts.layerLocalOn.pipe(
               Layer.provideMerge(
@@ -724,6 +750,12 @@ export const ServerCore = Layer.unwrap(
                   PreviewFiles.layer,
                   AppActivityLive,
                   ProcessRoots.layer,
+                  // The inbound paths and timers of an embedding deployment, inert while the
+                  // hosted features are off.
+                  TimersLive.pipe(
+                    Layer.provideMerge(EmbedInbound.layer),
+                    Layer.provideMerge(Embedding.layer),
+                  ),
                 ),
               ),
             ),

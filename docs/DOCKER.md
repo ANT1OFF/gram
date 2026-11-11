@@ -78,6 +78,8 @@ from its environment when it starts: `GRAM_EMBEDDING=1` turns it on, `GRAM_EMBED
 off, and without the variable the stored setting stays as it is. Only the app on the server's own
 machine changes it; a paired phone can't.
 
+What a deployment configures once it is on is in [running Gram behind another service](EMBEDDING.md).
+
 ### Move a workspace to another Gram
 
 With hosted features on at both ends, a workspace can leave one Gram and carry on in another, for

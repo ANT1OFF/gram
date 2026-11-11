@@ -26,6 +26,10 @@ import {
   ProjectLocalCheck,
   applyProjectSettingsWrites,
   type SettingsWrite,
+  SettingsPatch,
+  applySettingsPatch,
+  embeddingOn,
+  settingsPatchPaths,
   ProjectId,
   SeenConnector,
   Settings,
@@ -745,6 +749,14 @@ export interface ThreadStoreShape {
    * what a thread said, which the next report puts back.
    */
   getSeenConnectors: Effect.Effect<ReadonlyArray<SeenConnector>>;
+  /**
+   * The settings an embedding deployment supplies (`settings/supplied.ts`), kept beside the
+   * settings under their own key. While the hosted features are on they are applied over every
+   * read and every write of the settings, so nothing inside can change what they set.
+   */
+  getSuppliedSettings: Effect.Effect<SettingsPatch | undefined>;
+  /** Replaces what is supplied, `undefined` for nothing; answers the settings as they now read. */
+  putSuppliedSettings(patch: SettingsPatch | undefined): Effect.Effect<Settings>;
   /** Read-modify-write in one transaction; `f` answering `undefined` writes nothing. */
   updateSeenConnectors(
     f: (seen: ReadonlyArray<SeenConnector>) => ReadonlyArray<SeenConnector> | undefined,
@@ -1596,8 +1608,42 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const storedSettings = sql<{
         value: string;
       }>`SELECT value FROM settings WHERE key = 'app'`.pipe(Effect.map((rows) => rows[0]?.value));
-      /** Field by field: a part that doesn't decode reads as its default, and the rest is kept. */
+      /** Beside the settings, in the same table under its own key (`getSuppliedSettings`). */
+      const SUPPLIED_KEY = "supplied";
+      /** What is supplied, read once and kept: every read of the settings applies it. */
+      let supplied: { readonly patch: SettingsPatch | undefined } | undefined;
+      const readSupplied = Effect.gen(function* () {
+        if (supplied !== undefined) return supplied.patch;
+        const rows = yield* sql<{
+          value: string;
+        }>`SELECT value FROM settings WHERE key = ${SUPPLIED_KEY}`;
+        let patch: SettingsPatch | undefined;
+        try {
+          patch =
+            rows[0] === undefined
+              ? undefined
+              : Schema.decodeUnknownSync(SettingsPatch)(JSON.parse(rows[0].value));
+        } catch {
+          // Written by a build that knew other settings: nothing is supplied until it is again.
+          yield* Effect.logWarning("supplied settings unreadable; ignored");
+          patch = undefined;
+        }
+        // A replacement that landed while this read was out is the newer of the two.
+        supplied ??= { patch };
+        return supplied.patch;
+      });
+      /** `settings` as they read with what is supplied over them, while the hosted features are on. */
+      const withSupplied = (settings: Settings) =>
+        Effect.map(readSupplied, (patch) =>
+          patch === undefined || !embeddingOn(settings)
+            ? settings
+            : applySettingsPatch(settings, patch),
+        );
       const readSettings = Effect.gen(function* () {
+        return yield* withSupplied(yield* readStoredSettings);
+      });
+      /** Field by field: a part that doesn't decode reads as its default, and the rest is kept. */
+      const readStoredSettings = Effect.gen(function* () {
         const stored = yield* storedSettings;
         if (stored === undefined) return DEFAULT_SETTINGS;
         const { value, mended } = decodeMended(
@@ -1615,8 +1661,15 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
        * read in its place), and the keys this build doesn't know. A row with nothing to keep is set
        * aside under its own key before it is replaced.
        */
-      const writeSettings = (settings: Settings, touched?: ReadonlyArray<FieldPath>) =>
+      const writeSettings = (given: Settings, givenTouched?: ReadonlyArray<FieldPath>) =>
         Effect.gen(function* () {
+          // What is supplied is written with every change, so the stored row never drifts from it.
+          const settings = yield* withSupplied(given);
+          const patch = yield* readSupplied;
+          const touched =
+            givenTouched === undefined || patch === undefined || settings === given
+              ? givenTouched
+              : [...givenTouched, ...settingsPatchPaths(patch)];
           const stored = yield* storedSettings;
           const { json, replacesUnreadable } = mendedWrite(
             Settings,
@@ -2919,6 +2972,31 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
 
         getSettings: run(readSettings),
         putSettings: (settings) => tx(writeSettings(settings)),
+        getSuppliedSettings: run(readSupplied),
+        putSuppliedSettings: (patch) =>
+          tx(
+            Effect.gen(function* () {
+              if (patch === undefined) {
+                yield* sql`DELETE FROM settings WHERE key = ${SUPPLIED_KEY}`;
+              } else {
+                const json = JSON.stringify(Schema.encodeSync(SettingsPatch)(patch));
+                yield* sql`INSERT INTO settings (key, value) VALUES (${SUPPLIED_KEY}, ${json})
+                  ON CONFLICT (key) DO UPDATE SET value = excluded.value`;
+              }
+              supplied = { patch };
+              const stored = yield* readStoredSettings;
+              yield* writeSettings(stored, patch === undefined ? [] : settingsPatchPaths(patch));
+              return yield* readSettings;
+            }),
+          ).pipe(
+            // Outside the transaction: a write that rolled back, at its commit or by an interrupt,
+            // leaves what was supplied before, read again from the row.
+            Effect.onExit((exit) =>
+              Effect.sync(() => {
+                if (exit._tag === "Failure") supplied = undefined;
+              }),
+            ),
+          ),
         getSeenConnectors: run(readSeenConnectors),
         updateSeenConnectors: (f) =>
           tx(
