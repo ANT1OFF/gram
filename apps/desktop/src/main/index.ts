@@ -90,6 +90,7 @@ import { makeAskWindow } from "@gram/shell/modules/device/ask-window";
 import {
   agentHomes,
   askColorsFor,
+  confirmServerDialog,
   createDeviceHost,
   deviceDataDir,
   embeddingFromMessage,
@@ -270,20 +271,7 @@ const deviceHost = createDeviceHost({
         openBrowser: (url) => shell.openExternal(url),
         // A server not signed in to before: the person accepts it in a dialog main owns.
         confirmServer: async (server) =>
-          (
-            await dialog.showMessageBox({
-              type: "question",
-              title: "Sign in to a server",
-              message: `Sign in to ${server.origin}?`,
-              detail:
-                `It calls itself "${server.name}". Once you lend it this computer, it can ` +
-                "ask to run commands and read files in the folders you lend. You approve each.",
-              buttons: ["Sign in", "Cancel"],
-              defaultId: 1,
-              cancelId: 1,
-              noLink: true,
-            })
-          ).response === 0,
+          (await dialog.showMessageBox(confirmServerDialog(server))).response === 0,
         ask: queue.ask,
         presence,
         bounds: {
@@ -440,6 +428,8 @@ if (SMOKE || process.env["CI"]) {
       return;
     }
     exiting = true;
+    // Best effort: the exit doesn't wait, but lending's commands are asked to stop first.
+    void deviceHost.close();
     log.fatal({ kind, detail }, "crash");
     process.stderr.write(`${SMOKE ? "SMOKE FAIL" : "fatal"}: ${kind}: ${detail}\n`);
     server.kill("quit");
@@ -507,7 +497,9 @@ let quitAfterSignedStartup = false;
 
 /** Quit has committed with services fenced; release any snapshot not still owned by staging. */
 function exitSignedUpdate() {
-  void (nativeUpdates?.dispose() ?? Promise.resolve())
+  void deviceHost
+    .close()
+    .then(() => nativeUpdates?.dispose())
     .catch((error: unknown) => log.warn({ source: "update", err: error }, "update: cleanup failed"))
     .finally(() => app.exit(0));
 }
@@ -894,7 +886,11 @@ async function runApp() {
     notificationStatus,
     updates: createUpdateService({
       updater,
-      stopServer: () => stopForUpdate(server),
+      // Lending ends before the server: no command it started outlives the update.
+      stopServer: async () => {
+        await deviceHost.stop();
+        return stopForUpdate(server);
+      },
       restartServer,
       broadcast,
       hideWindows,
@@ -1020,6 +1016,7 @@ function fencedUpdateOptions(
       env: process.env,
     }),
     stopForUpdate: async (signal) => {
+      await deviceHost.stop();
       await updateFinalizer.own(() =>
         stopForUpdate(server, (teardown) =>
           log.info({ source: "update", ...teardown }, "update: server stopped"),

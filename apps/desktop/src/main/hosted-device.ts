@@ -1,5 +1,6 @@
 import { hostname } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { displayCommand } from "@gram/contracts";
 import type { HostedDevice } from "@gram/shell/modules/device";
 
 /**
@@ -37,6 +38,11 @@ export interface DeviceHost {
   readonly setEmbedding: (on: boolean) => void;
   /** The device while the setting is on and it was made. */
   readonly device: () => HostedDevice | undefined;
+  /**
+   * Ends the device until the server says the setting is on again, as an update does: its
+   * restarted server says so, and one that didn't restart leaves it off.
+   */
+  readonly stop: () => Promise<void>;
   /** Ends the device, as a quit does: nothing is made after. */
   readonly close: () => Promise<void>;
 }
@@ -100,6 +106,10 @@ export const createDeviceHost = (options: DeviceHostOptions): DeviceHost => {
       void turn();
     },
     device: () => made?.device,
+    stop: async () => {
+      wanted = false;
+      await turn();
+    },
     close: async () => {
       closed = true;
       await turn();
@@ -135,3 +145,43 @@ export const askColorsFor = (
   accent: dark ? "#346bf1" : "#1b4ed8",
   warning: dark ? "#ffb900" : "#ba7a00",
 });
+
+/**
+ * A server's own words on one line, as a main-owned dialog shows them: codes nobody could see
+ * (bidirectional, zero-width, control) drawn as their codes, and line breaks as spaces, so the
+ * words can't reorder or add to the dialog's own. Whether they had such codes, or letters outside
+ * ASCII that may be look-alikes, is said beside them.
+ */
+export const serverWords = (text: string): { readonly text: string; readonly unusual: boolean } => {
+  const display = displayCommand(text);
+  return {
+    text: display.pieces
+      .map((piece) => (piece.kind === "newline" ? " " : piece.text))
+      .join("")
+      .trim(),
+    unusual: display.hidden || display.nonAscii,
+  };
+};
+
+/** The dialog that asks the person to accept a server they haven't signed in to before. */
+export const confirmServerDialog = (server: { readonly origin: string; readonly name: string }) => {
+  const name = serverWords(server.name);
+  return {
+    type: "question" as const,
+    title: "Sign in to a server",
+    message: `Sign in to ${server.origin}?`,
+    detail: [
+      "Once you lend it this computer, it can ask to run commands and read files in the " +
+        "folders you lend. You approve each.",
+      "",
+      `The server names itself: ${name.text}`,
+      ...(name.unusual
+        ? ["Its name has characters you can't see, or letters that may look like others."]
+        : []),
+    ].join("\n"),
+    buttons: ["Sign in", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  };
+};

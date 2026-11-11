@@ -902,7 +902,11 @@ app is ready, it makes the device (keychain secrets in `device-secrets.json` bes
 gateway keys, presence from `powerMonitor`, the device files in `<data>/device`, the ask queue
 drawn in the ask window), and while it is off, or once the app quits, there is none. Lending
 ends first when the app quits. A server not signed in to before is accepted in a native dialog
-main shows, which no page can draw or answer.
+main shows, which no page can draw or answer; the server's name in it is drawn on one line with
+codes nobody could see shown as codes, and a line says when it had any. An update stops the
+device before the server (its restarted server turns it back on), and a crash asks it to stop.
+Commands get main's own environment, filtered, not yet the login shell's the design describes,
+so tools on a PATH set only in shell files aren't found when Gram was opened from the Finder.
 
 Every loop over the app's windows goes through `appWindows()` (and the focused one through
 `focusedAppWindow()`), which leave the decision windows out; a test fails on any other use of

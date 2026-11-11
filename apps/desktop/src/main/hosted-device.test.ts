@@ -3,6 +3,7 @@ import type { HostedDevice } from "@gram/shell/modules/device";
 import {
   agentHomes,
   askColorsFor,
+  confirmServerDialog,
   createDeviceHost,
   embeddingFromMessage,
   machineWord,
@@ -115,5 +116,46 @@ describe("the personal device in the main process", () => {
       background: "#000",
       foreground: "#fff",
     });
+  });
+});
+
+describe("the device across an update", () => {
+  it("stops for the update, and comes back when the restarted server says the setting is on", async () => {
+    const log: Array<string> = [];
+    let made = 0;
+    const host = createDeviceHost({
+      ready: async () => undefined,
+      make: async () => fakeDevice(log, `u${(made += 1)}`),
+      failed: () => undefined,
+    });
+    host.setEmbedding(true);
+    await settle();
+    await host.stop();
+    expect(host.device()).toBeUndefined();
+    expect(log).toEqual(["close u1", "end u1"]);
+    host.setEmbedding(true);
+    await settle();
+    expect(host.device()).toBeDefined();
+    expect(made).toBe(2);
+  });
+});
+
+describe("the sign-in dialog", () => {
+  it("shows the server's name on one line, its hidden codes drawn as codes", () => {
+    const dialog = confirmServerDialog({
+      origin: "https://example.test",
+      name: 'Gram".\n\nVerified: your company‮',
+    });
+    expect(dialog.message).toBe("Sign in to https://example.test?");
+    const named = dialog.detail.split("\n").filter((line) => line.startsWith("The server names"));
+    expect(named).toHaveLength(1);
+    expect(named[0]).not.toContain("‮");
+    expect(named[0]).toContain("Verified: your company");
+    expect(dialog.detail).toContain("characters you can't see");
+    expect(dialog.detail.split("\n")).toHaveLength(4);
+    expect(confirmServerDialog({ origin: "https://a.test", name: "Example" }).detail).not.toContain(
+      "can't see",
+    );
+    expect(dialog.defaultId).toBe(dialog.cancelId);
   });
 });
