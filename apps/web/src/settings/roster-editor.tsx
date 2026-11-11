@@ -309,7 +309,7 @@ function OrchestratorModelField({
   return (
     <Field
       label="Orchestrator model"
-      description="Sets the next orchestrator's model. Use Continue in… to move the current session to the other agent."
+      description="Sets the next orchestrator's model. Continue in… moves the current one."
       htmlFor={selectId}
       keywords={["orchestrator", "model", "opus", "main model", "effort"]}
     >
