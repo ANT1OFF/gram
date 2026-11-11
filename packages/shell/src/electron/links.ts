@@ -4,10 +4,11 @@
 
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 
-import { BrowserWindow, clipboard, dialog, shell, type MessageBoxOptions } from "electron";
+import { type BrowserWindow, clipboard, dialog, shell, type MessageBoxOptions } from "electron";
 
 import { Channels } from "../channels.ts";
 import { createLinkGate, type LinkGate } from "../core/link-gate.ts";
+import { appWindows } from "./decision-windows.ts";
 
 /** Set by `loadLinkTrust` before the first window; until then nothing opens. */
 let gate: LinkGate<BrowserWindow> | undefined;
@@ -55,7 +56,7 @@ export function loadLinkTrust(path: string) {
     open: (url) => shell.openExternal(url),
     copy: (text) => clipboard.writeText(text),
     changed: (hosts) => {
-      for (const win of BrowserWindow.getAllWindows()) {
+      for (const win of appWindows()) {
         if (!win.webContents.isDestroyed()) {
           win.webContents.send(Channels.trustedLinksChanged, hosts);
         }

@@ -37,6 +37,7 @@ import {
 } from "../../core/preview-rules.ts";
 import { parsePaneCommand } from "../../core/browse-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
+import { focusedAppWindow } from "../../electron/decision-windows.ts";
 
 /** No `persist:` prefix, so its cookies and storage live in memory and are gone at quit. */
 const PARTITION = "gram-preview";
@@ -269,7 +270,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
 
     const send = () => report(preview);
     const toLinkGate = (url: string) => {
-      const window = preview.window ?? BrowserWindow.getFocusedWindow();
+      const window = preview.window ?? focusedAppWindow();
       if (window !== null && !window.isDestroyed()) void options.openLink(url, window);
     };
     contents.setWindowOpenHandler(({ url }) => {

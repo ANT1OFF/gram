@@ -14,6 +14,9 @@ goes through separate runs, each checked before the next:
 Merging code changes no installed app. An install changes only when its user updates it from a
 published release.
 
+Publishing a release also publishes its [packages and images](PACKAGES.md), unless that pipeline
+is switched off.
+
 One release carries both platforms; [Linux files](#linux-files) covers how its AppImage and
 .deb are built and checked. They can't follow the Mac files later: the repository has immutable
 releases, so a published release takes no new asset, and gram-host's installer and in-app update
@@ -34,6 +37,15 @@ Conventional squash titles decide the next
 version: `fix:` proposes a patch, `feat:` a minor, and `docs:`, `refactor:` and `chore:` add no
 entry. Merging that PR publishes nothing: `skip-github-release` is on, and no tag or release is
 made.
+
+The metadata PR also records the host protocol the release speaks. On its branch, once the
+version fields read the new version, run `bun run host-protocol:release` and commit
+`packages/contracts/src/rpc/host-released.json`, emptying the `ACCEPTED` list in
+`host-compat.test.ts` if it has entries. That file is what later changes are held to, so a joined
+machine on this release keeps working with the next one (see
+[machines on different releases](MACHINES.md#machines-on-different-releases)). The command
+refuses when the tree breaks the previous release's protocol, and the test fails once the copy
+is more than one minor release behind.
 
 After the release below is published, the publisher swaps the merged metadata PR's
 `autorelease: pending` label for `autorelease: tagged`, so the next run proposes the following

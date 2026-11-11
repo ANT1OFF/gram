@@ -31,7 +31,11 @@ import type { TerminalGate } from "../terminal/gate.ts";
 import { terminalsThroughHost } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
 import { foregroundOf } from "../ports/pure.ts";
-import { followingSessions } from "./following-sessions.ts";
+import {
+  followingSessions,
+  REATTACH_WITHIN_MS,
+  STOPPED_REATTACH_MS,
+} from "./following-sessions.ts";
 import type { AttachmentsOnMachine } from "./carry-attachments.ts";
 import type { HostConnection } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
@@ -53,6 +57,8 @@ export interface Machine {
    * redial (`followingSessions`); without it, they end with the connection they opened on.
    */
   readonly connection?: Effect.Effect<HostConnection, HostUnavailable>;
+  /** How long its sessions wait for it to dial in again, read at each wait. */
+  readonly reattachMs?: () => number;
 }
 
 const offline = (machine: Machine) => `${machine.name} is offline.`;
@@ -175,7 +181,7 @@ export const machineCheckouts = (
           };
           return checkout;
         }
-        if (request.kind !== "newWorktree")
+        if (request.kind === "existingWorktree")
           return yield* new InvalidState({
             message: `A worker on ${machine.name} works in a new worktree there.`,
           });
@@ -189,6 +195,28 @@ export const machineCheckouts = (
                 : new InvalidState({ message: error.message }),
             ),
           );
+        // The machine's own clone as it is, for a thread that makes no branch of its own (an
+        // orchestrator of a headless Gram): where the worktrees of its workers there come from.
+        // Its branch is read there; every other value is this machine's own.
+        if (request.kind === "current") {
+          const state = yield* connection.git.local(repoPath).pipe(
+            Effect.mapError(
+              () =>
+                new GitError({
+                  message: `Couldn't read ${repoPath} on ${machine.name} after cloning it.`,
+                }),
+            ),
+          );
+          const cloneIdentity = cloneIdentityOf(url);
+          const main: Checkout = {
+            kind: "main",
+            path: repoPath,
+            hostId: machine.id,
+            ...(state.branch === undefined ? {} : { branch: state.branch }),
+            ...(cloneIdentity === undefined ? {} : { cloneIdentity }),
+          };
+          return main;
+        }
         const created = yield* connection.worktrees
           .create({
             repoPath,
@@ -432,7 +460,10 @@ export const machineWorkerHost = (
     const sessions =
       machine.connection === undefined
         ? connection.sessions
-        : followingSessions(machine.connection);
+        : followingSessions(
+            machine.connection,
+            machine.reattachMs === undefined ? {} : { reattachMs: machine.reattachMs },
+          );
     return {
       id: machine.id,
       sessions: AgentHosts.of({
@@ -464,6 +495,7 @@ export const machineWorkerHost = (
       name: machine.name,
       reads: connection.reads,
       attachments: connection.attachments,
+      threadPlaces: connection.threadPlaces,
       identify: connection.repos.identify,
     };
   });
@@ -525,6 +557,9 @@ export const machineHosts = (
             origin: () => remote.origin(id),
             recheckSignIn: () => void remote.checkSignIn(id),
             connection: remote.connection(id),
+            // A machine readied to stop is waited for longer: it comes back as a new host.
+            reattachMs: () =>
+              remote.stops.recently(id) ? STOPPED_REATTACH_MS : REATTACH_WITHIN_MS,
           };
           const host = yield* machineWorkerHost(machine, connection, deps).pipe(
             Scope.provide(scope),

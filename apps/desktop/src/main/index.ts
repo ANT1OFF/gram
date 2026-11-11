@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -15,12 +16,12 @@ import { createLogger, defaultDataDir, logDirFor } from "@gram/server/logging";
 import { readUpdatePrefs } from "@gram/server/updates";
 import {
   app,
-  BrowserWindow,
   dialog,
   ipcMain,
   Menu,
   MessageChannelMain,
   nativeImage,
+  nativeTheme,
   net,
   Notification,
   powerMonitor,
@@ -34,7 +35,9 @@ import {
 
 import { Channels } from "@gram/shell/channels";
 import {
+  appWindows,
   createShellWindows,
+  focusedAppWindow,
   createWindow,
   loadLinkTrust,
   loadStoredAppearance,
@@ -75,6 +78,25 @@ import {
   makeMacVaultCrypto,
 } from "@gram/shell/modules/key-vault";
 import { createTrayMode, installTray } from "@gram/shell/modules/tray";
+import {
+  askView,
+  filterEnvironment,
+  makeAskQueue,
+  makeHostedDevice,
+  vaultSecrets,
+  watchPresence,
+} from "@gram/shell/modules/device";
+import { makeAskWindow } from "@gram/shell/modules/device/ask-window";
+import {
+  agentHomes,
+  askColorsFor,
+  confirmServerDialog,
+  createDeviceHost,
+  deviceDataDir,
+  embeddingFromMessage,
+  machineName,
+  machineWord,
+} from "./hosted-device.ts";
 import { APP_ID } from "./app-id.ts";
 import { devAllowedOrigins, devBootUrl, logLevelFromMessage } from "./boot.ts";
 import { appIconDir, createAppIcon } from "./app-icon.ts";
@@ -210,6 +232,75 @@ const vaultCrypto = makeMacVaultCrypto(
 );
 
 /**
+ * This machine as a personal device of a hosted control plane, made only while the hosted
+ * features setting is on (the server says so) and closed when it goes off or the app quits.
+ */
+const deviceHost = createDeviceHost({
+  ready: () => app.whenReady(),
+  failed: (error) =>
+    log.error({ source: "device", err: error }, "the personal device didn't start"),
+  make: async () => {
+    const files = deviceDataDir(dataDir);
+    await mkdir(files, { recursive: true, mode: 0o700 });
+    const presence = watchPresence(powerMonitor);
+    const queue = makeAskQueue({
+      surface: makeAskWindow({
+        colors: () => askColorsFor(themeColors(), nativeTheme.shouldUseDarkColors),
+        answered: (show, answer) => queue.answered(show, answer),
+        gone: (show) => queue.gone(show),
+      }),
+      view: (request) => askView({ request, machine: machineWord(process.platform) }),
+      // Only the kind of ask: the server's words are shown in the ask itself, never here.
+      notify: (view) => {
+        if (Notification.isSupported())
+          new Notification({ title: "Gram is asking", body: view.heading }).show();
+      },
+      elapsed: () => performance.now(),
+    });
+    const ended = () => {
+      queue.close();
+      presence.stop();
+    };
+    try {
+      const device = await makeHostedDevice({
+        dataDir: files,
+        secrets: vaultSecrets(
+          vaultCrypto,
+          fileVaultStore(join(app.getPath("userData"), "device-secrets.json")),
+        ),
+        fetch: globalThis.fetch,
+        openBrowser: (url) => shell.openExternal(url),
+        // A server not signed in to before: the person accepts it in a dialog main owns.
+        confirmServer: async (server) =>
+          (await dialog.showMessageBox(confirmServerDialog(server))).response === 0,
+        ask: queue.ask,
+        presence,
+        bounds: {
+          home: app.getPath("home"),
+          ownFolders: [dataDir, app.getPath("userData")],
+          agentHomes: agentHomes(process.env),
+        },
+        environment: () => {
+          const filtered = filterEnvironment(process.env);
+          return { env: filtered.env, secrets: filtered.secrets };
+        },
+        machineName: machineName(),
+        platform:
+          process.platform === "darwin" || process.platform === "win32"
+            ? process.platform
+            : "linux",
+        now: () => Date.now(),
+        elapsed: () => performance.now(),
+      });
+      return { device, end: ended };
+    } catch (error) {
+      ended();
+      throw error;
+    }
+  },
+});
+
+/**
  * What the server opened for the user (an editor, a file manager), which a kill of its tree spares,
  * by pid with the start time read when it was reported: a pid since reused by another process is
  * no longer spared, and one whose start couldn't be read refuses an update's tree check.
@@ -277,6 +368,8 @@ const server = createServerHost({
     }
     const opened = launchedPidFromMessage(message);
     if (opened !== null) launched.set(opened, processStart(opened, treeCheckDeps));
+    const embedding = embeddingFromMessage(message);
+    if (embedding !== null) deviceHost.setEmbedding(embedding);
     void handleVaultRequest(message, vaultCrypto, vaultStore, process.platform).then((response) => {
       if (response) reply(response);
     });
@@ -340,6 +433,8 @@ if (SMOKE || process.env["CI"]) {
       return;
     }
     exiting = true;
+    // Best effort: the exit doesn't wait, but lending's commands are asked to stop first.
+    void deviceHost.close();
     log.fatal({ kind, detail }, "crash");
     process.stderr.write(`${SMOKE ? "SMOKE FAIL" : "fatal"}: ${kind}: ${detail}\n`);
     server.kill("quit");
@@ -407,7 +502,9 @@ let quitAfterSignedStartup = false;
 
 /** Quit has committed with services fenced; release any snapshot not still owned by staging. */
 function exitSignedUpdate() {
-  void (nativeUpdates?.dispose() ?? Promise.resolve())
+  void deviceHost
+    .close()
+    .then(() => nativeUpdates?.dispose())
     .catch((error: unknown) => log.warn({ source: "update", err: error }, "update: cleanup failed"))
     .finally(() => app.exit(0));
 }
@@ -435,6 +532,8 @@ const trayMode = createTrayMode({
 /** The quit, from the first ⌘Q to `app.exit`; see `quit.ts`. */
 const quit = createQuit({
   steps: [
+    // Lending ends first: no ask outlives the app, and no command starts while it quits.
+    { name: "personal device", timeoutMs: 3_000, run: () => deviceHost.close() },
     { name: "signed update", timeoutMs: 3_000, run: async () => nativeUpdates?.dispose() },
     // The server's own bound (`STOP_TIMEOUT_MS` and a forced kill) runs past the quit's deadline.
     { name: "server", timeoutMs: QUIT_DEADLINE_MS, run: () => server.stop("quit") },
@@ -491,7 +590,7 @@ function trustedOrigins(): ReadonlySet<string> {
 function reloadWindows() {
   const url = windowUrl();
   if (url === undefined) return;
-  reloadOnto(url, BrowserWindow.getAllWindows(), isProgressWindow);
+  reloadOnto(url, appWindows(), isProgressWindow);
 }
 
 /** Starts the server again after a failed update launch, and reloads every window onto it. */
@@ -541,14 +640,14 @@ function offerRecovery(problem: string) {
 }
 
 function broadcast(progress: UpdateProgress) {
-  for (const win of BrowserWindow.getAllWindows()) {
+  for (const win of appWindows()) {
     if (!win.webContents.isDestroyed()) win.webContents.send(Channels.updatesProgress, progress);
   }
 }
 
 /** Hides every window and returns a function that shows them again. */
 function hideWindows() {
-  const allWindows = BrowserWindow.getAllWindows();
+  const allWindows = appWindows();
   for (const win of allWindows) win.hide();
   return () => {
     for (const win of allWindows) if (!win.isDestroyed()) win.show();
@@ -637,7 +736,7 @@ async function runApp() {
     supported: Notification.isSupported(),
     now: () => Date.now(),
     onChange: (status) => {
-      for (const win of BrowserWindow.getAllWindows()) {
+      for (const win of appWindows()) {
         if (!win.webContents.isDestroyed())
           win.webContents.send(Channels.notificationStatusChanged, status);
       }
@@ -799,7 +898,11 @@ async function runApp() {
     notificationStatus,
     updates: createUpdateService({
       updater,
-      stopServer: () => stopForUpdate(server),
+      // Lending ends before the server: no command it started outlives the update.
+      stopServer: async () => {
+        await deviceHost.stop();
+        return stopForUpdate(server);
+      },
       restartServer,
       broadcast,
       hideWindows,
@@ -841,8 +944,7 @@ async function runApp() {
         menuTemplate(
           process.platform,
           {
-            send: (action) =>
-              BrowserWindow.getFocusedWindow()?.webContents.send(Channels.menu, action),
+            send: (action) => focusedAppWindow()?.webContents.send(Channels.menu, action),
             newWindow: () => {
               windows.open();
             },
@@ -880,8 +982,7 @@ async function runApp() {
   };
   showWindow = () => {
     // Nothing brings a window back once the quit has hidden them.
-    if (quit.state() === "idle" && !windows.revealHeld())
-      surfaceWindow(BrowserWindow.getAllWindows(), openWindow);
+    if (quit.state() === "idle" && !windows.revealHeld()) surfaceWindow(appWindows(), openWindow);
   };
   // A Start menu or taskbar relaunch, the way back from the tray too.
   app.on("second-instance", () => showWindow());
@@ -890,7 +991,7 @@ async function runApp() {
     if (quit.state() !== "idle") return;
     // The Dock icon of a login launch, whose windows wait hidden.
     if (windows.revealHeld()) return;
-    if (BrowserWindow.getAllWindows().length === 0) openWindow();
+    if (appWindows().length === 0) openWindow();
   });
   // Windows still open at quit come back at the next launch.
   app.on("before-quit", () => {
@@ -927,6 +1028,7 @@ function fencedUpdateOptions(
       env: process.env,
     }),
     stopForUpdate: async (signal) => {
+      await deviceHost.stop();
       await updateFinalizer.own(() =>
         stopForUpdate(server, (teardown) =>
           log.info({ source: "update", ...teardown }, "update: server stopped"),
@@ -991,7 +1093,7 @@ function fencedUpdateOptions(
 }
 
 const broadcastNativeUpdate = (state: AppUpdateState) => {
-  for (const win of BrowserWindow.getAllWindows()) {
+  for (const win of appWindows()) {
     if (!win.webContents.isDestroyed()) win.webContents.send(Channels.updatesNativeChanged, state);
   }
 };
@@ -1288,7 +1390,7 @@ app.on("before-quit", (event) => {
     return;
   }
   if (quit.state() === "idle") {
-    for (const win of BrowserWindow.getAllWindows()) win.hide();
+    for (const win of appWindows()) win.hide();
   }
   quit.request();
 });

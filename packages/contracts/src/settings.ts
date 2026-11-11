@@ -474,6 +474,12 @@ export const INBOX_SET_ASIDE_LIMIT = 200;
 export const ExperimentalSettings = Schema.Struct({
   /** Local dictation into the composer. Read through `voiceInputOn`; off unless turned on. */
   voiceInput: Schema.optionalKey(Schema.Boolean),
+  /**
+   * The features for running Gram as the control plane of a hosted or self-hosted install, behind
+   * another service: every one of them is off unless this is on. Read through `embeddingOn`. A
+   * server with no window to turn it on in takes it from `GRAM_EMBEDDING`.
+   */
+  embedding: Schema.optionalKey(Schema.Boolean),
 });
 export type ExperimentalSettings = typeof ExperimentalSettings.Type;
 
@@ -736,6 +742,14 @@ export const orchestrationMode = (settings: Settings): PermissionMode =>
 /** Whether local voice input is on: off unless the user turned it on. */
 export const voiceInputOn = (settings: Settings): boolean =>
   settings.experimental?.voiceInput === true;
+
+/**
+ * Whether the hosted features are on (`experimental.embedding`): off unless turned on. Each
+ * feature for running Gram behind another service checks this before anything of its own.
+ */
+export const embeddingOn = (settings: {
+  readonly experimental?: ExperimentalSettings | undefined;
+}): boolean => settings.experimental?.embedding === true;
 
 /** The performance slider's stop: Balanced unless the user moved it. */
 export const speechPerformanceOf = (settings: Settings): SpeechPerformanceStop =>
@@ -1022,7 +1036,10 @@ export const SettingsPatch = Schema.Struct({
     }),
   ),
   experimental: Schema.optionalKey(
-    Schema.Struct({ voiceInput: Schema.optionalKey(ExperimentalSettings.fields.voiceInput) }),
+    Schema.Struct({
+      voiceInput: Schema.optionalKey(ExperimentalSettings.fields.voiceInput),
+      embedding: Schema.optionalKey(ExperimentalSettings.fields.embedding),
+    }),
   ),
   usageHistory: Schema.optionalKey(UsageHistorySettings),
   reading: Schema.optionalKey(

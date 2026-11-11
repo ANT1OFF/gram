@@ -1,0 +1,20 @@
+{
+  "title": "Lend this Mac to a hosted workspace",
+  "slug": "hosted-device",
+  "status": "approved",
+  "template": "flow",
+  "current": 2,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-10"
+    },
+    {
+      "n": 2,
+      "file": "v2.html",
+      "created": "2026-11-11"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import type { AddressInfo } from "node:net";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,8 +32,20 @@ import {
 const THREAD = "t-dev" as ThreadId;
 
 /** A checkout whose launch config runs a tiny server with node, which starts a grandchild. */
-const project = (extra: Record<string, unknown> = {}) => {
+/** A loopback port the OS hands out, free as it is returned; a fixed or guessed one can be taken. */
+const freeLoopbackPort = () =>
+  new Promise<number>((done, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address() as AddressInfo;
+      server.close((error) => (error ? reject(error) : done(port)));
+    });
+  });
+
+const project = async (extra: Record<string, unknown> = {}) => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "gram-dev-servers-")));
+  const [webPort, brokenPort] = [await freeLoopbackPort(), await freeLoopbackPort()];
   mkdirSync(join(root, ".gram"));
   writeFileSync(
     join(root, "serve.cjs"),
@@ -50,14 +63,14 @@ require("node:http").createServer((_q, r) => r.end("ok")).listen(Number(process.
           name: "web",
           runtimeExecutable: process.execPath,
           runtimeArgs: ["serve.cjs", "--port=${port}"],
-          port: 47_100 + Math.floor(Math.random() * 800),
+          port: webPort,
           ...extra,
         },
         {
           name: "broken",
           runtimeExecutable: process.execPath,
           runtimeArgs: ["-e", "process.exit(3)"],
-          port: 47_990,
+          port: brokenPort,
         },
       ],
     }),
@@ -120,7 +133,7 @@ describe("launch configs", () => {
   });
 
   it("finds .gram first, and keeps a cwd inside the project, links resolved", async () => {
-    const root = project();
+    const root = await project();
     expect((await readLaunchConfig(root))?.file).toBe(".gram/launch.json");
     const outside = mkdtempSync(join(tmpdir(), "gram-dev-outside-"));
     symlinkSync(outside, join(root, "out"));
@@ -152,7 +165,7 @@ describe("launch configs", () => {
   });
 
   it("keeps a folder whose name starts with two dots, which is inside the project", async () => {
-    const root = project();
+    const root = await project();
     mkdirSync(join(root, "..build"));
     const config = { name: "web", runtimeExecutable: "npm", runtimeArgs: [], port: 5173 };
     expect((await resolveLaunch(root, { ...config, cwd: "..build" }, 5173)).cwd).toBe(
@@ -266,7 +279,7 @@ describe("ports and logs", () => {
 describe("the dev server host", () => {
   for (const cleanup of ["thread", "all"] as const) {
     it(`cancels a pending launch during ${cleanup} cleanup before it can spawn`, async () => {
-      const root = project();
+      const root = await project();
       const entered = Promise.withResolvers<void>();
       const environment = Promise.withResolvers<Record<string, string>>();
       const host = createDevServerHost({
@@ -295,7 +308,7 @@ describe("the dev server host", () => {
   }
 
   it("never signals a group that emptied after its leader exited", async () => {
-    const root = project();
+    const root = await project();
     const host = createDevServerHost({ env: async () => process.env });
     const config = {
       name: "quick",
@@ -322,7 +335,7 @@ describe("the dev server host", () => {
   });
 
   it("bounds each log line and the log as a whole, and keeps an unended last line", async () => {
-    const root = project();
+    const root = await project();
     const host = createDevServerHost({ env: async () => process.env });
     const run = async (name: string, script: string) => {
       const config = {
@@ -364,7 +377,7 @@ describe("the dev server host", () => {
   });
 
   it("starts a server on its port, keeps its output, and stops its whole process group", async () => {
-    const root = project();
+    const root = await project();
     const config = (await readLaunchConfig(root))!.configurations[0]!;
     const host = createDevServerHost({ env: async () => process.env });
     const port = await host.reserve("t1", config);
@@ -439,7 +452,7 @@ const harness = (
 
 describe("the dev server host's stop", () => {
   it("kills what a launcher left running after it exited itself", async () => {
-    const root = project();
+    const root = await project();
     writeFileSync(
       join(root, "launcher.cjs"),
       `const child = require("node:child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
@@ -470,7 +483,7 @@ setTimeout(() => process.exit(0), 200);`,
 describe("preview tools", () => {
   it.live("asks before running the project's command, once per command, and opens the pane", () =>
     Effect.gen(function* () {
-      const root = project();
+      const root = yield* Effect.promise(() => project());
       const { call, cards, published, host } = harness(root, ["deny", "allow"]);
       const declined = yield* Effect.flip(call("preview_start", { name: "web" }));
       expect(declined).toMatchObject({ approvalRequired: true });
@@ -498,7 +511,7 @@ describe("preview tools", () => {
 
   it.live("gives the port back when a start is interrupted while it reserves one", () =>
     Effect.gen(function* () {
-      const root = project({ port: 47_050 });
+      const root = yield* Effect.promise(() => project({ port: 47_050 }));
       const gate = Promise.withResolvers<void>();
       const probing = Promise.withResolvers<void>();
       const { call, host } = harness(root, ["allow"], {}, async () => {
@@ -527,7 +540,7 @@ describe("preview tools", () => {
 
   it.live("starts a name once when two starts race", () =>
     Effect.gen(function* () {
-      const root = project();
+      const root = yield* Effect.promise(() => project());
       const { call, host } = harness(root, ["allow", "allow"]);
       const results = yield* Effect.all(
         [call("preview_start", { name: "web" }), call("preview_start", { name: "web" })].map(
@@ -547,7 +560,7 @@ describe("preview tools", () => {
 
   it.live("reports a server that exits before it answers, with its output", () =>
     Effect.gen(function* () {
-      const root = project();
+      const root = yield* Effect.promise(() => project());
       const { call } = harness(root, ["allow"]);
       const error = yield* Effect.flip(call("preview_start", { name: "broken" }));
       expect(error.message).toContain('"broken" exited with code 3 before it answered');
@@ -556,7 +569,7 @@ describe("preview tools", () => {
 
   it.live("refuses a Dream, an unknown name and a project with no launch config", () =>
     Effect.gen(function* () {
-      const root = project();
+      const root = yield* Effect.promise(() => project());
       const dream = harness(root, ["allow"], { role: "dream" });
       expect((yield* Effect.flip(dream.call("preview_start", { name: "web" }))).message).toContain(
         "Dream",

@@ -6,7 +6,7 @@
 
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 
-import { BrowserWindow, nativeImage } from "electron";
+import { nativeImage } from "electron";
 
 import {
   paneRequestMessage,
@@ -20,6 +20,7 @@ import { createBrowseHostList, type BrowseHostList } from "../../core/browse-rul
 import type { ShellLog } from "../../core/log.ts";
 import type { ShellIpc } from "../ipc.ts";
 import type { AgentPanes } from "./pane.ts";
+import { appWindows } from "../../electron/decision-windows.ts";
 
 /** A recording frame's JPEG as BGRA pixels, through Chromium's own decoder. */
 export const decodeFrame = (
@@ -56,7 +57,7 @@ export function installAgentBrowse(
       }
     },
     changed: (list) => {
-      for (const win of BrowserWindow.getAllWindows()) {
+      for (const win of appWindows()) {
         if (!win.webContents.isDestroyed()) win.webContents.send(Channels.agentBrowseChanged, list);
       }
     },

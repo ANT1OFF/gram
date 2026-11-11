@@ -1,6 +1,7 @@
 import { InvalidState } from "@gram/contracts";
 import { Proc, pushCurrentBranch } from "@gram/git";
 import * as Effect from "effect/Effect";
+import { actionGuard } from "../../embedding/guard.ts";
 import { GitRefresh } from "../../git/platform.ts";
 import { threadFolder } from "../../git/thread-pr.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
@@ -11,11 +12,27 @@ export const pushHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const proc = yield* Proc;
   const refreshes = yield* GitRefresh;
+  const guard = yield* actionGuard;
 
   return {
     "git.push": ({ threadId }) =>
       Effect.gen(function* () {
-        const cwd = yield* threadFolder(yield* store.getThread(threadId));
+        const thread = yield* store.getThread(threadId);
+        const cwd = yield* threadFolder(thread);
+        yield* guard(
+          threadId,
+          {
+            action: "push",
+            initiator: "person",
+            detail: thread.checkout.branch === undefined ? {} : { ref: thread.checkout.branch },
+          },
+          Effect.succeed({
+            toolName: "git.push",
+            displayName: "Push",
+            description: "Push this thread's branch",
+            input: {},
+          }),
+        ).pipe(Effect.mapError((e) => new InvalidState({ message: e.message, threadId })));
         const result = yield* pushCurrentBranch(cwd).pipe(
           Effect.provideService(Proc, proc),
           Effect.mapError((e) => new InvalidState({ message: e.message, threadId })),

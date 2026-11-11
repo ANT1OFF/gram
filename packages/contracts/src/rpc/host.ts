@@ -27,21 +27,37 @@ import { GitState } from "../git.ts";
 import { ClaudeSignIn } from "../launch-checks.ts";
 import { HostId, ProfileId, RequestId, TerminalId, ThreadId } from "../ids.ts";
 import { TerminalEvent, TerminalInfo, TerminalOpened } from "../terminal.ts";
+import { ProfileFile } from "../thread-profile.ts";
 import { FileImage } from "../thread-ui.ts";
 import { WorktreeList } from "../worktrees.ts";
 import { PositiveInt } from "./shared.ts";
 
 /**
- * The host protocol's version. A control plane and a host that disagree on it don't talk: the
- * hello says so, and the control plane treats the host as unavailable, and shows a joined machine
- * as needing an update. Bump it when a message either side already sends changes in a way the
- * other's build can't read; a new call doesn't need it, since a host built before it answers that
- * call alone with an unknown-request defect. `HostHello`'s `protocol`, `hostId` and `release` stay
- * readable by every build, so a mismatch is always told apart from a host that didn't answer.
+ * The host protocol's version. Between releases the protocol only grows: a new call, a new optional
+ * field, a new feature a host names in its hello. So a control plane and a host on different
+ * releases keep working together, each without what the other doesn't have yet, and updating one
+ * doesn't make the other restart. `host-compat.test.ts` holds every change to that, against the
+ * protocol as last released (`host-released.json`).
+ *
+ * Bump it only for a break decided on purpose: a message either side already sends changing in a
+ * way a released build can't read. A control plane then refuses a host outside
+ * `HOST_PROTOCOL_OLDEST` to this version, its hello says so, and a joined machine shows as needing
+ * an update. `HostHello`'s `protocol`, `hostId` and `release` stay readable by every build, so a
+ * mismatch is always told apart from a host that didn't answer.
  */
 export const HOST_PROTOCOL_VERSION = 2;
 
-/** What a host can do, named so a control plane uses only what a host advertised. */
+/**
+ * The oldest protocol version this build's control plane still talks to. Raise it only when what a
+ * host of that version sends can no longer be read.
+ */
+export const HOST_PROTOCOL_OLDEST = 2;
+
+/**
+ * What a host can do, named so a control plane uses only what a host advertised. This list is
+ * closed: a control plane of 1.19 or earlier refuses a hello naming anything else, so a host names
+ * what came later in its hello's `features` (`HostFeature`).
+ */
 export const HostCapability = Schema.Literals([
   "files",
   "ports",
@@ -88,6 +104,33 @@ export const HostCapability = Schema.Literals([
 ]);
 export type HostCapability = typeof HostCapability.Type;
 
+/** The capabilities a host must name for a control plane to use it at all. This list never grows. */
+export const HOST_REQUIRED_CAPABILITIES: ReadonlyArray<HostCapability> = [
+  "files",
+  "ports",
+  "worktrees",
+  "git",
+  "terminals",
+  "sessions",
+  "repos",
+];
+
+/**
+ * What a host can do beyond its capabilities, named in its hello's `features`. Every one is
+ * optional: a control plane uses it only on a host that names it, and a host without it loses only
+ * that. On the wire these are plain strings, so a control plane reads a hello naming one it
+ * doesn't know yet, and ignores it.
+ */
+export const HostFeature = Schema.Literals([
+  /**
+   * Makes a folder of the host's own for a thread started from a profile, and lays a profile's
+   * files there or in a worktree of the host's clones (`host.threadPlaces.*`). A host without it
+   * takes no such thread.
+   */
+  "thread-places",
+]);
+export type HostFeature = typeof HostFeature.Type;
+
 /** The host's answer to `host.hello`: who it is and what it can do. */
 export const HostHello = Schema.Struct({
   protocol: Schema.Int,
@@ -101,8 +144,23 @@ export const HostHello = Schema.Struct({
    * ignores it, as a struct ignores keys it doesn't name.
    */
   release: Schema.optionalKey(Schema.String),
+  /**
+   * What it can do beyond `capabilities`, as `HostFeature` names it; absent from a host built
+   * before it was sent (1.19.0 and earlier). A control plane built before it ignores it.
+   */
+  features: Schema.optionalKey(
+    Schema.Array(Schema.String.check(Schema.isMaxLength(64))).check(Schema.isMaxLength(256)),
+  ),
 });
 export type HostHello = typeof HostHello.Type;
+
+/** Whether the host that said `hello` can do `what`. */
+export const hostServes = (
+  hello: Pick<HostHello, "capabilities" | "features">,
+  what: HostCapability | HostFeature,
+): boolean =>
+  (hello.capabilities as ReadonlyArray<string>).includes(what) ||
+  (hello.features?.includes(what) ?? false);
 
 /** A command a joined machine needs, as its host finds it on its own login-shell PATH. */
 export const HostTool = Schema.Struct({
@@ -153,6 +211,43 @@ export const HostBusy = Schema.Struct({
   checks: Schema.Int,
 });
 export type HostBusy = typeof HostBusy.Type;
+
+/** A thread's folder on a host, whose work in progress a stop keeps (`host.stop.prepare`). */
+export const HostStopCheckout = Schema.Struct({
+  threadId: ThreadId,
+  cwd: Schema.String.check(Schema.isMaxLength(4096)),
+});
+export type HostStopCheckout = typeof HostStopCheckout.Type;
+
+/** What a stop kept of one thread's folder: the hidden ref it wrote, and whether it was pushed. */
+export const HostStopKept = Schema.Struct({
+  threadId: ThreadId,
+  cwd: Schema.String,
+  /** `refs/gram/wip/<thread>`, once the working tree was committed under it. */
+  ref: Schema.optionalKey(Schema.String),
+  commit: Schema.optionalKey(Schema.String),
+  /** Whether the remote now has that commit under the ref. */
+  pushed: Schema.Boolean,
+  /** Why it wasn't committed or pushed, in the host's words. */
+  note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+});
+export type HostStopKept = typeof HostStopKept.Type;
+
+/**
+ * A host's answer to `host.stop.prepare`. `idle` says nothing is running on it and nothing new
+ * will start: it can be stopped now, and takes no new work until `host.stop.cancel` or ten minutes
+ * pass. Not idle and not forced, nothing was changed and `kept` is empty.
+ */
+export const HostStopPrepared = Schema.Struct({
+  idle: Schema.Boolean,
+  busy: HostBusy,
+  kept: Schema.Array(HostStopKept),
+  /** Why it isn't idle when `busy` doesn't say, such as an update under way. */
+  note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+  /** The stop didn't hold (taken back, or its hold ran out): the host takes work again. */
+  released: Schema.optionalKey(Schema.Boolean),
+});
+export type HostStopPrepared = typeof HostStopPrepared.Type;
 
 /** How a host's last update ended, as it keeps it across the restart. */
 export const HostUpdateOutcome = Schema.Struct({
@@ -372,10 +467,16 @@ export const HostSessionOpen = Schema.Struct({
   outwardGate: Schema.optionalKey(
     Schema.Union([Schema.Boolean, Schema.Literals(["all", "irreversible"])]),
   ),
+  gateConnectors: Schema.optionalKey(Schema.Boolean),
   confineWrites: Schema.optionalKey(Schema.Boolean),
   pinCwd: Schema.optionalKey(Schema.Boolean),
   mcpAllowlist: Schema.optionalKey(Schema.Array(Schema.String)),
   mcpDenylist: Schema.optionalKey(Schema.Array(Schema.String)),
+  /**
+   * One more MCP server for the session, by address. A host built before it was sent drops it,
+   * and the session then opens without that server, never with more than it was meant to have.
+   */
+  mcpServer: Schema.optionalKey(Schema.Struct({ name: Schema.String, url: Schema.String })),
   mcpNoneWithoutToolSearch: Schema.optionalKey(Schema.Boolean),
   noBlockingAsk: Schema.optionalKey(Schema.Boolean),
   peerMessaging: Schema.optionalKey(Schema.Boolean),
@@ -584,6 +685,27 @@ export const HostRpcs = RpcGroup.make(
   }),
   /** Deletes what the host holds of `threadId`'s attachments: the thread is gone. */
   Rpc.make("host.attachments.remove", { payload: { threadId: ThreadId } }),
+  /**
+   * Makes `threadId`'s own folder under the host's thread folders, new and empty, lays `files` in
+   * it and answers where it is. The host checks each path itself, and refuses an id it already
+   * has a folder for.
+   */
+  Rpc.make("host.threadPlaces.make", {
+    payload: { threadId: ThreadId, files: Schema.Array(ProfileFile) },
+    success: Schema.Struct({ path: Schema.String }),
+    error: readErrors,
+  }),
+  /**
+   * Lays `files` in `checkout`, a worktree of the host's clones: never over a file already there
+   * nor through a link, and named in an exclude file of that worktree alone. Answers which it wrote.
+   */
+  Rpc.make("host.threadPlaces.lay", {
+    payload: { checkout: Schema.String, files: Schema.Array(ProfileFile) },
+    success: Schema.Struct({ laid: Schema.Array(Schema.String) }),
+    error: readErrors,
+  }),
+  /** Deletes `threadId`'s own folder, made by `host.threadPlaces.make`: the thread never started. */
+  Rpc.make("host.threadPlaces.remove", { payload: { threadId: ThreadId } }),
   /** One sweep of the host's listening ports and processes. */
   Rpc.make("host.ports.scan", { success: HostPortScan, error: HostFailed }),
   /**
@@ -607,6 +729,25 @@ export const HostRpcs = RpcGroup.make(
     error: HostUpdateRefused,
     stream: true,
   }),
+  /**
+   * Readies the host to be stopped with its disk kept. It stops taking new work, and when nothing
+   * runs on it (the test an update waits on: no turn, busy terminal, clone or check), or `force`
+   * says to go on regardless (a machine about to be taken away), it commits each listed folder's
+   * working tree on top of its HEAD under `refs/gram/wip/<thread>` and pushes that ref to `remote`
+   * (`origin` when left out). The branch, the index and the files stay as they are. A host built
+   * before this answers with an unknown-request defect.
+   */
+  Rpc.make("host.stop.prepare", {
+    payload: {
+      checkouts: Schema.Array(HostStopCheckout).check(Schema.isMaxLength(512)),
+      force: Schema.optionalKey(Schema.Boolean),
+      remote: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+    },
+    success: HostStopPrepared,
+    error: HostFailed,
+  }),
+  /** Takes new work again after a `host.stop.prepare` that no stop followed. */
+  Rpc.make("host.stop.cancel", {}),
   /**
    * The host's own clone of the repository at `url`, in the folder it keeps clones in: cloned when
    * it has none, fetched when it has. What a worker placed on this machine makes its worktree from.

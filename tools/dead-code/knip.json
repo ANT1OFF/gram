@@ -23,7 +23,17 @@
       ]
     },
     "apps/web": {
-      "entry": ["src/main.tsx!", "pr-shots/playwright.config.ts", "pr-shots/**/*.ts"]
+      "entry": [
+        "src/main.tsx!",
+        "src/embed/index.ts!",
+        "src/embed/kit.ts!",
+        "vite.embed.config.ts!",
+        "scripts/build-embed.mjs!",
+        "e2e-embed/playwright.config.ts",
+        "e2e-embed/**/*.{ts,tsx}",
+        "pr-shots/playwright.config.ts",
+        "pr-shots/**/*.ts"
+      ]
     },
     "packages/agents": {
       "entry": ["scripts/*.mjs"],

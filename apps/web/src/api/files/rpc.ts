@@ -1,4 +1,5 @@
 import { run, type RpcContext } from "../rpc-client";
+import { serverUrl } from "../server-base";
 import type { FilesApi } from "./types";
 
 /**
@@ -7,7 +8,7 @@ import type { FilesApi } from "./types";
  * back as the contract's error (`_tag`, `message`), as `folderProblem` reads it.
  */
 const machineFolders = async <A>(path: string, body: object): Promise<A> => {
-  const response = await fetch(path, {
+  const response = await fetch(serverUrl(path), {
     method: "POST",
     credentials: "same-origin",
     cache: "no-store",

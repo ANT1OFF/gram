@@ -1,3 +1,5 @@
+import { serverUrl } from "@/api/server-base";
+
 /**
  * The machines joined to this Gram, managed over plain same-origin POSTs that the server's auth
  * layer answers itself, as phone access is: a paired phone or a joined machine can never reach
@@ -228,7 +230,7 @@ export interface JoinLink {
 }
 
 const post = (path: string, body?: unknown): Promise<Response> =>
-  fetch(path, {
+  fetch(serverUrl(path), {
     method: "POST",
     credentials: "same-origin",
     cache: "no-store",
