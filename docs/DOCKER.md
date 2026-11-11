@@ -98,7 +98,8 @@ already there, when the bundle came from a newer Gram, or when a repository has 
 The app's settings in the bundle (review bots and workspace defaults) are taken only with
 `"adoptSettings": true`. A bundle is scrubbed of what looks like a credential, but it holds your
 conversation and memory: keep it as you would those. Import only a bundle you exported or trust: it
-brings its own charter, with its autonomy and routines, and its orchestrator starts working.
+brings its own charter, with its autonomy, and its orchestrator starts working. Its routines arrive
+switched off, for you to turn on here.
 
 | Build argument        | Default                       | What it sets                                  |
 | --------------------- | ----------------------------- | --------------------------------------------- |
