@@ -40,8 +40,8 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { keyLabel } from "@/keyboard/registry";
-import { EmbedNavigation, EmbedSwitcher } from "@/embed/slots";
-import { useThreadsListed } from "@/embed/store";
+import { EmbedAccount, EmbedNavigation, EmbedSidebarHeader, EmbedSwitcher } from "@/embed/slots";
+import { useEmbedShell, useRoomySidebar, useThreadsListed } from "@/embed/store";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { formatRelative, formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -91,6 +91,7 @@ import {
   OverviewHistory,
   OverviewPullRequests,
   OverviewSearch,
+  RoomyFoot,
   useOverviewDone,
   useOverviewPrRows,
 } from "./overview-extras";
@@ -343,18 +344,56 @@ export function OverviewSidebar({
   const hidden = useLayoutStore((s) => s.overviewHidden);
   // An app in front of Gram may leave the workspaces and threads out of the sidebar.
   const threadsListed = useThreadsListed();
+  const hasHeader = useEmbedShell((s) => s.sidebar.header !== undefined);
   // Before any setup the welcome is the one thing to look at: no usage beside it.
   const beforeSetup = useBeforeSetup();
-  return (
+  // An app in front of Gram may draw it roomy: a card, with labelled rows at its foot. Not a phone's.
+  const roomy = useRoomySidebar() && !phone;
+  // Roomy and in the window's column, it is a card inset from the edges; over the page it is
+  // the strip's overlay, which has its own edge and shadow.
+  const card = roomy && onPin === undefined;
+  const aside = (
     <aside
       aria-label="Overview"
       data-testid="overview-sidebar"
       data-surface="chrome"
       {...{ [OVERVIEW_ROOT]: "open" }}
       data-overlay={onPin === undefined ? undefined : ""}
-      className="flex min-h-0 flex-1 flex-col border-r border-sidebar-divider bg-sidebar text-sidebar-foreground"
+      data-look={roomy ? "roomy" : undefined}
+      className={cn(
+        "flex min-h-0 flex-1 flex-col bg-sidebar text-sidebar-foreground",
+        card
+          ? "overflow-hidden rounded-(--radius-lg) border border-border"
+          : "border-r border-sidebar-divider",
+      )}
     >
-      {phone ? (
+      {roomy ? (
+        // The embedding app's mark and name, with New beside it; the toggles are at the foot.
+        <div className="flex min-h-(--titlebar-height) shrink-0 items-center gap-1 px-inset pt-2.5 pb-1.5">
+          <EmbedSidebarHeader />
+          {!hasHeader && <span className="flex-1" />}
+          {onPin !== undefined && (
+            <Hint
+              label="Keep sidebar open"
+              side="bottom"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Keep sidebar open"
+                  data-testid="overview-pin"
+                  className="text-muted-foreground"
+                  onClick={onPin}
+                />
+              }
+            >
+              <PanelLeft />
+            </Hint>
+          )}
+          <UpdatePill size="xs" />
+          <NewEntryMenu />
+        </div>
+      ) : phone ? (
         <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
           <OverviewSearch />
           <NewEntryMenu />
@@ -427,7 +466,8 @@ export function OverviewSidebar({
           </div>
         </>
       )}
-      {/* An app in front of Gram puts its own switcher here; nothing on Gram's own. */}
+      {/* An app in front of Gram puts its own head and switcher here; nothing on Gram's own. */}
+      {!roomy && <EmbedSidebarHeader className="flex-none px-inset pb-tight" />}
       <EmbedSwitcher placement="sidebar" className="px-inset pb-tight" />
       {/* The spacing scale's named steps: sections a list's step apart (12 px), as a list's
           headings are, so the column reads as one even list rather than blocks with gaps. */}
@@ -438,18 +478,39 @@ export function OverviewSidebar({
         {/* What needs you, and the way to find anything else, as one block at the top. */}
         <div className="flex flex-col gap-tight">
           <NeedsYou />
-          {!phone && <OverviewSearch />}
+          {!phone && <OverviewSearch roomy={roomy} />}
         </div>
         {/* The places an app in front of Gram puts first, above the workspaces and threads. */}
-        <EmbedNavigation placement="main" />
+        <EmbedNavigation placement="main" inPhoneDrawer={phone} />
         {threadsListed && <Orchestrators />}
       </div>
       {/* The places an app in front of Gram added, with the others you go to. */}
-      <EmbedNavigation />
-      {/* History and Settings share the foot: the places you go to rather than work in. */}
-      <OverviewHistory showHistory={!hidden.includes("doneToday")} />
-      {!phone && !beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
+      <EmbedNavigation inPhoneDrawer={phone} />
+      {roomy ? (
+        <>
+          {!beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
+          {/* History, Settings, the account and Collapse, each a labelled row. */}
+          <RoomyFoot
+            showHistory={!hidden.includes("doneToday")}
+            onCollapse={onPin === undefined ? () => switchOverview("compact") : undefined}
+          />
+        </>
+      ) : (
+        <>
+          {/* The embedding app's account, above the foot's own places. */}
+          <EmbedAccount className="border-t border-border px-inset py-tight" />
+          {/* History and Settings share the foot: the places you go to rather than work in. */}
+          <OverviewHistory showHistory={!hidden.includes("doneToday")} />
+          {!phone && !beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
+        </>
+      )}
     </aside>
+  );
+  if (!card) return aside;
+  return (
+    <div data-testid="overview-card" className="flex min-h-0 flex-1 flex-col bg-thread p-3">
+      {aside}
+    </div>
   );
 }
 

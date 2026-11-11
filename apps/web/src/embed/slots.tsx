@@ -1,5 +1,5 @@
 import { Link, useMatches, useParams, useRouterState } from "@tanstack/react-router";
-import { createElement, useRef } from "react";
+import { createElement, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ import {
   shownCount,
   shownNavigation,
   useEmbedShell,
+  useRoomySidebar,
 } from "./store";
 
 // The places in Gram's shell an app in front of it may fill. Each draws nothing until something was
@@ -72,6 +73,81 @@ function ItemIcon({ item, className }: { item: ShellNavigationItem; className: s
 const NAV_ROW =
   "relative flex h-8 min-w-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-muted-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:text-foreground aria-[current=page]:hover:bg-transparent in-data-phone-drawer:h-11 in-data-phone-drawer:gap-2.5 in-data-phone-drawer:px-2";
 
+/**
+ * A row in the `roomy` sidebar: taller, its label in the body's stronger weight and the foreground
+ * colour, bold while it is where the window is. Its icon sits in a `RoomyTile`.
+ */
+export const ROOMY_ROW =
+  "group/row relative flex h-10 min-w-0 items-center gap-3 rounded-(--radius-sm) pr-2 pl-1 text-left text-body-strong text-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:font-semibold aria-[current=page]:hover:bg-transparent aria-expanded:bg-sidebar-row-hover";
+
+/**
+ * The square an icon of a `roomy` row sits in. While the row is where the window is, the tile is
+ * solid foreground and the icon the background's colour: drawn by the tile itself (`solid`), or by
+ * the list's `Glide`, which then moves from tile to tile (`data-glide-tile`).
+ */
+export function RoomyTile({ solid = false, children }: { solid?: boolean; children: ReactNode }) {
+  return (
+    <span
+      data-glide-tile=""
+      className={cn(
+        "relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground transition-colors duration-(--dur-fast) group-hover/row:text-foreground group-aria-[current=page]/row:text-background *:size-4.5",
+        solid && "group-aria-[current=page]/row:bg-foreground",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** A shortcut's keys apart, each its own cap: `Ctrl+K` as Ctrl and K, `⌘K` as ⌘ and K. */
+export const keyCaps = (hint: string): readonly string[] => {
+  if (hint.length > 1 && hint.includes("+")) return hint.split("+").filter((key) => key !== "");
+  const [, mods = "", key = ""] = /^([⌃⌘⌥⇧]*)(.*)$/u.exec(hint) ?? [];
+  return [...mods, ...(key === "" ? [] : [key])];
+};
+
+/** A shortcut drawn as key caps, as the `roomy` sidebar's search has it. */
+export function KeyCaps({ hint }: { hint: string }) {
+  if (hint === "") return null;
+  return (
+    <span aria-hidden data-testid="key-caps" className="flex shrink-0 items-center gap-1">
+      {keyCaps(hint).map((key, i) => (
+        <kbd
+          key={i}
+          className="inline-flex h-5 min-w-5 items-center justify-center rounded-2xs border border-border bg-background px-1 font-mono text-caption text-muted-foreground"
+        >
+          {key}
+        </kbd>
+      ))}
+    </span>
+  );
+}
+
+/** The embedding app's head of the sidebar: its mark and name. Nothing when it supplied none. */
+export function EmbedSidebarHeader({ className }: { className?: string }) {
+  const header = useEmbedShell((s) => s.sidebar.header);
+  if (header === undefined) return null;
+  return (
+    <div
+      data-testid="embed-sidebar-header"
+      className={cn("flex min-w-0 flex-1 items-center [-webkit-app-region:no-drag]", className)}
+    >
+      {createElement(header, { placement: "sidebar" })}
+    </div>
+  );
+}
+
+/** The embedding app's account, at the sidebar's foot. Nothing when it supplied none. */
+export function EmbedAccount({ className }: { className?: string }) {
+  const account = useEmbedShell((s) => s.sidebar.account);
+  if (account === undefined) return null;
+  return (
+    <div data-testid="embed-account" className={cn("flex min-w-0 shrink-0", className)}>
+      {createElement(account, { placement: "sidebar" })}
+    </div>
+  );
+}
+
 /** A row's count, at its end. */
 function Count({ count }: { count: number | undefined }) {
   const shown = shownCount(count);
@@ -92,40 +168,58 @@ function Count({ count }: { count: number | undefined }) {
  * list, under Needs you and search, as places you work in; `foot` is below the threads and above
  * History, with the places you go to.
  */
-export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavigationPlacement }) {
+export function EmbedNavigation({
+  placement = "foot",
+  inPhoneDrawer = false,
+}: {
+  placement?: ShellNavigationPlacement;
+  /** In a phone's drawer, which keeps its own shape in either look. */
+  inPhoneDrawer?: boolean;
+}) {
   const groups = navigationAt(
     useEmbedShell((s) => s.navigation),
     placement,
   );
   const pathname = usePathname();
-  const list = useRef<HTMLElement>(null);
+  const roomy = useRoomySidebar() && !inPhoneDrawer;
   if (groups.length === 0) return null;
   const main = placement === "main";
   return (
     <nav
-      ref={list}
       aria-label={main ? "Places" : "More places"}
       data-testid={main ? "embed-navigation-main" : "embed-navigation"}
       data-placement={placement}
+      data-look={roomy ? "roomy" : undefined}
       className={cn(
-        "relative flex shrink-0 flex-col gap-tight text-body",
+        "relative flex shrink-0 flex-col text-body",
+        roomy ? "gap-0" : "gap-tight",
         // In the list it scrolls with the rest, a list's step from what follows; at the foot it
         // is a block of its own, ruled off from the list above.
         !main && "border-t border-border px-inset py-tight",
       )}
     >
-      <Glide container={list} />
+      {/* Roomy: a solid tile behind the current row's icon, gliding from tile to tile. */}
+      <Glide {...(roomy ? { className: "bg-foreground", tile: true } : {})} />
       {groups.map((group) => (
         <section
           key={group.id}
           {...(group.label === undefined ? {} : { "aria-label": group.label })}
           data-testid="embed-navigation-group"
         >
-          {group.label !== undefined && (
-            <h2 className="flex h-6 items-center px-1.5 text-meta text-muted-foreground">
-              {group.label}
-            </h2>
-          )}
+          {group.label !== undefined &&
+            (roomy ? (
+              // Small capitals, letter-spaced, with air above: a quiet label for what follows.
+              <h2
+                data-testid="embed-navigation-heading"
+                className="flex h-6 items-end px-2 pt-3 pb-1 text-caption font-medium tracking-[0.08em] text-muted-foreground uppercase box-content"
+              >
+                {group.label}
+              </h2>
+            ) : (
+              <h2 className="flex h-6 items-center px-1.5 text-meta text-muted-foreground">
+                {group.label}
+              </h2>
+            ))}
           <ul className="flex flex-col gap-px">
             {group.items.map((item) => {
               const current = navigationCurrent(pathname, item.to);
@@ -136,9 +230,15 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
                     {...{ [OVERVIEW_STOP]: "" }}
                     data-testid="embed-navigation-item"
                     aria-current={current ? "page" : undefined}
-                    className={NAV_ROW}
+                    className={roomy ? ROOMY_ROW : NAV_ROW}
                   >
-                    <ItemIcon item={item} className="size-icon-row shrink-0" />
+                    {roomy ? (
+                      <RoomyTile>
+                        <ItemIcon item={item} className="shrink-0" />
+                      </RoomyTile>
+                    ) : (
+                      <ItemIcon item={item} className="size-icon-row shrink-0" />
+                    )}
                     <span className="min-w-0 flex-1 truncate">{item.label}</span>
                     <Count count={item.count} />
                   </Link>
@@ -180,13 +280,11 @@ export function EmbedRailNavigation({
     placement,
   );
   const pathname = usePathname();
-  const list = useRef<HTMLElement>(null);
   const stripOpen = useStripOpen();
   if (groups.length === 0) return null;
   const main = placement === "main";
   return (
     <nav
-      ref={list}
       aria-label={main ? "Places" : "More places"}
       data-testid={main ? "embed-rail-navigation-main" : "embed-rail-navigation"}
       data-placement={placement}
@@ -196,7 +294,7 @@ export function EmbedRailNavigation({
         !main && !quiet && "border-t border-sidebar-divider py-2",
       )}
     >
-      <Glide container={list} />
+      <Glide />
       {groups.map((group) => (
         <div
           key={group.id}

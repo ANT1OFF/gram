@@ -8,6 +8,7 @@ import type {
   ShellNavigationGroup,
   ShellNavigationPlacement,
   ShellPageProps,
+  ShellSidebar,
   ShellSlotProps,
 } from "./contract";
 
@@ -28,6 +29,8 @@ export interface EmbedShellState {
   readonly hosted: boolean;
   /** The page at `/` in place of Gram's home. Set once, at mount. */
   readonly home: ComponentType<ShellPageProps> | undefined;
+  /** The open sidebar's look, its head and its account. */
+  readonly sidebar: ShellSidebar;
 }
 
 export const useEmbedShell = create<EmbedShellState>()(() => ({
@@ -38,6 +41,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   hosted: false,
   attention: undefined,
   home: undefined,
+  sidebar: {},
 }));
 
 /** What the store holds before anything is added, and again after `unmount`. */
@@ -49,7 +53,11 @@ export const EMPTY_SHELL: EmbedShellState = {
   hosted: false,
   attention: undefined,
   home: undefined,
+  sidebar: {},
 };
+
+/** Whether the open sidebar is drawn in the embedding app's `roomy` look: never on Gram's own. */
+export const useRoomySidebar = () => useEmbedShell((s) => s.sidebar.look === "roomy");
 
 /** Whether an app in front of Gram supplies the home page: Gram's first run is then never shown. */
 export const useHostHome = () => useEmbedShell((s) => s.home !== undefined);

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "@tanstack/react-router";
-import { History, Search } from "lucide-react";
+import { Link, useParams, useRouterState } from "@tanstack/react-router";
+import { ChevronsLeft, History, Search, Settings } from "lucide-react";
 import { Fragment, useMemo } from "react";
 
 import { useApi } from "@/api/context";
@@ -53,6 +53,8 @@ import { StatusDot, type DotState } from "./status-dot";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useThreadsListed } from "@/embed/store";
+import { EmbedAccount, KeyCaps, ROOMY_ROW, RoomyTile } from "@/embed/slots";
+import { useLaunchIssues } from "@/launch-checks/banner";
 
 // The overview sidebar's extras: At rest's Pull requests and Done, each gone with nothing in it, the
 // way into History, and the usage meters and worker slots at its foot, off by default. Each reads
@@ -183,11 +185,30 @@ function PrRow({ row }: { row: OverviewPrRow }) {
  * Search, written out under the Needs you pill so it is found without knowing its shortcut: it
  * opens the command palette, which finds threads, workers and commands.
  */
-export function OverviewSearch() {
+export function OverviewSearch({ roomy = false }: { roomy?: boolean }) {
   const hint = useShortcutHint("palette.open");
   // Where an app in front of Gram leaves the threads out of the sidebar, search finds more than them.
   const threadsListed = useThreadsListed();
   const open = useLayoutStore((s) => s.paletteOpen);
+  if (roomy)
+    return (
+      <button
+        type="button"
+        data-testid="overview-search"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-keyshortcuts={hint === "" ? undefined : hint}
+        title={withHint("Search", hint)}
+        onClick={() => useLayoutStore.getState().openPalette()}
+        className={cn(ROOMY_ROW, "w-full shrink-0 font-normal")}
+      >
+        <RoomyTile>
+          <Search aria-hidden />
+        </RoomyTile>
+        <span className="flex-1 truncate">Search</span>
+        <KeyCaps hint={hint} />
+      </button>
+    );
   return (
     <button
       type="button"
@@ -378,6 +399,94 @@ export function OverviewHistory({ showHistory = true }: { showHistory?: boolean 
       )}
       {/* Settings beside History, the sidebar's places to go, clear of its header's toggles. */}
       <TopLeftNav update={false} hintSide="top" className="shrink-0" />
+    </div>
+  );
+}
+
+/**
+ * The `roomy` sidebar's foot, an app in front of Gram's look: History, Settings, the embedding
+ * app's account and Collapse, each a labelled row, where the standard look has History and an icon
+ * at the foot and Hide and Compact at the head. Over the page from the compact strip it has no
+ * Collapse: it is collapsed already, and its head keeps it open.
+ */
+export function RoomyFoot({
+  showHistory = true,
+  onCollapse,
+}: {
+  showHistory?: boolean;
+  onCollapse?: (() => void) | undefined;
+}) {
+  const historyHint = useShortcutHint("history.open");
+  const historyOpen = useHistoryStore((s) => s.open);
+  const settingsHint = useShortcutHint("settings.open");
+  const setup = useLaunchIssues().dismissed;
+  const inSettings = useRouterState({
+    select: (state) => state.location.pathname.startsWith("/settings"),
+  });
+  return (
+    <div
+      data-testid="overview-roomy-foot"
+      className="flex shrink-0 flex-col gap-px border-t border-border px-inset py-tight"
+    >
+      {showHistory && (
+        <button
+          type="button"
+          data-testid="overview-history"
+          aria-haspopup="dialog"
+          aria-expanded={historyOpen}
+          aria-keyshortcuts={historyHint === "" ? undefined : historyHint}
+          title={withHint(
+            "Finished workers, done and archived threads, past CLI sessions",
+            historyHint,
+          )}
+          onClick={() => useHistoryStore.getState().show()}
+          className={ROOMY_ROW}
+        >
+          <RoomyTile solid>
+            <History aria-hidden />
+          </RoomyTile>
+          <span className="flex-1 truncate">History</span>
+        </button>
+      )}
+      <Link
+        to={setup.length === 0 ? "/settings" : "/settings/diagnostics"}
+        data-testid="overview-settings"
+        aria-current={inSettings ? "page" : undefined}
+        title={withHint("Settings", settingsHint)}
+        className={ROOMY_ROW}
+      >
+        <RoomyTile solid>
+          <Settings aria-hidden />
+          {setup.length > 0 && (
+            <span
+              aria-hidden
+              data-testid="top-left-settings-dot"
+              className="absolute top-1 right-1 size-1.5! rounded-full bg-foreground"
+            />
+          )}
+        </RoomyTile>
+        <span className="flex-1 truncate">Settings</span>
+        {setup.length > 0 && (
+          <span className="sr-only">
+            , {setup.length === 1 ? "1 setup problem" : `${setup.length} setup problems`}
+          </span>
+        )}
+      </Link>
+      <EmbedAccount className="py-1" />
+      {onCollapse !== undefined && (
+        <button
+          type="button"
+          data-testid="overview-compact"
+          title="Collapse the sidebar to a strip"
+          onClick={onCollapse}
+          className={ROOMY_ROW}
+        >
+          <RoomyTile>
+            <ChevronsLeft aria-hidden />
+          </RoomyTile>
+          <span className="flex-1 truncate">Collapse</span>
+        </button>
+      )}
     </div>
   );
 }

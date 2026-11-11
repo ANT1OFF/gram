@@ -99,6 +99,36 @@ export interface ShellAttention {
   readonly onOpen?: () => void;
 }
 
+/**
+ * How the open sidebar is drawn.
+ *
+ * - `standard`: Gram's own: edge to edge, compact rows, the current row filled, Hide and Compact
+ *   at its head and History and Settings at its foot.
+ * - `roomy`: a card inset from the window's edges; group headings in small capitals with air
+ *   above them; taller rows with larger icons and stronger labels; the current row marked by a
+ *   solid tile behind its icon and a bold label; search's shortcut as keycaps; and at the foot,
+ *   History, Settings, the account and Collapse as labelled rows in place of the head's toggles.
+ *
+ * A phone's drawer and the compact strip keep their own shape in either.
+ */
+export type ShellSidebarLook = "standard" | "roomy";
+
+/** The open sidebar's look and the two places in it the embedding app may fill. */
+export interface ShellSidebar {
+  /** Defaults to `standard`. */
+  readonly look?: ShellSidebarLook;
+  /**
+   * The sidebar's head: a brand mark and name, say. It takes the head's room, with Gram's New
+   * beside it; in the `standard` look it is a row of its own under the head's toggles.
+   */
+  readonly header?: ComponentType<ShellSlotProps>;
+  /**
+   * The person signed in: an avatar, a name and one line, drawn at the sidebar's foot (above
+   * Collapse in the `roomy` look). A phone's drawer has it at its foot too.
+   */
+  readonly account?: ComponentType<ShellSlotProps>;
+}
+
 /** What the embedding app adds to Gram's shell. Everything is optional. */
 export interface ShellContributions {
   /** Pages beside Gram's own. Read once, when the app mounts. */
@@ -125,6 +155,8 @@ export interface ShellContributions {
   readonly threads?: "shown" | "hidden";
   /** What needs someone, counted by the embedding app. Replaceable through `GramHandle.update`. */
   readonly attention?: ShellAttention;
+  /** The open sidebar's look, its head and its account. Replaceable through `GramHandle.update`. */
+  readonly sidebar?: ShellSidebar;
 }
 
 /** The server one mount talks to. */
@@ -160,13 +192,15 @@ export interface GramHandle {
    */
   readonly shell: "on" | "off";
   /**
-   * Replaces what `next` names of the navigation groups, the switcher, the thread list and the
-   * attention count, and
-   * leaves what it doesn't name as it is: `update({ navigation })` changes counts and keeps the
+   * Replaces what `next` names of the navigation groups, the switcher, the thread list, the
+   * attention count and the sidebar's look, and leaves what it doesn't name as it is: `update({ navigation })` changes counts and keeps the
    * switcher. A key given as `undefined` takes that part away. Routes stay as mounted.
    */
   update(
-    next: Pick<ShellContributions, "navigation" | "workspaceSwitcher" | "threads" | "attention">,
+    next: Pick<
+      ShellContributions,
+      "navigation" | "workspaceSwitcher" | "threads" | "attention" | "sidebar"
+    >,
   ): void;
   /** Moves the window to a path under the app. */
   navigate(to: string): Promise<void>;

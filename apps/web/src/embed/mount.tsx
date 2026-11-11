@@ -102,6 +102,7 @@ export const mountGram: MountGram = async (options) => {
       hosted,
       attention: shell.attention,
       home: shell.home?.component,
+      sidebar: shell.sidebar ?? {},
       titles: Object.fromEntries([
         ...(shell.routes ?? []).flatMap((route) =>
           route.title === undefined ? [] : [[route.path, route.title] as const],
@@ -132,6 +133,7 @@ export const mountGram: MountGram = async (options) => {
           ...("workspaceSwitcher" in next ? { workspaceSwitcher: next.workspaceSwitcher } : {}),
           ...("threads" in next ? { threads: next.threads ?? "shown" } : {}),
           ...("attention" in next ? { attention: next.attention } : {}),
+          ...("sidebar" in next ? { sidebar: next.sidebar ?? {} } : {}),
         });
       },
       navigate: (to) => router.navigate({ to: to as "/" }),

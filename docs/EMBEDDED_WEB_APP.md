@@ -112,6 +112,19 @@ moving keyboard focus into it, slides the open sidebar over the page beside it; 
 Escape, or going somewhere closes it, and its pin keeps the sidebar open. Gram on its own keeps its
 rail.
 
+**The sidebar's look.** `sidebar` (`{ look?, header?, account? }`) sets how the open sidebar is
+drawn. `look: "standard"` (the default) is Gram's own. `look: "roomy"` draws it as a card inset
+12 px from the window's edges, with group headings in small capitals and air above them, rows
+40 px tall with 18 px icons and labels in the body's stronger weight, the current row as a solid
+tile behind its icon (which glides from row to row) and a bold label, and search's shortcut as key
+caps. Its head is your `header` with Gram's New beside it, and its foot holds History, Settings,
+your `account` and Collapse as labelled rows, in place of the head's Hide and Compact. `header`
+and `account` are components of yours (a brand mark and name; an avatar, a name and one line),
+given `placement: "sidebar"`; in the standard look the header is a row under the head's toggles
+and the account sits above History. The phone's drawer and the compact strip keep their own shape
+in either look; the strip's overlay takes the look without the card or Collapse. Change it through
+`update({ sidebar })`.
+
 **What needs someone.** `attention` (`{ count, label?, to?, onOpen? }`) puts your count in place
 of Gram's own Needs you: the sidebar's pill says `label` (or "N need you"), the compact strip's tile
 and the title bar's Inbox show a dot, and a click goes to `to`, or calls `onOpen`, or opens Gram's
