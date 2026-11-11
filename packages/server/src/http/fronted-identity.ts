@@ -9,7 +9,8 @@ import { createPublicKey, verify, type KeyObject } from "node:crypto";
  * With it configured and switched on, the statement is the only way in for people: the launch token
  * and its cookie are not accepted, and a request without a valid statement is refused. The proxy
  * must remove any `x-gram-identity` a client sent and set its own, and must be the only route to
- * the server's port; a statement is a bearer credential for the minutes it lives.
+ * the server's port; a statement is a bearer credential for the minutes it lives. It must not
+ * route `/mcp` or `/host/*`, which are the agents' and hosts' own and take no person.
  *
  * What a statement must say:
  * - header: `alg` `EdDSA`, and `kid` when more than one key is configured;
@@ -25,6 +26,12 @@ export const IDENTITY_HEADER = "x-gram-identity";
 export const MAX_LIFETIME_SECONDS = 300;
 /** How far the proxy's clock and this one may disagree. */
 export const CLOCK_SKEW_SECONDS = 30;
+/**
+ * How long a WebSocket opened on a statement lasts before the server closes it. A socket is
+ * checked when it opens, so this bounds how long a person who signed out, or whose role changed,
+ * keeps what the statement gave them when the proxy doesn't close their connections itself.
+ */
+export const SOCKET_LIFETIME_MS = 15 * 60_000;
 /** A statement longer than this is refused unread. */
 const MAX_STATEMENT_LENGTH = 4096;
 const MAX_TEXT_LENGTH = 256;
@@ -48,6 +55,8 @@ export interface FrontedIdentityConfig {
   readonly origin: string;
   /** The proxy's public keys by `kid`; a key configured without one is under `""`. */
   readonly keys: ReadonlyMap<string, KeyObject>;
+  /** Overrides {@link SOCKET_LIFETIME_MS}, for a test that can't wait that long. */
+  readonly socketLifetimeMs?: number;
 }
 
 export type IdentityRefusal =
@@ -87,14 +96,17 @@ const parseObject = (bytes: Buffer): Record<string, unknown> | undefined => {
   }
 };
 
-/** Printable text of a sane length, with no control characters to carry into a log or a header. */
+/**
+ * Printable text of a sane length: no control characters to carry into a log or a header, and no
+ * invisible or direction-changing ones to make one name read as another.
+ */
 const plainText = (value: unknown): string | undefined =>
   typeof value === "string" &&
   value.length > 0 &&
   value.length <= MAX_TEXT_LENGTH &&
   value.trim() === value &&
   // oxlint-disable-next-line no-control-regex
-  !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(value)
+  !/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/.test(value)
     ? value
     : undefined;
 

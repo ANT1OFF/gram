@@ -75,7 +75,12 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { embeddingEnabled, withEmbeddingSeed } from "../settings/embedding.ts";
 import { ActorGuard, FrontedSignIn } from "../rpc/actor-guard.ts";
 import { markActor, unmarkActor } from "./actor.ts";
-import { IDENTITY_HEADER, verifyIdentity, type Actor } from "./fronted-identity.ts";
+import {
+  IDENTITY_HEADER,
+  SOCKET_LIFETIME_MS,
+  verifyIdentity,
+  type Actor,
+} from "./fronted-identity.ts";
 import { PreviewFiles } from "../preview/files.ts";
 import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
@@ -243,7 +248,8 @@ export const AuthMiddleware = HttpRouter.middleware(
         const identity =
           fronted?.config !== undefined &&
           (yield* fronted.active) &&
-          !(path === MCP_PATH && !isRemote) &&
+          // A person's request never goes there, so one that names a person isn't let by.
+          !(path === MCP_PATH && !isRemote && request.headers[IDENTITY_HEADER] === undefined) &&
           !(isRemote && path !== undefined && (path === HOST_MCP_PATH || HOST_PATHS.has(path)))
             ? fronted.config
             : undefined;
@@ -278,19 +284,38 @@ export const AuthMiddleware = HttpRouter.middleware(
             );
           }
           // Phone access and joining machines are this machine's own sign-in, which a fronted
-          // server doesn't have.
-          if (REMOTE_MANAGEMENT_PATHS.has(target.path) || MACHINE_MANAGEMENT_PATHS.has(target.path))
+          // server doesn't have. The agents' and hosts' routes take a thread's token or a host's
+          // proof, never a person: a person let through to them would act with neither a role
+          // nor a record.
+          if (
+            REMOTE_MANAGEMENT_PATHS.has(target.path) ||
+            MACHINE_MANAGEMENT_PATHS.has(target.path) ||
+            HOST_PATHS.has(target.path) ||
+            target.path === MCP_PATH ||
+            target.path === HOST_MCP_PATH
+          )
             return secureResponse(
               HttpServerResponse.text("forbidden: not available behind a proxy", { status: 403 }),
             );
-          return secureResponse(
-            yield* asCaller(
-              httpEffect,
-              unmarkLocalApp(
-                request.modify({ headers: Headers.remove(request.headers, IDENTITY_HEADER) }),
-              ),
-              stated.actor,
+          const served = asCaller(
+            httpEffect,
+            unmarkLocalApp(
+              request.modify({ headers: Headers.remove(request.headers, IDENTITY_HEADER) }),
             ),
+            stated.actor,
+          );
+          return secureResponse(
+            target.path === "/ws"
+              ? // A socket keeps the person and role it opened with, so it is closed after a
+                // while: the app connects again, and the proxy states who they are now.
+                yield* Effect.raceFirst(
+                  served,
+                  Effect.as(
+                    Effect.sleep(identity.socketLifetimeMs ?? SOCKET_LIFETIME_MS),
+                    HttpServerResponse.text("signed out", { status: 401 }),
+                  ),
+                )
+              : yield* served,
           );
         }
         if (request.headers["tailscale-funnel-request"] !== undefined)

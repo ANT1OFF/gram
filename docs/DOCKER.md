@@ -140,8 +140,9 @@ sent. The claims:
 
 - `iss` and `aud`, as configured.
 - `sub`, an id for the person that never changes, and optionally `name` to show.
-- `role`: `member`, who can do everything, or `viewer`, who can read threads, diffs, files in a
-  thread's folders, docs and settings, and change nothing.
+- `role`: `member`, who can do everything, or `viewer`, who can read threads, diffs, docs,
+  memory and settings, and change nothing. A viewer can read any file in a thread's folders,
+  including ones that hold secrets, such as `.env`.
 - `iat` and `exp`, at most five minutes apart. Make a new statement per request.
 
 The server holds public keys only, so it can't sign a statement itself. What you have to keep
@@ -151,13 +152,19 @@ true around it:
   minutes for whoever holds it, so the hop from the proxy to the server stays private.
 - A WebSocket is checked when it opens and keeps its person and role until it closes. When
   someone signs out or their role changes, the proxy closes their connections.
-- The agents' own connection to their app tools (`/mcp` on loopback, with each thread's token)
-  is unchanged. Phone access and the Machines page are off behind a proxy.
+- A WebSocket the proxy leaves open is closed by the server after 15 minutes, and the app
+  connects again with a new statement.
+- The proxy doesn't route `/mcp` or `/host/*`. Those are the agents' and joined machines' own
+  routes, with each thread's token or a machine's own proof, and are unchanged. A request there
+  that carries a statement is refused. Phone access and the Machines page are off behind a proxy.
+- With the four variables set but hosted features off, the server logs a warning and takes the
+  launch token as usual.
 
 Each change a member makes is recorded with who made it: the call, the thread or workspace, and
 what identifies the thing changed (a message's id, a request and its allow or deny, the names of
-the settings), never what was typed. The `actor_events` table in the database holds a year of
-them. A message, an answer and a settings change by two people are two people's entries.
+the settings), never what was typed. A call that failed is recorded as failed. Keystrokes in a
+terminal aren't recorded; opening one is. The `actor_events` table in the database holds a year
+of them. A message, an answer and a settings change by two people are two people's entries.
 
 ## A headless control plane
 

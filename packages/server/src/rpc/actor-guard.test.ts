@@ -23,6 +23,9 @@ describe("what a viewer may call", () => {
       "settings.set",
       "terminal.open",
       "fs.browse",
+      "worktree.status",
+      "git.branches",
+      "thread.suggestions",
     ])
       expect(VIEWER_RPCS.has(tag)).toBe(false);
   });
@@ -86,6 +89,30 @@ describe("what is recorded of a call", () => {
       ["t1", { requestId: "r1", answer: { kind: "approval", decision: "allow" } }],
       ["t2", { requestId: "r2", answer: { kind: "plan", decision: "reject" } }],
     ]);
+  });
+
+  test("keeps an id only where it has the shape of one", () => {
+    const [named] = actorEventsOf(
+      ada,
+      "orchestrator.renameFeature",
+      { workspaceId: "w1", feature: "the secret launch", id: "a sentence someone typed" },
+      5,
+    );
+    expect(named).toMatchObject({ workspaceId: "w1", data: {} });
+    const [patched] = actorEventsOf(
+      ada,
+      "settings.set",
+      { patch: { projects: { "/home/someone/secret plan": { color: "red" } } } },
+      5,
+    );
+    expect(patched?.data).toEqual({ settings: ["projects.*.color"] });
+    const many = actorEventsOf(
+      ada,
+      "thread.respondMany",
+      { answers: Array.from({ length: 500 }, () => ({ threadId: "t1", requestId: "r1" })) },
+      5,
+    );
+    expect(many).toHaveLength(200);
   });
 
   test("names the thread a call started", () => {

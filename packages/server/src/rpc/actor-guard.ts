@@ -1,7 +1,10 @@
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
+import * as RpcSchema from "effect/rpc/RpcSchema";
 import { ServerConfig } from "../config.ts";
 import { actorOf } from "../http/actor.ts";
 import type { Actor, FrontedIdentityConfig } from "../http/fronted-identity.ts";
@@ -43,11 +46,19 @@ export class FrontedSignIn extends Context.Service<
 }
 
 /**
- * What a viewer may call: reads of what the workspace shows. Everything else is refused, so an
- * RPC added later is closed to viewers until it is named here. Left out on purpose, though they
- * read: anything that browses the machine outside a thread's folders (`fs.browse`, `fs.tree`,
- * `fs.list`, `fs.files`, `sessions.*`), terminals, connector and gateway configuration,
- * diagnostics, and reads that spend model usage (`thread.recap`, `thread.whyStuck`).
+ * What a viewer may call: reads of what the workspace shows, each scoped to a thread or a
+ * workspace by its id. Everything else is refused, so an RPC added later is closed to viewers
+ * until it is named here. Before naming one, read its handler: it must take no path of the
+ * caller's choosing (git runs a folder's own configuration), spend no model usage, call no
+ * provider with the server's credentials, and write nothing. Left out for those reasons, though
+ * they read: `fs.browse`, `fs.tree`, `fs.list`, `fs.files`, `sessions.*`, `worktree.*`,
+ * `git.branches` and the other git calls that take a path, pull request lookups, terminals,
+ * connector and gateway configuration, diagnostics, and `thread.recap`, `thread.whyStuck`,
+ * `thread.suggestions` and `orchestrator.featureSummary`, which ask a model. A viewer still gets
+ * git and pull request state, and suggestions, as events.
+ *
+ * The RPC server calls a handler before this guard wraps what it returns, so a handler must do
+ * its work in the effect or stream it returns, never while building it.
  */
 export const VIEWER_RPCS: ReadonlySet<string> = new Set([
   "events.subscribe",
@@ -55,7 +66,6 @@ export const VIEWER_RPCS: ReadonlySet<string> = new Set([
   "thread.history",
   "thread.search",
   "thread.listWaits",
-  "thread.suggestions",
   "threads.closed.list",
   "threads.wakes",
   "attachment.read",
@@ -78,28 +88,14 @@ export const VIEWER_RPCS: ReadonlySet<string> = new Set([
   "orchestrator.watchLedger",
   "orchestrator.featureCards",
   "orchestrator.watchFeatureCards",
-  "orchestrator.featureSummary",
   "orchestrator.finishedWorker",
   "orchestrator.finishedWorkers",
   "orchestrator.finishedWorkersPage",
   "git.diff",
   "git.diffChunk",
-  "git.branches",
-  "git.baseStatus",
-  "git.upstreamStatus",
-  "git.prChecks",
-  "git.prDetail",
-  "pr.status",
-  "pr.labels.list",
-  "openPrs.list",
-  "reviewRequests.list",
-  "worktree.list",
-  "worktree.status",
   "fs.file",
   "fs.image",
-  "fs.preview",
   "fs.search",
-  "app.usageOverview",
   "app.usageLimitHistory",
 ]);
 
@@ -116,7 +112,6 @@ export const UNRECORDED_RPCS: ReadonlySet<string> = new Set([
   "helper.recordEvent",
   "helper.status",
   "composer.drafts",
-  "ui.showPanel",
   "terminal.input",
   "terminal.resize",
   "terminal.list",
@@ -141,7 +136,6 @@ export const UNRECORDED_RPCS: ReadonlySet<string> = new Set([
   "fs.vocabulary",
   "git.prCheckDiagnostic",
   "models.suggestions",
-  "palette.filters",
   "pr.mergeOptions",
   "pr.reviewerSuggestions",
   "profiles.list",
@@ -166,8 +160,9 @@ export const UNRECORDED_RPCS: ReadonlySet<string> = new Set([
 export const VIEWER_REFUSAL = "read-only: a viewer can't change anything here";
 export const NO_ACTOR_REFUSAL = "unauthorized: no signed-in person on this call";
 
+/** A word from a fixed set (a kind, a decision), not free text. */
 const text = (value: unknown): string | undefined =>
-  typeof value === "string" && value.length > 0 && value.length <= 256 ? value : undefined;
+  typeof value === "string" && /^[A-Za-z]{1,32}$/.test(value) ? value : undefined;
 
 /** The leaves of a settings patch as dotted paths: which settings, never their values. */
 const patchPaths = (patch: unknown, prefix = "", out: string[] = []): string[] => {
@@ -177,7 +172,9 @@ const patchPaths = (patch: unknown, prefix = "", out: string[] = []): string[] =
   }
   for (const [key, value] of Object.entries(patch)) {
     if (out.length >= 64) break;
-    patchPaths(value, prefix === "" ? key : `${prefix}.${key}`, out);
+    // A settings key is a name from the schema; anything else is a record's key, which is data.
+    const name = /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(key) ? key : "*";
+    patchPaths(value, prefix === "" ? name : `${prefix}.${name}`, out);
   }
   return out;
 };
@@ -193,9 +190,15 @@ const ID_KEYS = [
   "profileId",
   "labelId",
   "paletteId",
-  "feature",
   "id",
 ] as const;
+
+/** An id as the app makes them: nothing a person would type a sentence into. */
+const idText = (value: unknown): string | undefined =>
+  typeof value === "string" && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : undefined;
+
+/** The most entries one call leaves, however many answers it carries. */
+const MAX_ENTRIES_PER_CALL = 200;
 
 /** A decision an answer carries (allow or deny, approve or reject), never its words. */
 const answerOf = (answer: unknown): Record<string, unknown> => {
@@ -210,7 +213,7 @@ const answerOf = (answer: unknown): Record<string, unknown> => {
 
 /**
  * What to record of a call `actor` made: one entry, or one per answer for `thread.respondMany`.
- * Only what identifies the thing acted on is kept. The actor's id is the proxy's stable id for the
+ * Only what identifies the thing acted on is kept, and only where it has the shape of an id. The actor's id is the proxy's stable id for the
  * person, so a thread's entries say who started it (`thread.create`) and who acted in it since.
  */
 export const actorEventsOf = (
@@ -228,28 +231,30 @@ export const actorEventsOf = (
     action,
     // A thread a call made is known by what the call answered, so who started it is on record.
     threadId:
-      text(source["threadId"]) ??
+      idText(source["threadId"]) ??
       (action === "thread.create" && typeof result === "object" && result !== null
-        ? text((result as Record<string, unknown>)["id"])
+        ? idText((result as Record<string, unknown>)["id"])
         : undefined),
-    workspaceId: text(source["workspaceId"]),
+    workspaceId: idText(source["workspaceId"]),
     data: {
       ...Object.fromEntries(
-        ID_KEYS.flatMap((key) => (text(source[key]) === undefined ? [] : [[key, source[key]]])),
+        ID_KEYS.flatMap((key) => (idText(source[key]) === undefined ? [] : [[key, source[key]]])),
       ),
       ...data,
     },
   });
   if (action === "thread.respondMany" && Array.isArray(fields["answers"])) {
-    return (fields["answers"] as ReadonlyArray<unknown>).flatMap((item) =>
-      typeof item === "object" && item !== null
-        ? [
-            entry(item as Record<string, unknown>, {
-              answer: answerOf((item as Record<string, unknown>)["answer"]),
-            }),
-          ]
-        : [],
-    );
+    return (fields["answers"] as ReadonlyArray<unknown>)
+      .slice(0, MAX_ENTRIES_PER_CALL)
+      .flatMap((item) =>
+        typeof item === "object" && item !== null
+          ? [
+              entry(item as Record<string, unknown>, {
+                answer: answerOf((item as Record<string, unknown>)["answer"]),
+              }),
+            ]
+          : [],
+      );
   }
   if ("answer" in fields) return [entry(fields, { answer: answerOf(fields["answer"]) })];
   if (action === "settings.set") return [entry(fields, { settings: patchPaths(fields["patch"]) })];
@@ -276,12 +281,26 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           if (VIEWER_RPCS.has(action)) return yield* effect;
           if (actor.role !== "member") return yield* Effect.die(new Error(VIEWER_REFUSAL));
           if (UNRECORDED_RPCS.has(action)) return yield* effect;
-          // Recorded once the call has done what it does, and not interrupted between: a change
-          // that happened always has its entry, and a failed call leaves none.
+          const record = (failed: boolean, result?: unknown) =>
+            store.appendActorEvents(
+              actorEventsOf(actor, action, payload, Date.now(), result).map((entry) =>
+                failed ? { ...entry, data: { ...entry.data, failed: true } } : entry,
+              ),
+            );
+          // A stream runs for as long as its caller listens, so what it starts is recorded first.
+          if (RpcSchema.isStreamSchema(rpc.successSchema))
+            return yield* Effect.andThen(record(false), effect);
+          // Recorded once the call has ended, and not interrupted between: a change that happened
+          // always has its entry. A call that failed may have changed something on the way, so
+          // it is recorded as failed; one cut off before it ended leaves none.
           return yield* Effect.uninterruptibleMask((restore) =>
             restore(effect).pipe(
-              Effect.tap((result) =>
-                store.appendActorEvents(actorEventsOf(actor, action, payload, Date.now(), result)),
+              Effect.onExit((exit) =>
+                Exit.isSuccess(exit)
+                  ? record(false, exit.value)
+                  : Cause.hasInterruptsOnly(exit.cause)
+                    ? Effect.void
+                    : record(true),
               ),
             ),
           );

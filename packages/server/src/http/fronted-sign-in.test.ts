@@ -8,7 +8,7 @@ import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, layer } from "@effect/vitest";
-import { GramRpcs } from "@gram/contracts";
+import { GramRpcs, RequestId } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -28,18 +28,28 @@ import { tokenCookieName } from "./auth.ts";
 import { IDENTITY_HEADER } from "./fronted-identity.ts";
 import { makeTestProxy } from "./fronted-identity.testing.ts";
 import { LOCAL_APP_HEADER } from "./local-app.ts";
-import { MACHINES_LIST_PATH } from "./machine-routes.ts";
+import { HOST_MCP_PATH } from "../host/machine-keys.ts";
+import { HOST_PATHS, MACHINES_LIST_PATH } from "./machine-routes.ts";
 import { REMOTE_STATUS_PATH } from "./remote-access.ts";
 import { LaunchToken, serverPort, ServerLayer } from "./server.ts";
 
 const proxy = makeTestProxy();
 
-const server = (embedding: boolean) =>
+const server = (embedding: boolean, socketLifetimeMs?: number) =>
   ServerLayer.pipe(
     Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo" })),
     Layer.provide(TurnHooks.layerNoop),
     Layer.provide(gitPlatformTest()),
-    Layer.provide(ServerConfig.layer({ ...TEST_CONFIG, frontedIdentity: proxy.config, embedding })),
+    Layer.provide(
+      ServerConfig.layer({
+        ...TEST_CONFIG,
+        frontedIdentity: {
+          ...proxy.config,
+          ...(socketLifetimeMs === undefined ? {} : { socketLifetimeMs }),
+        },
+        embedding,
+      }),
+    ),
     Layer.orDie,
   );
 
@@ -203,6 +213,12 @@ describe("sign-in through a fronting proxy", () => {
         // A thread's agent on this machine still needs its own token for its app tools.
         const mcp = yield* get(port, "/mcp", { ...host, authorization: "Bearer nope" });
         expect(mcp).toMatchObject({ status: 401, body: "unauthorized: invalid bearer token" });
+        // And a person is never let through to them, or to a joined machine's routes.
+        for (const path of ["/mcp", HOST_MCP_PATH, ...HOST_PATHS])
+          expect(
+            (yield* get(port, path, { ...signedIn, authorization: "Bearer nope" })).status,
+          ).toBe(403);
+        expect((yield* get(port, "/mcp", { [IDENTITY_HEADER]: "forged" })).status).toBe(401);
       }),
     );
 
@@ -259,6 +275,14 @@ describe("sign-in through a fronting proxy", () => {
         });
         // And Grace changes a setting.
         yield* graceClient["settings.set"]({ patch: { logLevel: "debug" } });
+        // A change that fails on the way is on record as hers too.
+        yield* Effect.exit(
+          graceClient["thread.respond"]({
+            threadId,
+            requestId: RequestId.make("no-such-request"),
+            answer: { kind: "approval", decision: "deny", scope: "once" },
+          }),
+        );
 
         // Vera reads what the others see, and changes nothing.
         expect((yield* veraClient["settings.get"]()).logLevel).toBe("debug");
@@ -282,6 +306,16 @@ describe("sign-in through a fronting proxy", () => {
           ),
         ).toContain(VIEWER_REFUSAL);
         expect(yield* refusal(veraClient["terminal.list"]({ threadId }))).toContain(VIEWER_REFUSAL);
+        // Nor run anything in a folder of her choosing, which git's own configuration would.
+        expect(yield* refusal(veraClient["worktree.status"]({ path: folder }))).toContain(
+          VIEWER_REFUSAL,
+        );
+        expect(yield* refusal(veraClient["git.branches"]({ repoPath: folder }))).toContain(
+          VIEWER_REFUSAL,
+        );
+        expect(yield* refusal(veraClient["thread.suggestions"]({ threadId }))).toContain(
+          VIEWER_REFUSAL,
+        );
         // Nor by naming herself a member on a message: a header she can write, a seal she can't.
         const [body] = actorHeadersForTests({ id: "user-vera", name: "Vera", role: "member" })[
           ACTOR_HEADER
@@ -335,11 +369,48 @@ describe("sign-in through a fronting proxy", () => {
             threadId: undefined,
             data: { settings: ["logLevel"] },
           },
+          {
+            who: "user-grace",
+            name: "Grace",
+            action: "thread.respond",
+            threadId,
+            data: {
+              requestId: "no-such-request",
+              answer: { kind: "approval", decision: "deny", scope: "once" },
+              failed: true,
+            },
+          },
         ]);
         // Nothing of Vera's reached the thread.
         const said = JSON.stringify(yield* store.listMessages(threadId));
         expect(said).toContain("hello from Ada");
         expect(said).not.toContain("hello from Vera");
+      }),
+    );
+  });
+
+  layer(server(true, 300), { excludeTestServices: true })("with a short socket lifetime", (it) => {
+    it.effect("closes a socket after a while, so the proxy says again who it is", () =>
+      Effect.gen(function* () {
+        const { port } = yield* info;
+        const closedAfter = yield* Effect.promise(
+          () =>
+            new Promise<number>((resolve, reject) => {
+              const opened = Date.now();
+              const socket = new (globalThis.WebSocket as unknown as new (
+                url: string,
+                init: { headers: Record<string, string> },
+              ) => globalThis.WebSocket)(`ws://127.0.0.1:${port}/ws`, {
+                headers: { [IDENTITY_HEADER]: proxy.statement() },
+              });
+              socket.addEventListener("close", () => resolve(Date.now() - opened), { once: true });
+              socket.addEventListener("error", () => reject(new Error("socket failed")), {
+                once: true,
+              });
+            }),
+        );
+        expect(closedAfter).toBeGreaterThanOrEqual(250);
+        expect(closedAfter).toBeLessThan(5_000);
       }),
     );
   });

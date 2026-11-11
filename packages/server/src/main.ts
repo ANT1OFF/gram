@@ -250,6 +250,10 @@ const program = Effect.gen(function* () {
   }
   // Behind a fronting proxy the launch token signs nobody in, so it isn't printed either.
   const fronted = config.frontedIdentity !== undefined && (yield* embeddingEnabled);
+  if (config.frontedIdentity !== undefined && !fronted)
+    logger.warn(
+      "sign-in through a proxy is configured but hosted features are off: the launch token signs people in (set GRAM_EMBEDDING=1)",
+    );
   yield* Effect.sync(() => {
     if (parentPort === undefined) {
       console.log(fronted ? `boot http://127.0.0.1:${port}/` : bootLine(port, token));
