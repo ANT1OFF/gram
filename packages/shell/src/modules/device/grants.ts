@@ -1,5 +1,5 @@
 import { createPublicKey, type KeyObject } from "node:crypto";
-import type { SignedTurnGrant } from "@gram/contracts";
+import { DEVICE_GRANT_TTL_MS, type SignedTurnGrant } from "@gram/contracts";
 import { mintTurnGrant, turnGrantHolds } from "./keys.ts";
 
 /**
@@ -28,19 +28,27 @@ export interface GrantLedger {
   readonly size: () => number;
 }
 
-export const makeGrantLedger = (key: KeyObject, now: () => number): GrantLedger => {
+/**
+ * `now` is the wall clock a grant is signed with. `elapsed` is a clock that only goes forward:
+ * a grant also ends by it, so setting the wall clock back doesn't stretch one.
+ */
+export const makeGrantLedger = (
+  key: KeyObject,
+  now: () => number,
+  elapsed: () => number = () => performance.now(),
+): GrantLedger => {
   const publicKey = createPublicKey(key);
   /** By nonce, in the order minted. */
-  const live = new Map<string, { readonly to: GrantTarget; readonly expiresAt: number }>();
+  const live = new Map<string, { readonly to: GrantTarget; readonly endsAt: number }>();
   const prune = () => {
-    const time = now();
-    for (const [nonce, grant] of live) if (!(time < grant.expiresAt)) live.delete(nonce);
+    const time = elapsed();
+    for (const [nonce, grant] of live) if (!(time < grant.endsAt)) live.delete(nonce);
   };
   return {
     mint: (to) => {
       prune();
       const signed = mintTurnGrant(key, to, now());
-      live.set(signed.grant.nonce, { to: { ...to }, expiresAt: signed.grant.expiresAt });
+      live.set(signed.grant.nonce, { to: { ...to }, endsAt: elapsed() + DEVICE_GRANT_TTL_MS });
       for (const nonce of live.keys()) {
         if (live.size <= GRANTS_MOST) break;
         live.delete(nonce);

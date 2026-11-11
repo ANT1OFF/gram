@@ -8,8 +8,16 @@ const START = 1_800_000_000_000;
 
 const ledger = () => {
   const key = devicePrivateKeyFrom(generateDeviceKey().privateKeyPem);
-  const clock = { now: START };
-  return { key, clock, grants: makeGrantLedger(key, () => clock.now) };
+  const clock = { now: START, elapsed: 0 };
+  return {
+    key,
+    clock,
+    grants: makeGrantLedger(
+      key,
+      () => clock.now,
+      () => clock.elapsed,
+    ),
+  };
 };
 
 describe("the grants a device still honours", () => {
@@ -21,8 +29,10 @@ describe("the grants a device still honours", () => {
     expect(grants.holds(signed, { ...to, workspace: "w2" })).toBe(false);
     expect(grants.holds(signed, { ...to, origin: "https://other.example.com" })).toBe(false);
     clock.now = START + DEVICE_GRANT_TTL_MS - 1;
+    clock.elapsed = DEVICE_GRANT_TTL_MS - 1;
     expect(grants.holds(signed, to)).toBe(true);
     clock.now = START + DEVICE_GRANT_TTL_MS;
+    clock.elapsed = DEVICE_GRANT_TTL_MS;
     expect(grants.holds(signed, to)).toBe(false);
     expect(grants.size()).toBe(0);
   });
@@ -70,5 +80,23 @@ describe("the grants a device still honours", () => {
       grants.mint({ ...to, thread: `x${index}` });
     expect(grants.size()).toBe(GRANTS_MOST);
     expect(grants.holds(first, to)).toBe(false);
+  });
+
+  it("ends a grant after ten minutes even when the wall clock is set back", () => {
+    const { grants, clock } = ledger();
+    const signed = grants.mint(to);
+    clock.elapsed = DEVICE_GRANT_TTL_MS;
+    // Set back nine minutes: by the wall clock the grant has time left.
+    clock.now = START + DEVICE_GRANT_TTL_MS - 9 * 60_000;
+    expect(grants.holds(signed, to)).toBe(false);
+  });
+
+  it("checks the thread a grant was minted for, not only what its signature covers", () => {
+    const { grants } = ledger();
+    const signed = grants.mint(to);
+    grants.withdraw({ origin: "https://other.example.com" });
+    expect(grants.holds(signed, to)).toBe(true);
+    grants.withdraw({ origin: to.origin });
+    expect(grants.holds(signed, to)).toBe(false);
   });
 });

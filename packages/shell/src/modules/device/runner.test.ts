@@ -3,9 +3,9 @@ import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEVICE_OUTPUT_EVENT_MAX, DEVICE_OUTPUT_MAX_BYTES } from "@gram/contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { REDACTED } from "./environment.ts";
-import { type CommandRequest, runCommand } from "./runner.ts";
+import { type CommandRequest, OUTPUT_PIECES_MOST, runCommand, shellEnvironment } from "./runner.ts";
 
 let cwd: string;
 const env = { PATH: process.env.PATH ?? "/usr/bin:/bin" };
@@ -154,7 +154,65 @@ describe.skipIf(process.platform === "win32")("runCommand", () => {
     expect(alive(pid)).toBe(false);
   });
 
-  it("fails rather than running elsewhere when the folder is gone", async () => {
-    await expect(run("echo hi", { cwd: join(cwd, "nope") })).rejects.toThrow();
+  it("keeps output a command writes a byte at a time in few pieces", async () => {
+    const result = await run(
+      "i=0; while [ $i -lt 400 ]; do printf a; printf b >&2; i=$((i+1)); done",
+    );
+    expect(result.output.length).toBeLessThanOrEqual(OUTPUT_PIECES_MOST);
+    expect(text(result, "stdout").length + text(result, "stderr").length).toBe(800);
+    const single = await run("i=0; while [ $i -lt 400 ]; do printf a; i=$((i+1)); done");
+    expect(single.output).toEqual([{ stream: "stdout", text: "a".repeat(400) }]);
+  });
+
+  it("drops what would change the meaning of a command under bash", async () => {
+    expect(
+      shellEnvironment({
+        PATH: "/bin",
+        "BASH_FUNC_ls%%": "() { echo hijacked; }",
+        SHELLOPTS: "xtrace",
+        BASHOPTS: "x",
+        ENV: "/x",
+        BASH_ENV: "/x",
+        PS4: "x",
+        CDPATH: "/",
+        IFS: "x",
+        LANG: "C",
+      }),
+    ).toEqual({ PATH: "/bin", LANG: "C" });
+    const bash = await fs.stat("/bin/bash").then(
+      () => true,
+      () => false,
+    );
+    if (!bash) return;
+    const result = await run("/bin/bash -c 'ls / >/dev/null && echo plain'", {
+      env: { ...env, "BASH_FUNC_ls%%": "() { echo hijacked; }" },
+    });
+    expect(text(result, "stdout")).toBe("plain\n");
+  });
+
+  it("says the folder is gone rather than that the shell is missing", async () => {
+    await expect(run("echo hi", { cwd: join(cwd, "nope") })).rejects.toThrow(/folder is gone/);
+  });
+
+  it("never signals the command's group once its shell has been collected", async () => {
+    const signals: Array<number> = [];
+    const kill = vi.spyOn(process, "kill").mockImplementation((pid) => {
+      if (pid < 0) signals.push(pid);
+      return true;
+    });
+    let exitedAt = 0;
+    try {
+      // Holds the pipes after the shell ends, so the end waits out the drain time.
+      const result = await run(
+        "setsid sh -c 'sleep 2' >/dev/null 2>&1 </dev/null & sleep 2 & echo started",
+        { timeoutMs: 10_000 },
+      );
+      exitedAt = signals.length;
+      expect(result.code).toBe(0);
+    } finally {
+      kill.mockRestore();
+    }
+    // Exactly one: the SIGKILL sent as the shell was collected, none after.
+    expect(exitedAt).toBe(1);
   });
 });

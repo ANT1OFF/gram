@@ -20,21 +20,30 @@ export type AskOutcome =
   | "refused"
   /** Nobody answered in time. */
   | "unanswered"
-  /** The server took it back, or lending stopped under it. Says nothing about the person. */
-  | "withdrawn";
+  /**
+   * The server took it back. Counted like one left unanswered: otherwise a server could keep
+   * asking for ever by taking each ask back just before it timed out.
+   */
+  | "withdrawn"
+  /** Lending stopped under it, or the screen locked. Says nothing about the person or the server. */
+  | "stopped";
+
+export interface Admitted {
+  readonly settle: (outcome: AskOutcome) => void;
+}
 
 export interface AskLimits {
   /**
-   * Whether a request may wait for the person's answer. When it may, it is counted, and
-   * `settled` must be called once with how it ended.
+   * Whether a request may wait for the person's answer. When it may, it is counted, and the
+   * `settle` it comes with says how it ended; only its first call counts.
    */
-  readonly admit: (thread: string) => "ok" | "too-many-requests" | "paused";
-  readonly settled: (thread: string, outcome: AskOutcome) => void;
+  readonly admit: (thread: string) => Admitted | "too-many-requests" | "paused";
   /**
    * Counts a request that was refused before any ask, for its path. These tell a server a little
    * about the disk each time, so they come out of the same allowance as asks.
    */
   readonly refusedUnasked: () => "ok" | "too-many-requests" | "paused";
+  /** Whether lending to the server is paused. Asks already waiting must be taken down with it. */
   readonly paused: () => boolean;
   /** Lifts the pause. A decision: only a window the main process owns may call it. */
   readonly lift: () => void;
@@ -42,6 +51,7 @@ export interface AskLimits {
 }
 
 export const makeAskLimits = (
+  /** A clock that only goes forward, in milliseconds: the wall clock can be set back. */
   now: () => number,
   start: { readonly paused: boolean } = { paused: false },
   onPaused: () => void = () => undefined,
@@ -65,20 +75,24 @@ export const makeAskLimits = (
         return "too-many-requests";
       waiting.set(thread, mine + 1);
       recent.push(now());
-      return "ok";
-    },
-    settled: (thread, outcome) => {
-      const mine = waiting.get(thread) ?? 0;
-      if (mine <= 1) waiting.delete(thread);
-      else waiting.set(thread, mine - 1);
-      if (outcome === "allowed") inARow = 0;
-      else if (outcome === "refused" || outcome === "unanswered") {
-        inARow += 1;
-        if (inARow >= REFUSALS_IN_A_ROW && !paused) {
-          paused = true;
-          onPaused();
-        }
-      }
+      let done = false;
+      return {
+        settle: (outcome) => {
+          if (done) return;
+          done = true;
+          const left = (waiting.get(thread) ?? 1) - 1;
+          if (left <= 0) waiting.delete(thread);
+          else waiting.set(thread, left);
+          if (outcome === "allowed") inARow = 0;
+          else if (outcome !== "stopped") {
+            inARow += 1;
+            if (inARow >= REFUSALS_IN_A_ROW && !paused) {
+              paused = true;
+              onPaused();
+            }
+          }
+        },
+      };
     },
     refusedUnasked: () => {
       if (paused) return "paused";

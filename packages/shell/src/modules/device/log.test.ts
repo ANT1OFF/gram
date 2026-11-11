@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type DeviceLogEntry, openDeviceLog, readDeviceLog } from "./log.ts";
 
 let dir: string;
@@ -35,6 +35,7 @@ const written = async (commands: ReadonlyArray<string>) => {
   const log = await openDeviceLog(file, key);
   // Not awaited one by one: lines must still land in the order they were asked.
   await Promise.all(commands.map((command) => log.append(entry(command))));
+  await log.close();
   return log.head();
 };
 
@@ -58,6 +59,7 @@ describe("the local log", () => {
     const again = await openDeviceLog(file, key);
     expect(again.foundEdited).toBe(false);
     const head = await again.append(entry("two", { answer: "not-allowed-by-person" }));
+    await again.close();
     const read = await readDeviceLog(file, key, head);
     expect(read).toMatchObject({ intact: true, head: { count: 2 } });
   });
@@ -72,6 +74,9 @@ describe("the local log", () => {
       ["reordered", [two, one, three], 0],
       ["added", [one, two, three, three], 3],
       ["not a line", [one, "{}", three], 1],
+      ["blank line", [one, "", two, three], 1],
+      ["spaced", [one, two.replace('","', '", "'), three], 1],
+      ["carriage return", [one, `${two}\r`, three], 1],
     ] as const) {
       await fs.writeFile(file, `${edited.join("\n")}\n`);
       const read = await readDeviceLog(file, key);
@@ -102,10 +107,90 @@ describe("the local log", () => {
     await fs.writeFile(file, `${[lines[0], "forged", lines[2]].join("\n")}\n`);
     const log = await openDeviceLog(file, key);
     expect(log.foundEdited).toBe(true);
-    expect(await fs.readFile(`${file}.edited`, "utf8")).toContain("forged");
+    expect(await fs.readFile(log.setAside ?? "", "utf8")).toContain("forged");
     const head = await log.append(entry("four"));
+    await log.close();
     const read = await readDeviceLog(file, key, head);
     expect(read.intact).toBe(true);
     expect(read.entries.map((line) => line.what)).toEqual(["one", "four"]);
   });
+
+  it("keeps every edited copy, never writing over an earlier one", async () => {
+    await written(["one", "two"]);
+    await fs.appendFile(file, "first edit\n");
+    const first = await openDeviceLog(file, key);
+    await first.close();
+    await fs.appendFile(file, "second edit\n");
+    const second = await openDeviceLog(file, key);
+    await second.close();
+    expect(first.setAside).not.toBe(second.setAside);
+    expect(await fs.readFile(first.setAside ?? "", "utf8")).toContain("first edit");
+    expect(await fs.readFile(second.setAside ?? "", "utf8")).toContain("second edit");
+    const sideFiles = (await fs.readdir(dir)).filter((name) => name.includes(".edited-"));
+    expect(sideFiles).toHaveLength(2);
+  });
+
+  it("isn't an edit when the file has lines the kept head hasn't caught up with", async () => {
+    const log = await openDeviceLog(file, key);
+    const kept = await log.append(entry("one"));
+    await log.append(entry("written as the app quit"));
+    await log.close();
+    const read = await readDeviceLog(file, key, kept);
+    expect(read).toMatchObject({ intact: true, head: { count: 2 } });
+    const again = await openDeviceLog(file, key, kept);
+    expect(again.foundEdited).toBe(false);
+    await again.close();
+  });
+
+  it("cuts a line that didn't land whole, so the next ones still chain", async () => {
+    const log = await openDeviceLog(file, key);
+    await log.append(entry("one"));
+    // The next write lands half a line and then fails, as a full disk leaves it.
+    const probe = await fs.open(join(dir, "probe"), "w");
+    const prototype = Object.getPrototypeOf(probe) as {
+      write: (...args: Array<unknown>) => unknown;
+    };
+    await probe.close();
+    const real = prototype.write;
+    const spy = vi.spyOn(prototype, "write").mockImplementationOnce(async function (
+      this: unknown,
+      buffer: unknown,
+      offset: unknown,
+      length: unknown,
+      position: unknown,
+    ) {
+      await real.call(this, buffer, offset, Math.floor(Number(length) / 2), position);
+      throw Object.assign(new Error("no space"), { code: "ENOSPC" });
+    });
+    await expect(log.append(entry("lost"))).rejects.toThrow("no space");
+    spy.mockRestore();
+    await log.append(entry("two"));
+    await log.append(entry("three"));
+    await log.close();
+    const read = await readDeviceLog(file, key, log.head());
+    expect(read.intact).toBe(true);
+    expect(read.entries.map((line) => line.what)).toEqual(["one", "two", "three"]);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "won't write through a link, and keeps the file to its user",
+    async () => {
+      const elsewhere = join(dir, "elsewhere.txt");
+      await fs.writeFile(elsewhere, "keep me");
+      await fs.symlink(elsewhere, file);
+      await expect(openDeviceLog(file, key)).rejects.toThrow();
+      expect(await fs.readFile(elsewhere, "utf8")).toBe("keep me");
+      await fs.rm(file);
+      await fs.writeFile(file, "", { mode: 0o644 });
+      await fs.chmod(file, 0o644);
+      const log = await openDeviceLog(file, key);
+      await log.append(entry("one"));
+      await log.close();
+      expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+      await fs.rm(file);
+      await fs.writeFile(elsewhere, "");
+      await fs.link(elsewhere, file);
+      await expect(openDeviceLog(file, key)).rejects.toThrow();
+    },
+  );
 });
