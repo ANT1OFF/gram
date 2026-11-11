@@ -1,3 +1,4 @@
+import { PROFILE_START_PATH } from "@gram/contracts";
 import { createHash } from "node:crypto";
 import { sessionHash, type RemoteSession, type RemoteSessionStore } from "./remote-sessions.ts";
 import { authTarget } from "./auth-target.ts";
@@ -23,6 +24,8 @@ export const LOCAL_ONLY_PATHS: ReadonlySet<string> = new Set([
   REMOTE_DISABLE_PATH,
   WORKSPACE_EXPORT_PATH,
   WORKSPACE_IMPORT_PATH,
+  // A thread started from a profile, by the platform in front or the local app.
+  PROFILE_START_PATH,
 ]);
 
 /** Deliberately one canonical HTTPS tailnet origin, never a wildcard or forwarded-header trust. */

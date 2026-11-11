@@ -3,6 +3,7 @@
 import {
   type Checkout,
   type CheckoutRequest,
+  type HostId,
   InvalidState,
   type ProfileRepository,
   type ThreadId,
@@ -68,7 +69,7 @@ export const makeProfileRepositories = (deps: ProfileRepositoriesDeps) => {
       return yield* refuse(`${ref} isn't a branch, tag or commit of that repository.`);
     });
 
-  const one = (threadId: ThreadId, repository: ProfileRepository) =>
+  const one = (threadId: ThreadId, repository: ProfileRepository, machine: HostId | undefined) =>
     Effect.gen(function* () {
       const { path: clone } = yield* repos
         .ensure(repository.url)
@@ -81,6 +82,7 @@ export const makeProfileRepositories = (deps: ProfileRepositoriesDeps) => {
             kind: "newWorktree",
             branch: repository.branch ?? profileBranchOf(threadId),
             ...(base === undefined ? {} : { base }),
+            ...(machine === undefined ? {} : { hostId: machine }),
           },
           clone,
         )
@@ -90,17 +92,19 @@ export const makeProfileRepositories = (deps: ProfileRepositoriesDeps) => {
 
   /**
    * The thread's worktrees, one per repository, in the profile's order. All or none: a repository
-   * that can't be cloned, or can't give a worktree, takes the worktrees made so far with it.
+   * that can't be cloned, or can't give a worktree, takes the worktrees made so far with it. With
+   * `machine`, each worktree is made on that joined machine, from its own clone.
    */
   const prepare = (
     threadId: ThreadId,
     repositories: ReadonlyArray<ProfileRepository>,
+    machine?: HostId,
   ): Effect.Effect<RepositoryWorkplace, InvalidState> =>
     Effect.gen(function* () {
       const made: Array<{ readonly clone: string; readonly checkout: Checkout }> = [];
       for (const repository of repositories) {
         made.push(
-          yield* one(threadId, repository).pipe(
+          yield* one(threadId, repository, machine).pipe(
             Effect.tapError(() =>
               Effect.forEach(made, (entry) => deps.discard(entry.checkout), { discard: true }),
             ),

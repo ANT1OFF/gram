@@ -134,6 +134,8 @@ import {
 import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./remote-routes.ts";
 import { RemoteControl } from "./remote-control.ts";
 import { WORKSPACE_TRANSFER_PATHS, WorkspaceTransferRoutes } from "../transfer/routes.ts";
+import { PROFILE_START_PATH, ProfileStartRoutes } from "../thread-profiles/routes.ts";
+import { ProfileStarters } from "../thread-profiles/service.ts";
 import { WorkspaceTransfer } from "../transfer/workspace-transfer.ts";
 import {
   claudeTokenCaptureFor,
@@ -178,6 +180,7 @@ export const SERVICE_PATHS: ReadonlySet<string> = new Set([
   MACHINES_LIST_PATH,
   ...HOST_STOP_PATHS,
   ...WORKSPACE_TRANSFER_PATHS,
+  PROFILE_START_PATH,
 ]);
 
 /** The per-launch secret carried by the boot URL. */
@@ -437,6 +440,7 @@ export const AuthMiddleware = HttpRouter.middleware(
             MACHINE_MANAGEMENT_PATHS.has(target.path) ||
             HOST_STOP_PATHS.has(target.path) ||
             WORKSPACE_TRANSFER_PATHS.has(target.path) ||
+            target.path === PROFILE_START_PATH ||
             HOST_PATHS.has(target.path) ||
             target.path === MCP_PATH ||
             target.path === HOST_MCP_PATH
@@ -945,7 +949,11 @@ export const ServerLayer: Layer.Layer<
         StaticRoutes,
         McpRoute,
         WorkspaceTransferRoutes.pipe(Layer.provide(WorkspaceTransfer.layer)),
+        ProfileStartRoutes,
         AuthMiddleware,
+      ).pipe(
+        // One starter for the RPC and the route, so one id makes one thread either way in.
+        Layer.provide(ProfileStarters.layer),
       ),
       {
         disableListenLog: true,

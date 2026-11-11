@@ -39,6 +39,31 @@ its id: `thread.createFromProfile({ profile, threadId })`, with a lowercase UUID
 - An id another kind of thread has is refused, and so is the id of a thread since closed.
 - A start that failed left nothing, so asking again with the same id starts afresh.
 
+## From a fronting platform's own service
+
+A platform in front of Gram (see [fronted sign-in](REMOTE_ACCESS.md)) starts a thread with its own
+signed statement for the path, role `service`, as it registers provisioned hosts:
+
+```http
+POST /threads/from-profile
+Content-Type: application/json
+
+{ "profile": { "version": 1, ... }, "threadId": "<lowercase UUID>", "hostId": "<machine id>" }
+```
+
+- The answer is `{ "threadId": "...", "created": true }`; `created` is false when an earlier ask
+  under the same id made the thread. The shapes are `ProfileStartRequest` and
+  `ProfileStartResponse` in `@gram/contracts`, the path `PROFILE_START_PATH`.
+- `threadId` is required here, so a retried call never makes a second thread. It shares one
+  starter with `thread.createFromProfile`: an id asked for either way makes one thread.
+- `hostId` places the thread on that joined or provisioned machine, on any server, as a headless
+  one places what names none. An unknown, unconfirmed or offline machine, or this one, is
+  refused with nothing made.
+- A refusal is `409` with `{ "error": "..." }`; a body that isn't the shape, or has a key it
+  doesn't name, is `400`. With the hosted features off the path answers `404`.
+- A person signed in through the proxy is refused it, and so is a paired phone. The local app
+  may call it with its own sign-in. Each service call is on the record, as the others are.
+
 ## A workplace of repositories
 
 Each repository is an https or ssh remote with no credential in its address. Gram clones it once
