@@ -1257,6 +1257,7 @@ const make = Effect.gen(function* () {
     publishUpsert,
     isShuttingDown: () => shuttingDown,
     hasSessionFiber: (threadId) => FiberMap.hasUnsafe(sessions, threadId),
+    drainQueue,
     openSession: (rt, thread, resumeAt, switchAttempt) =>
       openSession(rt, thread, resumeAt, switchAttempt),
   });

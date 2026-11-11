@@ -625,6 +625,25 @@ export const SessionSwitch = Schema.Struct({
   ),
   checkpointTurnId: Schema.optionalKey(TurnId),
   detail: Schema.optionalKey(Schema.String),
+  /**
+   * The session the thread had, kept until the target is confirmed. Present, a switch that fails
+   * with no target process (none started, or its exit proved) and the old one's exit proved goes
+   * back to it rather than staying `failed`. Set by any thread's switch; the orchestrator's has none.
+   */
+  source: Schema.optionalKey(
+    Schema.Struct({
+      agentSessionId: Schema.optionalKey(Schema.String),
+      agentSessionUnused: Schema.optionalKey(Schema.Boolean),
+      codexHome: Schema.optionalKey(CodexHome),
+      forkedFrom: Schema.optionalKey(
+        Schema.Struct({
+          threadId: Schema.optionalKey(ThreadId),
+          agentSessionId: Schema.optionalKey(Schema.String),
+          codexHome: Schema.optionalKey(CodexHome),
+        }),
+      ),
+    }),
+  ),
 });
 export type SessionSwitch = typeof SessionSwitch.Type;
 

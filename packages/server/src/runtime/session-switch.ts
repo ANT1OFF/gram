@@ -16,6 +16,40 @@ import type { TurnLifecycle } from "./turn-lifecycle.ts";
 import type * as Semaphore from "effect/Semaphore";
 import type { MessageQueue } from "./message-queue.ts";
 
+/** The session a thread has, as a switch's `source` keeps it. */
+export const sessionIdentity = (
+  t: Thread,
+): NonNullable<NonNullable<Thread["sessionSwitch"]>["source"]> => ({
+  ...(t.agentSessionId === undefined ? {} : { agentSessionId: t.agentSessionId }),
+  ...(t.agentSessionUnused === undefined ? {} : { agentSessionUnused: t.agentSessionUnused }),
+  ...(t.codexHome === undefined ? {} : { codexHome: t.codexHome }),
+  ...(t.forkedFrom === undefined ? {} : { forkedFrom: t.forkedFrom }),
+});
+
+/** The thread put back on the session a switch's `source` kept, the switch gone. */
+const backToSource = (t: Thread, change: NonNullable<Thread["sessionSwitch"]>): Thread => {
+  const {
+    sessionSwitch: _switch,
+    agentSessionId: _id,
+    agentSessionUnused: _unused,
+    codexHome: _home,
+    forkedFrom: _fork,
+    ...rest
+  } = t;
+  const source = change.source ?? {};
+  return {
+    ...rest,
+    model: change.previous,
+    mode: change.mode,
+    ...(source.agentSessionId === undefined ? {} : { agentSessionId: source.agentSessionId }),
+    ...(source.agentSessionUnused === undefined
+      ? {}
+      : { agentSessionUnused: source.agentSessionUnused }),
+    ...(source.codexHome === undefined ? {} : { codexHome: source.codexHome }),
+    ...(source.forkedFrom === undefined ? {} : { forkedFrom: source.forkedFrom }),
+  };
+};
+
 /** What a session switch reads and changes beside a thread's `Runtime`. */
 export interface SessionSwitchDeps {
   readonly store: ThreadStoreShape;
@@ -28,6 +62,8 @@ export interface SessionSwitchDeps {
   readonly isShuttingDown: () => boolean;
   /** Whether a session fiber runs for the thread, starting or open. */
   readonly hasSessionFiber: (threadId: ThreadId) => boolean;
+  /** Sends what the switch held, once a rolled-back thread is back on its source. Holds the lock. */
+  readonly drainQueue: (rt: Runtime) => Effect.Effect<void>;
   readonly openSession: (
     rt: Runtime,
     thread: Thread,
@@ -47,6 +83,7 @@ export const makeSessionSwitch = ({
   publishUpsert,
   isShuttingDown,
   hasSessionFiber,
+  drainQueue,
   openSession,
 }: SessionSwitchDeps) => {
   const switchSession: ThreadRuntimesShape["switchSession"] = (threadId, attemptId) =>
@@ -114,12 +151,20 @@ export const makeSessionSwitch = ({
           // Arm no-force protection under the runtime lock, before shutdown intent can be
           // persisted or a disposal/close can reach ordinary scope cleanup.
           if (!change.oldExited && !cold) yield* session!.prepareForSwitch!;
+          // A switch that can roll back keeps the session as it is now, at the last moment the
+          // thread is still on it. A retry's thread was already stripped, so it keeps its own.
+          const kept =
+            change.source === undefined || change.phase === "retry"
+              ? change
+              : { ...change, source: sessionIdentity(thread) };
           const marked = yield* store.updateThread(threadId, (t) => ({
             ...t,
-            sessionSwitch: { ...change, phase: "stopping" },
+            sessionSwitch: { ...kept, phase: "stopping" },
           }));
           yield* publishUpsert(marked);
           if (session !== undefined) rt.switchSource = session;
+          // The stop runs outside the lock: what the old session sends meanwhile is fenced.
+          rt.switchFence = { id: attemptId };
           rt.reopening = true;
           rt.stopping = "rewind";
           yield* cancelIdleTimer(rt);
@@ -127,10 +172,12 @@ export const makeSessionSwitch = ({
             thread,
             session,
             stop: change.oldExited || cold ? Effect.void : session!.stopForSwitch!,
-            change,
+            change: kept,
           };
         }),
       );
+      // Whether a target session was asked for: until then none can exist, whatever its host says.
+      let targetOpened = false;
       return yield* Effect.gen(function* () {
         // Scope closure alone is not owner release. The adapter must observe actual owning-child EXIT.
         yield* before.stop;
@@ -156,6 +203,15 @@ export const makeSessionSwitch = ({
               return yield* new InvalidState({
                 threadId,
                 message: "The switch owner changed while the old session stopped.",
+              });
+            // An approval, a question or background work came from the old session while it
+            // stopped: it can't move to the target, so the switch goes no further.
+            const arrived = rt.switchFence?.id === attemptId ? rt.switchFence.arrived : undefined;
+            rt.switchFence = undefined;
+            if (arrived !== undefined)
+              return yield* new InvalidState({
+                threadId,
+                message: `The previous session sent ${arrived} while it stopped, so the switch didn't go ahead.`,
               });
             const next = yield* store.updateThread(threadId, (t) => {
               const {
@@ -185,6 +241,7 @@ export const makeSessionSwitch = ({
             rt.usage = undefined;
             rt.identity = undefined;
             rt.switchOpening = { id: attemptId, ack };
+            targetOpened = true;
             yield* openSession(rt, next, undefined, attemptId);
           }),
         );
@@ -244,20 +301,47 @@ export const makeSessionSwitch = ({
                 Effect.gen(function* () {
                   rt.switchOpening = undefined;
                   rt.reopening = false;
+                  if (rt.switchFence?.id === attemptId) rt.switchFence = undefined;
                   const current = yield* store.getThread(threadId).pipe(Effect.option);
                   if (Option.isNone(current) || current.value.sessionSwitch?.id !== attemptId)
                     return;
+                  const change = current.value.sessionSwitch;
                   const failure = Cause.findErrorOption(exit.cause);
                   const detail = Option.isSome(failure)
                     ? failure.value.message
                     : "The switch was interrupted. No replacement will be started automatically; ownership must be resolved before recovery.";
-                  const targetHost = yield* hosts
-                    .get(current.value.sessionSwitch!.target.agent)
-                    .pipe(Effect.option);
-                  const targetRelease =
-                    Option.isSome(targetHost) && targetHost.value.switchAttemptReceipt !== undefined
+                  const targetHost = targetOpened
+                    ? yield* hosts.get(change.target.agent).pipe(Effect.option)
+                    : Option.none();
+                  const targetRelease = !targetOpened
+                    ? ("notStarted" as const)
+                    : Option.isSome(targetHost) &&
+                        targetHost.value.switchAttemptReceipt !== undefined
                       ? yield* targetHost.value.switchAttemptReceipt(attemptId)
                       : undefined;
+                  // Roll back when nothing can own either session: the old one's exit proved, no
+                  // target process (none asked for, or its exit proved), none in the runtime. The
+                  // thread is then its source again, cold, and resumes that session on its next
+                  // send. Any doubt about ownership stays `failed`, holding input.
+                  if (
+                    change.source !== undefined &&
+                    change.oldExited &&
+                    targetRelease !== undefined &&
+                    rt.session === undefined &&
+                    !hasSessionFiber(threadId) &&
+                    !rt.closing
+                  ) {
+                    rt.switchSource = undefined;
+                    rt.usage = undefined;
+                    rt.identity = undefined;
+                    const restored = yield* store.updateThread(threadId, (t) =>
+                      t.sessionSwitch?.id === attemptId ? backToSource(t, change) : t,
+                    );
+                    yield* publishUpsert(restored);
+                    yield* setStatus(rt, "cold");
+                    yield* drainQueue(rt);
+                    return;
+                  }
                   const failed = yield* store.updateThread(threadId, (t) => ({
                     ...t,
                     sessionSwitch: {

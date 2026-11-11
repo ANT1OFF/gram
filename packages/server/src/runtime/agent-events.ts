@@ -566,6 +566,10 @@ export const makeAgentEvents = ({
           return;
         }
         case "request": {
+          // The old session of a switch asked something while stopping: the switch rolls back.
+          if (rt.switchFence !== undefined)
+            rt.switchFence.arrived ??=
+              event.request.kind === "question" ? "a question" : "an approval";
           const now = yield* Clock.currentTimeMillis;
           yield* store.putRequest(rt.threadId, event.request, now);
           yield* hub.publish({
@@ -796,6 +800,8 @@ export const makeAgentEvents = ({
           rt.restartedMachine = event.restartedMachine;
           return;
         case "backgroundTasks":
+          if (rt.switchFence !== undefined && event.tasks.length > 0)
+            rt.switchFence.arrived ??= "background work";
           yield* setBackground(rt, event.tasks);
           return;
         case "backgroundOutput":

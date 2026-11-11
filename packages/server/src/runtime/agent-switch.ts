@@ -26,6 +26,7 @@ import { selectableModels } from "./model-efforts.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { locked, type GetRuntime, type Runtime } from "./runtime-state.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
+import { sessionIdentity } from "./session-switch.ts";
 import type { EventHub } from "../events/event-hub.ts";
 
 /** What the user calls each agent. */
@@ -63,6 +64,15 @@ export const checkSwitchTarget = (
       return yield* new InvalidState({
         message:
           "Choose the installed CLI's subscription login for this switch. Switching does not migrate gateway credentials or accounts.",
+      });
+    if (thread.model.profileId !== undefined)
+      return yield* new InvalidState({
+        message: "Switching uses the CLI's own sign-in; it doesn't move gateway accounts.",
+      });
+    // The user's ceiling for a switch, whatever the model lists.
+    if (target.variant !== undefined && aboveHigh(target.variant))
+      return yield* new InvalidState({
+        message: "A switch runs at High effort at most. Pick High or lower.",
       });
     if (thread.mode === "plan" && !targetHost.capabilities.planMode)
       return yield* new InvalidState({
@@ -122,8 +132,6 @@ const notNow = (
   if (requests > 0) return `Answer the open approval first. It can't move to ${to}.`;
   if (rt.background.length > 0 || rt.activity.subagentsRunning)
     return `${from} still has background work running.`;
-  if (thread.model.profileId !== undefined)
-    return "Switching uses the CLI's own sign-in; it doesn't move gateway accounts.";
   if (!isLocalHost(effectiveCheckout(thread)))
     return `${to} can't run on this thread's machine yet.`;
   // A fork with no session of its own reopens by forking its source, which is the old agent's.
@@ -203,7 +211,19 @@ export const makeAgentSwitch = ({
             ? failure.value.message
             : "The switch was interrupted before the previous session stopped.";
           const current = yield* store.getThread(threadId).pipe(Effect.option);
-          if (Option.isNone(current) || current.value.sessionSwitch?.id !== attemptId) return;
+          if (Option.isNone(current)) return;
+          // Rolled back by `switchSession`: on its source again, the held input on its way.
+          if (current.value.sessionSwitch === undefined) {
+            if (current.value.model.agent !== previous.agent) return;
+            return yield* hub.publish({
+              type: "notify",
+              kind: "info",
+              title: "The switch was undone",
+              body: `${why} The thread is back in ${AGENT_NAMES[previous.agent]}, on the session it had.`,
+              threadId,
+            });
+          }
+          if (current.value.sessionSwitch.id !== attemptId) return;
           // Nothing was stopped yet: the thread carries on in the session it had.
           if (current.value.sessionSwitch.phase === "checkpoint") {
             yield* runtimes.cancelSessionSwitch(threadId, attemptId).pipe(Effect.ignore);
@@ -269,6 +289,7 @@ export const makeAgentSwitch = ({
                   ...(change.oldExited && release !== undefined
                     ? { retryFrom: { id: change.id, release } }
                     : {}),
+                  ...(change.source === undefined ? {} : { source: change.source }),
                 },
               }
             : t,
@@ -291,11 +312,6 @@ export const makeAgentSwitch = ({
         return yield* new InvalidState({
           threadId,
           message: "Wait for this switch to finish, then switch again.",
-        });
-      if (aboveHigh(target.variant ?? "high"))
-        return yield* new InvalidState({
-          threadId,
-          message: "A switch runs at High effort at most. Pick High or lower.",
         });
       // A failed switch is tried again, onto its target or back onto the agent it left: either
       // way a fresh session, from the model it was switched away from.
@@ -331,6 +347,8 @@ export const makeAgentSwitch = ({
         mode,
         phase: "checkpoint",
         oldExited: false,
+        // Kept until the target is confirmed, so a failed start goes back to it.
+        source: sessionIdentity(thread),
       });
       // The refusals again, now that the claim holds the queue: a turn may have started meanwhile.
       const late = yield* locked(

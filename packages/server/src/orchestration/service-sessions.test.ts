@@ -471,6 +471,83 @@ describe.skipIf(!hasGit)("orchestration service", () => {
       ),
   );
 
+  it.effect("moves a switched Auto worker on to Bypass when its target reports Ask", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const handlers = yield* threadHandlers;
+        const runtimes = yield* ThreadRuntimes;
+        const fake = yield* FakeAgentControl;
+        const { thread } = yield* openOrchestrator(world);
+        const reopened = yield* atAutonomy(thread, "full");
+        const worker = yield* spawn(reopened, { feature: "docs" });
+        yield* waitReal(
+          "the worker idle",
+          Effect.gen(function* () {
+            const status = yield* runtimes.status(worker.thread.id);
+            if (status === "running") yield* (yield* fake.latest(worker.thread.id)).completeTurn();
+            return status === "idle";
+          }),
+        );
+        expect((yield* store.getThread(worker.thread.id)).mode).toBe("auto");
+        // Codex without a usable Auto answers the auto open with `default` before its identity,
+        // so orchestration hears it while the switch still holds the thread.
+        yield* fake.setAutoOpenReport("codex", "default", 300);
+        yield* handlers["thread.switchAgent"]({
+          threadId: worker.thread.id,
+          target: { agent: "codex", model: "fake-opus" } as ModelRef,
+        });
+        const after = yield* waitReal(
+          "the worker in Bypass on Codex",
+          store
+            .getThread(worker.thread.id)
+            .pipe(
+              Effect.map(
+                (t) =>
+                  t.sessionSwitch === undefined &&
+                  t.model.agent === "codex" &&
+                  t.mode === "bypassPermissions" &&
+                  t,
+              ),
+            ),
+        );
+        expect(after.mode).toBe("bypassPermissions");
+        // The session opened in Auto and was moved, not opened in Bypass.
+        const target = yield* fake.latest(worker.thread.id);
+        expect(target.options.permissionMode).toBe("auto");
+        expect(target.modes).toContain("bypassPermissions");
+      }),
+    ),
+  );
+
+  it.effect("refuses an orchestrator switch above High effort or from a gateway profile", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const orchestration = yield* Orchestration;
+        const { thread, workspaceId } = yield* openOrchestrator(world);
+        yield* atAutonomy(thread, "full");
+        const codex = { agent: "codex", model: "fake-opus" } as ModelRef;
+
+        const above = yield* orchestration
+          .handoff(workspaceId, "user", { ...codex, variant: "max" })
+          .pipe(Effect.flip);
+        expect(above.message).toBe("A switch runs at High effort at most. Pick High or lower.");
+        expect((yield* store.getThread(thread.id)).sessionSwitch).toBeUndefined();
+
+        yield* store.updateThread(thread.id, (t) => ({
+          ...t,
+          model: { ...t.model, profileId: "litellm" as ProfileId },
+        }));
+        const gateway = yield* orchestration.handoff(workspaceId, "user", codex).pipe(Effect.flip);
+        expect(gateway.message).toBe(
+          "Switching uses the CLI's own sign-in; it doesn't move gateway accounts.",
+        );
+        expect((yield* store.getThread(thread.id)).sessionSwitch).toBeUndefined();
+      }),
+    ),
+  );
+
   it.effect("leaves a user's mode pick alone after a worker's idle reopen in auto", () =>
     inServer((world) =>
       Effect.gen(function* () {

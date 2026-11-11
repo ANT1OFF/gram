@@ -217,6 +217,11 @@ export interface Runtime {
    */
   reopening: boolean;
   switchSource?: AgentSession | undefined;
+  /**
+   * Set while a switch's old session stops, outside the lock: what arrived from it meanwhile (an
+   * approval or question, background work) that the switch must not carry past, by `arrived`.
+   */
+  switchFence?: { readonly id: string; arrived?: string } | undefined;
   switchOpening?:
     | { id: string; ack: Deferred.Deferred<AgentSession, AgentUnavailable> }
     | undefined;

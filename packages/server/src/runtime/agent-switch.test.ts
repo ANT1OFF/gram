@@ -422,4 +422,84 @@ describe("switchAgent", () => {
       }).pipe(Effect.provide(layerAt(file)));
     }),
   );
+
+  it.effect("rolls back when an approval arrives while the old session stops", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const { thread, session } = yield* idleThread;
+      yield* fake.setSwitchStopDelay("200 millis");
+      yield* runtimes.switchAgent(thread.id, CODEX);
+      yield* waitFor(
+        "the old session stopping",
+        store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch?.phase === "stopping")),
+      );
+      yield* session.emit({
+        type: "request",
+        request: {
+          kind: "approval",
+          id: "late" as RequestId,
+          toolName: "Bash",
+          displayName: "Bash",
+          input: {},
+          suggestions: [],
+        },
+      });
+      yield* waitFor(
+        "the late approval stored",
+        store.listRequests(thread.id).pipe(Effect.map((r) => r.length === 1)),
+      );
+      yield* fake.setSwitchStopDelay(undefined);
+      yield* TestClock.adjust("300 millis");
+      const after = yield* waitFor(
+        "the switch rolled back",
+        store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch === undefined && t)),
+      );
+      // Never half-switched: the source model and session, no target session, no divider.
+      expect(after.model).toEqual(thread.model);
+      expect(after.agentSessionId).toBe(thread.agentSessionId);
+      expect(fake.sessions.some((s) => s.options.model?.agent === "codex")).toBe(false);
+      expect(yield* handoffParts(thread.id)).toEqual([]);
+      // The next send resumes the session it had, which can ask again.
+      yield* runtimes.send(thread.id, { text: "carry on" });
+      const resumed = yield* waitFor(
+        "the source resumed",
+        fake.latest(thread.id).pipe(Effect.map((s) => s !== session && s.sent.length === 1 && s)),
+      );
+      expect(resumed.options.resumeId).toBe(thread.agentSessionId);
+      expect(resumed.options.model).toEqual(thread.model);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("goes back to the source session when the target fails to start cleanly", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const { thread, session } = yield* idleThread;
+      yield* fake.setUnavailable("synthetic target refused to start");
+      yield* runtimes.switchAgent(thread.id, CODEX);
+      const after = yield* waitFor(
+        "the switch rolled back",
+        store
+          .getThread(thread.id)
+          .pipe(Effect.map((t) => t.sessionSwitch === undefined && session.closed && t)),
+      );
+      expect(after.model).toEqual(thread.model);
+      expect(after.agentSessionId).toBe(thread.agentSessionId);
+      expect(after.codexHome).toEqual(thread.codexHome);
+      expect(yield* handoffParts(thread.id)).toEqual([]);
+      yield* fake.setUnavailable(undefined);
+      // Usable on its old agent: a send goes out, it isn't held.
+      const sent = yield* runtimes.send(thread.id, { text: "two" });
+      expect(sent).not.toMatchObject({ queued: true });
+      const resumed = yield* waitFor(
+        "the source resumed",
+        fake.latest(thread.id).pipe(Effect.map((s) => s !== session && s.sent.length === 1 && s)),
+      );
+      expect(resumed.options.resumeId).toBe(thread.agentSessionId);
+      expect(resumed.sent.map((i) => i.text)).toEqual(["two"]);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
 });

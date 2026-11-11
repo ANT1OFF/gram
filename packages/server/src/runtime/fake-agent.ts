@@ -149,6 +149,16 @@ export interface FakeAgentControlShape {
   setAutoReviewReady(ready: boolean): Effect.Effect<void>;
   setUnavailable(message: string | undefined): Effect.Effect<void>;
   /**
+   * A session of `agent` opened in `auto` reports `mode` before its identity, as Codex does for a
+   * build without a usable Auto, `gapMs` of real time before it, so whoever hears the report acts
+   * on it before the session is confirmed. Off with `undefined`.
+   */
+  setAutoOpenReport(
+    agent: AgentKind,
+    mode: PermissionMode | undefined,
+    gapMs?: number,
+  ): Effect.Effect<void>;
+  /**
    * Like `claude --resume`: when on, opening with `resumeId` fails unless that session was sent a
    * message, since only then does a transcript exist.
    */
@@ -356,6 +366,7 @@ export const makeFakeAgentAdapter = (
       let steerSupported = true;
       let toolGateSupported = true;
       let unavailable: string | undefined;
+      const autoOpenReports = new Map<AgentKind, { mode: PermissionMode; gapMs: number }>();
       let resumeNeedsTranscript = false;
       /** Session ids that have been sent a message. */
       const transcripts = new Set<string>();
@@ -527,10 +538,24 @@ export const makeFakeAgentAdapter = (
               Effect.andThen(Queue.end(queue)),
             ),
           );
-          yield* emit(
+          const autoReport =
+            openOptions.permissionMode === "auto" && openOptions.model?.agent !== undefined
+              ? autoOpenReports.get(openOptions.model.agent)
+              : undefined;
+          const confirm = emit(
             { type: "identity", agentSessionId, model: "fake", tools: [], commands: [] },
             { type: "status", status: "idle" },
           );
+          if (autoReport !== undefined) {
+            yield* emit({ type: "mode", mode: autoReport.mode });
+            // The identity follows once the session is in the runtime's hands, so the report is
+            // heard on its own first.
+            yield* Effect.promise(
+              () => new Promise<void>((resolve) => setTimeout(resolve, autoReport.gapMs)),
+            ).pipe(Effect.andThen(confirm), Effect.forkIn(scope));
+          } else {
+            yield* confirm;
+          }
 
           /**
            * A `/call` turn. Everything that touches the tool is forked into the session's scope:
@@ -996,6 +1021,11 @@ export const makeFakeAgentAdapter = (
         setUnavailable: (message) =>
           Effect.sync(() => {
             unavailable = message;
+          }),
+        setAutoOpenReport: (agent, mode, gapMs = 0) =>
+          Effect.sync(() => {
+            if (mode === undefined) autoOpenReports.delete(agent);
+            else autoOpenReports.set(agent, { mode, gapMs });
           }),
         setResumeNeedsTranscript: (on) =>
           Effect.sync(() => {
