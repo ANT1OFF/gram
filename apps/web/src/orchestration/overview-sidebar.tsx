@@ -1289,7 +1289,7 @@ function WaitingLine({
         className="flex min-w-0 items-center gap-1"
       >
         {Glyph !== undefined && <Glyph aria-hidden className="size-icon-chip shrink-0" />}
-        <span className="truncate tabular-nums">
+        <span className={cn("truncate", edge !== undefined && "tabular-nums")}>
           {edge === undefined ? nowBesidePrs(waitShort(waiting.label), prs) : edge.token}
         </span>
       </span>

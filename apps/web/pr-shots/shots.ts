@@ -2996,7 +2996,7 @@ export const SHOTS: readonly Shot[] = [
     name: "sidebar-waiting-kinds-narrow",
     title: "Every kind of wait in the sidebar at its narrowest, 180 px",
     open: async (page) => {
-      await seedMockSettings(page, { layout: { sidebarWidth: 180 } });
+      await seedMockSettings(page, { sidebar: { width: 180 } });
       await openWaitingOn(page, true);
     },
     element: (page) => page.getByTestId("overview-sidebar"),
