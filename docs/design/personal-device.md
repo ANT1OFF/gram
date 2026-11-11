@@ -892,3 +892,25 @@ A second review of those changes made these closer:
   the birth time Node reports changes with the folder, so resume asks to lend again: it fails
   safe. Starting afresh leaves the sign-ins of the servers set aside in the keychain, and those
   devices registered, until the person signs in and out there.
+
+### Installed in the desktop app
+
+The main process reads no settings of its own, so the server tells it whether the hosted
+features are on, as `{ type: "embedding", on }`, as it starts and after each change to the
+setting. `apps/desktop/src/main/hosted-device.ts` follows that answer: while it is on, once the
+app is ready, it makes the device (keychain secrets in `device-secrets.json` beside the app's
+gateway keys, presence from `powerMonitor`, the device files in `<data>/device`, the ask queue
+drawn in the ask window), and while it is off, or once the app quits, there is none. Lending
+ends first when the app quits. A server not signed in to before is accepted in a native dialog
+main shows, which no page can draw or answer; the server's name in it is drawn on one line with
+codes nobody could see shown as codes, and a line says when it had any. An update stops the
+device before the server (its restarted server turns it back on), and a crash asks it to stop.
+Commands get main's own environment, filtered, not yet the login shell's the design describes,
+so tools on a PATH set only in shell files aren't found when Gram was opened from the Finder.
+
+Every loop over the app's windows goes through `appWindows()` (and the focused one through
+`focusedAppWindow()`), which leave the decision windows out; a test fails on any other use of
+`BrowserWindow.getAllWindows` or `getFocusedWindow`.
+
+Still to come: the lending sheet, the activity window, and Settings → Hosted, the windows that
+call the device's decisions.

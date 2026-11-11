@@ -37,8 +37,25 @@ export const seedEmbedding: Effect.Effect<void, never, ServerConfig | ThreadStor
   },
 );
 
+/**
+ * Tells the desktop shell whether the hosted features are on, as `{ type: "embedding", on }`,
+ * as the server starts and whenever the setting changes: the shell's main process reads no
+ * settings of its own, and lends this machine only while they are on. Elsewhere (browser dev,
+ * headless) there is no parent port and nothing is sent.
+ */
+export const tellShellEmbedding = (on: boolean): void => {
+  const port = (process as { parentPort?: { postMessage(message: unknown): void } }).parentPort;
+  // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Electron MessagePortMain
+  port?.postMessage({ type: "embedding", on });
+};
+
 /** `store` with `GRAM_EMBEDDING` applied before anything above it reads the settings. */
 export const withEmbeddingSeed = <A, E, R>(
   store: Layer.Layer<A | ThreadStore, E, R>,
 ): Layer.Layer<A | ThreadStore, E, R | ServerConfig> =>
-  Layer.effectDiscard(seedEmbedding).pipe(Layer.provideMerge(store));
+  Layer.effectDiscard(
+    seedEmbedding.pipe(
+      Effect.andThen(embeddingEnabled),
+      Effect.tap((on) => Effect.sync(() => tellShellEmbedding(on))),
+    ),
+  ).pipe(Layer.provideMerge(store));

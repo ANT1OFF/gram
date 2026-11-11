@@ -1,5 +1,6 @@
 import {
   applySettingsPatch,
+  embeddingOn,
   keepAwakeOn,
   applySettingsWrites,
   settingsPatchPaths,
@@ -16,6 +17,7 @@ import { ServerLog } from "../logging/service.ts";
 import { Dreams } from "../orchestration/dreams.ts";
 import { ThreadStore, type SettingsAuditEntry } from "../persistence/thread-store.ts";
 import { mirrorUpdatePrefs } from "../updates/prerelease-flag.ts";
+import { tellShellEmbedding } from "./embedding.ts";
 
 export interface SettingsWriterOptions {
   /**
@@ -51,6 +53,7 @@ export const makeSettingsWriter = Effect.gen(function* () {
   ) =>
     Effect.gen(function* () {
       if (groups.has("agents")) turnActivity?.setEnabled(keepAwakeOn(settings));
+      if (groups.has("experimental")) tellShellEmbedding(embeddingOn(settings));
       yield* log.setLevel(settings.logLevel);
       if (groups.has("updates")) yield* mirrorUpdates(settings.updates);
       if (groups.has("agents") && dreams !== undefined) yield* dreams.automaticConfigurationChanged;

@@ -1,7 +1,7 @@
 /** The window manager over real BrowserWindows and displays. */
 
 import type { GridLayout } from "@gram/contracts";
-import { BrowserWindow, screen, type WebContents } from "electron";
+import { type BrowserWindow, screen, type WebContents } from "electron";
 
 import { Channels } from "../channels.ts";
 import {
@@ -11,6 +11,7 @@ import {
   type WindowManager,
 } from "../core/window-manager.ts";
 import { createWindow, focusWindow, type WindowContext } from "./windows.ts";
+import { appWindows } from "./decision-windows.ts";
 
 /** The window operations the IPC exposes; the sender's window is found from its web contents. */
 export interface WindowIpc {
@@ -174,7 +175,7 @@ export function createShellWindows({
     },
     windowIdFor: idOf,
     reloadAll: () => {
-      for (const win of BrowserWindow.getAllWindows()) {
+      for (const win of appWindows()) {
         const target = url();
         if (target === undefined) return;
         if (byContents.has(win.webContents.id) && !win.webContents.isDestroyed()) {

@@ -30,6 +30,7 @@ import {
 import { DEFAULT_PREFS, parseTrayPrefs } from "../../core/tray-mode.ts";
 import { focusWindow, showNotification } from "../../electron/windows.ts";
 import type { ShellIpc } from "../ipc.ts";
+import { appWindows } from "../../electron/decision-windows.ts";
 
 const isMac = process.platform === "darwin";
 
@@ -208,7 +209,7 @@ export function installTray(ipc: ShellIpc, trayMode: ReturnType<typeof createTra
   ipc.handle(Channels.keepInTrayGet, () => trayMode.keepInTray());
   ipc.handle(Channels.keepInTraySet, (enabled) => {
     trayMode.setKeepInTray(enabled === true);
-    for (const win of BrowserWindow.getAllWindows()) {
+    for (const win of appWindows()) {
       if (!win.webContents.isDestroyed()) {
         win.webContents.send(Channels.keepInTrayChanged, trayMode.keepInTray());
       }

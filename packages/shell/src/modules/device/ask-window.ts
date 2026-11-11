@@ -1,17 +1,10 @@
-import { app, BrowserWindow, screen, type WebContents } from "electron";
+import { app, BrowserWindow, screen } from "electron";
+import { markDecisionWindow } from "../../electron/decision-windows.ts";
 import { type AskColors, askAnswerOf, askPage, type AskPageAnswer } from "./ask-page.ts";
 import type { AskSurface } from "./ask-queue.ts";
 import type { AskView } from "./ask-view.ts";
 
-/**
- * The windows the main process owns for decisions: the ask, and later the lending sheet. Nothing
- * the app does to "all windows" may touch them (reload, hide, theme, vibrancy, notifications), so
- * those loops must ask `isDecisionWindow` first (done where the window is installed).
- */
-const decisionWindows = new WeakSet<WebContents>();
-
-export const isDecisionWindow = (win: { readonly webContents: WebContents }): boolean =>
-  decisionWindows.has(win.webContents);
+export { isDecisionWindow } from "../../electron/decision-windows.ts";
 
 export interface AskWindowOptions {
   readonly colors: () => AskColors;
@@ -88,7 +81,7 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
       },
     });
     const contents = next.webContents;
-    decisionWindows.add(contents);
+    markDecisionWindow(contents);
     contents.setVisualZoomLevelLimits(1, 1).catch(() => undefined);
     contents.on("before-input-event", (event, input) => {
       // No zoom, no reload, no find: the page is drawn as it is.
