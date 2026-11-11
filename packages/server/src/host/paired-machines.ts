@@ -27,6 +27,13 @@ export const MAX_MACHINES = 16;
 export const MAX_PROVISIONED = 256;
 /** How many dials' nonces can be in their window at once; past it, dials wait. */
 const NONCES_KEPT = 4096;
+/**
+ * How many of one machine's dials can be in their window at once: several times what a host
+ * dialling again at its slowest (every 30 seconds) makes, and few enough that every machine at
+ * this limit together still leaves room in `NONCES_KEPT`. Past it that machine waits, so one
+ * machine's key, however it is used, can't fill the room the others' dials need.
+ */
+export const DIALS_PER_MACHINE = 12;
 
 /** A joined machine as the main Gram keeps it: its pinned key and what it said it was. */
 export interface PairedMachine {
@@ -190,12 +197,6 @@ export const namesThisMachine = (name: string) =>
   (LOCAL_MACHINE_NAMES as ReadonlyArray<string>).includes(name.trim().toLowerCase());
 const PLATFORM = /^[a-z0-9]{1,16}$/;
 
-/** Whether each kind is within its own limit. */
-const withinLimits = (machines: ReadonlyArray<PairedMachine>) => {
-  const provisioned = machines.filter(isProvisioned).length;
-  return provisioned <= MAX_PROVISIONED && machines.length - provisioned <= MAX_MACHINES;
-};
-
 const isMachine = (value: unknown): value is PairedMachine => {
   if (typeof value !== "object" || value === null) return false;
   const m = value as Record<string, unknown>;
@@ -220,34 +221,53 @@ const isMachine = (value: unknown): value is PairedMachine => {
   );
 };
 
+/** A machines file's entries, each valid and of the kind the file holds; throws otherwise. */
+const machinesIn = (value: unknown, provisioned: boolean, most: number): PairedMachine[] => {
+  if (value === undefined) return [];
+  const record = value as Record<string, unknown> | null;
+  if (
+    typeof record !== "object" ||
+    record === null ||
+    record["version"] !== 1 ||
+    !Array.isArray(record["machines"]) ||
+    record["machines"].length > most ||
+    !record["machines"].every(
+      (machine) => isMachine(machine) && isProvisioned(machine) === provisioned,
+    )
+  )
+    throw new Error("Joined machines storage is invalid");
+  return record["machines"] as PairedMachine[];
+};
+
 /**
  * The joined machines in `<dataDir>/remote-access/machines.json`: private to this user, refused
  * when it isn't, replaced atomically. Only public keys are kept; there is no secret in it.
+ * Provisioned hosts are kept beside it in `provisioned-hosts.json`, never in the same file: a
+ * build from before they existed reads `machines.json` alone, and would take any entry in it for
+ * a machine a person confirmed. Neither file takes an entry of the other's kind.
  */
 export const fileMachineStore = (dataDir: string): PairedMachineStore => {
-  const file = privateJsonFile(dataDir, "machines.json", 256 * 1024);
-  const read = (): PairedMachine[] => {
-    const value = file.read();
-    if (value === undefined) return [];
-    const record = value as Record<string, unknown> | null;
-    if (
-      typeof record !== "object" ||
-      record === null ||
-      record["version"] !== 1 ||
-      !Array.isArray(record["machines"]) ||
-      record["machines"].length > MAX_MACHINES + MAX_PROVISIONED ||
-      !record["machines"].every(isMachine) ||
-      !withinLimits(record["machines"])
-    )
-      throw new Error("Joined machines storage is invalid");
-    return record["machines"] as PairedMachine[];
-  };
+  const file = privateJsonFile(dataDir, "machines.json", 64 * 1024);
+  const hostsFile = privateJsonFile(dataDir, "provisioned-hosts.json", 256 * 1024);
+  const read = (): PairedMachine[] => [
+    ...machinesIn(file.read(), false, MAX_MACHINES),
+    ...machinesIn(hostsFile.read(), true, MAX_PROVISIONED),
+  ];
   return {
     read,
     write: (machines) => {
       // Never repair an unsafe or corrupt file silently.
-      read();
-      file.write({ version: 1, machines });
+      const kept = read();
+      const joined = machines.filter((machine) => !isProvisioned(machine));
+      const provisioned = machines.filter(isProvisioned);
+      const changed = (kind: boolean, next: ReadonlyArray<PairedMachine>) =>
+        JSON.stringify(kept.filter((machine) => isProvisioned(machine) === kind)) !==
+        JSON.stringify(next);
+      // Each file is written only when its own machines changed, so a Gram that never had a
+      // provisioned host never has their file.
+      if (changed(true, provisioned)) hostsFile.write({ version: 1, machines: provisioned });
+      if (changed(false, joined) || file.read() === undefined)
+        file.write({ version: 1, machines: joined });
     },
   };
 };
@@ -395,13 +415,17 @@ export const createPairedMachines = (
    * nonces still in their window, which refuses the dial rather than forget one that could then
    * be replayed.
    */
+  /** Each machine's accepted dials still in their window, by when each leaves it. This run's only. */
+  const dialsOf = new Map<string, number[]>();
   const record = (
+    machineId: string,
     nonce: string,
     signed: number,
     /** The time the dial was checked at: one reading, so pruning can't pass the dial's window. */
     at: number,
   ): "ok" | "stale" | "replayed" | "full" | "unsaved" => {
     const until = signed + CONNECT_SKEW_MS;
+    const own = (dialsOf.get(machineId) ?? []).filter((expires) => expires >= at);
     // Let go once past their window, which the skew check refuses, and the floor raised past
     // them, so a clock set back later doesn't bring them into it again.
     for (const [kept, expires] of nonces)
@@ -411,7 +435,8 @@ export const createPairedMachines = (
       }
     if (signed <= floor) return "stale";
     if (nonces.has(nonce)) return "replayed";
-    if (nonces.size >= NONCES_KEPT) return "full";
+    if (nonces.size >= NONCES_KEPT || own.length >= DIALS_PER_MACHINE) return "full";
+    dialsOf.set(machineId, [...own, until]);
     // Kept in memory even when saving fails, so this run still refuses its replay.
     nonces.set(nonce, until);
     seen = Math.max(seen, at);
@@ -479,7 +504,7 @@ export const createPairedMachines = (
     /**
      * Registers a host by the key it made, confirmed from the start: no join link and no
      * fingerprint to compare, because whoever may call this already decides which hosts get work.
-     * Registering the same key again changes nothing. A key that joined with a link is refused,
+     * Registering the same key again, with the same name, changes nothing. A key that joined with a link is refused,
      * so this never confirms a machine a person hasn't.
      */
     provision: (request: ProvisionRequest): ProvisionResult => {
@@ -503,14 +528,32 @@ export const createPairedMachines = (
         };
       const id = hostIdOf(request.publicKey);
       const existing = byId(id);
-      if (existing !== undefined)
-        return isProvisioned(existing)
+      if (existing !== undefined) {
+        if (!isProvisioned(existing))
+          return {
+            kind: "refused",
+            status: 409,
+            message: "That key belongs to a machine that joined with a link.",
+          };
+        // The same registration again changes nothing; another name or platform for the key is a
+        // mistake to say so about, not to settle silently either way.
+        return existing.name === request.name && existing.platform === request.platform
           ? { kind: "provisioned", machine: existing, created: false }
           : {
               kind: "refused",
               status: 409,
-              message: "That key belongs to a machine that joined with a link.",
+              message: `That key is already registered as "${existing.name}". Remove it first to change that.`,
             };
+      }
+      // Work is placed by name, and a name two machines share places nothing: a new host never
+      // takes one in use, so registering can't make a machine unaddressable.
+      const wanted = request.name.trim().toLowerCase();
+      if (machines.some((machine) => machine.name.trim().toLowerCase() === wanted))
+        return {
+          kind: "refused",
+          status: 409,
+          message: "Another machine already has that name. Choose another.",
+        };
       if (machines.filter(isProvisioned).length >= MAX_PROVISIONED)
         return {
           kind: "refused",
@@ -562,6 +605,7 @@ export const createPairedMachines = (
     remove: (id: string): boolean => {
       if (byId(id) === undefined) return false;
       problems.delete(id);
+      dialsOf.delete(id);
       forget(machines.filter((machine) => machine.id !== id));
       return true;
     },
@@ -617,7 +661,7 @@ export const createPairedMachines = (
       if (blind)
         return { kind: "refused", status: 503, message: "unavailable: dial history unreadable" };
       // Checked after the signature, so a forged dial can't spend a real one's nonce.
-      const nonce = record(claim.nonce, claim.time, at);
+      const nonce = record(machine.id, claim.nonce, claim.time, at);
       if (nonce === "stale")
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       if (nonce === "replayed")

@@ -124,12 +124,12 @@ import { authTarget } from "./auth-target.ts";
 import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } from "./auth.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
 import {
-  type ProvisionedListener,
+  ProvisionedListener,
   ViaProvisionedListener,
   withProvisionedListener,
 } from "./provisioned-listener.ts";
 
-/** How often connected provisioned hosts are checked against the hosted-features switch. */
+/** How often the provisioned-host listener and its hosts are held to the hosted-features switch. */
 const PROVISIONED_SWITCH_POLL = Duration.seconds(3);
 
 /** The per-launch secret carried by the boot URL. */
@@ -173,11 +173,15 @@ export const AuthMiddleware = HttpRouter.middleware(
       store === undefined
         ? Effect.succeed(false)
         : Effect.provideService(embeddingEnabled, ThreadStore, store);
-    // Hosts already connected when the switch goes off are dropped within a few seconds; they
-    // stay registered, and their dials are refused until it is on again.
+    // The listener is bound only while the switch is on, and hosts connected when it goes off
+    // are dropped: both within a few seconds of the change. They stay registered. A switch that
+    // can't be read counts as off.
+    const listener = Option.getOrUndefined(yield* Effect.serviceOption(ProvisionedListener));
     if (remoteHosts?.provisionedOrigin !== undefined)
       yield* provisionedOn.pipe(
+        Effect.catchCause(() => Effect.succeed(false)),
         Effect.tap((on) => (on ? Effect.void : Effect.sync(remoteHosts.closeProvisioned))),
+        Effect.tap((on) => listener?.setOpen(on) ?? Effect.void),
         Effect.catchCause(() => Effect.void),
         Effect.repeat(Schedule.spaced(PROVISIONED_SWITCH_POLL)),
         Effect.forkScoped,

@@ -244,6 +244,10 @@ const dialIn = (hosts: RemoteHostsShape, origin: string, route: DialRoute) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     if (request.method !== "GET") return refuse("forbidden");
+    // Before its signature is looked at: a dial that asks for no WebSocket connects nothing, and
+    // must not spend one of the nonces the dials that do are counted by.
+    if (request.headers["upgrade"]?.toLowerCase() !== "websocket")
+      return refuse("WebSocket required", 400);
     const decision = hosts.machines.authorizeConnect(origin, request.headers, route);
     if (decision.kind === "refused") return refuse(decision.message, decision.status);
     // Pinned before the upgrade yields, so access turned off or moved during it drops the dial.

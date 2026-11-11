@@ -17,8 +17,8 @@ from a [joined machine](MACHINES.md) in how it gets in, and in nothing after tha
 | Updates              | Itself, to the main Gram's release  | Never: whoever started it replaces it    |
 
 Provisioned hosts are one of the hosted features: they are off unless **Hosted features** is on
-([Docker](DOCKER.md#hosted-features)), and the listener exists only when its environment is set.
-With either missing, Gram behaves as it does without them.
+([Docker](DOCKER.md#hosted-features)) and the listener's environment is set. With either missing,
+nothing listens for them and Gram behaves as it does without them.
 
 ## Turn the listener on
 
@@ -35,8 +35,15 @@ refuses to start rather than run half configured.
 
 The address must be `https:`. Plain `http:` is refused, and so is a tailnet address, which belongs
 to joined machines. Gram ends TLS itself, with TLS 1.3 only, so nothing between a host and Gram
-sees a dial or what it carries. The certificate and key are read once, when the server starts:
-restart it to take a renewed certificate.
+sees a dial or what it carries. A certificate or key that can't be read stops the server as it
+starts. They are read again each time the listener opens, so a renewed certificate is taken when
+the server restarts or Hosted features is turned off and on.
+
+The listener is bound only while Hosted features is on. Turned off, its port is closed within a
+few seconds, every connection on it ends, and the hosts stay registered for when it is on again.
+If the port can't be bound (something else has it), the server keeps running, its log says why,
+and it tries again every few seconds. The listener takes at most 1024 connections at once, and
+gives each 10 seconds to finish its TLS handshake and 10 more to send its request.
 
 The listener is apart from the app's own, which stays on loopback. It answers two things and
 nothing else:
@@ -47,8 +54,7 @@ nothing else:
 
 Everything else is refused: the app, its WebSocket, its settings routes, the join route and the
 installer aren't served there, and neither is any request for another name than the origin's or
-with a browser's `Origin`. So is everything while Hosted features is off, and a host connected
-when it is turned off is dropped within a few seconds.
+with a browser's `Origin`.
 
 ## Provision a host
 
@@ -85,9 +91,16 @@ when it is turned off is dropped within a few seconds.
    ```
 
    It answers `{ "hostId", "fingerprint", "created", "origin" }`. Registering the same key again
-   changes nothing and answers `created: false`. A key that belongs to a machine that joined with
-   a link is refused, so registering never confirms a machine a person hasn't. Up to 256
-   provisioned hosts can be registered at once, counted apart from the 16 joined machines.
+   with the same name changes nothing and answers `created: false`. These are refused with `409`:
+
+   - the same key under another name or platform (remove it first);
+   - a name another machine or host already has, in any case, since work is placed by name;
+   - a key that belongs to a machine that joined with a link, so registering never confirms a
+     machine a person hasn't;
+   - a 257th host: up to 256 can be registered at once, counted apart from the 16 joined machines.
+
+   Provisioned hosts are kept in `remote-access/provisioned-hosts.json` in Gram's data folder,
+   apart from the joined machines' `machines.json`, owner-only and holding public keys alone.
 
 3. **Start the host.** `gram-host run` dials the address and serves, and dials again whenever the
    connection ends. It trusts the certificates Node does: for one from your own authority, set
@@ -109,12 +122,23 @@ only for a host you started, and read it from that host over a channel you contr
   Ed25519 signature over those and the address. A key nobody registered, a signature by another
   key, a dial signed for another address, a time more than two minutes off and a nonce seen before
   are each refused with `401` before any WebSocket opens.
+- **One host can't crowd out the rest.** At most 12 of one host's dials count at a time (a host
+  dialling again at its slowest makes about four in the two minutes a dial counts for). Past that
+  its dials wait, so a key used to flood the listener can't use up the room the others need. A
+  dial that asks for no WebSocket is refused before its signature is looked at.
 - **The two ways in don't cross.** A provisioned host's key is taken only on the provisioned
   listener, and a joined machine's only on the tailnet address. On the other, either is as unknown
   as a key never registered. A thread's app-tools token is likewise taken only on the address its
   own host dialled.
 - **The host proves itself; Gram proves itself by its certificate.** A host that doesn't trust the
-  listener's certificate doesn't connect. Keep the certificate's key private to the server.
+  listener's certificate doesn't connect, and `gram-host run` refuses to dial anything but an
+  `https:` address. A dial's signature covers the address, the time and a nonce, not the TLS
+  connection itself: whoever holds the certificate's key for that name could take one dial and
+  use it once. Keep that key private to the server.
+- **A session's token reaches what any thread's does.** A session on a host uses its thread's
+  token on `/host/mcp`, and gets the app tools that thread has anywhere, which for an orchestrator
+  include starting work on other hosts. A host is isolated from the others by what its thread may
+  do, not by the listener.
 - **Network policy is still yours.** The listener is meant for a private network. Gram refuses
   what isn't a registered host's, but which machines can reach the port is up to the network it is
   on.

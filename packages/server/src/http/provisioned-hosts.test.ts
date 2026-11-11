@@ -7,7 +7,7 @@ import { generateKeyPairSync, type KeyObject, randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { createServer } from "node:net";
+import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,9 +22,11 @@ import {
   HOST_CONNECT_PATH,
   HOST_MCP_PATH,
   hostIdOf,
+  privateKeyFrom,
   publicKeyText,
   signedConnectHeaders,
 } from "../host/machine-keys.ts";
+import { readHostKey } from "../host/host-config.ts";
 import type { ProvisionedHost } from "../host/cli.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServer } from "../platform/unstable.ts";
@@ -304,20 +306,71 @@ const hostedFeatures = (embedding: boolean) =>
     );
   });
 
+/** Whether anything listens on the provisioned-host port now. */
+const listening = Effect.promise(
+  () =>
+    new Promise<boolean>((resolve) => {
+      const socket = connect(freePort, "127.0.0.1");
+      socket.once("connect", () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.once("error", () => resolve(false));
+    }),
+);
+
+/** One request to the app's loopback listener claiming the provisioned-host name. */
+const loopbackAs = (headers: Record<string, string>) =>
+  Effect.gen(function* () {
+    const port = serverPort(yield* HttpServer.HttpServer);
+    return yield* Effect.promise(
+      () =>
+        new Promise<number>((resolve, reject) => {
+          const req = httpRequest({
+            host: "127.0.0.1",
+            port,
+            path: HOST_CONNECT_PATH,
+            agent: false,
+            headers: {
+              connection: "Upgrade",
+              upgrade: "websocket",
+              "sec-websocket-version": "13",
+              "sec-websocket-key": randomBytes(16).toString("base64"),
+              ...headers,
+            },
+          });
+          req.on("upgrade", (_res, socket) => {
+            socket.destroy();
+            resolve(101);
+          });
+          req.on("response", (res) => {
+            res.resume();
+            resolve(res.statusCode ?? 0);
+          });
+          req.on("error", reject);
+          req.end();
+        }),
+    );
+  });
+
+/** A file of the server's machine storage, as text. */
+const kept = (name: string) => readFileSync(join(temp, "data", "remote-access", name), "utf8");
+
+const register = (name: string, publicKey: string) =>
+  local(MACHINES_PROVISION_PATH, { name, publicKey, platform: process.platform });
+
 layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (it) => {
   it.effect(
-    "with hosted features off, nothing can be registered and no dial is taken",
+    "with hosted features off, nothing listens, and nothing can be registered",
     () =>
       Effect.gen(function* () {
         const host = provisionHost("off");
-        const refused = yield* local(MACHINES_PROVISION_PATH, {
-          name: host.name,
-          publicKey: host.publicKey,
-        });
+        const refused = yield* register(host.name, host.publicKey);
         expect(refused.status).toBe(409);
         expect(yield* machines).toEqual([]);
-        const key = generateKeyPairSync("ed25519");
-        expect((yield* dial(key)).status).toBe(403);
+        // Long enough for the listener to have opened, were it going to.
+        yield* Effect.sleep("4 seconds");
+        expect(yield* listening).toBe(false);
       }),
     60_000,
   );
@@ -327,15 +380,12 @@ layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (
     () =>
       Effect.gen(function* () {
         yield* hostedFeatures(true);
+        yield* until(listening, 15, "the listener to open once hosted features are on");
 
         // The host makes its key; the control plane registers the public half. No join link, no
         // Tailscale, and nothing to confirm.
         const registered = provisionHost("sandbox-1");
-        const answer = yield* local(MACHINES_PROVISION_PATH, {
-          name: registered.name,
-          publicKey: registered.publicKey,
-          platform: registered.platform,
-        });
+        const answer = yield* register(registered.name, registered.publicKey);
         expect(answer.status).toBe(200);
         expect(JSON.parse(answer.body)).toEqual({
           hostId: registered.hostId,
@@ -343,18 +393,17 @@ layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (
           created: true,
           origin: ORIGIN,
         });
-        // The same key again changes nothing.
-        const again = yield* local(MACHINES_PROVISION_PATH, {
-          name: registered.name,
-          publicKey: registered.publicKey,
-        });
-        expect(JSON.parse(again.body)).toMatchObject({
-          hostId: registered.hostId,
-          created: false,
-        });
+        // The same registration again changes nothing; its name is taken for any other key.
+        expect(
+          JSON.parse((yield* register(registered.name, registered.publicKey)).body),
+        ).toMatchObject({ hostId: registered.hostId, created: false });
+        // It is kept apart from the machines a person joined.
+        expect(kept("provisioned-hosts.json")).toContain(registered.hostId);
+        expect(kept("machines.json")).not.toContain(registered.hostId);
 
         // A second host made its key the same way, but nobody registered it.
         const unknown = provisionHost("stranger");
+        expect((yield* register(registered.name, unknown.publicKey)).status).toBe(409);
 
         const running = yield* runHost(registered.home);
         const stranger = yield* runHost(unknown.home);
@@ -370,59 +419,91 @@ layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (
             Effect.die(new Error(`${String(defect)}\ngram-host said:\n${running.output()}`)),
           ),
         );
-        expect(online).toMatchObject({
-          name: "sandbox-1",
-          kind: "provisioned",
-          confirmed: true,
-        });
+        expect(online).toMatchObject({ name: "sandbox-1", kind: "provisioned", confirmed: true });
 
-        // The unregistered host dialled too, signed with a key of its own, and was refused: it is
-        // neither listed nor online, and its process says why it isn't connected.
+        // The unregistered host's own key, used exactly as its process uses it, is refused on the
+        // wire with 401 before any WebSocket opens; its process is left dialling, never listed.
+        const strangerKey = { privateKey: privateKeyFrom(readHostKey(unknown.home)!) };
+        const dialAs = (
+          key: { readonly privateKey: KeyObject },
+          hostId: string,
+          origin = ORIGIN,
+          extra: Record<string, string> = {},
+        ) => ({
+          path: HOST_CONNECT_PATH,
+          upgrade: true,
+          headers: { ...signedConnectHeaders(key.privateKey, origin, hostId), ...extra },
+        });
+        const refused = yield* overTls(dialAs(strangerKey, unknown.hostId));
+        expect(refused).toEqual({ status: 401, body: "unauthorized: machine not joined" });
         yield* until(
           Effect.sync(() => /not connected; dialling again/.test(stranger.output())),
           30,
-          "the unregistered host to be refused",
+          "the unregistered host to be left dialling",
         );
         expect(yield* machine(unknown.hostId)).toBeUndefined();
         expect((yield* machines).map((one) => one.id)).toEqual([registered.hostId]);
 
-        // The same refusal, seen from the wire: a well-formed dial signed by a key nobody
-        // registered gets 401 before any WebSocket is opened.
+        // Other keys nobody registered: a fresh one, an unsigned dial, and one naming the
+        // registered host without its key.
         const outsider = generateKeyPairSync("ed25519");
-        const refused = yield* dial(outsider);
-        expect(refused.status).toBe(401);
-        expect(refused.body).toBe("unauthorized: machine not joined");
-        // An unsigned dial, and one naming the registered host without its key.
+        expect((yield* dial(outsider)).status).toBe(401);
         expect((yield* overTls({ path: HOST_CONNECT_PATH, upgrade: true })).status).toBe(401);
-        expect(
-          (yield* overTls({
-            path: HOST_CONNECT_PATH,
-            upgrade: true,
-            headers: signedConnectHeaders(outsider.privateKey, ORIGIN, registered.hostId),
-          })).status,
-        ).toBe(401);
+        expect((yield* overTls(dialAs(outsider, registered.hostId))).status).toBe(401);
+
+        // A registered key of this test's own, to dial with by hand.
+        const probe = generateKeyPairSync("ed25519");
+        const probeId = hostIdOf(publicKeyText(probe.publicKey));
+        expect((yield* register("probe", publicKeyText(probe.publicKey))).status).toBe(200);
+        // Signed for another address than the listener's.
+        expect(yield* overTls(dialAs(probe, probeId, "https://elsewhere.internal"))).toEqual({
+          status: 401,
+          body: "unauthorized: bad signature",
+        });
+        // A dial that asks for no WebSocket connects nothing and spends nothing: the same
+        // headers are then taken once, and never again.
+        const once = dialAs(probe, probeId);
+        expect((yield* overTls({ ...once, upgrade: false })).status).toBe(400);
+        expect((yield* overTls(once)).status).toBe(101);
+        expect(yield* overTls(once)).toEqual({ status: 401, body: "unauthorized: dial replayed" });
 
         // The listener serves hosts and nothing else: not the app, its socket, its settings
         // routes, a join or the installer, and not under another name or from a browser.
         for (const path of ["/", "/ws", "/mcp", MACHINES_LIST_PATH, "/host/join", "/host/install"])
           expect((yield* overTls({ path })).status, path).toBe(403);
+        for (const path of ["/ws", "/host/connect/", "//host/connect", "/HOST/CONNECT"])
+          expect((yield* overTls({ ...dialAs(probe, probeId), path })).status, path).toBe(403);
         expect((yield* overTls({ path: MACHINES_PROVISION_PATH, method: "POST" })).status).toBe(
           403,
         );
-        expect((yield* dial(outsider, ORIGIN, { host: "127.0.0.1" })).status).toBe(403);
-        expect((yield* dial(outsider, ORIGIN, { origin: ORIGIN })).status).toBe(403);
+        expect((yield* overTls(dialAs(probe, probeId, ORIGIN, { host: "127.0.0.1" }))).status).toBe(
+          403,
+        );
+        expect((yield* overTls(dialAs(probe, probeId, ORIGIN, { origin: ORIGIN }))).status).toBe(
+          403,
+        );
         // Its app-tools endpoint takes a placed thread's token, not just any request.
         expect((yield* overTls({ path: HOST_MCP_PATH, method: "POST" })).status).toBe(401);
+        // The app's own listener takes no host's dial, under the listener's name or its own.
+        for (const host of [HOST, "127.0.0.1"])
+          expect(
+            yield* loopbackAs({ ...signedConnectHeaders(probe.privateKey, ORIGIN, probeId), host }),
+          ).not.toBe(101);
 
-        // Turning hosted features off drops the host and refuses its dials; on again, it is back
-        // without registering anew.
+        // Turning hosted features off closes the listener and drops the host; on again, it is
+        // back without registering anew.
         yield* hostedFeatures(false);
         yield* until(
           Effect.map(machine(registered.hostId), (one) => one?.onlineSince === undefined),
           15,
           "the host to be dropped when hosted features go off",
         );
-        expect((yield* dial(outsider)).status).toBe(403);
+        yield* until(
+          Effect.map(listening, (open) => !open),
+          15,
+          "the listener to close when hosted features go off",
+        );
+        expect((yield* register("late", publicKeyText(outsider.publicKey))).status).toBe(409);
         yield* hostedFeatures(true);
         yield* until(
           Effect.map(machine(registered.hostId), (one) => one?.onlineSince !== undefined),
@@ -431,13 +512,13 @@ layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (
         );
 
         // Removed, its key is unknown again.
+        const registeredKey = { privateKey: privateKeyFrom(readHostKey(registered.home)!) };
         expect((yield* local(MACHINES_REMOVE_PATH, { id: registered.hostId })).status).toBe(200);
-        yield* until(
-          Effect.sync(() => /not connected; dialling again/.test(running.output())),
-          30,
-          "the removed host to lose its connection",
-        );
-        expect(yield* machines).toEqual([]);
+        expect(yield* overTls(dialAs(registeredKey, registered.hostId))).toEqual({
+          status: 401,
+          body: "unauthorized: machine not joined",
+        });
+        expect((yield* machines).map((one) => one.id)).toEqual([probeId]);
       }).pipe(Effect.scoped),
     180_000,
   );

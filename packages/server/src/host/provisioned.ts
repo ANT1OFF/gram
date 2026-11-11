@@ -32,7 +32,13 @@ export const provisionedOrigin = (value: string): string => {
   } catch {
     throw new Error(NOT_AN_ORIGIN);
   }
-  if (value !== url.origin || url.protocol !== "https:" || url.hostname === "")
+  if (
+    value !== url.origin ||
+    url.protocol !== "https:" ||
+    url.hostname === "" ||
+    // One spelling of a name only, so `name.` is never a second address for `name`.
+    url.hostname.endsWith(".")
+  )
     throw new Error(NOT_AN_ORIGIN);
   if (url.hostname.endsWith(".ts.net"))
     throw new Error("A provisioned-host address can't be a tailnet address.");

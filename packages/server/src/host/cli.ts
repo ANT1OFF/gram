@@ -269,6 +269,9 @@ const joined = (home: string) => {
   const publicKey = publicKeyText(createPublicKey(key));
   if (hostIdOf(publicKey) !== config.hostId)
     throw new Error(`The key in ${home} isn't the one this machine joined with.`);
+  // A provisioned host dials only an https address, whatever its config has come to say: its
+  // signed dial is never sent in the clear.
+  if (config.provisioned === true) provisionedOrigin(config.origin);
   return { config, key, publicKey };
 };
 
