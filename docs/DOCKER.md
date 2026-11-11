@@ -109,14 +109,6 @@ conversation and memory: keep it as you would those. Import only a bundle you ex
 brings its own charter, with its autonomy, and its orchestrator starts working. Its routines arrive
 switched off, for you to turn on here.
 
-| Build argument        | Default                       | What it sets                                  |
-| --------------------- | ----------------------------- | --------------------------------------------- |
-| `CLAUDE_CODE_VERSION` | the version in the Dockerfile | Claude Code from npm                          |
-| `CODEX_VERSION`       | unset                         | Codex from npm, when set                      |
-| `GH_VERSION`          | `2.103.3`                     | The GitHub CLI's release; empty leaves it out |
-| `NODE_IMAGE`          | `node:26.13.0-bookworm-slim`  | The image it runs on                          |
-| `BUILD_IMAGE`         | `node:26.13.0-bookworm`       | The image it builds in                        |
-
 ### Sign-in through a proxy
 
 With hosted features on, a server can leave sign-in to a proxy you run in front of it: an
