@@ -1,7 +1,8 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEVICE_LIST_MAX_ENTRIES, DEVICE_READ_MAX_BYTES } from "@gram/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   checkLendable,
@@ -44,7 +45,7 @@ afterEach(async () => {
 const lend = async (path: string): Promise<LentFolder> => {
   const checked = await checkLendable(path, bounds);
   if (!checked.ok) throw new Error(checked.why);
-  return checked;
+  return { path: checked.path, device: checked.device, inode: checked.inode, bounds };
 };
 
 describe("checkLendable", () => {
@@ -262,4 +263,253 @@ describe("resolveWorkingFolder", () => {
         why: "outside-folders",
       });
   });
+});
+
+describe("what the code review asked to hold", () => {
+  it("answers the same whether or not something is there, for a way out or a credential", async () => {
+    const folder = await lend(join(home, "code", "app"));
+    await write(join(home, "Documents", "tax-2025.pdf"));
+    await write(join(folder.path, ".git", "refs", "heads", "release-acquisition"));
+    await fs.symlink(home, join(folder.path, "up"));
+    await fs.symlink(join(home, "nowhere"), join(folder.path, "dangling"));
+    for (const [there, missing] of [
+      ["up/Documents/tax-2025.pdf", "up/Documents/tax-2024.pdf"],
+      ["up/.ssh", "up/.gnupg"],
+      ["up/Documents/tax-2025.pdf/x", "up/nope/x"],
+      ["up", "dangling"],
+      [".git/refs/heads/release-acquisition", ".git/refs/heads/nope"],
+      [".env", ".env.nope"],
+    ] as const) {
+      const one = await readLentFile(folder, there, 10);
+      expect(one.ok, there).toBe(false);
+      expect(await readLentFile(folder, missing, 10), missing).toEqual(one);
+      expect(await listLentFolder(folder, missing, 10), missing).toEqual(
+        await listLentFolder(folder, there, 10),
+      );
+    }
+  });
+
+  it("judges names before the disk: Git and credentials are refused though nothing is there", async () => {
+    const folder = await lend(join(home, "code", "app"));
+    for (const path of [
+      "nope/.git/config",
+      "x/.GIT/y",
+      "repo.git/config",
+      "nope/.env/data",
+      "nope/id_rsa.bak",
+      "nope/prod.env",
+      "nope/kubeconfig",
+      "nope/terraform.tfstate",
+      "nope/service-account.json",
+      "nope/AuthKey_ABC.p8",
+      "my.key/readme.txt",
+      ".ssh/config",
+    ])
+      expect(await readLentFile(folder, path, 10), path).toEqual({
+        ok: false,
+        why: "credential-path",
+      });
+  });
+
+  it("refuses a name that starts with two dots, which is how a file's other forks are spelled", async () => {
+    const folder = await lend(join(home, "code", "app"));
+    await write(join(folder.path, "a.txt"));
+    for (const path of ["a.txt/..namedfork/data", "..x/a.txt", "src/..."])
+      expect(await readLentFile(folder, path, 10), path).toEqual({
+        ok: false,
+        why: "outside-folders",
+      });
+  });
+
+  it("never lends a Git folder, a bare repository or a folder inside one", async () => {
+    const app = join(home, "code", "app");
+    await write(join(app, ".git", "config"), "url = https://x:tok@h/r");
+    await write(join(app, ".git", "modules", "lib", "config"));
+    await write(join(home, "code", "bare.git", "config"));
+    for (const name of ["HEAD", "objects/x", "refs/x", "config"])
+      await write(join(home, "code", "separate", name));
+    for (const path of [
+      join(app, ".git"),
+      join(app, ".git", "modules", "lib"),
+      join(home, "code", "bare.git"),
+      join(home, "code", "separate"),
+    ])
+      expect(await checkLendable(path, bounds), path).toMatchObject({ ok: false });
+    const folder = await lend(join(home, "code"));
+    expect(await readLentFile(folder, "separate/config", 100)).toEqual({
+      ok: false,
+      why: "credential-path",
+    });
+    expect(await resolveWorkingFolder(folder, "separate")).toEqual({
+      ok: false,
+      why: "credential-path",
+    });
+    const listed = await listLentFolder(folder, "", 100);
+    expect(listed.ok && listed.entries.map((entry) => entry.name)).toEqual(["app", "separate"]);
+  });
+
+  it("never lends a system folder or one that holds one", async () => {
+    for (const path of [
+      "/etc",
+      "/usr",
+      "/usr/lib",
+      "/dev",
+      "/var",
+      "/proc",
+      "/proc/self",
+      "/sys",
+    ]) {
+      const there = await fs.stat(path).then(
+        () => true,
+        () => false,
+      );
+      if (there) expect(await checkLendable(path, bounds), path).toMatchObject({ ok: false });
+    }
+  });
+
+  it("lends a folder whose own name reads like a credential, and reads inside it", async () => {
+    for (const name of ["credentials", "my.key", "secrets.json", "id_rsa"]) {
+      await write(join(home, "code", name, "sub", "a.txt"), "plain");
+      const folder = await lend(join(home, "code", name));
+      expect(await resolveWorkingFolder(folder, undefined), name).toEqual({
+        ok: true,
+        path: folder.path,
+      });
+      const read = await readLentFile(folder, "sub/a.txt", 10);
+      expect(read.ok && read.data.toString(), name).toBe("plain");
+      expect(await listLentFolder(folder, "", 10), name).toMatchObject({ ok: true });
+    }
+  });
+
+  it("refuses a folder that became one Gram never lends after it was lent", async () => {
+    const folder = await lend(join(home, "code"));
+    const late = join(home, "code", "gram-data");
+    const lateBounds = { ...bounds, ownFolders: [...bounds.ownFolders, late] };
+    const lent = { ...folder, bounds: lateBounds };
+    await write(join(late, "lending.json"), "{}");
+    expect(await readLentFile(lent, "gram-data/lending.json", 10)).toEqual({
+      ok: false,
+      why: "credential-path",
+    });
+    expect(await listLentFolder(lent, "gram-data", 10)).toEqual({
+      ok: false,
+      why: "credential-path",
+    });
+  });
+
+  it("refuses when a folder it never lends can't be compared", async () => {
+    await write(join(home, "blocker"));
+    const cannot = { ...bounds, ownFolders: [join(home, "blocker", "inside")] };
+    expect(await checkLendable(join(home, "code", "app"), cannot)).toMatchObject({ ok: false });
+    const folder = await lend(join(home, "code", "app"));
+    await write(join(folder.path, "a.txt"));
+    expect(await readLentFile({ ...folder, bounds: cannot }, "a.txt", 10)).toMatchObject({
+      ok: false,
+    });
+  });
+
+  it("refuses everything once another folder was moved into the lent folder's place", async () => {
+    const folder = await lend(join(home, "code", "app"));
+    await write(join(home, "code", "other", "main.ts"), "other project");
+    await fs.rename(folder.path, join(home, "code", "app-old"));
+    await fs.rename(join(home, "code", "other"), folder.path);
+    expect(await readLentFile(folder, "main.ts", 100)).toEqual({
+      ok: false,
+      why: "outside-folders",
+    });
+    expect(await listLentFolder(folder, "", 100)).toEqual({ ok: false, why: "outside-folders" });
+    expect(await resolveWorkingFolder(folder, undefined)).toEqual({
+      ok: false,
+      why: "outside-folders",
+    });
+  });
+
+  it("refuses a limit that isn't a number, and never gives more than its own most", async () => {
+    const folder = await lend(join(home, "code", "app"));
+    await fs.writeFile(join(folder.path, "big.bin"), Buffer.alloc(DEVICE_READ_MAX_BYTES + 10, 1));
+    for (let index = 0; index < DEVICE_LIST_MAX_ENTRIES + 5; index += 1)
+      await fs.writeFile(join(folder.path, "src", `f${String(index).padStart(4, "0")}`), "");
+    expect(await readLentFile(folder, "big.bin", Number.NaN)).toMatchObject({ ok: false });
+    expect(await listLentFolder(folder, "src", Number.NaN)).toMatchObject({ ok: false });
+    const read = await readLentFile(folder, "big.bin", Number.POSITIVE_INFINITY);
+    expect(read).toMatchObject({ ok: false });
+    const most = await readLentFile(folder, "big.bin", DEVICE_READ_MAX_BYTES * 4);
+    expect(most.ok && most.data.length).toBe(DEVICE_READ_MAX_BYTES);
+    expect(most).toMatchObject({ truncated: true });
+    const listed = await listLentFolder(folder, "src", 100_000);
+    expect(listed.ok && listed.entries).toHaveLength(DEVICE_LIST_MAX_ENTRIES);
+    expect(listed).toMatchObject({ truncated: true });
+    // Sorted before it is cut: the same first names each time.
+    const few = await listLentFolder(folder, "src", 3);
+    expect(few.ok && few.entries.map((entry) => entry.name)).toEqual(["f0000", "f0001", "f0002"]);
+  });
+
+  it("gives no size for a hard-linked file and reports special files without opening them", async () => {
+    const folder = await lend(join(home, "code", "app"));
+    await write(join(home, "secret.txt"), "s3cret");
+    await fs.link(join(home, "secret.txt"), join(folder.path, "alias.txt"));
+    execFileSync("mkfifo", [join(folder.path, "pipe")]);
+    const listed = await listLentFolder(folder, "", 10);
+    expect(listed.ok && listed.entries).toEqual([
+      { name: "alias.txt", kind: "file" },
+      { name: "pipe", kind: "other" },
+      { name: "src", kind: "folder" },
+    ]);
+  });
+
+  it("lists nothing outside when the ask showed another folder", async () => {
+    const folder = await lend(join(home, "code", "app"));
+    await fs.mkdir(join(folder.path, "other"));
+    expect(await listLentFolder(folder, "src", 10, join(folder.path, "other"))).toEqual({
+      ok: false,
+      why: "outside-folders",
+    });
+  });
+
+  // The kernel is asked where the handle is, which only Linux answers.
+  it.runIf(process.platform === "linux")(
+    "never reads or lists outside the folder while a folder on the way is swapped for a link",
+    async () => {
+      const folder = await lend(join(home, "code", "app"));
+      const outside = join(home, "private");
+      await write(join(outside, "notes.txt"), "OUTSIDE-SECRET");
+      await write(join(outside, "only-outside.txt"));
+      await write(join(folder.path, "d", "notes.txt"), "inside");
+      const swapper = spawn(
+        process.execPath,
+        [
+          "-e",
+          `const fs = require("node:fs");
+           const [at, outside] = process.argv.slice(1);
+           for (;;) {
+             try { fs.renameSync(at, at + ".kept"); fs.symlinkSync(outside, at); } catch {}
+             try { fs.unlinkSync(at); fs.renameSync(at + ".kept", at); } catch {}
+           }`,
+          join(folder.path, "d"),
+          outside,
+        ],
+        { stdio: "ignore" },
+      );
+      try {
+        let inside = 0;
+        for (let attempt = 0; attempt < 4000; attempt += 1) {
+          const read = await readLentFile(folder, "d/notes.txt", 100);
+          if (read.ok) {
+            inside += 1;
+            if (read.data.toString() !== "inside") expect.fail(`read outside at ${attempt}`);
+          }
+          if (attempt % 4 !== 0) continue;
+          const listed = await listLentFolder(folder, "d", 100);
+          if (listed.ok && listed.entries.some((entry) => entry.name === "only-outside.txt"))
+            expect.fail(`listed outside at ${attempt}`);
+        }
+        // The swap must have been seen both ways for the test to mean anything.
+        expect(inside).toBeGreaterThan(0);
+        expect(inside).toBeLessThan(4000);
+      } finally {
+        swapper.kill("SIGKILL");
+      }
+    },
+    60_000,
+  );
 });

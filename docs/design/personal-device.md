@@ -409,22 +409,46 @@ Both can come back only with confinement by the operating system and a budget th
   among them), not `/`, not the home folder itself.
 - A command's working folder must be a lent folder or inside one, by real path at the moment it
   starts.
-- A read goes like this, and anything that doesn't fit is refused rather than guessed at:
-  1. resolve the real path of `folder + path`; require it under the lent folder's real path, on
-     the same device (`st_dev`), with no segment that is `.git` and no segment that the
-     credential check names (`.env*`, keys, certificates, token files);
-  2. open it with `O_NOFOLLOW | O_NONBLOCK`; `fstat` the handle; require a regular file with one
-     hard link (`not-a-file` otherwise: FIFOs, devices and sockets never block or leak);
-  3. `stat` the real path again and require the same device and inode as the handle;
+- A lent folder is never a system folder or one that holds one (`/etc`, `/usr`, `/proc`, …),
+  and never a Git folder: `.git`, a bare `name.git`, or any folder that holds `HEAD`, `objects`
+  and `refs`. The device keeps the folder's device and inode with its path, so a folder moved
+  into a lent folder's place isn't taken for it.
+- A path is judged in this order, and anything that doesn't fit is refused rather than guessed at:
+  1. **by its names alone**, before the disk is looked at: relative, no `..`, no name that starts
+     with `..` (a file's other forks on macOS), no name that is `.git` or ends in `.git`, and no
+     name the credential check knows (`.env*`, `*.env`, keys, certificates, token files, the
+     credential folders), on every name of the path. A refusal here is the same whether or not
+     anything is there, so refusals can't be used to find out what is on the disk;
+  2. **a name at a time** from the lent folder, without following links: the walk stops at the
+     first link whose target leaves the folder, with one answer whatever is behind it. A link
+     that stays inside is followed and its target's names are judged as in step 1. A folder on
+     the way that holds a Git folder's contents is refused;
+  3. what it arrives at must be on the lent folder's device (`st_dev`) and outside every folder
+     that is never lent, as those are at that moment, so one created after lending counts.
+- A read then goes like this:
+  1. require a regular file with one hard link before anything is opened (`not-a-file`
+     otherwise: opening a FIFO or a terminal is itself an act);
+  2. open it with `O_NOFOLLOW | O_NONBLOCK | O_NOCTTY`; `fstat` the handle; require the same
+     device and inode as the file that was checked;
+  3. on Linux, ask the kernel where the handle is (`/proc/self/fd/<n>`) and require the path
+     that was checked; everywhere, judge the path again and require the same file;
   4. read at most 1 MiB from the handle, counting bytes rather than trusting the size.
-- A listing applies step 1 to the folder, returns at most 500 names, kinds and sizes, and omits
-  entries the credential check names.
-- A command's output is at most 256 KiB, the end kept, with `truncated` set.
+- A listing judges the folder the same way. On Linux it holds the folder open and reads it
+  through the handle. It looks at no more than 10,000 names, sorts them, returns at most 500
+  with kinds and sizes, and omits entries the credential check names. A hard-linked file is
+  listed without its size.
+- Every disk call has ten seconds; a mount that doesn't answer counts as a refusal.
+- A command's output is at most 256 KiB, the end kept, with `truncated` set, cut after
+  redaction and never before.
 
-A rename between steps 1 and 3 by another process running as the person can still win this race;
-that process can already read the file. Refusing files with more than one hard link costs reads
-inside package stores that link their files (pnpm's `node_modules`); a command can still be asked
-for.
+On Linux, a folder swapped for a link between the checks is caught by the kernel's answer. On
+macOS and Windows the handle can't be asked where it is, so a swap timed between the checks by
+another process running as the person can still win there; that includes a process an earlier
+approved command left behind. macOS named forks and Windows streams, device names and its
+missing open flags are refused by name but **not yet tested on those systems: neither is lent
+until its tests pass there** (see [build order](#9-build-order-and-the-acceptance-test)).
+Refusing files with more than one hard link costs reads inside package stores that link their
+files (pnpm's `node_modules`); a command can still be asked for.
 
 **The folder limit does not confine a command.** A command runs as the person, with the
 person's permissions, and can read or change anything they can, from whichever folder it starts
@@ -437,14 +461,23 @@ command and the rest of the disk is the ask.
   interactive one, so the person's rc files, aliases, functions and directory hooks don't run and
   can't change what a command means. `PATH` and the rest come from the environment Gram already
   probes from the login shell for local sessions, taken once, not re-run per command.
-- **The environment** is that probed one, minus variables whose names have a segment that reads
-  as a credential (`TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `KEY`, `CREDENTIAL`, `PAT`, `DSN`,
-  `SESSION`), minus URLs that carry a password, and minus `SSH_AUTH_SOCK`, `SSH_ASKPASS` and
-  `SUDO_ASKPASS`, so a command can't borrow the person's signing agent or raise a password
-  window. This is hygiene, not a boundary: it misses what it doesn't know and a command can read
-  the same values from files. The part that does work is on the way out: **the exact values of
-  the removed variables are redacted from the output** before it is sent. Passing the whole
-  environment to a folder is a decision, made in the lending sheet.
+- **The environment** is that probed one, minus variables that read as credentials: by a word
+  anywhere in the name (`TOKEN`, `SECRET`, `PASSWORD`, `PASSPHRASE`, `APIKEY`, `CREDENTIAL`,
+  `WEBHOOK`, …), by a segment of it (`KEY`, `PAT`, `DSN`, `SESSION`, `AUTH`, `JWT`, …), or by what
+  the value looks like (a URL that signs in, `password=…` in a connection string, a well-known
+  token prefix, a private key). Also removed: `SSH_AUTH_SOCK`, the askpass variables,
+  `GIT_SSH_COMMAND`, `KRB5CCNAME`, Git's settings-by-environment as a set, and
+  `DBUS_SESSION_BUS_ADDRESS`, so a command can't borrow the person's signing agent, tickets or
+  keyring or raise a password window. The last one costs `systemctl --user` and desktop
+  notifications from a command. This is hygiene, not a boundary: it misses what it doesn't know
+  and a command can read the same values from files.
+- **On the way out, the exact values of the removed variables are redacted from the output**
+  before it is sent, and so are a URL's password and a connection string's secret on their own.
+  The result is the same however the output is cut into chunks, and the work is one step per
+  character. It catches a value printed as it is. It does not catch one printed in pieces, with a
+  line break or colour code inside it, or encoded, and values under six characters are removed
+  from the environment but not redacted (`1` or `true` would blank half of any output). Passing
+  the whole environment to a folder is a decision, made in the lending sheet.
 - No stdin and no terminal. A process group of its own. A timeout of two minutes unless the
   request asks for less or up to ten.
 - Stopped with `SIGTERM`, then killed with its process tree after five seconds, on timeout,
@@ -554,7 +587,7 @@ that only wants the person to misread an ask.
 | T10 | **A stolen sign-in.**                                                                                                               | Device tokens are bound to the device key; grants are signed by it; registration needs proof of the key and a narrow, fresh scope. Tokens live in the main process and the keychain only.                                    | A thief with an interactive sign-in can register **their own** machine as the person's device. New devices are listed and announced; the tools name them. |
 | T11 | **A look-alike server.**                                                                                                            | Sign-in in the system browser; the address confirmed in a main-owned dialog in punycode; `https` only; issuer and origin checks on discovery; every ask names the server.                                                    | A person who signs in to the wrong place has given that place a device to ask. The asks still stand.                                                      |
 | T12 | **Another program on the machine** drives the device service or edits its settings.                                                 | No listening socket, no loopback endpoint, no command-line entry. Settings authenticated with a keychain key; the log chained.                                                                                               | A program already running as the person needs none of this.                                                                                               |
-| T13 | **Path tricks**: links out of the folder, hard links, a swap between check and use, `..`, a FIFO, another mount.                    | The read steps in [folders](#folders): real path, same device, no-follow non-blocking open, regular file with one link, inode compared, bytes counted.                                                                       | The rename race by a process that is already the person.                                                                                                  |
+| T13 | **Path tricks**: links out of the folder, hard links, a swap between check and use, `..`, a FIFO, another mount.                    | The read steps in [folders](#folders): real path, same device, no-follow non-blocking open, regular file with one link, inode compared, bytes counted.                                                                       | Off Linux, a swap timed between the checks by a process that is already the person.                                                                       |
 | T14 | **Replay or alteration**: a retried request runs twice, a request id is reused for another command, a dial is replayed.             | Idempotent `requestId` with a payload check; approval bound to a length-prefixed hash; dial bound to subject and token with stored nonces; single-use grant nonces per request id.                                           | None known.                                                                                                                                               |
 | T15 | **The server mislabels** the thread, the workspace or the reason to lend an ask credibility.                                        | Those are marked as the server's word. What the app vouches for (server address, folder, command, that the person just wrote) comes from the app itself.                                                                     | The person may still weigh the label.                                                                                                                     |
 | T16 | **A runaway command**: a fork bomb, a daemon left behind, a full disk.                                                              | Timeout, process group, terminate then tree kill on every way the request can end.                                                                                                                                           | What a command does in its first seconds, and anything it detaches beyond the process tree.                                                               |
@@ -599,6 +632,10 @@ The head of each pull request gets its own independent review before it merges. 
 5. **The control plane's side**: the `device` host kind (after the provisioned hosts seam), the
    person binding and per-turn tool secret (after the fronted sign-in seam), the three tools, the
    decision hook call and the sink events (after those seams).
+
+The device's checks are tested on Linux and macOS in CI. Lending is offered on a system only
+once its path tests pass there: macOS named forks before macOS, and streams, device names and
+the missing open flags before Windows.
 
 The acceptance test runs in CI with the fake agent, a headless control plane, the test front and
 the device service started in-process, and proves the three things the brief asks for:
@@ -675,3 +712,32 @@ where each landed:
 | Flood limits keyed on ids the server picks; the warning list gave false comfort                    | A per-server rate and pause; facts from a parse, never a clean state                                                                                       |
 | An approved command could edit the settings; askpass windows                                       | Authenticated settings outside lent folders; askpass variables removed; the macOS privacy point in section 8                                               |
 | The hello described the disk; admins see refused commands                                          | Chosen labels only, no release; the lending sheet says what admins see; a chained local log                                                                |
+
+### What the code review changed
+
+An independent reviewer read the contracts and the device core (keys, folders, environment) on
+11 November 2026, with reproductions, before any of it was wired. Its fifteen findings and where
+each landed:
+
+| Finding                                                                                   | Change                                                                                                                                     |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| A folder swapped for a link read a file outside the lent folder, under an inside path     | The walk and the kernel's answer in [folders](#folders); closed on Linux, narrowed and stated elsewhere                                    |
+| Refusal reasons told a server what exists anywhere on the disk                            | Names judged before the disk; the walk stops at the first link out; one answer either way                                                  |
+| A grant held for ever when the clock wasn't a number                                      | Clock, issue time and a dial's time must be whole numbers                                                                                  |
+| Blank and never-drawn characters showed as ordinary text in an ask (no-break space first) | Drawn by Unicode property, tested against every code point                                                                                 |
+| Redaction leaked by how output was chunked, and could stall the main process              | One pass that finds every place, joins overlaps and holds back only what could still match                                                 |
+| The environment filter missed common names and shapes, and broke Git for some             | Words inside names, value shapes, Git's variables as a set; what it still costs is said above                                              |
+| A `.git` folder or a bare repository could be lent and read                               | Never lent; refused by name and by contents; `*.env` and other key names added                                                             |
+| macOS forks and Windows streams could step round the name checks (not tested)             | Refused by name; neither system is lent until tested there                                                                                 |
+| System folders could be lent; later-created forbidden folders and a replaced folder read  | System folders refused; never-lent folders compared on every request; device and inode kept; ten-second deadline; nothing but files opened |
+| Discovery checked parsed addresses and handed back the raw text                           | An address must be spelled as a URL parser writes it, with no query or fragment                                                            |
+| Signed fields with a lone surrogate encoded alike                                         | Refused; ids are printable ASCII                                                                                                           |
+| Signatures had sixteen spellings; small-order keys verified anything; ids from any text   | One spelling; small-order keys refused; an id only from a valid key, and a dial must name its key's device                                 |
+| Half a millisecond became no timeout; limits that weren't numbers; unbounded fields       | Floored first; refused; bounds on the command, output, listings, folders and sizes                                                         |
+| A listing cut short wasn't the same twice and gave sizes of hard-linked files             | Sorted before it is cut; no size for a hard-linked file                                                                                    |
+| Many checks could be deleted without a test failing                                       | A test for each, the swap race and the redactor's chunking among them                                                                      |
+
+Left for the device service, where the caller lives: path refusals count against the per-server
+rate; a grant is honoured only while its nonce is in the device's in-memory list of grants it
+minted, so none survives a quit; "the same payload" is compared on the decoded request; output is
+decoded with a `StringDecoder`; server-worded text in main-owned windows is drawn like a command.

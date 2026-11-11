@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import {
+  DEVICE_COMMAND_MAX_BYTES,
   DeviceExecEvent,
   DeviceHello,
   DeviceListResult,
@@ -30,7 +31,7 @@ export const DeviceRpcs = RpcGroup.make(
     payload: {
       ...DeviceRequestBy,
       cwd: Schema.optionalKey(DeviceRelativePath),
-      command: Schema.String,
+      command: Schema.String.check(Schema.isMaxLength(DEVICE_COMMAND_MAX_BYTES)),
       timeoutMs: Schema.optionalKey(PositiveInt),
       /** Why the agent says it wants this. Untrusted text, shown as the agent's own claim. */
       reason: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),

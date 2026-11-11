@@ -19,6 +19,10 @@ export const DEVICE_READ_MAX_BYTES = 1024 * 1024;
 export const DEVICE_LIST_MAX_ENTRIES = 500;
 /** A command's output is at most this much, the end kept. */
 export const DEVICE_OUTPUT_MAX_BYTES = 256 * 1024;
+/** A device lends at most this many folders to a workspace. */
+export const DEVICE_FOLDERS_MOST = 32;
+/** One `output` event carries at most this many characters. */
+export const DEVICE_OUTPUT_EVENT_MAX = 64 * 1024;
 /** A command runs this long unless the request asks for less, or for more up to the most. */
 export const DEVICE_TIMEOUT_DEFAULT_MS = 2 * 60_000;
 export const DEVICE_TIMEOUT_MOST_MS = 10 * 60_000;
@@ -30,7 +34,8 @@ export const DEVICE_GRANT_TTL_MS = 10 * 60_000;
 export const DEVICE_CLOCK_SKEW_MS = 2 * 60_000;
 
 const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max));
-const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128));
+/** An id: printable ASCII without spaces, so two ids never differ only in what can't be seen. */
+const Id = Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,128}$/));
 
 /** A device's id, derived from its public key so no other key can claim it. */
 export const DeviceId = Schema.String.check(Schema.isPattern(/^d-[a-f0-9]{24}$/)).pipe(
@@ -85,8 +90,8 @@ export const TurnGrant = Schema.Struct({
   thread: Id,
   /** Random, so two grants for one thread at one instant differ. */
   nonce: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{16,64}$/)),
-  issuedAt: Schema.Int,
-  expiresAt: Schema.Int,
+  issuedAt: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  expiresAt: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 export type TurnGrant = typeof TurnGrant.Type;
 
@@ -99,9 +104,12 @@ export type SignedTurnGrant = typeof SignedTurnGrant.Type;
 
 /**
  * Fields as one byte string, each prefixed with its length as four big-endian bytes, so no choice
- * of field contents makes two different lists encode alike.
+ * of field contents makes two different lists encode alike. A field with a lone surrogate isn't
+ * text and has no bytes of its own, so it is refused rather than encoded as something else.
  */
 export const lengthPrefixed = (fields: ReadonlyArray<string>): Uint8Array => {
+  if (fields.some((field) => typeof field !== "string" || !field.isWellFormed()))
+    throw new Error("A signed field isn't well-formed text");
   const encoder = new TextEncoder();
   const parts = fields.map((field) => encoder.encode(field));
   const bytes = new Uint8Array(parts.reduce((total, part) => total + 4 + part.length, 0));
@@ -208,11 +216,11 @@ export type DeviceCapability = typeof DeviceCapability.Type;
  * machine's name nor the app's release.
  */
 export const DeviceHello = Schema.Struct({
-  protocol: Schema.Int,
+  protocol: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 })),
   deviceId: DeviceId,
   platform: Schema.Literals(["darwin", "linux", "win32"]),
-  capabilities: Schema.Array(DeviceCapability),
-  folders: Schema.Array(DeviceFolder),
+  capabilities: Schema.Array(DeviceCapability).check(Schema.isMaxLength(2)),
+  folders: Schema.Array(DeviceFolder).check(Schema.isMaxLength(DEVICE_FOLDERS_MOST)),
 });
 export type DeviceHello = typeof DeviceHello.Type;
 
@@ -249,7 +257,7 @@ export const DeviceExecEvent = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("output"),
     stream: Schema.Literals(["stdout", "stderr"]),
-    text: Schema.String,
+    text: Text(DEVICE_OUTPUT_EVENT_MAX),
   }),
   Schema.Struct({
     kind: Schema.Literal("exit"),
@@ -266,14 +274,14 @@ export type DeviceExecEvent = typeof DeviceExecEvent.Type;
 export const DeviceFileEntry = Schema.Struct({
   name: Text(1024),
   kind: Schema.Literals(["file", "folder", "other"]),
-  size: Schema.optionalKey(Schema.Int),
+  size: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
 export type DeviceFileEntry = typeof DeviceFileEntry.Type;
 
 export const DeviceListResult = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("listed"),
-    entries: Schema.Array(DeviceFileEntry),
+    entries: Schema.Array(DeviceFileEntry).check(Schema.isMaxLength(DEVICE_LIST_MAX_ENTRIES)),
     /** There were more entries than the limit. */
     truncated: Schema.Boolean,
   }),
@@ -285,7 +293,7 @@ export const DeviceReadResult = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("read"),
     /** The file's bytes, base64. */
-    data: Schema.String,
+    data: Text(Math.ceil(DEVICE_READ_MAX_BYTES / 3) * 4),
     /** The file is longer than what was sent. */
     truncated: Schema.Boolean,
   }),
@@ -295,7 +303,9 @@ export type DeviceReadResult = typeof DeviceReadResult.Type;
 
 /** Why a command can't be asked for at all, before anything else is looked at. */
 export const deviceCommandProblem = (command: string): "too-large" | undefined => {
-  if (command.length === 0 || command.includes("\0")) return "too-large";
+  // UTF-8 is never shorter than UTF-16, so a command this long is over without being encoded.
+  if (command.length > DEVICE_COMMAND_MAX_BYTES) return "too-large";
+  if (command.trim().length === 0 || command.includes("\0")) return "too-large";
   // A lone surrogate isn't text, and would be re-encoded as something else on the way to a shell.
   if (!command.isWellFormed()) return "too-large";
   return new TextEncoder().encode(command).length > DEVICE_COMMAND_MAX_BYTES
@@ -304,10 +314,11 @@ export const deviceCommandProblem = (command: string): "too-large" | undefined =
 };
 
 /** A command's timeout within the device's own bounds, whatever the request asked for. */
-export const deviceTimeout = (asked: number | undefined): number =>
-  asked === undefined || !Number.isFinite(asked) || asked <= 0
-    ? DEVICE_TIMEOUT_DEFAULT_MS
-    : Math.min(Math.floor(asked), DEVICE_TIMEOUT_MOST_MS);
+export const deviceTimeout = (asked: number | undefined): number => {
+  // Floored before it is judged: half a millisecond must not become zero, which means no limit.
+  const whole = asked === undefined || !Number.isFinite(asked) ? 0 : Math.floor(asked);
+  return whole <= 0 ? DEVICE_TIMEOUT_DEFAULT_MS : Math.min(whole, DEVICE_TIMEOUT_MOST_MS);
+};
 
 /** A piece of a command as the ask draws it. */
 export type CommandPiece =
@@ -318,39 +329,26 @@ export type CommandPiece =
 
 export interface CommandDisplay {
   readonly pieces: ReadonlyArray<CommandPiece>;
-  /** It has control, bidirectional, zero-width or other invisible code points. */
+  /**
+   * It has control, bidirectional, zero-width, blank or other invisible code points. A tab is
+   * drawn as its code but doesn't count: scripts are full of them.
+   */
   readonly hidden: boolean;
   /** It has visible characters outside ASCII, which may be look-alikes. */
   readonly nonAscii: boolean;
 }
 
-const INVISIBLE: ReadonlyArray<readonly [number, number]> = [
-  [0x00, 0x09],
-  [0x0b, 0x1f],
-  [0x7f, 0x9f],
-  [0xad, 0xad],
-  [0x34f, 0x34f],
-  [0x61c, 0x61c],
-  [0x115f, 0x1160],
-  [0x17b4, 0x17b5],
-  [0x180b, 0x180f],
-  [0x2000, 0x200f],
-  [0x2028, 0x202f],
-  [0x205f, 0x206f],
-  [0x3000, 0x3000],
-  [0x3164, 0x3164],
-  [0xfe00, 0xfe0f],
-  [0xfeff, 0xfeff],
-  [0xffa0, 0xffa0],
-  [0xfff0, 0xfffb],
-  [0x1bca0, 0x1bca3],
-  [0x1d173, 0x1d17a],
-  [0xe0000, 0xe0fff],
-];
+/**
+ * Code points a person can't see or can't tell from a space, by their Unicode properties: every
+ * kind of white space but the space itself, controls, format characters, private use, unassigned
+ * and noncharacters, lone surrogates, and everything a renderer is told to ignore. The three named
+ * ones draw as blanks or as nothing though their properties say otherwise.
+ */
+const INVISIBLE =
+  /[\p{White_Space}\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Cs}\p{Default_Ignorable_Code_Point}\p{Noncharacter_Code_Point}\u2800\ufffc\u{1d159}]/u;
 
 const invisible = (code: number): boolean =>
-  // Lone surrogates never reach here from a checked command, and are drawn as codes if they do.
-  (code >= 0xd800 && code <= 0xdfff) || INVISIBLE.some(([from, to]) => code >= from && code <= to);
+  code !== 0x20 && INVISIBLE.test(String.fromCodePoint(code));
 
 const escapeOf = (code: number): string =>
   code === 0x09
@@ -363,7 +361,10 @@ const escapeOf = (code: number): string =>
 
 /**
  * A command as the ask shows it: every code point a person couldn't see drawn as its code, line
- * breaks as breaks, and nothing else changed. What runs is the command itself, never this.
+ * breaks as breaks, and nothing else changed. What runs is the command itself, never this. The
+ * same drawing is for any text a server worded that a main-owned window shows: a thread's title,
+ * a person's name, a reason, a server's or a workspace's name. A window must draw an escape piece
+ * unlike text, since `\\u202e` typed out and the character itself give the same letters.
  */
 export const displayCommand = (command: string): CommandDisplay => {
   const pieces: Array<CommandPiece> = [];
@@ -382,7 +383,7 @@ export const displayCommand = (command: string): CommandDisplay => {
       pieces.push({ kind: "newline" });
     } else if (invisible(code)) {
       flush();
-      hidden = true;
+      if (code !== 0x09) hidden = true;
       pieces.push({ kind: "escape", text: escapeOf(code) });
     } else {
       if (code > 0x7e) nonAscii = true;
@@ -403,7 +404,7 @@ export const HostedDiscovery = Schema.Struct({
   issuer: Address,
   /** What the server calls itself. Shown as its own word. */
   name: Text(128),
-  client_id: Text(256),
+  client_id: Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,256}$/)),
   authorization_endpoint: Address,
   token_endpoint: Address,
   workspaces_endpoint: Address,
@@ -457,6 +458,11 @@ export const checkHostedDiscovery = (origin: string, document: unknown): HostedD
     try {
       const url = new URL(address);
       return (
+        url.href === address &&
+        url.search === "" &&
+        url.hash === "" &&
+        !address.includes("?") &&
+        !address.includes("#") &&
         url.protocol === protocol &&
         url.host === new URL(origin).host &&
         url.username === "" &&

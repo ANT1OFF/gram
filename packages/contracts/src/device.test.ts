@@ -5,12 +5,14 @@ import {
   DEVICE_COMMAND_MAX_BYTES,
   DEVICE_TIMEOUT_DEFAULT_MS,
   DEVICE_TIMEOUT_MOST_MS,
+  DeviceFileEntry,
   DeviceHello,
   deviceApprovalBytes,
   deviceCommandProblem,
   deviceDialBytes,
   deviceTimeout,
   displayCommand,
+  HostedWorkspace,
   hostedOrigin,
   lengthPrefixed,
   turnGrantBytes,
@@ -144,41 +146,47 @@ describe("displayCommand", () => {
     expect(shown.pieces.filter((piece) => piece.kind === "escape")).toHaveLength(2);
   });
 
-  it("draws every invisible code point, so none reaches the screen", () => {
-    for (const code of [
-      0x00,
-      0x07,
-      0x08,
-      0x09,
-      0x0d,
-      0x1b,
-      0x7f,
-      0x85,
-      0xa0 - 1,
-      0xad,
-      0x61c,
-      0x200b,
-      0x200d,
-      0x200e,
-      0x2028,
-      0x2029,
-      0x202a,
-      0x202e,
-      0x2060,
-      0x2066,
-      0x2069,
-      0x3000,
-      0xfe0f,
-      0xfeff,
-      0xe0001,
-      0xe0041,
-      0xe0100,
-    ]) {
-      const shown = displayCommand(`a${String.fromCodePoint(code)}b`);
-      expect(shown.hidden, code.toString(16)).toBe(true);
+  it("draws every code point a person couldn't see, by its Unicode properties", () => {
+    // Generated from the properties rather than listed, so a new blank character isn't missed.
+    const unseen =
+      /[\p{White_Space}\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\p{Noncharacter_Code_Point}\u2800\ufffc]/u;
+    let checked = 0;
+    for (let code = 0; code <= 0x10ffff; code += 1) {
+      if (code >= 0xd800 && code <= 0xdfff) continue;
+      if (code === 0x20 || code === 0x0a) continue;
+      const character = String.fromCodePoint(code);
+      if (!unseen.test(character)) continue;
+      // Planes of nothing but unassigned and private use: their edges are enough.
+      if (code > 0x30000 && code < 0xe0000 && code % 0x1000 > 2) continue;
+      if (code > 0xe1000 && code % 0x1000 > 2 && code % 0x10000 < 0xfffd) continue;
+      checked += 1;
+      const shown = displayCommand(`a${character}b`);
       const visible = shown.pieces.filter((piece) => piece.kind === "text");
-      expect(visible.map((piece) => piece.text).join(""), code.toString(16)).toBe("ab");
+      if (visible.map((piece) => piece.text).join("") !== "ab" || shown.hidden !== (code !== 9))
+        expect.fail(`U+${code.toString(16)} isn't drawn as its code`);
     }
+    expect(checked).toBeGreaterThan(5000);
+  });
+
+  it("draws a space no shell splits on as its code", () => {
+    for (const code of [
+      0xa0, 0x1680, 0x2800, 0x3164, 0x115f, 0x34f, 0xfe00, 0x17b4, 0x180b, 0xe0020,
+    ]) {
+      const shown = displayCommand(`rm -rf a${String.fromCodePoint(code)}/`);
+      expect(shown.hidden, code.toString(16)).toBe(true);
+      expect(shown.pieces.some((piece) => piece.kind === "escape")).toBe(true);
+    }
+  });
+
+  it("draws a tab as its code without calling the command hidden", () => {
+    const shown = displayCommand("a\tb");
+    expect(shown.hidden).toBe(false);
+    expect(shown.pieces).toEqual([
+      { kind: "text", text: "a" },
+      { kind: "escape", text: "\\t" },
+      { kind: "text", text: "b" },
+    ]);
+    expect(displayCommand("a\r\nb").hidden).toBe(true);
   });
 
   it("draws a line break as a break, so a second command can't hide after it", () => {
@@ -319,5 +327,98 @@ describe("the device's service", () => {
         folders: [{ id: "/Users/ada/code/app", label: "app" }],
       }),
     ).toThrow();
+  });
+});
+
+describe("what the code review asked to hold", () => {
+  const origin = "https://gram.example.com";
+  const document = {
+    version: 1,
+    issuer: origin,
+    name: "Example Co",
+    client_id: "gram-desktop",
+    authorization_endpoint: `${origin}/oauth/authorize`,
+    token_endpoint: `${origin}/oauth/token`,
+    workspaces_endpoint: `${origin}/api/workspaces`,
+    devices_endpoint: `${origin}/api/devices`,
+    device_connect: "wss://gram.example.com/device/connect",
+  };
+
+  it("refuses to sign text with a lone surrogate, which would encode like another", () => {
+    for (const field of ["\ud800", "r\udfff", "a\ud83d"])
+      expect(() => lengthPrefixed(["x", field]), JSON.stringify(field)).toThrow();
+    expect(() => lengthPrefixed(["x", "😀"])).not.toThrow();
+  });
+
+  it("takes only ids that are printable ASCII", () => {
+    const decode = Schema.decodeUnknownOption(HostedWorkspace);
+    const workspace = { id: "w-1", name: "n", organisation: "o", role: "member", devices: "on" };
+    expect(decode(workspace)._tag).toBe("Some");
+    expect(decode({ ...workspace, id: "auth0|ada@example.com" })._tag).toBe("Some");
+    for (const id of ["", "a b", "a\nb", "a‮b", "a\0", "r\ud800", "é", "x".repeat(129)])
+      expect(decode({ ...workspace, id })._tag, JSON.stringify(id)).toBe("None");
+  });
+
+  it("never turns a fraction of a millisecond into no timeout at all", () => {
+    for (const asked of [0.5, 0.999, -0.5, 1e-9])
+      expect(deviceTimeout(asked), String(asked)).toBe(DEVICE_TIMEOUT_DEFAULT_MS);
+    expect(deviceTimeout(1.9)).toBe(1);
+  });
+
+  it("refuses a command of nothing but blanks", () => {
+    expect(deviceCommandProblem("  \n\t ")).toBe("too-large");
+    expect(deviceCommandProblem("x".repeat(DEVICE_COMMAND_MAX_BYTES + 1))).toBe("too-large");
+  });
+
+  it("refuses an address spelled so that another reader would find another host", () => {
+    for (const changed of [
+      { token_endpoint: "https://gram.example.com\\@evil.test/oauth/token" },
+      { token_endpoint: "https:\\\\gram.example.com\\oauth\\token" },
+      { token_endpoint: "https:gram.example.com/oauth/token" },
+      { token_endpoint: " https://gram.example.com/oauth/token" },
+      { token_endpoint: "https://gram.exa\tmple.com/oauth/token" },
+      { token_endpoint: "https://GRAM.example.com/oauth/token" },
+      { devices_endpoint: `${origin}/api/devices/../../x` },
+      { devices_endpoint: `${origin}/api/devices?x=1` },
+      { devices_endpoint: `${origin}/api/devices#frag` },
+      { devices_endpoint: `${origin}/api/devices?` },
+      { device_connect: "wss://gram.example.com/device/connect?workspace=other" },
+      { client_id: "" },
+      { client_id: "gram desktop" },
+    ])
+      expect(
+        checkHostedDiscovery(origin, { ...document, ...changed }),
+        JSON.stringify(changed),
+      ).toMatchObject({ ok: false });
+  });
+
+  it("refuses an origin that isn't written the one way Gram writes it", () => {
+    for (const spelled of [`${origin}/`, "HTTPS://gram.example.com", `${origin}:443`])
+      expect(
+        checkHostedDiscovery(spelled, { ...document, issuer: spelled }),
+        spelled,
+      ).toMatchObject({ ok: false });
+  });
+
+  it("bounds what a request and an answer may carry", () => {
+    const hello = {
+      protocol: 1,
+      deviceId: `d-${"a".repeat(24)}`,
+      platform: "linux",
+      capabilities: ["read"],
+      folders: [],
+    };
+    const decode = Schema.decodeUnknownOption(DeviceHello);
+    expect(decode(hello)._tag).toBe("Some");
+    expect(decode({ ...hello, protocol: 0 })._tag).toBe("None");
+    const folder = { id: `f-${"a".repeat(16)}`, label: "app" };
+    expect(decode({ ...hello, folders: Array.from({ length: 33 }, () => folder) })._tag).toBe(
+      "None",
+    );
+    expect(decode({ ...hello, capabilities: ["read", "exec", "read"] })._tag).toBe("None");
+    const entry = Schema.decodeUnknownOption(DeviceFileEntry);
+    expect(entry({ name: "a", kind: "file", size: -1 })._tag).toBe("None");
+    const exec = DeviceRpcs.requests.get("device.exec");
+    expect(exec).toBeDefined();
   });
 });

@@ -122,3 +122,164 @@ describe("makeRedactor", () => {
     expect(redactor.end()).toBe("");
   });
 });
+
+/** The answer the redactor must give however the text is cut: every place joined, then marked. */
+const reference = (secrets: ReadonlyArray<string>, text: string): string => {
+  const marked = Array.from({ length: text.length }, () => false);
+  for (const secret of secrets)
+    for (let at = text.indexOf(secret); at !== -1; at = text.indexOf(secret, at + 1))
+      for (let index = at; index < at + secret.length; index += 1) marked[index] = true;
+  let out = "";
+  for (let index = 0; index < text.length; index += 1) {
+    if (!marked[index]) out += text[index];
+    // Two places that only touch stay two marks; one that overlaps another joins it.
+    else if (index === 0 || !marked[index - 1] || touching(secrets, text, index)) out += REDACTED;
+  }
+  return out;
+};
+
+/** Whether a marked stretch really breaks at `index`: no place found runs across it. */
+const touching = (secrets: ReadonlyArray<string>, text: string, index: number): boolean => {
+  for (const secret of secrets)
+    for (let at = text.indexOf(secret); at !== -1; at = text.indexOf(secret, at + 1))
+      if (at < index && at + secret.length > index) return false;
+  // Nothing runs across, so a place must start here for the stretch to continue.
+  return true;
+};
+
+const inChunks = (secrets: ReadonlyArray<string>, text: string, cuts: ReadonlyArray<number>) => {
+  const redactor = makeRedactor(secrets);
+  let out = "";
+  let from = 0;
+  for (const cut of [...cuts, text.length]) {
+    out += redactor.push(text.slice(from, cut));
+    from = cut;
+  }
+  return out + redactor.end();
+};
+
+// Put together here so the file holds nothing shaped like a real token.
+const TOKEN_LIKE = `${"gh"}${"p_"}${"abcdefghijklmnopqrstuvwxyz0123456789"}`;
+
+describe("what the code review asked to hold", () => {
+  it("removes credentials by words inside a name, and by what a value looks like", () => {
+    const { env, removed } = filterEnvironment({
+      PGPASSWORD: "p",
+      BORG_PASSPHRASE: "p",
+      NPM_CONFIG__AUTHTOKEN: "t",
+      "npm_config_//registry.npmjs.org/:_authToken": "t",
+      ACCESSTOKEN: "t",
+      SECRETKEY: "k",
+      PRIVATEKEY: "k",
+      SLACK_WEBHOOK_URL: "https://hooks.example.com/x",
+      AZURE_STORAGE_CONNECTION_STRING: "x",
+      JWT: "x",
+      BEARER: "x",
+      KRB5CCNAME: "FILE:/tmp/krb5cc_1000",
+      GIT_SSH_COMMAND: "ssh -i ~/.ssh/deploy",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "http.extraheader",
+      GIT_CONFIG_VALUE_0: "Authorization: Basic eA==",
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+      ORIGIN: `https://${TOKEN_LIKE}@github.com/o/r`,
+      LIBPQ: "host=db password=hunter2hunter2",
+      STORAGE: "DefaultEndpointsProtocol=https;AccountKey=abcdef0123456789==",
+      SOME_ID: TOKEN_LIKE,
+      WHO: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZGEifQ.c2ln",
+      DEPLOY: `${"-".repeat(5)}BEGIN OPENSSH PRIVATE KEY${"-".repeat(5)}\nabc`,
+      MIRROR: " https://app:hunter2hunter2@mirror.example.com/",
+      XDG_SESSION_ID: "3",
+      TERM_SESSION_ID: "w0t0p0",
+      SESSION_MANAGER: "local/host:@/tmp/.ICE-unix/1",
+      HOME_PAGE: "https://example.com/a@b",
+      EDITOR: "vim",
+    });
+    expect(Object.keys(env).toSorted()).toEqual([
+      "EDITOR",
+      "HOME_PAGE",
+      "SESSION_MANAGER",
+      "TERM_SESSION_ID",
+      "XDG_SESSION_ID",
+    ]);
+    expect(removed).toHaveLength(24);
+  });
+
+  it("keeps a variable called __proto__ like any other", () => {
+    const env = Object.fromEntries([["__proto__", "plain"]]);
+    expect(Object.entries(filterEnvironment(env).env)).toEqual([["__proto__", "plain"]]);
+  });
+
+  it("redacts the password inside a URL or a connection string on its own", () => {
+    const { secrets } = filterEnvironment({
+      DATABASE_URL: "postgres://app:hunter2%21hunter2@db.internal/app",
+      LIBPQ: "host=db password=s3cr3tvalue",
+      DB_PASSWORD: "hunter2",
+      FLAG_TOKEN: "true",
+    });
+    expect(secrets).toEqual(
+      expect.arrayContaining(["hunter2%21hunter2", "hunter2!hunter2", "s3cr3tvalue", "hunter2"]),
+    );
+    expect(secrets).not.toContain("true");
+    const redactor = makeRedactor(secrets);
+    expect(
+      redactor.push("psql postgres://app:hunter2%21hunter2@db.internal/other") + redactor.end(),
+    ).toBe(`psql postgres://app:${REDACTED}@db.internal/other`);
+  });
+
+  it("gives the same answer however two values that start alike are cut", () => {
+    const secrets = ["abcdefgh", "abcdefghIJKLMNOP"];
+    const text = "-abcdefghIJKLMNOP-abcdefghIJK-";
+    const whole = inChunks(secrets, text, []);
+    expect(whole).toBe(`-${REDACTED}-${REDACTED}IJK-`);
+    for (let cut = 1; cut < text.length; cut += 1)
+      expect(inChunks(secrets, text, [cut]), `cut at ${cut}`).toBe(whole);
+  });
+
+  it("joins two values that overlap into one mark, leaving no tail of either", () => {
+    const secrets = ["aaaaXXXXbbbb", "XXXXbbbbcccc"];
+    const text = "aaaaXXXXbbbbcccc!";
+    for (let cut = 0; cut < text.length; cut += 1)
+      expect(inChunks(secrets, text, [cut]), `cut at ${cut}`).toBe(`${REDACTED}!`);
+  });
+
+  it("matches the plain answer for random values, text and cuts", () => {
+    // A fixed seed: the same cases every run.
+    let seed = 0x2f6e2b1;
+    const random = (below: number) => {
+      seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
+      return seed % below;
+    };
+    const word = (length: number) => Array.from({ length }, () => "ab"[random(2)]).join("");
+    for (let round = 0; round < 3000; round += 1) {
+      const secrets = Array.from({ length: 1 + random(3) }, () => word(6 + random(4)));
+      const text = word(20 + random(40));
+      const cuts = Array.from({ length: random(5) }, () => random(text.length)).toSorted(
+        (a, b) => a - b,
+      );
+      const got = inChunks(secrets, text, cuts);
+      if (got !== reference(secrets, text))
+        expect.fail(`${JSON.stringify({ secrets, text, cuts })} gave ${got}`);
+    }
+  });
+
+  it("never holds back more than a value's length", () => {
+    const redactor = makeRedactor(["ghp_0123456789abcdefghij"]);
+    let out = "";
+    for (let index = 0; index < 500; index += 1) {
+      out += redactor.push("ghp_0123456789abcdefghi-");
+      expect(out.length).toBeGreaterThanOrEqual((index + 1) * 24 - 24);
+    }
+  });
+
+  it("stays quick on a long value that almost repeats", () => {
+    const secret = `${"a".repeat(200_000)}b`;
+    const redactor = makeRedactor([secret]);
+    const started = performance.now();
+    let out = redactor.push(`${"a".repeat(200_000)}c`);
+    for (let index = 0; index < 50; index += 1) out += redactor.push("a".repeat(4000));
+    out += redactor.push("b") + redactor.end();
+    // The quadratic way took a minute and a half for the first push alone.
+    expect(performance.now() - started).toBeLessThan(5000);
+    expect(out.endsWith(REDACTED)).toBe(true);
+  });
+});
