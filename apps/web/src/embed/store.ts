@@ -21,6 +21,8 @@ export interface EmbedShellState {
   readonly titles: Readonly<Record<string, string>>;
   /** Whether the sidebar lists Gram's workspaces and threads. */
   readonly threads: "shown" | "hidden";
+  /** Mounted by an app in front of Gram on a server with hosted features on. Set once, at mount. */
+  readonly hosted: boolean;
   /** The page at `/` in place of Gram's home. Set once, at mount. */
   readonly home: ComponentType<ShellPageProps> | undefined;
 }
@@ -30,6 +32,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   workspaceSwitcher: undefined,
   titles: {},
   threads: "shown",
+  hosted: false,
   home: undefined,
 }));
 
@@ -39,6 +42,7 @@ export const EMPTY_SHELL: EmbedShellState = {
   workspaceSwitcher: undefined,
   titles: {},
   threads: "shown",
+  hosted: false,
   home: undefined,
 };
 

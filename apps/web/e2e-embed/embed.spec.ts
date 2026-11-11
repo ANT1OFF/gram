@@ -104,8 +104,9 @@ test("the switcher is the embedding app's, in the sidebar and then in the title 
     page.getByTestId("embed-rail-navigation").getByRole("link", { name: "Govern: Policies" }),
   ).toBeVisible();
 
-  // Hidden: the title bar carries it instead.
-  await page.getByTestId("overview-hide").click();
+  // Hidden (the strip leaves hiding to the key): the title bar carries it instead.
+  await page.locator("main").click({ position: { x: 600, y: 300 } });
+  await page.keyboard.press("ControlOrMeta+b");
   await expect(
     page.locator('[data-testid="embed-switcher"][data-placement="titlebar"]'),
   ).toBeVisible();
@@ -186,12 +187,12 @@ test("a group can lead the sidebar, above the threads, with counts", async ({ pa
   });
   await expect(main.getByTestId("embed-navigation-count")).toHaveText("12");
 
-  // Compact: the group's tiles above the workspaces', a dot on the one with a count.
+  // Compact: the group's tiles above the foot's, a dot on the one with a count.
   await page.getByTestId("overview-compact").click();
   const railMain = page.getByTestId("embed-rail-navigation-main");
   const tile = railMain.getByRole("link", { name: "Build: Runs, 12" });
   await expect(tile.getByTestId("embed-navigation-dot")).toBeVisible();
-  expect(await top("embed-rail-navigation-main")).toBeLessThan(await top("overview-tile"));
+  expect(await top("embed-rail-navigation-main")).toBeLessThan(await top("hosted-rail-history"));
   expect(errors).toEqual([]);
 });
 
@@ -206,13 +207,71 @@ test("the sidebar can leave Gram's workspaces and threads out", async ({ page })
   // The host's places and Gram's search stay.
   await expect(page.getByTestId("embed-navigation-main")).toBeVisible();
   await expect(page.getByTestId("overview-search")).toBeVisible();
-  await page.getByTestId("overview-compact").click();
-  await expect(page.getByTestId("embed-rail-navigation-main")).toBeVisible();
-  await expect(page.getByTestId("overview-tile")).toHaveCount(0);
   await page.evaluate(() => {
     (window as unknown as Update).embed.update({ threads: "shown" });
   });
-  await expect(page.getByTestId("overview-tile").first()).toBeVisible();
+  await expect(page.getByTestId("overview-section-solo")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("compact, the sidebar is a quiet strip that opens over the page on hover", async ({
+  page,
+}) => {
+  const errors = await mounted(page, "/govern/policies");
+  await page.getByTestId("overview-compact").click();
+  const strip = page.getByTestId("overview-rail");
+  await expect(strip).toHaveAttribute("data-hosted", "");
+  // What the open sidebar holds, in its order, and no workspace or thread tiles.
+  await expect(strip.getByTestId("embed-switcher")).toBeVisible();
+  await expect(strip.getByTestId("hosted-rail-needs-you-dot")).toBeVisible();
+  await expect(strip.getByTestId("hosted-rail-search")).toBeVisible();
+  await expect(strip.getByRole("link", { name: "Govern: Policies" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(strip.getByTestId("hosted-rail-history")).toBeVisible();
+  await expect(page.getByTestId("overview-tile")).toHaveCount(0);
+  // Once the column has finished narrowing.
+  await expect.poll(async () => (await strip.boundingBox())?.width).toBe(60);
+  const mainBox = await page.locator("main").boundingBox();
+
+  // Resting on it opens the sidebar beside it, over the page: the page doesn't move.
+  const overlay = page.getByTestId("hosted-rail-overlay");
+  await strip.hover({ position: { x: 20, y: 400 } });
+  await expect(overlay).toBeVisible();
+  await expect
+    .poll(async () => {
+      const [over, beside] = [await overlay.boundingBox(), await strip.boundingBox()];
+      return Math.round((over?.x ?? 0) - (beside?.x ?? 0) - (beside?.width ?? 0));
+    })
+    .toBe(0);
+  expect((await page.locator("main").boundingBox())?.x).toBe(mainBox?.x);
+  await expect(overlay.getByTestId("embed-navigation-main")).toBeVisible();
+  // Leaving both closes it.
+  await page.mouse.move(900, 400);
+  await expect(overlay).toHaveCount(0);
+
+  // Escape closes it; a row picked in it closes it as it goes there.
+  await strip.hover({ position: { x: 20, y: 400 } });
+  await expect(overlay).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(overlay).toHaveCount(0);
+  await page.mouse.move(900, 400);
+  await strip.hover({ position: { x: 20, y: 400 } });
+  await overlay.getByRole("link", { name: "Limits" }).click();
+  await expect(page.getByTestId("fixture-cap")).toBeVisible();
+  await expect(overlay).toHaveCount(0);
+
+  // The keyboard opens it too, and its pin keeps the sidebar open.
+  await page.mouse.move(900, 400);
+  await strip.getByTestId("hosted-rail-search").focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(overlay).toBeVisible();
+  await overlay.getByTestId("overview-pin").click();
+  await expect(page.getByTestId("overview-rail")).toHaveCount(0);
+  await expect(page.getByTestId("overview-sidebar")).toBeVisible();
+  await expect(page.getByTestId("overview-compact")).toBeVisible();
   expect(errors).toEqual([]);
 });
 

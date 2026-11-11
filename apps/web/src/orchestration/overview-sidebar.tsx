@@ -17,6 +17,7 @@ import {
   Hourglass,
   LaptopMinimalCheck,
   Link2,
+  PanelLeft,
   PanelLeftClose,
   Timer,
   type LucideIcon,
@@ -325,7 +326,17 @@ function useRevealViewed() {
  * a phone it is the drawer's content: Search and New task at its top, no sidebar toggles, and no
  * usage at its foot (the header's More has it).
  */
-export function OverviewSidebar({ phone = false }: { phone?: boolean }) {
+export function OverviewSidebar({
+  phone = false,
+  onPin,
+}: {
+  phone?: boolean;
+  /**
+   * Shown over the page from the hosted compact strip: its header's one toggle keeps it open
+   * (`onPin`) in place of Hide and Compact.
+   */
+  onPin?: () => void;
+}) {
   const hideHint = useShortcutHint("sidebar.toggle");
   useRevealViewed();
   // The optional sections Settings → General turned off.
@@ -340,6 +351,7 @@ export function OverviewSidebar({ phone = false }: { phone?: boolean }) {
       data-testid="overview-sidebar"
       data-surface="chrome"
       {...{ [OVERVIEW_ROOT]: "open" }}
+      data-overlay={onPin === undefined ? undefined : ""}
       className="flex min-h-0 flex-1 flex-col border-r border-sidebar-divider bg-sidebar text-sidebar-foreground"
     >
       {phone ? (
@@ -354,41 +366,62 @@ export function OverviewSidebar({ phone = false }: { phone?: boolean }) {
           for them all beside the buttons, the rest wrap to a row below rather than clip. Its
           room past those buttons decides whether New says its words. */}
           <div className="@container/overview-head flex min-h-(--titlebar-height) shrink-0 flex-wrap content-start items-center gap-1 px-2 py-1.5 pl-[max(--spacing(2),var(--window-lights-inset))] [-webkit-app-region:drag]">
-            {/* Each icon says what it does the moment it's hovered, with its key where it has one. */}
-            <Hint
-              label={withHint("Hide sidebar", hideHint)}
-              side="bottom"
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Hide sidebar"
-                  data-testid="overview-hide"
-                  className="text-muted-foreground [-webkit-app-region:no-drag]"
-                  onClick={toggleOverviewSidebar}
-                />
-              }
-            >
-              <PanelLeftClose />
-            </Hint>
-            {/* The sidebar's own two, side by side and drawn apart: Hide folds it away, Compact
+            {onPin !== undefined ? (
+              <Hint
+                label="Keep sidebar open"
+                side="bottom"
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Keep sidebar open"
+                    data-testid="overview-pin"
+                    className="text-muted-foreground [-webkit-app-region:no-drag]"
+                    onClick={onPin}
+                  />
+                }
+              >
+                <PanelLeft />
+              </Hint>
+            ) : (
+              <>
+                {/* Each icon says what it does the moment it's hovered, with its key where it has one. */}
+                <Hint
+                  label={withHint("Hide sidebar", hideHint)}
+                  side="bottom"
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Hide sidebar"
+                      data-testid="overview-hide"
+                      className="text-muted-foreground [-webkit-app-region:no-drag]"
+                      onClick={toggleOverviewSidebar}
+                    />
+                  }
+                >
+                  <PanelLeftClose />
+                </Hint>
+                {/* The sidebar's own two, side by side and drawn apart: Hide folds it away, Compact
             narrows it to tiles. Settings is at the foot, beside History. */}
-            <Hint
-              label="Compact sidebar: workspaces as tiles"
-              side="bottom"
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Compact sidebar"
-                  data-testid="overview-compact"
-                  className="text-muted-foreground [-webkit-app-region:no-drag]"
-                  onClick={() => switchOverview("compact")}
-                />
-              }
-            >
-              <FoldHorizontal />
-            </Hint>
+                <Hint
+                  label="Compact sidebar: workspaces as tiles"
+                  side="bottom"
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Compact sidebar"
+                      data-testid="overview-compact"
+                      className="text-muted-foreground [-webkit-app-region:no-drag]"
+                      onClick={() => switchOverview("compact")}
+                    />
+                  }
+                >
+                  <FoldHorizontal />
+                </Hint>
+              </>
+            )}
             <UpdatePill size="xs" />
             <NewEntryMenu />
           </div>

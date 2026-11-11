@@ -104,6 +104,14 @@ is drawn at the row's end, and as a dot on its compact tile.
 drawer and the compact sidebar, for an app whose own places lead. Needs you, search and the
 palette still reach every thread, and a thread still opens from its address.
 
+**The compact sidebar.** Mounted on a server with hosted features on, the compact sidebar is a
+quiet strip of what the open one holds, in its order: your switcher, Needs you (a dot while
+anything waits), Search, your `main` groups' icons a gap apart, then at the foot your `foot`
+groups, History and Settings. It has no workspace or thread tiles. Resting the pointer on it, or
+moving keyboard focus into it, slides the open sidebar over the page beside it; leaving both,
+Escape, or going somewhere closes it, and its pin keeps the sidebar open. Gram on its own keeps its
+rail.
+
 **A home page.** `home` (`{ title, component }`) is the page at `/`, in place of Gram's own home
 and its first-run welcome ("Open a repository"), which is then never shown. Its title shows as an
 added page's does.
