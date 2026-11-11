@@ -68,6 +68,7 @@ export * from "./rpc.ts";
 export * from "./app-windows.ts";
 export * from "./checkout-use.ts";
 export * from "./hosts.ts";
+export * from "./device.ts";
 export * from "./diagnostics.ts";
 export * from "./runtime-features.ts";
 export * from "./git-refresh.ts";

@@ -240,9 +240,10 @@ whose person isn't a member, or whose organisation has devices off. The control 
 whose signature doesn't verify against the key in the front's statement, whose time is more than
 two minutes off, or whose nonce it has seen; the nonce record is the workspace's own and survives
 a restart, as a joined machine's does. This signature protects against a stolen token and a
-confused front; it gives nothing against a dishonest front, which names the key. The token is
-renewed over the socket (`device.renew`) before it expires, and **the device closes the socket
-itself** if renewal fails, without waiting for the server to.
+confused front; it gives nothing against a dishonest front, which names the key. Before the
+token expires the control plane asks for a fresh one over the socket (`device.token`), which the
+device mints from its own sign-in. **The device closes the socket itself** when it can't, and at
+the old token's expiry whether or not it was asked, without waiting for the server to.
 
 ### The turn grant
 
@@ -271,14 +272,14 @@ The service is **its own small group, `DeviceRpcs`, not `HostRpcs` with calls re
 that isn't in the table doesn't exist on this connection, and a new host call never appears here
 by default. The control plane is the client; the app's main process serves.
 
-| Call                | Payload                                                                                                          | Answers                                                                                                                 |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `device.hello`      | –                                                                                                                | `{ protocol: 1, deviceId, platform, capabilities, folders: [{ id, label }] }`                                           |
-| `device.exec`       | `{ requestId, grant, thread: { id, title }, actor: { id, name }, folderId, cwd?, command, timeoutMs?, reason? }` | stream: `asked`, then `refused { why }` or `started`, `output { stream, text }` …, `exit { code \| signal, truncated }` |
-| `device.files.list` | `{ requestId, grant, thread, actor, folderId, path, limit }`                                                     | names, kinds and sizes; or `refused { why }`                                                                            |
-| `device.files.read` | `{ requestId, grant, thread, actor, folderId, path, maxBytes }`                                                  | text or bytes, bounded; or `refused { why }`                                                                            |
-| `device.cancel`     | `{ requestId }`                                                                                                  | withdraws the ask or stops the command                                                                                  |
-| `device.renew`      | `{ accessToken }`                                                                                                | – (sent by the app; the one call in this direction)                                                                     |
+| Call                | Payload                                                                                                                        | Answers                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `device.hello`      | –                                                                                                                              | `{ protocol: 1, deviceId, platform, capabilities, folders: [{ id, label }] }`                                                     |
+| `device.exec`       | `{ requestId, grant, thread: { id, title }, actor: { id, name }, othersWrote?, folderId, cwd?, command, timeoutMs?, reason? }` | stream: `asked`, then `refused { why }` or `started`, `output { stream, text }` …, `exit { code \| signal, truncated, timedOut }` |
+| `device.files.list` | `{ requestId, grant, thread, actor, folderId, path, limit }`                                                                   | names, kinds and sizes; or `refused { why }`                                                                                      |
+| `device.files.read` | `{ requestId, grant, thread, actor, folderId, path, maxBytes }`                                                                | text or bytes, bounded; or `refused { why }`                                                                                      |
+| `device.cancel`     | `{ requestId }`                                                                                                                | withdraws the ask or stops the command                                                                                            |
+| `device.token`      | –                                                                                                                              | `{ accessToken }`: a fresh token for this connection, minted by the device                                                        |
 
 Notes that matter:
 
