@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
+import { useHostHome } from "@/embed/store";
 
 // Whether the first run shows, apart from the welcome screen itself, which the shell's sidebar and
 // title bar ask about on every launch and only a first run draws.
@@ -30,7 +31,9 @@ export function useFirstRun(): boolean {
     if (!settings || useWelcome.getState().open !== undefined) return;
     useWelcome.setState({ open: !settings.onboarding.welcomeSeen });
   }, [settings]);
-  return open === true && settled && workspaces.length === 0;
+  // An app in front of Gram that supplies the home page has its own way in: no welcome.
+  const hostHome = useHostHome();
+  return !hostHome && open === true && settled && workspaces.length === 0;
 }
 
 /**
