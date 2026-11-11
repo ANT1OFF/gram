@@ -1198,6 +1198,26 @@ describe("digestDiff", () => {
     expect(loud.worthWaking).toBe(true);
   });
 
+  it("tells once that the user moved a worker to the other agent, and wakes for it", () => {
+    const before = ledgerWorker({ agent: "claude", status: "idle" });
+    const after = ledgerWorker({ agent: "codex", status: "idle" });
+    const diff = digest([before], [after]);
+    expect(diff.changes).toEqual([
+      expect.objectContaining({
+        threadId: W1,
+        from: "working",
+        to: "working",
+        note: "continues in Codex (the user switched it)",
+      }),
+    ]);
+    expect(diff.worthWaking).toBe(true);
+    expect(diff.nextSnapshot[W1]?.agent).toBe("codex");
+    // Said once: the next digest has nothing more about it.
+    expect(digest([after], [after]).changes).toEqual([]);
+    // A snapshot from before agents were kept says nothing.
+    expect(digest([ledgerWorker()], [after]).changes).toEqual([]);
+  });
+
   it("lists a paused feature's changes and reports without waking for them", () => {
     const failed = ledgerWorker({ state: "error" });
     const other = ledgerWorker({ threadId: W2, feature: "docs", title: "Docs", state: "error" });

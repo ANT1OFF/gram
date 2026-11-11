@@ -31,6 +31,13 @@ export interface PickerOption<V extends string> {
   group?: string | undefined;
   /** The model picker's mark beside the row, for a list of more than one agent's models. */
   icon?: ReactNode;
+  /** Greyed, and can't be picked; why is said where the list says it (a group's heading). */
+  disabled?: boolean | undefined;
+  /**
+   * A pick opens something to confirm rather than setting the value, as another agent's model
+   * opens "Continue in Codex": it is never the current value, and has no star.
+   */
+  opens?: boolean | undefined;
 }
 
 interface PickerProps<V extends string> {

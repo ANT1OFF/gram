@@ -1,5 +1,6 @@
 import {
   prioritizeDigestReports,
+  type AgentKind,
   type DigestReport,
   type DreamReport,
   type FeatureGroupLedgerEntry,
@@ -37,7 +38,10 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { MessageResponse } from "@/components/ai-elements/message";
+import { Hint } from "@/components/hint";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { modelDisplayName, useModels } from "@/composer/models";
 import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 import { useBesideLink } from "@/orchestration/beside-link";
@@ -59,6 +63,13 @@ import { StageChip } from "@/orchestration/stage-stepper";
 import { OutboundLink } from "@/panels/outbound-link";
 import { useThreadsStore } from "@/stores/threads";
 
+import {
+  AGENT_SHORT,
+  otherAgent,
+  switchDividerBefore,
+  switchDividerLabel,
+  switchLimitMeta,
+} from "./agent-switch-model";
 import {
   budgetLine,
   budgetSpent,
@@ -670,8 +681,13 @@ export function MemoryWriteRow({ write }: { write: MemoryWrite }) {
   );
 }
 
-/** Where an orchestrator's agent session was replaced by a fresh one; looks like a chapter. */
+/**
+ * Where a thread's agent session was replaced by a fresh one; looks like a chapter. A switch to the
+ * other agent says where it continued, on what and when, names the session before on hover, and
+ * folds open what the new agent was given.
+ */
 export function HandoffDivider({ handoff }: { handoff: Handoff }) {
+  if (handoff.reason === "switch") return <SwitchDivider handoff={handoff} />;
   return (
     <div
       data-testid="handoff"
@@ -680,6 +696,99 @@ export function HandoffDivider({ handoff }: { handoff: Handoff }) {
       <span className="h-px flex-1 bg-border" />
       {handoffLabel(handoff)}
       <span className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+/** A model's name as the picker shows it, when the handoff recorded one. */
+const nameOf = (models: Parameters<typeof modelDisplayName>[0], agent: AgentKind, id?: string) =>
+  id === undefined ? undefined : modelDisplayName(models, agent, id);
+
+/** "Continued in Codex · GPT-6.1-Sol · 14:02", and under its chevron "What Codex was given". */
+function SwitchDivider({ handoff }: { handoff: Handoff }) {
+  const from = handoff.previousAgent ?? "claude";
+  const to = otherAgent(from);
+  const toModels = useModels(to);
+  const fromModels = useModels(from);
+  const label = switchDividerLabel(handoff, nameOf(toModels, to, handoff.model));
+  const before = switchDividerBefore(handoff, nameOf(fromModels, from, handoff.previousModel));
+  const meta = switchLimitMeta(handoff);
+  return (
+    <Collapsible data-testid="handoff" data-reason="switch" className="my-3">
+      <div className="flex items-center gap-3 text-meta font-medium text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        <Hint
+          label={before}
+          side="bottom"
+          render={
+            <CollapsibleTrigger
+              data-testid="handoff-trigger"
+              aria-description={before}
+              className="group flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:focus-ring"
+            />
+          }
+        >
+          <ChevronRight
+            aria-hidden
+            className="size-icon-chip shrink-0 transition-transform duration-(--dur-fast) group-data-[panel-open]:rotate-90"
+          />
+          {label}
+        </Hint>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+      <CollapsibleContent className="gram-collapse">
+        <HandoffGiven handoff={handoff} to={to} />
+      </CollapsibleContent>
+      {meta !== undefined && (
+        <p data-testid="handoff-limit" className="mt-3 text-meta text-muted-foreground">
+          {meta}
+        </p>
+      )}
+    </Collapsible>
+  );
+}
+
+/**
+ * The note's and facts' Markdown at the fold's own size: lists indented inside the box, little gap
+ * between lines. Headings are sized in `globals.css`, where the transcript's are.
+ */
+const GIVEN_PROSE =
+  "text-reading [&_ol]:my-0.5 [&_ol]:pl-5 [&_ul]:my-0.5 [&_ul]:pl-5 [&_li]:my-0 [&_li]:py-0 [&_p]:my-1";
+
+/** What the new agent was given, read only: the note and who wrote it, then Gram's facts. */
+function HandoffGiven({ handoff, to }: { handoff: Handoff; to: AgentKind }) {
+  const name = AGENT_SHORT[to];
+  return (
+    <div
+      data-testid="handoff-given"
+      data-handoff-given
+      className="mt-2 flex flex-col gap-3 rounded-md border border-border bg-surface-1 p-3 text-reading"
+    >
+      <h4 className="font-medium">What {name} was given</h4>
+      <div className="flex flex-col gap-1">
+        <span className="text-meta text-muted-foreground">
+          {handoff.note === undefined
+            ? handoff.noteMode === "none"
+              ? "No note: you left it out"
+              : handoff.noteMode === "limit"
+                ? `Note · ${name} writes it in its first turn`
+                : "No note"
+            : `Note · by ${AGENT_SHORT[handoff.note.by]}`}
+        </span>
+        {handoff.note !== undefined && (
+          <div data-testid="handoff-note" className={GIVEN_PROSE}>
+            <MessageResponse>{handoff.note.text}</MessageResponse>
+          </div>
+        )}
+      </div>
+      {handoff.facts !== undefined && (
+        <div className="flex flex-col gap-1">
+          <span className="text-meta text-muted-foreground">Facts · from Gram</span>
+          <div data-testid="handoff-facts" className={GIVEN_PROSE}>
+            <MessageResponse>{handoff.facts}</MessageResponse>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

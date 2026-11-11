@@ -276,6 +276,72 @@ describe("the choices popover", () => {
     expect(chip().querySelector("[data-testid=pulse-once]")).not.toBeNull();
   });
 
+  it("lists another agent's models under its mark, and a pick there opens without setting", async () => {
+    const user = userEvent.setup();
+    const onModel = vi.fn();
+    const onPicked = vi.fn();
+    const withOther = (disabled: boolean): ChoiceSection[] => {
+      const [model, ...rest] = sections();
+      return [
+        {
+          ...model!,
+          options: [
+            ...MODELS.map((option) => ({ ...option, group: "Claude Code" })),
+            {
+              value: "continue-in:sol",
+              label: "GPT-6.1-Sol…",
+              group: "Codex",
+              opens: true,
+              disabled,
+            },
+          ],
+          onChange: onModel,
+          search: {
+            heads: {
+              "Claude Code": { mark: <svg />, hint: "Claude Code" },
+              Codex: {
+                mark: <svg />,
+                hint: disabled
+                  ? "Sign in to Codex in Settings → Agents."
+                  : "Continue in Codex: new session with a handoff",
+              },
+            },
+          },
+        },
+        ...rest,
+      ];
+    };
+    const view = render(
+      <ComposerChoices sections={withOther(false)} mark={<svg />} onPicked={onPicked} />,
+    );
+    await user.click(chip());
+    const marks = await screen.findAllByTestId("model-group-mark");
+    expect(marks.map((mark) => mark.getAttribute("aria-label"))).toEqual([
+      "Claude Code",
+      "Continue in Codex: new session with a handoff",
+    ]);
+    // No star on a row that opens something: it isn't one of this agent's models.
+    expect(screen.queryByRole("button", { name: "Add GPT-6.1-Sol… to favourites" })).toBeNull();
+    await user.click(screen.getByRole("option", { name: "GPT-6.1-Sol…" }));
+    expect(onModel).toHaveBeenCalledWith("continue-in:sol");
+    expect(onPicked).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByTestId("composer-choices-popup")).toBeNull());
+
+    // Greyed, it can't be picked, and its mark says why.
+    onModel.mockClear();
+    view.rerender(
+      <ComposerChoices sections={withOther(true)} mark={<svg />} onPicked={onPicked} />,
+    );
+    await user.click(chip());
+    const greyed = await screen.findByRole("option", { name: "GPT-6.1-Sol…" });
+    expect(greyed.getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getAllByTestId("model-group-mark")[1]!.getAttribute("aria-label")).toBe(
+      "Sign in to Codex in Settings → Agents.",
+    );
+    await user.click(greyed);
+    expect(onModel).not.toHaveBeenCalled();
+  });
+
   it("greys a dimension that doesn't apply, saying why, and offers no list for it", async () => {
     const user = userEvent.setup();
     render(<ComposerChoices sections={sections({ efforts: [] })} />);

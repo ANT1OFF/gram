@@ -523,6 +523,8 @@ export interface ThreadStoreShape {
   firstMessages(threadId: ThreadId, count: number): Effect.Effect<ReadonlyArray<GramUIMessage>>;
   /** The thread's last `count` messages, in order, reading none before them. */
   lastMessages(threadId: ThreadId, count: number): Effect.Effect<ReadonlyArray<GramUIMessage>>;
+  /** Every message stored for one turn, its input and its whole reply, in order. */
+  turnMessages(threadId: ThreadId, turnId: TurnId): Effect.Effect<ReadonlyArray<GramUIMessage>>;
   /** How many messages the thread has, reading none of them. */
   messageCount(threadId: ThreadId): Effect.Effect<number>;
   /** Whether the thread has a message, or one in `role`, reading and decoding none of them. */
@@ -2377,6 +2379,13 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 SELECT seq, id, message FROM messages WHERE thread_id = ${threadId}
                 ORDER BY seq DESC LIMIT ${Math.max(0, Math.floor(count))}
               ) ORDER BY seq`.pipe(
+              Effect.flatMap((rows) => messageRows("messages", threadId, rows)),
+            ),
+          ),
+        turnMessages: (threadId, turnId) =>
+          run(
+            sql<{ id: string; message: string }>`SELECT id, message FROM messages
+              WHERE turn_id = ${turnId} AND thread_id = ${threadId} ORDER BY seq`.pipe(
               Effect.flatMap((rows) => messageRows("messages", threadId, rows)),
             ),
           ),

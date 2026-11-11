@@ -20,6 +20,8 @@ export type ThreadDialog =
   | { kind: "fork"; threadId: ThreadId; notice?: string }
   /** Only when the restart would cut a turn or background work off; at rest it just runs. */
   | { kind: "restartSession"; threadId: ThreadId }
+  /** "Continue in Codex": `model` is the one picked in the chip's group, else the default target. */
+  | { kind: "continueIn"; threadId: ThreadId; model?: string }
   /** Without a workspace, the repository added opens on New thread. */
   | { kind: "addRepo"; workspaceId?: WorkspaceId }
   | { kind: "removeWorkspace"; workspaceId: WorkspaceId }

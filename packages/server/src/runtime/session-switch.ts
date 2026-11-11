@@ -2,6 +2,7 @@
 // which claims the session, reopens it on the new model and releases it, or is cancelled.
 
 import * as Effect from "effect/Effect";
+import { randomUUID } from "node:crypto";
 import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
@@ -114,6 +115,158 @@ export const makeSessionSwitch = ({
   modeAfterSwitch,
   openSession,
 }: SessionSwitchDeps) => {
+  /**
+   * The target's startup, confirmed: its identity awaited, then under the runtime lock its final
+   * mode settled in the very write that marks the switch `ready`, before anything can be delivered
+   * to it, and the startup acknowledged. Shared by the switch and a restart's reopen of its target,
+   * so both keep the one order.
+   */
+  const confirmStartup = (
+    rt: Runtime,
+    threadId: ThreadId,
+    attemptId: string,
+    agent: Thread["model"]["agent"],
+    ack: Deferred.Deferred<AgentSession, AgentUnavailable>,
+  ) =>
+    Effect.gen(function* () {
+      const target = yield* Deferred.await(ack).pipe(
+        Effect.timeoutOrElse({
+          duration: "45 seconds",
+          orElse: () =>
+            Effect.fail(
+              new AgentUnavailable({
+                agent,
+                message:
+                  "The selected agent did not confirm startup. No fallback or automatic retry was started. Your queued messages remain held.",
+              }),
+            ),
+        }),
+      );
+      yield* locked(
+        rt,
+        Effect.gen(function* () {
+          const current = yield* store.getThread(threadId);
+          if (
+            isShuttingDown() ||
+            rt.closing ||
+            current.sessionSwitch?.id !== attemptId ||
+            current.sessionSwitch.phase !== "starting" ||
+            rt.session !== target ||
+            rt.switchOpening?.id !== attemptId
+          )
+            return yield* new InvalidState({
+              threadId,
+              message: "A stale startup cannot complete this switch.",
+            });
+          // Before `ready`, which lets system deliveries in (the orchestrator's boot digest, any
+          // thread's handoff): nothing reaches the target before its final mode.
+          const mode = yield* settleSwitchMode(modeAfterSwitch, target, current);
+          const ready = yield* store.updateThread(threadId, (t) => ({
+            ...t,
+            ...(mode === undefined ? {} : { mode }),
+            sessionSwitch: { ...current.sessionSwitch!, phase: "ready" },
+          }));
+          yield* publishUpsert(ready);
+          if (target.acceptSwitchStartup === undefined)
+            return yield* new AgentUnavailable({
+              agent,
+              message: "The selected harness cannot acknowledge this switch startup.",
+            });
+          // The exact attempt and installed owner are checked under the same runtime lock as disposal.
+          yield* target.acceptSwitchStartup(attemptId);
+          rt.switchOpening = undefined;
+          rt.reopening = false;
+          yield* setStatus(rt, "idle");
+        }),
+      );
+    });
+
+  /**
+   * A plain thread's or worker's switch still owing its handoff whose target has no session (a
+   * restart, or an archive that evicted it): the target reopens under a fresh attempt id, since a
+   * startup id is single use, back through `starting`, and is confirmed as the switch confirmed it,
+   * its mode settled before `ready` lets the handoff go. The divider stays under the first attempt
+   * (`handoff.divider`). An archived thread, or one whose session is there, is left as it is.
+   * Every failure once the claim is `starting`, at once or late, leaves the switch `failed`, its
+   * queue held, to be tried again. Returns the attempt id the claim has after.
+   */
+  const reopenSwitchTarget = (threadId: ThreadId, attemptId: string) =>
+    Effect.gen(function* () {
+      const rt = yield* getRuntime(threadId);
+      const ack = yield* Deferred.make<AgentSession, AgentUnavailable>();
+      const fresh = randomUUID();
+      // Set once this reopen has moved the claim to `starting`: from then on every way out but
+      // success, at once or late, takes the cleanup below.
+      let started = false;
+      return yield* Effect.gen(function* () {
+        const opening = yield* locked(
+          rt,
+          Effect.gen(function* () {
+            const thread = yield* store.getThread(threadId);
+            const change = thread.sessionSwitch;
+            if (
+              change?.id !== attemptId ||
+              change.phase !== "ready" ||
+              change.handoff === undefined
+            )
+              return yield* new InvalidState({
+                threadId,
+                message: "This switch is no longer waiting to give its handoff.",
+              });
+            // Archived, it opens nothing: the handoff waits for it to come back, as its queue does.
+            if (thread.parked || rt.session !== undefined || hasSessionFiber(threadId))
+              return undefined;
+            const next = yield* store.updateThread(threadId, (t) => ({
+              ...t,
+              sessionSwitch: {
+                ...change,
+                id: fresh,
+                phase: "starting",
+                handoff: { ...change.handoff!, divider: change.handoff!.divider ?? change.id },
+              },
+            }));
+            started = true;
+            yield* publishUpsert(next);
+            rt.switchOpening = { id: fresh, ack };
+            rt.reopening = true;
+            yield* openSession(rt, next, undefined, fresh);
+            return change.target.agent;
+          }),
+        );
+        if (opening === undefined) return attemptId;
+        yield* confirmStartup(rt, threadId, fresh, opening, ack);
+        return fresh;
+      }).pipe(
+        Effect.onExit((exit) =>
+          Exit.isSuccess(exit) || !started
+            ? Effect.void
+            : locked(
+                rt,
+                Effect.gen(function* () {
+                  if (rt.switchOpening?.id === fresh) rt.switchOpening = undefined;
+                  rt.reopening = false;
+                  const failure = Cause.findErrorOption(exit.cause);
+                  const failed = yield* store.updateThread(threadId, (t) =>
+                    t.sessionSwitch?.id === fresh && t.sessionSwitch.phase === "starting"
+                      ? {
+                          ...t,
+                          sessionSwitch: {
+                            ...t.sessionSwitch,
+                            phase: "failed",
+                            detail: Option.isSome(failure)
+                              ? failure.value.message
+                              : "The switch's new session didn't reopen. Queued input is held.",
+                          },
+                        }
+                      : t,
+                  );
+                  yield* publishUpsert(failed);
+                }),
+              ),
+        ),
+      );
+    });
+
   const switchSession: ThreadRuntimesShape["switchSession"] = (threadId, attemptId) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
@@ -130,12 +283,14 @@ export const makeSessionSwitch = ({
               threadId,
               message: "This switch attempt is no longer waiting for its checkpoint.",
             });
+          // Any thread's switch takes one whose last turn failed too: limit mode.
+          const errored = rt.status === "error" && change.handoff !== undefined;
           // A cold thread has no process to stop: no session, none starting, none left from a
           // switch. Its next session is the target's.
           const cold =
             change.phase === "checkpoint" &&
             !change.oldExited &&
-            rt.status === "cold" &&
+            (rt.status === "cold" || errored) &&
             rt.session === undefined &&
             rt.switchSource === undefined &&
             !hasSessionFiber(threadId);
@@ -147,6 +302,7 @@ export const makeSessionSwitch = ({
             rt.turn !== undefined ||
             (rt.status !== "idle" &&
               !cold &&
+              !errored &&
               !(change.phase === "retry" && (rt.status === "cold" || rt.status === "error"))) ||
             rt.background.length > 0 ||
             rt.activity.subagentsRunning ||
@@ -273,56 +429,7 @@ export const makeSessionSwitch = ({
             yield* openSession(rt, next, undefined, attemptId);
           }),
         );
-        const target = yield* Deferred.await(ack).pipe(
-          Effect.timeoutOrElse({
-            duration: "45 seconds",
-            orElse: () =>
-              Effect.fail(
-                new AgentUnavailable({
-                  agent: before.change.target.agent,
-                  message:
-                    "The selected agent did not confirm startup. No fallback or automatic retry was started. Your queued messages remain held.",
-                }),
-              ),
-          }),
-        );
-        yield* locked(
-          rt,
-          Effect.gen(function* () {
-            const current = yield* store.getThread(threadId);
-            if (
-              isShuttingDown() ||
-              rt.closing ||
-              current.sessionSwitch?.id !== attemptId ||
-              current.sessionSwitch.phase !== "starting" ||
-              rt.session !== target ||
-              rt.switchOpening?.id !== attemptId
-            )
-              return yield* new InvalidState({
-                threadId,
-                message: "A stale startup cannot complete this switch.",
-              });
-            // Before `ready`, which lets system deliveries in (the orchestrator's boot digest):
-            // nothing reaches the target before its final mode.
-            const mode = yield* settleSwitchMode(modeAfterSwitch, target, current);
-            const ready = yield* store.updateThread(threadId, (t) => ({
-              ...t,
-              ...(mode === undefined ? {} : { mode }),
-              sessionSwitch: { ...current.sessionSwitch!, phase: "ready" },
-            }));
-            yield* publishUpsert(ready);
-            if (target.acceptSwitchStartup === undefined)
-              return yield* new AgentUnavailable({
-                agent: before.change.target.agent,
-                message: "The selected harness cannot acknowledge this switch startup.",
-              });
-            // The exact attempt and installed owner are checked under the same runtime lock as disposal.
-            yield* target.acceptSwitchStartup(attemptId);
-            rt.switchOpening = undefined;
-            rt.reopening = false;
-            yield* setStatus(rt, "idle");
-          }),
-        );
+        yield* confirmStartup(rt, threadId, attemptId, before.change.target.agent, ack);
         return before.thread.agentSessionId;
       }).pipe(
         Effect.onExit((exit) =>
@@ -390,7 +497,7 @@ export const makeSessionSwitch = ({
       );
     });
 
-  return { switchSession };
+  return { switchSession, reopenSwitchTarget };
 };
 
 /** What claiming, cancelling and releasing a switch read and change. */

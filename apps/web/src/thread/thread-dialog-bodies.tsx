@@ -7,6 +7,7 @@ import { BindPrDialog } from "./bind-pr-dialog";
 import { CheckoutPrDialog } from "./checkout-pr-dialog";
 import { CloseAllThreadsDialog } from "./close-all-dialog";
 import { CloseThreadDialog } from "./close-thread-dialog";
+import { ContinueInDialog } from "./continue-in-dialog";
 import { ForkDialog } from "./fork-dialog";
 import { LabelsDialog } from "./labels-dialog";
 import { RenameThreadDialog } from "./rename-dialog";
@@ -60,6 +61,9 @@ export function ThreadDialogBody({
       )}
       {dialog.kind === "restartSession" && (
         <RestartSessionDialog threadId={dialog.threadId} onClose={dismiss} />
+      )}
+      {dialog.kind === "continueIn" && (
+        <ContinueInDialog threadId={dialog.threadId} model={dialog.model} onClose={dismiss} />
       )}
       {dialog.kind === "addRepo" && (
         <AddRepoDialog workspaceId={dialog.workspaceId} onClose={dismiss} />

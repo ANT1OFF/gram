@@ -3,6 +3,7 @@ import type { ThreadId } from "@gram/contracts";
 import { ArrowLeftRight, Check, Ellipsis, GitFork, SquareArrowOutUpRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { useOpenInEditor, useOpensLocally } from "@/editor/use-open-in-editor";
 import { MENU_ITEM, MENU_POPUP } from "@/lib/selection";
@@ -11,7 +12,10 @@ import { switchOpenLabel } from "@/orchestration/switch-label";
 import { useAllActivity } from "@/stores/all-activity";
 import { useThreadsStore } from "@/stores/threads";
 
+import { continueLabel } from "./agent-switch-model";
 import { ThreadMenuItems } from "./thread-action-items";
+import { useThreadDialogs } from "./thread-dialogs-store";
+import { useSwitchOffer } from "./use-switch-offer";
 import { useForkAvailability, useForkThread, WORKTREE_NOTICE } from "./use-fork";
 
 /** The dialogs the menu opens, each loaded the first time it's asked for or once the shell is idle. */
@@ -24,7 +28,10 @@ const forkDialog = lazyPart(() => import("./fork-dialog"));
  * "…" holds them, and so does the title bar's single "…" for the thread it carries.
  */
 export function useThreadMenu(threadId: ThreadId): {
-  /** The menu's items: an orchestrator's switch first, then the folder, Fork and the thread verbs. */
+  /**
+   * The menu's items: "Continue in Codex…" (any other thread's) or an orchestrator's switch first,
+   * then the folder, Fork and the thread verbs.
+   */
   items: (itemClassName: string) => ReactNode;
   /** The dialogs the items open, and a failed fork's line: render them beside the menu. */
   aside: ReactNode;
@@ -35,6 +42,8 @@ export function useThreadMenu(threadId: ThreadId): {
   const switchable =
     thread?.role === "orchestrator" && thread.workspaceId !== undefined ? thread : undefined;
   const [switching, setSwitching] = useState(false);
+  // Any other thread moves to the other agent from here, or from the composer's chip.
+  const offer = useSwitchOffer(threadId);
   const openInEditor = useOpenInEditor();
   const local = useOpensLocally();
   const { available, reason } = useForkAvailability(threadId);
@@ -49,6 +58,38 @@ export function useThreadMenu(threadId: ThreadId): {
 
   const items = (itemClassName: string) => (
     <>
+      {offer.offered && (
+        <>
+          {offer.refusal === undefined ? (
+            <Menu.Item
+              data-testid="menu-continue-in"
+              className={itemClassName}
+              onClick={() => useThreadDialogs.getState().open({ kind: "continueIn", threadId })}
+            >
+              <ArrowLeftRight aria-hidden className="size-icon-row" />
+              {continueLabel(offer.to)}…
+            </Menu.Item>
+          ) : (
+            // Greyed, it says why on hover, in the words the server would refuse with.
+            <Hint
+              label={offer.refusal}
+              side="bottom"
+              render={
+                <Menu.Item
+                  data-testid="menu-continue-in"
+                  disabled
+                  aria-description={offer.refusal}
+                  className={itemClassName}
+                />
+              }
+            >
+              <ArrowLeftRight aria-hidden className="size-icon-row" />
+              {continueLabel(offer.to)}…
+            </Hint>
+          )}
+          <div role="separator" className="-mx-1 my-1 h-px bg-border" />
+        </>
+      )}
       {switchable && (
         <>
           <Menu.Item

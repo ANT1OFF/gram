@@ -4,6 +4,13 @@ import type { TurnId, ThreadStatus, UserInput } from "@gram/contracts";
 import type * as Effect from "effect/Effect";
 
 /**
+ * The key of the handoff a thread's switch gives its new session. While a plain thread's or
+ * worker's switch is `ready`, it is the one delivery that may go: nothing reaches the new session
+ * before it.
+ */
+export const SWITCH_HANDOFF_KEY = "switch-handoff";
+
+/**
  * Why a system delivery didn't reach the agent. `ended` and `error` are the thread's status, when
  * it was asked or when it got there with the delivery still waiting; `buildFailed` is `build`
  * dying; `sendFailed` is `AgentSession.send` dying; `turnError` is the adapter ending the turn in
@@ -68,6 +75,13 @@ export interface SystemDelivery {
    * agent took the steer.
    */
   accepted(turnId: TurnId): Effect.Effect<void>;
+  /**
+   * The agent natively began the turn that carries it, before or without accepting it as above:
+   * its own turn start, or the first event of the turn (`DeliveryStart` lists what counts), which
+   * a refusal (Codex's rejected `turn/start`) never sends. Called at most once, ahead of `accepted`
+   * or `failed`, which are still called as they would be. Optional: most deliveries need only those.
+   */
+  started?(turnId: TurnId): Effect.Effect<void>;
   /** It did not reach the agent; `turnId` is absent when no turn was opened for it. */
   failed(turnId: TurnId | undefined, reason: SystemDeliveryFailure): Effect.Effect<void>;
 }

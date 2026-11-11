@@ -1012,6 +1012,8 @@ interface WorkerSnapshot {
   /** Kept so a worker that has gone can still be named. */
   readonly feature: string;
   readonly title: string;
+  /** The agent it ran on, so a switch the user made is told once. */
+  readonly agent?: AgentKind | undefined;
   /** Its latest `report.interface`. */
   readonly interface?: string | undefined;
   readonly overlapsWith: ReadonlyArray<string>;
@@ -1151,6 +1153,9 @@ const QUIET_STATES: ReadonlySet<WorkerState> = new Set<WorkerState>(["briefed", 
 
 /** Statuses of a worker that isn't doing anything and won't until someone writes to it. */
 const AT_REST: ReadonlySet<ThreadStatus> = new Set<ThreadStatus>(["idle", "cold"]);
+
+/** What the user calls each agent, for a digest's line on a worker the user switched. */
+const AGENT_WORDS: Readonly<Record<AgentKind, string>> = { claude: "Claude Code", codex: "Codex" };
 
 const WENT_QUIET = "ended its turn without reporting; read its last messages with get_thread";
 
@@ -1293,6 +1298,7 @@ export const digestDiff = (input: {
         state: worker.state,
         feature: worker.feature,
         title: worker.title,
+        ...(worker.agent === undefined ? {} : { agent: worker.agent }),
         ...(contract === undefined ? {} : { interface: contract }),
         overlapsWith: [...worker.overlapsWith].toSorted(),
         actionKey: actionEvidenceKey(worker),
@@ -1332,6 +1338,11 @@ export const digestDiff = (input: {
       );
       if (worker.worktreeMissing === true && before?.worktreeMissing !== true)
         remarks.push(WORKTREE_GONE);
+      // Only the user moves a worker to the other agent; its bindings and its orchestrator stay.
+      const switched =
+        before?.agent !== undefined && worker.agent !== undefined && before.agent !== worker.agent;
+      if (switched)
+        remarks.push(`continues in ${AGENT_WORDS[worker.agent!]} (the user switched it)`);
       if (newOverlaps.length > 0) {
         const files = worker.overlapFiles ?? [];
         remarks.push(
@@ -1371,6 +1382,7 @@ export const digestDiff = (input: {
       loud ||=
         !quietFeature &&
         (wentQuiet ||
+          switched ||
           actionChanged ||
           worker.worktreeMissing === true ||
           contract !== before.interface ||

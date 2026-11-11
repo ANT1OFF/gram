@@ -211,7 +211,8 @@ test("the new thread's model picker lists every agent's models, and a Codex pick
   const list = page.getByTestId("model-picker");
   await expect(list.getByText("Claude Code", { exact: true })).toBeVisible();
   await expect(list.getByText("Codex", { exact: true })).toBeVisible();
-  await search.fill("codex");
+  // The agent's name and part of the model's: the mock's Codex lists three.
+  await search.fill("codex 5.5");
   await expect(list.getByRole("option")).toHaveCount(1);
   await search.press("Enter");
   await expect(picker).toHaveAccessibleName(/GPT-5\.5/);

@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.20.0](https://github.com/ANT1OFF/gram/compare/v1.19.0...v1.20.0) (2026-11-11)
+
+
+### Features
+
+* embedding and hosting Gram's core, behind the hosted features setting ([#440](https://github.com/ANT1OFF/gram/issues/440)) ([64ab8c0](https://github.com/ANT1OFF/gram/commit/64ab8c050b9990ad87883153c0c42004b484d72f))
+* Gram's own messages steer into a running turn by default ([#407](https://github.com/ANT1OFF/gram/issues/407)) ([88def10](https://github.com/ANT1OFF/gram/commit/88def107aed9dc8ddce44d82b742e930aa2e5cc2))
+* show the model's name on the composer chip and an icon for each mode ([#397](https://github.com/ANT1OFF/gram/issues/397)) ([bf6ba1e](https://github.com/ANT1OFF/gram/commit/bf6ba1efb8a01a54fc8a36cdb62d8486bf828073))
+* sidebar waits fit as a glyph and the PR number, words on hover ([#402](https://github.com/ANT1OFF/gram/issues/402)) ([9a14f21](https://github.com/ANT1OFF/gram/commit/9a14f218ade5ed5d1d60ccd88c411cd1fec56f18))
+* the handoff for a switched thread ([#433](https://github.com/ANT1OFF/gram/issues/433)) ([2a51891](https://github.com/ANT1OFF/gram/commit/2a518918f3ed7d553b5c895090b2ab5c6786c714))
+* What's New lists what changed in the recommended models ([#381](https://github.com/ANT1OFF/gram/issues/381)) ([385a518](https://github.com/ANT1OFF/gram/commit/385a518735f5f46a8194b00f4a7e96eca982694b))
+
+
+### Bug Fixes
+
+* calculate routine sleeps when timer fibers start ([#393](https://github.com/ANT1OFF/gram/issues/393)) ([c548a4b](https://github.com/ANT1OFF/gram/commit/c548a4bd98defeca303149dd6c4470a630347b13))
+* dev-servers test binds a free port ([#437](https://github.com/ANT1OFF/gram/issues/437)) ([2ce8e32](https://github.com/ANT1OFF/gram/commit/2ce8e320f332f4046d6170d5790d82f3e116ece1))
+* device log test builds its long log without 20,000 appends ([#447](https://github.com/ANT1OFF/gram/issues/447)) ([8778535](https://github.com/ANT1OFF/gram/commit/87785357bf462f2b420f8e330dec5a44b0ae5b09))
+* refuse a cross-harness model in setModel ([#390](https://github.com/ANT1OFF/gram/issues/390)) ([0b21fad](https://github.com/ANT1OFF/gram/commit/0b21fad0703f299a2ca6bc15e8bc97984e937d61))
+* refuse a steer into a thread whose folder is gone ([#382](https://github.com/ANT1OFF/gram/issues/382)) ([baab263](https://github.com/ANT1OFF/gram/commit/baab263e7bc4e4dd799e85e009afddb84855de77))
+* retry a refused update stop once by itself, showing its progress ([#398](https://github.com/ANT1OFF/gram/issues/398)) ([eb26d27](https://github.com/ANT1OFF/gram/commit/eb26d279a813e7dc09369c5c2d2d57373d11d256))
+* stop the update tree check refusing its own ps read ([#396](https://github.com/ANT1OFF/gram/issues/396)) ([26e8e0e](https://github.com/ANT1OFF/gram/commit/26e8e0e9575d147df96f5956c961da74cd88a8bc))
+
 ## [1.19.0](https://github.com/ANT1OFF/gram/compare/v1.18.0...v1.19.0) (2026-11-10)
 
 
