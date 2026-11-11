@@ -130,12 +130,14 @@ export const makeSessionSwitch = ({
               threadId,
               message: "This switch attempt is no longer waiting for its checkpoint.",
             });
+          // Any thread's switch takes one whose last turn failed too: limit mode.
+          const errored = rt.status === "error" && change.handoff !== undefined;
           // A cold thread has no process to stop: no session, none starting, none left from a
           // switch. Its next session is the target's.
           const cold =
             change.phase === "checkpoint" &&
             !change.oldExited &&
-            rt.status === "cold" &&
+            (rt.status === "cold" || errored) &&
             rt.session === undefined &&
             rt.switchSource === undefined &&
             !hasSessionFiber(threadId);
@@ -147,6 +149,7 @@ export const makeSessionSwitch = ({
             rt.turn !== undefined ||
             (rt.status !== "idle" &&
               !cold &&
+              !errored &&
               !(change.phase === "retry" && (rt.status === "cold" || rt.status === "error"))) ||
             rt.background.length > 0 ||
             rt.activity.subagentsRunning ||

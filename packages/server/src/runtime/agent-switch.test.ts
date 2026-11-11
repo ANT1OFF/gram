@@ -19,8 +19,10 @@ import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
+import { FakeAgentAdapter, FakeAgentControl, type FakeSession } from "./fake-agent.ts";
 import { CheckoutService, TurnHooks } from "./hooks.ts";
+import { LIMIT_RESUME_TEXT } from "./limit-wait.ts";
+import { notePrompt } from "./switch-handoff.ts";
 import { RuntimeTestLayer, TEST_CONFIG, waitFor } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
@@ -57,20 +59,62 @@ const idleThread = Effect.gen(function* () {
   return { thread: yield* (yield* ThreadStore).getThread(thread.id), session };
 });
 
+/** The synthetic note the old session replies with, and the new session's reply to its handoff. */
+const NOTE = "Goal: ship the cart. Done: the model. Next: the view. Trap: the fixture clock.";
+const READY = "Ready.";
+
+/** A synthetic GitHub token, put together here so no file holds one whole. */
+const SYNTHETIC_TOKEN = ["ghp", "abcdefghijklmnopqrstuvwxyz0123"].join("_");
+
+const isNotePrompt = (text: string) => text.startsWith("Your session ends after this turn");
+const isHandoff = (text: string) => text.includes("\n<gram-handoff ");
+
+/** How many of each session's inputs have been answered by `answerSwitchTurns`. */
+const answered = new WeakMap<FakeSession, number>();
+
+/**
+ * Answers the switch's own turns on the thread's latest session, once each: the old session's note
+ * turn with `note`, the new session's handoff with `reply`.
+ */
+const answerSwitchTurns = (threadId: ThreadId, note = NOTE, reply = READY) =>
+  Effect.gen(function* () {
+    const fake = yield* FakeAgentControl;
+    const session = yield* fake.latest(threadId);
+    const last = session.sent.length - 1;
+    const input = session.sent[last];
+    if (input === undefined || (answered.get(session) ?? -1) >= last) return;
+    if (!isNotePrompt(input.text) && !isHandoff(input.text)) return;
+    answered.set(session, last);
+    yield* session.completeTurn(isNotePrompt(input.text) ? note : reply);
+  });
+
 /** The thread once its switch is over: released, idle, on the target's session. */
-const switched = (threadId: ThreadId) =>
+const switched = (threadId: ThreadId, note?: string, reply?: string) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
     const runtimes = yield* ThreadRuntimes;
     return yield* waitFor(
       "the switch to finish",
       Effect.gen(function* () {
+        yield* answerSwitchTurns(threadId, note, reply);
         const thread = yield* store.getThread(threadId);
         const status = yield* runtimes.status(threadId);
         return thread.sessionSwitch === undefined && status === "idle" && thread;
       }),
     );
   });
+
+/** The handoff the thread's latest session was given. */
+const handoffSent = (threadId: ThreadId) =>
+  Effect.gen(function* () {
+    const fake = yield* FakeAgentControl;
+    const text = (yield* fake.latest(threadId)).sent.find((input) => isHandoff(input.text))?.text;
+    expect(text).toBeDefined();
+    return text!;
+  });
+
+/** The recent-turns section of a handoff. */
+const recentTurnsOf = (handoff: string) => handoff.slice(handoff.indexOf("## Recent turns"));
 
 const handoffParts = (threadId: ThreadId) =>
   Effect.gen(function* () {
@@ -142,7 +186,7 @@ describe("switchAgent", () => {
       const store = yield* ThreadStore;
       const { thread, session } = yield* idleThread;
       yield* fake.setSwitchStopDelay("200 millis");
-      yield* runtimes.switchAgent(thread.id, CODEX);
+      yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
       yield* waitFor(
         "the old session stopping",
         store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch?.phase === "stopping")),
@@ -150,13 +194,17 @@ describe("switchAgent", () => {
       yield* runtimes.send(thread.id, { text: "two" });
       yield* fake.setSwitchStopDelay(undefined);
       yield* TestClock.adjust("300 millis");
-      yield* waitFor(
+      const next = yield* waitFor(
         "the message on the new session",
-        fake
-          .latest(thread.id)
-          .pipe(Effect.map((s) => s !== session && s.sent.some((input) => input.text === "two"))),
+        answerSwitchTurns(thread.id).pipe(
+          Effect.andThen(fake.latest(thread.id)),
+          Effect.map((s) => s !== session && s.sent.some((input) => input.text === "two") && s),
+        ),
       );
       expect(session.sent.map((input) => input.text)).toEqual(["one"]);
+      // After the handoff's turn, never before it or into it.
+      expect(next.sent.map((input) => isHandoff(input.text) || input.text)).toEqual([true, "two"]);
+      expect(next.steered).toEqual([]);
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
@@ -170,7 +218,7 @@ describe("switchAgent", () => {
       yield* runtimes.updateThread(thread.id, (t) => ({ ...t, parked: false }));
       const opened = fake.sessions.length;
 
-      yield* runtimes.switchAgent(thread.id, CODEX);
+      yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
       const after = yield* switched(thread.id);
       expect(after.model).toEqual(CODEX);
       expect(fake.sessions.length).toBe(opened + 1);
@@ -362,7 +410,7 @@ describe("switchAgent", () => {
       const fake = yield* FakeAgentControl;
       const { thread } = yield* idleThread;
       yield* fake.setSwitchStopFailure("synthetic stop failure");
-      yield* runtimes.switchAgent(thread.id, CODEX);
+      yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
       const failed = yield* waitFor(
         "the failed switch",
         store
@@ -438,7 +486,7 @@ describe("switchAgent", () => {
       const fake = yield* FakeAgentControl;
       const { thread, session } = yield* idleThread;
       yield* fake.setSwitchStopDelay("200 millis");
-      yield* runtimes.switchAgent(thread.id, CODEX);
+      yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
       yield* waitFor(
         "the old session stopping",
         store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch?.phase === "stopping")),
@@ -525,7 +573,7 @@ describe("switchAgent", () => {
         const fake = yield* FakeAgentControl;
         const { thread, session } = yield* idleThread;
         yield* fake.setSwitchStopDelay("200 millis");
-        yield* runtimes.switchAgent(thread.id, CODEX);
+        yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
         yield* waitFor(
           "the old session stopping",
           store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch?.phase === "stopping")),
@@ -563,7 +611,7 @@ describe("switchAgent", () => {
       const fake = yield* FakeAgentControl;
       const { thread, session } = yield* idleThread;
       yield* fake.setUnavailable("synthetic target refused to start");
-      yield* runtimes.switchAgent(thread.id, CODEX);
+      yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
       const after = yield* waitFor(
         "the switch rolled back",
         store
@@ -584,6 +632,256 @@ describe("switchAgent", () => {
       );
       expect(resumed.options.resumeId).toBe(thread.agentSessionId);
       expect(resumed.sent.map((i) => i.text)).toEqual(["two"]);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+});
+
+describe("switchAgent's handoff", () => {
+  it.effect("asks the old session for a note, holds the queue, and hands it over capped", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const { thread, session } = yield* idleThread;
+
+      yield* runtimes.switchAgent(thread.id, CODEX);
+      yield* waitFor(
+        "the note turn",
+        Effect.sync(() => session.sent.length === 2),
+      );
+      // The plan's wording, naming where the thread goes.
+      expect(session.sent[1]!.text).toBe(notePrompt("codex"));
+      expect(session.sent[1]!.text).toContain("continues in Codex");
+      // Input sent while the old session writes its note waits for the new one.
+      expect(yield* runtimes.send(thread.id, { text: "two" })).toMatchObject({ queued: true });
+      yield* session.completeTurn(
+        `Goal: ship it. Key ${SYNTHETIC_TOKEN} is in the env. ${"x".repeat(5000)}`,
+      );
+
+      const next = yield* waitFor(
+        "the handoff on the new session",
+        fake.latest(thread.id).pipe(Effect.map((s) => s !== session && s.sent.length === 1 && s)),
+      );
+      const handoff = next.sent[0]!.text;
+      expect(
+        handoff.startsWith("This thread was started in Claude Code and continues here in Codex."),
+      ).toBe(true);
+      expect(handoff).toContain("## Handoff note from Claude Code");
+      expect(handoff).toContain("Goal: ship it.");
+      expect(handoff).toContain("[redacted]");
+      expect(handoff).not.toContain("ghp_");
+      expect(handoff).toContain("[note cut at 4,000 characters]");
+      expect(handoff).toContain("- Path: /work/repo");
+      // The note turn is the switch's own: its prompt is not replayed as a turn.
+      expect(recentTurnsOf(handoff)).not.toContain("Your session ends after this turn");
+      expect(recentTurnsOf(handoff)).toContain("one");
+      // Nothing else reaches the new session until its handoff turn ends.
+      expect(session.sent.map((input) => input.text)).toEqual(["one", notePrompt("codex")]);
+      yield* next.completeTurn(READY);
+      yield* waitFor(
+        "the held message",
+        Effect.sync(() => next.sent.some((input) => input.text === "two")),
+      );
+      expect(next.steered).toEqual([]);
+
+      const [part] = yield* handoffParts(thread.id);
+      expect(part).toMatchObject({
+        reason: "switch",
+        previousAgent: "claude",
+        noteMode: "outgoing",
+      });
+      expect(part!.note!.by).toBe("claude");
+      expect(part!.note!.text.length).toBeLessThanOrEqual(4000);
+      expect(part!.note!.text).not.toContain("ghp_");
+      expect(part!.facts).toContain("- Path: /work/repo");
+      expect((yield* store.getThread(thread.id)).model).toEqual(CODEX);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("stays where it was when the note turn ends early for another reason", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const { thread, session } = yield* idleThread;
+      yield* runtimes.switchAgent(thread.id, CODEX);
+      yield* waitFor(
+        "the note turn",
+        Effect.sync(() => session.sent.length === 2),
+      );
+      expect(yield* runtimes.send(thread.id, { text: "two" })).toMatchObject({ queued: true });
+      yield* session.emit({ type: "turnEnd", reason: "interrupted" });
+      const after = yield* waitFor(
+        "the switch called off",
+        store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch === undefined && t)),
+      );
+      expect(after.model).toEqual(thread.model);
+      expect(after.agentSessionId).toBe(thread.agentSessionId);
+      expect(yield* handoffParts(thread.id)).toEqual([]);
+      expect(fake.sessions.some((s) => s.options.model?.agent === "codex")).toBe(false);
+      // What it held goes to the session it kept.
+      yield* waitFor(
+        "the held message on the old session",
+        Effect.sync(() => session.sent.some((input) => input.text === "two")),
+      );
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("sends facts and recent turns only when the user leaves the note out", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const { thread, session } = yield* idleThread;
+      yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
+      yield* switched(thread.id);
+      expect(session.sent.map((input) => input.text)).toEqual(["one"]);
+      const handoff = yield* handoffSent(thread.id);
+      expect(handoff).toContain("## Handoff note\n\nNone: the user switched without one.");
+      expect(handoff).toContain("## Facts from Gram");
+      expect(recentTurnsOf(handoff)).toContain("done");
+      expect(handoff).toContain("Reply with one line saying you have this context");
+      const [part] = yield* handoffParts(thread.id);
+      expect(part).toMatchObject({ noteMode: "none" });
+      expect(part!.note).toBeUndefined();
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect(
+    "in limit mode the new agent writes the note in its first turn, the queue held till it ends",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const fake = yield* FakeAgentControl;
+        const thread = yield* runtimes.create({
+          projectRoot: "/work/repo",
+          checkout: { kind: "main", path: "/work/repo" },
+          input: { text: "one" },
+        });
+        const session = yield* waitFor(
+          "the first send",
+          fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+        );
+        // The agent's own usage-limit report ends the turn: the thread waits out the limit.
+        yield* session.emit({
+          type: "turnEnd",
+          reason: "error",
+          error: "You've hit your session limit · resets 12:50pm (Europe/Oslo)",
+          failure: { kind: "rateLimit", httpStatus: 429, code: "rate_limit", retryable: true },
+        });
+        yield* waitFor(
+          "the limit wait",
+          store.getThread(thread.id).pipe(Effect.map((t) => t.limitWait !== undefined)),
+        );
+
+        // A new session that can take input mid-turn, which a notice would otherwise be steered into.
+        yield* fake.setSteerCapability(true);
+        yield* runtimes.switchAgent(thread.id, CODEX);
+        const next = yield* waitFor(
+          "the catch-up on the new session",
+          fake.latest(thread.id).pipe(Effect.map((s) => s !== session && s.sent.length === 1 && s)),
+        );
+        // No note turn on the old session: it can't take one.
+        expect(session.sent.map((input) => input.text)).toEqual(["one"]);
+        const handoff = next.sent[0]!.text;
+        expect(handoff).toContain("None: Claude Code couldn't write one, so you write it");
+        expect(handoff).toContain("Claude Code couldn't write a handoff note: it is out of usage");
+        expect(handoff).toContain("Before any work, write that note yourself");
+        // The old account's wait is over: nothing resumes the old turn on the new agent.
+        expect((yield* store.getThread(thread.id)).limitWait).toBeUndefined();
+
+        // Queued while the catch-up runs: held, never steered into it, Gram's own notices included,
+        // which a running turn would otherwise take mid-turn.
+        expect(
+          yield* runtimes.sendNotice(thread.id, "pr-monitor", { text: "CI passed on #7." }),
+        ).toMatchObject({ queued: true, steered: false });
+        expect(yield* runtimes.send(thread.id, { text: "two" })).toMatchObject({ queued: true });
+        for (let i = 0; i < 50; i++) yield* Effect.yieldNow;
+        expect(next.sent.map((input) => input.text)).toEqual([handoff]);
+        expect(next.steered).toEqual([]);
+        yield* next.completeTurn("Goal: one. Done: nothing yet. Next: retry one.");
+        // Then what was held, in order, each a turn of its own after the catch-up.
+        yield* waitFor(
+          "the held notice after the catch-up",
+          Effect.sync(() => next.sent.some((input) => input.text === "CI passed on #7.")),
+        );
+        expect(next.steered).toEqual([]);
+        yield* next.completeTurn("noted");
+        yield* waitFor(
+          "the held message after the catch-up",
+          Effect.sync(() => next.sent.some((input) => input.text === "two")),
+        );
+        expect(next.sent.some((input) => input.text === LIMIT_RESUME_TEXT)).toBe(false);
+
+        const parts = yield* waitFor(
+          "the note on the divider",
+          handoffParts(thread.id).pipe(Effect.map((p) => p[0]?.note !== undefined && p)),
+        );
+        expect(parts).toHaveLength(1);
+        expect(parts[0]).toMatchObject({
+          noteMode: "limit",
+          note: { by: "codex", text: "Goal: one. Done: nothing yet. Next: retry one." },
+        });
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("takes a thread whose last turn failed in limit mode too", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const { thread, session } = yield* idleThread;
+      yield* store.updateThread(thread.id, (t) => ({
+        ...t,
+        lastError: { kind: "unknown", retryable: false, text: "The agent stopped.", at: 1 },
+      }));
+      yield* runtimes.switchAgent(thread.id, CODEX);
+      yield* switched(thread.id);
+      expect(session.sent.map((input) => input.text)).toEqual(["one"]);
+      expect(yield* handoffSent(thread.id)).toContain(
+        "couldn't write a handoff note: its last turn failed (The agent stopped.)",
+      );
+      expect((yield* handoffParts(thread.id))[0]).toMatchObject({ noteMode: "limit" });
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("switching back replays only the turns since the divider, with the earlier note", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const fake = yield* FakeAgentControl;
+      const { thread } = yield* idleThread;
+      yield* runtimes.switchAgent(thread.id, CODEX);
+      yield* switched(thread.id, "NOTE FROM CLAUDE");
+
+      yield* runtimes.send(thread.id, { text: "a codex step" });
+      const codex = yield* fake.latest(thread.id);
+      yield* waitFor(
+        "the codex step",
+        Effect.sync(() => codex.sent.some((input) => input.text === "a codex step")),
+      );
+      yield* codex.completeTurn("codex did the step");
+      yield* waitFor("idle", runtimes.status(thread.id).pipe(Effect.map((s) => s === "idle")));
+
+      yield* runtimes.switchAgent(thread.id, thread.model);
+      yield* switched(thread.id, "NOTE FROM CODEX");
+      const handoff = yield* handoffSent(thread.id);
+      expect(
+        handoff.startsWith("This thread was started in Codex and continues here in Claude Code."),
+      ).toBe(true);
+      expect(handoff).toContain("## Handoff note from Codex\n\nNOTE FROM CODEX");
+      expect(handoff).toContain(
+        "## Earlier handoff note, from Claude Code at the previous switch\n\nNOTE FROM CLAUDE",
+      );
+      const turns = recentTurnsOf(handoff);
+      expect(turns).toContain("a codex step");
+      expect(turns).toContain("codex did the step");
+      expect(turns).toContain("since its previous switch");
+      // Not before the divider, and not the first handoff's exchange.
+      expect(turns).not.toContain("\ndone\n");
+      expect(turns).not.toContain("This thread was started in");
+      expect(turns).not.toContain(READY);
+      expect((yield* handoffParts(thread.id)).map((h) => h.previousAgent)).toEqual([
+        "claude",
+        "codex",
+      ]);
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 });

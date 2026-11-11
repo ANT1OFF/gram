@@ -8,7 +8,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { hasGit } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { threadHandlers } from "../rpc/handlers/threads.ts";
-import { FakeAgentControl } from "../runtime/fake-agent.ts";
+import { FakeAgentControl, type FakeSession } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { orchestrationHandlers } from "./handler.ts";
 import { Orchestration } from "./service.ts";
@@ -30,6 +30,20 @@ import { inServer, texts, sessionsOf } from "./service-kit.ts";
 
 /** A kind outside the contract, for the guards that must refuse one. */
 const UNADMITTED = "unadmitted" as string as AgentKind;
+
+/** The handoffs a switched session was given that have been answered, by session. */
+const answeredHandoffs = new WeakMap<FakeSession, number>();
+
+/** Answers the switched session's handoff turn once, so what the switch held can go. */
+const answerHandoff = (threadId: Parameters<FakeAgentControl["Service"]["latest"]>[0]) =>
+  Effect.gen(function* () {
+    const session = yield* (yield* FakeAgentControl).latest(threadId);
+    const at = session.sent.findIndex((input) => input.text.includes("\n<gram-handoff "));
+    if (at < 0 || (answeredHandoffs.get(session) ?? -1) >= at || session.sent.length !== at + 1)
+      return;
+    answeredHandoffs.set(session, at);
+    yield* session.completeTurn("Ready.");
+  });
 /** A roster with a Codex worker model beside the orchestrator's own, so a worker starts on Codex. */
 const BOTH_AGENTS = [
   { agent: "claude", model: "fake-opus", default: true },
@@ -447,14 +461,17 @@ describe.skipIf(!hasGit)("orchestration service", () => {
               return status === "idle";
             }),
           );
-          yield* handlers["thread.switchAgent"]({ threadId: free.thread.id, target: codex });
+          yield* handlers["thread.switchAgent"]({
+            threadId: free.thread.id,
+            target: codex,
+            note: false,
+          });
           const after = yield* waitReal(
             "the worker on Codex",
-            store
-              .getThread(free.thread.id)
-              .pipe(
-                Effect.map((t) => t.sessionSwitch === undefined && t.model.agent === "codex" && t),
-              ),
+            answerHandoff(free.thread.id).pipe(
+              Effect.andThen(store.getThread(free.thread.id)),
+              Effect.map((t) => t.sessionSwitch === undefined && t.model.agent === "codex" && t),
+            ),
           );
           expect(after.spawnedBy).toEqual(free.thread.spawnedBy);
           expect(after.workspaceId).toBe(thread.workspaceId);
@@ -496,20 +513,20 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         yield* handlers["thread.switchAgent"]({
           threadId: worker.thread.id,
           target: { agent: "codex", model: "fake-opus" } as ModelRef,
+          note: false,
         });
         const after = yield* waitReal(
           "the worker in Bypass on Codex",
-          store
-            .getThread(worker.thread.id)
-            .pipe(
-              Effect.map(
-                (t) =>
-                  t.sessionSwitch === undefined &&
-                  t.model.agent === "codex" &&
-                  t.mode === "bypassPermissions" &&
-                  t,
-              ),
+          answerHandoff(worker.thread.id).pipe(
+            Effect.andThen(store.getThread(worker.thread.id)),
+            Effect.map(
+              (t) =>
+                t.sessionSwitch === undefined &&
+                t.model.agent === "codex" &&
+                t.mode === "bypassPermissions" &&
+                t,
             ),
+          ),
         );
         expect(after.mode).toBe("bypassPermissions");
         // The session opened in Auto and was moved, not opened in Bypass.
@@ -543,25 +560,28 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         yield* handlers["thread.switchAgent"]({
           threadId: worker.thread.id,
           target: { agent: "codex", model: "fake-opus" } as ModelRef,
+          note: false,
         });
         expect(
           yield* runtimes.send(worker.thread.id, { text: "queued continuation" }),
         ).toMatchObject({ queued: true });
         const target = yield* waitReal(
           "the queued input sent on Codex",
-          fake
-            .latest(worker.thread.id)
-            .pipe(
-              Effect.map(
-                (s) =>
-                  s.options.model?.agent === "codex" &&
-                  s.sent.some((input) => input.text === "queued continuation") &&
-                  s,
-              ),
+          answerHandoff(worker.thread.id).pipe(
+            Effect.andThen(fake.latest(worker.thread.id)),
+            Effect.map(
+              (s) =>
+                s.options.model?.agent === "codex" &&
+                s.sent.some((input) => input.text === "queued continuation") &&
+                s,
             ),
+          ),
         );
-        // Its first turn went out in the mode the session keeps, not in the reported Ask.
+        // Its first turns, the handoff and then the held input, went out in the mode the session
+        // keeps, not in the reported Ask.
         const at = target.sent.findIndex((input) => input.text === "queued continuation");
+        expect(at).toBe(1);
+        expect(target.sentModes[0]).toBe("bypassPermissions");
         expect(target.sentModes[at]).toBe("bypassPermissions");
         yield* settle;
         expect((yield* store.getThread(worker.thread.id)).mode).toBe("bypassPermissions");

@@ -49,7 +49,7 @@ import { ActivityTracker } from "./activity.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { type CheckoutService, TurnHooks, type TurnHooksShape } from "./hooks.ts";
-import type { EarlyReleases, ReleaseWave } from "./limit-wait.ts";
+import { accountOf, type EarlyReleases, type ReleaseWave } from "./limit-wait.ts";
 import { makeRateLimitGate } from "./rate-limits.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { RETRIES_EXHAUSTED } from "./thread-error.ts";
@@ -221,7 +221,7 @@ const make = Effect.gen(function* () {
   const waits = yield* ThreadWaits;
   const turnActivity = yield* TurnActivity;
   // Each thread's machine: its session and its checkout go to the machine it is placed on.
-  const { sessions: hosts, checkouts } = (yield* WorkerHosts).placed;
+  const { sessions: hosts, checkouts, git } = (yield* WorkerHosts).placed;
   const config = yield* ServerConfig;
   const hooks = turnsHere(yield* TurnHooks, store);
   const sessions = yield* FiberMap.make<ThreadId>();
@@ -572,6 +572,8 @@ const make = Effect.gen(function* () {
 
   const {
     hitAt,
+    limitedUntil,
+    dropWaitForSwitch,
     limitWaitOf,
     enterWait,
     waitWithAccount,
@@ -1373,7 +1375,14 @@ const make = Effect.gen(function* () {
     getRuntime,
     switches: yield* FiberMap.make<ThreadId>(),
     refuseMissingFolder,
-    runtimes: { ...switchMethods, switchSession, emitChunk: feedMethods.emitChunk, updateThread },
+    runtimes: {
+      ...switchMethods,
+      switchSession,
+      emitChunk: feedMethods.emitChunk,
+      updateDataPart: feedMethods.updateDataPart,
+      updateThread,
+      requestSystemDelivery: queueMethods.requestSystemDelivery,
+    },
     afterRelease: (rt) =>
       locked(
         rt,
@@ -1383,7 +1392,15 @@ const make = Effect.gen(function* () {
           yield* drainQueue(rt);
         }),
       ),
+    limitedUntil: (thread) =>
+      Clock.currentTimeMillis.pipe(
+        Effect.flatMap((now) => limitedUntil(accountOf(thread.model), now)),
+      ),
+    endLimitWait: (rt) => locked(rt, dropWaitForSwitch(rt)),
+    gitState: (cwd) => git.local(cwd),
   });
+  // Every turn end, for the switch's own turns: the note and the handoff.
+  observers.add({ onTurnEnd: agentSwitch.onTurnEnd });
   // A plain thread's or worker's switch the last run cut off; the orchestrator's is its handoff's.
   yield* Effect.forEach(
     (yield* store.listThreads).filter((thread) => thread.sessionSwitch !== undefined),

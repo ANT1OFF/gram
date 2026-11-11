@@ -760,8 +760,26 @@ export const makeLimitResume = ({
       return false;
     });
 
+  /**
+   * Called with the runtime lock held, once a switch has moved the thread to the other agent: the
+   * wait was on the account it left, so it ends with nothing resumed, as a cancel would leave it.
+   */
+  const dropWaitForSwitch = (rt: Runtime) =>
+    Effect.gen(function* () {
+      yield* FiberMap.remove(limitTimers, rt.threadId);
+      const wait =
+        rt.limitWait ?? (yield* store.getThread(rt.threadId).pipe(Effect.orDie)).limitWait;
+      if (wait === undefined) return;
+      const thread = yield* storeWait(rt, undefined);
+      yield* notifyObservers(rt.threadId, "onLimitWait", (observer) =>
+        observer.onLimitWait?.(thread, wait, "cancelled"),
+      );
+    });
+
   return {
     hitAt,
+    limitedUntil,
+    dropWaitForSwitch,
     limitWaitOf,
     enterWait,
     waitWithAccount,

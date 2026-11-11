@@ -19,6 +19,8 @@ import {
   PrWatchSeen,
   SpawnedBy,
   ThreadRole,
+  HANDOFF_NOTE_MAX_CHARS,
+  SwitchNoteMode,
 } from "./orchestration.ts";
 import { RunWatch } from "./run-watch.ts";
 import { ReviewVerdict } from "./review.ts";
@@ -625,6 +627,16 @@ export const SessionSwitch = Schema.Struct({
   ),
   checkpointTurnId: Schema.optionalKey(TurnId),
   detail: Schema.optionalKey(Schema.String),
+  /**
+   * Any thread's switch: how its handoff note is written (`Handoff.noteMode`), and the old
+   * session's note once its last turn wrote it. The orchestrator's has none.
+   */
+  handoff: Schema.optionalKey(
+    Schema.Struct({
+      note: SwitchNoteMode,
+      text: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(HANDOFF_NOTE_MAX_CHARS))),
+    }),
+  ),
   /**
    * The session the thread had, kept until the target is confirmed. Present, a switch that fails
    * with no target process (none started, or its exit proved) and the old one's exit proved goes

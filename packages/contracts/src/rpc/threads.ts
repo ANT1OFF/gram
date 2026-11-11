@@ -155,7 +155,16 @@ export const ThreadRpcs = RpcGroup.make(
    * it tries again, onto `target`. `InvalidState`: the thread can't move now, with why.
    */
   Rpc.make("thread.switchAgent", {
-    payload: { ...threadRef, target: ModelRef },
+    payload: {
+      ...threadRef,
+      target: ModelRef,
+      /**
+       * Ask the old session for a handoff note in one last turn first; on by default. Off, the new
+       * session gets Gram's facts and the recent turns only. A thread out of usage or errored gets
+       * no note turn either way: the new agent writes the note (limit mode).
+       */
+      note: Schema.optionalKey(Schema.Boolean),
+    },
     success: Thread,
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),
