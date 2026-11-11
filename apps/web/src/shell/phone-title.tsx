@@ -2,6 +2,7 @@ import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import { useParams, useRouterState } from "@tanstack/react-router";
 import { useMemo } from "react";
 
+import { useEmbedPageGroup, useEmbedPageTitle } from "@/embed/slots";
 import { cn } from "@/lib/utils";
 import { askKeysByThread } from "@/orchestration/ask-model";
 import { useWorkspaceAsks } from "@/orchestration/ask-stack";
@@ -65,6 +66,9 @@ export const phoneState = ({
  */
 export function usePhonePlace(): PhonePlace {
   const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
+  // A page an app in front of Gram added, by the name it gave it.
+  const embedTitle = useEmbedPageTitle();
+  const embedGroup = useEmbedPageGroup();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const board = useViewStore((s) => s.view === "board");
   const workspace = useViewWorkspace();
@@ -106,6 +110,10 @@ export function usePhonePlace(): PhonePlace {
       line: orchestrator ? `Orchestrator · ${state}` : `${place} · ${state}`,
       asks: status === "needsApproval" || status === "needsInput",
     };
+  }
+  // An added page is listed in no workspace: under its name, the group it is listed in.
+  if (embedTitle !== undefined) {
+    return { title: embedTitle, line: embedGroup ?? place, asks: false };
   }
   const page = PAGE_NAMES.find(([pattern]) => pattern.test(pathname))?.[1];
   return { title: page ?? place, line: page === undefined ? "Chat" : place, asks: false };

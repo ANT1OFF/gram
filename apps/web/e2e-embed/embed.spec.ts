@@ -49,6 +49,9 @@ test("the sidebar lists the added group, and its page opens inside Gram's shell"
   // Gram's shell is still around the page: its sidebar and title bar.
   await expect(page.getByTestId("overview-sidebar")).toBeVisible();
   await expect(page.getByTestId("shell-titlebar")).toBeVisible();
+  // The title bar names the page, where Gram's own pages name the workspace and its views.
+  await expect(page.getByTestId("embed-page-title")).toHaveText("Policies");
+  await expect(page.getByTestId("workspace-switcher-button")).toHaveCount(0);
 
   // A link of the page's own moves the window without loading it again, and carries a parameter.
   await page.evaluate(() => {
@@ -56,6 +59,8 @@ test("the sidebar lists the added group, and its page opens inside Gram's shell"
   });
   await page.getByRole("link", { name: "Agent 42" }).click();
   await expect(page.getByTestId("fixture-agent")).toHaveText("Agent a-42");
+  // A page added with no name leaves the title bar as Gram's own pages have it.
+  await expect(page.getByTestId("embed-page-title")).toHaveCount(0);
   // Under the group's destination, so it stays marked.
   expect(await page.evaluate(() => (window as unknown as { stayed?: boolean }).stayed)).toBe(true);
 
@@ -176,4 +181,65 @@ test("an added page uses Gram's own controls and its theme's names", async ({ pa
   await button.click();
   await expect(page.getByRole("heading", { name: "About" }).first()).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("an added page is a page of settings, from the kit's pieces", async ({ page }) => {
+  const errors = await mounted(page, "/govern/limits");
+  await expect(page.getByRole("heading", { name: "Limits", level: 1 }).last()).toBeVisible();
+  await expect(page.locator('[data-slot="page"]')).toBeVisible();
+  const group = page.getByRole("region", { name: "Spend" });
+  await expect(group.getByRole("heading", { name: "Spend" })).toBeVisible();
+
+  // A field with its unit, which turns red while what it holds isn't a number.
+  const cap = page.getByTestId("fixture-cap");
+  await expect(page.getByLabel("Cap")).toHaveValue("500");
+  await expect(page.locator('[data-slot="input-group"]')).toContainText("$");
+  await expect(page.locator('[data-slot="input-group"]')).toContainText("per month");
+  await expect(cap).not.toHaveAttribute("aria-invalid");
+  await cap.fill("lots");
+  await expect(cap).toHaveAttribute("aria-invalid", "true");
+  await expect(group).toContainText("A whole number of dollars");
+  const edge = await cap.evaluate((element) => getComputedStyle(element).borderTopColor);
+  await cap.fill("200");
+  await expect(cap).not.toHaveAttribute("aria-invalid");
+  expect(await cap.evaluate((element) => getComputedStyle(element).borderTopColor)).not.toBe(edge);
+
+  // The segmented control.
+  const period = page.getByRole("radiogroup", { name: "Period" });
+  await expect(period.getByRole("radio", { name: "Month" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await period.getByRole("radio", { name: "Day" }).click();
+  await expect(period.getByRole("radio", { name: "Day" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator('[data-slot="input-group"]')).toContainText("per day");
+
+  // The meter: amber past 90%, read out as a share.
+  const meter = page.getByRole("meter", { name: "Used this month" });
+  await expect(meter).toHaveAttribute("aria-valuenow", "95");
+  await expect(meter).toHaveAttribute("data-tone", "warning");
+  const fill = await page
+    .getByTestId("fixture-meter")
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(fill).not.toBe("rgba(0, 0, 0, 0)");
+
+  // The popover hangs from its button.
+  await page.getByTestId("fixture-popover-trigger").click();
+  await expect(page.getByTestId("fixture-popover")).toContainText("Acme / Data");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("fixture-popover")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test.describe("on a phone", () => {
+  // A phone is a narrow window with a touch screen as its pointer.
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("the header names the added page and the group it is listed in", async ({ page }) => {
+    const errors = await mounted(page, "/govern/limits");
+    const title = page.getByTestId("phone-title");
+    await expect(title.getByRole("heading")).toHaveText("Limits");
+    await expect(page.getByTestId("phone-title-line")).toHaveText("Govern");
+    expect(errors).toEqual([]);
+  });
 });

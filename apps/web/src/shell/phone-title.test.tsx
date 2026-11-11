@@ -3,6 +3,7 @@ import type { WorkspaceState } from "@gram/contracts";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { useEmbedShell } from "@/embed/store";
 import { useThreadsStore } from "@/stores/threads";
 import { useViewStore } from "@/views/view-store";
 
@@ -33,6 +34,9 @@ vi.mock("@tanstack/react-router", () => ({
   useParams: () => ({ threadId: at.threadId }),
   useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
     select({ location: { pathname: at.pathname } }),
+  // The page's route is its own path, as an added page's is.
+  useMatches: ({ select }: { select: (matches: { fullPath: string }[]) => unknown }) =>
+    select([{ fullPath: at.pathname }]),
 }));
 
 vi.mock("@/views/view-workspace", () => ({
@@ -52,6 +56,7 @@ const line = () => screen.getByTestId("phone-title-line");
 
 afterEach(() => {
   cleanup();
+  useEmbedShell.setState({ navigation: [], titles: {} });
   Object.assign(at, {
     pathname: "/",
     threadId: undefined,
@@ -121,6 +126,31 @@ describe("PhoneTitle", () => {
     Object.assign(at, { pathname: "/w/w-api/memory", workspace: api });
     render(<PhoneTitle />);
     expect(title()).toBe("Memory");
+    expect(line().textContent).toBe("api");
+  });
+
+  it("names a page an app in front of Gram added, over the group it is listed in", () => {
+    useEmbedShell.setState({
+      titles: { "/govern/limits": "Limits" },
+      navigation: [
+        {
+          id: "govern",
+          label: "Govern",
+          items: [{ id: "l", label: "Limits", to: "/govern/limits" }],
+        },
+      ],
+    });
+    Object.assign(at, { pathname: "/govern/limits", workspace: api });
+    render(<PhoneTitle />);
+    expect(title()).toBe("Limits");
+    expect(line().textContent).toBe("Govern");
+  });
+
+  it("puts the place under an added page listed in no group", () => {
+    useEmbedShell.setState({ titles: { "/govern/limits": "Limits" } });
+    Object.assign(at, { pathname: "/govern/limits", workspace: api });
+    render(<PhoneTitle />);
+    expect(title()).toBe("Limits");
     expect(line().textContent).toBe("api");
   });
 });

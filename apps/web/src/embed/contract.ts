@@ -28,7 +28,10 @@ export interface ShellRoute {
    * `/agents/$agentId` for a parameter. A path Gram has itself (`/settings`, `/t/…`) is refused.
    */
   readonly path: string;
-  /** What the window's title says while the page is open. */
+  /**
+   * The page's name. While the page is open the title bar says it where it otherwise names the
+   * workspace and its views, and a phone's header says it as where you are.
+   */
   readonly title?: string;
   readonly component: ComponentType<ShellPageProps>;
 }

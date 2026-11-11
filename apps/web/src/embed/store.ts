@@ -11,11 +11,14 @@ import type { ShellContributions, ShellNavigationGroup, ShellSlotProps } from ".
 export interface EmbedShellState {
   readonly navigation: readonly ShellNavigationGroup[];
   readonly workspaceSwitcher: ComponentType<ShellSlotProps> | undefined;
+  /** The added pages' names, by their path as the router has it. Set once, at mount. */
+  readonly titles: Readonly<Record<string, string>>;
 }
 
 export const useEmbedShell = create<EmbedShellState>()(() => ({
   navigation: [],
   workspaceSwitcher: undefined,
+  titles: {},
 }));
 
 /**

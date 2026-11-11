@@ -98,6 +98,11 @@ export const mountGram: MountGram = async (options) => {
     useEmbedShell.setState({
       navigation: shell.navigation ?? [],
       workspaceSwitcher: shell.workspaceSwitcher,
+      titles: Object.fromEntries(
+        (shell.routes ?? []).flatMap((route) =>
+          route.title === undefined ? [] : [[route.path, route.title]],
+        ),
+      ),
     });
     const stopKeyboard = installKeyboard();
 
@@ -125,7 +130,7 @@ export const mountGram: MountGram = async (options) => {
       unmount: () => {
         stopKeyboard();
         root.unmount();
-        useEmbedShell.setState({ navigation: [], workspaceSwitcher: undefined });
+        useEmbedShell.setState({ navigation: [], workspaceSwitcher: undefined, titles: {} });
       },
     };
     return handle;
