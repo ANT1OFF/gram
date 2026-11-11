@@ -500,6 +500,20 @@ export const PrAppToolsLive = Layer.effectDiscard(
           if (!(yield* mergeDelegated(caller, thread))) return false;
           return yield* workerOwnsPr(thread, target.repo, target.number);
         }).pipe(Effect.catchCause(() => Effect.succeed(false))),
+      // A clean pull request merges at once, so arming is the merge; turning it off is not one.
+      decision: (_caller, target: MergeTarget) =>
+        target.enabled
+          ? {
+              action: "pr.merge",
+              detail: {
+                repo: target.repo,
+                number: target.number,
+                method: target.method,
+                auto: true,
+                threadId: target.thread.id,
+              },
+            }
+          : undefined,
       resolve: (caller, { enabled = true, method = "squash", number, threadId = caller }) =>
         Effect.gen(function* () {
           const tool = "set_auto_merge";
@@ -866,6 +880,14 @@ export const PrAppToolsLive = Layer.effectDiscard(
                 : undefined,
           };
         }),
+      // Arming a merge is the merge as far as a decision goes; dropping the intent is not one.
+      decision: (_caller, { enabled = true, pr, method, thread }) =>
+        enabled
+          ? {
+              action: "pr.merge",
+              detail: { repo: pr.repo, number: pr.number, method, threadId: thread.id },
+            }
+          : undefined,
       // After `resolve`, which the target's type is inferred from.
       delegatedAtFullAutonomy: (caller, _input, { thread, pr, reuseApproval }) =>
         Effect.gen(function* () {

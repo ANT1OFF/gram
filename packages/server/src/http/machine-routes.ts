@@ -22,6 +22,7 @@ import {
   HOST_CONNECT_PATH,
   HOST_INSTALL_PATH,
   HOST_JOIN_PATH,
+  HOST_MCP_PATH,
 } from "../host/machine-keys.ts";
 import {
   printedFingerprint,
@@ -31,7 +32,7 @@ import {
   SSH_TARGET,
 } from "../host/ssh-join.ts";
 import { installScript, updateCommand } from "../host/install-script.ts";
-import type { DialAccess } from "../host/paired-machines.ts";
+import type { DialAccess, DialRoute } from "../host/paired-machines.ts";
 import { type HostFolders, MAX_LISTED } from "../host/folders.ts";
 import type { RemoteHostsShape } from "../host/remote-hosts.ts";
 import type { McpTokens } from "../app-tools/mcp-tokens.ts";
@@ -65,6 +66,13 @@ export const MACHINES_AUTOMATIC_UPDATES_PATH = "/machines/automatic-updates";
 export const MACHINES_CHECK_SIGN_IN_PATH = "/machines/check-sign-in";
 
 /**
+ * Registers a provisioned host by the public key it made (`gram-host provision`): confirmed from
+ * the start, with no join link. Local app only, like every route here, and only while this Gram
+ * listens for provisioned hosts.
+ */
+export const MACHINES_PROVISION_PATH = "/machines/provision";
+
+/**
  * A joined machine's folders for a one-off chat's picker, listed there by its host. Local app
  * only: a paired phone never lists or checks another machine's folders.
  */
@@ -80,6 +88,7 @@ export const MACHINE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
   MACHINES_JOIN_LINK_PATH,
   MACHINES_CONFIRM_PATH,
   MACHINES_REMOVE_PATH,
+  MACHINES_PROVISION_PATH,
   MACHINES_SSH_HOSTS_PATH,
   MACHINES_SSH_JOIN_PATH,
   MACHINES_TOKEN_START_PATH,
@@ -224,15 +233,61 @@ export const hostRoute = (
       if (result.kind === "refused") return refuse(result.message, result.status);
       return json({ hostId: result.machine.id });
     }
+    return yield* dialIn(hosts, remote.origin, "joined");
+  });
+
+/**
+ * Takes a host's dial at `origin`: its signed headers checked by the rules of `route`, then its
+ * WebSocket served as that machine's connection until it closes.
+ */
+const dialIn = (hosts: RemoteHostsShape, origin: string, route: DialRoute) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
     if (request.method !== "GET") return refuse("forbidden");
-    const decision = hosts.machines.authorizeConnect(remote.origin, request.headers);
+    // Before its signature is looked at: a dial that asks for no WebSocket connects nothing, and
+    // must not spend one of the nonces the dials that do are counted by.
+    if (
+      request.headers["upgrade"]?.toLowerCase() !== "websocket" ||
+      !/(?:^|,)\s*upgrade\s*(?:,|$)/i.test(request.headers["connection"] ?? "")
+    )
+      return refuse("WebSocket required", 400);
+    const decision = hosts.machines.authorizeConnect(origin, request.headers, route);
     if (decision.kind === "refused") return refuse(decision.message, decision.status);
     // Pinned before the upgrade yields, so access turned off or moved during it drops the dial.
-    const dial = hosts.admit(decision.machine, remote.origin);
+    const dial = hosts.admit(decision.machine, origin);
     const socket = yield* request.upgrade.pipe(Effect.option);
     if (socket._tag === "None") return refuse("WebSocket required", 400);
     yield* hosts.attach(dial, socket.value);
     return HttpServerResponse.empty();
+  });
+
+/**
+ * Answers a request that came in on the provisioned-host listener. That listener serves two
+ * things and nothing else: a registered host's signed dial, and a session on such a host reaching
+ * its thread's app tools (`mcp`, which the caller passes already limited to that). No join, no
+ * installer, no browser: a request with an `Origin`, for another name than the listener's, or for
+ * any other path is refused, as is every request while provisioned hosts are off.
+ */
+export const provisionedRoute = <E, R>(
+  hosts: RemoteHostsShape | undefined,
+  path: string | undefined,
+  on: boolean,
+  mcp: (origin: string) => Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
+) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const origin = hosts?.provisionedOrigin;
+    if (
+      !on ||
+      hosts === undefined ||
+      origin === undefined ||
+      request.headers["host"] !== new URL(origin).host ||
+      request.headers["origin"] !== undefined
+    )
+      return refuse("forbidden");
+    if (path === HOST_CONNECT_PATH) return yield* dialIn(hosts, origin, "provisioned");
+    if (path === HOST_MCP_PATH && request.method === "POST") return yield* mcp(origin);
+    return refuse("forbidden");
   });
 
 /** What the installer prints on a machine already joined to this Gram, whose service it moves. */
@@ -332,6 +387,8 @@ export const machineManagement = (
   access?: DialAccess,
   /** A joined machine's folders through its host; without them, the folder routes refuse. */
   folders?: (id: HostId) => HostFolders,
+  /** Whether provisioned hosts are turned on; off, none can be registered. */
+  provisionedOn = false,
 ) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -371,6 +428,41 @@ export const machineManagement = (
             ),
           ),
         );
+      }
+      case MACHINES_PROVISION_PATH: {
+        const origin = hosts.provisionedOrigin;
+        if (!provisionedOn || origin === undefined)
+          return json(
+            {
+              reason: "provisioned-off",
+              message: "Provisioned hosts aren't turned on for this Gram.",
+            },
+            409,
+          );
+        const body = yield* jsonBody(JOIN_BODY_MAX);
+        const { name, publicKey, platform = "linux" } = body ?? {};
+        if (
+          typeof name !== "string" ||
+          typeof publicKey !== "string" ||
+          typeof platform !== "string"
+        )
+          return json({ message: "Give the host's name and its public key." }, 400);
+        const result = (() => {
+          try {
+            return hosts.machines.provision({ name, publicKey, platform });
+          } catch {
+            return undefined;
+          }
+        })();
+        if (result === undefined) return json({ message: "The host couldn't be saved." }, 500);
+        if (result.kind === "refused") return json({ message: result.message }, result.status);
+        // The address it dials and what it should say it is, for whoever starts the host.
+        return json({
+          hostId: result.machine.id,
+          fingerprint: fingerprintOf(result.machine.publicKey),
+          created: result.created,
+          origin,
+        });
       }
       case MACHINES_JOIN_LINK_PATH:
         if (remote === undefined)
@@ -650,8 +742,14 @@ export const machineManagement = (
 export const placedOnMachine = (
   tokens: Pick<McpTokens["Service"], "threadFor">,
   store: Pick<ThreadStore["Service"], "getThread"> | undefined,
-  remoteHosts: Pick<RemoteHostsShape, "connection">,
+  remoteHosts: Pick<RemoteHostsShape, "connection"> & Partial<Pick<RemoteHostsShape, "origin">>,
   headers: Readonly<Record<string, string | undefined>>,
+  /**
+   * The address the request came in on, when the machine must have dialled that same one: a
+   * thread on a provisioned host is let through only on their listener, and one on a joined
+   * machine only on the tailnet address.
+   */
+  origin?: string,
 ) =>
   Effect.gen(function* () {
     const bearer = bearerToken(headers);
@@ -662,5 +760,6 @@ export const placedOnMachine = (
     if (thread._tag === "None") return false;
     const hostId = hostOf(effectiveCheckout(thread.value));
     if (hostId === LOCAL_HOST_ID) return false;
-    return (yield* remoteHosts.connection(hostId).pipe(Effect.exit))._tag === "Success";
+    if ((yield* remoteHosts.connection(hostId).pipe(Effect.exit))._tag !== "Success") return false;
+    return origin === undefined || remoteHosts.origin?.(hostId) === origin;
   });

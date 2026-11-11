@@ -27,6 +27,7 @@ import { GatewayCredentials } from "./gateway/credentials.ts";
 import { GitPlatformLive } from "./git/platform.ts";
 import { GitTurnHooksLive } from "./git/turn-hooks.ts";
 import { bootLine, LaunchToken, serverPort, ServerLayer } from "./http/server.ts";
+import { embeddingEnabled } from "./settings/embedding.ts";
 import { createLogger, logDirFor } from "./logging/logger.ts";
 import { ServerLog, serverLogLayer } from "./logging/service.ts";
 import { ThreadStore } from "./persistence/thread-store.ts";
@@ -117,12 +118,16 @@ const fakeAgent = process.env["GRAM_FAKE_AGENT"] === "1";
 /** Servers the fake `claude mcp` holds, so a live check can add one and see the session list it. */
 const fakeMcpServers: FakeMcpServers = new Map();
 
-const Agents: Layer.Layer<AgentHosts, never, AgentNeeds> = fakeAgent
-  ? makeFakeAgentAdapter({
-      ...(process.env["GRAM_FAKE_AGENT_REPLY"] === "echo" ? { reply: "echo" as const } : {}),
-      mcpServers: fakeMcpServers,
-    })
-  : ClaudeAgents;
+// A headless control plane (`GRAM_HEADLESS=1`) is given no agents: no CLI is looked for or started
+// on this machine, and the server offers what its joined machines run (`host/headless.ts`).
+const Agents: Layer.Layer<AgentHosts, never, AgentNeeds> = config.headless
+  ? AgentHosts.layerNone
+  : fakeAgent
+    ? makeFakeAgentAdapter({
+        ...(process.env["GRAM_FAKE_AGENT_REPLY"] === "echo" ? { reply: "echo" as const } : {}),
+        mcpServers: fakeMcpServers,
+      })
+    : ClaudeAgents;
 
 // The fake never writes a real Claude Code config.
 const McpCliLayer = fakeAgent ? Layer.succeed(McpCli, makeFakeMcpCli(fakeMcpServers)) : McpCliLive;
@@ -232,6 +237,7 @@ const program = Effect.gen(function* () {
       arch: process.arch,
       port,
       logDir,
+      ...(config.headless ? { headless: true } : {}),
     },
     "server started",
   );
@@ -242,9 +248,15 @@ const program = Effect.gen(function* () {
     if (text !== "emulator ok") return yield* Effect.die(`terminal emulator read "${text}"`);
     logger.info("terminal emulator loaded");
   }
+  // Behind a fronting proxy the launch token signs nobody in, so it isn't printed either.
+  const fronted = config.frontedIdentity !== undefined && (yield* embeddingEnabled);
+  if (config.frontedIdentity !== undefined && !fronted)
+    logger.warn(
+      "sign-in through a proxy is configured but hosted features are off: the launch token signs people in (set GRAM_EMBEDDING=1)",
+    );
   yield* Effect.sync(() => {
     if (parentPort === undefined) {
-      console.log(bootLine(port, token));
+      console.log(fronted ? `boot http://127.0.0.1:${port}/` : bootLine(port, token));
     } else {
       // The desktop shell's stdout ends up in logs, so the token only travels over the parent port.
       // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Electron MessagePortMain

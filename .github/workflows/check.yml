@@ -3,7 +3,8 @@ name: Application checks
 on:
   pull_request:
   push:
-    branches: [main]
+    # An integration branch collects pull requests before main, so it is checked as main is.
+    branches: [main, "integration/**"]
   workflow_dispatch:
 
 concurrency:

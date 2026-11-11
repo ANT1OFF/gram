@@ -7,7 +7,14 @@ import * as Layer from "effect/Layer";
 /** Resolves the host for an agent kind. */
 export class AgentHosts extends Context.Service<
   AgentHosts,
-  { get(kind: AgentKind): Effect.Effect<AgentHost, AgentUnavailable> }
+  {
+    get(kind: AgentKind): Effect.Effect<AgentHost, AgentUnavailable>;
+    /**
+     * Set when no agent runs on this machine and each is offered as another machine has it: why
+     * that machine lists no models is then the whole reason, not one agent's among several.
+     */
+    readonly elsewhere?: true;
+  }
 >()("@gram/server/AgentHosts") {
   /** The given hosts; any other kind is unavailable. */
   static readonly fromHosts = (hosts: ReadonlyArray<AgentHost>): AgentHosts["Service"] =>

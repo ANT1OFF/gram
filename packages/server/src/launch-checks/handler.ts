@@ -100,7 +100,27 @@ export class LaunchChecksCache extends Context.Service<
       return yield* observeRuns(yield* makeLaunchChecksCache(live));
     }),
   );
+
+  /**
+   * For a headless server, whose agents and tools are its joined machines': nothing is looked up
+   * or run on this machine, and every ask gets the same empty answer.
+   */
+  static readonly layerNone: Layer.Layer<LaunchChecksCache> = Layer.effect(
+    LaunchChecksCache,
+    Effect.suspend(() => {
+      const none = NO_LAUNCH_CHECKS(Date.now());
+      return observeRuns(() => Effect.succeed(none));
+    }),
+  );
 }
+
+/** The launch checks of a server that looks for nothing on its machine: no tool, no sign-in. */
+export const NO_LAUNCH_CHECKS = (now: number): LaunchChecks => ({
+  checkedAt: now,
+  tools: [],
+  claudeSignIn: "unknown",
+  ghSignedIn: false,
+});
 
 /** `app.launchChecks`. Nothing runs until asked. */
 export const launchChecksHandlers = Effect.gen(function* () {

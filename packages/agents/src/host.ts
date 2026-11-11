@@ -95,6 +95,12 @@ export interface OpenSessionOptions {
    */
   readonly outwardGate?: boolean | OutwardGate;
   /**
+   * Ask before every call to an MCP server that isn't Gram's own, whatever rules and mode say, as
+   * the outward gate asks about a push: for a server that puts each such call to a decision
+   * endpoint. A host that can't ask about them ignores it.
+   */
+  readonly gateConnectors?: boolean;
+  /**
    * Keep the session's unprompted writes inside its `cwd`, with the shell and the network off where
    * the host can't otherwise bound what they write or reach, and no MCP server but Gram's
    * own. What a dream needs: it reads transcripts nobody vetted. A
@@ -117,6 +123,13 @@ export interface OpenSessionOptions {
    * every server the agent is configured with. A host that can't narrow them ignores it.
    */
   readonly mcpAllowlist?: ReadonlyArray<string>;
+  /**
+   * One more MCP server the session is given beside Gram's own, by address alone: a remote
+   * (streamable HTTP) server, reached with no credential of Gram's. It is still subject to
+   * the lists, so a session held to it names its `url` in `mcpAllowlist`. A confined session
+   * (`confineWrites`) never gets it. A host that can't add a server ignores it.
+   */
+  readonly mcpServer?: { readonly name: string; readonly url: string };
   /**
    * MCP servers the session leaves out, entries as `mcpAllowlist` takes them; a server both lists
    * name is left out. Gram's own server is never on it. A host that can't leave a server

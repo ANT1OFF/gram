@@ -43,6 +43,7 @@ import { useApi } from "@/api/context";
 import { useWindowAttended } from "@/desktop/use-window-attended";
 import { errorMessage } from "@/api/errors";
 import { Hint } from "@/components/hint";
+import { worktreeMissing } from "@/components/worktree-missing";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -222,7 +223,10 @@ export function Composer({
   const busy = BUSY.has(status);
   // Stop steps back while the turn only waits on an answer; a background agent still works.
   const waitingOnYou = WAITING_ON_YOU.has(status) && !background;
-  const steerable = running && summary?.capabilities?.steer === true;
+  // A turn whose folder is gone is being stopped: the server's steer would hand the message to an
+  // agent that can't run there, while its send refuses and says why, so the send key sends.
+  const steerable =
+    running && summary?.capabilities?.steer === true && !worktreeMissing(summary.git);
   // Codex can't stop its turn for a message: there an interrupt goes in as a steer.
   const interruptible = steerable && summary?.capabilities?.steerInterrupt === true;
   // Some tests render a thread with no model.

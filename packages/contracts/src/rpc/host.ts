@@ -154,6 +154,41 @@ export const HostBusy = Schema.Struct({
 });
 export type HostBusy = typeof HostBusy.Type;
 
+/** A thread's folder on a host, whose work in progress a stop keeps (`host.stop.prepare`). */
+export const HostStopCheckout = Schema.Struct({
+  threadId: ThreadId,
+  cwd: Schema.String.check(Schema.isMaxLength(4096)),
+});
+export type HostStopCheckout = typeof HostStopCheckout.Type;
+
+/** What a stop kept of one thread's folder: the hidden ref it wrote, and whether it was pushed. */
+export const HostStopKept = Schema.Struct({
+  threadId: ThreadId,
+  cwd: Schema.String,
+  /** `refs/gram/wip/<thread>`, once the working tree was committed under it. */
+  ref: Schema.optionalKey(Schema.String),
+  commit: Schema.optionalKey(Schema.String),
+  /** Whether the remote now has that commit under the ref. */
+  pushed: Schema.Boolean,
+  /** Why it wasn't committed or pushed, in the host's words. */
+  note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+});
+export type HostStopKept = typeof HostStopKept.Type;
+
+/**
+ * A host's answer to `host.stop.prepare`. `idle` says nothing is running on it and nothing new
+ * will start: it can be stopped now, and takes no new work until `host.stop.cancel` or ten minutes
+ * pass. Not idle and not forced, nothing was changed and `kept` is empty.
+ */
+export const HostStopPrepared = Schema.Struct({
+  idle: Schema.Boolean,
+  busy: HostBusy,
+  kept: Schema.Array(HostStopKept),
+  /** Why it isn't idle when `busy` doesn't say, such as an update under way. */
+  note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+});
+export type HostStopPrepared = typeof HostStopPrepared.Type;
+
 /** How a host's last update ended, as it keeps it across the restart. */
 export const HostUpdateOutcome = Schema.Struct({
   /** The release it tried to move to. */
@@ -372,10 +407,16 @@ export const HostSessionOpen = Schema.Struct({
   outwardGate: Schema.optionalKey(
     Schema.Union([Schema.Boolean, Schema.Literals(["all", "irreversible"])]),
   ),
+  gateConnectors: Schema.optionalKey(Schema.Boolean),
   confineWrites: Schema.optionalKey(Schema.Boolean),
   pinCwd: Schema.optionalKey(Schema.Boolean),
   mcpAllowlist: Schema.optionalKey(Schema.Array(Schema.String)),
   mcpDenylist: Schema.optionalKey(Schema.Array(Schema.String)),
+  /**
+   * One more MCP server for the session, by address. A host built before it was sent drops it,
+   * and the session then opens without that server, never with more than it was meant to have.
+   */
+  mcpServer: Schema.optionalKey(Schema.Struct({ name: Schema.String, url: Schema.String })),
   mcpNoneWithoutToolSearch: Schema.optionalKey(Schema.Boolean),
   noBlockingAsk: Schema.optionalKey(Schema.Boolean),
   peerMessaging: Schema.optionalKey(Schema.Boolean),
@@ -607,6 +648,25 @@ export const HostRpcs = RpcGroup.make(
     error: HostUpdateRefused,
     stream: true,
   }),
+  /**
+   * Readies the host to be stopped with its disk kept. It stops taking new work, and when nothing
+   * runs on it (the test an update waits on: no turn, busy terminal, clone or check), or `force`
+   * says to go on regardless (a machine about to be taken away), it commits each listed folder's
+   * working tree on top of its HEAD under `refs/gram/wip/<thread>` and pushes that ref to `remote`
+   * (`origin` when left out). The branch, the index and the files stay as they are. A host built
+   * before this answers with an unknown-request defect.
+   */
+  Rpc.make("host.stop.prepare", {
+    payload: {
+      checkouts: Schema.Array(HostStopCheckout).check(Schema.isMaxLength(512)),
+      force: Schema.optionalKey(Schema.Boolean),
+      remote: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+    },
+    success: HostStopPrepared,
+    error: HostFailed,
+  }),
+  /** Takes new work again after a `host.stop.prepare` that no stop followed. */
+  Rpc.make("host.stop.cancel", {}),
   /**
    * The host's own clone of the repository at `url`, in the folder it keeps clones in: cloned when
    * it has none, fetched when it has. What a worker placed on this machine makes its worktree from.

@@ -93,6 +93,7 @@ export const makeLedgerWatch = (kit: OrchestrationKit) => {
     orchestrators,
     hub,
     cardsLock,
+    eventSink,
   } = kit;
 
   // ---------------------------------------------------------------------------------------
@@ -328,6 +329,7 @@ export const makeLedgerWatch = (kit: OrchestrationKit) => {
         now: found.now,
       });
       yield* Effect.forEach(changed, store.putFeatureCard, { discard: true });
+      if (eventSink !== undefined && changed.length > 0) yield* eventSink.featureCards(changed);
       return { workspaceId, cards };
     }).pipe((effect) => cardsLock.withLock(workspaceId, effect));
 

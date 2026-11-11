@@ -28,6 +28,7 @@ import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { claudeSignInOf, hostStatusOf } from "./claude-sign-in.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
+import { stopOn } from "./stop.ts";
 import {
   HOST_SERVES,
   type HostClaudeToken,
@@ -61,11 +62,11 @@ export const HOST_STREAM_FD = 3;
  * The agents whose sessions the host runs: Claude Code on the user's own login, or on the token
  * `oauthToken` reads (a joined machine's, from `claude setup-token`). A session through a gateway
  * profile, and every Codex session, still opens in the server, which keeps the keys and the Codex
- * homes. Under the fake agent the host runs the fake, as the server does.
+ * homes. Under the fake agent the host runs the fake, as the server does, echoing when asked to.
  */
 const hostAgents = (oauthToken?: () => string | undefined): Layer.Layer<AgentHosts> =>
   process.env["GRAM_FAKE_AGENT"] === "1"
-    ? makeFakeAgentAdapter()
+    ? makeFakeAgentAdapter(process.env["GRAM_FAKE_AGENT_REPLY"] === "echo" ? { reply: "echo" } : {})
     : Layer.effect(
         AgentHosts,
         Effect.gen(function* () {
@@ -141,6 +142,13 @@ const hostService = (
     });
     const admission = makeAdmission();
     const updater = update?.(busy, admission);
+    const stop = stopOn({
+      proc,
+      busy,
+      admission,
+      // A joined machine keeps only what its sessions could open; this machine's host any folder.
+      ...(hostId === LOCAL_HOST_ID ? {} : { admit: (cwd) => folders.gate.admit(cwd, "session") }),
+    });
     return {
       hello: {
         protocol: HOST_PROTOCOL_VERSION,
@@ -184,7 +192,9 @@ const hostService = (
         ),
       ),
       checks,
-      ...(updater === undefined ? {} : { update: updater, admission }),
+      admission,
+      stop,
+      ...(updater === undefined ? {} : { update: updater }),
     };
   });
 
@@ -209,9 +219,14 @@ NodeRuntime.runMain(
   args.length === 0
     ? child
     : runCli(args, {
-        service: (hostId, home) =>
-          hostService(hostId, claudeTokenIn(joinedHome), (busy, admission) =>
-            selfUpdater(RELEASE, home, busy, admission),
+        service: (hostId, home, provisioned) =>
+          hostService(
+            hostId,
+            claudeTokenIn(joinedHome),
+            // A provisioned host is replaced by whatever started it, never updated in place.
+            provisioned
+              ? undefined
+              : (busy, admission) => selfUpdater(RELEASE, home, busy, admission),
           ),
         layer: hostLayer(() => readClaudeToken(joinedHome)),
         release: RELEASE,

@@ -70,6 +70,43 @@ export function assembleReleases(
     .toSorted((a, b) => compareVersionBase(b.version, a.version));
 }
 
+/** The highlight that says what changed in the recommended models, from `recommendedChanges`. */
+export const RECOMMENDED_MODELS_TITLE = "Recommended models";
+
+/**
+ * "Recommended models": what moved in the recommendation since the user last saw it, one change
+ * per line of `changes`. Nothing when nothing moved. Models the user picked never change, so it
+ * says only what follows.
+ */
+export const recommendedModelsItem = (changes: readonly string[]): WhatsNewItem | undefined =>
+  changes.length === 0
+    ? undefined
+    : {
+        title: RECOMMENDED_MODELS_TITLE,
+        body: `Model slots that follow the recommendation now use: ${changes.join("; ")}. Models you picked yourself are unchanged.`,
+      };
+
+/**
+ * `releases` with `item` last among the highlights of the release `version` runs on, added as a
+ * release of its own when that version has none.
+ */
+export function withHighlight(
+  releases: readonly WhatsNewRelease[],
+  version: string,
+  item: WhatsNewItem | undefined,
+): readonly WhatsNewRelease[] {
+  if (item === undefined) return releases;
+  const at = releases.findIndex((release) => compareVersionBase(release.version, version) === 0);
+  if (at !== -1) {
+    return releases.map((release, index) =>
+      index === at ? { ...release, highlights: [...release.highlights, item] } : release,
+    );
+  }
+  return [...releases, { version: version.split("-")[0] ?? version, highlights: [item] }].toSorted(
+    (a, b) => compareVersionBase(b.version, a.version),
+  );
+}
+
 /** Highlights for `audience`; everything a part of it is unknown for (browser dev). */
 export const highlightsFor = (
   release: WhatsNewRelease,

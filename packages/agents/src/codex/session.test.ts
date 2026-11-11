@@ -1820,6 +1820,79 @@ describe("CodexHost confined sessions", () => {
       }),
   );
 
+  it.effect("adds the one server a session is given by address, and holds it to that", () =>
+    Effect.gen(function* () {
+      const given = { name: "workspace", url: "https://mcp.example.invalid/workspace" };
+      const h = harness({
+        config: { mcp_servers: { docs: { url: "https://mcp.example.invalid/docs" } } },
+        statuses: [status("gram", "connected"), status("workspace", "connected")],
+      });
+      const host = yield* CodexHost.pipe(Effect.provide(h.layer));
+      const mcpServersOf = () =>
+        (
+          h.calls.findLast(([method]) => method === "thread/start")![1] as {
+            config?: { mcp_servers?: Record<string, { enabled?: boolean; url?: string }> };
+          }
+        ).config?.mcp_servers;
+      yield* host.open({
+        threadId: ThreadId.make("t1"),
+        cwd: "/repo",
+        mcp: appTools,
+        mcpServer: given,
+        mcpAllowlist: [given.url],
+      });
+      expect(mcpServersOf()).toEqual({
+        docs: { enabled: false },
+        workspace: { enabled: true, url: given.url },
+        gram: expect.objectContaining({ enabled: true, url: appTools.url }),
+      });
+
+      // A confined session takes no server but Gram's own, this one included.
+      yield* host
+        .open({
+          threadId: ThreadId.make("t2"),
+          cwd: "/repo",
+          mcp: appTools,
+          mcpServer: given,
+          confineWrites: true,
+        })
+        .pipe(Effect.ignore);
+      expect(mcpServersOf()?.["workspace"]).not.toMatchObject({ enabled: true });
+    }),
+  );
+
+  it.effect("refuses a given server whose name the Codex config already has", () =>
+    Effect.gen(function* () {
+      const given = { name: "workspace", url: "https://mcp.example.invalid/workspace" };
+      // Its table would merge into the thread's: a token meant for elsewhere, sent to this address.
+      const h = harness({
+        config: {
+          mcp_servers: {
+            workspace: {
+              url: "https://elsewhere.example.invalid/mcp",
+              bearer_token_env_var: "ELSEWHERE_TOKEN",
+            },
+          },
+        },
+        statuses: [status("gram", "connected")],
+      });
+      const host = yield* CodexHost.pipe(Effect.provide(h.layer));
+      for (const lists of [{ mcpAllowlist: [given.url] }, {}]) {
+        const error = yield* host
+          .open({
+            threadId: ThreadId.make("t1"),
+            cwd: "/repo",
+            mcp: appTools,
+            mcpServer: given,
+            ...lists,
+          })
+          .pipe(Effect.flip);
+        expect(error.message).toContain("already has one by that name");
+      }
+      expect(h.calls.some(([method]) => method === "thread/start")).toBe(false);
+    }),
+  );
+
   it.effect("refuses a narrowed session when a named exclusion stays on", () =>
     Effect.gen(function* () {
       const h = harness({

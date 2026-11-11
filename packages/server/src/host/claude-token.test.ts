@@ -410,6 +410,8 @@ const fakeHosts = (
       return machines.remove(id);
     },
     keepOrigin: () => {},
+    provisionedOrigin: undefined,
+    closeProvisioned: () => {},
   };
   return { hosts, removed };
 };

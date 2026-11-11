@@ -1,7 +1,13 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { NodeWS } from "@effect/platform-node/NodeSocket";
 import { afterAll, describe, expect, it as test, layer, vi } from "@effect/vitest";
-import { DEFAULT_SETTINGS, GramRpcs, HostId, type ThreadId } from "@gram/contracts";
+import {
+  applySettingsPatch,
+  DEFAULT_SETTINGS,
+  GramRpcs,
+  HostId,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -1232,6 +1238,79 @@ layer(testServer("https://device.tail123.ts.net:9443"), { excludeTestServices: t
         const listed = yield* raw(port, { path: "/machines/list", method: "POST", headers: local });
         expect(JSON.parse(listed.body).automaticUpdates).toBe(false);
       }),
+    );
+
+    it.effect(
+      "moves a workspace only for the local app, and only with the hosted features on",
+      () =>
+        Effect.gen(function* () {
+          const { port } = yield* serverInfo;
+          const store = yield* ThreadStore;
+          const localCookie = yield* bootCookie;
+          const json = { "content-type": "application/json" };
+          const local = { cookie: localCookie, origin: `http://127.0.0.1:${port}`, ...json };
+          const mint = yield* raw(port, { path: "/remote/pair", method: "POST", headers: local });
+          const code = new URLSearchParams(new URL(JSON.parse(mint.body).url).hash.slice(1)).get(
+            "pair",
+          )!;
+          const origin = "https://device.tail123.ts.net:9443";
+          const host = "device.tail123.ts.net:9443";
+          const claimed = yield* raw(port, {
+            path: "/remote/claim",
+            method: "POST",
+            body: code,
+            headers: { host, origin, "content-type": "text/plain" },
+          });
+          const cookie = claimed.headers["set-cookie"]![0]!.split(";")[0]!;
+          const paths = ["/workspaces/export", "/workspaces/import"];
+          const ask = { workspaceId: "8a0a4b55-1f0c-4f0a-9a43-0d2f3c1b7e11" };
+          const post = (path: string, headers: Record<string, string>, body: unknown = ask) =>
+            raw(port, { path, method: "POST", headers, body: JSON.stringify(body) });
+          const hosted = (on: boolean) =>
+            store.updateSettings(
+              (settings) => applySettingsPatch(settings, { experimental: { embedding: on } }),
+              [["experimental", "embedding"]],
+            );
+
+          // Off: the paths aren't there for the local app.
+          for (const path of paths) expect((yield* post(path, local)).status).toBe(404);
+
+          yield* hosted(true);
+          yield* Effect.addFinalizer(() => hosted(false).pipe(Effect.ignore));
+          for (const path of paths) {
+            // Never without the launch cookie, never from another origin, never for a phone.
+            expect((yield* post(path, json)).status).toBe(401);
+            expect(
+              (yield* post(path, { ...local, origin: "https://elsewhere.example" })).status,
+            ).toBe(403);
+            expect((yield* post(path, { host, origin, cookie, ...json })).status).toBe(403);
+            // Nor under another spelling of the path, which the router would match all the same.
+            for (const alias of [
+              `${path}/`,
+              path.replace("/workspaces", "/Workspaces"),
+              path.replace("port", "%70ort"),
+              `${path};x`,
+            ]) {
+              expect((yield* post(alias, { host, origin, cookie, ...json })).status).toBe(403);
+              expect((yield* post(alias, local)).status).toBe(403);
+            }
+            // Only a JSON post is read.
+            expect((yield* post(path, { ...local, "content-type": "text/plain" })).status).toBe(
+              415,
+            );
+            expect((yield* raw(port, { path, headers: local })).status).toBe(405);
+          }
+          // The local app is answered by the service: no such workspace, and not a bundle.
+          const none = yield* post("/workspaces/export", local);
+          expect(none.status).toBe(404);
+          expect(JSON.parse(none.body).error).toContain("workspace");
+          const junk = yield* post("/workspaces/import", local, { bundle: { format: 99 } });
+          expect(junk.status).toBe(400);
+          expect(JSON.parse(junk.body).error).toBe(
+            "This is not a workspace bundle this Gram can read.",
+          );
+          expect(yield* store.listWorkspaces).toEqual([]);
+        }),
     );
 
     // Failed on b6a8cc89 in the independent review: a paired phone's `thread.create` with a

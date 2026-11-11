@@ -1,471 +1,639 @@
-// The embedding seams end to end, over a real socket: a server built as `main.ts` builds it (the
-// fake agent, real git over a temp repository, a database in memory), called the way an embedding
-// platform's services call it.
+// The acceptance of the decision hook and the event sink, against real HTTP endpoints on loopback:
+// a refusal stops the action and says why, and the sink picks up after a restart with no gap.
 
-import { afterAll, describe, expect, layer } from "@effect/vitest";
-import { GramRpcs, type PrStatus, type ServerEvent } from "@gram/contracts";
-import { Pr } from "@gram/git";
-import { captureLogs } from "@gram/agents/testing/logs";
+import { describe, expect, it } from "@effect/vitest";
+import {
+  applySettingsPatch,
+  type DecisionRequest,
+  type DecisionResponse,
+  type ServerEvent,
+  type SinkBatch,
+  type SinkEvent,
+  type Thread,
+  type ThreadId,
+} from "@gram/contracts";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import { createServer, request as httpRequest } from "node:http";
+import { mkdtempSync, rmSync } from "node:fs";
+import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ServerConfig } from "../config.ts";
-import { gitPlatformTest } from "../git/platform.ts";
 import { EventHub } from "../events/event-hub.ts";
-import { eventually, makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
-import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
-import { LaunchToken, ServerLayer, serverPort } from "../http/server.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { FakeAgentAdapter } from "../runtime/fake-agent.ts";
-import { TurnHooks } from "../runtime/hooks.ts";
+import { FakeAgentControl, makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
+import { CheckoutService, TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { UsageLimitReadings } from "../usage/limit-readings.ts";
+import { DecisionHook } from "./decision-hook.ts";
+import { EventSink, makeEventSink, type EventSinkShape } from "./event-sink.ts";
+import { makeActionGuard } from "./guard.ts";
 
-const TOKEN = "embed-acceptance-token-0123456789abcdef";
-
-const tmp = tempDir();
-afterAll(() => removeDir(tmp));
-
-interface Answer {
-  readonly status: number;
-  readonly body: string;
-  /** The first cookie the answer set, if any. */
-  readonly cookie: string;
-}
-
-const call = (
-  port: number,
-  path: string,
-  options: {
-    readonly method?: string;
-    readonly token?: string | undefined;
-    readonly headers?: Record<string, string>;
-    readonly body?: unknown;
-    /** The `Host` a service inside the deployment sends: never loopback's. */
-    readonly host?: string;
-  } = {},
-) =>
-  Effect.promise(
-    () =>
-      new Promise<Answer>((resolve, reject) => {
-        const req = httpRequest(
-          {
-            host: "127.0.0.1",
-            port,
-            path,
-            method: options.method ?? "POST",
-            agent: false,
-            headers: {
-              host: options.host ?? "gram.workspace.svc.cluster.local:8080",
-              ...(options.token === undefined ? {} : { authorization: `Bearer ${options.token}` }),
-              ...(options.body === undefined ? {} : { "content-type": "application/json" }),
-              ...options.headers,
-            },
-          },
-          (res) => {
-            let body = "";
-            res.setEncoding("utf8");
-            res.on("data", (chunk: string) => (body += chunk));
-            res.on("end", () =>
+/** A JSON endpoint on loopback that answers each POST with what `answer` makes of its body. */
+const endpoint = <Body>(answer: (body: Body) => { status?: number; json: unknown }) =>
+  Effect.acquireRelease(
+    Effect.promise(
+      () =>
+        new Promise<{ server: Server; url: string; tokens: Array<string | undefined> }>(
+          (resolve) => {
+            const tokens: Array<string | undefined> = [];
+            const server = createServer((request, response) => {
+              const chunks: Array<Buffer> = [];
+              request.on("data", (chunk: Buffer) => chunks.push(chunk));
+              request.on("end", () => {
+                tokens.push(request.headers.authorization);
+                const { status = 200, json } = answer(
+                  JSON.parse(Buffer.concat(chunks).toString("utf8")) as Body,
+                );
+                response.writeHead(status, { "content-type": "application/json" });
+                response.end(JSON.stringify(json));
+              });
+            });
+            server.listen(0, "127.0.0.1", () =>
               resolve({
-                status: res.statusCode ?? 0,
-                body,
-                cookie: res.headers["set-cookie"]?.[0] ?? "",
+                server,
+                url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/`,
+                tokens,
               }),
             );
           },
-        );
-        req.on("error", reject);
-        req.end(options.body === undefined ? undefined : JSON.stringify(options.body));
-      }),
+        ),
+    ),
+    ({ server }) =>
+      Effect.promise(
+        () =>
+          new Promise<void>((resolve) => {
+            server.closeAllConnections();
+            server.close(() => resolve());
+          }),
+      ),
   );
 
-const port = Effect.map(HttpServer.HttpServer, serverPort);
+/** Polls in real time: the endpoints answer over real sockets. */
+const eventually = <A, E, R>(label: string, check: Effect.Effect<A | undefined | false, E, R>) =>
+  Effect.gen(function* () {
+    for (let i = 0; i < 1000; i++) {
+      const value = yield* check;
+      if (value !== undefined && value !== false) return value;
+      yield* Effect.sleep("5 millis");
+    }
+    return yield* Effect.die(new Error(`timed out waiting for ${label}`));
+  });
 
-/** The app's own connection: the launch cookie from loopback, over `/ws`. */
-const appClient = Effect.gen(function* () {
-  const at = yield* port;
-  const { token } = yield* LaunchToken;
-  const boot = yield* call(at, `/?boot=${token}`, { method: "GET", host: `127.0.0.1:${at}` });
-  expect(boot.status).toBe(302);
-  const cookie = boot.cookie.split(";")[0] ?? "";
-  const protocol = yield* Layer.build(
-    RpcClient.layerProtocolSocket().pipe(
-      Layer.provide(Socket.layerWebSocket(`ws://127.0.0.1:${at}/ws`)),
-      Layer.provide(
-        Layer.succeed(Socket.WebSocketConstructor)(
-          (url) =>
-            new (globalThis.WebSocket as unknown as new (
-              url: string,
-              init: { headers: Record<string, string> },
-            ) => globalThis.WebSocket)(url, { headers: { cookie } }),
-        ),
-      ),
-      Layer.provide(RpcSerialization.layerJson),
+const serverLayer = (decisionUrl: string | undefined, sinkUrl?: string) =>
+  AppToolRegistry.layer.pipe(
+    Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
+    Layer.provideMerge(UsageLimitReadings.layer),
+    Layer.provideMerge(DecisionHook.layer.pipe(Layer.provideMerge(EventSink.layer))),
+    Layer.provideMerge(EventHub.layer),
+    Layer.provideMerge(ThreadStore.layerSqlite(":memory:")),
+    Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo" })),
+    Layer.provideMerge(TurnHooks.layerNoop),
+    Layer.provideMerge(CheckoutService.layerNoGit),
+    Layer.provideMerge(
+      ServerConfig.layer({
+        ...TEST_CONFIG,
+        ...(decisionUrl === undefined
+          ? {}
+          : {
+              decisionHook:
+                decisionUrl === "unusable"
+                  ? ("unusable" as const)
+                  : { url: decisionUrl, token: "hook-token" },
+            }),
+        ...(sinkUrl === undefined ? {} : { eventSink: { url: sinkUrl, token: "sink-token" } }),
+      }),
+    ),
+    Layer.orDie,
+  );
+
+const setHosted = (on: boolean) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore;
+    yield* store.updateSettings(
+      (settings) => applySettingsPatch(settings, { experimental: { embedding: on } }),
+      [["experimental", "embedding"]],
+    );
+  });
+
+const collectEvents = Effect.gen(function* () {
+  const hub = yield* EventHub;
+  const events: Array<ServerEvent> = [];
+  yield* Effect.forkScoped(
+    Stream.runForEach(
+      hub.internalEvents(() => true),
+      (event) => Effect.sync(() => void events.push(event)),
     ),
   );
-  return yield* RpcClient.make(GramRpcs).pipe(Effect.provideContext(protocol));
+  return events;
 });
 
-const SCHEDULER_TOKEN = "scheduler-acceptance-token-0123456789";
-
-/**
- * The deployment's scheduler: it keeps each timer it is told of, and calls the server back when
- * `ring` says a timer's time has come.
- */
-const scheduler = {
-  timers: new Map<string, number>(),
-  calls: [] as Array<{ readonly method: string; readonly path: string; readonly auth?: string }>,
-};
-const schedulerServer = createServer((req, res) => {
-  let text = "";
-  req.on("data", (chunk: Buffer) => (text += chunk.toString()));
-  req.on("end", () => {
-    const key = decodeURIComponent((req.url ?? "").replace("/v1/timers/", ""));
-    scheduler.calls.push({
-      method: req.method ?? "",
-      path: req.url ?? "",
-      ...(req.headers.authorization === undefined ? {} : { auth: req.headers.authorization }),
+const startThread = (text: string) =>
+  Effect.gen(function* () {
+    const runtimes = yield* ThreadRuntimes;
+    return yield* runtimes.create({
+      projectRoot: "/work/repo",
+      checkout: { kind: "main", path: "/work/repo" },
+      input: { text },
     });
-    if (req.method === "PUT")
-      scheduler.timers.set(key, (JSON.parse(text) as { atMs: number }).atMs);
-    if (req.method === "DELETE") scheduler.timers.delete(key);
-    res.writeHead(200).end();
-  });
-});
-await new Promise<void>((resolve) => schedulerServer.listen(0, "127.0.0.1", resolve));
-afterAll(() => void schedulerServer.close());
-const schedulerUrl = `http://127.0.0.1:${(schedulerServer.address() as AddressInfo).port}/v1`;
-
-const STORE_TOKEN = "object-store-acceptance-token-0123456789";
-
-/** The deployment's object store: what it was given, by key, and the token it was given with. */
-const bucket = { objects: new Map<string, string>(), auths: new Set<string | undefined>() };
-const bucketServer = createServer((req, res) => {
-  const chunks: Array<Buffer> = [];
-  req.on("data", (chunk: Buffer) => chunks.push(chunk));
-  req.on("end", () => {
-    const url = new URL(req.url ?? "", "http://store");
-    bucket.auths.add(req.headers.authorization);
-    if (url.searchParams.has("prefix")) {
-      return void res.writeHead(200).end(JSON.stringify({ keys: [] }));
-    }
-    if (req.method === "PUT") {
-      bucket.objects.set(
-        decodeURIComponent(url.pathname.replace("/v1/objects/", "")),
-        Buffer.concat(chunks).toString(),
-      );
-    }
-    res.writeHead(req.method === "PUT" ? 204 : 404).end();
-  });
-});
-await new Promise<void>((resolve) => bucketServer.listen(0, "127.0.0.1", resolve));
-afterAll(() => void bucketServer.close());
-const bucketUrl = `http://127.0.0.1:${(bucketServer.address() as AddressInfo).port}/v1`;
-
-const badge = (checks: PrStatus["checks"]): PrStatus => ({
-  number: 7,
-  state: "OPEN",
-  url: "https://github.com/acme/web/pull/7",
-  title: "Add the thing",
-  isDraft: false,
-  checks,
-  headMatches: true,
-  aheadOfPr: false,
-});
-
-/** What GitHub would say of the repository's PR, and how often it was asked. */
-const github = { checks: "pending" as PrStatus["checks"], asked: 0 };
-
-const MockPr = Layer.succeed(Pr, {
-  status: () =>
-    Effect.sync(() => {
-      github.asked++;
-      return badge(github.checks);
-    }),
-  checks: () => Effect.succeed([]),
-  prime: () => Effect.void,
-  seenChecks: () => Effect.succeed(undefined),
-  detail: () => Effect.succeed({ available: false }),
-});
-
-const server = (config: Partial<Parameters<typeof ServerConfig.layer>[0]>) =>
-  ServerLayer.pipe(
-    Layer.provide(FakeAgentAdapter),
-    Layer.provide(TurnHooks.layerNoop),
-    Layer.provide(gitPlatformTest({ pr: MockPr })),
-    Layer.provide(ServerConfig.layer({ ...TEST_CONFIG, ...config })),
-    Layer.orDie,
-    Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
-  );
-
-const embed = {
-  repoEvents: "pushed" as const,
-  inboundToken: TOKEN,
-  scheduler: { url: schedulerUrl, token: SCHEDULER_TOKEN },
-  objectStore: { url: bucketUrl, token: STORE_TOKEN },
-};
-
-const repoEvent = { events: [{ repo: "acme/web", number: 7, kind: "check" }] };
-
-// Its own data folder: the attachments it is given are kept there before they are sent on.
-layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
-  excludeTestServices: true,
-})("an embedded server", (it) => {
-  describe("its inbound paths", () => {
-    it.effect("take a service's bearer token, whatever Host it was reached by", () =>
-      Effect.gen(function* () {
-        const at = yield* port;
-        const none = yield* call(at, "/embed/v1/repo-events", { body: repoEvent });
-        expect(none.status).toBe(401);
-        const wrong = yield* call(at, "/embed/v1/repo-events", {
-          token: "x".repeat(TOKEN.length),
-          body: repoEvent,
-        });
-        expect(wrong.status).toBe(401);
-        const ok = yield* call(at, "/embed/v1/repo-events", { token: TOKEN, body: repoEvent });
-        expect(ok.status).toBe(200);
-        expect(JSON.parse(ok.body)).toMatchObject({ accepted: 1 });
-      }),
-    );
-
-    it.effect("refuse a browser, a path they don't have and a body that isn't one", () =>
-      Effect.gen(function* () {
-        const at = yield* port;
-        const browser = yield* call(at, "/embed/v1/repo-events", {
-          token: TOKEN,
-          body: repoEvent,
-          headers: { origin: "https://attacker.example" },
-        });
-        expect(browser.status).toBe(403);
-        expect((yield* call(at, "/embed/v1/nothing", { token: TOKEN })).status).toBe(404);
-        expect(
-          (yield* call(at, "/embed/v1/repo-events", { token: TOKEN, method: "GET" })).status,
-        ).toBe(405);
-        for (const body of [{}, { events: [] }, { events: [{ repo: "no-slash" }] }]) {
-          const refused = yield* call(at, "/embed/v1/repo-events", { token: TOKEN, body });
-          expect(refused.status).toBe(400);
-        }
-        // The token opens these paths and nothing else.
-        expect((yield* call(at, "/ws", { token: TOKEN, method: "GET" })).status).toBe(403);
-        expect((yield* call(at, "/", { token: TOKEN, method: "GET" })).status).toBe(403);
-      }),
-    );
   });
 
-  it.effect("reads a pull request when its event is pushed, not before", () =>
+const sessionOf = (threadId: ThreadId) =>
+  Effect.gen(function* () {
+    const control = yield* FakeAgentControl;
+    return yield* control.latest(threadId);
+  });
+
+describe("decision hook: an agent's outward command", () => {
+  it.live("a refusal stops the push, with no card, and says why to the agent and the user", () =>
     Effect.gen(function* () {
-      const at = yield* port;
-      const runtimes = yield* ThreadRuntimes;
-      const hub = yield* EventHub;
-      // The checks each `git.state` the server sent its clients showed, in order.
-      const shown: Array<string | undefined> = [];
-      yield* hub
-        .internalEvents(
-          (event): event is Extract<ServerEvent, { type: "git.state" }> =>
-            event.type === "git.state",
-          "acceptance",
-        )
-        .pipe(
-          Stream.runForEach((event) => Effect.sync(() => shown.push(event.state.pr?.checks))),
-          Effect.forkScoped({ startImmediately: true }),
+      const asked: Array<DecisionRequest> = [];
+      const hook = yield* endpoint<DecisionRequest>((body) => {
+        asked.push(body);
+        return {
+          json: {
+            decision: "refuse",
+            reason: "Pushes to main are closed this week.",
+          } satisfies DecisionResponse,
+        };
+      });
+      yield* Effect.gen(function* () {
+        yield* setHosted(true);
+        const store = yield* ThreadStore;
+        const events = yield* collectEvents;
+        const thread = yield* startThread("ship it /approve{git push origin main}");
+        const session = yield* sessionOf(thread.id);
+
+        yield* eventually(
+          "the agent's answer",
+          Effect.sync(() => session.responses.length === 1),
         );
-      const repo = makeRepo(tmp);
-      const created = yield* runtimes.create({
-        projectRoot: repo,
-        checkout: { kind: "main", path: repo },
-      });
-      // A worker's thread, bound to the pull request it opened.
-      yield* runtimes.updateThread(created.id, (thread) => ({
-        ...thread,
-        boundPr: { repo: "acme/web", number: 7, monitor: false },
-      }));
-
-      // Its checks are running on GitHub. Nothing here asks, so nothing here knows.
-      yield* Effect.sleep("500 millis");
-      expect(github.asked).toBe(0);
-      expect(shown.filter((checks) => checks !== undefined)).toEqual([]);
-
-      // Another repository's event reads nothing; this one's reads the checkout.
-      const other = yield* call(at, "/embed/v1/repo-events", {
-        token: TOKEN,
-        body: { events: [{ repo: "acme/api", number: 7 }] },
-      });
-      expect(JSON.parse(other.body)).toEqual({ accepted: 1, checkouts: 0 });
-      const opened = yield* call(at, "/embed/v1/repo-events", { token: TOKEN, body: repoEvent });
-      expect(JSON.parse(opened.body)).toEqual({ accepted: 1, checkouts: 1 });
-      yield* eventually(
-        "the pull request shown",
-        Effect.sync(() => shown.at(-1) === "pending"),
-      );
-
-      // The checks pass, and the event saying so is all that tells the server.
-      github.checks = "passing";
-      const asked = github.asked;
-      yield* Effect.sleep("300 millis");
-      expect(github.asked).toBe(asked);
-      yield* call(at, "/embed/v1/repo-events", { token: TOKEN, body: repoEvent });
-      yield* eventually(
-        "the passing checks shown",
-        Effect.sync(() => shown.at(-1) === "passing"),
-      );
-      expect(github.asked).toBeGreaterThan(asked);
-    }).pipe(Effect.scoped),
+        expect(session.responses[0]!.answer).toEqual({
+          kind: "approval",
+          decision: "deny",
+          scope: "once",
+          message: "Refused by policy (push): Pushes to main are closed this week.",
+        });
+        // The command never ran: the fake's turn reports the denial.
+        const runtimes = yield* ThreadRuntimes;
+        yield* eventually(
+          "the turn to end",
+          runtimes.status(thread.id).pipe(Effect.map((status) => status === "idle")),
+        );
+        expect(yield* store.listRequests(thread.id)).toEqual([]);
+        expect(events.some((event) => event.type === "thread.request")).toBe(false);
+        expect(events).toContainEqual({
+          type: "notify",
+          kind: "info",
+          title: "Refused by policy (push): Pushes to main are closed this week.",
+          threadId: thread.id,
+        });
+        // The session opened under the hook's gates, and the hook was asked once, as specified.
+        expect(session.options).toMatchObject({ outwardGate: "all", gateConnectors: true });
+        expect(asked).toHaveLength(1);
+        expect(asked[0]).toMatchObject({
+          v: 1,
+          action: "push",
+          initiator: "agent",
+          actor: { kind: "thread", id: thread.id },
+          thread: { id: thread.id, role: "plain" },
+          detail: { command: "git push origin main" },
+        });
+        expect(hook.tokens).toEqual(["Bearer hook-token"]);
+      }).pipe(Effect.provide(serverLayer(hook.url)));
+    }),
   );
 
-  it.effect("registers a snooze with the scheduler, which brings the thread back", () =>
+  it.live("an allowed push is answered for the agent with no card", () =>
     Effect.gen(function* () {
-      const at = yield* port;
-      const runtimes = yield* ThreadRuntimes;
-      const store = yield* ThreadStore;
-      const app = yield* appClient;
-      const thread = yield* runtimes.create({
-        projectRoot: tmp,
-        checkout: { kind: "main", path: tmp },
-      });
-      const key = `snooze:${thread.id}`;
-
-      // The user snoozes it for a few seconds: the server keeps the snooze, and tells the
-      // scheduler only its key and its time.
-      const until = Date.now() + 2_500;
-      yield* app["thread.snooze"]({ threadId: thread.id, until });
-      yield* eventually(
-        "the timer registered",
-        Effect.sync(() => scheduler.timers.get(key) === until),
-      );
-      expect(scheduler.calls.every((each) => each.auth === `Bearer ${SCHEDULER_TOKEN}`)).toBe(true);
-      const listed = yield* call(at, "/embed/v1/timers", { token: TOKEN, method: "GET" });
-      expect(JSON.parse(listed.body)).toMatchObject({ timers: [{ key, atMs: until }] });
-
-      // Its time comes, by the scheduler's clock, and the scheduler calls.
-      yield* Effect.sleep(`${Math.max(0, until - Date.now())} millis`);
-      const fired = yield* call(at, "/embed/v1/timers/fire", { token: TOKEN, body: { key } });
-      expect(JSON.parse(fired.body)).toEqual({ fired: true });
-      // Back and unread within moments: the wait's own fallback is half a minute away.
-      const back = yield* eventually(
-        "the thread back",
-        Effect.map(store.getThread(thread.id), (found) =>
-          found.snoozedUntil === undefined ? found : undefined,
-        ),
-        5_000,
-      );
-      expect(back.unread).toBe(true);
-      // A second call for it finds nothing waiting, so the scheduler drops it.
-      const again = yield* call(at, "/embed/v1/timers/fire", { token: TOKEN, body: { key } });
-      expect(JSON.parse(again.body)).toEqual({ fired: false });
-
-      // A snooze the user takes back is taken back from the scheduler too.
-      yield* app["thread.snooze"]({ threadId: thread.id, until: Date.now() + 3_600_000 });
-      yield* eventually(
-        "the second timer registered",
-        Effect.sync(() => scheduler.timers.has(key)),
-      );
-      yield* app["thread.snooze"]({ threadId: thread.id, until: null });
-      yield* eventually(
-        "the timer withdrawn",
-        Effect.sync(() => !scheduler.timers.has(key)),
-      );
-    }).pipe(Effect.scoped),
+      const hook = yield* endpoint<DecisionRequest>(() => ({ json: { decision: "allow" } }));
+      yield* Effect.gen(function* () {
+        yield* setHosted(true);
+        const events = yield* collectEvents;
+        const thread = yield* startThread("ship it /approve{git push origin feat}");
+        const session = yield* sessionOf(thread.id);
+        yield* eventually(
+          "the agent's answer",
+          Effect.sync(() => session.responses.length === 1),
+        );
+        expect(session.responses[0]!.answer).toEqual({
+          kind: "approval",
+          decision: "allow",
+          scope: "once",
+        });
+        expect(events.some((event) => event.type === "thread.request")).toBe(false);
+      }).pipe(Effect.provide(serverLayer(hook.url)));
+    }),
   );
 
-  it.effect("keeps a thread's attachment in the object store as it is uploaded", () =>
+  it.live("an endpoint that is down refuses", () =>
     Effect.gen(function* () {
-      const runtimes = yield* ThreadRuntimes;
-      const app = yield* appClient;
-      const thread = yield* runtimes.create({
-        projectRoot: tmp,
-        checkout: { kind: "main", path: tmp },
-      });
-      const attachment = yield* app["attachment.upload"]({
-        threadId: thread.id,
-        name: "notes.txt",
-        mediaType: "text/plain",
-        data: Buffer.from("kept outside the server").toString("base64"),
-      });
-      const key = `attachments/${thread.id}/${attachment.path.split(/[\\/]/).at(-1)}`;
-      yield* eventually(
-        "the attachment in the store",
-        Effect.sync(() => bucket.objects.get(key) === "kept outside the server"),
-      );
-      expect(bucket.auths).toEqual(new Set([`Bearer ${STORE_TOKEN}`]));
-    }).pipe(Effect.scoped),
+      const hook = yield* endpoint<DecisionRequest>(() => ({ status: 503, json: {} }));
+      yield* Effect.gen(function* () {
+        yield* setHosted(true);
+        const thread = yield* startThread("ship it /approve{gh pr merge 12 --squash}");
+        const session = yield* sessionOf(thread.id);
+        yield* eventually(
+          "the agent's answer",
+          Effect.sync(() => session.responses.length === 1),
+        );
+        expect(session.responses[0]!.answer).toMatchObject({
+          decision: "deny",
+          message:
+            "Refused by policy (pr.merge): The decision endpoint could not be asked, so this was refused.",
+        });
+      }).pipe(Effect.provide(serverLayer(hook.url)));
+    }),
   );
 
-  it.effect("holds the settings it is supplied against a change from inside", () =>
+  it.live("an endpoint that was configured and can't be used refuses, not allows", () =>
     Effect.gen(function* () {
-      const at = yield* port;
-      const app = yield* appClient;
-      expect((yield* app["settings.get"]()).logLevel).toBe("info");
+      yield* setHosted(true);
+      const thread = yield* startThread("ship it /approve{git push origin feat}");
+      const session = yield* sessionOf(thread.id);
+      yield* eventually(
+        "the agent's answer",
+        Effect.sync(() => session.responses.length === 1),
+      );
+      expect(session.responses[0]!.answer).toMatchObject({
+        decision: "deny",
+        message:
+          "Refused by policy (push): The decision endpoint could not be asked, so this was refused.",
+      });
+    }).pipe(Effect.provide(serverLayer("unusable"))),
+  );
 
-      const put = yield* call(at, "/embed/v1/settings", {
-        token: TOKEN,
-        method: "PUT",
-        body: { settings: { logLevel: "debug", notifications: { sounds: false } } },
+  it.live("ask raises the card, and its approval is put to the hook again before it runs", () =>
+    Effect.gen(function* () {
+      const asked: Array<DecisionRequest> = [];
+      let second: DecisionResponse = { decision: "allow" };
+      const hook = yield* endpoint<DecisionRequest>((body) => {
+        asked.push(body);
+        return {
+          json:
+            body.approval === undefined
+              ? ({ decision: "ask", reason: "A maintainer signs off merges." } as const)
+              : second,
+        };
       });
-      expect(JSON.parse(put.body)).toEqual({ supplied: ["logLevel", "notifications.sounds"] });
-      const now = yield* app["settings.get"]();
-      expect(now.logLevel).toBe("debug");
-      expect(now.notifications.sounds).toBe(false);
+      const run = (expected: "allow" | "deny") =>
+        Effect.gen(function* () {
+          asked.length = 0;
+          yield* setHosted(true);
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const thread = yield* startThread("ship it /approve{gh pr merge 12}");
+          const session = yield* sessionOf(thread.id);
+          const card = yield* eventually(
+            "the card",
+            store.listRequests(thread.id).pipe(Effect.map((requests) => requests[0])),
+          );
+          expect(card).toMatchObject({
+            kind: "approval",
+            input: { command: "gh pr merge 12" },
+            decisionReason: "A maintainer signs off merges.",
+          });
+          expect(session.responses).toEqual([]);
+          yield* runtimes.respond(thread.id, card.id, {
+            kind: "approval",
+            decision: "allow",
+            scope: "once",
+          });
+          expect(session.responses.map((response) => response.answer.kind)).toEqual(["approval"]);
+          expect(session.responses[0]!.answer).toMatchObject({ decision: expected });
+          expect(asked).toHaveLength(2);
+          expect(asked[1]).toMatchObject({
+            action: "pr.merge",
+            approval: { decisionId: asked[0]!.id, askId: card.id },
+          });
+        }).pipe(Effect.provide(serverLayer(hook.url)));
+      yield* run("allow");
+      second = { decision: "refuse", reason: "You can't approve your own merge." };
+      yield* run("deny");
+    }),
+  );
 
-      // The user's own window can't change either, and is told whose they are.
-      const refused = yield* Effect.flip(app["settings.set"]({ patch: { logLevel: "warn" } }));
-      expect(refused).toMatchObject({
-        _tag: "InvalidState",
-        message: expect.stringContaining("logLevel is set by the service that runs this Gram"),
+  it.live("with hosted features off, nothing is asked and the card is the one it always was", () =>
+    Effect.gen(function* () {
+      const asked: Array<DecisionRequest> = [];
+      const hook = yield* endpoint<DecisionRequest>((body) => {
+        asked.push(body);
+        return { json: { decision: "refuse" } };
       });
-      // What isn't supplied still changes, beside a supplied value repeated as it stands.
-      const changed = yield* app["settings.set"]({
-        patch: { notifications: { sounds: false, native: false } },
-      });
-      expect(changed.notifications).toMatchObject({ sounds: false, native: false });
-      expect(changed.logLevel).toBe("debug");
-
-      // The switch for all of this is never supplied.
-      const flag = yield* call(at, "/embed/v1/settings", {
-        token: TOKEN,
-        method: "PUT",
-        body: { settings: { experimental: { embedding: false } } },
-      });
-      expect(flag.status).toBe(400);
-
-      // Supplying nothing gives the settings back to the user, at the values they last had.
-      const cleared = yield* call(at, "/embed/v1/settings", {
-        token: TOKEN,
-        method: "PUT",
-        body: { settings: {} },
-      });
-      expect(cleared.status).toBe(200);
-      const read = yield* call(at, "/embed/v1/settings", { token: TOKEN, method: "GET" });
-      expect(JSON.parse(read.body)).toEqual({ settings: null });
-      expect((yield* app["settings.set"]({ patch: { logLevel: "info" } })).logLevel).toBe("info");
-    }).pipe(Effect.scoped),
+      yield* Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const thread = yield* startThread("ship it /approve{git push origin main}");
+        const session = yield* sessionOf(thread.id);
+        const card = yield* eventually(
+          "the card",
+          store.listRequests(thread.id).pipe(Effect.map((requests) => requests[0])),
+        );
+        expect(card).toMatchObject({
+          kind: "approval",
+          input: { command: "git push origin main" },
+        });
+        expect(session.options).not.toHaveProperty("gateConnectors");
+        expect(session.options).not.toHaveProperty("outwardGate");
+        expect(asked).toEqual([]);
+      }).pipe(Effect.provide(serverLayer(hook.url)));
+    }),
   );
 });
 
-layer(server({ embed }), { excludeTestServices: true })(
-  "a server with the hosted features off",
-  (it) => {
-    it.effect("has no inbound paths, whatever its environment configured", () =>
-      Effect.gen(function* () {
-        const at = yield* port;
-        const embedded = yield* call(at, "/embed/v1/repo-events", {
-          token: TOKEN,
-          body: repoEvent,
+describe("decision hook: an action the server takes", () => {
+  const thread = { id: "thread-1" as ThreadId } as Thread;
+  const question = {
+    action: "pr.merge" as const,
+    initiator: "person" as const,
+    detail: { repo: "acme/app", number: 12 },
+  };
+  const card = Effect.succeed({
+    toolName: "pr.merge",
+    displayName: "Merge",
+    description: "Merge",
+    input: {},
+  });
+
+  it.live("a refusal fails the action with the reason; off, it is let through unasked", () =>
+    Effect.gen(function* () {
+      let calls = 0;
+      const hook = yield* endpoint<DecisionRequest>(() => {
+        calls++;
+        return { json: { decision: "refuse", reason: "Merges are frozen." } };
+      });
+      const layer = DecisionHook.layer.pipe(
+        Layer.provideMerge(ThreadStore.layerSqlite(":memory:")),
+        Layer.provideMerge(ServerConfig.layer({ ...TEST_CONFIG, decisionHook: { url: hook.url } })),
+        Layer.orDie,
+      );
+      yield* Effect.gen(function* () {
+        const guard = makeActionGuard({
+          hook: yield* DecisionHook,
+          store: { getThread: () => Effect.succeed(thread) },
+          runtimes: { requestApproval: () => Effect.die("no card is raised") },
         });
-        const unknown = yield* call(at, "/no/such/path", { token: TOKEN, body: repoEvent });
-        expect(embedded).toEqual(unknown);
-        expect(embedded.status).toBe(403);
-        // From loopback too it is any other path: the launch cookie's, which no service has.
-        const local = yield* call(at, "/embed/v1/repo-events", {
-          token: TOKEN,
-          body: repoEvent,
-          host: `127.0.0.1:${at}`,
+        yield* guard(thread.id, question, card);
+        expect(calls).toBe(0);
+        yield* setHosted(true);
+        const refused = yield* Effect.flip(guard(thread.id, question, card));
+        expect(refused.message).toBe("Refused by policy (pr.merge): Merges are frozen.");
+        expect(calls).toBe(1);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.live("ask waits for a person, then asks again; a rejection stops it there", () =>
+    Effect.gen(function* () {
+      const asked: Array<DecisionRequest> = [];
+      const hook = yield* endpoint<DecisionRequest>((body) => {
+        asked.push(body);
+        return { json: { decision: body.approval === undefined ? "ask" : "allow" } };
+      });
+      const layer = DecisionHook.layer.pipe(
+        Layer.provideMerge(ThreadStore.layerSqlite(":memory:")),
+        Layer.provideMerge(ServerConfig.layer({ ...TEST_CONFIG, decisionHook: { url: hook.url } })),
+        Layer.orDie,
+      );
+      yield* Effect.gen(function* () {
+        yield* setHosted(true);
+        const answers: Array<"allow" | "deny"> = ["allow", "deny"];
+        const guard = makeActionGuard({
+          hook: yield* DecisionHook,
+          store: { getThread: () => Effect.succeed(thread) },
+          runtimes: {
+            requestApproval: () =>
+              Effect.succeed({
+                kind: "approval" as const,
+                decision: answers.shift()!,
+                scope: "once" as const,
+                resolution: {
+                  threadId: thread.id,
+                  requestId: "card-1" as never,
+                  origin: "user" as const,
+                  reason: "approved",
+                  resolvedAt: 0,
+                },
+              }),
+          },
         });
-        expect(local.status).toBe(401);
+        yield* guard(thread.id, question, card);
+        expect(asked.map((request) => request.approval)).toEqual([
+          undefined,
+          { decisionId: asked[0]!.id, askId: "card-1" },
+        ]);
+        const refused = yield* Effect.flip(guard(thread.id, question, card));
+        expect(refused.message).toBe("Not approved (pr.merge).");
+        expect(asked).toHaveLength(3);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+});
+
+const sinkAt = (file: string, url: string, on: Effect.Effect<boolean> = Effect.succeed(true)) =>
+  makeEventSink({
+    endpoint: { url, token: "sink-token" },
+    file,
+    on,
+    threads: Effect.succeed([]),
+    batchSize: 3,
+    retryBase: Duration.millis(5),
+    retryMax: Duration.millis(20),
+    recheck: Duration.millis(5),
+  });
+
+const recordStatuses = (sink: EventSinkShape, from: number, to: number) =>
+  Effect.forEach(
+    Array.from({ length: to - from + 1 }, (_, i) => from + i),
+    (n) =>
+      sink.record({
+        type: "thread.status",
+        threadId: "thread-1",
+        data: { id: "thread-1", status: "running", idle: false, n },
       }),
-    );
-  },
-);
+    { discard: true },
+  );
+
+describe("event sink", () => {
+  /** A receiver that keeps what it is sent in order, and can be told to stop taking it. */
+  const receiver = Effect.gen(function* () {
+    const held: Array<SinkEvent> = [];
+    const sources = new Set<string>();
+    const state = { down: false, posts: 0 };
+    const server = yield* endpoint<SinkBatch>((batch) => {
+      state.posts++;
+      if (state.down) return { status: 503, json: {} };
+      sources.add(batch.source);
+      for (const event of batch.events) {
+        // At least once: what it holds already is ignored, and a gap is not taken.
+        if (event.seq === held.length + 1) held.push(event);
+      }
+      return { json: { ack: held.length } };
+    });
+    return { held, sources, state, url: server.url, tokens: server.tokens };
+  });
+
+  it.live("replays from where the receiver left off after a restart, with no gap", () =>
+    Effect.gen(function* () {
+      const dir = mkdtempSync(join(tmpdir(), "gram-sink-"));
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+      const file = join(dir, "event-sink.db");
+      const to = yield* receiver;
+
+      // First run: seven events reach the receiver, then it goes down and five more are recorded.
+      const first = yield* Scope.make();
+      const sink = yield* sinkAt(file, to.url).pipe(Scope.provide(first));
+      yield* recordStatuses(sink, 1, 6);
+      yield* eventually(
+        "the first seven",
+        Effect.sync(() => to.held.length === 7),
+      );
+      to.state.down = true;
+      yield* recordStatuses(sink, 7, 11);
+      const postsWhileDown = to.state.posts;
+      yield* eventually(
+        "a refused send",
+        Effect.sync(() => to.state.posts > postsWhileDown),
+      );
+      // The server stops with five events unsent.
+      yield* Scope.close(first, { _tag: "Success", value: undefined } as never);
+      expect(to.held).toHaveLength(7);
+
+      // Second run on the same file: the receiver is back, and more happens.
+      to.state.down = false;
+      const again = yield* sinkAt(file, to.url);
+      yield* recordStatuses(again, 12, 13);
+      yield* eventually(
+        "everything",
+        Effect.sync(() => to.held.length === 15),
+      );
+
+      // One source, every number once, in order: 1 `sink.started`, 6 statuses, 5 from before the
+      // restart, the second run's `sink.started`, then its 2.
+      expect(to.sources.size).toBe(1);
+      expect(to.held.map((event) => event.seq)).toEqual(
+        Array.from({ length: 15 }, (_, i) => i + 1),
+      );
+      expect(
+        to.held.map((event) => (event.type === "sink.started" ? "start" : event.data["n"])),
+      ).toEqual(["start", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, "start", 12, 13]);
+      expect(new Set(to.tokens)).toEqual(new Set(["Bearer sink-token"]));
+    }),
+  );
+
+  it.live("does not believe an ack past what it sent, and keeps sending the same events", () =>
+    Effect.gen(function* () {
+      const held: Array<SinkEvent> = [];
+      const sources = new Set<string>();
+      const state = { lying: true };
+      const server = yield* endpoint<SinkBatch>((batch) => {
+        sources.add(batch.source);
+        if (state.lying) return { json: { ack: batch.events.at(-1)!.seq + 5 } };
+        for (const event of batch.events) if (event.seq === held.length + 1) held.push(event);
+        return { json: { ack: held.length } };
+      });
+      const sink = yield* sinkAt(":memory:", server.url);
+      yield* recordStatuses(sink, 1, 3);
+      yield* eventually(
+        "two sends",
+        Effect.sync(() => server.tokens.length >= 2),
+      );
+      state.lying = false;
+      yield* eventually(
+        "all four",
+        Effect.sync(() => held.length === 4),
+      );
+      expect(sources.size).toBe(1);
+      expect(held.map((event) => event.seq)).toEqual([1, 2, 3, 4]);
+    }),
+  );
+
+  it.live("goes back to what the receiver says it holds", () =>
+    Effect.gen(function* () {
+      const to = yield* receiver;
+      const sink = yield* sinkAt(":memory:", to.url);
+      yield* recordStatuses(sink, 1, 4);
+      yield* eventually(
+        "five",
+        Effect.sync(() => to.held.length === 5),
+      );
+      // The receiver loses its newest two; its next ack says so, and they are sent again.
+      to.held.length = 3;
+      yield* recordStatuses(sink, 5, 5);
+      yield* eventually(
+        "six",
+        Effect.sync(() => to.held.length === 6),
+      );
+      expect(to.held.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(to.held.map((event) => event.data["n"] ?? "start")).toEqual(["start", 1, 2, 3, 4, 5]);
+    }),
+  );
+
+  it.live("records nothing while hosted features are off, and opens with a snapshot when on", () =>
+    Effect.gen(function* () {
+      const to = yield* receiver;
+      let on = false;
+      const sink = yield* sinkAt(
+        ":memory:",
+        to.url,
+        Effect.sync(() => on),
+      );
+      yield* recordStatuses(sink, 1, 3);
+      yield* Effect.sleep("30 millis");
+      expect(to.state.posts).toBe(0);
+      on = true;
+      yield* Effect.sleep("10 millis");
+      yield* recordStatuses(sink, 4, 4);
+      yield* eventually(
+        "two",
+        Effect.sync(() => to.held.length === 2),
+      );
+      expect(to.held.map((event) => event.data["n"] ?? event.type)).toEqual(["sink.started", 4]);
+    }),
+  );
+
+  it.live("the server's own events reach the sink: threads, asks and decisions", () =>
+    Effect.gen(function* () {
+      const to = yield* receiver;
+      const hook = yield* endpoint<DecisionRequest>(() => ({
+        json: { decision: "ask", title: "Sign off the release" },
+      }));
+      yield* Effect.gen(function* () {
+        yield* setHosted(true);
+        const store = yield* ThreadStore;
+        const thread = yield* startThread("ship it /approve{gh release create v1}");
+        const card = yield* eventually(
+          "the card",
+          store.listRequests(thread.id).pipe(Effect.map((requests) => requests[0])),
+        );
+        const opened = yield* eventually(
+          "ask.opened at the receiver",
+          Effect.sync(() => to.held.find((event) => event.type === "ask.opened")),
+        );
+        const decision = to.held.find((event) => event.type === "decision")!;
+        expect(decision).toMatchObject({
+          threadId: thread.id,
+          actor: { kind: "thread", id: thread.id },
+          data: { action: "release", decision: "ask" },
+        });
+        expect(opened).toMatchObject({
+          threadId: thread.id,
+          data: {
+            id: card.id,
+            kind: "approval",
+            title: "Sign off the release",
+            decisionId: decision.data["id"],
+          },
+        });
+        expect(to.held[0]!.type).toBe("sink.started");
+        expect(to.held.some((event) => event.type === "thread.upsert")).toBe(true);
+        expect(to.held.map((event) => event.seq)).toEqual(to.held.map((_, i) => i + 1));
+      }).pipe(Effect.provide(serverLayer(hook.url, to.url)));
+    }),
+  );
+});

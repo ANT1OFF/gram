@@ -13,11 +13,16 @@ export const REMOTE_STATUS_PATH = "/remote/status";
 export const REMOTE_ENABLE_PATH = "/remote/enable";
 export const REMOTE_DISABLE_PATH = "/remote/disable";
 export const REMOTE_REVOKE_PATH = "/remote/revoke";
+/** A workspace out of this server as a bundle, and a bundle into it. */
+export const WORKSPACE_EXPORT_PATH = "/workspaces/export";
+export const WORKSPACE_IMPORT_PATH = "/workspaces/import";
 /** Management routes: only the local app may call them, never a paired browser. */
 export const LOCAL_ONLY_PATHS: ReadonlySet<string> = new Set([
   REMOTE_PAIR_PATH,
   REMOTE_ENABLE_PATH,
   REMOTE_DISABLE_PATH,
+  WORKSPACE_EXPORT_PATH,
+  WORKSPACE_IMPORT_PATH,
 ]);
 
 /** Deliberately one canonical HTTPS tailnet origin, never a wildcard or forwarded-header trust. */

@@ -226,11 +226,17 @@ describe("a joined machine's worker host", () => {
         expect(yield* host.checkouts.present(checkout.path)).toBe(true);
         expect((yield* host.git.local(checkout.path)).branch).toBe("feature/remote");
 
-        // Only a new worktree there: the project's own folder is on this machine.
-        const current = yield* host.checkouts
-          .prepare({ kind: "current" }, [], root)
+        // The project's own folder there is the machine's clone as it is, which only a headless
+        // Gram asks for (`placedHost` refuses it otherwise); a worktree of this machine is never
+        // the machine's.
+        const current = yield* host.checkouts.prepare({ kind: "current" }, [], root);
+        expect(current).toMatchObject({ kind: "main", hostId: host.id, branch: "main" });
+        expect(current.path).not.toBe(checkout.path);
+        expect(existsSync(join(current.path, "tracked.txt"))).toBe(true);
+        const here = yield* host.checkouts
+          .prepare({ kind: "existingWorktree", path: root }, [], root)
           .pipe(Effect.flip);
-        expect(current).toMatchObject({ _tag: "InvalidState" });
+        expect(here).toMatchObject({ _tag: "InvalidState" });
 
         // A token in the project's remote never crosses to the machine.
         execFileSync("git", [

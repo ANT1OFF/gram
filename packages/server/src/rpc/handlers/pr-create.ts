@@ -1,6 +1,7 @@
 import { InvalidState, ORCHESTRATOR_HAS_NO_PR, type BoundPr } from "@gram/contracts";
 import { createPr, Proc, prDraftFromCommits } from "@gram/git";
 import * as Effect from "effect/Effect";
+import { actionGuard } from "../../embedding/guard.ts";
 import { GitRefresh } from "../../git/platform.ts";
 import { threadFolder } from "../../git/thread-pr.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
@@ -13,6 +14,7 @@ export const prCreateHandlers = Effect.gen(function* () {
   const runtimes = yield* ThreadRuntimes;
   const proc = yield* Proc;
   const refreshes = yield* GitRefresh;
+  const guard = yield* actionGuard;
 
   const threadAndFolder = (threadId: Parameters<typeof store.getThread>[0]) =>
     Effect.gen(function* () {
@@ -36,6 +38,16 @@ export const prCreateHandlers = Effect.gen(function* () {
         if (thread.role === "orchestrator") {
           return yield* new InvalidState({ message: ORCHESTRATOR_HAS_NO_PR, threadId });
         }
+        yield* guard(
+          threadId,
+          { action: "pr.open", initiator: "person", detail: { title, base, draft } },
+          Effect.succeed({
+            toolName: "pr.create",
+            displayName: "Open pull request",
+            description: `Open a pull request into ${base}: ${title}`,
+            input: { title, base, draft },
+          }),
+        ).pipe(Effect.mapError((e) => new InvalidState({ message: e.message, threadId })));
         const created = yield* createPr(cwd, { title, body, base, draft }).pipe(
           Effect.provideService(Proc, proc),
           Effect.mapError((e) => new InvalidState({ message: e.message, threadId })),
