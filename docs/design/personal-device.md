@@ -852,3 +852,27 @@ Lending is never on at start: what was lent is offered to resume, and resuming c
 folder is still the one lent. A pause is kept across restarts until the person lifts it. Signing
 out stops lending, asks the server to forget the device and clears its sign-in from the
 keychain. `presence.ts` reads the operating system's sleep, lock, user switch and idle state.
+
+Its independent review changed it so:
+
+- Whether the keychain is strong is asked once the app is ready, awaiting the vault's answer;
+  a weak answer is asked again. Without lending available, sign-ins last the session in memory
+  and nothing reaches the keychain.
+- A lend is checked against what the settings can keep before anything changes, and a save
+  that fails takes it back, so a lend that answers no never lends.
+- A saved server that couldn't be reached at start is kept as saved, pause and folders, shown
+  as signed out, and brought back when the person tries again; signing in elsewhere doesn't
+  erase it.
+- Resume needs the workspace listed and allowed, and checks each folder's birth time as well as
+  its disk and inode, since a folder deleted and made again can get its inode straight back.
+  Where the file system keeps no birth time, the person lends again. A workspace whose policy
+  isn't known gets no capability.
+- When the server ends a sign-in, lending there stops, its grants go, the sign-in leaves the
+  keychain and the person can sign in again; what was lent waits to be resumed.
+- One sign-in per server at a time; closing stops one under way and undoes each step it took.
+  A failed sign-in leaves no new key, and signing out removes the server's key too. At most 16
+  servers.
+- Each log line is on disk before the head that counts it is kept, and the settings' folder is
+  flushed after each rename. A failure reading the keychain or the files at start makes lending
+  unavailable instead of failing; settings found edited can be set aside, with the log, and
+  started afresh, only as the person's decision.

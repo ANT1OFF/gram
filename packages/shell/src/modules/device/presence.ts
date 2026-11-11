@@ -110,15 +110,17 @@ export const watchPresence = (
 /**
  * The device's secrets in the operating system's keychain, through `safeStorage`: encrypted, in a
  * file of their own. Strong only with a real keyring: on Linux without one, `safeStorage` would
- * keep them under a fixed password, so nothing is kept and lending is unavailable.
+ * keep them under a fixed password, so nothing is kept and lending is unavailable. Made once the
+ * app is ready, as `safeStorage` can't tell its backend before.
  */
 export const vaultSecrets = (crypto: VaultCrypto, store: VaultStore): DeviceSecrets => {
-  let strong: boolean | undefined;
-  const isStrong = () => {
-    if (strong === undefined) {
-      const available = crypto.available();
+  /** Strong once found so; a weak answer is asked again, as Linux's keyring may come up later. */
+  let strong = false;
+  const isStrong = async () => {
+    if (!strong) {
+      const available = (await crypto.available()) === true;
       const backend = crypto.backend?.();
-      strong = available === true && (process.platform !== "linux" || keyringBackendOk(backend));
+      strong = available && (process.platform !== "linux" || keyringBackendOk(backend));
     }
     return strong;
   };
@@ -138,13 +140,13 @@ export const vaultSecrets = (crypto: VaultCrypto, store: VaultStore): DeviceSecr
   return {
     strong: isStrong,
     get: async (name) => {
-      if (!isStrong()) return undefined;
+      if (!(await isStrong())) return undefined;
       await queue.catch(() => undefined);
       const sealed = (await store.read())[name];
       return sealed === undefined ? undefined : await crypto.decrypt(Buffer.from(sealed, "base64"));
     },
     set: async (name, value) => {
-      if (!isStrong()) throw new Error("No keyring: nothing is kept.");
+      if (!(await isStrong())) throw new Error("No keyring: nothing is kept.");
       await change(async (entries) => {
         entries[name] = (await crypto.encrypt(value)).toString("base64");
       });

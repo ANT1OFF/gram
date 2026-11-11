@@ -243,6 +243,9 @@ export const openDeviceLog = async (
           await handle.truncate(goodBytes).catch(() => undefined);
           throw error;
         }
+        // On disk before the head that counts it is handed back to be kept with the settings,
+        // so a power loss can't leave the settings counting a line the log never got.
+        await handle.datasync();
         goodBytes += line.length;
         head = { count: head.count + 1, mac };
         return head;

@@ -108,7 +108,7 @@ describe("the device's secrets", () => {
       crypto(true, process.platform === "linux" ? "gnome_libsecret" : undefined),
       store,
     );
-    expect(secrets.strong()).toBe(true);
+    expect(await secrets.strong()).toBe(true);
     await Promise.all([secrets.set("a", "one"), secrets.set("b", "two")]);
     expect(await secrets.get("a")).toBe("one");
     expect(await secrets.get("b")).toBe("two");
@@ -119,10 +119,31 @@ describe("the device's secrets", () => {
 
   it("keeps nothing without a real keyring", async () => {
     const secrets = vaultSecrets(crypto(false), memoryStore());
-    expect(secrets.strong()).toBe(false);
+    expect(await secrets.strong()).toBe(false);
     await expect(secrets.set("a", "one")).rejects.toThrow();
     expect(await secrets.get("a")).toBeUndefined();
     if (process.platform === "linux")
-      expect(vaultSecrets(crypto(true, "basic_text"), memoryStore()).strong()).toBe(false);
+      expect(await vaultSecrets(crypto(true, "basic_text"), memoryStore()).strong()).toBe(false);
+  });
+
+  it("is strong through the app's own crypto, which answers later", async () => {
+    const later = {
+      ...crypto(true, process.platform === "linux" ? "gnome_libsecret" : undefined),
+      available: async () => true,
+    };
+    expect(await vaultSecrets(later, memoryStore()).strong()).toBe(true);
+  });
+
+  it("asks again after a weak answer, as a keyring can come up after start", async () => {
+    let up = false;
+    const coming = {
+      ...crypto(true),
+      available: () => up,
+      backend: () => (up ? "gnome_libsecret" : "unknown"),
+    };
+    const secrets = vaultSecrets(coming, memoryStore());
+    expect(await secrets.strong()).toBe(false);
+    up = true;
+    expect(await secrets.strong()).toBe(true);
   });
 });

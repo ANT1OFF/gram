@@ -4,6 +4,7 @@ import type { DeviceCapability, DeviceId, HostedDiscovery, HostedWorkspace } fro
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
+import { rename } from "node:fs/promises";
 import type { AskAnswer, AskRequest, GateFolder } from "./gate.ts";
 import { type GrantLedger, makeGrantLedger } from "./grants.ts";
 import { checkLendable, type LendBounds } from "./folders.ts";
@@ -28,6 +29,7 @@ import { type AskLimits, makeAskLimits } from "./limits.ts";
 import { type DeviceLog, type DeviceLogEntry, openDeviceLog } from "./log.ts";
 import {
   type DeviceSettings,
+  deviceSettingsFit,
   EMPTY_DEVICE_SETTINGS,
   readDeviceSettings,
   writeDeviceSettings,
@@ -44,10 +46,10 @@ import {
 /** The operating system's keychain, through the app's key vault. */
 export interface DeviceSecrets {
   /**
-   * Whether secrets are kept by a real keyring. Without one, a sign-in lasts for the session
-   * and lending is unavailable.
+   * Whether secrets are kept by a real keyring, asked once the app is ready. Without one, a
+   * sign-in lasts for the session and lending is unavailable.
    */
-  readonly strong: () => boolean;
+  readonly strong: () => Promise<boolean>;
   readonly get: (name: string) => Promise<string | undefined>;
   readonly set: (name: string, value: string) => Promise<void>;
   readonly remove: (name: string) => Promise<void>;
@@ -155,6 +157,11 @@ export interface HostedDevice {
   readonly stop: (origin: string, workspace: string) => Promise<void>;
   /** A decision: only from the lending sheet. */
   readonly liftPause: (origin: string) => Promise<void>;
+  /**
+   * A decision, only from a window the main process owns: the settings were found edited, and
+   * the person chose to set them aside, with the log, and start with nothing lent.
+   */
+  readonly startAfresh: () => Promise<Done>;
   /** The grants for turns the person sends from this machine, for the hosted view. */
   readonly grants: (origin: string) => GrantLedger | undefined;
   /** Ends every connection and closes the log, as a quit does. */
@@ -167,6 +174,8 @@ const LOG_FILE = "device-log.jsonl";
 const FILES_SECRET = "device-files";
 const keyName = (origin: string) => `device-key ${origin}`;
 const signInName = (origin: string) => `device-sign-in ${origin}`;
+/** As many servers as the settings keep. */
+const SERVERS_MOST = 16;
 
 const derived = (secret: Buffer, use: string) =>
   createHmac("sha256", secret).update(`gram-device-${use}-v1`).digest();
@@ -191,11 +200,32 @@ const parseSignIn = (text: string | undefined): StoredSignIn | undefined => {
   }
 };
 
+type Store = Pick<DeviceSecrets, "get" | "set" | "remove">;
+
+/** Where secrets go when lending isn't available: this session only, kept nowhere. */
+const memorySecrets = (): Store => {
+  const kept = new Map<string, string>();
+  return {
+    get: async (name) => kept.get(name),
+    set: async (name, value) => {
+      kept.set(name, value);
+    },
+    remove: async (name) => {
+      kept.delete(name);
+    },
+  };
+};
+
+/** A lent folder, and when it was made, so a folder made again in its place isn't taken for it. */
+type KeptFolder = GateFolder & { readonly born: string | undefined };
+
 interface Lent {
   state: LendingState;
-  readonly folders: Map<string, GateFolder>;
+  readonly folders: Map<string, KeptFolder>;
   readOnly: boolean;
 }
+
+type SavedServer = DeviceSettings["servers"][number];
 
 interface Server {
   readonly origin: string;
@@ -213,65 +243,120 @@ interface Server {
   problem?: string | undefined;
 }
 
+/** A saved server that wasn't restored: kept as saved, pause and folders, until it is. */
+interface Retained {
+  readonly saved: SavedServer;
+  readonly problem: string;
+}
+
+/** What a workspace's lent machine may do; a workspace whose policy isn't known gets nothing. */
 const capabilitiesOf = (
   policy: HostedWorkspace["devices"] | undefined,
   readOnly: boolean,
 ): ReadonlyArray<DeviceCapability> =>
-  policy === "on" && !readOnly ? ["read", "exec"] : policy === "off" ? [] : ["read"];
+  policy === undefined || policy === "off"
+    ? []
+    : policy === "on" && !readOnly
+      ? ["read", "exec"]
+      : ["read"];
 
 const folderId = () => `f-${randomBytes(8).toString("hex")}`;
+
+const savedOf = (server: Server): SavedServer => ({
+  origin: server.origin,
+  paused: server.limits.paused(),
+  workspaces: [...server.lent.entries()].map(([id, lent]) => ({
+    id,
+    readOnly: lent.readOnly,
+    folders: [...lent.folders.entries()].map(([fid, folder]) => ({
+      id: fid,
+      label: folder.label,
+      path: folder.path,
+      device: folder.device,
+      inode: folder.inode,
+      ...(folder.born === undefined ? {} : { born: folder.born }),
+      fullEnvironment: false,
+    })),
+  })),
+});
+
+const hostOf = (origin: string) => {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return origin;
+  }
+};
+
+const CLOSING: Done = { ok: false, why: "Gram is closing." };
 
 /** Loads what was saved and keeps it: lending is never on at start, only offered to resume. */
 export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<HostedDevice> => {
   const servers = new Map<string, Server>();
+  const retained = new Map<string, Retained>();
+  /** Origins the person accepted, kept in the settings; one not among them is asked about. */
+  const accepted = new Set<string>();
+  /** Origins a sign-in is under way to: one at a time each. */
+  const signingIn = new Set<string>();
+  const closing = new AbortController();
   const changed = () => options.changed?.();
   let unavailable: LendingUnavailable | undefined;
   let settings: DeviceSettings = EMPTY_DEVICE_SETTINGS;
   let log: DeviceLog | undefined;
   let fileKeys: { settings: Buffer; log: Buffer } | undefined;
   let closed = false;
+  let secrets: Store = options.secrets;
 
-  if (!options.secrets.strong()) unavailable = "no-keyring";
+  let strong = false;
+  try {
+    strong = await options.secrets.strong();
+  } catch {
+    strong = false;
+  }
+  if (!strong) unavailable = "no-keyring";
   else if (!options.presence.known()) unavailable = "no-lock-signal";
 
   // The device files' keys come from the keychain; without a real one there are none.
   if (unavailable === undefined) {
-    let secret = await options.secrets.get(FILES_SECRET);
-    if (secret === undefined) {
-      secret = randomBytes(32).toString("base64url");
-      await options.secrets.set(FILES_SECRET, secret);
+    try {
+      let secret = await secrets.get(FILES_SECRET);
+      if (secret === undefined) {
+        secret = randomBytes(32).toString("base64url");
+        await secrets.set(FILES_SECRET, secret);
+      }
+      const bytes = Buffer.from(secret, "base64url");
+      fileKeys = { settings: derived(bytes, "settings"), log: derived(bytes, "log") };
+    } catch {
+      unavailable = "no-keyring";
     }
-    const bytes = Buffer.from(secret, "base64url");
-    fileKeys = { settings: derived(bytes, "settings"), log: derived(bytes, "log") };
-    const read = await readDeviceSettings(join(options.dataDir, SETTINGS_FILE), fileKeys.settings);
-    if (read.ok) {
-      settings = read.settings;
-      log = await openDeviceLog(
-        join(options.dataDir, LOG_FILE),
-        fileKeys.log,
-        "logHead" in read ? read.logHead : undefined,
-      );
-    } else unavailable = "settings-edited";
   }
+  if (fileKeys !== undefined)
+    try {
+      const read = await readDeviceSettings(
+        join(options.dataDir, SETTINGS_FILE),
+        fileKeys.settings,
+      );
+      if (read.ok) {
+        log = await openDeviceLog(
+          join(options.dataDir, LOG_FILE),
+          fileKeys.log,
+          "logHead" in read ? read.logHead : undefined,
+        );
+        settings = read.settings;
+      } else unavailable = "settings-edited";
+    } catch {
+      unavailable = "settings-edited";
+    }
+  // Without lending, nothing about it is kept: a sign-in lasts for the session.
+  if (unavailable === "no-keyring" || unavailable === "no-lock-signal") secrets = memorySecrets();
+  for (const saved of settings.servers) accepted.add(saved.origin);
 
   const snapshot = (): DeviceSettings => ({
     v: 1,
-    servers: [...servers.values()].map((server) => ({
-      origin: server.origin,
-      paused: server.limits.paused(),
-      workspaces: [...server.lent.entries()].map(([id, lent]) => ({
-        id,
-        readOnly: lent.readOnly,
-        folders: [...lent.folders.entries()].map(([fid, folder]) => ({
-          id: fid,
-          label: folder.label,
-          path: folder.path,
-          device: folder.device,
-          inode: folder.inode,
-          fullEnvironment: false,
-        })),
-      })),
-    })),
+    servers: [
+      ...[...servers.values()].map(savedOf),
+      ...[...retained.values()].map((kept) => kept.saved),
+    ],
     ...(log === undefined ? {} : { log: log.head() }),
   });
 
@@ -279,7 +364,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
   let writing: Promise<void> = Promise.resolve();
   const save = (): Promise<void> => {
     const keys = fileKeys;
-    if (keys === undefined || unavailable === "settings-edited") return Promise.resolve();
+    if (keys === undefined || unavailable !== undefined) return Promise.resolve();
     writing = writing
       .catch(() => undefined)
       .then(() =>
@@ -323,7 +408,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
                 lent.readOnly,
               ),
             })),
-        present: () => mayLend() && options.presence.present(),
+        present: () => mayLend() && !server.keeper.signedOut() && options.presence.present(),
         ask: options.ask,
         environment: options.environment,
         log: logLine,
@@ -353,36 +438,43 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     changed();
   };
 
-  const keeperFor = (
-    origin: string,
-    discovery: HostedDiscovery,
-    key: KeyObject,
-    signIn: StoredSignIn,
-  ): TokenKeeper =>
-    makeTokenKeeper({
-      discovery,
-      key,
-      subject: signIn.subject,
-      refreshToken: signIn.refreshToken,
-      saveRefreshToken: (refreshToken) =>
-        options.secrets.set(signInName(origin), JSON.stringify({ ...signIn, refreshToken })),
-      fetch: options.fetch,
-      now: options.elapsed,
-    });
+  /**
+   * The server ended the sign-in: lending there stops, what was lent is offered to resume after
+   * the person signs in again, and the dead sign-in leaves the keychain.
+   */
+  const endedByServer = (server: Server) => {
+    if (servers.get(server.origin) !== server) return;
+    server.grants.withdraw({ origin: server.origin });
+    for (const lent of server.lent.values()) lent.state = "resume";
+    server.problem = "The server ended the sign-in. Sign in again.";
+    void stopLending(server).catch(() => undefined);
+    void secrets.remove(signInName(server.origin)).catch(() => undefined);
+    changed();
+  };
 
-  const addServer = async (
+  const makeServer = (
     origin: string,
     discovery: HostedDiscovery,
     key: KeyObject,
     signIn: StoredSignIn,
-    saved?: DeviceSettings["servers"][number],
-  ): Promise<Server> => {
+    saved?: SavedServer,
+  ): Server => {
     const server: Server = {
       origin,
       discovery,
       key,
       deviceId: signIn.deviceId,
-      keeper: keeperFor(origin, discovery, key, signIn),
+      keeper: makeTokenKeeper({
+        discovery,
+        key,
+        subject: signIn.subject,
+        refreshToken: signIn.refreshToken,
+        saveRefreshToken: (refreshToken) =>
+          secrets.set(signInName(origin), JSON.stringify({ ...signIn, refreshToken })),
+        fetch: options.fetch,
+        now: options.elapsed,
+        ended: () => endedByServer(server),
+      }),
       limits: makeAskLimits(options.elapsed, { paused: saved?.paused ?? false }, () => {
         // Paused: everything waiting on the person goes, as paused, and the pause is kept.
         void server.lending?.stop("paused");
@@ -406,12 +498,12 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
               path: folder.path,
               device: folder.device,
               inode: folder.inode,
+              born: folder.born,
               bounds: options.bounds,
             },
           ]),
         ),
       });
-    servers.set(origin, server);
     return server;
   };
 
@@ -430,31 +522,56 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     server.workspaces = listed.workspaces;
     server.problem = undefined;
     // A workspace no longer listed, or where the organisation turned lending off, is let go.
+    let dropped = false;
     for (const id of server.lent.keys()) {
       const listedNow = listed.workspaces.find((workspace) => workspace.id === id);
-      if (listedNow === undefined || listedNow.devices === "off") server.lent.delete(id);
+      if (listedNow !== undefined && listedNow.devices !== "off") continue;
+      server.lent.delete(id);
+      server.grants.withdraw({ origin: server.origin, workspace: id });
+      dropped = true;
     }
     sync(server);
+    if (dropped) await save().catch(() => undefined);
     return { ok: true };
   };
 
+  /** Brings back a saved server from its sign-in in the keychain; kept as saved if it can't. */
+  const restore = async (saved: SavedServer): Promise<Done> => {
+    try {
+      const signIn = parseSignIn(await secrets.get(signInName(saved.origin)));
+      const pem = await secrets.get(keyName(saved.origin));
+      if (signIn === undefined || pem === undefined) {
+        retained.set(saved.origin, { saved, problem: "Signed out. Sign in again." });
+        return { ok: false, why: "Signed out. Sign in again." };
+      }
+      const found = await discoverHosted(saved.origin, options.fetch);
+      if (!found.ok || found.origin !== saved.origin) {
+        const why = "Gram couldn't reach this server.";
+        retained.set(saved.origin, { saved, problem: why });
+        return { ok: false, why };
+      }
+      if (closed) return CLOSING;
+      const server = makeServer(
+        saved.origin,
+        found.discovery,
+        devicePrivateKeyFrom(pem),
+        signIn,
+        saved,
+      );
+      retained.delete(saved.origin);
+      servers.set(saved.origin, server);
+      await startLending(server);
+      void refresh(server).catch(() => undefined);
+      return { ok: true };
+    } catch {
+      const why = "Gram couldn't read this server's sign-in.";
+      retained.set(saved.origin, { saved, problem: why });
+      return { ok: false, why };
+    }
+  };
+
   // What was saved: each server's sign-in from the keychain, its discovery found again.
-  for (const saved of settings.servers) {
-    const signIn = parseSignIn(await options.secrets.get(signInName(saved.origin)));
-    const pem = await options.secrets.get(keyName(saved.origin));
-    if (signIn === undefined || pem === undefined) continue;
-    const found = await discoverHosted(saved.origin, options.fetch);
-    if (!found.ok || found.origin !== saved.origin) continue;
-    const server = await addServer(
-      saved.origin,
-      found.discovery,
-      devicePrivateKeyFrom(pem),
-      signIn,
-      saved,
-    );
-    await startLending(server);
-    void refresh(server);
-  }
+  for (const saved of settings.servers) await restore(saved);
 
   const known = (origin: string) => servers.get(origin);
 
@@ -463,49 +580,43 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     for (const server of servers.values()) sync(server);
   });
 
-  return {
-    state: () => ({
-      ...(unavailable === undefined ? {} : { unavailable }),
-      servers: [...servers.values()].map((server) => ({
-        origin: server.origin,
-        name: server.discovery.name,
-        signedIn: !server.keeper.signedOut(),
-        paused: server.limits.paused(),
-        ...(server.problem === undefined ? {} : { problem: server.problem }),
-        workspaces: server.workspaces.map((workspace) => {
-          const lent = server.lent.get(workspace.id);
-          return {
-            id: workspace.id,
-            name: workspace.name,
-            organisation: workspace.organisation,
-            policy: workspace.devices,
-            lending: lent?.state ?? "off",
-            readOnly: lent?.readOnly ?? false,
-            folders: [...(lent?.folders ?? new Map<string, GateFolder>()).entries()].map(
-              ([id, folder]) => ({ id, label: folder.label, path: folder.path }),
-            ),
-            connected: server.connected.has(workspace.id),
-          };
-        }),
-      })),
-    }),
-
-    signIn: async (typed, signal) => {
-      if (closed) return { ok: false, why: "Gram is closing." };
-      const found = await discoverHosted(typed, options.fetch);
-      if (!found.ok) return found;
-      if (servers.has(found.origin)) return { ok: false, why: "You are signed in there already." };
+  const signIn = async (typed: string, signal?: AbortSignal): Promise<Done> => {
+    if (closed) return CLOSING;
+    const found = await discoverHosted(typed, options.fetch);
+    if (closed) return CLOSING;
+    if (!found.ok) return found;
+    const { origin } = found;
+    const there = servers.get(origin);
+    if (there !== undefined && !there.keeper.signedOut())
+      return { ok: false, why: "You are signed in there already." };
+    if (signingIn.has(origin)) return { ok: false, why: "Signing in there already." };
+    const replacing = there !== undefined || retained.has(origin);
+    if (!replacing && servers.size + retained.size >= SERVERS_MOST)
+      return {
+        ok: false,
+        why: `Gram keeps at most ${SERVERS_MOST} servers. Sign out of one first.`,
+      };
+    signingIn.add(origin);
+    // Each step done is undone, newest first, if the sign-in doesn't finish.
+    const undo: Array<() => Promise<unknown>> = [];
+    const giveUp = async (done: Done): Promise<Done> => {
+      for (const step of undo.toReversed()) await step().catch(() => undefined);
+      return done;
+    };
+    try {
       // A server not signed in to before is a decision.
-      if (!settings.servers.some((saved) => saved.origin === found.origin)) {
-        const accepted = await options.confirmServer({
-          origin: found.origin,
-          name: found.discovery.name,
-        });
-        if (!accepted) return { ok: false, why: "Not signed in." };
+      if (!accepted.has(origin)) {
+        const yes = await options.confirmServer({ origin, name: found.discovery.name });
+        if (closed) return CLOSING;
+        if (!yes) return { ok: false, why: "Not signed in." };
       }
-      const stored = await options.secrets.get(keyName(found.origin));
+      const stored = await secrets.get(keyName(origin));
       const pem = stored ?? generateDeviceKey().privateKeyPem;
-      if (stored === undefined) await options.secrets.set(keyName(found.origin), pem);
+      if (stored === undefined) {
+        await secrets.set(keyName(origin), pem);
+        undo.push(() => secrets.remove(keyName(origin)));
+      }
+      if (closed) return await giveUp(CLOSING);
       const key = devicePrivateKeyFrom(pem);
       const signed = await signInHosted({
         discovery: found.discovery,
@@ -513,18 +624,24 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         openBrowser: options.openBrowser,
         fetch: options.fetch,
         now: options.elapsed,
-        ...(signal === undefined ? {} : { signal }),
+        signal: signal === undefined ? closing.signal : AbortSignal.any([signal, closing.signal]),
       });
-      if (!signed.ok) return signed;
+      if (closed) return await giveUp(CLOSING);
+      if (!signed.ok) return await giveUp(signed);
       if (signed.tokens.refreshToken === undefined)
-        return { ok: false, why: "The server gave no lasting sign-in." };
+        return await giveUp({ ok: false, why: "The server gave no lasting sign-in." });
       const first: StoredSignIn = {
         subject: signed.tokens.subject,
         refreshToken: signed.tokens.refreshToken,
         deviceId: deviceIdOf(devicePublicKeyText(key)),
       };
-      await options.secrets.set(signInName(found.origin), JSON.stringify(first));
-      const server = await addServer(found.origin, found.discovery, key, first);
+      await secrets.set(signInName(origin), JSON.stringify(first));
+      undo.push(() => secrets.remove(signInName(origin)));
+      // What was lent there before, and a pause, carry over to the new sign-in.
+      const before = there === undefined ? retained.get(origin)?.saved : savedOf(there);
+      const server = makeServer(origin, found.discovery, key, first, before);
+      undo.push(() => server.keeper.signOut());
+      if (closed) return await giveUp(CLOSING);
       const registered = await registerHostedDevice({
         discovery: found.discovery,
         keeper: server.keeper,
@@ -533,50 +650,119 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         name: options.machineName,
         platform: options.platform,
       });
-      if (!registered.ok) {
-        servers.delete(found.origin);
-        await server.keeper.signOut();
-        await options.secrets.remove(signInName(found.origin));
-        return registered;
+      if (!registered.ok) return await giveUp(registered);
+      if (closed) {
+        undo.push(() =>
+          forgetHostedDevice({
+            discovery: found.discovery,
+            keeper: server.keeper,
+            key,
+            fetch: options.fetch,
+            deviceId: server.deviceId,
+          }),
+        );
+        return await giveUp(CLOSING);
       }
-      await save();
+      // The old one, signed out by the server, goes for the new one.
+      if (there !== undefined) {
+        servers.delete(origin);
+        await stopLending(there);
+      }
+      retained.delete(origin);
+      servers.set(origin, server);
+      accepted.add(origin);
+      await save().catch(() => undefined);
       await startLending(server);
       await refresh(server);
       return { ok: true };
-    },
+    } finally {
+      signingIn.delete(origin);
+    }
+  };
+
+  return {
+    state: () => ({
+      ...(unavailable === undefined ? {} : { unavailable }),
+      servers: [
+        ...[...servers.values()].map((server) => ({
+          origin: server.origin,
+          name: server.discovery.name,
+          signedIn: !server.keeper.signedOut(),
+          paused: server.limits.paused(),
+          ...(server.problem === undefined ? {} : { problem: server.problem }),
+          workspaces: server.workspaces.map((workspace) => {
+            const lent = server.lent.get(workspace.id);
+            return {
+              id: workspace.id,
+              name: workspace.name,
+              organisation: workspace.organisation,
+              policy: workspace.devices,
+              lending: lent?.state ?? "off",
+              readOnly: lent?.readOnly ?? false,
+              folders: [...(lent?.folders ?? new Map<string, KeptFolder>()).entries()].map(
+                ([id, folder]) => ({ id, label: folder.label, path: folder.path }),
+              ),
+              connected: server.connected.has(workspace.id),
+            };
+          }),
+        })),
+        ...[...retained.values()].map((kept) => ({
+          origin: kept.saved.origin,
+          name: hostOf(kept.saved.origin),
+          signedIn: false,
+          paused: kept.saved.paused,
+          problem: kept.problem,
+          workspaces: [],
+        })),
+      ],
+    }),
+
+    signIn,
 
     signOut: async (origin) => {
       const server = known(origin);
-      if (server === undefined) return;
-      servers.delete(origin);
-      server.grants.withdraw({ origin });
-      await stopLending(server);
-      await forgetHostedDevice({
-        discovery: server.discovery,
-        keeper: server.keeper,
-        key: server.key,
-        fetch: options.fetch,
-        deviceId: server.deviceId,
-      });
-      await server.keeper.signOut();
-      await options.secrets.remove(signInName(origin));
+      if (server === undefined) {
+        if (!retained.delete(origin)) return;
+      } else {
+        servers.delete(origin);
+        server.grants.withdraw({ origin });
+        await stopLending(server);
+        if (!server.keeper.signedOut())
+          await forgetHostedDevice({
+            discovery: server.discovery,
+            keeper: server.keeper,
+            key: server.key,
+            fetch: options.fetch,
+            deviceId: server.deviceId,
+          });
+        await server.keeper.signOut();
+      }
+      accepted.delete(origin);
+      await secrets.remove(signInName(origin)).catch(() => undefined);
+      await secrets.remove(keyName(origin)).catch(() => undefined);
       await save().catch(() => undefined);
       changed();
     },
 
     refresh: async (origin) => {
       const server = known(origin);
-      return server === undefined ? { ok: false, why: "Not signed in there." } : refresh(server);
+      if (server !== undefined) return refresh(server);
+      const kept = retained.get(origin);
+      if (kept === undefined) return { ok: false, why: "Not signed in there." };
+      const done = await restore(kept.saved);
+      changed();
+      return done;
     },
 
     lend: async (origin, workspace, choice) => {
       const server = known(origin);
-      if (server === undefined) return { ok: false, why: "Not signed in there." };
+      if (server === undefined || server.keeper.signedOut())
+        return { ok: false, why: "Not signed in there." };
       if (!mayLend()) return { ok: false, why: "Lending isn't available on this computer." };
       const listed = server.workspaces.find((each) => each.id === workspace);
       if (listed === undefined || listed.devices === "off")
         return { ok: false, why: "The organisation doesn't allow lending to this workspace." };
-      const folders = new Map<string, GateFolder>();
+      const folders = new Map<string, KeptFolder>();
       for (const chosen of choice.folders) {
         const checked = await checkLendable(chosen.path, options.bounds);
         if (!checked.ok) return { ok: false, why: `${chosen.path}: ${checked.why}` };
@@ -585,12 +771,34 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
           path: checked.path,
           device: checked.device,
           inode: checked.inode,
+          born: checked.born,
           bounds: options.bounds,
         });
       }
       if (folders.size === 0) return { ok: false, why: "Pick at least one folder." };
+      if (!mayLend() || known(origin) !== server)
+        return { ok: false, why: "Lending isn't available on this computer." };
+      // Nothing changes unless the settings can keep it, and a save that fails takes it back.
+      const before = server.lent.get(workspace);
+      const putBack = () => {
+        if (before === undefined) server.lent.delete(workspace);
+        else server.lent.set(workspace, before);
+      };
       server.lent.set(workspace, { state: "on", folders, readOnly: choice.readOnly });
-      await save();
+      if (!deviceSettingsFit(snapshot())) {
+        putBack();
+        return {
+          ok: false,
+          why: "That's more than Gram keeps: at most 32 folders, each label at most 128 characters.",
+        };
+      }
+      try {
+        await save();
+      } catch {
+        putBack();
+        sync(server);
+        return { ok: false, why: "Gram couldn't save what you lent, so nothing is lent." };
+      }
       sync(server);
       return { ok: true };
     },
@@ -598,15 +806,30 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     resume: async (origin, workspace) => {
       const server = known(origin);
       const lent = server?.lent.get(workspace);
-      if (server === undefined || lent === undefined)
+      if (server === undefined || lent === undefined || lent.state !== "resume")
         return { ok: false, why: "Nothing to resume." };
+      if (server.keeper.signedOut()) return { ok: false, why: "Sign in there again first." };
       if (!mayLend()) return { ok: false, why: "Lending isn't available on this computer." };
-      // Each folder must still be the one lent: a folder moved into its place isn't it.
+      // What the organisation allows there must be known before anything is lent again.
+      const listed = server.workspaces.find((each) => each.id === workspace);
+      if (listed === undefined)
+        return { ok: false, why: "Gram hasn't got this workspace from the server yet. Try again." };
+      if (listed.devices === "off")
+        return { ok: false, why: "The organisation doesn't allow lending to this workspace." };
+      // Each folder must still be the one lent: a folder moved or made again in its place isn't.
       for (const folder of lent.folders.values()) {
         const checked = await checkLendable(folder.path, options.bounds);
-        if (!checked.ok || checked.device !== folder.device || checked.inode !== folder.inode)
+        if (
+          !checked.ok ||
+          checked.device !== folder.device ||
+          checked.inode !== folder.inode ||
+          folder.born === undefined ||
+          checked.born !== folder.born
+        )
           return { ok: false, why: `${folder.path} isn't the folder you lent. Lend it again.` };
       }
+      if (server.lent.get(workspace) !== lent || !mayLend())
+        return { ok: false, why: "Nothing to resume." };
       lent.state = "on";
       sync(server);
       return { ok: true };
@@ -629,10 +852,42 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       sync(server);
     },
 
+    startAfresh: async () => {
+      const keys = fileKeys;
+      if (unavailable !== "settings-edited" || keys === undefined || closed)
+        return { ok: false, why: "There is nothing to set aside." };
+      const aside = `edited-${options.now()}-${randomBytes(4).toString("hex")}`;
+      try {
+        await log?.close();
+        log = undefined;
+        for (const file of [SETTINGS_FILE, LOG_FILE]) {
+          const path = join(options.dataDir, file);
+          await rename(path, `${path}.${aside}`).catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== "ENOENT") throw error;
+          });
+        }
+        log = await openDeviceLog(join(options.dataDir, LOG_FILE), keys.log);
+      } catch {
+        return { ok: false, why: "Gram couldn't set the old settings aside." };
+      }
+      settings = EMPTY_DEVICE_SETTINGS;
+      unavailable = undefined;
+      try {
+        await save();
+      } catch {
+        unavailable = "settings-edited";
+        return { ok: false, why: "Gram couldn't write new settings." };
+      }
+      for (const server of servers.values()) await startLending(server);
+      changed();
+      return { ok: true };
+    },
+
     grants: (origin) => known(origin)?.grants,
 
     close: async () => {
       closed = true;
+      closing.abort();
       unwatch();
       await Promise.all([...servers.values()].map(stopLending));
       await writing.catch(() => undefined);

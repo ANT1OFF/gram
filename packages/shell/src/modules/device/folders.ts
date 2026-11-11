@@ -169,6 +169,11 @@ export type Lendable =
       readonly path: string;
       readonly device: number;
       readonly inode: number;
+      /**
+       * When the folder was made, in nanoseconds, where the file system keeps it. A folder
+       * deleted and made again can get the same inode straight back; it won't get this.
+       */
+      readonly born: string | undefined;
     }
   | { readonly ok: false; readonly why: string };
 
@@ -210,7 +215,14 @@ const checkLendableNow = async (path: string, bounds: LendBounds): Promise<Lenda
     if (within(real, where))
       return { ok: false, why: "It contains a folder that holds credentials or sign-ins." };
   }
-  return { ok: true, path: real, device: stats.dev, inode: stats.ino };
+  let born: string | undefined;
+  try {
+    const exact = await fs.stat(real, { bigint: true });
+    born = exact.birthtimeNs > 0n ? exact.birthtimeNs.toString() : undefined;
+  } catch {
+    return { ok: false, why: "Gram can't open this folder." };
+  }
+  return { ok: true, path: real, device: stats.dev, inode: stats.ino, born };
 };
 
 /**
