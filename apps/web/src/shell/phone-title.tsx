@@ -3,6 +3,7 @@ import { useParams, useRouterState } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 import { useEmbedPageGroup, useEmbedPageTitle } from "@/embed/slots";
+import { useEmbedShell } from "@/embed/store";
 import { cn } from "@/lib/utils";
 import { askKeysByThread } from "@/orchestration/ask-model";
 import { useWorkspaceAsks } from "@/orchestration/ask-stack";
@@ -70,6 +71,7 @@ export function usePhonePlace(): PhonePlace {
   // A page an app in front of Gram added, by the name it gave it.
   const embedTitle = useEmbedPageTitle();
   const embedGroup = useEmbedPageGroup();
+  const hosted = useEmbedShell((s) => s.hosted);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const board = useViewStore((s) => s.view === "board");
   const workspace = useViewWorkspace();
@@ -89,7 +91,8 @@ export function usePhonePlace(): PhonePlace {
   );
   const { working } = useWorkerTally(workspaceId ?? NO_WORKSPACE, ledger, asking);
   const waitings = useWorkerWaitings(ledger, asking);
-  const place = solo ? "Solo" : (workspace?.workspace.name ?? "Gram");
+  // Mounted by an app in front of Gram, its pages name where you are: Gram's own name says nothing.
+  const place = solo ? "Solo" : (workspace?.workspace.name ?? (hosted ? "" : "Gram"));
   if (board && workspace !== undefined) {
     return { title: workspace.workspace.name, line: "Board", asks: false };
   }
@@ -117,7 +120,11 @@ export function usePhonePlace(): PhonePlace {
     return { title: embedTitle, line: embedGroup ?? place, asks: false };
   }
   const page = PAGE_NAMES.find(([pattern]) => pattern.test(pathname))?.[1];
-  return { title: page ?? place, line: page === undefined ? "Chat" : place, asks: false };
+  return {
+    title: page ?? (place === "" ? "Home" : place),
+    line: page === undefined ? "Chat" : place,
+    asks: false,
+  };
 }
 
 /** The phone header's title: one line of where you are, one of its place and state under it. */
