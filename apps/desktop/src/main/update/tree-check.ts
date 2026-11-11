@@ -62,6 +62,10 @@ function readTable(deps: TreeCheckDeps): Table | undefined {
     const start = match[4]!.replaceAll(/\s+/g, " ");
     rows.set(Number(match[1]), { ppid: Number(match[2]), pgid: Number(match[3]), start });
   }
+  // `ps -A` lists itself: a new child of the app, in the app's group the server shares. Read as a
+  // process, every read after the first would find an ancestor's new child in that group and
+  // refuse the update as untellable. It has exited by now and is nothing of the server's.
+  if (read.pid !== undefined) rows.delete(read.pid);
   return rows.size === 0 ? undefined : rows;
 }
 
