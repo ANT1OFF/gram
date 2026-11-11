@@ -204,7 +204,7 @@ keeps each machine's last reason since it started, in memory only:
 | It dialled in but didn't answer         | It never said hello, in time or as itself                                    | Rerun the installer there                                   |
 | Connection lost at 14:03                | Its connection closed; it dials again by itself                              | If it stays offline, check Tailscale and `gram-host status` |
 | This Gram's tailnet address changed     | Access over Tailscale moved to another address, which it doesn't dial        | `gram-host leave` there, and add it again                   |
-| Needs update (1.16.0 → 1.17.0)          | Its host speaks another protocol, or doesn't serve what this Gram needs      | **Update**                                                  |
+| Needs update (1.16.0 → 1.17.0)          | Its host speaks a protocol this Gram doesn't, or lacks what this Gram needs  | **Update**                                                  |
 
 Only a clock its own key signed is taken as its clock. A bad signature can come from anyone on
 your tailnet who knows the machine's id, so it is only ever shown. Nothing from a dial (its
@@ -214,12 +214,38 @@ signature, nonce or key) reaches the page, and the listing stays local-app only.
 
 Each host says which release it runs when it dials in (from the release after 1.16.0; earlier ones say nothing).
 What has to match is the **host protocol**, not the release: every release since joined machines
-arrived (1.14.0 to 1.16.0 and this one) speaks protocol 2 with the same messages, so a 1.15.0 host
-works with a 1.16.0 main Gram. A call added in a later release fails on its own on an older host, with an
-unknown-request error, and the rest keeps working. Only a host on another protocol, or one that
-doesn't serve everything this Gram needs, is refused; Settings → Machines then shows **Needs
-update** with both releases instead of offline. A host on another release that works shows online,
-and its hover says which release it runs.
+arrived (1.14.0 on) speaks protocol 2, so a 1.15.0 host works with a 1.16.0 main Gram. Only a host
+on a protocol this Gram doesn't talk to, or one that doesn't serve everything this Gram needs, is
+refused; Settings → Machines then shows **Needs update** with both releases instead of offline. A
+host on another release that works shows online, and its hover says which release it runs.
+
+### Machines on different releases
+
+Between releases the host protocol only grows. Updating Gram on one side never makes the other
+side restart or update first: a joined machine on an earlier release stays connected and keeps its
+running sessions, and so does a machine on a later release than the Gram it joined. Each side
+works without what the other doesn't have yet:
+
+- **A call added later** fails on its own on an older host, with an unknown-request error, and
+  the rest keeps working.
+- **A field added later** is optional. A build from before it ignores it when it arrives and
+  leaves it out when it sends.
+- **Something a host newly can do** is named in its hello, and Gram uses it only on a host that
+  names it. A host without it loses that one thing: a host from 1.19.0 or earlier takes no thread
+  started from a profile, for instance, and everything else runs there. Hosts name these in
+  `features`, a list of plain names that a Gram from before one of them reads and ignores. The
+  older `capabilities` list is closed, because Gram up to 1.19.0 refuses a hello with a
+  capability it doesn't know.
+- **What Gram needs of every host** (files, ports, worktrees, git, terminals, sessions, repos)
+  never grows.
+
+What may not happen between releases: a call or a field going away, a field becoming required, a
+value changing its type or the values it takes. A test holds every change to that
+(`packages/contracts/src/rpc/host-compat.test.ts`), comparing the protocol with a checked-in copy
+of it as last released (`host-released.json`), in both directions, since either side may be the
+older one. A change that really can't keep a released build working is a new protocol version,
+decided on purpose; Gram then says which versions it still talks to, and only a host outside them
+shows **Needs update**.
 
 **Update** (the up-arrow icon, "Update <machine> to <release>" on hover) appears on every
 confirmed machine that runs an earlier release than this Gram, and only when this Gram is a release

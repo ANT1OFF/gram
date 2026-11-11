@@ -38,6 +38,15 @@ version: `fix:` proposes a patch, `feat:` a minor, and `docs:`, `refactor:` and 
 entry. Merging that PR publishes nothing: `skip-github-release` is on, and no tag or release is
 made.
 
+The metadata PR also records the host protocol the release speaks. On its branch, once the
+version fields read the new version, run `bun run host-protocol:release` and commit
+`packages/contracts/src/rpc/host-released.json`, emptying the `ACCEPTED` list in
+`host-compat.test.ts` if it has entries. That file is what later changes are held to, so a joined
+machine on this release keeps working with the next one (see
+[machines on different releases](MACHINES.md#machines-on-different-releases)). The command
+refuses when the tree breaks the previous release's protocol, and the test fails once the copy
+is more than one minor release behind.
+
 After the release below is published, the publisher swaps the merged metadata PR's
 `autorelease: pending` label for `autorelease: tagged`, so the next run proposes the following
 version. Never clear the label for a version that did not ship.

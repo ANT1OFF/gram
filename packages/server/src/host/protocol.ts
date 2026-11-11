@@ -21,10 +21,14 @@ import {
   HostUpdateRefused,
   type HostSessionOpen,
   type HostSessionOpened,
+  HOST_PROTOCOL_OLDEST,
   HOST_PROTOCOL_VERSION,
+  HOST_REQUIRED_CAPABILITIES,
   InterruptHung,
   ModeRefused,
   type HostCapability,
+  type HostFeature,
+  hostServes,
   type HostCheckResult,
   type HostRepoIdentity,
   HostCommandFailed,
@@ -156,15 +160,7 @@ export interface HostUpdater {
 const NO_TOKEN_STORE = "This machine's host doesn't keep a Claude token.";
 
 /** The capabilities a host must serve for this build to use it. */
-export const HOST_CAPABILITIES: ReadonlyArray<HostCapability> = [
-  "files",
-  "ports",
-  "worktrees",
-  "git",
-  "terminals",
-  "sessions",
-  "repos",
-];
+export const HOST_CAPABILITIES = HOST_REQUIRED_CAPABILITIES;
 
 /**
  * The capabilities this build's host serves: the ones required, and those a control plane uses only
@@ -178,8 +174,10 @@ export const HOST_SERVES: ReadonlyArray<HostCapability> = [
   "checks",
   "repo-identity",
   "folders",
-  "thread-places",
 ];
+
+/** The features this build's host names in its hello, beside its capabilities. */
+export const HOST_FEATURES: ReadonlyArray<HostFeature> = ["thread-places"];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -865,7 +863,8 @@ export interface ConnectOptions {
 }
 
 /**
- * Why this build can't use a host that said `hello`: it speaks another protocol version, or doesn't
+ * Why this build can't use a host that said `hello`: it speaks a protocol version outside those
+ * this build talks to (`HOST_PROTOCOL_OLDEST` to `HOST_PROTOCOL_VERSION`), or doesn't
  * serve everything this build needs. Either way one of the two builds needs an update.
  */
 export const helloMismatch = (
@@ -874,7 +873,8 @@ export const helloMismatch = (
   | { readonly kind: "protocol" }
   | { readonly kind: "capabilities"; readonly missing: ReadonlyArray<HostCapability> }
   | undefined => {
-  if (hello.protocol !== HOST_PROTOCOL_VERSION) return { kind: "protocol" };
+  if (hello.protocol < HOST_PROTOCOL_OLDEST || hello.protocol > HOST_PROTOCOL_VERSION)
+    return { kind: "protocol" };
   const missing = HOST_CAPABILITIES.filter((need) => !hello.capabilities.includes(need));
   return missing.length > 0 ? { kind: "capabilities", missing } : undefined;
 };
@@ -967,7 +967,9 @@ export const connectHost = (
     const mismatch = helloMismatch(hello);
     if (mismatch?.kind === "protocol") {
       return yield* unavailable(
-        `The host speaks protocol ${hello.protocol}; this build speaks ${HOST_PROTOCOL_VERSION}.`,
+        HOST_PROTOCOL_OLDEST === HOST_PROTOCOL_VERSION
+          ? `The host speaks protocol ${hello.protocol}; this build speaks ${HOST_PROTOCOL_VERSION}.`
+          : `The host speaks protocol ${hello.protocol}; this build speaks ${HOST_PROTOCOL_OLDEST} to ${HOST_PROTOCOL_VERSION}.`,
       );
     }
     if (mismatch?.kind === "capabilities") {
@@ -1388,7 +1390,7 @@ export const connectHost = (
       folders: hello.capabilities.includes("folders") ? folders : undefined,
       reads: hello.capabilities.includes("file-reads") ? reads : undefined,
       attachments: hello.capabilities.includes("attachments") ? attachments : undefined,
-      threadPlaces: hello.capabilities.includes("thread-places") ? threadPlaces : undefined,
+      threadPlaces: hostServes(hello, "thread-places") ? threadPlaces : undefined,
       ...(hello.capabilities.includes("checks") ? { checks } : {}),
       repos: {
         ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })),
