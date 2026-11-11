@@ -169,6 +169,46 @@ function Switcher({ placement }: ShellSlotProps) {
   );
 }
 
+/** The sidebar's head: a mark and the app's name. */
+function Brand() {
+  return (
+    <span data-testid="fixture-brand" className="flex min-w-0 items-center gap-2.5 px-1">
+      <span
+        aria-hidden
+        className="grid size-8 shrink-0 place-items-center rounded-(--radius-sm) border border-border text-meta font-semibold"
+      >
+        F
+      </span>
+      <span className="truncate text-title font-semibold">Fixture</span>
+    </span>
+  );
+}
+
+/** The person signed in, at the sidebar's foot. */
+function Account() {
+  return (
+    <span data-testid="fixture-account" className="flex min-w-0 items-center gap-3 px-1">
+      <span
+        aria-hidden
+        className="grid size-8 shrink-0 place-items-center rounded-full bg-foreground text-meta font-semibold text-background"
+      >
+        I
+      </span>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-body-strong">Ingrid Example</span>
+        <span className="truncate text-caption text-muted-foreground">Signed in</span>
+      </span>
+    </span>
+  );
+}
+
+/** The roomy look with both slots, for the run to put on through `update`. */
+(window as unknown as { fixtureSidebar: unknown }).fixtureSidebar = {
+  look: "roomy",
+  header: Brand,
+  account: Account,
+};
+
 const pathUnder =
   location.pathname === "/w/acme" || location.pathname.startsWith("/w/acme/")
     ? "/w/acme"

@@ -396,6 +396,62 @@ test("the embedding app can count what needs someone itself", async ({ page }) =
   expect(errors).toEqual([]);
 });
 
+test("the sidebar can be drawn roomy, with the app's head and account", async ({ page }) => {
+  const errors = await mounted(page, "/govern/limits");
+  await page.evaluate(() => {
+    const w = window as unknown as Update & { fixtureSidebar: object };
+    w.embed.update({ sidebar: w.fixtureSidebar });
+  });
+  const sidebar = page.getByTestId("overview-sidebar");
+  await expect(sidebar).toHaveAttribute("data-look", "roomy");
+  // A card inset from the window's edges.
+  await expect(page.getByTestId("overview-card")).toBeVisible();
+  const box = await sidebar.boundingBox();
+  expect(box?.x).toBe(12);
+  expect(box?.y).toBe(12);
+  // The app's head, with New beside it; Hide and Compact are not at the head.
+  await expect(sidebar.getByTestId("fixture-brand")).toBeVisible();
+  await expect(sidebar.getByTestId("overview-hide")).toHaveCount(0);
+  // Headings in small capitals, rows 40 px tall.
+  const heading = sidebar.getByTestId("embed-navigation-heading").first();
+  await expect(heading).toHaveCSS("text-transform", "uppercase");
+  const limits = sidebar.getByRole("link", { name: "Limits" });
+  expect((await limits.boundingBox())?.height).toBe(40);
+  // The current row: a solid tile behind its icon, the glide on that tile, a bold label.
+  await expect(limits).toHaveAttribute("aria-current", "page");
+  await expect(limits).toHaveCSS("font-weight", "600");
+  const glide = page.getByTestId("embed-navigation").getByTestId("embed-navigation-glide");
+  await expect.poll(async () => (await glide.boundingBox())?.width).toBe(32);
+  // Search's shortcut as key caps.
+  await expect(sidebar.getByTestId("key-caps").locator("kbd")).toHaveCount(2);
+  // The foot: History, Settings, the account and Collapse, each a row.
+  const foot = sidebar.getByTestId("overview-roomy-foot");
+  await expect(foot.getByTestId("overview-history")).toHaveText("History");
+  await expect(foot.getByTestId("overview-settings")).toHaveText("Settings");
+  await expect(foot.getByTestId("fixture-account")).toBeVisible();
+  await foot.getByTestId("overview-compact").click();
+  await expect(page.getByTestId("overview-rail")).toBeVisible();
+  // Over the page from the strip it keeps the look, with no Collapse of its own.
+  await page.getByTestId("overview-rail").hover({ position: { x: 20, y: 400 } });
+  const overlay = page.getByTestId("hosted-rail-overlay");
+  await expect(overlay.getByTestId("overview-sidebar")).toHaveAttribute("data-look", "roomy");
+  await expect(overlay.getByTestId("overview-compact")).toHaveCount(0);
+  // The current place's tile is drawn there too, from the overlay's first frame.
+  await expect(
+    overlay.getByTestId("embed-navigation").getByTestId("embed-navigation-glide"),
+  ).toBeVisible();
+  await expect(overlay.getByTestId("overview-pin")).toBeVisible();
+  await overlay.getByTestId("overview-pin").click();
+  // Back to the standard look: the toggles at the head again, the account above History.
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ sidebar: undefined });
+  });
+  await expect(sidebar).not.toHaveAttribute("data-look", "roomy");
+  await expect(page.getByTestId("overview-card")).toHaveCount(0);
+  await expect(sidebar.getByTestId("overview-hide")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("an address with no page says so in the shell, with the way home", async ({ page }) => {
   const errors = await mounted(page, "/govern/nowhere");
   const notFound = page.getByTestId("not-found");

@@ -1,13 +1,17 @@
-import { useLayoutEffect, useRef, type RefObject } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 
 /**
  * Puts `mark` over the current row of `container`, in its coordinates, or hides it when no row is
- * current. The first time it is shown it is put there; only later moves glide (`data-placed`).
+ * current: over the row's tile (`data-glide-tile`) when `tile`, else the whole row. The first time
+ * it is shown it is put there; only later moves glide (`data-placed`).
  */
-const follow = (container: HTMLElement, mark: HTMLElement) => {
-  const row = container.querySelector<HTMLElement>('[aria-current="page"]');
+const follow = (container: HTMLElement, mark: HTMLElement, tile: boolean) => {
+  const current = container.querySelector<HTMLElement>('[aria-current="page"]');
+  const row = tile
+    ? (current?.querySelector<HTMLElement>("[data-glide-tile]") ?? current)
+    : current;
   if (row === null) {
     mark.hidden = true;
     delete mark.dataset["placed"];
@@ -30,30 +34,33 @@ const follow = (container: HTMLElement, mark: HTMLElement) => {
 /**
  * The current row's highlight, one for a whole list, which glides from row to row as the window
  * moves rather than jumping: under the Motion setting, at the theme's ease-out; Reduced and Off
- * move it at once. `container` is positioned, and its rows draw no current fill of their own.
- * It follows the current row after each render of the list and each change of its size.
+ * move it at once. Its list is the element it is drawn in, which is positioned, and whose rows draw
+ * no current fill of their own. It follows the current row after each render and each change of
+ * the list's size. (The list is read from the highlight's own parent: a parent's ref is not yet
+ * set while its children's layout effects run on the first commit.)
  */
 export function Glide({
-  container,
   className,
+  tile = false,
 }: {
-  container: RefObject<HTMLElement | null>;
   className?: string;
+  /** Over the current row's tile (`data-glide-tile`) rather than the whole row. */
+  tile?: boolean;
 }) {
   const mark = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
-    if (container.current !== null && mark.current !== null) {
-      follow(container.current, mark.current);
-    }
+    const highlight = mark.current;
+    const list = highlight?.parentElement;
+    if (highlight && list) follow(list, highlight, tile);
   });
   useLayoutEffect(() => {
-    const element = container.current;
     const highlight = mark.current;
-    if (element === null || highlight === null) return;
-    const observer = new ResizeObserver(() => follow(element, highlight));
-    observer.observe(element);
+    const list = highlight?.parentElement;
+    if (!highlight || !list) return;
+    const observer = new ResizeObserver(() => follow(list, highlight, tile));
+    observer.observe(list);
     return () => observer.disconnect();
-  }, [container]);
+  }, [tile]);
   return (
     <span
       ref={mark}
