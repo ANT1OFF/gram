@@ -135,7 +135,7 @@ const until = async (done: () => boolean, what: string) => {
 };
 
 /** The device lending to a fake control plane, which takes each dial as the device makes it. */
-const setUp = async (options: { lastsMs?: number } = {}) => {
+const setUp = async (options: { lastsMs?: number; dialFails?: boolean } = {}) => {
   const key = devicePrivateKeyFrom(generateDeviceKey().privateKeyPem);
   const deviceId = deviceIdOf(devicePublicKeyText(key));
   const start = performance.now();
@@ -182,6 +182,7 @@ const setUp = async (options: { lastsMs?: number } = {}) => {
         Effect.gen(function* () {
           const pair = yield* socketPair();
           dials.push({ url, headers, pair });
+          if (options.dialFails === true) return yield* Effect.die(new Error("refused"));
           return pair.device;
         }),
       onConnection: (workspace, change) => connections.push(`${workspace} ${change}`),
@@ -271,7 +272,9 @@ describe.skipIf(process.platform === "win32")("lending to a hosted server", () =
     );
     expect(lending.running()).toEqual(["w1"]);
     await close();
-    expect(dials[0]?.pair.closed() ?? false).toBe(false);
+    expect(lending.running()).toEqual([]);
+    lending.sync();
+    expect(lending.running()).toEqual([]);
   });
 
   it("hangs up when the person steps away, refusing what waited on them, and takes back grants", async () => {
@@ -358,6 +361,72 @@ describe.skipIf(process.platform === "win32")("lending to a hosted server", () =
     tokens.signOut();
     await until(() => lending.running().length === 0, "lending ends");
     expect(dials).toHaveLength(1);
+    await close();
+  });
+
+  it("dials again at once when lent again while the last connection was still hanging up", async () => {
+    const { lending, state, dials, close } = await setUp();
+    lending.sync();
+    await until(() => dials.length === 1, "a dial");
+    state.present = false;
+    lending.sync();
+    state.present = true;
+    lending.sync();
+    await until(() => dials.length === 2, "a dial after the hang-up");
+    await new Promise((later) => setTimeout(later, 100));
+    expect(lending.running()).toEqual(["w1"]);
+    await close();
+  });
+
+  it("refuses on a live connection once the person is away, before any hang-up", async () => {
+    const { lending, state, dials, client, request, close } = await setUp();
+    lending.sync();
+    await until(() => dials.length === 1, "a dial");
+    state.present = false;
+    const events = await Effect.runPromise(
+      Effect.gen(function* () {
+        const rpc = yield* client();
+        return yield* rpc["device.exec"]({ ...request("r1"), command: "echo no" }).pipe(
+          Stream.runCollect,
+        );
+      }).pipe(Effect.scoped),
+    );
+    expect([...events]).toEqual([{ kind: "refused", why: "away" }]);
+    await close();
+  });
+
+  it("names a pause as a pause, and takes nothing new while hanging up", async () => {
+    const { lending, state, dials, client, request, close, grants } = await setUp();
+    state.answer = async () => ({ allowed: false });
+    lending.sync();
+    await until(() => dials.length === 1, "a dial");
+    const answers = await Effect.runPromise(
+      Effect.gen(function* () {
+        const rpc = yield* client();
+        const all: Array<ReadonlyArray<DeviceExecEvent>> = [];
+        for (const id of ["a", "b", "c", "d"])
+          all.push([
+            ...(yield* rpc["device.exec"]({ ...request(id), command: "ls" }).pipe(
+              Stream.runCollect,
+            )),
+          ]);
+        return all;
+      }).pipe(Effect.scoped),
+    );
+    expect(answers[3]).toEqual([{ kind: "refused", why: "paused" }]);
+    const stopping = lending.stop("away");
+    expect(grants.size()).toBe(0);
+    await stopping;
+    await close();
+  });
+
+  it("waits longer after each dial that fails", async () => {
+    const { lending, dials, close } = await setUp({ dialFails: true });
+    lending.sync();
+    await new Promise((later) => setTimeout(later, 330));
+    // 20, 40, 80, 160 ms apart: five dials at most in that time, not one per tick.
+    expect(dials.length).toBeGreaterThanOrEqual(3);
+    expect(dials.length).toBeLessThanOrEqual(5);
     await close();
   });
 });

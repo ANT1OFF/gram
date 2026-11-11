@@ -616,4 +616,15 @@ describe.skipIf(process.platform === "win32")("the device's gate", () => {
       truncated: true,
     });
   });
+
+  it("keeps the first reason everything was stopped for", async () => {
+    const { gate, by, asks } = await setUp();
+    asks.answer(() => new Promise(() => undefined));
+    const reading = gate.read({ ...by("r1"), path: "README.md", maxBytes: 10 });
+    await shownAsks(asks, 1);
+    gate.stopAll("paused");
+    gate.stopAll("away");
+    expect(await reading).toEqual({ kind: "refused", why: "paused" });
+    await gate.idle();
+  });
 });

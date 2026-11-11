@@ -7,6 +7,7 @@ import {
   type HostedDiscovery,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FiberMap from "effect/FiberMap";
 import type * as Scope from "effect/Scope";
 import * as Socket from "effect/socket/Socket";
@@ -76,7 +77,10 @@ export interface ServerLendingOptions extends Pick<
   readonly present: () => boolean;
   /** The wall clock, for what the server reads. */
   readonly now: () => number;
-  /** A clock that only goes forward, for when tokens end. */
+  /**
+   * A clock that only goes forward, for when tokens end: the same clock as the keeper's `now`,
+   * since a token's `expiresAt` is read by it.
+   */
   readonly elapsed: () => number;
   readonly connect?: Connect;
   /** How each connection went, for the lending mark and the activity window. */
@@ -98,6 +102,9 @@ export interface ServerLending {
 
 interface Running {
   gate?: DeviceGate | undefined;
+  fiber?: Fiber.Fiber<void> | undefined;
+  /** Hanging up: it takes nothing new, and a new connection waits until it has gone. */
+  closing?: boolean;
 }
 
 /**
@@ -111,6 +118,13 @@ export const makeServerLending = (
     const fibers = yield* FiberMap.make<string>();
     const runIn = yield* FiberMap.runtime(fibers)<never>();
     const running = new Map<string, Running>();
+    let over = false;
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        over = true;
+        running.clear();
+      }),
+    );
     const connect = options.connect ?? connectWebSocket;
     const first = options.retryFirstMs ?? LENDING_RETRY_FIRST_MS;
 
@@ -136,13 +150,19 @@ export const makeServerLending = (
           now: options.now(),
         });
         const socket = yield* connect(url, headers);
+        // A pause isn't absence: the gate refuses for it by name.
+        const lendingHere = () =>
+          options.present() &&
+          !options.keeper.signedOut() &&
+          entry.closing !== true &&
+          lentNow(id) !== undefined;
         const gate = makeDeviceGate({
           origin: options.origin,
           workspace: id,
           personId: options.personId,
           folders: () => lentNow(id)?.folders ?? new Map(),
-          capabilities: () => (mayLend() ? (lentNow(id)?.capabilities ?? []) : []),
-          present: () => mayLend() && lentNow(id) !== undefined,
+          capabilities: () => (lendingHere() ? (lentNow(id)?.capabilities ?? []) : []),
+          present: lendingHere,
           grants: options.grants,
           limits: options.limits,
           ask: options.ask,
@@ -208,51 +228,61 @@ export const makeServerLending = (
 
     const end = async (id: string, why: "away" | "paused") => {
       const entry = running.get(id);
-      if (entry === undefined) return;
-      running.delete(id);
+      if (entry === undefined || entry.closing === true) return;
+      entry.closing = true;
       // The reason first, so what waits on the person is refused for it, not for the hang-up, and
       // a moment for the refusals to reach the server before the connection goes.
       const gate = entry.gate;
       if (gate !== undefined) {
         gate.stopAll(why);
+        let timer: NodeJS.Timeout | undefined;
         await Promise.race([
           gate
             .idle()
             .then(() => new Promise((later) => setTimeout(later, LENDING_HANG_UP_GRACE_MS))),
-          new Promise((later) => setTimeout(later, LENDING_HANG_UP_MOST_MS)),
+          new Promise((later) => {
+            timer = setTimeout(later, LENDING_HANG_UP_MOST_MS);
+          }),
         ]);
+        clearTimeout(timer);
       }
-      await Effect.runPromise(FiberMap.remove(fibers, id));
+      // This connection's own fiber: one started since for the same workspace is left alone.
+      if (entry.fiber !== undefined) await Effect.runPromise(Fiber.interrupt(entry.fiber));
+      if (running.get(id) === entry) running.delete(id);
+      // Lent again while it hung up: it is dialled now.
+      sync();
+    };
+
+    const sync = () => {
+      if (over) return;
+      if (!options.present()) options.grants.withdraw({ origin: options.origin });
+      const lent = new Set(mayLend() ? options.workspaces().map((workspace) => workspace.id) : []);
+      for (const id of running.keys())
+        if (!lent.has(id)) void end(id, options.limits.paused() ? "paused" : "away");
+      for (const id of lent) {
+        if (running.has(id)) continue;
+        const entry: Running = {};
+        running.set(id, entry);
+        entry.fiber = runIn(
+          id,
+          loop(id, entry).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (running.get(id) === entry && entry.closing !== true) running.delete(id);
+              }),
+            ),
+          ),
+        );
+      }
     };
 
     return {
-      sync: () => {
-        if (!options.present()) options.grants.withdraw({ origin: options.origin });
-        const lent = new Set(
-          mayLend() ? options.workspaces().map((workspace) => workspace.id) : [],
-        );
-        for (const id of running.keys())
-          if (!lent.has(id)) void end(id, options.limits.paused() ? "paused" : "away");
-        for (const id of lent) {
-          if (running.has(id)) continue;
-          const entry: Running = {};
-          running.set(id, entry);
-          runIn(
-            id,
-            loop(id, entry).pipe(
-              Effect.ensuring(
-                Effect.sync(() => {
-                  if (running.get(id) === entry) running.delete(id);
-                }),
-              ),
-            ),
-          );
-        }
-      },
+      sync,
       stop: async (why) => {
         if (why === "away") options.grants.withdraw({ origin: options.origin });
         await Promise.all([...running.keys()].map((id) => end(id, why)));
       },
-      running: () => [...running.keys()],
+      running: () =>
+        [...running.entries()].filter(([, entry]) => entry.closing !== true).map(([id]) => id),
     } satisfies ServerLending;
   });
