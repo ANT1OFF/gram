@@ -29,7 +29,12 @@ const agents = Layer.effect(
     });
   }),
 ).pipe(Layer.provideMerge(FakeAgentAdapter));
-const remote = Layer.succeed(RemoteHosts, { list: () => [MACHINE] } as unknown as RemoteHostsShape);
+/** No machine's link is registered, so a call for this machine's own paths looks nothing up. */
+const NO_LINKS = { machines: { list: () => [] } };
+const remote = Layer.succeed(RemoteHosts, {
+  ...NO_LINKS,
+  list: () => [MACHINE],
+} as unknown as RemoteHostsShape);
 
 describe("spawn admission on a joined machine", () => {
   for (const model of [
@@ -118,6 +123,7 @@ describe("spawn admission on a joined machine", () => {
       Effect.gen(function* () {
         const world = yield* makeWorld;
         const machines = Layer.succeed(RemoteHosts, {
+          ...NO_LINKS,
           list: () => [{ ...MACHINE, name }],
         } as unknown as RemoteHostsShape);
         const context = yield* Layer.build(
@@ -192,6 +198,7 @@ describe("spawn admission on a joined machine", () => {
       Effect.gen(function* () {
         const world = yield* makeWorld;
         const machines = Layer.succeed(RemoteHosts, {
+          ...NO_LINKS,
           list: () => [
             {
               ...MACHINE,
