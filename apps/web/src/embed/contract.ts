@@ -36,6 +36,13 @@ export interface ShellRoute {
   readonly component: ComponentType<ShellPageProps>;
 }
 
+/** The page at the app's root (`/`), in place of Gram's own home and its first-run welcome. */
+export interface ShellHome {
+  /** Its name, said in the title bar and a phone's header as an added page's is. */
+  readonly title?: string;
+  readonly component: ComponentType<ShellPageProps>;
+}
+
 export interface ShellPageProps {
   /** The path's parameters, by name. */
   readonly params: Readonly<Record<string, string>>;
@@ -81,6 +88,11 @@ export interface ShellNavigationGroup {
 export interface ShellContributions {
   /** Pages beside Gram's own. Read once, when the app mounts. */
   readonly routes?: readonly ShellRoute[];
+  /**
+   * The page at `/`, in place of Gram's home: what Gram shows with nothing open, and its first-run
+   * welcome ("Open a repository"), which is then never shown. Read once, when the app mounts.
+   */
+  readonly home?: ShellHome;
   /** Groups of destinations. Replaceable later through `GramHandle.update`. */
   readonly navigation?: readonly ShellNavigationGroup[];
   /**

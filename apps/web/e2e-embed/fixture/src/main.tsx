@@ -135,6 +135,17 @@ function Limits() {
   );
 }
 
+/** This app's own first page, at the app's root in place of Gram's. */
+function Home() {
+  return (
+    <Page title="Welcome to Acme" description="Your places, then your threads.">
+      <p data-testid="fixture-home" className="text-body text-muted-foreground">
+        Pick a place on the left.
+      </p>
+    </Page>
+  );
+}
+
 function Agent({ params }: ShellPageProps) {
   return (
     <div className="p-6">
@@ -181,7 +192,11 @@ const BUILD = {
   id: "build",
   label: "Build",
   placement: "main" as const,
-  items: [{ id: "runs", label: "Runs", to: "/govern/agents/a-1", count: 3 }],
+  items: [
+    { id: "home", label: "Home", to: "/" },
+    { id: "runs", label: "Runs", to: "/govern/agents/a-1", count: 3 },
+    { id: "threads", label: "Threads", to: "/threads" },
+  ],
 };
 
 mountGram({
@@ -194,6 +209,7 @@ mountGram({
       { path: "/govern/limits", title: "Limits", component: Limits },
       { path: "/govern/agents/$agentId", component: Agent },
     ],
+    home: { title: "Home", component: Home },
     navigation: [BUILD, GOVERN],
     workspaceSwitcher: Switcher,
   },

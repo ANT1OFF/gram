@@ -539,6 +539,12 @@ export function PaletteBody({
       keywords: "preferences options",
       run: go("go:settings", () => void navigate({ to: "/settings" })),
     },
+    {
+      id: "go:threads",
+      label: "Threads",
+      keywords: "all threads list",
+      run: go("go:threads", () => void navigate({ to: "/threads" })),
+    },
     // The places an app in front of Gram added, each under its group's name; none on Gram's own.
     ...embedNavigation.flatMap((group) =>
       group.items.map((item) => {

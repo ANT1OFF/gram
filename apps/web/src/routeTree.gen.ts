@@ -14,6 +14,7 @@ import { Route as NewRouteImport } from './routes/new'
 import { Route as NewTaskRouteImport } from './routes/new-task'
 import { Route as NewWorkspaceRouteImport } from './routes/new-workspace'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ThreadsRouteImport } from './routes/threads'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as SettingsAboutRouteImport } from './routes/settings.about'
@@ -67,6 +68,11 @@ const NewWorkspaceRoute = NewWorkspaceRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ThreadsRoute = ThreadsRouteImport.update({
+  id: '/threads',
+  path: '/threads',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UsageRoute = UsageRouteImport.update({
@@ -222,6 +228,7 @@ export interface FileRoutesByFullPath {
   '/new-task': typeof NewTaskRoute
   '/new-workspace': typeof NewWorkspaceRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/threads': typeof ThreadsRoute
   '/usage': typeof UsageRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/advanced': typeof SettingsAdvancedRouteWithChildren
@@ -257,6 +264,7 @@ export interface FileRoutesByTo {
   '/new': typeof NewRoute
   '/new-task': typeof NewTaskRoute
   '/new-workspace': typeof NewWorkspaceRoute
+  '/threads': typeof ThreadsRoute
   '/usage': typeof UsageRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/advanced': typeof SettingsAdvancedRouteWithChildren
@@ -294,6 +302,7 @@ export interface FileRoutesById {
   '/new-task': typeof NewTaskRoute
   '/new-workspace': typeof NewWorkspaceRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/threads': typeof ThreadsRoute
   '/usage': typeof UsageRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/advanced': typeof SettingsAdvancedRouteWithChildren
@@ -332,6 +341,7 @@ export interface FileRouteTypes {
     | '/new-task'
     | '/new-workspace'
     | '/settings'
+    | '/threads'
     | '/usage'
     | '/settings/about'
     | '/settings/advanced'
@@ -367,6 +377,7 @@ export interface FileRouteTypes {
     | '/new'
     | '/new-task'
     | '/new-workspace'
+    | '/threads'
     | '/usage'
     | '/settings/about'
     | '/settings/advanced'
@@ -403,6 +414,7 @@ export interface FileRouteTypes {
     | '/new-task'
     | '/new-workspace'
     | '/settings'
+    | '/threads'
     | '/usage'
     | '/settings/about'
     | '/settings/advanced'
@@ -440,6 +452,7 @@ export interface RootRouteChildren {
   NewTaskRoute: typeof NewTaskRoute
   NewWorkspaceRoute: typeof NewWorkspaceRoute
   SettingsRoute: typeof SettingsRouteWithChildren
+  ThreadsRoute: typeof ThreadsRoute
   UsageRoute: typeof UsageRoute
   TThreadIdRoute: typeof TThreadIdRoute
   WWorkspaceIdFilesRoute: typeof WWorkspaceIdFilesRoute
@@ -481,6 +494,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/threads': {
+      id: '/threads'
+      path: '/threads'
+      fullPath: '/threads'
+      preLoaderRoute: typeof ThreadsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/usage': {
@@ -764,6 +784,7 @@ const rootRouteChildren: RootRouteChildren = {
   NewTaskRoute: NewTaskRoute,
   NewWorkspaceRoute: NewWorkspaceRoute,
   SettingsRoute: SettingsRouteWithChildren,
+  ThreadsRoute: ThreadsRoute,
   UsageRoute: UsageRoute,
   TThreadIdRoute: TThreadIdRoute,
   WWorkspaceIdFilesRoute: WWorkspaceIdFilesRoute,

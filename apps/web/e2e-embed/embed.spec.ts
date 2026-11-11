@@ -216,6 +216,56 @@ test("the sidebar can leave Gram's workspaces and threads out", async ({ page })
   expect(errors).toEqual([]);
 });
 
+test("the embedding app's home is the page at the root, with no first run", async ({ page }) => {
+  const errors = await mounted(page);
+  await expect(page.getByTestId("fixture-home")).toBeVisible();
+  await expect(page.getByTestId("embed-page-title")).toHaveText("Home");
+  // Gram's own home and its welcome are not shown.
+  await expect(page.getByTestId("home-empty")).toHaveCount(0);
+  await expect(page.getByTestId("welcome")).toHaveCount(0);
+  const home = page.getByTestId("embed-navigation-main").getByRole("link", { name: "Home" });
+  await expect(home).toHaveAttribute("aria-current", "page");
+  // Away and back by the group's row.
+  await page.getByTestId("embed-navigation-main").getByRole("link", { name: /Runs/ }).click();
+  await expect(page.getByTestId("fixture-agent")).toBeVisible();
+  await home.click();
+  await expect(page.getByTestId("fixture-home")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("every thread is on a page of its own, which the sidebar can lead to", async ({ page }) => {
+  const errors = await mounted(page);
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ threads: "hidden" });
+  });
+  await page.getByTestId("embed-navigation-main").getByRole("link", { name: "Threads" }).click();
+  await expect(page).toHaveURL(/\/threads$/);
+  const list = page.getByTestId("threads-list");
+  const rows = list.getByTestId("threads-row");
+  await expect(rows.first()).toBeVisible();
+  const count = await rows.count();
+  expect(count).toBeGreaterThan(3);
+  // Those that need you come first.
+  const marks = await rows.evaluateAll((elements) =>
+    elements.map((element) => element.hasAttribute("data-needs-you")),
+  );
+  expect(marks.indexOf(false)).toBeGreaterThan(0);
+  expect(marks.slice(marks.indexOf(false))).not.toContain(true);
+
+  // Search narrows the list; a row opens its thread.
+  await page.getByTestId("threads-search").fill("date library");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Pick a date library");
+  await rows.first().click();
+  await expect(page).toHaveURL(/\/t\/[^/]+$/);
+
+  // New task starts one.
+  await page.goBack();
+  await page.getByTestId("threads-new").click();
+  await expect(page).toHaveURL(/\/new/);
+  expect(errors).toEqual([]);
+});
+
 test("an address with no page says so in the shell, with the way home", async ({ page }) => {
   const errors = await mounted(page, "/govern/nowhere");
   const notFound = page.getByTestId("not-found");

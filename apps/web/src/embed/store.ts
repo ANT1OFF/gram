@@ -6,6 +6,7 @@ import type {
   ShellContributions,
   ShellNavigationGroup,
   ShellNavigationPlacement,
+  ShellPageProps,
   ShellSlotProps,
 } from "./contract";
 
@@ -20,6 +21,8 @@ export interface EmbedShellState {
   readonly titles: Readonly<Record<string, string>>;
   /** Whether the sidebar lists Gram's workspaces and threads. */
   readonly threads: "shown" | "hidden";
+  /** The page at `/` in place of Gram's home. Set once, at mount. */
+  readonly home: ComponentType<ShellPageProps> | undefined;
 }
 
 export const useEmbedShell = create<EmbedShellState>()(() => ({
@@ -27,6 +30,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   workspaceSwitcher: undefined,
   titles: {},
   threads: "shown",
+  home: undefined,
 }));
 
 /** What the store holds before anything is added, and again after `unmount`. */
@@ -35,7 +39,11 @@ export const EMPTY_SHELL: EmbedShellState = {
   workspaceSwitcher: undefined,
   titles: {},
   threads: "shown",
+  home: undefined,
 };
+
+/** Whether an app in front of Gram supplies the home page: Gram's first run is then never shown. */
+export const useHostHome = () => useEmbedShell((s) => s.home !== undefined);
 
 /** Whether the sidebar lists Gram's own workspaces and threads: always, on Gram's own. */
 export const useThreadsListed = () => useEmbedShell((s) => s.threads === "shown");
@@ -48,7 +56,17 @@ export const shellFor = (settings: Settings, shell: ShellContributions | undefin
   embeddingOn(settings) ? (shell ?? {}) : {};
 
 /** The first segment of each path Gram has itself: an added page may not take one. */
-const OWN = new Set(["", "t", "w", "new", "new-task", "new-workspace", "settings", "usage"]);
+const OWN = new Set([
+  "",
+  "t",
+  "w",
+  "new",
+  "new-task",
+  "new-workspace",
+  "settings",
+  "threads",
+  "usage",
+]);
 
 /**
  * Why `path` can't be an added page's, or undefined when it can: it must be a path of its own,

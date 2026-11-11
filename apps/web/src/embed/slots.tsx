@@ -1,4 +1,4 @@
-import { Link, useMatches, useRouterState } from "@tanstack/react-router";
+import { Link, useMatches, useParams, useRouterState } from "@tanstack/react-router";
 import { createElement } from "react";
 
 import { Hint } from "@/components/hint";
@@ -205,15 +205,19 @@ export function EmbedRailNavigation({
   );
 }
 
+/** Gram's own pages that name themselves in the title bar as an added page does: in no workspace. */
+const OWN_PAGE_TITLES: Readonly<Record<string, string>> = { "/threads": "Threads" };
+
 /**
- * The name of the added page the window is on, or undefined on one of Gram's own and on an added
- * page that brought no name. Always undefined in Gram on its own.
+ * The name of the page the window is on, where the title bar says it in place of the workspace and
+ * its views: an added page's (the one it brought; undefined if none) or the Threads page's.
+ * Undefined on Gram's other pages.
  */
 export function useEmbedPageTitle(): string | undefined {
   const titles = useEmbedShell((s) => s.titles);
   // The deepest match is the page; its `fullPath` is the path the page was added under.
   const path = useMatches({ select: (matches) => matches.at(-1)?.fullPath as string | undefined });
-  return path === undefined ? undefined : titles[path];
+  return path === undefined ? undefined : (titles[path] ?? OWN_PAGE_TITLES[path]);
 }
 
 /**
@@ -237,5 +241,17 @@ export function EmbedPageTitle({ title }: { title: string }) {
     >
       {title}
     </h1>
+  );
+}
+
+/** The embedding app's home page at `/`, in the conversation's place as an added page is. */
+export function EmbedHome() {
+  const home = useEmbedShell((s) => s.home);
+  const params = useParams({ strict: false }) as Readonly<Record<string, string>>;
+  if (home === undefined) return null;
+  return (
+    <section data-testid="embed-page" data-path="/" className="min-h-0 flex-1 overflow-y-auto">
+      {createElement(home, { params })}
+    </section>
   );
 }

@@ -34,6 +34,7 @@ const PAGE_NAMES: readonly (readonly [RegExp, string])[] = [
   [/^\/new(\/|$)/, "New task"],
   [/\/memory$/, "Memory"],
   [/^\/settings(\/|$)/, "Settings"],
+  [/^\/threads$/, "Threads"],
 ];
 
 /**
