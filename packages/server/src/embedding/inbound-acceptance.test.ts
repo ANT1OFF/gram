@@ -17,6 +17,8 @@ import { gitPlatformTest } from "../git/platform.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { eventually, makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
+import { IDENTITY_HEADER } from "../http/fronted-identity.ts";
+import { makeTestProxy } from "../http/fronted-identity.testing.ts";
 import { LaunchToken, ServerLayer, serverPort } from "../http/server.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentAdapter } from "../runtime/fake-agent.ts";
@@ -212,6 +214,47 @@ const embed = {
 const repoEvent = { events: [{ repo: "acme/web", number: 7, kind: "check" }] };
 
 // Its own data folder: the attachments it is given are kept there before they are sent on.
+// Sign-in through a fronting proxy takes people's requests. The deployment's own service still
+// gets in by its token, and a person's statement opens none of its paths.
+const proxy = makeTestProxy();
+layer(
+  server({
+    embedding: true,
+    embed: { repoEvents: "poll", inboundToken: TOKEN },
+    frontedIdentity: proxy.config,
+    dataDir: join(tmp, "fronted"),
+  }),
+  { excludeTestServices: true },
+)("an embedded server with sign-in through a proxy", (it) => {
+  it.effect("takes the service's token on its inbound paths, and no person's statement", () =>
+    Effect.gen(function* () {
+      const at = yield* port;
+      const service = yield* call(at, "/embed/v1/settings", { token: TOKEN, method: "GET" });
+      expect(service.status).toBe(200);
+      expect(JSON.parse(service.body)).toHaveProperty("settings");
+      expect((yield* call(at, "/embed/v1/settings", { method: "GET" })).status).toBe(401);
+      const wrong = yield* call(at, "/embed/v1/settings", {
+        token: "x".repeat(TOKEN.length),
+        method: "GET",
+      });
+      expect(wrong.status).toBe(401);
+      // A member is let in as a person, and a person has no such path, with the token or without.
+      const member = { [IDENTITY_HEADER]: proxy.statement({ sub: "user-1", role: "member" }) };
+      for (const token of [TOKEN, undefined]) {
+        const asPerson = yield* call(at, "/embed/v1/settings", {
+          ...(token === undefined ? {} : { token }),
+          method: "GET",
+          headers: member,
+        });
+        expect(asPerson.status).toBe(404);
+        expect(asPerson.body).not.toContain("settings");
+      }
+      // The token still opens nothing else: everything else needs a statement.
+      expect((yield* call(at, "/", { token: TOKEN, method: "GET" })).status).toBe(401);
+    }),
+  );
+});
+
 layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
   excludeTestServices: true,
 })("an embedded server", (it) => {
