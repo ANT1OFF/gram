@@ -29,6 +29,11 @@ describe("stop marks", () => {
     marks.back(machine);
     expect(marks.takeRested(machine)).toEqual([thread("a"), thread("b"), thread("c")]);
     expect(marks.takeRested(machine)).toEqual([]);
+    // A stop after the machine was back starts over: what an unasked resume left isn't carried.
+    marks.stopped(machine, [thread("a")]);
+    marks.back(machine);
+    marks.stopped(machine, [thread("d")]);
+    expect(marks.takeRested(machine)).toEqual([thread("d")]);
   });
 
   it("a stop taken back leaves nothing, and is counted", () => {

@@ -136,7 +136,12 @@ export const prepareStop = (
       .flatMap(({ thread, cwds }) => cwds.map((cwd) => ({ threadId: thread.id, cwd })));
     const asked = folders.slice(0, STOP_FOLDERS_MAX);
     const cancels = deps.hosts.stops.cancels(id);
-    const takeBack = connection.stop.cancel.pipe(Effect.timeout(CANCEL_WITHIN), Effect.ignore);
+    // The machine takes work again, and no longer counts as readied here either.
+    const takeBack = connection.stop.cancel.pipe(
+      Effect.timeout(CANCEL_WITHIN),
+      Effect.ignore,
+      Effect.ensuring(Effect.sync(() => deps.hosts.stops.back(id))),
+    );
     const prepared = yield* connection.stop
       .prepare({
         checkouts: asked,
@@ -155,8 +160,11 @@ export const prepareStop = (
       (left > 0 ? `${left} more folders than one stop keeps were left as they are.` : undefined);
     const answer = { busy: prepared.busy, kept, ...(note === undefined ? {} : { note }) };
     // Not idle and not forced, or a stop that didn't hold: the machine takes work as before.
-    if (prepared.released === true || (!prepared.idle && options.force !== true))
+    if (prepared.released === true || (!prepared.idle && options.force !== true)) {
+      // An earlier stop that this one's release ended isn't holding any more.
+      if (prepared.released === true) deps.hosts.stops.back(id);
       return { ...answer, kept: prepared.kept.length === 0 ? [] : kept, idle: false, working: [] };
+    }
     const rested: Array<ThreadId> = [];
     const working: Array<ThreadId> = [];
     for (const { thread, session } of placed) {
@@ -176,8 +184,11 @@ export const prepareStop = (
       };
     }
     // Taken back while its sessions were put to rest: the machine takes work again.
-    if (deps.hosts.stops.cancels(id) !== cancels)
+    if (deps.hosts.stops.cancels(id) !== cancels) {
+      // Said again: the cancel may have reached the machine before this stop did.
+      yield* takeBack;
       return { ...answer, idle: false, working, note: "The stop was taken back meanwhile." };
+    }
     deps.hosts.stops.stopped(id, rested);
     yield* Effect.logInfo("a machine was readied to stop").pipe(
       Effect.annotateLogs({ hostId: id, idle: prepared.idle, rested: rested.length }),

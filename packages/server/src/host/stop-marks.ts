@@ -59,9 +59,11 @@ export const makeStopMarks = (
   };
   return {
     stopped: (id, threads) => {
+      // Readied again while still readied adds to the threads at rest; a new stop starts over.
+      const before = markOf(id) === undefined ? [] : (rested.get(id) ?? []);
       marks.set(id, { at: now(), left: false });
       last.set(id, now());
-      rested.set(id, [...new Set([...(rested.get(id) ?? []), ...threads])]);
+      rested.set(id, [...new Set([...before, ...threads])]);
     },
     stoppedAt: (id) => markOf(id)?.at,
     holding: (id) => markOf(id)?.left === false,

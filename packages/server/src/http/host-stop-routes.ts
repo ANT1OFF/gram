@@ -76,7 +76,7 @@ export const hostStopRoute = (
     if (
       request.method !== "POST" ||
       request.headers["origin"] === undefined ||
-      request.headers["content-type"] !== "application/json"
+      !/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] ?? "")
     )
       return refuse("forbidden", 403);
     const body = yield* jsonBody;
