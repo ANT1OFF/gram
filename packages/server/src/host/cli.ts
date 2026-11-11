@@ -24,6 +24,8 @@ import {
   privateKeyFrom,
   publicKeyText,
 } from "./machine-keys.ts";
+import { HOST_NAME, namesThisMachine } from "./paired-machines.ts";
+import { provisionedOrigin } from "./provisioned.ts";
 import type { HostService } from "./protocol.ts";
 import {
   installService,
@@ -42,6 +44,10 @@ const USAGE = `gram-host: run this machine's work for a Gram on another machine,
       Join the Gram that made a join link (Settings → Machines → Add a machine), pasted when
       asked or piped in, and run as a background service. Confirm the fingerprint it prints
       on that machine. The link can also follow \`join\`, but then it lands in shell history.
+  gram-host provision --origin <https://address> [--name <name>]
+      For a host that a control plane starts, not a person: make this host's key and keep the
+      address it will dial, then print its public key as JSON for the control plane to register.
+      Nothing is sent anywhere. Run again, it prints the same key. Then: gram-host run.
   gram-host run          Dial the main Gram and serve it, in the foreground.
   gram-host service install | uninstall | status
   gram-host status       What this machine joined, its fingerprint and the service's state.
@@ -185,6 +191,76 @@ const join = (args: ReadonlyArray<string>, home: string) =>
     if (!flag(args, "--no-service")) yield* install(home);
   });
 
+/** What `gram-host provision` prints: what a control plane registers this host with. */
+export interface ProvisionedHost {
+  readonly hostId: string;
+  readonly name: string;
+  readonly platform: string;
+  readonly publicKey: string;
+  readonly fingerprint: string;
+  readonly origin: string;
+}
+
+const describeHost = (config: HostConfig, publicKey: string): ProvisionedHost => ({
+  hostId: config.hostId,
+  name: config.name,
+  platform: process.platform,
+  publicKey,
+  fingerprint: fingerprintOf(publicKey),
+  origin: config.origin,
+});
+
+/**
+ * Makes this host's key and keeps the address it will dial, without a join link and without
+ * reaching that address: the control plane that starts the host registers the public key printed
+ * here, and the main Gram takes its dials from then on. The private key never leaves `home`. A
+ * host already provisioned for the same address answers with the key it has; one that joined
+ * with a link, or was provisioned for another address, is refused until it leaves.
+ */
+export const provisionHere = (
+  home: string,
+  given: { readonly origin: string; readonly name?: string | undefined },
+): ProvisionedHost => {
+  const origin = provisionedOrigin(given.origin);
+  ensureHostHome(home);
+  const existing = readHostConfig(home);
+  if (existing !== undefined) {
+    if (existing.provisioned !== true)
+      throw new Error(
+        `This machine already joined ${existing.origin}. Run \`gram-host leave\` first.`,
+      );
+    if (existing.origin !== origin || (given.name !== undefined && given.name !== existing.name))
+      throw new Error(
+        `This host is already provisioned for ${existing.origin} as "${existing.name}". Run \`gram-host leave --no-service\` first to change that.`,
+      );
+    const found = joined(home);
+    if (found === undefined) throw new Error(`The host key is missing from ${home}.`);
+    return describeHost(found.config, found.publicKey);
+  }
+  const name = given.name ?? defaultName();
+  if (!HOST_NAME.test(name) || namesThisMachine(name))
+    throw new Error("That name isn't one a host can have.");
+  const key = generateHostKey();
+  const config: HostConfig = {
+    version: 1,
+    origin,
+    hostId: hostIdOf(key.publicKey),
+    name,
+    provisioned: true,
+  };
+  writeJoined(home, config, key.privateKeyPem);
+  return describeHost(config, key.publicKey);
+};
+
+const provision = (args: ReadonlyArray<string>, home: string) =>
+  Effect.gen(function* () {
+    const origin = option(args, "--origin");
+    if (origin === undefined || origin.startsWith("--"))
+      return yield* fail("Give the address to dial: gram-host provision --origin https://….");
+    const made = provisionHere(home, { origin, name: option(args, "--name") });
+    yield* say(JSON.stringify(made));
+  });
+
 const joined = (home: string) => {
   const config = readHostConfig(home);
   const pem = readHostKey(home);
@@ -193,6 +269,9 @@ const joined = (home: string) => {
   const publicKey = publicKeyText(createPublicKey(key));
   if (hostIdOf(publicKey) !== config.hostId)
     throw new Error(`The key in ${home} isn't the one this machine joined with.`);
+  // A provisioned host dials only an https address, whatever its config has come to say: its
+  // signed dial is never sent in the clear.
+  if (config.provisioned === true) provisionedOrigin(config.origin);
   return { config, key, publicKey };
 };
 
@@ -237,6 +316,8 @@ export const runCli = <R>(
     readonly service: (
       hostId: HostId,
       home: string,
+      /** Whether a control plane provisioned this host, which then also replaces it to update. */
+      provisioned: boolean,
     ) => Effect.Effect<HostService, never, Scope.Scope | R>;
     readonly layer: Layer.Layer<R>;
     /** The release this host runs, for recovering an unfinished update. */
@@ -249,6 +330,8 @@ export const runCli = <R>(
     switch (command) {
       case "join":
         return join(rest, home);
+      case "provision":
+        return provision(rest, home);
       case "run": {
         const found = joined(home);
         if (found === undefined) return fail("This machine hasn't joined a Gram: gram-host join.");
@@ -262,7 +345,11 @@ export const runCli = <R>(
                 key: found.key,
                 joined: stillJoined(home, found.config),
               },
-              host.service(HostIdSchema.make(found.config.hostId), home),
+              host.service(
+                HostIdSchema.make(found.config.hostId),
+                home,
+                found.config.provisioned === true,
+              ),
             ),
           ),
           Effect.scoped,

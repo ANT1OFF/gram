@@ -83,11 +83,14 @@ export interface ThreadCreator {
  */
 export const makeThreadCreator = (deps: {
   readonly store: Pick<ThreadStoreShape, "listThreads">;
-  readonly checkouts: Pick<CheckoutServiceShape, "prepare">;
+  readonly checkouts: Pick<CheckoutServiceShape, "prepare" | "place">;
   readonly runtimes: Pick<ThreadRuntimesShape, "create">;
 }): ThreadCreator => {
-  const prepare: ThreadCreator["prepare"] = (request, projectRoot) =>
+  const prepare: ThreadCreator["prepare"] = (asked, projectRoot) =>
     Effect.gen(function* () {
+      // Placed first, so the guard below reads the machine the checkout is really made on.
+      const request =
+        deps.checkouts.place === undefined ? asked : yield* deps.checkouts.place(asked);
       // The checkouts held on the machine the request is placed on.
       const on = checkoutRequestHost(request) ?? LOCAL_HOST_ID;
       const open = heldCheckoutPaths(yield* deps.store.listThreads, on);

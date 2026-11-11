@@ -209,9 +209,14 @@ NodeRuntime.runMain(
   args.length === 0
     ? child
     : runCli(args, {
-        service: (hostId, home) =>
-          hostService(hostId, claudeTokenIn(joinedHome), (busy, admission) =>
-            selfUpdater(RELEASE, home, busy, admission),
+        service: (hostId, home, provisioned) =>
+          hostService(
+            hostId,
+            claudeTokenIn(joinedHome),
+            // A provisioned host is replaced by whatever started it, never updated in place.
+            provisioned
+              ? undefined
+              : (busy, admission) => selfUpdater(RELEASE, home, busy, admission),
           ),
         layer: hostLayer(() => readClaudeToken(joinedHome)),
         release: RELEASE,

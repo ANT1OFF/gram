@@ -23,6 +23,11 @@ export interface HostConfig {
   readonly origin: string;
   readonly hostId: string;
   readonly name: string;
+  /**
+   * Set by `gram-host provision`: the host made its key for a control plane to register, and
+   * `origin` is that Gram's provisioned-host address rather than a tailnet one.
+   */
+  readonly provisioned?: true;
 }
 
 /**
@@ -131,7 +136,8 @@ export const readHostConfig = (home: string): HostConfig | undefined => {
     value.version !== 1 ||
     typeof value.origin !== "string" ||
     typeof value.hostId !== "string" ||
-    typeof value.name !== "string"
+    typeof value.name !== "string" ||
+    (value.provisioned !== undefined && value.provisioned !== true)
   )
     throw new Error(`${join(home, CONFIG)} isn't a gram-host config.`);
   return value as HostConfig;

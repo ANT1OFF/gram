@@ -30,6 +30,12 @@ describe("ServerConfig.fromEnv", () => {
     expect(ServerConfig.fromEnv({})).not.toHaveProperty("embedding");
   });
 
+  it("is headless only for GRAM_HEADLESS=1", () => {
+    expect(ServerConfig.fromEnv({ GRAM_HEADLESS: "1" }).headless).toBe(true);
+    expect(ServerConfig.fromEnv({ GRAM_HEADLESS: "0" })).not.toHaveProperty("headless");
+    expect(ServerConfig.fromEnv({})).not.toHaveProperty("headless");
+  });
+
   it("flags the fake agent only for GRAM_FAKE_AGENT=1", () => {
     expect(ServerConfig.fromEnv({ GRAM_FAKE_AGENT: "1" }).fakeAgent).toBe(true);
     expect(ServerConfig.fromEnv({ GRAM_FAKE_AGENT: "0" })).not.toHaveProperty("fakeAgent");

@@ -114,6 +114,7 @@ import {
 } from "../rules.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import { RemoteHosts } from "../../host/remote-hosts.ts";
+import { WorkerHosts } from "../../host/worker-host.ts";
 import { heldBriefOf } from "../limit-pause.ts";
 import { type PromptWorktree } from "../prompt.ts";
 
@@ -557,6 +558,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const limitReadings = yield* Effect.serviceOption(UsageLimitReadings);
   // Absent where no machine can join: every worker is then this machine's.
   const remoteHosts = yield* Effect.serviceOption(RemoteHosts);
+  // A headless Gram's placement, absent anywhere else: where a worker goes when none is named.
+  const headless = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts))?.headless;
   /** The confirmed joined machines a worker can be placed on, as the settings page lists them. */
   const joinedMachines = () =>
     Option.isSome(remoteHosts) ? remoteHosts.value.list().filter((m) => m.confirmed) : [];
@@ -1256,6 +1259,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
 
   return {
     joinedMachines,
+    headless,
     store,
     hub,
     runtimes,

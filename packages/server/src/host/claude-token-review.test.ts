@@ -113,6 +113,8 @@ const hostsOver = (
   checkSignIn: () => Promise.resolve(undefined),
   remove: (id) => machines.remove(id),
   keepOrigin: () => {},
+  provisionedOrigin: undefined,
+  closeProvisioned: () => {},
 });
 
 const post = (hosts: RemoteHostsShape, path: string, body: unknown, capture?: ClaudeTokenCapture) =>

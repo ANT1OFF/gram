@@ -4,7 +4,9 @@ import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { GramRpcs } from "@gram/contracts";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Schedule from "effect/Schedule";
 import * as Option from "effect/Option";
 import * as ByteSize from "effect/ByteSize";
 import * as Layer from "effect/Layer";
@@ -70,8 +72,9 @@ import type { GitPlatform } from "../git/platform.ts";
 import { LoopStallLog } from "../logging/loop-stalls.ts";
 import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { withEmbeddingSeed } from "../settings/embedding.ts";
+import { embeddingEnabled, withEmbeddingSeed } from "../settings/embedding.ts";
 import { PreviewFiles } from "../preview/files.ts";
+import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
@@ -115,6 +118,7 @@ import {
   HOST_PATHS,
   hostRoute,
   MACHINE_MANAGEMENT_PATHS,
+  provisionedRoute,
   machineManagement,
   placedOnMachine,
 } from "./machine-routes.ts";
@@ -122,6 +126,14 @@ import { releaseOfConfig, RemoteHosts } from "../host/remote-hosts.ts";
 import { authTarget } from "./auth-target.ts";
 import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } from "./auth.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
+import {
+  ProvisionedListener,
+  ViaProvisionedListener,
+  withProvisionedListener,
+} from "./provisioned-listener.ts";
+
+/** How often the provisioned-host listener and its hosts are held to the hosted-features switch. */
+const PROVISIONED_SWITCH_POLL = Duration.seconds(3);
 
 /** The per-launch secret carried by the boot URL. */
 export class LaunchToken extends Context.Service<LaunchToken, { readonly token: string }>()(
@@ -156,6 +168,27 @@ export const AuthMiddleware = HttpRouter.middleware(
     // and dials follow it, so none outlives the address it came in on.
     if (remoteHosts !== undefined) control.watch((origin) => remoteHosts.keepOrigin(origin));
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
+    /**
+     * Whether provisioned hosts are on: one of the hosted features, read at each dial and each
+     * registration so the switch holds at once.
+     */
+    const provisionedOn =
+      store === undefined
+        ? Effect.succeed(false)
+        : Effect.provideService(embeddingEnabled, ThreadStore, store);
+    // The listener is bound only while the switch is on, and hosts connected when it goes off
+    // are dropped: both within a few seconds of the change. They stay registered. A switch that
+    // can't be read counts as off.
+    const listener = Option.getOrUndefined(yield* Effect.serviceOption(ProvisionedListener));
+    if (remoteHosts?.provisionedOrigin !== undefined)
+      yield* provisionedOn.pipe(
+        Effect.catchCause(() => Effect.succeed(false)),
+        Effect.tap((on) => (on ? Effect.void : Effect.sync(remoteHosts.closeProvisioned))),
+        Effect.tap((on) => listener?.setOpen(on) ?? Effect.void),
+        Effect.catchCause(() => Effect.void),
+        Effect.repeat(Schedule.spaced(PROVISIONED_SWITCH_POLL)),
+        Effect.forkScoped,
+      );
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
       "cache-control": "no-store",
@@ -173,6 +206,22 @@ export const AuthMiddleware = HttpRouter.middleware(
         };
         const target = authTarget(request.url);
         const path = target?.path;
+        // The provisioned-host listener serves a host's dial and its sessions' app tools, by their
+        // own proofs, and nothing a browser or the local app reaches: decided before any of it.
+        if (yield* ViaProvisionedListener)
+          return HttpServerResponse.setHeaders(
+            yield* provisionedRoute(remoteHosts, path, yield* provisionedOn, (origin) =>
+              Effect.gen(function* () {
+                return remoteHosts !== undefined &&
+                  (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers, origin))
+                  ? yield* httpEffect
+                  : HttpServerResponse.text("unauthorized: not a thread on a provisioned host", {
+                      status: 401,
+                    });
+              }),
+            ),
+            securityHeaders,
+          );
         const remote = control.current();
         const isRemote = remote !== undefined && request.headers["host"] === remote.host;
         const secureResponse = (response: HttpServerResponse.HttpServerResponse) =>
@@ -241,7 +290,7 @@ export const AuthMiddleware = HttpRouter.middleware(
             request.method === "POST" &&
             request.headers["origin"] === undefined &&
             remoteHosts !== undefined &&
-            (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers));
+            (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers, remote.origin));
           return secureResponse(
             allowed
               ? yield* httpEffect
@@ -299,6 +348,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                           workerHosts === undefined
                             ? undefined
                             : (id) => workerHosts.machine(id).folders,
+                          yield* provisionedOn,
                         )
                     : isRemote && path === "/ws"
                       ? yield* closedOnRevoke(
@@ -508,7 +558,13 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           // Below the condition wakes, whose `versionChanged` reads a CLI's version off its runs.
-          Layer.provideMerge(Layer.mergeAll(GitStatePublisherLive, LaunchChecksCache.layer)),
+          Layer.provideMerge(
+            Layer.mergeAll(
+              GitStatePublisherLive,
+              // A headless server looks for no CLI on this machine: its agents are its machines'.
+              config.headless === true ? LaunchChecksCache.layerNone : LaunchChecksCache.layer,
+            ),
+          ),
           Layer.provideMerge(ReviewRequestsLive),
           Layer.provideMerge(Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer)),
           Layer.provideMerge(ThreadVisibility.layer),
@@ -537,10 +593,16 @@ export const ServerCore = Layer.unwrap(
                   GitCheckoutLive.pipe(Layer.provide(LocalHostProcess.worktrees)),
                   ClaudeAiSeenLive,
                   HostTerminals.layer,
-                  AgentHostsThroughHost,
+                  // A headless server has no agents of its own, whatever it was given.
+                  agentHostsOrHeadless(AgentHostsThroughHost),
                 ),
               ),
-              Layer.provideMerge(LocalHostProcess.layer),
+              // Nor a host process: nothing of a thread's runs on this machine.
+              Layer.provideMerge(
+                config.headless === true
+                  ? LocalHostProcess.layerWith({ hostProcess: false })
+                  : LocalHostProcess.layer,
+              ),
             ),
           ),
           Layer.provideMerge(
@@ -554,11 +616,14 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           Layer.provideMerge(
-            withEmbeddingSeed(
-              ThreadStore.layerSqlite(databaseFile, {
-                checkpointOffLoop: databaseFile !== ":memory:",
-                writerOffLoop: databaseFile !== ":memory:",
-              }),
+            // `GRAM_EMBEDDING` first, since a headless server needs the hosted features on.
+            withHeadlessCheck(
+              withEmbeddingSeed(
+                ThreadStore.layerSqlite(databaseFile, {
+                  checkpointOffLoop: databaseFile !== ":memory:",
+                  writerOffLoop: databaseFile !== ":memory:",
+                }),
+              ),
             ),
           ),
         )
@@ -587,12 +652,25 @@ const createHttpListener = () => {
 
 /** The HTTP + WebSocket server on 127.0.0.1, with the core services it serves. */
 export const ServerLayer: Layer.Layer<
-  HttpServer.HttpServer | LaunchToken | McpTokens | ThreadRuntimes | ThreadStore | EventHub,
+  | HttpServer.HttpServer
+  | ProvisionedListener
+  | LaunchToken
+  | McpTokens
+  | ThreadRuntimes
+  | ThreadStore
+  | EventHub,
   unknown,
   AgentHosts | ServerConfig | GitPlatform | TurnHooks
 > = Layer.unwrap(
   Effect.gen(function* () {
-    const { port, listenHost } = yield* ServerConfig;
+    const { port, listenHost, provisionedHosts } = yield* ServerConfig;
+    /** The app's own listener, and the provisioned hosts' TLS one beside it when configured. */
+    const listeners = (options: NodeHttpServer.Options) =>
+      withProvisionedListener(
+        NodeHttpServer.layerServer(createHttpListener, options),
+        provisionedHosts,
+        options,
+      );
     return HttpRouter.serve(
       Layer.mergeAll(
         RpcRoutes,
@@ -612,8 +690,9 @@ export const ServerLayer: Layer.Layer<
       Layer.provideMerge(RemoteHosts.layer),
       Layer.provideMerge(McpTokens.layer),
       Layer.provideMerge(LaunchToken.layer),
+      Layer.provideMerge(NodeHttpServer.layerHttpServices),
       Layer.provideMerge(
-        NodeHttpServer.layer(createHttpListener, {
+        listeners({
           host: listenHost ?? LOOPBACK_HOST,
           port,
           // Close request/WebSocket scopes before awaiting the listener's final close. The
