@@ -16,6 +16,7 @@ import {
   type AgentUnavailable,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -38,7 +39,7 @@ export const REPOSITORIES_NOT_YET =
 
 export interface ProfileStarterDeps {
   readonly store: Pick<ThreadStoreShape, "getSettings" | "listProfiles" | "ensureProject">;
-  readonly runtimes: Pick<ThreadRuntimesShape, "create">;
+  readonly runtimes: Pick<ThreadRuntimesShape, "create" | "close">;
   /** The server's data folder (`ServerConfig.dataDir`). */
   readonly dataDir: string;
 }
@@ -53,19 +54,26 @@ export const layProfileFiles = (
   folder: string,
   files: ReadonlyArray<ProfileFile>,
 ): Effect.Effect<void, InvalidState> =>
-  Effect.tryPromise({
-    try: async () => {
-      await mkdir(folder, { recursive: true });
-      for (const file of files) {
-        const path = join(folder, ...file.path.split("/"));
-        await mkdir(dirname(path), { recursive: true });
-        await writeFile(path, file.content, { encoding: "utf8", flag: "wx" });
-      }
-    },
-    catch: (cause) =>
-      refuse(
-        `The profile's files couldn't be written: ${cause instanceof Error ? cause.message : String(cause)}`,
-      ),
+  Effect.gen(function* () {
+    let at = "the thread's folder";
+    yield* Effect.tryPromise({
+      try: async () => {
+        await mkdir(folder, { recursive: true });
+        for (const file of files) {
+          at = file.path;
+          const path = join(folder, ...file.path.split("/"));
+          await mkdir(dirname(path), { recursive: true });
+          await writeFile(path, file.content, { encoding: "utf8", flag: "wx" });
+        }
+      },
+      // The file's own path and the error's code: never where the data folder is.
+      catch: (cause) =>
+        refuse(
+          `The profile's files couldn't be written (${at}: ${
+            (cause as { code?: unknown } | null)?.code ?? "failed"
+          }).`,
+        ),
+    });
   });
 
 /** The model a profile names, as a thread runs on it. */
@@ -104,28 +112,44 @@ export const makeProfileStarter = ({ store, runtimes, dataDir }: ProfileStarterD
       const id = Schema.decodeSync(ThreadId)(randomUUID());
       const root = join(dataDir, PROFILE_THREADS_DIR);
       const folder = join(root, id);
-      yield* layProfileFiles(folder, profileFilesOf(profile)).pipe(
-        // Nothing half-laid stays behind: no thread was made to own the folder.
-        Effect.tapError(() =>
-          Effect.promise(() => rm(folder, { recursive: true, force: true }).catch(() => undefined)),
+      const made = Effect.gen(function* () {
+        yield* layProfileFiles(folder, profileFilesOf(profile));
+        // Named once here; `create` would otherwise name the project for its folder.
+        yield* store.ensureProject({ root, name: PROFILE_THREADS_PROJECT });
+        return yield* runtimes.create({
+          id,
+          projectRoot: root,
+          checkout: { kind: "main", path: folder },
+          model: modelOf(profile),
+          // It runs with nobody at the composer, as an orchestrator's worker does.
+          mode: orchestrationMode(settings),
+          ...(profile.name === undefined || profile.name.trim() === ""
+            ? {}
+            : // Its title until it gets one: not the user's own, so a later name may replace it.
+              { title: profile.name.trim(), kept: { userNamed: false } }),
+          ...(profile.input === undefined ? {} : { input: { text: profile.input } }),
+          profile: profileBindingOf(profile),
+        });
+      });
+      // A start that fails, at whatever step, leaves nothing: a supplier that tries again would
+      // otherwise pile up threads that never ran and folders nothing owns. The thread goes first,
+      // if it got as far as being stored (an agent that couldn't open), then its folder.
+      return yield* made.pipe(
+        Effect.onExit((exit) =>
+          Exit.isSuccess(exit)
+            ? Effect.void
+            : runtimes
+                .close(id)
+                .pipe(
+                  Effect.ignore,
+                  Effect.andThen(
+                    Effect.promise(() =>
+                      rm(folder, { recursive: true, force: true }).catch(() => undefined),
+                    ),
+                  ),
+                ),
         ),
       );
-      // Named once here; `create` would otherwise name the project for its folder.
-      yield* store.ensureProject({ root, name: PROFILE_THREADS_PROJECT });
-      return yield* runtimes.create({
-        id,
-        projectRoot: root,
-        checkout: { kind: "main", path: folder },
-        model: modelOf(profile),
-        // It runs with nobody at the composer, as an orchestrator's worker does.
-        mode: orchestrationMode(settings),
-        ...(profile.name === undefined || profile.name.trim() === ""
-          ? {}
-          : // Its title until it gets one: not the user's own, so a later name may replace it.
-            { title: profile.name.trim(), kept: { userNamed: false } }),
-        ...(profile.input === undefined ? {} : { input: { text: profile.input } }),
-        profile: profileBindingOf(profile),
-      });
     });
 
   return { start };

@@ -101,6 +101,16 @@ describe("ThreadProfile", () => {
       "a\u0000b",
       ".git/config",
       "sub/.GIT/hooks/pre-commit",
+      ".git./config",
+      ".git /config",
+      "git~1/config",
+      ".git::$INDEX_ALLOCATION/x",
+      "dir/a:b",
+      "CON",
+      "sub/nul.txt",
+      "trailing./x",
+      " lead/x",
+      "what?.md",
       "x".repeat(301),
     ]) {
       expect(profilePathProblem(path), path).toBeTypeOf("string");
@@ -123,6 +133,26 @@ describe("ThreadProfile", () => {
         ],
       }),
     ).toEqual(["Two files are laid at Notes.md."]);
+    // Composed and decomposed, one name on some disks.
+    expect(
+      problemsOf({
+        ...minimal,
+        files: [
+          { path: "caf\u00e9.md", content: "" },
+          { path: "cafe\u0301.md", content: "" },
+        ],
+      }),
+    ).toHaveLength(1);
+    // A file where another's folder would be.
+    expect(
+      problemsOf({
+        ...minimal,
+        files: [
+          { path: "notes", content: "" },
+          { path: "notes/today.md", content: "" },
+        ],
+      }),
+    ).toEqual(["notes/today.md is inside a path another file is laid at."]);
     const skill = { name: "ship", description: "Ships.", body: "Do it." };
     expect(problemsOf({ ...minimal, skills: [skill, skill] })).toContain(
       "Two skills are named ship.",
@@ -170,6 +200,9 @@ describe("ThreadProfile", () => {
       "https://mcp.example.test/?token=abc",
       "https://mcp.example.test/#frag",
       "https://*.example.test/",
+      "https://mcp.example.test/w\n",
+      " https://mcp.example.test/w",
+      "https://",
     ]) {
       expect(server(url), url).toHaveLength(1);
     }

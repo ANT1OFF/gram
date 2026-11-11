@@ -41,22 +41,47 @@ describe("withProfile", () => {
   });
 
   it("holds the session to the profile's server by address, or to none", () => {
-    const listed: SessionPolicy = {
-      ...plain,
-      mcpAllowlist: ["github", "linear"],
-      mcpDenylist: ["slack"],
-      mcpNoneWithoutToolSearch: true,
-    };
-    const one = withProfile(listed, bound({ server: SERVER }));
+    const one = withProfile(plain, bound({ server: SERVER }));
     expect(one.mcpAllowlist).toEqual([SERVER.url]);
     expect(one.mcpServer).toEqual(SERVER);
-    expect(one.mcpDenylist).toBeUndefined();
-    expect(one.mcpNoneWithoutToolSearch).toBeUndefined();
-
-    const none = withProfile(listed, bound());
+    const none = withProfile({ ...plain, mcpAllowlist: ["github"] }, bound());
     expect(none.mcpAllowlist).toEqual([]);
     expect(none.mcpServer).toBeUndefined();
-    expect(none.mcpDenylist).toBeUndefined();
+  });
+
+  it("only ever narrows what the policy lets in", () => {
+    // An allowlist that doesn't name the server keeps it out, and nothing else in.
+    const listed = withProfile(
+      { ...plain, mcpAllowlist: ["github", "linear"] },
+      bound({ server: SERVER }),
+    );
+    expect(listed.mcpAllowlist).toEqual([]);
+    expect(listed.mcpServer).toBeUndefined();
+    // One that names it, by name or by a pattern over its address, lets it in alone.
+    for (const entry of ["workspace", "https://mcp.example.test/*"]) {
+      const let_in = withProfile(
+        { ...plain, mcpAllowlist: ["github", entry] },
+        bound({ server: SERVER }),
+      );
+      expect(let_in.mcpAllowlist).toEqual([SERVER.url]);
+      expect(let_in.mcpServer).toEqual(SERVER);
+    }
+    // A denylist stays, and a server it names isn't given.
+    const denied = withProfile(
+      { ...plain, mcpDenylist: ["slack", "https://mcp.example.test/*"] },
+      bound({ server: SERVER }),
+    );
+    expect(denied.mcpDenylist).toEqual(["slack", "https://mcp.example.test/*"]);
+    expect(denied.mcpAllowlist).toEqual([]);
+    expect(denied.mcpServer).toBeUndefined();
+    const kept = withProfile({ ...plain, mcpDenylist: ["slack"] }, bound({ server: SERVER }));
+    expect(kept.mcpDenylist).toEqual(["slack"]);
+    expect(kept.mcpServer).toEqual(SERVER);
+    // And the switch that takes every server from a session without tool search stays on.
+    expect(
+      withProfile({ ...plain, mcpNoneWithoutToolSearch: true }, bound({ server: SERVER }))
+        .mcpNoneWithoutToolSearch,
+    ).toBe(true);
   });
 
   it("keeps the rest of the policy", () => {

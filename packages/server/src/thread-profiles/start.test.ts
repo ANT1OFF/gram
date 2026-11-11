@@ -367,6 +367,24 @@ describe("thread.createFromProfile", () => {
     ),
   );
 
+  it.effect("hands back the thread, in error, when its agent can't open", () =>
+    withServer((dataDir) =>
+      Effect.gen(function* () {
+        yield* turnOn;
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const fake = yield* FakeAgentControl;
+        yield* fake.setUnavailable("The CLI isn't installed.");
+        // As `thread.create` does: the thread is there to be seen and tried again, not lost.
+        const thread = yield* start(profile());
+        expect(yield* runtimes.status(thread.id)).not.toBe("idle");
+        expect((yield* store.listThreads).map((t) => t.id)).toEqual([thread.id]);
+        expect(folders(dataDir)).toEqual([thread.id]);
+        expect(fake.sessions).toHaveLength(0);
+      }),
+    ),
+  );
+
   it.effect("leaves every other thread's sessions as they were", () =>
     withServer((dataDir) =>
       Effect.gen(function* () {

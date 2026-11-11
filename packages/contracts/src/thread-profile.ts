@@ -132,6 +132,8 @@ export const PROFILE_SKILLS_DIR: Readonly<Record<AgentKind, string>> = {
   codex: ".agents/skills",
 };
 
+const WINDOWS_DEVICE = /^(?:con|prn|aux|nul|com\d|lpt\d)(?:\..*)?$/i;
+
 /** Server names a profile can't take: Gram's own app tools go by it in every session. */
 const RESERVED_SERVER_NAMES: ReadonlySet<string> = new Set(["gram"]);
 
@@ -147,13 +149,24 @@ export const profilePathProblem = (path: string): string | undefined => {
     return `${JSON.stringify(path)} has a backslash or a control character in it.`;
   if (path.startsWith("/") || /^[A-Za-z]:/.test(path))
     return `${path} is absolute; a file's path is relative to the thread's folder.`;
+  // What names a drive, a stream or a wildcard somewhere: a path means one file everywhere.
+  if (/[:<>"|?*]/.test(path)) return `${path} has one of : < > " | ? * in it.`;
   const segments = path.split("/");
   if (segments.some((segment) => segment === "" || segment === "." || segment === ".."))
     return `${path} has an empty, "." or ".." name in it.`;
-  if (segments.some((segment) => segment.toLowerCase() === ".git"))
+  // A trailing dot or space is dropped by some disks, so `.git.` and `a.` would be other names.
+  if (segments.some((segment) => /^\s|[.\s]$/.test(segment)))
+    return `${path} has a name that starts with a space or ends with a dot or a space.`;
+  if (segments.some((segment) => WINDOWS_DEVICE.test(segment)))
+    return `${path} has a name some systems keep for a device.`;
+  // `.git` itself, and the short name a disk may give it.
+  if (segments.some((segment) => /^(?:\.git|git~\d+)$/i.test(segment)))
     return `${path} is inside a .git folder, which is the repository's own.`;
   return undefined;
 };
+
+/** One file on every disk: composed the same way and compared without case. */
+const pathKey = (path: string): string => path.normalize("NFC").toLowerCase();
 
 /** `---`-fenced front matter Claude Code and Codex both read a skill's name and description from. */
 const skillDocument = (skill: ProfileSkill): string =>
@@ -204,11 +217,16 @@ export const profileProblems = (profile: ThreadProfile): ReadonlyArray<string> =
   for (const file of files) {
     const problem = profilePathProblem(file.path);
     if (problem !== undefined) problems.push(problem);
-    // Compared without case: two names that differ only by it are one file on some disks.
-    const key = file.path.toLowerCase();
+    // Two names that differ only by case or composition are one file on some disks.
+    const key = pathKey(file.path);
     if (paths.has(key)) problems.push(`Two files are laid at ${file.path}.`);
     paths.add(key);
     bytes += utf8.encode(file.content).length;
+  }
+  for (const key of paths) {
+    const parts = key.split("/");
+    if (parts.slice(1).some((_, i) => paths.has(parts.slice(0, i + 1).join("/"))))
+      problems.push(`${key} is inside a path another file is laid at.`);
   }
   if (bytes > PROFILE_FILES_MAX_BYTES)
     problems.push(`A profile's files hold at most ${PROFILE_FILES_MAX_BYTES} bytes together.`);
@@ -216,9 +234,12 @@ export const profileProblems = (profile: ThreadProfile): ReadonlyArray<string> =
   if (server !== undefined) {
     if (RESERVED_SERVER_NAMES.has(server.name.toLowerCase()))
       problems.push(`An MCP server can't be named ${server.name}: that is Gram's own.`);
-    const entry = /^https?:\/\//i.test(server.url)
-      ? connectorEntryProblem(server.url)
-      : "Give the MCP server's http or https address.";
+    const entry =
+      /^https?:\/\//i.test(server.url) &&
+      server.url === server.url.trim() &&
+      URL.canParse(server.url)
+        ? connectorEntryProblem(server.url)
+        : "Give the MCP server's http or https address, and nothing around it.";
     if (entry !== undefined) problems.push(entry);
     else if (server.url.includes("*"))
       problems.push("An MCP server's address is one address, without a wildcard.");

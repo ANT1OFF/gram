@@ -34,6 +34,18 @@ A profile holds no credential. The model's key is the gateway profile's, named b
 server is an address alone, with no user, query or fragment in it and no headers: whatever runs
 the session authenticates it to that server some other way.
 
+## Who a supplier is
+
+Whoever may call `thread.createFromProfile` is trusted with the thread it starts. The files it
+lays can be an agent's own settings for that folder (`.claude/settings.json`, `.mcp.json`,
+`.codex/config.toml`), with hooks and permission rules in them, so the autonomy level and the
+charter bind the agent, not the supplier. What stays out of a supplier's hands: a path never
+leaves the thread's folder or enters a `.git`, and the MCP hold is applied over whatever those
+files say.
+
+A profile only ever narrows a session. If the thread's role already keeps the profile's server
+out, by an allowlist that doesn't name it or a denylist that does, the session opens without it.
+
 ## What the thread keeps
 
 The thread keeps the charter, the autonomy level, the MCP server, the fallbacks and the
@@ -53,5 +65,14 @@ composer.
 - The one MCP server is passed to Claude Code as a remote server of that session and to Codex as
   a server in the thread's own config. Both are covered by tests on synthetic sessions, not by a
   run against a live provider.
+- Codex refuses to open a session whose given server has the name of one already in its config,
+  the folder's own included, since the two tables would merge and that table's token or command
+  would go with the profile's address. Name the server something the machine doesn't use.
+- On Codex the hold covers MCP servers. ChatGPT apps and plugins the account has stay as they
+  are.
+- These threads share one project, whose root holds every such thread's folder. Starting an
+  ordinary thread in that project's root would put all of them beneath it.
+- When the agent can't open, the thread is handed back in error, as `thread.create` does. Any
+  other failure leaves no thread and no folder.
 - A joined machine whose host is older than this feature opens the session without the MCP
   server rather than with more than the profile allows.

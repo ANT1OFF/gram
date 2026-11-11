@@ -1824,13 +1824,7 @@ describe("CodexHost confined sessions", () => {
     Effect.gen(function* () {
       const given = { name: "workspace", url: "https://mcp.example.invalid/workspace" };
       const h = harness({
-        config: {
-          mcp_servers: {
-            docs: { url: "https://mcp.example.invalid/docs" },
-            // The user's own server of the same name, somewhere else.
-            workspace: { url: "https://elsewhere.example.invalid/mcp", enabled: false },
-          },
-        },
+        config: { mcp_servers: { docs: { url: "https://mcp.example.invalid/docs" } } },
         statuses: [status("gram", "connected"), status("workspace", "connected")],
       });
       const host = yield* CodexHost.pipe(Effect.provide(h.layer));
@@ -1864,6 +1858,38 @@ describe("CodexHost confined sessions", () => {
         })
         .pipe(Effect.ignore);
       expect(mcpServersOf()?.["workspace"]).not.toMatchObject({ enabled: true });
+    }),
+  );
+
+  it.effect("refuses a given server whose name the Codex config already has", () =>
+    Effect.gen(function* () {
+      const given = { name: "workspace", url: "https://mcp.example.invalid/workspace" };
+      // Its table would merge into the thread's: a token meant for elsewhere, sent to this address.
+      const h = harness({
+        config: {
+          mcp_servers: {
+            workspace: {
+              url: "https://elsewhere.example.invalid/mcp",
+              bearer_token_env_var: "ELSEWHERE_TOKEN",
+            },
+          },
+        },
+        statuses: [status("gram", "connected")],
+      });
+      const host = yield* CodexHost.pipe(Effect.provide(h.layer));
+      for (const lists of [{ mcpAllowlist: [given.url] }, {}]) {
+        const error = yield* host
+          .open({
+            threadId: ThreadId.make("t1"),
+            cwd: "/repo",
+            mcp: appTools,
+            mcpServer: given,
+            ...lists,
+          })
+          .pipe(Effect.flip);
+        expect(error.message).toContain("already has one by that name");
+      }
+      expect(h.calls.some(([method]) => method === "thread/start")).toBe(false);
     }),
   );
 

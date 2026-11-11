@@ -1,7 +1,12 @@
 // What a thread's profile adds to every session it opens: its charter, its outward gate and its
 // MCP servers. Laid over whatever the thread's role gives, so it holds whoever else has a say.
 import type { OutwardGate } from "@gram/agents";
-import { profileAutonomyOf, type ProfileAutonomy, type Thread } from "@gram/contracts";
+import {
+  connectorListed,
+  profileAutonomyOf,
+  type ProfileAutonomy,
+  type Thread,
+} from "@gram/contracts";
 import type { SessionPolicy } from "../runtime/session-policy.ts";
 
 /** The outward gate a profile's level opens a session with, as a workspace's autonomy does. */
@@ -17,8 +22,9 @@ const stricter = (a: OutwardGate | undefined, b: OutwardGate | undefined) =>
  *
  * - The charter follows the instructions the policy already has, so it reads as the more specific.
  * - The gate is the profile's level, or the policy's own where that is stricter.
- * - The session is held to the profile's one MCP server, by its address, or to none: the lists a
- *   role gave are replaced, since a profile's set is the whole of what its thread may reach.
+ * - The session is held to the profile's one MCP server, by its address, or to none. What the
+ *   policy already keeps out stays out: its denylist is kept, and a server its allowlist or its
+ *   denylist leaves out isn't given, so a profile only ever narrows.
  */
 export const withProfile = (
   policy: SessionPolicy,
@@ -30,12 +36,18 @@ export const withProfile = (
   const instructions = [policy.instructions, charter === "" ? undefined : charter]
     .filter((part) => part !== undefined)
     .join("\n\n");
-  const { mcpDenylist: _, mcpNoneWithoutToolSearch: __, mcpServer: ___, ...rest } = policy;
+  const server =
+    profile.server === undefined ||
+    (policy.mcpAllowlist !== undefined && !connectorListed(policy.mcpAllowlist, profile.server)) ||
+    connectorListed(policy.mcpDenylist ?? [], profile.server)
+      ? undefined
+      : profile.server;
+  const { mcpServer: _, ...rest } = policy;
   return {
     ...rest,
     ...(instructions === "" ? {} : { instructions }),
     outwardGate: stricter(policy.outwardGate, gateOf(profileAutonomyOf(profile))),
-    mcpAllowlist: profile.server === undefined ? [] : [profile.server.url],
-    ...(profile.server === undefined ? {} : { mcpServer: profile.server }),
+    mcpAllowlist: server === undefined ? [] : [server.url],
+    ...(server === undefined ? {} : { mcpServer: server }),
   };
 };
