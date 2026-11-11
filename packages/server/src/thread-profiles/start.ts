@@ -48,6 +48,26 @@ export const PROFILE_THREADS_PROJECT = "Profile threads";
 export const NO_REPOSITORIES_HERE =
   "A profile whose workplace is repositories can't be started here: this server has no git to clone them with.";
 
+/** What a caller hears for a placement on this machine: `on` names a joined one. */
+export const NAME_A_MACHINE = "Name a joined machine to place the thread on, or none.";
+
+/** What a start asked for again hears when it names another machine than the thread's. */
+export const ON_ANOTHER_MACHINE = "The thread with that id is on another machine.";
+
+/** How a start is asked for, beside its profile. */
+export interface ProfileStartOptions {
+  /** The caller's own id for the thread, a lowercase UUID: a start asked for again makes one. */
+  readonly threadId?: ThreadId | undefined;
+  /** The joined machine the thread goes on. */
+  readonly on?: HostId | undefined;
+}
+
+/** A thread a start answered, and whether that start made it. */
+export interface ProfileStarted {
+  readonly thread: Thread;
+  readonly created: boolean;
+}
+
 /** What a caller hears where a thread's machine can't be reached from here (a test layer). */
 export const NOT_PLACED_HERE = "This server has no joined machines to place the thread on.";
 
@@ -110,19 +130,28 @@ export const makeProfileStarter = ({
   const starting = makeKeyedLock<ThreadId>();
 
   /**
-   * The thread `value` describes, started. Refused before anything is made: with the hosted
-   * features off, for a value that isn't a profile of this version, and for one naming a gateway
-   * profile this Gram doesn't have.
+   * The thread `value` describes, started, and whether this call made it. Refused before anything
+   * is made: with the hosted features off, for a value that isn't a profile of this version, for
+   * one naming a gateway profile this Gram doesn't have, and for a machine `on` names that isn't
+   * joined and online.
    *
-   * With `asked`, the thread gets that id, and a start asked for again answers the thread the
+   * With `threadId`, the thread gets that id, and a start asked for again answers the thread the
    * first one made, as it is now (in error too, when its agent couldn't open), without reading the
-   * profile again. An id another kind of thread has, or one whose thread was closed, is refused.
+   * profile or `on` again. An id another kind of thread has, or one whose thread was closed, is
+   * refused.
+   *
+   * With `on`, the thread is placed on that joined machine: its folder made there by the machine's
+   * host, or its worktrees made from the machine's clones. Without it, a headless server places it
+   * on its default machine and any other server here.
    */
-  const start = (
+  const startOne = (
     value: unknown,
-    asked?: ThreadId,
-  ): Effect.Effect<Thread, InvalidState | AgentUnavailable> => {
-    if (asked === undefined) return startAs(value, Schema.decodeSync(ThreadId)(randomUUID()));
+    options: ProfileStartOptions = {},
+  ): Effect.Effect<ProfileStarted, InvalidState | AgentUnavailable> => {
+    const { threadId: asked, on } = options;
+    const fresh = (id: ThreadId) =>
+      startAs(value, id, on).pipe(Effect.map((thread) => ({ thread, created: true })));
+    if (asked === undefined) return fresh(Schema.decodeSync(ThreadId)(randomUUID()));
     return Effect.gen(function* () {
       if (!embeddingOn(yield* store.getSettings)) return yield* refuse(PROFILES_OFF);
       if (!SUPPLIED_ID.test(asked))
@@ -132,21 +161,33 @@ export const makeProfileStarter = ({
         Effect.gen(function* () {
           const existing = yield* store.getThread(asked).pipe(Effect.option);
           if (Option.isSome(existing)) {
-            return existing.value.profile === undefined
-              ? yield* refuse("That thread id is another thread's.")
-              : existing.value;
+            if (existing.value.profile === undefined)
+              return yield* refuse("That thread id is another thread's.");
+            // A machine asked for again must be where the thread is: an answer otherwise would
+            // say it is there when it isn't.
+            if (on !== undefined && existing.value.checkout.hostId !== on)
+              return yield* refuse(ON_ANOTHER_MACHINE);
+            return { thread: existing.value, created: false };
           }
           if ((yield* store.listClosed).some((closed) => closed.thread.id === asked))
             return yield* refuse("The thread with that id was closed.");
-          return yield* startAs(value, asked);
+          return yield* fresh(asked);
         }),
       );
     });
   };
 
+  /** `startOne`'s thread alone, as `thread.createFromProfile` answers. */
+  const start = (
+    value: unknown,
+    options: ProfileStartOptions = {},
+  ): Effect.Effect<Thread, InvalidState | AgentUnavailable> =>
+    startOne(value, options).pipe(Effect.map((started) => started.thread));
+
   const startAs = (
     value: unknown,
     id: ThreadId,
+    on: HostId | undefined,
   ): Effect.Effect<Thread, InvalidState | AgentUnavailable> =>
     Effect.gen(function* () {
       const settings = yield* store.getSettings;
@@ -166,6 +207,10 @@ export const makeProfileStarter = ({
           `There is no gateway profile ${gateway} here for the model to run on.`,
         );
       }
+      // The machine named, checked before anything is cloned or made: joined, online now, and
+      // with a host that makes thread folders.
+      if (on === LOCAL_HOST_ID) return yield* refuse(NAME_A_MACHINE);
+      const named = on === undefined ? undefined : yield* placesOn(on);
 
       const files = profileFilesOf(profile);
       const base = {
@@ -182,17 +227,17 @@ export const makeProfileStarter = ({
       };
 
       if (workplace.kind === "repositories" && repositories !== undefined) {
-        const place = yield* repositories.prepare(id, workplace.repositories);
+        const place = yield* repositories.prepare(id, workplace.repositories, on);
         const checkouts = [place.checkout, ...place.extraCheckouts];
         const made = Effect.gen(function* () {
           // The files go where the worktree is: on the machine a headless server placed it on,
           // by that machine's host, or here.
-          const on = place.checkout.hostId;
-          if (on === undefined || on === LOCAL_HOST_ID) {
+          const placedOn = place.checkout.hostId;
+          if (placedOn === undefined || placedOn === LOCAL_HOST_ID) {
             const laid = yield* layProfileFiles(place.checkout.path, files, { keepExisting: true });
             yield* repositories.exclude(place.checkout.path, laid);
           } else if (files.length > 0) {
-            yield* (yield* placesOn(on)).lay(place.checkout.path, files);
+            yield* (yield* placesOn(placedOn)).lay(place.checkout.path, files);
           }
           return yield* runtimes.create({
             ...base,
@@ -222,11 +267,12 @@ export const makeProfileStarter = ({
       }
 
       const root = join(dataDir, PROFILE_THREADS_DIR);
-      if (hosts?.headless !== undefined) {
-        // A headless server runs nothing here: the folder is made on the machine that takes what
-        // names none, by its host, and the thread is filed under the same project.
-        const hostId = yield* hosts.headless.machine;
-        const places = yield* placesOn(hostId);
+      if (on !== undefined || hosts?.headless !== undefined) {
+        // On the machine named, or, on a headless server that runs nothing here, the one that
+        // takes what names none: the folder is made there by its host, and the thread is filed
+        // under the same project.
+        const hostId = on ?? (yield* hosts!.headless!.machine);
+        const places = named ?? (yield* placesOn(hostId));
         // Before anything is taken back: a folder this start didn't make isn't its to remove.
         const { path } = yield* places.make(id, files);
         const made = Effect.gen(function* () {
@@ -279,5 +325,7 @@ export const makeProfileStarter = ({
       );
     });
 
-  return { start };
+  return { start, startOne };
 };
+
+export type ProfileStarter = ReturnType<typeof makeProfileStarter>;

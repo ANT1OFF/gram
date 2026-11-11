@@ -88,7 +88,7 @@ is written the way Gram's router writes them (`/agents/$agentId`), and the compo
 parameters as `params`. Give a page a `title`: while it is open the title bar says it where Gram's
 own pages name the workspace and its views, and a phone's header says it over the heading of the
 group that lists the page. A path that Gram has itself (`/`, `/t`, `/w`, `/new`, `/new-task`,
-`/new-workspace`, `/settings`, `/usage`) is refused when the app mounts, as is one added twice.
+`/new-workspace`, `/settings`, `/threads`, `/usage`) is refused when the app mounts, as is one added twice.
 Routes are read once, at mount.
 
 **Navigation groups.** Each group is an optional heading and its destinations. A group's
@@ -103,6 +103,29 @@ is drawn at the row's end, and as a dot on its compact tile.
 **Gram's threads.** `threads: "hidden"` leaves the workspaces and threads out of the sidebar, the
 drawer and the compact sidebar, for an app whose own places lead. Needs you, search and the
 palette still reach every thread, and a thread still opens from its address.
+
+**The compact sidebar.** Mounted on a server with hosted features on, the compact sidebar is a
+quiet strip of what the open one holds, in its order: your switcher, Needs you (a dot while
+anything waits), Search, your `main` groups' icons a gap apart, then at the foot your `foot`
+groups, History and Settings. It has no workspace or thread tiles. Resting the pointer on it, or
+moving keyboard focus into it, slides the open sidebar over the page beside it; leaving both,
+Escape, or going somewhere closes it, and its pin keeps the sidebar open. Gram on its own keeps its
+rail.
+
+**What needs someone.** `attention` (`{ count, label?, to?, onOpen? }`) puts your count in place
+of Gram's own Needs you: the sidebar's pill says `label` (or "N need you"), the compact strip's tile
+and the title bar's Inbox show a dot, and a click goes to `to`, or calls `onOpen`, or opens Gram's
+Inbox. At 0 the pill hides. Update it through `update({ attention })`; `undefined` gives Gram's own
+count back.
+
+**A home page.** `home` (`{ title, component }`) is the page at `/`, in place of Gram's own home
+and its first-run welcome ("Open a repository"), which is then never shown. Its title shows as an
+added page's does.
+
+**All threads.** `/threads` is Gram's page of every thread (archived ones are in History): those
+that need you first, then the latest, each with its state, its place, what started it and its last
+activity, with search and New task. Link it from a navigation group, especially with
+`threads: "hidden"`.
 
 An address under the app with no page shows "Nothing here" with the path and a way home, in the
 shell.

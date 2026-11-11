@@ -36,6 +36,13 @@ export interface ShellRoute {
   readonly component: ComponentType<ShellPageProps>;
 }
 
+/** The page at the app's root (`/`), in place of Gram's own home and its first-run welcome. */
+export interface ShellHome {
+  /** Its name, said in the title bar and a phone's header as an added page's is. */
+  readonly title?: string;
+  readonly component: ComponentType<ShellPageProps>;
+}
+
 export interface ShellPageProps {
   /** The path's parameters, by name. */
   readonly params: Readonly<Record<string, string>>;
@@ -77,10 +84,30 @@ export interface ShellNavigationGroup {
   readonly items: readonly ShellNavigationItem[];
 }
 
+/**
+ * What needs someone, as the embedding app counts it, in place of Gram's own Needs you count: the
+ * sidebar's pill, the compact strip's tile and the title bar's Inbox say it.
+ */
+export interface ShellAttention {
+  /** How many things need someone. At 0 the pill hides and the tile and Inbox show no dot. */
+  readonly count: number;
+  /** The pill's words, short: "3 need you" when left out. */
+  readonly label?: string;
+  /** Where a click goes: a path under the app. */
+  readonly to?: string;
+  /** Called on a click instead, when there is no `to`. With neither, Gram's Inbox opens. */
+  readonly onOpen?: () => void;
+}
+
 /** What the embedding app adds to Gram's shell. Everything is optional. */
 export interface ShellContributions {
   /** Pages beside Gram's own. Read once, when the app mounts. */
   readonly routes?: readonly ShellRoute[];
+  /**
+   * The page at `/`, in place of Gram's home: what Gram shows with nothing open, and its first-run
+   * welcome ("Open a repository"), which is then never shown. Read once, when the app mounts.
+   */
+  readonly home?: ShellHome;
   /** Groups of destinations. Replaceable later through `GramHandle.update`. */
   readonly navigation?: readonly ShellNavigationGroup[];
   /**
@@ -96,6 +123,8 @@ export interface ShellContributions {
    * Defaults to `shown`. Replaceable later through `GramHandle.update`.
    */
   readonly threads?: "shown" | "hidden";
+  /** What needs someone, counted by the embedding app. Replaceable through `GramHandle.update`. */
+  readonly attention?: ShellAttention;
 }
 
 /** The server one mount talks to. */
@@ -131,11 +160,14 @@ export interface GramHandle {
    */
   readonly shell: "on" | "off";
   /**
-   * Replaces what `next` names of the navigation groups, the switcher and the thread list, and
+   * Replaces what `next` names of the navigation groups, the switcher, the thread list and the
+   * attention count, and
    * leaves what it doesn't name as it is: `update({ navigation })` changes counts and keeps the
    * switcher. A key given as `undefined` takes that part away. Routes stay as mounted.
    */
-  update(next: Pick<ShellContributions, "navigation" | "workspaceSwitcher" | "threads">): void;
+  update(
+    next: Pick<ShellContributions, "navigation" | "workspaceSwitcher" | "threads" | "attention">,
+  ): void;
   /** Moves the window to a path under the app. */
   navigate(to: string): Promise<void>;
   /** Takes the app off the page. A page mounts it once: after this, load the page again. */

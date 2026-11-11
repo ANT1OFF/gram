@@ -1,6 +1,7 @@
 import { Inbox } from "lucide-react";
 
 import { Hint } from "@/components/hint";
+import { useHostAttention } from "@/embed/attention";
 import { Button } from "@/components/ui/button";
 import { withHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
@@ -19,14 +20,27 @@ import { useInboxStore } from "./inbox-store";
 // its name. Notification history is a link in the Inbox's header and a tab of the side panel.
 
 export function InboxButton() {
-  const { count, parts, scope, hint, open, openAsks } = useNeedsYouPill();
+  const own = useNeedsYouPill();
+  const { parts, scope, hint, open, openAsks } = own;
+  // An app in front of Gram that counts what needs someone itself: its count and its place.
+  const host = useHostAttention();
+  const count = host?.count ?? own.count;
   const shown = useInboxStore((s) => s.open);
-  const asks = asksAmong(count, parts);
+  const asks = host === undefined ? asksAmong(count, parts) : count > 0;
   const label =
-    count > 0
-      ? `${withHint(needsYouPillWords(count, parts, 3), hint)}\n${needsYouScope(count, scope)}`
-      : withHint("Inbox", hint);
-  const name = count > 0 ? withHint(needsYouSpoken(count, parts), hint) : withHint("Inbox", hint);
+    host !== undefined
+      ? count > 0
+        ? host.words
+        : "Inbox"
+      : count > 0
+        ? `${withHint(needsYouPillWords(count, parts, 3), hint)}\n${needsYouScope(count, scope)}`
+        : withHint("Inbox", hint);
+  const name =
+    host !== undefined
+      ? label
+      : count > 0
+        ? withHint(needsYouSpoken(count, parts), hint)
+        : withHint("Inbox", hint);
   return (
     <Hint
       label={label}
@@ -41,7 +55,7 @@ export function InboxButton() {
           data-count={count}
           data-asks={asks || undefined}
           className="relative shrink-0 text-muted-foreground [-webkit-app-region:no-drag] aria-pressed:bg-accent aria-pressed:text-foreground"
-          onClick={count > 0 ? openAsks : open}
+          onClick={host !== undefined ? host.open : count > 0 ? openAsks : open}
         />
       }
     >

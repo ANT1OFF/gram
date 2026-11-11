@@ -2,6 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { FolderGit2, SquareDashed } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
+import { EmbedHome } from "@/embed/slots";
+import { useHostHome } from "@/embed/store";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { useLandOnOrchestrator } from "@/orchestration/home";
 import { useWorkspacesQuery } from "@/orchestration/use-orchestration";
@@ -13,7 +15,12 @@ export const Route = createFileRoute("/")({
   component: HomePage,
 });
 
+/** Gram's home, or the one an app in front of Gram supplies in its place. */
 function HomePage() {
+  return useHostHome() ? <EmbedHome /> : <GramHome />;
+}
+
+function GramHome() {
   // A launch with a workspace goes on to its orchestrator; nothing shows until that's decided.
   const deciding = useLandOnOrchestrator();
   const firstRun = useFirstRun();

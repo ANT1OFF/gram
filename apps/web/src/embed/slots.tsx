@@ -1,10 +1,12 @@
-import { Link, useMatches, useRouterState } from "@tanstack/react-router";
-import { createElement } from "react";
+import { Link, useMatches, useParams, useRouterState } from "@tanstack/react-router";
+import { createElement, useRef } from "react";
 
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 import { OVERVIEW_STOP } from "@/shell/focus-regions";
 
+import { Glide } from "./glide";
+import { useStripOpen } from "./strip-open";
 import type { ShellNavigationItem, ShellNavigationPlacement, ShellPlacement } from "./contract";
 import {
   itemName,
@@ -63,6 +65,13 @@ function ItemIcon({ item, className }: { item: ShellNavigationItem; className: s
   );
 }
 
+/**
+ * A navigation row: its fill and colour ease in on hover, and it gives a little when pressed, under
+ * the Motion setting. The current row's fill is the list's `Glide`, which moves between rows.
+ */
+const NAV_ROW =
+  "relative flex h-8 min-w-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-muted-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:text-foreground aria-[current=page]:hover:bg-transparent in-data-phone-drawer:h-11 in-data-phone-drawer:gap-2.5 in-data-phone-drawer:px-2";
+
 /** A row's count, at its end. */
 function Count({ count }: { count: number | undefined }) {
   const shown = shownCount(count);
@@ -89,20 +98,23 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
     placement,
   );
   const pathname = usePathname();
+  const list = useRef<HTMLElement>(null);
   if (groups.length === 0) return null;
   const main = placement === "main";
   return (
     <nav
+      ref={list}
       aria-label={main ? "Places" : "More places"}
       data-testid={main ? "embed-navigation-main" : "embed-navigation"}
       data-placement={placement}
       className={cn(
-        "flex shrink-0 flex-col gap-tight text-body",
+        "relative flex shrink-0 flex-col gap-tight text-body",
         // In the list it scrolls with the rest, a list's step from what follows; at the foot it
         // is a block of its own, ruled off from the list above.
         !main && "border-t border-border px-inset py-tight",
       )}
     >
+      <Glide container={list} />
       {groups.map((group) => (
         <section
           key={group.id}
@@ -124,7 +136,7 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
                     {...{ [OVERVIEW_STOP]: "" }}
                     data-testid="embed-navigation-item"
                     aria-current={current ? "page" : undefined}
-                    className="flex h-8 min-w-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground in-data-phone-drawer:h-11 in-data-phone-drawer:gap-2.5 in-data-phone-drawer:px-2"
+                    className={NAV_ROW}
                   >
                     <ItemIcon item={item} className="size-icon-row shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{item.label}</span>
@@ -140,80 +152,109 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
   );
 }
 
+/** A compact tile: the open row's height, filled while it is where the window is. */
+export const RAIL_TILE =
+  "relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground aria-expanded:text-foreground";
+
+/** A rail tile in a list whose current fill is its `Glide`. */
+const GLIDE_TILE = cn(
+  RAIL_TILE,
+  "aria-[current=page]:bg-transparent aria-[current=page]:hover:bg-transparent",
+);
+
 /**
  * The same destinations in the compact sidebar: an icon each, its group and name on hover, and a
  * dot on the tile while its count is above 0. `main` sits above the workspaces' tiles, `foot` at
- * the rail's foot.
+ * the rail's foot. `quiet` draws the groups a gap apart with no rule between them, as the hosted
+ * strip has them.
  */
 export function EmbedRailNavigation({
   placement = "foot",
+  quiet = false,
 }: {
   placement?: ShellNavigationPlacement;
+  quiet?: boolean;
 }) {
   const groups = navigationAt(
     useEmbedShell((s) => s.navigation),
     placement,
   );
   const pathname = usePathname();
+  const list = useRef<HTMLElement>(null);
+  const stripOpen = useStripOpen();
   if (groups.length === 0) return null;
   const main = placement === "main";
   return (
     <nav
+      ref={list}
       aria-label={main ? "Places" : "More places"}
       data-testid={main ? "embed-rail-navigation-main" : "embed-rail-navigation"}
       data-placement={placement}
       className={cn(
-        "flex shrink-0 flex-col items-center gap-1",
-        !main && "border-t border-sidebar-divider py-2",
+        "relative flex shrink-0 flex-col items-center",
+        quiet ? "gap-3.5" : "gap-1",
+        !main && !quiet && "border-t border-sidebar-divider py-2",
       )}
     >
-      {groups.flatMap((group) =>
-        group.items.map((item) => {
-          const current = navigationCurrent(pathname, item.to);
-          const count = shownCount(item.count);
-          const name = itemName(group, item.label);
-          const spoken = count === undefined ? name : `${name}, ${count}`;
-          return (
-            <Hint
-              key={`${group.id}/${item.id}`}
-              label={spoken}
-              side="right"
-              render={
-                <Link
-                  {...linkTo(item.to)}
-                  {...{ [OVERVIEW_STOP]: "" }}
-                  data-testid="embed-navigation-item"
-                  aria-label={spoken}
-                  aria-current={current ? "page" : undefined}
-                  className="relative grid size-8 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground"
-                />
-              }
-            >
-              <ItemIcon item={item} className="size-icon-row" />
-              {count !== undefined && (
-                <span
-                  aria-hidden
-                  data-testid="embed-navigation-dot"
-                  className="absolute top-1 right-1 size-1.5 rounded-full bg-foreground"
-                />
-              )}
-            </Hint>
-          );
-        }),
-      )}
+      <Glide container={list} />
+      {groups.map((group) => (
+        <div
+          key={group.id}
+          className={cn("flex flex-col items-center", quiet ? "gap-px" : "gap-1")}
+        >
+          {group.items.map((item) => {
+            const current = navigationCurrent(pathname, item.to);
+            const count = shownCount(item.count);
+            const name = itemName(group, item.label);
+            const spoken = count === undefined ? name : `${name}, ${count}`;
+            return (
+              <Hint
+                key={item.id}
+                // The strip's own words are the place's name alone; the group is its neighbours'.
+                label={quiet ? item.label : spoken}
+                side="right"
+                disabled={stripOpen}
+                render={
+                  <Link
+                    {...linkTo(item.to)}
+                    {...{ [OVERVIEW_STOP]: "" }}
+                    data-testid="embed-navigation-item"
+                    aria-label={spoken}
+                    aria-current={current ? "page" : undefined}
+                    className={GLIDE_TILE}
+                  />
+                }
+              >
+                <ItemIcon item={item} className="size-icon-row" />
+                {count !== undefined && (
+                  <span
+                    aria-hidden
+                    data-testid="embed-navigation-dot"
+                    className="absolute top-1 right-1 size-1.5 rounded-full bg-foreground"
+                  />
+                )}
+              </Hint>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
 }
 
+/** Gram's own pages that name themselves in the title bar as an added page does: in no workspace. */
+const OWN_PAGE_TITLES: Readonly<Record<string, string>> = { "/threads": "Threads" };
+
 /**
- * The name of the added page the window is on, or undefined on one of Gram's own and on an added
- * page that brought no name. Always undefined in Gram on its own.
+ * The name of the page the window is on, where the title bar says it in place of the workspace and
+ * its views: an added page's (the one it brought; undefined if none) or the Threads page's.
+ * Undefined on Gram's other pages.
  */
 export function useEmbedPageTitle(): string | undefined {
   const titles = useEmbedShell((s) => s.titles);
   // The deepest match is the page; its `fullPath` is the path the page was added under.
   const path = useMatches({ select: (matches) => matches.at(-1)?.fullPath as string | undefined });
-  return path === undefined ? undefined : titles[path];
+  return path === undefined ? undefined : (titles[path] ?? OWN_PAGE_TITLES[path]);
 }
 
 /**
@@ -233,9 +274,22 @@ export function EmbedPageTitle({ title }: { title: string }) {
   return (
     <h1
       data-testid="embed-page-title"
-      className="min-w-0 truncate px-2 text-body font-medium text-foreground"
+      // Keyed by the title where it is drawn: a new page's name fades in where the last one was.
+      className="gram-fade min-w-0 truncate px-2 text-body font-medium text-foreground"
     >
       {title}
     </h1>
+  );
+}
+
+/** The embedding app's home page at `/`, in the conversation's place as an added page is. */
+export function EmbedHome() {
+  const home = useEmbedShell((s) => s.home);
+  const params = useParams({ strict: false }) as Readonly<Record<string, string>>;
+  if (home === undefined) return null;
+  return (
+    <section data-testid="embed-page" data-path="/" className="min-h-0 flex-1 overflow-y-auto">
+      {createElement(home, { params })}
+    </section>
   );
 }

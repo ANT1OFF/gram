@@ -104,8 +104,9 @@ test("the switcher is the embedding app's, in the sidebar and then in the title 
     page.getByTestId("embed-rail-navigation").getByRole("link", { name: "Govern: Policies" }),
   ).toBeVisible();
 
-  // Hidden: the title bar carries it instead.
-  await page.getByTestId("overview-hide").click();
+  // Hidden (the strip leaves hiding to the key): the title bar carries it instead.
+  await page.locator("main").click({ position: { x: 600, y: 300 } });
+  await page.keyboard.press("ControlOrMeta+b");
   await expect(
     page.locator('[data-testid="embed-switcher"][data-placement="titlebar"]'),
   ).toBeVisible();
@@ -186,12 +187,12 @@ test("a group can lead the sidebar, above the threads, with counts", async ({ pa
   });
   await expect(main.getByTestId("embed-navigation-count")).toHaveText("12");
 
-  // Compact: the group's tiles above the workspaces', a dot on the one with a count.
+  // Compact: the group's tiles above the foot's, a dot on the one with a count.
   await page.getByTestId("overview-compact").click();
   const railMain = page.getByTestId("embed-rail-navigation-main");
   const tile = railMain.getByRole("link", { name: "Build: Runs, 12" });
   await expect(tile.getByTestId("embed-navigation-dot")).toBeVisible();
-  expect(await top("embed-rail-navigation-main")).toBeLessThan(await top("overview-tile"));
+  expect(await top("embed-rail-navigation-main")).toBeLessThan(await top("hosted-rail-history"));
   expect(errors).toEqual([]);
 });
 
@@ -206,13 +207,192 @@ test("the sidebar can leave Gram's workspaces and threads out", async ({ page })
   // The host's places and Gram's search stay.
   await expect(page.getByTestId("embed-navigation-main")).toBeVisible();
   await expect(page.getByTestId("overview-search")).toBeVisible();
-  await page.getByTestId("overview-compact").click();
-  await expect(page.getByTestId("embed-rail-navigation-main")).toBeVisible();
-  await expect(page.getByTestId("overview-tile")).toHaveCount(0);
   await page.evaluate(() => {
     (window as unknown as Update).embed.update({ threads: "shown" });
   });
-  await expect(page.getByTestId("overview-tile").first()).toBeVisible();
+  await expect(page.getByTestId("overview-section-solo")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("compact, the sidebar is a quiet strip that opens over the page on hover", async ({
+  page,
+}) => {
+  const errors = await mounted(page, "/govern/policies");
+  await page.getByTestId("overview-compact").click();
+  const strip = page.getByTestId("overview-rail");
+  await expect(strip).toHaveAttribute("data-hosted", "");
+  // What the open sidebar holds, in its order, and no workspace or thread tiles.
+  await expect(strip.getByTestId("embed-switcher")).toBeVisible();
+  await expect(strip.getByTestId("hosted-rail-needs-you-dot")).toBeVisible();
+  await expect(strip.getByTestId("hosted-rail-search")).toBeVisible();
+  await expect(strip.getByRole("link", { name: "Govern: Policies" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(strip.getByTestId("hosted-rail-history")).toBeVisible();
+  await expect(page.getByTestId("overview-tile")).toHaveCount(0);
+  // Once the column has finished narrowing.
+  await expect.poll(async () => (await strip.boundingBox())?.width).toBe(60);
+  const mainBox = await page.locator("main").boundingBox();
+
+  // Resting on it opens the sidebar beside it, over the page: the page doesn't move.
+  const overlay = page.getByTestId("hosted-rail-overlay");
+  await strip.hover({ position: { x: 20, y: 400 } });
+  await expect(overlay).toBeVisible();
+  await expect
+    .poll(async () => {
+      const [over, beside] = [await overlay.boundingBox(), await strip.boundingBox()];
+      return Math.round((over?.x ?? 0) - (beside?.x ?? 0) - (beside?.width ?? 0));
+    })
+    .toBe(0);
+  expect((await page.locator("main").boundingBox())?.x).toBe(mainBox?.x);
+  await expect(overlay.getByTestId("embed-navigation-main")).toBeVisible();
+  // While it is open the strip's tooltips keep away: the sidebar says each name.
+  await strip.getByRole("link", { name: "Build: Home" }).hover();
+  await page.waitForTimeout(300);
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveCount(0);
+  // Leaving both closes it.
+  await page.mouse.move(900, 400);
+  await expect(overlay).toHaveCount(0);
+
+  // Escape closes it; a row picked in it closes it as it goes there.
+  await strip.hover({ position: { x: 20, y: 400 } });
+  await expect(overlay).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(overlay).toHaveCount(0);
+  await page.mouse.move(900, 400);
+  await strip.hover({ position: { x: 20, y: 400 } });
+  await overlay.getByRole("link", { name: "Limits" }).click();
+  await expect(page.getByTestId("fixture-cap")).toBeVisible();
+  await expect(overlay).toHaveCount(0);
+
+  // The keyboard opens it too, and its pin keeps the sidebar open.
+  await page.mouse.move(900, 400);
+  await strip.getByTestId("hosted-rail-search").focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(overlay).toBeVisible();
+  await overlay.getByTestId("overview-pin").click();
+  await expect(page.getByTestId("overview-rail")).toHaveCount(0);
+  await expect(page.getByTestId("overview-sidebar")).toBeVisible();
+  await expect(page.getByTestId("overview-compact")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("the embedding app's home is the page at the root, with no first run", async ({ page }) => {
+  const errors = await mounted(page);
+  await expect(page.getByTestId("fixture-home")).toBeVisible();
+  await expect(page.getByTestId("embed-page-title")).toHaveText("Home");
+  // Gram's own home and its welcome are not shown.
+  await expect(page.getByTestId("home-empty")).toHaveCount(0);
+  await expect(page.getByTestId("welcome")).toHaveCount(0);
+  const home = page.getByTestId("embed-navigation-main").getByRole("link", { name: "Home" });
+  await expect(home).toHaveAttribute("aria-current", "page");
+  // Away and back by the group's row.
+  await page.getByTestId("embed-navigation-main").getByRole("link", { name: /Runs/ }).click();
+  await expect(page.getByTestId("fixture-agent")).toBeVisible();
+  await home.click();
+  await expect(page.getByTestId("fixture-home")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("every thread is on a page of its own, which the sidebar can lead to", async ({ page }) => {
+  const errors = await mounted(page);
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ threads: "hidden" });
+  });
+  await page.getByTestId("embed-navigation-main").getByRole("link", { name: "Threads" }).click();
+  await expect(page).toHaveURL(/\/threads$/);
+  const list = page.getByTestId("threads-list");
+  const rows = list.getByTestId("threads-row");
+  await expect(rows.first()).toBeVisible();
+  const count = await rows.count();
+  expect(count).toBeGreaterThan(3);
+  // Those that need you come first.
+  const marks = await rows.evaluateAll((elements) =>
+    elements.map((element) => element.hasAttribute("data-needs-you")),
+  );
+  expect(marks.indexOf(false)).toBeGreaterThan(0);
+  expect(marks.slice(marks.indexOf(false))).not.toContain(true);
+
+  // Search narrows the list; a row opens its thread.
+  await page.getByTestId("threads-search").fill("date library");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Pick a date library");
+  await rows.first().click();
+  await expect(page).toHaveURL(/\/t\/[^/]+$/);
+
+  // New task starts one.
+  await page.goBack();
+  await page.getByTestId("threads-new").click();
+  await expect(page).toHaveURL(/\/new/);
+  expect(errors).toEqual([]);
+});
+
+test("the current place's highlight glides between rows, and pages arrive", async ({ page }) => {
+  const errors = await mounted(page, "/govern/policies");
+  const navigation = page.getByTestId("embed-navigation");
+  const glide = navigation.getByTestId("embed-navigation-glide");
+  const over = async (name: string) => {
+    const [mark, row] = [
+      await glide.boundingBox(),
+      await navigation.getByRole("link", { name }).boundingBox(),
+    ];
+    return Math.round(Math.abs((mark?.y ?? -99) - (row?.y ?? 0)));
+  };
+  await expect(glide).toBeVisible();
+  await expect.poll(() => over("Policies")).toBeLessThanOrEqual(1);
+  await navigation.getByRole("link", { name: "Limits" }).click();
+  await expect.poll(() => over("Limits")).toBeLessThanOrEqual(1);
+  // One highlight for the list: the rows draw none of their own.
+  const fill = await navigation
+    .getByRole("link", { name: "Limits" })
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(fill).toBe("rgba(0, 0, 0, 0)");
+  // The kit's page arrives part by part, and the title bar's name fades in.
+  await expect(page.locator('[data-slot="page"]')).toHaveClass(/gram-stagger/);
+  await expect(page.getByTestId("embed-page-title")).toHaveClass(/gram-fade/);
+  // Off the group's pages, there is nothing to mark.
+  await page.getByTestId("embed-navigation-main").getByRole("link", { name: "Threads" }).click();
+  await expect(glide).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test("the embedding app can count what needs someone itself", async ({ page }) => {
+  const errors = await mounted(page, "/govern/limits");
+  const pill = page.getByTestId("overview-needs-you");
+  await expect(pill).toContainText("need you");
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      attention: { count: 5, label: "5 to review", to: "/govern/policies" },
+    });
+  });
+  await expect(pill).toHaveText("5 to review");
+  await pill.click();
+  await expect(page.getByTestId("fixture-policies")).toBeVisible();
+
+  // The compact strip's tile follows the same count, and goes to the same place.
+  await page.getByTestId("overview-compact").click();
+  const tile = page.getByTestId("hosted-rail-needs-you");
+  await expect(tile).toHaveAccessibleName("5 to review");
+  await expect(page.getByTestId("hosted-rail-needs-you-dot")).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ attention: { count: 0 } });
+  });
+  await expect(page.getByTestId("hosted-rail-needs-you-dot")).toHaveCount(0);
+  await page.getByTestId("overview-rail").hover({ position: { x: 20, y: 400 } });
+  await expect(page.getByTestId("hosted-rail-overlay")).toBeVisible();
+  // At 0 the pill hides.
+  await expect(
+    page.getByTestId("hosted-rail-overlay").getByTestId("overview-needs-you"),
+  ).toHaveCount(0);
+  // Taken away, Gram's own count is back.
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ attention: undefined });
+  });
+  await expect(
+    page.getByTestId("hosted-rail-overlay").getByTestId("overview-needs-you"),
+  ).toContainText("need you");
   expect(errors).toEqual([]);
 });
 
@@ -336,6 +516,19 @@ test.describe("on a phone", () => {
     const title = page.getByTestId("phone-title");
     await expect(title.getByRole("heading")).toHaveText("Limits");
     await expect(page.getByTestId("phone-title-line")).toHaveText("Govern");
+    // With the threads left out, the drawer is the app's menu, and its search is for more than them.
+    await page.evaluate(() => {
+      (window as unknown as Update).embed.update({ threads: "hidden" });
+    });
+    await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
+    await page.getByTestId("phone-menu").click();
+    await expect(page.getByRole("dialog", { name: "Menu" })).toBeVisible();
+    await expect(page.getByTestId("phone-drawer").getByTestId("overview-search")).toContainText(
+      "Search",
+    );
+    await expect(page.getByTestId("phone-drawer").getByTestId("overview-search")).not.toContainText(
+      "Search threads",
+    );
     expect(errors).toEqual([]);
   });
 });

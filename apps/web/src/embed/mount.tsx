@@ -99,11 +99,15 @@ export const mountGram: MountGram = async (options) => {
       navigation: shell.navigation ?? [],
       workspaceSwitcher: shell.workspaceSwitcher,
       threads: shell.threads ?? "shown",
-      titles: Object.fromEntries(
-        (shell.routes ?? []).flatMap((route) =>
-          route.title === undefined ? [] : [[route.path, route.title]],
+      hosted,
+      attention: shell.attention,
+      home: shell.home?.component,
+      titles: Object.fromEntries([
+        ...(shell.routes ?? []).flatMap((route) =>
+          route.title === undefined ? [] : [[route.path, route.title] as const],
         ),
-      ),
+        ...(shell.home?.title === undefined ? [] : [["/", shell.home.title] as const]),
+      ]),
     });
     const stopKeyboard = installKeyboard();
 
@@ -127,6 +131,7 @@ export const mountGram: MountGram = async (options) => {
           ...("navigation" in next ? { navigation: next.navigation ?? [] } : {}),
           ...("workspaceSwitcher" in next ? { workspaceSwitcher: next.workspaceSwitcher } : {}),
           ...("threads" in next ? { threads: next.threads ?? "shown" } : {}),
+          ...("attention" in next ? { attention: next.attention } : {}),
         });
       },
       navigate: (to) => router.navigate({ to: to as "/" }),

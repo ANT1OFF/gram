@@ -20,6 +20,8 @@ const protectedPaths = [
   // A workspace's bundle, out and in: the local app only, so no alias may slip past that check.
   "/workspaces/export",
   "/workspaces/import",
+  // A thread started from a profile: the platform's own service or the local app only.
+  "/threads/from-profile",
 ] as const;
 const protectedRoutes = FindMyWay.make<string>();
 for (const path of protectedPaths) protectedRoutes.all(path, path);

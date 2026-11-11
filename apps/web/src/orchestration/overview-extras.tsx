@@ -52,6 +52,7 @@ import {
 import { StatusDot, type DotState } from "./status-dot";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
+import { useThreadsListed } from "@/embed/store";
 
 // The overview sidebar's extras: At rest's Pull requests and Done, each gone with nothing in it, the
 // way into History, and the usage meters and worker slots at its foot, off by default. Each reads
@@ -184,6 +185,8 @@ function PrRow({ row }: { row: OverviewPrRow }) {
  */
 export function OverviewSearch() {
   const hint = useShortcutHint("palette.open");
+  // Where an app in front of Gram leaves the threads out of the sidebar, search finds more than them.
+  const threadsListed = useThreadsListed();
   const open = useLayoutStore((s) => s.paletteOpen);
   return (
     <button
@@ -198,7 +201,9 @@ export function OverviewSearch() {
     >
       <Search aria-hidden className="size-icon-row shrink-0" />
       <span className="flex-1 in-data-phone-drawer:hidden">Search</span>
-      <span className="hidden flex-1 truncate in-data-phone-drawer:inline">Search threads</span>
+      <span className="hidden flex-1 truncate in-data-phone-drawer:inline">
+        {threadsListed ? "Search threads" : "Search"}
+      </span>
       {hint !== "" && (
         <kbd className="font-sans text-meta tabular-nums in-data-phone-drawer:hidden">{hint}</kbd>
       )}

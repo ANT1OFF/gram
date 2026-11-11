@@ -83,7 +83,7 @@ describe("the package's entries and dependencies", () => {
       "./modules/agent-browser",
       "./modules/connection",
       "./modules/device",
-      "./modules/device/ask-window",
+      "./modules/device/main",
       "./modules/fonts",
       "./modules/ipc",
       "./modules/key-vault",

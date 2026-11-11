@@ -18,7 +18,7 @@ import {
   ReasoningVariant,
   type ThreadProfileBinding,
 } from "./domain.ts";
-import { ProfileId } from "./ids.ts";
+import { HostId, ProfileId, ThreadId } from "./ids.ts";
 import { connectorEntryProblem } from "./workspaces.ts";
 
 /** The most files a profile lays, its skills' own among them. */
@@ -293,3 +293,27 @@ export const profileBindingOf = (profile: ThreadProfile): ThreadProfileBinding =
     ? {}
     : { fallbacks: profile.model.fallbacks }),
 });
+
+/**
+ * Where a fronting platform's own service starts a thread from a profile, over HTTP rather than
+ * the RPC: `POST`, with a `ProfileStartRequest` as JSON, answered with a `ProfileStartResponse`.
+ * One of the hosted features; a person's sign-in never reaches it.
+ */
+export const PROFILE_START_PATH = "/threads/from-profile";
+
+export const ProfileStartRequest = Schema.Struct({
+  /** A `ThreadProfile`, decoded strictly by the server. */
+  profile: Schema.Unknown,
+  /** The caller's own id for the thread, a lowercase UUID: asked for again, the same thread. */
+  threadId: ThreadId,
+  /** The joined machine the thread goes on, by the id it was provisioned or joined with. */
+  hostId: Schema.optionalKey(HostId),
+});
+export type ProfileStartRequest = typeof ProfileStartRequest.Type;
+
+export const ProfileStartResponse = Schema.Struct({
+  threadId: ThreadId,
+  /** False when an earlier ask under the same id made the thread, and this one made nothing. */
+  created: Schema.Boolean,
+});
+export type ProfileStartResponse = typeof ProfileStartResponse.Type;

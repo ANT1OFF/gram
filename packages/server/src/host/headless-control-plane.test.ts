@@ -21,7 +21,13 @@ import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import type { RemoteAppTools } from "@gram/agents";
 import { captureLogs } from "@gram/agents/testing/logs";
 import { afterAll, describe, expect, it } from "@effect/vitest";
-import { GramRpcs, HOST_PROTOCOL_VERSION, HostId, type Thread } from "@gram/contracts";
+import {
+  GramRpcs,
+  HOST_PROTOCOL_VERSION,
+  HostId,
+  PROFILE_START_PATH,
+  type Thread,
+} from "@gram/contracts";
 import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -466,6 +472,41 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
         // Still nothing here: no session, and no folder for the thread in the data folder.
         expect(serverFake.sessions).toHaveLength(0);
         expect(existsSync(join(dir, "data", "profile-threads", fromProfile.id))).toBe(false);
+
+        // The same over HTTP, as a fronting platform's own service asks, naming the machine.
+        const threadId = "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d";
+        const startBody = JSON.stringify({
+          profile: {
+            version: 1,
+            agent: "claude",
+            charter: "Named machine.",
+            files: [{ path: "NOTES.md", content: "named\n" }],
+            model: { model: "fake-model" },
+            connectors: {},
+            workplace: { kind: "scratch" },
+          },
+          threadId,
+          hostId,
+        });
+        const overHttp = yield* raw(port, {
+          path: PROFILE_START_PATH,
+          method: "POST",
+          headers: local,
+          body: startBody,
+        });
+        expect(overHttp.status, overHttp.body).toBe(200);
+        expect(JSON.parse(overHttp.body)).toEqual({ threadId, created: true });
+        expect(
+          readFileSync(join(machine.repos, HOST_THREADS_DIR, threadId, "NOTES.md"), "utf8"),
+        ).toBe("named\n");
+        const retried = yield* raw(port, {
+          path: PROFILE_START_PATH,
+          method: "POST",
+          headers: local,
+          body: startBody,
+        });
+        expect(JSON.parse(retried.body)).toEqual({ threadId, created: false });
+        expect(serverFake.sessions).toHaveLength(0);
       }).pipe(Effect.scoped),
     60_000,
   );

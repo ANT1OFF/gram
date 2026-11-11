@@ -9,6 +9,7 @@ import { useHistoryStore } from "@/history/history-view";
 import { useInboxStore } from "@/inbox/inbox-store";
 import { OverviewSidebar } from "@/orchestration/overview-sidebar";
 import { useLayoutStore } from "@/stores/layout";
+import { useThreadsListed } from "@/embed/store";
 
 interface PhoneDrawerState {
   readonly open: boolean;
@@ -24,17 +25,21 @@ export const usePhoneDrawer = create<PhoneDrawerState>()((set) => ({
 /** The data attribute the drawer's column carries, which the overview's rows take their phone shape from. */
 export const PHONE_DRAWER = "data-phone-drawer";
 
+/** The drawer's name: its threads, or, where an app in front of Gram leaves them out, its menu. */
+const useDrawerName = () => (useThreadsListed() ? "Threads" : "Menu");
+
 /**
  * The phone header's first button: the drawer with every thread, which the overview sidebar is on
  * a wider window.
  */
 export function PhoneMenuButton() {
   const open = usePhoneDrawer((s) => s.open);
+  const name = useDrawerName();
   return (
     <Button
       variant="ghost"
       size="icon"
-      aria-label="Threads"
+      aria-label={name}
       aria-haspopup="dialog"
       aria-expanded={open}
       data-testid="phone-menu"
@@ -76,6 +81,7 @@ function useCloseOnPick(open: boolean) {
 export function PhoneDrawer() {
   const open = usePhoneDrawer((s) => s.open);
   const setOpen = usePhoneDrawer((s) => s.setOpen);
+  const name = useDrawerName();
   useCloseOnPick(open);
   // Leaving the phone layout (a tablet turned to landscape) closes it, so it doesn't come back open.
   useEffect(() => () => usePhoneDrawer.getState().setOpen(false), []);
@@ -87,7 +93,7 @@ export function PhoneDrawer() {
           className="fixed inset-0 z-40 scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0"
         />
         <Dialog.Popup
-          aria-label="Threads"
+          aria-label={name}
           data-testid="phone-drawer"
           {...{ [PHONE_DRAWER]: "" }}
           className="fixed inset-y-0 left-0 z-50 flex w-[min(21.25rem,88vw)] flex-col shadow-overlay outline-none transition-[translate] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full"
