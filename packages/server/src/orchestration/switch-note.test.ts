@@ -480,6 +480,13 @@ describe("the orchestrator's switch carries a note and recent turns", () => {
           );
           yield* (yield* Orchestration).handoff(workspaceId, "user", CODEX);
           yield* freshBoot(thread.id);
+          // The boot turn is under way: the agent took it.
+          yield* waitReal(
+            "the boot taken",
+            store
+              .getThread(thread.id)
+              .pipe(Effect.map((t) => t.sessionSwitch?.handoff?.delivered !== undefined)),
+          );
           expect((yield* store.getThread(thread.id)).sessionSwitch?.phase).toBe("ready");
           return { threadId: thread.id, workspaceId };
         }),
@@ -488,7 +495,7 @@ describe("the orchestrator's switch carries a note and recent turns", () => {
         world,
         Effect.gen(function* () {
           const store = yield* ThreadStore;
-          // The claim is gone: the session it held for is the thread's.
+          // Taken before the restart, the boot isn't sent twice as the handoff: the claim goes.
           yield* waitReal(
             "the claim let go",
             store.getThread(saved.threadId).pipe(Effect.map((t) => t.sessionSwitch === undefined)),
