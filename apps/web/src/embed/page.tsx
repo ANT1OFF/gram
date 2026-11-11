@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { cn } from "@/lib/utils";
 import { SETTINGS_STACK } from "@/settings/settings-group";
 
 /**
@@ -22,9 +23,12 @@ export function Page({
 }) {
   return (
     <div className="@container/settings">
+      {/* Keyed by its name, so a new page arrives anew: its title, then each part 40 ms after the
+          last, under the Motion setting. */}
       <div
+        key={title}
         data-slot="page"
-        className="settings-column flex flex-col gap-6 px-8 py-6 @max-2xl/settings:p-4"
+        className="gram-stagger settings-column flex flex-col gap-6 px-8 py-6 @max-2xl/settings:p-4"
       >
         <header className="flex flex-wrap items-start gap-x-3 gap-y-2">
           <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -37,7 +41,7 @@ export function Page({
             <div className="flex shrink-0 items-center gap-2">{actions}</div>
           )}
         </header>
-        <div className={SETTINGS_STACK}>{children}</div>
+        <div className={cn("gram-stagger", SETTINGS_STACK)}>{children}</div>
       </div>
     </div>
   );

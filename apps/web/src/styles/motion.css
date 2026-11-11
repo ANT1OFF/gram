@@ -547,3 +547,39 @@ html[data-motion="reduced"] [data-ending-style] {
     scale: 0.98;
   }
 }
+
+/* Stagger — a page's parts arrive one after another, 40 ms apart, as Arrive does each: the first
+   eight are stepped, any after arrive with the eighth. Only Full moves them; Reduced fades. */
+.gram-stagger > * {
+  animation: gram-fade-in var(--dur-move-base) var(--ease-out) both;
+}
+
+[data-motion="full"] .gram-stagger > * {
+  animation-name: gram-arrive;
+}
+
+.gram-stagger > :nth-child(2) {
+  animation-delay: 40ms;
+}
+.gram-stagger > :nth-child(3) {
+  animation-delay: 80ms;
+}
+.gram-stagger > :nth-child(4) {
+  animation-delay: 120ms;
+}
+.gram-stagger > :nth-child(5) {
+  animation-delay: 160ms;
+}
+.gram-stagger > :nth-child(6) {
+  animation-delay: 200ms;
+}
+.gram-stagger > :nth-child(7) {
+  animation-delay: 240ms;
+}
+.gram-stagger > :nth-child(n + 8) {
+  animation-delay: 280ms;
+}
+
+[data-motion="off"] .gram-stagger > * {
+  animation: none;
+}

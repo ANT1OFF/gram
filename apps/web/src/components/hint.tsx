@@ -13,6 +13,7 @@ export function Hint({
   children,
   side = "top",
   delay,
+  disabled = false,
   onOpenChange,
 }: {
   /** Words, or for a list of them, a node. */
@@ -23,6 +24,8 @@ export function Hint({
   side?: "top" | "right" | "bottom" | "left";
   /** Ms before it shows, for marks met in passing, as a board's chips are; none by default. */
   delay?: number | undefined;
+  /** Shows nothing while true, as when the words are already on screen beside the glyph. */
+  disabled?: boolean;
   /** Told when it opens and closes, as a first-use explanation records that it was seen. */
   onOpenChange?: ((open: boolean) => void) | undefined;
 }) {
@@ -30,6 +33,7 @@ export function Hint({
     // A tooltip is no layer of its own: Escape closes it and still reaches what is under it, a
     // sheet or a dialog, as it did past a native title.
     <Tooltip
+      disabled={disabled}
       onOpenChange={(open, details) => {
         if (details.reason === "escape-key") details.allowPropagation();
         onOpenChange?.(open);
