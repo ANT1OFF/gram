@@ -839,3 +839,16 @@ unread; options that run commands (`tar --checkpoint-action`, `split --filter`, 
 `ProxyCommand` and the like) are named; and a window that goes while loading refuses its ask.
 The reader stays a list of facts: programs with exec options it doesn't know still read as
 themselves, which is why the command is always shown whole above them.
+
+### The device as built
+
+`hosted-device.ts` holds the device whole, without any window: the servers signed in to, the
+workspaces lent, and a lending service per server. Its secrets (a key per server, each sign-in
+and one secret the settings and log keys are derived from) are kept in the operating system's
+keychain through `safeStorage`, in a file of their own; with no real keyring nothing is kept and
+lending is unavailable, as it is where presence can't be known or the settings were edited. A
+new server is signed in to only once the person accepts it in a window the main process owns.
+Lending is never on at start: what was lent is offered to resume, and resuming checks that each
+folder is still the one lent. A pause is kept across restarts until the person lifts it. Signing
+out stops lending, asks the server to forget the device and clears its sign-in from the
+keychain. `presence.ts` reads the operating system's sleep, lock, user switch and idle state.
