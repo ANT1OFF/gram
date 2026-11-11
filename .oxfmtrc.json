@@ -2,6 +2,7 @@
   "printWidth": 100,
   "ignorePatterns": [
     "packages/agents/fixtures/**",
+    "packages/contracts/src/rpc/host-released.json",
     "**/dist/**",
     "**/out/**",
     "**/release/**",

@@ -33,16 +33,31 @@ import { WorktreeList } from "../worktrees.ts";
 import { PositiveInt } from "./shared.ts";
 
 /**
- * The host protocol's version. A control plane and a host that disagree on it don't talk: the
- * hello says so, and the control plane treats the host as unavailable, and shows a joined machine
- * as needing an update. Bump it when a message either side already sends changes in a way the
- * other's build can't read; a new call doesn't need it, since a host built before it answers that
- * call alone with an unknown-request defect. `HostHello`'s `protocol`, `hostId` and `release` stay
- * readable by every build, so a mismatch is always told apart from a host that didn't answer.
+ * The host protocol's version. Between releases the protocol only grows: a new call, a new optional
+ * field, a new feature a host names in its hello. So a control plane and a host on different
+ * releases keep working together, each without what the other doesn't have yet, and updating one
+ * doesn't make the other restart. `host-compat.test.ts` holds every change to that, against the
+ * protocol as last released (`host-released.json`).
+ *
+ * Bump it only for a break decided on purpose: a message either side already sends changing in a
+ * way a released build can't read. A control plane then refuses a host outside
+ * `HOST_PROTOCOL_OLDEST` to this version, its hello says so, and a joined machine shows as needing
+ * an update. `HostHello`'s `protocol`, `hostId` and `release` stay readable by every build, so a
+ * mismatch is always told apart from a host that didn't answer.
  */
 export const HOST_PROTOCOL_VERSION = 2;
 
-/** What a host can do, named so a control plane uses only what a host advertised. */
+/**
+ * The oldest protocol version this build's control plane still talks to. Raise it only when what a
+ * host of that version sends can no longer be read.
+ */
+export const HOST_PROTOCOL_OLDEST = 2;
+
+/**
+ * What a host can do, named so a control plane uses only what a host advertised. This list is
+ * closed: a control plane of 1.19 or earlier refuses a hello naming anything else, so a host names
+ * what came later in its hello's `features` (`HostFeature`).
+ */
 export const HostCapability = Schema.Literals([
   "files",
   "ports",
@@ -86,14 +101,35 @@ export const HostCapability = Schema.Literals([
    * thread on the machine runs only in a new worktree of its clone.
    */
   "folders",
+]);
+export type HostCapability = typeof HostCapability.Type;
+
+/** The capabilities a host must name for a control plane to use it at all. This list never grows. */
+export const HOST_REQUIRED_CAPABILITIES: ReadonlyArray<HostCapability> = [
+  "files",
+  "ports",
+  "worktrees",
+  "git",
+  "terminals",
+  "sessions",
+  "repos",
+];
+
+/**
+ * What a host can do beyond its capabilities, named in its hello's `features`. Every one is
+ * optional: a control plane uses it only on a host that names it, and a host without it loses only
+ * that. On the wire these are plain strings, so a control plane reads a hello naming one it
+ * doesn't know yet, and ignores it.
+ */
+export const HostFeature = Schema.Literals([
   /**
    * Makes a folder of the host's own for a thread started from a profile, and lays a profile's
-   * files there or in a worktree of the host's clones (`host.threadPlaces.*`). Optional: a host
-   * without it takes no such thread.
+   * files there or in a worktree of the host's clones (`host.threadPlaces.*`). A host without it
+   * takes no such thread.
    */
   "thread-places",
 ]);
-export type HostCapability = typeof HostCapability.Type;
+export type HostFeature = typeof HostFeature.Type;
 
 /** The host's answer to `host.hello`: who it is and what it can do. */
 export const HostHello = Schema.Struct({
@@ -108,8 +144,23 @@ export const HostHello = Schema.Struct({
    * ignores it, as a struct ignores keys it doesn't name.
    */
   release: Schema.optionalKey(Schema.String),
+  /**
+   * What it can do beyond `capabilities`, as `HostFeature` names it; absent from a host built
+   * before it was sent (1.19.0 and earlier). A control plane built before it ignores it.
+   */
+  features: Schema.optionalKey(
+    Schema.Array(Schema.String.check(Schema.isMaxLength(64))).check(Schema.isMaxLength(256)),
+  ),
 });
 export type HostHello = typeof HostHello.Type;
+
+/** Whether the host that said `hello` can do `what`. */
+export const hostServes = (
+  hello: Pick<HostHello, "capabilities" | "features">,
+  what: HostCapability | HostFeature,
+): boolean =>
+  (hello.capabilities as ReadonlyArray<string>).includes(what) ||
+  (hello.features?.includes(what) ?? false);
 
 /** A command a joined machine needs, as its host finds it on its own login-shell PATH. */
 export const HostTool = Schema.Struct({

@@ -28,6 +28,17 @@ was applied that this version doesn't know. A profile that is refused leaves not
 | `workplace`  | `none`, `scratch`, or one to eight repositories            | `none` and `scratch` get a new folder of the thread's own under the data folder. Repositories are cloned and the thread works in worktrees of them (below). |
 | `input`      | The first message                                          | Sent once the thread exists. Without it the session opens and waits.                                                                                        |
 
+## Asking again
+
+A caller that may ask twice for the same start (a retry after a timeout, say) gives the thread
+its id: `thread.createFromProfile({ profile, threadId })`, with a lowercase UUID it made itself.
+
+- The first ask makes the thread with that id. Any later ask answers that thread as it is now and
+  makes nothing, whatever profile comes with it. Two asks at once make one thread.
+- The thread answered may be in error, when its agent couldn't open; it is still the thread.
+- An id another kind of thread has is refused, and so is the id of a thread since closed.
+- A start that failed left nothing, so asking again with the same id starts afresh.
+
 ## A workplace of repositories
 
 Each repository is an https or ssh remote with no credential in its address. Gram clones it once

@@ -31,6 +31,7 @@ import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { stopOn } from "./stop.ts";
 import {
+  HOST_FEATURES,
   HOST_SERVES,
   type HostClaudeToken,
   type HostService,
@@ -158,6 +159,7 @@ const hostService = (
         platform: process.platform,
         pid: process.pid,
         ...(RELEASE === undefined ? {} : { release: RELEASE }),
+        features: HOST_FEATURES,
       },
       files: filesOn(proc),
       folders,

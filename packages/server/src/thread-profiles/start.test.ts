@@ -6,6 +6,7 @@ import {
   InvalidState,
   ProfileId,
   type Thread,
+  ThreadId,
   type ThreadProfile,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -387,6 +388,56 @@ describe("thread.createFromProfile", () => {
         expect(options.mcpAllowlist).toBeUndefined();
         expect(options.mcpServer).toBeUndefined();
         expect(options.outwardGate).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("makes one thread for an id the caller supplies, however often it is asked", () =>
+    withServer((dataDir) =>
+      Effect.gen(function* () {
+        yield* turnOn;
+        const handlers = yield* threadHandlers;
+        const store = yield* ThreadStore;
+        const fake = yield* FakeAgentControl;
+        const threadId = ThreadId.make("3f0c7c3e-8a51-4b7e-9d0a-6f1b2c3d4e5f");
+        const ask = (value: unknown) =>
+          handlers["thread.createFromProfile"]({ profile: value, threadId });
+        // Two asks at once and one after: the same thread, made once.
+        const [first, second] = yield* Effect.all([ask(profile()), ask(profile())], {
+          concurrency: 2,
+        });
+        const third: Thread = yield* ask(profile({ charter: "Another charter." }));
+        expect(first.id).toBe(threadId);
+        expect(second.id).toBe(threadId);
+        expect(third.id).toBe(threadId);
+        // The profile that came with the first ask is the thread's; a later one changes nothing.
+        expect(third.profile?.charter).toBe(profile().charter);
+        expect((yield* store.listThreads).map((thread) => thread.id)).toEqual([threadId]);
+        expect(folders(dataDir)).toEqual([threadId]);
+        expect(fake.sessions).toHaveLength(1);
+
+        // An id that is no UUID names no folder; another thread's id isn't taken over.
+        const shaped = yield* handlers["thread.createFromProfile"]({
+          profile: profile(),
+          threadId: ThreadId.make("../elsewhere"),
+        }).pipe(Effect.flip);
+        expect(shaped.message).toContain("lowercase UUID");
+        const plain: Thread = yield* handlers["thread.create"]({
+          projectRoot: dataDir,
+          checkout: { kind: "current" },
+          model: { agent: "claude", model: "fake-model" },
+        });
+        const taken = yield* handlers["thread.createFromProfile"]({
+          profile: profile(),
+          threadId: plain.id,
+        }).pipe(Effect.flip);
+        expect(taken.message).toBe("That thread id is another thread's.");
+
+        // Once closed, the id doesn't start a second thread behind the first one's back.
+        yield* handlers["thread.close"]({ threadId });
+        const closed = yield* ask(profile()).pipe(Effect.flip);
+        expect(closed.message).toBe("The thread with that id was closed.");
+        expect((yield* store.listThreads).map((thread) => thread.id)).toEqual([plain.id]);
       }),
     ),
   );

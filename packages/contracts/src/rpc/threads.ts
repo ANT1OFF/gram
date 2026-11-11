@@ -75,9 +75,13 @@ export const ThreadRpcs = RpcGroup.make(
    * hosted features: `InvalidState` unless `experimental.embedding` is on, and for a profile that
    * can't be applied, naming why, with nothing made. `profile` is decoded strictly by the handler
    * (`decodeThreadProfile`), so a key this version doesn't know is refused rather than dropped.
+   *
+   * `threadId` is the caller's own id for the thread, a UUID it made before asking, so a start it
+   * asks for again makes one thread: when a thread started from a profile already has that id, it
+   * is answered as it is and nothing is made, whatever profile came this time.
    */
   Rpc.make("thread.createFromProfile", {
-    payload: { profile: Schema.Unknown },
+    payload: { profile: Schema.Unknown, threadId: Schema.optionalKey(ThreadId) },
     success: Thread,
     error: errors(NotFound, AgentUnavailable, GitError, InvalidState),
   }),
