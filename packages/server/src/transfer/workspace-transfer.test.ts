@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
+import { existsSync } from "node:fs";
 import * as nodePath from "node:path";
 import { hasGit } from "../git/test-repo.ts";
 import { ThreadArchive } from "../orchestration/archive.ts";
@@ -344,6 +345,8 @@ describe.skipIf(!hasGit)("moving a workspace to another server", () => {
                 ),
               ),
             ).toContain("already on this server");
+            // Refused before a file was written: the other workspace has no memory folder here.
+            expect(existsSync(nodePath.join(hosted.dir, "memory", other))).toBe(false);
             expect((yield* store.listWorkspaces).map(({ workspace }) => workspace.id)).toEqual([
               workspaceId,
             ]);
@@ -383,6 +386,11 @@ describe("what a bundle may say", () => {
       "ssh://git@example.com:2222/acme/shop.git",
     );
     expect(shareableRemote("git@github.com:acme/shop.git")).toBe("git@github.com:acme/shop.git");
+    // A user that isn't ssh's `git` may be a token.
+    expect(shareableRemote("s3cret@github.com:acme/shop.git")).toBeUndefined();
+    expect(shareableRemote("ssh://s3cret@example.com/acme/shop.git")).toBe(
+      "ssh://example.com/acme/shop.git",
+    );
     expect(shareableRemote("/Users/someone/code/shop")).toBeUndefined();
     expect(shareableRemote("file:///Users/someone/code/shop")).toBeUndefined();
   });
@@ -401,6 +409,14 @@ describe("what a bundle may say", () => {
       id: "m1",
       parts: [{ type: "text" }, { n: 3, ok: true, none: null }],
     });
+  });
+
+  it("censors what a tool was given by its key, in messages only", () => {
+    const part = { type: "tool-Bash", input: { password: "hunter2", command: "ls" }, n: 1 };
+    expect(scrubbed([part], true)).toEqual([
+      { type: "tool-Bash", input: { password: "[redacted]", command: "ls" }, n: 1 },
+    ]);
+    expect(scrubbed({ input: { tokens: 12 } })).toEqual({ input: { tokens: 12 } });
   });
 
   it("tells the orchestrator what moved, where its repositories are, and what its workers were on", () => {
@@ -447,6 +463,7 @@ describe("what a bundle may say", () => {
       workers: [],
       archive: [],
       memory: [],
+      featureCards: [],
     } as unknown as WorkspaceBundle;
     expect(bundleProblem(base)).toBeUndefined();
     expect(
@@ -458,5 +475,30 @@ describe("what a bundle may say", () => {
         archive: [{ threadId: "../../etc/passwd" as ThreadId, text: "x", archivedAt: 1 }],
       }),
     ).toContain("thread id");
+    // Longer than a memory folder's name may be.
+    expect(
+      bundleProblem({
+        ...base,
+        workspace: {
+          ...base.workspace,
+          workspace: { ...base.workspace.workspace, id: "w".repeat(65) as never },
+        },
+      }),
+    ).toContain("workspace id");
+    expect(
+      bundleProblem({
+        ...base,
+        featureCards: [{ feature: "mail" }, { feature: "mail" }] as never,
+      }),
+    ).toContain("card twice");
+    expect(
+      bundleProblem({
+        ...base,
+        workspace: {
+          ...base.workspace,
+          charter: { routines: [{ name: "nightly", project: "p9" }] } as never,
+        },
+      }),
+    ).toContain("routine");
   });
 });

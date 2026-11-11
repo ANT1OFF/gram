@@ -1284,6 +1284,16 @@ layer(testServer("https://device.tail123.ts.net:9443"), { excludeTestServices: t
               (yield* post(path, { ...local, origin: "https://elsewhere.example" })).status,
             ).toBe(403);
             expect((yield* post(path, { host, origin, cookie, ...json })).status).toBe(403);
+            // Nor under another spelling of the path, which the router would match all the same.
+            for (const alias of [
+              `${path}/`,
+              path.replace("/workspaces", "/Workspaces"),
+              path.replace("port", "%70ort"),
+              `${path};x`,
+            ]) {
+              expect((yield* post(alias, { host, origin, cookie, ...json })).status).toBe(403);
+              expect((yield* post(alias, local)).status).toBe(403);
+            }
             // Only a JSON post is read.
             expect((yield* post(path, { ...local, "content-type": "text/plain" })).status).toBe(
               415,

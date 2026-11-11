@@ -18,8 +18,9 @@
  * it before anything is written. A bundle is input from somewhere else and is trusted for nothing:
  * every id that names a folder is checked, the memory set meets the caps a dream's does, text is
  * scrubbed on the way out and again by the archive and memory on the way in, and the orchestrator
- * opens on the model and mode this server decides for the charter, in the folders this server was
- * told, never on the bundle's.
+ * opens on the model and mode this server decides for the bundle's charter, in the folders this
+ * server was told, never on the bundle's. The charter itself is the bundle's, autonomy included,
+ * so a bundle is trusted as the workspace it is; its routines arrive switched off.
  */
 import {
   availableWorkspaceName,
@@ -50,10 +51,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Semaphore from "effect/Semaphore";
 import { ServerConfig } from "../config.ts";
 import { registerRepo } from "../fs/folders.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
-import { redactText } from "../logging/redact.ts";
+import { redactSecrets, redactText } from "../logging/redact.ts";
 import { renderClosedThread, ThreadArchive } from "../orchestration/archive.ts";
 import { checkMemorySet, OrchestrationMemory } from "../orchestration/memory.ts";
 import { decodeOutbox, emptyOutbox, encodeOutbox } from "../orchestration/outbox.ts";
@@ -83,15 +85,28 @@ const MID_TURN: ReadonlySet<ThreadStatus> = new Set([
   "needsInput",
 ]);
 
+/** A workspace's id, which names its memory folder: no longer than that folder's name may be. */
+const WORKSPACE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
 const refuse = (message: string) => new InvalidState({ message });
 
-/** `value` with every string in it scrubbed of what looks like a credential. */
-export const scrubbed = <A>(value: A): A => {
+/** The keys under which a message keeps what a tool was given and what it answered. */
+const TOOL_PAYLOAD: ReadonlySet<string> = new Set(["input", "output", "rawInput", "result"]);
+
+/**
+ * `value` with every string in it scrubbed of what looks like a credential. With `tools`, for
+ * messages, what a tool was given or answered is also censored by key, as the transcript archive
+ * does it, since `{"password": …}` holds its secret in a string that looks like nothing.
+ */
+export const scrubbed = <A>(value: A, tools = false): A => {
   if (typeof value === "string") return redactText(value) as A;
-  if (Array.isArray(value)) return value.map(scrubbed) as A;
+  if (Array.isArray(value)) return value.map((each) => scrubbed(each, tools)) as A;
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, inner]) => [key, scrubbed(inner)]),
+      Object.entries(value).map(([key, inner]) => [
+        key,
+        scrubbed(tools && TOOL_PAYLOAD.has(key) ? redactSecrets(inner) : inner, tools),
+      ]),
     ) as A;
   }
   return value;
@@ -104,8 +119,8 @@ export const scrubbed = <A>(value: A): A => {
  */
 export const shareableRemote = (url: string): string | undefined => {
   const text = url.trim();
-  // `git@host:owner/repo.git`, which names an account and no secret.
-  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+$/.test(text)) return text;
+  // `git@host:owner/repo.git`, which names an account and no secret. Any other user may be one.
+  if (/^git@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+$/.test(text)) return redactText(text);
   let parsed: URL;
   try {
     parsed = new URL(text);
@@ -113,12 +128,12 @@ export const shareableRemote = (url: string): string | undefined => {
     return undefined;
   }
   if (!["https:", "http:", "ssh:", "git:"].includes(parsed.protocol)) return undefined;
-  // Over https a user is a token as often as a name; over ssh it is the account, kept bare.
-  if (parsed.protocol !== "ssh:") parsed.username = "";
+  // A user is a token as often as a name; only ssh's own `git` account is kept.
+  if (parsed.protocol !== "ssh:" || parsed.username !== "git") parsed.username = "";
   parsed.password = "";
   parsed.search = "";
   parsed.hash = "";
-  return parsed.toString();
+  return redactText(parsed.toString());
 };
 
 /**
@@ -209,7 +224,7 @@ export const handoverNote = (
 /** What is wrong with a bundle that its schema can't say, or `undefined`. Pure. */
 export const bundleProblem = (bundle: WorkspaceBundle): string | undefined => {
   const { workspace } = bundle.workspace;
-  if (!SAFE_ID.test(workspace.id)) return "The bundle's workspace id is not one Gram makes.";
+  if (!WORKSPACE_ID.test(workspace.id)) return "The bundle's workspace id is not one Gram makes.";
   const projects = new Set<string>(bundle.projects.map((project) => project.id));
   if (projects.size !== bundle.projects.length) return "The bundle names a project twice.";
   if (workspace.projectIds.some((id) => !projects.has(id))) {
@@ -235,10 +250,21 @@ export const bundleProblem = (bundle: WorkspaceBundle): string | undefined => {
     if (orchestrator.turns.some((turn) => !SAFE_ID.test(turn.id))) {
       return "A turn id in the bundle is not one Gram makes.";
     }
+    if (orchestrator.messages.some(({ turnId }) => turnId !== undefined && !turns.has(turnId))) {
+      return "A message in the bundle belongs to a turn the bundle doesn't have.";
+    }
   }
   const transcripts = [...bundle.archive, ...bundle.workers].map((each) => each.threadId);
   if (transcripts.some((id) => !SAFE_ID.test(id))) {
     return "A thread id in the bundle is not one Gram makes.";
+  }
+  const cards = new Set(bundle.featureCards.map((card) => card.feature));
+  if (cards.size !== bundle.featureCards.length) return "The bundle has a feature's card twice.";
+  const outside = (bundle.workspace.charter.routines ?? []).find(
+    (routine) => routine.project !== undefined && !workspace.projectIds.includes(routine.project),
+  );
+  if (outside !== undefined) {
+    return "A routine in the bundle names a project that isn't one of its workspace's.";
   }
   if (bundle.memory.length > 0) {
     const memory = checkMemorySet(bundle.memory);
@@ -399,7 +425,7 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
             const plan = yield* store.getPlan(holder.id);
             orchestrator = {
               thread: portableThread(holder),
-              messages: scrubbed(history.messages.slice(dropped)),
+              messages: scrubbed(history.messages.slice(dropped), true),
               turns: history.turns.slice(-BUNDLE_MESSAGES_MAX),
               ...(plan.plan === undefined ? {} : { plan: plan.plan }),
               ...(plan.turnPlan === undefined ? {} : { turnPlan: plan.turnPlan }),
@@ -479,7 +505,8 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           const outbox = decodeOutbox(yield* store.getOutbox(workspaceId));
           const events = yield* store.listOrchestrationEvents(workspaceId, 0);
           const settings = yield* store.getSettings;
-          return {
+          // Every string that leaves is scrubbed, whatever part of the workspace it came from.
+          return scrubbed({
             format: WORKSPACE_BUNDLE_FORMAT,
             app: { version: config.appVersion ?? "0.0.0", schema: SCHEMA },
             exportedAt: yield* Clock.currentTimeMillis,
@@ -503,7 +530,7 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
               ...(settings.reviewBots === undefined ? {} : { reviewBots: settings.reviewBots }),
             },
             notes,
-          } satisfies WorkspaceBundle;
+          } satisfies WorkspaceBundle);
         });
 
       const exportWorkspace: WorkspaceTransferShape["exportWorkspace"] = (input) =>
@@ -534,7 +561,7 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           const wanted = bundle.projects.filter((project) =>
             bundle.workspace.workspace.projectIds.includes(project.id),
           );
-          const missing = wanted.filter((project) => places[project.id] === undefined);
+          const missing = wanted.filter((project) => !Object.hasOwn(places, project.id));
           if (missing.length > 0) {
             return yield* refuse(
               `Say where each of the workspace's repositories is on this server. Missing: ${missing
@@ -561,7 +588,12 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           return placed;
         });
 
+      // One at a time: two imports of one workspace would each write its memory before either
+      // was refused.
+      const importing = yield* Semaphore.make(1);
       const importWorkspace: WorkspaceTransferShape["importWorkspace"] = (input) =>
+        importing.withPermits(1)(importOne(input));
+      const importOne: WorkspaceTransferShape["importWorkspace"] = (input) =>
         Effect.gen(function* () {
           yield* requireOn;
           const { bundle } = input;
@@ -575,9 +607,13 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           const source = bundle.workspace;
           const workspaceId = source.workspace.id;
           yield* refuseConnectorEntries(source.charter);
-          if ((yield* store.listWorkspaces).some(({ workspace }) => workspace.id === workspaceId)) {
-            return yield* refuse("This workspace is already on this server.");
-          }
+          // Before any file is written, so a bundle that can't land leaves nothing behind.
+          const conflict = yield* store.movedConflict(
+            workspaceId,
+            bundle.orchestrator?.thread.id,
+            bundle.orchestrator?.turns.map((turn) => turn.id) ?? [],
+          );
+          if (conflict !== undefined) return yield* refuse(conflict);
           const opening =
             bundle.orchestrator === undefined
               ? undefined
@@ -597,6 +633,22 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           const home = placed.get(source.workspace.homeProjectId)!;
           const others = [...placed.values()].filter((project) => project.id !== home.id);
           const notes: Array<string> = opening?.note === undefined ? [] : [opening.note];
+          // Routines arrive switched off, in this server's projects: what starts workers on a
+          // schedule here is turned on here, by whoever runs this server.
+          const routines = source.charter.routines?.map((routine) => {
+            const { project, ...rest } = routine;
+            return {
+              ...rest,
+              ...(project === undefined ? {} : { project: placed.get(project)!.id }),
+              off: true as const,
+            };
+          });
+          if (routines?.some((_routine, index) => source.charter.routines?.[index]?.off !== true)) {
+            notes.push(
+              "The workspace's routines arrived switched off. Turn on the ones to run here.",
+            );
+          }
+          const charter = routines === undefined ? source.charter : { ...source.charter, routines };
           const now = yield* Clock.currentTimeMillis;
 
           // Files first: a memory tree for a workspace the database then refuses is only a folder
@@ -642,6 +694,7 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
             const { paused: _paused, ...rest } = source;
             const state: WorkspaceState = {
               ...rest,
+              charter,
               workspace: {
                 ...workspace,
                 name: availableWorkspaceName(source.workspace.name, taken),

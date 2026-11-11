@@ -761,6 +761,15 @@ export interface ThreadStoreShape {
    */
   stageMovedWorkspace(moved: MovedWorkspace): Effect.Effect<void, InvalidState>;
   /**
+   * Why `stageMovedWorkspace` would refuse these ids, read without writing anything, so a move
+   * can be refused before its files are written; `undefined` when none of them is here.
+   */
+  movedConflict(
+    workspaceId: string,
+    threadId: string | undefined,
+    turnIds: ReadonlyArray<string>,
+  ): Effect.Effect<string | undefined>;
+  /**
    * Makes `threadId` the workspace's orchestrator if nobody is, in one statement, so of two
    * concurrent claims one wins. A slot naming a thread that no longer exists counts as empty, and
    * the holder claiming again keeps it. False when another thread holds it, or when the workspace
@@ -1072,6 +1081,37 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         });
 
       /** Puts a thread on the closed list, dropping the oldest past the limit with what was kept. */
+      /** Which of a moved workspace's ids is already here, as the sentence that refuses it. */
+      const movedConflictOf = (
+        workspaceId: string,
+        threadId: string | undefined,
+        turnIds: ReadonlyArray<string>,
+      ) =>
+        Effect.gen(function* () {
+          const [workspace] = yield* sql<{
+            id: string;
+          }>`SELECT id FROM workspaces WHERE id = ${workspaceId}`;
+          if (workspace !== undefined) return "This workspace is already on this server.";
+          if (threadId === undefined) return undefined;
+          const [taken] = yield* sql<{ id: string }>`SELECT id FROM threads WHERE id = ${threadId}
+            UNION ALL SELECT thread_id FROM closed_threads WHERE thread_id = ${threadId}
+            UNION ALL SELECT thread_id FROM closed_messages WHERE thread_id = ${threadId}
+            UNION ALL SELECT thread_id FROM messages WHERE thread_id = ${threadId}
+            UNION ALL SELECT thread_id FROM thread_plans WHERE thread_id = ${threadId}
+            LIMIT 1`;
+          if (taken !== undefined) {
+            return "This workspace's orchestrator is already on this server.";
+          }
+          for (const turnId of turnIds) {
+            const [known] = yield* sql<{ id: string }>`SELECT id FROM turns WHERE id = ${turnId}
+              UNION ALL SELECT id FROM closed_turns WHERE id = ${turnId} LIMIT 1`;
+            if (known !== undefined) {
+              return "A turn of this workspace's orchestrator is already on this server.";
+            }
+          }
+          return undefined;
+        });
+
       const keepClosed = (
         id: string,
         closedAt: number,
@@ -2919,18 +2959,20 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               yield* sql`DELETE FROM workspaces WHERE id = ${id}`;
             }),
           ),
+        movedConflict: (workspaceId, threadId, turnIds) =>
+          tx(movedConflictOf(workspaceId, threadId, turnIds)),
         stageMovedWorkspace: (moved) =>
           run(
             sql
               .withTransaction(
                 Effect.gen(function* () {
                   const id = moved.state.workspace.id;
-                  const [workspace] = yield* sql<{
-                    id: string;
-                  }>`SELECT id FROM workspaces WHERE id = ${id}`;
-                  if (workspace !== undefined) {
-                    return yield* alreadyHere("This workspace is already on this server.");
-                  }
+                  const conflict = yield* movedConflictOf(
+                    id,
+                    moved.orchestrator?.thread.id,
+                    moved.orchestrator?.turns.map((turn) => turn.id) ?? [],
+                  );
+                  if (conflict !== undefined) return yield* alreadyHere(conflict);
                   yield* writeWorkspace(moved.state);
                   for (const card of moved.featureCards) {
                     yield* sql`INSERT INTO feature_cards
@@ -2948,22 +2990,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   const orchestrator = moved.orchestrator;
                   if (orchestrator === undefined) return;
                   const threadId = orchestrator.thread.id;
-                  const [taken] = yield* sql<{ id: string }>`SELECT id FROM threads
-                      WHERE id = ${threadId}
-                    UNION ALL SELECT thread_id FROM closed_threads WHERE thread_id = ${threadId}
-                    UNION ALL SELECT thread_id FROM closed_messages WHERE thread_id = ${threadId}
-                    UNION ALL SELECT thread_id FROM messages WHERE thread_id = ${threadId}
-                    LIMIT 1`;
-                  if (taken !== undefined) {
-                    return yield* alreadyHere(
-                      "This workspace's orchestrator is already on this server.",
-                    );
-                  }
-                  yield* keepClosed(
-                    threadId,
-                    orchestrator.closedAt,
-                    toJson(Thread, orchestrator.thread),
-                  );
+                  // Not `keepClosed`, whose cap would push this server's oldest closed thread out
+                  // for an entry that is taken off the list again as soon as it is opened.
+                  yield* sql`INSERT INTO closed_threads (thread_id, closed_at, data, workers)
+                    VALUES (${threadId}, ${orchestrator.closedAt},
+                      ${toJson(Thread, orchestrator.thread)}, NULL)`;
                   for (const [index, { message, turnId }] of orchestrator.messages.entries()) {
                     yield* sql`INSERT INTO closed_messages
                         (thread_id, id, seq, role, turn_id, message)
@@ -2971,14 +3002,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                         ${turnId ?? null}, ${JSON.stringify(message)})`;
                   }
                   for (const turn of orchestrator.turns) {
-                    const [known] = yield* sql<{ id: string }>`SELECT id FROM turns
-                        WHERE id = ${turn.id}
-                      UNION ALL SELECT id FROM closed_turns WHERE id = ${turn.id} LIMIT 1`;
-                    if (known !== undefined) {
-                      return yield* alreadyHere(
-                        "A turn of this workspace's orchestrator is already on this server.",
-                      );
-                    }
                     yield* sql`INSERT INTO closed_turns
                         (id, thread_id, started_at, ended_at, reason, usage, cost_usd)
                       VALUES (${turn.id}, ${threadId}, ${turn.startedAt}, ${turn.endedAt ?? null},
@@ -2994,9 +3017,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                       : toJson(TurnPlanJson, orchestrator.turnPlan);
                   if (plan !== null || turnPlan !== null) {
                     yield* sql`INSERT INTO thread_plans (thread_id, plan, turn_plan, rev)
-                      VALUES (${threadId}, ${plan}, ${turnPlan}, 1)
-                      ON CONFLICT (thread_id) DO UPDATE
-                      SET plan = excluded.plan, turn_plan = excluded.turn_plan, rev = rev + 1`;
+                      VALUES (${threadId}, ${plan}, ${turnPlan}, 1)`;
                   }
                 }),
               )
@@ -3006,7 +3027,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   e instanceof SqlError
                     ? Effect.fail(
                         new InvalidState({
-                          message: "Part of this workspace is already on this server.",
+                          message:
+                            "The workspace couldn't be stored here, and nothing of it was kept. Part of it may already be on this server.",
                         }),
                       )
                     : Effect.fail(e),

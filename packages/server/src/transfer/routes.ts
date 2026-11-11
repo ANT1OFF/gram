@@ -15,12 +15,14 @@ import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
+import { authTarget } from "../http/auth-target.ts";
+import { WORKSPACE_EXPORT_PATH, WORKSPACE_IMPORT_PATH } from "../http/remote-access.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { WorkspaceTransfer, type WorkspaceTransferShape } from "./workspace-transfer.ts";
 
-export const WORKSPACE_EXPORT_PATH = "/workspaces/export";
-export const WORKSPACE_IMPORT_PATH = "/workspaces/import";
+export { WORKSPACE_EXPORT_PATH, WORKSPACE_IMPORT_PATH };
 
 /** Reached only from the local app: a bundle is a whole workspace, and an import names folders. */
 export const WORKSPACE_TRANSFER_PATHS: ReadonlySet<string> = new Set([
@@ -81,6 +83,8 @@ export const workspaceTransferRoute = (
 > =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
+    // Only under its one spelling: the checks above this route match the path exactly.
+    if (authTarget(request.url)?.path !== path) return notThere;
     if (!(yield* on)) return notThere;
     if (request.method !== "POST") {
       return HttpServerResponse.text("method not allowed", {
@@ -126,7 +130,10 @@ export const WorkspaceTransferRoutes = Layer.unwrap(
       Effect.map(embeddingOn),
       Effect.orElseSucceed(() => false),
     );
-    const handle = (path: string) => () => workspaceTransferRoute(transfer, on, path);
+    // One at a time: a bundle is read whole, and two would each hold their own in memory.
+    const one = yield* Semaphore.make(1);
+    const handle = (path: string) => () =>
+      one.withPermits(1)(workspaceTransferRoute(transfer, on, path));
     return Layer.mergeAll(
       HttpRouter.add("*", WORKSPACE_EXPORT_PATH, handle(WORKSPACE_EXPORT_PATH)),
       HttpRouter.add("*", WORKSPACE_IMPORT_PATH, handle(WORKSPACE_IMPORT_PATH)),
