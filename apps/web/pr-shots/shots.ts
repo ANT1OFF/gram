@@ -2350,7 +2350,67 @@ const CONTINUE_IN_SHOTS: readonly Shot[] = [
   },
 ];
 
+/** The orchestrator's "…" in the title bar, both CLIs found and signed in. */
+const openOrchestratorMenu = async (page: Page) => {
+  await seedBothAgents(page);
+  await openOverviewHome(page, 1440, { panel: false });
+  await openBarMenu(page);
+  await page.getByTestId("menu-thread").click();
+  await page.getByTestId("titlebar-menu-thread").waitFor();
+  await page.waitForTimeout(400);
+};
+
+/** The sheet the orchestrator's switch opens: the base's own dialog, else Continue in Codex. */
+const orchestratorSheet = (page: Page) =>
+  page.getByTestId("continue-in-dialog").or(page.getByTestId("switch-orchestrator-dialog"));
+
+/** Settings → Workspaces → Models for an invented workspace, its orchestrator open. */
+const openOrchestratorSettingsRow = async (page: Page) => {
+  await openModelsWorkspace(page, 1280);
+  await page.evaluate(async () => {
+    const api = window.gramMock!;
+    const state = (await api.listWorkspaces()).find(
+      (each) => each.workspace.name === "agent-platform",
+    )!;
+    await api.openOrchestrator({ workspaceId: state.workspace.id });
+  });
+  const row = page.getByTestId("orchestrator-switch-action");
+  await row.scrollIntoViewIfNeeded();
+  await page.getByTestId("switch-orchestrator-open").waitFor();
+  await page.waitForTimeout(600);
+};
+
+/** Cut 6: the orchestrator continues in the other agent through the same sheet. */
+const ORCHESTRATOR_CONTINUE_IN_SHOTS: readonly Shot[] = [
+  {
+    name: "orchestrator-continue-in-menu",
+    title: "The orchestrator's \"…\": Continue in Codex… first, where Switch orchestrator… was",
+    open: openOrchestratorMenu,
+  },
+  {
+    name: "orchestrator-continue-in-sheet",
+    title:
+      "From the orchestrator's menu: the same Continue in Codex sheet, with what the orchestrator carries and its workers' line",
+    open: async (page) => {
+      await openOrchestratorMenu(page);
+      const item = page.getByTestId("menu-continue-in");
+      if ((await item.count()) > 0) await item.click();
+      else await page.getByTestId("menu-switch-orchestrator").click();
+      await orchestratorSheet(page).waitFor();
+      await page.waitForTimeout(600);
+    },
+    element: orchestratorSheet,
+  },
+  {
+    name: "orchestrator-continue-in-settings",
+    title: "Settings → Workspaces → Models: the current orchestrator, and Continue in Codex…",
+    open: openOrchestratorSettingsRow,
+    element: (page) => page.getByTestId("orchestrator-switch-action"),
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
+  ...ORCHESTRATOR_CONTINUE_IN_SHOTS,
   ...CONTINUE_IN_SHOTS,
   ...MACHINE_SHOTS,
   ...PHONE_ACCESS_SHOTS,
@@ -4890,7 +4950,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "orchestrator-menu-switch",
-    title: "The title bar's \"…\" with the orchestrator's Switch orchestrator… first",
+    title: "The title bar's \"…\" on the orchestrator, its thread menu open",
     modes: ["dark"],
     open: async (page) => {
       await openOverviewHome(page, 1440, { panel: false });
