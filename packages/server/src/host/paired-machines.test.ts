@@ -1,4 +1,12 @@
-import { mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -13,12 +21,14 @@ import {
 } from "./machine-keys.ts";
 import {
   createPairedMachines,
+  DIALS_PER_MACHINE,
   type DialNonces,
   fileMachineStore,
   fileNonceStore,
   JOIN_LIFETIME_MS,
   machineView,
   MAX_MACHINES,
+  MAX_PROVISIONED,
   memoryMachineStore,
   memoryNonceStore,
   NO_DIALS,
@@ -578,5 +588,239 @@ describe("joined machines", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+const HOSTS = "https://gram.internal:8443";
+const provisioned = (machines: PairedMachines, name = "sandbox") => {
+  const key = generateHostKey();
+  const result = machines.provision({ name, platform: "linux", publicKey: key.publicKey });
+  return { result, id: hostIdOf(key.publicKey), key, own: privateKeyFrom(key.privateKeyPem) };
+};
+
+describe("provisioned hosts", () => {
+  it("registers a key as confirmed, once, and never confirms a machine that joined with a link", () => {
+    const { machines, joinOne } = setup();
+    const { result, id, key } = provisioned(machines);
+    expect(result).toMatchObject({
+      kind: "provisioned",
+      created: true,
+      machine: { id, kind: "provisioned", confirmedAt: 1_000_000 },
+    });
+    expect(
+      machines.provision({ name: "sandbox", platform: "linux", publicKey: key.publicKey }),
+    ).toMatchObject({ kind: "provisioned", created: false, machine: { name: "sandbox" } });
+    // The key again under another name or platform is refused, not settled either way.
+    for (const other of [
+      { name: "other", platform: "linux" },
+      { name: "sandbox", platform: "darwin" },
+    ])
+      expect(machines.provision({ ...other, publicKey: key.publicKey })).toMatchObject({
+        kind: "refused",
+        status: 409,
+      });
+    expect(machines.list()).toHaveLength(1);
+    expect(machines.get(id)).toMatchObject({ name: "sandbox", platform: "linux" });
+
+    // A machine that asked with a link stays unconfirmed, whoever registers its key.
+    const joined = joinOne();
+    expect(
+      machines.provision({ name: "box", platform: "linux", publicKey: joined.key.publicKey }),
+    ).toMatchObject({ kind: "refused", status: 409 });
+    expect(machines.get(joined.id)).not.toHaveProperty("confirmedAt");
+    expect(machines.get(joined.id)).not.toHaveProperty("kind");
+
+    // A name in use, by a host or a joined machine and in any case, is never taken twice: work
+    // is placed by name, and a name two machines share places nothing.
+    for (const name of ["SandBox", "Box"])
+      expect(
+        machines.provision({ name, platform: "linux", publicKey: generateHostKey().publicKey }),
+      ).toMatchObject({ kind: "refused", status: 409 });
+
+    // Nor one that reads as a machine's id, which work is placed by too.
+    expect(
+      machines.provision({
+        name: joined.id.toUpperCase(),
+        platform: "linux",
+        publicKey: generateHostKey().publicKey,
+      }),
+    ).toMatchObject({ kind: "refused", status: 409 });
+    // And a machine joining with a link can't take a host's name or id either.
+    expect(joinOne("Sandbox").result).toMatchObject({ kind: "refused", status: 409 });
+    expect(joinOne(id.toUpperCase()).result).toMatchObject({ kind: "refused", status: 409 });
+
+    for (const bad of [
+      { name: "", platform: "linux", publicKey: generateHostKey().publicKey },
+      { name: "This Machine", platform: "linux", publicKey: generateHostKey().publicKey },
+      { name: "ok", platform: "Linux!", publicKey: generateHostKey().publicKey },
+      { name: "ok", platform: "linux", publicKey: "not a key" },
+    ])
+      expect(machines.provision(bad)).toMatchObject({ kind: "refused", status: 400 });
+  });
+
+  it("takes a provisioned host's dial only on the provisioned route, and a joined machine's only on the joined one", () => {
+    const { machines } = setup();
+    const host = provisioned(machines);
+    const box = confirmedMachine(machines);
+    const dial = (own: typeof host.own, id: string, origin: string) =>
+      signedConnectHeaders(own, origin, id, 1_000_000);
+    const unknown = { kind: "refused", status: 401, message: "unauthorized: machine not joined" };
+
+    expect(
+      machines.authorizeConnect(HOSTS, dial(host.own, host.id, HOSTS), "provisioned"),
+    ).toMatchObject({ kind: "ok", machine: { id: host.id } });
+    // Its key is as unknown on the tailnet address as one never registered, whichever address
+    // it signed for.
+    for (const origin of [HOSTS, ORIGIN])
+      expect(machines.authorizeConnect(origin, dial(host.own, host.id, origin))).toEqual(unknown);
+    // A joined machine, confirmed and all, on the provisioned route.
+    for (const origin of [HOSTS, ORIGIN])
+      expect(
+        machines.authorizeConnect(origin, dial(box.own, box.id, origin), "provisioned"),
+      ).toEqual(unknown);
+    expect(machines.authorizeConnect(ORIGIN, dial(box.own, box.id, ORIGIN))).toMatchObject({
+      kind: "ok",
+    });
+    // Signed for another address than the one it arrived on.
+    expect(
+      machines.authorizeConnect(
+        HOSTS,
+        dial(host.own, host.id, "https://elsewhere.internal"),
+        "provisioned",
+      ),
+    ).toMatchObject({ kind: "refused", status: 401, message: "unauthorized: bad signature" });
+    // A key nobody registered.
+    const stranger = generateHostKey();
+    expect(
+      machines.authorizeConnect(
+        HOSTS,
+        dial(privateKeyFrom(stranger.privateKeyPem), hostIdOf(stranger.publicKey), HOSTS),
+        "provisioned",
+      ),
+    ).toEqual(unknown);
+    // Removed, it is unknown again.
+    machines.remove(host.id);
+    expect(machines.authorizeConnect(HOSTS, dial(host.own, host.id, HOSTS), "provisioned")).toEqual(
+      unknown,
+    );
+  });
+
+  it("holds one machine's dials to its own share, so its key can't use up the others' room", () => {
+    const { clock, machines } = setup();
+    const loud = provisioned(machines, "loud");
+    const quiet = provisioned(machines, "quiet");
+    const dial = (host: typeof loud) =>
+      machines.authorizeConnect(
+        HOSTS,
+        signedConnectHeaders(host.own, HOSTS, host.id, clock.now()),
+        "provisioned",
+      );
+    for (let n = 0; n < DIALS_PER_MACHINE; n++) expect(dial(loud).kind).toBe("ok");
+    expect(dial(loud)).toMatchObject({
+      kind: "refused",
+      status: 401,
+      message: "unauthorized: too many dials; wait",
+    });
+    // The other host's dials are taken all the while.
+    expect(dial(quiet).kind).toBe("ok");
+    // Once its dials have left their window, it is taken again.
+    clock.advance(CONNECT_SKEW_MS + 1);
+    expect(dial(loud).kind).toBe("ok");
+  });
+
+  it("counts provisioned hosts apart from joined machines, each to its own limit", () => {
+    const { machines, joinOne } = setup();
+    for (let n = 0; n < MAX_PROVISIONED; n++)
+      expect(provisioned(machines, `sandbox ${n}`).result.kind).toBe("provisioned");
+    expect(provisioned(machines).result).toMatchObject({ kind: "refused", status: 409 });
+    // The joined machines' own limit is untouched by them.
+    for (let n = 0; n < MAX_MACHINES; n++) expect(joinOne(`box ${n}`).result.kind).toBe("joined");
+    expect(joinOne("one more").result).toMatchObject({ kind: "refused", status: 409 });
+  });
+
+  it("keeps them in a file of their own, which a build without them never reads", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-provisioned-store-"));
+    const fileOf = (name: string) => join(dir, "remote-access", name);
+    const kept = (name: string) =>
+      (JSON.parse(readFileSync(fileOf(name), "utf8")) as { machines: unknown[] }).machines;
+    try {
+      const first = createPairedMachines(fileMachineStore(dir));
+      const host = provisioned(first);
+      // Nothing of it is in the joined machines' file, where an earlier build would read a
+      // confirmed entry as a machine a person confirmed.
+      expect(kept("machines.json")).toEqual([]);
+      expect(kept("provisioned-hosts.json")).toMatchObject([{ id: host.id, kind: "provisioned" }]);
+      const again = createPairedMachines(fileMachineStore(dir));
+      expect(again.get(host.id)).toMatchObject({ kind: "provisioned", name: "sandbox" });
+
+      // A joined machine goes to its own file and leaves the hosts' alone.
+      const key = generateHostKey();
+      const code = codeOf(again.mint(ORIGIN).url);
+      again.join(ORIGIN, { code, name: "box", platform: "linux", ...key });
+      expect(kept("machines.json")).toMatchObject([{ name: "box" }]);
+      expect(kept("machines.json")[0]).not.toHaveProperty("kind");
+      expect(kept("provisioned-hosts.json")).toHaveLength(1);
+
+      const entry = again.get(host.id)!;
+      const write = (name: string, machines: unknown[]) =>
+        writeFileSync(fileOf(name), JSON.stringify({ version: 1, machines }), { mode: 0o600 });
+      const invalid = "Joined machines storage is invalid";
+      // A host in the joined machines' file, in either guise, and a joined machine in the hosts'.
+      const { kind: _kind, ...asJoined } = entry;
+      for (const smuggled of [entry, asJoined]) {
+        write("machines.json", [smuggled]);
+        write("provisioned-hosts.json", []);
+        if (smuggled === entry) expect(() => fileMachineStore(dir).read()).toThrow(invalid);
+        // Without its kind it is only a joined machine: never taken on the provisioned route.
+        else
+          expect(
+            createPairedMachines(fileMachineStore(dir)).authorizeConnect(
+              HOSTS,
+              signedConnectHeaders(host.own, HOSTS, host.id),
+              "provisioned",
+            ),
+          ).toMatchObject({ kind: "refused", status: 401 });
+      }
+      write("machines.json", []);
+      write("provisioned-hosts.json", [asJoined]);
+      expect(() => fileMachineStore(dir).read()).toThrow(invalid);
+      // One made unconfirmed, and a kind this build doesn't know.
+      const { confirmedAt: _confirmed, ...unconfirmed } = entry;
+      for (const bad of [unconfirmed, { ...entry, kind: "personal" }]) {
+        write("provisioned-hosts.json", [bad]);
+        expect(() => fileMachineStore(dir).read()).toThrow(invalid);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves no file of theirs where no host was ever registered", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-provisioned-none-"));
+    try {
+      const machines = createPairedMachines(fileMachineStore(dir));
+      const key = generateHostKey();
+      machines.join(ORIGIN, {
+        code: codeOf(machines.mint(ORIGIN).url),
+        name: "box",
+        platform: "linux",
+        ...key,
+      });
+      machines.confirm(hostIdOf(key.publicKey));
+      expect(readdirSync(join(dir, "remote-access"))).toEqual(["machines.json"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("is listed as online or offline whatever access over Tailscale is", () => {
+    const { machines } = setup();
+    const host = provisioned(machines);
+    const view = machineView(machines.get(host.id)!, undefined, { tailscale: "off" });
+    expect(view).toMatchObject({
+      kind: "provisioned",
+      confirmed: true,
+      offline: { kind: "never" },
+    });
   });
 });

@@ -14,6 +14,10 @@ placed on it; its session, checkout, git state and terminals then run there. The
 previews and attachments work on that machine ([its files](#its-files-and-attachments)); its turn
 checkpoints, PR badge and port chips don't reach that machine yet.
 
+A Gram that runs as a service can also take hosts that another system starts and registers by
+key, over ordinary TLS with no Tailscale and nothing to confirm: see
+[provisioned hosts](PROVISIONED_HOSTS.md).
+
 ## Start a thread on a machine
 
 Once a machine is confirmed, **Machine** shows first under Where it runs on New → Chat, and beside
@@ -88,6 +92,10 @@ The guard itself, on the joined machine's host:
 - The browser lists folders only, never files, at most 500 of them, and gives up on a folder or
   mount that doesn't answer within a few seconds.
 - A host from an older release doesn't list its folders. Update it before you pick a folder there.
+
+A Gram started as a [headless control plane](DOCKER.md#a-headless-control-plane) has no "This
+machine": every thread runs on a joined one, and one that names none goes on the machine that
+joined first of those online.
 
 ## What you need
 
@@ -344,6 +352,49 @@ falls back to running on this machine.
 
 Terminals aren't brought back: the shell, what ran in it and its scrollback ended with the host, so
 open a new one.
+
+## Stop a machine and keep its disk
+
+Part of the hosted features (Settings → About → Diagnostics → Hosted features, off by default).
+With the setting off none of this is there: the routes below answer not found, and a thread on a
+machine that is away fails as it always did.
+
+Whoever runs the machines can stop one while nothing works on it and start another host on the
+same disk later. Gram stops and starts nothing itself; it readies the machine, says when it is
+wanted, and carries the threads on. The calls are local `POST`s with a JSON body, answered only to
+the local app, as the other `/machines/*` routes are.
+
+- `POST /machines/stop/prepare` with `{ "id": "<machine>" }` asks the machine whether it can stop.
+  While sessions, terminals, clones or checks run there it answers `idle: false` with what is
+  running and changes nothing. Otherwise the host takes nothing new, keeps each thread's
+  uncommitted work as a commit on the hidden ref `refs/gram/wip/<thread>` (the working tree and
+  the branch are left as they are), pushes that ref, and answers `idle: true` with what it kept.
+  Gram then puts the idle sessions there to rest. The host holds new work off for ten minutes,
+  which is the time to stop it in; left running past that, it takes work again and no longer
+  counts as stopped. One call keeps up to 512 folders, and says so when there are more.
+- `"force": true` readies a busy machine too. The turns it cuts off go on by themselves once a
+  host is back on the disk, as after a restart (see [When it drops or restarts](#when-it-drops-or-restarts)),
+  if the host is back within fifteen minutes of its connection closing and the stop was asked
+  for no more than twenty-five minutes before.
+- `"remote"` names where the ref is pushed, a git remote's name or an https or ssh URL. The
+  default is `origin`. The ref holds every file git doesn't ignore, untracked ones included, and
+  whoever can read that remote can read it, so name a private mirror when that matters. A push
+  that fails is reported (`pushed: false`) and doesn't stop the answer: the work is still on the
+  disk.
+- `POST /machines/stop/cancel` takes a stop back: the host takes new work again.
+- `POST /machines/stop/status` lists each joined machine: `online`, `stoppedAt` when it was
+  readied and hasn't dialled in since, and `wanted` when a thread waits on it now. A message sent
+  to a thread on a machine that is away, or readied and not yet stopped, waits up to five minutes
+  for it, so start a host (or take the stop back) when `wanted` turns true. With the setting on,
+  this wait applies to any joined machine that is away.
+- `POST /machines/stop/resume` opens again the sessions the stop put to rest, once a host has
+  dialled in, and answers which it reopened and which folders are missing from the disk. Threads
+  that had no session open at the stop open with their next message, as ever.
+
+The new host must start with the stopped one's home folder (`GRAM_HOST_HOME`) and the threads'
+folders at the same paths. The machine's key is in that home, so the new host dials in as the same
+machine and nothing about the threads changes. A host on an empty disk is a different machine;
+restoring the hidden refs onto a fresh disk is not done for you.
 
 ## A Claude token from this machine
 

@@ -1,6 +1,7 @@
 import {
   AgentUnavailable,
   type Checkout,
+  type CheckoutRequest,
   checkoutRequestHost,
   effectiveCheckout,
   GitError,
@@ -32,6 +33,7 @@ import type { Terminals } from "../terminal/terminals.ts";
 import type { HostFiles } from "./files.ts";
 import { type HostFolders, olderHost } from "./folders.ts";
 import { noteForeignCheckouts } from "./foreign-paths.ts";
+import { type HeadlessPlacement, placeRequest } from "./headless.ts";
 import type { WorkerHost, WorkerHostsShape } from "./worker-host.ts";
 
 /** How often an offline machine's watch looks for it again. */
@@ -110,10 +112,21 @@ export type MachineParts = Pick<WorkerHost, "git" | "worktrees" | "files"> & {
  * watches wait for it to come back, and nothing of it runs here instead.
  */
 export const placedHost = (
-  hosts: Pick<WorkerHostsShape, "local" | "get">,
+  hosts: Pick<WorkerHostsShape, "local" | "get"> & {
+    /**
+     * The host a session is about to open on, when that is looked up another way than `get`: one
+     * that waits for a stopped machine to be started (`awaitedMachines`).
+     */
+    readonly forSession?: WorkerHostsShape["get"];
+  },
   store: Pick<ThreadStore["Service"], "listThreads" | "getThread">,
   /** Whether any machine is joined: with none, every call is this machine's, looked up for free. */
   anyMachines: () => boolean = () => true,
+  /**
+   * Given by a headless Gram, which runs no work itself: where a request that names no machine
+   * goes. Its `local` already refuses whatever would start something here (`headlessLocal`).
+   */
+  headless?: HeadlessPlacement,
 ): WorkerHost & {
   readonly machine: (id: HostId) => MachineParts;
   readonly placeOf: (path: string) => Effect.Effect<HostId | undefined>;
@@ -314,17 +327,24 @@ export const placedHost = (
     run: (host: WorkerHost) => Effect.Effect<A, E>,
   ) => Effect.flatMap(hostFor(hostOf(effectiveCheckout(thread)), onOffline), run);
   const checkouts: CheckoutServiceShape = {
-    // Placed where the request says; a request that names no machine is this machine's.
+    ...(headless === undefined
+      ? {}
+      : { place: (request: CheckoutRequest) => placeRequest(headless, request) }),
+    // Placed where the request says; a request that names no machine is this machine's, which a
+    // headless Gram's refuses. A machine's own clone as it is (`current` there) is only a headless
+    // Gram's to ask for: anywhere else a thread on a machine works in a worktree of its own.
     prepare: (request, openCheckouts, projectRoot) =>
-      Effect.flatMap(hostFor(checkoutRequestHost(request) ?? LOCAL_HOST_ID, invalid), (host) =>
-        host.checkouts.prepare(request, openCheckouts, projectRoot).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => {
-              if (host.id !== LOCAL_HOST_ID) placedNow = true;
-            }),
+      request.kind === "current" && request.hostId !== undefined && headless === undefined
+        ? Effect.fail(invalid("A thread on a joined machine works in a new worktree there."))
+        : Effect.flatMap(hostFor(checkoutRequestHost(request) ?? LOCAL_HOST_ID, invalid), (host) =>
+            host.checkouts.prepare(request, openCheckouts, projectRoot).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  if (host.id !== LOCAL_HOST_ID) placedNow = true;
+                }),
+              ),
+            ),
           ),
-        ),
-      ),
     // A close that removes nothing needs no machine: a thread on one that is offline, or was
     // removed, still closes. One that would remove its worktree there is refused while it's away.
     checkRelease: (thread, options) =>
@@ -468,7 +488,7 @@ export const placedHost = (
             Effect.flatMap(hostIdOfThread(options.threadId), (id) =>
               id === LOCAL_HOST_ID
                 ? agent.open(options)
-                : hosts.get(id).pipe(
+                : (hosts.forSession ?? hosts.get)(id).pipe(
                     Effect.mapError(
                       (error) =>
                         new AgentUnavailable({

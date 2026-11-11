@@ -454,6 +454,72 @@ export const outwardKind = (command: string): OutwardKind | undefined => {
   }
 };
 
+/** What an outward command does, named: for a decision asked about the command (`outwardActions`). */
+export type OutwardAction =
+  | "push"
+  | "pr.open"
+  | "pr.merge"
+  | "pr.close"
+  | "release"
+  | "workflow.run"
+  | "repo.delete";
+
+const GH_ACTIONS: Readonly<Record<string, OutwardAction>> = {
+  "pr create": "pr.open",
+  "pr new": "pr.open",
+  "pr merge": "pr.merge",
+  "pr close": "pr.close",
+  "release create": "release",
+  "release new": "release",
+  "workflow run": "workflow.run",
+  "repo delete": "repo.delete",
+};
+
+const actionsOf = (raw: ReadonlyArray<string>): ReadonlyArray<OutwardAction> | undefined => {
+  const [head, ...args] = unwrap(raw);
+  if (head === undefined) return [];
+  const name = binaryName(head);
+  if (name === "git") return gitKind(args) === undefined ? [] : ["push"];
+  if (name === "gh") {
+    if (ghKind(args) === undefined) return [];
+    const positional: Array<string> = [];
+    for (let i = 0; i < args.length && positional.length < 2; i++) {
+      const arg = args[i]!;
+      if (GH_VALUE_OPTIONS.has(arg)) i++;
+      else if (!arg.startsWith("-")) positional.push(arg);
+    }
+    const action = GH_ACTIONS[positional.join(" ")];
+    return action === undefined ? [] : [action];
+  }
+  if (name === "eval") return outwardActions(args.join(" "));
+  if (SHELLS.has(name)) {
+    const at = args.findIndex((arg) => /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
+    const script = at === -1 ? undefined : args[at + 1];
+    return script === undefined ? [] : outwardActions(script);
+  }
+  return [];
+};
+
+/**
+ * Each outward thing a shell command line does by an ordinary spelling, once each, in the order
+ * the line does them; empty when `outwardKind` finds nothing. A line too strange to read is
+ * `undefined`: outward, by `outwardKind`'s leaning, but nobody can say what.
+ */
+export const outwardActions = (command: string): ReadonlyArray<OutwardAction> | undefined => {
+  const commands: Array<ReadonlyArray<string>> = [];
+  try {
+    collectCommands(command, commands);
+    const found = commands.flatMap((each) => {
+      const actions = actionsOf(each);
+      if (actions === undefined) throw new Error("unreadable");
+      return actions;
+    });
+    return [...new Set(found)];
+  } catch {
+    return undefined;
+  }
+};
+
 /**
  * Whether a shell command line pushes, or opens, merges or closes a PR (or cuts a release, runs a
  * workflow, deletes a repo) by an ordinary spelling: `outwardKind` without the kind.

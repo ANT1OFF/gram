@@ -37,6 +37,7 @@ import { filesOn } from "./files.ts";
 import { reposOn } from "./repos.ts";
 import { gitOn } from "./git.ts";
 import { terminalsOnHost } from "./terminals.ts";
+import { threadPlacesOnHost } from "./thread-places.ts";
 import {
   connectHost,
   helloMismatch,
@@ -534,6 +535,42 @@ describe("a joined machine's file reads", () => {
       yield* attachmentsOnHost(attached);
       expect(readdirSync(attached)).toEqual(["t-new"]);
     }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "make a profile thread's folder across the wire, and refuse what the host refuses",
+    () =>
+      Effect.gen(function* () {
+        const clones = realpathSync(mkdtempSync(join(tmpdir(), "gram-host-clones-")));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(clones, { recursive: true })));
+        const places = (yield* connected(
+          {},
+          { threadPlaces: threadPlacesOnHost(yield* Proc, clones) },
+        )).threadPlaces!;
+        const thread = "t-profile" as ThreadId;
+        const { path } = yield* places.make(thread, [{ path: "AGENTS.md", content: "rules\n" }]);
+        expect(path).toBe(join(clones, ".threads", thread));
+        expect(readFileSync(join(path, "AGENTS.md"), "utf8")).toBe("rules\n");
+        // The host's own refusals arrive as they were worded there.
+        const escape = yield* places
+          .make("t-other" as ThreadId, [{ path: "../x", content: "x" }])
+          .pipe(Effect.flip);
+        expect(escape._tag).toBe("InvalidState");
+        const elsewhere = yield* places
+          .lay(tmpdir(), [{ path: "x.txt", content: "x" }])
+          .pipe(Effect.flip);
+        expect(elsewhere.message).toContain("only in a worktree of this machine's clones");
+        yield* places.remove(thread);
+        expect(existsSync(path)).toBe(false);
+        // A host built without them is asked for none, and one that serves none refuses.
+        const old = yield* connected({
+          capabilities: HOST_SERVES.filter((c) => c !== "thread-places"),
+        });
+        expect(old.threadPlaces).toBeUndefined();
+        const none = (yield* connected()).threadPlaces!;
+        const refused = yield* none.make(thread, []).pipe(Effect.flip);
+        expect(refused.message).toContain("makes no folders");
+      }).pipe(Effect.scoped, onHost),
   );
 
   it.effect("are absent for a host from a build without them, which still connects", () =>

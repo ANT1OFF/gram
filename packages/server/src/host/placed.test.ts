@@ -13,6 +13,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
+import type { HeadlessPlacement } from "./headless.ts";
 import { placedHost } from "./placed.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
@@ -123,7 +124,7 @@ const THREADS = [
 
 const KEPT = "kept-on-the-machine" as TerminalId;
 
-const setup = (online: { value: boolean }) => {
+const setup = (online: { value: boolean }, headless?: HeadlessPlacement) => {
   const calls: Array<string> = [];
   const local = recordingHost(LOCAL_HOST_ID, calls);
   const machine = recordingHost(MACHINE, calls, [KEPT]);
@@ -144,6 +145,8 @@ const setup = (online: { value: boolean }) => {
           : Effect.succeed(found);
       },
     },
+    undefined,
+    headless,
   );
   return { calls, placed };
 };
@@ -176,6 +179,27 @@ describe("placedHost", () => {
       yield* placed.checkouts.prepare({ kind: "newWorktree", branch: "b" }, [], LOCAL_PATH);
       yield* placed.checkouts.release(THREADS[0]!, { removeWorktree: { force: true } });
       expect(calls).toEqual([`${MACHINE}:prepare`, "local:prepare", `${MACHINE}:release`]);
+    }),
+  );
+
+  it.effect("leaves a machine's own clone as it is to a headless Gram", () =>
+    Effect.gen(function* () {
+      const { calls, placed } = setup({ value: true });
+      const refused = yield* placed.checkouts
+        .prepare({ kind: "current", hostId: MACHINE }, [], LOCAL_PATH)
+        .pipe(Effect.flip);
+      expect(refused).toMatchObject({
+        _tag: "InvalidState",
+        message: "A thread on a joined machine works in a new worktree there.",
+      });
+      expect(placed.checkouts.place).toBeUndefined();
+      expect(calls).toEqual([]);
+
+      const headless = setup({ value: true }, { machine: Effect.succeed(MACHINE) });
+      const request = yield* headless.placed.checkouts.place!({ kind: "current" });
+      expect(request).toEqual({ kind: "current", hostId: MACHINE });
+      yield* headless.placed.checkouts.prepare(request, [], LOCAL_PATH);
+      expect(headless.calls).toEqual([`${MACHINE}:prepare`]);
     }),
   );
 

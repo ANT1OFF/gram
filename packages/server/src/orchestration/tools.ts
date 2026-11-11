@@ -216,6 +216,18 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         }),
       needsApproval: (caller, _input, pinned) => orchestration.spawnNeedsApproval(caller, pinned),
       describe: (caller, input) => orchestration.describeSpawn(caller, input),
+      decision: (_caller, input) => ({
+        action: "spawn",
+        detail: {
+          title: input.title,
+          project: input.project,
+          feature: input.feature,
+          ...(input.alsoIn === undefined ? {} : { alsoIn: input.alsoIn }),
+          ...(input.model === undefined ? {} : { model: input.model }),
+          ...(input.machine === undefined ? {} : { machine: input.machine }),
+          ...(input.branch === undefined ? {} : { branch: input.branch }),
+        },
+      }),
       handle: (caller, input) =>
         orchestration.spawnWorker(caller, input).pipe(
           Effect.tap((spawned) =>

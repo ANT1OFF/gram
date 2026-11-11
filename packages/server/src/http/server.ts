@@ -1,10 +1,16 @@
+import { DecisionHook } from "../embedding/decision-hook.ts";
+import { EventSink } from "../embedding/event-sink.ts";
 import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { GramRpcs } from "@gram/contracts";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Schedule from "effect/Schedule";
 import * as Option from "effect/Option";
 import * as ByteSize from "effect/ByteSize";
 import * as Layer from "effect/Layer";
@@ -44,6 +50,12 @@ import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { OrchestratorAppToolsLive } from "../orchestration/tools.ts";
 import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
+import { Embedding } from "../embedding/embedding.ts";
+import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
+import { RepoEventsInboundLive } from "../embedding/repo-events.ts";
+import { ObjectStoreLive } from "../embedding/object-store.ts";
+import { TimersLive } from "../embedding/timers.ts";
+import { SuppliedSettingsLive } from "../settings/supplied.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { TerminalGate } from "../terminal/gate.ts";
 import { HostTerminals } from "../terminal/host-terminals.ts";
@@ -70,14 +82,25 @@ import type { GitPlatform } from "../git/platform.ts";
 import { LoopStallLog } from "../logging/loop-stalls.ts";
 import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { withEmbeddingSeed } from "../settings/embedding.ts";
+import { embeddingEnabled, withEmbeddingSeed } from "../settings/embedding.ts";
+import { ActorGuard, FrontedSignIn } from "../rpc/actor-guard.ts";
+import { markActor, unmarkActor } from "./actor.ts";
+import {
+  IDENTITY_HEADER,
+  SERVICE_ROLE,
+  SOCKET_LIFETIME_MS,
+  verifyIdentity,
+  type Actor,
+} from "./fronted-identity.ts";
 import { PreviewFiles } from "../preview/files.ts";
+import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
+  Headers,
   HttpPlatform,
   HttpRouter,
   HttpServer,
@@ -95,6 +118,7 @@ import { RpcHandlersLayer } from "../rpc/handlers/index.ts";
 import type { AgentHosts } from "../runtime/agent-hosts.ts";
 import type { TurnHooks } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { HOST_STOP_PATHS, hostStopRoute } from "./host-stop-routes.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { WorkspaceOutputs } from "../outputs/workspace-outputs.ts";
 import {
@@ -108,18 +132,52 @@ import {
 } from "./remote-access.ts";
 import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./remote-routes.ts";
 import { RemoteControl } from "./remote-control.ts";
+import { WORKSPACE_TRANSFER_PATHS, WorkspaceTransferRoutes } from "../transfer/routes.ts";
+import { WorkspaceTransfer } from "../transfer/workspace-transfer.ts";
 import {
   claudeTokenCaptureFor,
   HOST_PATHS,
   hostRoute,
   MACHINE_MANAGEMENT_PATHS,
+  MACHINES_LIST_PATH,
+  MACHINES_PROVISION_PATH,
+  MACHINES_REMOVE_PATH,
+  provisionedRoute,
   machineManagement,
   placedOnMachine,
 } from "./machine-routes.ts";
-import { releaseOfConfig, RemoteHosts } from "../host/remote-hosts.ts";
+import { releaseOfConfig, RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { authTarget } from "./auth-target.ts";
-import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } from "./auth.ts";
+import {
+  authorize,
+  contentSecurityPolicy,
+  makeLaunchToken,
+  MCP_PATH,
+  tokenCookieName,
+} from "./auth.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
+import {
+  ProvisionedListener,
+  ViaProvisionedListener,
+  withProvisionedListener,
+} from "./provisioned-listener.ts";
+
+/** How often the provisioned-host listener and its hosts are held to the hosted-features switch. */
+const PROVISIONED_SWITCH_POLL = Duration.seconds(3);
+
+/**
+ * What a fronting platform's own statement (`role` `service`) reaches, and all it reaches: the
+ * hosts it provisions and stops, and a workspace's way in and out. A person's statement reaches none of
+ * them. Before naming another path here, see that its handler needs no person: nothing behind
+ * these has a role to check or a window to answer.
+ */
+export const SERVICE_PATHS: ReadonlySet<string> = new Set([
+  MACHINES_PROVISION_PATH,
+  MACHINES_REMOVE_PATH,
+  MACHINES_LIST_PATH,
+  ...HOST_STOP_PATHS,
+  ...WORKSPACE_TRANSFER_PATHS,
+]);
 
 /** The per-launch secret carried by the boot URL. */
 export class LaunchToken extends Context.Service<LaunchToken, { readonly token: string }>()(
@@ -154,12 +212,58 @@ export const AuthMiddleware = HttpRouter.middleware(
     // and dials follow it, so none outlives the address it came in on.
     if (remoteHosts !== undefined) control.watch((origin) => remoteHosts.keepOrigin(origin));
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
+    // Absent in tests that serve the middleware alone.
+    const embedInbound = Option.getOrUndefined(yield* Effect.serviceOption(EmbedInbound));
+    /**
+     * Whether provisioned hosts are on: one of the hosted features, read at each dial and each
+     * registration so the switch holds at once.
+     */
+    const provisionedOn =
+      store === undefined
+        ? Effect.succeed(false)
+        : Effect.provideService(embeddingEnabled, ThreadStore, store);
+    // The listener is bound only while the switch is on, and hosts connected when it goes off
+    // are dropped: both within a few seconds of the change. They stay registered. A switch that
+    // can't be read counts as off.
+    const listener = Option.getOrUndefined(yield* Effect.serviceOption(ProvisionedListener));
+    if (remoteHosts?.provisionedOrigin !== undefined)
+      yield* provisionedOn.pipe(
+        Effect.catchCause(() => Effect.succeed(false)),
+        Effect.tap((on) => (on ? Effect.void : Effect.sync(remoteHosts.closeProvisioned))),
+        Effect.tap((on) => listener?.setOpen(on) ?? Effect.void),
+        Effect.catchCause(() => Effect.void),
+        Effect.repeat(Schedule.spaced(PROVISIONED_SWITCH_POLL)),
+        Effect.forkScoped,
+      );
+    // Stopping a joined machine and resuming its threads: a hosted feature, local app only.
+    const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
+    const stopDeps =
+      remoteHosts === undefined || store === undefined || runtimes === undefined
+        ? undefined
+        : { hosts: remoteHosts, store, runtimes, settings: store };
+    // Absent only in tests that serve the middleware alone, which take the launch token.
+    const fronted = Option.getOrUndefined(yield* Effect.serviceOption(FrontedSignIn));
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
       "referrer-policy": "no-referrer",
     };
+    const manageMachines = (hosts: RemoteHostsShape, path: string, provisionedOnly = false) =>
+      Effect.flatMap(provisionedOn, (on) =>
+        machineManagement(
+          hosts,
+          control.current(),
+          path,
+          releaseOfConfig(config),
+          undefined,
+          tokenCapture,
+          control.dialAccess(),
+          workerHosts === undefined ? undefined : (id) => workerHosts.machine(id).folders,
+          on,
+          provisionedOnly,
+        ),
+      );
     return (httpEffect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
@@ -171,15 +275,176 @@ export const AuthMiddleware = HttpRouter.middleware(
         };
         const target = authTarget(request.url);
         const path = target?.path;
+        // The provisioned-host listener serves a host's dial and its sessions' app tools, by their
+        // own proofs, and nothing a browser or the local app reaches: decided before any of it.
+        if (yield* ViaProvisionedListener)
+          return HttpServerResponse.setHeaders(
+            yield* provisionedRoute(remoteHosts, path, yield* provisionedOn, (origin) =>
+              Effect.gen(function* () {
+                return remoteHosts !== undefined &&
+                  (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers, origin))
+                  ? yield* httpEffect
+                  : HttpServerResponse.text("unauthorized: not a thread on a provisioned host", {
+                      status: 401,
+                    });
+              }),
+            ),
+            securityHeaders,
+          );
         const remote = control.current();
         const isRemote = remote !== undefined && request.headers["host"] === remote.host;
+        // People sign in through a fronting proxy: its signed statement, on every request, in
+        // place of the launch cookie and of a phone's pairing. A thread's agent on this machine
+        // still reaches its app tools by its own token over loopback, and a joined machine's host
+        // by its own proof, below.
+        const identity =
+          fronted?.config !== undefined &&
+          (yield* fronted.active) &&
+          // A person's request never goes there, so one that names a person isn't let by.
+          !(path === MCP_PATH && !isRemote && request.headers[IDENTITY_HEADER] === undefined) &&
+          !(
+            isRemote &&
+            path !== undefined &&
+            (path === HOST_MCP_PATH || HOST_PATHS.has(path)) &&
+            request.headers[IDENTITY_HEADER] === undefined
+          )
+            ? fronted.config
+            : undefined;
         const secureResponse = (response: HttpServerResponse.HttpServerResponse) =>
           HttpServerResponse.setHeaders(response, {
             ...securityHeaders,
-            ...(isRemote
-              ? { "content-security-policy": contentSecurityPolicy(port, remote.origin) }
-              : {}),
+            ...(identity !== undefined
+              ? { "content-security-policy": contentSecurityPolicy(port, identity.origin) }
+              : isRemote
+                ? { "content-security-policy": contentSecurityPolicy(port, remote.origin) }
+                : {}),
           });
+        if (identity !== undefined) {
+          if (target === undefined)
+            return secureResponse(
+              HttpServerResponse.text("forbidden: request target", { status: 403 }),
+            );
+          // A browser names the page a request comes from; only the proxy's own origin may ask.
+          const origin = request.headers["origin"];
+          if (origin !== undefined && origin !== identity.origin)
+            return secureResponse(
+              HttpServerResponse.text("forbidden: foreign origin", { status: 403 }),
+            );
+          const stated = verifyIdentity(identity, request.headers[IDENTITY_HEADER]);
+          if (!stated.ok) {
+            // Why is for the log alone: a caller learns nothing about what a statement lacked.
+            yield* Effect.logInfo("refused a request without a valid signed identity").pipe(
+              Effect.annotateLogs({ reason: stated.reason }),
+            );
+            return secureResponse(
+              HttpServerResponse.text("unauthorized: signed identity required", { status: 401 }),
+            );
+          }
+          // The platform in front, for itself: it registers and removes the hosts it starts and
+          // moves workspaces in and out, and reaches nothing a person does. Each call is on
+          // record with how it was answered.
+          if ("service" in stated) {
+            const servicePath = target.path;
+            // Only the paths named for it, only the one this statement was made for, and from
+            // the public origin as the rest of a fronted server is.
+            if (
+              !SERVICE_PATHS.has(servicePath) ||
+              stated.service.path !== servicePath ||
+              origin !== identity.origin
+            ) {
+              yield* Effect.logWarning("refused a service statement where it has no business").pipe(
+                Effect.annotateLogs({ caller: stated.service.id, path: servicePath }),
+              );
+              return secureResponse(
+                HttpServerResponse.text("forbidden: not for a service", { status: 403 }),
+              );
+            }
+            const { id: serviceId, name: serviceName } = stated.service;
+            const asService = unmarkLocalApp(
+              request.modify({ headers: Headers.remove(request.headers, IDENTITY_HEADER) }),
+            );
+            const answered = yield* (
+              HOST_STOP_PATHS.has(servicePath)
+                ? stopDeps === undefined
+                  ? Effect.succeed(
+                      HttpServerResponse.text("forbidden: no machines here", { status: 403 }),
+                    )
+                  : hostStopRoute(stopDeps, servicePath).pipe(
+                      Effect.provideService(HttpServerRequest.HttpServerRequest, asService),
+                    )
+                : MACHINE_MANAGEMENT_PATHS.has(servicePath)
+                  ? remoteHosts === undefined
+                    ? Effect.succeed(
+                        HttpServerResponse.text("forbidden: no machines here", { status: 403 }),
+                      )
+                    : manageMachines(remoteHosts, servicePath, true).pipe(
+                        Effect.provideService(HttpServerRequest.HttpServerRequest, asService),
+                      )
+                  : asCaller(httpEffect, asService)
+            ).pipe(
+              Effect.onExit((exit) =>
+                store === undefined
+                  ? Effect.void
+                  : store
+                      .appendActorEvents([
+                        {
+                          at: Date.now(),
+                          actor: { id: serviceId, name: serviceName, role: SERVICE_ROLE },
+                          action: servicePath,
+                          data: Exit.isSuccess(exit)
+                            ? { status: exit.value.status }
+                            : Cause.hasInterruptsOnly(exit.cause)
+                              ? { interrupted: true }
+                              : { failed: true },
+                        },
+                      ])
+                      .pipe(
+                        // The call has happened either way: its answer isn't lost to the record.
+                        Effect.catchCause((cause) =>
+                          Effect.logError("a service call went unrecorded", cause),
+                        ),
+                      ),
+              ),
+            );
+            return secureResponse(answered);
+          }
+          // Phone access, joining machines and moving a workspace are for this machine's own
+          // sign-in or the platform's, never a person signed in through the proxy. The agents'
+          // and hosts' routes take a thread's token or a host's proof, never a person: a person
+          // let through to them would act with neither a role nor a record.
+          if (
+            REMOTE_MANAGEMENT_PATHS.has(target.path) ||
+            MACHINE_MANAGEMENT_PATHS.has(target.path) ||
+            HOST_STOP_PATHS.has(target.path) ||
+            WORKSPACE_TRANSFER_PATHS.has(target.path) ||
+            HOST_PATHS.has(target.path) ||
+            target.path === MCP_PATH ||
+            target.path === HOST_MCP_PATH
+          )
+            return secureResponse(
+              HttpServerResponse.text("forbidden: not available behind a proxy", { status: 403 }),
+            );
+          const served = asCaller(
+            httpEffect,
+            unmarkLocalApp(
+              request.modify({ headers: Headers.remove(request.headers, IDENTITY_HEADER) }),
+            ),
+            stated.actor,
+          );
+          return secureResponse(
+            target.path === "/ws"
+              ? // A socket keeps the person and role it opened with, so it is closed after a
+                // while: the app connects again, and the proxy states who they are now.
+                yield* Effect.raceFirst(
+                  served,
+                  Effect.as(
+                    Effect.sleep(identity.socketLifetimeMs ?? SOCKET_LIFETIME_MS),
+                    HttpServerResponse.text("signed out", { status: 401 }),
+                  ),
+                )
+              : yield* served,
+          );
+        }
         if (request.headers["tailscale-funnel-request"] !== undefined)
           return secureResponse(
             HttpServerResponse.text("forbidden: private access only", { status: 403 }),
@@ -188,6 +453,20 @@ export const AuthMiddleware = HttpRouter.middleware(
           return secureResponse(
             HttpServerResponse.text("forbidden: request target", { status: 403 }),
           );
+        // An embedding platform's own service: its bearer token alone, before the loopback checks,
+        // since it reaches the server by its address inside the deployment. `undefined` while the
+        // hosted features are off, and the request is then any other.
+        // Never over phone access: a request that came in by Tailscale is a person's device.
+        if (
+          embedInbound !== undefined &&
+          !isRemote &&
+          request.headers["tailscale-user-login"] === undefined &&
+          path !== undefined &&
+          path.startsWith(EMBED_PREFIX)
+        ) {
+          const answered = yield* embedInbound.respond(request, path);
+          if (answered !== undefined) return secureResponse(answered);
+        }
         // Remote bootstrap has no app assets and exposes no data. The secret is a fragment.
         if (isRemote && path === REMOTE_CONNECT_PATH && request.method === "GET") {
           if (
@@ -239,7 +518,7 @@ export const AuthMiddleware = HttpRouter.middleware(
             request.method === "POST" &&
             request.headers["origin"] === undefined &&
             remoteHosts !== undefined &&
-            (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers));
+            (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers, remote.origin));
           return secureResponse(
             allowed
               ? yield* httpEffect
@@ -280,35 +559,31 @@ export const AuthMiddleware = HttpRouter.middleware(
             response =
               path !== undefined && REMOTE_MANAGEMENT_PATHS.has(path)
                 ? yield* remoteManagement(control, path, isRemote ? remote : undefined)
-                : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
-                  ? isRemote || remoteHosts === undefined
+                : path !== undefined && HOST_STOP_PATHS.has(path)
+                  ? isRemote || stopDeps === undefined
                     ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
-                    : yield* machineManagement(
-                        remoteHosts,
-                        control.current(),
-                        path,
-                        releaseOfConfig(config),
-                        undefined,
-                        tokenCapture,
-                        control.dialAccess(),
-                        workerHosts === undefined
-                          ? undefined
-                          : (id) => workerHosts.machine(id).folders,
-                      )
-                  : isRemote && path === "/ws"
-                    ? yield* closedOnRevoke(
-                        remote,
-                        remote.sessionOf(authRequest),
-                        asCaller(httpEffect, unmarkLocalApp(request)),
-                      )
-                    : // The local app's own connection, which the RPC handlers can tell apart
-                      // from a phone's (`isLocalApp`); anything else says nothing of itself.
-                      yield* asCaller(
-                        httpEffect,
-                        !isRemote && path === "/ws"
-                          ? markLocalApp(request)
-                          : unmarkLocalApp(request),
-                      );
+                    : yield* hostStopRoute(stopDeps, path)
+                  : // A workspace's bundle leaves and arrives through the local app only.
+                    isRemote && path !== undefined && WORKSPACE_TRANSFER_PATHS.has(path)
+                    ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
+                    : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
+                      ? isRemote || remoteHosts === undefined
+                        ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
+                        : yield* manageMachines(remoteHosts, path)
+                      : isRemote && path === "/ws"
+                        ? yield* closedOnRevoke(
+                            remote,
+                            remote.sessionOf(authRequest),
+                            asCaller(httpEffect, unmarkLocalApp(request)),
+                          )
+                        : // The local app's own connection, which the RPC handlers can tell apart
+                          // from a phone's (`isLocalApp`); anything else says nothing of itself.
+                          yield* asCaller(
+                            httpEffect,
+                            !isRemote && path === "/ws"
+                              ? markLocalApp(request)
+                              : unmarkLocalApp(request),
+                          );
             break;
           case "boot":
             response = yield* HttpServerResponse.redirect("/", { status: 302 }).pipe(
@@ -354,7 +629,14 @@ export const AuthMiddleware = HttpRouter.middleware(
 const asCaller = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   request: HttpServerRequest.HttpServerRequest,
-) => Effect.provideService(effect, HttpServerRequest.HttpServerRequest, request);
+  actor?: Actor,
+) =>
+  Effect.provideService(
+    effect,
+    HttpServerRequest.HttpServerRequest,
+    // Only a verified statement names an actor: any other caller's word for one is taken off.
+    actor === undefined ? unmarkActor(request) : markActor(request, actor),
+  );
 
 /**
  * Gives a file response's stream an `'error'` listener as soon as it exists. Effect's Node
@@ -420,7 +702,10 @@ export const rpcRoutes = <Rpcs extends Rpc.Any, E, R>(
     Layer.provide(RpcSerialization.layerJson),
   );
 
-const RpcRoutes = rpcRoutes(GramRpcs, RpcHandlersLayer);
+// Every RPC behind the actor guard, which does nothing unless people sign in through a proxy.
+const RpcRoutes = rpcRoutes(GramRpcs.middleware(ActorGuard), RpcHandlersLayer).pipe(
+  Layer.provide(ActorGuard.layer),
+);
 
 /** Store, hub, runtimes, app tools and git checkouts; needs agents, hooks, git and config. */
 export const ServerCore = Layer.unwrap(
@@ -450,6 +735,8 @@ export const ServerCore = Layer.unwrap(
         BrowserAppToolsLive.pipe(Layer.provide(PanePort.layer)),
         DevServerAppToolsLive,
         ThreadAssistLive,
+        RepoEventsInboundLive,
+        SuppliedSettingsLive,
       )
         // Above the merges, which it asks again when a dependency merges; a `pipe` takes twenty.
         .pipe(Layer.provideMerge(PrDependenciesLive))
@@ -503,7 +790,13 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           // Below the condition wakes, whose `versionChanged` reads a CLI's version off its runs.
-          Layer.provideMerge(Layer.mergeAll(GitStatePublisherLive, LaunchChecksCache.layer)),
+          Layer.provideMerge(
+            Layer.mergeAll(
+              GitStatePublisherLive,
+              // A headless server looks for no CLI on this machine: its agents are its machines'.
+              config.headless === true ? LaunchChecksCache.layerNone : LaunchChecksCache.layer,
+            ),
+          ),
           Layer.provideMerge(ReviewRequestsLive),
           Layer.provideMerge(Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer)),
           Layer.provideMerge(ThreadVisibility.layer),
@@ -524,7 +817,9 @@ export const ServerCore = Layer.unwrap(
           // and port scan, and the machines joined to it. One host process serves this machine's
           // worker host, the worktrees its checkouts make, and the Claude sessions it can run.
           // `CheckoutService` above here makes each thread's checkout on the machine it is placed on.
-          Layer.provideMerge(WorkerHosts.placedCheckouts),
+          // Beside it, attachments, docs and outputs mirrored to an embedding deployment's object
+          // store, under the outputs and the handlers that read through it.
+          Layer.provideMerge(Layer.mergeAll(WorkerHosts.placedCheckouts, ObjectStoreLive)),
           Layer.provideMerge(
             WorkerHosts.layerLocalOn.pipe(
               Layer.provideMerge(
@@ -532,28 +827,51 @@ export const ServerCore = Layer.unwrap(
                   GitCheckoutLive.pipe(Layer.provide(LocalHostProcess.worktrees)),
                   ClaudeAiSeenLive,
                   HostTerminals.layer,
-                  AgentHostsThroughHost,
+                  // A headless server has no agents of its own, whatever it was given.
+                  agentHostsOrHeadless(AgentHostsThroughHost),
                 ),
               ),
-              Layer.provideMerge(LocalHostProcess.layer),
+              // Nor a host process: nothing of a thread's runs on this machine.
+              Layer.provideMerge(
+                config.headless === true
+                  ? LocalHostProcess.layerWith({ hostProcess: false })
+                  : LocalHostProcess.layer,
+              ),
+            ),
+          ),
+          // The decision hook and event sink of an embedding deployment: both do nothing unless
+          // their endpoint is configured and hosted features are on. Under the runtimes and the
+          // orchestration, which ask the one and tell the other.
+          Layer.provideMerge(
+            DecisionHook.layer.pipe(
+              Layer.provideMerge(EventSink.layer),
+              Layer.provideMerge(
+                // Low enough for the port scan and the limit poll to rest while no window shows.
+                Layer.mergeAll(
+                  EventHub.layer,
+                  TerminalGate.layer,
+                  PreviewFiles.layer,
+                  AppActivityLive,
+                  ProcessRoots.layer,
+                  // The inbound paths and timers of an embedding deployment, inert while the
+                  // hosted features are off.
+                  TimersLive.pipe(
+                    Layer.provideMerge(EmbedInbound.layer),
+                    Layer.provideMerge(Embedding.layer),
+                  ),
+                ),
+              ),
             ),
           ),
           Layer.provideMerge(
-            // Low enough for the port scan and the limit poll to rest while no window shows.
-            Layer.mergeAll(
-              EventHub.layer,
-              TerminalGate.layer,
-              PreviewFiles.layer,
-              AppActivityLive,
-              ProcessRoots.layer,
-            ),
-          ),
-          Layer.provideMerge(
-            withEmbeddingSeed(
-              ThreadStore.layerSqlite(databaseFile, {
-                checkpointOffLoop: databaseFile !== ":memory:",
-                writerOffLoop: databaseFile !== ":memory:",
-              }),
+            // `GRAM_EMBEDDING` first, since a headless server needs the hosted features on.
+            withHeadlessCheck(
+              withEmbeddingSeed(
+                ThreadStore.layerSqlite(databaseFile, {
+                  checkpointOffLoop: databaseFile !== ":memory:",
+                  writerOffLoop: databaseFile !== ":memory:",
+                }),
+              ),
             ),
           ),
         )
@@ -582,24 +900,48 @@ const createHttpListener = () => {
 
 /** The HTTP + WebSocket server on 127.0.0.1, with the core services it serves. */
 export const ServerLayer: Layer.Layer<
-  HttpServer.HttpServer | LaunchToken | McpTokens | ThreadRuntimes | ThreadStore | EventHub,
+  | HttpServer.HttpServer
+  | ProvisionedListener
+  | LaunchToken
+  | McpTokens
+  | ThreadRuntimes
+  | ThreadStore
+  | EventHub,
   unknown,
   AgentHosts | ServerConfig | GitPlatform | TurnHooks
 > = Layer.unwrap(
   Effect.gen(function* () {
-    const { port, listenHost } = yield* ServerConfig;
-    return HttpRouter.serve(Layer.mergeAll(RpcRoutes, StaticRoutes, McpRoute, AuthMiddleware), {
-      disableListenLog: true,
-      disableLogger: true,
-    }).pipe(
+    const { port, listenHost, provisionedHosts } = yield* ServerConfig;
+    /** The app's own listener, and the provisioned hosts' TLS one beside it when configured. */
+    const listeners = (options: NodeHttpServer.Options) =>
+      withProvisionedListener(
+        NodeHttpServer.layerServer(createHttpListener, options),
+        provisionedHosts,
+        options,
+      );
+    return HttpRouter.serve(
+      Layer.mergeAll(
+        RpcRoutes,
+        StaticRoutes,
+        McpRoute,
+        WorkspaceTransferRoutes.pipe(Layer.provide(WorkspaceTransfer.layer)),
+        AuthMiddleware,
+      ),
+      {
+        disableListenLog: true,
+        disableLogger: true,
+      },
+    ).pipe(
       Layer.merge(LoopStallLog),
+      Layer.provide(FrontedSignIn.layer),
       Layer.provideMerge(ServerCore),
       Layer.provide(RemoteControl.layer),
       Layer.provideMerge(RemoteHosts.layer),
       Layer.provideMerge(McpTokens.layer),
       Layer.provideMerge(LaunchToken.layer),
+      Layer.provideMerge(NodeHttpServer.layerHttpServices),
       Layer.provideMerge(
-        NodeHttpServer.layer(createHttpListener, {
+        listeners({
           host: listenHost ?? LOOPBACK_HOST,
           port,
           // Close request/WebSocket scopes before awaiting the listener's final close. The

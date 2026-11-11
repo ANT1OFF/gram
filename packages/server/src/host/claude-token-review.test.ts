@@ -1,6 +1,7 @@
 // Regressions for the independent security review of #314 (head b15b9662). Each case failed on
 // that head. Fixtures are synthetic: no real token, CLI, shell profile or account is read.
 
+import { makeStopMarks } from "./stop-marks.ts";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -92,6 +93,7 @@ const hostsOver = (
   online: () => boolean = () => true,
 ): RemoteHostsShape => ({
   machines,
+  stops: makeStopMarks(),
   connection: (id) =>
     online() && machines.get(id) !== undefined
       ? Effect.succeed({ claude } as unknown as HostConnection)
@@ -113,6 +115,8 @@ const hostsOver = (
   checkSignIn: () => Promise.resolve(undefined),
   remove: (id) => machines.remove(id),
   keepOrigin: () => {},
+  provisionedOrigin: undefined,
+  closeProvisioned: () => {},
 });
 
 const post = (hosts: RemoteHostsShape, path: string, body: unknown, capture?: ClaudeTokenCapture) =>

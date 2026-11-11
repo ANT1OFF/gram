@@ -3,7 +3,7 @@ name: Scaffold boundaries
 on:
   # Branch pushes are covered by their pull request run.
   push:
-    branches: [main]
+    branches: [main, "integration/**"]
   pull_request:
 
 concurrency:

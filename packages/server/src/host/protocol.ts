@@ -15,6 +15,7 @@ import {
   AnswerUndelivered,
   type HostAgentReload,
   type HostStatus,
+  type HostStopPrepared,
   type HostUpdateCheck,
   type HostUpdateProgress,
   HostUpdateRefused,
@@ -65,6 +66,7 @@ import {
   SocketServer,
 } from "../platform/unstable.ts";
 import type { HostAttachments, HostFileReads } from "./file-reads.ts";
+import type { HostThreadPlaces } from "./thread-places.ts";
 import type { HostCheckRequest, HostChecks } from "./checks.ts";
 import type { HostFiles } from "./files.ts";
 import type { HostFolders } from "./folders.ts";
@@ -72,6 +74,7 @@ import { NOT_A_CLAUDE_TOKEN } from "./host-config.ts";
 import type { HostGit } from "./git.ts";
 import type { HostRepos } from "./repos.ts";
 import { type Admission, UPDATING } from "./admission.ts";
+import { type HostStop, type StopRequest, STOPPING } from "./stop.ts";
 import type { HostSessionsService } from "./sessions.ts";
 import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
 import type {
@@ -117,6 +120,11 @@ export interface HostService {
   readonly reads: HostFileReads;
   /** The files users attach to its sessions. */
   readonly attachments: HostAttachments;
+  /**
+   * Its places for threads started from a profile. Every built host has them; a test's may leave
+   * them out, and its calls are then refused.
+   */
+  readonly threadPlaces?: HostThreadPlaces;
   /** The clones it keeps of repositories, for the workers placed on it. */
   readonly repos: HostRepos;
   readonly worktrees: HostWorktrees;
@@ -134,6 +142,8 @@ export interface HostService {
   readonly update?: HostUpdater;
   /** Whether it takes new work now; an update closes it before the restart (`admission.ts`). */
   readonly admission?: Admission;
+  /** Its readiness to be stopped with its disk kept (`stop.ts`). */
+  readonly stop?: HostStop;
 }
 
 /** A host's update of itself, as it serves `host.update.*`. */
@@ -168,6 +178,7 @@ export const HOST_SERVES: ReadonlyArray<HostCapability> = [
   "checks",
   "repo-identity",
   "folders",
+  "thread-places",
 ];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
@@ -232,14 +243,24 @@ const defined = <A extends object>(value: A): Defined<A> =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Defined<A>;
 
 const noFolders = new HostFailed({ message: "This host doesn't list its folders." });
+const noThreadPlaces = new HostFailed({
+  message: "This host makes no folders for threads started from a profile.",
+});
 
 /** The protocol's handlers over a host's own folders, worktrees, git state and scan. */
 const handlersFor = (host: HostService) => {
   /** New work, refused while an update has closed the gate. */
-  const gated = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  const admitted = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     host.admission === undefined
       ? effect
       : host.admission.admit(effect, () => new HostFailed({ message: UPDATING }));
+  /** New work, refused too while the host is readied to stop. */
+  const gated = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Effect.suspend(() =>
+      host.stop?.stopping() === true
+        ? Effect.fail(new HostFailed({ message: STOPPING }))
+        : admitted(effect),
+    );
   return HostRpcs.toLayer(
     HostRpcs.of({
       "host.hello": () => Effect.succeed(host.hello),
@@ -264,6 +285,16 @@ const handlersFor = (host: HostService) => {
       "host.attachments.put": ({ threadId, name, data }) =>
         host.attachments.put(threadId, name, data),
       "host.attachments.remove": ({ threadId }) => host.attachments.remove(threadId),
+      "host.threadPlaces.make": ({ threadId, files }) =>
+        host.threadPlaces === undefined
+          ? Effect.fail(noThreadPlaces)
+          : host.threadPlaces.make(threadId, files),
+      "host.threadPlaces.lay": ({ checkout, files }) =>
+        host.threadPlaces === undefined
+          ? Effect.fail(noThreadPlaces)
+          : host.threadPlaces.lay(checkout, files),
+      "host.threadPlaces.remove": ({ threadId }) =>
+        host.threadPlaces === undefined ? Effect.void : host.threadPlaces.remove(threadId),
       // Never a defect: one from a handler breaks the whole connection, not just this call.
       "host.status": () =>
         (host.status ?? Effect.succeed(UNKNOWN_STATUS)).pipe(
@@ -281,6 +312,11 @@ const handlersFor = (host: HostService) => {
             message: "This host doesn't update itself.",
           }),
         ),
+      "host.stop.prepare": (request) =>
+        host.stop === undefined
+          ? Effect.fail(new HostFailed({ message: "This host can't be readied to stop." }))
+          : host.stop.prepare(request),
+      "host.stop.cancel": () => host.stop?.cancel ?? Effect.void,
       "host.ports.scan": () =>
         host.scan.pipe(
           Effect.map(scanToWire),
@@ -641,6 +677,8 @@ export interface HostConnection {
   readonly reads: HostFileReads | undefined;
   /** Absent for a host from a build that doesn't serve `attachments`. */
   readonly attachments: HostAttachments | undefined;
+  /** Absent for a host from a build that doesn't serve `thread-places`. */
+  readonly threadPlaces: HostThreadPlaces | undefined;
   readonly repos: {
     readonly ensure: (url: string) => Effect.Effect<{ readonly path: string }, WorktreeError>;
     /** Absent for a host from a build that doesn't serve `repo-identity`. */
@@ -669,6 +707,16 @@ export interface HostConnection {
     readonly start: (
       release: string,
     ) => Stream.Stream<HostUpdateProgress, HostUpdateRefused | HostUnavailable>;
+  };
+  /**
+   * Readies it to be stopped with its disk kept, and takes that back. A host built before these
+   * calls, or one that doesn't answer, fails with `HostFailed` or `HostUnavailable`.
+   */
+  readonly stop: {
+    readonly prepare: (
+      request: StopRequest,
+    ) => Effect.Effect<HostStopPrepared, HostFailed | HostUnavailable>;
+    readonly cancel: Effect.Effect<void, HostFailed | HostUnavailable>;
   };
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
@@ -791,6 +839,13 @@ const STATUS_TIMEOUT = "30 seconds";
 
 /** A host that can't say what it can run. */
 export const UNKNOWN_STATUS: HostStatus = { claudeSignIn: "unknown", tools: [] };
+
+/** What a stop call says when the host didn't take it. */
+export const HOST_STOP_UNANSWERED =
+  "This machine's gram-host can't be readied to stop. It may be older than this Gram.";
+
+/** How long a host gets to commit and push its threads' work in progress before a stop. */
+const STOP_TIMEOUT = "10 minutes";
 
 /** How long a host gets to say hello before it counts as not answering. */
 const HELLO_TIMEOUT = "5 seconds";
@@ -983,6 +1038,19 @@ export const connectHost = (
       // A host that went holds nothing more to delete now; its own prune takes the rest.
       remove: (threadId) =>
         guarded(client["host.attachments.remove"]({ threadId })).pipe(Effect.ignore),
+    };
+    const threadPlaces: HostThreadPlaces = {
+      make: (threadId, laid) =>
+        guarded(client["host.threadPlaces.make"]({ threadId, files: laid })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      lay: (checkout, laid) =>
+        guarded(client["host.threadPlaces.lay"]({ checkout, files: laid })).pipe(
+          Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
+        ),
+      // A host that went keeps the folder; nothing runs in it, and its id is never used again.
+      remove: (threadId) =>
+        guarded(client["host.threadPlaces.remove"]({ threadId })).pipe(Effect.ignore),
     };
     const worktreeCall = <A, E extends { readonly _tag: string; readonly message?: string }>(
       call: Effect.Effect<A, E>,
@@ -1297,6 +1365,22 @@ export const connectHost = (
           ),
         ),
     };
+    /**
+     * A stop call: the host's own refusal and a host that went are kept as they are, and a broken
+     * stream ends the host. Anything else is a host built before the call, whose unknown-request
+     * defect is a failed call, not a broken stream.
+     */
+    const stopCall = <A, E extends { readonly _tag: string }>(call: Effect.Effect<A, E>) =>
+      guarded(call).pipe(
+        Effect.catchCause((cause): Effect.Effect<never, HostFailed | HostUnavailable> => {
+          const error = Cause.squash(cause);
+          if (error instanceof HostFailed || error instanceof HostUnavailable)
+            return Effect.fail(error);
+          return ended
+            ? Effect.fail(unavailable(HOST_NOT_ANSWERING))
+            : Effect.fail(new HostFailed({ message: HOST_STOP_UNANSWERED }));
+        }),
+      );
     return {
       hello,
       files,
@@ -1304,6 +1388,7 @@ export const connectHost = (
       folders: hello.capabilities.includes("folders") ? folders : undefined,
       reads: hello.capabilities.includes("file-reads") ? reads : undefined,
       attachments: hello.capabilities.includes("attachments") ? attachments : undefined,
+      threadPlaces: hello.capabilities.includes("thread-places") ? threadPlaces : undefined,
       ...(hello.capabilities.includes("checks") ? { checks } : {}),
       repos: {
         ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })),
@@ -1333,6 +1418,24 @@ export const connectHost = (
         }),
         Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
       ),
+      stop: {
+        prepare: (request) =>
+          stopCall(
+            client["host.stop.prepare"](
+              defined({
+                checkouts: request.checkouts,
+                force: request.force,
+                remote: request.remote,
+              }),
+            ).pipe(
+              Effect.timeoutOrElse({
+                duration: STOP_TIMEOUT,
+                orElse: () => Effect.fail(unavailable(HOST_NOT_ANSWERING)),
+              }),
+            ),
+          ),
+        cancel: stopCall(client["host.stop.cancel"]()),
+      },
       ...(hello.capabilities.includes("update")
         ? {
             update: {

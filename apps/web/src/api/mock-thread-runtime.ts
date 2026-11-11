@@ -60,6 +60,8 @@ export interface ThreadRuntime {
   heldAt?: string | undefined;
   /** `restartSession` came mid-turn: the session restarts once the turn ends. */
   restartAfterTurn: boolean;
+  /** Its folder went mid-turn: the turn ends interrupted and the thread rests cold, as stopped. */
+  folderGone?: boolean;
   /** When its scripted tool calls ran, as the server stamps `toolTimes`. */
   toolClock: MockToolClock;
   /** The running turn's last usage report, which its reply is stamped with as the turn ends. */

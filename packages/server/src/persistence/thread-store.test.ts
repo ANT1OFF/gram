@@ -591,6 +591,42 @@ describe("ThreadStore", () => {
   );
 });
 
+describe("supplied settings", () => {
+  it.effect("apply over reads and writes only while the hosted features are on", () =>
+    withStore(
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        // Kept, and nothing yet: the hosted features are off.
+        const off = yield* store.putSuppliedSettings({ logLevel: "debug" });
+        expect(off.logLevel).toBe("info");
+        expect(yield* store.getSuppliedSettings).toEqual({ logLevel: "debug" });
+
+        yield* store.updateSettings((s) =>
+          applySettingsPatch(s, { experimental: { embedding: true } }),
+        );
+        expect((yield* store.getSettings).logLevel).toBe("debug");
+        // A write from inside doesn't move it, whatever path it came by.
+        const written = yield* store.updateSettings((s) => ({ ...s, logLevel: "warn" }));
+        expect(written.logLevel).toBe("debug");
+        yield* store.putSettings({ ...(yield* store.getSettings), logLevel: "error" });
+        expect((yield* store.getSettings).logLevel).toBe("debug");
+
+        // Replaced whole: what is no longer supplied keeps its value and takes writes again.
+        yield* store.putSuppliedSettings({ notifications: { sounds: false } });
+        expect(yield* store.getSettings).toMatchObject({
+          logLevel: "debug",
+          notifications: { sounds: false, native: true },
+        });
+        expect((yield* store.updateSettings((s) => ({ ...s, logLevel: "warn" }))).logLevel).toBe(
+          "warn",
+        );
+        yield* store.putSuppliedSettings(undefined);
+        expect(yield* store.getSuppliedSettings).toBeUndefined();
+      }),
+    ),
+  );
+});
+
 const report = (threadId: string, at: number): WorkerReport => ({
   threadId: threadId as ThreadId,
   state: "progress",

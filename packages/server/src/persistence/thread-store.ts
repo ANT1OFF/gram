@@ -26,6 +26,10 @@ import {
   ProjectLocalCheck,
   applyProjectSettingsWrites,
   type SettingsWrite,
+  SettingsPatch,
+  applySettingsPatch,
+  embeddingOn,
+  settingsPatchPaths,
   ProjectId,
   SeenConnector,
   Settings,
@@ -56,7 +60,7 @@ import {
   type WaitId,
   type WaitResolver,
   ThreadId,
-  type TurnEndReason,
+  TurnEndReason,
   type TurnId,
   type WorkspaceId,
   type UsageOverview,
@@ -135,6 +139,43 @@ interface TaskRecord {
 interface WorkerReportRecord {
   readonly seq: number;
   readonly report: WorkerReport;
+}
+
+/** One turn of a conversation that moves between two Grams; its file checkpoint stays behind. */
+export interface MovedTurn {
+  readonly id: TurnId;
+  readonly startedAt: number;
+  readonly endedAt?: number;
+  readonly reason?: TurnEndReason;
+  readonly usage?: UsageSummary;
+}
+
+/** A thread's conversation as it moves between two Grams. */
+export interface MovedHistory {
+  readonly messages: ReadonlyArray<{
+    readonly message: GramUIMessage;
+    readonly turnId?: TurnId;
+  }>;
+  readonly turns: ReadonlyArray<MovedTurn>;
+}
+
+/** What `stageMovedWorkspace` writes. */
+export interface MovedWorkspace {
+  /** As it is stored here: this server's project ids, and no orchestrator in the slot. */
+  readonly state: WorkspaceState;
+  readonly orchestrator?:
+    | (MovedHistory & {
+        /** The closed record a reopen opens: this server's project, checkout and mode. */
+        readonly thread: Thread;
+        readonly closedAt: number;
+        readonly plan?: ThreadPlan | undefined;
+        readonly turnPlan?: ReadonlyArray<PlanItem> | undefined;
+      })
+    | undefined;
+  readonly featureCards: ReadonlyArray<FeatureCard>;
+  readonly events: ReadonlyArray<OrchestrationEventEntry>;
+  /** The encoded outbox its first digest here is built from. */
+  readonly outbox: string;
 }
 
 /** A worker's latest report, with the interface its reports last stated. */
@@ -242,6 +283,10 @@ export const pruneHistory = (sql: SqlClient.SqlClient, now: number) =>
             AND seq NOT IN (SELECT seq FROM settings_audit ORDER BY seq DESC
               LIMIT ${SETTINGS_AUDIT_KEPT_ROWS})
             AND (request_id IS NULL OR request_id NOT IN (SELECT id FROM requests))`;
+        yield* sql`DELETE FROM actor_events
+          WHERE at < ${now - ACTOR_EVENTS_KEPT_MS}
+            AND seq NOT IN (SELECT seq FROM actor_events ORDER BY seq DESC
+              LIMIT ${ACTOR_EVENTS_KEPT_ROWS})`;
         yield* sql`DELETE FROM helper_usage WHERE day < ${utcDayOf(now - HELPER_USAGE_KEPT_MS)}`;
         yield* sql`DELETE FROM helper_events WHERE day < ${utcDayOf(now - HELPER_EVENTS_KEPT_MS)}`;
       }),
@@ -254,6 +299,26 @@ export const pruneHistory = (sql: SqlClient.SqlClient, now: number) =>
         ),
       ),
     );
+
+/** One thing a signed-in person did (`actor_events`). */
+export interface ActorEventEntry {
+  readonly at: number;
+  readonly actor: {
+    readonly id: string;
+    readonly name: string;
+    readonly role: string;
+  };
+  /** The call that did it, by its RPC tag (`thread.send`, `settings.set`). */
+  readonly action: string;
+  readonly threadId?: string | undefined;
+  readonly workspaceId?: string | undefined;
+  /** What else identifies it: ids and names of what changed, never what was typed. */
+  readonly data: Readonly<Record<string, unknown>>;
+}
+
+export interface ActorEventRecord extends ActorEventEntry {
+  readonly seq: number;
+}
 
 /** Who resolved a Waiting on you item, when, and what they said of it. */
 export interface WaitResolution {
@@ -279,6 +344,9 @@ export const ORCHESTRATION_EVENTS_KEPT_MS = 90 * DAY_MS;
  */
 export const SETTINGS_AUDIT_KEPT_MS = 365 * DAY_MS;
 export const SETTINGS_AUDIT_KEPT_ROWS = 1_000;
+/** `actor_events`: a year, and the newest 10,000 whatever their age. */
+export const ACTOR_EVENTS_KEPT_MS = 365 * DAY_MS;
+export const ACTOR_EVENTS_KEPT_ROWS = 10_000;
 /** `helper_usage`: 400 UTC days of daily totals, of which the helper reads today's. */
 export const HELPER_USAGE_KEPT_MS = 400 * DAY_MS;
 /** `helper_events`: 30 UTC days of daily counts, of which the helper reads the last 7. */
@@ -424,6 +492,12 @@ export interface ThreadStoreShape {
   takeNewestClosed: Effect.Effect<
     { readonly closed: ClosedThread; readonly workers: ReadonlyArray<ClosedWorker> } | undefined
   >;
+  /** `takeNewestClosed` of one thread by its id; `undefined` when it isn't on the list or can't be read. */
+  takeClosed(
+    threadId: ThreadId,
+  ): Effect.Effect<
+    { readonly closed: ClosedThread; readonly workers: ReadonlyArray<ClosedWorker> } | undefined
+  >;
 
   listMessages(threadId: ThreadId): Effect.Effect<ReadonlyArray<GramUIMessage>>;
   /** The thread's user messages in order, without reading or decoding the replies between them. */
@@ -557,6 +631,11 @@ export interface ThreadStoreShape {
   ): Effect.Effect<void>;
   listTurns(threadId: ThreadId): Effect.Effect<ReadonlyArray<TurnRecord>>;
   /**
+   * A live thread's conversation as stored, for a move to another Gram: its messages in order, each
+   * with the turn it was written in, and its turns with what each used.
+   */
+  exportHistory(threadId: ThreadId): Effect.Effect<MovedHistory>;
+  /**
    * Ends every turn still open as `interrupted` at `endedAt` (or its start, if later) and returns
    * them. Only for boot, when no agent process is left to own one.
    */
@@ -670,6 +749,14 @@ export interface ThreadStoreShape {
    * what a thread said, which the next report puts back.
    */
   getSeenConnectors: Effect.Effect<ReadonlyArray<SeenConnector>>;
+  /**
+   * The settings an embedding deployment supplies (`settings/supplied.ts`), kept beside the
+   * settings under their own key. While the hosted features are on they are applied over every
+   * read and every write of the settings, so nothing inside can change what they set.
+   */
+  getSuppliedSettings: Effect.Effect<SettingsPatch | undefined>;
+  /** Replaces what is supplied, `undefined` for nothing; answers the settings as they now read. */
+  putSuppliedSettings(patch: SettingsPatch | undefined): Effect.Effect<Settings>;
   /** Read-modify-write in one transaction; `f` answering `undefined` writes nothing. */
   updateSeenConnectors(
     f: (seen: ReadonlyArray<SeenConnector>) => ReadonlyArray<SeenConnector> | undefined,
@@ -706,6 +793,22 @@ export interface ThreadStoreShape {
    */
   removeWorkspace(id: WorkspaceId): Effect.Effect<void, NotFound | InvalidState>;
   /**
+   * A workspace moved here from another Gram, written in one transaction or not at all: its row
+   * with nobody holding the slot, its feature cards, audit and outbox, and its orchestrator as a
+   * closed thread with its conversation, for a reopen to open. `InvalidState` when the workspace,
+   * the thread or one of its turns is already here: nothing of this server's is ever replaced.
+   */
+  stageMovedWorkspace(moved: MovedWorkspace): Effect.Effect<void, InvalidState>;
+  /**
+   * Why `stageMovedWorkspace` would refuse these ids, read without writing anything, so a move
+   * can be refused before its files are written; `undefined` when none of them is here.
+   */
+  movedConflict(
+    workspaceId: string,
+    threadId: string | undefined,
+    turnIds: ReadonlyArray<string>,
+  ): Effect.Effect<string | undefined>;
+  /**
    * Makes `threadId` the workspace's orchestrator if nobody is, in one statement, so of two
    * concurrent claims one wins. A slot naming a thread that no longer exists counts as empty, and
    * the holder claiming again keeps it. False when another thread holds it, or when the workspace
@@ -738,6 +841,16 @@ export interface ThreadStoreShape {
   /** Opaque here: the service owns the schema of what it stores. */
   putOutbox(workspaceId: WorkspaceId, json: string): Effect.Effect<void>;
 
+  /**
+   * Appends what a signed-in person did, in the order given and in one transaction, and returns
+   * the last entry's sequence number (0 for none).
+   */
+  appendActorEvents(entries: ReadonlyArray<ActorEventEntry>): Effect.Effect<number>;
+  /** What signed-in people did after `afterSeq`, oldest first, at most `limit` (1,000 at most). */
+  listActorEvents(options?: {
+    readonly afterSeq?: number;
+    readonly limit?: number;
+  }): Effect.Effect<ReadonlyArray<ActorEventRecord>>;
   /** Appends to the workspace's audit and returns the entry's sequence number. */
   appendOrchestrationEvent(
     workspaceId: WorkspaceId,
@@ -907,6 +1020,9 @@ const threadWakePrJson = (wake: ThreadWake): string | null =>
         ...(wake.conditionState === undefined ? {} : { conditionState: wake.conditionState }),
       });
 
+/** Why a moved workspace is refused: nothing already on this server is ever replaced. */
+const alreadyHere = (message: string) => new InvalidState({ message });
+
 const toJson = <S extends Schema.Top>(schema: S, value: S["Type"]): string =>
   JSON.stringify(Schema.encodeSync(schema as unknown as Schema.Codec<S["Type"], unknown>)(value));
 
@@ -1014,6 +1130,37 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         });
 
       /** Puts a thread on the closed list, dropping the oldest past the limit with what was kept. */
+      /** Which of a moved workspace's ids is already here, as the sentence that refuses it. */
+      const movedConflictOf = (
+        workspaceId: string,
+        threadId: string | undefined,
+        turnIds: ReadonlyArray<string>,
+      ) =>
+        Effect.gen(function* () {
+          const [workspace] = yield* sql<{
+            id: string;
+          }>`SELECT id FROM workspaces WHERE id = ${workspaceId}`;
+          if (workspace !== undefined) return "This workspace is already on this server.";
+          if (threadId === undefined) return undefined;
+          const [taken] = yield* sql<{ id: string }>`SELECT id FROM threads WHERE id = ${threadId}
+            UNION ALL SELECT thread_id FROM closed_threads WHERE thread_id = ${threadId}
+            UNION ALL SELECT thread_id FROM closed_messages WHERE thread_id = ${threadId}
+            UNION ALL SELECT thread_id FROM messages WHERE thread_id = ${threadId}
+            UNION ALL SELECT thread_id FROM thread_plans WHERE thread_id = ${threadId}
+            LIMIT 1`;
+          if (taken !== undefined) {
+            return "This workspace's orchestrator is already on this server.";
+          }
+          for (const turnId of turnIds) {
+            const [known] = yield* sql<{ id: string }>`SELECT id FROM turns WHERE id = ${turnId}
+              UNION ALL SELECT id FROM closed_turns WHERE id = ${turnId} LIMIT 1`;
+            if (known !== undefined) {
+              return "A turn of this workspace's orchestrator is already on this server.";
+            }
+          }
+          return undefined;
+        });
+
       const keepClosed = (
         id: string,
         closedAt: number,
@@ -1461,8 +1608,42 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const storedSettings = sql<{
         value: string;
       }>`SELECT value FROM settings WHERE key = 'app'`.pipe(Effect.map((rows) => rows[0]?.value));
-      /** Field by field: a part that doesn't decode reads as its default, and the rest is kept. */
+      /** Beside the settings, in the same table under its own key (`getSuppliedSettings`). */
+      const SUPPLIED_KEY = "supplied";
+      /** What is supplied, read once and kept: every read of the settings applies it. */
+      let supplied: { readonly patch: SettingsPatch | undefined } | undefined;
+      const readSupplied = Effect.gen(function* () {
+        if (supplied !== undefined) return supplied.patch;
+        const rows = yield* sql<{
+          value: string;
+        }>`SELECT value FROM settings WHERE key = ${SUPPLIED_KEY}`;
+        let patch: SettingsPatch | undefined;
+        try {
+          patch =
+            rows[0] === undefined
+              ? undefined
+              : Schema.decodeUnknownSync(SettingsPatch)(JSON.parse(rows[0].value));
+        } catch {
+          // Written by a build that knew other settings: nothing is supplied until it is again.
+          yield* Effect.logWarning("supplied settings unreadable; ignored");
+          patch = undefined;
+        }
+        // A replacement that landed while this read was out is the newer of the two.
+        supplied ??= { patch };
+        return supplied.patch;
+      });
+      /** `settings` as they read with what is supplied over them, while the hosted features are on. */
+      const withSupplied = (settings: Settings) =>
+        Effect.map(readSupplied, (patch) =>
+          patch === undefined || !embeddingOn(settings)
+            ? settings
+            : applySettingsPatch(settings, patch),
+        );
       const readSettings = Effect.gen(function* () {
+        return yield* withSupplied(yield* readStoredSettings);
+      });
+      /** Field by field: a part that doesn't decode reads as its default, and the rest is kept. */
+      const readStoredSettings = Effect.gen(function* () {
         const stored = yield* storedSettings;
         if (stored === undefined) return DEFAULT_SETTINGS;
         const { value, mended } = decodeMended(
@@ -1480,8 +1661,15 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
        * read in its place), and the keys this build doesn't know. A row with nothing to keep is set
        * aside under its own key before it is replaced.
        */
-      const writeSettings = (settings: Settings, touched?: ReadonlyArray<FieldPath>) =>
+      const writeSettings = (given: Settings, givenTouched?: ReadonlyArray<FieldPath>) =>
         Effect.gen(function* () {
+          // What is supplied is written with every change, so the stored row never drifts from it.
+          const settings = yield* withSupplied(given);
+          const patch = yield* readSupplied;
+          const touched =
+            givenTouched === undefined || patch === undefined || settings === given
+              ? givenTouched
+              : [...givenTouched, ...settingsPatchPaths(patch)];
           const stored = yield* storedSettings;
           const { json, replacesUnreadable } = mendedWrite(
             Settings,
@@ -2111,6 +2299,26 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             return undefined;
           }),
         ),
+        takeClosed: (threadId) =>
+          tx(
+            Effect.gen(function* () {
+              const [row] = yield* sql<{
+                data: string;
+                closed_at: number;
+                workers: string | null;
+              }>`SELECT data, closed_at, workers FROM closed_threads WHERE thread_id = ${threadId}`;
+              if (row === undefined) return undefined;
+              const decoded = decodeStored(Thread, row.data);
+              if (!decoded.ok) return undefined;
+              yield* sql`DELETE FROM closed_threads WHERE thread_id = ${threadId}`;
+              const workers =
+                row.workers === null ? undefined : decodeStored(ClosedWorkers, row.workers);
+              return {
+                closed: { thread: decoded.value, closedAt: Number(row.closed_at) },
+                workers: workers?.ok === true ? workers.value : [],
+              };
+            }),
+          ),
         forgetClosed: (threadId) =>
           tx(
             Effect.gen(function* () {
@@ -2362,6 +2570,53 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 usage = ${usage === undefined ? null : toJson(UsageSummary, usage)},
                 cost_usd = ${usage?.costUsd ?? null}
               WHERE id = ${turnId} AND ended_at IS NULL`,
+          ),
+        exportHistory: (threadId) =>
+          tx(
+            Effect.gen(function* () {
+              const storedMessages = yield* sql<{
+                id: string;
+                turn_id: string | null;
+                message: string;
+              }>`SELECT id, turn_id, message FROM messages WHERE thread_id = ${threadId}
+                ORDER BY seq`;
+              const messages = (yield* readableRows(
+                unreadable,
+                "messages",
+                storedMessages,
+                (r) => `${threadId}/${r.id}`,
+                (r) =>
+                  mapDecoded(decodeStored(UIMessageSchema, r.message), (message) => ({
+                    message,
+                    ...(r.turn_id === null ? {} : { turnId: r.turn_id as TurnId }),
+                  })),
+              )) satisfies MovedHistory["messages"];
+              const turnRows = yield* sql<{
+                id: string;
+                started_at: number;
+                ended_at: number | null;
+                reason: string | null;
+                usage: string | null;
+              }>`SELECT id, started_at, ended_at, reason, usage FROM turns
+                WHERE thread_id = ${threadId} ORDER BY started_at, rowid`;
+              const turns = turnRows.map((r): MovedTurn => {
+                const reason =
+                  r.reason === null
+                    ? undefined
+                    : Schema.decodeUnknownOption(TurnEndReason)(r.reason);
+                const usage = r.usage === null ? undefined : decodeStored(UsageSummary, r.usage);
+                return {
+                  id: r.id as TurnId,
+                  startedAt: Number(r.started_at),
+                  ...(r.ended_at === null ? {} : { endedAt: Number(r.ended_at) }),
+                  ...(reason === undefined || Option.isNone(reason)
+                    ? {}
+                    : { reason: reason.value }),
+                  ...(usage?.ok === true ? { usage: usage.value } : {}),
+                };
+              });
+              return { messages, turns };
+            }),
           ),
         closeOpenTurns: (endedAt) =>
           run(
@@ -2717,6 +2972,31 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
 
         getSettings: run(readSettings),
         putSettings: (settings) => tx(writeSettings(settings)),
+        getSuppliedSettings: run(readSupplied),
+        putSuppliedSettings: (patch) =>
+          tx(
+            Effect.gen(function* () {
+              if (patch === undefined) {
+                yield* sql`DELETE FROM settings WHERE key = ${SUPPLIED_KEY}`;
+              } else {
+                const json = JSON.stringify(Schema.encodeSync(SettingsPatch)(patch));
+                yield* sql`INSERT INTO settings (key, value) VALUES (${SUPPLIED_KEY}, ${json})
+                  ON CONFLICT (key) DO UPDATE SET value = excluded.value`;
+              }
+              supplied = { patch };
+              const stored = yield* readStoredSettings;
+              yield* writeSettings(stored, patch === undefined ? [] : settingsPatchPaths(patch));
+              return yield* readSettings;
+            }),
+          ).pipe(
+            // Outside the transaction: a write that rolled back, at its commit or by an interrupt,
+            // leaves what was supplied before, read again from the row.
+            Effect.onExit((exit) =>
+              Effect.sync(() => {
+                if (exit._tag === "Failure") supplied = undefined;
+              }),
+            ),
+          ),
         getSeenConnectors: run(readSeenConnectors),
         updateSeenConnectors: (f) =>
           tx(
@@ -2793,6 +3073,82 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               }
               yield* sql`DELETE FROM workspaces WHERE id = ${id}`;
             }),
+          ),
+        movedConflict: (workspaceId, threadId, turnIds) =>
+          tx(movedConflictOf(workspaceId, threadId, turnIds)),
+        stageMovedWorkspace: (moved) =>
+          run(
+            sql
+              .withTransaction(
+                Effect.gen(function* () {
+                  const id = moved.state.workspace.id;
+                  const conflict = yield* movedConflictOf(
+                    id,
+                    moved.orchestrator?.thread.id,
+                    moved.orchestrator?.turns.map((turn) => turn.id) ?? [],
+                  );
+                  if (conflict !== undefined) return yield* alreadyHere(conflict);
+                  yield* writeWorkspace(moved.state);
+                  for (const card of moved.featureCards) {
+                    yield* sql`INSERT INTO feature_cards
+                        (workspace_id, feature, version, created_at, data)
+                      VALUES (${id}, ${card.feature}, ${card.version}, ${card.createdAt},
+                        ${toJson(FeatureCard, { ...card, workspaceId: id })})`;
+                  }
+                  for (const event of moved.events) {
+                    yield* sql`INSERT INTO orchestration_events (workspace_id, at, kind, data)
+                      VALUES (${id}, ${event.at}, ${event.kind},
+                        ${JSON.stringify(event.data ?? null)})`;
+                  }
+                  yield* sql`INSERT INTO orchestration_outbox (workspace_id, data)
+                    VALUES (${id}, ${moved.outbox})`;
+                  const orchestrator = moved.orchestrator;
+                  if (orchestrator === undefined) return;
+                  const threadId = orchestrator.thread.id;
+                  // Not `keepClosed`, whose cap would push this server's oldest closed thread out
+                  // for an entry that is taken off the list again as soon as it is opened.
+                  yield* sql`INSERT INTO closed_threads (thread_id, closed_at, data, workers)
+                    VALUES (${threadId}, ${orchestrator.closedAt},
+                      ${toJson(Thread, orchestrator.thread)}, NULL)`;
+                  for (const [index, { message, turnId }] of orchestrator.messages.entries()) {
+                    yield* sql`INSERT INTO closed_messages
+                        (thread_id, id, seq, role, turn_id, message)
+                      VALUES (${threadId}, ${message.id}, ${index + 1}, ${message.role},
+                        ${turnId ?? null}, ${JSON.stringify(message)})`;
+                  }
+                  for (const turn of orchestrator.turns) {
+                    yield* sql`INSERT INTO closed_turns
+                        (id, thread_id, started_at, ended_at, reason, usage, cost_usd)
+                      VALUES (${turn.id}, ${threadId}, ${turn.startedAt}, ${turn.endedAt ?? null},
+                        ${turn.reason ?? null},
+                        ${turn.usage === undefined ? null : toJson(UsageSummary, turn.usage)},
+                        ${turn.usage?.costUsd ?? null})`;
+                  }
+                  const plan =
+                    orchestrator.plan === undefined ? null : toJson(ThreadPlan, orchestrator.plan);
+                  const turnPlan =
+                    orchestrator.turnPlan === undefined
+                      ? null
+                      : toJson(TurnPlanJson, orchestrator.turnPlan);
+                  if (plan !== null || turnPlan !== null) {
+                    yield* sql`INSERT INTO thread_plans (thread_id, plan, turn_plan, rev)
+                      VALUES (${threadId}, ${plan}, ${turnPlan}, 1)`;
+                  }
+                }),
+              )
+              .pipe(
+                // A row another write got to first, such as a message id given twice.
+                Effect.catch((e) =>
+                  e instanceof SqlError
+                    ? Effect.fail(
+                        new InvalidState({
+                          message:
+                            "The workspace couldn't be stored here, and nothing of it was kept. Part of it may already be on this server.",
+                        }),
+                      )
+                    : Effect.fail(e),
+                ),
+              ),
           ),
         // One UPDATE decides the race: SQLite serialises writers, so the second claim's WHERE sees
         // the first one's slot. A read followed by a write would let both see it empty.
@@ -3018,6 +3374,57 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             sql`INSERT INTO orchestration_outbox (workspace_id, data)
               VALUES (${workspaceId}, ${json})
               ON CONFLICT (workspace_id) DO UPDATE SET data = excluded.data`.pipe(Effect.asVoid),
+          ),
+
+        appendActorEvents: (entries) =>
+          entries.length === 0
+            ? Effect.succeed(0)
+            : run(
+                sql.withTransaction(
+                  Effect.forEach(entries, (entry) =>
+                    sql<{ seq: number }>`INSERT INTO actor_events
+                        (at, actor_id, actor_name, actor_role, action, thread_id, workspace_id, data)
+                        VALUES (${entry.at}, ${entry.actor.id}, ${entry.actor.name},
+                          ${entry.actor.role}, ${entry.action}, ${entry.threadId ?? null},
+                          ${entry.workspaceId ?? null}, ${JSON.stringify(entry.data)})
+                        RETURNING seq`.pipe(Effect.map((rows) => Number(rows[0]!.seq))),
+                  ).pipe(Effect.map((seqs) => seqs.at(-1) ?? 0)),
+                ),
+              ),
+        listActorEvents: (options = {}) =>
+          run(
+            sql<{
+              seq: number;
+              at: number;
+              actor_id: string;
+              actor_name: string;
+              actor_role: string;
+              action: string;
+              thread_id: string | null;
+              workspace_id: string | null;
+              data: string;
+            }>`SELECT * FROM actor_events WHERE seq > ${options.afterSeq ?? 0}
+              ORDER BY seq LIMIT ${Math.max(1, Math.min(options.limit ?? 200, 1_000))}`.pipe(
+              Effect.map((rows) =>
+                rows.map((r): ActorEventRecord => {
+                  let data: Record<string, unknown> = {};
+                  try {
+                    data = JSON.parse(r.data) as Record<string, unknown>;
+                  } catch {
+                    // A row whose detail doesn't parse still says who did what.
+                  }
+                  return {
+                    seq: Number(r.seq),
+                    at: Number(r.at),
+                    actor: { id: r.actor_id, name: r.actor_name, role: r.actor_role },
+                    action: r.action,
+                    ...(r.thread_id === null ? {} : { threadId: r.thread_id }),
+                    ...(r.workspace_id === null ? {} : { workspaceId: r.workspace_id }),
+                    data,
+                  };
+                }),
+              ),
+            ),
           ),
 
         appendOrchestrationEvent: (workspaceId, entry) =>
