@@ -368,9 +368,9 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           depth = verdict.depth;
           counted = verdict.recentSends;
         }
-        // An orchestrator's word to its own worker is usually a correction, which a turn spent
-        // waiting behind it makes stale.
-        const asked = mode ?? (delegated ? "steer" : undefined);
+        // Steered unless the sender picks another mode: a steer cancels nothing, and a message
+        // that waits out the turn is often stale by the time it is read.
+        const asked = mode ?? "steer";
         const role = source.thread.role;
         // A worker's feature marks its message a worker's, which the receiving agent reads fenced.
         const feature = source.thread.spawnedBy?.feature;
@@ -382,7 +382,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
             depth,
             ...(role === undefined ? {} : { role }),
             ...(feature === undefined ? {} : { feature }),
-            ...(asked === undefined ? {} : { mode: asked }),
+            mode: asked,
           },
         };
         yield* resolveSendTarget(threadId);
@@ -406,11 +406,9 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
             .steer(target.thread.id, input, interrupt ? { interrupt } : undefined)
             .pipe(
               Effect.as(true),
-              // The turn can end between the snapshot and the steer; to a worker that is a queued
-              // message, not a failed send.
-              Effect.catchTag("InvalidState", (e) =>
-                delegated ? Effect.succeed(false) : Effect.fail(e),
-              ),
+              // The turn can end between the snapshot and the steer, or the agent refuse it; then
+              // it is an ordinary send, which a thread that can't take it at all refuses itself.
+              Effect.catchTag("InvalidState", () => Effect.succeed(false)),
             ));
         let delivered: "sent" | "queued" | "steered" = "steered";
         let waitedSeconds: number | undefined;
@@ -424,7 +422,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
               )
             : yield* runtimes.send(target.thread.id, input);
           delivered = result.queued ? "queued" : "sent";
-          if (mode === "steer" || mode === "interrupt") {
+          if (result.queued && (mode === "steer" || mode === "interrupt")) {
             notes.push("That thread can't be steered right now, so the message was queued.");
           }
           if (result.joined !== undefined) {
@@ -462,7 +460,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "send_message",
         class: "crossThread",
         description:
-          'Use `message` for message text (`text` and `content` are aliases). Send it to another Gram thread by the exact full threadId from list_threads or list_workers; shortened IDs are refused. For your parent, use message_orchestrator without an ID. `mode`: "queue" (after the turn), "steer" (mid-turn after the tool calls under way; cancels nothing) or "interrupt" (stops the turn now, cutting off tool calls; urgent stops only). Default queue; to your own running worker, steer. Your own workers need no approval. In Full Auto a current worker may also message its bound workspace orchestrator or a current sibling worker without approval; these queue by default and keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces and user-held workers refuse these messages. Other targets, and worker sends outside Full Auto, ask approval per call, even in Bypass. `clientRequestId` retries an own-worker or Full Auto send without sending it twice. An orchestrator\'s `userMessages` (1–5) appends the user\'s latest messages word for word, for a paste the worker needs exactly. Link a thread for the user as [title](#threadId).',
+          'Use `message` for message text (`text` and `content` are aliases). Send it to another Gram thread by the exact full threadId from list_threads or list_workers; shortened IDs are refused. For your parent, use message_orchestrator without an ID. `mode`: "queue" (after the turn), "steer" (mid-turn after the tool calls under way; cancels nothing) or "interrupt" (stops the turn now, cutting off tool calls; urgent stops only). Default steer. Your own workers need no approval. In Full Auto a current worker may also message its bound workspace orchestrator or a current sibling worker without approval; these keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces and user-held workers refuse these messages. Other targets, and worker sends outside Full Auto, ask approval per call, even in Bypass. `clientRequestId` retries an own-worker or Full Auto send without sending it twice. An orchestrator\'s `userMessages` (1–5) appends the user\'s latest messages word for word, for a paste the worker needs exactly. Link a thread for the user as [title](#threadId).',
       },
       input: inputAliases(
         Schema.Struct({
@@ -517,7 +515,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "message_orchestrator",
         class: "crossThread",
         description:
-          "Use `message` for message text (`text` and `content` are aliases). Send specific coordination or clarification to your current bound workspace orchestrator, queued by default; no thread ID is needed. Prefer `report` for structured progress, completion and interface status. Full Auto needs no approval for this current owned route; lower autonomy asks per call, even in Bypass. Pauses, user holds and stale membership refuse it. The usual origin, back-to-back, two-hop and rate guards apply. clientRequestId deduplicates Full Auto retries per sender.",
+          "Use `message` for message text (`text` and `content` are aliases). Send specific coordination or clarification to your current bound workspace orchestrator, steered into its turn; no thread ID is needed. Prefer `report` for structured progress, completion and interface status. Full Auto needs no approval for this current owned route; lower autonomy asks per call, even in Bypass. Pauses, user holds and stale membership refuse it. The usual origin, back-to-back, two-hop and rate guards apply. clientRequestId deduplicates Full Auto retries per sender.",
       },
       audience: ["worker"],
       rejectExcessProperties: true,

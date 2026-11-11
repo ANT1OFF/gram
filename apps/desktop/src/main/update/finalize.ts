@@ -8,9 +8,12 @@ export interface UpdateFinalization {
 export function createUpdateFinalizer() {
   let controller: AbortController | undefined;
   const pending = new Set<Promise<void>>();
+  /** Set by a quit asked for during a restart, recovery included: its retry must not start. */
+  let quitAsked = false;
   return {
     active: () => controller !== undefined,
     cancel() {
+      quitAsked = true;
       controller?.abort();
     },
     /** Track actual shutdown, not a timeout/abort race that merely stopped waiting for it. */
@@ -33,8 +36,11 @@ export function createUpdateFinalizer() {
       if (pending.size > 0) return;
       controller = undefined;
     },
-    async run(work: (signal: AbortSignal) => Promise<void>) {
+    /** `retry`: the same restart's next stop, refused once a quit was asked for since it began. */
+    async run(work: (signal: AbortSignal) => Promise<void>, retry = false) {
       if (controller) throw new Error("An update transaction is already active");
+      if (!retry) quitAsked = false;
+      else if (quitAsked) throw new Error("Gram was asked to quit; the update was cancelled.");
       controller = new AbortController();
       const own = controller;
       try {

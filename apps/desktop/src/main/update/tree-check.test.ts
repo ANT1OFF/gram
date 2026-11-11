@@ -17,18 +17,27 @@ const row = ([pid, ppid, pgid, start]: Proc) =>
 
 /**
  * Deps over invented tables: `next` gives each read's table (undefined: the read fails); time
- * passes only by `sleep`. Signals are recorded, never sent.
+ * passes only by `sleep`. Signals are recorded, never sent. With `reader`, each read lists itself
+ * as `ps -A` does: that read's own process, a new child of `reader`'s parent in its group, given
+ * as the run's pid.
  */
-const fake = (next: (read: number) => ReadonlyArray<Proc> | undefined, platform = "darwin") => {
+const fake = (
+  next: (read: number) => ReadonlyArray<Proc> | undefined,
+  platform = "darwin",
+  reader?: { readonly ppid: number; readonly pgid: number },
+) => {
   const reads: { file: string; args: ReadonlyArray<string> }[] = [];
   const signals: string[] = [];
   let now = 0;
   const run: RunSync = (file, args) => {
     const table = next(reads.length);
+    const self: Proc | undefined =
+      reader === undefined ? undefined : [900 + reads.length, reader.ppid, reader.pgid, T2];
     reads.push({ file, args });
-    return table === undefined
-      ? undefined
-      : { status: 0, stdout: `${table.map(row).join("\n")}\n` };
+    if (table === undefined) return undefined;
+    const rows = self === undefined ? table : [...table, self];
+    const stdout = `${rows.map(row).join("\n")}\n`;
+    return self === undefined ? { status: 0, stdout } : { status: 0, stdout, pid: self[0] };
   };
   const deps: TreeCheckDeps = {
     platform: platform as NodeJS.Platform,
@@ -163,6 +172,42 @@ describe("update tree check", () => {
     expect(await watch.freeze()).toBe(true);
     expect(await watch.survivors()).toBeUndefined();
     expect(signals.some((signal) => signal.endsWith(" 104"))).toBe(false);
+  });
+
+  describe("the check's own reads", () => {
+    // Each `ps` the app runs is a new child of the app (50) in its group, which the server shares.
+    const PS = { ppid: 50, pgid: 50 } as const;
+
+    it.each(["darwin", "linux"])(
+      "never takes a read's own process for an untellable new child of the app (%s)",
+      async (platform) => {
+        const { deps, signals } = fake(sequence(LIVE, LIVE, LIVE, GONE), platform, PS);
+        const watch = watchTree(100, deps, none)!;
+        expect(await watch.freeze()).toBe(true);
+        expect(await watch.survivors()).toBe(0);
+        expect(signals.some((signal) => / 9\d\d$/.test(signal))).toBe(false);
+      },
+    );
+
+    it.each(["darwin", "linux"])(
+      "still refuses another new live child of the app in its group, without signaling it (%s)",
+      async (platform) => {
+        const other: Proc = [104, 50, 50, T2];
+        const { deps, signals } = fake(sequence(LIVE, LIVE, LIVE, [...GONE, other]), platform, PS);
+        const watch = watchTree(100, deps, none)!;
+        expect(await watch.freeze()).toBe(true);
+        expect(await watch.survivors()).toBeUndefined();
+        expect(signals.some((signal) => signal.endsWith(" 104"))).toBe(false);
+      },
+    );
+
+    it("refuses such a child that shows up during the freeze too (darwin)", async () => {
+      const other: Proc = [104, 50, 50, T2];
+      const { deps, signals } = fake(sequence(LIVE, [...LIVE, other]), "darwin", PS);
+      const watch = watchTree(100, deps, none)!;
+      expect(await watch.freeze()).toBe(false);
+      expect(signals.some((signal) => signal.endsWith(" 104"))).toBe(false);
+    });
   });
 
   it("never takes a reused pid for a process of the tree", async () => {

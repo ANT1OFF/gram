@@ -30,6 +30,7 @@ import {
   type ThreadNotFound,
   type AgentUnavailable,
   type Thread,
+  type ThreadStatus,
 } from "@gram/contracts";
 import { typedText, userMessage, userParts, authored, typedInput } from "./user-input.ts";
 import type { AgentSession, SteerOptions } from "@gram/agents";
@@ -397,8 +398,70 @@ export const makeMessageQueue = ({
     });
 
   /**
+   * Called with the runtime lock held, on a `running` thread. Steers the oldest waiting delivery
+   * that asks for it (`SystemDelivery.steer`) into the turn, cancelling nothing. The turn then
+   * carries it, and its end settles it: accepted when the adapter ends it, back to wait when the
+   * adapter ends it in error, and failed (its owner asks again) on a limit or a lost session, as
+   * for a turn of its own. Nothing streamed after the steer accepts it. The rest, and all of them
+   * where the turn can't take one (Gram's idle compaction, an agent that can't steer, a turn
+   * already carrying a delivery, queued input that goes first, a queue hold), wait for the turn's
+   * end. One the agent refuses goes back to wait, and is built again then.
+   */
+  const steerDeliveries = (rt: Runtime): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      const session = rt.session;
+      const turn = rt.turn;
+      if (
+        session === undefined ||
+        turn === undefined ||
+        turn.idleCompaction !== undefined ||
+        rt.capabilities?.steer !== true ||
+        rt.carrying !== undefined ||
+        rt.queue.length > 0 ||
+        (yield* queueHeld(rt))
+      )
+        return;
+      // Deleting the entry in hand is safe mid-iteration; anything else returns at once.
+      for (const [key, delivery] of rt.deliveries) {
+        if (delivery.steer !== true) continue;
+        rt.deliveries.delete(key);
+        const built = yield* Effect.exit(
+          delivery.build(turn.id, {
+            status: rt.status,
+            background: rt.background.length,
+            subagentsRunning: rt.activity.subagentsRunning,
+            waiting: rt.deliveries.size,
+          }),
+        );
+        if (Exit.isFailure(built)) {
+          yield* Effect.logWarning("system delivery build failed").pipe(
+            Effect.annotateLogs({ threadId: rt.threadId, key, cause: Cause.pretty(built.cause) }),
+          );
+          yield* dispatch(
+            rt.threadId,
+            "system delivery failed",
+            delivery.failed(undefined, "buildFailed"),
+          );
+          continue;
+        }
+        if (built.value === undefined) continue;
+        const taken = yield* steerNow(rt, session, turn, { ...built.value, author: "server" }).pipe(
+          Effect.catchDefect(() => Effect.succeed(false)),
+          Effect.catch(() => Effect.succeed(false)),
+        );
+        if (!taken) {
+          // Nothing reached the agent, so it waits for the turn's end, and `build` runs again then.
+          rt.deliveries.set(key, delivery);
+          return;
+        }
+        rt.carrying = { turnId: turn.id, delivery, steered: { key } };
+        return;
+      }
+    });
+
+  /**
    * Called with the runtime lock held. Starts a waiting delivery if the thread can take one now;
-   * a busy thread gets to it from `becomeIdle`.
+   * a busy thread gets to it from `becomeIdle`, or steers one that asks for it.
    */
   const switchHold = (rt: Runtime) =>
     store.getThread(rt.threadId).pipe(
@@ -427,8 +490,10 @@ export const makeMessageQueue = ({
       switch (rt.status) {
         case "ended":
           return yield* failPendingDeliveries(rt, rt.status);
-        case "starting":
         case "running":
+          return yield* steerDeliveries(rt);
+        // Not into a turn waiting on the user: the agent would read it before their answer.
+        case "starting":
         case "needsApproval":
         case "needsInput":
           return;
@@ -598,8 +663,8 @@ export const makeMessageQueue = ({
             const turn = rt.turn;
             const stale = rt.queue.findIndex((item) => rt.noticeKeys.get(item.id) === noticeKey);
             if (
-              // Only a notice that changes what the agent should do now is steered, and never so
-              // as to cut off a tool call; the rest wait for the turn's end.
+              // Steered by default, never so as to cut off a tool call; one sent with
+              // `steer: false` waits for the turn's end.
               steerNotice &&
               // One queued ahead of something else keeps its place, so the update never overtakes
               // what was waiting behind the older one.
@@ -792,6 +857,19 @@ export const makeMessageQueue = ({
   };
 };
 
+/**
+ * A turn held on a card the user must answer (an approval, a question). Nothing is steered into it:
+ * the agent would read the message before the user's answer. It is queued for the turn's end.
+ */
+const WAITING_ON_USER: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
+
+const waitingOnUser = (threadId: ThreadId, status: ThreadStatus) =>
+  new InvalidState({
+    message: "the turn is waiting on you; answer it, or queue the message",
+    threadId,
+    status,
+  });
+
 /** What `makeMessageQueue` gives the rest of `ThreadRuntimes`. */
 export type MessageQueue = ReturnType<typeof makeMessageQueue>;
 
@@ -893,7 +971,7 @@ export const makeQueueMethods = ({
       undefined,
       key,
       undefined,
-      options?.steer === true,
+      options?.steer !== false,
     ).pipe(
       Effect.map((result) => ({
         queued: result.queued,
@@ -928,27 +1006,30 @@ export const makeQueueMethods = ({
             ? Effect.fail(
                 new InvalidState({ message: "nothing to steer", threadId, status: rt.status }),
               )
-            : options?.interrupt === true && rt.capabilities?.steerInterrupt !== true
-              ? Effect.fail(
-                  new InvalidState({
-                    message: "this agent can't be interrupted for input; stop it and send instead",
-                    threadId,
-                    status: rt.status,
-                  }),
-                )
-              : steerNow(rt, session, turn, authored(typedInput(sent)), options).pipe(
-                  Effect.flatMap((taken) =>
-                    taken
-                      ? Effect.void
-                      : Effect.fail(
-                          new InvalidState({
-                            message: "the agent couldn't take mid-turn input; send it instead",
-                            threadId,
-                            status: rt.status,
-                          }),
-                        ),
+            : WAITING_ON_USER.has(rt.status)
+              ? Effect.fail(waitingOnUser(threadId, rt.status))
+              : options?.interrupt === true && rt.capabilities?.steerInterrupt !== true
+                ? Effect.fail(
+                    new InvalidState({
+                      message:
+                        "this agent can't be interrupted for input; stop it and send instead",
+                      threadId,
+                      status: rt.status,
+                    }),
+                  )
+                : steerNow(rt, session, turn, authored(typedInput(sent)), options).pipe(
+                    Effect.flatMap((taken) =>
+                      taken
+                        ? Effect.void
+                        : Effect.fail(
+                            new InvalidState({
+                              message: "the agent couldn't take mid-turn input; send it instead",
+                              threadId,
+                              status: rt.status,
+                            }),
+                          ),
+                    ),
                   ),
-                ),
         ),
       );
     }).pipe(Effect.tap(() => userTyped(threadId, sent))),
@@ -1022,6 +1103,7 @@ export const makeQueueMethods = ({
             yield* syncQueue(rt);
             return yield* drainQueue(rt);
           }
+          if (WAITING_ON_USER.has(rt.status)) return yield* waitingOnUser(threadId, rt.status);
           if (session === undefined || turn === undefined || rt.capabilities?.steer !== true) {
             return yield* new InvalidState({
               message:

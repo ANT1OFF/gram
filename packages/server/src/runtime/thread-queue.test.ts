@@ -4,6 +4,7 @@ import {
   InvalidState,
   NotFound,
   type QueueItemId,
+  type RequestId,
   type ReviewNotice,
   serializeReviewNotice,
   type ServerEvent,
@@ -549,7 +550,7 @@ describe("ThreadRuntimes queue", () => {
   );
 
   it.effect(
-    "queues a notice behind a running turn, steers one only when asked, and sends one to an idle thread",
+    "steers a notice into a running turn by default, queues one sent with steer: false, and sends one to an idle thread",
     () =>
       Effect.gen(function* () {
         const runtimes = yield* ThreadRuntimes;
@@ -566,14 +567,18 @@ describe("ThreadRuntimes queue", () => {
         );
         yield* runtimes.send(thread.id, { text: "mine" });
 
-        // Informational: it waits for the turn's end and cuts nothing off.
-        const queued = yield* runtimes.sendNotice(thread.id, "merged:o/r#7", { text: "merged #7" });
+        // Asked to wait: it queues for the turn's end and cuts nothing off.
+        const queued = yield* runtimes.sendNotice(
+          thread.id,
+          "merged:o/r#7",
+          { text: "merged #7" },
+          { steer: false },
+        );
         expect(queued).toEqual({ queued: true, steered: false, replaced: false });
         expect(session.steered).toEqual([]);
 
-        const steered = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(1), {
-          steer: true,
-        });
+        // The default: steered in, after the tool calls under way.
+        const steered = yield* runtimes.sendNotice(thread.id, "review:o/r#7", notice(1));
         expect(steered).toEqual({ queued: false, steered: true, replaced: false });
         expect(session.steered).toEqual([notice(1)]);
         // A steer, never an interrupt.
@@ -848,5 +853,72 @@ describe("ThreadRuntimes queue", () => {
       );
       expect(yield* store.getCompletedReason(thread.id)).toBe("user");
     }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+});
+
+describe("ThreadRuntimes into a turn waiting on the user", () => {
+  it.effect(
+    "steers nothing past an approval card: a steer is refused, and a notice or queued item waits",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const fake = yield* FakeAgentControl;
+        const thread = yield* runtimes.create({
+          projectRoot: "/work/repo",
+          checkout: { kind: "main", path: "/work/repo" },
+          input: { text: "one" },
+        });
+        const session = yield* waitFor(
+          "the first send",
+          fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+        );
+        yield* session.emit({
+          type: "request",
+          request: {
+            kind: "approval",
+            id: "req-1" as RequestId,
+            toolName: "Bash",
+            displayName: "Bash",
+            input: { command: "git push" },
+            suggestions: [],
+          },
+        });
+        yield* waitFor(
+          "the card",
+          runtimes.status(thread.id).pipe(Effect.map((s) => s === "needsApproval")),
+        );
+
+        for (const options of [undefined, { interrupt: true }] as const) {
+          const refused = yield* runtimes
+            .steer(thread.id, { text: "skip it" }, options)
+            .pipe(Effect.flip);
+          expect(refused).toMatchObject({
+            _tag: "InvalidState",
+            message: "the turn is waiting on you; answer it, or queue the message",
+          });
+        }
+        const ci = yield* runtimes.sendNotice(thread.id, "ci:o/r#7", { text: "CI passed" });
+        expect(ci).toEqual({ queued: true, steered: false, replaced: false });
+        yield* runtimes.send(thread.id, { text: "mine" });
+        const [summary] = yield* runtimes.snapshot;
+        const mine = summary!.queue.find((q) => q.input.text === "mine")!;
+        expect(yield* runtimes.steerQueued(thread.id, mine.id).pipe(Effect.flip)).toMatchObject({
+          _tag: "InvalidState",
+        });
+        expect(session.steered).toEqual([]);
+
+        // Once it ends, what waited goes in order, each once.
+        yield* session.completeTurn();
+        yield* waitFor(
+          "the notice",
+          Effect.sync(() => session.sent.length === 2),
+        );
+        yield* session.completeTurn();
+        yield* waitFor(
+          "the queued message",
+          Effect.sync(() => session.sent.length === 3),
+        );
+        expect(session.sent.map((i) => i.text)).toEqual(["one", "CI passed", "mine"]);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 });

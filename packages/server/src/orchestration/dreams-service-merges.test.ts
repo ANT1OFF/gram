@@ -4,6 +4,7 @@ import {
   askQuestion,
   parseQuestions,
   type MessageId,
+  type RequestId,
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -334,38 +335,74 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
     ),
   );
 
-  it.effect("answers given while the orchestrator works wait as one, never interrupting it", () =>
-    inDreams((world) =>
-      Effect.gen(function* () {
-        const handlers = yield* dreamHandlers;
-        const runtimes = yield* ThreadRuntimes;
-        const { workspaceId, thread, session } = yield* openOrchestrator(world);
-        yield* handlers["memory.write"]({
-          workspaceId,
-          path: "questions.md",
-          content:
-            "# Questions\n\n- Q1 (opened 2026-09-20): retry on 429?\n- Q2 (opened 2026-09-20): keep MSI?\n",
-        });
-        yield* runtimes.send(thread.id, { text: "Plan the release." });
-        yield* waitStatus(thread.id, "running");
-        for (const [questionId, answer] of [
-          ["Q1", "Three times."],
-          ["Q2", "Yes."],
-        ] as const) {
-          yield* handlers["question.answer"]({ workspaceId, questionId, question: "", answer });
-        }
-        const queue = (yield* runtimes.snapshot).find(
-          (each) => each.thread.id === thread.id,
-        )?.queue;
-        expect(queue).toHaveLength(1);
-        expect(queue?.[0]?.input.text).toMatch(
-          /Answer to Q1[\s\S]*Three times\.[\s\S]*Answer to Q2[\s\S]*Yes\./,
-        );
-        expect(session.steered).toEqual([]);
-        expect(isQueuedAnswer(queue![0]!.input)).toBe(true);
-        expect(isQueuedAnswer({ text: "Something else." })).toBe(false);
-      }),
-    ),
+  it.effect(
+    "answers steer into the orchestrator's running turn, and wait as one behind a card",
+    () =>
+      inDreams((world) =>
+        Effect.gen(function* () {
+          const handlers = yield* dreamHandlers;
+          const runtimes = yield* ThreadRuntimes;
+          const { workspaceId, thread, session } = yield* openOrchestrator(world);
+          yield* handlers["memory.write"]({
+            workspaceId,
+            path: "questions.md",
+            content:
+              "# Questions\n\n- Q1 (opened 2026-09-20): retry on 429?\n- Q2 (opened 2026-09-20): keep MSI?\n- Q3 (opened 2026-09-20): sign builds?\n- Q4 (opened 2026-09-20): ship Linux?\n",
+          });
+          yield* runtimes.send(thread.id, { text: "Plan the release." });
+          yield* waitStatus(thread.id, "running");
+          const queueOf = () =>
+            runtimes.snapshot.pipe(
+              Effect.map((all) => all.find((each) => each.thread.id === thread.id)?.queue ?? []),
+            );
+
+          // Running: each answer lands after the tool calls under way, cutting nothing off.
+          for (const [questionId, answer] of [
+            ["Q1", "Three times."],
+            ["Q2", "Yes."],
+          ] as const) {
+            expect(
+              yield* handlers["question.answer"]({ workspaceId, questionId, question: "", answer }),
+            ).toMatchObject({ questionId, delivered: "steered" });
+          }
+          expect(session.steered.map((input) => input.text)).toEqual([
+            expect.stringMatching(/Answer to Q1[\s\S]*Three times\./),
+            expect.stringMatching(/Answer to Q2[\s\S]*Yes\./),
+          ]);
+          expect(session.steeredInterrupt).toEqual([false, false]);
+          expect(yield* queueOf()).toEqual([]);
+
+          // Waiting on an approval: nothing is steered past the card, and a burst waits as one.
+          yield* session.emit({
+            type: "request",
+            request: {
+              kind: "approval",
+              id: "req-1" as RequestId,
+              toolName: "Bash",
+              displayName: "Bash",
+              input: { command: "git push" },
+              suggestions: [],
+            },
+          });
+          yield* waitStatus(thread.id, "needsApproval");
+          for (const [questionId, answer] of [
+            ["Q3", "Always."],
+            ["Q4", "Not yet."],
+          ] as const) {
+            expect(
+              yield* handlers["question.answer"]({ workspaceId, questionId, question: "", answer }),
+            ).toMatchObject({ questionId, delivered: "queued" });
+          }
+          const queue = yield* queueOf();
+          expect(queue).toHaveLength(1);
+          expect(queue[0]?.input.text).toMatch(
+            /Answer to Q3[\s\S]*Always\.[\s\S]*Answer to Q4[\s\S]*Not yet\./,
+          );
+          expect(session.steered).toHaveLength(2);
+          expect(isQueuedAnswer(queue[0]!.input)).toBe(true);
+          expect(isQueuedAnswer({ text: "Something else." })).toBe(false);
+        }),
+      ),
   );
 
   describe("an answer that fails on the way", () => {

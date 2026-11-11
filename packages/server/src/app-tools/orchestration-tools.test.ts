@@ -1,5 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
-import { fenceThreadMessage, initialBabysitState, ProfileId, type ThreadId } from "@gram/contracts";
+import {
+  fenceThreadMessage,
+  initialBabysitState,
+  ProfileId,
+  type RequestId,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -78,6 +84,55 @@ const badge = (repo: string, number: number, state: "OPEN" | "MERGED" | "CLOSED"
 });
 
 describe("orchestration app tools", () => {
+  it.effect(
+    "send_message steers into a running turn by default, queues when asked, and never past a card",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const [a, b, c, d] = yield* Effect.forEach(["A", "B", "C", "D"], (n) =>
+          createThread(`Planner ${n}`),
+        );
+        const worker = yield* createThread("Worker");
+        yield* runtimes.send(worker.id, { text: "Work on this." });
+        yield* statusIs(worker.id, "running");
+        const session = yield* sessionOf(worker.id);
+
+        expect(yield* run(a!.id, "send_message", { threadId: worker.id, text: "Use v2." })).toEqual(
+          { threadId: worker.id, title: "Worker", delivered: "steered" },
+        );
+        expect(session.steeredInterrupt).toEqual([false]);
+        expect(
+          yield* run(b!.id, "send_message", { threadId: worker.id, text: "FYI.", mode: "queue" }),
+        ).toMatchObject({ delivered: "queued" });
+        expect(session.steered).toHaveLength(1);
+
+        yield* session.emit({
+          type: "request",
+          request: {
+            kind: "approval",
+            id: "req-1" as RequestId,
+            toolName: "Bash",
+            displayName: "Bash",
+            input: { command: "git push" },
+            suggestions: [],
+          },
+        });
+        yield* statusIs(worker.id, "needsApproval");
+        expect(
+          yield* run(c!.id, "send_message", { threadId: worker.id, text: "Waiting?" }),
+        ).toEqual({ threadId: worker.id, title: "Worker", delivered: "queued" });
+        expect(
+          yield* run(d!.id, "send_message", { threadId: worker.id, text: "Now.", mode: "steer" }),
+        ).toMatchObject({
+          delivered: "queued",
+          note: "That thread can't be steered right now, so the message was queued.",
+        });
+        expect(session.steered).toHaveLength(1);
+        const [summary] = (yield* runtimes.snapshot).filter((s) => s.thread.id === worker.id);
+        expect(summary?.queue.map((q) => q.input.origin?.threadId)).toEqual([b!.id, c!.id, d!.id]);
+      }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("send_message delivers with its origin and refuses self and back-to-back sends", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;
@@ -87,7 +142,8 @@ describe("orchestration app tools", () => {
       expect(
         yield* run(planner.id, "send_message", { threadId: worker.id, text: "Please add tests." }),
       ).toEqual({ threadId: worker.id, title: "Worker", delivered: "sent" });
-      const origin = { threadId: planner.id, title: "Planner", depth: 1 };
+      // Steer is the default mode, whatever the target's state.
+      const origin = { threadId: planner.id, title: "Planner", depth: 1, mode: "steer" as const };
       // The agent reads another thread's message fenced as that thread's; the transcript as written.
       expect((yield* sessionOf(worker.id)).sent[0]).toEqual({
         text: fenceThreadMessage(origin, "Please add tests."),

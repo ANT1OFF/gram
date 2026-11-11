@@ -54,7 +54,7 @@ export function MessageOriginLabel({ origin }: { origin: MessageOrigin }) {
   const ready = useThreadsStore((s) => s.ready);
   const gone = ready && sender === undefined;
   const role = senderRole(origin, sender?.spawnedBy !== undefined);
-  // Absent, it was left to the default, which queues.
+  // Absent only on a message sent before every send carried its mode, when the default queued.
   const delivery = DELIVERY[origin.mode ?? "queue"];
   const body = (
     <>

@@ -11,6 +11,7 @@ import {
   InvalidState,
   NotFound,
   AgentUnavailable,
+  type ModelRef,
   type GitError,
   type QueuedInput,
   type Thread,
@@ -88,6 +89,7 @@ import { DecisionHook } from "../embedding/decision-hook.ts";
 import { EventSink } from "../embedding/event-sink.ts";
 import { makeHookedRequests } from "../embedding/hooked-requests.ts";
 import { makeSessionSwitch, makeSwitchMethods } from "./session-switch.ts";
+import { AGENT_NAMES, makeAgentSwitch } from "./agent-switch.ts";
 import { makeSessionLifecycle } from "./session-lifecycle.ts";
 import type { InputUndelivered } from "./undelivered.ts";
 
@@ -199,6 +201,23 @@ const turnsHere = (
       ),
   };
 };
+
+/**
+ * A model pick stays on the thread's own agent: its session, `agentSessionId` and `codexHome`
+ * belong to that agent, so a model of the other one would be written onto a session that can't run
+ * it. Moving a thread to the other agent is a session switch, not a model change.
+ */
+const otherAgentRefusal = (
+  threadId: ThreadId,
+  current: ModelRef,
+  next: ModelRef,
+): InvalidState | undefined =>
+  next.agent === current.agent
+    ? undefined
+    : new InvalidState({
+        threadId,
+        message: `${next.model} is a ${AGENT_NAMES[next.agent]} model and this thread runs in ${AGENT_NAMES[current.agent]}. A model change stays on the thread's agent.`,
+      });
 
 const make = Effect.gen(function* () {
   const store = yield* ThreadStore;
@@ -323,7 +342,12 @@ const make = Effect.gen(function* () {
       { discard: true },
     );
 
-  const { policyFor, opening, methods: policyMethods } = makeSessionPolicy({ store });
+  const {
+    policyFor,
+    opening,
+    modeAfterSwitch,
+    methods: policyMethods,
+  } = makeSessionPolicy({ store });
   // Present in the full server; tests without the HTTP layer run agents without MCP endpoints.
   const mcpTokens = yield* Effect.serviceOption(McpTokens);
   const httpServer = yield* Effect.serviceOption(HttpServer.HttpServer);
@@ -1259,6 +1283,9 @@ const make = Effect.gen(function* () {
     cancelIdleTimer,
     publishUpsert,
     isShuttingDown: () => shuttingDown,
+    hasSessionFiber: (threadId) => FiberMap.hasUnsafe(sessions, threadId),
+    drainQueue,
+    modeAfterSwitch,
     openSession: (rt, thread, resumeAt, switchAttempt) =>
       openSession(rt, thread, resumeAt, switchAttempt),
   });
@@ -1358,6 +1385,7 @@ const make = Effect.gen(function* () {
     publishUpsert,
     drainQueue,
     becomeIdle,
+    modeAfterSwitch,
   });
 
   const restSession: ThreadRuntimesShape["restSession"] = (threadId) =>
@@ -1379,11 +1407,36 @@ const make = Effect.gen(function* () {
         ),
       );
     });
+  const agentSwitch = makeAgentSwitch({
+    store,
+    hosts,
+    hub,
+    getRuntime,
+    switches: yield* FiberMap.make<ThreadId>(),
+    refuseMissingFolder,
+    runtimes: { ...switchMethods, switchSession, emitChunk: feedMethods.emitChunk, updateThread },
+    afterRelease: (rt) =>
+      locked(
+        rt,
+        Effect.gen(function* () {
+          if (rt.turn !== undefined) return;
+          yield* becomeIdle(rt);
+          yield* drainQueue(rt);
+        }),
+      ),
+  });
+  // A plain thread's or worker's switch the last run cut off; the orchestrator's is its handoff's.
+  yield* Effect.forEach(
+    (yield* store.listThreads).filter((thread) => thread.sessionSwitch !== undefined),
+    agentSwitch.resumeAtBoot,
+    { discard: true },
+  );
 
   const service = ThreadRuntimes.of({
     ...switchMethods,
     restSession,
     switchSession,
+    switchAgent: agentSwitch.switchAgent,
     cutAtBoot: cutOff,
     ...queueMethods,
     create,
@@ -1486,6 +1539,8 @@ const make = Effect.gen(function* () {
             threadId,
             message: "Wait for the orchestrator switch before changing its model.",
           });
+        const otherAgent = otherAgentRefusal(threadId, before.model, model);
+        if (otherAgent !== undefined) return yield* otherAgent;
         if (model.speed === "fast") {
           const host = yield* hosts.get(model.agent);
           const problem = fastSelectionProblem(
@@ -1511,6 +1566,8 @@ const make = Effect.gen(function* () {
                 message:
                   "The orchestrator changed while this model selection waited. Review the current session and select again.",
               });
+            const movedAgent = otherAgentRefusal(threadId, current.model, model);
+            if (movedAgent !== undefined) return yield* movedAgent;
             const thread = yield* store.updateThread(threadId, (t) => ({
               ...t,
               model,

@@ -104,7 +104,7 @@ import {
 import { appBuildEnv, runningBuildInfo } from "./build-info.ts";
 import { createSignalQuit } from "./signal-quit.ts";
 import { createQuit, QUIT_DEADLINE_MS, serverShutdownFromMessage } from "./quit.ts";
-import { createQuitWindow } from "./quit-window.ts";
+import { createQuitWindow, isProgressWindow } from "./quit-window.ts";
 import { inheritedServerEnv } from "./server-env.ts";
 import { createServerHost, DEFAULT_RECOVERY, NO_RECOVERY } from "./server-host.ts";
 import {
@@ -146,6 +146,7 @@ import { stopForUpdate } from "./update/shutdown.ts";
 import { processStart, sparedNow, watchTree, type TreeCheckDeps } from "./update/tree-check.ts";
 import { probeSignature, runGh } from "./update/process.ts";
 import { normaliseUserEnv } from "./user-env.ts";
+import { reloadOnto } from "./window-reload.ts";
 
 const WEB_DEV_URL = process.env["GRAM_WEB_URL"] ?? "http://localhost:5173";
 /** The fixed dev server port the web Vite proxy targets (see scripts/dev.mjs). */
@@ -269,7 +270,11 @@ const server = createServerHost({
     const level = logLevelFromMessage(message);
     if (level) log.level = level;
     const shutdown = serverShutdownFromMessage(message);
-    if (shutdown) quit.report(shutdown);
+    if (shutdown) {
+      quit.report(shutdown);
+      // An update's stop says what it is stopping too.
+      if (updateWindow.open()) updateWindow.show({ step: "server", ...shutdown });
+    }
     const opened = launchedPidFromMessage(message);
     if (opened !== null) launched.set(opened, processStart(opened, treeCheckDeps));
     void handleVaultRequest(message, vaultCrypto, vaultStore, process.platform).then((response) => {
@@ -453,6 +458,12 @@ const quit = createQuit({
   now: () => Date.now(),
 });
 const quitWindow = createQuitWindow({ colors: themeColors, onForce: () => quit.force("user") });
+/** What an update's stop shows while every window is hidden for it. */
+const updateWindow = createQuitWindow({
+  colors: themeColors,
+  heading: "Restarting to update…",
+  title: "Restarting Gram",
+});
 
 /**
  * The boot navigation for a window, which carries the launch token to the server's own origin;
@@ -473,13 +484,14 @@ function trustedOrigins(): ReadonlySet<string> {
   return origins;
 }
 
-/** A fresh server has a new port and token, so every window reloads onto it. */
+/**
+ * A fresh server has a new port and token, so every window reloads onto it; a progress window
+ * keeps its own page (`window-reload.ts`).
+ */
 function reloadWindows() {
   const url = windowUrl();
   if (url === undefined) return;
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.webContents.isDestroyed()) void win.loadURL(url);
-  }
+  reloadOnto(url, BrowserWindow.getAllWindows(), isProgressWindow);
 }
 
 /** Starts the server again after a failed update launch, and reloads every window onto it. */
@@ -929,9 +941,9 @@ function fencedUpdateOptions(
         signal,
       );
     },
-    transaction: async (work) => {
+    transaction: async (work, retry) => {
       if (quit.state() !== "idle") throw new Error("Gram is already quitting.");
-      await updateFinalizer.run((signal) => work(signal));
+      await updateFinalizer.run((signal) => work(signal), retry);
     },
     recover: async () => {
       // A shutdown still settling holds recovery.
@@ -962,7 +974,16 @@ function fencedUpdateOptions(
     },
     ordinaryQuit: () => app.quit(),
     exit: exitSignedUpdate,
-    hideWindows,
+    hideWindows: () => {
+      const restore = hideWindows();
+      updateWindow.show("Stopping threads and agents…");
+      return () => {
+        // Back first, so closing the progress window never closes the last one.
+        restore();
+        updateWindow.close();
+      };
+    },
+    progress: (detail) => updateWindow.show(detail),
     record: nativeRecordStore(app.getPath("userData")),
     broadcast: broadcastNativeUpdate,
     log: (level, line) => log[level]({ source: "update" }, line),

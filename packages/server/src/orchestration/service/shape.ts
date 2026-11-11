@@ -10,7 +10,7 @@ import {
   type AgentUnavailable,
   type Autonomy,
   type BriefPriority,
-  type Handoff,
+  type OrchestratorHandoffReason,
   type ModelRef,
   type ReopenedMembership,
   type RoutineState,
@@ -199,8 +199,8 @@ export interface AddWorkerRepoInput {
 export interface AddedWorkerRepo extends WorkerWorktree {
   readonly threadId: ThreadId;
   readonly title: string;
-  /** Whether the message naming the worktree went out at once or waits behind the worker's turn. */
-  readonly delivered: "sent" | "queued";
+  /** Whether the message naming the worktree was steered in, went out at once, or waits behind the turn. */
+  readonly delivered: "steered" | "sent" | "queued";
 }
 
 /** How a thread joins a workspace as a worker, from the user's menu or `adopt_thread`. */
@@ -521,7 +521,7 @@ export interface OrchestrationShape {
    */
   handoff(
     workspaceId: WorkspaceId,
-    reason: Handoff["reason"],
+    reason: OrchestratorHandoffReason,
     target?: ModelRef,
   ): Effect.Effect<Thread, NotFound | InvalidState>;
   retrySwitch(workspaceId: WorkspaceId): Effect.Effect<Thread, NotFound | InvalidState>;
