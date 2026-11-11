@@ -28,6 +28,7 @@ import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { claudeSignInOf, hostStatusOf } from "./claude-sign-in.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
+import { stopOn } from "./stop.ts";
 import {
   HOST_SERVES,
   type HostClaudeToken,
@@ -141,6 +142,13 @@ const hostService = (
     });
     const admission = makeAdmission();
     const updater = update?.(busy, admission);
+    const stop = stopOn({
+      proc,
+      busy,
+      admission,
+      // A joined machine keeps only what its sessions could open; this machine's host any folder.
+      ...(hostId === LOCAL_HOST_ID ? {} : { admit: (cwd) => folders.gate.admit(cwd, "session") }),
+    });
     return {
       hello: {
         protocol: HOST_PROTOCOL_VERSION,
@@ -184,7 +192,9 @@ const hostService = (
         ),
       ),
       checks,
-      ...(updater === undefined ? {} : { update: updater, admission }),
+      admission,
+      stop,
+      ...(updater === undefined ? {} : { update: updater }),
     };
   });
 
