@@ -43,7 +43,7 @@ that the thread may also work in. The profile's files and skills are laid in the
 
 - A file the repository already has at that path stays as it is. The repository's own wins.
 - Nothing is written through a link, so no file lands outside the worktree.
-- What was laid is named in the clone's `info/exclude`, so it shows in no `git status` and an
+- What was laid is named in an exclude file of that worktree alone, so it shows in no `git status` and an
   agent's commit doesn't carry the supplier's files into the repository's history.
 
 If any repository can't be cloned or can't give a worktree, no thread is started and the
@@ -82,6 +82,10 @@ lays can be an agent's own settings for that folder (`.claude/settings.json`, `.
 charter bind the agent, not the supplier. What stays out of a supplier's hands: a path never
 leaves the thread's folder or enters a `.git`, and the MCP hold is applied over whatever those
 files say.
+
+On a headless control plane those files land on a joined machine, so a hook a supplier lays runs
+as that machine's user, with its git credentials, instead of in the server. The trust is the
+same; what it reaches is the machine.
 
 A profile only ever narrows a session. If the thread's role already keeps the profile's server
 out, by an allowlist that doesn't name it or a denylist that does, the session opens without it.

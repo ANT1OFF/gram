@@ -5,7 +5,7 @@ import { InvalidState, type ProfileFile } from "@gram/contracts";
 import { git, Proc, type ProcShape } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { appendFile, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 const refuse = (message: string) => new InvalidState({ message });
 
@@ -54,34 +54,47 @@ export const layProfileFiles = (
     return laid;
   });
 
+/** The file a checkout's own excludes are kept in, inside its git folder. */
+const PROFILE_EXCLUDE = "profile-exclude";
+
 /**
- * Keeps the files a profile laid in a checkout out of its commits: each is named in the
- * repository's own `info/exclude`, which no clone or push carries. Without it an agent's
- * `git add` would put the supplier's skills into the repository's history. Best effort: a
- * repository that can't say where its exclude file is keeps the files visible.
+ * Keeps the files a profile laid in a checkout out of its commits: each is named in an exclude
+ * file of that checkout alone, which no clone or push carries. Without it an agent's `git add`
+ * would put the supplier's skills into the repository's history. The repository's `info/exclude`
+ * won't do: every worktree of a clone shares it, so a name laid for one thread would hide the same
+ * path in every other, for good. This one is in the worktree's own git folder, named by its own
+ * `core.excludesFile`, and goes when the worktree does. Best effort: a checkout that can't take
+ * it, or already names an excludes file of its own, keeps the files visible.
  */
 export const excludeLaid = (
   proc: ProcShape,
   checkout: string,
   laid: ReadonlyArray<string>,
-): Effect.Effect<void> =>
-  laid.length === 0
+): Effect.Effect<void> => {
+  const run = (args: ReadonlyArray<string>) =>
+    git(checkout, args).pipe(Effect.provideService(Proc, proc));
+  return laid.length === 0
     ? Effect.void
     : Effect.gen(function* () {
-        const out = yield* git(checkout, ["rev-parse", "--git-path", "info/exclude"]).pipe(
-          Effect.provideService(Proc, proc),
-        );
-        if (out.status !== 0 || out.stdout.trim() === "") return;
-        const named = out.stdout.trim();
-        const file = isAbsolute(named) ? named : join(checkout, named);
+        const dir = yield* run(["rev-parse", "--absolute-git-dir"]);
+        if (dir.status !== 0 || !isAbsolute(dir.stdout.trim())) return;
+        const file = join(dir.stdout.trim(), PROFILE_EXCLUDE);
+        if ((yield* run(["config", "extensions.worktreeConfig", "true"])).status !== 0) return;
+        const set = (yield* run([
+          "config",
+          "--worktree",
+          "--get",
+          "core.excludesFile",
+        ])).stdout.trim();
+        if (set !== "" && set !== file) return;
         yield* Effect.promise(async () => {
           const have = new Set((await readFile(file, "utf8").catch(() => "")).split("\n"));
           // Anchored at the top and escaped, so a name is that one file and never a pattern.
           const lines = laid
             .map((path) => `/${path.replace(/[\\[\]*?!# ]/g, "\\$&")}`)
             .filter((line) => !have.has(line));
-          if (lines.length === 0) return;
-          await mkdir(dirname(file), { recursive: true });
-          await appendFile(file, `${lines.join("\n")}\n`, "utf8");
+          if (lines.length > 0) await appendFile(file, `${lines.join("\n")}\n`, "utf8");
         });
+        yield* run(["config", "--worktree", "core.excludesFile", file]);
       }).pipe(Effect.ignore);
+};

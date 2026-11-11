@@ -184,8 +184,9 @@ export const makeProfileStarter = ({
         // names none, by its host, and the thread is filed under the same project.
         const hostId = yield* hosts.headless.machine;
         const places = yield* placesOn(hostId);
+        // Before anything is taken back: a folder this start didn't make isn't its to remove.
+        const { path } = yield* places.make(id, files);
         const made = Effect.gen(function* () {
-          const { path } = yield* places.make(id, files);
           // The project's folder here holds nothing; it is what the threads are filed under.
           yield* Effect.promise(() => mkdir(root, { recursive: true }).catch(() => undefined));
           yield* store.ensureProject({ root, name: PROFILE_THREADS_PROJECT });

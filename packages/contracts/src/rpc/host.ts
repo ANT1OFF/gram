@@ -643,7 +643,7 @@ export const HostRpcs = RpcGroup.make(
   }),
   /**
    * Lays `files` in `checkout`, a worktree of the host's clones: never over a file already there
-   * nor through a link, and named in the repository's own exclude file. Answers which it wrote.
+   * nor through a link, and named in an exclude file of that worktree alone. Answers which it wrote.
    */
   Rpc.make("host.threadPlaces.lay", {
     payload: { checkout: Schema.String, files: Schema.Array(ProfileFile) },

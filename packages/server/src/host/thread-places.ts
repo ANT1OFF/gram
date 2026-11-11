@@ -9,10 +9,10 @@ import {
   profilePathProblem,
   type ThreadId,
 } from "@gram/contracts";
-import { isInside, isStrictlyInside, type ProcShape, realPath } from "@gram/git";
+import { git, Proc, type ProcShape, realPath, relativeInside } from "@gram/git";
 import * as Effect from "effect/Effect";
-import { mkdir, rm, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { lstat, mkdir, rm, rmdir } from "node:fs/promises";
+import { join, resolve, sep } from "node:path";
 import { excludeLaid, layProfileFiles } from "../thread-profiles/lay.ts";
 
 /** The folder under the host's clones where threads that work in no repository get theirs. */
@@ -78,11 +78,17 @@ export const threadPlacesOnHost = (proc: ProcShape, clones: string): HostThreadP
       Effect.gen(function* () {
         yield* checked(files);
         const folder = yield* folderOf(threadId);
-        yield* Effect.tryPromise({
+        const made = yield* Effect.tryPromise({
           try: async () => {
             await mkdir(root, { recursive: true, mode: 0o700 });
+            // A link left where the threads' folders go would send them elsewhere.
+            if (!(await lstat(root)).isDirectory()) return "linked" as const;
             // Not recursive: a folder already there is another start's, and is left alone.
             await mkdir(folder, { mode: 0o700 });
+            const [real, base] = await Promise.all([realPath(folder), realPath(resolve(clones))]);
+            if (real === join(base, HOST_THREADS_DIR, threadId)) return "made" as const;
+            await rmdir(folder).catch(() => undefined);
+            return "linked" as const;
           },
           catch: (cause) =>
             refuse(
@@ -91,6 +97,8 @@ export const threadPlacesOnHost = (proc: ProcShape, clones: string): HostThreadP
                 : "This machine couldn't make the thread's folder.",
             ),
         });
+        if (made === "linked")
+          return yield* refuse("This machine's folder for threads isn't a folder of its own.");
         yield* layProfileFiles(folder, files).pipe(
           Effect.tapError(() =>
             Effect.promise(() =>
@@ -108,15 +116,37 @@ export const threadPlacesOnHost = (proc: ProcShape, clones: string): HostThreadP
         const inside = yield* Effect.tryPromise({
           try: async () => {
             const [real, base] = await Promise.all([realPath(checkout), realPath(resolve(clones))]);
-            const info = await stat(real);
-            const threads = join(base, HOST_THREADS_DIR);
-            return info.isDirectory() && isStrictlyInside(base, real) && !isInside(threads, real)
-              ? real
-              : undefined;
+            const below = relativeInside(base, real);
+            // Not the clones folder, not the threads' own folders, and nowhere in a `.git`.
+            if (below === undefined || below === "") return undefined;
+            const names = below.split(sep);
+            if (names[0] === HOST_THREADS_DIR) return undefined;
+            if (names.some((name) => name.toLowerCase() === ".git")) return undefined;
+            // A linked worktree's `.git` is a file; a clone's own folder, or any folder that is
+            // no checkout at all, is not where a thread's files go.
+            return (await lstat(join(real, ".git"))).isFile() ? real : undefined;
           },
-          catch: () => refuse("That folder isn't on this machine."),
-        });
-        if (inside === undefined)
+          catch: () => undefined,
+        }).pipe(Effect.orElseSucceed(() => undefined));
+        // And git itself takes the folder for the top of that worktree.
+        const top =
+          inside === undefined
+            ? undefined
+            : yield* git(inside, ["rev-parse", "--show-toplevel"]).pipe(
+                Effect.provideService(Proc, proc),
+                Effect.map((out) => (out.status === 0 ? out.stdout.trim() : undefined)),
+                Effect.orElseSucceed(() => undefined),
+              );
+        const same =
+          inside !== undefined && top !== undefined
+            ? yield* Effect.promise(() =>
+                realPath(top).then(
+                  (real) => real === inside,
+                  () => false,
+                ),
+              )
+            : false;
+        if (inside === undefined || !same)
           return yield* refuse("Files are laid only in a worktree of this machine's clones.");
         const laid = yield* layProfileFiles(inside, files, { keepExisting: true });
         yield* excludeLaid(proc, inside, laid);

@@ -9,6 +9,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -81,7 +82,13 @@ describe("a machine's places for profile threads", () => {
       const { home, clones, places } = yield* machine();
       const id = yield* places.make("../../escape" as ThreadId, []).pipe(Effect.flip);
       expect(id.message).toContain("Not a thread id");
-      for (const path of ["../outside.txt", "/etc/passwd", "a/../../b", ".git/hooks/pre-commit"]) {
+      for (const path of [
+        "../outside.txt",
+        "/etc/passwd",
+        "a/../../b",
+        ".git/hooks/pre-commit",
+        ".g\u200cit/config",
+      ]) {
         const refused = yield* places.make(THREAD, [{ path, content: "x" }]).pipe(Effect.flip);
         expect(refused._tag, path).toBe("InvalidState");
       }
@@ -98,6 +105,20 @@ describe("a machine's places for profile threads", () => {
       expect(large.message).toContain("at most");
       expect(existsSync(join(clones, HOST_THREADS_DIR, THREAD))).toBe(false);
       expect(existsSync(join(home, "outside.txt"))).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
+  it.live("makes nothing through a link left where the threads' folders go", () =>
+    Effect.gen(function* () {
+      const { home, clones, places } = yield* machine();
+      const elsewhere = join(home, "elsewhere");
+      mkdirSync(elsewhere);
+      symlinkSync(elsewhere, join(clones, HOST_THREADS_DIR));
+      const refused = yield* places
+        .make(THREAD, [{ path: "AGENTS.md", content: "x" }])
+        .pipe(Effect.flip);
+      expect(refused.message).toContain("isn't a folder of its own");
+      expect(readdirSync(elsewhere)).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(ProcLive)),
   );
 
@@ -131,16 +152,32 @@ describe("a machine's places for profile threads", () => {
           encoding: "utf8",
         });
         expect(status).not.toContain(".claude");
+        // Only in that worktree: the same new path in another one of the clone still shows.
+        const other = join(clone, ".worktrees", "other");
+        execFileSync("git", ["-C", clone, "worktree", "add", "--quiet", "-b", "thread/y", other]);
+        mkdirSync(join(other, ".claude/skills/changelog"), { recursive: true });
+        writeFileSync(join(other, ".claude/skills/changelog/SKILL.md"), "its own\n");
+        expect(
+          execFileSync("git", ["-C", other, "status", "--porcelain"], { encoding: "utf8" }),
+        ).toContain(".claude");
 
         // Anywhere else on the machine is refused, however the path gets there.
         const outside = join(home, "elsewhere");
         mkdirSync(outside);
         symlinkSync(outside, join(clone, "link"));
         mkdirSync(join(clones, HOST_THREADS_DIR, "other"), { recursive: true });
+        mkdirSync(join(clones, "git.example.test", "plain"));
         for (const path of [
           outside,
           home,
           clones,
+          // Inside the clones, but no worktree: a git folder, the clone itself, plain folders.
+          join(clone, ".git"),
+          join(clone, ".git", "hooks"),
+          clone,
+          join(clone, ".worktrees"),
+          join(clones, "git.example.test"),
+          join(clones, "git.example.test", "plain"),
           join(clone, "link"),
           join(clones, HOST_THREADS_DIR, "other"),
           join(home, "nothing-here"),
@@ -152,6 +189,8 @@ describe("a machine's places for profile threads", () => {
         }
         expect(existsSync(join(outside, "planted.txt"))).toBe(false);
         expect(existsSync(join(clones, "planted.txt"))).toBe(false);
+        expect(existsSync(join(clone, ".git", "planted.txt"))).toBe(false);
+        expect(existsSync(join(clone, ".git", "hooks", "planted.txt"))).toBe(false);
         // Nor through a link inside the worktree that leads out of it.
         symlinkSync(outside, join(worktree, "out"));
         const through = yield* places
