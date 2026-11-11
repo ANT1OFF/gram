@@ -797,3 +797,45 @@ Carried to the wiring: the headers are made afresh for each dial (an Effect WebS
 headers it was made with, so a reconnect would repeat the nonce). A lending settings file copied
 back from earlier still checks out; a generation number kept beside the key will catch that,
 and resuming lending already goes through the lending sheet.
+
+### The ask window as built
+
+The ask is a page of its own, loaded from a `data:` address in a session partition of its own,
+with no bridge to the app. It draws only text it is handed, and answers through its own title,
+which the main process reads from that window alone. Allow takes a pointer click on content that
+has been on screen a full second; new content, or the window going out of sight and back, starts
+the second again, and the main process checks the second itself. Asks are shown one at a time,
+without taking focus, and one the server takes back stays on screen, marked withdrawn, until the
+person dismisses it, so nothing slides in under their pointer. What a command runs is read by a
+small shell parser: the programs, code from the folder, network, elevation, paths outside the
+folder, and "Gram couldn't read this command whole" where it can't. These are facts, never a
+verdict.
+
+The review of the ask window changed four things. The command reader now says it can't read
+what bash expands in ways it can't follow: `$((` that names a value or holds a substitution,
+`${…}` with a default, indirection or transformation, an unquoted here-document holding a
+substitution, `$'…'`, and brace expansion; it names assignments before a program, a `cd` out of
+the folder, and programs behind more wrappers (`find -exec`, `setsid`, `busybox`, `su -c`), and
+refuses wrapper options it doesn't know. The queue can't stick: a window that closes, crashes,
+hangs or reloads takes its ask with it as refused, and a withdrawal that crosses a draw is sent
+again. Allow also needs the pointer to have moved since the second ended and to have pressed on
+Allow after that, the window opens in the corner farthest from the pointer, and losing focus
+starts the second again. What the server says is drawn one line a piece, cut at 160 characters,
+with a warning for look-alike letters, and the command's own words in a fact are quoted.
+
+A second review found more that bash runs without showing it, and those are in: arithmetic in
+any form (`((…))`, `[[ … ]]`, `$[…]`, subscripts, `let`, `declare -i`, `printf -v`, `test -v`)
+and programs that run others in ways the reader doesn't follow (`watch`, `strace`, `flock` and
+the like) leave the command unread; `trap` is read as the text it runs; names are matched
+without case, as a disk that ignores case finds them; a pattern such as `.?` that can match `..`
+counts as leaving the folder; and a window closing is tied to the ask it drew, so a late close
+can't refuse the next one, and no ask window opens once the app is quitting.
+
+A third review found the earlier fixes holding and no ordinary command made unreadable, and
+asked for a few more, which are in: every sed and awk script is named as a script that can run
+commands and write files; an interpreter given a glued script (`-e'…'`) or fed a file or a
+here-document is named as running it; options between `bash -c` and its text leave the command
+unread; options that run commands (`tar --checkpoint-action`, `split --filter`, `ssh`'s
+`ProxyCommand` and the like) are named; and a window that goes while loading refuses its ask.
+The reader stays a list of facts: programs with exec options it doesn't know still read as
+themselves, which is why the command is always shown whole above them.

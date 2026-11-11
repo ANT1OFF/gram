@@ -10,6 +10,12 @@ import { type CommandRequest, OUTPUT_PIECES_MOST, runCommand, shellEnvironment }
 let cwd: string;
 const env = { PATH: process.env.PATH ?? "/usr/bin:/bin" };
 const quick = { killAfterMs: 300, drainAfterExitMs: 200 };
+/**
+ * A shell script run in a session of its own, out of the command's group. macOS has no
+ * `setsid` program, so this uses perl's, which both have.
+ */
+const detached = (script: string) =>
+  `perl -MPOSIX -e 'POSIX::setsid(); exec "/bin/sh", "-c", q{${script}}'`;
 
 beforeEach(async () => {
   cwd = await fs.realpath(await fs.mkdtemp(join(tmpdir(), "gram-run-")));
@@ -204,7 +210,7 @@ describe.skipIf(process.platform === "win32")("runCommand", () => {
     try {
       // Holds the pipes after the shell ends, so the end waits out the drain time.
       const result = await run(
-        "setsid sh -c 'sleep 2' >/dev/null 2>&1 </dev/null & sleep 2 & echo started",
+        `${detached("sleep 2")} >/dev/null 2>&1 </dev/null & sleep 2 & echo started`,
         { timeoutMs: 10_000 },
       );
       exitedAt = signals.length;
@@ -227,7 +233,7 @@ describe.skipIf(process.platform === "win32")("runCommand", () => {
     try {
       // The shell ends at once; a process it left holds the output for the drain time.
       const running = run(
-        "setsid sh -c 'sleep 2' >/dev/null 2>&1 </dev/null & sleep 2 & echo started",
+        `${detached("sleep 2")} >/dev/null 2>&1 </dev/null & sleep 2 & echo started`,
         {
           signal: controller.signal,
           timeoutMs: 50,
@@ -246,7 +252,7 @@ describe.skipIf(process.platform === "win32")("runCommand", () => {
 
   it("says output was lost when something it left behind still held it open", async () => {
     // Out of its group, so the kill as the shell ends doesn't reach it, and it holds the output.
-    const result = await run("setsid sh -c 'sleep 0.5; echo late' & sleep 0.1; echo now");
+    const result = await run(`${detached("sleep 0.5; echo late")} & sleep 0.1; echo now`);
     expect(text(result, "stdout")).toBe("now\n");
     expect(result.truncated).toBe(true);
     const plain = await run("echo now");
@@ -266,7 +272,7 @@ describe.skipIf(process.platform === "win32")("runCommand", () => {
       // output; the kill five seconds (here a tenth) later comes after the shell was collected.
       await runCommand(
         {
-          command: "setsid sleep 1 & sleep 5",
+          command: `${detached("sleep 1")} & sleep 5`,
           cwd,
           env,
           secrets: [],
