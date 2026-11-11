@@ -1096,7 +1096,9 @@ export const makeAgentSwitch = ({
       const until = yield* limitedUntil(thread);
       return yield* locked(
         rt,
-        store.getThread(threadId).pipe(Effect.map((current) => noteModeOf(rt, current, until, wanted))),
+        store
+          .getThread(threadId)
+          .pipe(Effect.map((current) => noteModeOf(rt, current, until, wanted))),
       );
     });
 

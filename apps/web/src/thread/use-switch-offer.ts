@@ -16,8 +16,8 @@ export function useSwitchOffer(threadId: ThreadId): SwitchOffer {
   const { checks } = useLaunchChecks();
   // Partial summaries (a thread still loading) have no model yet: nothing is offered.
   const agent = summary?.thread.model?.agent;
-  const to = otherAgent(agent ?? "claude");
-  const wanted = agent !== undefined && summary?.thread.role !== "orchestrator";
+  const to = summary?.thread.sessionSwitch?.target.agent ?? otherAgent(agent ?? "claude");
+  const wanted = agent !== undefined;
   const { models } = useModelsSettled(to, wanted && installed(checks, to));
   if (summary === undefined || agent === undefined) return { offered: false };
   return switchOffer({

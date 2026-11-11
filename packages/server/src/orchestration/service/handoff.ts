@@ -449,7 +449,13 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
                     : value,
                 ),
               );
-              yield* finishHandoff(workspaceId, threadId, marker, previous, installed.sessionSwitch);
+              yield* finishHandoff(
+                workspaceId,
+                threadId,
+                marker,
+                previous,
+                installed.sessionSwitch,
+              );
               // Limit mode holds the queue until the boot turn, which writes the note, has ended
               // (`catchUpAfterTurn`); nothing steers into it while the claim is `ready`.
               if (installed.sessionSwitch.handoff?.note !== "limit")
@@ -539,7 +545,10 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
                 ...t,
                 sessionSwitch: {
                   ...t.sessionSwitch,
-                  handoff: { note: "limit", ...(plan.limit === undefined ? {} : { limit: plan.limit }) },
+                  handoff: {
+                    note: "limit",
+                    ...(plan.limit === undefined ? {} : { limit: plan.limit }),
+                  },
                 },
               }
             : t,
@@ -855,8 +864,7 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
    */
   const resumeHandoff = (workspaceId: WorkspaceId, thread: Thread) =>
     Effect.gen(function* () {
-      const outbox = yield* readOutbox(workspaceId);
-      const marker = outbox.handoff;
+      const marker = (yield* readOutbox(workspaceId)).handoff;
       if (marker === undefined) return yield* resumeReady(workspaceId, thread);
       if (
         marker.target !== undefined &&

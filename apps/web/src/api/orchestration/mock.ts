@@ -136,8 +136,8 @@ export function createOrchestrationMock(
       orchestration.setFeaturePaused(workspaceId, feature, paused),
     renameFeature: (workspaceId, feature, to) =>
       orchestration.renameFeature(workspaceId, feature, to),
-    switchOrchestrator: (workspaceId, model) =>
-      orchestration.switchOrchestrator(workspaceId, model),
+    switchOrchestrator: (workspaceId, model, options) =>
+      orchestration.switchOrchestrator(workspaceId, model, options),
     retryOrchestratorSwitch: async () => {
       throw new Error("This invented mock has no failed startup owner to retry.");
     },

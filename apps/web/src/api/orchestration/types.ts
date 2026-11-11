@@ -116,7 +116,15 @@ export interface OrchestrationApi {
    * and while another handoff runs.
    */
   orchestratorHandoff(workspaceId: WorkspaceId): Promise<Thread>;
-  switchOrchestrator(workspaceId: WorkspaceId, model: ModelRef): Promise<Thread>;
+  /**
+   * Continues the orchestrator in `model`: its checkpoint saves memory and, unless `note` is false,
+   * writes the handoff note its boot digest carries with the last exchanges with the user.
+   */
+  switchOrchestrator(
+    workspaceId: WorkspaceId,
+    model: ModelRef,
+    options?: { readonly note?: boolean },
+  ): Promise<Thread>;
   retryOrchestratorSwitch(workspaceId: WorkspaceId): Promise<Thread>;
   cancelOrchestratorSwitch(workspaceId: WorkspaceId): Promise<void>;
   /**

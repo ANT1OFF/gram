@@ -259,12 +259,7 @@ describe("explicit workspace orchestrator switch", () => {
     );
   }
 
-  for (const failure of [
-    "unsupported",
-    "discovery",
-    "missing model",
-    "effort",
-  ] as const) {
+  for (const failure of ["unsupported", "discovery", "missing model", "effort"] as const) {
     it.effect(`preflight ${failure} leaves the source and charter unchanged`, () =>
       inServer((world) =>
         runCase(() =>

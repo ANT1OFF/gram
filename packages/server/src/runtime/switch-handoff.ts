@@ -559,6 +559,10 @@ const usersOwn = (message: GramUIMessage): boolean =>
   message.metadata?.author !== "server" &&
   !message.parts.some((part) => NOT_THE_USERS.has(part.type));
 
+/** The turn a message belongs to, or one of its own when it names none. */
+const turnOf = (message: GramUIMessage, index: number): string =>
+  message.metadata?.turnId ?? `#${index}`;
+
 /** What `userExchanges` keeps. */
 export interface UserExchanges {
   readonly messages: ReadonlyArray<GramUIMessage>;
@@ -591,8 +595,6 @@ export const userExchanges = (
     }
   });
   const window = messages.slice(start, end);
-  const turnOf = (message: GramUIMessage, index: number): string =>
-    message.metadata?.turnId ?? `#${index}`;
   const exchanges = new Set<string>();
   window.forEach((message, index) => {
     if (usersOwn(message)) exchanges.add(turnOf(message, index));
