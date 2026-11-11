@@ -492,6 +492,13 @@ export interface ThreadRuntimesShape {
     midTurn?: RestartMidTurn,
   ): Effect.Effect<RestartSessionResult, ThreadNotFound | InvalidState>;
   /**
+   * Puts the thread's agent session to rest by the path an eviction takes, when it is idle with
+   * nothing running under it: the conversation stays, and its next message opens a session on it
+   * again: `rested`. `none` for a thread with no session open, and `working` for one that is at
+   * work, waits on the user, is starting or has something waiting to go, which is left as it is.
+   */
+  restSession(threadId: ThreadId): Effect.Effect<"rested" | "none" | "working">;
+  /**
    * Opens a cold or evicted thread's agent session with no turn and no prompt, by the path creating
    * a thread takes, so what the session reports can be shown: the Connectors tab asks when it is
    * shown. The session connects the thread's MCP servers exactly as its next message would, which

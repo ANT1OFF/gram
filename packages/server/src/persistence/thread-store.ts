@@ -26,6 +26,10 @@ import {
   ProjectLocalCheck,
   applyProjectSettingsWrites,
   type SettingsWrite,
+  SettingsPatch,
+  applySettingsPatch,
+  embeddingOn,
+  settingsPatchPaths,
   ProjectId,
   SeenConnector,
   Settings,
@@ -279,6 +283,10 @@ export const pruneHistory = (sql: SqlClient.SqlClient, now: number) =>
             AND seq NOT IN (SELECT seq FROM settings_audit ORDER BY seq DESC
               LIMIT ${SETTINGS_AUDIT_KEPT_ROWS})
             AND (request_id IS NULL OR request_id NOT IN (SELECT id FROM requests))`;
+        yield* sql`DELETE FROM actor_events
+          WHERE at < ${now - ACTOR_EVENTS_KEPT_MS}
+            AND seq NOT IN (SELECT seq FROM actor_events ORDER BY seq DESC
+              LIMIT ${ACTOR_EVENTS_KEPT_ROWS})`;
         yield* sql`DELETE FROM helper_usage WHERE day < ${utcDayOf(now - HELPER_USAGE_KEPT_MS)}`;
         yield* sql`DELETE FROM helper_events WHERE day < ${utcDayOf(now - HELPER_EVENTS_KEPT_MS)}`;
       }),
@@ -291,6 +299,26 @@ export const pruneHistory = (sql: SqlClient.SqlClient, now: number) =>
         ),
       ),
     );
+
+/** One thing a signed-in person did (`actor_events`). */
+export interface ActorEventEntry {
+  readonly at: number;
+  readonly actor: {
+    readonly id: string;
+    readonly name: string;
+    readonly role: string;
+  };
+  /** The call that did it, by its RPC tag (`thread.send`, `settings.set`). */
+  readonly action: string;
+  readonly threadId?: string | undefined;
+  readonly workspaceId?: string | undefined;
+  /** What else identifies it: ids and names of what changed, never what was typed. */
+  readonly data: Readonly<Record<string, unknown>>;
+}
+
+export interface ActorEventRecord extends ActorEventEntry {
+  readonly seq: number;
+}
 
 /** Who resolved a Waiting on you item, when, and what they said of it. */
 export interface WaitResolution {
@@ -316,6 +344,9 @@ export const ORCHESTRATION_EVENTS_KEPT_MS = 90 * DAY_MS;
  */
 export const SETTINGS_AUDIT_KEPT_MS = 365 * DAY_MS;
 export const SETTINGS_AUDIT_KEPT_ROWS = 1_000;
+/** `actor_events`: a year, and the newest 10,000 whatever their age. */
+export const ACTOR_EVENTS_KEPT_MS = 365 * DAY_MS;
+export const ACTOR_EVENTS_KEPT_ROWS = 10_000;
 /** `helper_usage`: 400 UTC days of daily totals, of which the helper reads today's. */
 export const HELPER_USAGE_KEPT_MS = 400 * DAY_MS;
 /** `helper_events`: 30 UTC days of daily counts, of which the helper reads the last 7. */
@@ -718,6 +749,14 @@ export interface ThreadStoreShape {
    * what a thread said, which the next report puts back.
    */
   getSeenConnectors: Effect.Effect<ReadonlyArray<SeenConnector>>;
+  /**
+   * The settings an embedding deployment supplies (`settings/supplied.ts`), kept beside the
+   * settings under their own key. While the hosted features are on they are applied over every
+   * read and every write of the settings, so nothing inside can change what they set.
+   */
+  getSuppliedSettings: Effect.Effect<SettingsPatch | undefined>;
+  /** Replaces what is supplied, `undefined` for nothing; answers the settings as they now read. */
+  putSuppliedSettings(patch: SettingsPatch | undefined): Effect.Effect<Settings>;
   /** Read-modify-write in one transaction; `f` answering `undefined` writes nothing. */
   updateSeenConnectors(
     f: (seen: ReadonlyArray<SeenConnector>) => ReadonlyArray<SeenConnector> | undefined,
@@ -802,6 +841,16 @@ export interface ThreadStoreShape {
   /** Opaque here: the service owns the schema of what it stores. */
   putOutbox(workspaceId: WorkspaceId, json: string): Effect.Effect<void>;
 
+  /**
+   * Appends what a signed-in person did, in the order given and in one transaction, and returns
+   * the last entry's sequence number (0 for none).
+   */
+  appendActorEvents(entries: ReadonlyArray<ActorEventEntry>): Effect.Effect<number>;
+  /** What signed-in people did after `afterSeq`, oldest first, at most `limit` (1,000 at most). */
+  listActorEvents(options?: {
+    readonly afterSeq?: number;
+    readonly limit?: number;
+  }): Effect.Effect<ReadonlyArray<ActorEventRecord>>;
   /** Appends to the workspace's audit and returns the entry's sequence number. */
   appendOrchestrationEvent(
     workspaceId: WorkspaceId,
@@ -1559,8 +1608,42 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const storedSettings = sql<{
         value: string;
       }>`SELECT value FROM settings WHERE key = 'app'`.pipe(Effect.map((rows) => rows[0]?.value));
-      /** Field by field: a part that doesn't decode reads as its default, and the rest is kept. */
+      /** Beside the settings, in the same table under its own key (`getSuppliedSettings`). */
+      const SUPPLIED_KEY = "supplied";
+      /** What is supplied, read once and kept: every read of the settings applies it. */
+      let supplied: { readonly patch: SettingsPatch | undefined } | undefined;
+      const readSupplied = Effect.gen(function* () {
+        if (supplied !== undefined) return supplied.patch;
+        const rows = yield* sql<{
+          value: string;
+        }>`SELECT value FROM settings WHERE key = ${SUPPLIED_KEY}`;
+        let patch: SettingsPatch | undefined;
+        try {
+          patch =
+            rows[0] === undefined
+              ? undefined
+              : Schema.decodeUnknownSync(SettingsPatch)(JSON.parse(rows[0].value));
+        } catch {
+          // Written by a build that knew other settings: nothing is supplied until it is again.
+          yield* Effect.logWarning("supplied settings unreadable; ignored");
+          patch = undefined;
+        }
+        // A replacement that landed while this read was out is the newer of the two.
+        supplied ??= { patch };
+        return supplied.patch;
+      });
+      /** `settings` as they read with what is supplied over them, while the hosted features are on. */
+      const withSupplied = (settings: Settings) =>
+        Effect.map(readSupplied, (patch) =>
+          patch === undefined || !embeddingOn(settings)
+            ? settings
+            : applySettingsPatch(settings, patch),
+        );
       const readSettings = Effect.gen(function* () {
+        return yield* withSupplied(yield* readStoredSettings);
+      });
+      /** Field by field: a part that doesn't decode reads as its default, and the rest is kept. */
+      const readStoredSettings = Effect.gen(function* () {
         const stored = yield* storedSettings;
         if (stored === undefined) return DEFAULT_SETTINGS;
         const { value, mended } = decodeMended(
@@ -1578,8 +1661,15 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
        * read in its place), and the keys this build doesn't know. A row with nothing to keep is set
        * aside under its own key before it is replaced.
        */
-      const writeSettings = (settings: Settings, touched?: ReadonlyArray<FieldPath>) =>
+      const writeSettings = (given: Settings, givenTouched?: ReadonlyArray<FieldPath>) =>
         Effect.gen(function* () {
+          // What is supplied is written with every change, so the stored row never drifts from it.
+          const settings = yield* withSupplied(given);
+          const patch = yield* readSupplied;
+          const touched =
+            givenTouched === undefined || patch === undefined || settings === given
+              ? givenTouched
+              : [...givenTouched, ...settingsPatchPaths(patch)];
           const stored = yield* storedSettings;
           const { json, replacesUnreadable } = mendedWrite(
             Settings,
@@ -2882,6 +2972,31 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
 
         getSettings: run(readSettings),
         putSettings: (settings) => tx(writeSettings(settings)),
+        getSuppliedSettings: run(readSupplied),
+        putSuppliedSettings: (patch) =>
+          tx(
+            Effect.gen(function* () {
+              if (patch === undefined) {
+                yield* sql`DELETE FROM settings WHERE key = ${SUPPLIED_KEY}`;
+              } else {
+                const json = JSON.stringify(Schema.encodeSync(SettingsPatch)(patch));
+                yield* sql`INSERT INTO settings (key, value) VALUES (${SUPPLIED_KEY}, ${json})
+                  ON CONFLICT (key) DO UPDATE SET value = excluded.value`;
+              }
+              supplied = { patch };
+              const stored = yield* readStoredSettings;
+              yield* writeSettings(stored, patch === undefined ? [] : settingsPatchPaths(patch));
+              return yield* readSettings;
+            }),
+          ).pipe(
+            // Outside the transaction: a write that rolled back, at its commit or by an interrupt,
+            // leaves what was supplied before, read again from the row.
+            Effect.onExit((exit) =>
+              Effect.sync(() => {
+                if (exit._tag === "Failure") supplied = undefined;
+              }),
+            ),
+          ),
         getSeenConnectors: run(readSeenConnectors),
         updateSeenConnectors: (f) =>
           tx(
@@ -3259,6 +3374,57 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             sql`INSERT INTO orchestration_outbox (workspace_id, data)
               VALUES (${workspaceId}, ${json})
               ON CONFLICT (workspace_id) DO UPDATE SET data = excluded.data`.pipe(Effect.asVoid),
+          ),
+
+        appendActorEvents: (entries) =>
+          entries.length === 0
+            ? Effect.succeed(0)
+            : run(
+                sql.withTransaction(
+                  Effect.forEach(entries, (entry) =>
+                    sql<{ seq: number }>`INSERT INTO actor_events
+                        (at, actor_id, actor_name, actor_role, action, thread_id, workspace_id, data)
+                        VALUES (${entry.at}, ${entry.actor.id}, ${entry.actor.name},
+                          ${entry.actor.role}, ${entry.action}, ${entry.threadId ?? null},
+                          ${entry.workspaceId ?? null}, ${JSON.stringify(entry.data)})
+                        RETURNING seq`.pipe(Effect.map((rows) => Number(rows[0]!.seq))),
+                  ).pipe(Effect.map((seqs) => seqs.at(-1) ?? 0)),
+                ),
+              ),
+        listActorEvents: (options = {}) =>
+          run(
+            sql<{
+              seq: number;
+              at: number;
+              actor_id: string;
+              actor_name: string;
+              actor_role: string;
+              action: string;
+              thread_id: string | null;
+              workspace_id: string | null;
+              data: string;
+            }>`SELECT * FROM actor_events WHERE seq > ${options.afterSeq ?? 0}
+              ORDER BY seq LIMIT ${Math.max(1, Math.min(options.limit ?? 200, 1_000))}`.pipe(
+              Effect.map((rows) =>
+                rows.map((r): ActorEventRecord => {
+                  let data: Record<string, unknown> = {};
+                  try {
+                    data = JSON.parse(r.data) as Record<string, unknown>;
+                  } catch {
+                    // A row whose detail doesn't parse still says who did what.
+                  }
+                  return {
+                    seq: Number(r.seq),
+                    at: Number(r.at),
+                    actor: { id: r.actor_id, name: r.actor_name, role: r.actor_role },
+                    action: r.action,
+                    ...(r.thread_id === null ? {} : { threadId: r.thread_id }),
+                    ...(r.workspace_id === null ? {} : { workspaceId: r.workspace_id }),
+                    data,
+                  };
+                }),
+              ),
+            ),
           ),
 
         appendOrchestrationEvent: (workspaceId, entry) =>

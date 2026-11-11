@@ -193,6 +193,8 @@ export const HostStopPrepared = Schema.Struct({
   kept: Schema.Array(HostStopKept),
   /** Why it isn't idle when `busy` doesn't say, such as an update under way. */
   note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+  /** The stop didn't hold (taken back, or its hold ran out): the host takes work again. */
+  released: Schema.optionalKey(Schema.Boolean),
 });
 export type HostStopPrepared = typeof HostStopPrepared.Type;
 
@@ -414,6 +416,7 @@ export const HostSessionOpen = Schema.Struct({
   outwardGate: Schema.optionalKey(
     Schema.Union([Schema.Boolean, Schema.Literals(["all", "irreversible"])]),
   ),
+  gateConnectors: Schema.optionalKey(Schema.Boolean),
   confineWrites: Schema.optionalKey(Schema.Boolean),
   pinCwd: Schema.optionalKey(Schema.Boolean),
   mcpAllowlist: Schema.optionalKey(Schema.Array(Schema.String)),

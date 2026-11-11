@@ -63,11 +63,11 @@ export const HOST_STREAM_FD = 3;
  * The agents whose sessions the host runs: Claude Code on the user's own login, or on the token
  * `oauthToken` reads (a joined machine's, from `claude setup-token`). A session through a gateway
  * profile, and every Codex session, still opens in the server, which keeps the keys and the Codex
- * homes. Under the fake agent the host runs the fake, as the server does.
+ * homes. Under the fake agent the host runs the fake, as the server does, echoing when asked to.
  */
 const hostAgents = (oauthToken?: () => string | undefined): Layer.Layer<AgentHosts> =>
   process.env["GRAM_FAKE_AGENT"] === "1"
-    ? makeFakeAgentAdapter()
+    ? makeFakeAgentAdapter(process.env["GRAM_FAKE_AGENT_REPLY"] === "echo" ? { reply: "echo" } : {})
     : Layer.effect(
         AgentHosts,
         Effect.gen(function* () {

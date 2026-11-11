@@ -53,6 +53,7 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
     findThread,
     listeningWorkspace,
     wakeAlarms,
+    wakeClock,
     signals,
     readOutbox,
     publisher,
@@ -107,16 +108,21 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       yield* FiberMap.run(
         wakeAlarms,
         alarm.id,
-        Effect.sleep(after ?? Duration.millis(Math.max(0, alarm.at - now))).pipe(
-          Effect.andThen(
-            signals.offer({
-              type: "wakeAlarm",
-              workspaceId,
-              wakeId: alarm.id,
-              ...(fired === undefined ? {} : { fired }),
-            }),
+        wakeClock
+          .until(
+            `workspace-wake:${alarm.id}`,
+            after === undefined ? alarm.at : now + Duration.toMillis(after),
+          )
+          .pipe(
+            Effect.andThen(
+              signals.offer({
+                type: "wakeAlarm",
+                workspaceId,
+                wakeId: alarm.id,
+                ...(fired === undefined ? {} : { fired }),
+              }),
+            ),
           ),
-        ),
       );
     });
 

@@ -519,6 +519,30 @@ const hosts = Effect.gen(function* () {
   yield* sql`CREATE INDEX session_leases_host ON session_leases(host_id)`;
 });
 
+/**
+ * What each signed-in person did, in order: a row per call that changes something, made by a
+ * person a fronting proxy named (`http/fronted-identity.ts`). `action` is the call, `thread_id`
+ * and `workspace_id` what it was about where it says, and `data` the rest of what identifies it
+ * (a request, a message, the settings it touched), never what was typed. Empty unless fronted
+ * sign-in is on.
+ */
+const actorEvents = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE actor_events (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    actor_id TEXT NOT NULL,
+    actor_name TEXT NOT NULL,
+    actor_role TEXT NOT NULL,
+    action TEXT NOT NULL,
+    thread_id TEXT,
+    workspace_id TEXT,
+    data TEXT NOT NULL
+  )`;
+  yield* sql`CREATE INDEX actor_events_thread ON actor_events(thread_id, seq)
+    WHERE thread_id IS NOT NULL`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -527,6 +551,7 @@ export const migrations = {
   "0005_usage_limit_history": usageLimitHistory,
   "0006_message_parts": messageParts,
   "0007_hosts": hosts,
+  "0008_actor_events": actorEvents,
 };
 
 /**

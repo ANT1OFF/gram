@@ -31,7 +31,11 @@ import type { TerminalGate } from "../terminal/gate.ts";
 import { terminalsThroughHost } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
 import { foregroundOf } from "../ports/pure.ts";
-import { followingSessions } from "./following-sessions.ts";
+import {
+  followingSessions,
+  REATTACH_WITHIN_MS,
+  STOPPED_REATTACH_MS,
+} from "./following-sessions.ts";
 import type { AttachmentsOnMachine } from "./carry-attachments.ts";
 import type { HostConnection } from "./protocol.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
@@ -53,6 +57,8 @@ export interface Machine {
    * redial (`followingSessions`); without it, they end with the connection they opened on.
    */
   readonly connection?: Effect.Effect<HostConnection, HostUnavailable>;
+  /** How long its sessions wait for it to dial in again, read at each wait. */
+  readonly reattachMs?: () => number;
 }
 
 const offline = (machine: Machine) => `${machine.name} is offline.`;
@@ -454,7 +460,10 @@ export const machineWorkerHost = (
     const sessions =
       machine.connection === undefined
         ? connection.sessions
-        : followingSessions(machine.connection);
+        : followingSessions(
+            machine.connection,
+            machine.reattachMs === undefined ? {} : { reattachMs: machine.reattachMs },
+          );
     return {
       id: machine.id,
       sessions: AgentHosts.of({
@@ -548,6 +557,9 @@ export const machineHosts = (
             origin: () => remote.origin(id),
             recheckSignIn: () => void remote.checkSignIn(id),
             connection: remote.connection(id),
+            // A machine readied to stop is waited for longer: it comes back as a new host.
+            reattachMs: () =>
+              remote.stops.recently(id) ? STOPPED_REATTACH_MS : REATTACH_WITHIN_MS,
           };
           const host = yield* machineWorkerHost(machine, connection, deps).pipe(
             Scope.provide(scope),

@@ -29,6 +29,8 @@ import {
   type AskedDespiteAutonomy,
 } from "./definition.ts";
 import { inputLengthProblem } from "./input.ts";
+import { DecisionHook } from "../embedding/decision-hook.ts";
+import { makeActionGuard, type ActionGuard } from "../embedding/guard.ts";
 import { dreamFileTools } from "./dream-tools.ts";
 import { sendFileTool } from "./file-tools.ts";
 import { sentFromMachinesHere } from "./sent-from-machines.ts";
@@ -164,6 +166,8 @@ export const bindAppTools = (
   definitions: ReadonlyArray<AppToolDefinition>,
   threadId: ThreadId,
   gate?: ApprovalGate,
+  /** The decision hook's guard, asked about a tool that names a `decision`; absent asks nothing. */
+  guard?: ActionGuard,
 ): ReadonlyArray<AppTool> =>
   definitions.toSorted(byToolName).map((definition) => {
     const { descriptor } = definition;
@@ -321,6 +325,31 @@ export const bindAppTools = (
             ),
           );
           const target = yield* resolve(decoded);
+          const decision =
+            guard === undefined ? undefined : definition.decision?.(threadId, target);
+          if (guard !== undefined && decision !== undefined) {
+            yield* guard(
+              threadId,
+              { ...decision, initiator: "agent" },
+              (describeCall === undefined
+                ? Effect.succeed(descriptor.description)
+                : describeCall(threadId, target).pipe(
+                    Effect.catchCause(() => Effect.succeed(descriptor.description)),
+                  )
+              ).pipe(
+                Effect.map((description) => ({
+                  toolName: `mcp__gram__${descriptor.name}`,
+                  displayName: descriptor.name,
+                  description: plainCardText(description),
+                  input: decision.detail,
+                })),
+              ),
+            ).pipe(
+              Effect.mapError(
+                (refused) => new AppToolError({ tool: descriptor.name, message: refused.message }),
+              ),
+            );
+          }
           const { carded, why } = yield* approve(decoded, target);
           const result = yield* definition.handle(threadId, target, { carded });
           // The agent learns why the user was asked, and how to go without next time.
@@ -717,6 +746,12 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
         ...waitAppTools(waits, runtimes),
       ];
       const gate = makeApprovalGate(runtimes, store);
+      // Asks nothing unless a decision hook is configured and hosted features are on.
+      const guard = makeActionGuard({
+        hook: Option.getOrUndefined(yield* Effect.serviceOption(DecisionHook)),
+        store,
+        runtimes,
+      });
       const registry = AppToolRegistry.of({
         definitions,
         register: (added) =>
@@ -742,6 +777,7 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
             definitions.filter((d) => boundFor(d, audience)),
             threadId,
             gate,
+            guard,
           ),
         // The server's gate is the authority on Claude too: the SDK's permission
         // layer lets a call through unasked in `bypassPermissions`, under an allow rule or an
@@ -752,6 +788,7 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
             definitions.filter((d) => boundFor(d, audience)),
             threadId,
             gate,
+            guard,
           ),
         audienceOf: runtimes.audienceOf,
       });

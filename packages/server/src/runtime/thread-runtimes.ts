@@ -72,6 +72,8 @@ import {
   BUSY,
   makeTurnId,
   locked,
+  evictable,
+  NOTHING_RUNNING,
   guarded,
   replyOf,
   type GetRuntime,
@@ -82,6 +84,9 @@ import { makeTurnLifecycle } from "./turn-lifecycle.ts";
 import { makeMessageQueue, makeQueueMethods } from "./message-queue.ts";
 import { makeThreadLifecycle, makeCloseMethods } from "./thread-lifecycle.ts";
 import { makeAgentEvents } from "./agent-events.ts";
+import { DecisionHook } from "../embedding/decision-hook.ts";
+import { EventSink } from "../embedding/event-sink.ts";
+import { makeHookedRequests } from "../embedding/hooked-requests.ts";
 import { makeSessionSwitch, makeSwitchMethods } from "./session-switch.ts";
 import { makeSessionLifecycle } from "./session-lifecycle.ts";
 import type { InputUndelivered } from "./undelivered.ts";
@@ -263,6 +268,14 @@ const make = Effect.gen(function* () {
   const limitTimers = yield* FiberMap.make<ThreadId>();
   /** The latest reading of each subscription window, whose rejections name when an account lifts. */
   const limitReadings = yield* Effect.serviceOption(UsageLimitReadings);
+  // Present in the full server; `undefined` leaves every request and session as it always was.
+  const decisions = Option.getOrUndefined(yield* Effect.serviceOption(DecisionHook));
+  const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
+  const hooked = makeHookedRequests();
+  /** The decision hook's calls for agents' requests, which outlive the event that began them. */
+  const decisionCalls = yield* FiberSet.make();
+  const forkDecision = (decision: Effect.Effect<void>) =>
+    FiberSet.run(decisionCalls, decision).pipe(Effect.asVoid);
   const resumeHolds = new Set<ResumeHold>();
   const queueHolds = new Set<QueueHold>();
   const turnHolds = new Set<TurnHold>();
@@ -862,6 +875,10 @@ const make = Effect.gen(function* () {
   const { handleEvent, setBackground, setLapsedConnectors } = makeAgentEvents({
     store,
     hub,
+    decisions,
+    hooked,
+    eventSink,
+    forkDecision,
     config,
     hooks,
     checkouts,
@@ -924,6 +941,8 @@ const make = Effect.gen(function* () {
   const { clearPendingRequests, requestApproval, respond } = makeServerApprovals({
     store,
     hub,
+    decisions,
+    hooked,
     getRuntime,
     serverRequests,
     serverApprovalOrigins,
@@ -939,6 +958,7 @@ const make = Effect.gen(function* () {
 
   const { stopInMissing, forkStopInMissing, openSession, recoverOwned } = makeSessionLifecycle({
     store,
+    decisions,
     hub,
     checkouts,
     hosts,
@@ -1338,8 +1358,29 @@ const make = Effect.gen(function* () {
     becomeIdle,
   });
 
+  const restSession: ThreadRuntimesShape["restSession"] = (threadId) =>
+    Effect.gen(function* () {
+      const rt = runtimes.get(threadId);
+      if (rt === undefined) return "none";
+      const rested = yield* stopSession(
+        rt,
+        "evict",
+        () => evictable(rt) && rt.background.length === 0 && rt.queue.length === 0,
+      );
+      if (rested) return "rested";
+      return yield* locked(
+        rt,
+        Effect.sync(() =>
+          rt.session === undefined && rt.launch === undefined && NOTHING_RUNNING.has(rt.status)
+            ? ("none" as const)
+            : ("working" as const),
+        ),
+      );
+    });
+
   const service = ThreadRuntimes.of({
     ...switchMethods,
+    restSession,
     switchSession,
     cutAtBoot: cutOff,
     ...queueMethods,

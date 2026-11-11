@@ -230,10 +230,22 @@ export const stopOn = (deps: StopDeps): HostStop => {
         .admit(keeping, () => "closed" as const)
         .pipe(Effect.catch(() => keeping));
       if (cancels !== cancelled)
-        return { idle: false, busy, kept, note: "The stop was taken back meanwhile." };
+        return {
+          idle: false,
+          busy,
+          kept,
+          released: true,
+          note: "The stop was taken back meanwhile.",
+        };
       // The hold ran out under the pushes: work may have been let in since the look.
       if (!stopping())
-        return { idle: false, busy, kept, note: "Keeping its work took too long; ask again." };
+        return {
+          idle: false,
+          busy,
+          kept,
+          released: true,
+          note: "Keeping its work took too long; ask again.",
+        };
       // The hold runs from the answer: the pushes may have taken most of one.
       heldUntil = now() + holdMs;
       return { idle, busy, kept };

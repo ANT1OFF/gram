@@ -1,5 +1,6 @@
 // Approval cards the server raises and answers itself (`requestApproval`), rather than an agent session.
 
+import { ActingPerson } from "../embedding/person.ts";
 import * as Cause from "effect/Cause";
 import {
   type ThreadId,
@@ -24,6 +25,14 @@ import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { EventHubShape } from "../events/event-hub.ts";
 import type { TurnLifecycle } from "./turn-lifecycle.ts";
 import type { MessageQueue } from "./message-queue.ts";
+import * as Option from "effect/Option";
+import {
+  DECISION_UNAVAILABLE,
+  refusalText,
+  type Decided,
+  type DecisionHookShape,
+} from "../embedding/decision-hook.ts";
+import type { HookedRequests } from "../embedding/hooked-requests.ts";
 
 /** Why one answer of `respondMany` wasn't given, in words a row of the inbox can show. */
 export const respondFailure = (cause: Cause.Cause<unknown>): string => {
@@ -38,6 +47,8 @@ export const respondFailure = (cause: Cause.Cause<unknown>): string => {
 /** Internal result provenance; client RequestAnswer schemas have no resolution field. */
 export type ServerApprovalAnswer = ApprovalAnswer & {
   readonly resolution?: AppToolApprovalResolution;
+  /** The signed-in person who answered, where the server knows one (`embedding/person.ts`). */
+  readonly answeredBy?: string;
 };
 
 export interface ServerApprovalRequest {
@@ -84,6 +95,9 @@ export const approvalResolution = (
 export interface ServerApprovalsDeps {
   readonly store: ThreadStoreShape;
   readonly hub: EventHubShape;
+  /** The decision hook, where one is configured, and the cards it sent to a person. */
+  readonly decisions: DecisionHookShape | undefined;
+  readonly hooked: HookedRequests;
   readonly getRuntime: GetRuntime;
   readonly serverRequests: Map<RequestId, ServerApprovalRequest>;
   readonly serverApprovalOrigins: Map<RequestId, ThreadId>;
@@ -101,6 +115,8 @@ export interface ServerApprovalsDeps {
 export const makeServerApprovals = ({
   store,
   hub,
+  decisions,
+  hooked,
   getRuntime,
   serverRequests,
   serverApprovalOrigins,
@@ -112,6 +128,8 @@ export const makeServerApprovals = ({
 }: ServerApprovalsDeps) => {
   const clearPendingRequests = (rt: Runtime, reason: string) =>
     Effect.gen(function* () {
+      // What the decision hook still holds of the thread's goes with its cards.
+      hooked.forget(rt.threadId);
       const cancelled: Array<[RequestId, ServerApprovalRequest]> = [];
       for (const [requestId, request] of serverRequests) {
         if (request.threadId !== rt.threadId) continue;
@@ -263,6 +281,7 @@ export const makeServerApprovals = ({
               });
             }
             serverRequests.delete(requestId);
+            const answeredBy = yield* ActingPerson;
             yield* Effect.gen(function* () {
               if (!(yield* store.removeRequest(threadId, requestId))) {
                 return yield* new RequestNotFound({ threadId, requestId });
@@ -293,6 +312,7 @@ export const makeServerApprovals = ({
                     scope: failed ? "once" : answer.scope,
                     ...(!failed && answer.message !== undefined ? { message: answer.message } : {}),
                     resolution,
+                    ...(failed || answeredBy === undefined ? {} : { answeredBy }),
                   });
                 }),
               ),
@@ -306,7 +326,64 @@ export const makeServerApprovals = ({
       );
     });
 
-  const respondToSession = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
+  /**
+   * A person's answer to a card the decision hook sent them, as the agent gets it. An approval is
+   * put to the hook once more, naming the first call and the card, so the endpoint has the last
+   * word (and, once the server knows who answered, can check them); anything but `allow` turns it
+   * into a denial that says why. A rejection, and an
+   * answer to any other card, pass as they are.
+   */
+  const confirmedByHook = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
+    Effect.gen(function* () {
+      const asked = hooked.asked.get(requestId);
+      if (
+        asked === undefined ||
+        decisions === undefined ||
+        answer.kind !== "approval" ||
+        answer.decision !== "allow"
+      ) {
+        return answer;
+      }
+      const thread = yield* store.getThread(threadId).pipe(Effect.option);
+      // This runs in the call of whoever answered the card.
+      const answeredBy = yield* ActingPerson;
+      for (const each of asked.actions) {
+        const decided: Decided = Option.isNone(thread)
+          ? { id: "", decision: "refuse", reason: DECISION_UNAVAILABLE }
+          : yield* decisions.decide({
+              ...each,
+              initiator: "agent",
+              thread: thread.value,
+              approval: {
+                decisionId: each.decisionId,
+                askId: requestId,
+                ...(answeredBy === undefined ? {} : { answeredBy }),
+              },
+            });
+        if (decided.decision === "allow") continue;
+        const refusal = refusalText(
+          each.action,
+          decided.reason ?? "The approval was not accepted.",
+        );
+        yield* hub.publish({ type: "notify", kind: "info", title: refusal, threadId });
+        return {
+          kind: "approval",
+          decision: "deny",
+          scope: "once",
+          message: refusal,
+        } satisfies RequestAnswer;
+      }
+      return { ...answer, scope: "once" } satisfies RequestAnswer;
+    });
+
+  const respondToSession = (threadId: ThreadId, requestId: RequestId, given: RequestAnswer) =>
+    // The hook is asked before the lock is taken, so a slow endpoint holds up nothing else of
+    // the thread; whether the card still waits is read under the lock, as it always was.
+    confirmedByHook(threadId, requestId, given).pipe(
+      Effect.flatMap((answer) => deliverToSession(threadId, requestId, answer)),
+    );
+
+  const deliverToSession = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
     withSession(threadId, (rt, session) =>
       Effect.gen(function* () {
         const waiting = yield* store.listRequests(threadId);
@@ -322,6 +399,7 @@ export const makeServerApprovals = ({
               (error) => new InvalidState({ message: error.message, threadId, status: rt.status }),
             ),
           );
+        hooked.asked.delete(requestId);
         // The adapter may have reported it resolved already, which published the event.
         if (yield* store.removeRequest(threadId, requestId)) {
           yield* hub.publish({ type: "thread.requestResolved", threadId, requestId });

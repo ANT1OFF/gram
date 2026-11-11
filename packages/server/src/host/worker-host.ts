@@ -1,4 +1,5 @@
 import {
+  embeddingOn,
   type HostHello,
   type HostId,
   hostOf,
@@ -10,9 +11,11 @@ import {
 } from "@gram/contracts";
 import { GitStateRuntime, Proc, Worktrees } from "@gram/git";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import type { HostAttachments, HostFileReads } from "./file-reads.ts";
 import type { HostThreadPlaces } from "./thread-places.ts";
 import type { HostRepoIdentify } from "./protocol.ts";
@@ -20,7 +23,7 @@ import { filesOn, type HostFiles } from "./files.ts";
 import type { HostFolders } from "./folders.ts";
 import { type HeadlessPlacement, headlessLocal, headlessPlacement } from "./headless.ts";
 import { LocalHostProcess } from "./local-process.ts";
-import { RemoteHosts } from "./remote-hosts.ts";
+import { RemoteHosts, type RemoteHostsShape } from "./remote-hosts.ts";
 import { type MachineParts, placedHost } from "./placed.ts";
 import { machineHosts } from "./remote-worker-host.ts";
 import { ServerConfig } from "../config.ts";
@@ -155,6 +158,55 @@ export interface WorkerHostsShape {
   readonly headless?: HeadlessPlacement | undefined;
 }
 
+/** How long a session about to open waits for a stopped machine to be started. */
+export const WAKE_WAIT_MS = 5 * 60_000;
+/** How often a machine being waited for is looked for. */
+const WAKE_LOOK = "500 millis";
+
+/**
+ * A joined machine's host for a session about to open. With the hosted features on, a machine
+ * that is joined but away is waited for, for `waitMs`: whoever runs the machines stops idle ones
+ * with their disks kept (`stop-resume.ts`) and starts one again when it is wanted, which the wait
+ * says it is (`RemoteHosts.stops.wanted`). So is one readied to stop and still there, which takes
+ * no work until it is stopped and started, or its stop is taken back. With them off, and for a
+ * machine that isn't joined, an absent machine is unavailable at once, as ever.
+ */
+export const awaitedMachines =
+  (
+    get: (id: HostId) => Effect.Effect<WorkerHost, HostUnavailable>,
+    remote: Pick<RemoteHostsShape, "machines" | "stops">,
+    store: Pick<ThreadStore["Service"], "getSettings">,
+    waitMs: number = WAKE_WAIT_MS,
+  ) =>
+  (id: HostId): Effect.Effect<WorkerHost, HostUnavailable> =>
+    Effect.gen(function* () {
+      const first = yield* get(id).pipe(
+        Effect.map((host) => ({ host, away: undefined })),
+        Effect.catch((away) => Effect.succeed({ host: undefined, away })),
+      );
+      if (first.host !== undefined && !remote.stops.holding(id)) return first.host;
+      const asIs = first.host === undefined ? Effect.fail(first.away) : Effect.succeed(first.host);
+      if (remote.machines.get(id)?.confirmedAt === undefined) return yield* asIs;
+      if (!embeddingOn(yield* store.getSettings)) return yield* asIs;
+      yield* Effect.logInfo("a session waits for its machine to be started").pipe(
+        Effect.annotateLogs({ hostId: id }),
+      );
+      const ready = get(id).pipe(
+        Effect.filterOrFail(
+          () => !remote.stops.holding(id),
+          () => new HostUnavailable({ hostId: id, message: "That machine is being stopped." }),
+        ),
+      );
+      return yield* remote.stops.wanting(
+        id,
+        ready.pipe(
+          Effect.retry(
+            Schedule.spaced(WAKE_LOOK).pipe(Schedule.upTo({ duration: Duration.millis(waitMs) })),
+          ),
+        ),
+      );
+    });
+
 /**
  * The joined machines' worker hosts, when this server has joined machines (`RemoteHosts`) and the
  * services their hosts are built on; absent in test layers without them.
@@ -182,6 +234,7 @@ const joinedMachines = Effect.gen(function* () {
   );
   return {
     get,
+    forSession: awaitedMachines(get, remote, store),
     any: () => placedBefore || remote.machines.list().length > 0,
   };
 });
@@ -208,6 +261,8 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     anyMachines?: () => boolean,
     /** A headless Gram's placement; `local` is then already the one that refuses (`headlessLocal`). */
     headless?: HeadlessPlacement,
+    /** The joined machines' hosts for a session about to open, when that differs from `machines`. */
+    sessionMachines?: (id: HostId) => Effect.Effect<WorkerHost, HostUnavailable>,
   ) => {
     const byId = new Map<HostId, WorkerHost>([
       [local.id, local],
@@ -220,7 +275,13 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
         ? Effect.fail(new HostUnavailable({ hostId: id, message: `No machine "${id}" is paired.` }))
         : machines(id);
     };
-    const hosts = { local, get };
+    const hosts = {
+      local,
+      get,
+      ...(sessionMachines === undefined
+        ? {}
+        : { forSession: (id: HostId) => (byId.has(id) ? get(id) : sessionMachines(id)) }),
+    };
     const placed = placedHost(
       hosts,
       store ?? NO_THREADS,
@@ -291,6 +352,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
         machines === undefined ? undefined : store,
         machines?.any,
         headless,
+        machines?.forSession,
       );
     }),
   );
@@ -328,19 +390,30 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
           Option.getOrElse(() => missing<S>(part)),
         );
       const proc = Option.getOrUndefined(yield* Effect.serviceOption(Proc));
-      return WorkerHosts.fromHosts({
-        id: LOCAL_HOST_ID,
-        sessions: yield* AgentHosts,
-        checkouts: yield* CheckoutService,
-        worktrees: yield* optional(Worktrees, "worktrees"),
-        git: yield* optional(GitStateRuntime, "git state"),
-        files: proc === undefined ? missing<HostFiles>("files") : filesOn(proc),
-        terminals: yield* optional(HostTerminals, "terminals"),
-        ports:
-          proc === undefined
-            ? { scan: Effect.die(new Error("This test's host has no port scan.")) }
-            : { scan: liveScan.pipe(Effect.provideService(Proc, proc)) },
-      });
+      // A test that provides joined machines (`RemoteHosts`) places threads on them, as the server.
+      const machines = yield* joinedMachines;
+      const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
+      return WorkerHosts.fromHosts(
+        {
+          id: LOCAL_HOST_ID,
+          sessions: yield* AgentHosts,
+          checkouts: yield* CheckoutService,
+          worktrees: yield* optional(Worktrees, "worktrees"),
+          git: yield* optional(GitStateRuntime, "git state"),
+          files: proc === undefined ? missing<HostFiles>("files") : filesOn(proc),
+          terminals: yield* optional(HostTerminals, "terminals"),
+          ports:
+            proc === undefined
+              ? { scan: Effect.die(new Error("This test's host has no port scan.")) }
+              : { scan: liveScan.pipe(Effect.provideService(Proc, proc)) },
+        },
+        [],
+        machines?.get,
+        machines === undefined ? undefined : store,
+        machines?.any,
+        undefined,
+        machines?.forSession,
+      );
     }),
   );
 }
