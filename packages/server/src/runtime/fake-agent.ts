@@ -364,6 +364,8 @@ export const makeFakeAgentAdapter = (
       let modelDiscoveryFailure: string | undefined;
       const releasedSwitches = new Set<string>();
       const neverStartedSwitches = new Set<string>();
+      /** Every switch startup id an open was given: single use for the host's lifetime, as natively. */
+      const usedStartups = new Set<string>();
       let openDelay: Duration.Input | undefined;
       let refusedModes: ReadonlyArray<PermissionMode> = [];
       let respondFailure: string | undefined;
@@ -379,6 +381,14 @@ export const makeFakeAgentAdapter = (
 
       const open = (openOptions: OpenSessionOptions) =>
         Effect.gen(function* () {
+          if (openOptions.switchStartup !== undefined) {
+            if (usedStartups.has(openOptions.switchStartup))
+              return yield* new AgentUnavailable({
+                agent: "claude",
+                message: "This switch startup attempt was already used.",
+              });
+            usedStartups.add(openOptions.switchStartup);
+          }
           if (unavailable !== undefined) {
             if (openOptions.switchStartup !== undefined)
               neverStartedSwitches.add(openOptions.switchStartup);

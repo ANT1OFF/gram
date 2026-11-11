@@ -492,6 +492,17 @@ export const makeMessageQueue = ({
       // orchestrator's (no `handoff`) lets its boot digest through as before.
       const only = change?.handoff === undefined ? undefined : SWITCH_HANDOFF_KEY;
       if (only !== undefined && !rt.deliveries.has(only)) return;
+      // Nor does it open a session for it: the switch owns its target's startup (a reopen takes a
+      // fresh startup id), so a handoff asked for with no session fails, and the switch reopens.
+      if (only !== undefined && rt.session === undefined) {
+        const handoff = rt.deliveries.get(only)!;
+        rt.deliveries.delete(only);
+        return yield* dispatch(
+          rt.threadId,
+          "system delivery failed",
+          handoff.failed(undefined, "ended"),
+        );
+      }
       // A cold thread being closed has no session for the close to stop, so it must not get one.
       if (rt.closing) return yield* failPendingDeliveries(rt, "ended");
       // Held for `whileAtRest`, which pumps again once it lets go.

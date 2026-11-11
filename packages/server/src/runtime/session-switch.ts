@@ -2,6 +2,7 @@
 // which claims the session, reopens it on the new model and releases it, or is cancelled.
 
 import * as Effect from "effect/Effect";
+import { randomUUID } from "node:crypto";
 import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
@@ -181,15 +182,19 @@ export const makeSessionSwitch = ({
     });
 
   /**
-   * After a restart, a plain thread's or worker's switch still owing its handoff: its confirmed
-   * target reopens under the attempt, back through `starting`, and is confirmed as the switch
-   * confirmed it, its mode settled before `ready` lets the handoff go. One already open is left as
-   * it is. A reopen that fails leaves the switch `failed`, its queue held, to be tried again.
+   * A plain thread's or worker's switch still owing its handoff whose target has no session (a
+   * restart, or an archive that evicted it): the target reopens under a fresh attempt id, since a
+   * startup id is single use, back through `starting`, and is confirmed as the switch confirmed it,
+   * its mode settled before `ready` lets the handoff go. The divider stays under the first attempt
+   * (`handoff.divider`). An archived thread, or one whose session is there, is left as it is.
+   * Every failure once the claim is `starting`, at once or late, leaves the switch `failed`, its
+   * queue held, to be tried again. Returns the attempt id the claim has after.
    */
   const reopenSwitchTarget = (threadId: ThreadId, attemptId: string) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       const ack = yield* Deferred.make<AgentSession, AgentUnavailable>();
+      const fresh = randomUUID();
       // Set once this reopen has moved the claim to `starting`: from then on every way out but
       // success, at once or late, takes the cleanup below.
       let started = false;
@@ -213,18 +218,24 @@ export const makeSessionSwitch = ({
               return undefined;
             const next = yield* store.updateThread(threadId, (t) => ({
               ...t,
-              sessionSwitch: { ...change, phase: "starting" },
+              sessionSwitch: {
+                ...change,
+                id: fresh,
+                phase: "starting",
+                handoff: { ...change.handoff!, divider: change.handoff!.divider ?? change.id },
+              },
             }));
             started = true;
             yield* publishUpsert(next);
-            rt.switchOpening = { id: attemptId, ack };
+            rt.switchOpening = { id: fresh, ack };
             rt.reopening = true;
-            yield* openSession(rt, next, undefined, attemptId);
+            yield* openSession(rt, next, undefined, fresh);
             return change.target.agent;
           }),
         );
-        if (opening === undefined) return;
-        yield* confirmStartup(rt, threadId, attemptId, opening, ack);
+        if (opening === undefined) return attemptId;
+        yield* confirmStartup(rt, threadId, fresh, opening, ack);
+        return fresh;
       }).pipe(
         Effect.onExit((exit) =>
           Exit.isSuccess(exit) || !started
@@ -232,11 +243,11 @@ export const makeSessionSwitch = ({
             : locked(
                 rt,
                 Effect.gen(function* () {
-                  if (rt.switchOpening?.id === attemptId) rt.switchOpening = undefined;
+                  if (rt.switchOpening?.id === fresh) rt.switchOpening = undefined;
                   rt.reopening = false;
                   const failure = Cause.findErrorOption(exit.cause);
                   const failed = yield* store.updateThread(threadId, (t) =>
-                    t.sessionSwitch?.id === attemptId && t.sessionSwitch.phase === "starting"
+                    t.sessionSwitch?.id === fresh && t.sessionSwitch.phase === "starting"
                       ? {
                           ...t,
                           sessionSwitch: {
@@ -244,7 +255,7 @@ export const makeSessionSwitch = ({
                             phase: "failed",
                             detail: Option.isSome(failure)
                               ? failure.value.message
-                              : "The switch's new session didn't reopen after the restart. Queued input is held.",
+                              : "The switch's new session didn't reopen. Queued input is held.",
                           },
                         }
                       : t,

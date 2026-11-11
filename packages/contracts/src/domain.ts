@@ -653,6 +653,11 @@ export const SessionSwitch = Schema.Struct({
        * `ready`, a restart still owes the new session its handoff before anything else goes.
        */
       delivered: Schema.optionalKey(TurnId),
+      /**
+       * The attempt (`Handoff.switchId`) the divider is written under: the first one. A reopen
+       * of the target takes a fresh attempt id, as a startup id is never used twice.
+       */
+      divider: Schema.optionalKey(Schema.String),
     }),
   ),
   /**

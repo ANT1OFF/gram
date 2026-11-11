@@ -13,6 +13,7 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -29,7 +30,7 @@ import { FakeAgentAdapter, FakeAgentControl, type FakeSession } from "./fake-age
 import { CheckoutService, TurnHooks } from "./hooks.ts";
 import { LIMIT_RESUME_TEXT } from "./limit-wait.ts";
 import { notePrompt } from "./switch-handoff.ts";
-import { RuntimeTestLayer, TEST_CONFIG, waitFor } from "./test-harness.ts";
+import { makeRuntimeTestLayer, RuntimeTestLayer, TEST_CONFIG, waitFor } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
 /** The runtime over a database file, so a second layer is the app after a restart. */
@@ -1254,7 +1255,9 @@ describe("switchAgent's handoff at boot, as review rev 2 of #433 reproduced it",
             for (let i = 0; i < 200; i++) yield* Effect.yieldNow;
             const thread = yield* store.getThread(id);
             expect(thread.limitWait?.account).toBe("codex/");
-            expect(thread.sessionSwitch?.id).toBe("rev2-boot");
+            // Still held, its target reopened under a fresh startup id, its divider under the first.
+            expect(thread.sessionSwitch?.phase).toBe("ready");
+            expect(thread.sessionSwitch?.handoff?.divider).toBe("rev2-boot");
             const sent = fake.sessions
               .filter((s) => s.options.threadId === id)
               .flatMap((s) => s.sent);
@@ -1412,5 +1415,182 @@ describe("switchAgent's owed handoff, as review rev 3 of #433 reproduced it", ()
         }).pipe(Effect.provide(layerAt(file, noCodex)));
       }),
     ),
+  );
+});
+
+/**
+ * A store whose plan reads wait while `hold` is set, so a test can act while a switch gathers its
+ * handoff's facts, after its new session was confirmed.
+ */
+const factsGate = Effect.gen(function* () {
+  const release = yield* Deferred.make<void>();
+  const gate = { hold: false, reached: false, release };
+  const layer = Layer.effect(
+    ThreadStore,
+    Effect.gen(function* () {
+      const base = yield* ThreadStore;
+      return ThreadStore.of({
+        ...base,
+        getPlan: (id) =>
+          Effect.gen(function* () {
+            if (gate.hold) {
+              gate.reached = true;
+              yield* Deferred.await(release);
+            }
+            return yield* base.getPlan(id);
+          }),
+      });
+    }),
+  ).pipe(Layer.provideMerge(ThreadStore.layerSqlite(":memory:")));
+  return { gate, layer };
+});
+
+/** A switch held while it gathers its facts, then its new session evicted by an archive. */
+const evictedWhileGathering = (gate: { hold: boolean; reached: boolean }) =>
+  Effect.gen(function* () {
+    const runtimes = yield* ThreadRuntimes;
+    const store = yield* ThreadStore;
+    const fake = yield* FakeAgentControl;
+    const { thread, session } = yield* idleThread;
+    gate.hold = true;
+    yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
+    yield* waitFor(
+      "the facts being gathered",
+      Effect.sync(() => gate.reached),
+    );
+    expect((yield* store.getThread(thread.id)).sessionSwitch?.phase).toBe("ready");
+    yield* runtimes.send(thread.id, { text: "WORK_AFTER_SWITCH" });
+    const target = yield* fake.latest(thread.id);
+    expect(target).not.toBe(session);
+    yield* runtimes.updateThread(thread.id, (t) => ({ ...t, parked: true }));
+    yield* waitFor(
+      "the new session evicted",
+      Effect.sync(() => target.closed),
+    );
+    return { thread, session, target };
+  });
+
+describe("switchAgent's handoff after an archive evicts its new session (review rev 4 of #433)", () => {
+  it.effect(
+    "counts a handoff whose turn then failed as delivered: released, never sent again",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const fake = yield* FakeAgentControl;
+        const { thread, session } = yield* idleThread;
+        yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
+        const next = yield* waitFor(
+          "the handoff",
+          fake.latest(thread.id).pipe(Effect.map((s) => s !== session && s.sent.length === 1 && s)),
+        );
+        expect(yield* runtimes.send(thread.id, { text: "two" })).toMatchObject({ queued: true });
+        yield* next.emit({
+          type: "turnEnd",
+          reason: "error",
+          error: "synthetic failure after the handoff was sent",
+          failure: { kind: "unknown", retryable: false },
+        });
+        yield* waitFor(
+          "the switch released",
+          store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch === undefined)),
+        );
+        yield* waitFor(
+          "the held message",
+          Effect.sync(() => next.sent.some((input) => input.text === "two")),
+        );
+        const all = fake.sessions
+          .filter((s) => s.options.threadId === thread.id && s !== session)
+          .flatMap((s) => s.sent);
+        expect(all.filter((input) => isHandoff(input.text))).toHaveLength(1);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("an unarchive before the switch settles sends the handoff before any work", () =>
+    Effect.gen(function* () {
+      const { gate, layer } = yield* factsGate;
+      yield* Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const fake = yield* FakeAgentControl;
+        const { thread, session, target } = yield* evictedWhileGathering(gate);
+        // Back before the switch has even seen the archive.
+        yield* runtimes.updateThread(thread.id, (t) => ({ ...t, parked: false }));
+        gate.hold = false;
+        yield* Deferred.succeed(gate.release, undefined);
+        const next = yield* waitFor(
+          "the handoff on a reopened session",
+          Effect.sync(() =>
+            fake.sessions.find(
+              (s) =>
+                s.options.threadId === thread.id &&
+                s !== session &&
+                s !== target &&
+                s.sent.length > 0,
+            ),
+          ),
+        );
+        const inputs = fake.sessions
+          .filter((s) => s.options.threadId === thread.id && s !== session)
+          .flatMap((s) => s.sent);
+        expect(inputs).toHaveLength(1);
+        expect(isHandoff(inputs[0]!.text)).toBe(true);
+        // A fresh startup id, never the one the evicted session used.
+        expect(next.options.switchStartup).toBeDefined();
+        expect(next.options.switchStartup).not.toBe(target.options.switchStartup);
+        yield* next.completeTurn(READY);
+        yield* waitFor(
+          "the work after the handoff",
+          Effect.sync(() => next.sent.some((input) => input.text === "WORK_AFTER_SWITCH")),
+        );
+        expect(yield* handoffParts(thread.id)).toHaveLength(1);
+        expect((yield* store.getThread(thread.id)).sessionSwitch).toBeUndefined();
+      }).pipe(
+        Effect.provide(makeRuntimeTestLayer(undefined, undefined, undefined, undefined, layer)),
+      );
+    }),
+  );
+
+  it.effect("an unarchive after it settles reopens under a fresh startup id, then hands over", () =>
+    Effect.gen(function* () {
+      const { gate, layer } = yield* factsGate;
+      yield* Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const fake = yield* FakeAgentControl;
+        const { thread, session, target } = yield* evictedWhileGathering(gate);
+        gate.hold = false;
+        yield* Deferred.succeed(gate.release, undefined);
+        yield* settle;
+        // Archived: nothing sent, the claim held.
+        expect((yield* store.getThread(thread.id)).sessionSwitch?.phase).toBe("ready");
+        expect(target.sent).toEqual([]);
+        yield* runtimes.updateThread(thread.id, (t) => ({ ...t, parked: false }));
+        const next = yield* waitFor(
+          "the handoff after the unarchive",
+          Effect.sync(() =>
+            fake.sessions.find(
+              (s) =>
+                s.options.threadId === thread.id &&
+                s !== session &&
+                s !== target &&
+                s.sent.length > 0,
+            ),
+          ),
+        );
+        expect(next.sent).toHaveLength(1);
+        expect(isHandoff(next.sent[0]!.text)).toBe(true);
+        expect(next.options.switchStartup).not.toBe(target.options.switchStartup);
+        expect(next.switchStartupAccepts).toEqual([next.options.switchStartup]);
+        yield* next.completeTurn(READY);
+        yield* waitFor(
+          "the work after the handoff",
+          Effect.sync(() => next.sent.some((input) => input.text === "WORK_AFTER_SWITCH")),
+        );
+        expect(yield* handoffParts(thread.id)).toHaveLength(1);
+      }).pipe(
+        Effect.provide(makeRuntimeTestLayer(undefined, undefined, undefined, undefined, layer)),
+      );
+    }),
   );
 });

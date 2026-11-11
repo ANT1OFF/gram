@@ -1373,6 +1373,8 @@ const make = Effect.gen(function* () {
     modeAfterSwitch,
   });
 
+  /** A switch's settling (`finish`) started by the boot or an unarchive, for the runtime's life. */
+  const switchSettles = yield* FiberSet.make<void>();
   const agentSwitch = makeAgentSwitch({
     store,
     hosts,
@@ -1403,6 +1405,7 @@ const make = Effect.gen(function* () {
       ),
     endLimitWait: (rt, previous) => locked(rt, dropWaitForSwitch(rt, accountOf(previous))),
     reopenTarget: reopenSwitchTarget,
+    background: (effect) => FiberSet.run(switchSettles, effect).pipe(Effect.asVoid),
     gitState: (cwd) => git.local(cwd),
   });
   switchUnarchived = agentSwitch.giveOwed;
