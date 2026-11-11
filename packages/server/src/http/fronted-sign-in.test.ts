@@ -31,6 +31,7 @@ import { LOCAL_APP_HEADER } from "./local-app.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
 import { HOST_PATHS, MACHINES_LIST_PATH } from "./machine-routes.ts";
 import { REMOTE_STATUS_PATH } from "./remote-access.ts";
+import { WORKSPACE_TRANSFER_PATHS } from "../transfer/routes.ts";
 import { LaunchToken, serverPort, ServerLayer } from "./server.ts";
 
 const proxy = makeTestProxy();
@@ -207,7 +208,7 @@ describe("sign-in through a fronting proxy", () => {
         expect(yield* upgrade(port, { ...signedIn, origin: proxy.config.origin })).toBe(101);
 
         // Phone access and joining machines are the local sign-in's, which isn't here.
-        for (const path of [REMOTE_STATUS_PATH, MACHINES_LIST_PATH])
+        for (const path of [REMOTE_STATUS_PATH, MACHINES_LIST_PATH, ...WORKSPACE_TRANSFER_PATHS])
           expect((yield* get(port, path, signedIn)).status).toBe(403);
 
         // A thread's agent on this machine still needs its own token for its app tools.

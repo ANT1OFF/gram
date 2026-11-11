@@ -288,13 +288,14 @@ export const AuthMiddleware = HttpRouter.middleware(
               HttpServerResponse.text("unauthorized: signed identity required", { status: 401 }),
             );
           }
-          // Phone access and joining machines are this machine's own sign-in, which a fronted
-          // server doesn't have. The agents' and hosts' routes take a thread's token or a host's
+          // Phone access, joining machines and moving a workspace are for this machine's own
+          // sign-in, which a fronted server doesn't have. The agents' and hosts' routes take a thread's token or a host's
           // proof, never a person: a person let through to them would act with neither a role
           // nor a record.
           if (
             REMOTE_MANAGEMENT_PATHS.has(target.path) ||
             MACHINE_MANAGEMENT_PATHS.has(target.path) ||
+            WORKSPACE_TRANSFER_PATHS.has(target.path) ||
             HOST_PATHS.has(target.path) ||
             target.path === MCP_PATH ||
             target.path === HOST_MCP_PATH
