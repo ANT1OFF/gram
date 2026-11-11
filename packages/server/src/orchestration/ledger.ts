@@ -581,6 +581,7 @@ const entryOf = (
     ...localGateOf(facts.project),
     threadId: thread.id,
     title: redactText(thread.title),
+    agent: thread.model.agent,
     ...(branch === undefined ? {} : { branch }),
     state,
     stateBase: workerStateBase(stateInputOf(facts)),
@@ -874,6 +875,7 @@ export type CompactWorkerRow = Pick<WorkerLedgerEntry, "threadId" | "title" | "s
   Partial<
     Pick<
       WorkerLedgerEntry,
+      | "agent"
       | "project"
       | "branch"
       | "pr"
@@ -908,6 +910,7 @@ export const compactWorkerRow = (worker: WorkerLedgerEntry): CompactWorkerRow =>
   return {
     threadId: worker.threadId,
     title: worker.title,
+    ...(worker.agent === undefined ? {} : { agent: worker.agent }),
     state: worker.state,
     status: worker.status,
     ...(worker.compacting === true ? { compacting: true as const } : {}),

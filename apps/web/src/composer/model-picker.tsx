@@ -18,6 +18,13 @@ type Option = PickerOption<string>;
 
 const NO_FAVOURITES = () => false;
 
+/** A group's heading drawn as a mark with its words on hover, as each agent's in the composer. */
+export interface GroupHead {
+  readonly mark: ReactNode;
+  readonly hint: string;
+}
+export type GroupHeads = Readonly<Record<string, GroupHead>>;
+
 const ROW =
   "group/row flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor";
 
@@ -187,12 +194,17 @@ function ModelSearchBody({
   favourite,
   onToggleFavourite,
   highlighted,
+  heads,
+  firstGroup,
 }: {
   headed: boolean;
   rowIcon: ReactNode;
   favourite: (value: string) => boolean;
   onToggleFavourite: ((value: string) => void) | undefined;
   highlighted: RefObject<Option | undefined>;
+  heads?: GroupHeads | undefined;
+  /** The list's first group, whose heading has no hairline above it. */
+  firstGroup?: string | undefined;
 }) {
   return (
     <>
@@ -219,11 +231,37 @@ function ModelSearchBody({
       <Combobox.List className="max-h-[min(20rem,var(--available-height))] overflow-y-auto overscroll-contain p-1 empty:p-0">
         {(group: ModelGroup) => (
           <Combobox.Group key={group.label} items={group.items as Option[]}>
-            {headed && (
-              <Combobox.GroupLabel className="px-2 pt-2 pb-1 text-caption font-medium text-muted-foreground">
-                {group.label}
-              </Combobox.GroupLabel>
-            )}
+            {headed &&
+              (heads?.[group.label] === undefined ? (
+                <Combobox.GroupLabel className="px-2 pt-2 pb-1 text-caption font-medium text-muted-foreground">
+                  {group.label}
+                </Combobox.GroupLabel>
+              ) : (
+                // The agent's mark alone, its words on hover and to a screen reader.
+                <Combobox.GroupLabel
+                  data-testid="model-group-head"
+                  className={cn(
+                    "flex px-2 pt-2 pb-1 text-muted-foreground",
+                    group.label !== firstGroup && "mt-1 border-t border-border",
+                  )}
+                >
+                  <Hint
+                    label={heads[group.label]!.hint}
+                    side="right"
+                    render={
+                      <span
+                        role="img"
+                        tabIndex={-1}
+                        aria-label={heads[group.label]!.hint}
+                        data-testid="model-group-mark"
+                        className="flex items-center"
+                      />
+                    }
+                  >
+                    {heads[group.label]!.mark}
+                  </Hint>
+                </Combobox.GroupLabel>
+              ))}
             <Combobox.Collection>
               {(option: Option) => {
                 const starred = favourite(option.value);
@@ -232,9 +270,10 @@ function ModelSearchBody({
                   <Combobox.Item
                     key={option.value}
                     value={option}
+                    disabled={option.disabled === true}
                     aria-label={option.label}
                     aria-description={option.description}
-                    className={ROW}
+                    className={cn(ROW, option.disabled && "opacity-50")}
                   >
                     {(option.icon ?? rowIcon) !== undefined && (
                       <span
@@ -256,7 +295,7 @@ function ModelSearchBody({
                       <CheckIcon aria-hidden className="size-icon-row" />
                     </Combobox.ItemIndicator>
                     {/* Out of the tab order: the input keeps focus, and ⇧↵ stars from there. */}
-                    {onToggleFavourite && (
+                    {onToggleFavourite && option.opens !== true && (
                       <button
                         type="button"
                         tabIndex={-1}
@@ -309,6 +348,7 @@ export function ModelSearch({
   rowIcon,
   favourite = NO_FAVOURITES,
   onToggleFavourite,
+  heads,
 }: {
   value: string | undefined;
   options: readonly Option[];
@@ -316,6 +356,8 @@ export function ModelSearch({
   rowIcon?: ReactNode;
   favourite?: ((value: string) => boolean) | undefined;
   onToggleFavourite?: ((value: string) => void) | undefined;
+  /** Group headings drawn as a mark, by group label; the rest say their label. */
+  heads?: GroupHeads | undefined;
 }) {
   const highlighted = useRef<Option | undefined>(undefined);
   const groups = modelGroups(options, favourite);
@@ -345,6 +387,8 @@ export function ModelSearch({
           favourite={favourite}
           onToggleFavourite={onToggleFavourite}
           highlighted={highlighted}
+          heads={heads}
+          firstGroup={groups[0]?.label}
         />
       </div>
     </Combobox.Root>

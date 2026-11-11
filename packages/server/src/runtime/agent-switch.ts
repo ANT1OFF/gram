@@ -475,14 +475,17 @@ export const makeAgentSwitch = ({
     threadId: ThreadId,
     attemptId: string,
     previous: ModelRef,
+    target: ModelRef,
     agentSessionId?: string,
-    carried?: Pick<Handoff, "noteMode" | "note" | "facts">,
+    carried?: Pick<Handoff, "noteMode" | "limit" | "note" | "facts">,
   ) =>
     Effect.gen(function* () {
       const data: Handoff = {
         reason: "switch",
         switchId: attemptId,
         previousAgent: previous.agent,
+        previousModel: previous.model,
+        model: target.model,
         ...(agentSessionId === undefined ? {} : { previousAgentSessionId: agentSessionId }),
         ...carried,
         at: yield* Clock.currentTimeMillis,
@@ -547,8 +550,9 @@ export const makeAgentSwitch = ({
         sinceDivider ? "this thread, since its previous switch" : "this thread",
       );
       if (existing === undefined)
-        yield* markTranscript(threadId, key, previous, claim.source?.agentSessionId, {
+        yield* markTranscript(threadId, key, previous, thread.model, claim.source?.agentSessionId, {
           noteMode,
+          ...(plan.limit === undefined ? {} : { limit: plan.limit.reason }),
           ...(note === undefined ? {} : { note }),
           facts,
         });
@@ -1026,9 +1030,13 @@ export const makeAgentSwitch = ({
             thread.id,
             dividerKey(change),
             change.previous,
+            change.target,
             change.source?.agentSessionId,
             {
               noteMode: change.handoff?.note ?? "none",
+              ...(change.handoff?.limit === undefined
+                ? {}
+                : { limit: change.handoff.limit.reason }),
               ...(change.handoff?.text === undefined
                 ? {}
                 : { note: { text: change.handoff.text, by: change.previous.agent } }),

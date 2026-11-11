@@ -21,18 +21,19 @@ import { switchOpenLabel } from "./switch-label";
 const name = (model: ModelRef) =>
   `${agentLabel(model.agent)} · ${model.model}${model.variant ? ` · ${model.variant}` : ""}`;
 
+/** Where a switch of this thread's agent stands, in words for any thread, the orchestrator's included. */
 export const switchStatusText = (change: SessionSwitch): string => {
   switch (change.phase) {
     case "checkpoint":
-      return "Waiting for current work and questions to finish, then saving workspace memory. Your current orchestrator is still selected.";
+      return "Waiting for current work and questions to finish, then writing what this thread carries over. Its current agent is still selected.";
     case "retry":
-      return "Retrying the saved switch. Queued messages stay held until the selected session is ready.";
+      return "Retrying the saved switch. Queued messages stay held until this thread's new session is ready.";
     case "stopping":
-      return "Waiting for the previous session to stop. The requested orchestrator has not started.";
+      return "Waiting for the previous session to stop. This thread's new session has not started.";
     case "starting":
-      return "The previous session has stopped. Waiting for the requested orchestrator to confirm it has started.";
+      return "The previous session has stopped. Waiting for this thread's new session to confirm it has started.";
     case "ready":
-      return "The requested orchestrator has connected. Preparing its workspace context before releasing queued messages.";
+      return "This thread's new session has connected. Giving it the handoff before releasing queued messages.";
     case "failed":
       return change.oldExited
         ? "The previous session has stopped. The switch did not complete; no fallback or automatic retry was started."

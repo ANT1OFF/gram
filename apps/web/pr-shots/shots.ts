@@ -2233,7 +2233,125 @@ const openRecommendedDefault = async (page: Page) => {
   await page.waitForTimeout(600);
 };
 
+/** Both CLIs found and signed in, explicitly, for "Continue in Codex…" on a mock thread. */
+const seedBothAgents = (page: Page, checks: Record<string, unknown> = {}) =>
+  page.addInitScript((extra) => {
+    sessionStorage.setItem("gram.mock.agents", "claude,codex");
+    sessionStorage.setItem(
+      "gram.mock.launchChecks",
+      JSON.stringify({
+        claudeSignIn: "signedIn",
+        codexSignIn: "signedIn",
+        ghSignedIn: false,
+        ...extra,
+      }),
+    );
+  }, checks);
+
+/** The idle `t-deps` thread on Claude, its choices popover open on Model. */
+const openContinueGroup = async (page: Page, checks: Record<string, unknown> = {}) => {
+  await seedBothAgents(page, checks);
+  await page.goto("/t/t-deps");
+  await dismissLaunchBanner(page);
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  await page.getByTestId("composer-toolbar").getByTestId("composer-choices").click();
+  await page.getByTestId("composer-choices-popup").waitFor();
+};
+
+/** Out of usage until 15:00 on the shot's day, by the agent's own report. */
+const limitT_deps = (page: Page) =>
+  page.evaluate((day) => {
+    const at = new Date(day);
+    at.setHours(15, 0, 0, 0);
+    window.gramMock!.simulateLimitWait(
+      "t-deps" as never,
+      { kind: "limit", resetsAt: at.getTime(), resumeAt: at.getTime(), attempt: 0 },
+      "Carry on with the lockfile.",
+    );
+  }, CLOCK.getTime());
+
+/** The sheet from the chip's GPT-6.1-Sol, `limit` once the thread is out of usage. */
+const openContinueSheet = async (page: Page, limit: boolean) => {
+  await seedBothAgents(page);
+  await page.goto("/t/t-deps");
+  await dismissLaunchBanner(page);
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  if (limit) await limitT_deps(page);
+  await page.getByTestId("composer-toolbar").getByTestId("composer-choices").click();
+  await page
+    .getByTestId("composer-choices-popup")
+    .getByRole("option", { name: "GPT-6.1-Sol…" })
+    .click();
+  await expect(page.getByTestId("continue-in-model")).toContainText("GPT-6.1-Sol");
+  await page.waitForTimeout(300);
+};
+
+/** After Continue: the divider, its fold open on what Codex was given. */
+const openContinueDivider = async (page: Page, limit: boolean) => {
+  await openContinueSheet(page, limit);
+  await page.getByTestId("continue-in-confirm").click();
+  await page.getByTestId("continue-in-dialog").waitFor({ state: "hidden" });
+  const divider = page.getByTestId("handoff").last();
+  await divider.getByTestId("handoff-trigger").click();
+  await divider.getByTestId("handoff-given").waitFor();
+  // The transcript's end, where the user lands; the pointer over the empty side panel.
+  await page.getByTestId("transcript").evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await page.mouse.move(1700, 1100);
+  await page.waitForTimeout(600);
+};
+
+/** "Continue in Codex…": the chip's group, the sheet and the divider, normal and limit mode. */
+const CONTINUE_IN_SHOTS: readonly Shot[] = [
+  {
+    name: "continue-in-group",
+    title:
+      "The choices popover on Model: Claude's models under its mark, then Codex's under its own, each ending in …; the mark's words on hover",
+    open: async (page) => {
+      await openContinueGroup(page);
+      const mark = page.getByTestId("model-group-mark").last();
+      // The base has no group; it shows the popover as it was.
+      if ((await mark.count()) > 0) await mark.hover();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "continue-in-group-signed-out",
+    title: "Codex signed out: its models greyed, the mark saying why on hover",
+    open: async (page) => {
+      await openContinueGroup(page, { codexSignIn: "notSignedIn" });
+      const mark = page.getByTestId("model-group-mark").last();
+      if ((await mark.count()) > 0) await mark.hover();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "continue-in-sheet",
+    title:
+      "Continue in Codex from the chip's GPT-6.1-Sol: model and effort up to High, what carries over and what doesn't, and the note checkbox",
+    open: (page) => openContinueSheet(page, false),
+    element: (page) => page.getByTestId("continue-in-dialog"),
+  },
+  {
+    name: "continue-in-sheet-limit",
+    title: "Limit mode: Claude out of usage until 15:00, so Codex writes the note; no checkbox",
+    open: (page) => openContinueSheet(page, true),
+    element: (page) => page.getByTestId("continue-in-dialog"),
+  },
+  {
+    name: "continue-in-divider",
+    title:
+      "After the switch: Continued in Codex · GPT-6.1-Sol · 10:00, open on what Codex was given (the note by Claude, then Gram's facts)",
+    open: (page) => openContinueDivider(page, false),
+  },
+  {
+    name: "continue-in-divider-limit",
+    title: "Limit mode after the switch: the divider's line, and Codex's first turn is the note",
+    open: (page) => openContinueDivider(page, true),
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
+  ...CONTINUE_IN_SHOTS,
   ...MACHINE_SHOTS,
   ...PHONE_ACCESS_SHOTS,
   ...EVENT_ROUTINE_SHOTS,

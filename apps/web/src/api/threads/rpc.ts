@@ -84,6 +84,14 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => {
     },
     setMode: (threadId, mode) => run(client["thread.setMode"]({ threadId, mode })),
     setModel: (threadId, model) => run(client["thread.setModel"]({ threadId, model })),
+    switchAgent: (threadId, target, options) =>
+      run(
+        client["thread.switchAgent"]({
+          threadId,
+          target,
+          ...(options?.note === undefined ? {} : { note: options.note }),
+        }),
+      ).then(() => undefined),
     rename: (threadId, title) => run(client["thread.rename"]({ threadId, title })),
     addDirectory: (threadId, path) => run(client["thread.addDirectory"]({ threadId, path })),
     setPlan: (threadId, plan) => run(client["thread.setPlan"]({ threadId, plan })),

@@ -14,7 +14,7 @@ import { PulseOnce } from "@/motion";
 
 import { aboveComposer } from "./above-composer";
 import { ChoicesSheet, chipWords } from "./choices-sheet";
-import { ModelSearch } from "./model-picker";
+import { ModelSearch, type GroupHeads } from "./model-picker";
 import type { PickerOption } from "./picker";
 import { GHOST_TRIGGER } from "./styles";
 
@@ -59,6 +59,8 @@ export interface ChoiceSection {
         readonly rowIcon?: ReactNode;
         readonly favourite?: ((value: string) => boolean) | undefined;
         readonly onToggleFavourite?: ((value: string) => void) | undefined;
+        /** Group headings drawn as the agent's mark with its words on hover, by group label. */
+        readonly heads?: GroupHeads | undefined;
       }
     | undefined;
   /** What the section shows in place of its list, such as models still loading or failing. */
@@ -172,8 +174,13 @@ export function ComposerChoices({
   /** A pick; the popover closes on it, the phone's sheet stays open for the next. */
   const pick = (section: ChoiceSection, option: ChoiceOption) => {
     if (option.disabled) return;
-    if (!phone) setOpen(false);
+    if (!phone || option.opens) setOpen(false);
     if (option.value === section.value) return;
+    // It opens something to confirm: nothing is set yet, so nothing rings or is said.
+    if (option.opens) {
+      section.onChange?.(option.value);
+      return;
+    }
     setPending({ id: section.id, value: option.value });
     section.onChange?.(option.value);
     onPicked?.(`${section.label} set to ${option.short ?? option.label}`);
@@ -481,6 +488,7 @@ function Section({
               rowIcon={section.search.rowIcon}
               favourite={section.search.favourite}
               onToggleFavourite={section.search.onToggleFavourite}
+              heads={section.search.heads}
             />
           ) : (
             <div role="listbox" aria-label={section.label}>

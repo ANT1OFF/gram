@@ -260,6 +260,18 @@ export function createMockGateways(
               efforts: ["low", "medium", "high"],
               isDefault: true,
             },
+            {
+              id: "gpt-6.1-sol",
+              displayName: "GPT-6.1-Sol",
+              supportsEffort: true,
+              efforts: ["low", "medium", "high", "xhigh"],
+            },
+            {
+              id: "gpt-6-luna",
+              displayName: "GPT-6 Luna",
+              supportsEffort: true,
+              efforts: ["low", "medium", "high"],
+            },
           ],
         };
       const profile = profiles.get(profileId);

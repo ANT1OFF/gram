@@ -169,6 +169,8 @@ describe("switchAgent", () => {
         expect.objectContaining({
           reason: "switch",
           previousAgent: "claude",
+          previousModel: thread.model.model,
+          model: CODEX.model,
           previousAgentSessionId: previousId,
           switchId: claimed.sessionSwitch!.id,
         }),
@@ -479,6 +481,7 @@ describe("switchAgent", () => {
           expect.objectContaining({
             reason: "switch",
             previousAgent: "claude",
+            model: CODEX.model,
             switchId: "attempt-ready",
           }),
         ]);
@@ -826,6 +829,7 @@ describe("switchAgent's handoff", () => {
         expect(parts).toHaveLength(1);
         expect(parts[0]).toMatchObject({
           noteMode: "limit",
+          limit: "usage",
           note: { by: "codex", text: "Goal: one. Done: nothing yet. Next: retry one." },
         });
       }).pipe(Effect.provide(RuntimeTestLayer)),
@@ -851,7 +855,10 @@ describe("switchAgent's handoff", () => {
       );
       expect(handoff.slice(close)).not.toContain("The agent stopped.");
       expect(handoff.slice(0, close)).toContain("What Claude Code reported:\n\nThe agent stopped.");
-      expect((yield* handoffParts(thread.id))[0]).toMatchObject({ noteMode: "limit" });
+      expect((yield* handoffParts(thread.id))[0]).toMatchObject({
+        noteMode: "limit",
+        limit: "failed",
+      });
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
