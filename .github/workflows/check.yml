@@ -1,7 +1,10 @@
 name: Application checks
 
 on:
+  # A pull request into an integration branch is checked once it lands there, by the push run:
+  # checking each one as well left the runners too few for the branch's own runs.
   pull_request:
+    branches-ignore: ["integration/**"]
   push:
     # An integration branch collects pull requests before main, so it is checked as main is.
     branches: [main, "integration/**"]
@@ -539,7 +542,13 @@ jobs:
         e2e-7,
         e2e-8,
       ]
-    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    # On a pull request it always reports, so a cancelled run never reads as a skipped, passing
+    # required check. On a push it skips a cancelled run: `always()` queued it even then, and the
+    # run held its concurrency slot until a runner came free, so the next push's run waited.
+    if: >-
+      (github.event_name == 'pull_request' && always()
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      || (github.event_name != 'pull_request' && !cancelled())
     timeout-minutes: 5
     runs-on: ubuntu-24.04-arm
     defaults:

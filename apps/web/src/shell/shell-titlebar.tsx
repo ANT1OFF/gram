@@ -20,7 +20,7 @@ import {
   useTitlebarThread,
 } from "@/shell/titlebar-slot";
 import { SettingsTitle } from "@/shell/settings-title";
-import { EmbedSwitcher } from "@/embed/slots";
+import { EmbedPageTitle, EmbedSwitcher, useEmbedPageTitle } from "@/embed/slots";
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { UsageMeter } from "@/shell/usage-meter";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
@@ -87,6 +87,7 @@ export function ShellTitlebar({
   // With no panel to its right, the chat's titlebar runs under Windows' window controls.
   const titlebarAtEdge = panelLeft || !panelShown;
   const phone = usePhone();
+  const embedTitle = useEmbedPageTitle();
 
   // A phone's one bar: the drawer's menu, where you are, Needs you and "…" with the rest in words.
   // The thread's header and Board's controls still mount in the slot, out of sight: what they
@@ -166,15 +167,20 @@ export function ShellTitlebar({
           {!sidebarShown && <TopLeftNav className="mr-2" />}
           {/* An app in front of Gram's own switcher, while no sidebar is there to carry it. */}
           {!sidebarShown && <EmbedSwitcher placement="titlebar" />}
-          <WorkspaceSwitcher
-            className={cn(
-              "shrink-0 [-webkit-app-region:no-drag]",
-              carried && "@max-2xl/titlebar:max-w-28",
-              folded && "max-w-20",
-            )}
-          />
+          {/* A page an app in front of Gram added says its own name here; it is in no workspace
+              and has no views to switch between. */}
+          {embedTitle !== undefined && <EmbedPageTitle title={embedTitle} />}
+          {embedTitle === undefined && (
+            <WorkspaceSwitcher
+              className={cn(
+                "shrink-0 [-webkit-app-region:no-drag]",
+                carried && "@max-2xl/titlebar:max-w-28",
+                folded && "max-w-20",
+              )}
+            />
+          )}
           {/* Chat · Board are the workspace's views: a solo thread in Chat is no part of it. */}
-          {!soloBar && (
+          {embedTitle === undefined && !soloBar && (
             <>
               <ViewSwitcher className="shrink-0 [-webkit-app-region:no-drag]" />
               <FakeAgentBadge className="[-webkit-app-region:no-drag]" />

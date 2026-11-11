@@ -30,20 +30,25 @@ run("bundle", binOf("vite", "bin/vite.js"), ["build", "--config", "vite.embed.co
 const TYPES = [
   "embed/contract",
   "embed/kit",
+  "embed/page",
   "components/hint",
   "components/ui/alert",
   "components/ui/badge",
   "components/ui/button",
   "components/ui/button-group",
   "components/ui/collapsible",
+  "components/ui/input",
+  "components/ui/meter",
   "components/ui/select",
   "components/ui/switch",
   "components/ui/tabs",
   "components/ui/tooltip",
-  "lib/utils",
+  "settings/fields",
+  "settings/settings-group",
+  "shell/titlebar-popover",
 ];
 /** The libraries a kept declaration may name: they become the package's dependencies. */
-const TYPE_LIBRARIES = ["@base-ui/react", "class-variance-authority", "cn"];
+const TYPE_LIBRARIES = ["@base-ui/react", "class-variance-authority"];
 const emitted = mkdtempSync(join(tmpdir(), "gram-embed-types-"));
 try {
   run("types", binOf("typescript", "bin/tsc"), [
@@ -122,7 +127,13 @@ writeFileSync(
       },
       // Named by the kit's declarations only: the code is in the bundle.
       dependencies: Object.fromEntries(TYPE_LIBRARIES.map((name) => [name, peer(name)])),
-      peerDependencies: { react: peer("react"), "react-dom": peer("react-dom") },
+      peerDependencies: {
+        react: peer("react"),
+        "react-dom": peer("react-dom"),
+        "@types/react": peer("@types/react"),
+      },
+      // The declarations name React's types; an app not written in TypeScript needs none.
+      peerDependenciesMeta: { "@types/react": { optional: true } },
     },
     null,
     2,
