@@ -105,6 +105,7 @@ export interface AgentEventsDeps {
   readonly openTurn: TurnLifecycle["openTurn"];
   readonly markRunning: TurnLifecycle["markRunning"];
   readonly settleDelivery: TurnLifecycle["settleDelivery"];
+  readonly noteDeliveryStart: TurnLifecycle["noteDeliveryStart"];
   readonly settleNote: TurnLifecycle["settleNote"];
   readonly recordFailure: TurnLifecycle["recordFailure"];
   readonly keepError: TurnLifecycle["keepError"];
@@ -180,6 +181,7 @@ export const makeAgentEvents = ({
   openTurn,
   markRunning,
   settleDelivery,
+  noteDeliveryStart,
   settleNote,
   recordFailure,
   keepError,
@@ -369,6 +371,16 @@ export const makeAgentEvents = ({
       rt,
       Effect.gen(function* () {
         const lane = event.type === "chunk" ? rt.open.get(event.messageId) : undefined;
+        // Whether the agent natively began a turn that carries a delivery, from either adapter.
+        yield* noteDeliveryStart(
+          rt,
+          event,
+          event.type === "chunk" &&
+            (lane === undefined
+              ? event.chunk.type === "start" &&
+                event.chunk.messageMetadata?.parentToolUseId === undefined
+              : lane.nested !== true && lane.turnId === rt.turn?.id),
+        );
         // Foreground delegation is progress on its parent's outstanding tool; an older or
         // background lane must not hide a silent command in this turn.
         const foregroundProgress =

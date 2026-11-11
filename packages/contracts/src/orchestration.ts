@@ -1534,6 +1534,22 @@ export const WorkerAnswer = Schema.Struct({
 });
 export type WorkerAnswer = typeof WorkerAnswer.Type;
 
+/** The longest a switch's handoff note may be; a longer reply is cut. */
+export const HANDOFF_NOTE_MAX_CHARS = 4000;
+/** The longest a switch's facts block may be. */
+export const HANDOFF_FACTS_MAX_CHARS = 16_000;
+
+/** How a switch's handoff note is written (`Handoff.noteMode`). */
+export const SwitchNoteMode = Schema.Literals(["outgoing", "limit", "none"]);
+export type SwitchNoteMode = typeof SwitchNoteMode.Type;
+
+/** A switch's handoff note: its text, and the agent that wrote it. */
+export const HandoffNote = Schema.Struct({
+  text: Schema.String.check(Schema.isMaxLength(HANDOFF_NOTE_MAX_CHARS)),
+  by: Schema.Literals(["claude", "codex"]),
+});
+export type HandoffNote = typeof HandoffNote.Type;
+
 /**
  * A thread's agent session was replaced by a fresh one: an orchestrator's carrying a checkpoint,
  * or (`switch`) any thread moved to the other agent.
@@ -1545,6 +1561,16 @@ export const Handoff = Schema.Struct({
   previousAgent: Schema.optionalKey(Schema.Literals(["claude", "codex"])),
   /** A switch's: the attempt (`SessionSwitch.id`) that wrote it, so a restart writes it once. */
   switchId: Schema.optionalKey(Schema.String),
+  /**
+   * A switch's: how its note was to be written. `outgoing`, by the old session in one last turn;
+   * `limit`, by the new agent in a work-free first turn, as the old one was out of usage or errored;
+   * `none`, the user left it out.
+   */
+  noteMode: Schema.optionalKey(SwitchNoteMode),
+  /** A switch's handoff note, once written, and who wrote it. */
+  note: Schema.optionalKey(HandoffNote),
+  /** A switch's facts from Gram's own state, exactly as the new session was given them. */
+  facts: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(HANDOFF_FACTS_MAX_CHARS))),
   /** Epoch ms. */
   at: Schema.Number,
 });

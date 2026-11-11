@@ -49,7 +49,7 @@ import { ActivityTracker } from "./activity.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { type CheckoutService, TurnHooks, type TurnHooksShape } from "./hooks.ts";
-import type { EarlyReleases, ReleaseWave } from "./limit-wait.ts";
+import { accountOf, type EarlyReleases, type ReleaseWave } from "./limit-wait.ts";
 import { makeRateLimitGate } from "./rate-limits.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { RETRIES_EXHAUSTED } from "./thread-error.ts";
@@ -226,7 +226,7 @@ const make = Effect.gen(function* () {
   const waits = yield* ThreadWaits;
   const turnActivity = yield* TurnActivity;
   // Each thread's machine: its session and its checkout go to the machine it is placed on.
-  const { sessions: hosts, checkouts } = (yield* WorkerHosts).placed;
+  const { sessions: hosts, checkouts, git } = (yield* WorkerHosts).placed;
   const config = yield* ServerConfig;
   const hooks = turnsHere(yield* TurnHooks, store);
   const sessions = yield* FiberMap.make<ThreadId>();
@@ -503,6 +503,7 @@ const make = Effect.gen(function* () {
 
   const {
     settleDelivery,
+    noteDeliveryStart,
     settleNote,
     failPendingDeliveries,
     setStatus,
@@ -585,6 +586,8 @@ const make = Effect.gen(function* () {
 
   const {
     hitAt,
+    limitedUntil,
+    dropWaitForSwitch,
     limitWaitOf,
     enterWait,
     waitWithAccount,
@@ -925,6 +928,7 @@ const make = Effect.gen(function* () {
     openTurn,
     markRunning,
     settleDelivery,
+    noteDeliveryStart,
     settleNote,
     recordFailure,
     keepError,
@@ -1162,12 +1166,17 @@ const make = Effect.gen(function* () {
       return thread;
     });
 
+  /** Set once the switch is made: a thread back from the archive gets what its switch owes it. */
+  let switchUnarchived: ((threadId: ThreadId) => Effect.Effect<void>) | undefined;
+
   const updateThread: ThreadRuntimesShape["updateThread"] = (threadId, f, authorityCaller) =>
     Effect.gen(function* () {
       const before = yield* store.getThread(threadId);
       const thread = yield* store.updateThread(threadId, f, authorityCaller);
       yield* publishUpsert(thread);
       const unarchived = before.parked && !thread.parked;
+      // A switch that waited for the thread to come back gives it what it owes, ahead of its queue.
+      if (unarchived && switchUnarchived !== undefined) yield* switchUnarchived(threadId);
       const rt =
         runtimes.get(threadId) ??
         (unarchived && (yield* store.listQueue(threadId)).length > 0
@@ -1274,7 +1283,7 @@ const make = Effect.gen(function* () {
       return result;
     });
 
-  const { switchSession } = makeSessionSwitch({
+  const { switchSession, reopenSwitchTarget } = makeSessionSwitch({
     store,
     hosts,
     getRuntime,
@@ -1407,6 +1416,9 @@ const make = Effect.gen(function* () {
         ),
       );
     });
+
+  /** A switch's settling (`finish`) started by the boot or an unarchive, for the runtime's life. */
+  const switchSettles = yield* FiberSet.make<void>();
   const agentSwitch = makeAgentSwitch({
     store,
     hosts,
@@ -1414,7 +1426,14 @@ const make = Effect.gen(function* () {
     getRuntime,
     switches: yield* FiberMap.make<ThreadId>(),
     refuseMissingFolder,
-    runtimes: { ...switchMethods, switchSession, emitChunk: feedMethods.emitChunk, updateThread },
+    runtimes: {
+      ...switchMethods,
+      switchSession,
+      emitChunk: feedMethods.emitChunk,
+      updateDataPart: feedMethods.updateDataPart,
+      updateThread,
+      requestSystemDelivery: queueMethods.requestSystemDelivery,
+    },
     afterRelease: (rt) =>
       locked(
         rt,
@@ -1424,7 +1443,18 @@ const make = Effect.gen(function* () {
           yield* drainQueue(rt);
         }),
       ),
+    limitedUntil: (thread) =>
+      Clock.currentTimeMillis.pipe(
+        Effect.flatMap((now) => limitedUntil(accountOf(thread.model), now)),
+      ),
+    endLimitWait: (rt, previous) => locked(rt, dropWaitForSwitch(rt, accountOf(previous))),
+    reopenTarget: reopenSwitchTarget,
+    background: (effect) => FiberSet.run(switchSettles, effect).pipe(Effect.asVoid),
+    gitState: (cwd) => git.local(cwd),
   });
+  switchUnarchived = agentSwitch.giveOwed;
+  // Every turn end, for the switch's own turns: the note and the handoff.
+  observers.add({ onTurnEnd: agentSwitch.onTurnEnd });
   // A plain thread's or worker's switch the last run cut off; the orchestrator's is its handoff's.
   yield* Effect.forEach(
     (yield* store.listThreads).filter((thread) => thread.sessionSwitch !== undefined),
@@ -1439,6 +1469,8 @@ const make = Effect.gen(function* () {
     switchAgent: agentSwitch.switchAgent,
     cutAtBoot: cutOff,
     ...queueMethods,
+    // A switch a restart left owing its new session the handoff gives it first.
+    sendQueuedAtBoot: agentSwitch.handOverOwed.pipe(Effect.andThen(queueMethods.sendQueuedAtBoot)),
     create,
     stopTask,
     send,

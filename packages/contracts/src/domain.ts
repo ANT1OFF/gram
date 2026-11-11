@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { LimitCleared, LimitWait, ThreadError } from "./agent-failure.ts";
+import { LimitCleared, LimitWait, THREAD_ERROR_TEXT_MAX, ThreadError } from "./agent-failure.ts";
 import { BabysitState, HumanReviewNotice, ReviewNotice } from "./babysit.ts";
 import { CodexHome } from "./codex-home.ts";
 import { ChecksRollup, PrState } from "./git.ts";
@@ -19,6 +19,8 @@ import {
   PrWatchSeen,
   SpawnedBy,
   ThreadRole,
+  HANDOFF_NOTE_MAX_CHARS,
+  SwitchNoteMode,
 } from "./orchestration.ts";
 import { RunWatch } from "./run-watch.ts";
 import { ReviewVerdict } from "./review.ts";
@@ -625,6 +627,39 @@ export const SessionSwitch = Schema.Struct({
   ),
   checkpointTurnId: Schema.optionalKey(TurnId),
   detail: Schema.optionalKey(Schema.String),
+  /**
+   * Any thread's switch: how its handoff note is written (`Handoff.noteMode`), and the old
+   * session's note once its last turn wrote it. The orchestrator's has none.
+   */
+  handoff: Schema.optionalKey(
+    Schema.Struct({
+      note: SwitchNoteMode,
+      text: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(HANDOFF_NOTE_MAX_CHARS))),
+      /**
+       * Limit mode's: why the old agent couldn't write the note, by its own report. `detail` is
+       * the provider's error, untrusted, which only ever goes inside the handoff's fence.
+       */
+      limit: Schema.optionalKey(
+        Schema.Struct({
+          reason: Schema.Literals(["usage", "failed"]),
+          until: Schema.optionalKey(Schema.Number),
+          detail: Schema.optionalKey(
+            Schema.String.check(Schema.isMaxLength(THREAD_ERROR_TEXT_MAX)),
+          ),
+        }),
+      ),
+      /**
+       * The turn that carried the handoff to the new session, once the agent took it. Absent at
+       * `ready`, a restart still owes the new session its handoff before anything else goes.
+       */
+      delivered: Schema.optionalKey(TurnId),
+      /**
+       * The attempt (`Handoff.switchId`) the divider is written under: the first one. A reopen
+       * of the target takes a fresh attempt id, as a startup id is never used twice.
+       */
+      divider: Schema.optionalKey(Schema.String),
+    }),
+  ),
   /**
    * The session the thread had, kept until the target is confirmed. Present, a switch that fails
    * with no target process (none started, or its exit proved) and the old one's exit proved goes
