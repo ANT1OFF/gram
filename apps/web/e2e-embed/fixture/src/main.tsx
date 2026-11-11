@@ -9,8 +9,11 @@ import {
   type ShellPageProps,
   type ShellSlotProps,
 } from "gram-web";
+import { Badge, Button, Hint } from "gram-web/kit";
 import "gram-web/style.css";
 import { useState } from "react";
+
+import "./style.css";
 
 declare global {
   interface Window {
@@ -22,13 +25,38 @@ declare global {
 function Policies() {
   const { pathname, navigate } = useShellLocation();
   return (
-    <div className="p-6">
-      <h1 data-testid="fixture-policies">Policies</h1>
-      <p data-testid="fixture-pathname">{pathname}</p>
-      <ShellLink to="/govern/agents/a-42">Agent 42</ShellLink>
-      <button type="button" onClick={() => void navigate("/settings/about")}>
-        About Gram
-      </button>
+    <div className="mx-auto flex max-w-3xl flex-col gap-section px-5 py-6">
+      <header className="flex items-center gap-2">
+        <h1 data-testid="fixture-policies" className="font-heading text-heading">
+          Policies
+        </h1>
+        <Badge variant="secondary">2 active</Badge>
+      </header>
+      {/* Classes of this app's own Tailwind build, on the names of Gram's theme. */}
+      <p
+        data-testid="fixture-themed"
+        className="rounded-md bg-surface-3 p-inset text-meta text-muted-foreground"
+      >
+        This page is at <span data-testid="fixture-pathname">{pathname}</span>
+      </p>
+      <div className="flex items-center gap-2">
+        <Hint
+          label="Opens Gram's own About page"
+          render={
+            <Button
+              data-testid="fixture-button"
+              variant="outline"
+              size="sm"
+              onClick={() => void navigate("/settings/about")}
+            />
+          }
+        >
+          About Gram
+        </Hint>
+        <ShellLink to="/govern/agents/a-42" className="text-link underline">
+          Agent 42
+        </ShellLink>
+      </div>
     </div>
   );
 }

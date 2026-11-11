@@ -6,8 +6,9 @@ import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig, esmExternalRequirePlugin } from "vite";
 
 /**
- * The web app as a module another app mounts (`src/embed/index.ts`), in `dist-embed`: one entry,
- * `gram-web.js`, one stylesheet, `gram-web.css`, and beside them the chunks and assets they load.
+ * The web app as a module another app mounts (`src/embed/index.ts`), in `dist-embed`: its entry,
+ * `gram-web.js`, the controls for that app's own pages, `gram-web-kit.js` (`src/embed/kit.ts`), one
+ * stylesheet, `gram-web.css`, and beside them the chunks and assets they load.
  * React is left for the embedding app to bring, so its own pages render in the same tree as Gram's.
  * See docs/EMBEDDED_WEB_APP.md.
  */
@@ -38,7 +39,11 @@ export default defineConfig({
     modulePreload: false,
     chunkSizeWarningLimit: 2050,
     rolldownOptions: {
-      input: { "gram-web": fileURLToPath(new URL("./src/embed/index.ts", import.meta.url)) },
+      input: {
+        "gram-web": fileURLToPath(new URL("./src/embed/index.ts", import.meta.url)),
+        // Gram's own controls for the embedding app's pages: the same modules the app runs.
+        "gram-web-kit": fileURLToPath(new URL("./src/embed/kit.ts", import.meta.url)),
+      },
       // The entry's exports are the package's: keep them as written.
       preserveEntrySignatures: "strict",
       checks: { pluginTimings: false },

@@ -4,3 +4,6 @@ declare module "gram-web" {
   export * from "@/embed/index";
 }
 declare module "gram-web/style.css";
+declare module "gram-web/kit" {
+  export * from "@/embed/kit";
+}
