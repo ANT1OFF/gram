@@ -380,6 +380,7 @@ export const OrchestrationLive = Layer.effect(
       wakeFor,
       forgetReasons,
       deliveryFor,
+      bootDelivery,
       onWakeDue,
       addNote,
       noteQuietly,
@@ -708,7 +709,18 @@ export const OrchestrationLive = Layer.effect(
     yield* kit.conditions.register(conditionHost);
     // Before the boot signal: a worker the boot continues opens its session there, and a session
     // keeps the policy it opened with, so one opened earlier would run without its role's tools.
-    yield* runtimes.setSessionPolicy({ forThread: policyFor, opening, modeAfterSwitch });
+    yield* runtimes.setSessionPolicy({
+      forThread: policyFor,
+      opening,
+      modeAfterSwitch,
+      // An orchestrator's switch hands over with its boot digest, through any thread's handoff path.
+      switchHandoff: (thread) =>
+        Effect.succeed(
+          thread.role === "orchestrator" && thread.workspaceId !== undefined
+            ? bootDelivery(thread.workspaceId)
+            : undefined,
+        ),
+    });
 
     yield* signals.offer({ type: "boot" });
     yield* signals.take.pipe(

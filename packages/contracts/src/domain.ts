@@ -629,7 +629,8 @@ export const SessionSwitch = Schema.Struct({
   detail: Schema.optionalKey(Schema.String),
   /**
    * Any thread's switch: how its handoff note is written (`Handoff.noteMode`), and the old
-   * session's note once its last turn wrote it. The orchestrator's has none.
+   * session's note once its last turn wrote it. The orchestrator's writes its note in its
+   * checkpoint turn, and its boot digest carries it (`OutboxState.switchBoot`).
    */
   handoff: Schema.optionalKey(
     Schema.Struct({

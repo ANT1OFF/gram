@@ -5,7 +5,7 @@ import {
   type ReasoningVariant,
   type ThreadId,
 } from "@gram/contracts";
-import { Check, Clock, GitPullRequest, Lock, X } from "lucide-react";
+import { Check, Clock, GitPullRequest, Lock, Users, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { AgentIcon } from "@/agents/agent-display";
@@ -36,6 +36,8 @@ import {
   leavesLine,
   limitLine,
   modeLine,
+  ORCHESTRATOR_LINE,
+  orchestratorCarriesLine,
   otherAgent,
   sheetEfforts,
   switchLimitOf,
@@ -82,11 +84,14 @@ function Line({
 }
 
 /**
- * "Continue in Codex" (or Claude Code): the confirm sheet for moving a plain thread or a worker to
- * the other agent, from the choices chip's other-agent group or the thread's "…" menu. Its model and
- * effort (up to High), what carries over and what doesn't, the note checkbox (limit mode's line in
- * its place), a worker's line and the mode line when the mode changes. Nothing changes until
- * Continue; then it says where the switch stands, and closes once the thread is on its new agent.
+ * "Continue in Codex" (or Claude Code): the confirm sheet for moving a thread, a worker or the
+ * orchestrator to the other agent, from the choices chip's other-agent group, the thread's "…" menu
+ * or, for the orchestrator, Settings → Workspaces. Its model and effort (up to High), what carries
+ * over and what doesn't, the note checkbox (limit mode's line in its place), a worker's or the
+ * orchestrator's line and the mode line when the mode changes. Nothing changes until Continue; then
+ * it says where the switch stands, and closes once the thread is on its new agent. The
+ * orchestrator's switch saves memory first, and while one is under way the sheet opens on how it
+ * stands, with Cancel switch before the old session stops and Retry once it has failed.
  */
 export function ContinueInDialog({
   threadId,
@@ -104,16 +109,24 @@ export function ContinueInDialog({
   const { checks } = useLaunchChecks();
   const workspaces = useWorkspaces();
   const thread = summary?.thread;
-  // Fixed as the sheet opens: once the switch lands, the thread's agent is the target.
-  const [from] = useState<AgentKind>(() => thread?.model.agent ?? "claude");
-  const to = otherAgent(from);
+  // The orchestrator's goes through its workspace: its checkpoint saves memory and writes the note.
+  const workspaceId = thread?.role === "orchestrator" ? thread.workspaceId : undefined;
+  // Fixed as the sheet opens: once the switch lands, the thread's agent is the target. One under
+  // way (an orchestrator's, opened again) is read from its claim.
+  const [from] = useState<AgentKind>(
+    () => thread?.sessionSwitch?.previous.agent ?? thread?.model.agent ?? "claude",
+  );
+  const [to] = useState<AgentKind>(() => thread?.sessionSwitch?.target.agent ?? otherAgent(from));
   const models = useModels(to);
   const current = useModels(from);
   const [choice, setChoice] = useState<ModelRef>();
   const [note, setNote] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const [sent, setSent] = useState(false);
+  // An orchestrator's switch already under way opens on how it stands.
+  const [sent, setSent] = useState(
+    () => workspaceId !== undefined && thread?.sessionSwitch !== undefined,
+  );
 
   // Preselected once the target's models are in: the pick, else the default target.
   const listed = models ?? [];
@@ -142,10 +155,12 @@ export function ContinueInDialog({
   const change = thread.sessionSwitch;
   const limit = switchLimitOf(summary);
   const worker = thread.spawnedBy !== undefined;
+  const orchestrator = workspaceId !== undefined;
   const workspace = workspaces.find((each) => each.workspace.id === thread.workspaceId);
-  const gated = worker && workspace !== undefined && autonomyOf(workspace.charter) !== "full";
+  const gated =
+    (worker || orchestrator) && workspace !== undefined && autonomyOf(workspace.charter) !== "full";
   const codexVersion = checks?.tools.find((tool) => tool.tool === "codex")?.version;
-  const mode = modeLine({ mode: thread.mode, to, worker, gated, codexVersion });
+  const mode = modeLine({ mode: thread.mode, to, worker, orchestrator, gated, codexVersion });
   const efforts = choice === undefined ? [] : sheetEfforts(models, choice.model);
   const effortItems = EFFORT_OPTIONS.filter((option) => efforts.includes(option.value)).map(
     (option) => ({ value: option.value, label: option.short ?? option.label }),
@@ -158,26 +173,51 @@ export function ContinueInDialog({
   const pickEffort = (variant: ReasoningVariant) =>
     setChoice((was) => (was === undefined ? was : { ...was, variant }));
 
-  const confirm = async () => {
-    if (choice === undefined) return;
+  const act = async (run: () => Promise<unknown>, after: boolean) => {
     setBusy(true);
     setError(undefined);
     try {
-      await api.switchAgent(threadId, choice, limit === undefined ? { note } : {});
-      setSent(true);
+      await run();
+      setSent(after);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
   };
+  const confirm = () => {
+    if (choice === undefined) return;
+    const options = limit === undefined ? { note } : {};
+    return act(
+      () =>
+        workspaceId === undefined
+          ? api.switchAgent(threadId, choice, options)
+          : api.switchOrchestrator(workspaceId, choice, options),
+      true,
+    );
+  };
 
   return (
     <DialogShell testId="continue-in-dialog" title={title} onClose={onClose}>
       {change !== undefined && sent ? (
-        <p role="status" data-testid="continue-in-status" className="text-reading">
-          {switchStatusText(change)}
-        </p>
+        <div className="flex flex-col gap-2">
+          <p role="status" data-testid="continue-in-status" className="text-reading">
+            {switchStatusText(change)}
+          </p>
+          {orchestrator && change.detail !== undefined && (
+            <p role="alert" className="text-meta text-destructive">
+              {change.detail}
+            </p>
+          )}
+          {orchestrator && change.phase === "failed" && (
+            <p className="text-meta text-muted-foreground">
+              History, workers, decisions and queued messages are kept.{" "}
+              {change.targetRelease === undefined
+                ? "Resolve the previous session before opening another orchestrator: an unknown owner can't be replaced safely."
+                : "Resolve the startup error, then retry safely."}
+            </p>
+          )}
+        </div>
       ) : (
         <>
           <div className="flex flex-wrap items-end gap-3">
@@ -251,7 +291,9 @@ export function ContinueInDialog({
               className="text-success"
               glyph={<Check aria-hidden className="size-icon-row" />}
             >
-              {carriesLine(from, note, limit !== undefined)}
+              {orchestrator
+                ? orchestratorCarriesLine(from, note, limit !== undefined)
+                : carriesLine(from, note, limit !== undefined)}
             </Line>
             <Line
               testId="continue-in-leaves"
@@ -260,6 +302,15 @@ export function ContinueInDialog({
             >
               {leavesLine(from)}
             </Line>
+            {orchestrator && (
+              <Line
+                testId="continue-in-orchestrator"
+                hint="Its workers and model"
+                glyph={<Users aria-hidden className="size-icon-row" />}
+              >
+                {ORCHESTRATOR_LINE}
+              </Line>
+            )}
             {worker && (
               <Line
                 testId="continue-in-worker"
@@ -293,7 +344,7 @@ export function ContinueInDialog({
           )}
         </>
       )}
-      {(error ?? refusal) !== undefined && !sent && (
+      {(error ?? (sent ? undefined : refusal)) !== undefined && (
         <p role="alert" className="text-meta text-destructive">
           {error ?? refusal}
         </p>
@@ -310,6 +361,27 @@ export function ContinueInDialog({
             onClick={() => void confirm()}
           >
             Continue
+          </Button>
+        )}
+        {sent && workspaceId !== undefined && change?.phase === "checkpoint" && (
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="continue-in-cancel-switch"
+            disabled={busy}
+            onClick={() => void act(() => api.cancelOrchestratorSwitch(workspaceId), false)}
+          >
+            Cancel switch
+          </Button>
+        )}
+        {sent && workspaceId !== undefined && change?.phase === "failed" && (
+          <Button
+            size="sm"
+            data-testid="continue-in-retry-switch"
+            disabled={busy}
+            onClick={() => void act(() => api.retryOrchestratorSwitch(workspaceId), true)}
+          >
+            Retry switch safely
           </Button>
         )}
       </div>

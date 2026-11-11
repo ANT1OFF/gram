@@ -478,6 +478,143 @@ home or workspace directory, or of a target it can't resolve) is never the class
 Where nobody can be shown a dialog, as in Gram's sessions, Claude Code denies it and tells the agent
 not to work around it. This is read from Claude Code 2.1.319, not measured live.
 
+## Switching a thread's agent
+
+A thread started in Claude Code can carry on in Codex, or the reverse, without starting a new
+thread. The thread keeps its title, worktree, branch, plan, waits and wakes; only its agent, model
+and session change. The new agent starts a fresh session and gets a handoff from Gram, so it
+knows what happened without the old agent's memory of it.
+
+Switching is offered only when the other agent's CLI is installed. With one CLI, nothing new
+shows.
+
+### Where to switch
+
+- **The choices chip.** Under Model, the other agent's models follow the current agent's, under
+  its mark ("Continue in Codex: new session with a handoff" on hover). Each ends in "…": picking
+  one opens the confirm sheet and changes nothing by itself.
+- **The thread menu.** "…" → Thread → **Continue in Codex…** (or **Continue in Claude Code…**).
+- **The orchestrator.** Its "…" menu has the same item, and so does Settings → Workspaces →
+  Models, beside "Current orchestrator". The chip's group isn't offered on the orchestrator.
+
+All three open the same sheet. It shows the target model and effort (up to High), one line on
+what carries over, one on what doesn't, and **Ask Claude for a handoff note first**, ticked. The
+sheet preselects the target's model for the tier the current model fills, otherwise the target's
+default, and keeps the current effort where the target offers it. When a greyed entry can't
+switch, its hover says why.
+
+### What carries over
+
+The new session's first input is the handoff. Gram fences it as material from the thread, never
+instructions, and it holds:
+
+- **A note from the old agent.** Gram asks the old session for one last short turn: the goal,
+  what's done, what's in progress, decisions and why, what's next, and traps. The note is capped at
+  4,000 characters. Untick the box to skip it.
+- **Gram's facts**, from Gram's own state rather than a model: the title and opening request, or
+  a worker's brief; the plan and open asks; the worktree path, branch, HEAD and whether the tree
+  is dirty; and a bound pull request with its checks, reviews, merge intent and monitors.
+- **Recent turns** as text: your messages and the agent's replies, with each tool call cut to one
+  line (such as `Bash: bun test foo`) and no output. The budget is about 12k tokens, the first
+  request and the latest exchange first.
+
+The new agent answers the handoff in one line and does no work in that turn. Messages you queue
+during a switch wait and go to the new session after it.
+
+What doesn't carry over: the old agent's tool output, its reasoning and its prompt cache. The
+first real reply is slower, and the switch costs a full read on the other subscription, plus the
+note turn on the old one. Switch at a natural break.
+
+In the transcript a divider reads, for example, **Continued in Codex · GPT-6.1-Sol · 14:02**. Its
+hover names the previous agent, model and session. Its chevron opens **What Codex was given**,
+read only: the note and who wrote it, then Gram's facts. Rewind and fork stop at the divider.
+
+The orchestrator's switch also flushes memory first, as before, and its note comes from that same
+turn. The new orchestrator boots as usual from its role, memory, the charter and the ledger, and
+gets the note plus your last 4 exchanges with it (about 4k tokens). Workers keep their own agents,
+and the pick becomes the workspace's orchestrator model. Under the recommended setup that slot then
+shows as yours, and **Follow recommended** puts it back.
+
+### When the old agent is out of usage
+
+When the old agent's own usage report says it is out of usage, or its last turn failed, it can't
+write a note. The sheet says so in place of the checkbox, for example: "Claude is out of usage
+until 15:00, so Codex's first turn writes the note from the transcript and does no other work."
+
+In this limit mode Gram skips the note turn and sends about 24k tokens of recent turns instead of
+12k (8k for the orchestrator). The new agent's first turn reads the handoff and the worktree and
+replies with the note, before any work. That reply is stored as the note on the divider, under a
+muted line such as "Claude was out of usage · this turn writes the note, no work". Queued
+messages wait until that turn ends. Gram reads usage only from the agent's own report, never from
+credentials.
+
+### When a switch is refused
+
+Gram refuses these on the server, and greys the entry with the same words where it can tell
+beforehand:
+
+| When                                                    | What you see                                                                                                              |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| A turn is running or starting, or a switch is under way | "Wait for this turn to finish, or stop it, then switch."                                                                  |
+| An approval, question or plan waits on you              | "Answer the open approval first. It can't move to Codex."                                                                 |
+| The old agent still runs background work                | "Claude still has background work running."                                                                               |
+| The other CLI isn't installed                           | Nothing is offered                                                                                                        |
+| The other CLI is signed out                             | "Sign in to Codex in Settings → Agents."                                                                                  |
+| A gateway profile on the thread                         | "Switching uses the CLI's own sign-in; it doesn't move gateway accounts."                                                 |
+| The thread's session runs on a joined machine           | "Codex can't run on this thread's machine yet."                                                                           |
+| A fork that hasn't sent yet                             | "Send once in this fork first."                                                                                           |
+| An archived thread                                      | "Unarchive this thread before switching it."                                                                              |
+| The worktree is busy                                    | "This thread's worktree is in use. Try again in a moment."                                                                |
+| Plan mode the target can't keep                         | "The selected harness cannot preserve this session's Plan mode. Finish the plan in the current session before switching." |
+| An effort above High                                    | "A switch runs at High effort at most. Pick High or lower."                                                               |
+| A workspace approval gate the target can't keep         | The gate's own refusal, naming the mode                                                                                   |
+| Windows                                                 | Nothing is offered                                                                                                        |
+
+Plan mode, effort, the gate and a busy worktree show in the sheet after **Continue**, since only
+the server knows them. A thread at its usage limit is never refused: that is limit mode. The
+orchestrator's entry isn't greyed for a running turn or an open question, because its memory
+checkpoint waits for them.
+
+### Permission modes
+
+The mode carries over through each agent's own mapping (see
+[permission modes by harness](#permission-modes-by-harness)). The sheet names a change before you
+confirm, and says nothing when the mode stays the same.
+
+- **Claude Code to Codex.** Auto stays Auto on Codex 0.166.0 or newer with no outward gate. On an
+  older Codex, a plain thread runs in Ask ("Codex runs this thread in Ask. Its Auto needs Codex
+  0.166 or newer."), and a worker or orchestrator runs in Bypass. Under Supervised or Publish a
+  worker or orchestrator runs in Bypass, where the gate still asks, so Codex's reviewer never
+  answers a push or merge for you.
+- **Codex to Claude Code.** Every mode carries over as it is.
+
+### Workers
+
+A switched worker keeps everything bound to it: its pull request, monitors, merge when ready,
+dependencies, wakes, waits, plan, merge freezes and local checks. The sheet says so: "Its PR, merge
+when ready and checks stay with this worker, and its orchestrator is told." The orchestrator still
+directs the worker, and its next digest says it "continues in Codex (the user switched it)". Only
+you can switch a worker: the orchestrator's `set_thread_model` keeps refusing a change of agent.
+
+### Switching back
+
+Switching back is another handoff to a fresh session, never a resume of the old one. It carries
+the new note, the earlier note and the turns since the last divider. The sheet preselects the
+tier's model, which may not be the model the thread started on. The old session is stopped, and
+Gram never deletes the CLI's own files for it.
+
+### Limits
+
+- Not on joined machines, which run direct Claude Code sessions only.
+- Not with gateway profiles on either side: a switch uses the CLI's own sign-in.
+- Not on Windows, where Gram can't yet stop a session cleanly for a switch.
+- Only you switch a worker; the orchestrator can't.
+- The recent-turns budget is fixed, since neither CLI reports its context window to Gram yet.
+- Limit mode has been tested only with synthetic usage reports, not with an account that ran out.
+
+Source: [agent switch](../packages/server/src/runtime/agent-switch.ts),
+[the sheet's words](../apps/web/src/thread/agent-switch-model.ts).
+
 ## App-tool approval results
 
 Supervised and Publish workspaces can run Codex orchestrators and workers on your

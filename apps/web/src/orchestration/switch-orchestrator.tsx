@@ -1,22 +1,12 @@
-import {
-  CUSTOM_MODEL_DESCRIPTION,
-  type ModelRef,
-  type SessionSwitch,
-  type Thread,
-  type WorkspaceId,
-} from "@gram/contracts";
-import { useState } from "react";
+import { type ModelRef, type SessionSwitch, type Thread } from "@gram/contracts";
 
 import { agentLabel } from "@/agents/agent-display";
-import { useApi } from "@/api/context";
-import { errorMessage } from "@/api/errors";
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
-import { AgentFields, choiceModel, type AgentChoice } from "@/composer/agent-fields";
-import { useModelsSettled } from "@/composer/models";
 import { useThreadsStore } from "@/stores/threads";
-import { DialogShell } from "@/thread/dialog-shell";
-
-import { switchOpenLabel } from "./switch-label";
+import { continueLabel } from "@/thread/agent-switch-model";
+import { useThreadDialogs } from "@/thread/thread-dialogs-store";
+import { useSwitchOffer } from "@/thread/use-switch-offer";
 
 const name = (model: ModelRef) =>
   `${agentLabel(model.agent)} · ${model.model}${model.variant ? ` · ${model.variant}` : ""}`;
@@ -60,193 +50,55 @@ export const switchCurrentText = (
   );
 };
 
-/** The workspace settings' Models row: the current orchestrator, and the way to switch it. */
+/**
+ * The workspace settings' Models row: the current orchestrator, and "Continue in Codex…" (or
+ * "…in Claude Code…"), which opens the same sheet as the thread's menu. Offered as it is there:
+ * with the other CLI installed, greyed with the server's words when it can't move; while a switch
+ * is under way, it opens on how it stands.
+ */
 export function SwitchOrchestratorAction({
   thread,
-  workspaceId,
   disabled = false,
 }: {
   thread: Thread;
-  workspaceId: WorkspaceId;
   disabled?: boolean;
 }) {
   const current = useThreadsStore((state) => state.byId[thread.id]?.thread) ?? thread;
   const identity = useThreadsStore((state) => state.byId[thread.id]?.identity);
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <div
-        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-3"
-        data-testid="orchestrator-switch-action"
-      >
-        <div className="text-meta">
-          <p className="font-medium">Current orchestrator</p>
-          <p data-testid="orchestrator-current" className="mt-1 text-muted-foreground">
-            {switchCurrentText(current, identity?.model)}
-          </p>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={disabled}
-          onClick={() => setOpen(true)}
-          data-testid="switch-orchestrator-open"
-        >
-          {switchOpenLabel(current)}
-        </Button>
-      </div>
-      {open && (
-        <SwitchOrchestratorDialog
-          thread={thread}
-          workspaceId={workspaceId}
-          disabled={disabled}
-          onClose={() => setOpen(false)}
-        />
-      )}
-    </>
+  const offer = useSwitchOffer(thread.id);
+  const open = () => useThreadDialogs.getState().open({ kind: "continueIn", threadId: thread.id });
+  const button = (refusal: string | undefined) => (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={disabled || refusal !== undefined}
+      aria-description={refusal}
+      onClick={open}
+      data-testid="switch-orchestrator-open"
+    >
+      {offer.offered ? `${continueLabel(offer.to)}…` : ""}
+    </Button>
   );
-}
-
-/**
- * The switch itself: pick a harness and model, then save memory and switch; or, while a switch is
- * under way, where it stands. Opened from the workspace settings and the orchestrator's ⋯ menu.
- */
-export function SwitchOrchestratorDialog({
-  thread,
-  workspaceId,
-  disabled = false,
-  onClose,
-}: {
-  thread: Thread;
-  workspaceId: WorkspaceId;
-  disabled?: boolean;
-  onClose: () => void;
-}) {
-  const api = useApi();
-  const current = useThreadsStore((state) => state.byId[thread.id]?.thread) ?? thread;
-  const identity = useThreadsStore((state) => state.byId[thread.id]?.identity);
-  const change = current.sessionSwitch;
-  const [choice, setChoice] = useState<AgentChoice>(() => ({
-    agent: current.model.agent,
-    model: current.model.model,
-    ...(current.model.variant === undefined ? {} : { variant: current.model.variant }),
-  }));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const catalog = useModelsSettled(choice.agent, true);
-  const listed = catalog.models?.find(
-    (model) => model.id === choice.model || model.resolvedId === choice.model,
-  );
-  const known =
-    listed !== undefined &&
-    listed.description !== CUSTOM_MODEL_DESCRIPTION &&
-    listed.warning === undefined;
-  const act = async (run: () => Promise<unknown>) => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await run();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
-    <DialogShell testId="switch-orchestrator-dialog" title="Switch orchestrator" onClose={onClose}>
-      {change === undefined ? (
-        <>
-          <p className="text-meta text-muted-foreground">
-            Current: <span data-testid="switch-current-model">{name(current.model)}</span>
-            {identity?.model && identity.model !== current.model.model
-              ? ` (CLI reports ${identity.model})`
-              : ""}
-          </p>
-          <div className="flex flex-wrap gap-2" data-testid="switch-target-fields">
-            <AgentFields value={choice} onChange={setChoice} subscriptionOnly />
-          </div>
-          <p className="text-meta text-muted-foreground" data-testid="switch-model-availability">
-            {known
-              ? "Listed by your installed CLI. Availability still depends on your account."
-              : catalog.settled
-                ? "Custom or unverified model ID. The exact ID will be sent; account availability is not verified."
-                : "Checking the installed CLI's model list…"}
-          </p>
-          <p className="text-reading">
-            The current orchestrator finishes its work and questions, then saves workspace memory
-            and stops. The selected harness starts a fresh session on this thread using memory and
-            the current ledger. Earlier messages stay visible here; the full provider conversation
-            is not transferred.
-          </p>
-          <p className="text-meta text-muted-foreground">
-            Queued messages wait for the new session's workspace context. Worker models, open
-            decisions and workspace pauses stay in place. After success, this selection also becomes
-            the workspace's preference for future orchestrators.
-          </p>
-        </>
-      ) : (
-        <div className="flex flex-col gap-3" data-testid="orchestrator-switch-status">
-          <p className="text-meta text-muted-foreground">Previous: {name(change.previous)}</p>
-          <p className="text-reading font-medium">Requested: {name(change.target)}</p>
-          <p role="status" className="text-reading">
-            {switchStatusText(change)}
-          </p>
-          {change.detail && (
-            <p role="alert" className="text-meta text-destructive">
-              {change.detail}
-            </p>
-          )}
-          {change.phase === "failed" && (
-            <p className="text-meta text-muted-foreground">
-              History, workers, decisions and queued messages are retained.{" "}
-              {change.targetRelease === "notStarted"
-                ? "The target never started a session. Resolve the startup error, then retry safely."
-                : change.targetRelease === "exited"
-                  ? "The failed target has stopped. Resolve the startup error, then retry safely."
-                  : "Resolve the previous session before opening another orchestrator. An unknown owner cannot be replaced safely."}
-            </p>
-          )}
-        </div>
-      )}
-      {error !== undefined && (
-        <p role="alert" className="text-meta text-destructive">
-          {error}
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-3"
+      data-testid="orchestrator-switch-action"
+    >
+      <div className="text-meta">
+        <p className="font-medium">Current orchestrator</p>
+        <p data-testid="orchestrator-current" className="mt-1 text-muted-foreground">
+          {switchCurrentText(current, identity?.model)}
         </p>
-      )}
-      <div className="flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={onClose}>
-          Close
-        </Button>
-        {change === undefined && (
-          <Button
-            size="sm"
-            disabled={disabled || busy || choice.model === "" || !catalog.settled}
-            data-testid="switch-orchestrator-confirm"
-            onClick={() => void act(() => api.switchOrchestrator(workspaceId, choiceModel(choice)))}
-          >
-            {busy ? "Checking…" : "Save memory and switch"}
-          </Button>
-        )}
-        {change?.phase === "failed" && (
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() => void act(() => api.retryOrchestratorSwitch(workspaceId))}
-          >
-            Retry switch safely
-          </Button>
-        )}
-        {change?.phase === "checkpoint" && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => void act(() => api.cancelOrchestratorSwitch(workspaceId))}
-          >
-            Cancel switch
-          </Button>
-        )}
       </div>
-    </DialogShell>
+      {offer.offered &&
+        (offer.refusal === undefined ? (
+          button(undefined)
+        ) : (
+          // Greyed, it says why on hover, in the words the server would refuse with.
+          <Hint label={offer.refusal} side="bottom" render={<span tabIndex={0} />}>
+            {button(offer.refusal)}
+          </Hint>
+        ))}
+    </div>
   );
 }

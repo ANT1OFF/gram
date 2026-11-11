@@ -9,6 +9,7 @@ import { renderWithApi } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 import { useUndoToasts } from "@/stores/undo-toasts";
+import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
 import { WorkspaceSettingsPage } from "./workspace-page";
 import { WorkspacesSettings } from "./workspace-settings";
@@ -33,11 +34,13 @@ afterEach(() => {
   useServerSettings.setState({ settings: undefined });
   useUndoToasts.setState({ toasts: [] });
   useThreadsStore.setState({ byId: {}, ready: false });
+  useThreadDialogs.setState({ dialog: undefined });
   vi.restoreAllMocks();
 });
 
 const mount = async () => {
-  const api = createMockApi({ speed: 0, autoplay: false });
+  // Both agents, as the mock's launch checks find both CLIs: the orchestrator can continue in Codex.
+  const api = createMockApi({ speed: 0, autoplay: false, agents: ["claude", "codex"] });
   useServerSettings.setState({ settings });
   const state = await api.saveWorkspace({
     name: "platform",
@@ -56,6 +59,34 @@ const undoLast = async () => {
 };
 
 describe("a workspace's settings page", () => {
+  it("opens Continue in Codex… on the orchestrator, the sheet the thread's menu opens", async () => {
+    const { api, state } = await mount();
+    const thread = await api.openOrchestrator({ workspaceId: state.workspace.id });
+    useThreadsStore.getState().applyEvent({ type: "thread.upsert", thread });
+    renderWithApi(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
+    const open = await screen.findByTestId("switch-orchestrator-open");
+    expect(open.textContent).toBe("Continue in Codex…");
+    fireEvent.click(open);
+    expect(useThreadDialogs.getState().dialog).toEqual({ kind: "continueIn", threadId: thread.id });
+  });
+
+  it("shows nothing new with only Claude installed", async () => {
+    const { api, state } = await mount();
+    vi.spyOn(api, "launchChecks").mockResolvedValue({
+      checkedAt: 1,
+      tools: [{ tool: "claude", found: true }],
+      claudeSignIn: "signedIn",
+      codexSignIn: "notSignedIn",
+      ghSignedIn: false,
+    } as never);
+    const thread = await api.openOrchestrator({ workspaceId: state.workspace.id });
+    useThreadsStore.getState().applyEvent({ type: "thread.upsert", thread });
+    renderWithApi(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
+    await screen.findByTestId("orchestrator-current");
+    await act(async () => {});
+    expect(screen.queryByTestId("switch-orchestrator-open")).toBeNull();
+  });
+
   it("saves a change at once and offers Undo, which puts back what was there", async () => {
     const { api, state, stored } = await mount();
     renderWithApi(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
@@ -83,6 +114,9 @@ describe("a workspace's settings page", () => {
     renderWithApi(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
     const current = await screen.findByTestId("orchestrator-current");
     const identity = current.textContent;
+    expect((await screen.findByTestId("switch-orchestrator-open")).textContent).toBe(
+      "Continue in Codex…",
+    );
     const select = (await screen.findByTestId("orchestrator-model-follow")) as HTMLSelectElement;
     expect((await stored()).charter.autonomy).toBe("full");
     expect(select.value).toBe("follow");
