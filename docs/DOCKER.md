@@ -69,6 +69,37 @@ from its environment when it starts: `GRAM_EMBEDDING=1` turns it on, `GRAM_EMBED
 off, and without the variable the stored setting stays as it is. Only the app on the server's own
 machine changes it; a paired phone can't.
 
+### Move a workspace to another Gram
+
+With hosted features on at both ends, a workspace can leave one Gram and carry on in another, for
+example from the app on your computer to a server with no window. Both calls are for the app on
+the server's own machine, with its launch cookie; a paired phone or a joined machine is refused.
+
+1. On the Gram it leaves, `POST /workspaces/export` with `{"workspaceId": "…"}` answers the
+   workspace as one JSON bundle. It is refused while the orchestrator is mid-turn, and it
+   pauses the workspace there so two orchestrators never work the same branches. Send
+   `"pause": false` to take a copy and keep it running.
+2. On the Gram it moves to, `POST /workspaces/import` with
+   `{"bundle": …, "projects": {"<project id in the bundle>": {"root": "/path/on/this/server"}}}`.
+   Every repository of the workspace needs its folder here named; nothing is cloned or guessed.
+
+What moves: the charter, stages and groups, the orchestrator's conversation and its memory, the
+feature cards, the audit that budgets are counted from, and the transcript of every worker. The
+orchestrator opens under the same thread on a new session, on a model this server chooses, and its
+first digest tells it what moved and where its repositories are now.
+
+What stays: agent sessions, worktrees and anything not pushed from them, folder grants, approvals
+in flight, file checkpoints, attachments, routines' state and sign-ins. Workers that were open
+arrive as finished ones: their branch, pull requests and last report are told to the orchestrator,
+which starts workers again where it needs them. Push the branches before you export.
+
+An import replaces nothing. It is refused when the workspace or its orchestrator's thread is
+already there, when the bundle came from a newer Gram, or when a repository has no usable folder.
+The app's settings in the bundle (review bots and workspace defaults) are taken only with
+`"adoptSettings": true`. A bundle is scrubbed of what looks like a credential, but it holds your
+conversation and memory: keep it as you would those. Import only a bundle you exported or trust: it
+brings its own charter, with its autonomy and routines, and its orchestrator starts working.
+
 | Build argument        | Default                       | What it sets                                  |
 | --------------------- | ----------------------------- | --------------------------------------------- |
 | `CLAUDE_CODE_VERSION` | the version in the Dockerfile | Claude Code from npm                          |

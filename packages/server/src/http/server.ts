@@ -108,6 +108,8 @@ import {
 } from "./remote-access.ts";
 import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./remote-routes.ts";
 import { RemoteControl } from "./remote-control.ts";
+import { WORKSPACE_TRANSFER_PATHS, WorkspaceTransferRoutes } from "../transfer/routes.ts";
+import { WorkspaceTransfer } from "../transfer/workspace-transfer.ts";
 import {
   claudeTokenCaptureFor,
   HOST_PATHS,
@@ -280,35 +282,38 @@ export const AuthMiddleware = HttpRouter.middleware(
             response =
               path !== undefined && REMOTE_MANAGEMENT_PATHS.has(path)
                 ? yield* remoteManagement(control, path, isRemote ? remote : undefined)
-                : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
-                  ? isRemote || remoteHosts === undefined
-                    ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
-                    : yield* machineManagement(
-                        remoteHosts,
-                        control.current(),
-                        path,
-                        releaseOfConfig(config),
-                        undefined,
-                        tokenCapture,
-                        control.dialAccess(),
-                        workerHosts === undefined
-                          ? undefined
-                          : (id) => workerHosts.machine(id).folders,
-                      )
-                  : isRemote && path === "/ws"
-                    ? yield* closedOnRevoke(
-                        remote,
-                        remote.sessionOf(authRequest),
-                        asCaller(httpEffect, unmarkLocalApp(request)),
-                      )
-                    : // The local app's own connection, which the RPC handlers can tell apart
-                      // from a phone's (`isLocalApp`); anything else says nothing of itself.
-                      yield* asCaller(
-                        httpEffect,
-                        !isRemote && path === "/ws"
-                          ? markLocalApp(request)
-                          : unmarkLocalApp(request),
-                      );
+                : // A workspace's bundle leaves and arrives through the local app only.
+                  isRemote && path !== undefined && WORKSPACE_TRANSFER_PATHS.has(path)
+                  ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
+                  : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
+                    ? isRemote || remoteHosts === undefined
+                      ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
+                      : yield* machineManagement(
+                          remoteHosts,
+                          control.current(),
+                          path,
+                          releaseOfConfig(config),
+                          undefined,
+                          tokenCapture,
+                          control.dialAccess(),
+                          workerHosts === undefined
+                            ? undefined
+                            : (id) => workerHosts.machine(id).folders,
+                        )
+                    : isRemote && path === "/ws"
+                      ? yield* closedOnRevoke(
+                          remote,
+                          remote.sessionOf(authRequest),
+                          asCaller(httpEffect, unmarkLocalApp(request)),
+                        )
+                      : // The local app's own connection, which the RPC handlers can tell apart
+                        // from a phone's (`isLocalApp`); anything else says nothing of itself.
+                        yield* asCaller(
+                          httpEffect,
+                          !isRemote && path === "/ws"
+                            ? markLocalApp(request)
+                            : unmarkLocalApp(request),
+                        );
             break;
           case "boot":
             response = yield* HttpServerResponse.redirect("/", { status: 302 }).pipe(
@@ -588,10 +593,19 @@ export const ServerLayer: Layer.Layer<
 > = Layer.unwrap(
   Effect.gen(function* () {
     const { port, listenHost } = yield* ServerConfig;
-    return HttpRouter.serve(Layer.mergeAll(RpcRoutes, StaticRoutes, McpRoute, AuthMiddleware), {
-      disableListenLog: true,
-      disableLogger: true,
-    }).pipe(
+    return HttpRouter.serve(
+      Layer.mergeAll(
+        RpcRoutes,
+        StaticRoutes,
+        McpRoute,
+        WorkspaceTransferRoutes.pipe(Layer.provide(WorkspaceTransfer.layer)),
+        AuthMiddleware,
+      ),
+      {
+        disableListenLog: true,
+        disableLogger: true,
+      },
+    ).pipe(
       Layer.merge(LoopStallLog),
       Layer.provideMerge(ServerCore),
       Layer.provide(RemoteControl.layer),

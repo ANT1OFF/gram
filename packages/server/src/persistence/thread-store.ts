@@ -56,7 +56,7 @@ import {
   type WaitId,
   type WaitResolver,
   ThreadId,
-  type TurnEndReason,
+  TurnEndReason,
   type TurnId,
   type WorkspaceId,
   type UsageOverview,
@@ -135,6 +135,43 @@ interface TaskRecord {
 interface WorkerReportRecord {
   readonly seq: number;
   readonly report: WorkerReport;
+}
+
+/** One turn of a conversation that moves between two Grams; its file checkpoint stays behind. */
+export interface MovedTurn {
+  readonly id: TurnId;
+  readonly startedAt: number;
+  readonly endedAt?: number;
+  readonly reason?: TurnEndReason;
+  readonly usage?: UsageSummary;
+}
+
+/** A thread's conversation as it moves between two Grams. */
+export interface MovedHistory {
+  readonly messages: ReadonlyArray<{
+    readonly message: GramUIMessage;
+    readonly turnId?: TurnId;
+  }>;
+  readonly turns: ReadonlyArray<MovedTurn>;
+}
+
+/** What `stageMovedWorkspace` writes. */
+export interface MovedWorkspace {
+  /** As it is stored here: this server's project ids, and no orchestrator in the slot. */
+  readonly state: WorkspaceState;
+  readonly orchestrator?:
+    | (MovedHistory & {
+        /** The closed record a reopen opens: this server's project, checkout and mode. */
+        readonly thread: Thread;
+        readonly closedAt: number;
+        readonly plan?: ThreadPlan | undefined;
+        readonly turnPlan?: ReadonlyArray<PlanItem> | undefined;
+      })
+    | undefined;
+  readonly featureCards: ReadonlyArray<FeatureCard>;
+  readonly events: ReadonlyArray<OrchestrationEventEntry>;
+  /** The encoded outbox its first digest here is built from. */
+  readonly outbox: string;
 }
 
 /** A worker's latest report, with the interface its reports last stated. */
@@ -424,6 +461,12 @@ export interface ThreadStoreShape {
   takeNewestClosed: Effect.Effect<
     { readonly closed: ClosedThread; readonly workers: ReadonlyArray<ClosedWorker> } | undefined
   >;
+  /** `takeNewestClosed` of one thread by its id; `undefined` when it isn't on the list or can't be read. */
+  takeClosed(
+    threadId: ThreadId,
+  ): Effect.Effect<
+    { readonly closed: ClosedThread; readonly workers: ReadonlyArray<ClosedWorker> } | undefined
+  >;
 
   listMessages(threadId: ThreadId): Effect.Effect<ReadonlyArray<GramUIMessage>>;
   /** The thread's user messages in order, without reading or decoding the replies between them. */
@@ -556,6 +599,11 @@ export interface ThreadStoreShape {
     end: { endedAt: number; reason: TurnEndReason; usage?: UsageSummary },
   ): Effect.Effect<void>;
   listTurns(threadId: ThreadId): Effect.Effect<ReadonlyArray<TurnRecord>>;
+  /**
+   * A live thread's conversation as stored, for a move to another Gram: its messages in order, each
+   * with the turn it was written in, and its turns with what each used.
+   */
+  exportHistory(threadId: ThreadId): Effect.Effect<MovedHistory>;
   /**
    * Ends every turn still open as `interrupted` at `endedAt` (or its start, if later) and returns
    * them. Only for boot, when no agent process is left to own one.
@@ -705,6 +753,13 @@ export interface ThreadStoreShape {
    * still exists holds its slot, or is one of its dreams' threads.
    */
   removeWorkspace(id: WorkspaceId): Effect.Effect<void, NotFound | InvalidState>;
+  /**
+   * A workspace moved here from another Gram, written in one transaction or not at all: its row
+   * with nobody holding the slot, its feature cards, audit and outbox, and its orchestrator as a
+   * closed thread with its conversation, for a reopen to open. `InvalidState` when the workspace,
+   * the thread or one of its turns is already here: nothing of this server's is ever replaced.
+   */
+  stageMovedWorkspace(moved: MovedWorkspace): Effect.Effect<void, InvalidState>;
   /**
    * Makes `threadId` the workspace's orchestrator if nobody is, in one statement, so of two
    * concurrent claims one wins. A slot naming a thread that no longer exists counts as empty, and
@@ -906,6 +961,9 @@ const threadWakePrJson = (wake: ThreadWake): string | null =>
         ...(wake.fired === undefined ? {} : { fired: wake.fired }),
         ...(wake.conditionState === undefined ? {} : { conditionState: wake.conditionState }),
       });
+
+/** Why a moved workspace is refused: nothing already on this server is ever replaced. */
+const alreadyHere = (message: string) => new InvalidState({ message });
 
 const toJson = <S extends Schema.Top>(schema: S, value: S["Type"]): string =>
   JSON.stringify(Schema.encodeSync(schema as unknown as Schema.Codec<S["Type"], unknown>)(value));
@@ -2111,6 +2169,26 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             return undefined;
           }),
         ),
+        takeClosed: (threadId) =>
+          tx(
+            Effect.gen(function* () {
+              const [row] = yield* sql<{
+                data: string;
+                closed_at: number;
+                workers: string | null;
+              }>`SELECT data, closed_at, workers FROM closed_threads WHERE thread_id = ${threadId}`;
+              if (row === undefined) return undefined;
+              const decoded = decodeStored(Thread, row.data);
+              if (!decoded.ok) return undefined;
+              yield* sql`DELETE FROM closed_threads WHERE thread_id = ${threadId}`;
+              const workers =
+                row.workers === null ? undefined : decodeStored(ClosedWorkers, row.workers);
+              return {
+                closed: { thread: decoded.value, closedAt: Number(row.closed_at) },
+                workers: workers?.ok === true ? workers.value : [],
+              };
+            }),
+          ),
         forgetClosed: (threadId) =>
           tx(
             Effect.gen(function* () {
@@ -2362,6 +2440,53 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 usage = ${usage === undefined ? null : toJson(UsageSummary, usage)},
                 cost_usd = ${usage?.costUsd ?? null}
               WHERE id = ${turnId} AND ended_at IS NULL`,
+          ),
+        exportHistory: (threadId) =>
+          tx(
+            Effect.gen(function* () {
+              const storedMessages = yield* sql<{
+                id: string;
+                turn_id: string | null;
+                message: string;
+              }>`SELECT id, turn_id, message FROM messages WHERE thread_id = ${threadId}
+                ORDER BY seq`;
+              const messages = (yield* readableRows(
+                unreadable,
+                "messages",
+                storedMessages,
+                (r) => `${threadId}/${r.id}`,
+                (r) =>
+                  mapDecoded(decodeStored(UIMessageSchema, r.message), (message) => ({
+                    message,
+                    ...(r.turn_id === null ? {} : { turnId: r.turn_id as TurnId }),
+                  })),
+              )) satisfies MovedHistory["messages"];
+              const turnRows = yield* sql<{
+                id: string;
+                started_at: number;
+                ended_at: number | null;
+                reason: string | null;
+                usage: string | null;
+              }>`SELECT id, started_at, ended_at, reason, usage FROM turns
+                WHERE thread_id = ${threadId} ORDER BY started_at, rowid`;
+              const turns = turnRows.map((r): MovedTurn => {
+                const reason =
+                  r.reason === null
+                    ? undefined
+                    : Schema.decodeUnknownOption(TurnEndReason)(r.reason);
+                const usage = r.usage === null ? undefined : decodeStored(UsageSummary, r.usage);
+                return {
+                  id: r.id as TurnId,
+                  startedAt: Number(r.started_at),
+                  ...(r.ended_at === null ? {} : { endedAt: Number(r.ended_at) }),
+                  ...(reason === undefined || Option.isNone(reason)
+                    ? {}
+                    : { reason: reason.value }),
+                  ...(usage?.ok === true ? { usage: usage.value } : {}),
+                };
+              });
+              return { messages, turns };
+            }),
           ),
         closeOpenTurns: (endedAt) =>
           run(
@@ -2793,6 +2918,100 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               }
               yield* sql`DELETE FROM workspaces WHERE id = ${id}`;
             }),
+          ),
+        stageMovedWorkspace: (moved) =>
+          run(
+            sql
+              .withTransaction(
+                Effect.gen(function* () {
+                  const id = moved.state.workspace.id;
+                  const [workspace] = yield* sql<{
+                    id: string;
+                  }>`SELECT id FROM workspaces WHERE id = ${id}`;
+                  if (workspace !== undefined) {
+                    return yield* alreadyHere("This workspace is already on this server.");
+                  }
+                  yield* writeWorkspace(moved.state);
+                  for (const card of moved.featureCards) {
+                    yield* sql`INSERT INTO feature_cards
+                        (workspace_id, feature, version, created_at, data)
+                      VALUES (${id}, ${card.feature}, ${card.version}, ${card.createdAt},
+                        ${toJson(FeatureCard, { ...card, workspaceId: id })})`;
+                  }
+                  for (const event of moved.events) {
+                    yield* sql`INSERT INTO orchestration_events (workspace_id, at, kind, data)
+                      VALUES (${id}, ${event.at}, ${event.kind},
+                        ${JSON.stringify(event.data ?? null)})`;
+                  }
+                  yield* sql`INSERT INTO orchestration_outbox (workspace_id, data)
+                    VALUES (${id}, ${moved.outbox})`;
+                  const orchestrator = moved.orchestrator;
+                  if (orchestrator === undefined) return;
+                  const threadId = orchestrator.thread.id;
+                  const [taken] = yield* sql<{ id: string }>`SELECT id FROM threads
+                      WHERE id = ${threadId}
+                    UNION ALL SELECT thread_id FROM closed_threads WHERE thread_id = ${threadId}
+                    UNION ALL SELECT thread_id FROM closed_messages WHERE thread_id = ${threadId}
+                    UNION ALL SELECT thread_id FROM messages WHERE thread_id = ${threadId}
+                    LIMIT 1`;
+                  if (taken !== undefined) {
+                    return yield* alreadyHere(
+                      "This workspace's orchestrator is already on this server.",
+                    );
+                  }
+                  yield* keepClosed(
+                    threadId,
+                    orchestrator.closedAt,
+                    toJson(Thread, orchestrator.thread),
+                  );
+                  for (const [index, { message, turnId }] of orchestrator.messages.entries()) {
+                    yield* sql`INSERT INTO closed_messages
+                        (thread_id, id, seq, role, turn_id, message)
+                      VALUES (${threadId}, ${message.id}, ${index + 1}, ${message.role},
+                        ${turnId ?? null}, ${JSON.stringify(message)})`;
+                  }
+                  for (const turn of orchestrator.turns) {
+                    const [known] = yield* sql<{ id: string }>`SELECT id FROM turns
+                        WHERE id = ${turn.id}
+                      UNION ALL SELECT id FROM closed_turns WHERE id = ${turn.id} LIMIT 1`;
+                    if (known !== undefined) {
+                      return yield* alreadyHere(
+                        "A turn of this workspace's orchestrator is already on this server.",
+                      );
+                    }
+                    yield* sql`INSERT INTO closed_turns
+                        (id, thread_id, started_at, ended_at, reason, usage, cost_usd)
+                      VALUES (${turn.id}, ${threadId}, ${turn.startedAt}, ${turn.endedAt ?? null},
+                        ${turn.reason ?? null},
+                        ${turn.usage === undefined ? null : toJson(UsageSummary, turn.usage)},
+                        ${turn.usage?.costUsd ?? null})`;
+                  }
+                  const plan =
+                    orchestrator.plan === undefined ? null : toJson(ThreadPlan, orchestrator.plan);
+                  const turnPlan =
+                    orchestrator.turnPlan === undefined
+                      ? null
+                      : toJson(TurnPlanJson, orchestrator.turnPlan);
+                  if (plan !== null || turnPlan !== null) {
+                    yield* sql`INSERT INTO thread_plans (thread_id, plan, turn_plan, rev)
+                      VALUES (${threadId}, ${plan}, ${turnPlan}, 1)
+                      ON CONFLICT (thread_id) DO UPDATE
+                      SET plan = excluded.plan, turn_plan = excluded.turn_plan, rev = rev + 1`;
+                  }
+                }),
+              )
+              .pipe(
+                // A row another write got to first, such as a message id given twice.
+                Effect.catch((e) =>
+                  e instanceof SqlError
+                    ? Effect.fail(
+                        new InvalidState({
+                          message: "Part of this workspace is already on this server.",
+                        }),
+                      )
+                    : Effect.fail(e),
+                ),
+              ),
           ),
         // One UPDATE decides the race: SQLite serialises writers, so the second claim's WHERE sees
         // the first one's slot. A read followed by a write would let both see it empty.
