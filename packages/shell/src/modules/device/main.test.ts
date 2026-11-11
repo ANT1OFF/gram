@@ -228,6 +228,40 @@ describe("the bridge Settings reads the device through", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("gives Settings the activity list without the threads' ids", async () => {
+    expect(await served(undefined)(Channels.hostedDeviceActivity, undefined)).toBeNull();
+    const asked: Array<number> = [];
+    const device = {
+      ...fakeDevice(stateWith(), []),
+      activity: async (most: number) => {
+        asked.push(most);
+        return {
+          kept: true,
+          intact: true,
+          setAside: false,
+          more: false,
+          entries: [
+            {
+              time: 1,
+              origin: ORIGIN,
+              workspace: "w1",
+              thread: "t-secret",
+              threadTitle: "Fix it",
+              folder: APP,
+              kind: "exec" as const,
+              what: "ls",
+              answer: "allowed" as const,
+            },
+          ],
+        };
+      },
+    } as HostedDevice;
+    const read = await served(device)(Channels.hostedDeviceActivity, undefined);
+    expect(asked).toEqual([200]);
+    expect(JSON.stringify(read)).not.toContain("t-secret");
+    expect(read).toMatchObject({ kept: true, entries: [{ what: "ls", threadTitle: "Fix it" }] });
+  });
+
   it("refuses every call from a decision window", async () => {
     const contents = {};
     markDecisionWindow(contents as never);

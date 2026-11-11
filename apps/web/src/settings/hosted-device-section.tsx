@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useServerSettings } from "@/settings-sync/store";
 
+import { HostedDeviceActivityList } from "./hosted-device-activity";
 import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
 
 type Bridge = NonNullable<NonNullable<Window["gram"]>["hostedDevice"]>;
@@ -119,6 +120,7 @@ export function HostedDeviceSection() {
           {state.servers.map((server) => (
             <ServerCard key={server.origin} server={server} bridge={bridge} busy={busy} act={act} />
           ))}
+          <HostedDeviceActivityList bridge={bridge} view={state} machine={machine()} />
           <form
             className="flex items-center gap-2 px-1"
             onSubmit={(event) => {

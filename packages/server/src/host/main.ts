@@ -22,7 +22,13 @@ import { checksOn } from "./checks.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { threadPlacesOnHost } from "./thread-places.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
-import { hostAttachments, hostHome, hostRepos, readClaudeToken } from "./host-config.ts";
+import {
+  hostAttachments,
+  hostHome,
+  hostRepos,
+  readClaudeToken,
+  readHostConfig,
+} from "./host-config.ts";
 import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
@@ -66,7 +72,10 @@ export const HOST_STREAM_FD = 3;
  * profile, and every Codex session, still opens in the server, which keeps the keys and the Codex
  * homes. Under the fake agent the host runs the fake, as the server does, echoing when asked to.
  */
-const hostAgents = (oauthToken?: () => string | undefined): Layer.Layer<AgentHosts> =>
+const hostAgents = (
+  oauthToken?: () => string | undefined,
+  keyAuth = false,
+): Layer.Layer<AgentHosts> =>
   process.env["GRAM_FAKE_AGENT"] === "1"
     ? makeFakeAgentAdapter(process.env["GRAM_FAKE_AGENT_REPLY"] === "echo" ? { reply: "echo" } : {})
     : Layer.effect(
@@ -87,7 +96,12 @@ const hostAgents = (oauthToken?: () => string | undefined): Layer.Layer<AgentHos
         }),
       ).pipe(
         Layer.provide(
-          ClaudeHostLive(oauthToken === undefined ? {} : { environment: { oauthToken } }),
+          ClaudeHostLive({
+            environment: {
+              ...(oauthToken === undefined ? {} : { oauthToken }),
+              ...(keyAuth ? { keyAuth } : {}),
+            },
+          }),
         ),
       );
 
@@ -202,8 +216,8 @@ const hostService = (
     };
   });
 
-const hostLayer = (oauthToken?: () => string | undefined) =>
-  Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)), hostAgents(oauthToken));
+const hostLayer = (oauthToken?: () => string | undefined, keyAuth = false) =>
+  Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)), hostAgents(oauthToken, keyAuth));
 
 /** This machine's host, for the server that started it. */
 const child = Effect.gen(function* () {
@@ -219,6 +233,20 @@ const args = process.argv.slice(2);
  * forgotten applies to the next; one it can't read leaves Claude on the machine's own sign-in.
  */
 const joinedHome = hostHome();
+/**
+ * Claude Code's own key auth on a provisioned host whose operator asked for it: the platform that
+ * started the host points Claude Code at its own model endpoint. A provisioned host exists only
+ * where its control plane has the hosted features on; a machine a person joined never takes this.
+ */
+const keyAuth =
+  process.env["GRAM_HOST_CLAUDE_KEY_AUTH"] === "1" &&
+  (() => {
+    try {
+      return readHostConfig(joinedHome)?.provisioned === true;
+    } catch {
+      return false;
+    }
+  })();
 NodeRuntime.runMain(
   args.length === 0
     ? child
@@ -232,7 +260,7 @@ NodeRuntime.runMain(
               ? undefined
               : (busy, admission) => selfUpdater(RELEASE, home, busy, admission),
           ),
-        layer: hostLayer(() => readClaudeToken(joinedHome)),
+        layer: hostLayer(() => readClaudeToken(joinedHome), keyAuth),
         release: RELEASE,
       }),
 );
