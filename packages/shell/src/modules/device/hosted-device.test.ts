@@ -191,13 +191,12 @@ describe("this machine as a personal device", () => {
     const { promise: held, resolve: release } = Promise.withResolvers<void>();
     const again = await setUp(
       {
-        fetch: async (input, init) => {
-          const url = input instanceof Request ? input.url : String(input);
+        fetch: async (url, init) => {
           if (url.endsWith("/api/workspaces")) {
             asked();
             await held;
           }
-          return fetch(input, init);
+          return fetch(url, init);
         },
       },
       first.store,
