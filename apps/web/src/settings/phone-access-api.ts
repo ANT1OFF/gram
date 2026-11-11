@@ -1,6 +1,8 @@
 import { RemoteAccessStatus } from "@gram/contracts";
 import * as Schema from "effect/Schema";
 
+import { serverUrl } from "@/api/server-base";
+
 /**
  * Phone access is managed over plain same-origin POSTs that the server's auth layer answers
  * itself, never over RPC: a paired phone holds an RPC socket too, and must not be able to turn
@@ -11,7 +13,7 @@ export class PhoneAccessError extends Error {}
 const decodeStatus = Schema.decodeUnknownSync(RemoteAccessStatus);
 
 const post = async (path: string, body?: unknown): Promise<Response> =>
-  fetch(path, {
+  fetch(serverUrl(path), {
     method: "POST",
     credentials: "same-origin",
     cache: "no-store",

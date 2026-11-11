@@ -1,5 +1,6 @@
 import { createContext, useContext, type ReactNode } from "react";
 
+import { socketUrl } from "./server-base";
 import type { Api } from "./types";
 
 const ApiContext = createContext<Api | null>(null);
@@ -15,12 +16,15 @@ export function useApi(): Api {
 }
 
 /**
- * The RPC client on the page's own origin by default (`/ws`; proxied to the headless server in dev);
- * the in-memory mock with `VITE_API=mock`. Each is loaded lazily so the other stays out of the bundle
+ * The RPC client on the page's own origin by default (`/ws`; proxied to the headless server in dev),
+ * or wherever `setServerBase` put the server; the in-memory mock with `VITE_API=mock`, or when
+ * asked for by `kind`. Each is loaded lazily so the other stays out of the bundle
  * path.
  */
-export async function createApi(): Promise<Api> {
-  if (import.meta.env.VITE_API === "mock") {
+export async function createApi(
+  kind: "mock" | "rpc" = import.meta.env.VITE_API === "mock" ? "mock" : "rpc",
+): Promise<Api> {
+  if (kind === "mock") {
     const { createMockApi } = await import("./mock");
     const speed = Number(import.meta.env.VITE_MOCK_SPEED ?? "1");
     const mock = createMockApi({ speed: Number.isFinite(speed) ? speed : 1, persist: true });
@@ -28,6 +32,5 @@ export async function createApi(): Promise<Api> {
     return mock;
   }
   const { createRpcApi } = await import("./rpc");
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  return createRpcApi(`${protocol}//${location.host}/ws`);
+  return createRpcApi(socketUrl(location));
 }

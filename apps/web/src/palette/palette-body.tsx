@@ -18,6 +18,7 @@ import { createElement, useEffect, useMemo, useRef, useState, type KeyboardEvent
 import { useApi } from "@/api/context";
 import { errorMessage, isNotImplemented } from "@/api/errors";
 import { openExternalUrl } from "@/api/open-external";
+import { shownNavigation, useEmbedShell } from "@/embed/store";
 import { showInbox } from "@/inbox/inbox-store";
 import { boardWorkspaceFor } from "@/orchestration/board-model";
 import { useOpenBoard } from "@/orchestration/open-board";
@@ -162,6 +163,7 @@ export function PaletteBody({
   const api = useApi();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const embedNavigation = shownNavigation(useEmbedShell((s) => s.navigation));
   const params = useParams({ strict: false });
   const currentId = params.threadId as ThreadId | undefined;
   const byId = useThreadsStore((s) => s.byId);
@@ -537,6 +539,20 @@ export function PaletteBody({
       keywords: "preferences options",
       run: go("go:settings", () => void navigate({ to: "/settings" })),
     },
+    // The places an app in front of Gram added, each under its group's name; none on Gram's own.
+    ...embedNavigation.flatMap((group) =>
+      group.items.map((item) => {
+        const id = `go:embed:${group.id}/${item.id}`;
+        return {
+          id,
+          label: item.label,
+          hint: group.label,
+          keywords: group.label,
+          icon: "command" as const,
+          run: go(id, () => void navigate({ to: item.to as "/" })),
+        };
+      }),
+    ),
   ];
 
   // A touch screen shows one pane at a time: no splits, layouts or panes to open into.

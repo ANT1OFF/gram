@@ -8,6 +8,7 @@ import {
 import { useEffect, useRef } from "react";
 
 import { useShortcut } from "@/keyboard/registry";
+import { appPathname, withoutBasePath } from "@/lib/app-path";
 import { focusPaneComposer } from "@/shell/pane-focus";
 import { useLayoutStore } from "@/stores/layout";
 
@@ -84,8 +85,12 @@ export interface ReadingPlace {
 
 /** Each thread's reading place, held from opening Settings until the window comes back from it. */
 const held = new Map<ThreadId, ReadingPlace>();
-/** The path the window is on, as the history says it before anything renders for it. */
-let path = typeof window === "undefined" ? "/" : window.location.pathname;
+/**
+ * The path the window is on, as the history says it before anything renders for it. Read when first
+ * needed: an app that serves this one under a path sets that path after this module has loaded.
+ */
+let path: string | undefined;
+const pathNow = (): string => (path ??= typeof window === "undefined" ? "/" : appPathname());
 
 /**
  * Keeps the reading places only across a trip to Settings: a step out of Settings keeps them for
@@ -94,26 +99,27 @@ let path = typeof window === "undefined" ? "/" : window.location.pathname;
  */
 function useHoldReadingPlaces() {
   const router = useRouter();
-  useEffect(
-    () =>
-      router.history.subscribe(() => {
-        const from = path;
-        path = router.history.location.pathname;
-        // The history can say the same step twice; only a step to another path counts.
-        if (path !== from && !isSettingsPath(path) && !isSettingsPath(from)) held.clear();
-      }),
-    [router],
-  );
+  useEffect(() => {
+    // Where the window is before its first step, which the history then reports as already taken.
+    pathNow();
+    return router.history.subscribe(() => {
+      const from = pathNow();
+      // The history's paths are the browser's, with the path the app is served under.
+      path = withoutBasePath(router.history.location.pathname);
+      // The history can say the same step twice; only a step to another path counts.
+      if (path !== from && !isSettingsPath(path) && !isSettingsPath(from)) held.clear();
+    });
+  }, [router]);
 }
 
 /** Holds `threadId`'s reading place when its transcript leaves because Settings opened. */
 export const holdReadingPlace = (threadId: ThreadId, place: ReadingPlace): void => {
-  if (isSettingsPath(path)) held.set(threadId, place);
+  if (isSettingsPath(pathNow())) held.set(threadId, place);
 };
 
 /** `threadId`'s held reading place, for its transcript coming back from Settings. */
 export const heldReadingPlace = (threadId: ThreadId): ReadingPlace | undefined =>
-  isSettingsPath(path) ? undefined : held.get(threadId);
+  isSettingsPath(pathNow()) ? undefined : held.get(threadId);
 
 /** Lets `threadId`'s reading place go once its transcript is back on it. */
 export const releaseReadingPlace = (threadId: ThreadId): void => {

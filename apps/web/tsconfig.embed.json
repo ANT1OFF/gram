@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM"],
+    "jsx": "react-jsx",
+    "types": [],
+    "noEmit": false,
+    "composite": false,
+    "incremental": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": false,
+    "sourceMap": false,
+    "rootDir": "src/embed"
+  },
+  "include": ["src/embed/contract.ts"]
+}

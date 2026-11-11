@@ -20,6 +20,7 @@ import {
   useTitlebarThread,
 } from "@/shell/titlebar-slot";
 import { SettingsTitle } from "@/shell/settings-title";
+import { EmbedSwitcher } from "@/embed/slots";
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { UsageMeter } from "@/shell/usage-meter";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
@@ -163,6 +164,8 @@ export function ShellTitlebar({
           )}
           {/* Settings follows the toggle, as it does in the overview's header. */}
           {!sidebarShown && <TopLeftNav className="mr-2" />}
+          {/* An app in front of Gram's own switcher, while no sidebar is there to carry it. */}
+          {!sidebarShown && <EmbedSwitcher placement="titlebar" />}
           <WorkspaceSwitcher
             className={cn(
               "shrink-0 [-webkit-app-region:no-drag]",

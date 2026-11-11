@@ -202,6 +202,11 @@ jobs:
       - run: bun run --filter @gram/web e2e --shard="$SHARD/8" --workers=1
         env:
           GRAM_E2E_SERVER: preview
+      # The embeddable package's acceptance run, in one shard: the package is built as it ships and
+      # mounted by a separate app that adds pages of its own (docs/EMBEDDED_WEB_APP.md).
+      - name: Mount the embeddable package in another app
+        if: env.SHARD == '1'
+        run: bun run --filter @gram/web e2e:embed
       - name: Upload the Playwright report and traces
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -210,6 +215,8 @@ jobs:
           path: |
             apps/web/playwright-report
             apps/web/test-results
+            apps/web/playwright-report-embed
+            apps/web/test-results-embed
           retention-days: 14
           if-no-files-found: ignore
       - name: Upload per-spec timings (including successful shards)
