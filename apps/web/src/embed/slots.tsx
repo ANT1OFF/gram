@@ -140,15 +140,22 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
   );
 }
 
+/** A compact tile: the open row's height, filled while it is where the window is. */
+export const RAIL_TILE =
+  "relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground aria-expanded:text-foreground";
+
 /**
  * The same destinations in the compact sidebar: an icon each, its group and name on hover, and a
  * dot on the tile while its count is above 0. `main` sits above the workspaces' tiles, `foot` at
- * the rail's foot.
+ * the rail's foot. `quiet` draws the groups a gap apart with no rule between them, as the hosted
+ * strip has them.
  */
 export function EmbedRailNavigation({
   placement = "foot",
+  quiet = false,
 }: {
   placement?: ShellNavigationPlacement;
+  quiet?: boolean;
 }) {
   const groups = navigationAt(
     useEmbedShell((s) => s.navigation),
@@ -163,44 +170,50 @@ export function EmbedRailNavigation({
       data-testid={main ? "embed-rail-navigation-main" : "embed-rail-navigation"}
       data-placement={placement}
       className={cn(
-        "flex shrink-0 flex-col items-center gap-1",
-        !main && "border-t border-sidebar-divider py-2",
+        "flex shrink-0 flex-col items-center",
+        quiet ? "gap-3.5" : "gap-1",
+        !main && !quiet && "border-t border-sidebar-divider py-2",
       )}
     >
-      {groups.flatMap((group) =>
-        group.items.map((item) => {
-          const current = navigationCurrent(pathname, item.to);
-          const count = shownCount(item.count);
-          const name = itemName(group, item.label);
-          const spoken = count === undefined ? name : `${name}, ${count}`;
-          return (
-            <Hint
-              key={`${group.id}/${item.id}`}
-              label={spoken}
-              side="right"
-              render={
-                <Link
-                  {...linkTo(item.to)}
-                  {...{ [OVERVIEW_STOP]: "" }}
-                  data-testid="embed-navigation-item"
-                  aria-label={spoken}
-                  aria-current={current ? "page" : undefined}
-                  className="relative grid size-8 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground"
-                />
-              }
-            >
-              <ItemIcon item={item} className="size-icon-row" />
-              {count !== undefined && (
-                <span
-                  aria-hidden
-                  data-testid="embed-navigation-dot"
-                  className="absolute top-1 right-1 size-1.5 rounded-full bg-foreground"
-                />
-              )}
-            </Hint>
-          );
-        }),
-      )}
+      {groups.map((group) => (
+        <div
+          key={group.id}
+          className={cn("flex flex-col items-center", quiet ? "gap-px" : "gap-1")}
+        >
+          {group.items.map((item) => {
+            const current = navigationCurrent(pathname, item.to);
+            const count = shownCount(item.count);
+            const name = itemName(group, item.label);
+            const spoken = count === undefined ? name : `${name}, ${count}`;
+            return (
+              <Hint
+                key={item.id}
+                label={spoken}
+                side="right"
+                render={
+                  <Link
+                    {...linkTo(item.to)}
+                    {...{ [OVERVIEW_STOP]: "" }}
+                    data-testid="embed-navigation-item"
+                    aria-label={spoken}
+                    aria-current={current ? "page" : undefined}
+                    className={RAIL_TILE}
+                  />
+                }
+              >
+                <ItemIcon item={item} className="size-icon-row" />
+                {count !== undefined && (
+                  <span
+                    aria-hidden
+                    data-testid="embed-navigation-dot"
+                    className="absolute top-1 right-1 size-1.5 rounded-full bg-foreground"
+                  />
+                )}
+              </Hint>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
 }

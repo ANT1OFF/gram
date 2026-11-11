@@ -99,6 +99,7 @@ export const mountGram: MountGram = async (options) => {
       navigation: shell.navigation ?? [],
       workspaceSwitcher: shell.workspaceSwitcher,
       threads: shell.threads ?? "shown",
+      hosted,
       home: shell.home?.component,
       titles: Object.fromEntries([
         ...(shell.routes ?? []).flatMap((route) =>
