@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -222,19 +222,41 @@ describe("the local log", () => {
   });
 
   it("reads a long log in time that grows with its length, not its square", async () => {
-    const line = await (async () => {
+    const first = await (async () => {
       const log = await openDeviceLog(file, key);
       await log.append(entry("x".repeat(300)));
       await log.close();
-      return fs.readFile(file, "utf8");
+      return { text: await fs.readFile(file, "utf8"), mac: log.head().mac };
     })();
-    // Twenty thousand lines of the same shape: the chain fails after the first, but the read
-    // still walks the file once.
-    await fs.writeFile(file, line.repeat(1));
-    const many = await openDeviceLog(file, key);
-    await Promise.all(
-      Array.from({ length: 20_000 }, (_, index) => many.append(entry(`c${index}`))),
-    );
+    // The lines between are built here and written in one go, chained as the appender chains
+    // them: appended one by one, each waits on its own flush to disk, which under Node on a Mac
+    // takes over a minute for twenty thousand.
+    const after = (previous: string, value: DeviceLogEntry) => {
+      const body = JSON.stringify(value);
+      const mac = createHmac("sha256", key)
+        .update(previous)
+        .update("\n")
+        .update(body)
+        .digest("hex");
+      return { mac, line: `${JSON.stringify([mac, body])}\n` };
+    };
+    // Built this way, the appender's own line comes out byte for byte.
+    expect(after("gram-device-log-v1", entry("x".repeat(300)))).toEqual({
+      mac: first.mac,
+      line: first.text,
+    });
+    const lines = [first.text];
+    let mac = first.mac;
+    for (let index = 0; index < 19_999; index++) {
+      const next = after(mac, entry(`c${index}`));
+      lines.push(next.line);
+      mac = next.mac;
+    }
+    await fs.writeFile(file, lines.join(""));
+    // The appender takes the built chain as its own and adds the last line.
+    const many = await openDeviceLog(file, key, { count: 20_000, mac });
+    expect(many.foundEdited).toBe(false);
+    await many.append(entry("c19999"));
     await many.close();
     const started = performance.now();
     const read = await readDeviceLog(file, key, many.head());
