@@ -1241,6 +1241,55 @@ layer(testServer("https://device.tail123.ts.net:9443"), { excludeTestServices: t
     );
 
     it.effect(
+      "keeps the machine stop routes to the local app, and absent with hosted features off",
+      () =>
+        Effect.gen(function* () {
+          const { port } = yield* serverInfo;
+          const localCookie = yield* bootCookie;
+          const local = { cookie: localCookie, origin: `http://127.0.0.1:${port}` };
+          const json = { "content-type": "application/json" };
+          for (const path of ["status", "prepare", "cancel", "resume"].map(
+            (name) => `/machines/stop/${name}`,
+          )) {
+            const off = yield* raw(port, {
+              path,
+              method: "POST",
+              body: "{}",
+              headers: { ...local, ...json },
+            });
+            expect(off.status, path).toBe(404);
+          }
+          const mint = yield* raw(port, { path: "/remote/pair", method: "POST", headers: local });
+          const code = new URLSearchParams(new URL(JSON.parse(mint.body).url).hash.slice(1)).get(
+            "pair",
+          )!;
+          const origin = "https://device.tail123.ts.net:9443";
+          const host = "device.tail123.ts.net:9443";
+          const claimed = yield* raw(port, {
+            path: "/remote/claim",
+            method: "POST",
+            body: code,
+            headers: { host, origin, "content-type": "text/plain" },
+          });
+          const cookie = claimed.headers["set-cookie"]![0]!.split(";")[0]!;
+          const phone = yield* raw(port, {
+            path: "/machines/stop/status",
+            method: "POST",
+            body: "{}",
+            headers: { host, origin, cookie, ...json },
+          });
+          expect(phone.status).toBe(403);
+          const anyone = yield* raw(port, {
+            path: "/machines/stop/status",
+            method: "POST",
+            body: "{}",
+            headers: json,
+          });
+          expect([401, 403]).toContain(anyone.status);
+        }),
+    );
+
+    it.effect(
       "moves a workspace only for the local app, and only with the hosted features on",
       () =>
         Effect.gen(function* () {

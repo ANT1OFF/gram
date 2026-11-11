@@ -112,7 +112,13 @@ export type MachineParts = Pick<WorkerHost, "git" | "worktrees" | "files"> & {
  * watches wait for it to come back, and nothing of it runs here instead.
  */
 export const placedHost = (
-  hosts: Pick<WorkerHostsShape, "local" | "get">,
+  hosts: Pick<WorkerHostsShape, "local" | "get"> & {
+    /**
+     * The host a session is about to open on, when that is looked up another way than `get`: one
+     * that waits for a stopped machine to be started (`awaitedMachines`).
+     */
+    readonly forSession?: WorkerHostsShape["get"];
+  },
   store: Pick<ThreadStore["Service"], "listThreads" | "getThread">,
   /** Whether any machine is joined: with none, every call is this machine's, looked up for free. */
   anyMachines: () => boolean = () => true,
@@ -482,7 +488,7 @@ export const placedHost = (
             Effect.flatMap(hostIdOfThread(options.threadId), (id) =>
               id === LOCAL_HOST_ID
                 ? agent.open(options)
-                : hosts.get(id).pipe(
+                : (hosts.forSession ?? hosts.get)(id).pipe(
                     Effect.mapError(
                       (error) =>
                         new AgentUnavailable({

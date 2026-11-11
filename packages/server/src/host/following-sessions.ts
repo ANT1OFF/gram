@@ -15,6 +15,12 @@ import type { HostConnection, HostSessionsConnection } from "./protocol.ts";
  */
 export const REATTACH_WITHIN_MS = 2 * 60_000;
 /**
+ * How long a session waits instead for a machine this Gram readied to stop (`stop-resume.ts`):
+ * its turn was cut by a stop that couldn't wait for it, and goes on once a host is started on the
+ * machine's disk again.
+ */
+export const STOPPED_REATTACH_MS = 15 * 60_000;
+/**
  * How long a call into a session (an answer, a mode) waits for the machine to be back. Its input
  * waits as long as the session does (`REATTACH_WITHIN_MS`).
  */
@@ -44,9 +50,14 @@ export const awaitConnection = (
 export const followingSessions = (
   /** The machine's connection now, failing while it is offline. */
   current: Effect.Effect<HostConnection, HostUnavailable>,
-  timing: { readonly reattachMs?: number; readonly callMs?: number } = {},
+  timing: {
+    /** Read at each wait, so a machine readied to stop meanwhile is waited for as one. */
+    readonly reattachMs?: number | (() => number);
+    readonly callMs?: number;
+  } = {},
 ): HostSessionsConnection => {
-  const reattachMs = timing.reattachMs ?? REATTACH_WITHIN_MS;
+  const reattach = timing.reattachMs ?? REATTACH_WITHIN_MS;
+  const reattachOf = () => (typeof reattach === "number" ? reattach : reattach());
   const callMs = timing.callMs ?? CALL_WAIT_MS;
   const sessions = awaitConnection(current, callMs).pipe(
     Effect.map((connection) => connection.sessions),
@@ -74,7 +85,7 @@ export const followingSessions = (
     deliveryId === undefined
       ? call(run)
       : Effect.gen(function* () {
-          const until = (yield* Clock.currentTimeMillis) + reattachMs;
+          const until = (yield* Clock.currentTimeMillis) + reattachOf();
           for (;;) {
             const left = until - (yield* Clock.currentTimeMillis);
             const live = yield* awaitConnection(current, Math.max(0, left)).pipe(
@@ -123,7 +134,7 @@ export const followingSessions = (
                   Effect.logInfo("worker host: a session waits for its machine to dial in").pipe(
                     Effect.as(
                       follow(
-                        awaitConnection(current, reattachMs).pipe(
+                        awaitConnection(current, reattachOf()).pipe(
                           Effect.tap(() =>
                             Effect.logInfo("worker host: a session picked up after a redial"),
                           ),
@@ -148,7 +159,9 @@ export const followingSessions = (
             Effect.map((live) =>
               Stream.concat(
                 live.sessions.connectorsSeen(handle),
-                Stream.unwrap(Effect.sync(() => (live.gone() ? follow(reattachMs) : Stream.empty))),
+                Stream.unwrap(
+                  Effect.sync(() => (live.gone() ? follow(reattachOf()) : Stream.empty)),
+                ),
               ),
             ),
             Effect.orElseSucceed(() => Stream.empty),
