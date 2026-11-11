@@ -22,6 +22,7 @@ import {
 import { Channels } from "../channels.ts";
 import { overlayDotBitmap, parseStoredAppearance } from "../core/rules.ts";
 import { windowArg } from "../window-arg.ts";
+import { appWindows } from "./decision-windows.ts";
 
 const isMac = process.platform === "darwin";
 const isWindows = process.platform === "win32";
@@ -141,7 +142,7 @@ export function createWindow({
 /** Re-applies vibrancy when the OS reduced-transparency setting changes. */
 export function watchSystemAppearance() {
   nativeTheme.on("updated", () => {
-    for (const win of BrowserWindow.getAllWindows()) applyAppearance(win);
+    for (const win of appWindows()) applyAppearance(win);
   });
 }
 
@@ -173,7 +174,7 @@ export function setTitleBarTheme(next: TitleBarTheme) {
   theme = next;
   windowBackground = next.background;
   nativeTheme.themeSource = next.mode;
-  for (const win of BrowserWindow.getAllWindows()) applyAppearance(win);
+  for (const win of appWindows()) applyAppearance(win);
   if (!changed || appearancePath === undefined) return;
   try {
     writeFileSync(appearancePath, JSON.stringify(next));
@@ -191,7 +192,7 @@ export const currentBackground = () => windowBackground;
 
 export function setVibrancy(enabled: boolean) {
   vibrancyWanted = enabled;
-  for (const win of BrowserWindow.getAllWindows()) applyAppearance(win);
+  for (const win of appWindows()) applyAppearance(win);
 }
 
 export function setBadge(count: number) {
@@ -200,13 +201,12 @@ export function setBadge(count: number) {
     // Dock); the window's urgency hint, which every taskbar shows, is what's left elsewhere.
     app.setBadgeCount(count);
     if (isLinux) {
-      for (const win of BrowserWindow.getAllWindows())
-        win.flashFrame(count > 0 && !win.isFocused());
+      for (const win of appWindows()) win.flashFrame(count > 0 && !win.isFocused());
     }
     return;
   }
   overlayDot ??= nativeImage.createFromBitmap(overlayDotBitmap(16), { width: 16, height: 16 });
-  for (const win of BrowserWindow.getAllWindows()) {
+  for (const win of appWindows()) {
     win.setOverlayIcon(count > 0 ? overlayDot : null, count > 0 ? `${count} waiting` : "");
     win.flashFrame(count > 0 && !win.isFocused());
   }
@@ -237,7 +237,7 @@ const liveById = new Map<string, Notification>();
 
 /** The window a notification answers to: the one that raised it, else any. */
 const windowFor = (target: BrowserWindow | null) =>
-  target && !target.isDestroyed() ? target : BrowserWindow.getAllWindows()[0];
+  target && !target.isDestroyed() ? target : appWindows()[0];
 
 /**
  * Shows a native notification; a click focuses `target` (or any window) and tells its renderer.
