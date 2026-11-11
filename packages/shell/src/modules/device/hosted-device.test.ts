@@ -628,6 +628,73 @@ describe("this machine as a personal device", () => {
       other.server.close();
     }
   });
+
+  it("counts a server signed in to again once toward the limit", async () => {
+    const first = await setUp();
+    await first.device.signIn(origin);
+    await first.device.close();
+    const file = join(dataDir, "device-settings.json");
+    const key = settingsKey(first.store);
+    // Fourteen kept that can't be reached, and this one with its sign-in gone: fifteen.
+    await writeDeviceSettings(file, key, {
+      v: 1,
+      servers: [
+        ...Array.from({ length: 14 }, (_, i) => ({
+          origin: `https://gone-${i}.invalid`,
+          paused: false,
+          workspaces: [],
+        })),
+        { origin, paused: false, workspaces: [] },
+      ],
+    });
+    first.store.delete(`device-sign-in ${origin}`);
+    const other = fakeServer();
+    const otherOrigin = await other.start();
+    try {
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      const second = await setUp(
+        {
+          openBrowser: async (url) => {
+            if (url.startsWith(origin)) await held;
+            return browser(url);
+          },
+        },
+        first.store,
+      );
+      expect(second.device.state().servers).toHaveLength(15);
+      const again = second.device.signIn(origin);
+      await settle();
+      expect(await second.device.signIn(otherOrigin)).toEqual({ ok: true });
+      release();
+      expect(await again).toEqual({ ok: true });
+      expect(second.device.state().servers).toHaveLength(16);
+    } finally {
+      other.server.closeAllConnections();
+      other.server.close();
+    }
+  });
+
+  it("brings back no server the person signed out of while it was being found", async () => {
+    const first = await setUp();
+    await first.device.signIn(origin);
+    await first.device.close();
+    let online = false;
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const slow: typeof fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (!online && url.startsWith(origin)) throw new TypeError("offline");
+      if (url.startsWith(origin) && url.includes("well-known")) await held;
+      return fetch(input, init);
+    };
+    const second = await setUp({ fetch: slow }, first.store);
+    online = true;
+    const trying = second.device.refresh(origin);
+    await settle();
+    await second.device.signOut(origin);
+    release();
+    expect(await trying).toMatchObject({ ok: false });
+    expect(second.device.state().servers).toEqual([]);
+  });
 });
 
 const optionsFor = async (): Promise<HostedDeviceOptions> => ({

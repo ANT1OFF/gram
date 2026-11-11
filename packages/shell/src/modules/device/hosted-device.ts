@@ -560,20 +560,25 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
   const restore = async (saved: SavedServer): Promise<Done> => {
     if (signingIn.has(saved.origin)) return { ok: false, why: "Signing in there already." };
     signingIn.add(saved.origin);
+    // Kept as saved with why, unless the person signed out of it meanwhile.
+    const still = () => retained.get(saved.origin)?.saved === saved;
+    const keep = (why: string): Done => {
+      if (still()) retained.set(saved.origin, { saved, problem: why });
+      return { ok: false, why };
+    };
     try {
       const signIn = parseSignIn(await secrets.get(signInName(saved.origin)));
       const pem = await secrets.get(keyName(saved.origin));
       if (signIn === undefined || pem === undefined) {
-        retained.set(saved.origin, { saved, problem: "Signed out. Sign in again." });
-        return { ok: false, why: "Signed out. Sign in again." };
+        return keep("Signed out. Sign in again.");
       }
       const found = await discoverHosted(saved.origin, options.fetch);
       if (!found.ok || found.origin !== saved.origin) {
-        const why = "Gram couldn't reach this server.";
-        retained.set(saved.origin, { saved, problem: why });
-        return { ok: false, why };
+        return keep("Gram couldn't reach this server.");
       }
       if (closed) return CLOSING;
+      // Signed out of while it was found again: it stays signed out.
+      if (!still()) return { ok: false, why: "Not signed in there." };
       const server = makeServer(
         saved.origin,
         found.discovery,
@@ -587,9 +592,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       void refresh(server).catch(() => undefined);
       return { ok: true };
     } catch {
-      const why = "Gram couldn't read this server's sign-in.";
-      retained.set(saved.origin, { saved, problem: why });
-      return { ok: false, why };
+      return keep("Gram couldn't read this server's sign-in.");
     } finally {
       signingIn.delete(saved.origin);
     }
@@ -620,7 +623,8 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       return { ok: false, why: "You are signed in there already." };
     if (signingIn.has(origin)) return { ok: false, why: "Signing in there already." };
     const replacing = there !== undefined || retained.has(origin);
-    if (!replacing && servers.size + retained.size + signingIn.size >= SERVERS_MOST)
+    const starting = [...signingIn].filter((each) => !servers.has(each) && !retained.has(each));
+    if (!replacing && servers.size + retained.size + starting.length >= SERVERS_MOST)
       return {
         ok: false,
         why: `Gram keeps at most ${SERVERS_MOST} servers. Sign out of one first.`,
@@ -687,15 +691,17 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         platform: options.platform,
       });
       if (!registered.ok) return await giveUp(registered);
-      undo.push(() =>
-        forgetHostedDevice({
-          discovery: found.discovery,
-          keeper,
-          key,
-          fetch: options.fetch,
-          deviceId: first.deviceId,
-        }),
-      );
+      // A device registered under a key kept from before stays: an earlier sign-in shares it.
+      if (stored === undefined)
+        undo.push(() =>
+          forgetHostedDevice({
+            discovery: found.discovery,
+            keeper,
+            key,
+            fetch: options.fetch,
+            deviceId: first.deviceId,
+          }),
+        );
       if (closed) return await giveUp(CLOSING);
       if (keeper.signedOut()) return await giveUp({ ok: false, why: "The sign-in ended." });
       // What was lent there before, and a pause, carry over to the new sign-in, as they are now.
@@ -850,6 +856,11 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         return { ok: false, why: "Gram couldn't save what you lent, so nothing is lent." };
       }
       // Stopped, or signed out, while it was saved: it stays so.
+      if (server.keeper.signedOut()) {
+        if (server.lent.get(workspace) === lent) lent.state = "resume";
+        changed();
+        return { ok: false, why: "The sign-in ended. Sign in again." };
+      }
       if (server.lent.get(workspace) !== lent || known(origin) !== server)
         return { ok: false, why: "Lending was stopped." };
       lent.state = "on";
