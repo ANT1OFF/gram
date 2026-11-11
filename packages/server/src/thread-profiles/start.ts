@@ -51,6 +51,9 @@ export const NO_REPOSITORIES_HERE =
 /** What a caller hears for a placement on this machine: `on` names a joined one. */
 export const NAME_A_MACHINE = "Name a joined machine to place the thread on, or none.";
 
+/** What a start asked for again hears when it names another machine than the thread's. */
+export const ON_ANOTHER_MACHINE = "The thread with that id is on another machine.";
+
 /** How a start is asked for, beside its profile. */
 export interface ProfileStartOptions {
   /** The caller's own id for the thread, a lowercase UUID: a start asked for again makes one. */
@@ -158,9 +161,13 @@ export const makeProfileStarter = ({
         Effect.gen(function* () {
           const existing = yield* store.getThread(asked).pipe(Effect.option);
           if (Option.isSome(existing)) {
-            return existing.value.profile === undefined
-              ? yield* refuse("That thread id is another thread's.")
-              : { thread: existing.value, created: false };
+            if (existing.value.profile === undefined)
+              return yield* refuse("That thread id is another thread's.");
+            // A machine asked for again must be where the thread is: an answer otherwise would
+            // say it is there when it isn't.
+            if (on !== undefined && existing.value.checkout.hostId !== on)
+              return yield* refuse(ON_ANOTHER_MACHINE);
+            return { thread: existing.value, created: false };
           }
           if ((yield* store.listClosed).some((closed) => closed.thread.id === asked))
             return yield* refuse("The thread with that id was closed.");

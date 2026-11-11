@@ -58,11 +58,13 @@ Content-Type: application/json
   starter with `thread.createFromProfile`: an id asked for either way makes one thread.
 - `hostId` places the thread on that joined or provisioned machine, on any server, as a headless
   one places what names none. An unknown, unconfirmed or offline machine, or this one, is
-  refused with nothing made.
+  refused with nothing made. Asked again under the same id naming another machine than the
+  thread's, it is refused rather than answered.
 - A refusal is `409` with `{ "error": "..." }`; a body that isn't the shape, or has a key it
   doesn't name, is `400`. With the hosted features off the path answers `404`.
 - A person signed in through the proxy is refused it, and so is a paired phone. The local app
-  may call it with its own sign-in. Each service call is on the record, as the others are.
+  may call it with its own sign-in. Each service call is on the record with the thread it made or
+  found, whether it made it, and its machine.
 
 ## A workplace of repositories
 

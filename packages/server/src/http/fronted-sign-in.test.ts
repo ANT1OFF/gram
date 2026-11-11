@@ -320,6 +320,27 @@ describe("sign-in through a fronting proxy", () => {
           platform(PROFILE_START_PATH),
         );
         expect(JSON.parse(again.body)).toEqual({ threadId: PROFILE_THREAD, created: false });
+        // Each call is on the record with the thread it made or found.
+        const recorded = (yield* (yield* ThreadStore).listActorEvents()).filter(
+          (event) => event.action === PROFILE_START_PATH,
+        );
+        expect(recorded.map((event) => event.data)).toEqual([
+          { status: 200, threadId: PROFILE_THREAD, created: true },
+          { status: 200, threadId: PROFILE_THREAD, created: false },
+        ]);
+        // Asked again for a machine it isn't on, it says so rather than answer as if it were.
+        const moved = yield* post(
+          port,
+          PROFILE_START_PATH,
+          startBody({ hostId: "machine-elsewhere" }),
+          platform(PROFILE_START_PATH),
+        );
+        expect(moved.status).toBe(409);
+        // An alias of the path is no way around the checks above.
+        expect(
+          (yield* post(port, `${PROFILE_START_PATH}/`, startBody(), { ...host, ...signedIn }))
+            .status,
+        ).toBeGreaterThanOrEqual(400);
         const elsewhere = yield* post(
           port,
           PROFILE_START_PATH,

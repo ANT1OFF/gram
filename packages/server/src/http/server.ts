@@ -134,7 +134,11 @@ import {
 import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./remote-routes.ts";
 import { RemoteControl } from "./remote-control.ts";
 import { WORKSPACE_TRANSFER_PATHS, WorkspaceTransferRoutes } from "../transfer/routes.ts";
-import { PROFILE_START_PATH, ProfileStartRoutes } from "../thread-profiles/routes.ts";
+import {
+  PROFILE_START_PATH,
+  PROFILE_START_RECORD,
+  ProfileStartRoutes,
+} from "../thread-profiles/routes.ts";
 import { ProfileStarters } from "../thread-profiles/service.ts";
 import { WorkspaceTransfer } from "../transfer/workspace-transfer.ts";
 import {
@@ -182,6 +186,18 @@ export const SERVICE_PATHS: ReadonlySet<string> = new Set([
   ...WORKSPACE_TRANSFER_PATHS,
   PROFILE_START_PATH,
 ]);
+
+/** What a service call's answer adds to its record: the thread a profile start made or found. */
+const recordOf = (response: HttpServerResponse.HttpServerResponse): Record<string, unknown> => {
+  const thread = response.headers[PROFILE_START_RECORD.thread];
+  if (thread === undefined) return {};
+  const host = response.headers[PROFILE_START_RECORD.host];
+  return {
+    threadId: thread,
+    created: response.headers[PROFILE_START_RECORD.created] === "true",
+    ...(host === undefined ? {} : { hostId: host }),
+  };
+};
 
 /** The per-launch secret carried by the boot URL. */
 export class LaunchToken extends Context.Service<LaunchToken, { readonly token: string }>()(
@@ -405,7 +421,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                           actor: { id: serviceId, name: serviceName, role: SERVICE_ROLE },
                           action: servicePath,
                           data: Exit.isSuccess(exit)
-                            ? { status: exit.value.status }
+                            ? { status: exit.value.status, ...recordOf(exit.value) }
                             : Cause.hasInterruptsOnly(exit.cause)
                               ? { interrupted: true }
                               : { failed: true },

@@ -30,6 +30,16 @@ const notThere = HttpServerResponse.text("not found", { status: 404 });
 
 const decodeRequest = Schema.decodeUnknownEffect(ProfileStartRequest);
 
+/**
+ * Headers the answer carries for the service-call record (`server.ts`): which thread, where, and
+ * whether this call made it. Nothing the body doesn't already say, beside the machine asked for.
+ */
+export const PROFILE_START_RECORD = {
+  thread: "x-gram-thread",
+  created: "x-gram-created",
+  host: "x-gram-host",
+} as const;
+
 /** Answers the path. `on` is the hosted features setting, read per request. */
 export const profileStartRoute = (
   starter: Pick<ProfileStarter, "startOne">,
@@ -73,10 +83,18 @@ export const profileStartRoute = (
     const { profile, threadId, hostId } = input.value;
     return yield* starter.startOne(profile, { threadId, on: hostId }).pipe(
       Effect.map(({ thread, created }) =>
-        HttpServerResponse.jsonUnsafe({
-          threadId: thread.id,
-          created,
-        } satisfies ProfileStartResponse),
+        HttpServerResponse.jsonUnsafe(
+          { threadId: thread.id, created } satisfies ProfileStartResponse,
+          {
+            headers: {
+              [PROFILE_START_RECORD.thread]: thread.id,
+              [PROFILE_START_RECORD.created]: String(created),
+              ...(thread.checkout.hostId === undefined
+                ? {}
+                : { [PROFILE_START_RECORD.host]: thread.checkout.hostId }),
+            },
+          },
+        ),
       ),
       // The starter's own sentence, and nothing of how it failed inside.
       Effect.catch((error) => Effect.succeed(refuse(error.message, 409))),
