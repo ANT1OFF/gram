@@ -6,7 +6,8 @@ Gram's server and web app can run in a Linux container. On Windows, or on a Mac 
 agents to work on Linux, Docker Desktop then gives you a Linux machine to run them on. You use Gram
 from your browser. The image is also the starting point for running Gram in a cluster later.
 
-The image is built from source; no published image exists yet.
+The image is built from source here. [Packages and images](PACKAGES.md) covers the published
+images and the image of the worker host alone.
 
 ## Run it
 
