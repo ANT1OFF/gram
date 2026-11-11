@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { appPathname } from "@/lib/app-path";
 import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -121,11 +122,15 @@ export const LANDING_WAIT_MS = 3_000;
  * The window's one launch landing: whether it opened on the home page (read once, so only that
  * launch lands anywhere), whether it is decided, and whether it is on its way to an orchestrator.
  */
-const launch = {
-  home: typeof window !== "undefined" && window.location.pathname === "/",
+const launch: { home: boolean | undefined; landed: boolean; leaving: boolean } = {
+  // Read when first asked, not as the module loads: an app that serves this one under a path sets
+  // that path before anything renders, and after this module has loaded.
+  home: undefined,
   landed: false,
   leaving: false,
 };
+const launchedHome = (): boolean =>
+  (launch.home ??= typeof window !== "undefined" && appPathname() === "/");
 
 /** A fresh launch at `pathname`, for tests. */
 export const resetLaunchForTests = (pathname: string): void => {
@@ -161,7 +166,7 @@ export function useLandOnOrchestrator(): boolean {
   );
   const [last] = useState(readLast);
   const [lastThread] = useState(readLastThread);
-  const [lands] = useState(() => launch.home && !launch.landed);
+  const [lands] = useState(() => launchedHome() && !launch.landed);
   const [gaveUp, setGaveUp] = useState(false);
   // The threads rank the workspaces by activity, which the one used last doesn't need.
   const known = workspaces.some(

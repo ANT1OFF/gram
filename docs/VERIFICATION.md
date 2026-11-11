@@ -173,6 +173,9 @@ bun run e2e:real
 ```
 
 `e2e:smoke` is the configured four-spec subscription/onboarding set, one worker.
+`bun run --filter @gram/web e2e:embed` is a run of its own for the
+[embeddable package](EMBEDDING.md#checking-it): it builds the package and a separate
+app that mounts it; CI runs it in the first e2e shard.
 CI runs the whole mock suite in eight preview shards (`--shard=N/8`, one worker,
 one retry); see [CI](#ci).
 Mock setup builds its own `VITE_API=mock` preview into `dist-e2e`, verifies a random

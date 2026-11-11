@@ -1,3 +1,4 @@
+import { serverUrl } from "./server-base";
 import type { ConnectionMonitor, ConnectionNotice, ConnectionState } from "./types";
 
 /** How long a command waits for a dropped connection to come back before it gives up. */
@@ -80,7 +81,7 @@ async function noticeOf(response: Response): Promise<ConnectionNotice | undefine
 
 export async function probeSession(fetchImpl: typeof fetch = fetch): Promise<ProbeAnswer> {
   try {
-    const response = await fetchImpl("/?boot=0", {
+    const response = await fetchImpl(serverUrl("/?boot=0"), {
       credentials: "same-origin",
       cache: "no-store",
       redirect: "manual",

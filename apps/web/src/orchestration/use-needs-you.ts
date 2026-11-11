@@ -6,6 +6,7 @@ import { useLayoutEffect, useMemo } from "react";
 import { useApi } from "@/api/context";
 import { inboxDocked, showInbox, toggleInbox, useInboxStore } from "@/inbox/inbox-store";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
+import { appPathname } from "@/lib/app-path";
 import { attr, ringWhenDrawn } from "@/lib/ring-when-drawn";
 import { useLayoutStore } from "@/stores/layout";
 import { useRequestRevealStore, useRevealStore } from "@/stores/reveal";
@@ -136,7 +137,7 @@ export function useNeedsYouJump(): (item: NeedsYouItem) => void {
     if (view.view !== "chat") view.setView("chat");
     useLayoutStore.getState().openThread(threadId);
     const pathname = `/t/${threadId}`;
-    if (window.location.pathname !== pathname) {
+    if (appPathname() !== pathname) {
       void navigate({ to: "/t/$threadId", params: { threadId } });
     }
     if (target.kind === "card") ringWhenDrawn(target.selector, !beside);
