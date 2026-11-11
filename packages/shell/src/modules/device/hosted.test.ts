@@ -68,6 +68,10 @@ const fakeServer = () => {
     code: "",
     resourceNonce: undefined as string | undefined,
     workspacesStatus: 200,
+    /** Ask for the token endpoint's own nonce on every call whose proof lacks it. */
+    alwaysTokenNonce: false,
+    tokenNonceErrors: 0,
+    names: [] as Array<string>,
   };
   let origin = "";
   const handle = async (request: IncomingMessage) => {
@@ -98,8 +102,9 @@ const fakeServer = () => {
     if (url.pathname === "/oauth/token") {
       const proof = checkProof(request.headers.dpop as string | undefined, "POST", full);
       if (proof === undefined) return json(400, { error: "invalid_dpop_proof" });
-      if (state.askNonceOnce && proof.claims.nonce !== state.nonce) {
+      if ((state.askNonceOnce || state.alwaysTokenNonce) && proof.claims.nonce !== state.nonce) {
         state.askNonceOnce = false;
+        state.tokenNonceErrors += 1;
         return json(400, { error: "use_dpop_nonce" }, { "dpop-nonce": state.nonce });
       }
       const form = new URLSearchParams(await readBody(request));
@@ -173,7 +178,9 @@ const fakeServer = () => {
         publicKey: string;
         challenge: string;
         signature: string;
+        name: string;
       };
+      state.names.push(asked.name);
       if (!state.challenges.delete(asked.challenge)) return json(400, { error: "bad challenge" });
       const key = createPublicKey({
         key: { kty: "OKP", crv: "Ed25519", x: asked.publicKey },
@@ -252,6 +259,25 @@ const signedIn = async () => {
   });
   if (!signed.ok) throw new Error(signed.why);
   return { discovery: found.discovery, tokens: signed.tokens };
+};
+
+const keeperFor = async (more: Partial<Parameters<typeof makeTokenKeeper>[0]> = {}) => {
+  const { discovery, tokens } = await signedIn();
+  return makeTokenKeeper({
+    discovery,
+    key,
+    subject: tokens.subject,
+    refreshToken: tokens.refreshToken ?? "",
+    saveRefreshToken: async () => undefined,
+    fetch,
+    now,
+    ...more,
+  });
+};
+
+/** Waits, on the real clock, until something under way has happened. */
+const waitFor = async (done: () => boolean) => {
+  for (let i = 0; i < 500 && !done(); i += 1) await new Promise((later) => setTimeout(later, 2));
 };
 
 /** Sends raw bytes to a port and answers with whatever comes back. */
@@ -559,7 +585,9 @@ describe("a hosted server", () => {
     const { discovery, tokens } = await signedIn();
     const held = Promise.withResolvers<void>();
     const saved: Array<string> = [];
+    let asked = false;
     const slow: typeof fetch = async (input, init) => {
+      asked = true;
       await held.promise;
       return fetch(input, init);
     };
@@ -575,10 +603,30 @@ describe("a hosted server", () => {
       now,
     });
     const renewing = keeper.token("workspaces");
-    keeper.signOut();
+    // Signed out once the renewal is already with the server.
+    await waitFor(() => asked);
+    const out = keeper.signOut();
     held.resolve();
+    await out;
     expect(await renewing).toMatchObject({ ok: false, signedOut: true });
     expect(saved).toEqual([]);
+    // And from a server that doesn't rotate the refresh token, so no save comes between.
+    const hold = Promise.withResolvers<void>();
+    let calling = false;
+    const other = await keeperFor({
+      fetch: async (input, init) => {
+        calling = true;
+        await hold.promise;
+        return fetch(input, init);
+      },
+    });
+    fake.state.giveRefresh = false;
+    const renewal = other.token("workspaces");
+    await waitFor(() => calling);
+    const leaving = other.signOut();
+    hold.resolve();
+    await leaving;
+    expect(await renewal).toMatchObject({ ok: false, signedOut: true });
   });
 
   it("uses a rotated refresh token the keychain refused, and saves it again at the next renewal", async () => {
@@ -645,5 +693,117 @@ describe("a hosted server", () => {
       ok: false,
       why: "The server refused the call.",
     });
+  });
+
+  it("never lets a slow keychain write land over a newer refresh token", async () => {
+    const written: Array<string> = [];
+    const first = Promise.withResolvers<void>();
+    let calls = 0;
+    const keeper = await keeperFor({
+      saveWaitMs: 20,
+      saveRefreshToken: async (token) => {
+        calls += 1;
+        if (calls === 1) await first.promise;
+        written.push(token);
+      },
+    });
+    expect((await keeper.token("workspaces")).ok).toBe(true);
+    expect(keeper.unsaved()).toBe(true);
+    const renewing = keeper.fresh("device:connect");
+    await new Promise((later) => setTimeout(later, 30));
+    first.resolve();
+    expect((await renewing).ok).toBe(true);
+    await new Promise((later) => setTimeout(later, 30));
+    expect(keeper.unsaved()).toBe(false);
+    // What the keychain holds last is the one the server will take.
+    const again = await keeperFor({ refreshToken: written.at(-1) ?? "" });
+    expect((await again.token("workspaces")).ok).toBe(true);
+  });
+
+  it("finishes a keychain write before sign-out settles, and keeps nothing a save let through", async () => {
+    const release = Promise.withResolvers<void>();
+    let writing = false;
+    const keeper = await keeperFor({
+      // The renewal stops waiting for the keychain at once; the write goes on.
+      saveWaitMs: 5,
+      saveRefreshToken: async () => {
+        writing = true;
+        await release.promise;
+      },
+    });
+    const renewing = keeper.token("workspaces");
+    await waitFor(() => writing);
+    let out = false;
+    const signingOut = keeper.signOut().then(() => {
+      out = true;
+    });
+    await new Promise((later) => setTimeout(later, 20));
+    expect(out).toBe(false);
+    release.resolve();
+    await signingOut;
+    await renewing;
+    expect(await keeper.token("workspaces")).toMatchObject({ ok: false, signedOut: true });
+  });
+
+  it("hands out a fresh token once, and keeps the token endpoint's nonce apart from the calls'", async () => {
+    const keeper = await keeperFor();
+    const fresh = await keeper.fresh("workspaces");
+    const held = await keeper.token("workspaces");
+    expect(fresh.ok && held.ok && fresh.token.accessToken !== held.token.accessToken).toBe(true);
+    fake.state.alwaysTokenNonce = true;
+    fake.state.resourceNonce = "calls-own-nonce";
+    await keeper.fresh("workspaces");
+    const errors = fake.state.tokenNonceErrors;
+    const found = await discoverHosted(origin, fetch);
+    if (!found.ok) throw new Error(found.why);
+    await listHostedWorkspaces({ discovery: found.discovery, keeper, key, fetch });
+    await keeper.fresh("workspaces");
+    expect(fake.state.tokenNonceErrors).toBe(errors);
+  });
+
+  it("stops a sign-in closed after the browser came back, and doesn't wait on the browser", async () => {
+    const found = await discoverHosted(origin, fetch);
+    if (!found.ok) throw new Error(found.why);
+    const stop = new AbortController();
+    expect(
+      await signInHosted({
+        discovery: found.discovery,
+        key,
+        fetch,
+        now,
+        signal: stop.signal,
+        openBrowser: async (url) => {
+          await browser(url);
+          stop.abort();
+        },
+      }),
+    ).toEqual({ ok: false, why: "The sign-in was stopped." });
+    const signed = await signInHosted({
+      discovery: found.discovery,
+      key,
+      fetch,
+      now,
+      openBrowser: (url) => {
+        void browser(url);
+        return new Promise(() => undefined);
+      },
+    });
+    expect(signed.ok).toBe(true);
+  });
+
+  it("sends a device name of at most 128 characters, whole", async () => {
+    const keeper = await keeperFor();
+    const found = await discoverHosted(origin, fetch);
+    if (!found.ok) throw new Error(found.why);
+    await registerHostedDevice({
+      discovery: found.discovery,
+      keeper,
+      key,
+      fetch,
+      name: "\u{1F600}".repeat(200),
+      platform: "linux",
+    });
+    expect([...(fake.state.names[0] ?? "")]).toHaveLength(128);
+    expect(fake.state.names[0]?.isWellFormed()).toBe(true);
   });
 });

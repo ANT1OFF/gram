@@ -90,10 +90,11 @@ const call = async (
   init: RequestInit,
 ): Promise<Response | undefined> => {
   try {
+    const deadline = AbortSignal.timeout(HOSTED_CALL_MS);
     const response = await fetch(url, {
       ...init,
       redirect: "manual",
-      signal: AbortSignal.timeout(HOSTED_CALL_MS),
+      signal: init.signal == null ? deadline : AbortSignal.any([init.signal, deadline]),
     });
     return response;
   } catch {
@@ -140,6 +141,8 @@ interface TokenCallOptions {
   readonly now: () => number;
   /** The server's last `DPoP-Nonce`, kept between calls. */
   readonly nonce: { value?: string };
+  /** Ends the call early. */
+  readonly signal?: AbortSignal;
 }
 // `now` above is a clock that only goes forward, for when a token ends.
 
@@ -158,6 +161,7 @@ const tokenCall = async (
 ): Promise<{ ok: true; tokens: HostedTokens } | (Failed & { readonly signedOut?: true })> => {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const response = await call(options.fetch, options.discovery.token_endpoint, {
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
@@ -321,14 +325,24 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
       code_challenge_method: "S256",
     }).toString();
     if (stopped()) return failed("The sign-in was stopped.");
-    await options.openBrowser(authorize.href).catch(() => {
-      finish(failed("Gram couldn't open the browser."));
-    });
+    // Not waited for: a browser that never says it opened still can't hold the sign-in open.
+    void Promise.resolve()
+      .then(() => options.openBrowser(authorize.href))
+      .catch(() => {
+        finish(failed("Gram couldn't open the browser."));
+      });
     const answer = await answered;
     if (!("code" in answer)) return answer;
     if (stopped()) return failed("The sign-in was stopped.");
     const exchanged = await tokenCall(
-      { discovery, key: options.key, fetch: options.fetch, now: options.now, nonce: {} },
+      {
+        discovery,
+        key: options.key,
+        fetch: options.fetch,
+        now: options.now,
+        nonce: {},
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      },
       {
         grant_type: "authorization_code",
         code: answer.code,
@@ -336,6 +350,7 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
         code_verifier: verifier,
       },
     );
+    if (stopped()) return failed("The sign-in was stopped.");
     if (!exchanged.ok) return failed(exchanged.why);
     if (exchanged.tokens.refreshToken === undefined) return failed(UNREADABLE);
     return exchanged;
@@ -354,6 +369,8 @@ export interface TokenKeeperOptions {
   readonly refreshToken: string;
   /** Keeps a rotated refresh token, in the keychain, before it is used. */
   readonly saveRefreshToken: (token: string) => Promise<void>;
+  /** How long the keychain is waited for; the write goes on, and a newer one follows it. */
+  readonly saveWaitMs?: number;
   readonly fetch: Fetch;
   /** A clock that only goes forward, in milliseconds. */
   readonly now: () => number;
@@ -376,7 +393,11 @@ export interface TokenKeeper {
   readonly nonce: { value?: string };
   /** Signed out: the server said the refresh token is no good, or the person signed out. */
   readonly signedOut: () => boolean;
-  readonly signOut: () => void;
+  /**
+   * Ends the sign-in. Settles once nothing under way can still write a refresh token, so the
+   * keychain is cleared after it.
+   */
+  readonly signOut: () => Promise<void>;
   /** The keychain didn't take the latest refresh token; it is tried again at each renewal. */
   readonly unsaved: () => boolean;
 }
@@ -393,30 +414,50 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
   /** The token endpoint's own nonce: a server may give its calls and its tokens different ones. */
   const tokenNonce: { value?: string } = {};
   let queue: Promise<unknown> = Promise.resolve();
-  /** A rotated refresh token the keychain hasn't taken yet: saved again before the next renewal. */
-  let unsaved: string | undefined;
   const pending = new Map<HostedScope, Promise<TokenFor>>();
+  /**
+   * Which refresh token the keychain holds. Each rotation is a new generation, and writes go one
+   * at a time, newest last, so a write the keychain was slow with never lands over a newer one.
+   */
+  let generation = 0;
+  let savedGeneration = 0;
+  let saving: Promise<void> | undefined;
+  const saveWaitMs = options.saveWaitMs ?? HOSTED_SAVE_MS;
+  const signedOutYet = () => ended;
 
-  const save = async (token: string): Promise<boolean> => {
-    let timer: NodeJS.Timeout | undefined;
-    try {
-      return await Promise.race([
-        options.saveRefreshToken(token).then(() => true),
-        new Promise<boolean>((done) => {
-          timer = setTimeout(() => done(false), HOSTED_SAVE_MS);
-        }),
-      ]);
-    } catch {
-      return false;
-    } finally {
-      clearTimeout(timer);
-    }
+  const writeLatest = (): Promise<void> => {
+    saving ??= (async () => {
+      while (!signedOutYet() && savedGeneration < generation) {
+        const writing = generation;
+        try {
+          await options.saveRefreshToken(refreshToken);
+        } catch {
+          return;
+        }
+        savedGeneration = writing;
+      }
+    })().finally(() => {
+      saving = undefined;
+    });
+    return saving;
   };
 
-  const renew = (scope: HostedScope): Promise<TokenFor> => {
+  /** Saves the newest refresh token, waiting no longer than the keychain is given. */
+  const save = async (): Promise<void> => {
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      writeLatest(),
+      new Promise<void>((done) => {
+        timer = setTimeout(done, saveWaitMs);
+      }),
+    ]);
+    clearTimeout(timer);
+  };
+
+  const renew = (scope: HostedScope, keep: boolean): Promise<TokenFor> => {
     const next = queue.then(async (): Promise<TokenFor> => {
       if (ended) return signedOutNow();
-      if (unsaved !== undefined && (await save(unsaved))) unsaved = undefined;
+      if (savedGeneration < generation) await save();
       if (ended) return signedOutNow();
       const answer = await tokenCall(
         {
@@ -447,11 +488,13 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
         // The server has let the old one go: this one is used from now on, saved or not, and
         // saved again before the next renewal if the keychain didn't take it.
         refreshToken = answer.tokens.refreshToken;
-        unsaved = (await save(refreshToken)) ? undefined : refreshToken;
+        generation += 1;
+        await save();
         if (ended) return signedOutNow();
       }
       const { refreshToken: _rotated, ...token } = answer.tokens;
-      tokens.set(scope, token);
+      // A fresh token is for one use alone, so it is never handed out again.
+      if (keep) tokens.set(scope, token);
       return { ok: true, token };
     });
     queue = next.catch(() => undefined);
@@ -471,17 +514,20 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
       // Callers that find the same token near its end share one renewal.
       const waiting = pending.get(scope);
       if (waiting !== undefined) return waiting;
-      const renewal = renew(scope).finally(() => pending.delete(scope));
+      const renewal = renew(scope, true).finally(() => pending.delete(scope));
       pending.set(scope, renewal);
       return renewal;
     },
-    fresh: renew,
+    fresh: (scope) => renew(scope, false),
     nonce,
     signedOut: () => ended,
-    unsaved: () => unsaved !== undefined,
-    signOut: () => {
+    unsaved: () => savedGeneration < generation,
+    signOut: async () => {
       ended = true;
       tokens.clear();
+      // Whatever was asked or written before is over before the caller clears the keychain.
+      await queue;
+      await saving;
     },
   };
 };
