@@ -335,7 +335,7 @@ describe("switchAgent", () => {
 
         yield* set((t) => ({ ...t, role: "orchestrator" }));
         expect(yield* refused(CODEX)).toBe(
-          "Switch the orchestrator from its own Switch orchestrator… action.",
+          "Move the orchestrator from its own Continue in… sheet, in its menu or in Settings → Workspaces.",
         );
         yield* set(({ role: _r, ...t }) => t);
 

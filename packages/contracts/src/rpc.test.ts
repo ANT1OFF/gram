@@ -1190,6 +1190,14 @@ describe("GramRpcs", () => {
       }),
     ).toEqual({ workspaceId: "w1", model: { agent: "claude", model: "Exact-Custom-Opus5.5" } });
     expect(() => payloadOf("orchestrator.switch")({ workspaceId: "w1" })).toThrow();
+    // The note checkbox, left out: the checkpoint only flushes memory.
+    expect(
+      payloadOf("orchestrator.switch")({
+        workspaceId: "w1",
+        model: { agent: "codex", model: "gpt-6.1-sol" },
+        note: false,
+      }),
+    ).toMatchObject({ note: false });
     expect(payloadOf("orchestrator.cancelSwitch")({ workspaceId: "w1" })).toEqual({
       workspaceId: "w1",
     });

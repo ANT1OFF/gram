@@ -1467,6 +1467,8 @@ const make = Effect.gen(function* () {
     restSession,
     switchSession,
     switchAgent: agentSwitch.switchAgent,
+    switchNotePlan: agentSwitch.switchNotePlan,
+    endSwitchLimitWait: agentSwitch.endSwitchLimitWait,
     cutAtBoot: cutOff,
     ...queueMethods,
     // A switch a restart left owing its new session the handoff gives it first.

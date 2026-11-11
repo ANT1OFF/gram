@@ -148,7 +148,7 @@ const notNow = (
   if (target.agent === thread.model.agent)
     return `This thread already runs in ${to}. Pick one of its models instead.`;
   if (thread.role === "orchestrator")
-    return "Switch the orchestrator from its own Switch orchestrator… action.";
+    return "Move the orchestrator from its own Continue in… sheet, in its menu or in Settings → Workspaces.";
   if (rt.closing || thread.parked) return "Unarchive this thread before switching it.";
   // A thread whose last turn failed moves too: that is limit mode, with no note turn.
   if (
@@ -226,7 +226,7 @@ type Outcome = ({ readonly end: ObservedTurnEnd } | { readonly failed: SystemDel
 };
 
 /** A turn's reply as plain text: its main lane's text parts, in order. */
-const replyOf = (messages: ReadonlyArray<GramUIMessage>): string =>
+export const replyOf = (messages: ReadonlyArray<GramUIMessage>): string =>
   messages
     .filter(
       (message) => message.role === "assistant" && message.metadata?.parentToolUseId === undefined,
@@ -242,7 +242,7 @@ const replyOf = (messages: ReadonlyArray<GramUIMessage>): string =>
  * old session's last turn, unless the user left the note out.
  */
 const noteModeOf = (
-  rt: Runtime,
+  rt: Pick<Runtime, "status">,
   thread: Thread,
   until: number | undefined,
   wanted: boolean,
@@ -263,6 +263,24 @@ const noteModeOf = (
     };
   return { mode: wanted ? "outgoing" : "none" };
 };
+
+/**
+ * A turn's whole reply as a handoff note by `by`, through `capNote` (scrubbed, then cut at
+ * `HANDOFF_NOTE_MAX_CHARS`); none when it said nothing. Read by the turn's id, so a long reply keeps
+ * its beginning. Any thread's switch reads its note this way, the orchestrator's checkpoint too.
+ */
+export const turnNote = (
+  store: Pick<ThreadStoreShape, "turnMessages">,
+  threadId: ThreadId,
+  turnId: TurnId,
+  by: AgentKind,
+) =>
+  store.turnMessages(threadId, turnId).pipe(
+    Effect.map((messages) => {
+      const text = capNote(replyOf(messages));
+      return text === undefined ? undefined : ({ text, by } satisfies HandoffNote);
+    }),
+  );
 
 /** The switch's claim, as `handoff` keeps it, if it is still `attemptId`'s. */
 const claimOf = (thread: Thread, attemptId: string) =>
@@ -361,8 +379,7 @@ export const makeAgentSwitch = ({
         outcome.end.reason !== "completed"
       )
         return undefined;
-      const text = capNote(replyOf(yield* store.turnMessages(threadId, outcome.turnId)));
-      return text === undefined ? undefined : ({ text, by } satisfies HandoffNote);
+      return yield* turnNote(store, threadId, outcome.turnId, by);
     });
 
   /**
@@ -897,7 +914,7 @@ export const makeAgentSwitch = ({
         if (thread.role === "orchestrator")
           return yield* new InvalidState({
             threadId,
-            message: "Retry the orchestrator's switch from its own Switch orchestrator… action.",
+            message: "Retry the orchestrator's switch from its own Continue in… sheet.",
           });
         yield* checkSwitchTarget(store, hosts, { model: previous, mode: thread.mode }, target);
         const { id } = yield* retry(thread, target);
@@ -971,8 +988,11 @@ export const makeAgentSwitch = ({
    */
   const give = (threadId: ThreadId) =>
     Effect.gen(function* () {
-      const claim = (yield* store.getThread(threadId)).sessionSwitch;
-      if (claim?.phase !== "ready" || claim.handoff === undefined) return;
+      const thread = yield* store.getThread(threadId);
+      const claim = thread.sessionSwitch;
+      // The orchestrator's switch is its handoff's (`handoff.ts`), whose boot digest is its handoff.
+      if (claim?.phase !== "ready" || claim.handoff === undefined || thread.role === "orchestrator")
+        return;
       yield* endLimitWait(yield* getRuntime(threadId), claim.previous);
       yield* background(
         finish(threadId).pipe(
@@ -1069,5 +1089,29 @@ export const makeAgentSwitch = ({
         .pipe(Effect.ignore);
     });
 
-  return { switchAgent, resumeAtBoot, handOverOwed, giveOwed, onTurnEnd };
+  const switchNotePlan: ThreadRuntimesShape["switchNotePlan"] = (threadId, wanted) =>
+    Effect.gen(function* () {
+      const rt = yield* getRuntime(threadId);
+      const thread = yield* store.getThread(threadId);
+      const until = yield* limitedUntil(thread);
+      return yield* locked(
+        rt,
+        store.getThread(threadId).pipe(Effect.map((current) => noteModeOf(rt, current, until, wanted))),
+      );
+    });
+
+  const endSwitchLimitWait: ThreadRuntimesShape["endSwitchLimitWait"] = (threadId, previous) =>
+    Effect.gen(function* () {
+      yield* endLimitWait(yield* getRuntime(threadId), previous);
+    });
+
+  return {
+    switchAgent,
+    resumeAtBoot,
+    handOverOwed,
+    giveOwed,
+    onTurnEnd,
+    switchNotePlan,
+    endSwitchLimitWait,
+  };
 };

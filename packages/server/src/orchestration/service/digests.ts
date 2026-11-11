@@ -44,6 +44,7 @@ import {
 } from "../outbox.ts";
 import { digestQuestions, withCopiesTold } from "../worker-questions.ts";
 import { bootContext } from "../prompt.ts";
+import { switchBootNote } from "./switch-boot.ts";
 import {
   contextNote,
   digestDiff,
@@ -371,6 +372,13 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
               ),
             })
           : [];
+      // An orchestrator switch's note and the last exchanges with the user, fenced: last of all.
+      const holder = state.workspace.orchestratorThreadId;
+      const switchBoot = variant === "boot" ? outbox.switchBoot : undefined;
+      const switchNote =
+        switchBoot === undefined || holder === undefined
+          ? undefined
+          : yield* switchBootNote(store, holder, switchBoot);
       // Not on a boot: the last usage on record is then the session a handoff left behind.
       const context =
         variant === "boot"
@@ -455,6 +463,7 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
           ...(outbox.dueWakes ?? []).map(orchestratorWakeNote),
           ...(context.note === undefined ? [] : [context.note]),
           ...(limitNote === undefined ? [] : [limitNote]),
+          ...(switchNote === undefined ? [] : [switchNote]),
         ],
         ...(state.paused === undefined ? {} : { paused: state.paused }),
         ...(waiting === undefined ? {} : { waiting }),
@@ -483,6 +492,10 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
             claimedAt: readAt,
             ...(limitNote === undefined ? {} : { limitNoted: true }),
           },
+          // Limit mode's boot turn writes the note: its end is waited for (`handoff.ts`).
+          ...(switchBoot?.noteMode === "limit" && current.switchBoot?.at === switchBoot.at
+            ? { switchBoot: { ...current.switchBoot, turnId } }
+            : {}),
         },
         undefined,
       ]);
@@ -505,7 +518,12 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
         } = withNotesAcked(outbox, flight.notesUpTo);
         const rest =
           limited === undefined || flight.limitNoted === true ? acked : { ...acked, limited };
-        const copied = withCopiesTold(rest, flight.questionCopiesTaken ?? []);
+        const withCopies = withCopiesTold(rest, flight.questionCopiesTaken ?? []);
+        // The boot carried the switch's handoff; limit mode's waits for its turn's end.
+        const copied =
+          withCopies.switchBoot === undefined || withCopies.switchBoot.noteMode === "limit"
+            ? withCopies
+            : (({ switchBoot: _boot, ...others }) => others)(withCopies);
         const told = new Set(flight.dueWakesTaken ?? []);
         const stillDue = (dueWakes ?? []).filter((due) => !told.has(due.id));
         const removalsTold = new Set(flight.liveRemovalsTaken ?? []);

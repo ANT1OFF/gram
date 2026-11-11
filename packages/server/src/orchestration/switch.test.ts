@@ -264,7 +264,6 @@ describe("explicit workspace orchestrator switch", () => {
     "discovery",
     "missing model",
     "effort",
-    "checkpoint error",
   ] as const) {
     it.effect(`preflight ${failure} leaves the source and charter unchanged`, () =>
       inServer((world) =>
@@ -278,8 +277,6 @@ describe("explicit workspace orchestrator switch", () => {
             if (failure === "unsupported") yield* fake.setSwitchCapability(false);
             if (failure === "discovery")
               yield* fake.setModelDiscoveryFailure("Synthetic CLI signed out");
-            if (failure === "checkpoint error")
-              yield* session.emit({ type: "status", status: "error" });
             yield* settle;
             const target: ModelRef = {
               agent: "claude",

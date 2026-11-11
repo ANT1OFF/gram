@@ -8,6 +8,7 @@
 
 import {
   AgentFailureKind,
+  HandoffNote,
   ModelRef,
   BackgroundTaskKind,
   PrRef,
@@ -16,6 +17,7 @@ import {
   PrWatchSeen,
   ReasoningVariant,
   RoutineState,
+  SwitchNoteMode,
   StoredWakeCondition,
   ThreadId,
   type PendingWake,
@@ -208,6 +210,31 @@ export const HandoffMarker = Schema.Struct({
   previousAgentSessionId: Schema.optionalKey(Schema.String),
 });
 export type HandoffMarker = typeof HandoffMarker.Type;
+
+/**
+ * An orchestrator switch's handoff, owed to the boot digest of the session it opened: who it moved
+ * from and to, the note the checkpoint wrote, or limit mode's reason the new session writes it.
+ * Set once the divider is written (`at` is the divider's), and dropped once the boot digest is
+ * acknowledged; limit mode's stays until the boot turn, which writes the note, ends.
+ */
+export const SwitchBoot = Schema.Struct({
+  at: Schema.Number,
+  from: Schema.Literals(["claude", "codex"]),
+  to: Schema.Literals(["claude", "codex"]),
+  noteMode: SwitchNoteMode,
+  note: Schema.optionalKey(HandoffNote),
+  /** Limit mode's: why the old session wrote no note. `detail` is untrusted, for the fence only. */
+  limit: Schema.optionalKey(
+    Schema.Struct({
+      reason: Schema.Literals(["usage", "failed"]),
+      until: Schema.optionalKey(Schema.Number),
+      detail: Schema.optionalKey(Schema.String),
+    }),
+  ),
+  /** Limit mode's: the boot turn, whose reply is the note. */
+  turnId: Schema.optionalKey(TurnId),
+});
+export type SwitchBoot = typeof SwitchBoot.Type;
 
 /** One delegated `send_message` made with a `clientRequestId`. */
 export const SentRequest = Schema.Struct({
@@ -513,6 +540,7 @@ export const OutboxState = Schema.Struct({
   /** The housekeeping conditions acknowledged digests have noted and that still held (`tidyNotes`). */
   tidyNoted: Schema.optionalKey(Schema.Array(Schema.String)),
   handoff: Schema.optionalKey(HandoffMarker),
+  switchBoot: Schema.optionalKey(SwitchBoot),
   /** Wakes the orchestrator and its workers have set, not yet due; absent when there are none. */
   wakes: Schema.optionalKey(Schema.Array(StoredWake)),
   /**
@@ -677,6 +705,8 @@ export const outboxAfterHandoff = (previous: OutboxState): OutboxState => {
     contextNoted: _noted,
     tidyNoted: _tidy,
     interfacesRead: _read,
+    // A switch's handoff was for the session this one replaces; the caller sets its own.
+    switchBoot: _switchBoot,
     ...rest
   } = previous;
   return { ...rest, booted: false, failures: 0 };

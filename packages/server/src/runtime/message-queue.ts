@@ -469,28 +469,33 @@ export const makeMessageQueue = ({
    * Called with the runtime lock held. Starts a waiting delivery if the thread can take one now;
    * a busy thread gets to it from `becomeIdle`, or steers one that asks for it.
    */
-  const switchHold = (rt: Runtime) =>
+  const heldBy = (rt: Runtime) =>
     store.getThread(rt.threadId).pipe(
       Effect.map((thread) => {
         const change = thread.sessionSwitch;
         return change !== undefined &&
           (change.phase !== "checkpoint" || change.checkpointTurnId !== undefined)
-          ? change
+          ? { change, orchestrator: thread.role === "orchestrator" }
           : undefined;
       }),
       Effect.orDie,
     );
+  const switchHold = (rt: Runtime) => heldBy(rt).pipe(Effect.map((held) => held?.change));
 
   const pumpDeliveries = (rt: Runtime): Effect.Effect<void> =>
     Effect.gen(function* () {
       // They wait in memory, as a stopped server leaves them; the process is about to exit.
       if (rt.deliveries.size === 0 || isShuttingDown()) return;
-      const change = yield* switchHold(rt);
+      const held = yield* heldBy(rt);
+      const change = held?.change;
       if (change !== undefined && change.phase !== "ready") return;
       // A plain thread's or worker's switch at `ready` lets only its own handoff go, so nothing
       // reaches the new session before it; the rest wait for the switch to let go. The
-      // orchestrator's (no `handoff`) lets its boot digest through as before.
-      const only = change?.handoff === undefined ? undefined : SWITCH_HANDOFF_KEY;
+      // orchestrator's lets its boot digest through as before, whatever its claim carries.
+      const only =
+        change?.handoff === undefined || held?.orchestrator === true
+          ? undefined
+          : SWITCH_HANDOFF_KEY;
       if (only !== undefined && !rt.deliveries.has(only)) return;
       // Nor does it open a session for it: the switch owns its target's startup (a reopen takes a
       // fresh startup id), so a handoff asked for with no session fails, and the switch reopens.
@@ -512,8 +517,10 @@ export const makeMessageQueue = ({
       switch (rt.status) {
         case "ended":
           return yield* failPendingDeliveries(rt, rt.status);
+        // Nothing steers in while a switch is `ready`: the turn is its handoff's, or the
+        // orchestrator's boot digest, whose reply is limit mode's note.
         case "running":
-          return only === undefined ? yield* steerDeliveries(rt) : undefined;
+          return change === undefined ? yield* steerDeliveries(rt) : undefined;
         // Not into a turn waiting on the user: the agent would read it before their answer.
         case "starting":
         case "needsApproval":

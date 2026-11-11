@@ -11,6 +11,7 @@ import type {
   QueueItemId,
   Checkout,
   ModelRef,
+  SwitchNoteMode,
   PermissionMode,
   UserInput,
   Thread,
@@ -43,6 +44,7 @@ import type { AgentSession, AppToolRegistryPort, SteerOptions, ToolAudience } fr
 import type { McpConfigChange } from "./session-restarts.ts";
 import type { SessionPolicyPort } from "./session-policy.ts";
 import type { SystemDelivery } from "./system-delivery.ts";
+import type { HandoffLimit } from "./switch-handoff.ts";
 import type { RuntimeObserver } from "./runtime-observer.ts";
 
 export interface CreateThreadInput {
@@ -562,6 +564,23 @@ export interface ThreadRuntimesShape {
     target: ModelRef,
     options?: { readonly note?: boolean },
   ): Effect.Effect<Thread, ThreadNotFound | InvalidState | AgentUnavailable>;
+  /**
+   * How an orchestrator's switch writes its handoff note, by the rule any thread's switch uses:
+   * limit mode when the agent's own usage-limit reports say it is out of usage, or its last turn
+   * failed; else the checkpoint's note, unless `wanted` is false. Never read from credentials.
+   */
+  switchNotePlan(
+    threadId: ThreadId,
+    wanted: boolean,
+  ): Effect.Effect<
+    { readonly mode: SwitchNoteMode; readonly limit?: HandoffLimit | undefined },
+    ThreadNotFound
+  >;
+  /**
+   * Ends a limit wait the account `previous` left on the thread, as any thread's switch does once
+   * its session is replaced, so nothing resumes the old turn on the new agent.
+   */
+  endSwitchLimitWait(threadId: ThreadId, previous: ModelRef): Effect.Effect<void, ThreadNotFound>;
   /** Late-bound: the app-tool registry depends on this service. */
   setAppTools(port: AppToolRegistryPort): Effect.Effect<void>;
   /** Late-bound like `setAppTools`: what a thread's role adds to its sessions. Absent, every thread is plain. */

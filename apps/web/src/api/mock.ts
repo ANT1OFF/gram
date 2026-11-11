@@ -1625,7 +1625,9 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     if (target.agent === thread.model.agent)
       throw refuse("This thread already runs there. Pick one of its models instead.");
     if (thread.role === "orchestrator")
-      throw refuse("Switch the orchestrator from its own Switch orchestrator… action.");
+      throw refuse(
+        "Move the orchestrator from its own Continue in… sheet, in its menu or in Settings → Workspaces.",
+      );
     if (thread.sessionSwitch !== undefined || !["idle", "cold", "error"].includes(status))
       throw refuse("Wait for this turn to finish, or stop it, then switch.");
     if (pendingRequests.length > 0) throw refuse("Answer the open approval first.");
