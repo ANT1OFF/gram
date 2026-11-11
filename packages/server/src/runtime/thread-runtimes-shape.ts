@@ -11,6 +11,7 @@ import type {
   QueueItemId,
   Checkout,
   ModelRef,
+  SwitchNoteMode,
   PermissionMode,
   UserInput,
   Thread,
@@ -43,6 +44,7 @@ import type { AgentSession, AppToolRegistryPort, SteerOptions, ToolAudience } fr
 import type { McpConfigChange } from "./session-restarts.ts";
 import type { SessionPolicyPort } from "./session-policy.ts";
 import type { SystemDelivery } from "./system-delivery.ts";
+import type { HandoffLimit } from "./switch-handoff.ts";
 import type { RuntimeObserver } from "./runtime-observer.ts";
 
 export interface CreateThreadInput {
@@ -562,6 +564,25 @@ export interface ThreadRuntimesShape {
     target: ModelRef,
     options?: { readonly note?: boolean },
   ): Effect.Effect<Thread, ThreadNotFound | InvalidState | AgentUnavailable>;
+  /**
+   * How an orchestrator's switch writes its handoff note, by the rule any thread's switch uses:
+   * limit mode when the agent's own usage-limit reports say it is out of usage, or its last turn
+   * failed; else the checkpoint's note, unless `wanted` is false. Never read from credentials.
+   */
+  switchNotePlan(
+    threadId: ThreadId,
+    wanted: boolean,
+  ): Effect.Effect<
+    { readonly mode: SwitchNoteMode; readonly limit?: HandoffLimit | undefined },
+    ThreadNotFound
+  >;
+  /**
+   * Settles a switch whose new session is confirmed (`ready`), in the background, as any thread's
+   * is: the old account's limit wait ends, the handoff is given (the orchestrator's boot digest,
+   * by its session policy) ahead of anything held, and the claim lets go once the agent took it
+   * and its turn ended. Nothing for a thread without such a switch.
+   */
+  handOverSwitch(threadId: ThreadId): Effect.Effect<void>;
   /** Late-bound: the app-tool registry depends on this service. */
   setAppTools(port: AppToolRegistryPort): Effect.Effect<void>;
   /** Late-bound like `setAppTools`: what a thread's role adds to its sessions. Absent, every thread is plain. */

@@ -949,9 +949,11 @@ export function Composer({
         : undefined;
   const isFavourite = useIsFavourite(model?.agent ?? "claude");
   // The other agent's models, a group of their own below this one's: a pick opens "Continue in
-  // Codex" and changes nothing by itself. Only while the other CLI is installed.
+  // Codex" and changes nothing by itself. Only while the other CLI is installed, and not on the
+  // orchestrator, which continues in the other agent from its menu and its workspace's settings.
   const offer = useSwitchOffer(threadId);
-  const otherAgent = offer.offered ? offer.to : undefined;
+  const otherAgent =
+    offer.offered && summary?.thread.role !== "orchestrator" ? offer.to : undefined;
   const otherModels = useModelsSettled(otherAgent ?? "codex", otherAgent !== undefined).models;
   const otherRow = (id: string, label: string): PickerOption<string> => ({
     value: `${SWITCH_PREFIX}${id}`,

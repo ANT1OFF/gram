@@ -15,6 +15,7 @@ import {
   defaultTarget,
   limitLine,
   modeLine,
+  orchestratorCarriesLine,
   sheetEfforts,
   switchDividerBefore,
   switchDividerLabel,
@@ -65,6 +66,10 @@ const offer = (
   more: { platform?: string; listed?: boolean } = {},
 ) => switchOffer({ summary: s, checks: c, listed: more.listed ?? true, platform: more.platform });
 
+/** An orchestrator's summary, as `summary` makes a plain thread's. */
+const orchestrator = (overrides: Parameters<typeof summary>[0] = {}, more: Partial<Thread> = {}) =>
+  summary(overrides, { role: "orchestrator", workspaceId: "w-1" as never, ...more });
+
 const CODEX_MODELS: AgentModel[] = [
   {
     id: "gpt-5.5",
@@ -91,7 +96,7 @@ describe("switchOffer", () => {
     });
   });
 
-  it("offers nothing with one harness, on Windows, on the orchestrator or with nothing listed", () => {
+  it("offers nothing with one harness, on Windows or with nothing listed", () => {
     expect(offer(summary(), checks({ tools: [{ tool: "claude", found: true }] })).offered).toBe(
       false,
     );
@@ -99,8 +104,38 @@ describe("switchOffer", () => {
       false,
     );
     expect(offer(summary(), checks(), { platform: "win32" }).offered).toBe(false);
-    expect(offer(summary({}, { role: "orchestrator" })).offered).toBe(false);
     expect(offer(summary(), checks(), { listed: false }).offered).toBe(false);
+    expect(
+      offer(
+        summary({}, { role: "orchestrator" }),
+        checks({ tools: [{ tool: "claude", found: true }] }),
+      ).offered,
+    ).toBe(false);
+  });
+
+  it("offers the orchestrator the same sheet, greyed only where its switch would be refused", () => {
+    expect(offer(orchestrator())).toEqual({ offered: true, to: "codex" });
+    // Its checkpoint waits for its turn and questions, so neither greys it.
+    expect(offer(orchestrator({ status: "running" }))).toEqual({ offered: true, to: "codex" });
+    expect(
+      offer(orchestrator({ pendingRequests: [{ id: "r" } as unknown as PendingRequest] })),
+    ).toEqual({ offered: true, to: "codex" });
+    expect(offer(orchestrator(), checks({ codexSignIn: "notSignedIn" }))).toMatchObject({
+      refusal: "Sign in to Codex in Settings → Agents.",
+    });
+    // One under way opens on how it stands, toward its own target.
+    const change = {
+      id: "a",
+      previous: CLAUDE,
+      target: { agent: "codex" as const, model: "gpt-5.5" },
+      mode: "auto" as const,
+      phase: "failed" as const,
+      oldExited: true,
+    };
+    expect(offer(orchestrator({}, { model: change.target, sessionSwitch: change }))).toEqual({
+      offered: true,
+      to: "codex",
+    });
   });
 
   it("greys it with the server's words", () => {
@@ -190,6 +225,11 @@ describe("the sheet's words", () => {
     );
     expect(carriesLine("claude", false, false)).not.toContain("note");
     expect(carriesLine("claude", true, true)).toContain("about 24k tokens");
+    expect(orchestratorCarriesLine("claude", true, false)).toBe(
+      "A note from Claude, your last exchanges, memory, the charter and the ledger.",
+    );
+    expect(orchestratorCarriesLine("claude", true, true)).not.toContain("note");
+    expect(orchestratorCarriesLine("claude", false, false)).not.toContain("note");
   });
 
   it("finds limit mode as the server does", () => {
@@ -220,6 +260,9 @@ describe("the sheet's words", () => {
       "Codex runs this thread in Ask. Its Auto needs Codex 0.166 or newer.",
     );
     expect(line({ gated: true })).toContain("Bypass");
+    expect(line({ gated: true, worker: false, orchestrator: true })).toBe(
+      "Codex runs the orchestrator in Bypass. Its Auto can't keep this workspace's approval gate.",
+    );
     expect(line({ mode: "default" })).toBeUndefined();
     expect(line({ to: "claude" })).toBeUndefined();
   });

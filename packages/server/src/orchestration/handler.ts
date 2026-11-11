@@ -122,8 +122,8 @@ export const orchestrationHandlers = Effect.gen(function* () {
       orchestration.setFeaturePaused(workspaceId, feature, paused),
     "orchestrator.renameFeature": ({ workspaceId, feature, to }) =>
       orchestration.renameFeature(workspaceId, feature, to),
-    "orchestrator.switch": ({ workspaceId, model }) =>
-      orchestration.handoff(workspaceId, "user", model),
+    "orchestrator.switch": ({ workspaceId, model, note }) =>
+      orchestration.handoff(workspaceId, "user", model, note === undefined ? {} : { note }),
     "orchestrator.retrySwitch": ({ workspaceId }) => orchestration.retrySwitch(workspaceId),
     "orchestrator.cancelSwitch": ({ workspaceId }) => orchestration.cancelSwitch(workspaceId),
     "orchestrator.handoff": ({ workspaceId }) => orchestration.handoff(workspaceId, "user"),

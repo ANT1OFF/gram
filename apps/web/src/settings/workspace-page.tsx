@@ -150,11 +150,7 @@ export function WorkspaceSettingsPage({
         keywords={["roster", "worker models", "orchestrator model", "brief footer"]}
       >
         {orchestrator !== undefined && (
-          <SwitchOrchestratorAction
-            thread={orchestrator}
-            workspaceId={workspaceId}
-            disabled={changes.busy}
-          />
+          <SwitchOrchestratorAction thread={orchestrator} disabled={changes.busy} />
         )}
         <RosterEditor
           charter={changes.charter ?? state.charter}

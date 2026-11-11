@@ -1,7 +1,7 @@
-// Moving a plain thread or a worker to the other agent ("Continue in Codex…"): whether it's offered,
-// why it's greyed, what the sheet preselects, and what its lines say. The server makes the same
-// refusals (`agent-switch.ts`) and has the last word; these only keep the UI from offering what it
-// would refuse.
+// Moving a thread, a worker or the orchestrator to the other agent ("Continue in Codex…"): whether
+// it's offered, why it's greyed, what the sheet preselects, and what its lines say. The server makes
+// the same refusals (`agent-switch.ts`, and the orchestrator's `handoff.ts`) and has the last word;
+// these only keep the UI from offering what it would refuse.
 
 import {
   aboveHigh,
@@ -53,8 +53,8 @@ export const CODEX_AUTO_VERSION = "0.166.0";
 
 /**
  * Whether the switch is offered on this thread, and if so to which agent and, when it can't move
- * now, why: the server's words. Not offered at all on the orchestrator (its own switch), on Windows,
- * or while the other CLI isn't installed, so Gram with one harness shows nothing new.
+ * now, why: the server's words. Not offered at all on Windows, or while the other CLI isn't
+ * installed, so Gram with one harness shows nothing new. The orchestrator's is offered the same way.
  */
 export type SwitchOffer =
   | { readonly offered: false }
@@ -78,8 +78,12 @@ export const switchOffer = (input: {
 }): SwitchOffer => {
   const { summary, checks } = input;
   const { thread } = summary;
-  if (thread.role === "orchestrator" || input.platform === "win32") return { offered: false };
-  const to = otherAgent(thread.model.agent);
+  if (input.platform === "win32") return { offered: false };
+  // An orchestrator's switch under way names where it is going, so its sheet shows how it stands.
+  const to =
+    thread.role === "orchestrator" && thread.sessionSwitch !== undefined
+      ? thread.sessionSwitch.target.agent
+      : otherAgent(thread.model.agent);
   if (!installed(checks, to)) return { offered: false };
   const signedOut = (to === "codex" ? checks?.codexSignIn : checks?.claudeSignIn) === "notSignedIn";
   if (!input.listed && !signedOut) return { offered: false };
@@ -95,11 +99,17 @@ const refusalOf = (
   const { thread } = summary;
   const from = AGENT_SHORT[thread.model.agent];
   const name = AGENT_NAMES[to];
-  if (thread.sessionSwitch !== undefined || !RUNS_NOW.has(summary.status))
-    return "Wait for this turn to finish, or stop it, then switch.";
-  if (summary.pendingRequests.length > 0)
-    return `Answer the open approval first. It can't move to ${name}.`;
-  if ((summary.background?.length ?? 0) > 0) return `${from} still has background work running.`;
+  if (thread.role === "orchestrator") {
+    // Its switch waits for its work and questions to finish (the checkpoint), and one under way
+    // opens the sheet on how it stands, with Cancel or Retry.
+    if (thread.sessionSwitch !== undefined) return undefined;
+  } else {
+    if (thread.sessionSwitch !== undefined || !RUNS_NOW.has(summary.status))
+      return "Wait for this turn to finish, or stop it, then switch.";
+    if (summary.pendingRequests.length > 0)
+      return `Answer the open approval first. It can't move to ${name}.`;
+    if ((summary.background?.length ?? 0) > 0) return `${from} still has background work running.`;
+  }
   if (thread.model.profileId !== undefined)
     return "Switching uses the CLI's own sign-in; it doesn't move gateway accounts.";
   const signIn = to === "codex" ? checks.codexSignIn : checks.claudeSignIn;
@@ -159,6 +169,19 @@ export const carriesLine = (from: AgentKind, note: boolean, limit: boolean): str
       ? `A note from ${AGENT_SHORT[from]}, the plan, open asks, the last turns, and the branch and PR.`
       : "The plan, open asks, the last turns, and the branch and PR.";
 
+/**
+ * What the new orchestrator gets: its boot context as always (memory, the charter, the ledger),
+ * with the note and the last exchanges with the user.
+ */
+export const orchestratorCarriesLine = (from: AgentKind, note: boolean, limit: boolean): string =>
+  !limit && note
+    ? `A note from ${AGENT_SHORT[from]}, your last exchanges, memory, the charter and the ledger.`
+    : "Your last exchanges, memory, the charter and the ledger.";
+
+/** The orchestrator's own line: its workers stay as they are, and the pick becomes its model. */
+export const ORCHESTRATOR_LINE =
+  "Workers keep their own agents, and this pick becomes the workspace's orchestrator model.";
+
 /** What doesn't carry over. */
 export const leavesLine = (from: AgentKind): string =>
   `${AGENT_SHORT[from]}'s tool output, reasoning and cache: the first reply is slower.`;
@@ -176,6 +199,8 @@ export const modeLine = (input: {
   readonly mode: PermissionMode;
   readonly to: AgentKind;
   readonly worker: boolean;
+  /** The orchestrator drops to Bypass as a worker does (`modeAfterDowngrade`). */
+  readonly orchestrator?: boolean;
   /** The workspace's approval gate holds (Supervised, Publish). */
   readonly gated: boolean;
   readonly codexVersion: string | undefined;
@@ -184,8 +209,12 @@ export const modeLine = (input: {
   const recent =
     input.codexVersion !== undefined && !isOlderVersion(input.codexVersion, CODEX_AUTO_VERSION);
   if (recent && !input.gated) return undefined;
-  const who = input.worker ? "this worker" : "this thread";
-  const runs = input.worker ? "Bypass" : "Ask";
+  const who = input.orchestrator
+    ? "the orchestrator"
+    : input.worker
+      ? "this worker"
+      : "this thread";
+  const runs = input.worker || input.orchestrator ? "Bypass" : "Ask";
   const why = input.gated
     ? "Its Auto can't keep this workspace's approval gate."
     : "Its Auto needs Codex 0.166 or newer.";

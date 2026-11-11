@@ -230,9 +230,16 @@ export const OrchestrationRpcs = RpcGroup.make(
     success: Thread,
     error: errors(NotFound, InvalidState),
   }),
-  /** Explicit user action. Completes asynchronously after checkpoint, graceful exit and target acknowledgement. */
+  /**
+   * Explicit user action. Completes asynchronously after checkpoint, graceful exit and target
+   * acknowledgement. `note: false` leaves the handoff note out of the checkpoint (on by default).
+   */
   Rpc.make("orchestrator.switch", {
-    payload: { workspaceId: WorkspaceId, model: ModelRef },
+    payload: {
+      workspaceId: WorkspaceId,
+      model: ModelRef,
+      note: Schema.optionalKey(Schema.Boolean),
+    },
     success: Thread,
     error: errors(NotFound, InvalidState),
   }),

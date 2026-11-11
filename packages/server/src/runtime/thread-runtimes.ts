@@ -346,6 +346,7 @@ const make = Effect.gen(function* () {
     policyFor,
     opening,
     modeAfterSwitch,
+    switchHandoff,
     methods: policyMethods,
   } = makeSessionPolicy({ store });
   // Present in the full server; tests without the HTTP layer run agents without MCP endpoints.
@@ -1451,6 +1452,7 @@ const make = Effect.gen(function* () {
     reopenTarget: reopenSwitchTarget,
     background: (effect) => FiberSet.run(switchSettles, effect).pipe(Effect.asVoid),
     gitState: (cwd) => git.local(cwd),
+    roleHandoff: switchHandoff,
   });
   switchUnarchived = agentSwitch.giveOwed;
   // Every turn end, for the switch's own turns: the note and the handoff.
@@ -1467,6 +1469,8 @@ const make = Effect.gen(function* () {
     restSession,
     switchSession,
     switchAgent: agentSwitch.switchAgent,
+    switchNotePlan: agentSwitch.switchNotePlan,
+    handOverSwitch: agentSwitch.handOverSwitch,
     cutAtBoot: cutOff,
     ...queueMethods,
     // A switch a restart left owing its new session the handoff gives it first.

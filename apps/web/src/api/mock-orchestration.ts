@@ -1120,7 +1120,11 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
      * A fresh agent session under the orchestrator's thread: it runs a checkpoint turn, then the
      * divider lands and the thread carries a new `agentSessionId`, which is how the UI knows it is over.
      */
-    async switchOrchestrator(workspaceId: WorkspaceId, model: ModelRef): Promise<Thread> {
+    async switchOrchestrator(
+      workspaceId: WorkspaceId,
+      model: ModelRef,
+      _options?: { readonly note?: boolean },
+    ): Promise<Thread> {
       const state = find(workspaceId);
       const current = holder(state);
       if (

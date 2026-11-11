@@ -65,8 +65,14 @@ export const orchestrationRpc = ({ client, connection }: RpcContext): Orchestrat
     run(client["orchestrator.setFeaturePaused"]({ workspaceId, feature, paused })),
   renameFeature: (workspaceId, feature, to) =>
     run(client["orchestrator.renameFeature"]({ workspaceId, feature, to })),
-  switchOrchestrator: (workspaceId, model) =>
-    run(client["orchestrator.switch"]({ workspaceId, model })),
+  switchOrchestrator: (workspaceId, model, options) =>
+    run(
+      client["orchestrator.switch"]({
+        workspaceId,
+        model,
+        ...(options?.note === undefined ? {} : { note: options.note }),
+      }),
+    ),
   retryOrchestratorSwitch: (workspaceId) =>
     run(client["orchestrator.retrySwitch"]({ workspaceId })),
   cancelOrchestratorSwitch: (workspaceId) =>

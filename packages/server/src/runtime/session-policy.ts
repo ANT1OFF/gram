@@ -4,6 +4,7 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { withProfile } from "../thread-profiles/policy.ts";
+import type { SystemDelivery } from "./system-delivery.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
 /** What a thread's role adds to every agent session it opens. */
@@ -58,6 +59,13 @@ export interface SessionPolicyPort {
    * same lock rules as `forThread`; the switch applies the answer itself.
    */
   modeAfterSwitch?(thread: Thread): Effect.Effect<PermissionMode | undefined>;
+  /**
+   * A role whose switch hands over through a delivery of its own: the orchestrator's boot digest,
+   * which carries the note and the last exchanges with the user. The switch sends it as its handoff
+   * (`SWITCH_HANDOFF_KEY`), owed, retried and released as any thread's; `undefined` for a role
+   * whose new session takes the thread's handoff.
+   */
+  switchHandoff?(thread: Thread): Effect.Effect<SystemDelivery | undefined>;
 }
 
 export const PLAIN_POLICY: SessionPolicy = { audience: "plain", outwardGate: undefined };
@@ -127,6 +135,12 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
             ),
           );
 
+  /** The delivery `thread`'s role hands a switch over with, if it has one of its own. */
+  const switchHandoff = (thread: Thread): Effect.Effect<SystemDelivery | undefined> =>
+    sessionPolicy?.switchHandoff === undefined
+      ? Effect.succeed(undefined)
+      : sessionPolicy.switchHandoff(thread);
+
   const methods: Pick<ThreadRuntimesShape, "setSessionPolicy" | "audienceOf"> = {
     setSessionPolicy: (port) =>
       Effect.sync(() => {
@@ -143,7 +157,7 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
       ),
   };
 
-  return { policyFor, opening, modeAfterSwitch, methods };
+  return { policyFor, opening, modeAfterSwitch, switchHandoff, methods };
 };
 
 /** What `makeSessionPolicy` gives the rest of `ThreadRuntimes`. */

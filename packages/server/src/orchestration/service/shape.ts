@@ -517,12 +517,16 @@ export interface OrchestrationShape {
    * as the bridge: a checkpoint prompt first, then, when that turn has ended, the fresh
    * session and a `boot` digest. Returns once it is under way, not once it is done. `InvalidState`
    * without an orchestrator, while another handoff is running, and for a thread that has ended.
-   * An orchestrator in `error` skips the checkpoint.
+   * An orchestrator in `error` skips the checkpoint. With a `target` it is a switch: the
+   * checkpoint also writes the handoff note (unless `note` is false), and the boot digest carries
+   * it with the last exchanges with the user; out of usage or in `error`, it is limit mode, the
+   * new session writing the note in its boot turn.
    */
   handoff(
     workspaceId: WorkspaceId,
     reason: OrchestratorHandoffReason,
     target?: ModelRef,
+    options?: { readonly note?: boolean },
   ): Effect.Effect<Thread, NotFound | InvalidState>;
   retrySwitch(workspaceId: WorkspaceId): Effect.Effect<Thread, NotFound | InvalidState>;
   cancelSwitch(workspaceId: WorkspaceId): Effect.Effect<void, NotFound | InvalidState>;

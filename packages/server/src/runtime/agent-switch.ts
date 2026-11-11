@@ -35,7 +35,12 @@ import { selectableModels } from "./model-efforts.ts";
 import type { SeqMessage, ThreadStoreShape } from "../persistence/thread-store.ts";
 import { locked, type GetRuntime, type Runtime } from "./runtime-state.ts";
 import type { ObservedTurnEnd } from "./runtime-observer.ts";
-import { SWITCH_HANDOFF_KEY, type SystemDeliveryFailure } from "./system-delivery.ts";
+import {
+  SWITCH_HANDOFF_KEY,
+  type DeliveryRest,
+  type SystemDelivery,
+  type SystemDeliveryFailure,
+} from "./system-delivery.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 import { sessionIdentity } from "./session-switch.ts";
 import type { EventHub } from "../events/event-hub.ts";
@@ -148,7 +153,7 @@ const notNow = (
   if (target.agent === thread.model.agent)
     return `This thread already runs in ${to}. Pick one of its models instead.`;
   if (thread.role === "orchestrator")
-    return "Switch the orchestrator from its own Switch orchestrator… action.";
+    return "Move the orchestrator from its own Continue in… sheet, in its menu or in Settings → Workspaces.";
   if (rt.closing || thread.parked) return "Unarchive this thread before switching it.";
   // A thread whose last turn failed moves too: that is limit mode, with no note turn.
   if (
@@ -215,6 +220,11 @@ export interface AgentSwitchDeps {
   readonly background: (effect: Effect.Effect<void>) => Effect.Effect<void>;
   /** A checkout's branch, HEAD and changes, as git reports them here or on its machine. */
   readonly gitState: (cwd: string) => Effect.Effect<GitState, unknown>;
+  /**
+   * The delivery a role hands a switch over with instead of the thread's handoff: the
+   * orchestrator's boot digest (`SessionPolicyPort.switchHandoff`); `undefined` for any other.
+   */
+  readonly roleHandoff: (thread: Thread) => Effect.Effect<SystemDelivery | undefined>;
 }
 
 /**
@@ -226,7 +236,7 @@ type Outcome = ({ readonly end: ObservedTurnEnd } | { readonly failed: SystemDel
 };
 
 /** A turn's reply as plain text: its main lane's text parts, in order. */
-const replyOf = (messages: ReadonlyArray<GramUIMessage>): string =>
+export const replyOf = (messages: ReadonlyArray<GramUIMessage>): string =>
   messages
     .filter(
       (message) => message.role === "assistant" && message.metadata?.parentToolUseId === undefined,
@@ -242,7 +252,7 @@ const replyOf = (messages: ReadonlyArray<GramUIMessage>): string =>
  * old session's last turn, unless the user left the note out.
  */
 const noteModeOf = (
-  rt: Runtime,
+  rt: Pick<Runtime, "status">,
   thread: Thread,
   until: number | undefined,
   wanted: boolean,
@@ -263,6 +273,24 @@ const noteModeOf = (
     };
   return { mode: wanted ? "outgoing" : "none" };
 };
+
+/**
+ * A turn's whole reply as a handoff note by `by`, through `capNote` (scrubbed, then cut at
+ * `HANDOFF_NOTE_MAX_CHARS`); none when it said nothing. Read by the turn's id, so a long reply keeps
+ * its beginning. Any thread's switch reads its note this way, the orchestrator's checkpoint too.
+ */
+export const turnNote = (
+  store: Pick<ThreadStoreShape, "turnMessages">,
+  threadId: ThreadId,
+  turnId: TurnId,
+  by: AgentKind,
+) =>
+  store.turnMessages(threadId, turnId).pipe(
+    Effect.map((messages) => {
+      const text = capNote(replyOf(messages));
+      return text === undefined ? undefined : ({ text, by } satisfies HandoffNote);
+    }),
+  );
 
 /** The switch's claim, as `handoff` keeps it, if it is still `attemptId`'s. */
 const claimOf = (thread: Thread, attemptId: string) =>
@@ -287,6 +315,7 @@ export const makeAgentSwitch = ({
   reopenTarget,
   background,
   gitState,
+  roleHandoff,
 }: AgentSwitchDeps) => {
   /** The switch's own turns still running, by turn id, each waiting for its end. */
   const turnEnds = new Map<TurnId, Deferred.Deferred<Outcome>>();
@@ -315,17 +344,19 @@ export const makeAgentSwitch = ({
   const turnOf = (
     threadId: ThreadId,
     key: string,
-    build: (turnId: TurnId) => Effect.Effect<UserInput | undefined>,
+    build: (turnId: TurnId, rest: DeliveryRest) => Effect.Effect<UserInput | undefined>,
     accepted: (turnId: TurnId) => Effect.Effect<void> = () => Effect.void,
     started?: (turnId: TurnId) => Effect.Effect<void>,
+    /** Told too when it fails, before the outcome is: a role's own delivery keeps its books. */
+    failed?: SystemDelivery["failed"],
   ) =>
     Effect.gen(function* () {
       const done = yield* Deferred.make<Outcome>();
       let carried: TurnId | undefined;
       yield* runtimes.requestSystemDelivery(threadId, key, {
-        build: (turnId) =>
+        build: (turnId, rest) =>
           Effect.gen(function* () {
-            const input = yield* build(turnId);
+            const input = yield* build(turnId, rest);
             if (input === undefined) {
               yield* Deferred.succeed(done, { failed: "buildFailed" });
               return undefined;
@@ -337,7 +368,10 @@ export const makeAgentSwitch = ({
         accepted,
         ...(started === undefined ? {} : { started }),
         failed: (turnId, reason) =>
-          Deferred.succeed(done, { failed: reason, turnId: turnId ?? carried }).pipe(Effect.asVoid),
+          (failed === undefined ? Effect.void : failed(turnId, reason)).pipe(
+            Effect.andThen(Deferred.succeed(done, { failed: reason, turnId: turnId ?? carried })),
+            Effect.asVoid,
+          ),
       });
       return yield* Deferred.await(done).pipe(
         Effect.ensuring(
@@ -361,8 +395,7 @@ export const makeAgentSwitch = ({
         outcome.end.reason !== "completed"
       )
         return undefined;
-      const text = capNote(replyOf(yield* store.turnMessages(threadId, outcome.turnId)));
-      return text === undefined ? undefined : ({ text, by } satisfies HandoffNote);
+      return yield* turnNote(store, threadId, outcome.turnId, by);
     });
 
   /**
@@ -528,6 +561,14 @@ export const makeAgentSwitch = ({
         return;
       const attemptId = claim.id;
       const key = dividerKey(claim);
+      const own = yield* roleHandoff(thread);
+      if (own !== undefined) return yield* handOverOwn(thread, attemptId, key, own);
+      // The orchestrator's handoff is its boot digest: never a thread's in its place.
+      if (thread.role === "orchestrator")
+        return yield* new InvalidState({
+          threadId,
+          message: "The orchestrator's boot digest isn't ready to hand over yet.",
+        });
       const previous = claim.previous;
       const plan = claim.handoff;
       const noteMode: SwitchNoteMode = plan.note;
@@ -589,6 +630,39 @@ export const makeAgentSwitch = ({
         (turnId) => markDelivered(threadId, attemptId, turnId),
       );
       if (noteMode === "limit") {
+        const written = yield* noteFrom(threadId, outcome, thread.model.agent);
+        if (written !== undefined) yield* addNote(threadId, key, written);
+      }
+    });
+
+  /**
+   * `handOver` for a role whose handoff is a delivery of its own, the orchestrator's boot digest:
+   * the same key, the same holds and the same native start evidence (`started`, `accepted`) as a
+   * thread's handoff, its books (`accepted`, `failed`) kept by the role. The divider is the role's,
+   * written before; limit mode's note, the turn's reply, goes onto it.
+   */
+  const handOverOwn = (thread: Thread, attemptId: string, key: string, own: SystemDelivery) =>
+    Effect.gen(function* () {
+      const threadId = thread.id;
+      if ((yield* getRuntime(threadId)).session === undefined) return;
+      const outcome = yield* turnOf(
+        threadId,
+        SWITCH_HANDOFF_KEY,
+        (turnId, rest) =>
+          store.getThread(threadId).pipe(
+            Effect.flatMap((current) =>
+              claimOf(current, attemptId)?.phase === "ready" && !current.parked
+                ? own.build(turnId, rest)
+                : Effect.succeed(undefined),
+            ),
+            Effect.orElseSucceed(() => undefined),
+          ),
+        (turnId) =>
+          markDelivered(threadId, attemptId, turnId).pipe(Effect.andThen(own.accepted(turnId))),
+        (turnId) => markDelivered(threadId, attemptId, turnId),
+        own.failed,
+      );
+      if (claimOf(thread, attemptId)?.handoff?.note === "limit") {
         const written = yield* noteFrom(threadId, outcome, thread.model.agent);
         if (written !== undefined) yield* addNote(threadId, key, written);
       }
@@ -897,7 +971,7 @@ export const makeAgentSwitch = ({
         if (thread.role === "orchestrator")
           return yield* new InvalidState({
             threadId,
-            message: "Retry the orchestrator's switch from its own Switch orchestrator… action.",
+            message: "Retry the orchestrator's switch from its own Continue in… sheet.",
           });
         yield* checkSwitchTarget(store, hosts, { model: previous, mode: thread.mode }, target);
         const { id } = yield* retry(thread, target);
@@ -1005,7 +1079,14 @@ export const makeAgentSwitch = ({
   const resumeAtBoot = (thread: Thread) =>
     Effect.gen(function* () {
       const change = thread.sessionSwitch;
-      if (change === undefined || thread.role === "orchestrator") return;
+      if (change === undefined) return;
+      // The orchestrator's switch before `ready` is its handoff's (`resumeHandoff`); at `ready`,
+      // its boot digest is owed or taken as any thread's handoff is.
+      if (
+        thread.role === "orchestrator" &&
+        (change.phase !== "ready" || change.handoff === undefined)
+      )
+        return;
       if (change.phase === "checkpoint") {
         yield* runtimes
           .updateThread(thread.id, (t) =>
@@ -1069,5 +1150,26 @@ export const makeAgentSwitch = ({
         .pipe(Effect.ignore);
     });
 
-  return { switchAgent, resumeAtBoot, handOverOwed, giveOwed, onTurnEnd };
+  const switchNotePlan: ThreadRuntimesShape["switchNotePlan"] = (threadId, wanted) =>
+    Effect.gen(function* () {
+      const rt = yield* getRuntime(threadId);
+      const thread = yield* store.getThread(threadId);
+      const until = yield* limitedUntil(thread);
+      return yield* locked(
+        rt,
+        store
+          .getThread(threadId)
+          .pipe(Effect.map((current) => noteModeOf(rt, current, until, wanted))),
+      );
+    });
+
+  return {
+    switchAgent,
+    resumeAtBoot,
+    handOverOwed,
+    giveOwed,
+    onTurnEnd,
+    switchNotePlan,
+    handOverSwitch: give,
+  };
 };

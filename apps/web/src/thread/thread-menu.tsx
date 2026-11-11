@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { useOpenInEditor, useOpensLocally } from "@/editor/use-open-in-editor";
 import { MENU_ITEM, MENU_POPUP } from "@/lib/selection";
 import { lazyPart } from "@/lib/lazy-part";
-import { switchOpenLabel } from "@/orchestration/switch-label";
 import { useAllActivity } from "@/stores/all-activity";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -19,7 +18,6 @@ import { useSwitchOffer } from "./use-switch-offer";
 import { useForkAvailability, useForkThread, WORKTREE_NOTICE } from "./use-fork";
 
 /** The dialogs the menu opens, each loaded the first time it's asked for or once the shell is idle. */
-const switchDialog = lazyPart(() => import("@/orchestration/switch-orchestrator"));
 const forkDialog = lazyPart(() => import("./fork-dialog"));
 
 /**
@@ -29,8 +27,8 @@ const forkDialog = lazyPart(() => import("./fork-dialog"));
  */
 export function useThreadMenu(threadId: ThreadId): {
   /**
-   * The menu's items: "Continue in Codex…" (any other thread's) or an orchestrator's switch first,
-   * then the folder, Fork and the thread verbs.
+   * The menu's items: "Continue in Codex…" first, the orchestrator's too, then the folder, Fork and
+   * the thread verbs.
    */
   items: (itemClassName: string) => ReactNode;
   /** The dialogs the items open, and a failed fork's line: render them beside the menu. */
@@ -38,18 +36,14 @@ export function useThreadMenu(threadId: ThreadId): {
 } {
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   const folder = thread?.checkout.path;
-  // Its harness and model, switched from here and from the workspace settings' Models.
-  const switchable =
-    thread?.role === "orchestrator" && thread.workspaceId !== undefined ? thread : undefined;
-  const [switching, setSwitching] = useState(false);
-  // Any other thread moves to the other agent from here, or from the composer's chip.
+  // Any thread moves to the other agent from here: a plain thread or worker from the composer's chip
+  // too, the orchestrator from the workspace settings' Models too.
   const offer = useSwitchOffer(threadId);
   const openInEditor = useOpenInEditor();
   const local = useOpensLocally();
   const { available, reason } = useForkAvailability(threadId);
   const { fork, error, clearError } = useForkThread(threadId);
   const [dialog, setDialog] = useState<{ notice?: string }>();
-  const switcher = switchDialog.useModule(switching);
   const forker = forkDialog.useModule(dialog !== undefined);
 
   const forkThread = async () => {
@@ -90,19 +84,6 @@ export function useThreadMenu(threadId: ThreadId): {
           <div role="separator" className="-mx-1 my-1 h-px bg-border" />
         </>
       )}
-      {switchable && (
-        <>
-          <Menu.Item
-            data-testid="menu-switch-orchestrator"
-            className={itemClassName}
-            onClick={() => setSwitching(true)}
-          >
-            <ArrowLeftRight aria-hidden className="size-icon-row" />
-            {switchOpenLabel(switchable)}
-          </Menu.Item>
-          <div role="separator" className="-mx-1 my-1 h-px bg-border" />
-        </>
-      )}
       {local && (
         <Menu.Item
           disabled={folder === undefined}
@@ -136,13 +117,6 @@ export function useThreadMenu(threadId: ThreadId): {
         >
           {error}
         </button>
-      )}
-      {switching && switchable && switcher && (
-        <switcher.SwitchOrchestratorDialog
-          thread={switchable}
-          workspaceId={switchable.workspaceId!}
-          onClose={() => setSwitching(false)}
-        />
       )}
       {dialog && forker && (
         <forker.ForkDialog
@@ -196,7 +170,7 @@ export function AllActivityItem({
 }
 
 /**
- * The pane header's "…" menu: an orchestrator's switch first, then opening the folder in the
+ * The pane header's "…" menu: "Continue in Codex…" first, then opening the folder in the
  * editor, forking the thread, its own verbs and More…, then an orchestrator chat's Show all
  * activity (the title bar keeps it under View). More… has the rest: the branch to copy and
  * push (the agents' working detail, kept out of the bar and its menu), the worker's or

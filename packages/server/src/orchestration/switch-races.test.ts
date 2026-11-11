@@ -259,6 +259,17 @@ for (const finish of ["completed", "cancelled", "failed"] as const) {
           else {
             if (finish === "failed") yield* fake.setUnavailable("Synthetic target refusal");
             yield* session.completeTurn();
+            // The boot is the switch's handoff: the claim lets go once its turn ends.
+            if (finish === "completed") {
+              const boot = yield* waitReal(
+                "the boot on the new session",
+                Effect.sync(() => {
+                  const last = fake.sessions.findLast((s) => s.options.threadId === thread.id);
+                  return last !== undefined && last !== session && last.sent.length > 0 && last;
+                }),
+              );
+              yield* boot.completeTurn();
+            }
             yield* waitReal(
               "switch settled",
               store
