@@ -15,6 +15,7 @@ import {
   composeBridge,
   connectionPreload,
   fontsPreload,
+  hostedDevicePreload,
   preloadIpc,
   previewPreload,
   speechPreload,
@@ -131,6 +132,7 @@ const bridge: DesktopBridge = composeBridge(
   trayPreload(ipc),
   speechPreload(ipc, window),
   agentBrowsePreload(ipc),
+  hostedDevicePreload(ipc),
 );
 
 contextBridge.exposeInMainWorld("gram", bridge);
