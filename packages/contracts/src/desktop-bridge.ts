@@ -431,12 +431,6 @@ export interface DesktopBridge extends DesktopWindows {
     onChange(callback: (hosts: readonly string[]) => void): () => void;
   };
   /**
-   * "Agent may browse": the public hosts agents may open and read in the Preview pane without a
-   * card, apart from `trustedLinks`, since trusting a link to open isn't trusting an agent on the
-   * site. Only an approval card's "Always for this host" adds one, so the renderer can read and
-   * shrink the list but never grow it. Absent from shells that predate it.
-   */
-  /**
    * This machine as a personal device of hosted servers, while the hosted features are on:
    * `state` is null while there is none. The page can read it, sign in, sign out and stop
    * lending; lending, resuming, lifting a pause and starting afresh only open a decision the
@@ -454,6 +448,12 @@ export interface DesktopBridge extends DesktopWindows {
     startAfresh(): Promise<HostedDeviceDone>;
     onChange(callback: () => void): () => void;
   };
+  /**
+   * "Agent may browse": the public hosts agents may open and read in the Preview pane without a
+   * card, apart from `trustedLinks`, since trusting a link to open isn't trusting an agent on the
+   * site. Only an approval card's "Always for this host" adds one, so the renderer can read and
+   * shrink the list but never grow it. Absent from shells that predate it.
+   */
   readonly agentBrowse?: {
     list(): Promise<readonly string[]>;
     remove(host: string): Promise<void>;

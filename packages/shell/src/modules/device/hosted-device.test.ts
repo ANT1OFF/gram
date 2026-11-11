@@ -695,6 +695,40 @@ describe("this machine as a personal device", () => {
     expect(await trying).toMatchObject({ ok: false });
     expect(second.device.state().servers).toEqual([]);
   });
+
+  it("resumes only the folders shown, and keeps reads only when it said so", async () => {
+    const first = await setUp();
+    await first.device.signIn(origin);
+    await first.device.lend(origin, "w1", {
+      folders: [{ path: project, label: "app" }],
+      readOnly: false,
+    });
+    await first.device.close();
+    const again = await setUp({}, first.store);
+    await waitFor(() => (again.device.state().servers[0]?.workspaces.length ?? 0) > 0);
+    const lent = again.device.state().servers[0]?.workspaces[0];
+    const ids = lent?.folders.map((folder) => folder.id) ?? [];
+    expect(
+      await again.device.resume(origin, "w1", { folders: ["f-0000000000000000"], readOnly: false }),
+    ).toMatchObject({ ok: false });
+    expect(await again.device.resume(origin, "w1", { folders: ids, readOnly: true })).toEqual({
+      ok: true,
+    });
+    expect(again.device.state().servers[0]?.workspaces[0]).toMatchObject({
+      lending: "on",
+      readOnly: true,
+    });
+  });
+
+  it("lends no folder whose path now leads elsewhere", async () => {
+    const { device } = await setUp();
+    await device.signIn(origin);
+    const link = join(base, "code", "link");
+    await fs.symlink(project, link);
+    expect(
+      await device.lend(origin, "w1", { folders: [{ path: link, label: "app" }], readOnly: false }),
+    ).toMatchObject({ ok: false });
+  });
 });
 
 const optionsFor = async (): Promise<HostedDeviceOptions> => ({

@@ -2,6 +2,7 @@
 // person answers in dialogs the shell draws, and the bridge Settings reads it through. It imports
 // `electron`, so only the main process loads it.
 
+import { realpath } from "node:fs/promises";
 import { basename } from "node:path";
 
 import { displayCommand } from "@gram/contracts";
@@ -24,9 +25,11 @@ export { isDecisionWindow, makeAskWindow } from "./ask-window.ts";
 export const serverWords = (text: string): { readonly text: string; readonly unusual: boolean } => {
   const display = displayCommand(text);
   return {
+    // Runs of spaces go too: wrapped in a dialog, they could start a line of their own.
     text: display.pieces
       .map((piece) => (piece.kind === "newline" ? " " : piece.text))
       .join("")
+      .replace(/\s+/g, " ")
       .trim(),
     unusual: display.hidden || display.nonAscii,
   };
@@ -77,6 +80,21 @@ const workspaceLines = (origin: string, workspace: Workspace): Array<string> => 
   ];
 };
 
+/** Folder paths, one a line, each drawn as a server's words are: a name can hold anything. */
+const folderLines = (paths: ReadonlyArray<string>): Array<string> => {
+  const drawn = paths.map(serverWords);
+  return [
+    ...drawn.map((path) => path.text),
+    ...(drawn.some((path) => path.unusual)
+      ? ["A folder's name has characters you can't see, or letters that may look like others."]
+      : []),
+  ];
+};
+
+/** Whether resuming says reads only; when it does, the resume keeps it so. */
+const resumesReadOnly = (workspace: Workspace): boolean =>
+  workspace.readOnly || workspace.policy === "read";
+
 /** The dialog that confirms the folders the person picked, and whether commands may run. */
 export const lendDialog = (
   origin: string,
@@ -90,7 +108,7 @@ export const lendDialog = (
   detail: [
     ...workspaceLines(origin, workspace),
     "",
-    ...paths,
+    ...folderLines(paths),
     "",
     workspace.policy === "read"
       ? "The organisation allows reading files here, not commands. Each read asks you first."
@@ -118,9 +136,9 @@ export const resumeDialog = (
   detail: [
     ...workspaceLines(origin, workspace),
     "",
-    ...workspace.folders.map((folder) => folder.path),
+    ...folderLines(workspace.folders.map((folder) => folder.path)),
     "",
-    workspace.readOnly || workspace.policy === "read"
+    resumesReadOnly(workspace)
       ? "Reads only. Each asks you first."
       : "Commands and reads. Each asks you first.",
   ].join("\n"),
@@ -216,10 +234,17 @@ export const deviceDecisionsFor = (
       if (workspace === undefined) return { ok: false, why: "No such workspace." };
       if (workspace.policy === "off")
         return { ok: false, why: "The organisation doesn't allow lending to this workspace." };
-      const paths = await decisions.pickFolders(
+      const picked = await decisions.pickFolders(
         `Folders to lend to ${serverWords(workspace.name).text}`,
       );
-      if (paths === undefined || paths.length === 0) return CANCELLED;
+      if (picked === undefined || picked.length === 0) return CANCELLED;
+      // Shown, and lent, as the folders really are: a link picked is the folder it leads to.
+      let paths: Array<string>;
+      try {
+        paths = await Promise.all(picked.map((path) => realpath(path)));
+      } catch {
+        return { ok: false, why: "Gram can't open a folder you chose." };
+      }
       const answer = await decisions.ask(lendDialog(origin, workspace, paths, machine));
       if (answer.response !== 0) return CANCELLED;
       const choice: LendChoice = {
@@ -233,7 +258,12 @@ export const deviceDecisionsFor = (
       if (workspace === undefined || workspace.lending !== "resume")
         return { ok: false, why: "Nothing to resume." };
       const answer = await decisions.ask(resumeDialog(origin, workspace, machine));
-      return answer.response === 0 ? device.resume(origin, id) : CANCELLED;
+      return answer.response === 0
+        ? device.resume(origin, id, {
+            folders: workspace.folders.map((folder) => folder.id),
+            readOnly: resumesReadOnly(workspace),
+          })
+        : CANCELLED;
     },
     liftPause: async (origin: string): Promise<HostedDeviceDone> => {
       const server = device.state().servers.find((each) => each.origin === origin);

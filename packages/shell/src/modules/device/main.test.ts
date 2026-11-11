@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { HostedDevice, HostedDeviceState, LendChoice } from "./hosted-device.ts";
 
@@ -38,8 +41,8 @@ const fakeDevice = (state: HostedDeviceState, calls: Array<string>) =>
       calls.push(`lend ${origin} ${id} ${JSON.stringify(choice)}`);
       return { ok: true };
     },
-    resume: async (origin: string, id: string) => {
-      calls.push(`resume ${origin} ${id}`);
+    resume: async (origin: string, id: string, shown?: unknown) => {
+      calls.push(`resume ${origin} ${id} ${JSON.stringify(shown)}`);
       return { ok: true };
     },
     liftPause: async (origin: string) => {
@@ -52,6 +55,10 @@ const fakeDevice = (state: HostedDeviceState, calls: Array<string>) =>
   }) as unknown as HostedDevice;
 
 const ORIGIN = "https://hosted.example";
+/** A real folder, since what is lent is the folder a picked path really is. */
+const base = realpathSync(mkdtempSync(join(tmpdir(), "gram-device-main-")));
+const APP = join(base, "app");
+mkdirSync(APP);
 const stateWith = (
   more: Parameters<typeof workspace>[0] = {},
   paused = false,
@@ -94,7 +101,7 @@ describe("the decisions Settings opens", () => {
     const decide = deviceDecisionsFor(
       fakeDevice(stateWith(), calls),
       {
-        pickFolders: async () => ["/work/app"],
+        pickFolders: async () => [APP],
         ask: async (options) => {
           asked.push(options.message);
           return { response: 0, checkboxChecked: true };
@@ -105,14 +112,14 @@ describe("the decisions Settings opens", () => {
     expect(await decide.lend(ORIGIN, "w1")).toEqual({ ok: true });
     expect(asked).toEqual(["Lend this folder?"]);
     expect(calls).toEqual([
-      `lend ${ORIGIN} w1 ${JSON.stringify({ folders: [{ path: "/work/app", label: "app" }], readOnly: true })}`,
+      `lend ${ORIGIN} w1 ${JSON.stringify({ folders: [{ path: APP, label: "app" }], readOnly: true })}`,
     ]);
   });
 
   it("changes nothing when the person cancels, or the organisation doesn't allow it", async () => {
     const calls: Array<string> = [];
     const cancel = {
-      pickFolders: async () => ["/work/app"],
+      pickFolders: async () => [APP],
       ask: async () => ({ response: 1, checkboxChecked: false }),
     };
     const decide = deviceDecisionsFor(
@@ -145,7 +152,7 @@ describe("the decisions Settings opens", () => {
     const decide = deviceDecisionsFor(
       fakeDevice(stateWith({ policy: "read" }), calls),
       {
-        pickFolders: async () => ["/work/app"],
+        pickFolders: async () => [APP],
         ask: async () => ({ response: 0, checkboxChecked: false }),
       },
       "this Mac",
@@ -180,7 +187,7 @@ const served = (device: HostedDevice | undefined) => {
     {
       device: () => device,
       decisions: () => ({
-        pickFolders: async () => ["/work/app"],
+        pickFolders: async () => [APP],
         ask: async () => ({ response: 0, checkboxChecked: false }),
       }),
       machine: "this Mac",
@@ -218,5 +225,70 @@ describe("the bridge Settings reads the device through", () => {
     windowOf.set(contents, { webContents: contents });
     const call = served(fakeDevice(stateWith(), []));
     expect(() => call(Channels.hostedDeviceState, undefined, contents)).toThrow("untrusted sender");
+  });
+});
+
+describe("what a decision shows is what it grants", () => {
+  it("lends the folder a picked link leads to, shown as that folder", async () => {
+    const link = join(base, "link-to-app");
+    symlinkSync(APP, link);
+    const calls: Array<string> = [];
+    const shown: Array<string> = [];
+    await deviceDecisionsFor(
+      fakeDevice(stateWith(), calls),
+      {
+        pickFolders: async () => [link],
+        ask: async (options) => {
+          shown.push(String(options.detail));
+          return { response: 0, checkboxChecked: false };
+        },
+      },
+      "this Mac",
+    ).lend(ORIGIN, "w1");
+    expect(shown[0]).toContain(APP);
+    expect(shown[0]).not.toContain(link);
+    expect(calls[0]).toContain(JSON.stringify(APP));
+  });
+
+  it("draws a folder's name on one line, its hidden codes as codes", () => {
+    const dialog = lendDialog(
+      ORIGIN,
+      workspace(),
+      ["/work/x\n\nReads only: commands are off\u202e"],
+      "this Mac",
+    );
+    expect(dialog.detail.split("\n").filter((line) => line.startsWith("Reads only"))).toEqual([]);
+    expect(dialog.detail).not.toContain("\u202e");
+    expect(dialog.detail).toContain("A folder's name has characters you can't see");
+  });
+
+  it("resumes as shown: the same folders, and reads only when it said so", async () => {
+    const calls: Array<string> = [];
+    const lent = stateWith({
+      lending: "resume",
+      policy: "read",
+      folders: [{ id: "f-1", label: "app", path: APP }],
+    });
+    await deviceDecisionsFor(
+      fakeDevice(lent, calls),
+      {
+        pickFolders: async () => undefined,
+        ask: async () => ({ response: 0, checkboxChecked: false }),
+      },
+      "this Mac",
+    ).resume(ORIGIN, "w1");
+    expect(calls).toEqual([
+      `resume ${ORIGIN} w1 ${JSON.stringify({ folders: ["f-1"], readOnly: true })}`,
+    ]);
+  });
+
+  it("keeps spaces in a server's words from starting a line of their own", () => {
+    const dialog = lendDialog(
+      ORIGIN,
+      workspace({ name: `Acme${" ".repeat(60)}Server: https://acme.example` }),
+      [APP],
+      "this Mac",
+    );
+    expect(dialog.detail).toContain("Workspace: Acme Server: https://acme.example");
   });
 });
