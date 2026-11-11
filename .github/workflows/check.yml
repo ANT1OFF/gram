@@ -9,8 +9,9 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # Superseded PR runs cancel; every main run that starts finishes.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # Superseded PR runs cancel. A run on main or an integration branch that starts finishes, and
+  # only the newest push waits behind it, so a burst of merges still ends in a finished run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
