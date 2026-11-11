@@ -521,7 +521,7 @@ describe("review monitor", () => {
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
-  it.effect("queues a notice behind a running turn, cutting nothing off, for its end", () =>
+  it.effect("steers a notice into a running turn, cutting nothing off", () =>
     Effect.gen(function* () {
       reset();
       const { id, session } = yield* busyThread;
@@ -534,19 +534,14 @@ describe("review monitor", () => {
         }),
       );
       yield* TestClock.adjust("30 seconds");
-      yield* waitFor("the queued notice", notices(id).pipe(Effect.map((n) => n.length === 1)));
-      // Never steered, so no tool call of the running turn is cut off.
-      expect(session.steered).toEqual([]);
-      expect(session.sent.map((i) => i.text)).toEqual(["work"]);
-      yield* session.completeTurn();
-      yield* waitFor(
-        "the notice sent as the next turn",
-        Effect.sync(() => session.sent.length === 2),
-      );
-      expect(session.sent[1]?.notice).toMatchObject({
+      yield* waitFor("the steered notice", notices(id).pipe(Effect.map((n) => n.length === 1)));
+      // Steered, never an interrupt, so no tool call of the running turn is cut off.
+      expect(session.steeredInterrupt).toEqual([false]);
+      expect(session.steered[0]?.notice).toMatchObject({
         verdict: "changesRequested",
         blockers: [{ reviewThreadId: "PRRT_1" }],
       });
+      expect(session.sent.map((i) => i.text)).toEqual(["work"]);
       const summary = (yield* (yield* ThreadRuntimes).snapshot).find((s) => s.thread.id === id);
       expect(summary?.queue).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
@@ -761,24 +756,22 @@ describe("review monitor, people's reviews", () => {
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
-  it.effect("queues behind a running turn, never steering, and goes at its end", () =>
+  it.effect("steers into a running turn, never interrupting it", () =>
     Effect.gen(function* () {
       reset();
       const { id, session } = yield* busyThread;
       yield* publish(id, reviewedBy([]));
       yield* publish(id, reviewedBy([personReview("PRR_h1", "alice", "approved")]));
-      yield* waitFor("the queued notice", humanNotices(id).pipe(Effect.map((n) => n.length === 1)));
-      expect(session.steered).toEqual([]);
-      expect(session.sent.map((i) => i.text)).toEqual(["work"]);
-      yield* session.completeTurn();
       yield* waitFor(
-        "the notice sent",
-        Effect.sync(() => session.sent.length === 2),
+        "the steered notice",
+        humanNotices(id).pipe(Effect.map((n) => n.length === 1)),
       );
-      expect(session.sent[1]?.notice).toMatchObject({
+      expect(session.steeredInterrupt).toEqual([false]);
+      expect(session.steered[0]?.notice).toMatchObject({
         kind: "humanReview",
         newReviewIds: ["PRR_h1"],
       });
+      expect(session.sent.map((i) => i.text)).toEqual(["work"]);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
@@ -1163,7 +1156,9 @@ describe("babysit mode", () => {
       yield* round(id, "PRR_2");
       yield* TestClock.adjust("30 seconds");
       yield* waitFor("round 1", babysitOf(id).pipe(Effect.map((b) => b?.rounds === 1)));
-      expect((yield* notices(id))[1]).toMatchObject({ round: 1 });
+      // `notices` lists what was sent before what was steered, whatever came first.
+      expect(yield* notices(id)).toContainEqual(expect.objectContaining({ round: 1 }));
+      expect(yield* notices(id)).toHaveLength(2);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
@@ -1215,7 +1210,7 @@ describe("babysit mode", () => {
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
-  it.effect("babysits a running turn, counting the round its queued notice carries", () =>
+  it.effect("babysits a running turn, counting the round its steered notice carries", () =>
     Effect.gen(function* () {
       reset();
       const { id, session } = yield* busyThread;
@@ -1230,13 +1225,12 @@ describe("babysit mode", () => {
       );
       yield* TestClock.adjust("30 seconds");
       yield* waitFor("round 1", babysitOf(id).pipe(Effect.map((b) => b?.rounds === 1)));
-      // Nothing is steered into the turn under way: kick-off and round wait for its end.
-      expect(session.steered).toEqual([]);
+      // Kick-off and round are steered into the turn under way, in that order, cutting nothing.
+      expect(session.steeredInterrupt).toEqual([false, false]);
       expect(session.sent.map((i) => i.text)).toEqual(["work"]);
-      yield* turnsDone(id);
-      expect(session.sent[1]?.text).toMatch(/^Babysit mode is on for #12/);
-      expect(session.sent[2]?.text).toMatch(/Fix what holds up/);
-      expect(session.sent[2]?.notice).toMatchObject({ round: 1 });
+      expect(session.steered[0]?.text).toMatch(/^Babysit mode is on for #12/);
+      expect(session.steered[1]?.text).toMatch(/Fix what holds up/);
+      expect(session.steered[1]?.notice).toMatchObject({ round: 1 });
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
@@ -1353,7 +1347,8 @@ describe("babysit mode", () => {
         babysitOf(id).pipe(Effect.map((b) => b?.phase === "stopped" && b)),
       );
       expect(stopped).toMatchObject({ rounds: 2, stopReason: "rounds" });
-      expect((yield* notices(id)).map((n) => n.round)).toEqual([0, 1]);
+      // `notices` lists what was sent before what was steered, whatever came first.
+      expect((yield* notices(id)).map((n) => n.round).toSorted()).toEqual([0, 1]);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 

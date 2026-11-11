@@ -95,7 +95,7 @@ describe.skipIf(!hasGit)("message target validation", () => {
     () =>
       inServer((world) =>
         Effect.gen(function* () {
-          const { thread, workspaceId, worker, registry } = yield* setup(world);
+          const { thread, workspaceId, session, worker, registry } = yield* setup(world);
           const store = yield* ThreadStore;
           const runtimes = yield* ThreadRuntimes;
           yield* runtimes.send(thread.id, { text: "Coordinate." });
@@ -124,7 +124,7 @@ describe.skipIf(!hasGit)("message target validation", () => {
           }
           expect(yield* tool.run(message)).toMatchObject({
             threadId: thread.id,
-            delivered: "queued",
+            delivered: "steered",
           });
           for (let i = 0; i < 6; i++)
             expect(yield* tool.run(message)).toMatchObject({ repeated: true });
@@ -141,13 +141,24 @@ describe.skipIf(!hasGit)("message target validation", () => {
             (yield* tool.run({ ...message, clientRequestId: "new-message" }).pipe(Effect.flip))
               .message,
           ).toContain("already came from this thread");
-          const queue = (yield* runtimes.snapshot).find((s) => s.thread.id === thread.id)?.queue;
-          expect(queue).toHaveLength(1);
-          expect(queue?.[0]?.input).toMatchObject({
-            text: message.text,
-            origin: { threadId: worker.thread.id, title: worker.thread.title, depth: 2 },
+          // Steered into the orchestrator's running turn, once, as the worker's.
+          expect((yield* runtimes.snapshot).find((s) => s.thread.id === thread.id)?.queue).toEqual(
+            [],
+          );
+          const steered = session.steered.filter(
+            (input) => input.origin?.threadId === worker.thread.id,
+          );
+          expect(steered).toHaveLength(1);
+          expect(steered[0]).toMatchObject({
+            origin: {
+              threadId: worker.thread.id,
+              title: worker.thread.title,
+              depth: 2,
+              mode: "steer",
+            },
           });
-          expect(queue?.[0]?.input.origin?.role).toBeUndefined();
+          expect(steered[0]?.text).toContain(message.text);
+          expect(steered[0]?.origin?.role).toBeUndefined();
           expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
           expect(Object.keys((yield* outboxOf(workspaceId)).sentRequests ?? {})).toHaveLength(1);
           expect(worker.session.options.instructions).toContain(
@@ -221,7 +232,7 @@ describe.skipIf(!hasGit)("message target validation", () => {
           });
           expect(yield* Fiber.join(pending)).toMatchObject({
             threadId: thread.id,
-            delivered: "queued",
+            delivered: "steered",
           });
         }),
       ),
@@ -444,7 +455,7 @@ describe.skipIf(!hasGit)("message target validation", () => {
           .forTransport(worker.thread.id, "worker")
           .find((t) => t.descriptor.name === "message_orchestrator")!;
         for (let i = 0; i < 5; i++) {
-          expect(yield* tool.run({ text: `Context ${i}` })).toMatchObject({ delivered: "queued" });
+          expect(yield* tool.run({ text: `Context ${i}` })).toMatchObject({ delivered: "steered" });
           yield* runtimes.send(thread.id, { text: `Human context ${i}` });
         }
         expect((yield* tool.run({ text: "Sixth." }).pipe(Effect.flip)).message).toContain(

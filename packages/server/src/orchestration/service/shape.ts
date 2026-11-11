@@ -198,8 +198,8 @@ export interface AddWorkerRepoInput {
 export interface AddedWorkerRepo extends WorkerWorktree {
   readonly threadId: ThreadId;
   readonly title: string;
-  /** Whether the message naming the worktree went out at once or waits behind the worker's turn. */
-  readonly delivered: "sent" | "queued";
+  /** Whether the message naming the worktree was steered in, went out at once, or waits behind the turn. */
+  readonly delivered: "steered" | "sent" | "queued";
 }
 
 /** How a thread joins a workspace as a worker, from the user's menu or `adopt_thread`. */

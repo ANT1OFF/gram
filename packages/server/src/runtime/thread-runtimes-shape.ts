@@ -192,10 +192,11 @@ export interface ThreadRuntimesShape {
     options?: SteerOptions,
   ): Effect.Effect<void, ThreadNotFound | InvalidState>;
   /**
-   * Delivers a server-authored notice (a PR monitor's). It queues for the end of a running turn,
-   * and is never steered unless `options.steer`, and then without cutting off a tool call: steered
-   * into a `running` turn whose agent can take mid-turn input, and otherwise `send`, which a steer
-   * that fails falls back to. `key`
+   * Delivers a server-authored notice (a PR monitor's). It is steered, cancelling nothing, into a
+   * `running` turn whose agent can take mid-turn input; anything else (a turn waiting on the user,
+   * an agent that can't steer, idle compaction, a thread at rest) takes it as `send` does, and so
+   * does a steer the agent refuses. `options.steer: false` queues it for the end of a running turn
+   * instead. `key`
    * names what the notice is about, so a newer one replaces an older one with the same key still
    * in the queue, in its place, and the thread only ever reads the newest. It isn't steered past
    * something queued behind that older one. Nothing else in the queue

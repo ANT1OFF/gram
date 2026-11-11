@@ -1201,13 +1201,13 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
         ).toContain("message");
 
         // The ordinary loop guard still holds for everyone else, and a running thread that isn't
-        // its own is queued for, as for any other sender.
+        // its own is steered into, as for any other sender.
         yield* runtimes.send(stranger.id, { text: "Work on this." });
         yield* waitStatus(stranger.id, "running");
         expect(
           yield* session.callTool("send_message", { threadId: stranger.id, text: "hello" }),
-        ).toEqual({ threadId: stranger.id, title: stranger.title, delivered: "queued" });
-        expect((yield* waitSent(stranger.id, 1)).steered).toEqual([]);
+        ).toEqual({ threadId: stranger.id, title: stranger.title, delivered: "steered" });
+        expect((yield* waitSent(stranger.id, 1)).steeredInterrupt).toEqual([false]);
         const backToBack = yield* session
           .callTool("send_message", { threadId: stranger.id, text: "hello again" })
           .pipe(Effect.flip);
@@ -2653,10 +2653,10 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             clientRequestId: "send-1",
             ...(mode === undefined ? {} : { mode }),
           };
-          const delivered = mode === "steer" ? "steered" : "queued";
+          const delivered = mode !== "queue" ? "steered" : "queued";
           expect(yield* hosted(a.thread.id).run(message)).toMatchObject({ delivered });
           expect(yield* store.listRequests(a.thread.id)).toEqual([]);
-          expect(b.session.steered).toHaveLength(mode === "steer" ? 1 : 0);
+          expect(b.session.steered).toHaveLength(mode !== "queue" ? 1 : 0);
           for (let i = 0; i < 6; i++) {
             expect(yield* hosted(a.thread.id).run(message)).toMatchObject({
               delivered,
@@ -2664,18 +2664,18 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             });
           }
           const queue = (yield* runtimes.snapshot).find((s) => s.thread.id === b.thread.id)?.queue;
-          expect(queue).toHaveLength(mode === "steer" ? 0 : 1);
-          if (mode !== "steer")
+          expect(queue).toHaveLength(mode !== "queue" ? 0 : 1);
+          if (mode === "queue")
             expect(queue?.[0]?.input.origin).toMatchObject({ threadId: a.thread.id, depth: 2 });
           const reuse = yield* hosted(a.thread.id)
             .run({ ...message, text: "Actually, v3." })
             .pipe(Effect.flip);
           expect(reuse.message).toContain("already sent another message");
           const changedMode = yield* hosted(a.thread.id)
-            .run({ ...message, mode: mode === "steer" ? "queue" : "steer" })
+            .run({ ...message, mode: mode !== "queue" ? "queue" : "steer" })
             .pipe(Effect.flip);
           expect(changedMode.message).toContain("already sent another message");
-          if (mode !== "steer") {
+          if (mode === "queue") {
             const repeated = yield* hosted(a.thread.id)
               .run({ ...message, clientRequestId: "send-2" })
               .pipe(Effect.flip);
@@ -2690,7 +2690,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
               clientRequestId: "send-1",
             }),
           ).toMatchObject({ delivered: "queued" });
-          if (mode === "steer") {
+          if (mode !== "queue") {
             const chained = yield* hosted(b.thread.id)
               .run({ threadId: c.thread.id, text: "Forward this." })
               .pipe(Effect.flip);
