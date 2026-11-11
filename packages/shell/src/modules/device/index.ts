@@ -8,3 +8,5 @@ export * from "./grants.ts";
 export * from "./limits.ts";
 export * from "./log.ts";
 export * from "./runner.ts";
+export * from "./gate.ts";
+export * from "./serve.ts";
