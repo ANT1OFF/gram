@@ -4,6 +4,7 @@
 
 import {
   aboveHigh,
+  type AgentUnavailable,
   effectiveCheckout,
   InvalidState,
   isLocalHost,
@@ -200,7 +201,15 @@ export interface AgentSwitchDeps {
    */
   readonly limitedUntil: (thread: Thread) => Effect.Effect<number | undefined>;
   /** Ends a limit wait the old account left, so nothing resumes the old turn on the new agent. */
-  readonly endLimitWait: (rt: Runtime) => Effect.Effect<void>;
+  readonly endLimitWait: (rt: Runtime, previous: ModelRef) => Effect.Effect<void>;
+  /**
+   * After a restart: reopens a `ready` switch's confirmed target under its attempt and confirms it
+   * as the switch did, its mode settled before `ready` lets the handoff go (`session-switch.ts`).
+   */
+  readonly reopenTarget: (
+    threadId: ThreadId,
+    attemptId: string,
+  ) => Effect.Effect<void, InvalidState | AgentUnavailable | ThreadNotFound>;
   /** A checkout's branch, HEAD and changes, as git reports them here or on its machine. */
   readonly gitState: (cwd: string) => Effect.Effect<GitState, unknown>;
 }
@@ -268,6 +277,7 @@ export const makeAgentSwitch = ({
   afterRelease,
   limitedUntil,
   endLimitWait,
+  reopenTarget,
   gitState,
 }: AgentSwitchDeps) => {
   /** The switch's own turns still running, by turn id, each waiting for its end. */
@@ -647,7 +657,7 @@ export const makeAgentSwitch = ({
       }
       yield* runtimes.switchSession(threadId, attemptId);
       // The wait was the old account's; the new agent's turns aren't held by it.
-      yield* endLimitWait(yield* getRuntime(threadId));
+      yield* endLimitWait(yield* getRuntime(threadId), previous);
       yield* finish(threadId, attemptId);
     }).pipe(
       Effect.catchCause((cause) =>
@@ -852,7 +862,41 @@ export const makeAgentSwitch = ({
     const due = [...owed];
     owed.clear();
     for (const [threadId, attemptId] of due)
-      yield* FiberMap.run(switches, threadId, finish(threadId, attemptId));
+      yield* Effect.gen(function* () {
+        const claim = claimOf(yield* store.getThread(threadId), attemptId);
+        if (claim === undefined) return;
+        // A restart between the switch and the end of the old account's wait left it: ended now,
+        // before the boot schedules what waits on that account, so it neither holds the handoff
+        // nor resumes the old turn on the new agent.
+        yield* endLimitWait(yield* getRuntime(threadId), claim.previous);
+        yield* FiberMap.run(
+          switches,
+          threadId,
+          reopenTarget(threadId, attemptId).pipe(
+            Effect.andThen(finish(threadId, attemptId)),
+            Effect.catchCause((cause) =>
+              Effect.gen(function* () {
+                yield* Effect.logWarning("a switch's new session didn't reopen at boot").pipe(
+                  Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
+                );
+                yield* hub.publish({
+                  type: "notify",
+                  kind: "error",
+                  title: "The switch needs attention",
+                  body: "The new session didn't reopen after the restart, so it hasn't had its handoff. Queued messages are held. Try the switch again from the thread.",
+                  threadId,
+                });
+              }),
+            ),
+          ),
+        );
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("couldn't give a switch its handoff at boot").pipe(
+            Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
+          ),
+        ),
+      );
   });
 
   const resumeAtBoot = (thread: Thread) =>

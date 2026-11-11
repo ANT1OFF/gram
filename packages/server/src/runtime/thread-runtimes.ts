@@ -1254,7 +1254,7 @@ const make = Effect.gen(function* () {
       return result;
     });
 
-  const { switchSession } = makeSessionSwitch({
+  const { switchSession, reopenSwitchTarget } = makeSessionSwitch({
     store,
     hosts,
     getRuntime,
@@ -1396,7 +1396,8 @@ const make = Effect.gen(function* () {
       Clock.currentTimeMillis.pipe(
         Effect.flatMap((now) => limitedUntil(accountOf(thread.model), now)),
       ),
-    endLimitWait: (rt) => locked(rt, dropWaitForSwitch(rt)),
+    endLimitWait: (rt, previous) => locked(rt, dropWaitForSwitch(rt, accountOf(previous))),
+    reopenTarget: reopenSwitchTarget,
     gitState: (cwd) => git.local(cwd),
   });
   // Every turn end, for the switch's own turns: the note and the handoff.

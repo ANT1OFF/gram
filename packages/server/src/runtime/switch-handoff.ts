@@ -289,24 +289,30 @@ const TARGET_KEYS = [
  */
 export const toolTarget = (input: string | undefined): string | undefined => {
   if (input === undefined) return undefined;
+  // Decoding can rebuild what the raw text hid (`\u0067hp_…`): each decoded value goes through
+  // `material` again before it is put on one line and cut, never after.
+  const line = (value: string): string | undefined => {
+    const text = oneLine(material(value));
+    return text === "" ? undefined : cut(text, HANDOFF_TOOL_TARGET_MAX_CHARS);
+  };
   const scrubbed = material(input);
   let parsed: unknown;
   try {
     parsed = JSON.parse(scrubbed);
   } catch {
-    parsed = scrubbed;
+    return line(scrubbed);
   }
+  if (typeof parsed === "string") return line(parsed);
   if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
     for (const key of TARGET_KEYS) {
       const value = Reflect.get(parsed, key);
-      if (typeof value === "string" && value.trim() !== "")
-        return cut(oneLine(value), HANDOFF_TOOL_TARGET_MAX_CHARS);
+      if (typeof value === "string" && value.trim() !== "") return line(value);
       if (Array.isArray(value) && value.every((part) => typeof part === "string"))
-        return cut(oneLine(value.join(" ")), HANDOFF_TOOL_TARGET_MAX_CHARS);
+        return line(value.join(" "));
     }
   }
-  const text = typeof parsed === "string" ? parsed : input;
-  return text.trim() === "" ? undefined : cut(oneLine(text), HANDOFF_TOOL_TARGET_MAX_CHARS);
+  // Written again from what was decoded, so no escape is left for a reader to undo.
+  return line(JSON.stringify(parsed) ?? "");
 };
 
 /** Whether a message is a handoff Gram sent: material for that session, not a turn to replay. */

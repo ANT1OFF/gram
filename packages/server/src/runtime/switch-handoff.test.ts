@@ -1,7 +1,7 @@
 // The handoff a switched thread's new session is given, built from synthetic messages and state.
 import { describe, expect, it } from "@effect/vitest";
 import { HANDOFF_FACTS_MAX_CHARS, HANDOFF_NOTE_MAX_CHARS } from "@gram/contracts";
-import type { AnchoredMessage } from "../orchestration/transcripts.ts";
+import { fromStoredMessages, type AnchoredMessage } from "../orchestration/transcripts.ts";
 import {
   capNote,
   material,
@@ -405,6 +405,54 @@ describe("one path for untrusted text (review of #433)", () => {
     expect(handoff({ from: "codex", to: "claude" }).split("\n")[0]).toMatch(
       /^This thread was running in Codex and continues here in Claude Code\./,
     );
+  });
+});
+
+/** A tool input stored as a JSON string, the token's first letter hidden behind an escape. */
+const escaped = (value: object) => JSON.stringify(value).replace("ghp_", String.raw`\u0067hp_`);
+
+const sent = (input: string) =>
+  handoff({
+    turns: renderRecentTurns(
+      fromStoredMessages([
+        {
+          seq: 0,
+          message: {
+            id: "json-string-input",
+            role: "assistant",
+            parts: [
+              {
+                type: "dynamic-tool",
+                toolName: "Bash",
+                toolCallId: "json-string-call",
+                state: "output-available",
+                input,
+                output: "no output",
+              },
+            ],
+          },
+        },
+      ] as never),
+      HANDOFF_TURNS_TOKENS,
+      "t",
+    ).text,
+  });
+
+describe("decoded tool inputs (review rev 2 of #433)", () => {
+  it("scrubs a decoded target before the 160-character cut", () => {
+    const text = sent(escaped({ command: `${"x".repeat(149)} ${SECRET}` }));
+    expect(text).not.toContain("ghp_");
+    expect(text).not.toContain("abcdefghijklmnop");
+  });
+
+  it("scrubs a decoded array target and the decoded fallback too", () => {
+    expect(sent(escaped({ command: ["echo", `${"y".repeat(150)} ${SECRET}`] }))).not.toContain(
+      "ghp_",
+    );
+    expect(sent(escaped({ other: `${"z".repeat(140)} ${SECRET}` }))).not.toContain("ghp_");
+    expect(
+      sent(JSON.stringify(`${"w".repeat(150)} ${SECRET}`).replace("ghp_", String.raw`\u0067hp_`)),
+    ).not.toContain("ghp_");
   });
 });
 

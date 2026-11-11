@@ -442,10 +442,7 @@ export const makeSessionLifecycle = ({
       if (
         thread.sessionSwitch !== undefined &&
         thread.sessionSwitch.phase !== "checkpoint" &&
-        switchAttempt !== thread.sessionSwitch.id &&
-        // Any thread's switch at `ready` has confirmed its target: that session reopens (after a
-        // restart) to be given the handoff it is still owed.
-        !(thread.sessionSwitch.phase === "ready" && thread.sessionSwitch.handoff !== undefined)
+        switchAttempt !== thread.sessionSwitch.id
       )
         return yield* new AgentUnavailable({
           agent: thread.model.agent,

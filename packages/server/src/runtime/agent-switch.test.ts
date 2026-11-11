@@ -2,6 +2,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import type {
   AgentEvent,
+  LimitWait,
   TurnId,
   HostId,
   MessageId,
@@ -1147,5 +1148,144 @@ describe("switchAgent's handoff, as the review of #433 reproduced it", () => {
       expect(part!.facts).not.toContain("</gram-handoff>");
       expect(part!.facts).not.toContain("ghp_");
     }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+});
+
+/** A switch a crash left `ready` and owing its handoff, with work queued behind it. */
+const seedOwed = (options: { wait?: "claude/" | "codex/"; mode?: "auto" } = {}) =>
+  Effect.gen(function* () {
+    const runtimes = yield* ThreadRuntimes;
+    const store = yield* ThreadStore;
+    const { thread } = yield* idleThread;
+    const mode = options.mode ?? thread.mode;
+    yield* store.updateThread(thread.id, ({ agentSessionId: _id, ...t }) => ({
+      ...t,
+      model: CODEX,
+      mode,
+      agentSessionId: "confirmed-target-session",
+      // Between `switchSession` and the end of the old account's wait, or the target's own.
+      ...(options.wait === undefined
+        ? {}
+        : {
+            limitWait: {
+              kind: "limit",
+              account: options.wait,
+              resetsAt: 3_600_000,
+              resumeAt: 3_601_000,
+              since: 0,
+              attempt: 0,
+            } satisfies LimitWait,
+          }),
+      sessionSwitch: {
+        id: "rev2-boot",
+        previous: thread.model,
+        target: CODEX,
+        mode,
+        oldExited: true,
+        phase: "ready",
+        source: { agentSessionId: thread.agentSessionId! },
+        handoff: { note: "limit", limit: { reason: "usage", until: 3_600_000 } },
+      },
+    }));
+    yield* runtimes.send(thread.id, { text: "WORK_AFTER_BOOT" });
+    return thread.id;
+  });
+
+/** A database file for two runtimes in turn: the app, then the app after a restart. */
+const onDisk = <A, E, R>(work: (file: string) => Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const dir = mkdtempSync(join(tmpdir(), "gram-switch-rev2-"));
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => rmSync(dir, { recursive: true, force: true })),
+    );
+    return yield* work(join(dir, "gram.db"));
+  });
+
+/** The thread's first session with input, once there is one. */
+const firstInput = (threadId: ThreadId) =>
+  Effect.gen(function* () {
+    const fake = yield* FakeAgentControl;
+    return yield* waitFor(
+      "the first input after boot",
+      Effect.sync(() =>
+        fake.sessions.find((s) => s.options.threadId === threadId && s.sent.length > 0),
+      ),
+    );
+  });
+
+describe("switchAgent's handoff at boot, as review rev 2 of #433 reproduced it", () => {
+  it.effect("ends the old account's wait before giving the owed handoff, the work after it", () =>
+    onDisk((file) =>
+      Effect.gen(function* () {
+        const id = yield* seedOwed({ wait: "claude/" }).pipe(Effect.provide(layerAt(file)));
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          yield* (yield* ThreadRuntimes).sendQueuedAtBoot;
+          const next = yield* firstInput(id);
+          expect(isHandoff(next.sent[0]!.text)).toBe(true);
+          expect((yield* store.getThread(id)).limitWait).toBeUndefined();
+          yield* next.completeTurn("Goal: carry on.");
+          yield* waitFor(
+            "the work after the handoff",
+            Effect.sync(() => next.sent.some((input) => input.text === "WORK_AFTER_BOOT")),
+          );
+          // No old turn resumed on the new agent.
+          expect(next.sent.some((input) => input.text === LIMIT_RESUME_TEXT)).toBe(false);
+        }).pipe(Effect.provide(layerAt(file)));
+      }),
+    ),
+  );
+
+  it.effect(
+    "keeps a limit the new agent's own account reported, and the handoff waits for it",
+    () =>
+      onDisk((file) =>
+        Effect.gen(function* () {
+          const id = yield* seedOwed({ wait: "codex/" }).pipe(Effect.provide(layerAt(file)));
+          yield* Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const fake = yield* FakeAgentControl;
+            yield* (yield* ThreadRuntimes).sendQueuedAtBoot;
+            for (let i = 0; i < 200; i++) yield* Effect.yieldNow;
+            const thread = yield* store.getThread(id);
+            expect(thread.limitWait?.account).toBe("codex/");
+            expect(thread.sessionSwitch?.id).toBe("rev2-boot");
+            const sent = fake.sessions
+              .filter((s) => s.options.threadId === id)
+              .flatMap((s) => s.sent);
+            expect(sent.map((input) => input.text)).not.toContain("WORK_AFTER_BOOT");
+          }).pipe(Effect.provide(layerAt(file)));
+        }),
+      ),
+  );
+
+  it.effect("settles the reopened target's mode before its owed handoff goes", () =>
+    onDisk((file) =>
+      Effect.gen(function* () {
+        const id = yield* seedOwed({ mode: "auto" }).pipe(Effect.provide(layerAt(file)));
+        yield* Effect.gen(function* () {
+          const runtimes = yield* ThreadRuntimes;
+          const store = yield* ThreadStore;
+          const fake = yield* FakeAgentControl;
+          // As the worker policy maps it: Codex reporting `default` for an Auto open runs in Bypass.
+          yield* runtimes.setSessionPolicy({
+            forThread: () => Effect.succeed({ audience: "worker", outwardGate: undefined }),
+            modeAfterSwitch: (t) =>
+              Effect.succeed(t.mode === "default" ? "bypassPermissions" : undefined),
+          });
+          yield* fake.setAutoOpenReport("codex", "default", 0);
+          yield* runtimes.sendQueuedAtBoot;
+          const next = yield* firstInput(id);
+          expect(isHandoff(next.sent[0]!.text)).toBe(true);
+          expect(next.sentModes[0]).toBe("bypassPermissions");
+          expect((yield* store.getThread(id)).mode).toBe("bypassPermissions");
+          yield* next.completeTurn("Goal: carry on.");
+          yield* waitFor(
+            "the switch released",
+            store.getThread(id).pipe(Effect.map((t) => t.sessionSwitch === undefined)),
+          );
+        }).pipe(Effect.provide(layerAt(file)));
+      }),
+    ),
   );
 });
