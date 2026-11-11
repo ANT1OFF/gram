@@ -405,5 +405,7 @@ written as audit rows, since nothing changed.
   whole, even when the edit and the change touch different fields. The agent proposes again,
   and the user approves a card drawn from the workspace as it is.
 - A change to the orchestrator's model or effort applies to its next session, as in Settings.
-  To switch the running one, use the orchestrator switch or `set_thread_model`.
+  To change the running one, use `set_thread_model` on the same agent, or "Continue in…" to
+  move it to the other agent (see
+  [switching a thread's agent](../AGENTS_AND_FEATURES.md#switching-a-threads-agent)).
 - Synthetic tests run on the fake agent. They don't qualify live Claude or Codex transports.
