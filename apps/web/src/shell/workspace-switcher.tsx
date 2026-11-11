@@ -19,6 +19,7 @@ import { shortcutHint } from "@/keyboard/bindings";
 import { formatKeys, registerShortcut } from "@/keyboard/registry";
 import { effectiveKeys, useBindingsStore } from "@/keyboard/bindings-store";
 import { withHint } from "@/keyboard/use-shortcut-hint";
+import { appPathname } from "@/lib/app-path";
 import { EXPLAIN } from "@/lib/explain";
 import { seeTerm } from "@/lib/first-use";
 import { listIndexForKey } from "@/lib/list-keys";
@@ -53,7 +54,7 @@ export function useSwitchWorkspace(): (workspace: Workspace) => void {
     const threadId = workspace.orchestratorThreadId;
     if (threadId !== undefined) {
       const pathname = `/t/${threadId}`;
-      if (window.location.pathname === pathname) return;
+      if (appPathname() === pathname) return;
       useViewStore.getState().carryView(pathname);
     }
     open(workspace);

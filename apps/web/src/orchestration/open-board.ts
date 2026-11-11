@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { appPathname } from "@/lib/app-path";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { useViewStore } from "@/views/view-store";
@@ -24,7 +25,7 @@ export function useOpenBoard(): (workspaceId: WorkspaceId) => void {
     const view = useViewStore.getState();
     view.setQuiet(false);
     const pathname = `/t/${threadId}`;
-    if (window.location.pathname === pathname) return view.setView("board");
+    if (appPathname() === pathname) return view.setView("board");
     view.carryView(pathname);
     useLayoutStore.getState().openThread(threadId);
     void navigate({ to: "/t/$threadId", params: { threadId } }).then(() =>

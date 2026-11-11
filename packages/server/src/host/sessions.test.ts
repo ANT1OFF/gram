@@ -217,6 +217,8 @@ describe("agent sessions through the host process", () => {
         cwd: "/work",
         mcp: MCP,
         outwardGate: "irreversible",
+        mcpServer: { name: "workspace", url: "https://mcp.example.test/workspace" },
+        mcpAllowlist: ["https://mcp.example.test/workspace"],
         onConnectorsSeen: (report) => void seen.push(report.connectors[0]!.name),
       });
       expect(inServer.opened).toEqual([]);
@@ -224,6 +226,12 @@ describe("agent sessions through the host process", () => {
       expect(options.cwd).toBe("/work");
       expect(options.mcp).toEqual(MCP);
       expect(options.outwardGate).toBe("irreversible");
+      // The one server a session is given by address reaches the machine that opens it.
+      expect(options.mcpServer).toEqual({
+        name: "workspace",
+        url: "https://mcp.example.test/workspace",
+      });
+      expect(options.mcpAllowlist).toEqual(["https://mcp.example.test/workspace"]);
       expect(options.appTools).toBeUndefined();
       // The host reached the endpoint itself, and gave the agent the tools it lists.
       expect(reached).toEqual([MCP.url]);

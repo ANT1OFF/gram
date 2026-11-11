@@ -2,7 +2,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { APP_ICONS, isAppIconId, type AppIconId } from "@gram/contracts";
-import { app, BrowserWindow, nativeImage, type NativeImage } from "electron";
+import { app, nativeImage, type NativeImage } from "electron";
+import { appWindows } from "@gram/shell/electron";
 
 /** The icon the app bundle carries; macOS already shows it, so launch leaves the Dock alone. */
 const DEFAULT_APP_ICON: AppIconId = APP_ICONS[0];
@@ -48,7 +49,7 @@ export function createAppIcon({ file, dir }: { file: string; dir: string }) {
   const apply = () => {
     if (image === undefined) return;
     if (process.platform === "darwin") app.dock?.setIcon(image);
-    else for (const win of BrowserWindow.getAllWindows()) win.setIcon(image);
+    else for (const win of appWindows()) win.setIcon(image);
   };
 
   return {

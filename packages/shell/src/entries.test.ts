@@ -82,6 +82,8 @@ describe("the package's entries and dependencies", () => {
       "./electron",
       "./modules/agent-browser",
       "./modules/connection",
+      "./modules/device",
+      "./modules/device/ask-window",
       "./modules/fonts",
       "./modules/ipc",
       "./modules/key-vault",

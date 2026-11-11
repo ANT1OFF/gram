@@ -15,6 +15,7 @@ import {
   dialNoncesLastSeen,
   type DialNonceStore,
   fileMachineStore,
+  isProvisioned,
   fileNonceStore,
   machineView,
   type DialAccess,
@@ -28,6 +29,7 @@ import { makeMachineUpdates, RETRY_MS, type UpdateRequest } from "./machine-upda
 import * as Schedule from "effect/Schedule";
 import * as FiberSet from "effect/FiberSet";
 import { watchedSocket } from "./socket-end.ts";
+import { makeStopMarks, type StopMarks } from "./stop-marks.ts";
 
 /** The release a host said it runs, kept only when it reads as a release: it is shown as text. */
 const releaseOf = (hello: HostHello): string | undefined =>
@@ -71,12 +73,15 @@ const lazyFileStore = <R, W>(
   name: string,
   make: (dataDir: string) => { readonly read: () => R; readonly write: (value: W) => void },
   empty: () => R,
+  /** Other files the store keeps, any of which being there means it was made. */
+  beside: ReadonlyArray<string> = [],
 ) => {
   let store: ReturnType<typeof make> | undefined;
   const real = () => (store ??= make(dataDir));
   return {
     read: (): R =>
-      store === undefined && !existsSync(join(dataDir, "remote-access", name))
+      store === undefined &&
+      ![name, ...beside].some((file) => existsSync(join(dataDir, "remote-access", file)))
         ? empty()
         : real().read(),
     write: (value: W) => real().write(value),
@@ -175,9 +180,22 @@ export interface RemoteHostsShape {
   readonly setAutomaticUpdates: (on: boolean) => void;
   /** Forgets the machine and closes its connection; false when it wasn't joined. */
   readonly remove: (id: HostId) => boolean;
+  /** The address provisioned hosts dial, when this Gram listens for them. */
+  readonly provisionedOrigin: string | undefined;
   /**
-   * Closes every connection that didn't dial `origin`, and any still saying hello: all of them
-   * when access over Tailscale is off (`undefined`). The machines stay joined.
+   * The machines readied to stop with their disks kept, and what waits on one to be started
+   * (`stop-marks.ts`). A machine that dials in is no longer stopped.
+   */
+  readonly stops: StopMarks;
+  /**
+   * Closes every provisioned host's connection and any of their dials still saying hello, for
+   * when provisioned hosts are turned off. They stay registered.
+   */
+  readonly closeProvisioned: () => void;
+  /**
+   * Closes every joined machine's connection that didn't dial `origin`, and any still saying
+   * hello: all of them when access over Tailscale is off (`undefined`). The machines stay joined,
+   * and provisioned hosts, which dial their own listener, aren't touched.
    */
   readonly keepOrigin: (origin: string | undefined) => void;
 }
@@ -196,11 +214,17 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       readonly retryMs?: number;
       /** Where the automatic-updates switch is kept; in memory when left out. */
       readonly automatic?: AutomaticStore;
+      /**
+       * The address provisioned hosts dial, when this Gram has a listener for them. Their dials
+       * and connections are held to it alone and don't follow access over Tailscale.
+       */
+      readonly provisionedOrigin?: string | undefined;
     } = {},
   ) =>
     Effect.gen(function* () {
       const machines = createPairedMachines(store, now, nonces);
       const online = new Map<HostId, Online>();
+      const stops = makeStopMarks(now);
       const root = yield* Effect.scope;
       // The server's own logger and the rest, for a check started outside an effect.
       const context = yield* Effect.context<never>();
@@ -270,10 +294,18 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
        */
       let kept: string | null | undefined;
       /** Whether the access a dial was admitted under still holds. */
-      const stillAdmitted = ({ machine, origin, generation }: AdmittedDial) =>
-        generationOf(machine.id) === generation &&
-        (kept === undefined || kept === origin) &&
-        machines.get(machine.id)?.confirmedAt !== undefined;
+      const stillAdmitted = ({ machine, origin, generation }: AdmittedDial) => {
+        const current = machines.get(machine.id);
+        return (
+          generationOf(machine.id) === generation &&
+          current?.confirmedAt !== undefined &&
+          // A provisioned host on its own listener's address, whatever access over Tailscale is;
+          // a joined machine on the address that access is kept on.
+          (isProvisioned(current)
+            ? options.provisionedOrigin !== undefined && origin === options.provisionedOrigin
+            : origin !== options.provisionedOrigin && (kept === undefined || kept === origin))
+        );
+      };
       const attach = (dial: AdmittedDial, socket: Socket.Socket) =>
         Effect.gen(function* () {
           const { machine, origin } = dial;
@@ -364,6 +396,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             };
             entry = live;
             online.set(machine.id, live);
+            stops.back(machine.id);
             machines.note(machine.id, undefined);
             yield* Effect.logInfo("machines: a joined machine is online").pipe(
               Effect.annotateLogs({ hostId: machine.id, platform: opened.value.hello.platform }),
@@ -373,6 +406,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             // whether it updates now.
             runFork(updates.connected(machine.id, opened.value));
             yield* Deferred.await(ended).pipe(Effect.ignore);
+            if (online.get(machine.id) === live) stops.away(machine.id);
             yield* Effect.logInfo("machines: a joined machine went offline").pipe(
               Effect.annotateLogs({ hostId: machine.id }),
             );
@@ -444,15 +478,26 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           }),
         origin: (id) => online.get(id)?.origin,
         list: (tailscale) => machines.list().map((machine) => view(machine, tailscale)),
+        provisionedOrigin: options.provisionedOrigin,
+        closeProvisioned: () => {
+          for (const machine of machines.list()) {
+            if (!isProvisioned(machine)) continue;
+            if (online.has(machine.id)) machines.note(machine.id, { kind: "lost", at: now() });
+            bump(machine.id);
+            close(machine.id);
+          }
+        },
         admit: (machine, origin) => ({ machine, origin, generation: generationOf(machine.id) }),
         attach,
         checkSignIn,
         update: updates.request,
         automaticUpdates: automaticOn,
         setAutomaticUpdates: (on) => automaticStore.write(on),
+        stops,
         remove: (id) => {
           bump(id);
           updates.forget(id);
+          stops.forget(id);
           try {
             return machines.remove(id);
           } finally {
@@ -462,6 +507,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         keepOrigin: (origin) => {
           kept = origin ?? null;
           for (const machine of machines.list()) {
+            // Its listener isn't the tailnet's: access turned off or moved leaves it connected.
+            if (isProvisioned(machine)) continue;
             const live = online.get(machine.id);
             if (live !== undefined && live.origin === origin) continue;
             // Onto another address, which it doesn't dial. Turned off, the list says so itself, and
@@ -485,7 +532,9 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       const config = yield* ServerConfig;
       const { dataDir } = config;
       return yield* RemoteHosts.make(
-        lazyFileStore(dataDir, "machines.json", fileMachineStore, () => []),
+        lazyFileStore(dataDir, "machines.json", fileMachineStore, () => [], [
+          "provisioned-hosts.json",
+        ]),
         Date.now,
         {
           ...lazyFileStore(dataDir, "dial-nonces.json", fileNonceStore, () => NO_DIALS),
@@ -494,6 +543,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         {
           release: releaseOfConfig(config),
           automatic: fileAutomaticStore(dataDir),
+          provisionedOrigin: config.provisionedHosts?.origin,
         },
       );
     }),

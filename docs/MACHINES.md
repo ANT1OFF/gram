@@ -14,6 +14,10 @@ placed on it; its session, checkout, git state and terminals then run there. The
 previews and attachments work on that machine ([its files](#its-files-and-attachments)); its turn
 checkpoints, PR badge and port chips don't reach that machine yet.
 
+A Gram that runs as a service can also take hosts that another system starts and registers by
+key, over ordinary TLS with no Tailscale and nothing to confirm: see
+[provisioned hosts](PROVISIONED_HOSTS.md).
+
 ## Start a thread on a machine
 
 Once a machine is confirmed, **Machine** shows first under Where it runs on New → Chat, and beside
@@ -88,6 +92,10 @@ The guard itself, on the joined machine's host:
 - The browser lists folders only, never files, at most 500 of them, and gives up on a folder or
   mount that doesn't answer within a few seconds.
 - A host from an older release doesn't list its folders. Update it before you pick a folder there.
+
+A Gram started as a [headless control plane](DOCKER.md#a-headless-control-plane) has no "This
+machine": every thread runs on a joined one, and one that names none goes on the machine that
+joined first of those online.
 
 ## What you need
 
@@ -196,7 +204,7 @@ keeps each machine's last reason since it started, in memory only:
 | It dialled in but didn't answer         | It never said hello, in time or as itself                                    | Rerun the installer there                                   |
 | Connection lost at 14:03                | Its connection closed; it dials again by itself                              | If it stays offline, check Tailscale and `gram-host status` |
 | This Gram's tailnet address changed     | Access over Tailscale moved to another address, which it doesn't dial        | `gram-host leave` there, and add it again                   |
-| Needs update (1.16.0 → 1.17.0)          | Its host speaks another protocol, or doesn't serve what this Gram needs      | **Update**                                                  |
+| Needs update (1.16.0 → 1.17.0)          | Its host speaks a protocol this Gram doesn't, or lacks what this Gram needs  | **Update**                                                  |
 
 Only a clock its own key signed is taken as its clock. A bad signature can come from anyone on
 your tailnet who knows the machine's id, so it is only ever shown. Nothing from a dial (its
@@ -206,12 +214,38 @@ signature, nonce or key) reaches the page, and the listing stays local-app only.
 
 Each host says which release it runs when it dials in (from the release after 1.16.0; earlier ones say nothing).
 What has to match is the **host protocol**, not the release: every release since joined machines
-arrived (1.14.0 to 1.16.0 and this one) speaks protocol 2 with the same messages, so a 1.15.0 host
-works with a 1.16.0 main Gram. A call added in a later release fails on its own on an older host, with an
-unknown-request error, and the rest keeps working. Only a host on another protocol, or one that
-doesn't serve everything this Gram needs, is refused; Settings → Machines then shows **Needs
-update** with both releases instead of offline. A host on another release that works shows online,
-and its hover says which release it runs.
+arrived (1.14.0 on) speaks protocol 2, so a 1.15.0 host works with a 1.16.0 main Gram. Only a host
+on a protocol this Gram doesn't talk to, or one that doesn't serve everything this Gram needs, is
+refused; Settings → Machines then shows **Needs update** with both releases instead of offline. A
+host on another release that works shows online, and its hover says which release it runs.
+
+### Machines on different releases
+
+Between releases the host protocol only grows. Updating Gram on one side never makes the other
+side restart or update first: a joined machine on an earlier release stays connected and keeps its
+running sessions, and so does a machine on a later release than the Gram it joined. Each side
+works without what the other doesn't have yet:
+
+- **A call added later** fails on its own on an older host, with an unknown-request error, and
+  the rest keeps working.
+- **A field added later** is optional. A build from before it ignores it when it arrives and
+  leaves it out when it sends.
+- **Something a host newly can do** is named in its hello, and Gram uses it only on a host that
+  names it. A host without it loses that one thing: a host from 1.19.0 or earlier takes no thread
+  started from a profile, for instance, and everything else runs there. Hosts name these in
+  `features`, a list of plain names that a Gram from before one of them reads and ignores. The
+  older `capabilities` list is closed, because Gram up to 1.19.0 refuses a hello with a
+  capability it doesn't know.
+- **What Gram needs of every host** (files, ports, worktrees, git, terminals, sessions, repos)
+  never grows.
+
+What may not happen between releases: a call or a field going away, a field becoming required, a
+value changing its type or the values it takes. A test holds every change to that
+(`packages/contracts/src/rpc/host-compat.test.ts`), comparing the protocol with a checked-in copy
+of it as last released (`host-released.json`), in both directions, since either side may be the
+older one. A change that really can't keep a released build working is a new protocol version,
+decided on purpose; Gram then says which versions it still talks to, and only a host outside them
+shows **Needs update**.
 
 **Update** (the up-arrow icon, "Update <machine> to <release>" on hover) appears on every
 confirmed machine that runs an earlier release than this Gram, and only when this Gram is a release
@@ -344,6 +378,49 @@ falls back to running on this machine.
 
 Terminals aren't brought back: the shell, what ran in it and its scrollback ended with the host, so
 open a new one.
+
+## Stop a machine and keep its disk
+
+Part of the hosted features (Settings → About → Diagnostics → Hosted features, off by default).
+With the setting off none of this is there: the routes below answer not found, and a thread on a
+machine that is away fails as it always did.
+
+Whoever runs the machines can stop one while nothing works on it and start another host on the
+same disk later. Gram stops and starts nothing itself; it readies the machine, says when it is
+wanted, and carries the threads on. The calls are local `POST`s with a JSON body, answered only to
+the local app, as the other `/machines/*` routes are.
+
+- `POST /machines/stop/prepare` with `{ "id": "<machine>" }` asks the machine whether it can stop.
+  While sessions, terminals, clones or checks run there it answers `idle: false` with what is
+  running and changes nothing. Otherwise the host takes nothing new, keeps each thread's
+  uncommitted work as a commit on the hidden ref `refs/gram/wip/<thread>` (the working tree and
+  the branch are left as they are), pushes that ref, and answers `idle: true` with what it kept.
+  Gram then puts the idle sessions there to rest. The host holds new work off for ten minutes,
+  which is the time to stop it in; left running past that, it takes work again and no longer
+  counts as stopped. One call keeps up to 512 folders, and says so when there are more.
+- `"force": true` readies a busy machine too. The turns it cuts off go on by themselves once a
+  host is back on the disk, as after a restart (see [When it drops or restarts](#when-it-drops-or-restarts)),
+  if the host is back within fifteen minutes of its connection closing and the stop was asked
+  for no more than twenty-five minutes before.
+- `"remote"` names where the ref is pushed, a git remote's name or an https or ssh URL. The
+  default is `origin`. The ref holds every file git doesn't ignore, untracked ones included, and
+  whoever can read that remote can read it, so name a private mirror when that matters. A push
+  that fails is reported (`pushed: false`) and doesn't stop the answer: the work is still on the
+  disk.
+- `POST /machines/stop/cancel` takes a stop back: the host takes new work again.
+- `POST /machines/stop/status` lists each joined machine: `online`, `stoppedAt` when it was
+  readied and hasn't dialled in since, and `wanted` when a thread waits on it now. A message sent
+  to a thread on a machine that is away, or readied and not yet stopped, waits up to five minutes
+  for it, so start a host (or take the stop back) when `wanted` turns true. With the setting on,
+  this wait applies to any joined machine that is away.
+- `POST /machines/stop/resume` opens again the sessions the stop put to rest, once a host has
+  dialled in, and answers which it reopened and which folders are missing from the disk. Threads
+  that had no session open at the stop open with their next message, as ever.
+
+The new host must start with the stopped one's home folder (`GRAM_HOST_HOME`) and the threads'
+folders at the same paths. The machine's key is in that home, so the new host dials in as the same
+machine and nothing about the threads changes. A host on an empty disk is a different machine;
+restoring the hidden refs onto a fresh disk is not done for you.
 
 ## A Claude token from this machine
 

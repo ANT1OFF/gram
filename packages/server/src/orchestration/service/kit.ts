@@ -51,7 +51,9 @@ import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 import { appLabelOf, ServerConfig } from "../../config.ts";
 import { type Coalescing, makeCoalescingQueue } from "../../events/backlog.ts";
+import { Timers } from "../../embedding/timers.ts";
 import { EventHub } from "../../events/event-hub.ts";
+import { EventSink } from "../../embedding/event-sink.ts";
 import { AppActivity } from "../../git/activity.ts";
 import { LocalChecks } from "../../git/local-checks.ts";
 import { WakeConditions } from "../../wakes/conditions.ts";
@@ -114,6 +116,7 @@ import {
 } from "../rules.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import { RemoteHosts } from "../../host/remote-hosts.ts";
+import { WorkerHosts } from "../../host/worker-host.ts";
 import { heldBriefOf } from "../limit-pause.ts";
 import { type PromptWorktree } from "../prompt.ts";
 
@@ -557,6 +560,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const limitReadings = yield* Effect.serviceOption(UsageLimitReadings);
   // Absent where no machine can join: every worker is then this machine's.
   const remoteHosts = yield* Effect.serviceOption(RemoteHosts);
+  // A headless Gram's placement, absent anywhere else: where a worker goes when none is named.
+  const headless = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts))?.headless;
   /** The confirmed joined machines a worker can be placed on, as the settings page lists them. */
   const joinedMachines = () =>
     Option.isSome(remoteHosts) ? remoteHosts.value.list().filter((m) => m.confirmed) : [];
@@ -568,6 +573,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const localChecks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
   // Absent in layers that don't track the composers: unknown presence holds idle compaction.
   const composerPresence = Option.getOrUndefined(yield* Effect.serviceOption(ComposerPresence));
+  /** Present where an event sink is configured: told the feature cards as they change. */
+  const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
   const creator = makeThreadCreator({ store, checkouts, runtimes });
 
   /**
@@ -694,6 +701,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const holdTimers = yield* FiberMap.make<ThreadId>();
   /** Per `schedule_wake`, by its id, the timer that fires it. */
   const wakeAlarms = yield* FiberMap.make<string>();
+  /** What a scheduled wake waits on: a sleep, registered with an outside scheduler where one is. */
+  const wakeClock = yield* Timers;
   /**
    * Per worker question in triage, by `questionTimerKey`, the timer that forwards it to the user.
    * Ids are numbered per workspace, so every workspace has its own `WQ1`.
@@ -1256,6 +1265,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
 
   return {
     joinedMachines,
+    headless,
     store,
     hub,
     runtimes,
@@ -1274,6 +1284,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     limitPoller,
     localChecks,
     composerPresence,
+    eventSink,
     creator,
     rosterHere,
     rosterFor,
@@ -1286,6 +1297,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     switchJobs,
     holdTimers,
     wakeAlarms,
+    wakeClock,
     questionTimers,
     limitAlarms,
     pauseFence,

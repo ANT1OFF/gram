@@ -632,7 +632,11 @@ export const makeFakeAgentAdapter = (
                     id: requestId,
                     toolName: "Bash",
                     displayName: "Bash",
-                    input: { command: "echo approved", description: "A fake command" },
+                    // `/approve{git push}` asks about that command instead.
+                    input: {
+                      command: /\/approve\{([^}]+)\}/.exec(input.text)?.[1] ?? "echo approved",
+                      description: "A fake command",
+                    },
                     suggestions: [],
                   },
                 },

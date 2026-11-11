@@ -15,9 +15,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import {
+  HOST_PROTOCOL_OLDEST,
   HOST_PROTOCOL_VERSION,
   HostCapability,
   HostHello,
+  hostServes,
   HostId,
   LOCAL_HOST_ID,
   type ThreadId,
@@ -37,9 +39,11 @@ import { filesOn } from "./files.ts";
 import { reposOn } from "./repos.ts";
 import { gitOn } from "./git.ts";
 import { terminalsOnHost } from "./terminals.ts";
+import { threadPlacesOnHost } from "./thread-places.ts";
 import {
   connectHost,
   helloMismatch,
+  HOST_FEATURES,
   HOST_SERVES,
   scanFromWire,
   scanToWire,
@@ -63,18 +67,27 @@ const SCAN: PortScan = {
   ]),
 };
 
-const hello = (overrides: Partial<HostHello> = {}): HostHello => ({
-  protocol: HOST_PROTOCOL_VERSION,
-  hostId: LOCAL_HOST_ID,
-  capabilities: HOST_SERVES,
-  platform: process.platform,
-  pid: 4242,
-  ...overrides,
-});
+/** A hello from this build's host; `features: undefined` is one from before features were sent. */
+type HelloOverrides = Partial<Omit<HostHello, "features">> & {
+  readonly features?: HostHello["features"] | undefined;
+};
+
+const hello = (overrides: HelloOverrides = {}): HostHello => {
+  const { features, ...rest } = {
+    protocol: HOST_PROTOCOL_VERSION,
+    hostId: LOCAL_HOST_ID,
+    capabilities: HOST_SERVES,
+    features: HOST_FEATURES as HostHello["features"] | undefined,
+    platform: process.platform,
+    pid: 4242,
+    ...overrides,
+  };
+  return features === undefined ? rest : { ...rest, features };
+};
 
 /** A host served on one end of a fresh stream, and the control plane's connection to it. */
 const connected = (
-  overrides: Partial<HostHello> = {},
+  overrides: HelloOverrides = {},
   extra: Partial<HostService> = {},
   attached: string = mkdtempSync(join(tmpdir(), "gram-host-attached-")),
 ) =>
@@ -176,14 +189,18 @@ describe("host protocol", () => {
       platform: Schema.String,
       pid: Schema.Int,
     });
+    const before = hello({ features: undefined });
     const now = Schema.encodeSync(HostHello)(hello({ release: "1.15.2" }));
-    expect(Schema.decodeUnknownSync(Before)(now)).toEqual(hello());
-    expect(Schema.decodeUnknownSync(HostHello)(Schema.encodeSync(Before)(hello()))).toEqual(
-      hello(),
-    );
+    expect(Schema.decodeUnknownSync(Before)(now)).toEqual(before);
+    expect(Schema.decodeUnknownSync(HostHello)(Schema.encodeSync(Before)(before))).toEqual(before);
     // Same protocol and everything this build needs: compatible, whatever the release.
     expect(helloMismatch(hello({ release: "1.14.0" }))).toBeUndefined();
-    expect(helloMismatch(hello({ protocol: HOST_PROTOCOL_VERSION - 1 }))).toEqual({
+    // Any protocol version from the oldest this build talks to up to its own, and no other.
+    expect(helloMismatch(hello({ protocol: HOST_PROTOCOL_OLDEST }))).toBeUndefined();
+    expect(helloMismatch(hello({ protocol: HOST_PROTOCOL_OLDEST - 1 }))).toEqual({
+      kind: "protocol",
+    });
+    expect(helloMismatch(hello({ protocol: HOST_PROTOCOL_VERSION + 1 }))).toEqual({
       kind: "protocol",
     });
     expect(helloMismatch(hello({ capabilities: ["files"] }))).toMatchObject({
@@ -191,6 +208,57 @@ describe("host protocol", () => {
       missing: expect.arrayContaining(["sessions"]),
     });
   });
+
+  it("says a hello the last release's control plane reads, whatever this build's host can do", () => {
+    // `HostHello` as 1.19.0 has it: its list of capabilities is closed, so one name it doesn't
+    // know and the whole hello is refused.
+    const Released = Schema.Struct({
+      protocol: Schema.Int,
+      hostId: HostId,
+      capabilities: Schema.Array(
+        Schema.Literals([
+          "files",
+          "ports",
+          "worktrees",
+          "git",
+          "terminals",
+          "sessions",
+          "repos",
+          "deliveries",
+          "file-reads",
+          "attachments",
+          "checks",
+          "repo-identity",
+          "update",
+          "folders",
+        ]),
+      ),
+      platform: Schema.String,
+      pid: Schema.Int,
+      release: Schema.optionalKey(Schema.String),
+    });
+    const said = Schema.encodeSync(HostHello)(
+      hello({ capabilities: [...HOST_SERVES, "update"], features: HOST_FEATURES }),
+    );
+    expect(Schema.decodeUnknownSync(Released)(said).capabilities).toEqual([
+      ...HOST_SERVES,
+      "update",
+    ]);
+    // What a released control plane can't name travels as a feature, never as a capability.
+    expect(HOST_FEATURES.length).toBeGreaterThan(0);
+  });
+
+  it.effect("connects a host of the last release, and one naming a feature this build lacks", () =>
+    Effect.gen(function* () {
+      const old = yield* connected({ features: undefined });
+      expect(old.hello).not.toHaveProperty("features");
+      expect(old.files).toBeDefined();
+      expect(old.threadPlaces).toBeUndefined();
+      const later = yield* connected({ features: [...HOST_FEATURES, "something-later"] });
+      expect(hostServes(later.hello, "thread-places")).toBe(true);
+      expect(later.threadPlaces).toBeDefined();
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
 
   it.effect("refuses a host on another protocol version", () =>
     Effect.gen(function* () {
@@ -534,6 +602,42 @@ describe("a joined machine's file reads", () => {
       yield* attachmentsOnHost(attached);
       expect(readdirSync(attached)).toEqual(["t-new"]);
     }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "make a profile thread's folder across the wire, and refuse what the host refuses",
+    () =>
+      Effect.gen(function* () {
+        const clones = realpathSync(mkdtempSync(join(tmpdir(), "gram-host-clones-")));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(clones, { recursive: true })));
+        const places = (yield* connected(
+          {},
+          { threadPlaces: threadPlacesOnHost(yield* Proc, clones) },
+        )).threadPlaces!;
+        const thread = "t-profile" as ThreadId;
+        const { path } = yield* places.make(thread, [{ path: "AGENTS.md", content: "rules\n" }]);
+        expect(path).toBe(join(clones, ".threads", thread));
+        expect(readFileSync(join(path, "AGENTS.md"), "utf8")).toBe("rules\n");
+        // The host's own refusals arrive as they were worded there.
+        const escape = yield* places
+          .make("t-other" as ThreadId, [{ path: "../x", content: "x" }])
+          .pipe(Effect.flip);
+        expect(escape._tag).toBe("InvalidState");
+        const elsewhere = yield* places
+          .lay(tmpdir(), [{ path: "x.txt", content: "x" }])
+          .pipe(Effect.flip);
+        expect(elsewhere.message).toContain("only in a worktree of this machine's clones");
+        yield* places.remove(thread);
+        expect(existsSync(path)).toBe(false);
+        // A host built without them is asked for none, and one that serves none refuses.
+        const old = yield* connected({
+          features: [],
+        });
+        expect(old.threadPlaces).toBeUndefined();
+        const none = (yield* connected()).threadPlaces!;
+        const refused = yield* none.make(thread, []).pipe(Effect.flip);
+        expect(refused.message).toContain("makes no folders");
+      }).pipe(Effect.scoped, onHost),
   );
 
   it.effect("are absent for a host from a build without them, which still connects", () =>

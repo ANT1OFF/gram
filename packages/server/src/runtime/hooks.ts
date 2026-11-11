@@ -70,6 +70,12 @@ export interface ReleaseCheckoutOptions {
 
 export interface CheckoutServiceShape {
   /**
+   * `request` with the machine it is placed on named, before `prepare`: only a headless Gram, which
+   * runs no work itself, moves a request that names none onto a joined machine. Absent where a
+   * request is always taken as it is.
+   */
+  place?(request: CheckoutRequest): Effect.Effect<CheckoutRequest, InvalidState>;
+  /**
    * Resolves what `thread.create` asked for into the thread's checkout. `openCheckouts` are the
    * paths live threads already use (the one-thread-per-worktree guard, `CheckoutInUse`);
    * `projectRoot` is the path the user opened, which a `current` checkout uses directly.

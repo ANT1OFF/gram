@@ -61,6 +61,7 @@ export * from "./rpc/dreams.ts";
 export * from "./rpc/files.ts";
 export * from "./rpc/git.ts";
 export * from "./rpc/host.ts";
+export * from "./rpc/device.ts";
 export * from "./rpc/orchestration.ts";
 export * from "./rpc/projects.ts";
 export * from "./rpc/settings.ts";

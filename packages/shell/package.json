@@ -25,6 +25,14 @@
       "types": "./src/modules/connection/main.ts",
       "default": "./src/modules/connection/main.ts"
     },
+    "./modules/device": {
+      "types": "./src/modules/device/index.ts",
+      "default": "./src/modules/device/index.ts"
+    },
+    "./modules/device/ask-window": {
+      "types": "./src/modules/device/ask-window.ts",
+      "default": "./src/modules/device/ask-window.ts"
+    },
     "./modules/fonts": {
       "types": "./src/modules/fonts/main.ts",
       "default": "./src/modules/fonts/main.ts"

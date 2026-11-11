@@ -23,6 +23,42 @@ describe("ServerConfig.fromEnv", () => {
     ).not.toHaveProperty("listenHost");
   });
 
+  it("takes the hosted features setting from GRAM_EMBEDDING only as 1 or 0", () => {
+    expect(ServerConfig.fromEnv({ GRAM_EMBEDDING: "1" }).embedding).toBe(true);
+    expect(ServerConfig.fromEnv({ GRAM_EMBEDDING: "0" }).embedding).toBe(false);
+    expect(ServerConfig.fromEnv({ GRAM_EMBEDDING: "true" })).not.toHaveProperty("embedding");
+    expect(ServerConfig.fromEnv({})).not.toHaveProperty("embedding");
+  });
+
+  it("takes the hook's and the sink's token from a file named from the root, never with a token", () => {
+    const hook = "https://hooks.example.test/decide";
+    expect(
+      ServerConfig.fromEnv({
+        GRAM_DECISION_HOOK_URL: hook,
+        GRAM_DECISION_HOOK_TOKEN_FILE: "/var/run/tokens/hook",
+      }).decisionHook,
+    ).toEqual({ url: hook, tokenFile: "/var/run/tokens/hook" });
+    expect(
+      ServerConfig.fromEnv({
+        GRAM_EVENT_SINK_URL: "https://sink.example.test/events",
+        GRAM_EVENT_SINK_TOKEN_FILE: "tokens/sink",
+      }).eventSink,
+    ).toBe("unusable");
+    expect(
+      ServerConfig.fromEnv({
+        GRAM_DECISION_HOOK_URL: hook,
+        GRAM_DECISION_HOOK_TOKEN: "abc",
+        GRAM_DECISION_HOOK_TOKEN_FILE: "/var/run/tokens/hook",
+      }).decisionHook,
+    ).toBe("unusable");
+  });
+
+  it("is headless only for GRAM_HEADLESS=1", () => {
+    expect(ServerConfig.fromEnv({ GRAM_HEADLESS: "1" }).headless).toBe(true);
+    expect(ServerConfig.fromEnv({ GRAM_HEADLESS: "0" })).not.toHaveProperty("headless");
+    expect(ServerConfig.fromEnv({})).not.toHaveProperty("headless");
+  });
+
   it("flags the fake agent only for GRAM_FAKE_AGENT=1", () => {
     expect(ServerConfig.fromEnv({ GRAM_FAKE_AGENT: "1" }).fakeAgent).toBe(true);
     expect(ServerConfig.fromEnv({ GRAM_FAKE_AGENT: "0" })).not.toHaveProperty("fakeAgent");

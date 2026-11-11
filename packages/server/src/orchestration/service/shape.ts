@@ -15,6 +15,7 @@ import {
   type ReopenedMembership,
   type RoutineState,
   type OrchestratorCharter,
+  type PermissionMode,
   type OrchestratorLedger,
   type JoinTarget,
   type Project,
@@ -549,6 +550,26 @@ export interface OrchestrationShape {
     { readonly thread: Thread; readonly membership?: ReopenedMembership | undefined },
     E
   >;
+
+  // -- A workspace moved here from another Gram (`transfer/workspace-transfer.ts`) -----------
+  /**
+   * The model and mode an orchestrator opens on here under `charter`, as `open` decides them for
+   * a new one, with a `note` when the charter's own model can't run here and another stands in.
+   * `InvalidState` when nothing here may orchestrate under the charter's gate.
+   */
+  orchestratorOpening(charter: OrchestratorCharter): Effect.Effect<
+    {
+      readonly model: ModelRef;
+      readonly mode: PermissionMode;
+      readonly note?: string | undefined;
+    },
+    InvalidState
+  >;
+  /**
+   * Runs `write`, which stores a workspace that was made elsewhere, under the lock that reserves
+   * workspace names, with the names taken here; then tells the windows the workspaces changed.
+   */
+  arrive<A, E>(write: (taken: ReadonlyArray<string>) => Effect.Effect<A, E>): Effect.Effect<A, E>;
 
   // -- Routines' seam (`routines/routines.ts`) ----------------------------------------------
   /** Installs the routines engine's admission (`RoutineAdmission`); a routine spawn refuses without it. */

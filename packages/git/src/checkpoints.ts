@@ -25,7 +25,7 @@ import { undoTurnFiles, type TurnUndo } from "./turn-undo.ts";
 
 export const CHECKPOINT_REF_PREFIX = "refs/gram/checkpoints";
 
-const IDENTITY_ENV = {
+export const IDENTITY_ENV = {
   GIT_AUTHOR_NAME: "Gram",
   GIT_AUTHOR_EMAIL: "gram@localhost",
   GIT_COMMITTER_NAME: "Gram",
@@ -60,7 +60,7 @@ const refsUnder = (top: string, prefix: string) =>
  * first purely as a stat cache, so `add -A` doesn't rehash every file. Undo never trusts this: it
  * reads the files themselves (`turn-undo.ts`).
  */
-const writeWorktreeTree = (top: string) =>
+export const writeWorktreeTree = (top: string) =>
   Effect.scoped(
     Effect.gen(function* () {
       const indexFile = yield* tempIndex;

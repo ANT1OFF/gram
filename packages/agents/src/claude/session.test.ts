@@ -2728,6 +2728,33 @@ describe("app tools bridge", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("adds the one server a session is given by address, never a confined one's", () =>
+    Effect.gen(function* () {
+      const given = { name: "workspace", url: "https://mcp.example.invalid/workspace" };
+      const held = harness();
+      yield* openSession({ mcpServer: given, mcpAllowlist: [given.url] }).pipe(
+        Effect.provide(held.layer),
+      );
+      expect(query(held).options.mcpServers).toEqual({
+        workspace: { type: "http", url: given.url },
+      });
+      expect(query(held).options.settings).toEqual({
+        ...REFUSE_PEER_MESSAGES,
+        allowedMcpServers: [{ serverUrl: given.url }],
+      });
+
+      const confined = harness();
+      yield* openSession({ mcpServer: given, confineWrites: true }).pipe(
+        Effect.provide(confined.layer),
+      );
+      expect(query(confined).options.mcpServers ?? {}).not.toHaveProperty("workspace");
+
+      const without = harness();
+      yield* openSession({}).pipe(Effect.provide(without.layer));
+      expect(query(without).options).not.toHaveProperty("mcpServers");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect(
     "pins an orchestrator's shell, narrows its MCP servers, and drops the blocking ask",
     () =>

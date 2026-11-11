@@ -5,6 +5,10 @@
 #   docker compose -f docker/compose.yaml up --build
 #
 # See docs/DOCKER.md.
+#
+# Two images come out of this file. The default target is the one above: the server and the web
+# app. `--target host` is the worker host alone, for a machine that only runs another Gram's work
+# (docs/PACKAGES.md#images).
 
 # The full image builds: it has the compilers node-pty needs. The slim one runs.
 ARG BUILD_IMAGE=node:26.13.0-bookworm
@@ -15,9 +19,20 @@ RUN npm install -g bun@1.4.4
 WORKDIR /opt/gram
 COPY . .
 RUN bun install --frozen-lockfile
+
+# The worker host as a folder that runs on its own: one bundle and its two native modules, built
+# here where the compilers are.
+FROM build AS host-build
+RUN node tools/packages/build-host.mjs /opt/gram-host \
+  && cd /opt/gram-host \
+  && npm install --omit=dev --no-audit --no-fund \
+  && npm cache clean --force
+
+FROM build AS server-build
 RUN bun run --filter @gram/web build
 
-FROM ${NODE_IMAGE}
+# What both images run on: the tools threads use, the agents, and the user they run as.
+FROM ${NODE_IMAGE} AS runtime
 # What threads use beside the agents: git for checkouts, ripgrep for search, ssh for remotes,
 # lsof and procps for the port chips and busy terminals, tini to reap what the agents leave.
 RUN apt-get update \
@@ -44,8 +59,25 @@ RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
   && if [ -n "${CODEX_VERSION}" ]; then npm install -g "@openai/codex@${CODEX_VERSION}"; fi \
   && npm cache clean --force
 RUN useradd --create-home --uid 10001 gram
+
+# The worker host alone. It listens on nothing: it dials the Gram it joined (docs/MACHINES.md), so
+# join once with `gram-host join` and keep /home/gram on a volume. /opt/gram-host is the whole
+# host, and can be copied into another image of this architecture that has Node.
+FROM runtime AS host
+# Owned by root: the agents run as gram and can't rewrite the host they run under.
+COPY --from=host-build /opt/gram-host /opt/gram-host
+RUN printf '#!/bin/sh\nexec node /opt/gram-host/gram-host.js "$@"\n' > /usr/local/bin/gram-host \
+  && chmod 755 /usr/local/bin/gram-host
+USER gram
+WORKDIR /home/gram
+ENV GRAM_HOST_HOME=/home/gram/.gram-host
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["gram-host", "run"]
+
+# The server and the web app: the default target.
+FROM runtime AS control-plane
 # Owned by root: the agents run as gram and can't rewrite the server they run under.
-COPY --from=build /opt/gram /opt/gram
+COPY --from=server-build /opt/gram /opt/gram
 USER gram
 WORKDIR /home/gram
 # All interfaces inside the container only (`GRAM_CONTAINER`); the port mapping decides who reaches

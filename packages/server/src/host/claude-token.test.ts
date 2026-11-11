@@ -1,3 +1,4 @@
+import { makeStopMarks } from "./stop-marks.ts";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -386,6 +387,7 @@ const fakeHosts = (
   const removed: Array<string> = [];
   const hosts: RemoteHostsShape = {
     machines,
+    stops: makeStopMarks(),
     connection: (id) =>
       online.has(id)
         ? Effect.succeed({ claude } as unknown as HostConnection)
@@ -410,6 +412,8 @@ const fakeHosts = (
       return machines.remove(id);
     },
     keepOrigin: () => {},
+    provisionedOrigin: undefined,
+    closeProvisioned: () => {},
   };
   return { hosts, removed };
 };

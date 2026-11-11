@@ -16,7 +16,13 @@
 // what it says, so a restart loses nothing.
 
 import { makeSpawnBreaker } from "./spawn-breaker.ts";
-import { idleCompactOf, effectiveCheckout, type ServerEvent, type Thread } from "@gram/contracts";
+import {
+  idleCompactOf,
+  effectiveCheckout,
+  InvalidState,
+  type ServerEvent,
+  type Thread,
+} from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -342,6 +348,14 @@ export const OrchestrationLive = Layer.effect(
 
     const { survey, ledger, watchLedger, featureCards, watchFeatureCards, dependencyBadgesOf } =
       makeLedgerWatch(kit);
+    if (kit.eventSink !== undefined) {
+      yield* kit.eventSink.setFeatureCardRefresh((workspaceId) =>
+        featureCards(workspaceId).pipe(
+          Effect.asVoid,
+          Effect.catchCause(() => Effect.void),
+        ),
+      );
+    }
 
     const {
       lookupProject,
@@ -515,7 +529,7 @@ export const OrchestrationLive = Layer.effect(
       abandonHandoff,
     });
 
-    const { saveWorkspace, commitWorkspace, whileWorkspaceStays, removeWorkspace, open } =
+    const { saveWorkspace, commitWorkspace, whileWorkspaceStays, removeWorkspace, open, arrive } =
       makeWorkspaces(kit, {
         forgetReasons,
         openModel,
@@ -800,6 +814,13 @@ export const OrchestrationLive = Layer.effect(
           kit.openedInAuto.delete(threadId);
         }),
       reopen,
+      orchestratorOpening: (charter) =>
+        openModel(charter).pipe(
+          Effect.catchTag("AgentUnavailable", (error) =>
+            Effect.fail(new InvalidState({ message: error.message })),
+          ),
+        ),
+      arrive,
       authorityOf,
       memoryReaderOf: (threadId) =>
         Effect.gen(function* () {
