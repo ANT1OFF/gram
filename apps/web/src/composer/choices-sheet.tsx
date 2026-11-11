@@ -219,6 +219,11 @@ function Segments({
               selected && section.warning && "text-warning",
             )}
           >
+            {option.icon !== undefined && (
+              <span aria-hidden className="mr-1 flex shrink-0 items-center">
+                {option.icon}
+              </span>
+            )}
             <span className="truncate">
               {option.word ?? option.compact ?? option.short ?? option.label}
             </span>

@@ -217,17 +217,22 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     dialog never rings as a whole.
 - **The composer's toolbar is icons with their words on hover** (Johan's ruling, 2026-11-08: "we
   have moved too far in the text direction"). Every control on the row is a glyph whose words are
-  its tooltip and its accessible name; the row shows no word of its own, so it is one width at any
-  pane width and nothing measures or folds it. The one exception is a warning, not a control: the
-  worker's "Sending takes over from the orchestrator" line (below).
+  its tooltip and its accessible name, and nothing measures or folds it. Two exceptions: the
+  model's name on the choices chip (Johan, 2026-11-11: "I want to actually see the model name"),
+  and a warning, not a control: the worker's "Sending takes over from the orchestrator" line
+  (below).
   - Every composer (the orchestrator's chat, a solo thread's and `/new`) has one choices chip for
-    model · effort · mode · speed: the agent's mark, and beside it a 14 px glyph only for a value
-    off its default that matters for safety or cost: Bypass's open lock in the warning colour,
-    Fast's filled bolt. Effort, Plan or Accept edits draw nothing. In `/new` the agent picker before
-    it is the agent's mark alone, its name on hover, and the chip draws the sliders glyph in the
-    mark's place. The chip's name and tooltip say every value and its shortcut, a default saying
-    whose it is, one line each on hover: "Claude · Claude Opus (⌘⇧M)", "Effort: Model default
-    (⌘⇧E)", "Mode: Auto (⌘⇧A)", "Speed: CLI default". Nothing folds into "…".
+    model · effort · mode · speed: the agent's mark, the model's name as the model picker lists it
+    less the vendor the mark says ("Opus 5.5"), then the mode's 14 px glyph, and Fast's filled bolt
+    while on. Each mode has its own glyph, on the chip and beside its row in the popover: Ask's
+    lock, Accept edits' pen on a file, Plan's checklist, Auto's checked shield, Bypass's open lock
+    in the warning colour. Auto never takes the Sparkles that marks a setting following the
+    recommended setup. The name is the one word on the chip: it stays at every width, truncating
+    with "…" only once the row has no room left, and never drops. Effort draws nothing. In `/new`
+    the agent picker before it is the agent's mark alone, its name on hover, and the chip draws the
+    sliders glyph in the mark's place. The chip's name and tooltip say every value and its
+    shortcut, a default saying whose it is, one line each on hover: "Claude · Claude Opus (⌘⇧M)",
+    "Effort: Model default (⌘⇧E)", "Mode: Auto (⌘⇧A)", "Speed: CLI default".
   - The chip opens one popover above the whole composer, never over the draft, with a section per
     dimension in the same order: a heading with its value and shortcut, one section open at a time,
     its list checking the current value with a line on what each costs (the model's searches, with
