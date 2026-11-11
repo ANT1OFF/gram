@@ -562,6 +562,8 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
           async (folder, target): Promise<DeviceReadResult> => {
             // No more than the size the person was shown, even if the file grew since.
             const most = Math.min(payload.maxBytes, target.size ?? payload.maxBytes);
+            // Shown empty, it is read as empty: nothing is opened that the window didn't show.
+            if (most === 0) return { kind: "read", data: "", truncated: target.size === 0 };
             const file = await readLentFile(folder, payload.path, most, target.path);
             return file.ok
               ? {
@@ -673,7 +675,14 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
       timeoutMs,
     );
     // Taken back while the folder was looked at, it is never asked.
-    if (!signal.aborted) send({ kind: "asked" });
+    if (!signal.aborted) {
+      try {
+        send({ kind: "asked" });
+      } catch (error) {
+        admitted.settle("unasked");
+        throw error;
+      }
+    }
     const answer = await askPerson(
       {
         approval,
@@ -687,12 +696,14 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     );
     // Just before it runs: everything checked before the ask still holds, and the folder it was
     // allowed in is still where it was.
-    let after = answer === "allowed" ? stillAllowed(payload, "exec", folder, signal) : answer;
+    // Checked after the last wait, so nothing can change between the check and the run.
+    let after: Refusal | "withdrawn" | undefined = answer === "allowed" ? undefined : answer;
     let again: Awaited<ReturnType<typeof resolveWorkingFolder>> | undefined;
     if (after === undefined) {
       again = await resolveWorkingFolder(folder, payload.cwd);
-      if (!again.ok || again.path !== cwd.path) after = refusal("outside-folders");
-      else if (signal.aborted) after = takenBack(signal);
+      after = stillAllowed(payload, "exec", folder, signal);
+      if (after === undefined && (!again.ok || again.path !== cwd.path))
+        after = refusal("outside-folders");
     }
     if (after !== undefined || again === undefined || !again.ok) {
       const why = after ?? refusal("outside-folders");

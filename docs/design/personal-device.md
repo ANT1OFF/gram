@@ -768,7 +768,7 @@ reads or lists without an allow for what the window showed, and asked for these,
 
 | Finding                                                                                   | Change                                                                                      |
 | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| A request taken back or stopped while its path was looked at was still asked, and counted | Never asked; nothing counted against the person                                             |
+| A request taken back or stopped while its path was looked at was still asked, and counted | Never asked; one the server took back still counts against the server                       |
 | With asks full, a path that exists and one that doesn't were answered differently         | A place among the asks is taken before any path is looked at; a path refused frees it       |
 | A server without a grant could make the device write log lines without end                | Refusals before any ask: at most 20 lines in ten minutes, words cut short, the rest counted |
 | Only presence and the working folder were checked after the allow                         | Every check before the ask is made again, and the folder must still be the one lent         |
@@ -778,6 +778,11 @@ reads or lists without an allow for what the window showed, and asked for these,
 | Exits after the allow weren't logged                                                      | Logged                                                                                      |
 | A read could return more than the size the window showed                                  | Read no further than that size                                                              |
 | A dial address with a fragment couldn't be dialled; settings weren't synced or bounded    | Fragment dropped; written to disk before the rename; a file over 4 MiB is refused           |
+
+A second review of the fixes found them holding and asked for four more, which are in: the
+device ending a connection stops what waits on the person before the calls end, so a lock is
+"away" and never counts toward a pause; every check after the allow is made after the last wait;
+a file shown empty is read as empty; a listener that throws frees its place.
 
 Carried to the wiring: the headers are made afresh for each dial (an Effect WebSocket keeps the
 headers it was made with, so a reconnect would repeat the nonce). A lending settings file copied

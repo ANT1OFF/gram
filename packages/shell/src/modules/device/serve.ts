@@ -125,8 +125,14 @@ export const serveDevice = (
   socket: Socket.Socket,
   connection: DeviceConnection,
   options: { readonly tokenWaitMs?: number } = {},
-): Effect.Effect<DeviceServeEnd> =>
-  Effect.gen(function* () {
+): Effect.Effect<DeviceServeEnd> => {
+  let stopped = false;
+  const stopAll = Effect.sync(() => {
+    if (stopped) return;
+    stopped = true;
+    connection.gate.stopAll("away");
+  });
+  return Effect.gen(function* () {
     const end = yield* Deferred.make<DeviceServeEnd>();
     const oneConnection = Layer.succeed(SocketServer.SocketServer, {
       address: NetAddress.unixPathAddress("device-stream"),
@@ -145,9 +151,13 @@ export const serveDevice = (
         Layer.provide(RpcSerialization.layerNdjson),
       ),
     );
+    // Finalizers run last first: this one runs before the calls are interrupted, so what was
+    // waiting on the person is stopped as "away", not taken back by the server.
+    yield* Effect.addFinalizer(() => stopAll);
     return yield* Deferred.await(end);
   }).pipe(
     Effect.scoped,
     // However it ends, nothing it started keeps running or waiting on the person.
-    Effect.ensuring(Effect.sync(() => connection.gate.stopAll("away"))),
+    Effect.ensuring(stopAll),
   );
+};

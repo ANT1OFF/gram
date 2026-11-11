@@ -556,4 +556,64 @@ describe.skipIf(process.platform === "win32")("the device's gate", () => {
     expect(read).toMatchObject({ kind: "read", truncated: true });
     expect(read.kind === "read" && Buffer.from(read.data, "base64").toString()).toBe("hello");
   });
+
+  it("frees the place a request took when its path is refused, or its listener throws", async () => {
+    const { gate, by, limits } = await setUp();
+    expect(await gate.read({ ...by("r1"), path: "nope.md", maxBytes: 10 })).toEqual({
+      kind: "refused",
+      why: "not-a-file",
+    });
+    expect(await gate.list({ ...by("r2"), path: "nope", limit: 10 })).toMatchObject({
+      kind: "refused",
+    });
+    await gate.exec({ ...by("r3"), command: "ls", cwd: "nope" }, () => undefined);
+    expect(limits.waiting()).toBe(0);
+    await expect(
+      gate.exec({ ...by("r4"), command: "ls" }, (event) => {
+        if (event.kind === "asked") throw new Error("listener");
+      }),
+    ).rejects.toThrow("listener");
+    expect(limits.waiting()).toBe(0);
+  });
+
+  it("runs nothing when the lent folder was replaced in place during the ask", async () => {
+    const set = await setUp();
+    const { folder } = set;
+    let replaced = false;
+    const gate = makeDeviceGate({
+      origin: ORIGIN,
+      workspace: WORKSPACE,
+      personId: "ada",
+      folders: () =>
+        new Map([[FOLDER_ID, replaced ? { ...folder, inode: folder.inode + 1 } : folder]]),
+      capabilities: () => ["read", "exec"],
+      present: () => true,
+      grants: set.grants,
+      limits: set.limits,
+      ask: async (request) => {
+        replaced = true;
+        return { allowed: true, hash: request.hash };
+      },
+      environment: () => ({ env: {}, secrets: [] }),
+      log: async () => undefined,
+      now: () => set.clock.now,
+    });
+    const events: Array<DeviceExecEvent> = [];
+    await gate.exec({ ...set.by("r1"), command: "echo ran" }, (event) => events.push(event));
+    expect(events.at(-1)).toEqual({ kind: "refused", why: "outside-folders" });
+  });
+
+  it("reads an empty file as empty, even if it was written to during the ask", async () => {
+    const { gate, by, asks } = await setUp();
+    await fs.writeFile(join(app, "empty.txt"), "");
+    asks.answer(async (request) => {
+      await fs.writeFile(join(app, "empty.txt"), "S");
+      return { allowed: true, hash: request.hash };
+    });
+    expect(await gate.read({ ...by("r1"), path: "empty.txt", maxBytes: 10 })).toEqual({
+      kind: "read",
+      data: "",
+      truncated: true,
+    });
+  });
 });

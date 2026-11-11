@@ -50,8 +50,17 @@ const fakeGate = () => {
   /** Requests whose caller stopped listening. */
   const left: Array<string> = [];
   const listing: Array<string> = [];
+  /** What happened, in order: callers leaving and everything being stopped. */
+  const order: Array<string> = [];
   const leaves = (requestId: string, signal: AbortSignal | undefined) =>
-    signal?.addEventListener("abort", () => left.push(requestId), { once: true });
+    signal?.addEventListener(
+      "abort",
+      () => {
+        left.push(requestId);
+        order.push(`left ${requestId}`);
+      },
+      { once: true },
+    );
   let hold: Promise<void> | undefined;
   let holdList: Promise<void> | undefined;
   const gate: DeviceGate = {
@@ -69,12 +78,18 @@ const fakeGate = () => {
       if (holdList !== undefined) await holdList;
       return { kind: "listed", entries: [{ name: "a", kind: "file" }], truncated: false };
     },
-    read: async () => ({ kind: "refused", why: "credential-path" }),
+    read: async (payload, signal) => {
+      listing.push(payload.requestId);
+      leaves(payload.requestId, signal);
+      if (holdList !== undefined) await holdList;
+      return { kind: "refused", why: "credential-path" };
+    },
     cancel: (id) => {
       cancelled.push(id);
     },
     stopAll: (why) => {
       stopped.push(why);
+      order.push(`stopped ${why}`);
     },
   };
   return {
@@ -83,6 +98,7 @@ const fakeGate = () => {
     stopped,
     left,
     listing,
+    order,
     holdUntil: (promise: Promise<void>) => {
       hold = promise;
     },
@@ -204,6 +220,15 @@ describe("serving a device", () => {
       yield* Fiber.interrupt(listing);
       yield* until(() => fake.left.length > 0);
       expect(fake.left).toEqual(["r2"]);
+      const reading = yield* client["device.files.read"]({
+        ...request("r3"),
+        path: "README.md",
+        maxBytes: 10,
+      }).pipe(Effect.forkScoped);
+      yield* until(() => fake.listing.length > 1);
+      yield* Fiber.interrupt(reading);
+      yield* until(() => fake.left.length > 1);
+      expect(fake.left).toEqual(["r2", "r3"]);
       held.resolve();
     }).pipe(Effect.scoped),
   );
@@ -271,6 +296,27 @@ describe("serving a device", () => {
       yield* client["device.hello"]();
       yield* Fiber.interrupt(serving);
       expect(fake.stopped).toEqual(["away"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("stops what waits on the person before the calls end, when the device ends it", () =>
+    Effect.gen(function* () {
+      const fake = fakeGate();
+      const held = Promise.withResolvers<void>();
+      fake.holdListUntil(held.promise);
+      const { client, serving } = yield* connected({
+        hello: () => hello,
+        gate: fake.gate,
+        token: async () => "fresh",
+      });
+      yield* client["device.files.list"]({ ...request("r1"), path: ".", limit: 10 }).pipe(
+        Effect.forkScoped,
+      );
+      yield* until(() => fake.listing.length > 0);
+      // A lock, a quit or lending stopping: the device interrupts serving.
+      yield* Fiber.interrupt(serving);
+      expect(fake.order[0]).toBe("stopped away");
+      held.resolve();
     }).pipe(Effect.scoped),
   );
 });

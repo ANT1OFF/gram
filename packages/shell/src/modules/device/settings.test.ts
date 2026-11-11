@@ -119,7 +119,12 @@ describe("the lending settings", () => {
   });
 
   it("are refused, unread, when far larger than the app writes them", async () => {
-    await fs.writeFile(file, " ".repeat(DEVICE_SETTINGS_MOST_BYTES + 1));
+    // Well formed, so only its size refuses it.
+    const body = JSON.stringify(settings);
+    await fs.writeFile(
+      file,
+      JSON.stringify({ mac: "00", body }) + " ".repeat(DEVICE_SETTINGS_MOST_BYTES),
+    );
     expect(await readDeviceSettings(file, key)).toEqual({ ok: false, why: "edited" });
   });
 });
