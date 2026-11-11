@@ -31,6 +31,12 @@ export const PENDING_DETECTION_DEADLINE_MS = 30_000;
 export const STAGE_DEADLINE_MS = 3 * 60_000;
 /** How long the app may take to quit into the staged update. */
 export const QUIT_DEADLINE_MS = 60_000;
+/**
+ * How many times one restart runs the stop fence. A refused stop that recovered cleanly is tried
+ * once more by itself: what refuses a first stop (an agent still ending a turn it was interrupted
+ * in, a teardown slow under load) has passed by the next one, which proves everything afresh.
+ */
+export const UPDATE_STOP_ATTEMPTS = 2;
 
 /** What the controller needs of electron-updater and Squirrel.Mac. */
 export interface NativeUpdaterPort {
@@ -94,9 +100,13 @@ export interface NativeUpdatesOptions {
   readonly stopForUpdate: (signal: AbortSignal) => Promise<void>;
   /**
    * Runs the whole restart as Gram's one update transaction: a quit asked for meanwhile cancels
-   * it instead of racing it.
+   * it instead of racing it. `retry` is the same restart's second stop, which a quit asked for
+   * since the first began refuses rather than starts.
    */
-  readonly transaction: (work: (signal: AbortSignal) => Promise<void>) => Promise<void>;
+  readonly transaction: (
+    work: (signal: AbortSignal) => Promise<void>,
+    retry?: boolean,
+  ) => Promise<void>;
   /**
    * Brings the server, voice and windows back after this transaction's own refused stop.
    * An earlier unresolved install keeps every subsequent quit behind the stop fence.
@@ -109,7 +119,10 @@ export interface NativeUpdatesOptions {
   /** Ordinary quit, allowed only after launch has conclusively cleared any pending install. */
   readonly ordinaryQuit: () => void;
   readonly exit: () => void;
+  /** Hides every window for the stop, showing its progress instead; returns what shows them again. */
   readonly hideWindows: () => () => void;
+  /** A line for that progress, while the windows are hidden. */
+  readonly progress?: (detail: string) => void;
   readonly record: {
     read(): Promise<NativeInstallRecord | undefined>;
     write(record: NativeInstallRecord): Promise<void>;
@@ -485,10 +498,14 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
     if (apply({ type: "installStarted" }) === before) return state;
     const refuse = async (
       message: string,
-      { recover = false, step }: { recover?: boolean; step?: "check" | "download" } = {},
+      {
+        recover = false,
+        step,
+        recovered,
+      }: { recover?: boolean; step?: "check" | "download"; recovered?: string } = {},
     ): Promise<AppUpdateState> => {
       if (step === "download" || step === "check") await forget();
-      let problem: string | undefined;
+      let problem = recovered;
       if (recover) {
         try {
           problem = await options.recover();
@@ -530,79 +547,110 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
       showWindows?.();
       showWindows = undefined;
     };
-    try {
-      await options.transaction(async (signal) => {
-        const live = () => {
-          if (signal.aborted) throw new Error(CANCELLED);
-        };
-        showWindows = options.hideWindows();
-        stopped = true;
-        await options.stopForUpdate(signal);
-        live();
-        await options.record.write({
-          schema: 1,
-          from: options.currentVersion,
-          to: version,
-          at: now(),
-        });
-        live();
-        // From this call on, Squirrel.Mac may arm an install at any moment: its outcome is
-        // joined, never raced, and a quit asked for meanwhile no longer cancels anything.
-        invoked = true;
-        staging = true;
-        const stage = port
-          .stage(candidate.snapshot, version)
-          .then(async () => {
-            // Squirrel.Mac now owns its own copy. Release ours before the restart.
-            await forget();
-          })
-          .finally(async () => {
-            staging = false;
-            if (disposed) await forget();
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await options.transaction(async (signal) => {
+          const live = () => {
+            if (signal.aborted) throw new Error(CANCELLED);
+          };
+          // A retry keeps them hidden: they come back once, when the restart is over.
+          showWindows ??= options.hideWindows();
+          stopped = true;
+          await options.stopForUpdate(signal);
+          live();
+          await options.record.write({
+            schema: 1,
+            from: options.currentVersion,
+            to: version,
+            at: now(),
           });
-        let waiting: unknown;
-        const slow = new Promise<"slow">((resolve) => {
-          waiting = later(() => resolve("slow"), STAGE_DEADLINE_MS);
-        });
-        const first = await Promise.race([stage.then(() => "staged" as const), slow]).finally(() =>
-          cancelLater(waiting),
-        );
-        if (first === "slow") {
-          // The fence has stopped everything, so quitting is safe; bringing it back isn't yet.
-          options.armQuit();
-          apply({ type: "installHeld", message: copy.slowStage });
-          show();
-          await stage;
-        }
-        staged = true;
-      });
-    } catch (error) {
-      if (!staged) {
-        log("warn", `update: restart refused: ${error instanceof Error ? error.message : error}`);
-        if (invoked) {
-          // Squirrel.Mac refused, but it may already have written its installer's request. Nothing
-          // comes back, and the record stays, until macOS shows no install pending.
-          if (!(await boundedDisarm())) {
-            await forget();
-            options.armQuit();
-            show();
-            return apply({
-              type: "installHeld",
-              message:
-                "macOS may still install this update when Gram quits, so Gram stays stopped. Quit Gram to finish.",
+          live();
+          // From this call on, Squirrel.Mac may arm an install at any moment: its outcome is
+          // joined, never raced, and a quit asked for meanwhile no longer cancels anything.
+          invoked = true;
+          staging = true;
+          const stage = port
+            .stage(candidate.snapshot, version)
+            .then(async () => {
+              // Squirrel.Mac now owns its own copy. Release ours before the restart.
+              await forget();
+            })
+            .finally(async () => {
+              staging = false;
+              if (disposed) await forget();
             });
+          let waiting: unknown;
+          const slow = new Promise<"slow">((resolve) => {
+            waiting = later(() => resolve("slow"), STAGE_DEADLINE_MS);
+          });
+          const first = await Promise.race([stage.then(() => "staged" as const), slow]).finally(
+            () => cancelLater(waiting),
+          );
+          if (first === "slow") {
+            // The fence has stopped everything, so quitting is safe; bringing it back isn't yet.
+            options.armQuit();
+            apply({ type: "installHeld", message: copy.slowStage });
+            show();
+            await stage;
           }
+          staged = true;
+        }, attempt > 1);
+      } catch (error) {
+        if (!staged) {
+          log("warn", `update: restart refused: ${error instanceof Error ? error.message : error}`);
+          if (invoked) {
+            // Squirrel.Mac refused, but it may already have written its installer's request. Nothing
+            // comes back, and the record stays, until macOS shows no install pending.
+            if (!(await boundedDisarm())) {
+              await forget();
+              options.armQuit();
+              show();
+              return apply({
+                type: "installHeld",
+                message:
+                  "macOS may still install this update when Gram quits, so Gram stays stopped. Quit Gram to finish.",
+              });
+            }
+          }
+          const reason =
+            error instanceof UpdateTeardownRefused
+              ? `Didn't restart: ${FENCE_REASON[error.teardown.reason]}. Nothing was installed.`
+              : `Didn't restart: ${sentence(oneLine(error))} Nothing was installed.`;
+          // Nothing is pending (or Squirrel.Mac was never invoked): quits are ordinary again.
+          options.disarmQuit();
+          // Only the fence's own refusal, before Squirrel.Mac was ever invoked, is tried again,
+          // and only once the stop it refused has come back whole.
+          if (
+            invoked ||
+            !stopped ||
+            !(error instanceof UpdateTeardownRefused) ||
+            attempt >= UPDATE_STOP_ATTEMPTS
+          ) {
+            const result = await refuse(reason, { recover: stopped });
+            show();
+            return result;
+          }
+          // Said while the stopped server comes back, before the next stop reports its own.
+          const why = FENCE_REASON[error.teardown.reason];
+          options.progress?.(`${sentence(why[0]!.toUpperCase() + why.slice(1))} Trying once more…`);
+          let problem: string | undefined;
+          try {
+            problem = await options.recover();
+          } catch (recovery) {
+            problem = oneLine(recovery);
+          }
+          if (problem !== undefined) {
+            const result = await refuse(reason, { recovered: problem });
+            show();
+            return result;
+          }
+          log("info", `update: the stop was refused (${why}); stopping once more`);
+          apply({ type: "installHeld", message: `Restarting once more: ${why}.` });
+          stopped = false;
+          continue;
         }
-        const reason =
-          error instanceof UpdateTeardownRefused
-            ? `Didn't restart: ${FENCE_REASON[error.teardown.reason]}. Nothing was installed.`
-            : `Didn't restart: ${sentence(oneLine(error))} Nothing was installed.`;
-        // Nothing is pending (or Squirrel.Mac was never invoked): quits are ordinary again.
-        options.disarmQuit();
-        const result = await refuse(reason, { recover: stopped });
-        show();
-        return result;
       }
+      break;
     }
     // Squirrel.Mac has verified and staged the update: an exit now installs it. Quit into it, and
     // if the relaunch never comes, exit anyway so its installer runs; the next launch's record

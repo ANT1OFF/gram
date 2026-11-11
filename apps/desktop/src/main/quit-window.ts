@@ -4,12 +4,16 @@ import { QUIT_NOW_TITLE, quitPage } from "./quit-page.ts";
 import { quitDetail, type QuitProgress } from "./quit.ts";
 
 /**
- * The small "Quitting Gram…" window a slow quit shows, with Quit Now. `show` opens it or
- * updates it; Quit Now calls `onForce`. It goes with the app's exit, so nothing closes it.
+ * The small progress window a slow quit shows ("Quitting Gram…", with Quit Now), or an update's
+ * stop ("Restarting to update…", without it: a quit then cancels the update instead). `show` opens
+ * it or updates its line; Quit Now calls `onForce`. A quit's goes with the app's exit; `close`
+ * takes down an update's that didn't end in one.
  */
 export function createQuitWindow(options: {
   readonly colors: () => { readonly background: string; readonly foreground: string };
-  readonly onForce: () => void;
+  readonly heading?: string;
+  readonly onForce?: () => void;
+  readonly title?: string;
 }) {
   let win: BrowserWindow | undefined;
   let detail = "";
@@ -21,13 +25,13 @@ export function createQuitWindow(options: {
       .catch(() => {});
   };
   return {
-    show(progress: QuitProgress) {
-      detail = quitDetail(progress);
-      if (win !== undefined) return render();
+    show(progress: QuitProgress | string) {
+      detail = typeof progress === "string" ? progress : quitDetail(progress);
+      if (win !== undefined && !win.isDestroyed()) return render();
       const colors = options.colors();
       win = new BrowserWindow({
         width: 380,
-        height: 124,
+        height: options.onForce === undefined ? 84 : 124,
         show: false,
         frame: false,
         resizable: false,
@@ -36,18 +40,31 @@ export function createQuitWindow(options: {
         fullscreenable: false,
         alwaysOnTop: true,
         center: true,
-        title: "Quitting Gram",
+        title: options.title ?? "Quitting Gram",
         backgroundColor: colors.background,
         webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
       });
       const contents = win.webContents;
       contents.on("page-title-updated", (event, title) => {
         event.preventDefault();
-        if (title === QUIT_NOW_TITLE) options.onForce();
+        if (title === QUIT_NOW_TITLE) options.onForce?.();
       });
       contents.on("did-finish-load", render);
-      win.once("ready-to-show", () => win?.show());
-      void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(quitPage(colors))}`);
+      const opened = win;
+      win.once("ready-to-show", () => {
+        if (!opened.isDestroyed()) opened.show();
+      });
+      const page = quitPage(colors, {
+        ...(options.heading === undefined ? {} : { heading: options.heading }),
+        quitNow: options.onForce !== undefined,
+      });
+      void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`);
+    },
+    /** Whether it is open, so a server report updates it only while it shows. */
+    open: () => win !== undefined && !win.isDestroyed(),
+    close() {
+      if (win !== undefined && !win.isDestroyed()) win.destroy();
+      win = undefined;
     },
   };
 }

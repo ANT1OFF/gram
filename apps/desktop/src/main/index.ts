@@ -269,7 +269,11 @@ const server = createServerHost({
     const level = logLevelFromMessage(message);
     if (level) log.level = level;
     const shutdown = serverShutdownFromMessage(message);
-    if (shutdown) quit.report(shutdown);
+    if (shutdown) {
+      quit.report(shutdown);
+      // An update's stop says what it is stopping too.
+      if (updateWindow.open()) updateWindow.show({ step: "server", ...shutdown });
+    }
     const opened = launchedPidFromMessage(message);
     if (opened !== null) launched.set(opened, processStart(opened, treeCheckDeps));
     void handleVaultRequest(message, vaultCrypto, vaultStore, process.platform).then((response) => {
@@ -453,6 +457,12 @@ const quit = createQuit({
   now: () => Date.now(),
 });
 const quitWindow = createQuitWindow({ colors: themeColors, onForce: () => quit.force("user") });
+/** What an update's stop shows while every window is hidden for it. */
+const updateWindow = createQuitWindow({
+  colors: themeColors,
+  heading: "Restarting to update…",
+  title: "Restarting Gram",
+});
 
 /**
  * The boot navigation for a window, which carries the launch token to the server's own origin;
@@ -929,9 +939,9 @@ function fencedUpdateOptions(
         signal,
       );
     },
-    transaction: async (work) => {
+    transaction: async (work, retry) => {
       if (quit.state() !== "idle") throw new Error("Gram is already quitting.");
-      await updateFinalizer.run((signal) => work(signal));
+      await updateFinalizer.run((signal) => work(signal), retry);
     },
     recover: async () => {
       // A shutdown still settling holds recovery.
@@ -962,7 +972,16 @@ function fencedUpdateOptions(
     },
     ordinaryQuit: () => app.quit(),
     exit: exitSignedUpdate,
-    hideWindows,
+    hideWindows: () => {
+      const restore = hideWindows();
+      updateWindow.show("Stopping threads and agents…");
+      return () => {
+        // Back first, so closing the progress window never closes the last one.
+        restore();
+        updateWindow.close();
+      };
+    },
+    progress: (detail) => updateWindow.show(detail),
     record: nativeRecordStore(app.getPath("userData")),
     broadcast: broadcastNativeUpdate,
     log: (level, line) => log[level]({ source: "update" }, line),

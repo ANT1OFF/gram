@@ -99,6 +99,46 @@ describe("update-specific native completion", () => {
     expect(finalizer.active()).toBe(false);
   });
 
+  it("refuses a restart's second stop once a quit was asked for during its recovery", async () => {
+    const finalizer = createUpdateFinalizer();
+    await expect(
+      finalizer.run(async () => {
+        throw new Error("refused");
+      }),
+    ).rejects.toThrow("refused");
+    // A quit while the refused stop recovers: the transaction is still active, so it cancels.
+    finalizer.cancel();
+    finalizer.recovered();
+    let ran = false;
+    await expect(
+      finalizer.run(async () => {
+        ran = true;
+      }, true),
+    ).rejects.toThrow("asked to quit");
+    expect(ran).toBe(false);
+    expect(finalizer.active()).toBe(false);
+    // A new restart the user asks for later starts afresh.
+    await finalizer.run(async () => {
+      ran = true;
+    });
+    expect(ran).toBe(true);
+  });
+
+  it("lets a restart's second stop run when nothing asked to quit", async () => {
+    const finalizer = createUpdateFinalizer();
+    await expect(
+      finalizer.run(async () => {
+        throw new Error("refused");
+      }),
+    ).rejects.toThrow("refused");
+    finalizer.recovered();
+    let ran = false;
+    await finalizer.run(async () => {
+      ran = true;
+    }, true);
+    expect(ran).toBe(true);
+  });
+
   it("holds the transaction while an owned shutdown step is still settling", async () => {
     const finalizer = createUpdateFinalizer();
     let finish!: () => void;
