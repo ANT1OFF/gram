@@ -22,12 +22,7 @@ import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { CheckoutService, TurnHooks } from "../runtime/hooks.ts";
 import { makeRuntimeTestLayer, TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import {
-  PROFILE_THREADS_DIR,
-  PROFILE_THREADS_PROJECT,
-  PROFILES_OFF,
-  REPOSITORIES_NOT_YET,
-} from "./start.ts";
+import { PROFILE_THREADS_DIR, PROFILE_THREADS_PROJECT, PROFILES_OFF } from "./start.ts";
 
 const GATEWAY = "https://mcp.example.test/workspace";
 
@@ -350,16 +345,6 @@ describe("thread.createFromProfile", () => {
           expect(refused, what).toBeInstanceOf(InvalidState);
           expect(refused.message, what).toContain(says);
         }
-        const notYet = yield* start(
-          profile({
-            workplace: {
-              kind: "repositories",
-              repositories: [{ url: "https://git.example.test/team/app.git" }],
-            },
-          }),
-        ).pipe(Effect.flip);
-        expect(notYet).toEqual(new InvalidState({ message: REPOSITORIES_NOT_YET }));
-
         expect(yield* store.listThreads).toEqual([]);
         expect(fake.sessions).toHaveLength(0);
         expect(folders(dataDir)).toEqual([]);
