@@ -190,41 +190,53 @@ export const makeSessionSwitch = ({
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       const ack = yield* Deferred.make<AgentSession, AgentUnavailable>();
-      const opening = yield* locked(
-        rt,
-        Effect.gen(function* () {
-          const thread = yield* store.getThread(threadId);
-          const change = thread.sessionSwitch;
-          if (change?.id !== attemptId || change.phase !== "ready" || change.handoff === undefined)
-            return yield* new InvalidState({
-              threadId,
-              message: "This switch is no longer waiting to give its handoff.",
-            });
-          if (rt.session !== undefined || hasSessionFiber(threadId)) return undefined;
-          const next = yield* store.updateThread(threadId, (t) => ({
-            ...t,
-            sessionSwitch: { ...change, phase: "starting" },
-          }));
-          yield* publishUpsert(next);
-          rt.switchOpening = { id: attemptId, ack };
-          rt.reopening = true;
-          yield* openSession(rt, next, undefined, attemptId);
-          return change.target.agent;
-        }),
-      );
-      if (opening === undefined) return;
-      yield* confirmStartup(rt, threadId, attemptId, opening, ack).pipe(
+      // Set once this reopen has moved the claim to `starting`: from then on every way out but
+      // success, at once or late, takes the cleanup below.
+      let started = false;
+      return yield* Effect.gen(function* () {
+        const opening = yield* locked(
+          rt,
+          Effect.gen(function* () {
+            const thread = yield* store.getThread(threadId);
+            const change = thread.sessionSwitch;
+            if (
+              change?.id !== attemptId ||
+              change.phase !== "ready" ||
+              change.handoff === undefined
+            )
+              return yield* new InvalidState({
+                threadId,
+                message: "This switch is no longer waiting to give its handoff.",
+              });
+            // Archived, it opens nothing: the handoff waits for it to come back, as its queue does.
+            if (thread.parked || rt.session !== undefined || hasSessionFiber(threadId))
+              return undefined;
+            const next = yield* store.updateThread(threadId, (t) => ({
+              ...t,
+              sessionSwitch: { ...change, phase: "starting" },
+            }));
+            started = true;
+            yield* publishUpsert(next);
+            rt.switchOpening = { id: attemptId, ack };
+            rt.reopening = true;
+            yield* openSession(rt, next, undefined, attemptId);
+            return change.target.agent;
+          }),
+        );
+        if (opening === undefined) return;
+        yield* confirmStartup(rt, threadId, attemptId, opening, ack);
+      }).pipe(
         Effect.onExit((exit) =>
-          Exit.isSuccess(exit)
+          Exit.isSuccess(exit) || !started
             ? Effect.void
             : locked(
                 rt,
                 Effect.gen(function* () {
-                  rt.switchOpening = undefined;
+                  if (rt.switchOpening?.id === attemptId) rt.switchOpening = undefined;
                   rt.reopening = false;
                   const failure = Cause.findErrorOption(exit.cause);
                   const failed = yield* store.updateThread(threadId, (t) =>
-                    t.sessionSwitch?.id === attemptId
+                    t.sessionSwitch?.id === attemptId && t.sessionSwitch.phase === "starting"
                       ? {
                           ...t,
                           sessionSwitch: {

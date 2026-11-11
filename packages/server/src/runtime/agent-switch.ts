@@ -283,6 +283,13 @@ export const makeAgentSwitch = ({
   /** The switch's own turns still running, by turn id, each waiting for its end. */
   const turnEnds = new Map<TurnId, Deferred.Deferred<Outcome>>();
 
+  /**
+   * The switches still owing their new session its handoff, or their release, by thread: one a
+   * restart left `ready` and undelivered, or one whose thread is archived, which waits for it to
+   * come back (`giveOwed`).
+   */
+  const owed = new Map<ThreadId, string>();
+
   /** The runtime's observer hears every turn end; a switch's own turn ends its wait. */
   const onTurnEnd = (_thread: Thread, end: ObservedTurnEnd) =>
     Effect.suspend(() => {
@@ -499,7 +506,9 @@ export const makeAgentSwitch = ({
     Effect.gen(function* () {
       const thread = yield* store.getThread(threadId);
       const claim = claimOf(thread, attemptId);
-      if (claim?.phase !== "ready") return;
+      // Archived, it gets nothing yet (`finish` keeps it owed); taken already, never sent twice.
+      if (claim?.phase !== "ready" || thread.parked || claim.handoff?.delivered !== undefined)
+        return;
       const previous = claim.previous;
       const plan = claim.handoff;
       const noteMode: SwitchNoteMode = plan?.note ?? "none";
@@ -542,8 +551,11 @@ export const makeAgentSwitch = ({
         SWITCH_HANDOFF_KEY,
         () =>
           store.getThread(threadId).pipe(
+            // Asked again as it goes: an archive committed meanwhile holds it back.
             Effect.map((current) =>
-              claimOf(current, attemptId)?.phase === "ready" ? { text } : undefined,
+              claimOf(current, attemptId)?.phase === "ready" && !current.parked
+                ? { text }
+                : undefined,
             ),
             Effect.orElseSucceed(() => undefined),
           ),
@@ -590,7 +602,7 @@ export const makeAgentSwitch = ({
    * couldn't be put together or sent still lets the queue go, rather than hold it on a switch
    * nothing can retry, and says so.
    */
-  const finish = (threadId: ThreadId, attemptId: string) =>
+  const finish = (threadId: ThreadId, attemptId: string): Effect.Effect<void, ThreadNotFound> =>
     Effect.gen(function* () {
       yield* handOver(threadId, attemptId).pipe(
         Effect.catchCause((cause) =>
@@ -608,8 +620,24 @@ export const makeAgentSwitch = ({
           }),
         ),
       );
+      // Archived meanwhile: nothing it held goes while it is parked. It stays owed, and coming
+      // back gives it what is left (`giveOwed`); asked again after, so an unarchive in between
+      // isn't missed.
+      if (yield* parkedWith(threadId, attemptId)) {
+        owed.set(threadId, attemptId);
+        if (yield* parkedWith(threadId, attemptId)) return;
+        owed.delete(threadId);
+        return yield* finish(threadId, attemptId);
+      }
       yield* letGo(threadId, attemptId);
     });
+
+  /** Whether the thread is archived with `attemptId`'s claim still on it. */
+  const parkedWith = (threadId: ThreadId, attemptId: string) =>
+    store.getThread(threadId).pipe(
+      Effect.map((thread) => thread.parked && claimOf(thread, attemptId) !== undefined),
+      Effect.orElseSucceed(() => false),
+    );
 
   /** The switch past its claim: the note, stop, open on the target, hand over, release. */
   const run = (threadId: ThreadId, attemptId: string, previous: ModelRef) =>
@@ -851,53 +879,63 @@ export const makeAgentSwitch = ({
    * divider and release are left if the agent did. One caught between is failed: who owns the
    * session can't be proved, so nothing starts on its own. The orchestrator's is `resumeHandoff`'s.
    */
-  /** The switches a restart left owing their new session its handoff, by thread. */
-  const owed = new Map<ThreadId, string>();
-
   /**
-   * Gives each switch the boot sweep found owing its handoff the handoff, then releases it, in the
-   * background. Run at boot once sessions can open, before what the switches held is sent.
+   * Gives an owed switch what it is owed, in the background: its new session reopened if it has
+   * none (the mode settled before `ready`), then the handoff unless the agent took it, then the
+   * release. An archived thread stays owed. A limit wait a restart left on the account the thread
+   * left is ended first, before the boot schedules that account, so it neither holds the handoff
+   * nor resumes the old turn on the new agent.
    */
-  const handOverOwed = Effect.gen(function* () {
-    const due = [...owed];
-    owed.clear();
-    for (const [threadId, attemptId] of due)
-      yield* Effect.gen(function* () {
-        const claim = claimOf(yield* store.getThread(threadId), attemptId);
-        if (claim === undefined) return;
-        // A restart between the switch and the end of the old account's wait left it: ended now,
-        // before the boot schedules what waits on that account, so it neither holds the handoff
-        // nor resumes the old turn on the new agent.
-        yield* endLimitWait(yield* getRuntime(threadId), claim.previous);
-        yield* FiberMap.run(
-          switches,
-          threadId,
-          reopenTarget(threadId, attemptId).pipe(
-            Effect.andThen(finish(threadId, attemptId)),
-            Effect.catchCause((cause) =>
-              Effect.gen(function* () {
-                yield* Effect.logWarning("a switch's new session didn't reopen at boot").pipe(
-                  Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
-                );
-                yield* hub.publish({
-                  type: "notify",
-                  kind: "error",
-                  title: "The switch needs attention",
-                  body: "The new session didn't reopen after the restart, so it hasn't had its handoff. Queued messages are held. Try the switch again from the thread.",
-                  threadId,
-                });
-              }),
-            ),
-          ),
-        );
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("couldn't give a switch its handoff at boot").pipe(
-            Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
+  const give = (threadId: ThreadId, attemptId: string) =>
+    Effect.gen(function* () {
+      const thread = yield* store.getThread(threadId);
+      const claim = claimOf(thread, attemptId);
+      if (claim === undefined) return void owed.delete(threadId);
+      if (thread.parked) return void owed.set(threadId, attemptId);
+      owed.delete(threadId);
+      yield* endLimitWait(yield* getRuntime(threadId), claim.previous);
+      yield* FiberMap.run(
+        switches,
+        threadId,
+        reopenTarget(threadId, attemptId).pipe(
+          Effect.andThen(finish(threadId, attemptId)),
+          Effect.catchCause((cause) =>
+            Effect.gen(function* () {
+              yield* Effect.logWarning("a switch's new session didn't reopen").pipe(
+                Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
+              );
+              yield* hub.publish({
+                type: "notify",
+                kind: "error",
+                title: "The switch needs attention",
+                body: "The new session didn't reopen, so it hasn't had its handoff. Queued messages are held. Try the switch again from the thread.",
+                threadId,
+              });
+            }),
           ),
         ),
       );
-  });
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("couldn't give a switch its handoff").pipe(
+          Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
+        ),
+      ),
+    );
+
+  /** At boot, once sessions can open and before what the switches held is sent: each owed switch. */
+  const handOverOwed = Effect.suspend(() =>
+    Effect.forEach([...owed], ([threadId, attemptId]) => give(threadId, attemptId), {
+      discard: true,
+    }),
+  );
+
+  /** A thread back from the archive: what its switch still owes it. */
+  const giveOwed = (threadId: ThreadId) =>
+    Effect.suspend(() => {
+      const attemptId = owed.get(threadId);
+      return attemptId === undefined ? Effect.void : give(threadId, attemptId);
+    });
 
   const resumeAtBoot = (thread: Thread) =>
     Effect.gen(function* () {
@@ -962,5 +1000,5 @@ export const makeAgentSwitch = ({
         .pipe(Effect.ignore);
     });
 
-  return { switchAgent, resumeAtBoot, handOverOwed, onTurnEnd };
+  return { switchAgent, resumeAtBoot, handOverOwed, giveOwed, onTurnEnd };
 };

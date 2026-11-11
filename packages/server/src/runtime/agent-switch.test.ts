@@ -1,16 +1,18 @@
 // Moving a plain thread or worker to the other agent (`switchAgent`), with the synthetic agent.
 import { describe, expect, it } from "@effect/vitest";
-import type {
-  AgentEvent,
-  LimitWait,
-  TurnId,
-  HostId,
-  MessageId,
-  ModelRef,
-  ProfileId,
-  RequestId,
-  ThreadId,
+import {
+  AgentUnavailable,
+  type AgentEvent,
+  type LimitWait,
+  type TurnId,
+  type HostId,
+  type MessageId,
+  type ModelRef,
+  type ProfileId,
+  type RequestId,
+  type ThreadId,
 } from "@gram/contracts";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -22,6 +24,7 @@ import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { AgentHosts } from "./agent-hosts.ts";
 import { FakeAgentAdapter, FakeAgentControl, type FakeSession } from "./fake-agent.ts";
 import { CheckoutService, TurnHooks } from "./hooks.ts";
 import { LIMIT_RESUME_TEXT } from "./limit-wait.ts";
@@ -30,12 +33,12 @@ import { RuntimeTestLayer, TEST_CONFIG, waitFor } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
 /** The runtime over a database file, so a second layer is the app after a restart. */
-const layerAt = (file: string) =>
+const layerAt = (file: string, agents = FakeAgentAdapter) =>
   AppToolRegistry.layer.pipe(
     Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
     Layer.provideMerge(EventHub.layer),
     Layer.provideMerge(ThreadStore.layerSqlite(file)),
-    Layer.provideMerge(FakeAgentAdapter),
+    Layer.provideMerge(agents),
     Layer.provideMerge(TurnHooks.layerNoop),
     Layer.provideMerge(CheckoutService.layerNoGit),
     Layer.provideMerge(ServerConfig.layer(TEST_CONFIG)),
@@ -1152,7 +1155,7 @@ describe("switchAgent's handoff, as the review of #433 reproduced it", () => {
 });
 
 /** A switch a crash left `ready` and owing its handoff, with work queued behind it. */
-const seedOwed = (options: { wait?: "claude/" | "codex/"; mode?: "auto" } = {}) =>
+const seedOwed = (options: { wait?: "claude/" | "codex/"; mode?: "auto"; parked?: boolean } = {}) =>
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
     const store = yield* ThreadStore;
@@ -1188,6 +1191,8 @@ const seedOwed = (options: { wait?: "claude/" | "codex/"; mode?: "auto" } = {}) 
       },
     }));
     yield* runtimes.send(thread.id, { text: "WORK_AFTER_BOOT" });
+    if (options.parked === true)
+      yield* store.updateThread(thread.id, (t) => ({ ...t, parked: true }));
     return thread.id;
   });
 
@@ -1285,6 +1290,126 @@ describe("switchAgent's handoff at boot, as review rev 2 of #433 reproduced it",
             store.getThread(id).pipe(Effect.map((t) => t.sessionSwitch === undefined)),
           );
         }).pipe(Effect.provide(layerAt(file)));
+      }),
+    ),
+  );
+});
+
+/** The fake agents, but with no Codex adapter: resolving the target's host fails at once. */
+const noCodex = Layer.effectContext(
+  Effect.gen(function* () {
+    const hosts = yield* AgentHosts;
+    const control = yield* FakeAgentControl;
+    return Context.make(
+      AgentHosts,
+      AgentHosts.of({
+        get: (kind) =>
+          kind === "codex"
+            ? Effect.fail(
+                new AgentUnavailable({ agent: "codex", message: "no codex adapter in this build" }),
+              )
+            : hosts.get(kind),
+      }),
+    ).pipe(Context.add(FakeAgentControl, control));
+  }),
+).pipe(Layer.provide(FakeAgentAdapter));
+
+/** Every input the thread's sessions were sent. */
+const inputsOf = (threadId: ThreadId) =>
+  FakeAgentControl.pipe(
+    Effect.map((fake) =>
+      fake.sessions.filter((s) => s.options.threadId === threadId).flatMap((s) => s.sent),
+    ),
+  );
+
+const settle = Effect.gen(function* () {
+  for (let i = 0; i < 200; i++) yield* Effect.yieldNow;
+});
+
+describe("switchAgent's owed handoff, as review rev 3 of #433 reproduced it", () => {
+  it.effect(
+    "opens nothing for an archived thread at boot, and gives the handoff once it is back",
+    () =>
+      onDisk((file) =>
+        Effect.gen(function* () {
+          const id = yield* seedOwed({ parked: true }).pipe(Effect.provide(layerAt(file)));
+          yield* Effect.gen(function* () {
+            const runtimes = yield* ThreadRuntimes;
+            const store = yield* ThreadStore;
+            const fake = yield* FakeAgentControl;
+            yield* runtimes.sendQueuedAtBoot;
+            yield* settle;
+            expect(fake.sessions.filter((s) => s.options.threadId === id)).toEqual([]);
+            expect((yield* store.getThread(id)).sessionSwitch?.phase).toBe("ready");
+            // Back from the archive: the handoff first, then what it held.
+            yield* runtimes.updateThread(id, (t) => ({ ...t, parked: false }));
+            const next = yield* firstInput(id);
+            expect(isHandoff(next.sent[0]!.text)).toBe(true);
+            expect(next.sent).toHaveLength(1);
+            yield* next.completeTurn("Goal: carry on.");
+            yield* waitFor(
+              "the work after the handoff",
+              Effect.sync(() => next.sent.some((input) => input.text === "WORK_AFTER_BOOT")),
+            );
+          }).pipe(Effect.provide(layerAt(file)));
+        }),
+      ),
+  );
+
+  it.effect("sends nothing to a thread archived while its new session reopens", () =>
+    onDisk((file) =>
+      Effect.gen(function* () {
+        const id = yield* seedOwed().pipe(Effect.provide(layerAt(file)));
+        yield* Effect.gen(function* () {
+          const runtimes = yield* ThreadRuntimes;
+          const store = yield* ThreadStore;
+          const fake = yield* FakeAgentControl;
+          yield* fake.setOpenDelay("200 millis");
+          yield* runtimes.sendQueuedAtBoot;
+          yield* waitFor(
+            "the reopen starting",
+            store.getThread(id).pipe(Effect.map((t) => t.sessionSwitch?.phase === "starting")),
+          );
+          yield* runtimes.updateThread(id, (t) => ({ ...t, parked: true }));
+          yield* fake.setOpenDelay(undefined);
+          yield* TestClock.adjust("300 millis");
+          yield* settle;
+          expect((yield* store.getThread(id)).parked).toBe(true);
+          expect(yield* inputsOf(id)).toEqual([]);
+          expect((yield* store.listQueue(id)).map((item) => item.input.text)).toContain(
+            "WORK_AFTER_BOOT",
+          );
+          // Back: the handoff, then the work.
+          yield* runtimes.updateThread(id, (t) => ({ ...t, parked: false }));
+          const sent = yield* waitFor(
+            "the handoff after the unarchive",
+            inputsOf(id).pipe(Effect.map((inputs) => inputs.length > 0 && inputs)),
+          );
+          expect(isHandoff(sent[0]!.text)).toBe(true);
+          expect(sent).toHaveLength(1);
+        }).pipe(Effect.provide(layerAt(file)));
+      }),
+    ),
+  );
+
+  it.effect("fails the switch, the queue held, when the reopen fails at once", () =>
+    onDisk((file) =>
+      Effect.gen(function* () {
+        const id = yield* seedOwed().pipe(Effect.provide(layerAt(file)));
+        yield* Effect.gen(function* () {
+          const runtimes = yield* ThreadRuntimes;
+          const store = yield* ThreadStore;
+          yield* runtimes.sendQueuedAtBoot;
+          const failed = yield* waitFor(
+            "the switch failed",
+            store.getThread(id).pipe(Effect.map((t) => t.sessionSwitch?.phase === "failed" && t)),
+          );
+          expect(failed.sessionSwitch!.detail).toContain("no codex adapter in this build");
+          expect((yield* store.listQueue(id)).map((item) => item.input.text)).toContain(
+            "WORK_AFTER_BOOT",
+          );
+          expect(yield* inputsOf(id)).toEqual([]);
+        }).pipe(Effect.provide(layerAt(file, noCodex)));
       }),
     ),
   );

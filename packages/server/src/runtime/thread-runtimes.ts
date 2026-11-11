@@ -1142,12 +1142,17 @@ const make = Effect.gen(function* () {
       return thread;
     });
 
+  /** Set once the switch is made: a thread back from the archive gets what its switch owes it. */
+  let switchUnarchived: ((threadId: ThreadId) => Effect.Effect<void>) | undefined;
+
   const updateThread: ThreadRuntimesShape["updateThread"] = (threadId, f, authorityCaller) =>
     Effect.gen(function* () {
       const before = yield* store.getThread(threadId);
       const thread = yield* store.updateThread(threadId, f, authorityCaller);
       yield* publishUpsert(thread);
       const unarchived = before.parked && !thread.parked;
+      // A switch that waited for the thread to come back gives it what it owes, ahead of its queue.
+      if (unarchived && switchUnarchived !== undefined) yield* switchUnarchived(threadId);
       const rt =
         runtimes.get(threadId) ??
         (unarchived && (yield* store.listQueue(threadId)).length > 0
@@ -1400,6 +1405,7 @@ const make = Effect.gen(function* () {
     reopenTarget: reopenSwitchTarget,
     gitState: (cwd) => git.local(cwd),
   });
+  switchUnarchived = agentSwitch.giveOwed;
   // Every turn end, for the switch's own turns: the note and the handoff.
   observers.add({ onTurnEnd: agentSwitch.onTurnEnd });
   // A plain thread's or worker's switch the last run cut off; the orchestrator's is its handoff's.
