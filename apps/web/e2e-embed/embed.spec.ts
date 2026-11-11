@@ -142,3 +142,38 @@ test("the app runs under a path of the embedding app's choosing", async ({ page 
   await expect(page.getByTestId("fixture-agent")).toHaveText("Agent a-9");
   expect(errors).toEqual([]);
 });
+
+test("an added page uses Gram's own controls and its theme's names", async ({ page }) => {
+  const errors = await mounted(page, "/govern/policies");
+  // Gram's button, from the package's kit: the outline variant has the theme's border.
+  const button = page.getByTestId("fixture-button");
+  await expect(button).toHaveClass(/group\/button/);
+  const border = await button.evaluate((element) => getComputedStyle(element).borderTopWidth);
+  expect(border).toBe("1px");
+  // The kit's tooltip opens under the app's own provider.
+  await button.hover();
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText(
+    "Opens Gram's own About page",
+  );
+
+  // The page's own Tailwind build knows the theme's names: a surface colour, a type step and a
+  // named space, each resolved from the tokens the app's stylesheet sets.
+  const themed = await page.getByTestId("fixture-themed").evaluate((element) => {
+    const style = getComputedStyle(element);
+    const root = getComputedStyle(document.documentElement);
+    return {
+      background: style.backgroundColor,
+      padding: style.paddingTop,
+      size: style.fontSize,
+      // The token is in rem, on the page's root size.
+      metaSize: `${Number.parseFloat(root.getPropertyValue("--type-meta-size")) * Number.parseFloat(root.fontSize)}px`,
+    };
+  });
+  expect(themed.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(themed.padding).toBe("8px");
+  expect(themed.size).toBe(themed.metaSize);
+
+  await button.click();
+  await expect(page.getByRole("heading", { name: "About" }).first()).toBeVisible();
+  expect(errors).toEqual([]);
+});

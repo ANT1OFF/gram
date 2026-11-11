@@ -19,6 +19,8 @@ out. Nothing here changes the desktop app.
 | `gram-web.js`             | The entry, an ES module. It loads the rest as it needs it.                          |
 | `gram-web.css`            | Every style of the app, fonts included. Link it once.                               |
 | `gram-web.d.ts`, `types/` | The types below, as [contract.ts](../apps/web/src/embed/contract.ts) declares them. |
+| `gram-web-kit.js`         | Gram's own controls, for your pages (below).                                        |
+| `theme.css`               | The names of Gram's theme for your own Tailwind build (below).                      |
 | `chunks/`, `assets/`      | What the entry loads later, found relative to it.                                   |
 | `package.json`            | The manifest: the two exports, and React as an exact peer.                          |
 
@@ -100,10 +102,32 @@ Inside your pages and switcher, `ShellLink` is a link to a path under the app th
 the page again, and `useShellLocation()` gives the path the window is on (without `basePath`) and
 a `navigate`.
 
+## Pages that look like Gram's
+
+`@gram/web/kit` exports Gram's own controls: `Button`, `ButtonGroup`, `Badge`, `Alert`, `Switch`,
+`Tabs`, `Select`, `Collapsible`, `Tooltip`, `Hint` and the class joiner `cn`. They are the
+components the app itself draws, from the same build, so their styles are already in
+`gram-web.css` and a tooltip of yours opens under the app's own provider. The list grows as
+pages need more; a control added to it keeps its props.
+
+For your own markup, `@gram/web/theme.css` gives a Tailwind 4 build of yours the names of Gram's
+theme: its colours (`bg-surface-3`, `text-muted-foreground`), type steps (`text-meta`,
+`text-heading`), named spaces (`p-inset`, `gap-section`), icon sizes, variants (`dark:`, `phone:`)
+and utilities (`focus-ring`). The values behind the names are the custom properties the app's
+stylesheet sets on `<html>`, so your pages follow the person's palette, mode and look.
+
+```css
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source("./");
+@import "@gram/web/theme.css";
+```
+
+Leave Tailwind's base styles out, as above: the page's are Gram's. Follow
+[the design notes](../DESIGN.md) for which name goes where.
+
 ## Limits today
 
-- Your pages bring their own styles. Gram's colour and spacing tokens are CSS custom properties on
-  `<html>` and can be read from them; Gram's components are not yet exported.
 - Layout, drafts and theme are kept in the browser's storage for the origin, not per server. Two
   servers shown from one origin share them.
 - The title of the window is Gram's.
@@ -113,5 +137,6 @@ a `navigate`.
 `bun run --filter @gram/web e2e:embed` builds the package, builds a
 [separate app](../apps/web/e2e-embed/fixture/src/main.tsx) that consumes only the build, and
 drives it in a browser: the whole app mounts, an added page opens from the sidebar, the palette
-and its address, the switcher moves between the sidebar and the title bar, and all of it works
+and its address, the switcher moves between the sidebar and the title bar, a page of its own uses
+the kit and the theme's names, and all of it works
 under a base path. CI runs it in the first e2e shard.

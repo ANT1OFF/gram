@@ -1,9 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2024", "DOM"],
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "types": [],
+    "types": ["vite/client"],
     "noEmit": false,
     "composite": false,
     "incremental": false,
@@ -11,7 +11,11 @@
     "emitDeclarationOnly": true,
     "declarationMap": false,
     "sourceMap": false,
-    "rootDir": "src/embed"
+    "allowImportingTsExtensions": true,
+    "rootDir": "src",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
-  "include": ["src/embed/contract.ts"]
+  "include": ["src/embed/contract.ts", "src/embed/kit.ts", "src/vite-env.d.ts"]
 }

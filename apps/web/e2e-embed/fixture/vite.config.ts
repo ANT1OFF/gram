@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -10,10 +11,13 @@ const dist = (file: string) => fileURLToPath(new URL(`../../dist-embed/${file}`,
  */
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
-  plugins: [react()],
+  // Its own Tailwind build, for its own pages, on the names of Gram's theme.
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: [
       { find: "gram-web/style.css", replacement: dist("gram-web.css") },
+      { find: "gram-web/theme.css", replacement: dist("theme.css") },
+      { find: "gram-web/kit", replacement: dist("gram-web-kit.js") },
       { find: "gram-web", replacement: dist("gram-web.js") },
     ],
     // One React for the page: Gram's package leaves it to the app.
