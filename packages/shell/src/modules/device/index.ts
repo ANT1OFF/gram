@@ -14,3 +14,4 @@ export * from "./dial.ts";
 export * from "./settings.ts";
 export * from "./dpop.ts";
 export * from "./hosted.ts";
+export * from "./lending.ts";
