@@ -10,6 +10,7 @@
 // not: each start, and each time the feature is turned on, opens with `sink.started` and every
 // open thread, which a receiver reconciles against.
 
+import type { AnswerProof } from "./answer-proof.ts";
 import {
   approvalSubject,
   type DecisionAssignee,
@@ -60,6 +61,8 @@ export interface AskNote {
 export interface AnswerNote {
   readonly decision?: "approve" | "reject";
   readonly answeredBy?: string;
+  /** The request the answer came in, where it came as one (`ask-answer.ts`). */
+  readonly proof?: AnswerProof;
 }
 
 /** Answers kept for an `ask.resolved` that never came: the oldest go past this many. */
@@ -354,6 +357,7 @@ export const makeEventSink = (
                 how: answer === undefined ? "withdrawn" : "answered",
                 ...(answer?.decision === undefined ? {} : { decision: answer.decision }),
                 ...(answer?.answeredBy === undefined ? {} : { answeredBy: answer.answeredBy }),
+                ...(answer?.proof === undefined ? {} : { proof: answer.proof }),
               },
             },
           ];

@@ -1,5 +1,6 @@
 // Approval cards the server raises and answers itself (`requestApproval`), rather than an agent session.
 
+import { AnswerProofRef } from "../embedding/answer-proof.ts";
 import type { EventSinkShape } from "../embedding/event-sink.ts";
 import { ActingPerson } from "../embedding/person.ts";
 import * as Cause from "effect/Cause";
@@ -424,6 +425,7 @@ export const makeServerApprovals = ({
     // delivery publishes, so the answer is noted first and taken back if it wasn't delivered.
     return Effect.gen(function* () {
       const answeredBy = yield* ActingPerson;
+      const proof = yield* AnswerProofRef;
       const decision =
         answer.kind === "question"
           ? undefined
@@ -433,6 +435,7 @@ export const makeServerApprovals = ({
       yield* eventSink.noteAnswer(requestId, {
         ...(decision === undefined ? {} : { decision }),
         ...(answeredBy === undefined ? {} : { answeredBy }),
+        ...(proof === undefined ? {} : { proof }),
       });
       return yield* deliver(threadId, requestId, answer).pipe(
         Effect.onError(() => eventSink.noteAnswer(requestId, undefined)),

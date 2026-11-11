@@ -1,3 +1,4 @@
+import { answerAsk, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { DecisionHook } from "../embedding/decision-hook.ts";
 import { EventSink } from "../embedding/event-sink.ts";
 import { UsageLimitPoller } from "../usage/limit-poller.ts";
@@ -417,6 +418,16 @@ export const AuthMiddleware = HttpRouter.middleware(
             );
             return secureResponse(answered);
           }
+          // An answer to a card, as its own request: what the proxy signed for it goes with it.
+          if (target.path === ASK_ANSWER_PATH && runtimes !== undefined && store !== undefined)
+            return secureResponse(
+              yield* answerAsk(
+                { runtimes, store },
+                request,
+                stated.actor,
+                request.headers[IDENTITY_HEADER] ?? "",
+              ),
+            );
           // Phone access, joining machines and moving a workspace are for this machine's own
           // sign-in or the platform's, never a person signed in through the proxy. The agents'
           // and hosts' routes take a thread's token or a host's proof, never a person: a person

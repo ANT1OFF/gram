@@ -121,10 +121,13 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  *   (`createdBy` is the id of the signed-in person who started the thread, where known),
  *   `thread.removed` `{id}`, `thread.status` `{id, status, idle}`.
  * - `ask.opened` `{id, kind, title, decisionId?, assignees?}`.
- * - `ask.resolved` `{id, how, decision?, answeredBy?}`: `how` is `answered` when a person
+ * - `ask.resolved` `{id, how, decision?, answeredBy?, proof?}`: `how` is `answered` when a person
  *   answered it and `withdrawn` when it went unanswered (the turn stopped, the session went, the
  *   agent took it back). `decision` is the person's `approve` or `reject` of an approval or a
- *   plan; `answeredBy` is their id, where the server knows who is signed in.
+ *   plan; `answeredBy` is their id, where the server knows who is signed in. `proof`, with sign-in
+ *   through a fronting proxy, is the request the answer came in, exactly as received:
+ *   `{statement, method, path, body}`, the front's signed statement and what it signed, for a
+ *   receiver to check who answered without taking the server's word for it.
  * - `featureCard.upsert` `{id: "<workspaceId>/<feature>", title, status, version}`.
  * - `usage` `{turnId?, model?, inputTokens, outputTokens, cacheReadTokens?, cacheWriteTokens?, costUsd?}`.
  * - `decision` `{id, action, decision, reason?}`: each call to the decision hook and its outcome.
