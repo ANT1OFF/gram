@@ -43,6 +43,8 @@ import {
   MACHINES_PROVISION_PATH,
   MACHINES_REMOVE_PATH,
 } from "./machine-routes.ts";
+import { IDENTITY_HEADER, type FrontedIdentityConfig } from "./fronted-identity.ts";
+import { makeTestProxy } from "./fronted-identity.testing.ts";
 import { ProvisionedListener } from "./provisioned-listener.ts";
 import { LaunchToken, serverPort, ServerLayer } from "./server.ts";
 
@@ -111,7 +113,7 @@ execFileSync(
 );
 const ca = readFileSync(certFile);
 
-const serverWith = (dataDir: string, port: number) =>
+const serverWith = (dataDir: string, port: number, fronted?: FrontedIdentityConfig) =>
   ServerLayer.pipe(
     Layer.provide(FakeAgentAdapter),
     Layer.provide(TurnHooks.layerNoop),
@@ -127,6 +129,7 @@ const serverWith = (dataDir: string, port: number) =>
           certFile,
           keyFile,
         },
+        ...(fronted === undefined ? {} : { frontedIdentity: fronted, embedding: true }),
       }),
     ),
     Layer.orDie,
@@ -588,3 +591,102 @@ test("stops in order with a connection that never finishes its request, and when
     }),
   );
 }, 90_000);
+
+const proxy = makeTestProxy();
+const frontedPort = await unusedPort();
+
+/** One request as the fronting proxy forwards it, carrying the statement it signed. */
+const fronted = (claims: Record<string, unknown>, path: string, body: unknown = {}) =>
+  Effect.gen(function* () {
+    const port = serverPort(yield* HttpServer.HttpServer);
+    return yield* Effect.promise(
+      () =>
+        new Promise<Answer>((resolve, reject) => {
+          const text = JSON.stringify(body);
+          const req = httpRequest(
+            {
+              host: "127.0.0.1",
+              port,
+              path,
+              method: "POST",
+              agent: false,
+              headers: {
+                [IDENTITY_HEADER]: proxy.statement(claims),
+                origin: proxy.config.origin,
+                "content-type": "application/json",
+                "content-length": Buffer.byteLength(text),
+              },
+            },
+            (res) => {
+              let answer = "";
+              res.setEncoding("utf8");
+              res.on("data", (chunk: string) => (answer += chunk));
+              res.on("end", () => resolve({ status: res.statusCode ?? 0, body: answer }));
+            },
+          );
+          req.on("error", reject);
+          req.end(text);
+        }),
+    );
+  });
+
+layer(serverWith(join(temp, "data-fronted"), frontedPort, proxy.config), {
+  excludeTestServices: true,
+})("provisioned hosts behind a fronting proxy", (it) => {
+  it.effect(
+    "the platform's own statement registers and removes a host, and a person's never does",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const platform = { sub: "platform", name: "Platform", role: "service" };
+        const publicKey = publicKeyText(generateKeyPairSync("ed25519").publicKey);
+        const hostId = hostIdOf(publicKey);
+        const host = { name: "sandbox-1", publicKey, platform: "linux" };
+
+        // Whoever signed in through the proxy, whatever their role, is no platform.
+        for (const role of ["member", "viewer"])
+          for (const path of [MACHINES_PROVISION_PATH, MACHINES_REMOVE_PATH, MACHINES_LIST_PATH])
+            expect((yield* fronted({ role }, path, host)).status).toBe(403);
+        // Nor is the local app's launch cookie, from its own origin.
+        expect((yield* local(MACHINES_PROVISION_PATH, host)).status).toBe(403);
+
+        const registered = yield* fronted(platform, MACHINES_PROVISION_PATH, host);
+        expect(registered.status).toBe(200);
+        expect(JSON.parse(registered.body)).toMatchObject({
+          hostId,
+          created: true,
+          origin: `https://localhost:${frontedPort}`,
+        });
+        const listed = () =>
+          Effect.map(fronted(platform, MACHINES_LIST_PATH), (answer) =>
+            (JSON.parse(answer.body) as { machines: ReadonlyArray<{ id: string }> }).machines.map(
+              (one) => one.id,
+            ),
+          );
+        expect(yield* listed()).toEqual([hostId]);
+        expect((yield* fronted(platform, MACHINES_REMOVE_PATH, { id: hostId })).status).toBe(200);
+        expect(yield* listed()).toEqual([]);
+
+        // The platform's statement opens nothing else: no page, no socket's path, no other
+        // machine route, and none of what people reach.
+        for (const path of ["/", "/ws", "/machines/join-link", "/remote/status", "/mcp"])
+          expect((yield* fronted(platform, path)).status).toBe(403);
+
+        // Each of its calls is on record as the platform's, with how it was answered.
+        expect(
+          (yield* store.listActorEvents()).map(({ actor, action, data }) => [
+            actor.id,
+            actor.role,
+            action,
+            data["status"],
+          ]),
+        ).toEqual([
+          ["platform", "service", MACHINES_PROVISION_PATH, 200],
+          ["platform", "service", MACHINES_LIST_PATH, 200],
+          ["platform", "service", MACHINES_REMOVE_PATH, 200],
+          ["platform", "service", MACHINES_LIST_PATH, 200],
+        ]);
+      }),
+    60_000,
+  );
+});

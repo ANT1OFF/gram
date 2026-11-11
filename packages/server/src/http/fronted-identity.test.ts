@@ -28,6 +28,19 @@ describe("a fronting proxy's signed identity", () => {
     });
   });
 
+  test("names the platform itself apart from any person", () => {
+    expect(check(proxy.statement({ sub: "platform", name: undefined, role: "service" }))).toEqual({
+      ok: true,
+      service: { id: "platform", name: "platform" },
+    });
+    expect(check(proxy.statement({ sub: undefined, role: "service" }))).toEqual({
+      ok: false,
+      reason: "subject",
+    });
+    for (const role of ["Service", "services", ["service"]])
+      expect(check(proxy.statement({ role }))).toEqual({ ok: false, reason: "role" });
+  });
+
   test("is refused when missing or not a statement", () => {
     expect(check(undefined)).toEqual({ ok: false, reason: "missing" });
     expect(check("")).toEqual({ ok: false, reason: "missing" });

@@ -17,7 +17,9 @@ import { createPublicKey, verify, type KeyObject } from "node:crypto";
  * - `iss` and `aud`: exactly the configured issuer and audience. The audience names this one
  *   server, so a statement made for another is refused here;
  * - `sub`: the person, an id that never changes for them; `name`, optionally, to show;
- * - `role`: `member`, who may do everything, or `viewer`, who may only read;
+ * - `role`: `member`, who may do everything, or `viewer`, who may only read. Or `service`, which
+ *   is no person: the platform in front itself, let through only to register and remove the
+ *   hosts it starts and to move workspaces in and out (`SERVICE_PATHS` in `server.ts`);
  * - `iat` and `exp`: seconds. A statement lives at most {@link MAX_LIFETIME_SECONDS}.
  */
 export const IDENTITY_HEADER = "x-gram-identity";
@@ -72,8 +74,21 @@ export type IdentityRefusal =
   | "subject"
   | "role";
 
+/**
+ * The platform in front, speaking for itself and no person (`role` `service`). Whoever signs
+ * statements can make one, so it is the proxy's operator, never someone signed in through it.
+ */
+export interface ServiceCaller {
+  /** What the platform calls this caller (`sub`), for the record. */
+  readonly id: string;
+  readonly name: string;
+}
+
+export const SERVICE_ROLE = "service";
+
 export type IdentityResult =
   | { readonly ok: true; readonly actor: Actor }
+  | { readonly ok: true; readonly service: ServiceCaller }
   | { readonly ok: false; readonly reason: IdentityRefusal };
 
 const refuse = (reason: IdentityRefusal): IdentityResult => ({ ok: false, reason });
@@ -177,6 +192,7 @@ export const verifyIdentity = (
   const name = claims["name"] === undefined ? id : plainText(claims["name"]);
   if (name === undefined) return refuse("subject");
   const role = claims["role"];
+  if (role === SERVICE_ROLE) return { ok: true, service: { id, name } };
   if (role !== "member" && role !== "viewer") return refuse("role");
   return { ok: true, actor: { id, name, role } };
 };

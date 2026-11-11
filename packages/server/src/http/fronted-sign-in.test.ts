@@ -211,6 +211,24 @@ describe("sign-in through a fronting proxy", () => {
         for (const path of [REMOTE_STATUS_PATH, MACHINES_LIST_PATH, ...WORKSPACE_TRANSFER_PATHS])
           expect((yield* get(port, path, signedIn)).status).toBe(403);
 
+        // The platform's own statement reaches a workspace's way in and out, and no person's
+        // page or socket.
+        const platform = {
+          ...host,
+          [IDENTITY_HEADER]: proxy.statement({ sub: "platform", role: "service" }),
+        };
+        for (const path of WORKSPACE_TRANSFER_PATHS)
+          expect(yield* get(port, path, platform)).toMatchObject({
+            status: 405,
+            body: "method not allowed",
+          });
+        expect(yield* get(port, "/", platform)).toMatchObject({
+          status: 403,
+          body: "forbidden: not for a service",
+        });
+        expect(yield* upgrade(port, platform)).toBe(403);
+        expect((yield* get(port, "/mcp", platform)).status).toBe(403);
+
         // A thread's agent on this machine still needs its own token for its app tools.
         const mcp = yield* get(port, "/mcp", { ...host, authorization: "Bearer nope" });
         expect(mcp).toMatchObject({ status: 401, body: "unauthorized: invalid bearer token" });

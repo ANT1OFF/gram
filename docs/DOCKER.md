@@ -140,6 +140,14 @@ sent. The claims:
   including ones that hold secrets, such as `.env`.
 - `iat` and `exp`, at most five minutes apart. Make a new statement per request.
 
+What sits in front can also speak for itself. A statement with `role` `service` names no person:
+it is the platform's own, for the calls only it makes. It reaches `POST /machines/provision`,
+`/machines/remove` and `/machines/list`, to register and remove the hosts it starts, and
+`POST /workspaces/export` and `/workspaces/import`, to move a workspace in or out. It reaches
+nothing else, and a member or a viewer reaches none of those. Send it with `Origin` set to the
+public origin, as a browser would. Never issue it for someone who signed in: whoever holds one can
+add a machine that threads then run on. Its calls are recorded like a member's, under its `sub`.
+
 The server holds public keys only, so it can't sign a statement itself. What you have to keep
 true around it:
 
