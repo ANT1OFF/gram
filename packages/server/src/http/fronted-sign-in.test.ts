@@ -8,7 +8,7 @@ import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, layer } from "@effect/vitest";
-import { GramRpcs, RequestId } from "@gram/contracts";
+import { GramRpcs, PROFILE_START_PATH, RequestId } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -36,6 +36,9 @@ import { WORKSPACE_TRANSFER_PATHS } from "../transfer/routes.ts";
 import { LaunchToken, serverPort, ServerLayer } from "./server.ts";
 
 const proxy = makeTestProxy();
+
+const PROFILE_THREAD = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2c";
+const OTHER_PROFILE_THREAD = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2d";
 
 /** The event sink's receiver: every event the server sends it, in order. */
 const sunk: Array<{ type: string; data: Record<string, unknown> }> = [];
@@ -286,6 +289,78 @@ describe("sign-in through a fronting proxy", () => {
         expect((yield* get(port, importPath, platform(exportPath))).status).toBe(403);
         const { origin: _, ...originless } = platform(exportPath);
         expect((yield* get(port, exportPath, originless)).status).toBe(403);
+
+        // It starts a thread from a profile, once for one id however often it asks, and only
+        // on a machine that is there; a person is never let through to that path.
+        const startBody = (extra: Record<string, unknown> = {}) =>
+          JSON.stringify({
+            profile: {
+              version: 1,
+              agent: "claude",
+              charter: "Synthetic charter.",
+              model: { model: "fake-model" },
+              connectors: {},
+              workplace: { kind: "scratch" },
+            },
+            threadId: PROFILE_THREAD,
+            ...extra,
+          });
+        const started = yield* post(
+          port,
+          PROFILE_START_PATH,
+          startBody(),
+          platform(PROFILE_START_PATH),
+        );
+        expect(started.status, started.body).toBe(200);
+        expect(JSON.parse(started.body)).toEqual({ threadId: PROFILE_THREAD, created: true });
+        const again = yield* post(
+          port,
+          PROFILE_START_PATH,
+          startBody(),
+          platform(PROFILE_START_PATH),
+        );
+        expect(JSON.parse(again.body)).toEqual({ threadId: PROFILE_THREAD, created: false });
+        // Each call is on the record with the thread it made or found.
+        const recorded = (yield* (yield* ThreadStore).listActorEvents()).filter(
+          (event) => event.action === PROFILE_START_PATH,
+        );
+        expect(recorded.map((event) => event.data)).toEqual([
+          { status: 200, threadId: PROFILE_THREAD, created: true },
+          { status: 200, threadId: PROFILE_THREAD, created: false },
+        ]);
+        // Asked again for a machine it isn't on, it says so rather than answer as if it were.
+        const moved = yield* post(
+          port,
+          PROFILE_START_PATH,
+          startBody({ hostId: "machine-elsewhere" }),
+          platform(PROFILE_START_PATH),
+        );
+        expect(moved.status).toBe(409);
+        // An alias of the path is no way around the checks above.
+        expect(
+          (yield* post(port, `${PROFILE_START_PATH}/`, startBody(), { ...host, ...signedIn }))
+            .status,
+        ).toBeGreaterThanOrEqual(400);
+        const elsewhere = yield* post(
+          port,
+          PROFILE_START_PATH,
+          startBody({ threadId: OTHER_PROFILE_THREAD, hostId: "machine-nowhere" }),
+          platform(PROFILE_START_PATH),
+        );
+        expect(elsewhere.status).toBe(409);
+        const extraKey = yield* post(
+          port,
+          PROFILE_START_PATH,
+          startBody({ threadId: OTHER_PROFILE_THREAD, sudo: true }),
+          platform(PROFILE_START_PATH),
+        );
+        expect(extraKey.status).toBe(400);
+        expect(
+          (yield* post(port, PROFILE_START_PATH, startBody(), { ...host, ...signedIn })).status,
+        ).toBe(403);
+        expect(
+          (yield* post(port, PROFILE_START_PATH, startBody(), platform(MACHINES_LIST_PATH))).status,
+        ).toBe(403);
 
         // A thread's agent on this machine still needs its own token for its app tools.
         const mcp = yield* get(port, "/mcp", { ...host, authorization: "Bearer nope" });
@@ -561,6 +636,9 @@ describe("sign-in through a fronting proxy", () => {
         expect((yield* app["settings.get"]()).logLevel).toBe("debug");
         // Nobody is named, so nothing is recorded.
         expect(yield* store.listActorEvents()).toEqual([]);
+        // Starting a thread from a profile is a hosted feature: here, a path that isn't there.
+        const local = { ...host, cookie, origin: `http://127.0.0.1:${port}` };
+        expect((yield* post(port, PROFILE_START_PATH, "{}", local)).status).toBe(404);
       }),
     );
   });

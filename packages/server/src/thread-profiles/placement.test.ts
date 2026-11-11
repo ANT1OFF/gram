@@ -10,6 +10,7 @@ import {
   HostId,
   HostUnavailable,
   InvalidState,
+  LOCAL_HOST_ID,
   type ProfileFile,
   type Thread,
   type ThreadId,
@@ -26,7 +27,7 @@ import type { HostThreadPlaces } from "../host/thread-places.ts";
 import type { WorkerHost } from "../host/worker-host.ts";
 import type { CreateThreadInput } from "../runtime/thread-runtimes-shape.ts";
 import type { ProfileRepositories } from "./repositories.ts";
-import { makeProfileStarter, PROFILE_THREADS_DIR } from "./start.ts";
+import { makeProfileStarter, NAME_A_MACHINE, PROFILE_THREADS_DIR } from "./start.ts";
 
 const MACHINE = HostId.make("machine-1");
 const ON = applySettingsPatch(DEFAULT_SETTINGS, { experimental: { embedding: true } });
@@ -49,6 +50,8 @@ const headless = (
     readonly machine?: Effect.Effect<HostId, InvalidState>;
     readonly create?: (input: CreateThreadInput) => Effect.Effect<Thread, InvalidState>;
     readonly repositories?: ProfileRepositories;
+    /** False for a server that isn't headless: it places only what names a machine. */
+    readonly headless?: boolean;
   } = {},
 ) => {
   const dataDir = mkdtempSync(join(tmpdir(), "gram-profile-placement-"));
@@ -104,7 +107,9 @@ const headless = (
     dataDir,
     repositories: options.repositories,
     hosts: {
-      headless: { machine: options.machine ?? Effect.succeed(MACHINE) },
+      ...(options.headless === false
+        ? {}
+        : { headless: { machine: options.machine ?? Effect.succeed(MACHINE) } }),
       get: (id) =>
         id === MACHINE
           ? Effect.succeed(host)
@@ -207,6 +212,96 @@ describe("a profile thread on a headless server", () => {
       expect(local).toEqual([]);
       expect(existsSync(worktree.path)).toBe(false);
       expect(created[0]?.checkout).toEqual(worktree);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("goes on the machine a caller names, on any server, and only there", () =>
+    Effect.gen(function* () {
+      // Not headless, and a default machine that isn't the one named: the named one is used.
+      const { starter, calls, created, dataDir, cleanup } = headless({
+        headless: false,
+        machine: Effect.fail(new InvalidState({ message: "not asked" })),
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+      const started = yield* starter.startOne(profile(), { on: MACHINE });
+      expect(started.created).toBe(true);
+      expect(calls.map((each) => each.call)).toEqual(["make"]);
+      expect(created[0]?.checkout).toMatchObject({ kind: "main", hostId: MACHINE });
+      expect(readdirSync(join(dataDir, PROFILE_THREADS_DIR))).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("refuses a machine that isn't joined, or this one, before anything is made", () =>
+    Effect.gen(function* () {
+      const prepared: Array<unknown> = [];
+      const repositories: ProfileRepositories = {
+        prepare: (...args) =>
+          Effect.sync(() => void prepared.push(args)).pipe(
+            Effect.andThen(Effect.fail(new InvalidState({ message: "not asked" }))),
+          ),
+        exclude: () => Effect.void,
+        discard: () => Effect.void,
+      };
+      const { starter, calls, created, dataDir, cleanup } = headless({ repositories });
+      yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+      const gone = HostId.make("machine-gone");
+      for (const workplace of [
+        { kind: "scratch" as const },
+        {
+          kind: "repositories" as const,
+          repositories: [{ url: "https://git.example.test/acme/widgets.git" }],
+        },
+      ]) {
+        const unknown = yield* starter
+          .startOne(profile({ workplace }), { on: gone })
+          .pipe(Effect.flip);
+        expect(unknown.message).toBe('No machine "machine-gone".');
+        const here = yield* starter
+          .startOne(profile({ workplace }), { on: LOCAL_HOST_ID })
+          .pipe(Effect.flip);
+        expect(here.message).toBe(NAME_A_MACHINE);
+      }
+      expect(prepared).toEqual([]);
+      expect(calls).toEqual([]);
+      expect(created).toEqual([]);
+      expect(existsSync(join(dataDir, PROFILE_THREADS_DIR))).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("makes a repository workplace's worktrees on the machine a caller names", () =>
+    Effect.gen(function* () {
+      const asked: Array<HostId | undefined> = [];
+      const repositories: ProfileRepositories = {
+        prepare: (_threadId, _repositories, machine) =>
+          Effect.sync(() => {
+            asked.push(machine);
+            return {
+              projectRoot: "/data/clone",
+              checkout: {
+                kind: "worktree" as const,
+                path: "/machine/repos/widgets/.worktrees/t",
+                hostId: MACHINE,
+                branch: "thread/t",
+              },
+              extraCheckouts: [],
+            };
+          }),
+        exclude: () => Effect.void,
+        discard: () => Effect.void,
+      };
+      const { starter, calls, cleanup } = headless({ repositories, headless: false });
+      yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+      yield* starter.startOne(
+        profile({
+          workplace: {
+            kind: "repositories",
+            repositories: [{ url: "https://git.example.test/acme/widgets.git" }],
+          },
+        }),
+        { on: MACHINE },
+      );
+      expect(asked).toEqual([MACHINE]);
+      expect(calls.map((each) => each.call)).toEqual(["lay"]);
     }).pipe(Effect.scoped),
   );
 });
