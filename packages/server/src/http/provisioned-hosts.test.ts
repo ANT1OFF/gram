@@ -43,10 +43,10 @@ import {
   MACHINES_PROVISION_PATH,
   MACHINES_REMOVE_PATH,
 } from "./machine-routes.ts";
-import { IDENTITY_HEADER, type FrontedIdentityConfig } from "./fronted-identity.ts";
+import { IDENTITY_HEADER, SERVICE_TYP, type FrontedIdentityConfig } from "./fronted-identity.ts";
 import { makeTestProxy } from "./fronted-identity.testing.ts";
 import { ProvisionedListener } from "./provisioned-listener.ts";
-import { LaunchToken, serverPort, ServerLayer } from "./server.ts";
+import { LaunchToken, SERVICE_PATHS, serverPort, ServerLayer } from "./server.ts";
 
 const temp = mkdtempSync(join(tmpdir(), "gram-provisioned-"));
 afterAll(() =>
@@ -596,7 +596,12 @@ const proxy = makeTestProxy();
 const frontedPort = await unusedPort();
 
 /** One request as the fronting proxy forwards it, carrying the statement it signed. */
-const fronted = (claims: Record<string, unknown>, path: string, body: unknown = {}) =>
+const fronted = (
+  claims: Record<string, unknown>,
+  path: string,
+  body: unknown = {},
+  header: Record<string, unknown> = {},
+) =>
   Effect.gen(function* () {
     const port = serverPort(yield* HttpServer.HttpServer);
     return yield* Effect.promise(
@@ -611,7 +616,7 @@ const fronted = (claims: Record<string, unknown>, path: string, body: unknown = 
               method: "POST",
               agent: false,
               headers: {
-                [IDENTITY_HEADER]: proxy.statement(claims),
+                [IDENTITY_HEADER]: proxy.statement(claims, { header }),
                 origin: proxy.config.origin,
                 "content-type": "application/json",
                 "content-length": Buffer.byteLength(text),
@@ -638,19 +643,34 @@ layer(serverWith(join(temp, "data-fronted"), frontedPort, proxy.config), {
     () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore;
-        const platform = { sub: "platform", name: "Platform", role: "service" };
+        const service = { sub: "platform", name: "Platform", role: "service" };
+        /** The platform's own statement, made for the path it calls. */
+        const platform = (path: string, body?: unknown, madeFor = path) =>
+          fronted({ ...service, path: madeFor }, path, body, { typ: SERVICE_TYP });
         const publicKey = publicKeyText(generateKeyPairSync("ed25519").publicKey);
         const hostId = hostIdOf(publicKey);
         const host = { name: "sandbox-1", publicKey, platform: "linux" };
 
         // Whoever signed in through the proxy, whatever their role, is no platform.
         for (const role of ["member", "viewer"])
-          for (const path of [MACHINES_PROVISION_PATH, MACHINES_REMOVE_PATH, MACHINES_LIST_PATH])
+          for (const path of SERVICE_PATHS)
             expect((yield* fronted({ role }, path, host)).status).toBe(403);
+        // A role a proxy copied from a directory is not the platform's statement either.
+        expect(
+          (yield* fronted(
+            { ...service, path: MACHINES_PROVISION_PATH },
+            MACHINES_PROVISION_PATH,
+            host,
+          )).status,
+        ).toBe(401);
+        // And one made for another path, seen on its way, registers nothing.
+        expect((yield* platform(MACHINES_PROVISION_PATH, host, MACHINES_LIST_PATH)).status).toBe(
+          403,
+        );
         // Nor is the local app's launch cookie, from its own origin.
         expect((yield* local(MACHINES_PROVISION_PATH, host)).status).toBe(403);
 
-        const registered = yield* fronted(platform, MACHINES_PROVISION_PATH, host);
+        const registered = yield* platform(MACHINES_PROVISION_PATH, host);
         expect(registered.status).toBe(200);
         expect(JSON.parse(registered.body)).toMatchObject({
           hostId,
@@ -658,19 +678,19 @@ layer(serverWith(join(temp, "data-fronted"), frontedPort, proxy.config), {
           origin: `https://localhost:${frontedPort}`,
         });
         const listed = () =>
-          Effect.map(fronted(platform, MACHINES_LIST_PATH), (answer) =>
+          Effect.map(platform(MACHINES_LIST_PATH), (answer) =>
             (JSON.parse(answer.body) as { machines: ReadonlyArray<{ id: string }> }).machines.map(
               (one) => one.id,
             ),
           );
         expect(yield* listed()).toEqual([hostId]);
-        expect((yield* fronted(platform, MACHINES_REMOVE_PATH, { id: hostId })).status).toBe(200);
+        expect((yield* platform(MACHINES_REMOVE_PATH, { id: hostId })).status).toBe(200);
         expect(yield* listed()).toEqual([]);
 
         // The platform's statement opens nothing else: no page, no socket's path, no other
         // machine route, and none of what people reach.
         for (const path of ["/", "/ws", "/machines/join-link", "/remote/status", "/mcp"])
-          expect((yield* fronted(platform, path)).status).toBe(403);
+          expect((yield* platform(path)).status).toBe(403);
 
         // Each of its calls is on record as the platform's, with how it was answered.
         expect(

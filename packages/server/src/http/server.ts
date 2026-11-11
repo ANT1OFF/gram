@@ -7,6 +7,7 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { GramRpcs } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Schedule from "effect/Schedule";
@@ -247,7 +248,7 @@ export const AuthMiddleware = HttpRouter.middleware(
       "x-content-type-options": "nosniff",
       "referrer-policy": "no-referrer",
     };
-    const manageMachines = (hosts: RemoteHostsShape, path: string) =>
+    const manageMachines = (hosts: RemoteHostsShape, path: string, provisionedOnly = false) =>
       Effect.flatMap(provisionedOn, (on) =>
         machineManagement(
           hosts,
@@ -259,6 +260,7 @@ export const AuthMiddleware = HttpRouter.middleware(
           control.dialAccess(),
           workerHosts === undefined ? undefined : (id) => workerHosts.machine(id).folders,
           on,
+          provisionedOnly,
         ),
       );
     return (httpEffect) =>
@@ -342,10 +344,21 @@ export const AuthMiddleware = HttpRouter.middleware(
           // record with how it was answered.
           if ("service" in stated) {
             const servicePath = target.path;
-            if (!SERVICE_PATHS.has(servicePath))
+            // Only the paths named for it, only the one this statement was made for, and from
+            // the public origin as the rest of a fronted server is.
+            if (
+              !SERVICE_PATHS.has(servicePath) ||
+              stated.service.path !== servicePath ||
+              origin !== identity.origin
+            ) {
+              yield* Effect.logWarning("refused a service statement where it has no business").pipe(
+                Effect.annotateLogs({ caller: stated.service.id, path: servicePath }),
+              );
               return secureResponse(
                 HttpServerResponse.text("forbidden: not for a service", { status: 403 }),
               );
+            }
+            const { id: serviceId, name: serviceName } = stated.service;
             const asService = unmarkLocalApp(
               request.modify({ headers: Headers.remove(request.headers, IDENTITY_HEADER) }),
             );
@@ -355,7 +368,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                   ? Effect.succeed(
                       HttpServerResponse.text("forbidden: no machines here", { status: 403 }),
                     )
-                  : manageMachines(remoteHosts, servicePath).pipe(
+                  : manageMachines(remoteHosts, servicePath, true).pipe(
                       Effect.provideService(HttpServerRequest.HttpServerRequest, asService),
                     )
                 : asCaller(httpEffect, asService)
@@ -363,24 +376,33 @@ export const AuthMiddleware = HttpRouter.middleware(
               Effect.onExit((exit) =>
                 store === undefined
                   ? Effect.void
-                  : store.appendActorEvents([
-                      {
-                        at: Date.now(),
-                        actor: { ...stated.service, role: SERVICE_ROLE },
-                        action: servicePath,
-                        data: Exit.isSuccess(exit)
-                          ? { status: exit.value.status }
-                          : { failed: true },
-                      },
-                    ]),
+                  : store
+                      .appendActorEvents([
+                        {
+                          at: Date.now(),
+                          actor: { id: serviceId, name: serviceName, role: SERVICE_ROLE },
+                          action: servicePath,
+                          data: Exit.isSuccess(exit)
+                            ? { status: exit.value.status }
+                            : Cause.hasInterruptsOnly(exit.cause)
+                              ? { interrupted: true }
+                              : { failed: true },
+                        },
+                      ])
+                      .pipe(
+                        // The call has happened either way: its answer isn't lost to the record.
+                        Effect.catchCause((cause) =>
+                          Effect.logError("a service call went unrecorded", cause),
+                        ),
+                      ),
               ),
             );
             return secureResponse(answered);
           }
           // Phone access, joining machines and moving a workspace are for this machine's own
-          // sign-in or the platform's, never a person signed in through the proxy. The agents' and hosts' routes take a thread's token or a host's
-          // proof, never a person: a person let through to them would act with neither a role
-          // nor a record.
+          // sign-in or the platform's, never a person signed in through the proxy. The agents'
+          // and hosts' routes take a thread's token or a host's proof, never a person: a person
+          // let through to them would act with neither a role nor a record.
           if (
             REMOTE_MANAGEMENT_PATHS.has(target.path) ||
             MACHINE_MANAGEMENT_PATHS.has(target.path) ||

@@ -389,6 +389,8 @@ export const machineManagement = (
   folders?: (id: HostId) => HostFolders,
   /** Whether provisioned hosts are turned on; off, none can be registered. */
   provisionedOn = false,
+  /** For a caller that only looks after provisioned hosts: it removes no machine a person joined. */
+  provisionedOnly = false,
 ) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -623,6 +625,8 @@ export const machineManagement = (
         const id = (yield* jsonBody(256))?.["id"];
         const machine = typeof id === "string" ? hosts.machines.get(id) : undefined;
         if (typeof id !== "string" || machine === undefined) return refuse("no such machine", 404);
+        if (provisionedOnly && machine.kind !== "provisioned")
+          return refuse("no such machine", 404);
         if (path === MACHINES_CONFIRM_PATH) {
           try {
             hosts.machines.confirm(id);

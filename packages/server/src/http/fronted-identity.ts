@@ -17,10 +17,15 @@ import { createPublicKey, verify, type KeyObject } from "node:crypto";
  * - `iss` and `aud`: exactly the configured issuer and audience. The audience names this one
  *   server, so a statement made for another is refused here;
  * - `sub`: the person, an id that never changes for them; `name`, optionally, to show;
- * - `role`: `member`, who may do everything, or `viewer`, who may only read. Or `service`, which
- *   is no person: the platform in front itself, let through only to register and remove the
- *   hosts it starts and to move workspaces in and out (`SERVICE_PATHS` in `server.ts`);
+ * - `role`: `member`, who may do everything, or `viewer`, who may only read;
  * - `iat` and `exp`: seconds. A statement lives at most {@link MAX_LIFETIME_SECONDS}.
+ *
+ * The platform in front can also speak for itself, as no person: a statement whose header has
+ * `typ` {@link SERVICE_TYP}, with `role` `service` and a `path` claim naming the one path it is
+ * for. It is let through only to register and remove the hosts it starts and to move workspaces
+ * in and out (`SERVICE_PATHS` in `server.ts`). The header marks it, not the role alone, so a
+ * proxy that copies a role from a directory can never make one by accident, and the path means
+ * a statement seen on its way is good for that one call's path and nothing more.
  */
 export const IDENTITY_HEADER = "x-gram-identity";
 
@@ -82,7 +87,12 @@ export interface ServiceCaller {
   /** What the platform calls this caller (`sub`), for the record. */
   readonly id: string;
   readonly name: string;
+  /** The one path this statement is for, which the request's must equal. */
+  readonly path: string;
 }
+
+/** The JOSE `typ` of a platform's own statement; a person's has another or none. */
+export const SERVICE_TYP = "gram-service+jwt";
 
 export const SERVICE_ROLE = "service";
 
@@ -192,7 +202,14 @@ export const verifyIdentity = (
   const name = claims["name"] === undefined ? id : plainText(claims["name"]);
   if (name === undefined) return refuse("subject");
   const role = claims["role"];
-  if (role === SERVICE_ROLE) return { ok: true, service: { id, name } };
+  // Both or neither: the header says what kind of statement this is, and the role agrees.
+  const forService = header["typ"] === SERVICE_TYP;
+  if (forService !== (role === SERVICE_ROLE)) return refuse("role");
+  if (forService) {
+    const path = claims["path"];
+    if (typeof path !== "string" || !/^\/[a-z/-]{0,64}$/.test(path)) return refuse("role");
+    return { ok: true, service: { id, name, path } };
+  }
   if (role !== "member" && role !== "viewer") return refuse("role");
   return { ok: true, actor: { id, name, role } };
 };

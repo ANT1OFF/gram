@@ -25,7 +25,7 @@ import { TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { ACTOR_HEADER, actorHeadersForTests } from "./actor.ts";
 import { tokenCookieName } from "./auth.ts";
-import { IDENTITY_HEADER } from "./fronted-identity.ts";
+import { SERVICE_TYP, IDENTITY_HEADER } from "./fronted-identity.ts";
 import { makeTestProxy } from "./fronted-identity.testing.ts";
 import { LOCAL_APP_HEADER } from "./local-app.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
@@ -213,21 +213,30 @@ describe("sign-in through a fronting proxy", () => {
 
         // The platform's own statement reaches a workspace's way in and out, and no person's
         // page or socket.
-        const platform = {
+        const platform = (path: string) => ({
           ...host,
-          [IDENTITY_HEADER]: proxy.statement({ sub: "platform", role: "service" }),
-        };
+          origin: proxy.config.origin,
+          [IDENTITY_HEADER]: proxy.statement(
+            { sub: "platform", role: "service", path },
+            { header: { typ: SERVICE_TYP } },
+          ),
+        });
         for (const path of WORKSPACE_TRANSFER_PATHS)
-          expect(yield* get(port, path, platform)).toMatchObject({
+          expect(yield* get(port, path, platform(path))).toMatchObject({
             status: 405,
             body: "method not allowed",
           });
-        expect(yield* get(port, "/", platform)).toMatchObject({
+        expect(yield* get(port, "/", platform("/"))).toMatchObject({
           status: 403,
           body: "forbidden: not for a service",
         });
-        expect(yield* upgrade(port, platform)).toBe(403);
-        expect((yield* get(port, "/mcp", platform)).status).toBe(403);
+        expect(yield* upgrade(port, platform("/ws"))).toBe(403);
+        expect((yield* get(port, "/mcp", platform("/mcp"))).status).toBe(403);
+        // A statement made for one path opens no other, and none without the public origin.
+        const [exportPath, importPath] = [...WORKSPACE_TRANSFER_PATHS] as [string, string];
+        expect((yield* get(port, importPath, platform(exportPath))).status).toBe(403);
+        const { origin: _, ...originless } = platform(exportPath);
+        expect((yield* get(port, exportPath, originless)).status).toBe(403);
 
         // A thread's agent on this machine still needs its own token for its app tools.
         const mcp = yield* get(port, "/mcp", { ...host, authorization: "Bearer nope" });
