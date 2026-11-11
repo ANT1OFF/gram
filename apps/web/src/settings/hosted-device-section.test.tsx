@@ -162,7 +162,7 @@ describe("Settings → Machines → lending this computer", () => {
           time: Date.now(),
           origin: ORIGIN,
           workspace: "w1",
-          threadTitle: "Tidy",
+          threadTitle: "Tidy \\u202e",
           folder: "/work/app",
           kind: "read",
           what: "/work/app/.env",
@@ -176,11 +176,18 @@ describe("Settings → Machines → lending this computer", () => {
     const rows = await screen.findAllByTestId("activity-row");
     expect(rows.map((row) => row.textContent)).toEqual([
       expect.stringContaining("Platform · Fix the seed\\u202e"),
-      expect.stringContaining("read /work/app/.envGram refusedholds credentials"),
+      expect.stringContaining(
+        "Tidy \\u202e/work/appread /work/app/.envGram refusedholds credentials",
+      ),
     ]);
-    expect(rows[0]?.textContent).toContain("bun install ⏎ rm -rf /");
+    expect(rows[0]?.textContent).toContain("bun install⏎rm -rf /");
     expect(rows[0]?.textContent).toContain("You allowed itexit 0");
     expect(rows[0]?.textContent).not.toContain("\u202e");
+    // The codes are set apart from the text, so typing them out can't pass for them.
+    expect(
+      [...(rows[0]?.querySelectorAll("[data-drawn]") ?? [])].map((span) => span.textContent),
+    ).toEqual(["\\u202e", "⏎"]);
+    expect(rows[1]?.querySelectorAll("[data-drawn]")).toHaveLength(0);
     expect(screen.getByTestId("activity-edited").textContent).toContain("changed outside Gram");
   });
 

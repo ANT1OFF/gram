@@ -815,6 +815,8 @@ describe("the activity list", () => {
     expect(read).toMatchObject({ kept: true, intact: true, setAside: false, more: true });
     expect(read.entries.map((entry) => entry.what)).toEqual(["three", "two"]);
     expect((await device.activity(10)).more).toBe(false);
+    // Asked again while a read is under way, it is that read.
+    expect(device.activity(10)).toBe(device.activity(10));
   });
 
   it("says when the record was changed, and lists only what came before", async () => {

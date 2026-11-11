@@ -410,6 +410,25 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     return save().catch(() => undefined);
   };
 
+  /** Reads the local log for the activity list, against where this app's log stands. */
+  const readActivity = async (most: number): Promise<DeviceActivity> => {
+    const open = log;
+    const keys = fileKeys;
+    if (open === undefined || keys === undefined || closed)
+      return { kept: false, intact: true, setAside: false, entries: [], more: false };
+    // Checked against where this app's log stands, so lines cut off its end show too.
+    const read = await readDeviceLog(join(options.dataDir, LOG_FILE), keys.log, open.head());
+    const count = Math.max(0, Math.floor(most));
+    return {
+      kept: true,
+      intact: read.intact,
+      setAside: open.foundEdited,
+      entries: read.entries.slice(Math.max(0, read.entries.length - count)).toReversed(),
+      more: read.entries.length > count,
+    };
+  };
+  let reading: { most: number; read: Promise<DeviceActivity> } | undefined;
+
   const mayLend = () => unavailable === undefined && !closed;
 
   const startLending = (server: Server): Promise<void> => {
@@ -966,8 +985,10 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         return { ok: false, why: "There is nothing to set aside." };
       const aside = `edited-${options.now()}-${randomBytes(4).toString("hex")}`;
       try {
-        await log?.close();
+        // Gone before it closes, so the activity list never reads it mid-rename.
+        const old = log;
         log = undefined;
+        await old?.close();
         for (const file of [SETTINGS_FILE, LOG_FILE]) {
           const path = join(options.dataDir, file);
           await rename(path, `${path}.${aside}`).catch((error: NodeJS.ErrnoException) => {
@@ -993,21 +1014,15 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
 
     grants: (origin) => known(origin)?.grants,
 
-    activity: async (most) => {
-      const open = log;
-      const keys = fileKeys;
-      if (open === undefined || keys === undefined || closed)
-        return { kept: false, intact: true, setAside: false, entries: [], more: false };
-      // Checked against where this app's log stands, so lines cut off its end show too.
-      const read = await readDeviceLog(join(options.dataDir, LOG_FILE), keys.log, open.head());
-      const count = Math.max(0, Math.floor(most));
-      return {
-        kept: true,
-        intact: read.intact,
-        setAside: open.foundEdited,
-        entries: read.entries.slice(Math.max(0, read.entries.length - count)).toReversed(),
-        more: read.entries.length > count,
-      };
+    activity: (most) => {
+      // One read at a time: asking again while one is under way gets that one.
+      if (reading?.most !== most) {
+        const read = readActivity(most).finally(() => {
+          if (reading?.read === read) reading = undefined;
+        });
+        reading = { most, read };
+      }
+      return reading.read;
     },
 
     close: async () => {

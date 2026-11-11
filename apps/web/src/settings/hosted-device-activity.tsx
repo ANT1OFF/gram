@@ -4,7 +4,7 @@ import {
   type HostedDeviceActivity,
   type HostedDeviceView,
 } from "@gram/contracts";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,13 +16,31 @@ type Bridge = NonNullable<NonNullable<Window["gram"]>["hostedDevice"]>;
 type Entry = HostedDeviceActivity["entries"][number];
 
 /**
- * Words from a server or a command on one line, with codes nobody could see drawn as their codes:
- * a thread title or a command can't reorder the row or pass for another.
+ * Words from a server or a command on one line, with codes nobody could see drawn as their codes
+ * and line breaks as a mark, each set apart from the text so that typing them out can't pass for
+ * them: a thread title or a command can't reorder the row or pass for another.
  */
-export const oneLine = (text: string): string =>
-  displayCommand(text)
-    .pieces.map((piece) => (piece.kind === "newline" ? " ⏎ " : piece.text))
-    .join("");
+export function Drawn({ text }: { text: string }) {
+  return (
+    <>
+      {displayCommand(text).pieces.map((piece, index) =>
+        piece.kind === "text" ? (
+          piece.text
+        ) : (
+          <span
+            // The pieces are fixed for one text; their place is their identity.
+            key={index}
+            data-drawn={piece.kind}
+            className="mx-px rounded-sm bg-muted px-0.5 text-warning not-italic"
+            title={piece.kind === "newline" ? "A line break" : "A character you can't see"}
+          >
+            {piece.kind === "newline" ? "⏎" : piece.text}
+          </span>
+        ),
+      )}
+    </>
+  );
+}
 
 /** Why Gram itself refused, after "Gram refused". */
 const GRAM_REFUSED: Record<
@@ -71,8 +89,14 @@ function Answer({ entry }: { entry: Entry }) {
   );
 }
 
-const askedFor = (entry: Entry): string =>
-  entry.kind === "exec" ? oneLine(entry.what) : `${entry.kind} ${oneLine(entry.what)}`;
+function AskedFor({ entry }: { entry: Entry }) {
+  return (
+    <>
+      {entry.kind === "exec" ? "" : `${entry.kind} `}
+      <Drawn text={entry.what} />
+    </>
+  );
+}
 
 /** The workspace's name as the server lists it now, else its id. */
 const workspaceName = (view: HostedDeviceView, entry: Entry): string =>
@@ -96,14 +120,44 @@ export function HostedDeviceActivityList({
 }) {
   const [open, setOpen] = useState(false);
   const [activity, setActivity] = useState<HostedDeviceActivity | null>();
-  const read = useCallback(() => {
-    void bridge.activity().then(setActivity, () => setActivity(null));
-  }, [bridge]);
   useEffect(() => {
     if (!open) return undefined;
+    // One read at a time, and at most one a second: each reads the whole record, and a busy
+    // server changes it with every request. A change during a read reads again after it.
+    let live = true;
+    let busy = false;
+    let again = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = () => {
+      if (busy || timer !== undefined) {
+        again = true;
+        return;
+      }
+      busy = true;
+      again = false;
+      void bridge
+        .activity()
+        .then(
+          (next) => live && setActivity(next),
+          () => live && setActivity(null),
+        )
+        .finally(() => {
+          busy = false;
+          if (live && again)
+            timer = setTimeout(() => {
+              timer = undefined;
+              read();
+            }, 1000);
+        });
+    };
     read();
-    return bridge.onChange(read);
-  }, [bridge, open, read]);
+    const stop = bridge.onChange(read);
+    return () => {
+      live = false;
+      if (timer !== undefined) clearTimeout(timer);
+      stop();
+    };
+  }, [bridge, open]);
 
   return (
     <div className={SETTINGS_CARD} data-testid="hosted-activity">
@@ -193,11 +247,18 @@ function ActivityBody({
                     {formatStamp(entry.time)}
                   </td>
                   <td className="max-w-56 truncate py-1 pe-3">
-                    {oneLine(workspaceName(view, entry))}
-                    <span className="text-muted-foreground"> · {oneLine(entry.threadTitle)}</span>
+                    <Drawn text={workspaceName(view, entry)} />
+                    <span className="text-muted-foreground">
+                      {" · "}
+                      <Drawn text={entry.threadTitle} />
+                    </span>
                   </td>
-                  <td className="max-w-48 truncate py-1 pe-3 font-mono">{oneLine(entry.folder)}</td>
-                  <td className="max-w-72 py-1 pe-3 font-mono break-all">{askedFor(entry)}</td>
+                  <td className="max-w-48 truncate py-1 pe-3 font-mono">
+                    <Drawn text={entry.folder} />
+                  </td>
+                  <td className="max-w-72 py-1 pe-3 font-mono break-all">
+                    <AskedFor entry={entry} />
+                  </td>
                   <td className="py-1">
                     <Answer entry={entry} />
                   </td>

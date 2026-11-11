@@ -932,9 +932,10 @@ decisions are the same, drawn by the system instead of in a window of Gram's.
 
 Under the servers, "Activity on this Mac" lists the local log when opened, newest first: when,
 the workspace and thread, the folder, what was asked and how it was answered (the exit code
-after an allowed command, the fixed reason after one Gram refused). It is read again whenever
-the device changes, which it does after each line. The thread's title, the folder and the
-command are drawn with hidden codes shown as codes and line breaks as a mark. The thread's id
+after an allowed command, the fixed reason after one Gram refused). It is read again when the
+device changes, which it does after each line: one read at a time, at most one a second while
+requests keep coming. The thread's title, the folder and the
+command are drawn with hidden codes shown as codes and line breaks as a mark, each set apart from the text so typing them out can't pass for them. The thread's id
 stays in main. When the file doesn't check out against the head kept in the settings, the list
 says it was changed outside Gram and shows only the lines before the change; a log set aside at
 start is said too. Without a keyring nothing is kept, and the list says so. It shows the newest
