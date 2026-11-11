@@ -427,7 +427,9 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       more: read.entries.length > count,
     };
   };
-  let reading: { most: number; read: Promise<DeviceActivity> } | undefined;
+  let reading:
+    | { readonly most: number; readonly lines: number; readonly read: Promise<DeviceActivity> }
+    | undefined;
 
   const mayLend = () => unavailable === undefined && !closed;
 
@@ -1015,12 +1017,14 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     grants: (origin) => known(origin)?.grants,
 
     activity: (most) => {
-      // One read at a time: asking again while one is under way gets that one.
-      if (reading?.most !== most) {
+      // Asking again while a read is under way gets that one, unless a line was added since it
+      // began: then it is out of date, and a new one starts.
+      const lines = log?.head().count ?? -1;
+      if (reading?.most !== most || reading.lines !== lines) {
         const read = readActivity(most).finally(() => {
           if (reading?.read === read) reading = undefined;
         });
-        reading = { most, read };
+        reading = { most, lines, read };
       }
       return reading.read;
     },
