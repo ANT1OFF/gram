@@ -1,3 +1,5 @@
+import { DecisionHook } from "../embedding/decision-hook.ts";
+import { EventSink } from "../embedding/event-sink.ts";
 import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
@@ -708,14 +710,22 @@ export const ServerCore = Layer.unwrap(
               ),
             ),
           ),
+          // The decision hook and event sink of an embedding deployment: both do nothing unless
+          // their endpoint is configured and hosted features are on. Under the runtimes and the
+          // orchestration, which ask the one and tell the other.
           Layer.provideMerge(
-            // Low enough for the port scan and the limit poll to rest while no window shows.
-            Layer.mergeAll(
-              EventHub.layer,
-              TerminalGate.layer,
-              PreviewFiles.layer,
-              AppActivityLive,
-              ProcessRoots.layer,
+            DecisionHook.layer.pipe(
+              Layer.provideMerge(EventSink.layer),
+              Layer.provideMerge(
+                // Low enough for the port scan and the limit poll to rest while no window shows.
+                Layer.mergeAll(
+                  EventHub.layer,
+                  TerminalGate.layer,
+                  PreviewFiles.layer,
+                  AppActivityLive,
+                  ProcessRoots.layer,
+                ),
+              ),
             ),
           ),
           Layer.provideMerge(

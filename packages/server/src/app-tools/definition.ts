@@ -8,6 +8,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
+import type { DecisionQuestion } from "../embedding/decision-hook.ts";
 
 /** What the gate decided about one call, for a handler whose result depends on it. */
 export interface AppToolCall {
@@ -88,6 +89,13 @@ export interface AppToolDefinition<S extends Schema.Top = Schema.Top, T = S["Typ
    * such as an issue on a shared repo that may carry context from the conversation.
    */
   readonly alwaysAsks?: true;
+  /**
+   * What a decision hook is asked before this call, where one is configured (`embedding/guard.ts`):
+   * the outward action the call is, with what is known of it. Asked after `resolve` and before
+   * Gram's own approval, which still applies to a call the hook allows. `undefined` for a call
+   * that is no such action (a merge intent dropped, say). Reads nothing.
+   */
+  decision?(threadId: ThreadId, target: T): Pick<DecisionQuestion, "action" | "detail"> | undefined;
   /**
    * What the card's details show for a call, when what runs isn't the input as sent (an issue as
    * composed and redacted, footer included); the input in the schema's encoding when absent.

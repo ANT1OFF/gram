@@ -159,6 +159,62 @@ the settings), never what was typed. A call that failed is recorded as failed. K
 terminal aren't recorded; opening one is. The `actor_events` table in the database holds a year
 of them. A message, an answer and a settings change by two people are two people's entries.
 
+### Decision hook
+
+With hosted features on and `GRAM_DECISION_HOOK_URL` set (an `http` or `https` URL with no
+credentials in it; `GRAM_DECISION_HOOK_TOKEN` is sent as a bearer token), the server asks that
+endpoint before an outward action and does what it answers: `allow`, `refuse`, or `ask` a person.
+The [wire shapes](../packages/contracts/src/embedding.ts) are version 1.
+
+| Asked about                                                       | Where                                                                                                                                         |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| A push, and opening, merging or closing a pull request, a release | An agent's own shell command, read as the [outward gate](../packages/agents/src/outward.ts) reads it; the app's Push and pull request buttons |
+| A connector's call                                                | A Claude agent's call to any MCP server but Gram's own                                                                                        |
+| A spawn, and arming a merge                                       | The orchestrator's `spawn_worker` and `merge_when_ready`, and a thread's `set_auto_merge`                                                     |
+
+- `allow` on an agent's command answers it with no card. On one of Gram's own tools it leaves the
+  call to the approval Gram would have asked for anyway.
+- `refuse` stops the action. The agent is told why in the call's result, and the thread shows the
+  same line as a notice.
+- `ask` raises the usual approval card, with the endpoint's reason on it. When a person approves
+  it the endpoint is asked again, naming the first call and the card, and the action runs only if
+  that answer is `allow`.
+- No answer within ten seconds, any status but 200, or an answer that doesn't read as one is a
+  refusal. Redirects aren't followed, and an answer over 64 KiB isn't read.
+- A `GRAM_DECISION_HOOK_URL` that is set but isn't a whole `http(s)` URL (or has credentials or a
+  fragment in it), or a token with spaces or control characters, refuses every one of these
+  actions and says so in the log at start. It does not turn the hook off.
+
+While it is on, every thread's sessions open with the outward gate at its strictest and their
+connector calls gated, whatever the workspace's autonomy says, so that each of those calls reaches
+the endpoint; turning it on or off takes effect in sessions opened afterwards. Like the outward
+gate, it reads command spellings: it is not a boundary against an agent that pushes by a route
+Gram can't see, which is for whatever holds the credentials to enforce. Not asked yet: a Codex
+agent's connector calls, a routine's own spawn, and the merge an armed `merge_when_ready` makes
+later (it is asked when the merge is armed). A session that was already open when the hook came
+on keeps the gates it opened with until it is next opened.
+
+### Event sink
+
+With hosted features on and `GRAM_EVENT_SINK_URL` set (`GRAM_EVENT_SINK_TOKEN` as its bearer
+token), the server sends what happens to that endpoint in order: threads as they are made, change
+and go, each thread's status, approval cards and questions as they open and close, feature cards,
+each turn's usage, and every decision the hook made.
+
+- Events are numbered from 1 with no gaps and kept in `event-sink.db` in the data folder until
+  the receiver confirms them. Each POST carries the next few; the answer `{"ack": n}` says the
+  highest number the receiver holds, and the next POST starts at `n + 1`, forward or back.
+- Delivery is at least once: a receiver ignores a number it already holds. After a restart the
+  server goes on from the last confirmed number, so nothing recorded is skipped.
+- Each start opens with `sink.started`, which lists every open thread, for a receiver to put
+  right what a crash kept from being recorded.
+- The last 10,000 confirmed events are kept in case the receiver falls back. If it asks for older
+  ones, or the file is lost, a new `source` id starts again at 1. An `ack` above the last number
+  in the POST it answers is not believed, and the same events are sent again.
+- If the receiver takes nothing while 200,000 events wait, the backlog is given up and a new
+  `source` id starts at 1 with `sink.started`.
+- Nothing is recorded while hosted features are off. Transcript messages aren't sent yet.
+
 ## A headless control plane
 
 With `GRAM_HEADLESS=1` the server runs no work itself. It starts no agent, opens no terminal and

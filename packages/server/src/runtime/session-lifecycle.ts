@@ -1,6 +1,8 @@
 // A thread's agent session: opening it, what its end means for the thread, the watchdog's
 // recovery of a stuck turn, and stopping a session whose folder is gone.
 
+import type { DecisionHookShape } from "../embedding/decision-hook.ts";
+import { hookedSessionOptions } from "../embedding/hooked-requests.ts";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Exit from "effect/Exit";
@@ -67,6 +69,8 @@ export interface SessionLifecycleDeps {
   readonly checkouts: CheckoutServiceShape;
   readonly hosts: AgentHosts["Service"];
   readonly sessions: FiberMap.FiberMap<ThreadId>;
+  /** The decision hook, where one is configured: a session under it asks about every outward call. */
+  readonly decisions: DecisionHookShape | undefined;
   readonly folderStops: FiberMap.FiberMap<ThreadId>;
   readonly recoveries: FiberMap.FiberMap<ThreadId, void, never>;
   readonly activityTimers: FiberMap.FiberMap<ThreadId>;
@@ -103,6 +107,7 @@ export interface SessionLifecycleDeps {
 
 /** The sessions `ThreadRuntimes` runs, one per thread, each in `sessions`. */
 export const makeSessionLifecycle = ({
+  decisions,
   store,
   hub,
   checkouts,
@@ -453,6 +458,9 @@ export const makeSessionLifecycle = ({
       const resume = yield* resumeOptions(thread, resumeAt);
       const policy = yield* policyFor(thread);
       yield* opening(thread);
+      // Read as the session opens: turning the hook on or off takes a new session, like the gate.
+      const hooked =
+        decisions !== undefined && thread.role !== "dream" && (yield* decisions.enabled);
       rt.capabilities = host.capabilities;
       rt.cwd = thread.checkout.path;
       rt.quota = `${thread.model.agent}/${thread.model.profileId ?? ""}`;
@@ -519,6 +527,7 @@ export const makeSessionLifecycle = ({
             ...(dreamMode === "guided" || policy.outwardGate === undefined
               ? {}
               : { outwardGate: policy.outwardGate }),
+            ...(hooked ? hookedSessionOptions : {}),
             ...(policy.confineWrites === true ? { confineWrites: true } : {}),
             ...(policy.pinCwd === true ? { pinCwd: true } : {}),
             ...(policy.mcpAllowlist === undefined ? {} : { mcpAllowlist: policy.mcpAllowlist }),

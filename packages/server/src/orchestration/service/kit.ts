@@ -52,6 +52,7 @@ import * as Semaphore from "effect/Semaphore";
 import { appLabelOf, ServerConfig } from "../../config.ts";
 import { type Coalescing, makeCoalescingQueue } from "../../events/backlog.ts";
 import { EventHub } from "../../events/event-hub.ts";
+import { EventSink } from "../../embedding/event-sink.ts";
 import { AppActivity } from "../../git/activity.ts";
 import { LocalChecks } from "../../git/local-checks.ts";
 import { WakeConditions } from "../../wakes/conditions.ts";
@@ -571,6 +572,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const localChecks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
   // Absent in layers that don't track the composers: unknown presence holds idle compaction.
   const composerPresence = Option.getOrUndefined(yield* Effect.serviceOption(ComposerPresence));
+  /** Present where an event sink is configured: told the feature cards as they change. */
+  const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
   const creator = makeThreadCreator({ store, checkouts, runtimes });
 
   /**
@@ -1278,6 +1281,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     limitPoller,
     localChecks,
     composerPresence,
+    eventSink,
     creator,
     rosterHere,
     rosterFor,

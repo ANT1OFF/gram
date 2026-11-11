@@ -407,6 +407,7 @@ export const HostSessionOpen = Schema.Struct({
   outwardGate: Schema.optionalKey(
     Schema.Union([Schema.Boolean, Schema.Literals(["all", "irreversible"])]),
   ),
+  gateConnectors: Schema.optionalKey(Schema.Boolean),
   confineWrites: Schema.optionalKey(Schema.Boolean),
   pinCwd: Schema.optionalKey(Schema.Boolean),
   mcpAllowlist: Schema.optionalKey(Schema.Array(Schema.String)),
