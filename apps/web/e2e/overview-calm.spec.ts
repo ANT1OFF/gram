@@ -98,9 +98,10 @@ test("every row in the sidebar is one line of one height; a worker's edge keeps 
     true,
   );
   expect(rows.some((row) => row.words === "Running")).toBe(false);
-  // A wait keeps its reason at the edge, without the "Waiting" its hollow dot says.
+  // A wait keeps its reason at the edge, without the "Waiting" its hollow dot says: on a PR, its
+  // glyph and the PR's number.
   const wait = rows.find((row) => row.tone === "waiting");
-  expect(wait?.words).toMatch(/^checks/);
+  expect(wait?.words).toMatch(/^#\d+$/);
 });
 test("the compact rail marks each workspace with a monogram of its name, the solo threads with a glyph", async ({
   page,
