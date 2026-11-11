@@ -89,6 +89,77 @@ const inServer = <A, E, R>(body: (world: World) => Effect.Effect<A, E, R>) =>
     yield* withServer(world, body(world) as never);
   });
 
+// The independent review's ordering probes (R1, R2): an owed boot goes before any queued work,
+// and counts as given only on the agent's own word that it began, as any thread's handoff.
+const QUEUED = "QUEUED WORK MUST WAIT";
+const isBoot = (input: { readonly text: string }) => input.text.includes("<gram-handoff");
+const everySent = Effect.map(FakeAgentControl, (fake) =>
+  fake.sessions.flatMap((session) => session.sent),
+);
+const queuedSent = Effect.map(everySent, (sent) => sent.some((input) => input.text === QUEUED));
+
+/** A Claude orchestrator whose last turn failed: its switch is limit mode. */
+const failedLastTurn = (world: World) =>
+  Effect.gen(function* () {
+    const opened = yield* setup(world);
+    const rt = yield* ThreadRuntimes;
+    const store = yield* ThreadStore;
+    yield* rt.send(opened.thread.id, { text: "Plan the release." });
+    yield* waitReal(
+      "the ask",
+      Effect.sync(() => opened.session.sent.length >= 2),
+    );
+    yield* opened.session.emit({ type: "turnEnd", reason: "error", error: "Synthetic failure." });
+    yield* waitReal(
+      "the failed turn",
+      store.getThread(opened.thread.id).pipe(Effect.map((t) => t.lastError !== undefined)),
+    );
+    return opened;
+  });
+
+/** Limit mode's boot sent, but nothing native came back; then work queued behind it. */
+const bootWithoutStart = (world: World, park: boolean) =>
+  Effect.gen(function* () {
+    const { thread, workspaceId } = yield* failedLastTurn(world);
+    const fake = yield* FakeAgentControl;
+    const rt = yield* ThreadRuntimes;
+    const store = yield* ThreadStore;
+    // Send returns and the session says nothing: no status, reply, request or turn end.
+    yield* fake.setSendRefusal(isBoot, []);
+    yield* (yield* Orchestration).handoff(workspaceId, "user", CODEX);
+    yield* waitReal(
+      "the boot sent",
+      Effect.map(everySent, (sent) => sent.some(isBoot)),
+    );
+    expect((yield* rt.send(thread.id, { text: QUEUED })).queued).toBe(true);
+    expect((yield* store.getThread(thread.id)).sessionSwitch?.handoff?.delivered).toBeUndefined();
+    if (park) yield* rt.updateThread(thread.id, (t) => ({ ...t, parked: true }));
+    return thread.id;
+  });
+
+/** After the restart: the boot comes first, the work only once its turn has ended. */
+const bootThenWork = (threadId: ThreadId) =>
+  Effect.gen(function* () {
+    yield* settle;
+    expect(yield* queuedSent).toBe(false);
+    const target = yield* waitReal(
+      "the boot given again",
+      Effect.gen(function* () {
+        const all = yield* sessionsFor(threadId);
+        return all.at(-1)?.sent.some(isBoot) === true ? all.at(-1) : undefined;
+      }),
+    );
+    yield* settle;
+    expect(yield* queuedSent).toBe(false);
+    expect(target.sent.at(-1)?.text).toContain("Before any work, write that note yourself");
+    yield* target.completeTurn("Goal: the release. Next: the changelog.");
+    yield* waitReal("the work after the catch-up", queuedSent);
+    const store = yield* ThreadStore;
+    expect((yield* store.getThread(threadId)).sessionSwitch).toBeUndefined();
+    const [divider] = yield* dividers(threadId);
+    expect(divider?.note).toMatchObject({ by: "codex" });
+  });
+
 describe("the orchestrator's switch carries a note and recent turns", () => {
   it.effect(
     "the checkpoint writes the note; the boot digest fences it with the last exchanges",
@@ -163,9 +234,20 @@ describe("the orchestrator's switch carries a note and recent turns", () => {
           expect(divider!.note!.text).not.toContain("ghp_");
           // §3.5: the charter slot is the user's pick now.
           expect((yield* store.getWorkspace(workspaceId)).charter.orchestratorModel).toEqual(CODEX);
-          expect((yield* store.getThread(thread.id)).sessionSwitch).toBeUndefined();
+          // Held as any thread's handoff is: taken on the agent's word, released once it ends.
+          const held = yield* waitReal(
+            "the boot taken on the agent's word",
+            store
+              .getThread(thread.id)
+              .pipe(Effect.map((t) => t.sessionSwitch?.handoff?.delivered !== undefined && t)),
+          );
+          expect(held.sessionSwitch?.phase).toBe("ready");
           expect((yield* outboxOf(workspaceId)).switchBoot).toBeDefined();
-          yield* completeTurn(fresh, "Read it.");
+          yield* fresh.completeTurn("Read it.");
+          yield* waitReal(
+            "the switch let go",
+            store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch === undefined)),
+          );
           // Acknowledged: the handoff was the boot's, and no later digest carries it.
           expect((yield* outboxOf(workspaceId)).switchBoot).toBeUndefined();
         }),
@@ -425,5 +507,88 @@ describe("the orchestrator's switch carries a note and recent turns", () => {
         }),
       );
     }),
+  );
+
+  it.effect(
+    "restart before native boot start holds queued work until rebuilt catch-up finishes",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const threadId = yield* withServer(world, bootWithoutStart(world, false));
+        yield* withServer(world, bootThenWork(threadId));
+      }),
+  );
+
+  it.effect("an archived owed boot remains ahead of the queue after restart and unarchive", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const threadId = yield* withServer(world, bootWithoutStart(world, true));
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const rt = yield* ThreadRuntimes;
+          yield* settle;
+          // Archived, nothing goes: neither the boot nor the work.
+          expect(yield* queuedSent).toBe(false);
+          yield* rt.updateThread(threadId, (t) => ({ ...t, parked: false }));
+          yield* bootThenWork(threadId);
+        }),
+      );
+    }),
+  );
+
+  it.effect("a boot refusal without native start preserves the handoff and holds work", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const { thread, session, workspaceId } = yield* setup(world);
+        const fake = yield* FakeAgentControl;
+        const rt = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        // Codex-style: an error notice, the turn ending in error, idle; nothing began.
+        yield* fake.setSendRefusal(isBoot);
+        yield* (yield* Orchestration).handoff(workspaceId, "user", CODEX);
+        yield* waitReal(
+          "the checkpoint",
+          Effect.sync(() => session.sent.at(-1)?.notice?.kind === "orchestration"),
+        );
+        expect((yield* rt.send(thread.id, { text: QUEUED })).queued).toBe(true);
+        yield* session.completeTurn("Goal: the login page.");
+        yield* waitReal(
+          "the boot sent",
+          Effect.map(everySent, (sent) => sent.some(isBoot)),
+        );
+        yield* settle;
+        expect(yield* queuedSent).toBe(false);
+        // Refused each time it was given: failed, the queue still held, the boot still owed.
+        yield* waitReal(
+          "the boot refused",
+          store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch?.phase === "failed")),
+        );
+        expect(yield* queuedSent).toBe(false);
+        expect((yield* outboxOf(workspaceId)).switchBoot).toBeDefined();
+        expect((yield* store.listQueue(thread.id))[0]?.input.text).toBe(QUEUED);
+      }),
+    ),
+  );
+
+  it.effect("limit boot refusal without native start keeps queued work held", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const { thread, workspaceId } = yield* failedLastTurn(world);
+        const fake = yield* FakeAgentControl;
+        const rt = yield* ThreadRuntimes;
+        yield* fake.setSendRefusal(isBoot);
+        yield* (yield* Orchestration).handoff(workspaceId, "user", CODEX);
+        yield* waitReal(
+          "the boot sent",
+          Effect.map(everySent, (sent) => sent.some(isBoot)),
+        );
+        yield* settle;
+        expect((yield* rt.send(thread.id, { text: QUEUED })).queued).toBe(true);
+        yield* settle;
+        expect(yield* queuedSent).toBe(false);
+        expect((yield* outboxOf(workspaceId)).switchBoot).toBeDefined();
+      }),
+    ),
   );
 });

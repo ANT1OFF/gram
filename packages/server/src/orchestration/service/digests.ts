@@ -262,7 +262,7 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
    * What a digest sent now would say, or `undefined` when there is nothing to say: the ledger
    * against the snapshot of the last acknowledged digest, and the reports filed since.
    */
-  const planDigest = (workspaceId: WorkspaceId) =>
+  const planDigest = (workspaceId: WorkspaceId, owedBoot = false) =>
     Effect.gen(function* () {
       // Before the workspace is read, so a stage set after this may be missing from the text.
       const readAt = yield* Clock.currentTimeMillis;
@@ -271,8 +271,10 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
       if (state === undefined) return undefined;
       // A pause holds every digest back but one: the boot of a session a handoff has just
       // emptied, which would otherwise sit there knowing nothing until the user resumed.
+      // A switch's boot, owed as its handoff, goes when the switch gives it: the claim holds the
+      // thread meanwhile, an archive included, so a pause left from that archive doesn't.
       const bootsAnyway =
-        bootWhilePaused.has(workspaceId) && !(yield* readOutbox(workspaceId)).booted;
+        (owedBoot || bootWhilePaused.has(workspaceId)) && !(yield* readOutbox(workspaceId)).booted;
       if (state.paused !== undefined && !bootsAnyway) return undefined;
       const found = yield* survey(state, true);
       const { outbox } = found;
@@ -325,7 +327,7 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
    * The digest for `turnId`, or `undefined` when there is nothing to say. Runs under the
    * orchestrator's runtime lock, so it reads the store and asks other threads' status only.
    */
-  const buildDigest = (workspaceId: WorkspaceId, turnId: TurnId) =>
+  const buildDigest = (workspaceId: WorkspaceId, turnId: TurnId, owedBoot = false) =>
     Effect.gen(function* () {
       // An outbox that can't be read, or one set aside and waiting on the user's resume, gives
       // nothing to diff against: the empty state would make this a boot digest.
@@ -342,7 +344,7 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
         );
         return undefined;
       }
-      const plan = yield* planDigest(workspaceId);
+      const plan = yield* planDigest(workspaceId, owedBoot);
       if (plan === undefined) {
         forgetReasons(workspaceId);
         yield* Effect.logDebug("orchestration digest dropped: nothing to say").pipe(
@@ -492,10 +494,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
             claimedAt: readAt,
             ...(limitNote === undefined ? {} : { limitNoted: true }),
           },
-          // Limit mode's boot turn writes the note: its end is waited for (`handoff.ts`).
-          ...(switchBoot?.noteMode === "limit" && current.switchBoot?.at === switchBoot.at
-            ? { switchBoot: { ...current.switchBoot, turnId } }
-            : {}),
         },
         undefined,
       ]);
@@ -518,12 +516,11 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
         } = withNotesAcked(outbox, flight.notesUpTo);
         const rest =
           limited === undefined || flight.limitNoted === true ? acked : { ...acked, limited };
-        const withCopies = withCopiesTold(rest, flight.questionCopiesTaken ?? []);
-        // The boot carried the switch's handoff; limit mode's waits for its turn's end.
-        const copied =
-          withCopies.switchBoot === undefined || withCopies.switchBoot.noteMode === "limit"
-            ? withCopies
-            : (({ switchBoot: _boot, ...others }) => others)(withCopies);
+        // The boot carried the switch's handoff: no later digest carries it again.
+        const { switchBoot: _boot, ...copied } = withCopiesTold(
+          rest,
+          flight.questionCopiesTaken ?? [],
+        );
         const told = new Set(flight.dueWakesTaken ?? []);
         const stillDue = (dueWakes ?? []).filter((due) => !told.has(due.id));
         const removalsTold = new Set(flight.liveRemovalsTaken ?? []);
@@ -633,6 +630,26 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
       yield* armWake(workspaceId, delay);
     });
 
+  /**
+   * The boot digest as an orchestrator switch's handoff (`SessionPolicyPort.switchHandoff`): the
+   * switch sends, retries, holds and releases it as any thread's handoff, so a failure here only
+   * puts the books back; the digest's own retries and pause aren't its.
+   */
+  const bootDelivery = (workspaceId: WorkspaceId): SystemDelivery => ({
+    build: (turnId) => buildDigest(workspaceId, turnId, true),
+    accepted: (turnId) => onAccepted(workspaceId, turnId),
+    failed: (turnId) =>
+      Effect.gen(function* () {
+        if (turnId !== undefined) carried.delete(turnId);
+        yield* updateOutbox(workspaceId, (outbox) => {
+          if (outbox.inFlight === undefined || outbox.inFlight.turnId !== turnId)
+            return [outbox, undefined];
+          const { inFlight: _, ...rest } = outbox;
+          return [rest, undefined];
+        });
+      }),
+  });
+
   const deliveryFor = (workspaceId: WorkspaceId): SystemDelivery => ({
     // Into a running turn, cancelling nothing: a report or a merge the orchestrator reads only
     // once its turn ends is often stale by then.
@@ -734,6 +751,7 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
     wakeFor,
     forgetReasons,
     deliveryFor,
+    bootDelivery,
     onWakeDue,
     addNote,
     noteQuietly,

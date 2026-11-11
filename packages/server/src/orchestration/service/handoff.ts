@@ -365,6 +365,8 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
       }
       yield* workspacesChanged;
       yield* orchestrationChanged(workspaceId);
+      // A switch's boot goes as its handoff (`handOverSwitch`), never as a digest beside it.
+      if (carried !== undefined) return;
       yield* runtimes
         .requestSystemDelivery(threadId, DIGEST_KEY, deliveryFor(workspaceId))
         .pipe(Effect.catchTag("ThreadNotFound", () => Effect.void));
@@ -427,8 +429,6 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
                 );
 
               const previous = yield* runtimes.switchSession(threadId, change.id);
-              // The wait was the old account's; the new agent's turns aren't held by it.
-              yield* runtimes.endSwitchLimitWait(threadId, change.previous).pipe(Effect.ignore);
               const installed = yield* store.getThread(threadId);
               if (
                 installed.sessionSwitch?.id !== change.id ||
@@ -456,10 +456,10 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
                 previous,
                 installed.sessionSwitch,
               );
-              // Limit mode holds the queue until the boot turn, which writes the note, has ended
-              // (`catchUpAfterTurn`); nothing steers into it while the claim is `ready`.
-              if (installed.sessionSwitch.handoff?.note !== "limit")
-                yield* runtimes.releaseSwitch(threadId, change.id);
+              // The boot digest is the switch's handoff, owed and given as any thread's is: ahead
+              // of what the claim holds, only on the agent's own word that it began, and the claim
+              // lets go once that turn ends (limit mode's reply is the note).
+              yield* runtimes.handOverSwitch(threadId);
             }).pipe(
               Effect.catchCause((cause) =>
                 Effect.gen(function* () {
@@ -580,73 +580,10 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
         .pipe(Effect.ignore);
     });
 
-  /** Lets a switch held at `ready` go, and what it held with it. */
-  const letSwitchGo = (threadId: ThreadId) =>
-    Effect.gen(function* () {
-      const change = (yield* findThread(threadId))?.sessionSwitch;
-      if (change?.phase !== "ready") return;
-      yield* runtimes.releaseSwitch(threadId, change.id).pipe(
-        // Its session went meanwhile: the thread is on its target, so the claim helps nothing.
-        Effect.catchTag("InvalidState", () =>
-          runtimes
-            .updateThread(threadId, (t) =>
-              t.sessionSwitch?.id === change.id
-                ? (({ sessionSwitch: _switch, ...rest }) => rest)(t)
-                : t,
-            )
-            .pipe(Effect.ignore),
-        ),
-        Effect.ignore,
-      );
-      yield* runtimes.releaseQueue(threadId);
-    });
-
-  /**
-   * Limit mode's boot turn, which writes the note: its reply goes onto the divider, as by the new
-   * agent, and the switch lets go of what it held. A boot turn that didn't complete lets go too,
-   * and a boot digest given again asks again. Another turn's end (the old session's, heard late)
-   * changes nothing while the switch holds; once it doesn't, it drops what is left.
-   */
-  const catchUpAfterTurn = (workspaceId: WorkspaceId, thread: Thread, end: ObservedTurnEnd) =>
-    Effect.gen(function* () {
-      const boot = (yield* readOutbox(workspaceId)).switchBoot;
-      if (boot?.noteMode !== "limit" || boot.turnId === undefined) return;
-      const own = boot.turnId === end.turnId;
-      if (!own && (yield* findThread(thread.id))?.sessionSwitch?.phase === "ready") return;
-      const completed = own && !end.synthesized && end.reason === "completed";
-      const note = completed ? yield* turnNote(store, thread.id, end.turnId, boot.to) : undefined;
-      if (note !== undefined) yield* addDividerNote(thread.id, boot.at, note);
-      yield* updateOutbox(workspaceId, (outbox) => {
-        if (outbox.switchBoot?.at !== boot.at) return [outbox, undefined];
-        const { switchBoot: left, ...rest } = outbox;
-        if (own && !completed) {
-          const { turnId: _turn, ...again } = left;
-          return [{ ...rest, switchBoot: again }, undefined];
-        }
-        return [rest, undefined];
-      });
-      yield* letSwitchGo(thread.id);
-    });
-
-  /** Limit mode's note, written by the new session, onto the divider it belongs under. */
-  const addDividerNote = (threadId: ThreadId, at: number, note: HandoffNote) =>
-    Effect.gen(function* () {
-      for (const message of yield* store.messagesWithParts(threadId, ["data-handoff"]))
-        for (const part of message.parts)
-          if (part.type === "data-handoff" && part.data.at === at)
-            return yield* runtimes
-              .updateDataPart(threadId, message.id, {
-                type: "data-handoff",
-                id: part.id ?? "",
-                data: { ...part.data, note },
-              })
-              .pipe(Effect.ignore);
-    });
-
   const handoffAfterTurn = (workspaceId: WorkspaceId, thread: Thread, end: ObservedTurnEnd) =>
     Effect.gen(function* () {
       const marker = (yield* readOutbox(workspaceId)).handoff;
-      if (marker === undefined) return yield* catchUpAfterTurn(workspaceId, thread, end);
+      if (marker === undefined) return;
       if (marker.phase === "checkpoint") {
         // Some other turn: a digest that was in flight, or the user's own message. Keep waiting.
         if (marker.checkpointTurnId !== end.turnId) return;
@@ -865,7 +802,9 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
   const resumeHandoff = (workspaceId: WorkspaceId, thread: Thread) =>
     Effect.gen(function* () {
       const marker = (yield* readOutbox(workspaceId)).handoff;
-      if (marker === undefined) return yield* resumeReady(workspaceId, thread);
+      // A switch past its marker, `ready`, is owed its boot as any thread's handoff
+      // (`resumeAtBoot`, `handOverOwed`).
+      if (marker === undefined) return;
       if (
         marker.target !== undefined &&
         thread.sessionSwitch !== undefined &&
@@ -937,33 +876,6 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
       yield* finishHandoff(workspaceId, thread.id, marker, marker.previousAgentSessionId);
     });
 
-  /**
-   * At boot, a switch whose new session was confirmed and marked (`ready`, its marker gone): the
-   * restart cut off the release, or limit mode's boot turn. The claim goes, as the session it held
-   * for is the thread's now; a boot digest not yet acknowledged is built again with the switch's
-   * handoff, and a boot turn the restart cut off leaves the divider without its note.
-   */
-  const resumeReady = (workspaceId: WorkspaceId, thread: Thread) =>
-    Effect.gen(function* () {
-      const change = thread.sessionSwitch;
-      if (change?.phase !== "ready") return;
-      yield* runtimes
-        .updateThread(thread.id, (t) =>
-          t.sessionSwitch?.id === change.id
-            ? (({ sessionSwitch: _switch, ...rest }) => rest)(t)
-            : t,
-        )
-        .pipe(Effect.ignore);
-      yield* updateOutbox(workspaceId, (outbox) => {
-        const boot = outbox.switchBoot;
-        if (boot === undefined) return [outbox, undefined];
-        const { switchBoot: _boot, ...rest } = outbox;
-        if (outbox.booted) return [rest, undefined];
-        const { turnId: _turn, ...again } = boot;
-        return [{ ...rest, switchBoot: again }, undefined];
-      });
-    });
-
   const retrySwitch: OrchestrationShape["retrySwitch"] = (workspaceId) =>
     handoffLock.withLock(
       workspaceId,
@@ -992,7 +904,19 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
             message:
               "The failed attempt has not proved that no target child remains. It may still be stopping, or its owner cannot be verified after an app restart. No retry was started; queued input remains held.",
           });
-        const marker = (yield* readOutbox(workspaceId)).handoff;
+        const saved = yield* readOutbox(workspaceId);
+        // One that failed past its marker (its boot never taken) goes again from `fresh`, under
+        // the divider it already wrote.
+        const marker: HandoffMarker | undefined =
+          saved.handoff ??
+          (change.handoff === undefined
+            ? undefined
+            : {
+                reason: "user",
+                target: change.target,
+                at: saved.switchBoot?.at ?? (yield* Clock.currentTimeMillis),
+                phase: "fresh",
+              });
         if (marker?.target === undefined)
           return yield* new InvalidState({
             message: "The saved handoff is unavailable. No replacement was started.",
@@ -1011,11 +935,16 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
               ...(change.oldExited && release !== undefined
                 ? { retryFrom: { id: change.id, release } }
                 : {}),
-              // The note the checkpoint wrote, or limit mode, carries over to the retry.
-              ...(change.handoff === undefined ? {} : { handoff: change.handoff }),
+              // The note the checkpoint wrote, or limit mode, carries over to the retry; a boot
+              // marked taken by another attempt doesn't: this one gives its own.
+              ...(change.handoff === undefined
+                ? {}
+                : { handoff: (({ delivered: _delivered, ...rest }) => rest)(change.handoff) }),
             },
           }))
           .pipe(Effect.mapError((e) => new InvalidState({ message: e.message })));
+        if (saved.handoff === undefined)
+          yield* updateOutbox(workspaceId, (outbox) => [{ ...outbox, handoff: marker }, undefined]);
         // performFresh takes handoffLock too; its job is scheduled after this request releases it.
         yield* FiberMap.run(
           handoffTimers,

@@ -215,7 +215,7 @@ export type HandoffMarker = typeof HandoffMarker.Type;
  * An orchestrator switch's handoff, owed to the boot digest of the session it opened: who it moved
  * from and to, the note the checkpoint wrote, or limit mode's reason the new session writes it.
  * Set once the divider is written (`at` is the divider's), and dropped once the boot digest is
- * acknowledged; limit mode's stays until the boot turn, which writes the note, ends.
+ * acknowledged.
  */
 export const SwitchBoot = Schema.Struct({
   at: Schema.Number,
@@ -231,8 +231,6 @@ export const SwitchBoot = Schema.Struct({
       detail: Schema.optionalKey(Schema.String),
     }),
   ),
-  /** Limit mode's: the boot turn, whose reply is the note. */
-  turnId: Schema.optionalKey(TurnId),
 });
 export type SwitchBoot = typeof SwitchBoot.Type;
 

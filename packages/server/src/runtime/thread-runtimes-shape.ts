@@ -577,10 +577,12 @@ export interface ThreadRuntimesShape {
     ThreadNotFound
   >;
   /**
-   * Ends a limit wait the account `previous` left on the thread, as any thread's switch does once
-   * its session is replaced, so nothing resumes the old turn on the new agent.
+   * Settles a switch whose new session is confirmed (`ready`), in the background, as any thread's
+   * is: the old account's limit wait ends, the handoff is given (the orchestrator's boot digest,
+   * by its session policy) ahead of anything held, and the claim lets go once the agent took it
+   * and its turn ended. Nothing for a thread without such a switch.
    */
-  endSwitchLimitWait(threadId: ThreadId, previous: ModelRef): Effect.Effect<void, ThreadNotFound>;
+  handOverSwitch(threadId: ThreadId): Effect.Effect<void>;
   /** Late-bound: the app-tool registry depends on this service. */
   setAppTools(port: AppToolRegistryPort): Effect.Effect<void>;
   /** Late-bound like `setAppTools`: what a thread's role adds to its sessions. Absent, every thread is plain. */
