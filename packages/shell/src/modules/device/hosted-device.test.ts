@@ -480,6 +480,154 @@ describe("this machine as a personal device", () => {
     expect(aside.some((name) => name.startsWith("device-settings.json."))).toBe(true);
     expect((await readDeviceSettings(file, settingsKey(first.store))).ok).toBe(true);
   });
+
+  it("keeps the sign-in it had when signing in there again fails", async () => {
+    const first = await setUp();
+    await first.device.signIn(origin);
+    await first.device.close();
+    let online = false;
+    const flaky = offlineUnless(() => online, origin);
+    const second = await setUp({ fetch: flaky }, first.store);
+    expect(second.device.state().servers[0]?.signedIn).toBe(false);
+    online = true;
+    fake.state.lieAboutId = true;
+    expect(await second.device.signIn(origin)).toMatchObject({ ok: false });
+    fake.state.lieAboutId = false;
+    expect(first.store.has(`device-sign-in ${origin}`)).toBe(true);
+    expect(await second.device.refresh(origin)).toEqual({ ok: true });
+  });
+
+  it("brings a server back by one way at a time, and the sign-in keeps what was lent", async () => {
+    const first = await setUp();
+    await first.device.signIn(origin);
+    await first.device.lend(origin, "w1", {
+      folders: [{ path: project, label: "app" }],
+      readOnly: false,
+    });
+    await first.device.close();
+    let online = false;
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const second = await setUp(
+      {
+        fetch: offlineUnless(() => online, origin),
+        openBrowser: async (url) => {
+          await held;
+          return browser(url);
+        },
+      },
+      first.store,
+    );
+    online = true;
+    const signing = second.device.signIn(origin);
+    await settle();
+    expect(await second.device.refresh(origin)).toMatchObject({ ok: false });
+    release();
+    expect(await signing).toEqual({ ok: true });
+    expect(second.device.state().servers).toHaveLength(1);
+    expect(second.device.state().servers[0]?.workspaces[0]?.lending).toBe("resume");
+    await second.device.signOut(origin);
+    expect(second.device.state().servers).toEqual([]);
+  });
+
+  it("keeps at most sixteen servers, even signing in to two at once", async () => {
+    const first = await setUp();
+    await first.device.signIn(origin);
+    await first.device.signOut(origin);
+    await first.device.close();
+    const file = join(dataDir, "device-settings.json");
+    const key = settingsKey(first.store);
+    // Fifteen servers saved that can't be reached: each is kept as saved.
+    await writeDeviceSettings(file, key, {
+      v: 1,
+      servers: Array.from({ length: 15 }, (_, i) => ({
+        origin: `https://gone-${i}.invalid`,
+        paused: false,
+        workspaces: [],
+      })),
+    });
+    const other = fakeServer();
+    const otherOrigin = await other.start();
+    try {
+      const second = await setUp({}, first.store);
+      expect(second.device.state().servers).toHaveLength(15);
+      const both = await Promise.all([
+        second.device.signIn(origin),
+        second.device.signIn(otherOrigin),
+      ]);
+      expect(both.filter((done) => done.ok)).toHaveLength(1);
+      expect(second.device.state().servers).toHaveLength(16);
+      const after = await readDeviceSettings(file, key);
+      expect(after.ok && after.settings.servers.length).toBe(16);
+    } finally {
+      other.server.closeAllConnections();
+      other.server.close();
+    }
+  });
+
+  it("dials nothing for a lend until the settings keep it", async () => {
+    const { device, present } = await setUp();
+    await device.signIn(origin);
+    // The settings can't be written: a folder stands where the file goes.
+    const file = join(dataDir, "device-settings.json");
+    await fs.rm(file, { force: true });
+    await fs.mkdir(join(file, "block"), { recursive: true });
+    const done = { now: false };
+    const lending = device
+      .lend(origin, "w1", { folders: [{ path: project, label: "app" }], readOnly: false })
+      .finally(() => {
+        done.now = true;
+      });
+    while (!done.now) {
+      for (const changed of present.listeners) changed();
+      await new Promise((later) => setImmediate(later));
+    }
+    expect(await lending).toMatchObject({ ok: false });
+    await settle();
+    expect(dials).toEqual([]);
+    expect(device.state().servers[0]?.workspaces[0]?.lending).toBe("off");
+  });
+
+  it("keeps every saved server in the settings while start is still finding them", async () => {
+    const other = fakeServer();
+    const otherOrigin = await other.start();
+    try {
+      const first = await setUp();
+      await first.device.signIn(origin);
+      await first.device.signIn(otherOrigin);
+      for (const each of [origin, otherOrigin])
+        await first.device.lend(each, "w1", {
+          folders: [{ path: project, label: "app" }],
+          readOnly: false,
+        });
+      await first.device.close();
+      const file = join(dataDir, "device-settings.json");
+      const key = settingsKey(first.store);
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      const slow: typeof fetch = async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.startsWith(otherOrigin) && url.includes("well-known")) await held;
+        return fetch(input, init);
+      };
+      const starting = setUp({ fetch: slow }, first.store);
+      // The first server's workspace is let go meanwhile, which saves.
+      fake.state.workspaces = [];
+      await settle();
+      await settle();
+      const mid = await readDeviceSettings(file, key);
+      expect(mid.ok && mid.settings.servers.map((server) => server.origin).toSorted()).toEqual(
+        [origin, otherOrigin].toSorted(),
+      );
+      // The save did happen: the first server's workspace is gone from it.
+      expect(
+        mid.ok && mid.settings.servers.find((server) => server.origin === origin)?.workspaces,
+      ).toEqual([]);
+      release();
+      await starting;
+    } finally {
+      other.server.closeAllConnections();
+      other.server.close();
+    }
+  });
 });
 
 const optionsFor = async (): Promise<HostedDeviceOptions> => ({
@@ -503,6 +651,15 @@ const settingsKey = (store: Map<string, string>) =>
   createHmac("sha256", Buffer.from(store.get("device-files") ?? "", "base64url"))
     .update("gram-device-settings-v1")
     .digest();
+
+/** A fetch that can't reach one origin until `online` says so. */
+const offlineUnless =
+  (online: () => boolean, unreachable: string): typeof fetch =>
+  async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (!online() && url.startsWith(unreachable)) throw new TypeError("offline");
+    return fetch(input, init);
+  };
 
 const settle = () => new Promise((later) => setTimeout(later, 30));
 

@@ -218,6 +218,9 @@ const checkLendableNow = async (path: string, bounds: LendBounds): Promise<Lenda
   let born: string | undefined;
   try {
     const exact = await fs.stat(real, { bigint: true });
+    // The same folder both times, or it was swapped in between.
+    if (exact.ino !== BigInt(stats.ino) || exact.dev !== BigInt(stats.dev))
+      return { ok: false, why: "The folder changed while Gram checked it." };
     born = exact.birthtimeNs > 0n ? exact.birthtimeNs.toString() : undefined;
   } catch {
     return { ok: false, why: "Gram can't open this folder." };

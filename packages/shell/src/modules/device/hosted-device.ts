@@ -220,7 +220,8 @@ const memorySecrets = (): Store => {
 type KeptFolder = GateFolder & { readonly born: string | undefined };
 
 interface Lent {
-  state: LendingState;
+  /** `saving`: chosen, and not lent until the settings keep it. */
+  state: LendingState | "saving";
   readonly folders: Map<string, KeptFolder>;
   readOnly: boolean;
 }
@@ -239,6 +240,8 @@ interface Server {
   readonly lent: Map<string, Lent>;
   readonly connected: Set<string>;
   lending?: ServerLending | undefined;
+  /** Lending being started: one at a time, and a stop waits for it. */
+  starting?: Promise<void> | undefined;
   scope?: Scope.Closeable | undefined;
   problem?: string | undefined;
 }
@@ -296,7 +299,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
   const retained = new Map<string, Retained>();
   /** Origins the person accepted, kept in the settings; one not among them is asked about. */
   const accepted = new Set<string>();
-  /** Origins a sign-in is under way to: one at a time each. */
+  /** Origins a sign-in or a restore is under way to: one at a time each. */
   const signingIn = new Set<string>();
   const closing = new AbortController();
   const changed = () => options.changed?.();
@@ -382,8 +385,15 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
 
   const mayLend = () => unavailable === undefined && !closed;
 
-  const startLending = async (server: Server) => {
-    if (server.lending !== undefined || !mayLend()) return;
+  const startLending = (server: Server): Promise<void> => {
+    server.starting ??= startLendingNow(server).finally(() => {
+      server.starting = undefined;
+    });
+    return server.starting;
+  };
+
+  const startLendingNow = async (server: Server) => {
+    if (server.lending !== undefined || !mayLend() || servers.get(server.origin) !== server) return;
     const scope = await Effect.runPromise(Scope.make());
     server.scope = scope;
     server.lending = await Effect.runPromise(
@@ -425,6 +435,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
   };
 
   const stopLending = async (server: Server) => {
+    await server.starting?.catch(() => undefined);
     const { lending, scope } = server;
     server.lending = undefined;
     server.scope = undefined;
@@ -452,29 +463,39 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     changed();
   };
 
+  const keeperFor = (
+    origin: string,
+    discovery: HostedDiscovery,
+    key: KeyObject,
+    signIn: StoredSignIn,
+    ended: () => void,
+  ): TokenKeeper =>
+    makeTokenKeeper({
+      discovery,
+      key,
+      subject: signIn.subject,
+      refreshToken: signIn.refreshToken,
+      saveRefreshToken: (refreshToken) =>
+        secrets.set(signInName(origin), JSON.stringify({ ...signIn, refreshToken })),
+      fetch: options.fetch,
+      now: options.elapsed,
+      ended,
+    });
+
   const makeServer = (
     origin: string,
     discovery: HostedDiscovery,
     key: KeyObject,
     signIn: StoredSignIn,
     saved?: SavedServer,
+    keeper?: TokenKeeper,
   ): Server => {
     const server: Server = {
       origin,
       discovery,
       key,
       deviceId: signIn.deviceId,
-      keeper: makeTokenKeeper({
-        discovery,
-        key,
-        subject: signIn.subject,
-        refreshToken: signIn.refreshToken,
-        saveRefreshToken: (refreshToken) =>
-          secrets.set(signInName(origin), JSON.stringify({ ...signIn, refreshToken })),
-        fetch: options.fetch,
-        now: options.elapsed,
-        ended: () => endedByServer(server),
-      }),
+      keeper: keeper ?? keeperFor(origin, discovery, key, signIn, () => endedByServer(server)),
       limits: makeAskLimits(options.elapsed, { paused: saved?.paused ?? false }, () => {
         // Paused: everything waiting on the person goes, as paused, and the pause is kept.
         void server.lending?.stop("paused");
@@ -537,6 +558,8 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
 
   /** Brings back a saved server from its sign-in in the keychain; kept as saved if it can't. */
   const restore = async (saved: SavedServer): Promise<Done> => {
+    if (signingIn.has(saved.origin)) return { ok: false, why: "Signing in there already." };
+    signingIn.add(saved.origin);
     try {
       const signIn = parseSignIn(await secrets.get(signInName(saved.origin)));
       const pem = await secrets.get(keyName(saved.origin));
@@ -567,10 +590,16 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       const why = "Gram couldn't read this server's sign-in.";
       retained.set(saved.origin, { saved, problem: why });
       return { ok: false, why };
+    } finally {
+      signingIn.delete(saved.origin);
     }
   };
 
   // What was saved: each server's sign-in from the keychain, its discovery found again.
+  // Every saved server is kept as saved first, so a save made while the others are found again
+  // can't leave any out.
+  for (const saved of settings.servers)
+    retained.set(saved.origin, { saved, problem: "Connecting to the server." });
   for (const saved of settings.servers) await restore(saved);
 
   const known = (origin: string) => servers.get(origin);
@@ -591,7 +620,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       return { ok: false, why: "You are signed in there already." };
     if (signingIn.has(origin)) return { ok: false, why: "Signing in there already." };
     const replacing = there !== undefined || retained.has(origin);
-    if (!replacing && servers.size + retained.size >= SERVERS_MOST)
+    if (!replacing && servers.size + retained.size + signingIn.size >= SERVERS_MOST)
       return {
         ok: false,
         why: `Gram keeps at most ${SERVERS_MOST} servers. Sign out of one first.`,
@@ -635,41 +664,60 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         refreshToken: signed.tokens.refreshToken,
         deviceId: deviceIdOf(devicePublicKeyText(key)),
       };
+      // A sign-in kept from before goes back if this one doesn't finish.
+      const previous = await secrets.get(signInName(origin));
       await secrets.set(signInName(origin), JSON.stringify(first));
-      undo.push(() => secrets.remove(signInName(origin)));
-      // What was lent there before, and a pause, carry over to the new sign-in.
-      const before = there === undefined ? retained.get(origin)?.saved : savedOf(there);
-      const server = makeServer(origin, found.discovery, key, first, before);
-      undo.push(() => server.keeper.signOut());
+      undo.push(() =>
+        previous === undefined
+          ? secrets.remove(signInName(origin))
+          : secrets.set(signInName(origin), previous),
+      );
+      const holder: { server?: Server } = {};
+      const keeper = keeperFor(origin, found.discovery, key, first, () => {
+        if (holder.server !== undefined) endedByServer(holder.server);
+      });
+      undo.push(() => keeper.signOut());
       if (closed) return await giveUp(CLOSING);
       const registered = await registerHostedDevice({
         discovery: found.discovery,
-        keeper: server.keeper,
+        keeper,
         key,
         fetch: options.fetch,
         name: options.machineName,
         platform: options.platform,
       });
       if (!registered.ok) return await giveUp(registered);
-      if (closed) {
-        undo.push(() =>
-          forgetHostedDevice({
-            discovery: found.discovery,
-            keeper: server.keeper,
-            key,
-            fetch: options.fetch,
-            deviceId: server.deviceId,
-          }),
-        );
-        return await giveUp(CLOSING);
-      }
-      // The old one, signed out by the server, goes for the new one.
-      if (there !== undefined) {
-        servers.delete(origin);
-        await stopLending(there);
-      }
+      undo.push(() =>
+        forgetHostedDevice({
+          discovery: found.discovery,
+          keeper,
+          key,
+          fetch: options.fetch,
+          deviceId: first.deviceId,
+        }),
+      );
+      if (closed) return await giveUp(CLOSING);
+      if (keeper.signedOut()) return await giveUp({ ok: false, why: "The sign-in ended." });
+      // What was lent there before, and a pause, carry over to the new sign-in, as they are now.
+      const current = servers.get(origin);
+      const kept = retained.get(origin);
+      const before = current === undefined ? kept?.saved : savedOf(current);
+      const server = makeServer(origin, found.discovery, key, first, before, keeper);
+      servers.delete(origin);
       retained.delete(origin);
       servers.set(origin, server);
+      if (!deviceSettingsFit(snapshot())) {
+        servers.delete(origin);
+        if (current !== undefined) servers.set(origin, current);
+        if (kept !== undefined) retained.set(origin, kept);
+        return await giveUp({
+          ok: false,
+          why: `Gram keeps at most ${SERVERS_MOST} servers. Sign out of one first.`,
+        });
+      }
+      holder.server = server;
+      // The old one, signed out by the server, goes for the new one.
+      if (current !== undefined) await stopLending(current);
       accepted.add(origin);
       await save().catch(() => undefined);
       await startLending(server);
@@ -697,7 +745,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
               name: workspace.name,
               organisation: workspace.organisation,
               policy: workspace.devices,
-              lending: lent?.state ?? "off",
+              lending: lent === undefined || lent.state === "saving" ? "off" : lent.state,
               readOnly: lent?.readOnly ?? false,
               folders: [...(lent?.folders ?? new Map<string, KeptFolder>()).entries()].map(
                 ([id, folder]) => ({ id, label: folder.label, path: folder.path }),
@@ -784,7 +832,8 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         if (before === undefined) server.lent.delete(workspace);
         else server.lent.set(workspace, before);
       };
-      server.lent.set(workspace, { state: "on", folders, readOnly: choice.readOnly });
+      const lent: Lent = { state: "saving", folders, readOnly: choice.readOnly };
+      server.lent.set(workspace, lent);
       if (!deviceSettingsFit(snapshot())) {
         putBack();
         return {
@@ -792,13 +841,18 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
           why: "That's more than Gram keeps: at most 32 folders, each label at most 128 characters.",
         };
       }
+      // Lent only once the settings keep it: until then nothing connects to it.
       try {
         await save();
       } catch {
-        putBack();
+        if (server.lent.get(workspace) === lent) putBack();
         sync(server);
         return { ok: false, why: "Gram couldn't save what you lent, so nothing is lent." };
       }
+      // Stopped, or signed out, while it was saved: it stays so.
+      if (server.lent.get(workspace) !== lent || known(origin) !== server)
+        return { ok: false, why: "Lending was stopped." };
+      lent.state = "on";
       sync(server);
       return { ok: true };
     },

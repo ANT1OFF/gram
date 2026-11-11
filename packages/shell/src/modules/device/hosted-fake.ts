@@ -59,6 +59,8 @@ export const fakeServer = () => {
     code: "",
     resourceNonce: undefined as string | undefined,
     workspacesStatus: 200,
+    /** The workspaces listed, when not the one default. */
+    workspaces: undefined as Array<Record<string, string>> | undefined,
     /** Ask for the token endpoint's own nonce on every call whose proof lacks it. */
     alwaysTokenNonce: false,
     tokenNonceErrors: 0,
@@ -156,9 +158,12 @@ export const fakeServer = () => {
     if (url.pathname === "/api/workspaces" && state.workspacesStatus !== 200)
       return json(state.workspacesStatus, { error: "down" });
     if (url.pathname === "/api/workspaces" && held.scope === "workspaces")
-      return json(200, [
-        { id: "w1", name: "Platform", organisation: "Example", role: "member", devices: "on" },
-      ]);
+      return json(
+        200,
+        state.workspaces ?? [
+          { id: "w1", name: "Platform", organisation: "Example", role: "member", devices: "on" },
+        ],
+      );
     if (url.pathname === "/api/devices/challenge" && held.scope === "device:register") {
       const challenge = randomBytes(24).toString("base64url");
       state.challenges.add(challenge);

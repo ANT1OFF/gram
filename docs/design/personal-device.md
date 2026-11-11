@@ -876,3 +876,19 @@ Its independent review changed it so:
   flushed after each rename. A failure reading the keychain or the files at start makes lending
   unavailable instead of failing; settings found edited can be set aside, with the log, and
   started afresh, only as the person's decision.
+
+A second review of those changes made these closer:
+
+- Restoring a server and signing in to it are one at a time per origin, and a sign-in reads
+  what is there only when it lands, so it stops the server it replaces and carries over what
+  was lent and paused as it is then. Sign-ins under way count toward the 16 servers, and the
+  settings are checked to keep the new server before it is added.
+- A sign-in that fails puts back the sign-in the keychain had for that server.
+- At start every saved server is kept as saved before any is found again, so a save made in
+  between can't leave one out.
+- A lend is `saving` until the settings keep it, and nothing connects to it until then.
+- Lending for a server is started once at a time, and a stop waits for a start under way.
+- A folder's birth time comes from the same check as its inode. Where Linux has no `statx`,
+  the birth time Node reports changes with the folder, so resume asks to lend again: it fails
+  safe. Starting afresh leaves the sign-ins of the servers set aside in the keychain, and those
+  devices registered, until the person signs in and out there.
