@@ -51,6 +51,31 @@ const backToSource = (t: Thread, change: NonNullable<Thread["sessionSwitch"]>): 
   };
 };
 
+/**
+ * The mode a switch's confirmed `session` moves to from `thread.mode`, as it reported it, applied
+ * to the session; `undefined` to keep the report. Asked under the runtime lock, before any input
+ * can reach the session: a turn keeps the mode it was sent in, so a policy's move (`auto` reported
+ * as `default`) can't wait for a later one. A refused move keeps the report.
+ */
+const settleSwitchMode = (
+  modeAfterSwitch: SessionPolicies["modeAfterSwitch"],
+  session: AgentSession,
+  thread: Thread,
+) =>
+  Effect.gen(function* () {
+    const mode = yield* modeAfterSwitch(thread);
+    if (mode === undefined || mode === thread.mode) return undefined;
+    return yield* session.setMode(mode).pipe(
+      Effect.as(mode),
+      Effect.catch((refused) =>
+        Effect.logWarning("the switched session kept its reported mode").pipe(
+          Effect.annotateLogs({ threadId: thread.id, mode, error: refused.message }),
+          Effect.as(undefined),
+        ),
+      ),
+    );
+  });
+
 /** What a session switch reads and changes beside a thread's `Runtime`. */
 export interface SessionSwitchDeps {
   readonly store: ThreadStoreShape;
@@ -65,6 +90,7 @@ export interface SessionSwitchDeps {
   readonly hasSessionFiber: (threadId: ThreadId) => boolean;
   /** Sends what the switch held, once a rolled-back thread is back on its source. Holds the lock. */
   readonly drainQueue: (rt: Runtime) => Effect.Effect<void>;
+  readonly modeAfterSwitch: SessionPolicies["modeAfterSwitch"];
   readonly openSession: (
     rt: Runtime,
     thread: Thread,
@@ -85,6 +111,7 @@ export const makeSessionSwitch = ({
   isShuttingDown,
   hasSessionFiber,
   drainQueue,
+  modeAfterSwitch,
   openSession,
 }: SessionSwitchDeps) => {
   const switchSession: ThreadRuntimesShape["switchSession"] = (threadId, attemptId) =>
@@ -275,8 +302,12 @@ export const makeSessionSwitch = ({
                 threadId,
                 message: "A stale startup cannot complete this switch.",
               });
+            // Before `ready`, which lets system deliveries in (the orchestrator's boot digest):
+            // nothing reaches the target before its final mode.
+            const mode = yield* settleSwitchMode(modeAfterSwitch, target, current);
             const ready = yield* store.updateThread(threadId, (t) => ({
               ...t,
+              ...(mode === undefined ? {} : { mode }),
               sessionSwitch: { ...current.sessionSwitch!, phase: "ready" },
             }));
             yield* publishUpsert(ready);
@@ -461,25 +492,12 @@ export const makeSwitchMethods = ({
               threadId,
               message: "This switch is not ready to release its queued input.",
             });
-          // The session's last mode before anything queued goes: a turn keeps the mode it was
-          // sent in, so a policy's move (`auto` reported as `default`) can't wait for a later one.
-          const mode = yield* modeAfterSwitch(thread);
-          const moved =
-            mode === undefined || mode === thread.mode
-              ? false
-              : yield* rt.session.setMode(mode).pipe(
-                  Effect.as(true),
-                  Effect.catch((refused) =>
-                    Effect.logWarning("the switched session kept its reported mode").pipe(
-                      Effect.annotateLogs({ threadId, mode, error: refused.message }),
-                      Effect.as(false),
-                    ),
-                  ),
-                );
+          // Settled at `ready`; asked again for a report that came since, before the queue goes.
+          const mode = yield* settleSwitchMode(modeAfterSwitch, rt.session, thread);
           const released = yield* store.updateThread(
             threadId,
             ({ sessionSwitch: _switch, ...rest }) =>
-              moved && mode !== undefined ? { ...rest, mode } : rest,
+              mode === undefined ? rest : { ...rest, mode },
           );
           yield* publishUpsert(released);
         }),

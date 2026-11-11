@@ -165,6 +165,49 @@ describe("explicit workspace orchestrator switch", () => {
     );
   }
 
+  it.effect("sends the boot digest and queued input in Bypass once Codex reports Ask", () =>
+    inServer((world) =>
+      runCase(() =>
+        Effect.gen(function* () {
+          const { thread, session, workspaceId } = yield* setup(world, "claude");
+          const orchestration = yield* Orchestration;
+          const store = yield* ThreadStore;
+          const rt = yield* ThreadRuntimes;
+          const fake = yield* FakeAgentControl;
+          expect((yield* store.getThread(thread.id)).mode).toBe("auto");
+          // Codex without a usable Auto answers the auto open with `default` before its identity.
+          yield* fake.setAutoOpenReport("codex", "default", 100);
+          const target = { agent: "codex", model: "fake-opus" } as const;
+          yield* orchestration.handoff(workspaceId, "user", target);
+          yield* waitSent(thread.id, 2);
+          expect((yield* rt.send(thread.id, { text: "Queued while checkpointing" })).queued).toBe(
+            true,
+          );
+          yield* session.completeTurn("ready");
+          const fresh = yield* waitReal(
+            "target boot",
+            Effect.gen(function* () {
+              const all = yield* sessionsFor(thread.id);
+              return all.length === 2 && all[1]!.sent.length > 0 ? all[1] : undefined;
+            }),
+          );
+          // The boot digest is a working turn: it goes out in the mode the session keeps.
+          expect(fresh.options.permissionMode).toBe("auto");
+          expect(fresh.sent[0]?.notice).toMatchObject({ variant: "boot" });
+          expect(fresh.sentModes[0]).toBe("bypassPermissions");
+          yield* fresh.completeTurn();
+          yield* waitSent(thread.id, 2);
+          expect(fresh.sent[1]?.text).toContain("Queued while checkpointing");
+          expect(fresh.sentModes[1]).toBe("bypassPermissions");
+          yield* settle;
+          const after = yield* store.getThread(thread.id);
+          expect(after.sessionSwitch).toBeUndefined();
+          expect(after.mode).toBe("bypassPermissions");
+        }),
+      ),
+    ),
+  );
+
   for (const autonomy of ["publish", "supervised", "full"] as const) {
     it.effect(`switch preflight honors ${autonomy} autonomy and never edits it`, () =>
       inServer((world) =>

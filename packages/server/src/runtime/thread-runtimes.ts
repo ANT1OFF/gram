@@ -1263,6 +1263,7 @@ const make = Effect.gen(function* () {
     isShuttingDown: () => shuttingDown,
     hasSessionFiber: (threadId) => FiberMap.hasUnsafe(sessions, threadId),
     drainQueue,
+    modeAfterSwitch,
     openSession: (rt, thread, resumeAt, switchAttempt) =>
       openSession(rt, thread, resumeAt, switchAttempt),
   });
