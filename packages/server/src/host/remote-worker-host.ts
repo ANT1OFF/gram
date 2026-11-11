@@ -175,7 +175,7 @@ export const machineCheckouts = (
           };
           return checkout;
         }
-        if (request.kind !== "newWorktree")
+        if (request.kind === "existingWorktree")
           return yield* new InvalidState({
             message: `A worker on ${machine.name} works in a new worktree there.`,
           });
@@ -189,6 +189,28 @@ export const machineCheckouts = (
                 : new InvalidState({ message: error.message }),
             ),
           );
+        // The machine's own clone as it is, for a thread that makes no branch of its own (an
+        // orchestrator of a headless Gram): where the worktrees of its workers there come from.
+        // Its branch is read there; every other value is this machine's own.
+        if (request.kind === "current") {
+          const state = yield* connection.git.local(repoPath).pipe(
+            Effect.mapError(
+              () =>
+                new GitError({
+                  message: `Couldn't read ${repoPath} on ${machine.name} after cloning it.`,
+                }),
+            ),
+          );
+          const cloneIdentity = cloneIdentityOf(url);
+          const main: Checkout = {
+            kind: "main",
+            path: repoPath,
+            hostId: machine.id,
+            ...(state.branch === undefined ? {} : { branch: state.branch }),
+            ...(cloneIdentity === undefined ? {} : { cloneIdentity }),
+          };
+          return main;
+        }
         const created = yield* connection.worktrees
           .create({
             repoPath,

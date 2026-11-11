@@ -17,10 +17,12 @@ import type { HostAttachments, HostFileReads } from "./file-reads.ts";
 import type { HostRepoIdentify } from "./protocol.ts";
 import { filesOn, type HostFiles } from "./files.ts";
 import type { HostFolders } from "./folders.ts";
+import { type HeadlessPlacement, headlessLocal, headlessPlacement } from "./headless.ts";
 import { LocalHostProcess } from "./local-process.ts";
 import { RemoteHosts } from "./remote-hosts.ts";
 import { type MachineParts, placedHost } from "./placed.ts";
 import { machineHosts } from "./remote-worker-host.ts";
+import { ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { TerminalGate } from "../terminal/gate.ts";
@@ -140,6 +142,11 @@ export interface WorkerHostsShape {
   placeOf(path: string): Effect.Effect<HostId | undefined>;
   /** The host a record (a checkout, a worker) is on, where an absent `hostId` is this machine. */
   of(record: { readonly hostId?: HostId | undefined }): Effect.Effect<WorkerHost, HostUnavailable>;
+  /**
+   * Present on a headless Gram, which runs no work itself: the joined machine that takes what
+   * names none, or why none can. Absent everywhere else, where that is this machine.
+   */
+  readonly headless?: HeadlessPlacement | undefined;
 }
 
 /**
@@ -193,6 +200,8 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     store?: Pick<ThreadStore["Service"], "listThreads" | "getThread">,
     /** Whether any machine is joined now; with none, nothing is looked up to place a call. */
     anyMachines?: () => boolean,
+    /** A headless Gram's placement; `local` is then already the one that refuses (`headlessLocal`). */
+    headless?: HeadlessPlacement,
   ) => {
     const byId = new Map<HostId, WorkerHost>([
       [local.id, local],
@@ -210,14 +219,17 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
       hosts,
       store ?? NO_THREADS,
       store === undefined ? () => false : anyMachines,
+      headless,
     );
     return WorkerHosts.of({
       local,
       get,
       of: (record) => get(hostOf(record)),
-      placed: store === undefined ? local : placed,
+      // A headless Gram always routes: what names no machine is placed on one, never run here.
+      placed: store === undefined && headless === undefined ? local : placed,
       machine: placed.machine,
       placeOf: placed.placeOf,
+      ...(headless === undefined ? {} : { headless }),
     });
   };
 
@@ -248,22 +260,31 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
       const { parts } = yield* LocalHostProcess;
       const machines = yield* joinedMachines;
       const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
+      // A headless Gram (`GRAM_HEADLESS=1`) keeps this machine for reading only, and places what
+      // names no machine on a joined one.
+      const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
+      const headless =
+        config?.headless === true
+          ? headlessPlacement(Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts)))
+          : undefined;
+      const local: WorkerHost = {
+        id: LOCAL_HOST_ID,
+        sessions: yield* AgentHosts,
+        checkouts: yield* CheckoutService,
+        worktrees: parts.worktrees,
+        git: parts.git,
+        files: parts.files,
+        terminals: yield* HostTerminals,
+        ports: { scan: parts.scan },
+        process: parts.hello,
+      };
       return WorkerHosts.fromHosts(
-        {
-          id: LOCAL_HOST_ID,
-          sessions: yield* AgentHosts,
-          checkouts: yield* CheckoutService,
-          worktrees: parts.worktrees,
-          git: parts.git,
-          files: parts.files,
-          terminals: yield* HostTerminals,
-          ports: { scan: parts.scan },
-          process: parts.hello,
-        },
+        headless === undefined ? local : headlessLocal(local),
         [],
         machines?.get,
         machines === undefined ? undefined : store,
         machines?.any,
+        headless,
       );
     }),
   );

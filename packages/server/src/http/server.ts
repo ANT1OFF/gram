@@ -72,6 +72,7 @@ import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { withEmbeddingSeed } from "../settings/embedding.ts";
 import { PreviewFiles } from "../preview/files.ts";
+import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
@@ -503,7 +504,13 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           // Below the condition wakes, whose `versionChanged` reads a CLI's version off its runs.
-          Layer.provideMerge(Layer.mergeAll(GitStatePublisherLive, LaunchChecksCache.layer)),
+          Layer.provideMerge(
+            Layer.mergeAll(
+              GitStatePublisherLive,
+              // A headless server looks for no CLI on this machine: its agents are its machines'.
+              config.headless === true ? LaunchChecksCache.layerNone : LaunchChecksCache.layer,
+            ),
+          ),
           Layer.provideMerge(ReviewRequestsLive),
           Layer.provideMerge(Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer)),
           Layer.provideMerge(ThreadVisibility.layer),
@@ -532,10 +539,16 @@ export const ServerCore = Layer.unwrap(
                   GitCheckoutLive.pipe(Layer.provide(LocalHostProcess.worktrees)),
                   ClaudeAiSeenLive,
                   HostTerminals.layer,
-                  AgentHostsThroughHost,
+                  // A headless server has no agents of its own, whatever it was given.
+                  agentHostsOrHeadless(AgentHostsThroughHost),
                 ),
               ),
-              Layer.provideMerge(LocalHostProcess.layer),
+              // Nor a host process: nothing of a thread's runs on this machine.
+              Layer.provideMerge(
+                config.headless === true
+                  ? LocalHostProcess.layerWith({ hostProcess: false })
+                  : LocalHostProcess.layer,
+              ),
             ),
           ),
           Layer.provideMerge(
@@ -549,11 +562,14 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           Layer.provideMerge(
-            withEmbeddingSeed(
-              ThreadStore.layerSqlite(databaseFile, {
-                checkpointOffLoop: databaseFile !== ":memory:",
-                writerOffLoop: databaseFile !== ":memory:",
-              }),
+            // `GRAM_EMBEDDING` first, since a headless server needs the hosted features on.
+            withHeadlessCheck(
+              withEmbeddingSeed(
+                ThreadStore.layerSqlite(databaseFile, {
+                  checkpointOffLoop: databaseFile !== ":memory:",
+                  writerOffLoop: databaseFile !== ":memory:",
+                }),
+              ),
             ),
           ),
         )

@@ -13,7 +13,14 @@ export const RespondManyResult = Schema.Struct({
 export type RespondManyResult = typeof RespondManyResult.Type;
 
 export const CheckoutRequest = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("current") }),
+  Schema.Struct({
+    kind: Schema.Literal("current"),
+    /**
+     * The joined machine whose own clone of the project's repository the thread runs in, as it is.
+     * Only a headless Gram, which runs no work itself, places a thread so; absent for this machine.
+     */
+    hostId: Schema.optionalKey(HostId),
+  }),
   Schema.Struct({
     kind: Schema.Literal("newWorktree"),
     branch: Schema.String,
@@ -41,7 +48,7 @@ export type CheckoutRequest = typeof CheckoutRequest.Type;
 
 /** The machine a checkout request is placed on: the one it names, else this one (`undefined`). */
 export const checkoutRequestHost = (request: CheckoutRequest): HostId | undefined =>
-  request.kind === "newWorktree" || request.kind === "machineFolder" ? request.hostId : undefined;
+  request.kind === "existingWorktree" ? undefined : request.hostId;
 
 export const SendResult = Schema.Struct({
   /** True when a turn was running and the input joined the queue. */
