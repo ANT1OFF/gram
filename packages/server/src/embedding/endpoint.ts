@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import type { EndpointConfig } from "../config.ts";
@@ -7,13 +8,30 @@ export class EndpointFailed extends Data.TaggedError("EndpointFailed")<{
   readonly message: string;
 }> {}
 
+/**
+ * The bearer token for one call: the configured one, or what the token file holds now. A file
+ * that can't be read, or holds anything but one header value, fails the call without its text.
+ */
+const bearerOf = async (endpoint: EndpointConfig): Promise<string | undefined> => {
+  if (endpoint.tokenFile === undefined) return endpoint.token;
+  let text: string;
+  try {
+    text = await readFile(endpoint.tokenFile, "utf8");
+  } catch {
+    throw new Error("the token file could not be read");
+  }
+  const token = text.trim();
+  if (!/^[\x21-\x7e]+$/.test(token)) throw new Error("the token file holds no usable token");
+  return token;
+};
+
 /** The largest answer read from an endpoint: both answers are a few fields. */
 const MAX_ANSWER_BYTES = 64 * 1024;
 
 /**
  * POSTs `body` as JSON and reads the 200 answer as JSON. Anything else fails: another status, no
  * answer within `timeoutMs`, an answer too long or not JSON. Redirects are not followed, so the
- * token goes only where it was configured to go.
+ * token goes only where it was configured to go. A token file is read again for every call.
  */
 export const postJson = (
   endpoint: EndpointConfig,
@@ -22,11 +40,12 @@ export const postJson = (
 ): Effect.Effect<unknown, EndpointFailed> =>
   Effect.tryPromise({
     try: async (signal) => {
+      const token = await bearerOf(endpoint);
       const response = await fetch(endpoint.url, {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          ...(endpoint.token === undefined ? {} : { authorization: `Bearer ${endpoint.token}` }),
+          ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
         },
         body: JSON.stringify(body),
         redirect: "error",
