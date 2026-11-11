@@ -45,6 +45,7 @@ import {
 } from "./machine-routes.ts";
 import { IDENTITY_HEADER, SERVICE_TYP, type FrontedIdentityConfig } from "./fronted-identity.ts";
 import { makeTestProxy } from "./fronted-identity.testing.ts";
+import { MACHINES_STOP_STATUS_PATH } from "./host-stop-routes.ts";
 import { ProvisionedListener } from "./provisioned-listener.ts";
 import { LaunchToken, SERVICE_PATHS, serverPort, ServerLayer } from "./server.ts";
 
@@ -687,6 +688,9 @@ layer(serverWith(join(temp, "data-fronted"), frontedPort, proxy.config), {
         expect((yield* platform(MACHINES_REMOVE_PATH, { id: hostId })).status).toBe(200);
         expect(yield* listed()).toEqual([]);
 
+        // It asks which machines are readied to stop, as it would before stopping one.
+        expect((yield* platform(MACHINES_STOP_STATUS_PATH)).status).toBe(200);
+
         // The platform's statement opens nothing else: no page, no socket's path, no other
         // machine route, and none of what people reach.
         for (const path of ["/", "/ws", "/machines/join-link", "/remote/status", "/mcp"])
@@ -705,6 +709,7 @@ layer(serverWith(join(temp, "data-fronted"), frontedPort, proxy.config), {
           ["platform", "service", MACHINES_LIST_PATH, 200],
           ["platform", "service", MACHINES_REMOVE_PATH, 200],
           ["platform", "service", MACHINES_LIST_PATH, 200],
+          ["platform", "service", MACHINES_STOP_STATUS_PATH, 200],
         ]);
       }),
     60_000,

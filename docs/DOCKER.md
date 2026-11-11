@@ -143,7 +143,8 @@ sent. The claims:
 What sits in front can also speak for itself. A statement whose header has `typ`
 `gram-service+jwt`, with `role` `service` and a `path` claim, names no person: it is the
 platform's own, for the calls only it makes. It reaches `POST /machines/provision`,
-`/machines/remove` and `/machines/list`, to register and remove the hosts it starts, and
+`/machines/remove` and `/machines/list`, to register and remove the hosts it starts,
+`POST /machines/stop/status`, `/prepare`, `/cancel` and `/resume`, to stop and resume them, and
 `POST /workspaces/export` and `/workspaces/import`, to move a workspace in or out. It reaches
 nothing else, and a member or a viewer reaches none of those.
 

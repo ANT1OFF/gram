@@ -167,7 +167,7 @@ const PROVISIONED_SWITCH_POLL = Duration.seconds(3);
 
 /**
  * What a fronting platform's own statement (`role` `service`) reaches, and all it reaches: the
- * hosts it provisions, and a workspace's way in and out. A person's statement reaches none of
+ * hosts it provisions and stops, and a workspace's way in and out. A person's statement reaches none of
  * them. Before naming another path here, see that its handler needs no person: nothing behind
  * these has a role to check or a window to answer.
  */
@@ -175,6 +175,7 @@ export const SERVICE_PATHS: ReadonlySet<string> = new Set([
   MACHINES_PROVISION_PATH,
   MACHINES_REMOVE_PATH,
   MACHINES_LIST_PATH,
+  ...HOST_STOP_PATHS,
   ...WORKSPACE_TRANSFER_PATHS,
 ]);
 
@@ -363,15 +364,23 @@ export const AuthMiddleware = HttpRouter.middleware(
               request.modify({ headers: Headers.remove(request.headers, IDENTITY_HEADER) }),
             );
             const answered = yield* (
-              MACHINE_MANAGEMENT_PATHS.has(servicePath)
-                ? remoteHosts === undefined
+              HOST_STOP_PATHS.has(servicePath)
+                ? stopDeps === undefined
                   ? Effect.succeed(
                       HttpServerResponse.text("forbidden: no machines here", { status: 403 }),
                     )
-                  : manageMachines(remoteHosts, servicePath, true).pipe(
+                  : hostStopRoute(stopDeps, servicePath).pipe(
                       Effect.provideService(HttpServerRequest.HttpServerRequest, asService),
                     )
-                : asCaller(httpEffect, asService)
+                : MACHINE_MANAGEMENT_PATHS.has(servicePath)
+                  ? remoteHosts === undefined
+                    ? Effect.succeed(
+                        HttpServerResponse.text("forbidden: no machines here", { status: 403 }),
+                      )
+                    : manageMachines(remoteHosts, servicePath, true).pipe(
+                        Effect.provideService(HttpServerRequest.HttpServerRequest, asService),
+                      )
+                  : asCaller(httpEffect, asService)
             ).pipe(
               Effect.onExit((exit) =>
                 store === undefined
@@ -406,6 +415,7 @@ export const AuthMiddleware = HttpRouter.middleware(
           if (
             REMOTE_MANAGEMENT_PATHS.has(target.path) ||
             MACHINE_MANAGEMENT_PATHS.has(target.path) ||
+            HOST_STOP_PATHS.has(target.path) ||
             WORKSPACE_TRANSFER_PATHS.has(target.path) ||
             HOST_PATHS.has(target.path) ||
             target.path === MCP_PATH ||
