@@ -20,8 +20,22 @@ import type { MachineUpdate } from "./machine-updates.ts";
 export const JOIN_LIFETIME_MS = 15 * 60_000;
 /** How many machines can be joined at once. */
 export const MAX_MACHINES = 16;
+/**
+ * How many provisioned hosts can be registered at once, beside the joined machines: an embedding
+ * control plane registers one per unit of work it places, so far more than a person joins.
+ */
+export const MAX_PROVISIONED = 256;
 /** How many dials' nonces can be in their window at once; past it, dials wait. */
 const NONCES_KEPT = 4096;
+/**
+ * How many of one machine's dials can be in their window at once: several times what a host
+ * dialling again at its slowest (every 30 seconds) makes, and few enough that every machine at
+ * this limit together still leaves room in `NONCES_KEPT`. Past it that machine waits, so one
+ * machine's key, however it is used, can't fill the room the others' dials need. Counted by
+ * this run alone: after a restart a machine has its share again beside the dials the last run
+ * took, which only many keys spent together around a restart could turn into a full set.
+ */
+export const DIALS_PER_MACHINE = 12;
 
 /** A joined machine as the main Gram keeps it: its pinned key and what it said it was. */
 export interface PairedMachine {
@@ -44,7 +58,31 @@ export interface PairedMachine {
    * update can run that install again; absent for a machine that joined by the command.
    */
   readonly sshTarget?: string;
+  /**
+   * How it came to be here, which decides where it may dial; absent for a machine a person joined
+   * with a link. `provisioned` is a host a control plane registered by its key (`provision`):
+   * never asked with a join link, confirmed from the start, and taken only on the
+   * provisioned-host listener, never the tailnet address. How a key was approved (this) and the
+   * address its dials come in on (`DialRoute`) are kept apart, so another kind can pair them
+   * differently.
+   */
+  readonly kind?: MachineKind;
 }
+
+/** How a machine other than a joined one came to be registered. */
+export type MachineKind = "provisioned";
+
+/** Whether a control plane registered it by its key. */
+export const isProvisioned = (machine: Pick<PairedMachine, "kind">) =>
+  machine.kind === "provisioned";
+
+/** Whether `machine` has `name`, as work placed by name reads it: in any case, trimmed. */
+const sameName = (machine: Pick<PairedMachine, "name">, name: string) =>
+  machine.name.trim().toLowerCase() === name.trim().toLowerCase();
+
+/** Where a machine of this kind may dial in. */
+const routeOf = (machine: Pick<PairedMachine, "kind">): DialRoute =>
+  isProvisioned(machine) ? "provisioned" : "joined";
 
 /**
  * The last reason a joined machine dropped or was refused, as this Gram saw it since it started:
@@ -98,6 +136,29 @@ export type JoinResult =
   | { readonly kind: "joined"; readonly machine: PairedMachine }
   | { readonly kind: "refused"; readonly status: 400 | 403 | 409; readonly message: string };
 
+/** What an embedding control plane registers a host with: its key, made on the host. */
+export interface ProvisionRequest {
+  readonly name: string;
+  readonly platform: string;
+  readonly publicKey: string;
+}
+
+export type ProvisionResult =
+  /** `created` is false when this key was already registered as a provisioned host. */
+  | {
+      readonly kind: "provisioned";
+      readonly machine: PairedMachine;
+      readonly created: boolean;
+    }
+  | {
+      readonly kind: "refused";
+      readonly status: 400 | 409;
+      readonly message: string;
+    };
+
+/** The way a dial came in: over the tailnet address, or over the provisioned-host listener. */
+export type DialRoute = "joined" | "provisioned";
+
 export type ConnectResult =
   | { readonly kind: "ok"; readonly machine: PairedMachine }
   | { readonly kind: "refused"; readonly status: 401 | 403 | 503; readonly message: string };
@@ -133,7 +194,9 @@ export interface DialNonceStore {
 
 export const NO_DIALS: DialNonces = { nonces: [], floor: 0, seen: 0 };
 
-const NAME = /^[\p{L}\p{N} ._'-]{1,64}$/u;
+/** The names a machine or host can have. */
+export const HOST_NAME = /^[\p{L}\p{N} ._'-]{1,64}$/u;
+const NAME = HOST_NAME;
 /** Names that mean this machine, in any case: `spawn_worker` runs here on them, and none can join. */
 export const LOCAL_MACHINE_NAMES = ["local", "this machine"] as const;
 export const namesThisMachine = (name: string) =>
@@ -155,37 +218,64 @@ const isMachine = (value: unknown): value is PairedMachine => {
     (m["confirmedAt"] === undefined || Number.isSafeInteger(m["confirmedAt"])) &&
     (m["claudeTokenSetAt"] === undefined || Number.isSafeInteger(m["claudeTokenSetAt"])) &&
     (m["sshTarget"] === undefined ||
-      (typeof m["sshTarget"] === "string" && SSH_TARGET.test(m["sshTarget"])))
+      (typeof m["sshTarget"] === "string" && SSH_TARGET.test(m["sshTarget"]))) &&
+    // A provisioned host is confirmed when it is registered, and was never installed over SSH.
+    (m["kind"] === undefined ||
+      (m["kind"] === "provisioned" &&
+        m["confirmedAt"] !== undefined &&
+        m["sshTarget"] === undefined))
   );
+};
+
+/** A machines file's entries, each valid and of the kind the file holds; throws otherwise. */
+const machinesIn = (value: unknown, provisioned: boolean, most: number): PairedMachine[] => {
+  if (value === undefined) return [];
+  const record = value as Record<string, unknown> | null;
+  if (
+    typeof record !== "object" ||
+    record === null ||
+    record["version"] !== 1 ||
+    !Array.isArray(record["machines"]) ||
+    record["machines"].length > most ||
+    !record["machines"].every(
+      (machine) => isMachine(machine) && isProvisioned(machine) === provisioned,
+    )
+  )
+    throw new Error("Joined machines storage is invalid");
+  return record["machines"] as PairedMachine[];
 };
 
 /**
  * The joined machines in `<dataDir>/remote-access/machines.json`: private to this user, refused
  * when it isn't, replaced atomically. Only public keys are kept; there is no secret in it.
+ * Provisioned hosts are kept beside it in `provisioned-hosts.json`, never in the same file: a
+ * build from before they existed reads `machines.json` alone, and would take any entry in it for
+ * a machine a person confirmed. Neither file takes an entry of the other's kind.
  */
 export const fileMachineStore = (dataDir: string): PairedMachineStore => {
   const file = privateJsonFile(dataDir, "machines.json", 64 * 1024);
-  const read = (): PairedMachine[] => {
-    const value = file.read();
-    if (value === undefined) return [];
-    const record = value as Record<string, unknown> | null;
-    if (
-      typeof record !== "object" ||
-      record === null ||
-      record["version"] !== 1 ||
-      !Array.isArray(record["machines"]) ||
-      record["machines"].length > MAX_MACHINES ||
-      !record["machines"].every(isMachine)
-    )
-      throw new Error("Joined machines storage is invalid");
-    return record["machines"] as PairedMachine[];
-  };
+  const hostsFile = privateJsonFile(dataDir, "provisioned-hosts.json", 256 * 1024);
+  const read = (): PairedMachine[] => [
+    ...machinesIn(file.read(), false, MAX_MACHINES),
+    ...machinesIn(hostsFile.read(), true, MAX_PROVISIONED),
+  ];
   return {
     read,
     write: (machines) => {
       // Never repair an unsafe or corrupt file silently.
-      read();
-      file.write({ version: 1, machines });
+      const kept = read();
+      const joined = machines.filter((machine) => !isProvisioned(machine));
+      const provisioned = machines.filter(isProvisioned);
+      const changed = (kind: boolean, next: ReadonlyArray<PairedMachine>) =>
+        JSON.stringify(kept.filter((machine) => isProvisioned(machine) === kind)) !==
+        JSON.stringify(next);
+      // Each file is written only when its own machines changed, so a Gram that never had a
+      // provisioned host never has their file.
+      // The joined machines' file first, which the hosts' is never without: a write that stops
+      // between the two leaves nothing on disk that this run doesn't also hold.
+      if (changed(false, joined) || file.read() === undefined)
+        file.write({ version: 1, machines: joined });
+      if (changed(true, provisioned)) hostsFile.write({ version: 1, machines: provisioned });
     },
   };
 };
@@ -333,13 +423,17 @@ export const createPairedMachines = (
    * nonces still in their window, which refuses the dial rather than forget one that could then
    * be replayed.
    */
+  /** Each machine's accepted dials still in their window, by when each leaves it. This run's only. */
+  const dialsOf = new Map<string, number[]>();
   const record = (
+    machineId: string,
     nonce: string,
     signed: number,
     /** The time the dial was checked at: one reading, so pruning can't pass the dial's window. */
     at: number,
   ): "ok" | "stale" | "replayed" | "full" | "unsaved" => {
     const until = signed + CONNECT_SKEW_MS;
+    const own = (dialsOf.get(machineId) ?? []).filter((expires) => expires >= at);
     // Let go once past their window, which the skew check refuses, and the floor raised past
     // them, so a clock set back later doesn't bring them into it again.
     for (const [kept, expires] of nonces)
@@ -349,7 +443,8 @@ export const createPairedMachines = (
       }
     if (signed <= floor) return "stale";
     if (nonces.has(nonce)) return "replayed";
-    if (nonces.size >= NONCES_KEPT) return "full";
+    if (nonces.size >= NONCES_KEPT || own.length >= DIALS_PER_MACHINE) return "full";
+    dialsOf.set(machineId, [...own, until]);
     // Kept in memory even when saving fails, so this run still refuses its replay.
     nonces.set(nonce, until);
     seen = Math.max(seen, at);
@@ -397,7 +492,21 @@ export const createPairedMachines = (
       const id = hostIdOf(request.publicKey);
       if (byId(id) !== undefined)
         return { kind: "refused", status: 409, message: "This machine has already joined." };
-      if (machines.length >= MAX_MACHINES)
+      // A provisioned host's name and id stay its own, as `provision` keeps every name.
+      if (
+        machines.some(
+          (machine) =>
+            isProvisioned(machine) &&
+            (sameName(machine, request.name) || machine.id === request.name.trim().toLowerCase()),
+        )
+      )
+        return {
+          kind: "refused",
+          status: 409,
+          message:
+            "Another machine already has that name. Choose another with gram-host join --name.",
+        };
+      if (machines.filter((machine) => !isProvisioned(machine)).length >= MAX_MACHINES)
         return {
           kind: "refused",
           status: 409,
@@ -413,6 +522,81 @@ export const createPairedMachines = (
       };
       save([...machines, machine]);
       return { kind: "joined", machine };
+    },
+    /**
+     * Registers a host by the key it made, confirmed from the start: no join link and no
+     * fingerprint to compare, because whoever may call this already decides which hosts get work.
+     * Registering the same key again, with the same name, changes nothing. A key that joined with a link is refused,
+     * so this never confirms a machine a person hasn't.
+     */
+    provision: (request: ProvisionRequest): ProvisionResult => {
+      if (!NAME.test(request.name) || !PLATFORM.test(request.platform))
+        return {
+          kind: "refused",
+          status: 400,
+          message: "The host's name isn't valid.",
+        };
+      if (namesThisMachine(request.name))
+        return {
+          kind: "refused",
+          status: 400,
+          message: "That name is reserved for this machine. Choose another.",
+        };
+      if (publicKeyFrom(request.publicKey) === undefined)
+        return {
+          kind: "refused",
+          status: 400,
+          message: "The host's key isn't valid.",
+        };
+      const id = hostIdOf(request.publicKey);
+      const existing = byId(id);
+      if (existing !== undefined) {
+        if (!isProvisioned(existing))
+          return {
+            kind: "refused",
+            status: 409,
+            message: "That key belongs to a machine that joined with a link.",
+          };
+        // The same registration again changes nothing; another name or platform for the key is a
+        // mistake to say so about, not to settle silently either way.
+        return existing.name === request.name && existing.platform === request.platform
+          ? { kind: "provisioned", machine: existing, created: false }
+          : {
+              kind: "refused",
+              status: 409,
+              message: `That key is already registered as "${existing.name}". Remove it first to change that.`,
+            };
+      }
+      // Work is placed by name, and a name two machines share places nothing: a new host never
+      // takes one in use, so registering can't make a machine unaddressable.
+      // Nor a name that reads as a machine's id, which work is placed by as well.
+      if (
+        /^m-[a-f0-9]{24}$/i.test(request.name.trim()) ||
+        machines.some((machine) => sameName(machine, request.name))
+      )
+        return {
+          kind: "refused",
+          status: 409,
+          message: "Another machine already has that name. Choose another.",
+        };
+      if (machines.filter(isProvisioned).length >= MAX_PROVISIONED)
+        return {
+          kind: "refused",
+          status: 409,
+          message: `Gram can have ${MAX_PROVISIONED} provisioned hosts; remove one first.`,
+        };
+      const at = now();
+      const machine: PairedMachine = {
+        id,
+        name: request.name,
+        platform: request.platform,
+        publicKey: request.publicKey,
+        joinedAt: at,
+        confirmedAt: at,
+        kind: "provisioned",
+      };
+      save([...machines, machine]);
+      return { kind: "provisioned", machine, created: true };
     },
     confirm: (id: string): PairedMachine | undefined => {
       const machine = byId(id);
@@ -433,13 +617,20 @@ export const createPairedMachines = (
     /** Records that Gram installed the machine at `target` over SSH, for its updates. */
     installedOverSsh: (id: string, target: string): void => {
       const machine = byId(id);
-      if (machine === undefined || !SSH_TARGET.test(target) || machine.sshTarget === target) return;
+      if (
+        machine === undefined ||
+        isProvisioned(machine) ||
+        !SSH_TARGET.test(target) ||
+        machine.sshTarget === target
+      )
+        return;
       save(machines.map((m) => (m === machine ? { ...machine, sshTarget: target } : m)));
     },
     /** Forgets the machine and its key; the caller closes its connection. */
     remove: (id: string): boolean => {
       if (byId(id) === undefined) return false;
       problems.delete(id);
+      dialsOf.delete(id);
       forget(machines.filter((machine) => machine.id !== id));
       return true;
     },
@@ -449,16 +640,20 @@ export const createPairedMachines = (
     note,
     /**
      * Checks a dial's headers: a machine that joined and was confirmed, a time within the skew, a
-     * nonce not seen before, and the machine's own signature over all of it and `origin`.
+     * nonce not seen before, and the machine's own signature over all of it and `origin`. A
+     * provisioned host is taken only on the provisioned route and a joined machine only on the
+     * joined one; on the other, either is as unknown as a key never registered.
      */
     authorizeConnect: (
       origin: string,
       headers: Readonly<Record<string, string | undefined>>,
+      route: DialRoute = "joined",
     ): ConnectResult => {
       const claim = connectClaimOf(origin, headers);
       if (claim === undefined)
         return { kind: "refused", status: 401, message: "unauthorized: signed dial required" };
-      const machine = byId(claim.hostId);
+      const named = byId(claim.hostId);
+      const machine = named !== undefined && routeOf(named) === route ? named : undefined;
       const key = machine === undefined ? undefined : keyOf(machine);
       if (machine === undefined || key === undefined)
         return { kind: "refused", status: 401, message: "unauthorized: machine not joined" };
@@ -491,7 +686,7 @@ export const createPairedMachines = (
       if (blind)
         return { kind: "refused", status: 503, message: "unavailable: dial history unreadable" };
       // Checked after the signature, so a forged dial can't spend a real one's nonce.
-      const nonce = record(claim.nonce, claim.time, at);
+      const nonce = record(machine.id, claim.nonce, claim.time, at);
       if (nonce === "stale")
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       if (nonce === "replayed")
@@ -551,7 +746,8 @@ export const machineView = (
     readonly update?: MachineUpdate | undefined;
   } = {},
 ) => {
-  const access = status.tailscale ?? "on";
+  // A provisioned host dials its own listener, whatever access over Tailscale is.
+  const access = isProvisioned(machine) ? "on" : (status.tailscale ?? "on");
   // Tailscale down here explains a lost connection better than the loss itself.
   const offline: OfflineReason | undefined =
     online !== undefined
@@ -591,6 +787,7 @@ export const machineView = (
     ...(offline === undefined ? {} : { offline }),
     ...(release === undefined ? {} : { release }),
     ...(machine.sshTarget === undefined ? {} : { sshTarget: machine.sshTarget }),
+    ...(machine.kind === undefined ? {} : { kind: machine.kind }),
     ...(online?.selfUpdate === true ? { selfUpdate: true } : {}),
     ...(status.update === undefined ? {} : { update: status.update }),
   };

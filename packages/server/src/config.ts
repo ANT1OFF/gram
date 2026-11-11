@@ -9,6 +9,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { remoteOrigin } from "./http/remote-access.ts";
+import { type ProvisionedHostsConfig, provisionedHostsFrom } from "./host/provisioned.ts";
 import { defaultDataDir } from "./logging/data-dir.ts";
 
 export interface ServerConfigShape {
@@ -30,6 +31,11 @@ export interface ServerConfigShape {
   readonly extraOrigins: ReadonlyArray<string>;
   /** Explicit HTTPS Tailscale Serve origin; absent keeps remote access disabled. */
   readonly remoteOrigin?: string;
+  /**
+   * The listener provisioned hosts dial over TLS (`host/provisioned.ts`); absent, as it is unless
+   * its environment is set, there is none and no host can be provisioned.
+   */
+  readonly provisionedHosts?: ProvisionedHostsConfig;
   /** Overrides the `agents.idleEvictMinutes` setting when set. */
   readonly idleEvictAfter: Duration.Duration | undefined;
   readonly interruptWatchdog: Duration.Duration;
@@ -117,11 +123,13 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     const appBuild = env["GRAM_APP_BUILD"];
     const debounceMs = Number(env["GRAM_ORCHESTRATION_DEBOUNCE_MS"]);
     const listenHost = listenHostFrom(env);
+    const provisionedHosts = provisionedHostsFrom(env);
     return {
       dataDir: defaultDataDir(env),
       ...(env["GRAM_REMOTE_ORIGIN"] !== undefined
         ? { remoteOrigin: remoteOrigin(env["GRAM_REMOTE_ORIGIN"])! }
         : {}),
+      ...(provisionedHosts === undefined ? {} : { provisionedHosts }),
       port: Number.isInteger(port) && port >= 0 && port < 65536 ? port : 0,
       ...(listenHost === undefined ? {} : { listenHost }),
       webRoot: env["GRAM_WEB_ROOT"] || undefined,

@@ -9,7 +9,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
 import { authTarget } from "../http/auth-target.ts";
-import { hostRoute } from "../http/machine-routes.ts";
+import { hostRoute, provisionedRoute } from "../http/machine-routes.ts";
 import type { RemoteAccess } from "../http/remote-access.ts";
 import { serverPort } from "../http/server.ts";
 import { HttpRouter, HttpServer, HttpServerRequest, Socket } from "../platform/unstable.ts";
@@ -452,6 +452,109 @@ describe("joined machines over the network", () => {
       hosts.remove(HostId.make(hostId));
       yield* Effect.sleep("200 millis");
       expect(hosts.machines.problemOf(hostId)).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("provisioned hosts' connections", () => {
+  const HOSTS = "https://gram.internal:8443";
+
+  /** The provisioned-host listener's route on loopback, answering as that listener would. */
+  const servedProvisioned = (on: () => boolean) =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore(), Date.now, undefined, {
+        provisionedOrigin: HOSTS,
+      });
+      const context = yield* Layer.build(
+        HttpRouter.serve(
+          HttpRouter.add(
+            "*",
+            "/host/*",
+            Effect.gen(function* () {
+              const request = yield* HttpServerRequest.HttpServerRequest;
+              const named: HttpServerRequest.HttpServerRequest = Object.create(request, {
+                headers: {
+                  value: { ...request.headers, host: "gram.internal:8443" },
+                },
+              });
+              return yield* provisionedRoute(hosts, authTarget(request.url)?.path, on(), () =>
+                Effect.die(new Error("not in this test")),
+              ).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, named));
+            }),
+          ),
+          { disableListenLog: true, disableLogger: true },
+        ).pipe(
+          Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })),
+        ),
+      ).pipe(Effect.orDie);
+      const port = serverPort(Context.get(context, HttpServer.HttpServer));
+      const key = generateHostKey();
+      const hostId = hostIdOf(key.publicKey);
+      hosts.machines.provision({
+        name: "sandbox",
+        platform: "linux",
+        publicKey: key.publicKey,
+      });
+      const dial: DialOptions = {
+        origin: HOSTS,
+        hostId,
+        key: privateKeyFrom(key.privateKeyPem),
+        url: `ws://127.0.0.1:${port}/host/connect`,
+      };
+      return { hosts, hostId, dial };
+    });
+
+  it.live(
+    "stay through access over Tailscale turning off or moving, and end when they are turned off",
+    () =>
+      Effect.gen(function* () {
+        let on = true;
+        const { hosts, hostId, dial } = yield* servedProvisioned(() => on);
+        yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+        yield* online(hosts, hostId);
+        expect(hosts.origin(HostId.make(hostId))).toBe(HOSTS);
+        hosts.keepOrigin(undefined);
+        hosts.keepOrigin(ORIGIN);
+        hosts.keepOrigin("https://moved.example-tailnet.ts.net");
+        yield* Effect.sleep("100 millis");
+        expect(hosts.list("off")[0]).toHaveProperty("onlineSince");
+
+        on = false;
+        hosts.closeProvisioned();
+        while (hosts.list()[0]?.onlineSince !== undefined) yield* Effect.sleep("20 millis");
+        expect(hosts.list()[0]).toMatchObject({
+          kind: "provisioned",
+          offline: { kind: "lost" },
+        });
+        // Off, its dial is refused; on again, it is taken without registering anew.
+        yield* dialOnce(dial, service(hostId));
+        expect(hosts.list()[0]).not.toHaveProperty("onlineSince");
+        on = true;
+        yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+        yield* online(hosts, hostId);
+      }).pipe(Effect.scoped, Effect.timeout("15 seconds")),
+  );
+
+  it.live("are not taken when no address is kept for them", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const key = generateHostKey();
+      const result = hosts.machines.provision({
+        name: "sandbox",
+        platform: "linux",
+        publicKey: key.publicKey,
+      });
+      if (result.kind !== "provisioned") throw new Error("not provisioned");
+      // A dial admitted for it (which the route never does without an address) doesn't attach.
+      const closed = { ran: false };
+      yield* hosts.attach(hosts.admit(result.machine, HOSTS), {
+        get runRaw() {
+          closed.ran = true;
+          return () => Effect.void;
+        },
+      } as unknown as Socket.Socket);
+      expect(closed.ran).toBe(false);
+      expect(hosts.list()[0]).not.toHaveProperty("onlineSince");
     }).pipe(Effect.scoped),
   );
 });
