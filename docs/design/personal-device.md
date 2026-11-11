@@ -164,7 +164,7 @@ more than the person did.
     marks the device offline at once (the connection closed) or within 20 seconds (four missed
     pings, as for a joined machine). A request in flight fails with `DeviceUnavailable` and a
     reason the thread can show: "This Mac went offline: Gram was closed." A command still running
-    is asked to stop (`SIGTERM` to its process group), then killed with its whole process tree
+    is asked to stop (`SIGTERM` to its process group), then killed with its whole process group
     five seconds later.
 15. Every request carries a deadline (the ask's wait plus the command's timeout). When it passes,
     the control plane answers the tool call itself. Nothing waits on a device without a clock
@@ -383,8 +383,8 @@ Every command, file read and folder listing gets one.
 - **One at a time, with limits.** One ask is shown; others wait behind it, at most three per
   thread and eight in all. Beyond the per-thread counts, which use ids the server chooses, there
   is a count per server that it can't dodge: at most twenty asks in ten minutes, and three in a
-  row refused or left unanswered pause lending to that server until the person lifts the pause,
-  a decision. An ask not answered in five minutes is refused (`not-answered`).
+  row refused, left unanswered or taken back by the server pause lending to that server until the
+  person lifts the pause, a decision. An ask not answered in five minutes is refused (`not-answered`).
 
 ### No rule skips the ask
 
@@ -482,8 +482,15 @@ command and the rest of the disk is the ask.
   the whole environment to a folder is a decision, made in the lending sheet.
 - No stdin and no terminal. A process group of its own. A timeout of two minutes unless the
   request asks for less or up to ten.
-- Stopped with `SIGTERM`, then killed with its process tree after five seconds, on timeout,
-  cancel, a closed connection, a lock or quit.
+- Stopped with `SIGTERM`, then killed with its process group after five seconds, on timeout,
+  cancel, a closed connection, a lock or quit. Whatever is left in the group is killed when the
+  shell ends, and the group is never signalled after the shell has been collected, since its
+  number may then belong to another process. A command that leaves its group (`setsid`, a
+  daemon) outlives the request, and a text check can't see that reliably: only confinement by
+  the operating system stops it. Output such a process writes after the shell ends is lost, and
+  the result says so.
+- Variables that change what a command means under bash (`BASH_FUNC_*`, `SHELLOPTS`, `BASHOPTS`,
+  `ENV`, `BASH_ENV`, `PS4`, `CDPATH`, `IFS`, `GLOBIGNORE` and the like) are dropped whatever else the environment keeps.
 
 ### The hosted view
 
@@ -592,7 +599,7 @@ that only wants the person to misread an ask.
 | T13 | **Path tricks**: links out of the folder, hard links, a swap between check and use, `..`, a FIFO, another mount.                    | The read steps in [folders](#folders): real path, same device, no-follow non-blocking open, regular file with one link, inode compared, bytes counted.                                                                       | Off Linux, a swap timed between the checks by a process that is already the person.                                                                       |
 | T14 | **Replay or alteration**: a retried request runs twice, a request id is reused for another command, a dial is replayed.             | Idempotent `requestId` with a payload check; approval bound to a length-prefixed hash; dial bound to subject and token with stored nonces; single-use grant nonces per request id.                                           | None known.                                                                                                                                               |
 | T15 | **The server mislabels** the thread, the workspace or the reason to lend an ask credibility.                                        | Those are marked as the server's word. What the app vouches for (server address, folder, command, that the person just wrote) comes from the app itself.                                                                     | The person may still weigh the label.                                                                                                                     |
-| T16 | **A runaway command**: a fork bomb, a daemon left behind, a full disk.                                                              | Timeout, process group, terminate then tree kill on every way the request can end.                                                                                                                                           | What a command does in its first seconds, and anything it detaches beyond the process tree.                                                               |
+| T16 | **A runaway command**: a fork bomb, a daemon left behind, a full disk.                                                              | Timeout, process group, terminate then group kill on every way the request can end.                                                                                                                                          | What a command does in its first seconds, and anything it detaches beyond the process tree.                                                               |
 | T17 | **The organisation's policy is bypassed** by a modified app.                                                                        | Policy is enforced at the front (the dial) and the control plane (the tools, the hook). The app's copy is display.                                                                                                           | None: the app is the person's, and is not asked to enforce the organisation's rules.                                                                      |
 | T18 | **Hosted content reaches local powers** of the desktop app: a local terminal, a local file, the folder dialog, the sign-in token.   | [The hosted view](#the-hosted-view): its own web contents, origin and partition; the bridge decided in the main process by caller; tokens never in a renderer.                                                               | Bugs in the short list of calls it does get.                                                                                                              |
 | T19 | **An approved command grants standing access**: it edits the lending settings or the log.                                           | Settings and log are outside every lent folder, authenticated with a keychain key; a failed check means lending is off.                                                                                                      | A command that reads the keychain as the person. See section 8.                                                                                           |
