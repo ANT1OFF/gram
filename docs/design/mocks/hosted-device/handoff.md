@@ -51,7 +51,6 @@ Approved as the defaults in [section 10 of the design note](../../personal-devic
 - The hosted view's own web contents and its reduced bridge aren't drawn: they change nothing a
   person sees.
 - "This Mac" becomes "this computer" off macOS.
-- The pause after three refused or unanswered requests, and lifting it, has no board yet. Draw
-  it in the lending sheet before building it.
-- Lending being unavailable (no keyring, no lock signal) has no board yet; it is a line on the
-  workspace's page in place of the button.
+- The pause and lending being unavailable are drawn in [v2](v2.html) (states paused,
+  no-keyring and no-lock-signal on "2 Lend this Mac", lift-pause on "The lending sheet"), awaiting
+  review.
