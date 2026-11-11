@@ -8,22 +8,29 @@ import {
   type ModelRef,
   orchestrationMode,
   profileBindingOf,
-  type ProfileFile,
   profileFilesOf,
   type Thread,
   ThreadId,
   type ThreadProfile,
   type AgentUnavailable,
+  type HostId,
+  LOCAL_HOST_ID,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { olderHost } from "../host/folders.ts";
+import type { HostThreadPlaces } from "../host/thread-places.ts";
+import type { WorkerHostsShape } from "../host/worker-host.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
+import { layProfileFiles } from "./lay.ts";
 import type { ProfileRepositories } from "./repositories.ts";
+
+export { layProfileFiles } from "./lay.ts";
 
 /** What a caller hears while the hosted features are off. */
 export const PROFILES_OFF =
@@ -39,6 +46,9 @@ export const PROFILE_THREADS_PROJECT = "Profile threads";
 export const NO_REPOSITORIES_HERE =
   "A profile whose workplace is repositories can't be started here: this server has no git to clone them with.";
 
+/** What a caller hears where a thread's machine can't be reached from here (a test layer). */
+export const NOT_PLACED_HERE = "This server has no joined machines to place the thread on.";
+
 export interface ProfileStarterDeps {
   readonly store: Pick<ThreadStoreShape, "getSettings" | "listProfiles" | "ensureProject">;
   readonly runtimes: Pick<ThreadRuntimesShape, "create" | "close">;
@@ -46,54 +56,14 @@ export interface ProfileStarterDeps {
   readonly dataDir: string;
   /** Clones and worktrees for a workplace of repositories; absent where there is no git. */
   readonly repositories?: ProfileRepositories | undefined;
+  /**
+   * The machines work is placed on. On a headless server, which runs no work itself, the thread
+   * goes on the joined machine it places what names none on; absent, or anywhere else, on this one.
+   */
+  readonly hosts?: Pick<WorkerHostsShape, "headless" | "get"> | undefined;
 }
 
 const refuse = (message: string) => new InvalidState({ message });
-
-/**
- * Writes `files` under `folder`, making it and what lies between, and says which it wrote. The
- * paths were checked (`profilePathProblem`). A new folder holds nothing to collide with; in a
- * repository's checkout (`keepExisting`) a file already there is left as it is, the repository's
- * own winning, and nothing is written through a link, so no file lands outside the folder.
- */
-export const layProfileFiles = (
-  folder: string,
-  files: ReadonlyArray<ProfileFile>,
-  options: { readonly keepExisting?: boolean } = {},
-): Effect.Effect<ReadonlyArray<string>, InvalidState> =>
-  Effect.gen(function* () {
-    let at = "the thread's folder";
-    const laid: Array<string> = [];
-    yield* Effect.tryPromise({
-      try: async () => {
-        await mkdir(folder, { recursive: true });
-        for (const file of files) {
-          at = file.path;
-          const names = file.path.split("/");
-          let parent = folder;
-          for (const name of names.slice(0, -1)) {
-            parent = join(parent, name);
-            const stat = await lstat(parent).catch(() => undefined);
-            if (stat === undefined) await mkdir(parent);
-            else if (!stat.isDirectory()) throw Object.assign(new Error("link"), { code: "ELINK" });
-          }
-          const path = join(parent, names.at(-1)!);
-          if (options.keepExisting === true && (await lstat(path).catch(() => undefined))) continue;
-          // `wx` never follows a link left at the name, nor replaces what is there.
-          await writeFile(path, file.content, { encoding: "utf8", flag: "wx" });
-          laid.push(file.path);
-        }
-      },
-      // The file's own path and the error's code: never where the data folder is.
-      catch: (cause) =>
-        refuse(
-          `The profile's files couldn't be written (${at}: ${
-            (cause as { code?: unknown } | null)?.code ?? "failed"
-          }).`,
-        ),
-    });
-    return laid;
-  });
 
 /** The model a profile names, as a thread runs on it. */
 const modelOf = (profile: ThreadProfile): ModelRef => ({
@@ -110,7 +80,24 @@ export const makeProfileStarter = ({
   runtimes,
   dataDir,
   repositories,
+  hosts,
 }: ProfileStarterDeps) => {
+  /**
+   * A joined machine's places for the thread, looked up at each use since a machine's host lasts
+   * only as long as its connection. Refused for a machine that went, or whose host is older.
+   */
+  const placesOn = (hostId: HostId): Effect.Effect<HostThreadPlaces, InvalidState> =>
+    hosts === undefined
+      ? Effect.fail(refuse(NOT_PLACED_HERE))
+      : hosts.get(hostId).pipe(
+          Effect.mapError((error) => refuse(error.message)),
+          Effect.flatMap((host) =>
+            host.threadPlaces === undefined
+              ? Effect.fail(refuse(olderHost({ name: host.name ?? hostId })))
+              : Effect.succeed(host.threadPlaces),
+          ),
+        );
+
   /**
    * The thread `value` describes, started. Refused before anything is made: with the hosted
    * features off, for a value that isn't a profile of this version, and for one naming a gateway
@@ -155,8 +142,15 @@ export const makeProfileStarter = ({
         const place = yield* repositories.prepare(id, workplace.repositories);
         const checkouts = [place.checkout, ...place.extraCheckouts];
         const made = Effect.gen(function* () {
-          const laid = yield* layProfileFiles(place.checkout.path, files, { keepExisting: true });
-          yield* repositories.exclude(place.checkout.path, laid);
+          // The files go where the worktree is: on the machine a headless server placed it on,
+          // by that machine's host, or here.
+          const on = place.checkout.hostId;
+          if (on === undefined || on === LOCAL_HOST_ID) {
+            const laid = yield* layProfileFiles(place.checkout.path, files, { keepExisting: true });
+            yield* repositories.exclude(place.checkout.path, laid);
+          } else if (files.length > 0) {
+            yield* (yield* placesOn(on)).lay(place.checkout.path, files);
+          }
           return yield* runtimes.create({
             ...base,
             projectRoot: place.projectRoot,
@@ -185,6 +179,30 @@ export const makeProfileStarter = ({
       }
 
       const root = join(dataDir, PROFILE_THREADS_DIR);
+      if (hosts?.headless !== undefined) {
+        // A headless server runs nothing here: the folder is made on the machine that takes what
+        // names none, by its host, and the thread is filed under the same project.
+        const hostId = yield* hosts.headless.machine;
+        const places = yield* placesOn(hostId);
+        const made = Effect.gen(function* () {
+          const { path } = yield* places.make(id, files);
+          // The project's folder here holds nothing; it is what the threads are filed under.
+          yield* Effect.promise(() => mkdir(root, { recursive: true }).catch(() => undefined));
+          yield* store.ensureProject({ root, name: PROFILE_THREADS_PROJECT });
+          return yield* runtimes.create({
+            ...base,
+            projectRoot: root,
+            checkout: { kind: "main", path, hostId },
+          });
+        });
+        return yield* made.pipe(
+          Effect.onExit((exit) =>
+            Exit.isSuccess(exit)
+              ? Effect.void
+              : runtimes.close(id).pipe(Effect.ignore, Effect.andThen(places.remove(id))),
+          ),
+        );
+      }
       const folder = join(root, id);
       const made = Effect.gen(function* () {
         yield* layProfileFiles(folder, files);

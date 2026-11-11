@@ -5,7 +5,15 @@
 // the machine.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
 import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -54,6 +62,7 @@ import { appToolsAt } from "./remote-app-tools.ts";
 import { reposOn } from "./repos.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
+import { HOST_THREADS_DIR, threadPlacesOnHost } from "./thread-places.ts";
 
 /** The address the machine joins and dials: the server's own, as it is reached over a tailnet. */
 const ORIGIN = "https://device.tail123.ts.net:9443";
@@ -176,6 +185,7 @@ const machineService = (
       folders,
       reads: fileReadsOn(proc),
       attachments: yield* attachmentsOnHost(join(home, "attachments")),
+      threadPlaces: threadPlacesOnHost(proc, repos),
       repos: reposOn(proc, repos, env),
       worktrees: cloneWorktrees(proc, yield* Worktrees, env),
       git: gitOn(proc),
@@ -411,6 +421,50 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
             ? readdirSync(join(dir, "data", "worktrees"))
             : [],
         ).toEqual([]);
+
+        // A thread started from a profile names no machine either: its folder is made on the
+        // machine, by the machine's host, with the profile's files in it, and it runs there.
+        const fromProfile: Thread = yield* app["thread.createFromProfile"]({
+          profile: {
+            version: 1,
+            name: "Release notes",
+            agent: "claude",
+            charter: "You write release notes.",
+            files: [{ path: "AGENTS.md", content: "# House rules\n" }],
+            skills: [{ name: "changelog", description: "Drafts a changelog.", body: "Draft." }],
+            model: { model: "fake-model" },
+            connectors: { server: { name: "workspace", url: "https://mcp.example.test/w" } },
+            workplace: { kind: "scratch" },
+            input: "Draft the notes.",
+          },
+        });
+        expect(fromProfile.checkout).toMatchObject({
+          kind: "main",
+          hostId,
+          path: join(machine.repos, HOST_THREADS_DIR, fromProfile.id),
+        });
+        expect(readFileSync(join(fromProfile.checkout.path, "AGENTS.md"), "utf8")).toBe(
+          "# House rules\n",
+        );
+        expect(
+          existsSync(join(fromProfile.checkout.path, ".claude/skills/changelog/SKILL.md")),
+        ).toBe(true);
+        const profileSession = yield* eventually(
+          "the profile thread's session on the machine",
+          Effect.sync(() =>
+            machineFake.sessions.find((session) => session.options.threadId === fromProfile.id),
+          ),
+        );
+        expect(profileSession.options.cwd).toBe(fromProfile.checkout.path);
+        expect(profileSession.options.instructions).toContain("You write release notes.");
+        expect(profileSession.options.mcpServer).toEqual({
+          name: "workspace",
+          url: "https://mcp.example.test/w",
+        });
+        expect(profileSession.options.mcpAllowlist).toEqual(["https://mcp.example.test/w"]);
+        // Still nothing here: no session, and no folder for the thread in the data folder.
+        expect(serverFake.sessions).toHaveLength(0);
+        expect(existsSync(join(dir, "data", "profile-threads", fromProfile.id))).toBe(false);
       }).pipe(Effect.scoped),
     60_000,
   );

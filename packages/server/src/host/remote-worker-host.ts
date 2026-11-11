@@ -486,6 +486,7 @@ export const machineWorkerHost = (
       name: machine.name,
       reads: connection.reads,
       attachments: connection.attachments,
+      threadPlaces: connection.threadPlaces,
       identify: connection.repos.identify,
     };
   });

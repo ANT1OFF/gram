@@ -138,6 +138,8 @@ services:
   Workers get worktrees of that clone, as they do on any joined machine.
 - With no machine joined, or none online, starting a thread is refused with the reason. Opening a
   terminal here, or a thread in a worktree of this machine, is always refused.
+- A thread started from a [profile](THREAD_PROFILES.md#on-a-headless-control-plane) goes on the
+  same machine, in a folder its host makes for it.
 - The models offered are the ones the default machine's Claude Code lists. The launch checks for
   local tools don't run.
 - Not on a machine yet, so not available headless: Codex sessions, sessions through a gateway

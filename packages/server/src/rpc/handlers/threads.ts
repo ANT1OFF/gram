@@ -192,6 +192,7 @@ export const threadHandlers = Effect.gen(function* () {
     store,
     runtimes,
     dataDir: config.dataDir,
+    hosts,
     repositories: Option.match(proc, {
       onNone: () => undefined,
       onSome: (service) =>

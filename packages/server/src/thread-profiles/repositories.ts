@@ -9,9 +9,9 @@ import {
 } from "@gram/contracts";
 import { git, Proc, type ProcShape } from "@gram/git";
 import * as Effect from "effect/Effect";
-import { appendFile, mkdir, readFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, join } from "node:path";
 import { reposOn } from "../host/repos.ts";
+import { excludeLaid } from "./lay.ts";
 
 /** Where the clones a profile's repositories are worked from are kept, under the data folder. */
 export const PROFILE_REPOS_DIR = "profile-repos";
@@ -117,31 +117,8 @@ export const makeProfileRepositories = (deps: ProfileRepositoriesDeps) => {
       };
     });
 
-  /**
-   * Keeps the files a profile laid in a checkout out of its commits: each is named in the
-   * repository's own `info/exclude`, which no clone or push carries. Without it an agent's
-   * `git add` would put the supplier's skills into the repository's history. Best effort: a
-   * repository that can't say where its exclude file is keeps the files visible.
-   */
-  const exclude = (checkout: string, laid: ReadonlyArray<string>): Effect.Effect<void> =>
-    laid.length === 0
-      ? Effect.void
-      : Effect.gen(function* () {
-          const out = yield* on(git(checkout, ["rev-parse", "--git-path", "info/exclude"]));
-          if (out.status !== 0 || out.stdout.trim() === "") return;
-          const named = out.stdout.trim();
-          const file = isAbsolute(named) ? named : join(checkout, named);
-          yield* Effect.promise(async () => {
-            const have = new Set((await readFile(file, "utf8").catch(() => "")).split("\n"));
-            // Anchored at the top and escaped, so a name is that one file and never a pattern.
-            const lines = laid
-              .map((path) => `/${path.replace(/[\\[\]*?!# ]/g, "\\$&")}`)
-              .filter((line) => !have.has(line));
-            if (lines.length === 0) return;
-            await mkdir(dirname(file), { recursive: true });
-            await appendFile(file, `${lines.join("\n")}\n`, "utf8");
-          });
-        }).pipe(Effect.ignore);
+  const exclude = (checkout: string, laid: ReadonlyArray<string>) =>
+    excludeLaid(deps.proc, checkout, laid);
 
   return { prepare, exclude, discard: deps.discard };
 };
