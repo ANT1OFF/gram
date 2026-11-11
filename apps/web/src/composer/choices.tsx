@@ -25,7 +25,7 @@ export type ChoiceOption = PickerOption<string> & {
 
 /**
  * One of the composer's dimensions (model, effort, mode or speed): a section of the choices
- * popover, and a glyph on the chip while its value is off its default in a way that matters.
+ * popover, and on the chip the model's name, the mode's glyph and Fast's bolt.
  */
 export interface ChoiceSection {
   readonly id: string;
@@ -37,9 +37,9 @@ export interface ChoiceSection {
    */
   readonly named: string;
   /**
-   * A 14 px glyph on the chip beside the agent's mark, only while the value is off its default and
-   * matters for safety or cost: Bypass's open lock in the warning colour, Fast's bolt. Absent, the
-   * value is said only in the chip's name and tooltip, as every value is.
+   * A 14 px glyph on the chip after the model's name: the mode's, Bypass's open lock in the warning
+   * colour, and Fast's bolt while on. Absent, the value is said only in the chip's name and
+   * tooltip, as every value is.
    */
   readonly glyph?: ReactNode;
   /** Why it doesn't apply here: its section is greyed and says so on hover. */
@@ -87,11 +87,11 @@ function SectionShortcut({
 const MOVES = new Set(["ArrowDown", "ArrowUp", "Home", "End"]);
 
 /**
- * The composer's one choices chip, in icons: the agent's mark, then a small glyph for any value
- * off its default that matters for safety or cost (Bypass, Fast), and one popover with a section
- * for each dimension, in words. The chip says no word: its name and tooltip say every value and
- * its shortcut. Being glyphs alone, it is one width at any toolbar width, so nothing measures it.
- * Each section's shortcut opens the popover on it, and a pick closes it.
+ * The composer's one choices chip: the agent's mark, the model's name, then the mode's glyph and
+ * Fast's bolt while on, and one popover with a section for each dimension, in words. The name is the
+ * one word on the chip, and it truncates rather than goes when the toolbar is short of room; the
+ * chip's name and tooltip say every value and its shortcut. Each section's shortcut opens the
+ * popover on it, and a pick closes it.
  */
 export function ComposerChoices({
   sections,
@@ -199,8 +199,9 @@ export function ComposerChoices({
   const glyphs = sections.flatMap((section) =>
     section.glyph === undefined || section.unavailable !== undefined
       ? []
-      : [{ id: section.id, glyph: section.glyph }],
+      : [{ id: section.id, value: section.value, glyph: section.glyph }],
   );
+  const model = sections.find((section) => section.id === "model");
 
   const rows = () => [...(popup.current?.querySelectorAll<HTMLElement>("[data-choice-row]") ?? [])];
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -306,14 +307,29 @@ export function ComposerChoices({
             data-warning={warnings.length > 0 ? "true" : undefined}
             className={cn(
               GHOST_TRIGGER,
-              "inline-flex shrink-0 items-center justify-center gap-1 rounded-md px-1.5 outline-none select-none",
+              "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-1.5 outline-none select-none",
             )}
           />
         }
       >
         {markGlyph}
-        {glyphs.map(({ id, glyph }) => (
-          <span key={id} aria-hidden data-chip-glyph={id} className="flex shrink-0 items-center">
+        {model !== undefined && model.unavailable === undefined && (
+          <span
+            aria-hidden
+            data-testid="choices-model-name"
+            className={cn("min-w-0 truncate", model.warning && "text-warning")}
+          >
+            {chipModelName(model.named)}
+          </span>
+        )}
+        {glyphs.map(({ id, value, glyph }) => (
+          <span
+            key={id}
+            aria-hidden
+            data-chip-glyph={id}
+            data-value={value}
+            className="flex shrink-0 items-center"
+          >
             {glyph}
           </span>
         ))}
@@ -353,6 +369,14 @@ export function ComposerChoices({
       </Popover.Portal>
     </Popover.Root>
   );
+}
+
+/**
+ * The model's name on the chip, as the model picker lists it less the vendor the agent's mark
+ * already says: "Claude Opus 5.5" reads "Opus 5.5".
+ */
+export function chipModelName(named: string): string {
+  return named.replace(/^(Claude|OpenAI)\s+/i, "").trim() || named;
 }
 
 const ROW =
@@ -484,6 +508,17 @@ function Section({
                       option.disabled && "pointer-events-none opacity-50",
                     )}
                   >
+                    {option.icon !== undefined && (
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "flex shrink-0 items-center text-muted-foreground",
+                          option.description !== undefined && "self-start pt-1",
+                        )}
+                      >
+                        {option.icon}
+                      </span>
+                    )}
                     {option.description === undefined ? (
                       <span className="min-w-0 truncate">{option.label}</span>
                     ) : (

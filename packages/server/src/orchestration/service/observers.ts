@@ -706,7 +706,13 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
    */
   const onUpsert = (thread: Thread) =>
     Effect.gen(function* () {
-      if (openedInAuto.has(thread.id) && thread.mode !== "auto") {
+      // A switch's release makes this move itself before its queue goes (`modeAfterSwitch`). A
+      // report it didn't see waits for the release's upsert, not spent on a refused `setMode`.
+      if (
+        openedInAuto.has(thread.id) &&
+        thread.mode !== "auto" &&
+        thread.sessionSwitch === undefined
+      ) {
         openedInAuto.delete(thread.id);
         const next = modeAfterDowngrade({ openedIn: "auto", reported: thread.mode });
         if (next !== undefined) {

@@ -1700,18 +1700,30 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
     page.locator(`[data-testid="overview-worker"][data-thread-id="${threadId}"]`);
   const waits = (threadId: string) => row(threadId).getByTestId("overview-worker-waiting");
 
-  // The words win: with words at its edge a worker's PR chips stay on its hover card, so the words
-  // name its PR. The edge leaves "Waiting" to the hollow dot; the whole label is the words' hover.
-  await expect(waits(made.ci)).toHaveText("checks on #341");
+  // A wait on a PR is its glyph and the PR's number, which a row's edge always has room for; a
+  // limit its glyph and the time it resets. Its words are the edge's hover, the whole label.
+  const edge = async (threadId: string, glyph: string, text: string | RegExp) => {
+    await expect(waits(threadId)).toHaveText(text);
+    await expect(waits(threadId)).toHaveAttribute("data-glyph", glyph);
+  };
+  await edge(made.ci, "ci", "#341");
   await expect(waits(made.ci)).toHaveAttribute("title", "Waiting · checks on #341");
   await expect(waits(made.ci)).toHaveAttribute("data-kind", "checks");
-  await expect(waits(made.reviewing)).toHaveText("review on #343");
-  await expect(waits(made.stacked)).toHaveText("#341 to merge");
-  await expect(waits(made.merging)).toHaveText("merge of #345");
+  await edge(made.reviewing, "review", "#343");
+  await expect(waits(made.reviewing)).toHaveAttribute("title", "Waiting · review on #343");
+  await edge(made.stacked, "dependency", "#341");
+  await expect(waits(made.stacked)).toHaveAttribute("title", "Waiting · #341 to merge");
+  await edge(made.merging, "merge", "#345");
+  await edge(made.rebase, "dependency", "#341");
+  await edge(made.limited, "limit", /^(\w{3} )?\d{2}:\d{2}$/);
+  await expect(waits(made.limited)).toHaveAttribute(
+    "title",
+    /^Paused · limit until (\w{3} )?\d{2}:\d{2}$/,
+  );
+  // Words that fit stay words.
   await expect(waits(made.release)).toHaveText("Release run");
-  await expect(waits(made.rebase)).toHaveText("#341 to merge");
   await expect(waits(made.timed)).toHaveText(/^until (\w{3} )?\d{2}:\d{2}$/);
-  await expect(waits(made.limited)).toHaveText(/^Paused · limit until (\w{3} )?\d{2}:\d{2}$/);
+  await expect(waits(made.timed)).not.toHaveAttribute("data-glyph", /./);
   await expect(waits(made.exportPresets)).toHaveText("main to move");
   await expect(waits(made.exportPresets)).toHaveAttribute("data-kind", "condition");
   // Calm: the hollow waiting dot, never the needs-you one, and nothing added to Needs you.

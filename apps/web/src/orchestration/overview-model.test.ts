@@ -22,6 +22,7 @@ import {
   tileWorking,
   steplessLine,
   edgeWords,
+  featureAddsToTitle,
   waitShort,
   workLineText,
   workspaceWorkersText,
@@ -466,6 +467,15 @@ describe("an orchestrator's line", () => {
     expect(waitShort("Waiting")).toBe("Waiting");
     expect(waitShort("Paused · resets 14:00")).toBe("Paused · resets 14:00");
     expect(waitShort("Under your control")).toBe("held by you");
+  });
+
+  it("names a worker's feature on its card only where its title doesn't already say it", () => {
+    expect(
+      featureAddsToTitle("composer-model-name-mode-icons", "Composer: model name and mode icons"),
+    ).toBe(false);
+    expect(featureAddsToTitle("Sidebar-Status", "Sidebar status fit")).toBe(false);
+    expect(featureAddsToTitle("routine-flake", "Event-routines flake is back")).toBe(true);
+    expect(featureAddsToTitle("release-2.4", "Cut the release")).toBe(true);
   });
 
   it("says a line too long for a row's edge in the words that fit it", () => {

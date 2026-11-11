@@ -8,6 +8,7 @@ import {
   InvalidState,
   serializeDigest,
   type Handoff,
+  type OrchestratorHandoffReason,
   type ModelRef,
   type OrchestrationDigest,
   type Thread,
@@ -23,7 +24,7 @@ import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Option from "effect/Option";
 import { randomUUID } from "node:crypto";
-import { selectableModels } from "../../runtime/model-efforts.ts";
+import { checkSwitchTarget } from "../../runtime/agent-switch.ts";
 import {
   type ObservedTurnEnd,
   type SystemDelivery,
@@ -54,14 +55,14 @@ export const HANDOFF_KEY = "handoff";
 export const HANDOFF_RETRY = Duration.seconds(15);
 /** A handoff that still hasn't happened this long after it was asked for is given up. */
 export const HANDOFF_GIVE_UP_MS = 3_600_000;
-const HANDOFF_WHY: Record<Handoff["reason"], string> = {
+const HANDOFF_WHY: Record<OrchestratorHandoffReason, string> = {
   user: "The user asked for a handoff",
   context: "Your context is nearly full",
   compactions: "Your conversation has been compacted more than once",
 };
 
 /** What the checkpoint prompt, a handoff's first step, asks of the session about to be replaced. */
-const checkpointNote = (reason: Handoff["reason"]): string =>
+const checkpointNote = (reason: OrchestratorHandoffReason): string =>
   `${HANDOFF_WHY[reason]}, so when this turn ends your session is replaced by a fresh one. It starts from your role, MEMORY.md, the ledger and the charter, and remembers nothing else of this conversation. Write down now, with \`memory_write\`, whatever isn't in memory yet and can't be derived: goals and priorities, decisions and why, open questions for the user, what you were in the middle of. Only flush; tidying is for later. Don't spawn or message workers in this turn. When you are done, reply \`ready\` and end your turn.`;
 
 /** The wake reason of the `boot` digest that opens the fresh session. */
@@ -184,6 +185,8 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
    * The checkpoint prompt, the handoff's first step. It acknowledges nothing: the outbox's delivery
    * state is a digest's alone.
    */
+  // Never steered (no `steer`): the checkpoint is a turn of its own, whose end starts the fresh
+  // session, so it waits for the running turn to end.
   const checkpointFor = (workspaceId: WorkspaceId): SystemDelivery => ({
     build: (turnId) =>
       Effect.gen(function* () {
@@ -508,61 +511,14 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
         return yield* new InvalidState({
           message: "Choose Codex or Claude Code for the orchestrator.",
         });
-      const sourceHost = yield* hosts
-        .get(thread.model.agent)
-        .pipe(Effect.mapError((e) => new InvalidState({ message: e.message })));
-      const targetHost = yield* hosts
-        .get(target.agent)
-        .pipe(Effect.mapError((e) => new InvalidState({ message: e.message })));
-      if (!sourceHost.supportsWorkspaceSwitch || !targetHost.supportsWorkspaceSwitch)
-        return yield* new InvalidState({
-          message:
-            "Switching an existing orchestrator is unavailable on this platform or harness build. Windows cannot currently guarantee a graceful stop. Your current session and workspace preferences have not changed.",
-        });
-      if (target.profileId !== undefined)
-        return yield* new InvalidState({
-          message:
-            "Choose the installed CLI's subscription login for this switch. Switching does not migrate gateway credentials or accounts.",
-        });
+      // What any thread's switch asks of its target, then the workspace's gate in this mode.
+      yield* checkSwitchTarget(store, hosts, thread, target);
       const mode = thread.mode;
-      if (mode === "plan" && !targetHost.capabilities.planMode)
-        return yield* new InvalidState({
-          message:
-            "The selected harness cannot preserve this session's Plan mode. Finish the plan in the current session before switching.",
-        });
       const needs = yield* needsUnderGate(target, gateOfAutonomy(autonomyOf(state.charter)), mode);
       if (needs !== undefined)
         return yield* new InvalidState({
           message: `The selected ${kindName(target.agent)} session cannot preserve this workspace's approval policy in ${mode} mode. ${gateNeedsReason(needs, target.agent, mode)} No switch was started.`,
         });
-      const models = yield* selectableModels(store, hosts, target.agent, undefined).pipe(
-        Effect.mapError((e) => new InvalidState({ message: e.message })),
-      );
-      const selected = models.find(
-        (model) => model.id === target.model || model.resolvedId === target.model,
-      );
-      if (selected === undefined)
-        return yield* new InvalidState({
-          message: `The installed ${kindName(target.agent)} CLI does not list ${target.model}. Select a listed model, or add that exact custom ID in Settings → Agents first. No model was substituted.`,
-        });
-      if (target.variant !== undefined && !selected.efforts.includes(target.variant))
-        return yield* new InvalidState({
-          message:
-            "The selected model does not support that effort. Choose one offered by its model picker.",
-        });
-      if (target.speed === "fast" && !selected.speeds.includes("fast"))
-        return yield* new InvalidState({
-          message:
-            "The selected model does not support that speed. Choose one offered by its model picker.",
-        });
-      if (targetHost.checkWorkspaceSwitch === undefined)
-        return yield* new InvalidState({
-          message:
-            "This harness build cannot re-check sign-in before stopping the current session. Update or recover the current session before trying the switch.",
-        });
-      yield* targetHost.checkWorkspaceSwitch.pipe(
-        Effect.mapError((e) => new InvalidState({ message: e.message })),
-      );
       return mode;
     });
 

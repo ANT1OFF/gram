@@ -1245,7 +1245,7 @@ export function Composer({
           <DictationStrip partial={dictation.partial} />
         )}
         <DictationError state={dictation.state} />
-        {/* Icons with their words on hover: the row is one width however narrow the pane. */}
+        {/* The model by name, the rest icons with their words on hover; the name truncates first. */}
         <div
           data-testid="composer-toolbar"
           className="flex flex-nowrap items-center gap-1 px-2 pb-2"

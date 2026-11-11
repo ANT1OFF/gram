@@ -33,9 +33,9 @@ export const MessageOrigin = Schema.Struct({
   feature: Schema.optionalKey(Schema.String),
   /**
    * The delivery the sender asked for: `queue` for context the thread reads after its turn,
-   * `steer` for mid-turn once the tool calls under way finish (an orchestrator's default to its
-   * own worker), `interrupt` to stop the turn now, cutting off its tool calls. Absent when it left
-   * it to the default, which queues.
+   * `steer` for mid-turn once the tool calls under way finish (the default), `interrupt` to stop
+   * the turn now, cutting off its tool calls. Absent on a message sent before every send recorded
+   * it, when the default queued.
    */
   mode: Schema.optionalKey(Schema.Literals(["queue", "steer", "interrupt"])),
 });
@@ -1534,11 +1534,20 @@ export const WorkerAnswer = Schema.Struct({
 });
 export type WorkerAnswer = typeof WorkerAnswer.Type;
 
-/** An orchestrator's agent session was replaced by a fresh one carrying a checkpoint. */
+/**
+ * A thread's agent session was replaced by a fresh one: an orchestrator's carrying a checkpoint,
+ * or (`switch`) any thread moved to the other agent.
+ */
 export const Handoff = Schema.Struct({
   previousAgentSessionId: Schema.optionalKey(Schema.String),
-  reason: Schema.Literals(["context", "compactions", "user"]),
+  reason: Schema.Literals(["context", "compactions", "user", "switch"]),
+  /** A switch's: the agent the thread left. */
+  previousAgent: Schema.optionalKey(Schema.Literals(["claude", "codex"])),
+  /** A switch's: the attempt (`SessionSwitch.id`) that wrote it, so a restart writes it once. */
+  switchId: Schema.optionalKey(Schema.String),
   /** Epoch ms. */
   at: Schema.Number,
 });
 export type Handoff = typeof Handoff.Type;
+/** Why an orchestrator hands off to a fresh session; a `switch` is any thread's. */
+export type OrchestratorHandoffReason = Exclude<Handoff["reason"], "switch">;

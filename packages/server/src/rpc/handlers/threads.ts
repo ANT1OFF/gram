@@ -361,6 +361,12 @@ export const threadHandlers = Effect.gen(function* () {
         ? Effect.void
         : orchestration.checkModelChange(threadId, model)
       ).pipe(Effect.andThen(runtimes.setModel(threadId, model))),
+    "thread.switchAgent": ({ threadId, target }) =>
+      // A worker on the other agent is held to the same admission and gate as on a new model.
+      (orchestration === undefined
+        ? Effect.void
+        : orchestration.checkModelChange(threadId, target)
+      ).pipe(Effect.andThen(runtimes.switchAgent(threadId, target))),
     "thread.rename": ({ threadId, title }) =>
       runtimes
         .updateThread(threadId, (t) => ({ ...t, title, userNamed: true }))

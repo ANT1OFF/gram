@@ -113,6 +113,7 @@ function harness(
       steps.push("hide");
       return () => steps.push("show");
     },
+    progress: (detail) => steps.push(`progress ${detail}`),
     record: {
       read: async () => record,
       write: async (next) => {
@@ -322,11 +323,16 @@ describe("install", () => {
       downloadedVersion: "0.1.0-rc.18",
       message: "Didn't restart: an agent didn't stop cleanly. Nothing was installed.",
     });
+    // Refused again when it stopped once more by itself: windows hidden once, shown once.
     expect(h.steps).toEqual([
       "intact",
       "pending?",
       "transaction",
       "hide",
+      "disarmQuit",
+      "progress An agent didn't stop cleanly. Trying once more…",
+      "recover",
+      "transaction",
       "disarmQuit",
       "recover",
       "record removed",
@@ -449,6 +455,80 @@ describe("install", () => {
     const h = await readyHarness();
     expect((await h.updates.install("0.1.0-rc.19")).status).toBe("ready");
     expect(h.steps).toEqual([]);
+  });
+
+  it("stops once more by itself after a refused stop that came back whole, then installs", async () => {
+    let refusals = 1;
+    const retries: Array<boolean | undefined> = [];
+    const h = await readyHarness({
+      stopForUpdate: async () => {
+        h.steps.push("stop");
+        if (refusals-- > 0)
+          throw new UpdateTeardownRefused("x", { path: "refused", reason: "agents" });
+      },
+      transaction: async (work, retry) => {
+        h.steps.push("transaction");
+        retries.push(retry);
+        await work(new AbortController().signal);
+      },
+    });
+    const state = await h.updates.install("0.1.0-rc.18");
+    expect(state).toMatchObject({
+      status: "installing",
+      message: "Restarting once more: an agent didn't stop cleanly.",
+    });
+    expect(h.steps).toEqual([
+      "intact",
+      "pending?",
+      "transaction",
+      "hide",
+      "stop",
+      "disarmQuit",
+      "progress An agent didn't stop cleanly. Trying once more…",
+      "recover",
+      "transaction",
+      "stop",
+      "record 0.1.0-rc.17→0.1.0-rc.18",
+      "stage",
+      "snapshot closed",
+      "armQuit",
+      "quitAndInstall",
+    ]);
+    // The second stop is the same restart's, which a quit asked for meanwhile refuses.
+    expect(retries).toEqual([false, true]);
+  });
+
+  it("doesn't stop again when recovery left something down", async () => {
+    const h = await readyHarness({
+      stopForUpdate: async () => {
+        throw new UpdateTeardownRefused("x", { path: "refused", reason: "unverified" });
+      },
+      recover: async () => {
+        h.steps.push("recover");
+        return "The server didn't restart: port in use.";
+      },
+    });
+    expect((await h.updates.install("0.1.0-rc.18")).message).toBe(
+      "Didn't restart: Gram couldn't confirm the server stopped. Nothing was installed. The server didn't restart: port in use.",
+    );
+    expect(h.steps.filter((step) => step === "transaction")).toHaveLength(1);
+    expect(h.steps.filter((step) => step === "recover")).toHaveLength(1);
+  });
+
+  it("doesn't stop again for what isn't the fence's refusal, such as a quit", async () => {
+    let first = true;
+    const h = await readyHarness({
+      transaction: async (work) => {
+        h.steps.push("transaction");
+        const controller = new AbortController();
+        if (first) controller.abort();
+        first = false;
+        await work(controller.signal);
+      },
+    });
+    expect((await h.updates.install("0.1.0-rc.18")).message).toMatch(/asked to quit/);
+    expect(h.steps.filter((step) => step === "transaction")).toHaveLength(1);
+    expect(h.steps).not.toContain("quitAndInstall");
   });
 
   it("retries after a refusal", async () => {

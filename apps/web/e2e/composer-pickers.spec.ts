@@ -15,17 +15,18 @@ const box = async (locator: Locator) => {
 };
 
 // The composer's model, effort, mode and speed were four chips that crowded Send. They are one
-// chip now, in icons: its name and tooltip say every value, and its popover has a section for each
-// that checks the value and confirms a pick in words.
+// chip now: the model's name and the mode's glyph on it, its name and tooltip every value, and its
+// popover a section for each that checks the value and confirms a pick in words.
 test("effort says its value, checks it in its section, and confirms a pick in words", async ({
   page,
 }) => {
   await page.goto("/t/t-deps");
   const toolbar = page.getByTestId("composer-toolbar");
   const chip = choicesChip(toolbar);
-  // No effort chosen: the model's own default, said as such in the name; the chip is its mark.
+  // No effort chosen: the model's own default, said as such in the name, not on the chip.
   await expect(chip).toHaveAccessibleName(/ · Effort: Model default \(.+\) · /);
-  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
+  const face = { words: "Opus", glyphs: ["mode:default"] };
+  await expect.poll(() => chipFace(chip)).toEqual(face);
 
   await chip.hover();
   await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
@@ -44,7 +45,7 @@ test("effort says its value, checks it in its section, and confirms a pick in wo
 
   await expect(chip).toHaveAccessibleName(/ · Effort: Extra high \(.+\) · /);
   // Effort matters for neither safety nor cost enough for a glyph: its name says it.
-  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
+  await expect.poll(() => chipFace(chip)).toEqual(face);
   await expect(toolbar.getByText("Effort set to Extra high")).toBeVisible();
   // Its shortcut opens the popover on its section, the current value checked and focused.
   await page.getByLabel("Message", { exact: true }).focus();
@@ -57,9 +58,9 @@ test("effort says its value, checks it in its section, and confirms a pick in wo
   await page.keyboard.press("Escape");
   await expect(choicesPopup(page)).toBeHidden();
 
-  // Narrow, the chip is the same icons, and the name still says every value.
+  // Narrow, the chip says the same, and the name still says every value.
   await squeeze(page, 420);
-  await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: [] });
+  await expect.poll(() => chipFace(chip)).toEqual(face);
   await expect(chip).toHaveAccessibleName(/ · Effort: Extra high \(.+\) · /);
 });
 

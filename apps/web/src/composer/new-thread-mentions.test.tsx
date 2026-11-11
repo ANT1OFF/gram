@@ -66,13 +66,13 @@ describe("New thread draft @ mentions", () => {
     expect(await screen.findByRole("form", { name: "New thread" })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Agent" }).textContent).toContain("Codex");
     // The choices chip says the saved mode and speed, as in a thread's composer: Bypass's lock in
-    // its caution tint and Fast's bolt beside the mark, their words in its name.
+    // its caution tint and Fast's bolt after the model's name, their words in its name.
     const chip = screen.getByTestId("composer-choices");
     const name = chip.getAttribute("aria-label") ?? "";
     expect(name).toContain("Mode: Bypass");
     expect(name).toContain("Speed: Fast");
     expect(chip.getAttribute("data-warning")).toBe("true");
-    expect(chip.textContent).toBe("");
+    expect(chip.textContent).toBe("gpt-5.5");
     expect(
       [...chip.querySelectorAll<HTMLElement>("[data-chip-glyph]")].map(
         (el) => el.dataset["chipGlyph"],

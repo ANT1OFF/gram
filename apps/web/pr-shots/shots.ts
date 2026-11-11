@@ -2255,6 +2255,50 @@ export const SHOTS: readonly Shot[] = [
     open: (page) => openMemoryChange(page, true),
   },
   {
+    name: "composer-chip-narrow",
+    title: "A solo thread's composer squeezed to 300 px: the chip keeps the model's name",
+    open: async (page) => {
+      await openSoloComposer(1440)(page);
+      await composerSurface(page).evaluate((el) => {
+        el.style.maxWidth = "300px";
+      });
+      await page.waitForTimeout(300);
+    },
+    element: composerSurface,
+  },
+  {
+    name: "composer-mode-menu",
+    title: "The choices popover on Mode: each mode with its own glyph",
+    open: async (page) => {
+      await openSoloComposer(1440)(page);
+      await page.getByTestId("composer-toolbar").getByTestId("composer-choices").click();
+      const heading = page.getByTestId("composer-choices-popup").getByTestId("choices-mode");
+      await heading.click();
+      await page.getByRole("listbox", { name: "Mode" }).waitFor();
+      // Off the rows, so none reads as hovered.
+      await page.mouse.move(1, 1);
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByTestId("composer-choices-popup"),
+  },
+  {
+    name: "composer-chip-bypass",
+    title: "A solo thread in Bypass: the open lock in the warning colour after the model's name",
+    open: async (page) => {
+      await openSoloComposer(1440)(page);
+      await page.getByTestId("composer-toolbar").getByTestId("composer-choices").click();
+      await page.getByTestId("composer-choices-popup").getByTestId("choices-mode").click();
+      await page
+        .getByRole("listbox", { name: "Mode" })
+        .getByRole("option", { name: "Bypass", exact: true })
+        .click();
+      await page.getByTestId("composer-choices-popup").waitFor({ state: "hidden" });
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(400);
+    },
+    element: composerSurface,
+  },
+  {
     name: "composer-model-open",
     title:
       "A solo thread at 1440 px, a draft typed, the model list open: it should not cover the draft",
@@ -2993,9 +3037,17 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("overview-sidebar"),
   },
   {
+    name: "sidebar-waiting-kinds-narrow",
+    title: "Every kind of wait in the sidebar at its narrowest, 180 px",
+    open: async (page) => {
+      await seedMockSettings(page, { sidebar: { width: 180 } });
+      await openWaitingOn(page, true);
+    },
+    element: (page) => page.getByTestId("overview-sidebar"),
+  },
+  {
     name: "sidebar-waiting-hover",
     title: "A waiting worker's hover card lists every wait, the one its row names first",
-    modes: ["dark"],
     open: async (page) => {
       await openWaitingOn(page, true);
       await page.getByTestId("overview-worker-waiting").first().hover();
