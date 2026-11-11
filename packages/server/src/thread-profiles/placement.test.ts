@@ -13,6 +13,7 @@ import {
   type ProfileFile,
   type Thread,
   type ThreadId,
+  ThreadNotFound,
   type ThreadProfile,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -89,6 +90,8 @@ const headless = (
       getSettings: Effect.succeed(ON),
       listProfiles: Effect.succeed([]),
       ensureProject: () => Effect.void as never,
+      getThread: (threadId) => Effect.fail(new ThreadNotFound({ threadId })),
+      listClosed: Effect.succeed([]),
     },
     runtimes: {
       create: (input) => {
