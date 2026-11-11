@@ -16,6 +16,7 @@ import { useLayoutStore } from "@/stores/layout";
 import { OVERVIEW_ROOT } from "@/views/shell-layout";
 
 import { EmbedRailNavigation, EmbedSwitcher, RAIL_TILE } from "./slots";
+import { StripOpen, useStripOpen } from "./strip-open";
 
 /** How long the pointer rests on the strip before the sidebar opens over the page. */
 export const OPEN_AFTER_MS = 150;
@@ -42,6 +43,7 @@ function Tile({
     <Hint
       label={label}
       side="right"
+      disabled={useStripOpen()}
       render={
         <button
           type="button"
@@ -113,7 +115,7 @@ export function HostedRail() {
   };
 
   return (
-    <>
+    <StripOpen value={open}>
       <aside
         ref={strip}
         aria-label="Overview"
@@ -147,7 +149,7 @@ export function HostedRail() {
           onBlur={leave}
         />
       )}
-    </>
+    </StripOpen>
   );
 }
 
@@ -232,7 +234,7 @@ function SidebarOver({
       onBlur={onBlur}
       className={cn(
         "fixed inset-y-0 z-40 flex shadow-overlay",
-        slides && "transition-[translate,opacity] duration-(--dur-fast) ease-out",
+        slides && "transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out)",
         shown ? "translate-x-0 opacity-100" : "-translate-x-3 opacity-0",
       )}
       style={{ left, width }}

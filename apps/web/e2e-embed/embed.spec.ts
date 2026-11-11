@@ -247,6 +247,10 @@ test("compact, the sidebar is a quiet strip that opens over the page on hover", 
     .toBe(0);
   expect((await page.locator("main").boundingBox())?.x).toBe(mainBox?.x);
   await expect(overlay.getByTestId("embed-navigation-main")).toBeVisible();
+  // While it is open the strip's tooltips keep away: the sidebar says each name.
+  await strip.getByRole("link", { name: "Build: Home" }).hover();
+  await page.waitForTimeout(300);
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveCount(0);
   // Leaving both closes it.
   await page.mouse.move(900, 400);
   await expect(overlay).toHaveCount(0);
@@ -322,6 +326,35 @@ test("every thread is on a page of its own, which the sidebar can lead to", asyn
   await page.goBack();
   await page.getByTestId("threads-new").click();
   await expect(page).toHaveURL(/\/new/);
+  expect(errors).toEqual([]);
+});
+
+test("the current place's highlight glides between rows, and pages arrive", async ({ page }) => {
+  const errors = await mounted(page, "/govern/policies");
+  const navigation = page.getByTestId("embed-navigation");
+  const glide = navigation.getByTestId("embed-navigation-glide");
+  const over = async (name: string) => {
+    const [mark, row] = [
+      await glide.boundingBox(),
+      await navigation.getByRole("link", { name }).boundingBox(),
+    ];
+    return Math.round(Math.abs((mark?.y ?? -99) - (row?.y ?? 0)));
+  };
+  await expect(glide).toBeVisible();
+  await expect.poll(() => over("Policies")).toBeLessThanOrEqual(1);
+  await navigation.getByRole("link", { name: "Limits" }).click();
+  await expect.poll(() => over("Limits")).toBeLessThanOrEqual(1);
+  // One highlight for the list: the rows draw none of their own.
+  const fill = await navigation
+    .getByRole("link", { name: "Limits" })
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(fill).toBe("rgba(0, 0, 0, 0)");
+  // The kit's page arrives part by part, and the title bar's name fades in.
+  await expect(page.locator('[data-slot="page"]')).toHaveClass(/gram-stagger/);
+  await expect(page.getByTestId("embed-page-title")).toHaveClass(/gram-fade/);
+  // Off the group's pages, there is nothing to mark.
+  await page.getByTestId("embed-navigation-main").getByRole("link", { name: "Threads" }).click();
+  await expect(glide).toBeHidden();
   expect(errors).toEqual([]);
 });
 

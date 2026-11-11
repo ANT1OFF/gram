@@ -169,7 +169,7 @@ export function ShellTitlebar({
           {!sidebarShown && <EmbedSwitcher placement="titlebar" />}
           {/* A page an app in front of Gram added says its own name here; it is in no workspace
               and has no views to switch between. */}
-          {embedTitle !== undefined && <EmbedPageTitle title={embedTitle} />}
+          {embedTitle !== undefined && <EmbedPageTitle key={embedTitle} title={embedTitle} />}
           {embedTitle === undefined && (
             <WorkspaceSwitcher
               className={cn(

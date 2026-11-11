@@ -1,10 +1,12 @@
 import { Link, useMatches, useParams, useRouterState } from "@tanstack/react-router";
-import { createElement } from "react";
+import { createElement, useRef } from "react";
 
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 import { OVERVIEW_STOP } from "@/shell/focus-regions";
 
+import { Glide } from "./glide";
+import { useStripOpen } from "./strip-open";
 import type { ShellNavigationItem, ShellNavigationPlacement, ShellPlacement } from "./contract";
 import {
   itemName,
@@ -63,6 +65,13 @@ function ItemIcon({ item, className }: { item: ShellNavigationItem; className: s
   );
 }
 
+/**
+ * A navigation row: its fill and colour ease in on hover, and it gives a little when pressed, under
+ * the Motion setting. The current row's fill is the list's `Glide`, which moves between rows.
+ */
+const NAV_ROW =
+  "relative flex h-8 min-w-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-muted-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:text-foreground aria-[current=page]:hover:bg-transparent in-data-phone-drawer:h-11 in-data-phone-drawer:gap-2.5 in-data-phone-drawer:px-2";
+
 /** A row's count, at its end. */
 function Count({ count }: { count: number | undefined }) {
   const shown = shownCount(count);
@@ -89,20 +98,23 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
     placement,
   );
   const pathname = usePathname();
+  const list = useRef<HTMLElement>(null);
   if (groups.length === 0) return null;
   const main = placement === "main";
   return (
     <nav
+      ref={list}
       aria-label={main ? "Places" : "More places"}
       data-testid={main ? "embed-navigation-main" : "embed-navigation"}
       data-placement={placement}
       className={cn(
-        "flex shrink-0 flex-col gap-tight text-body",
+        "relative flex shrink-0 flex-col gap-tight text-body",
         // In the list it scrolls with the rest, a list's step from what follows; at the foot it
         // is a block of its own, ruled off from the list above.
         !main && "border-t border-border px-inset py-tight",
       )}
     >
+      <Glide container={list} />
       {groups.map((group) => (
         <section
           key={group.id}
@@ -124,7 +136,7 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
                     {...{ [OVERVIEW_STOP]: "" }}
                     data-testid="embed-navigation-item"
                     aria-current={current ? "page" : undefined}
-                    className="flex h-8 min-w-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground in-data-phone-drawer:h-11 in-data-phone-drawer:gap-2.5 in-data-phone-drawer:px-2"
+                    className={NAV_ROW}
                   >
                     <ItemIcon item={item} className="size-icon-row shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{item.label}</span>
@@ -142,7 +154,13 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
 
 /** A compact tile: the open row's height, filled while it is where the window is. */
 export const RAIL_TILE =
-  "relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground aria-expanded:text-foreground";
+  "relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground aria-expanded:text-foreground";
+
+/** A rail tile in a list whose current fill is its `Glide`. */
+const GLIDE_TILE = cn(
+  RAIL_TILE,
+  "aria-[current=page]:bg-transparent aria-[current=page]:hover:bg-transparent",
+);
 
 /**
  * The same destinations in the compact sidebar: an icon each, its group and name on hover, and a
@@ -162,19 +180,23 @@ export function EmbedRailNavigation({
     placement,
   );
   const pathname = usePathname();
+  const list = useRef<HTMLElement>(null);
+  const stripOpen = useStripOpen();
   if (groups.length === 0) return null;
   const main = placement === "main";
   return (
     <nav
+      ref={list}
       aria-label={main ? "Places" : "More places"}
       data-testid={main ? "embed-rail-navigation-main" : "embed-rail-navigation"}
       data-placement={placement}
       className={cn(
-        "flex shrink-0 flex-col items-center",
+        "relative flex shrink-0 flex-col items-center",
         quiet ? "gap-3.5" : "gap-1",
         !main && !quiet && "border-t border-sidebar-divider py-2",
       )}
     >
+      <Glide container={list} />
       {groups.map((group) => (
         <div
           key={group.id}
@@ -188,8 +210,10 @@ export function EmbedRailNavigation({
             return (
               <Hint
                 key={item.id}
-                label={spoken}
+                // The strip's own words are the place's name alone; the group is its neighbours'.
+                label={quiet ? item.label : spoken}
                 side="right"
+                disabled={stripOpen}
                 render={
                   <Link
                     {...linkTo(item.to)}
@@ -197,7 +221,7 @@ export function EmbedRailNavigation({
                     data-testid="embed-navigation-item"
                     aria-label={spoken}
                     aria-current={current ? "page" : undefined}
-                    className={RAIL_TILE}
+                    className={GLIDE_TILE}
                   />
                 }
               >
@@ -250,7 +274,8 @@ export function EmbedPageTitle({ title }: { title: string }) {
   return (
     <h1
       data-testid="embed-page-title"
-      className="min-w-0 truncate px-2 text-body font-medium text-foreground"
+      // Keyed by the title where it is drawn: a new page's name fades in where the last one was.
+      className="gram-fade min-w-0 truncate px-2 text-body font-medium text-foreground"
     >
       {title}
     </h1>
