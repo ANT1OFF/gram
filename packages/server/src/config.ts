@@ -4,6 +4,7 @@ import {
   InvalidState,
   type RuntimeFeatureId,
 } from "@gram/contracts";
+import { isAbsolute } from "node:path";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -20,6 +21,11 @@ export interface EndpointConfig {
   readonly url: string;
   /** Sent as `Authorization: Bearer`; never logged. */
   readonly token?: string;
+  /**
+   * A file holding the token, read on each call: for a token that is replaced while the server
+   * runs, such as a projected service account token. Never with `token`.
+   */
+  readonly tokenFile?: string;
 }
 
 /** `url` as an endpoint, or `undefined` for anything but a whole `http(s)` URL without credentials. */
@@ -52,10 +58,17 @@ export type EndpointSetting = EndpointConfig | typeof ENDPOINT_UNUSABLE;
 export const endpointSetting = (
   url: string | undefined,
   token: string | undefined,
-): EndpointSetting | undefined =>
-  url === undefined || url.trim() === ""
-    ? undefined
-    : (endpointFrom(url, token) ?? ENDPOINT_UNUSABLE);
+  tokenFile?: string,
+): EndpointSetting | undefined => {
+  if (url === undefined || url.trim() === "") return undefined;
+  const file = tokenFile?.trim() ?? "";
+  if (file === "") return endpointFrom(url, token) ?? ENDPOINT_UNUSABLE;
+  // One token or the other, and a file named from the root: a relative one would follow the
+  // working directory.
+  if (token || !isAbsolute(file)) return ENDPOINT_UNUSABLE;
+  const endpoint = endpointFrom(url, undefined);
+  return endpoint === undefined ? ENDPOINT_UNUSABLE : { ...endpoint, tokenFile: file };
+};
 
 export interface ServerConfigShape {
   /** Directory holding the database (`DATABASE_FILE`) and logs. */
@@ -198,8 +211,13 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     const decisionHook = endpointSetting(
       env["GRAM_DECISION_HOOK_URL"],
       env["GRAM_DECISION_HOOK_TOKEN"],
+      env["GRAM_DECISION_HOOK_TOKEN_FILE"],
     );
-    const eventSink = endpointSetting(env["GRAM_EVENT_SINK_URL"], env["GRAM_EVENT_SINK_TOKEN"]);
+    const eventSink = endpointSetting(
+      env["GRAM_EVENT_SINK_URL"],
+      env["GRAM_EVENT_SINK_TOKEN"],
+      env["GRAM_EVENT_SINK_TOKEN_FILE"],
+    );
     return {
       dataDir: defaultDataDir(env),
       ...(env["GRAM_REMOTE_ORIGIN"] !== undefined

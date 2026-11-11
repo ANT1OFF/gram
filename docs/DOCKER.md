@@ -179,7 +179,7 @@ of them. A message, an answer and a settings change by two people are two people
 ### Decision hook
 
 With hosted features on and `GRAM_DECISION_HOOK_URL` set (an `http` or `https` URL with no
-credentials in it; `GRAM_DECISION_HOOK_TOKEN` is sent as a bearer token), the server asks that
+credentials in it; `GRAM_DECISION_HOOK_TOKEN` is sent as a bearer token, or the contents of the file `GRAM_DECISION_HOOK_TOKEN_FILE` names, read again for every call, for a token that is replaced while the server runs), the server asks that
 endpoint before an outward action and does what it answers: `allow`, `refuse`, or `ask` a person.
 The [wire shapes](../packages/contracts/src/embedding.ts) are version 1.
 
@@ -217,7 +217,7 @@ on keeps the gates it opened with until it is next opened.
 ### Event sink
 
 With hosted features on and `GRAM_EVENT_SINK_URL` set (`GRAM_EVENT_SINK_TOKEN` as its bearer
-token), the server sends what happens to that endpoint in order: threads as they are made, change
+token, or `GRAM_EVENT_SINK_TOKEN_FILE` as for the hook), the server sends what happens to that endpoint in order: threads as they are made, change
 and go, each thread's status, approval cards and questions as they open and close, feature cards,
 each turn's usage, and every decision the hook made.
 
