@@ -358,6 +358,44 @@ test("the current place's highlight glides between rows, and pages arrive", asyn
   expect(errors).toEqual([]);
 });
 
+test("the embedding app can count what needs someone itself", async ({ page }) => {
+  const errors = await mounted(page, "/govern/limits");
+  const pill = page.getByTestId("overview-needs-you");
+  await expect(pill).toContainText("need you");
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      attention: { count: 5, label: "5 to review", to: "/govern/policies" },
+    });
+  });
+  await expect(pill).toHaveText("5 to review");
+  await pill.click();
+  await expect(page.getByTestId("fixture-policies")).toBeVisible();
+
+  // The compact strip's tile follows the same count, and goes to the same place.
+  await page.getByTestId("overview-compact").click();
+  const tile = page.getByTestId("hosted-rail-needs-you");
+  await expect(tile).toHaveAccessibleName("5 to review");
+  await expect(page.getByTestId("hosted-rail-needs-you-dot")).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ attention: { count: 0 } });
+  });
+  await expect(page.getByTestId("hosted-rail-needs-you-dot")).toHaveCount(0);
+  await page.getByTestId("overview-rail").hover({ position: { x: 20, y: 400 } });
+  await expect(page.getByTestId("hosted-rail-overlay")).toBeVisible();
+  // At 0 the pill hides.
+  await expect(
+    page.getByTestId("hosted-rail-overlay").getByTestId("overview-needs-you"),
+  ).toHaveCount(0);
+  // Taken away, Gram's own count is back.
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ attention: undefined });
+  });
+  await expect(
+    page.getByTestId("hosted-rail-overlay").getByTestId("overview-needs-you"),
+  ).toContainText("need you");
+  expect(errors).toEqual([]);
+});
+
 test("an address with no page says so in the shell, with the way home", async ({ page }) => {
   const errors = await mounted(page, "/govern/nowhere");
   const notFound = page.getByTestId("not-found");

@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import { create } from "zustand";
 
 import type {
+  ShellAttention,
   ShellContributions,
   ShellNavigationGroup,
   ShellNavigationPlacement,
@@ -21,6 +22,8 @@ export interface EmbedShellState {
   readonly titles: Readonly<Record<string, string>>;
   /** Whether the sidebar lists Gram's workspaces and threads. */
   readonly threads: "shown" | "hidden";
+  /** What needs someone, as the embedding app counts it; Gram's own count while undefined. */
+  readonly attention: ShellAttention | undefined;
   /** Mounted by an app in front of Gram on a server with hosted features on. Set once, at mount. */
   readonly hosted: boolean;
   /** The page at `/` in place of Gram's home. Set once, at mount. */
@@ -33,6 +36,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   titles: {},
   threads: "shown",
   hosted: false,
+  attention: undefined,
   home: undefined,
 }));
 
@@ -43,6 +47,7 @@ export const EMPTY_SHELL: EmbedShellState = {
   titles: {},
   threads: "shown",
   hosted: false,
+  attention: undefined,
   home: undefined,
 };
 

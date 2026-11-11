@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 import { asksAmong, isErrorPart } from "./needs-you-items";
 import { useNeedsYouPill } from "./use-needs-you";
+import { useHostAttention } from "@/embed/attention";
 
 // What needs you has one way in and one wording, an amber dot before it, wherever it shows: its
 // kinds, "1 question · 1 error", so a count never stands for more than the cards that show it. It
@@ -60,6 +61,32 @@ export function NeedsYouEntry({
   className?: string;
 } & Omit<ComponentProps<"button">, "children" | "className">) {
   const { count, parts, scope: where, label, hint, openAsks } = useNeedsYouPill();
+  // An app in front of Gram that counts what needs someone itself says its count here instead.
+  const host = useHostAttention();
+  if (host !== undefined) {
+    if (host.count === 0) return null;
+    return (
+      <button
+        type="button"
+        data-count={host.count}
+        data-host=""
+        aria-label={host.words}
+        title={host.words}
+        onClick={host.open}
+        {...rest}
+        className={cn(
+          "flex shrink-0 items-center gap-2 border text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          variant === "row"
+            ? "h-8 w-full rounded-(--radius-md) border-sidebar-block-border px-1.5 text-foreground hover:bg-sidebar-row-hover"
+            : "h-7 rounded-full border-transparent px-2.5 text-meta text-status-needs hover:bg-accent",
+          className,
+        )}
+      >
+        <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-needs-mark" />
+        <span className="min-w-0 flex-1 truncate">{host.words}</span>
+      </button>
+    );
+  }
   if (variant === "chip" && count === 0) return null;
   const words = needsYouPillWords(count, parts, KINDS_SHOWN[variant]);
   // One alarm per failure: an error's is its card and its thread's red dot, so only what asks

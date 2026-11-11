@@ -112,6 +112,12 @@ moving keyboard focus into it, slides the open sidebar over the page beside it; 
 Escape, or going somewhere closes it, and its pin keeps the sidebar open. Gram on its own keeps its
 rail.
 
+**What needs someone.** `attention` (`{ count, label?, to?, onOpen? }`) puts your count in place
+of Gram's own Needs you: the sidebar's pill says `label` (or "N need you"), the compact strip's tile
+and the title bar's Inbox show a dot, and a click goes to `to`, or calls `onOpen`, or opens Gram's
+Inbox. At 0 the pill hides. Update it through `update({ attention })`; `undefined` gives Gram's own
+count back.
+
 **A home page.** `home` (`{ title, component }`) is the page at `/`, in place of Gram's own home
 and its first-run welcome ("Open a repository"), which is then never shown. Its title shows as an
 added page's does.
