@@ -3,6 +3,12 @@ import { BrowserWindow } from "electron";
 import { QUIT_NOW_TITLE, quitPage } from "./quit-page.ts";
 import { quitDetail, type QuitProgress } from "./quit.ts";
 
+/** Every progress window open, which a reload onto a fresh server must leave on its own page. */
+const progressWindows = new WeakSet<BrowserWindow>();
+
+/** Whether `win` is a progress window rather than one of the app's own. */
+export const isProgressWindow = (win: BrowserWindow): boolean => progressWindows.has(win);
+
 /**
  * The small progress window a slow quit shows ("Quitting Gram…", with Quit Now), or an update's
  * stop ("Restarting to update…", without it: a quit then cancels the update instead). `show` opens
@@ -44,6 +50,7 @@ export function createQuitWindow(options: {
         backgroundColor: colors.background,
         webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
       });
+      progressWindows.add(win);
       const contents = win.webContents;
       contents.on("page-title-updated", (event, title) => {
         event.preventDefault();

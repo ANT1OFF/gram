@@ -104,7 +104,7 @@ import {
 import { appBuildEnv, runningBuildInfo } from "./build-info.ts";
 import { createSignalQuit } from "./signal-quit.ts";
 import { createQuit, QUIT_DEADLINE_MS, serverShutdownFromMessage } from "./quit.ts";
-import { createQuitWindow } from "./quit-window.ts";
+import { createQuitWindow, isProgressWindow } from "./quit-window.ts";
 import { inheritedServerEnv } from "./server-env.ts";
 import { createServerHost, DEFAULT_RECOVERY, NO_RECOVERY } from "./server-host.ts";
 import {
@@ -146,6 +146,7 @@ import { stopForUpdate } from "./update/shutdown.ts";
 import { processStart, sparedNow, watchTree, type TreeCheckDeps } from "./update/tree-check.ts";
 import { probeSignature, runGh } from "./update/process.ts";
 import { normaliseUserEnv } from "./user-env.ts";
+import { reloadOnto } from "./window-reload.ts";
 
 const WEB_DEV_URL = process.env["GRAM_WEB_URL"] ?? "http://localhost:5173";
 /** The fixed dev server port the web Vite proxy targets (see scripts/dev.mjs). */
@@ -483,13 +484,14 @@ function trustedOrigins(): ReadonlySet<string> {
   return origins;
 }
 
-/** A fresh server has a new port and token, so every window reloads onto it. */
+/**
+ * A fresh server has a new port and token, so every window reloads onto it; a progress window
+ * keeps its own page (`window-reload.ts`).
+ */
 function reloadWindows() {
   const url = windowUrl();
   if (url === undefined) return;
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.webContents.isDestroyed()) void win.loadURL(url);
-  }
+  reloadOnto(url, BrowserWindow.getAllWindows(), isProgressWindow);
 }
 
 /** Starts the server again after a failed update launch, and reloads every window onto it. */
