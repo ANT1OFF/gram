@@ -1,7 +1,15 @@
 import { applySettingsPatch, DEFAULT_SETTINGS } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { navigationCurrent, routeProblem, shellFor, shownNavigation } from "./store";
+import {
+  itemName,
+  navigationAt,
+  navigationCurrent,
+  routeProblem,
+  shellFor,
+  shownCount,
+  shownNavigation,
+} from "./store";
 
 describe("what a mount takes of the embedding app's additions", () => {
   const shell = { navigation: [{ id: "govern", label: "Govern", items: [] }] };
@@ -63,5 +71,29 @@ describe("navigation groups", () => {
         { id: "empty", label: "Empty", items: [] },
       ]),
     ).toEqual([{ id: "govern", label: "Govern", items: [item("a")] }]);
+  });
+
+  it("list each group at its placement, at the foot when it names none", () => {
+    const groups = [
+      { id: "foot", label: "Govern", items: [item("a")] },
+      { id: "main", placement: "main" as const, items: [item("b")] },
+      { id: "foot2", placement: "foot" as const, items: [item("c")] },
+    ];
+    expect(navigationAt(groups, "main").map((group) => group.id)).toEqual(["main"]);
+    expect(navigationAt(groups, "foot").map((group) => group.id)).toEqual(["foot", "foot2"]);
+  });
+
+  it("draw a count only above 0, as a whole number", () => {
+    expect(shownCount(undefined)).toBeUndefined();
+    expect(shownCount(0)).toBeUndefined();
+    expect(shownCount(-2)).toBeUndefined();
+    expect(shownCount(Number.NaN)).toBeUndefined();
+    expect(shownCount(3.7)).toBe(3);
+    expect(shownCount(12)).toBe(12);
+  });
+
+  it("name a destination with its group's heading, where it has one", () => {
+    expect(itemName({ id: "g", label: "Govern", items: [] }, "Policies")).toBe("Govern: Policies");
+    expect(itemName({ id: "g", items: [] }, "Policies")).toBe("Policies");
   });
 });

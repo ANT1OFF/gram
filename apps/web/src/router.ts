@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { createRouter, type AnyRoute } from "@tanstack/react-router";
 
 import { routeTree } from "./routeTree.gen";
+import { NotFound } from "./shell/not-found";
 
 /**
  * The app's router. `basepath` and `extra` are for an app in front of Gram that serves this one
@@ -22,6 +23,8 @@ export const createAppRouter = (
     routeTree,
     context: { queryClient },
     defaultPreload: "intent",
+    // An address with no page says so in the shell's own look, not the router's bare words.
+    defaultNotFoundComponent: NotFound,
     ...(options.basepath === undefined || options.basepath === ""
       ? {}
       : { basepath: options.basepath }),

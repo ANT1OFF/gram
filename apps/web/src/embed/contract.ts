@@ -49,14 +49,31 @@ export interface ShellNavigationItem {
   /** A path under the app: one of `routes`, or one of Gram's own. */
   readonly to: string;
   readonly icon?: ShellIcon;
+  /**
+   * A number at the row's end, such as how many runs wait for review; on the compact sidebar's
+   * tile, a dot. Left out or 0, nothing is drawn. Change it through `GramHandle.update`.
+   */
+  readonly count?: number;
 }
 
-/** A named set of destinations, listed in the sidebar below the threads and in the palette. */
+/**
+ * Where a group is listed in the sidebar: `main` at the top of its list, under Needs you and
+ * search and above the workspaces and threads, as the places you mostly work in; `foot` below
+ * the threads and above History, with the places you go to now and then.
+ */
+export type ShellNavigationPlacement = "main" | "foot";
+
+/** A set of destinations, listed in the sidebar, the phone's drawer, the compact sidebar and the palette. */
 export interface ShellNavigationGroup {
   /** Stable among the groups. */
   readonly id: string;
-  /** The group's heading: "Govern". */
-  readonly label: string;
+  /**
+   * The group's heading: "Govern". Left out, its rows stand under no heading, and the palette and
+   * the compact sidebar's tiles name them alone.
+   */
+  readonly label?: string;
+  /** Defaults to `foot`. Groups keep their order within each placement. */
+  readonly placement?: ShellNavigationPlacement;
   readonly items: readonly ShellNavigationItem[];
 }
 
@@ -72,6 +89,13 @@ export interface ShellContributions {
    * later through `GramHandle.update`.
    */
   readonly workspaceSwitcher?: ComponentType<ShellSlotProps>;
+  /**
+   * Whether the sidebar lists Gram's workspaces and threads (the open sidebar's and the drawer's
+   * lists, the compact sidebar's tiles). `hidden` leaves the sidebar to Needs you, search and the
+   * navigation groups; a thread still opens from those, from the palette and from its address.
+   * Defaults to `shown`. Replaceable later through `GramHandle.update`.
+   */
+  readonly threads?: "shown" | "hidden";
 }
 
 /** The server one mount talks to. */
@@ -106,8 +130,12 @@ export interface GramHandle {
    * own and `shell` is left out whole: no page, group or switcher is added.
    */
   readonly shell: "on" | "off";
-  /** Replaces the navigation groups and the switcher. Routes stay as mounted. */
-  update(next: Pick<ShellContributions, "navigation" | "workspaceSwitcher">): void;
+  /**
+   * Replaces what `next` names of the navigation groups, the switcher and the thread list, and
+   * leaves what it doesn't name as it is: `update({ navigation })` changes counts and keeps the
+   * switcher. A key given as `undefined` takes that part away. Routes stay as mounted.
+   */
+  update(next: Pick<ShellContributions, "navigation" | "workspaceSwitcher" | "threads">): void;
   /** Moves the window to a path under the app. */
   navigate(to: string): Promise<void>;
   /** Takes the app off the page. A page mounts it once: after this, load the page again. */

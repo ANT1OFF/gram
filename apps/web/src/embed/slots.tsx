@@ -5,8 +5,15 @@ import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 import { OVERVIEW_STOP } from "@/shell/focus-regions";
 
-import type { ShellNavigationItem, ShellPlacement } from "./contract";
-import { navigationCurrent, shownNavigation, useEmbedShell } from "./store";
+import type { ShellNavigationItem, ShellNavigationPlacement, ShellPlacement } from "./contract";
+import {
+  itemName,
+  navigationAt,
+  navigationCurrent,
+  shownCount,
+  shownNavigation,
+  useEmbedShell,
+} from "./store";
 
 // The places in Gram's shell an app in front of it may fill. Each draws nothing until something was
 // added (`mountGram`), which never happens in Gram on its own.
@@ -56,25 +63,57 @@ function ItemIcon({ item, className }: { item: ShellNavigationItem; className: s
   );
 }
 
+/** A row's count, at its end. */
+function Count({ count }: { count: number | undefined }) {
+  const shown = shownCount(count);
+  if (shown === undefined) return null;
+  return (
+    <span
+      data-testid="embed-navigation-count"
+      className="shrink-0 text-meta text-muted-foreground tabular-nums"
+    >
+      {shown}
+    </span>
+  );
+}
+
 /**
- * The added navigation groups in the open sidebar and the phone's drawer: each a heading and its
- * destinations as rows, below the threads and above History, with the places you go to.
+ * The added navigation groups at one place in the open sidebar and the phone's drawer: each its
+ * heading, when it has one, and its destinations as rows. `main` is at the top of the sidebar's
+ * list, under Needs you and search, as places you work in; `foot` is below the threads and above
+ * History, with the places you go to.
  */
-export function EmbedNavigation() {
-  const groups = shownNavigation(useEmbedShell((s) => s.navigation));
+export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavigationPlacement }) {
+  const groups = navigationAt(
+    useEmbedShell((s) => s.navigation),
+    placement,
+  );
   const pathname = usePathname();
   if (groups.length === 0) return null;
+  const main = placement === "main";
   return (
     <nav
-      aria-label="More places"
-      data-testid="embed-navigation"
-      className="flex shrink-0 flex-col gap-tight border-t border-border px-inset py-tight text-body"
+      aria-label={main ? "Places" : "More places"}
+      data-testid={main ? "embed-navigation-main" : "embed-navigation"}
+      data-placement={placement}
+      className={cn(
+        "flex shrink-0 flex-col gap-tight text-body",
+        // In the list it scrolls with the rest, a list's step from what follows; at the foot it
+        // is a block of its own, ruled off from the list above.
+        !main && "border-t border-border px-inset py-tight",
+      )}
     >
       {groups.map((group) => (
-        <section key={group.id} aria-label={group.label} data-testid="embed-navigation-group">
-          <h2 className="flex h-6 items-center px-1.5 text-meta text-muted-foreground">
-            {group.label}
-          </h2>
+        <section
+          key={group.id}
+          {...(group.label === undefined ? {} : { "aria-label": group.label })}
+          data-testid="embed-navigation-group"
+        >
+          {group.label !== undefined && (
+            <h2 className="flex h-6 items-center px-1.5 text-meta text-muted-foreground">
+              {group.label}
+            </h2>
+          )}
           <ul className="flex flex-col gap-px">
             {group.items.map((item) => {
               const current = navigationCurrent(pathname, item.to);
@@ -89,6 +128,7 @@ export function EmbedNavigation() {
                   >
                     <ItemIcon item={item} className="size-icon-row shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    <Count count={item.count} />
                   </Link>
                 </li>
               );
@@ -100,37 +140,63 @@ export function EmbedNavigation() {
   );
 }
 
-/** The same destinations in the compact sidebar: an icon each, its group and name on hover. */
-export function EmbedRailNavigation() {
-  const groups = shownNavigation(useEmbedShell((s) => s.navigation));
+/**
+ * The same destinations in the compact sidebar: an icon each, its group and name on hover, and a
+ * dot on the tile while its count is above 0. `main` sits above the workspaces' tiles, `foot` at
+ * the rail's foot.
+ */
+export function EmbedRailNavigation({
+  placement = "foot",
+}: {
+  placement?: ShellNavigationPlacement;
+}) {
+  const groups = navigationAt(
+    useEmbedShell((s) => s.navigation),
+    placement,
+  );
   const pathname = usePathname();
   if (groups.length === 0) return null;
+  const main = placement === "main";
   return (
     <nav
-      aria-label="More places"
-      data-testid="embed-rail-navigation"
-      className="flex shrink-0 flex-col items-center gap-1 border-t border-sidebar-divider py-2"
+      aria-label={main ? "Places" : "More places"}
+      data-testid={main ? "embed-rail-navigation-main" : "embed-rail-navigation"}
+      data-placement={placement}
+      className={cn(
+        "flex shrink-0 flex-col items-center gap-1",
+        !main && "border-t border-sidebar-divider py-2",
+      )}
     >
       {groups.flatMap((group) =>
         group.items.map((item) => {
           const current = navigationCurrent(pathname, item.to);
+          const count = shownCount(item.count);
+          const name = itemName(group, item.label);
+          const spoken = count === undefined ? name : `${name}, ${count}`;
           return (
             <Hint
               key={`${group.id}/${item.id}`}
-              label={`${group.label}: ${item.label}`}
+              label={spoken}
               side="right"
               render={
                 <Link
                   {...linkTo(item.to)}
                   {...{ [OVERVIEW_STOP]: "" }}
                   data-testid="embed-navigation-item"
-                  aria-label={`${group.label}: ${item.label}`}
+                  aria-label={spoken}
                   aria-current={current ? "page" : undefined}
-                  className="grid size-8 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground"
+                  className="relative grid size-8 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground"
                 />
               }
             >
               <ItemIcon item={item} className="size-icon-row" />
+              {count !== undefined && (
+                <span
+                  aria-hidden
+                  data-testid="embed-navigation-dot"
+                  className="absolute top-1 right-1 size-1.5 rounded-full bg-foreground"
+                />
+              )}
             </Hint>
           );
         }),

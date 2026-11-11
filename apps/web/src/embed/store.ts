@@ -2,7 +2,12 @@ import { embeddingOn, type Settings } from "@gram/contracts";
 import type { ComponentType } from "react";
 import { create } from "zustand";
 
-import type { ShellContributions, ShellNavigationGroup, ShellSlotProps } from "./contract";
+import type {
+  ShellContributions,
+  ShellNavigationGroup,
+  ShellNavigationPlacement,
+  ShellSlotProps,
+} from "./contract";
 
 /**
  * What an app in front of Gram added to the shell (`mountGram`). Empty on Gram's own: every slot
@@ -13,13 +18,27 @@ export interface EmbedShellState {
   readonly workspaceSwitcher: ComponentType<ShellSlotProps> | undefined;
   /** The added pages' names, by their path as the router has it. Set once, at mount. */
   readonly titles: Readonly<Record<string, string>>;
+  /** Whether the sidebar lists Gram's workspaces and threads. */
+  readonly threads: "shown" | "hidden";
 }
 
 export const useEmbedShell = create<EmbedShellState>()(() => ({
   navigation: [],
   workspaceSwitcher: undefined,
   titles: {},
+  threads: "shown",
 }));
+
+/** What the store holds before anything is added, and again after `unmount`. */
+export const EMPTY_SHELL: EmbedShellState = {
+  navigation: [],
+  workspaceSwitcher: undefined,
+  titles: {},
+  threads: "shown",
+};
+
+/** Whether the sidebar lists Gram's own workspaces and threads: always, on Gram's own. */
+export const useThreadsListed = () => useEmbedShell((s) => s.threads === "shown");
 
 /**
  * What a mount takes of `shell`: all of it from a server whose hosted features are on, and nothing
@@ -65,3 +84,18 @@ export const shownNavigation = (
     return items.length === 0 ? [] : [{ ...group, items }];
   });
 };
+
+/** The shown groups listed at `placement` in the sidebar; a group that names none is at the foot. */
+export const navigationAt = (
+  groups: readonly ShellNavigationGroup[],
+  placement: ShellNavigationPlacement,
+): readonly ShellNavigationGroup[] =>
+  shownNavigation(groups).filter((group) => (group.placement ?? "foot") === placement);
+
+/** A row's count as drawn: a whole number above 0, or nothing. */
+export const shownCount = (count: number | undefined): number | undefined =>
+  count !== undefined && Number.isFinite(count) && count >= 1 ? Math.floor(count) : undefined;
+
+/** A destination's name with its group's, where it has one: "Govern: Policies". */
+export const itemName = (group: ShellNavigationGroup, label: string): string =>
+  group.label === undefined || group.label.trim() === "" ? label : `${group.label}: ${label}`;

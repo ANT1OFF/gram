@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { keyLabel } from "@/keyboard/registry";
 import { EmbedNavigation, EmbedSwitcher } from "@/embed/slots";
+import { useThreadsListed } from "@/embed/store";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { formatRelative, formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -317,6 +318,8 @@ export function OverviewSidebar({ phone = false }: { phone?: boolean }) {
   useRevealViewed();
   // The optional sections Settings → General turned off.
   const hidden = useLayoutStore((s) => s.overviewHidden);
+  // An app in front of Gram may leave the workspaces and threads out of the sidebar.
+  const threadsListed = useThreadsListed();
   // Before any setup the welcome is the one thing to look at: no usage beside it.
   const beforeSetup = useBeforeSetup();
   return (
@@ -392,7 +395,9 @@ export function OverviewSidebar({ phone = false }: { phone?: boolean }) {
           <NeedsYou />
           {!phone && <OverviewSearch />}
         </div>
-        <Orchestrators />
+        {/* The places an app in front of Gram puts first, above the workspaces and threads. */}
+        <EmbedNavigation placement="main" />
+        {threadsListed && <Orchestrators />}
       </div>
       {/* The places an app in front of Gram added, with the others you go to. */}
       <EmbedNavigation />
