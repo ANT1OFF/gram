@@ -50,7 +50,13 @@ describe("ThreadRuntimes usage and plan events", () => {
           Effect.sync(() => events.some((e) => e.type === "thread.plan")),
         );
 
-        expect(events).toContainEqual({ type: "thread.usage", threadId: thread.id, usage });
+        // Read mid-turn, so it names the turn.
+        expect(events).toContainEqual({
+          type: "thread.usage",
+          threadId: thread.id,
+          usage,
+          turnId: expect.any(String),
+        });
         expect(events).toContainEqual({ type: "thread.plan", threadId: thread.id, items });
         const [summary] = yield* runtimes.snapshot;
         expect(summary?.usage).toEqual(usage);
