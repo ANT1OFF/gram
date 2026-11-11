@@ -132,6 +132,8 @@ services:
       GRAM_HEADLESS: "1"
 ```
 
+- A machine gets in as any does: joined over Tailscale, or, with no tailnet around the
+  container, registered by its key as a [provisioned host](PROVISIONED_HOSTS.md).
 - A thread whose request names no machine goes on the confirmed machine online now that joined
   first. A worker's `machine` and the composer's Machine select still pick another.
 - An orchestrator works in the machine's own clone of its project, on the clone's default branch.
