@@ -36,10 +36,12 @@ const SERVER_ENTRY = fileURLToPath(new URL("../main.ts", import.meta.url));
 const HOST_ENTRY = fileURLToPath(new URL("./main.ts", import.meta.url));
 /**
  * The project's remote, which the host clones: a bare repository in the temp folder, named over
- * SSH, the one transport besides HTTPS a host's git allows.
+ * SSH, the one transport besides HTTPS a host's git allows. The URL names a short path, which the
+ * SSH stand-in maps to the temp folder, since a remote may be only so many folders deep and
+ * macOS's temp folder alone is five.
  */
-const BARE = join(temp, "widgets.git");
-const REMOTE = `ssh://git@git.example.test${BARE}`;
+const BARE = join(temp, "acme", "widgets.git");
+const REMOTE = "ssh://git@git.example.test/acme/widgets.git";
 
 const unusedPort = () =>
   new Promise<number>((resolve, reject) => {
@@ -255,7 +257,11 @@ describe.skipIf(!hasGit || !hasOpenssl || process.platform === "win32")(
           expect(none).toMatchObject({ message: NO_MACHINE_JOINED });
 
           const localSsh = join(temp, "local-ssh");
-          writeFileSync(localSsh, '#!/bin/sh\nshift\nexec sh -c "$*"\n', { mode: 0o755 });
+          writeFileSync(
+            localSsh,
+            `#!/bin/sh\nshift\nexec sh -c "$(printf '%s' "$*" | sed "s#'/acme/#'${temp}/acme/#")"\n`,
+            { mode: 0o755 },
+          );
 
           // The host makes its key, the control plane registers it, and the host runs.
           const hostHome = join(temp, "host");
