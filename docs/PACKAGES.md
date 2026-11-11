@@ -11,17 +11,19 @@ Packages go to GitHub Packages and images to `ghcr.io`, under the repository own
 
 ## What is published
 
-Five packages, always together at one version:
+Six packages, always together at one version:
 
-| Workspace name    | What it is                                                           |
-| ----------------- | -------------------------------------------------------------------- |
-| `@gram/contracts` | Schemas and types shared by every part: threads, RPC, settings       |
-| `@gram/themes`    | The built-in themes and their tokens                                 |
-| `@gram/git`       | Git, worktrees, bounded commands and the pull request model          |
-| `@gram/agents`    | The Claude Code and Codex hosts, and their recorded test fixtures    |
-| `@gram/server`    | The server, and the `gram-server` and `gram-host` commands it brings |
+| Workspace name    | What it is                                                                                                                       |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `@gram/contracts` | Schemas and types shared by every part: threads, RPC, settings                                                                   |
+| `@gram/themes`    | The built-in themes and their tokens                                                                                             |
+| `@gram/git`       | Git, worktrees, bounded commands and the pull request model                                                                      |
+| `@gram/agents`    | The Claude Code and Codex hosts, and their recorded test fixtures                                                                |
+| `@gram/server`    | The server, and the `gram-server` and `gram-host` commands it brings                                                             |
+| `@gram/web`       | The web app as a browser bundle another app mounts, with its controls and theme; see [the embedded web app](EMBEDDED_WEB_APP.md) |
 
-`@gram/shell` (the Electron shell) and the two apps are not published.
+`@gram/shell` (the Electron shell) and the desktop app are not published. `@gram/web` is the web
+app's embed build, not its source: one bundle with React as an exact peer.
 
 Two images, from one [Dockerfile](../docker/Dockerfile):
 
@@ -122,7 +124,7 @@ A host built this way reports no release of its own, as one run from source does
 release, by hand, and on a pull request that changes the workflow, `tools/packages/`, the
 Dockerfile or a published package's manifest. Every run:
 
-1. builds the packages and packs them (`bun run packages:pack`);
+1. builds the packages and the web app's bundle, and packs them (`bun run packages:pack`);
 2. installs the tarballs with npm in an empty project outside the workspace, imports every
    export, typechecks a consumer against the published types, and starts `gram-server` and
    `gram-host` from their installed commands (`bun run packages:verify`);
@@ -134,9 +136,11 @@ A version the registry already has is left alone, so a failed run can be run aga
 holds the package-writing token installs nothing and runs one dependency-free script over the
 tarballs the first job checked, each against its recorded hash.
 
-To run the same checks locally, after `bun run typecheck`:
+To run the same checks locally:
 
 ```sh
+bun run typecheck
+bun run --filter @gram/web build:embed
 bun run packages:pack --canary --scope @<owner>
 bun run packages:verify
 ```

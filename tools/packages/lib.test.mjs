@@ -11,6 +11,8 @@ import {
   dependencySpec,
   distTag,
   hostManifest,
+  PREBUILT,
+  prebuiltManifest,
   publishedName,
   publishManifest,
   PUBLISHED,
@@ -218,5 +220,53 @@ describe("the standalone host", () => {
       "node-pty": catalog["node-pty"],
     });
     expect(manifest.private).toBe(true);
+  });
+});
+
+const stamp = (manifest) =>
+  prebuiltManifest({
+    manifest,
+    source: "apps/web",
+    version: "1.2.4-canary.20260102030405.g012345678",
+    scope: "@owner",
+    repository: "owner/gram",
+    commit: COMMIT,
+    built: {},
+  });
+
+describe("prebuilt packages", () => {
+  const own = {
+    name: "@gram/web",
+    version: "1.2.3",
+    type: "module",
+    exports: { ".": { types: "./a.d.ts", default: "./a.js" }, "./style.css": "./a.css" },
+    dependencies: { cn: "0.5.2" },
+    peerDependencies: { react: "19.3.1" },
+  };
+  it("keeps the build's own manifest and sets only the name, version and origin", () => {
+    const manifest = stamp(own);
+    expect(manifest.name).toBe("@owner/gram-web");
+    expect(manifest.version).toBe("1.2.4-canary.20260102030405.g012345678");
+    expect(manifest.exports).toEqual(own.exports);
+    expect(manifest.peerDependencies).toEqual(own.peerDependencies);
+    expect(manifest.repository.directory).toBe("apps/web");
+    expect(manifest.gram.commit).toBe(COMMIT);
+  });
+
+  it("refuses a range, a workspace specifier or a manifest with no exports", () => {
+    expect(() => stamp({ ...own, peerDependencies: { react: "^19.0.0" } })).toThrow(/exact/);
+    expect(() => stamp({ ...own, dependencies: { cn: "catalog:" } })).toThrow(/exact/);
+    expect(() => stamp({ ...own, exports: undefined })).toThrow(/no exports/);
+  });
+
+  it("is published after the workspace packages, from a build the workspace has", () => {
+    const order = publishOrder([{ folder: "web" }, { folder: "server" }]);
+    expect(order.map((entry) => entry.folder)).toEqual(["server", "web"]);
+    for (const { source, build } of PREBUILT) {
+      const [, filter, script] = /^bun run --filter (\S+) (\S+)$/.exec(build);
+      const manifest = json(`${source}/package.json`);
+      expect(manifest.name).toBe(filter);
+      expect(manifest.scripts).toHaveProperty(script);
+    }
   });
 });
