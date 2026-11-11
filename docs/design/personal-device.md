@@ -839,3 +839,56 @@ unread; options that run commands (`tar --checkpoint-action`, `split --filter`, 
 `ProxyCommand` and the like) are named; and a window that goes while loading refuses its ask.
 The reader stays a list of facts: programs with exec options it doesn't know still read as
 themselves, which is why the command is always shown whole above them.
+
+### The device as built
+
+`hosted-device.ts` holds the device whole, without any window: the servers signed in to, the
+workspaces lent, and a lending service per server. Its secrets (a key per server, each sign-in
+and one secret the settings and log keys are derived from) are kept in the operating system's
+keychain through `safeStorage`, in a file of their own; with no real keyring nothing is kept and
+lending is unavailable, as it is where presence can't be known or the settings were edited. A
+new server is signed in to only once the person accepts it in a window the main process owns.
+Lending is never on at start: what was lent is offered to resume, and resuming checks that each
+folder is still the one lent. A pause is kept across restarts until the person lifts it. Signing
+out stops lending, asks the server to forget the device and clears its sign-in from the
+keychain. `presence.ts` reads the operating system's sleep, lock, user switch and idle state.
+
+Its independent review changed it so:
+
+- Whether the keychain is strong is asked once the app is ready, awaiting the vault's answer;
+  a weak answer is asked again. Without lending available, sign-ins last the session in memory
+  and nothing reaches the keychain.
+- A lend is checked against what the settings can keep before anything changes, and a save
+  that fails takes it back, so a lend that answers no never lends.
+- A saved server that couldn't be reached at start is kept as saved, pause and folders, shown
+  as signed out, and brought back when the person tries again; signing in elsewhere doesn't
+  erase it.
+- Resume needs the workspace listed and allowed, and checks each folder's birth time as well as
+  its disk and inode, since a folder deleted and made again can get its inode straight back.
+  Where the file system keeps no birth time, the person lends again. A workspace whose policy
+  isn't known gets no capability.
+- When the server ends a sign-in, lending there stops, its grants go, the sign-in leaves the
+  keychain and the person can sign in again; what was lent waits to be resumed.
+- One sign-in per server at a time; closing stops one under way and undoes each step it took.
+  A failed sign-in leaves no new key, and signing out removes the server's key too. At most 16
+  servers.
+- Each log line is on disk before the head that counts it is kept, and the settings' folder is
+  flushed after each rename. A failure reading the keychain or the files at start makes lending
+  unavailable instead of failing; settings found edited can be set aside, with the log, and
+  started afresh, only as the person's decision.
+
+A second review of those changes made these closer:
+
+- Restoring a server and signing in to it are one at a time per origin, and a sign-in reads
+  what is there only when it lands, so it stops the server it replaces and carries over what
+  was lent and paused as it is then. Sign-ins under way count toward the 16 servers, and the
+  settings are checked to keep the new server before it is added.
+- A sign-in that fails puts back the sign-in the keychain had for that server.
+- At start every saved server is kept as saved before any is found again, so a save made in
+  between can't leave one out.
+- A lend is `saving` until the settings keep it, and nothing connects to it until then.
+- Lending for a server is started once at a time, and a stop waits for a start under way.
+- A folder's birth time comes from the same check as its inode. Where Linux has no `statx`,
+  the birth time Node reports changes with the folder, so resume asks to lend again: it fails
+  safe. Starting afresh leaves the sign-ins of the servers set aside in the keychain, and those
+  devices registered, until the person signs in and out there.

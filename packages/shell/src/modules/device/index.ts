@@ -19,4 +19,6 @@ export * from "./command-facts.ts";
 export * from "./ask-view.ts";
 export * from "./ask-page.ts";
 export * from "./ask-queue.ts";
+export * from "./hosted-device.ts";
+export * from "./presence.ts";
 // The ask window itself is Electron's: import `./ask-window.ts` from the main process.

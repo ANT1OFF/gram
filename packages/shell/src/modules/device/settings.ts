@@ -19,6 +19,8 @@ const LentFolderSetting = Schema.Struct({
   path: Schema.String.check(Schema.isMaxLength(4096)),
   device: Schema.Number,
   inode: Schema.Number,
+  /** When the folder was made, in nanoseconds; absent where the file system doesn't keep it. */
+  born: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[0-9]{1,24}$/))),
   /** The person chose, in the lending sheet, to pass this folder's commands the whole environment. */
   fullEnvironment: Schema.Boolean,
 });
@@ -47,6 +49,10 @@ export const DeviceSettings = Schema.Struct({
   ),
 });
 export type DeviceSettings = typeof DeviceSettings.Type;
+
+/** Whether settings are within what the file may hold, checked before anything is changed. */
+export const deviceSettingsFit = (settings: DeviceSettings): boolean =>
+  Schema.encodeOption(DeviceSettings)(settings)._tag === "Some";
 
 export const EMPTY_DEVICE_SETTINGS: DeviceSettings = { v: 1, servers: [] };
 
@@ -148,5 +154,24 @@ export const writeDeviceSettings = async (
   } catch (error) {
     await fs.rm(next, { force: true });
     throw error;
+  }
+  // The rename itself is on disk too, so a power loss can't bring the old settings back.
+  await syncFolder(dirname(file));
+};
+
+/** Flushes a folder's entries; where folders can't be opened for it (Windows), a no-op. */
+export const syncFolder = async (folder: string): Promise<void> => {
+  let handle: fs.FileHandle | undefined;
+  try {
+    handle = await fs.open(folder, "r");
+  } catch {
+    return;
+  }
+  try {
+    await handle.sync();
+  } catch {
+    // Some file systems refuse to sync a folder; the file itself already is.
+  } finally {
+    await handle.close();
   }
 };

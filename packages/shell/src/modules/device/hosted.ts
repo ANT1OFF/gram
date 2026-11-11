@@ -374,6 +374,8 @@ export interface TokenKeeperOptions {
   readonly fetch: Fetch;
   /** A clock that only goes forward, in milliseconds. */
   readonly now: () => number;
+  /** The server ended the sign-in, or answered for someone else: it is over. */
+  readonly ended?: () => void;
 }
 
 export type TokenFor =
@@ -475,6 +477,7 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
         if (answer.signedOut === true) {
           ended = true;
           tokens.clear();
+          options.ended?.();
         }
         return answer;
       }
@@ -482,6 +485,7 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
       if (answer.tokens.subject !== options.subject) {
         ended = true;
         tokens.clear();
+        options.ended?.();
         return { ...failed("The server signed in someone else."), signedOut: true };
       }
       if (answer.tokens.refreshToken !== undefined && answer.tokens.refreshToken !== refreshToken) {
