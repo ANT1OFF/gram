@@ -44,6 +44,12 @@ export interface Outbox {
   readonly confirm: (ack: number) => boolean;
   /** A new source at 1, dropping what the old one hadn't sent: for when `confirm` says `false`. */
   readonly restart: () => void;
+  /**
+   * Who started each thread, kept here because nothing else the sink reads says so after a
+   * restart. `undefined` forgets a thread's.
+   */
+  readonly setCreator: (threadId: string, person: string | undefined) => void;
+  readonly creators: () => Map<string, string>;
   readonly close: () => void;
 }
 
@@ -55,6 +61,7 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
     PRAGMA synchronous = NORMAL;
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, at INTEGER NOT NULL, body TEXT NOT NULL) STRICT;
+    CREATE TABLE IF NOT EXISTS creators (thread_id TEXT PRIMARY KEY, person TEXT NOT NULL) STRICT;
   `);
   const getMeta = db.prepare("SELECT value FROM meta WHERE key = ?");
   const setMeta = db.prepare(
@@ -65,6 +72,11 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
   const oldest = db.prepare("SELECT MIN(seq) AS seq FROM events");
   const prune = db.prepare("DELETE FROM events WHERE seq <= ?");
   const clear = db.prepare("DELETE FROM events");
+  const putCreator = db.prepare(
+    "INSERT INTO creators (thread_id, person) VALUES (?, ?) ON CONFLICT (thread_id) DO UPDATE SET person = excluded.person",
+  );
+  const dropCreator = db.prepare("DELETE FROM creators WHERE thread_id = ?");
+  const allCreators = db.prepare("SELECT thread_id, person FROM creators");
 
   const read = (key: string): string | undefined =>
     (getMeta.get(key) as { value: string } | undefined)?.value;
@@ -120,6 +132,17 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
         clear.run();
         begin();
       }),
+    setCreator: (threadId, person) => {
+      if (person === undefined) dropCreator.run(threadId);
+      else putCreator.run(threadId, person);
+    },
+    creators: () =>
+      new Map(
+        (allCreators.all() as Array<{ thread_id: string; person: string }>).map((row) => [
+          row.thread_id,
+          row.person,
+        ]),
+      ),
     close: () => db.close(),
   };
 };

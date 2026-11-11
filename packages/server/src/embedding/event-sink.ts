@@ -75,6 +75,11 @@ export interface EventSinkShape {
    * this. `undefined` takes it back, for an answer that wasn't taken.
    */
   noteAnswer(requestId: RequestId, note: AnswerNote | undefined): Effect.Effect<void>;
+  /**
+   * `person` started `threadId`: sent as `createdBy` on its `thread.upsert`s, the first of which
+   * is published after this. Kept across restarts.
+   */
+  noteCreator(threadId: ThreadId, person: string): Effect.Effect<void>;
   /** A workspace's feature cards that changed, as the orchestration reconciled them. */
   featureCards(cards: ReadonlyArray<FeatureCard>): Effect.Effect<void>;
   /**
@@ -94,6 +99,8 @@ export interface EventSinkOptions {
   readonly on: Effect.Effect<boolean>;
   /** Every open thread, for `sink.started`. */
   readonly threads: Effect.Effect<ReadonlyArray<Thread>>;
+  /** The ids of the cards open now, for a `sink.started` that isn't the server's start. */
+  readonly openAsks?: Effect.Effect<ReadonlyArray<string>>;
   /** The server's events to record; absent in a test that records by hand. */
   readonly events?: Stream.Stream<ServerEvent>;
   readonly batchSize?: number;
@@ -162,6 +169,16 @@ export const makeEventSink = (
     const models = new Map<string, string>();
     const askNotes = new Map<string, AskNote>();
     const answerNotes = new Map<string, AnswerNote>();
+    /** Who started each thread, as far as anyone was signed in to say. */
+    const creators = yield* Effect.try(() => outbox.creators()).pipe(
+      Effect.catch(() => Effect.succeed(new Map<string, string>())),
+    );
+    const createdBy = (threadId: string) => {
+      const person = creators.get(threadId);
+      return person === undefined ? {} : { createdBy: person };
+    };
+    /** True while the sink is being made: a `sink.started` then is the server's own start. */
+    let booting = true;
     let refreshCards: ((workspaceId: WorkspaceId) => Effect.Effect<void>) | undefined;
     let on = false;
     let checkedAt = Number.NEGATIVE_INFINITY;
@@ -203,14 +220,19 @@ export const makeEventSink = (
         if (thread.workspaceId !== undefined) workspaces.set(thread.id, thread.workspaceId);
         models.set(thread.id, thread.model.model);
       }
+      // A server drops every card when it starts, whatever its store still lists at this point.
+      const openAsks = booting ? [] : yield* options.openAsks ?? Effect.succeed([]);
       return {
         type: "sink.started",
         actor: { kind: "system" },
         data: {
+          ...(booting ? { restarted: true } : {}),
           threads: threads.map((thread) => ({
             ...threadData(thread),
+            ...createdBy(thread.id),
             ...(thread.workspaceId === undefined ? {} : { workspaceId: thread.workspaceId }),
           })),
+          openAsks,
         },
       } satisfies SinkRecord;
     });
@@ -264,12 +286,25 @@ export const makeEventSink = (
           if (thread.workspaceId === undefined) workspaces.delete(thread.id);
           else workspaces.set(thread.id, thread.workspaceId);
           models.set(thread.id, thread.model.model);
-          return [{ type: "thread.upsert", ...scoped(thread.id), data: threadData(thread) }];
+          return [
+            {
+              type: "thread.upsert",
+              ...scoped(thread.id),
+              data: { ...threadData(thread), ...createdBy(thread.id) },
+            },
+          ];
         }
         case "thread.removed": {
           const where = scoped(event.threadId);
           workspaces.delete(event.threadId);
           models.delete(event.threadId);
+          if (creators.delete(event.threadId)) {
+            try {
+              outbox.setCreator(event.threadId, undefined);
+            } catch {
+              // Left in the file: it names a thread that no longer is, and nothing reads it.
+            }
+          }
           return [{ type: "thread.removed", ...where, data: { id: event.threadId } }];
         }
         case "thread.status":
@@ -331,6 +366,7 @@ export const makeEventSink = (
               type: "usage",
               ...scoped(event.threadId),
               data: {
+                ...(event.turnId === undefined ? {} : { turnId: event.turnId }),
                 ...(model === undefined ? {} : { model }),
                 inputTokens: tokens.inputTokens,
                 outputTokens: tokens.outputTokens,
@@ -372,6 +408,7 @@ export const makeEventSink = (
 
     // Asked once before anything is recorded, so the first events don't race the first answer.
     yield* isOn;
+    booting = false;
 
     if (options.events !== undefined) {
       yield* options.events.pipe(
@@ -472,6 +509,15 @@ export const makeEventSink = (
     return {
       record,
       noteAsk: (requestId, note) => Effect.sync(() => void askNotes.set(requestId, note)),
+      noteCreator: (threadId, person) =>
+        Effect.sync(() => {
+          creators.set(threadId, person);
+          try {
+            outbox.setCreator(threadId, person);
+          } catch {
+            // Known for this run of the server, and not after it.
+          }
+        }),
       noteAnswer: (requestId, note) =>
         Effect.sync(() => {
           answerNotes.delete(requestId);
@@ -517,6 +563,7 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
     record: () => Effect.void,
     noteAsk: () => Effect.void,
     noteAnswer: () => Effect.void,
+    noteCreator: () => Effect.void,
     featureCards: () => Effect.void,
     setFeatureCardRefresh: () => Effect.void,
   };
@@ -543,6 +590,12 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
           file: inMemory ? ":memory:" : eventSinkFile(config.dataDir),
           on: store.getSettings.pipe(Effect.map(embeddingOn)),
           threads: store.listThreads,
+          openAsks: store.listThreads.pipe(
+            Effect.flatMap(
+              Effect.forEach((thread) => store.listRequests(thread.id), { concurrency: 8 }),
+            ),
+            Effect.map((lists) => lists.flat().map((request) => request.id)),
+          ),
           events: hub.internalEvents(
             (event) =>
               event.type === "thread.upsert" ||

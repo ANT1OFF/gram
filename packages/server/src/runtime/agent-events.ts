@@ -756,7 +756,12 @@ export const makeAgentEvents = ({
           rt.usage = usage;
           yield* setRetrying(rt, false);
           if (!unchanged)
-            yield* hub.publish({ type: "thread.usage", threadId: rt.threadId, usage });
+            yield* hub.publish({
+              type: "thread.usage",
+              threadId: rt.threadId,
+              usage,
+              ...(rt.turn === undefined ? {} : { turnId: rt.turn.id }),
+            });
           return;
         }
         case "subagentUsage": {
