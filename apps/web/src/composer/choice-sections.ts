@@ -10,6 +10,7 @@ import {
 } from "@gram/contracts";
 
 import { agentLabel } from "@/agents/agent-display";
+import { cn } from "@/lib/utils";
 import { modeWarning } from "@/thread/mode-warning";
 
 import type { ChoiceOption, ChoiceSection } from "./choices";
@@ -20,10 +21,10 @@ import { speedOptions, speedReport, speedUsage, speedValueWord } from "./speed-f
 
 // The four sections of the composer's choices, in its one order (model · effort · mode · speed),
 // the same in a thread's composer and in `/new`. Each says its value in words in the chip's name,
-// tooltip and popover; on the chip itself only a value that matters for safety or cost and is off
-// its default draws a glyph beside the agent's mark: Bypass's open lock, Fast's bolt.
+// tooltip and popover; on the chip itself the model says its name beside the agent's mark, the mode
+// draws its glyph, and Fast its bolt while on.
 
-/** The model, said by the chip's name and tooltip; the agent's mark stands for it on the chip. */
+/** The model, its name on the chip beside the agent's mark, and in the chip's name and tooltip. */
 export function modelSection({
   value,
   options,
@@ -93,9 +94,17 @@ export function effortSection({
   };
 }
 
+/** A mode's glyph, in the warning colour for one that never asks. */
+const modeGlyph = (mode: PermissionMode, size: string) =>
+  createElement(MODE_ICONS[mode], {
+    "aria-hidden": true,
+    className: cn(size, "shrink-0", modeWarning(mode) !== undefined && "text-warning"),
+  });
+
 /**
- * The permission mode. One that never asks (Bypass) draws its glyph on the chip in the warning
- * colour: what the agent may do without asking matters.
+ * The permission mode: its glyph always on the chip, and each mode's beside its row in the list. One
+ * that never asks (Bypass) is in the warning colour wherever its glyph is: what the agent may do
+ * without asking matters.
  */
 export function modeSection({
   value,
@@ -109,22 +118,18 @@ export function modeSection({
   const chosen = MODE_OPTIONS.find((option) => option.value === value);
   const named = chosen?.label ?? value ?? "Ask";
   const warning = modeWarning(value);
-  const Glyph = value === undefined ? undefined : MODE_ICONS[value];
   return {
     id: "mode",
     label: "Mode",
     named,
-    glyph:
-      warning === undefined || Glyph === undefined
-        ? undefined
-        : createElement(Glyph, {
-            "aria-hidden": true,
-            className: "size-icon-chip text-warning",
-          }),
+    glyph: modeGlyph(value ?? "default", "size-icon-chip"),
     warning,
     shortcut,
     value,
-    options: MODE_OPTIONS,
+    options: MODE_OPTIONS.map((option) => ({
+      ...option,
+      icon: modeGlyph(option.value, "size-icon-row"),
+    })),
     onChange: (next) => onChange(next as PermissionMode),
   };
 }

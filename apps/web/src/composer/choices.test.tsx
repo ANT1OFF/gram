@@ -76,18 +76,25 @@ const glyphs = () =>
   [...chip().querySelectorAll<HTMLElement>("[data-chip-glyph]")].map(
     (el) => el.dataset["chipGlyph"],
   );
+const modeGlyph = () => chip().querySelector('[data-chip-glyph="mode"] svg');
 
 describe("the choices chip", () => {
-  it("shows no word: the agent's mark alone while nothing set matters for safety or cost", () => {
+  it("says the model's name beside the agent's mark, and the mode in its glyph", () => {
     render(
       <ComposerChoices
         sections={sections({ effort: "high", mode: "plan", speed: "standard" })}
         mark={<svg data-testid="mark" />}
       />,
     );
-    expect(chip().textContent).toBe("");
+    // The mark says the vendor, so the name drops it; effort and a standard speed draw nothing.
+    expect(chip().textContent).toBe("Opus");
     expect(within(chip()).getByTestId("mark")).toBeTruthy();
-    expect(glyphs()).toEqual([]);
+    expect(glyphs()).toEqual(["mode"]);
+    expect(chip().querySelector('[data-chip-glyph="mode"]')?.getAttribute("data-value")).toBe(
+      "plan",
+    );
+    expect(modeGlyph()?.getAttribute("class")).toContain("lucide-list-checks");
+    expect(modeGlyph()?.getAttribute("class")).not.toContain("text-warning");
     // Its name says every value and its shortcut, the defaults' too.
     expect(chip().getAttribute("aria-label")).toMatch(
       /^Claude Opus \(.+M\) · Effort: High \(.+E\) · Mode: Plan \(.+A\) · Speed: Standard$/,
@@ -101,10 +108,10 @@ describe("the choices chip", () => {
         mark={<svg data-testid="mark" />}
       />,
     );
-    expect(chip().textContent).toBe("");
+    expect(chip().textContent).toBe("Opus");
     expect(glyphs()).toEqual(["mode", "speed"]);
-    const lock = chip().querySelector('[data-chip-glyph="mode"] svg');
-    expect(lock?.getAttribute("class")).toContain("text-warning");
+    expect(modeGlyph()?.getAttribute("class")).toContain("lucide-lock-open");
+    expect(modeGlyph()?.getAttribute("class")).toContain("text-warning");
     expect(chip().querySelector('[data-testid="speed-glyph"]')?.getAttribute("data-speed")).toBe(
       "fast",
     );
@@ -133,15 +140,47 @@ describe("the choices chip", () => {
     expect(chip().getAttribute("data-warning")).toBe("true");
   });
 
+  it("draws a distinct glyph for each mode", () => {
+    const modes: PermissionMode[] = [
+      "default",
+      "acceptEdits",
+      "plan",
+      "auto",
+      "bypassPermissions",
+      "dontAsk",
+    ];
+    const seen = modes.map((mode) => {
+      const view = render(<ComposerChoices sections={sections({ mode })} mark={<svg />} />);
+      const glyph = modeGlyph()?.getAttribute("class") ?? "";
+      view.unmount();
+      return /lucide-[a-z-]+/.exec(glyph.replace("lucide-icon", ""))?.[0];
+    });
+    expect(new Set(seen).size).toBe(modes.length);
+    // Auto's shield, never the Sparkles that marks a setting following the recommended setup.
+    expect(seen).not.toContain("lucide-sparkles");
+  });
+
+  it("keeps the model's name, truncated, in a toolbar short of room", () => {
+    render(
+      <div style={{ width: "60px", display: "flex" }}>
+        <ComposerChoices sections={sections()} mark={<svg />} />
+      </div>,
+    );
+    const name = screen.getByTestId("choices-model-name");
+    expect(name.textContent).toBe("Opus");
+    expect(name.getAttribute("class")).toContain("truncate");
+    expect(chip().getAttribute("class")).toContain("min-w-0");
+  });
+
   it("is never an empty pill: without a mark, the sliders glyph stands in", () => {
     render(<ComposerChoices sections={sections()} />);
-    expect(chip().textContent).toBe("");
+    expect(chip().textContent).toBe("Opus");
     expect(within(chip()).getByTestId("choices-glyph")).toBeTruthy();
   });
 
   // #263's chip folded its words by the measured width of the row, and a glyph a few px off what
   // the measure expected flipped it between two layouts until React stopped it ("Maximum update
-  // depth exceeded"). Glyphs alone are one width at any width: nothing measures, so nothing loops.
+  // depth exceeded"). The name truncates by CSS alone: nothing measures, so nothing loops.
   it("renders the same in a toolbar too narrow for it, settling at once", async () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -166,6 +205,23 @@ describe("the choices chip", () => {
 });
 
 describe("the choices popover", () => {
+  it("draws each mode's glyph beside its row, Bypass's in the warning colour", async () => {
+    const user = userEvent.setup();
+    render(<ComposerChoices sections={sections({ mode: "auto" })} />);
+    await user.click(chip());
+    await user.click(await screen.findByTestId("choices-mode"));
+    const modes = within(screen.getByRole("listbox", { name: "Mode" }));
+    const glyphOf = (name: string) =>
+      modes.getByRole("option", { name }).querySelector("svg")?.getAttribute("class") ?? "";
+    expect(glyphOf("Ask")).toContain("lucide-lock");
+    expect(glyphOf("Accept edits")).toContain("lucide-file-pen");
+    expect(glyphOf("Plan")).toContain("lucide-list-checks");
+    expect(glyphOf("Auto")).toContain("lucide-shield-check");
+    expect(glyphOf("Bypass")).toContain("lucide-lock-open");
+    expect(glyphOf("Bypass")).toContain("text-warning");
+    expect(glyphOf("Auto")).not.toContain("text-warning");
+  });
+
   it("opens on its Model section, and each section's list checks its value and says what each costs", async () => {
     const user = userEvent.setup();
     render(<ComposerChoices sections={sections({ effort: "xhigh" })} />);

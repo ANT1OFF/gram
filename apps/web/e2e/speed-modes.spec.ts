@@ -76,7 +76,12 @@ for (const agent of ["claude", "codex"] as const)
     await page.getByRole("option", { name: "Fast", exact: true }).click();
     await expect(chip).toHaveAccessibleName(/ · Speed: Fast$/);
     await expect(chip).toHaveAccessibleName(/ · Effort: High · /);
-    await expect.poll(() => chipFace(chip)).toEqual({ words: "", glyphs: ["speed"] });
+    await expect
+      .poll(() => chipFace(chip))
+      .toEqual({
+        words: "Synthetic Fast model",
+        glyphs: [expect.stringMatching(/^mode:/), "speed:fast"],
+      });
     await openMoreOptions(page);
     await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/code/sandbox");
     await form.getByLabel("First prompt").fill("Synthetic speed preference test.");

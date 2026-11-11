@@ -4,8 +4,8 @@ import {
   ListChecks,
   Lock,
   LockOpen,
+  ShieldBan,
   ShieldCheck,
-  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,13 +41,18 @@ export const MODE_OPTIONS: readonly PickerOption<PermissionMode>[] = [
   },
 ];
 
-/** Each mode's glyph on the mode picker; `dontAsk` is never offered there but can be a thread's. */
+/**
+ * Each mode's glyph, on the choices chip beside the model's name and on its row in the mode list;
+ * `dontAsk` is never offered there but can be a thread's. Ask is the lock and Bypass the lock open;
+ * Auto is a shield, as its risky steps are checked, and never the Sparkles that marks a setting that
+ * follows the recommended setup.
+ */
 export const MODE_ICONS: Readonly<Record<PermissionMode, LucideIcon>> = {
   default: Lock,
   acceptEdits: FilePen,
   plan: ListChecks,
-  auto: Sparkles,
-  dontAsk: ShieldCheck,
+  auto: ShieldCheck,
+  dontAsk: ShieldBan,
   bypassPermissions: LockOpen,
 };
 
