@@ -189,6 +189,7 @@ const orphans = () => {
 const start = async (
   mode: "fast" | "hang" | "essential" | "orphans" | "terminal-orphans",
   killRootOnly = false,
+  sharedGroup = false,
 ) => {
   const pids: number[] = [];
   const lines: string[] = [];
@@ -196,7 +197,8 @@ const start = async (
   const host = createServerHost({
     fork: () => {
       // An explicit environment: nothing of the host's provider, auth or CLI state.
-      // Its own process group, as a stand-in, so no other test's processes share it.
+      // Its own process group, as a stand-in, so no other test's processes share it; or, as
+      // Gram's server shares the app's, this test process's group (`sharedGroup`).
       child = fork(script, [], {
         env: {
           PATH: "/usr/bin:/bin",
@@ -206,7 +208,7 @@ const start = async (
           FENCE_TERMINAL: join(dir, "terminal.cjs"),
         },
         stdio: ["ignore", "pipe", "pipe", "ipc"],
-        detached: true,
+        detached: !sharedGroup,
       });
       started.push(child.pid!);
       return {
@@ -281,6 +283,22 @@ describe.skipIf(process.platform === "win32")("update teardown fence", () => {
     // Nothing of the old tree is left: the server, its terminal or what that ran.
     expect([root(), ...pids].some(alive)).toBe(false);
   }, 30_000);
+
+  // Gram's server is a utility process in the app's own process group, and the check's `ps` reads
+  // run from the app: each read lists itself, a new child of the app in that group. Run where the
+  // check runs in Gram, it must still pass the forced path, not refuse it as unverified. On macOS
+  // only: on Linux a test runner starting its next worker in this group is a real ambiguity.
+  it.runIf(process.platform === "darwin")(
+    "proceeds past a hanging finalizer with the server in the app's own process group",
+    async () => {
+      const { host, pids, root } = await start("hang", false, true);
+      const stopped: UpdateTeardown[] = [];
+      await stopForUpdate(host, (teardown) => stopped.push(teardown));
+      expect(stopped).toMatchObject([{ path: "forced", killed: 2 }]);
+      expect([root(), ...pids].some(alive)).toBe(false);
+    },
+    30_000,
+  );
 
   it("refuses when an essential is reported failed, naming it", async () => {
     const { host } = await start("essential");

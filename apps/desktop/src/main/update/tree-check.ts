@@ -62,6 +62,10 @@ function readTable(deps: TreeCheckDeps): Table | undefined {
     const start = match[4]!.replaceAll(/\s+/g, " ");
     rows.set(Number(match[1]), { ppid: Number(match[2]), pgid: Number(match[3]), start });
   }
+  // `ps -A` lists itself: a new child of the app, in the app's group the server shares. Read as a
+  // process, every read after the first would find an ancestor's new child in that group and
+  // refuse the update as untellable. It has exited by now and is nothing of the server's.
+  if (read.pid !== undefined) rows.delete(read.pid);
   return rows.size === 0 ? undefined : rows;
 }
 
@@ -121,9 +125,11 @@ export function watchTree(
   const groups = new Map<number, string>();
   const shared = rootRow.pgid === root ? undefined : rootRow.pgid;
   // Linux can adopt orphans into an ancestor subreaper instead of PID 1. Record ancestors by
-  // birth identity, never by process name or an unfenced parent pid.
+  // birth identity, never by process name or an unfenced parent pid. macOS has no subreapers: an
+  // orphan goes to launchd, so an ancestor's new child is only ever one it started itself (a
+  // helper, a `git`), never the server's, and is no reason to refuse.
   const ancestors = new Map<number, string>();
-  for (let pid = rootRow.ppid; pid > 1 && !ancestors.has(pid);) {
+  for (let pid = rootRow.ppid; deps.platform !== "darwin" && pid > 1 && !ancestors.has(pid);) {
     const row = first.get(pid);
     if (row === undefined) break;
     ancestors.set(pid, row.start);

@@ -5,12 +5,15 @@
 // the pid main recorded for its own child is touched, and a subtree the server started for the user
 // to keep (an editor, a file manager: `launched`) is spared, since it may hold unsaved work.
 
-/** What a bounded synchronous run of `ps`/PowerShell/`taskkill` gave back; undefined if it failed. */
+/**
+ * What a bounded synchronous run of `ps`/PowerShell/`taskkill` gave back; undefined if it failed.
+ * `pid` is the run's own process, which a process table it printed lists too.
+ */
 export type RunSync = (
   file: string,
   args: ReadonlyArray<string>,
   timeoutMs: number,
-) => { readonly status: number | null; readonly stdout: string } | undefined;
+) => { readonly status: number | null; readonly stdout: string; readonly pid?: number } | undefined;
 
 export interface KillTreeDeps {
   readonly platform: NodeJS.Platform;
