@@ -26,7 +26,7 @@ import {
 } from "./keys.ts";
 import { type Connect, makeServerLending, type ServerLending } from "./lending.ts";
 import { type AskLimits, makeAskLimits } from "./limits.ts";
-import { type DeviceLog, type DeviceLogEntry, openDeviceLog } from "./log.ts";
+import { type DeviceLog, type DeviceLogEntry, openDeviceLog, readDeviceLog } from "./log.ts";
 import {
   type DeviceSettings,
   deviceSettingsFit,
@@ -152,8 +152,20 @@ export interface ResumeShown {
   readonly readOnly: boolean;
 }
 
+/** The local log as the activity list shows it: the newest lines that check out. */
+export interface DeviceActivity {
+  readonly kept: boolean;
+  readonly intact: boolean;
+  readonly setAside: boolean;
+  /** Newest first. */
+  readonly entries: ReadonlyArray<DeviceLogEntry>;
+  readonly more: boolean;
+}
+
 export interface HostedDevice {
   readonly state: () => HostedDeviceState;
+  /** Reads the local log again: at most `most` lines, newest first. */
+  readonly activity: (most: number) => Promise<DeviceActivity>;
   /** Finds the server, asks the person to accept a new one, and signs in in the browser. */
   readonly signIn: (typed: string, signal?: AbortSignal) => Promise<Done>;
   readonly signOut: (origin: string) => Promise<void>;
@@ -393,6 +405,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
   const logLine = async (entry: DeviceLogEntry): Promise<unknown> => {
     if (log === undefined) return undefined;
     await log.append(entry);
+    changed();
     // Where the log stands is kept with the settings, so lines cut off its end are noticed.
     return save().catch(() => undefined);
   };
@@ -979,6 +992,23 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     },
 
     grants: (origin) => known(origin)?.grants,
+
+    activity: async (most) => {
+      const open = log;
+      const keys = fileKeys;
+      if (open === undefined || keys === undefined || closed)
+        return { kept: false, intact: true, setAside: false, entries: [], more: false };
+      // Checked against where this app's log stands, so lines cut off its end show too.
+      const read = await readDeviceLog(join(options.dataDir, LOG_FILE), keys.log, open.head());
+      const count = Math.max(0, Math.floor(most));
+      return {
+        kept: true,
+        intact: read.intact,
+        setAside: open.foundEdited,
+        entries: read.entries.slice(Math.max(0, read.entries.length - count)).toReversed(),
+        more: read.entries.length > count,
+      };
+    },
 
     close: async () => {
       closed = true;

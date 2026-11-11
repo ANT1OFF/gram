@@ -3,6 +3,7 @@ import {
   applySettingsPatch,
   DEFAULT_SETTINGS,
   type DesktopBridge,
+  type HostedDeviceActivity,
   type HostedDeviceView,
 } from "@gram/contracts";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -67,8 +68,17 @@ const bridgeWith = (state: HostedDeviceView | null): Bridge & { calls: Array<str
       return ok();
     },
     startAfresh: ok,
+    activity: async () => activity,
     onChange: () => () => undefined,
   };
+};
+
+let activity: HostedDeviceActivity | null = {
+  kept: true,
+  intact: true,
+  setAside: false,
+  entries: [],
+  more: false,
 };
 
 const withHosted = (on: boolean, bridge: Bridge | undefined) => {
@@ -128,6 +138,67 @@ describe("Settings → Machines → lending this computer", () => {
       fireEvent.click(button);
       await waitFor(() => expect(bridge.calls).toContain(call));
     }
+  });
+
+  it("lists what was asked here, its hidden codes as codes, and says when the record was edited", async () => {
+    activity = {
+      kept: true,
+      intact: false,
+      setAside: false,
+      more: false,
+      entries: [
+        {
+          time: Date.now(),
+          origin: ORIGIN,
+          workspace: "w1",
+          threadTitle: "Fix the seed\u202e",
+          folder: "/work/app",
+          kind: "exec",
+          what: "bun install\nrm -rf /",
+          answer: "allowed",
+          exitCode: 0,
+        },
+        {
+          time: Date.now(),
+          origin: ORIGIN,
+          workspace: "w1",
+          threadTitle: "Tidy",
+          folder: "/work/app",
+          kind: "read",
+          what: "/work/app/.env",
+          answer: "credential-path",
+        },
+      ],
+    };
+    withHosted(true, bridgeWith(view("on")));
+    render(<HostedDeviceSection />);
+    fireEvent.click(await screen.findByRole("button", { name: "Show" }));
+    const rows = await screen.findAllByTestId("activity-row");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Platform · Fix the seed\\u202e"),
+      expect.stringContaining("read /work/app/.envGram refusedholds credentials"),
+    ]);
+    expect(rows[0]?.textContent).toContain("bun install ⏎ rm -rf /");
+    expect(rows[0]?.textContent).toContain("You allowed itexit 0");
+    expect(rows[0]?.textContent).not.toContain("\u202e");
+    expect(screen.getByTestId("activity-edited").textContent).toContain("changed outside Gram");
+  });
+
+  it("says when nothing has been asked, or no record is kept", async () => {
+    activity = { kept: true, intact: true, setAside: false, entries: [], more: false };
+    withHosted(true, bridgeWith(view("on")));
+    const { unmount } = render(<HostedDeviceSection />);
+    fireEvent.click(await screen.findByRole("button", { name: "Show" }));
+    expect((await screen.findByTestId("hosted-activity")).textContent).toContain(
+      "Nothing has been asked of this Mac",
+    );
+    unmount();
+    activity = { kept: false, intact: true, setAside: false, entries: [], more: false };
+    render(<HostedDeviceSection />);
+    fireEvent.click(await screen.findByRole("button", { name: "Show" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("hosted-activity").textContent).toContain("No record is kept"),
+    );
   });
 
   it("says why lending isn't available", async () => {

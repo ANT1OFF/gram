@@ -11,6 +11,7 @@ import {
   type HostedDeviceOptions,
   makeHostedDevice,
 } from "./hosted-device.ts";
+import { type DeviceLogEntry, openDeviceLog } from "./log.ts";
 import { readDeviceSettings, writeDeviceSettings } from "./settings.ts";
 
 let fake: ReturnType<typeof fakeServer>;
@@ -782,3 +783,62 @@ const settle = () => new Promise((later) => setTimeout(later, 30));
 const waitFor = async (done: () => boolean) => {
   for (let i = 0; i < 500 && !done(); i += 1) await new Promise((later) => setTimeout(later, 2));
 };
+
+const line = (what: string): DeviceLogEntry => ({
+  time: clock,
+  origin: "https://hosted.example",
+  workspace: "w1",
+  thread: "t1",
+  threadTitle: "Fix it",
+  folder: "/work/app",
+  kind: "exec",
+  what,
+  answer: "allowed",
+  exitCode: 0,
+});
+
+/** Writes lines with this machine's log key, as the device would have, before it starts. */
+const logged = async (store: Map<string, string>, whats: ReadonlyArray<string>) => {
+  store.set("device-files", Buffer.alloc(32, 7).toString("base64url"));
+  const key = createHmac("sha256", Buffer.alloc(32, 7)).update("gram-device-log-v1").digest();
+  const log = await openDeviceLog(join(dataDir, "device-log.jsonl"), key);
+  for (const what of whats) await log.append(line(what));
+  await log.close();
+};
+
+describe("the activity list", () => {
+  it("lists the newest lines first, at most as many as asked", async () => {
+    const store = new Map<string, string>();
+    await logged(store, ["one", "two", "three"]);
+    const { device } = await setUp({}, store);
+    const read = await device.activity(2);
+    expect(read).toMatchObject({ kept: true, intact: true, setAside: false, more: true });
+    expect(read.entries.map((entry) => entry.what)).toEqual(["three", "two"]);
+    expect((await device.activity(10)).more).toBe(false);
+  });
+
+  it("says when the record was changed, and lists only what came before", async () => {
+    const store = new Map<string, string>();
+    await logged(store, ["one", "two", "three"]);
+    const { device } = await setUp({}, store);
+    const file = join(dataDir, "device-log.jsonl");
+    const text = await fs.readFile(file, "utf8");
+    await fs.writeFile(file, text.replace("two", "tw0"));
+    const read = await device.activity(10);
+    expect(read.intact).toBe(false);
+    expect(read.entries.map((entry) => entry.what)).toEqual(["one"]);
+  });
+
+  it("keeps no record without a keyring", async () => {
+    const { device } = await setUp({
+      secrets: secretsIn(new Map(), false),
+    });
+    expect(await device.activity(10)).toEqual({
+      kept: false,
+      intact: true,
+      setAside: false,
+      entries: [],
+      more: false,
+    });
+  });
+});

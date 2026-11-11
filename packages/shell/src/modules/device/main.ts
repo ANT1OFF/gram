@@ -6,7 +6,11 @@ import { realpath, stat } from "node:fs/promises";
 import { basename } from "node:path";
 
 import { displayCommand } from "@gram/contracts";
-import type { HostedDeviceDone, HostedDeviceView } from "@gram/contracts/desktop-bridge";
+import type {
+  HostedDeviceActivity,
+  HostedDeviceDone,
+  HostedDeviceView,
+} from "@gram/contracts/desktop-bridge";
 import { BrowserWindow, dialog, type MessageBoxOptions, type WebContents } from "electron";
 
 import { Channels } from "../../channels.ts";
@@ -306,6 +310,9 @@ export const deviceDecisionsFor = (
   };
 };
 
+/** As many of the newest activity lines as Settings lists. */
+const ACTIVITY_MOST = 200;
+
 /** Not from a decision window: those draw what the shell owns, and never call the bridge. */
 const fromApp = (sender: WebContents) => {
   const win = BrowserWindow.fromWebContents(sender);
@@ -409,6 +416,20 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
     Channels.hostedDeviceStartAfresh,
     withDevice((device, _arg, sender) => decide(device, sender).startAfresh()),
   );
+
+  serve(Channels.hostedDeviceActivity, async (): Promise<HostedDeviceActivity | null> => {
+    const device = options.device();
+    if (device === undefined) return null;
+    const read = await device.activity(ACTIVITY_MOST);
+    return {
+      kept: read.kept,
+      intact: read.intact,
+      setAside: read.setAside,
+      more: read.more,
+      // Only what the list shows: the thread's id stays here.
+      entries: read.entries.map(({ thread: _thread, ...shown }) => shown),
+    };
+  });
 
   /** Tells the app's windows the device changed; they read its state again. */
   return {

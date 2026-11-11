@@ -1,4 +1,5 @@
 import type { DesktopWindows } from "./app-windows.ts";
+import type { DeviceRefusalReason } from "./device.ts";
 import type { DesktopPreview } from "./preview.ts";
 import type { UpdateChannel } from "./settings.ts";
 import type { DesktopSpeech } from "./speech-bridge.ts";
@@ -348,6 +349,33 @@ export interface HostedDeviceView {
   }>;
 }
 
+/** What hosted workspaces asked of this computer and how it was answered, newest first. */
+export interface HostedDeviceActivity {
+  /** A record is kept on this computer: not without a keyring, or while the settings are edited. */
+  readonly kept: boolean;
+  /** The file is as Gram wrote it. When it isn't, only the lines before the edit are listed. */
+  readonly intact: boolean;
+  /** The file was found edited when Gram started and was set aside beside the new one. */
+  readonly setAside: boolean;
+  readonly entries: ReadonlyArray<{
+    /** Milliseconds since the epoch, by this computer's clock. */
+    readonly time: number;
+    readonly origin: string;
+    readonly workspace: string;
+    /** The server's words. */
+    readonly threadTitle: string;
+    readonly folder: string;
+    readonly kind: "exec" | "read" | "list";
+    readonly what: string;
+    readonly answer: "allowed" | "withdrawn" | DeviceRefusalReason;
+    readonly exitCode?: number;
+    readonly signal?: string;
+    readonly timedOut?: boolean;
+  }>;
+  /** Older lines than these are in the file. */
+  readonly more: boolean;
+}
+
 export type HostedDeviceDone = { readonly ok: true } | { readonly ok: false; readonly why: string };
 
 export interface DesktopBridge extends DesktopWindows {
@@ -446,6 +474,8 @@ export interface DesktopBridge extends DesktopWindows {
     stop(origin: string, workspace: string): Promise<void>;
     liftPause(origin: string): Promise<HostedDeviceDone>;
     startAfresh(): Promise<HostedDeviceDone>;
+    /** The local record, read again on each call. */
+    activity(): Promise<HostedDeviceActivity | null>;
     onChange(callback: () => void): () => void;
   };
   /**

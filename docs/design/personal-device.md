@@ -912,8 +912,7 @@ Every loop over the app's windows goes through `appWindows()` (and the focused o
 `focusedAppWindow()`), which leave the decision windows out; a test fails on any other use of
 `BrowserWindow.getAllWindows` or `getFocusedWindow`.
 
-Still to come: the lending sheet, the activity window, and Settings → Hosted, the windows that
-call the device's decisions.
+Settings, its decisions and the activity list followed; see the next section.
 
 ### Settings and the decisions, as built
 
@@ -929,5 +928,15 @@ commands are allowed. The server's words in each are drawn on one line with hidd
 as codes. The page can't choose folders or answer a dialog.
 
 These stand in for the mock's lending sheet window and its own Settings group for now: the
-decisions are the same, drawn by the system instead of in a window of Gram's. The activity
-window is still to come.
+decisions are the same, drawn by the system instead of in a window of Gram's.
+
+Under the servers, "Activity on this Mac" lists the local log when opened, newest first: when,
+the workspace and thread, the folder, what was asked and how it was answered (the exit code
+after an allowed command, the fixed reason after one Gram refused). It is read again whenever
+the device changes, which it does after each line. The thread's title, the folder and the
+command are drawn with hidden codes shown as codes and line breaks as a mark. The thread's id
+stays in main. When the file doesn't check out against the head kept in the settings, the list
+says it was changed outside Gram and shows only the lines before the change; a log set aside at
+start is said too. Without a keyring nothing is kept, and the list says so. It shows the newest
+200 lines; the file isn't rotated yet, and each read reads all of it. It sits in Settings
+rather than its own window, as the mock's board also draws it as a Settings page.
