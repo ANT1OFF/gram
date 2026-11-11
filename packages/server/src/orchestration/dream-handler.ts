@@ -23,6 +23,7 @@ import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { logDefects, type Handlers } from "../rpc/handlers/common.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { steerOrSend } from "../runtime/steer-or-send.ts";
 import { Dreams } from "./dreams.ts";
 import { OrchestrationMemory, type MemoryError, type OrchestrationMemoryShape } from "./memory.ts";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
@@ -192,18 +193,23 @@ export const dreamHandlers = Effect.gen(function* () {
           });
         }
         const delivery: AnswerDelivery<ThreadNotFound | InvalidState | AgentUnavailable> = {
-          // Never steered: a steer interrupts the turn, and answers given in a burst cut off one
-          // turn after another (36 of 68 interrupted turns in the 0.8 retro). One queued behind a
-          // running turn joins an earlier answer still waiting, so a burst lands as one turn.
+          // Steered into a running turn: a steer cancels nothing, so a burst of answers no longer
+          // cuts off one turn after another as it did when steers interrupted (36 of 68
+          // interrupted turns in the 0.8 retro). One queued behind a turn that can't take it
+          // (waiting on the user, or Gram's idle compaction) joins an earlier answer still
+          // waiting, so a burst lands as one turn.
           deliver: (text) =>
-            runtimes
-              .sendOrJoin(
+            steerOrSend(
+              runtimes,
+              orchestrator,
+              { text },
+              runtimes.sendOrJoin(
                 orchestrator,
                 { text },
                 ({ input }, next) => ({ ...input, text: `${input.text}\n\n${next.text}` }),
                 isQueuedAnswer,
-              )
-              .pipe(Effect.map(({ queued }) => (queued ? ("queued" as const) : ("sent" as const)))),
+              ),
+            ),
           holds: (tag) =>
             Effect.gen(function* () {
               const queued = (yield* runtimes.summaryOf(orchestrator))?.queue.some((item) =>

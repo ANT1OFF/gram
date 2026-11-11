@@ -199,6 +199,7 @@ export const makeIdleCompactor = (
       after: TurnId,
     ) =>
       deps.runtimes
+        // Never steered (no `steer`): compaction is for a thread wholly at rest.
         .requestSystemDelivery(thread.id, IDLE_COMPACT_KEY, {
           build: (_turnId, rest) =>
             Effect.gen(function* () {

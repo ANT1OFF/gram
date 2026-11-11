@@ -14,6 +14,7 @@ import { ServerConfig } from "../config.ts";
 import { logDefects, type Handlers } from "../rpc/handlers/common.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { steerOrSend } from "../runtime/steer-or-send.ts";
 import { ThreadArchive } from "./archive.ts";
 import { makeFinishedWorkers } from "./finished-workers.ts";
 import { routineHandlers } from "../routines/routines.ts";
@@ -32,18 +33,7 @@ export const orchestrationHandlers = Effect.gen(function* () {
 
   /** The user's words to the orchestrator: steered into a turn that can take them, else sent. */
   const deliver = (threadId: ThreadId, input: UserInput) =>
-    Effect.gen(function* () {
-      const summary = yield* runtimes.summaryOf(threadId);
-      const steered =
-        summary?.capabilities?.steer === true &&
-        summary.status === "running" &&
-        (yield* runtimes.steer(threadId, input).pipe(
-          Effect.as(true),
-          // The turn can end between the snapshot and the steer; then it is an ordinary send.
-          Effect.catchTag("InvalidState", () => Effect.succeed(false)),
-        ));
-      if (!steered) yield* runtimes.send(threadId, input);
-    });
+    steerOrSend(runtimes, threadId, input).pipe(Effect.asVoid);
 
   /** Runs `run` with the draft's attachments moved into the thread's folder, as `thread.create` does. */
   const adopted = <A, E>(

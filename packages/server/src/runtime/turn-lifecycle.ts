@@ -423,7 +423,15 @@ export const makeTurnLifecycle = ({
       // Only the adapter's own word counts: a turn the host ended says nothing about whether the
       // agent has the input, and neither does an `error` end before any of its reply.
       const taken = origin === "adapter" && reason !== "error";
-      if (rt.carrying?.turnId === turn.id) {
+      const steered = rt.carrying?.turnId === turn.id ? rt.carrying.steered : undefined;
+      if (steered !== undefined && origin === "adapter" && reason === "error" && !limited) {
+        // The turn's own error isn't the steered delivery's: it waits again, as it would have
+        // behind the turn, unless a newer one under its key already does, and `build` runs again
+        // for it. A limit or a lost session fails it below, and its owner asks again.
+        const delivery = rt.carrying!.delivery;
+        rt.carrying = undefined;
+        if (!rt.deliveries.has(steered.key)) rt.deliveries.set(steered.key, delivery);
+      } else if (rt.carrying?.turnId === turn.id) {
         yield* settleDelivery(
           rt,
           taken ? "accepted" : limited ? "limited" : origin === "adapter" ? "turnError" : origin,
