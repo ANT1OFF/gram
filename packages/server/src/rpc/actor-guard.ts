@@ -1,3 +1,4 @@
+import { ANSWER_OVER_HTTP } from "../embedding/answer-proof.ts";
 import { ActingPerson } from "../embedding/person.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -284,6 +285,9 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           const action = rpc._tag;
           if (VIEWER_RPCS.has(action)) return yield* effect;
           if (actor.role !== "member") return yield* Effect.die(new Error(VIEWER_REFUSAL));
+          // A socket can't carry what the proxy signs for one answer: those come over HTTP.
+          if (action === "thread.respond" || action === "thread.respondMany")
+            return yield* Effect.die(new Error(ANSWER_OVER_HTTP));
           if (UNRECORDED_RPCS.has(action)) return yield* effect;
           const record = (outcome?: "failed" | "interrupted", result?: unknown) =>
             store.appendActorEvents(

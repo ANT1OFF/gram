@@ -239,6 +239,11 @@ each turn's usage, and every decision the hook made.
   `source` id starts at 1 with `sink.started`.
 - A card's closing says how: `answered`, with the person's `approve` or `reject` and (with
   sign-in through a fronting proxy) who they are, or `withdrawn` when it went unanswered.
+- With sign-in through a fronting proxy, a card is answered as its own request,
+  `POST /asks/answer` with `{"threadId", "requestId", "answer"}`, which the app sends; the socket
+  refuses answers. The closing then carries `proof`: the proxy's statement for that request, its
+  method and path, and its body, exactly as received, for a receiver to check who answered
+  without taking the server's word for it.
 - Nothing is recorded while hosted features are off. Transcript messages aren't sent yet.
 
 ## A headless control plane

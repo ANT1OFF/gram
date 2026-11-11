@@ -4,7 +4,7 @@
 // the same server takes the launch token as it always has.
 import { randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
-import { request as httpRequest } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, layer } from "@effect/vitest";
@@ -19,6 +19,7 @@ import { removeDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
 import { NO_ACTOR_REFUSAL, VIEWER_REFUSAL } from "../rpc/actor-guard.ts";
+import { ANSWER_OVER_HTTP, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
@@ -36,6 +37,23 @@ import { LaunchToken, serverPort, ServerLayer } from "./server.ts";
 
 const proxy = makeTestProxy();
 
+/** The event sink's receiver: every event the server sends it, in order. */
+const sunk: Array<{ type: string; data: Record<string, unknown> }> = [];
+const sinkPort = await new Promise<number>((resolve) => {
+  const receiver = createServer((req, res) => {
+    let text = "";
+    req.on("data", (chunk: Buffer) => (text += chunk.toString("utf8")));
+    req.on("end", () => {
+      const batch = JSON.parse(text) as { events: Array<{ seq: number } & (typeof sunk)[number]> };
+      for (const event of batch.events) if (event.seq === sunk.length + 1) sunk.push(event);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ack: sunk.length }));
+    });
+  });
+  receiver.unref();
+  receiver.listen(0, "127.0.0.1", () => resolve((receiver.address() as { port: number }).port));
+});
+
 const server = (embedding: boolean, socketLifetimeMs?: number) =>
   ServerLayer.pipe(
     Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo" })),
@@ -49,6 +67,7 @@ const server = (embedding: boolean, socketLifetimeMs?: number) =>
           ...(socketLifetimeMs === undefined ? {} : { socketLifetimeMs }),
         },
         embedding,
+        eventSink: { url: `http://127.0.0.1:${sinkPort}/events` },
       }),
     ),
     Layer.orDie,
@@ -78,6 +97,36 @@ const get = (port: number, path: string, headers: Record<string, string> = {}) =
         });
         req.on("error", reject);
         req.end();
+      }),
+  );
+
+/** A POST of `body`, as the proxy would pass it on. */
+const post = (port: number, path: string, body: string, headers: Record<string, string> = {}) =>
+  Effect.promise(
+    () =>
+      new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = httpRequest(
+          {
+            host: "127.0.0.1",
+            port,
+            path,
+            method: "POST",
+            agent: false,
+            headers: {
+              "content-type": "application/json",
+              "content-length": String(Buffer.byteLength(body)),
+              ...headers,
+            },
+          },
+          (res) => {
+            let text = "";
+            res.setEncoding("utf8");
+            res.on("data", (chunk: string) => (text += chunk));
+            res.on("end", () => resolve({ status: res.statusCode ?? 0, body: text }));
+          },
+        );
+        req.on("error", reject);
+        req.end(body);
       }),
   );
 
@@ -296,21 +345,56 @@ describe("sign-in through a fronting proxy", () => {
           "the approval",
           Effect.map(store.listRequests(threadId), (requests) => requests[0]),
         );
-        yield* adaClient["thread.respond"]({
-          threadId,
-          requestId: request.id,
-          answer: { kind: "approval", decision: "allow", scope: "once" },
+        // Over the socket an answer is refused: the proxy can't sign one message on it.
+        const answer = { kind: "approval", decision: "allow", scope: "once" } as const;
+        expect(
+          yield* refusal(adaClient["thread.respond"]({ threadId, requestId: request.id, answer })),
+        ).toContain(ANSWER_OVER_HTTP);
+        expect(
+          yield* refusal(
+            adaClient["thread.respondMany"]({
+              answers: [{ threadId, requestId: request.id, answer }],
+            }),
+          ),
+        ).toContain(ANSWER_OVER_HTTP);
+        // As its own request it is taken, and what the proxy signed for it reaches the sink.
+        const answerBody = JSON.stringify({ threadId, requestId: request.id, answer });
+        const adaStatement = proxy.statement(ada);
+        expect(
+          yield* post(port, ASK_ANSWER_PATH, answerBody, { [IDENTITY_HEADER]: adaStatement }),
+        ).toMatchObject({ status: 200 });
+        const resolved = yield* waitFor(
+          "the answer at the sink",
+          Effect.sync(() =>
+            sunk.find((event) => event.type === "ask.resolved" && event.data["id"] === request.id),
+          ),
+        );
+        expect(resolved.data).toEqual({
+          id: request.id,
+          how: "answered",
+          decision: "approve",
+          answeredBy: "user-ada",
+          proof: {
+            statement: adaStatement,
+            method: "POST",
+            path: ASK_ANSWER_PATH,
+            body: answerBody,
+          },
         });
         // And Grace changes a setting.
         yield* graceClient["settings.set"]({ patch: { logLevel: "debug" } });
         // A change that fails on the way is on record as hers too.
-        yield* Effect.exit(
-          graceClient["thread.respond"]({
+        const missing = yield* post(
+          port,
+          ASK_ANSWER_PATH,
+          JSON.stringify({
             threadId,
             requestId: RequestId.make("no-such-request"),
             answer: { kind: "approval", decision: "deny", scope: "once" },
           }),
+          { [IDENTITY_HEADER]: proxy.statement(grace) },
         );
+        expect(missing.status).toBe(404);
 
         // Vera reads what the others see, and changes nothing.
         expect((yield* veraClient["settings.get"]()).logLevel).toBe("debug");
@@ -333,6 +417,19 @@ describe("sign-in through a fronting proxy", () => {
             }),
           ),
         ).toContain(VIEWER_REFUSAL);
+        const veraAnswer = yield* post(
+          port,
+          ASK_ANSWER_PATH,
+          JSON.stringify({
+            threadId,
+            requestId: request.id,
+            answer: { kind: "approval", decision: "deny", scope: "once" },
+          }),
+          { [IDENTITY_HEADER]: proxy.statement(vera) },
+        );
+        expect(veraAnswer.status).toBe(403);
+        // And nobody answers without a statement of their own.
+        expect((yield* post(port, ASK_ANSWER_PATH, "{}")).status).toBe(401);
         expect(yield* refusal(veraClient["terminal.list"]({ threadId }))).toContain(VIEWER_REFUSAL);
         // Nor run anything in a folder of her choosing, which git's own configuration would.
         expect(yield* refusal(veraClient["worktree.status"]({ path: folder }))).toContain(
