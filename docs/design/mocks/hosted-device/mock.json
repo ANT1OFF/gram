@@ -1,10 +1,10 @@
 {
   "title": "Lend this Mac to a hosted workspace",
   "slug": "hosted-device",
-  "status": "in-review",
+  "status": "approved",
   "template": "flow",
   "current": 1,
-  "approved": null,
+  "approved": 1,
   "versions": [
     {
       "n": 1,

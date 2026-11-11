@@ -2,9 +2,11 @@
 
 [Up: other machines](../MACHINES.md) · [Mock](mocks/hosted-device/brief.md)
 
-Status: design for review, 11 November 2026, revised after an independent security review
-([what it changed](#11-what-the-security-review-changed)). Nothing here is built. It sits behind
-the one hosted-features setting (`experimental.embedding`), and with that off none of it exists.
+Status: design approved on 11 November 2026 with the defaults in
+[section 10](#10-open-decisions), after an independent security review
+([what it changed](#11-what-the-security-review-changed)). Nothing here is built yet. It sits
+behind the one hosted-features setting (`experimental.embedding`), and with that off none of it
+exists.
 
 A Gram control plane can run headless on a server, with every session placed on hosts that join
 it. A workspace run that way needs nobody's computer to be on. This note covers the way back:
@@ -582,8 +584,7 @@ Stated plainly, so nobody reads more into "limited to chosen folders" than is th
 
 ## 9. Build order and the acceptance test
 
-Nothing past step 2 is built until the mock is approved and the head of each pull request has had
-its own independent review. Each is a pull request into the integration branch:
+The head of each pull request gets its own independent review before it merges. Each is a pull request into the integration branch:
 
 1. **Contracts**: `DeviceRpcs`, the discovery document, the grant, the refusal reasons, the event
    shapes.
@@ -630,7 +631,7 @@ And the properties the threat model leans on, each asserted somewhere in CI:
 
 ## 10. Open decisions
 
-Each has a default the mock and this note assume.
+Each default below was approved with the mock on 11 November 2026.
 
 1. **Rules that skip the ask.** Default: none in this version. A later one would need
    decision 5 first, plus a visible budget of files and bytes.

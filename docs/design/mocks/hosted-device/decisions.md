@@ -9,3 +9,4 @@ keeps this; the build reads it with the approved version.
   settings page. "Read files without asking" and "Allow this exact command" are gone. The ask
   shows that you wrote to the thread from this Mac and what the command is made of in place of a
   warning list, has no keyboard shortcut, and keeps a withdrawn request on screen.
+- Review 1 (v1, 11 November 2026): approved as drawn, with every default in the brief.
