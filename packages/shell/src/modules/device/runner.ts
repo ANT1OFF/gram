@@ -60,7 +60,19 @@ interface Timing {
  * options, start-up files, the prompt it traces with, where `cd` looks and how words split. They
  * come from the person's own login environment, and are dropped whatever the caller passes.
  */
-const SHELL_MEANING = new Set(["SHELLOPTS", "BASHOPTS", "ENV", "BASH_ENV", "PS4", "CDPATH", "IFS"]);
+const SHELL_MEANING = new Set([
+  "SHELLOPTS",
+  "BASHOPTS",
+  "ENV",
+  "BASH_ENV",
+  "PS4",
+  "CDPATH",
+  "IFS",
+  "GLOBIGNORE",
+  "EXECIGNORE",
+  "POSIXLY_CORRECT",
+  "BASH_COMPAT",
+]);
 
 export const shellEnvironment = (env: Readonly<Record<string, string>>): Record<string, string> =>
   Object.fromEntries(
@@ -247,8 +259,15 @@ export const runCommand = (
       // shell, and never later: after this the number may be given to another process.
       stopTree(child, "SIGKILL");
       exited = true;
+      // It ended by itself: a timeout or an abort from now on changes nothing it did.
+      clearTimeout(timer);
+      request.signal.removeEventListener("abort", onAbort);
       // A background process may hold the pipes open; it gets a moment, not for ever.
-      drainTimer = setTimeout(() => finish(code, signal), timing.drainAfterExitMs);
+      drainTimer = setTimeout(() => {
+        // Something it left running still holds the output open: what it writes later is lost.
+        tail.lost();
+        finish(code, signal);
+      }, timing.drainAfterExitMs);
     });
     child.on("close", (code, signal) => finish(exit?.code ?? code, exit?.signal ?? signal));
   });

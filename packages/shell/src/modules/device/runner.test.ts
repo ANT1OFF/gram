@@ -215,4 +215,69 @@ describe.skipIf(process.platform === "win32")("runCommand", () => {
     // Exactly one: the SIGKILL sent as the shell was collected, none after.
     expect(exitedAt).toBe(1);
   });
+
+  it("doesn't call a command stopped or timed out once its shell has ended by itself", async () => {
+    const controller = new AbortController();
+    const signals: Array<number> = [];
+    const kill = vi.spyOn(process, "kill");
+    kill.mockImplementation((pid) => {
+      if (pid < 0) signals.push(pid);
+      return true;
+    });
+    try {
+      // The shell ends at once; a process it left holds the output for the drain time.
+      const running = run(
+        "setsid sh -c 'sleep 2' >/dev/null 2>&1 </dev/null & sleep 2 & echo started",
+        {
+          signal: controller.signal,
+          timeoutMs: 50,
+        },
+      );
+      await new Promise((later) => setTimeout(later, 120));
+      controller.abort();
+      const result = await running;
+      expect(result).toMatchObject({ code: 0, stopped: false, timedOut: false });
+    } finally {
+      kill.mockRestore();
+    }
+    // Only the kill as the shell was collected: neither the timeout nor the abort signalled.
+    expect(signals).toHaveLength(1);
+  });
+
+  it("says output was lost when something it left behind still held it open", async () => {
+    // Out of its group, so the kill as the shell ends doesn't reach it, and it holds the output.
+    const result = await run("setsid sh -c 'sleep 0.5; echo late' & sleep 0.1; echo now");
+    expect(text(result, "stdout")).toBe("now\n");
+    expect(result.truncated).toBe(true);
+    const plain = await run("echo now");
+    expect(plain.truncated).toBe(false);
+  });
+
+  it("never lets the kill that follows a stop reach a group whose shell has gone", async () => {
+    const signals: Array<string> = [];
+    const real = process.kill.bind(process);
+    const kill = vi.spyOn(process, "kill");
+    kill.mockImplementation((pid, signal) => {
+      if (pid < 0) signals.push(String(signal));
+      return real(pid, signal);
+    });
+    try {
+      // Stopped at its timeout, the shell dies at once while a sleep out of its group holds the
+      // output; the kill five seconds (here a tenth) later comes after the shell was collected.
+      await runCommand(
+        {
+          command: "setsid sleep 1 & sleep 5",
+          cwd,
+          env,
+          secrets: [],
+          timeoutMs: 150,
+          signal: new AbortController().signal,
+        },
+        { killAfterMs: 100, drainAfterExitMs: 500 },
+      );
+    } finally {
+      kill.mockRestore();
+    }
+    expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
+  });
 });

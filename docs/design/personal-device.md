@@ -384,8 +384,7 @@ Every command, file read and folder listing gets one.
   thread and eight in all. Beyond the per-thread counts, which use ids the server chooses, there
   is a count per server that it can't dodge: at most twenty asks in ten minutes, and three in a
   row refused, left unanswered or taken back by the server pause lending to that server until the
-  person lifts the pause,
-  a decision. An ask not answered in five minutes is refused (`not-answered`).
+  person lifts the pause, a decision. An ask not answered in five minutes is refused (`not-answered`).
 
 ### No rule skips the ask
 
@@ -486,11 +485,12 @@ command and the rest of the disk is the ask.
 - Stopped with `SIGTERM`, then killed with its process group after five seconds, on timeout,
   cancel, a closed connection, a lock or quit. Whatever is left in the group is killed when the
   shell ends, and the group is never signalled after the shell has been collected, since its
-  number may then belong to another process. A command that leaves its group (`setsid`, a daemon)
-  outlives the request: only confinement by the operating system stops that, so the ask's "What
-  it runs" says when a command uses `setsid`, `nohup` or `disown`.
+  number may then belong to another process. A command that leaves its group (`setsid`, a
+  daemon) outlives the request, and a text check can't see that reliably: only confinement by
+  the operating system stops it. Output such a process writes after the shell ends is lost, and
+  the result says so.
 - Variables that change what a command means under bash (`BASH_FUNC_*`, `SHELLOPTS`, `BASHOPTS`,
-  `ENV`, `BASH_ENV`, `PS4`, `CDPATH`, `IFS`) are dropped whatever else the environment keeps.
+  `ENV`, `BASH_ENV`, `PS4`, `CDPATH`, `IFS`, `GLOBIGNORE` and the like) are dropped whatever else the environment keeps.
 
 ### The hosted view
 

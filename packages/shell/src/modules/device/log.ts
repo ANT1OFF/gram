@@ -74,8 +74,9 @@ const parseLines = (
   let at = 0;
   while (at < text.length) {
     const end = text.indexOf("\n", at);
-    // A last line without its newline was never finished.
-    if (end === -1) return { entries, macs, goodBytes, clean: false };
+    // A last line without its newline was a write cut short, as by a crash: it holds no entry,
+    // and the kept head still says whether anything it covers is missing.
+    if (end === -1) return { entries, macs, goodBytes, clean: true };
     const line = text.slice(at, end);
     let parsed: unknown;
     try {
@@ -104,7 +105,7 @@ const parseLines = (
     entries.push(entry);
     macs.push(claimed);
     at = end + 1;
-    goodBytes = Buffer.byteLength(text.slice(0, at), "utf8");
+    goodBytes += Buffer.byteLength(line, "utf8") + 1;
   }
   return { entries, macs, goodBytes, clean: true };
 };
@@ -175,7 +176,7 @@ export const openDeviceLog = async (
 ): Promise<DeviceLog> => {
   const handle = await fs.open(
     file,
-    constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW,
+    constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW | (constants.O_NONBLOCK ?? 0),
     0o600,
   );
   let head: DeviceLogHead;
@@ -208,6 +209,20 @@ export const openDeviceLog = async (
   return {
     append: (entry) => {
       const next = last.then(async () => {
+        // The file at the path must still be the one held: one renamed away and replaced would
+        // take these lines with it, unseen.
+        const [held, there] = await Promise.all([
+          handle.stat(),
+          fs.lstat(file).catch(() => undefined),
+        ]);
+        if (
+          there === undefined ||
+          !there.isFile() ||
+          there.dev !== held.dev ||
+          there.ino !== held.ino ||
+          held.nlink !== 1
+        )
+          throw new Error("The device log was moved or replaced.");
         const body = JSON.stringify(entry);
         const mac = macOf(key, head.mac, body);
         const line = Buffer.from(`${JSON.stringify([mac, body])}\n`, "utf8");

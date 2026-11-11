@@ -193,4 +193,53 @@ describe("the local log", () => {
       await expect(openDeviceLog(file, key)).rejects.toThrow();
     },
   );
+
+  it("takes a line cut short by a crash as unfinished, not as an edit", async () => {
+    const log = await openDeviceLog(file, key);
+    const head = await log.append(entry("one"));
+    await log.close();
+    await fs.appendFile(file, '["abc","{\\"ti');
+    expect(await readDeviceLog(file, key, head)).toMatchObject({
+      intact: true,
+      head: { count: 1 },
+    });
+    const again = await openDeviceLog(file, key, head);
+    expect(again.foundEdited).toBe(false);
+    const next = await again.append(entry("two"));
+    await again.close();
+    const read = await readDeviceLog(file, key, next);
+    expect(read.intact).toBe(true);
+    expect(read.entries.map((line) => line.what)).toEqual(["one", "two"]);
+  });
+
+  it("refuses to write once the file was moved away and replaced", async () => {
+    const log = await openDeviceLog(file, key);
+    await log.append(entry("one"));
+    await fs.rename(file, `${file}.away`);
+    await fs.copyFile(`${file}.away`, file);
+    await expect(log.append(entry("two"))).rejects.toThrow(/moved or replaced/);
+    await log.close();
+  });
+
+  it("reads a long log in time that grows with its length, not its square", async () => {
+    const line = await (async () => {
+      const log = await openDeviceLog(file, key);
+      await log.append(entry("x".repeat(300)));
+      await log.close();
+      return fs.readFile(file, "utf8");
+    })();
+    // Twenty thousand lines of the same shape: the chain fails after the first, but the read
+    // still walks the file once.
+    await fs.writeFile(file, line.repeat(1));
+    const many = await openDeviceLog(file, key);
+    await Promise.all(
+      Array.from({ length: 20_000 }, (_, index) => many.append(entry(`c${index}`))),
+    );
+    await many.close();
+    const started = performance.now();
+    const read = await readDeviceLog(file, key, many.head());
+    expect(read.intact).toBe(true);
+    expect(read.entries).toHaveLength(20_001);
+    expect(performance.now() - started).toBeLessThan(5000);
+  }, 60_000);
 });
