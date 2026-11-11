@@ -39,11 +39,12 @@ sees a dial or what it carries. A certificate or key that can't be read stops th
 starts. They are read again each time the listener opens, so a renewed certificate is taken when
 the server restarts or Hosted features is turned off and on.
 
-The listener is bound only while Hosted features is on. Turned off, its port is closed within a
-few seconds, every connection on it ends, and the hosts stay registered for when it is on again.
-If the port can't be bound (something else has it), the server keeps running, its log says why,
-and it tries again every few seconds. The listener takes at most 1024 connections at once, and
-gives each 10 seconds to finish its TLS handshake and 10 more to send its request.
+The listener is bound only while Hosted features is on. Turned off, its port is closed and every
+connection on it is ended within a few seconds, and the hosts stay registered for when it is on
+again. If the port can't be bound (something else has it), the server keeps running, its log says
+why, and it tries again after a wait that grows from 3 seconds to a minute. The listener takes at
+most 1024 connections at once, and gives each 10 seconds to finish its TLS handshake and about 10
+more to send its request.
 
 The listener is apart from the app's own, which stays on loopback. It answers two things and
 nothing else:
@@ -94,7 +95,9 @@ with a browser's `Origin`.
    with the same name changes nothing and answers `created: false`. These are refused with `409`:
 
    - the same key under another name or platform (remove it first);
-   - a name another machine or host already has, in any case, since work is placed by name;
+   - a name another machine or host already has, in any case, or one that reads as a machine's
+     id, since work is placed by name or id (a machine joining with a link can't take a host's
+     name either);
    - a key that belongs to a machine that joined with a link, so registering never confirms a
      machine a person hasn't;
    - a 257th host: up to 256 can be registered at once, counted apart from the 16 joined machines.
@@ -124,15 +127,17 @@ only for a host you started, and read it from that host over a channel you contr
   are each refused with `401` before any WebSocket opens.
 - **One host can't crowd out the rest.** At most 12 of one host's dials count at a time (a host
   dialling again at its slowest makes about four in the two minutes a dial counts for). Past that
-  its dials wait, so a key used to flood the listener can't use up the room the others need. A
-  dial that asks for no WebSocket is refused before its signature is looked at.
+  its dials wait, so a key used to flood the listener can't use up the room the others need. The
+  count starts again when the server restarts. A dial that asks for no WebSocket is refused before
+  its signature is looked at. Connections that never send a dial are bounded only by the limits
+  above, so who can reach the port still matters.
 - **The two ways in don't cross.** A provisioned host's key is taken only on the provisioned
   listener, and a joined machine's only on the tailnet address. On the other, either is as unknown
   as a key never registered. A thread's app-tools token is likewise taken only on the address its
   own host dialled.
 - **The host proves itself; Gram proves itself by its certificate.** A host that doesn't trust the
-  listener's certificate doesn't connect, and `gram-host run` refuses to dial anything but an
-  `https:` address. A dial's signature covers the address, the time and a nonce, not the TLS
+  listener's certificate doesn't connect, and a provisioned host's `gram-host run` refuses to dial
+  anything but an `https:` address. A dial's signature covers the address, the time and a nonce, not the TLS
   connection itself: whoever holds the certificate's key for that name could take one dial and
   use it once. Keep that key private to the server.
 - **A session's token reaches what any thread's does.** A session on a host uses its thread's

@@ -31,7 +31,9 @@ const NONCES_KEPT = 4096;
  * How many of one machine's dials can be in their window at once: several times what a host
  * dialling again at its slowest (every 30 seconds) makes, and few enough that every machine at
  * this limit together still leaves room in `NONCES_KEPT`. Past it that machine waits, so one
- * machine's key, however it is used, can't fill the room the others' dials need.
+ * machine's key, however it is used, can't fill the room the others' dials need. Counted by
+ * this run alone: after a restart a machine has its share again beside the dials the last run
+ * took, which only many keys spent together around a restart could turn into a full set.
  */
 export const DIALS_PER_MACHINE = 12;
 
@@ -73,6 +75,10 @@ export type MachineKind = "provisioned";
 /** Whether a control plane registered it by its key. */
 export const isProvisioned = (machine: Pick<PairedMachine, "kind">) =>
   machine.kind === "provisioned";
+
+/** Whether `machine` has `name`, as work placed by name reads it: in any case, trimmed. */
+const sameName = (machine: Pick<PairedMachine, "name">, name: string) =>
+  machine.name.trim().toLowerCase() === name.trim().toLowerCase();
 
 /** Where a machine of this kind may dial in. */
 const routeOf = (machine: Pick<PairedMachine, "kind">): DialRoute =>
@@ -265,9 +271,11 @@ export const fileMachineStore = (dataDir: string): PairedMachineStore => {
         JSON.stringify(next);
       // Each file is written only when its own machines changed, so a Gram that never had a
       // provisioned host never has their file.
-      if (changed(true, provisioned)) hostsFile.write({ version: 1, machines: provisioned });
+      // The joined machines' file first, which the hosts' is never without: a write that stops
+      // between the two leaves nothing on disk that this run doesn't also hold.
       if (changed(false, joined) || file.read() === undefined)
         file.write({ version: 1, machines: joined });
+      if (changed(true, provisioned)) hostsFile.write({ version: 1, machines: provisioned });
     },
   };
 };
@@ -484,6 +492,14 @@ export const createPairedMachines = (
       const id = hostIdOf(request.publicKey);
       if (byId(id) !== undefined)
         return { kind: "refused", status: 409, message: "This machine has already joined." };
+      // A provisioned host's name stays its own, as `provision` keeps every name.
+      if (machines.some((machine) => isProvisioned(machine) && sameName(machine, request.name)))
+        return {
+          kind: "refused",
+          status: 409,
+          message:
+            "Another machine already has that name. Choose another with gram-host join --name.",
+        };
       if (machines.filter((machine) => !isProvisioned(machine)).length >= MAX_MACHINES)
         return {
           kind: "refused",
@@ -547,8 +563,11 @@ export const createPairedMachines = (
       }
       // Work is placed by name, and a name two machines share places nothing: a new host never
       // takes one in use, so registering can't make a machine unaddressable.
-      const wanted = request.name.trim().toLowerCase();
-      if (machines.some((machine) => machine.name.trim().toLowerCase() === wanted))
+      // Nor a name that reads as a machine's id, which work is placed by as well.
+      if (
+        /^m-[a-f0-9]{24}$/i.test(request.name.trim()) ||
+        machines.some((machine) => sameName(machine, request.name))
+      )
         return {
           kind: "refused",
           status: 409,

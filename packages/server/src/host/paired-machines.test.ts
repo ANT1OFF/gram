@@ -637,6 +637,17 @@ describe("provisioned hosts", () => {
         machines.provision({ name, platform: "linux", publicKey: generateHostKey().publicKey }),
       ).toMatchObject({ kind: "refused", status: 409 });
 
+    // Nor one that reads as a machine's id, which work is placed by too.
+    expect(
+      machines.provision({
+        name: joined.id.toUpperCase(),
+        platform: "linux",
+        publicKey: generateHostKey().publicKey,
+      }),
+    ).toMatchObject({ kind: "refused", status: 409 });
+    // And a machine joining with a link can't take a host's name either.
+    expect(joinOne("Sandbox").result).toMatchObject({ kind: "refused", status: 409 });
+
     for (const bad of [
       { name: "", platform: "linux", publicKey: generateHostKey().publicKey },
       { name: "This Machine", platform: "linux", publicKey: generateHostKey().publicKey },

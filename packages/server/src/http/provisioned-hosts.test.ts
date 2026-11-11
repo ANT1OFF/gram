@@ -9,13 +9,17 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
+import { connect as tlsConnect, type TLSSocket } from "node:tls";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, expect, layer } from "@effect/vitest";
+import { afterAll, expect, it as test, layer } from "@effect/vitest";
 import { applySettingsPatch } from "@gram/contracts";
 import { captureLogs } from "@gram/agents/testing/logs";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Scope from "effect/Scope";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import {
@@ -39,6 +43,7 @@ import {
   MACHINES_PROVISION_PATH,
   MACHINES_REMOVE_PATH,
 } from "./machine-routes.ts";
+import { ProvisionedListener } from "./provisioned-listener.ts";
 import { LaunchToken, serverPort, ServerLayer } from "./server.ts";
 
 const temp = mkdtempSync(join(tmpdir(), "gram-provisioned-"));
@@ -52,14 +57,18 @@ afterAll(() =>
 );
 
 /** A port nothing listens on now, for an origin that has to name its port before the server binds. */
-const freePort = await new Promise<number>((resolve, reject) => {
-  const probe = createServer();
-  probe.once("error", reject);
-  probe.listen(0, "127.0.0.1", () => {
-    const address = probe.address();
-    probe.close(() => resolve(typeof address === "object" && address !== null ? address.port : 0));
+const unusedPort = () =>
+  new Promise<number>((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const address = probe.address();
+      probe.close(() =>
+        resolve(typeof address === "object" && address !== null ? address.port : 0),
+      );
+    });
   });
-});
+const freePort = await unusedPort();
 const ORIGIN = `https://localhost:${freePort}`;
 const HOST = `localhost:${freePort}`;
 
@@ -102,26 +111,28 @@ execFileSync(
 );
 const ca = readFileSync(certFile);
 
-const TestServer = ServerLayer.pipe(
-  Layer.provide(FakeAgentAdapter),
-  Layer.provide(TurnHooks.layerNoop),
-  Layer.provide(gitPlatformTest()),
-  Layer.provide(
-    ServerConfig.layer({
-      ...TEST_CONFIG,
-      dataDir: join(temp, "data"),
-      provisionedHosts: {
-        origin: ORIGIN,
-        port: freePort,
-        listenHost: "127.0.0.1",
-        certFile,
-        keyFile,
-      },
-    }),
-  ),
-  Layer.orDie,
-  Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
-);
+const serverWith = (dataDir: string, port: number) =>
+  ServerLayer.pipe(
+    Layer.provide(FakeAgentAdapter),
+    Layer.provide(TurnHooks.layerNoop),
+    Layer.provide(gitPlatformTest()),
+    Layer.provide(
+      ServerConfig.layer({
+        ...TEST_CONFIG,
+        dataDir,
+        provisionedHosts: {
+          origin: `https://localhost:${port}`,
+          port,
+          listenHost: "127.0.0.1",
+          certFile,
+          keyFile,
+        },
+      }),
+    ),
+    Layer.orDie,
+    Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
+  );
+const TestServer = serverWith(join(temp, "data"), freePort);
 
 interface Answer {
   readonly status: number;
@@ -523,3 +534,57 @@ layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (
     180_000,
   );
 });
+
+test("stops in order with a connection that never finishes its request, and when its port is taken", async () => {
+  const port = await unusedPort();
+  // Something else has the port at first: the server runs all the same, and takes it once free.
+  const squatter = createServer();
+  await new Promise<void>((resolve) => squatter.listen(port, "127.0.0.1", resolve));
+  const tcp = (open: boolean) =>
+    new Promise<boolean>((resolve) => {
+      const socket = connect(port, "127.0.0.1");
+      socket.once("connect", () => {
+        socket.destroy();
+        resolve(open);
+      });
+      socket.once("error", () => resolve(!open));
+    });
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const context = yield* Layer.buildWithScope(serverWith(join(temp, "data-stop"), port), scope);
+      yield* hostedFeatures(true).pipe(Effect.provideContext(context));
+      const listener = Context.get(context, ProvisionedListener);
+      yield* Effect.sleep("4 seconds");
+      expect(listener.port()).toBeUndefined();
+      yield* Effect.promise(() => new Promise<void>((resolve) => squatter.close(() => resolve())));
+      yield* until(
+        Effect.sync(() => listener.port() === port),
+        30,
+        "the listener to take its port once it is free",
+      );
+
+      // A TLS connection that sends half a request and waits: Node's own close would wait on it.
+      const half = yield* Effect.promise(
+        () =>
+          new Promise<TLSSocket>((resolve, reject) => {
+            const socket = tlsConnect(
+              { host: "127.0.0.1", port, ca, servername: "localhost" },
+              () =>
+                socket.write("GET /host/connect HTTP/1.1\r\nHost: localhost\r\n", () =>
+                  resolve(socket),
+                ),
+            );
+            socket.once("error", reject);
+          }),
+      );
+      const ended = new Promise<void>((resolve) => half.once("close", () => resolve()));
+      half.on("error", () => {});
+      const started = Date.now();
+      yield* Scope.close(scope, Exit.void);
+      expect(Date.now() - started).toBeLessThan(8_000);
+      yield* Effect.promise(() => ended);
+      expect(yield* Effect.promise(() => tcp(false))).toBe(true);
+    }),
+  );
+}, 90_000);

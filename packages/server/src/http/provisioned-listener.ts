@@ -33,7 +33,8 @@ export class ProvisionedListener extends Context.Service<
     /**
      * Opens the listener, or closes it and every connection on it. Nothing happens when it is
      * already so, or when none is configured. A listener that can't be bound (its port is taken)
-     * stays closed, says why in the log, and is tried again the next time it is asked for.
+     * stays closed, says why in the log, and is tried again when asked for, after a wait that
+     * grows up to a minute.
      */
     readonly setOpen: (open: boolean) => Effect.Effect<void>;
     /** The port it is bound to while open. */
@@ -46,6 +47,11 @@ const MAX_CONNECTIONS = 1024;
 /** How long a connection gets to finish its TLS handshake, and then to send its request. */
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 const HEADERS_TIMEOUT_MS = 10_000;
+/** How often Node looks for connections past `HEADERS_TIMEOUT_MS`; its own default is 30 s. */
+const CONNECTIONS_CHECK_MS = 2_000;
+/** The wait before a listener that couldn't be bound is tried again, doubled up to the last. */
+const RETRY_FIRST_MS = 3_000;
+const RETRY_MOST_MS = 60_000;
 
 /** TLS 1.3 only: both ends are Gram's own, so there is no older client to keep working. */
 const tlsOptions = (config: ProvisionedHostsConfig) =>
@@ -55,16 +61,22 @@ const tlsOptions = (config: ProvisionedHostsConfig) =>
     minVersion: "TLSv1.3",
   }) as const;
 
-const createTlsListener = (config: ProvisionedHostsConfig, sockets: Set<Socket>) => {
+/** The TLS server, not yet listening, and `end`, which unbinds it and ends every connection. */
+const createTlsListener = (config: ProvisionedHostsConfig) => {
   const server = createServer({
     ...tlsOptions(config),
     handshakeTimeout: HANDSHAKE_TIMEOUT_MS,
     headersTimeout: HEADERS_TIMEOUT_MS,
+    connectionsCheckingInterval: CONNECTIONS_CHECK_MS,
   });
   // Bounded, so connections held open here can't use up what the app's own listener needs.
   server.maxConnections = MAX_CONNECTIONS;
-  // Every connection, from before its handshake, so closing the listener ends them all.
+  const sockets = new Set<Socket>();
+  let ending = false;
+  // Every connection, from before its handshake, so ending the listener ends them all: Node's
+  // own close waits for each, and stops timing out one that never finishes its request.
   server.on("connection", (socket: Socket) => {
+    if (ending) return void socket.destroy();
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
   });
@@ -74,7 +86,19 @@ const createTlsListener = (config: ProvisionedHostsConfig, sockets: Set<Socket>)
     response.writeHead(503, { connection: "close" });
     response.end();
   });
-  return server;
+  return {
+    server,
+    end: () => {
+      ending = true;
+      // Also for a server that never listened: its close stops the timers it started.
+      try {
+        server.close();
+      } catch {
+        // Not listening.
+      }
+      for (const socket of sockets) socket.destroy();
+    },
+  };
 };
 
 /**
@@ -104,42 +128,55 @@ export const withProvisionedListener = <E>(
           type Served = Parameters<Parameters<typeof HttpServer.make>[0]["serve"]>;
           let served: Served | undefined;
           let open:
-            | {
-                readonly scope: Scope.Closeable;
-                readonly port: number;
-                readonly sockets: Set<Socket>;
-              }
+            | { readonly scope: Scope.Closeable; readonly port: number; readonly end: () => void }
             | undefined;
-          /** The last reason it couldn't be bound, so the log says each once. */
+          /** Set as the server stops: nothing is opened after. */
+          let stopped = false;
+          /** The last reason it couldn't be bound, so the log says each once; and the next try. */
           let failed: string | undefined;
+          let retryIn = RETRY_FIRST_MS;
+          let retryAt = 0;
           const one = yield* Semaphore.make(1);
           const close = Effect.suspend(() => {
             const was = open;
             open = undefined;
             if (was === undefined) return Effect.void;
-            for (const socket of was.sockets) socket.destroy();
+            // Unbound and every connection ended at once. The rest of its scope (a handler still
+            // running, the server's own close) finishes on its own, never holding the caller.
+            was.end();
             return Scope.close(was.scope, Exit.void).pipe(
+              Effect.forkIn(root),
               Effect.andThen(Effect.logInfo("provisioned hosts: listener closed")),
             );
           });
           const start = Effect.gen(function* () {
-            if (open !== undefined || served === undefined) return;
+            if (stopped || open !== undefined || served === undefined || Date.now() < retryAt)
+              return;
             const [httpEffect, middleware] = served;
             const scope = yield* Scope.fork(root);
-            const sockets = new Set<Socket>();
             const marked = Effect.provideService(httpEffect, ViaProvisionedListener, true);
-            const started = yield* NodeHttpServer.make(
-              // Node's HTTPS server is its HTTP server over TLS sockets.
-              () => createTlsListener(config, sockets) as unknown as HttpListener,
-              { ...options, host: config.listenHost, port: config.port },
-            ).pipe(
+            let end: (() => void) | undefined;
+            const started = yield* Effect.try(() => createTlsListener(config)).pipe(
+              Effect.flatMap((listener) => {
+                end = listener.end;
+                return NodeHttpServer.make(
+                  // Node's HTTPS server is its HTTP server over TLS sockets.
+                  () => listener.server as unknown as HttpListener,
+                  { ...options, host: config.listenHost, port: config.port },
+                );
+              }),
               Effect.tap((hosts): Effect.Effect<void, never, Scope.Scope> =>
                 middleware === undefined ? hosts.serve(marked) : hosts.serve(marked, middleware),
               ),
+              // Added last, so it runs first however the scope closes, the server stopping
+              // included: connections end before anything waits for them.
+              Effect.tap(() => Effect.addFinalizer(() => Effect.sync(() => end?.()))),
               Scope.provide(scope),
               Effect.exit,
             );
             if (Exit.isFailure(started)) {
+              // A server that never bound is closed too: it holds timers until it is.
+              end?.();
               yield* Scope.close(scope, Exit.void);
               const reason = String(started.cause);
               if (reason !== failed)
@@ -147,17 +184,26 @@ export const withProvisionedListener = <E>(
                   Effect.annotateLogs({ host: config.listenHost, port: config.port, reason }),
                 );
               failed = reason;
+              retryAt = Date.now() + retryIn;
+              retryIn = Math.min(retryIn * 2, RETRY_MOST_MS);
               return;
             }
             failed = undefined;
+            retryIn = RETRY_FIRST_MS;
+            retryAt = 0;
             const address = started.value.address;
             const port = "port" in address ? address.port : config.port;
-            open = { scope, port, sockets };
+            open = { scope, port, end: end ?? (() => {}) };
             yield* Effect.logInfo("provisioned hosts: listening").pipe(
               Effect.annotateLogs({ origin: config.origin, host: config.listenHost, port }),
             );
           });
-          yield* Effect.addFinalizer(() => close);
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              stopped = true;
+              open?.end();
+            }),
+          );
           return Layer.merge(
             Layer.succeed(
               HttpServer.HttpServer,

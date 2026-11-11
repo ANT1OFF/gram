@@ -72,12 +72,15 @@ const lazyFileStore = <R, W>(
   name: string,
   make: (dataDir: string) => { readonly read: () => R; readonly write: (value: W) => void },
   empty: () => R,
+  /** Other files the store keeps, any of which being there means it was made. */
+  beside: ReadonlyArray<string> = [],
 ) => {
   let store: ReturnType<typeof make> | undefined;
   const real = () => (store ??= make(dataDir));
   return {
     read: (): R =>
-      store === undefined && !existsSync(join(dataDir, "remote-access", name))
+      store === undefined &&
+      ![name, ...beside].some((file) => existsSync(join(dataDir, "remote-access", file)))
         ? empty()
         : real().read(),
     write: (value: W) => real().write(value),
@@ -518,7 +521,9 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       const config = yield* ServerConfig;
       const { dataDir } = config;
       return yield* RemoteHosts.make(
-        lazyFileStore(dataDir, "machines.json", fileMachineStore, () => []),
+        lazyFileStore(dataDir, "machines.json", fileMachineStore, () => [], [
+          "provisioned-hosts.json",
+        ]),
         Date.now,
         {
           ...lazyFileStore(dataDir, "dial-nonces.json", fileNonceStore, () => NO_DIALS),
