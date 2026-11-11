@@ -14,4 +14,4 @@ keeps this; the build reads it with the approved version.
   "2 Lend this Mac", a paused state (three requests in a row refused, unanswered or taken back
   pause that server; lifting it opens the lending sheet) and two unavailable states (no keyring,
   no lock signal) as a line in place of the button. On "The lending sheet", a lift-pause state
-  that lists the three requests. Awaiting review.
+  that lists the three requests. Approved by Johan on 11 November 2026 ("mock states look good").
