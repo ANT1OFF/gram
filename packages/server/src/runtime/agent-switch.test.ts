@@ -1656,3 +1656,94 @@ describe("switchAgent's handoff refused by the agent (review rev 5 of #433)", ()
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 });
+
+/** A handoff refused with `events`; the work must stay queued and the claim fail in the end. */
+const refusedWith = (events: ReadonlyArray<AgentEvent>) =>
+  Effect.gen(function* () {
+    const runtimes = yield* ThreadRuntimes;
+    const store = yield* ThreadStore;
+    const fake = yield* FakeAgentControl;
+    const { thread, session } = yield* idleThread;
+    yield* fake.setSendRefusal((input) => isHandoff(input.text), events);
+    yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
+    yield* runtimes.send(thread.id, { text: "WORK_REQUIRING_HANDOFF" });
+    const failed = yield* waitFor(
+      "the switch failed after its tries",
+      store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch?.phase === "failed" && t)),
+    );
+    expect(failed.sessionSwitch!.handoff?.delivered).toBeUndefined();
+    const inputs = fake.sessions
+      .filter((s) => s.options.threadId === thread.id && s !== session)
+      .flatMap((s) => s.sent);
+    expect(inputs.map((input) => input.text)).not.toContain("WORK_REQUIRING_HANDOFF");
+    expect((yield* store.listQueue(thread.id)).map((item) => item.input.text)).toContain(
+      "WORK_REQUIRING_HANDOFF",
+    );
+  });
+
+describe("switchAgent's handoff and an error status (review rev 6 of #433)", () => {
+  it.effect("a Codex systemError before its refused turn/start is no start", () =>
+    // As the Codex adapter maps it: the thread's `systemError` as an `error` status, then the
+    // rejected `turn/start`.
+    refusedWith([
+      { type: "status", status: "error" },
+      { type: "notice", level: "error", message: "Codex didn't accept the message: refused" },
+      { type: "turnEnd", reason: "error", error: "refused" },
+      { type: "status", status: "idle" },
+    ]).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("a Claude auth_status error before any running status or reply is no start", () =>
+    // As the Claude adapter maps it: the login error as an `error` status, then the turn's end.
+    refusedWith([
+      { type: "status", status: "error", detail: "Synthetic login expired" },
+      { type: "turnEnd", reason: "error", error: "Synthetic pre-start rejection" },
+      { type: "status", status: "idle" },
+    ]).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("a turn that showed its own reply and then failed was delivered", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const { thread, session } = yield* idleThread;
+      const reply = "accepted-reply" as MessageId;
+      // No work status at all: the turn's own reply is the evidence, then it fails.
+      yield* fake.setSendRefusal(
+        (input) => isHandoff(input.text),
+        [
+          {
+            type: "chunk",
+            messageId: reply,
+            chunk: { type: "start", messageId: reply },
+          },
+          { type: "chunk", messageId: reply, chunk: { type: "text-start", id: "t" } },
+          {
+            type: "chunk",
+            messageId: reply,
+            chunk: { type: "text-delta", id: "t", delta: "On it" },
+          },
+          { type: "status", status: "error" },
+          { type: "turnEnd", reason: "error", error: "failed after it began" },
+          { type: "status", status: "idle" },
+        ],
+      );
+      yield* runtimes.switchAgent(thread.id, CODEX, { note: false });
+      yield* runtimes.send(thread.id, { text: "WORK_AFTER_HANDOFF" });
+      yield* waitFor(
+        "the switch released",
+        store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch === undefined)),
+      );
+      const next = yield* fake.latest(thread.id);
+      yield* waitFor(
+        "the work after the handoff",
+        Effect.sync(() => next.sent.some((input) => input.text === "WORK_AFTER_HANDOFF")),
+      );
+      const all = fake.sessions
+        .filter((s) => s.options.threadId === thread.id && s !== session)
+        .flatMap((s) => s.sent);
+      expect(all.filter((input) => isHandoff(input.text))).toHaveLength(1);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+});

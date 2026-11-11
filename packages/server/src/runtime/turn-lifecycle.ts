@@ -26,6 +26,7 @@ import {
 import type { SystemDeliveryFailure } from "./system-delivery.ts";
 import {
   type AgentEvent,
+  type AgentStatus,
   type AgentUnavailable,
   type TurnId,
   type ThreadStatus,
@@ -84,6 +85,9 @@ export interface TurnLifecycleDeps {
   readonly clearPendingRequests: (rt: Runtime, reason: string) => Effect.Effect<void>;
 }
 
+/** The statuses that show the agent at work on a turn: what `noteDeliveryStart` counts. */
+const WORK_STATUSES: ReadonlySet<AgentStatus> = new Set<AgentStatus>(["running", "compacting"]);
+
 /** Status, turns and failures, which every other part of `ThreadRuntimes` reports through. */
 export const makeTurnLifecycle = ({
   turnActivity,
@@ -124,9 +128,12 @@ export const makeTurnLifecycle = ({
 
   /**
    * The one place both adapters' events say the agent natively began the turn carrying a
-   * delivery: a status of work (Codex's on `turn/started`, Claude's as its session runs), a chunk
-   * of the turn's own reply, or a request from it. Never a notice, a turn end or an idle status,
-   * which is all a refusal sends. Tells the delivery once (`SystemDelivery.started`). Holds the lock.
+   * delivery. An allowlist of positive work only: a status of work (`WORK_STATUSES`: Codex's on
+   * `turn/started`, Claude's as its session runs), a chunk of the turn's own reply, or a request
+   * (a tool's approval, a question) from it. Nothing else counts: not `error` (Codex's thread
+   * `systemError`, Claude's `auth_status` error), `idle`, `starting` or `retrying`, nor a notice
+   * or a turn end, which is all a refusal sends. Tells the delivery once
+   * (`SystemDelivery.started`). Holds the lock.
    */
   const noteDeliveryStart = (rt: Runtime, event: AgentEvent, ownReply: boolean) =>
     Effect.suspend(() => {
@@ -137,7 +144,7 @@ export const makeTurnLifecycle = ({
         carried.steered !== undefined ||
         rt.turn?.id !== carried.turnId ||
         !(
-          (event.type === "status" && event.status !== "idle" && event.status !== "starting") ||
+          (event.type === "status" && WORK_STATUSES.has(event.status)) ||
           (event.type === "chunk" && ownReply) ||
           event.type === "request"
         )

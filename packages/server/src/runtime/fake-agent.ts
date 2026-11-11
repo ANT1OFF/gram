@@ -140,7 +140,11 @@ export interface FakeAgentControlShape {
    * Refuses the sends `refuse` matches as Codex refuses a rejected `turn/start`: a notice, the
    * turn ended in error and idle, and no turn start, so the input never reached a turn.
    */
-  setSendRefusal(refuse: ((input: UserInput) => boolean) | undefined): Effect.Effect<void>;
+  setSendRefusal(
+    refuse: ((input: UserInput) => boolean) | undefined,
+    /** What the refusal emits instead, for an adapter's own sequence (an `error` status first). */
+    events?: ReadonlyArray<AgentEvent>,
+  ): Effect.Effect<void>;
   /** The `steer` capability sessions opened from now on report; `false` for an agent that can't. */
   setSteerCapability(supported: boolean): Effect.Effect<void>;
   /** Whether sessions opened from now on have a tool gate (`closeToolGate`); Codex has none. */
@@ -373,6 +377,7 @@ export const makeFakeAgentAdapter = (
       const usedStartups = new Set<string>();
       let openDelay: Duration.Input | undefined;
       let sendRefusal: ((input: UserInput) => boolean) | undefined;
+      let refusalEvents: ReadonlyArray<AgentEvent> | undefined;
       let refusedModes: ReadonlyArray<PermissionMode> = [];
       let respondFailure: string | undefined;
       const modeDelays = new Map<PermissionMode, Duration.Input>();
@@ -705,13 +710,15 @@ export const makeFakeAgentAdapter = (
                 Effect.andThen(
                   sendRefusal?.(input) === true
                     ? emit(
-                        {
-                          type: "notice",
-                          level: "error",
-                          message: "Codex didn't accept the message: refused",
-                        },
-                        { type: "turnEnd", reason: "error", error: "refused" },
-                        { type: "status", status: "idle" },
+                        ...(refusalEvents ?? [
+                          {
+                            type: "notice",
+                            level: "error",
+                            message: "Codex didn't accept the message: refused",
+                          },
+                          { type: "turnEnd", reason: "error", error: "refused" },
+                          { type: "status", status: "idle" },
+                        ]),
                       )
                     : emit({ type: "status", status: "running" }).pipe(
                         Effect.andThen(options.reply === "echo" ? echo(input) : Effect.void),
@@ -1031,9 +1038,10 @@ export const makeFakeAgentAdapter = (
           Effect.sync(() => {
             sendHangs = on;
           }),
-        setSendRefusal: (refuse) =>
+        setSendRefusal: (refuse, events) =>
           Effect.sync(() => {
             sendRefusal = refuse;
+            refusalEvents = events;
           }),
         setToolGate: (supported) =>
           Effect.sync(() => {
