@@ -219,7 +219,9 @@ export const withProvisionedListener = <E>(
               }),
             ),
             Layer.succeed(ProvisionedListener, {
-              setOpen: (wanted) => one.withPermits(1)(wanted ? start : close),
+              // Never interrupted part way: a server that bound always has its finalizer.
+              setOpen: (wanted) =>
+                Effect.uninterruptible(one.withPermits(1)(wanted ? start : close)),
               port: () => open?.port,
             }),
           );

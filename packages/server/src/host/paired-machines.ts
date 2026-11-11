@@ -492,8 +492,14 @@ export const createPairedMachines = (
       const id = hostIdOf(request.publicKey);
       if (byId(id) !== undefined)
         return { kind: "refused", status: 409, message: "This machine has already joined." };
-      // A provisioned host's name stays its own, as `provision` keeps every name.
-      if (machines.some((machine) => isProvisioned(machine) && sameName(machine, request.name)))
+      // A provisioned host's name and id stay its own, as `provision` keeps every name.
+      if (
+        machines.some(
+          (machine) =>
+            isProvisioned(machine) &&
+            (sameName(machine, request.name) || machine.id === request.name.trim().toLowerCase()),
+        )
+      )
         return {
           kind: "refused",
           status: 409,

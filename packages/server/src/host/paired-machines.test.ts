@@ -645,8 +645,9 @@ describe("provisioned hosts", () => {
         publicKey: generateHostKey().publicKey,
       }),
     ).toMatchObject({ kind: "refused", status: 409 });
-    // And a machine joining with a link can't take a host's name either.
+    // And a machine joining with a link can't take a host's name or id either.
     expect(joinOne("Sandbox").result).toMatchObject({ kind: "refused", status: 409 });
+    expect(joinOne(id.toUpperCase()).result).toMatchObject({ kind: "refused", status: 409 });
 
     for (const bad of [
       { name: "", platform: "linux", publicKey: generateHostKey().publicKey },
