@@ -9,7 +9,18 @@ import {
   type WorkspaceState,
 } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
-import { ChevronDown, FoldHorizontal, Hourglass, PanelLeftClose } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  FoldHorizontal,
+  Gauge,
+  Hourglass,
+  LaptopMinimalCheck,
+  Link2,
+  PanelLeftClose,
+  Timer,
+  type LucideIcon,
+} from "lucide-react";
 import {
   memo,
   useEffect,
@@ -34,7 +45,7 @@ import { useNow } from "@/lib/use-now";
 import { EXPLAIN } from "@/lib/explain";
 import { cn } from "@/lib/utils";
 import { revealVirtualRow, virtualRowOf, VirtualRows } from "@/lib/virtual-rows";
-import { PresenceItem, PresenceList, Swap } from "@/motion";
+import { PendingRing, PresenceItem, PresenceList, Swap } from "@/motion";
 import { CARD_SURFACE } from "@/reviews/pr-display";
 import { focusLost } from "@/lib/use-return-focus";
 import { focusSidebar, overviewStops } from "@/shell/focus-regions";
@@ -99,6 +110,7 @@ import {
   stateWordShown,
   steplessLine,
   edgeWords,
+  featureAddsToTitle,
   waitShort,
   workLineText,
   workspaceWorkersText,
@@ -134,7 +146,7 @@ import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
 import { WorkspaceMenuItems } from "./workspace-menu-items";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useOrchestratorWaiting, useWorkerWaitings } from "./use-waiting-on";
-import type { WaitingOn } from "./waiting-on";
+import type { WaitGlyph, WaitingOn } from "./waiting-on";
 import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-model";
 
 // The overview sidebar: the Orchestrator layout's left
@@ -1168,41 +1180,48 @@ function WorkerCard({
   waiting: WaitingOn | undefined;
 }) {
   const time = formatStamp(lastActivity);
+  // Its agent, then its feature where the title doesn't already say it; wrapped, never cut.
+  const context = [
+    ...(agent === undefined ? [] : [agentLabel(agent)]),
+    ...(featureAddsToTitle(feature, row.title) ? [feature] : []),
+  ];
   return (
     <>
-      <p
-        data-testid="overview-worker-card-feature"
-        className="truncate text-meta text-muted-foreground"
-      >
-        {feature}
-        {agent !== undefined && ` · ${agentLabel(agent)}`}
-      </p>
+      {context.length > 0 && (
+        <p data-testid="overview-worker-card-feature" className="text-meta text-muted-foreground">
+          {context.join(" · ")}
+        </p>
+      )}
       <p data-testid="overview-worker-card-title" className="font-medium">
         {row.title}
       </p>
-      <p className="flex min-w-0 items-center gap-1.5 text-meta">
-        <span
-          aria-hidden
-          title={RAIL_TONES[tone].label}
-          className={cn("size-1.5 shrink-0 rounded-full", dot)}
-        />
+      {/* Its station and now line, wrapped rather than cut: a wait in its short words, as the
+          list under it says each one whole. */}
+      <p className="flex min-w-0 items-start gap-1.5 text-meta">
+        <span className="flex h-lh shrink-0 items-center">
+          <span
+            aria-hidden
+            title={RAIL_TONES[tone].label}
+            className={cn("size-1.5 rounded-full", dot)}
+          />
+        </span>
         <span data-testid="overview-worker-card-station" className="shrink-0 text-foreground/80">
           {row.stationLabel}
         </span>
         <span
           data-testid="overview-worker-card-now"
           className={cn(
-            "min-w-0 truncate",
+            "min-w-0 flex-1 break-words",
             asking ? "text-foreground" : row.failed ? "text-destructive" : "text-muted-foreground",
           )}
         >
-          {waiting?.label ?? row.now}
+          {waiting === undefined ? row.now : waitShort(waiting.label)}
         </span>
         <time
           data-testid="overview-worker-card-time"
           dateTime={new Date(lastActivity).toISOString()}
           title={`Last activity ${time}`}
-          className="ml-auto shrink-0 text-muted-foreground tabular-nums"
+          className="shrink-0 text-muted-foreground tabular-nums"
         >
           {time}
         </time>
@@ -1232,10 +1251,21 @@ function WorkerCard({
   );
 }
 
+/** A wait's glyph at a row's edge, in the PR vocabulary's marks where it has one. */
+const WAIT_GLYPH: Readonly<Record<WaitGlyph, LucideIcon>> = {
+  ci: PendingRing,
+  localCheck: LaptopMinimalCheck,
+  review: Bot,
+  merge: Timer,
+  dependency: Link2,
+  limit: Gauge,
+};
+
 /**
- * What a worker or an orchestrator at rest waits on, at its row's edge: the short label without
- * "Waiting" (`waitShort`), muted, as calm as an idle row, beside the row's hollow dot that already
- * says it waits. The whole list is on the row's hover.
+ * What a worker or an orchestrator at rest waits on, at its row's edge, as calm as an idle row
+ * beside the row's hollow dot that already says it waits: the wait's glyph and its key token, the
+ * PR or the time ("#397", "08:10"), where it has them (`WaitEdge`), else its short words without
+ * "Waiting" (`waitShort`). Its words are on its hover; the whole list is on the row's card.
  */
 function WaitingLine({
   waiting,
@@ -1247,15 +1277,21 @@ function WaitingLine({
   /** PRs its row's chips show, left out of its words. */
   prs?: readonly { readonly number: number }[];
 }) {
+  const edge = waiting.edge;
+  const Glyph = edge === undefined ? undefined : WAIT_GLYPH[edge.glyph];
   return (
     <Swap swapKey={waiting.label} className="min-w-0 truncate text-meta text-muted-foreground">
       <span
         data-testid={testId}
         data-kind={waiting.kind}
+        data-glyph={edge?.glyph}
         title={waiting.label}
         className="flex min-w-0 items-center gap-1"
       >
-        <span className="truncate">{nowBesidePrs(waitShort(waiting.label), prs)}</span>
+        {Glyph !== undefined && <Glyph aria-hidden className="size-icon-chip shrink-0" />}
+        <span className={cn("truncate", edge !== undefined && "tabular-nums")}>
+          {edge === undefined ? nowBesidePrs(waitShort(waiting.label), prs) : edge.token}
+        </span>
       </span>
     </Swap>
   );

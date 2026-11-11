@@ -56,6 +56,23 @@ export const WAIT_KINDS: readonly WaitKind[] = [
   "timer",
 ];
 
+/**
+ * What a narrow edge draws for a wait: a glyph for what it waits on, in the PR vocabulary's marks
+ * where it has one (`pr-marks-model.ts`): CI's pending ring, Gram's local check, the review bot,
+ * the armed merge, another PR, a provider limit.
+ */
+export type WaitGlyph = "ci" | "localCheck" | "review" | "merge" | "dependency" | "limit";
+
+/**
+ * A wait as a sidebar row's edge says it: its glyph and its one key token, the PR it waits on or
+ * the time it clears ("#397", "08:10"), its words on the edge's hover. A row's edge has room for
+ * about a dozen characters, so "checks on #397" was cut to "checks on #…", losing the PR.
+ */
+export interface WaitEdge {
+  readonly glyph: WaitGlyph;
+  readonly token: string;
+}
+
 export interface WaitReason {
   readonly kind: WaitKind;
   /**
@@ -67,6 +84,8 @@ export interface WaitReason {
   readonly detail: string;
   /** Epoch ms it clears by, when that is known: a wake's time, a limit's reset. */
   readonly at?: number | undefined;
+  /** Its glyph and key token for a narrow edge; none where `short` is short already. */
+  readonly edge?: WaitEdge | undefined;
 }
 
 export interface WaitingOn {
@@ -74,6 +93,8 @@ export interface WaitingOn {
   readonly kind: WaitKind;
   /** The row's line: "Waiting · checks on #69", "Paused · limit until 08:10". */
   readonly label: string;
+  /** The named wait's glyph and token, for a narrow edge (`WaitEdge`). */
+  readonly edge?: WaitEdge | undefined;
   /** Every wait, the one the label names first. */
   readonly reasons: readonly WaitReason[];
   /** The hover: the label with "+N" for the others, then every wait's line. */
@@ -132,6 +153,7 @@ export const waitingOf = (reasons: readonly WaitReason[]): WaitingOn | undefined
   return {
     kind: first.kind,
     label,
+    edge: first.edge,
     reasons: sorted,
     hint: [more > 0 ? `${label} · +${more}` : label, ...sorted.map((r) => r.detail)].join("\n"),
   };
@@ -156,6 +178,15 @@ const PR_EVENT_SHORT: Readonly<Record<PrWakeEvent, (name: string) => string>> = 
   headChanged: (name) => `${name} to move`,
   checksSettled: (name) => `checks on ${name}`,
   verdict: (name) => `review on ${name}`,
+};
+
+/** The glyph of a wake on another PR, by the first event it names. */
+const PR_EVENT_GLYPH: Readonly<Record<PrWakeEvent, WaitGlyph>> = {
+  merged: "dependency",
+  closed: "dependency",
+  headChanged: "dependency",
+  checksSettled: "ci",
+  verdict: "review",
 };
 
 /** How a wait names another thread: its title where the window has it. */
@@ -205,11 +236,13 @@ export const wakeReason = (
   const detail = `${wakeWhenText(wake, clock)}${note}`;
   if (wake.onPr !== undefined) {
     const [event = "merged"] = wake.on ?? DEFAULT_PR_WAKE_EVENTS;
+    const pr = `#${wake.onPr.number}`;
     return {
       kind: "dependency",
-      short: PR_EVENT_SHORT[event](`#${wake.onPr.number}`),
+      short: PR_EVENT_SHORT[event](pr),
       detail,
       at: wake.at,
+      edge: { glyph: PR_EVENT_GLYPH[event], token: pr },
     };
   }
   return { kind: "timer", short: `until ${clock(wake.at)}`, detail, at: wake.at };
@@ -245,6 +278,7 @@ export const limitReason = (wait: LimitWaitFacts, now: number, clock: WaitClock)
   return {
     kind: "limit",
     short,
+    edge: { glyph: "limit", token: due ? clock(wait.resumeAt) : "resuming" },
     detail: due
       ? `Waits out a ${what}; resumes on its own at ${clock(wait.resumeAt)}.`
       : `The ${what} has reset; it resumes once its turn can start.`,
@@ -267,6 +301,7 @@ const prReasons = (pr: WorkerPr): WaitReason[] => {
     reasons.push({
       kind: "dependency",
       short: `${other} to merge`,
+      edge: { glyph: "dependency", token: other },
       detail: `${where} waits for ${prName(dependency)} to merge${dependency.state === undefined ? "" : ` (${dependency.state})`}.`,
     });
   }
@@ -274,6 +309,7 @@ const prReasons = (pr: WorkerPr): WaitReason[] => {
     reasons.push({
       kind: "checks",
       short: `local check ${name}`,
+      edge: { glyph: "localCheck", token: name },
       detail: `Gram's local check runs on ${where}.`,
     });
   }
@@ -282,6 +318,7 @@ const prReasons = (pr: WorkerPr): WaitReason[] => {
     reasons.push({
       kind: "checks",
       short: `checks on ${name}`,
+      edge: { glyph: "ci", token: name },
       detail: `CI is running on ${where}.`,
     });
   }
@@ -291,6 +328,7 @@ const prReasons = (pr: WorkerPr): WaitReason[] => {
     reasons.push({
       kind: "review",
       short: `review on ${name}`,
+      edge: { glyph: "review", token: name },
       detail: `The review bot is reviewing the head of ${where}.`,
     });
   }
@@ -307,6 +345,7 @@ const prReasons = (pr: WorkerPr): WaitReason[] => {
     reasons.push({
       kind: "merge",
       short: `merge of ${name}`,
+      edge: { glyph: "merge", token: name },
       detail:
         intent.waiting ??
         `Gram merges ${where} once it is ready${after === "" ? "" : `, after ${after}`}.`,

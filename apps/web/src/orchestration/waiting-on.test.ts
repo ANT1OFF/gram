@@ -90,6 +90,9 @@ const reason = (kind: WaitKind, at?: number): WaitReason => ({
 const waitingOn = (entry: WorkerLedgerEntry) =>
   workerWaitingOn(entry, workerActivity(entry), NOW, { clock });
 
+/** The named wait's glyph and token for a narrow edge. */
+const edge = (entry: WorkerLedgerEntry) => waitingOn(entry)?.edge;
+
 describe("what a worker waits on", () => {
   it("names CI running on its PR", () => {
     const waiting = waitingOn(worker("inReview", { pr: pr({ checks: "pending 3/5" }) }));
@@ -309,6 +312,53 @@ describe("what a worker waits on", () => {
     expect(waitingOn(worker("working", { limitWait: limit(NOW - MIN) }))?.label).toBe(
       "Paused · limit, resuming",
     );
+  });
+
+  it("gives each wait on a PR or a limit a glyph and its key token for a narrow edge", () => {
+    expect(edge(worker("inReview", { pr: pr({ checks: "pending 3/5" }) }))).toEqual({
+      glyph: "ci",
+      token: "#69",
+    });
+    expect(
+      edge(
+        worker("readyToMerge", {
+          pr: pr({ mergeState: "CLEAN", localCheck: { status: "running" }, mergeWhenReady: {} }),
+        }),
+      ),
+    ).toEqual({ glyph: "localCheck", token: "#69" });
+    expect(edge(worker("inReview", { pr: pr({ botOnHead: "reviewing" }) }))).toEqual({
+      glyph: "review",
+      token: "#69",
+    });
+    expect(
+      edge(worker("readyToMerge", { pr: pr({ mergeState: "CLEAN", mergeWhenReady: {} }) })),
+    ).toEqual({ glyph: "merge", token: "#69" });
+    expect(
+      edge(worker("inReview", { pr: pr({ dependsOn: [dependency("acme/api", 7)] }) })),
+    ).toEqual({ glyph: "dependency", token: "acme/api#7" });
+    expect(edge(worker("working", { wakes: [onPr(undefined)] }))).toEqual({
+      glyph: "dependency",
+      token: "#645",
+    });
+    expect(edge(worker("working", { wakes: [onPr(["checksSettled"])] }))).toEqual({
+      glyph: "ci",
+      token: "#645",
+    });
+    expect(edge(worker("working", { wakes: [onPr(["verdict"])] }))).toEqual({
+      glyph: "review",
+      token: "#645",
+    });
+    expect(edge(worker("working", { limitWait: limit(NOW + 70 * MIN) }))).toEqual({
+      glyph: "limit",
+      token: "08:10",
+    });
+    expect(edge(worker("working", { limitWait: limit(NOW - MIN) }))).toEqual({
+      glyph: "limit",
+      token: "resuming",
+    });
+    // Words short enough for the edge stay words.
+    expect(edge(worker("working", { wakes: [timed(NOW + 70 * MIN)] }))).toBeUndefined();
+    expect(edge(worker("working", { userIntervened: true }))).toBeUndefined();
   });
 
   it("says the user holds it", () => {

@@ -3037,9 +3037,17 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("overview-sidebar"),
   },
   {
+    name: "sidebar-waiting-kinds-narrow",
+    title: "Every kind of wait in the sidebar at its narrowest, 180 px",
+    open: async (page) => {
+      await seedMockSettings(page, { sidebar: { width: 180 } });
+      await openWaitingOn(page, true);
+    },
+    element: (page) => page.getByTestId("overview-sidebar"),
+  },
+  {
     name: "sidebar-waiting-hover",
     title: "A waiting worker's hover card lists every wait, the one its row names first",
-    modes: ["dark"],
     open: async (page) => {
       await openWaitingOn(page, true);
       await page.getByTestId("overview-worker-waiting").first().hover();
