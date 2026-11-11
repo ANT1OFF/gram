@@ -6,6 +6,7 @@ import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import { heldCheckoutPaths } from "../../runtime/create-in-checkout.ts";
+import { steerOrSend } from "../../runtime/steer-or-send.ts";
 import { featureBranch, refusal } from "../rules.ts";
 import {
   projectOfCheckout,
@@ -211,14 +212,20 @@ export const makeWorkerRepos = (kit: OrchestrationKit, deps: WorkerReposDeps) =>
           yield* runtimes.addDirectories(target.id, [checkout.path]).pipe(Effect.ignore);
           yield* reload(target.id);
           const [named] = worktreesOf(projects, [checkout]);
-          const sent = yield* runtimes
-            .send(target.id, {
-              text: `You now also have a worktree in ${project.name}: ${checkout.path}${
-                checkout.branch === undefined ? "" : ` (branch ${checkout.branch})`
-              }. It is one of your folders from here on: edit and commit there, never in that repo's main checkout. If the change there needs a pull request, open one and bind it with \`pr_bind\` (its \`repo\` and \`number\`, \`add: true\`).`,
-              origin: { threadId: caller.id, title: caller.title, depth: 1, role: "orchestrator" },
-            })
-            .pipe(Effect.mapError((e) => toolError(tool, e.message)));
+          // Steered into a running turn, as an orchestrator's message to its worker is, so the
+          // worker hears of its new folder before it edits in the wrong one.
+          const sent = yield* steerOrSend(runtimes, target.id, {
+            text: `You now also have a worktree in ${project.name}: ${checkout.path}${
+              checkout.branch === undefined ? "" : ` (branch ${checkout.branch})`
+            }. It is one of your folders from here on: edit and commit there, never in that repo's main checkout. If the change there needs a pull request, open one and bind it with \`pr_bind\` (its \`repo\` and \`number\`, \`add: true\`).`,
+            origin: {
+              threadId: caller.id,
+              title: caller.title,
+              depth: 1,
+              role: "orchestrator",
+              mode: "steer",
+            },
+          }).pipe(Effect.mapError((e) => toolError(tool, e.message)));
           yield* noteMessage(callerId, target.id);
           yield* store.appendOrchestrationEvent(workspaceId, {
             at: yield* Clock.currentTimeMillis,
@@ -232,7 +239,7 @@ export const makeWorkerRepos = (kit: OrchestrationKit, deps: WorkerReposDeps) =>
             project: named?.project ?? project.name,
             worktree: checkout.path,
             ...(checkout.branch === undefined ? {} : { branch: checkout.branch }),
-            delivered: sent.queued ? ("queued" as const) : ("sent" as const),
+            delivered: sent,
           };
         }),
       ),

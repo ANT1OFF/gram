@@ -83,7 +83,7 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
             },
             { carded: false },
           ),
-        ).toMatchObject({ threadId: thread.id, delivered: "queued" });
+        ).toMatchObject({ threadId: thread.id, delivered: "steered" });
       }),
     ),
   );
@@ -107,30 +107,30 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
           );
           expect(worker.session.options.instructions).toContain("Prefer `report` for progress");
           expect(tool.descriptor.description).toContain("Prefer `report`");
-          const delivered = mode === "steer" ? "steered" : "queued";
+          const delivered = mode !== "queue" ? "steered" : "queued";
           expect(yield* tool.run(message)).toMatchObject({ delivered });
           for (let i = 0; i < 6; i++)
             expect(yield* tool.run(message)).toMatchObject({ delivered, repeated: true });
           expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
           const parent = (yield* runtimes.snapshot).find((s) => s.thread.id === thread.id)!;
-          const input = mode === "steer" ? session.steered.at(-1) : parent.queue.at(-1)?.input;
+          const input = mode !== "queue" ? session.steered.at(-1) : parent.queue.at(-1)?.input;
           expect(input).toMatchObject({
             origin: { threadId: worker.thread.id, title: worker.thread.title, depth: 2 },
           });
           // The queue holds the worker's words as written; the orchestrator's agent reads them fenced.
           expect(input?.text).toBe(
-            mode === "steer" ? fenceThreadMessage(input!.origin!, "Coordinate.") : "Coordinate.",
+            mode !== "queue" ? fenceThreadMessage(input!.origin!, "Coordinate.") : "Coordinate.",
           );
           expect(input?.origin).not.toHaveProperty("role", "orchestrator");
           for (const change of [
             { text: "Actually, the API changed." },
-            { mode: mode === "steer" ? "queue" : "steer" },
+            { mode: mode !== "queue" ? "queue" : "steer" },
             { threadId: second.thread.id },
           ])
             expect(
               (yield* tool.run({ ...message, ...change }).pipe(Effect.flip)).message,
             ).toContain("already sent another message");
-          if (mode !== "steer") {
+          if (mode === "queue") {
             expect(
               parent.queue.filter((q) => q.input.origin?.threadId === worker.thread.id),
             ).toHaveLength(1);
@@ -477,7 +477,7 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
           text: "Coordinate.",
           clientRequestId: "parent-once",
         };
-        expect(yield* tool.run(message)).toMatchObject({ delivered: "queued" });
+        expect(yield* tool.run(message)).toMatchObject({ delivered: "steered" });
         yield* orchestration.setPaused(workspaceId, true);
         expect(yield* tool.needsApproval!(message)).toBe(false);
         expect((yield* tool.run(message).pipe(Effect.flip)).message).toMatch(/^paused:/);

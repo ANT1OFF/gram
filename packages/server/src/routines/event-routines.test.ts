@@ -14,7 +14,9 @@ import {
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import type * as FiberMap from "effect/FiberMap";
 import * as TestClock from "effect/testing/TestClock";
+import { vi } from "vitest";
 import { hasGit } from "../git/test-repo.ts";
 import { FENCE_OPENER as FENCE_OPENER_TEXT } from "../git/untrusted-fence.ts";
 import { Orchestration } from "../orchestration/service.ts";
@@ -32,7 +34,24 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { addRoutine, editRoutine, routineNow, stageState, stateOf } from "./test-kit.ts";
+import { addRoutine, editRoutine, ranAfter, routineNow, stageState, stateOf } from "./test-kit.ts";
+
+// Delay the registration boundary while retaining FiberMap's real replacement and lifetime rules.
+const timerRegistration = vi.hoisted(() => ({
+  beforeRun: undefined as undefined | ((key: unknown) => Effect.Effect<void> | undefined),
+}));
+vi.mock("effect/FiberMap", async (importOriginal) => {
+  const real = await importOriginal<typeof FiberMap>();
+  return {
+    ...real,
+    run: ((...args: Parameters<typeof real.run>) => {
+      const before = timerRegistration.beforeRun?.(args[1]);
+      return before === undefined
+        ? real.run(...args)
+        : before.pipe(Effect.andThen(real.run(...args)));
+    }) as typeof real.run,
+  };
+});
 
 const SLOW = { timeout: 90_000 } as const;
 
@@ -569,14 +588,15 @@ describe.skipIf(!hasGit)("event routines", () => {
     );
 
     it.effect.each([
-      { suffix: "", delayedPublication: false },
+      { suffix: "", delay: "none" },
       {
         suffix: " when publication finishes after the clock advances",
-        delayedPublication: true,
+        delay: "publication",
       },
+      { suffix: " when timer registration yields after reading the clock", delay: "registration" },
     ])(
       "[2] puts the events of a Run now a crash cut short back to wait$suffix",
-      ({ delayedPublication }) =>
+      ({ delay }) =>
         Effect.gen(function* () {
           const world = yield* makeWorld;
           const id = yield* withServer(
@@ -599,12 +619,32 @@ describe.skipIf(!hasGit)("event routines", () => {
               return routine.id;
             }),
           );
-          // Hold recovery between its state write and timer registration. The state is already
-          // visible to the test when a loaded runner delays this publication.
-          const published = yield* Deferred.make<void>();
-          if (delayedPublication) {
+          const registering = yield* Deferred.make<void>();
+          const resume = yield* Deferred.make<void>();
+          if (delay === "publication") {
             world.onPublish = (event) =>
-              event.type === "routines.changed" ? Deferred.await(published) : Effect.void;
+              event.type === "routines.changed" ? Deferred.await(resume) : Effect.void;
+          }
+          if (delay === "registration") {
+            // Recovery has written and published. Hold the next timer after arm has constructed
+            // its effect, as a scheduler yield before FiberMap.run can do on a loaded runner.
+            world.onPublish = (event) =>
+              Effect.sync(() => {
+                if (event.type !== "routines.changed") return;
+                world.onPublish = undefined;
+                timerRegistration.beforeRun = (key) => {
+                  if (typeof key !== "string" || !key.endsWith(id)) return undefined;
+                  timerRegistration.beforeRun = undefined;
+                  return Deferred.succeed(registering, undefined).pipe(
+                    Effect.andThen(Deferred.await(resume)),
+                  );
+                };
+              });
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(() => {
+                timerRegistration.beforeRun = undefined;
+              }),
+            );
           }
           yield* sees(world, ev(1), ev(6));
           yield* withServer(
@@ -624,11 +664,14 @@ describe.skipIf(!hasGit)("event routines", () => {
                 ),
               );
               expect(back.trigger?.pending?.[0]?.key).toBe("o/r#6");
+              if (delay === "registration") yield* Deferred.await(registering);
               yield* TestClock.adjust("15 minutes");
-              yield* Deferred.succeed(published, undefined);
+              yield* Deferred.succeed(resume, undefined);
               const [worker] = yield* workersAt(id, 1);
               expect(yield* briefOf(worker!.id)).toContain("o/r#6:");
-              expect((yield* routineNow(id)).lastRun).toMatchObject({ outcome: "started" });
+              expect((yield* ranAfter(id, back.trigger!.firedAt!)).lastRun).toMatchObject({
+                outcome: "started",
+              });
             }),
           );
         }),

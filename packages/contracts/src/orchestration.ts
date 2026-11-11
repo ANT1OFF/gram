@@ -33,9 +33,9 @@ export const MessageOrigin = Schema.Struct({
   feature: Schema.optionalKey(Schema.String),
   /**
    * The delivery the sender asked for: `queue` for context the thread reads after its turn,
-   * `steer` for mid-turn once the tool calls under way finish (an orchestrator's default to its
-   * own worker), `interrupt` to stop the turn now, cutting off its tool calls. Absent when it left
-   * it to the default, which queues.
+   * `steer` for mid-turn once the tool calls under way finish (the default), `interrupt` to stop
+   * the turn now, cutting off its tool calls. Absent on a message sent before every send recorded
+   * it, when the default queued.
    */
   mode: Schema.optionalKey(Schema.Literals(["queue", "steer", "interrupt"])),
 });

@@ -663,12 +663,14 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         expect((yield* store.getWorkspace(workspaceId)).paused).toBeUndefined();
         expect(yield* outboxOf(workspaceId)).toMatchObject({ failures: 0 });
 
-        // A digest waiting behind a turn that fails isn't failed with it, and goes once it settles.
+        // A digest steered into a turn that then fails isn't failed with it: it waits again, and
+        // goes as a turn of its own once the thread settles.
         yield* runtimes.send(thread.id, { text: "again" });
         yield* waitSent(thread.id, 4);
         yield* stopSilently(other.session);
         yield* TestClock.adjust("60 seconds");
         yield* settle;
+        expect(session.steered.at(-1)?.text).toContain("'Billing' finished a turn");
         yield* session.emit({ type: "turnEnd", reason: "error", error: "overloaded" });
         yield* waitStatus(thread.id, "error");
         yield* session.emit({ type: "status", status: "idle" });

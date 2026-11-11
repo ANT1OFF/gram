@@ -223,8 +223,19 @@ export interface Runtime {
 
   /** System deliveries waiting for the thread to be free, by key, oldest first. Never in `queue`. */
   readonly deliveries: Map<string, SystemDelivery>;
-  /** The delivery the open turn carries, until the adapter shows it has it or the turn is lost. */
-  carrying: { readonly turnId: TurnId; readonly delivery: SystemDelivery } | undefined;
+  /**
+   * The delivery the open turn carries, until the adapter shows it has it or the turn is lost. One
+   * `steered` into the turn (under its key) settles only as the turn ends, since what streams after
+   * the steer may be the agent's work from before it; a turn the adapter ends in error puts it
+   * back to wait under its key, as it would have waited behind the turn unsteered.
+   */
+  carrying:
+    | {
+        readonly turnId: TurnId;
+        readonly delivery: SystemDelivery;
+        readonly steered?: { readonly key: string };
+      }
+    | undefined;
   /**
    * The Waiting on you items a note in turn `turnId` told of, recorded as heard once the agent
    * takes that turn's input as a delivery is (`settleDelivery`), and dropped as news otherwise.

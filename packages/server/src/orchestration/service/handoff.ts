@@ -185,6 +185,8 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
    * The checkpoint prompt, the handoff's first step. It acknowledges nothing: the outbox's delivery
    * state is a digest's alone.
    */
+  // Never steered (no `steer`): the checkpoint is a turn of its own, whose end starts the fresh
+  // session, so it waits for the running turn to end.
   const checkpointFor = (workspaceId: WorkspaceId): SystemDelivery => ({
     build: (turnId) =>
       Effect.gen(function* () {

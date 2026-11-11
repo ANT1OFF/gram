@@ -282,6 +282,22 @@ describe.skipIf(process.platform === "win32")("update teardown fence", () => {
     expect([root(), ...pids].some(alive)).toBe(false);
   }, 30_000);
 
+  // Gram's server is a utility process in the app's own process group, and the check's reads run
+  // from the app, so a read that lists itself lists a new child of the app in that group: what the
+  // check refuses as untellable unless it drops the read's own row by its pid (`readTable`). A
+  // stand-in can't share this process's group here: the test runner starts its workers in it, which
+  // the check rightly refuses. So the fact it rests on is checked against the real `ps` instead.
+  it("reads a real table that lists the read itself, under this process, by the pid it reports", () => {
+    const read = runSync("/bin/ps", ["-A", "-o", "pid=,ppid=,pgid=,lstart="], 2_000);
+    expect(read?.status).toBe(0);
+    expect(read?.pid).toBeGreaterThan(1);
+    const own = read!.stdout
+      .split("\n")
+      .map((line) => line.trim().split(/\s+/))
+      .find(([pid]) => pid === String(read!.pid));
+    expect(own?.[1]).toBe(String(process.pid));
+  });
+
   it("refuses when an essential is reported failed, naming it", async () => {
     const { host } = await start("essential");
     await expect(stopForUpdate(host)).rejects.toThrow(

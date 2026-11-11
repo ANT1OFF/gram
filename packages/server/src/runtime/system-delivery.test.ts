@@ -4,6 +4,7 @@ import {
   ThreadNotFound,
   type MessageId,
   type OrchestrationDigest,
+  type RequestId,
   type ServerEvent,
   type ThreadId,
   type UserInput,
@@ -105,6 +106,12 @@ const waitCalls = (calls: ReadonlyArray<string>, count: number) =>
 const settle = Effect.gen(function* () {
   for (let i = 0; i < 50; i++) yield* Effect.yieldNow;
 });
+
+/** `recordingDelivery`, asking to be steered into a running turn. */
+const steered = (input: UserInput) => {
+  const recorded = recordingDelivery(input);
+  return { ...recorded, delivery: { ...recorded.delivery, steer: true } };
+};
 
 const startChunk = (session: FakeSession, id: string) =>
   session.emit({ type: "chunk", messageId: id as MessageId, chunk: replyStart(id) });
@@ -679,4 +686,109 @@ describe("runtime observer", () => {
       expect(watched.seen).toEqual([]);
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
+  describe("one that asks to be steered", () => {
+    it.effect("steers into a running turn, cutting nothing, and is accepted as the turn ends", () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const { thread, session } = yield* createRunning;
+        const { delivery, calls, turnIds } = steered(digest("digest"));
+        yield* runtimes.requestSystemDelivery(thread.id, "digest", delivery);
+        expect(session.steered.map((input) => input.text)).toEqual(["digest"]);
+        expect(session.steeredInterrupt).toEqual([false]);
+        expect(sentTexts(session)).toEqual(["one"]);
+        // What streams after the steer may be the agent's work from before it.
+        yield* startChunk(session, "reply-a");
+        yield* settle;
+        expect(calls).toEqual(["build"]);
+        const stored = (yield* store.listMessages(thread.id)).filter((m) => m.role === "user");
+        expect(stored.map((m) => m.metadata?.delivery)).toEqual([undefined, "steer"]);
+        expect(stored[1]?.metadata?.author).toBe("server");
+
+        yield* session.completeTurn();
+        yield* waitCalls(calls, 2);
+        expect(calls).toEqual(["build", "accepted"]);
+        expect(turnIds[1]).toBe(turnIds[0]);
+        yield* waitStatus(thread.id, "idle");
+        yield* settle;
+        // Delivered once: no turn of its own follows.
+        expect(sentTexts(session)).toEqual(["one"]);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+    );
+
+    it.effect("waits behind a turn waiting on an approval, and goes as a turn of its own", () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const { thread, session } = yield* createRunning;
+        yield* session.emit({
+          type: "request",
+          request: {
+            kind: "approval",
+            id: "req-1" as RequestId,
+            toolName: "Bash",
+            displayName: "Bash",
+            input: { command: "git push" },
+            suggestions: [],
+          },
+        });
+        yield* waitStatus(thread.id, "needsApproval");
+        const { delivery, calls } = steered(digest("digest"));
+        yield* runtimes.requestSystemDelivery(thread.id, "digest", delivery);
+        yield* settle;
+        expect(session.steered).toEqual([]);
+        expect(calls).toEqual([]);
+        yield* session.completeTurn();
+        yield* waitSent(session, 2);
+        expect(sentTexts(session)).toEqual(["one", "digest"]);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+    );
+
+    it.effect("one the agent refuses waits for the turn's end, built again then", () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const fake = yield* FakeAgentControl;
+        const { thread, session } = yield* createRunning;
+        yield* fake.setSteerFails(true);
+        const { delivery, calls } = steered(digest("digest"));
+        yield* runtimes.requestSystemDelivery(thread.id, "digest", delivery);
+        expect(session.steered).toEqual([]);
+        expect(calls).toEqual(["build"]);
+        yield* fake.setSteerFails(false);
+        yield* session.completeTurn();
+        yield* waitSent(session, 2);
+        expect(sentTexts(session)).toEqual(["one", "digest"]);
+        expect(calls).toEqual(["build", "build"]);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+    );
+
+    it.effect("a turn that fails after the steer puts it back to wait, not failed", () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const { thread, session } = yield* createRunning;
+        const { delivery, calls } = steered(digest("digest"));
+        yield* runtimes.requestSystemDelivery(thread.id, "digest", delivery);
+        expect(session.steered.map((input) => input.text)).toEqual(["digest"]);
+        yield* session.emit({ type: "turnEnd", reason: "error", error: "overloaded" });
+        yield* waitStatus(thread.id, "error");
+        yield* session.emit({ type: "status", status: "idle" });
+        yield* waitSent(session, 2);
+        expect(sentTexts(session)).toEqual(["one", "digest"]);
+        expect(calls).toEqual(["build", "build"]);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+    );
+
+    it.effect("is a turn of its own on an idle thread", () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const { thread, session } = yield* createIdle;
+        const { delivery, calls } = steered(digest("digest"));
+        yield* runtimes.requestSystemDelivery(thread.id, "digest", delivery);
+        yield* waitSent(session, 1);
+        expect(session.steered).toEqual([]);
+        yield* startChunk(session, "reply-a");
+        yield* waitCalls(calls, 2);
+        expect(calls).toEqual(["build", "accepted"]);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+    );
+  });
 });

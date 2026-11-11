@@ -357,8 +357,8 @@ describe("AgentFields speed", () => {
     // The CLI decides, though Fast is there.
     renderSpeed({ agent: "claude", model: "m" }, ["standard", "fast"], true);
     const chip = await findChip(/Speed: CLI default$/);
-    // Icons alone, words on hover: no bolt at the default.
-    expect(chip.textContent).toBe("");
+    // The model by name, the rest in icons with words on hover: no bolt at the default.
+    expect(chip.textContent).toBe("M");
     expect(chipGlyphs(chip)).toEqual([]);
     // Its section lists the speeds, the CLI's default checked, with what Fast costs.
     await user.click(chip);
@@ -381,7 +381,7 @@ describe("AgentFields speed", () => {
     const user = userEvent.setup();
     renderSpeed({ agent: "claude", model: "m", speed: "fast" }, ["standard", "fast"], true);
     const chip = await findChip(/Speed: Fast$/);
-    expect(chip.textContent).toBe("");
+    expect(chip.textContent).toBe("M");
     expect(chipGlyphs(chip)).toEqual(["speed"]);
     await user.hover(chip);
     await waitFor(() =>
@@ -402,9 +402,10 @@ describe("AgentFields effort", () => {
     const onChange = vi.fn();
     renderWithApi(<AgentFields ghost value={choice} onChange={onChange} />, mockApi());
     const chip = await findChip(/Effort: High/);
-    // As in a thread's composer, the chip says no word: its name and tooltip say the effort.
+    // As in a thread's composer, the chip says only the model's name: its name and tooltip say the
+    // effort.
     expect(chip.getAttribute("aria-label")).toMatch(/^Claude Opus\b.* · Effort: High\b/);
-    expect(chip.textContent).toBe("");
+    expect(chip.textContent).toBe("Opus");
     await user.hover(chip);
     expect(await screen.findByText(/Effort: High/)).toBeTruthy();
     await user.click(chip);

@@ -616,6 +616,9 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
     });
 
   const deliveryFor = (workspaceId: WorkspaceId): SystemDelivery => ({
+    // Into a running turn, cancelling nothing: a report or a merge the orchestrator reads only
+    // once its turn ends is often stale by then.
+    steer: true,
     build: (turnId) => buildDigest(workspaceId, turnId),
     accepted: (turnId) => onAccepted(workspaceId, turnId),
     failed: (turnId, reason) => onFailed(workspaceId, turnId, reason),

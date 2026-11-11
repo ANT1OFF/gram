@@ -428,7 +428,9 @@ export const makeAgentEvents = ({
             rt.open.get(event.messageId)?.nested === false &&
             rt.open.get(event.messageId)?.turnId === rt.turn.id
           ) {
-            if (rt.carrying?.turnId === rt.turn.id) yield* settleDelivery(rt, "accepted");
+            if (rt.carrying?.turnId === rt.turn.id && rt.carrying.steered === undefined) {
+              yield* settleDelivery(rt, "accepted");
+            }
             yield* settleNote(rt, rt.turn.id, true);
           }
           // Only actual main-turn content proves that this model can answer. Empty starts, error

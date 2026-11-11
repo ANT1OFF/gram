@@ -495,6 +495,19 @@ export const edgeWords = (line: string): string => EDGE_WORDS[line] ?? line;
 export const waitShort = (label: string): string =>
   edgeWords(label.startsWith("Waiting · ") ? label.slice("Waiting · ".length) : label);
 
+/**
+ * Whether a worker's feature slug says something its title doesn't, for its hover card's top line:
+ * "composer-model-name-mode-icons" beside "Composer: model name and mode icons" says nothing more,
+ * and only crowded the agent out of the line. A slug with a word the title hasn't is kept.
+ */
+export const featureAddsToTitle = (feature: string, title: string): boolean => {
+  const words = new Set(title.toLowerCase().split(/[^\p{L}\p{N}]+/u));
+  return feature
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .some((word) => word !== "" && !words.has(word));
+};
+
 /** An orchestrator's summary in words: "3 workers · 1 working · 2 need you". */
 export const foldedSummaryText = ({ live, working, asks }: FoldedSummary): string =>
   [

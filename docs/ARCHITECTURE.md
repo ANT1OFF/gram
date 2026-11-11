@@ -66,16 +66,25 @@ CLI/session owners and its [offline scenario guidance](../packages/agents/script
 - Background polling that only matters on screen (the port scan, the usage-limit poll) runs
   while a window is shown and slows down while none is focused
   ([`pollWhileShown`](../packages/server/src/git/activity.ts)).
-- Input reaches a running thread in one of three ways. **Queue** waits for the turn to end; Gram's
-  own notices (merges, checks, reviews, monitors) queue, and only a question's answer steers.
-  **Steer** lands once the tool calls under way finish and cancels nothing: Claude takes it at
-  priority `next`, folded in between tool rounds or run as the turn after, in the same logical
-  turn ([Claude session](../packages/agents/src/claude/session.ts)). **Interrupt** stops the turn
-  now (priority `now`), cutting off its tool calls, which Claude Code answers with "The user
-  doesn't want…"; Gram adds that nobody declined them, and the transcript shows them as
-  interrupted. Only `send_message`'s `mode: "interrupt"` and the user ask for it. The composer offers
-  the same three while a turn takes input: ↵ steers, ⌥↵ queues, ⌘. with a draft interrupts, and
-  the chevron beside Send lists them; the sent message says "Steered" or "Interrupted the turn".
+- Input reaches a running thread in one of three ways. **Steer**, the default for everyone, lands
+  once the tool calls under way finish and cancels nothing: Claude takes it at priority `next`,
+  folded in between tool rounds or run as the turn after, in the same logical turn
+  ([Claude session](../packages/agents/src/claude/session.ts)). **Queue** waits for the turn to
+  end. **Interrupt** stops the turn now (priority `now`), cutting off its tool calls, which Claude
+  Code answers with "The user doesn't want…"; Gram adds that nobody declined them, and the
+  transcript shows them as interrupted. Only the user and `send_message`'s `mode: "interrupt"`
+  ask for it.
+- What steers by default: the composer (↵ steers, ⌥↵ queues, ⌘. with a draft interrupts, and the
+  chevron beside Send lists them; the sent message says "Steered" or "Interrupted the turn"), a
+  new task to a running orchestrator, `send_message`, `broadcast_message` and
+  `message_orchestrator`, answers to questions, and every Gram notice (`sendNotice`: merges,
+  checks, reviews, comments, wakes, resumes). `sendNotice`'s `steer: false` queues one instead.
+  Digests steer too (`SystemDelivery.steer`), and settle as the turn that carries them ends; one
+  whose turn errs waits again. Idle compaction and a handoff's checkpoint stay turns of their
+  own. A steer falls back to an ordinary send, which queues behind a turn that can't take it:
+  one waiting on an approval or an answer (the agent would read it first; `thread.steer` refuses
+  it), one starting, Gram's idle compaction, or an agent that refused the steer, which recorded
+  nothing, so nothing is delivered twice.
 - A Codex steer joins the running turn or fails; it never starts a new turn, cancels nothing, and
   the runtime keeps an input the agent refused. Codex has no interrupting steer, so an interrupt
   reaches it as a steer ([Codex session](../packages/agents/src/codex/session.ts)).

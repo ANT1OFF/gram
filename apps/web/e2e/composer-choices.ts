@@ -45,13 +45,17 @@ export async function pickChoice(
 }
 
 /**
- * What the chip draws: the words it shows, none, as it is icons with its words on hover, and the
- * sections whose glyph stands beside the agent's mark (Bypass's "mode", Fast's "speed").
+ * What the chip draws: its one word, the model's name, whole even where it truncates, and the
+ * glyphs after it, each its section and value: the mode's always ("mode:default"), Fast's bolt
+ * while on ("speed:fast").
  */
 export const chipFace = (chip: Locator) =>
   chip.evaluate((el) => ({
     words: (el as HTMLElement).innerText.trim(),
-    glyphs: [...el.querySelectorAll<HTMLElement>("[data-chip-glyph]")].map(
-      (glyph) => glyph.dataset["chipGlyph"] ?? "",
+    glyphs: [...el.querySelectorAll<HTMLElement>("[data-chip-glyph]")].map((glyph) =>
+      [glyph.dataset["chipGlyph"], glyph.dataset["value"]].filter(Boolean).join(":"),
     ),
   }));
+
+/** The model's name on the chip: shown, however narrow, as wide as it has room for. */
+export const chipModelName = (chip: Locator) => chip.getByTestId("choices-model-name");
