@@ -20,11 +20,12 @@ import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import type { Handlers } from "./common.ts";
 
 /**
- * `threads.closed.list`: the last closed threads, newest first, each marked with what's changed since
- * it closed. `threads.closed.reopen`: the newest one, taken off the list and opened again from its
- * stored record. `resolve` checks a checkout folder; tests swap it to simulate errors.
+ * How a closed thread is opened again from its stored record: what stands in its way
+ * (`withProblems`), and the reopen itself (`reopenTaken`), which gives it back its checkout, its
+ * conversation and what of its place in a workspace can come back. `resolve` checks a checkout
+ * folder; tests swap it to simulate errors.
  */
-export const makeClosedThreadHandlers = (
+export const makeClosedReopener = (
   resolve: (path: string) => Effect.Effect<string, NotFound | InvalidState> = resolveFolder,
 ) =>
   Effect.gen(function* () {
@@ -167,7 +168,21 @@ export const makeClosedThreadHandlers = (
           thread: reopened.thread,
           ...(reopened.membership === undefined ? {} : { membership: reopened.membership }),
         } satisfies ReopenedClosedThread;
-      }).pipe(Effect.map((result): ReopenedClosedThread | null => result));
+      });
+
+    return { store, withProblems, reopenTaken };
+  });
+
+/**
+ * `threads.closed.list`: the last closed threads, newest first, each marked with what's changed since
+ * it closed. `threads.closed.reopen`: the newest one, taken off the list and opened again from its
+ * stored record. `resolve` is `makeClosedReopener`'s.
+ */
+export const makeClosedThreadHandlers = (
+  resolve: (path: string) => Effect.Effect<string, NotFound | InvalidState> = resolveFolder,
+) =>
+  Effect.gen(function* () {
+    const { store, withProblems, reopenTaken } = yield* makeClosedReopener(resolve);
 
     return {
       "threads.closed.list": () => store.listClosed.pipe(Effect.flatMap(withProblems)),
@@ -187,7 +202,10 @@ export const makeClosedThreadHandlers = (
                   : store.rememberClosed(entry.thread, entry.closedAt, workers),
               ),
             );
-            return yield* restore(reopenTaken(entry, workers)).pipe(Effect.onError(() => putBack));
+            return yield* restore(reopenTaken(entry, workers)).pipe(
+              Effect.map((result): ReopenedClosedThread | null => result),
+              Effect.onError(() => putBack),
+            );
           }),
         ),
     } satisfies Partial<Handlers>;

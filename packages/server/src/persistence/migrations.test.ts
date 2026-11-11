@@ -54,6 +54,7 @@ describe("migration ordering gate", () => {
         [5, "usage_limit_history"],
         [6, "message_parts"],
         [7, "hosts"],
+        [8, "actor_events"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -128,6 +129,7 @@ describe("the baseline", () => {
   it.effect("creates the 1.0 schema whole and records itself as migration 1", () =>
     Effect.gen(function* () {
       expect(yield* objects).toEqual([
+        "index actor_events_thread",
         "index closed_messages_turn",
         "index closed_turns_started",
         "index closed_turns_thread",
@@ -154,6 +156,7 @@ describe("the baseline", () => {
         "index worker_reports_interface",
         "index worker_reports_thread",
         "index worker_reports_workspace",
+        "table actor_events",
         "table automatic_dream",
         "table closed_messages",
         "table closed_threads",
@@ -226,6 +229,7 @@ describe("the baseline", () => {
         [5, "usage_limit_history"],
         [6, "message_parts"],
         [7, "hosts"],
+        [8, "actor_events"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -253,6 +257,7 @@ describe("the baseline", () => {
           "usage_limit_history",
           "message_parts",
           "hosts",
+          "actor_events",
         ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
@@ -291,6 +296,7 @@ describe("the baseline", () => {
             [5, "usage_limit_history"],
             [6, "message_parts"],
             [7, "hosts"],
+            [8, "actor_events"],
           ]);
           // A closed thread has no live row, but must retain its permanent safety identity.
           if (reopen === 0) {
@@ -451,11 +457,12 @@ describe("the baseline", () => {
       for (let reopen = 0; reopen < 2; reopen++) {
         yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          expect((yield* applied).map((row) => row.name).slice(-4)).toEqual([
+          expect((yield* applied).map((row) => row.name).slice(-5)).toEqual([
             "merge_fences",
             "usage_limit_history",
             "message_parts",
             "hosts",
+            "actor_events",
           ]);
           expect(yield* sql`SELECT key, data FROM usage_limits`).toEqual([
             { key: "codex//five_hour", data: '{"synthetic":true}' },

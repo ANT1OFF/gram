@@ -8,6 +8,7 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { frontedIdentityFrom, type FrontedIdentityConfig } from "./http/fronted-identity.ts";
 import { remoteOrigin } from "./http/remote-access.ts";
 import { type ProvisionedHostsConfig, provisionedHostsFrom } from "./host/provisioned.ts";
 import { defaultDataDir } from "./logging/data-dir.ts";
@@ -36,6 +37,11 @@ export interface ServerConfigShape {
    * its environment is set, there is none and no host can be provisioned.
    */
   readonly provisionedHosts?: ProvisionedHostsConfig;
+  /**
+   * Sign-in by a fronting proxy's signed statements (`http/fronted-identity.ts`), as the
+   * environment configures it; used only while the hosted features setting is on.
+   */
+  readonly frontedIdentity?: FrontedIdentityConfig;
   /** Overrides the `agents.idleEvictMinutes` setting when set. */
   readonly idleEvictAfter: Duration.Duration | undefined;
   readonly interruptWatchdog: Duration.Duration;
@@ -124,6 +130,8 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     const debounceMs = Number(env["GRAM_ORCHESTRATION_DEBOUNCE_MS"]);
     const listenHost = listenHostFrom(env);
     const provisionedHosts = provisionedHostsFrom(env);
+    // Throws on a partial or malformed configuration: such a server must not start.
+    const frontedIdentity = frontedIdentityFrom(env);
     return {
       dataDir: defaultDataDir(env),
       ...(env["GRAM_REMOTE_ORIGIN"] !== undefined
@@ -132,6 +140,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
       ...(provisionedHosts === undefined ? {} : { provisionedHosts }),
       port: Number.isInteger(port) && port >= 0 && port < 65536 ? port : 0,
       ...(listenHost === undefined ? {} : { listenHost }),
+      ...(frontedIdentity === undefined ? {} : { frontedIdentity }),
       webRoot: env["GRAM_WEB_ROOT"] || undefined,
       extraOrigins: (env["GRAM_ALLOWED_ORIGINS"] ?? "")
         .split(",")

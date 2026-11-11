@@ -77,6 +77,87 @@ from its environment when it starts: `GRAM_EMBEDDING=1` turns it on, `GRAM_EMBED
 off, and without the variable the stored setting stays as it is. Only the app on the server's own
 machine changes it; a paired phone can't.
 
+### Move a workspace to another Gram
+
+With hosted features on at both ends, a workspace can leave one Gram and carry on in another, for
+example from the app on your computer to a server with no window. Both calls are for the app on
+the server's own machine, with its launch cookie; a paired phone or a joined machine is refused.
+
+1. On the Gram it leaves, `POST /workspaces/export` with `{"workspaceId": "…"}` answers the
+   workspace as one JSON bundle. It is refused while the orchestrator is mid-turn, and it
+   pauses the workspace there so two orchestrators never work the same branches. Send
+   `"pause": false` to take a copy and keep it running.
+2. On the Gram it moves to, `POST /workspaces/import` with
+   `{"bundle": …, "projects": {"<project id in the bundle>": {"root": "/path/on/this/server"}}}`.
+   Every repository of the workspace needs its folder here named; nothing is cloned or guessed.
+
+What moves: the charter, stages and groups, the orchestrator's conversation and its memory, the
+feature cards, the audit that budgets are counted from, and the transcript of every worker. The
+orchestrator opens under the same thread on a new session, on a model this server chooses, and its
+first digest tells it what moved and where its repositories are now.
+
+What stays: agent sessions, worktrees and anything not pushed from them, folder grants, approvals
+in flight, file checkpoints, attachments, routines' state and sign-ins. Workers that were open
+arrive as finished ones: their branch, pull requests and last report are told to the orchestrator,
+which starts workers again where it needs them. Push the branches before you export.
+
+An import replaces nothing. It is refused when the workspace or its orchestrator's thread is
+already there, when the bundle came from a newer Gram, or when a repository has no usable folder.
+The app's settings in the bundle (review bots and workspace defaults) are taken only with
+`"adoptSettings": true`. A bundle is scrubbed of what looks like a credential, but it holds your
+conversation and memory: keep it as you would those. Import only a bundle you exported or trust: it
+brings its own charter, with its autonomy, and its orchestrator starts working. Its routines arrive
+switched off, for you to turn on here.
+
+### Sign-in through a proxy
+
+With hosted features on, a server can leave sign-in to a proxy you run in front of it: an
+identity-aware proxy or a gateway of your own. The proxy signs people in however it likes, then
+tells Gram who each request is from in a statement it signs. The launch token no longer signs
+anyone in, and isn't printed.
+
+Set all four of these where the server runs. With some of them missing or malformed the server
+refuses to start.
+
+| Variable                 | What it sets                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `GRAM_IDENTITY_KEYS`     | The proxy's Ed25519 public keys, as a JWK Set (`{"keys":[…]}`), each with a `kid` |
+| `GRAM_IDENTITY_ISSUER`   | The `iss` the proxy's statements carry                                            |
+| `GRAM_IDENTITY_AUDIENCE` | The `aud` that names this one server; a statement for another is refused          |
+| `GRAM_PUBLIC_ORIGIN`     | The one `https://` origin browsers use; a request from another origin is refused  |
+
+On every request, WebSocket upgrades included, the proxy sets the `x-gram-identity` header to a
+JWT signed with one of those keys (`alg` `EdDSA`), and removes any `x-gram-identity` the client
+sent. The claims:
+
+- `iss` and `aud`, as configured.
+- `sub`, an id for the person that never changes, and optionally `name` to show.
+- `role`: `member`, who can do everything, or `viewer`, who can read threads, diffs, docs,
+  memory and settings, and change nothing. A viewer can read any file in a thread's folders,
+  including ones that hold secrets, such as `.env`.
+- `iat` and `exp`, at most five minutes apart. Make a new statement per request.
+
+The server holds public keys only, so it can't sign a statement itself. What you have to keep
+true around it:
+
+- The proxy is the only thing that can reach the server's port. A statement is good for a few
+  minutes for whoever holds it, so the hop from the proxy to the server stays private.
+- A WebSocket is checked when it opens and keeps its person and role until it closes. When
+  someone signs out or their role changes, the proxy closes their connections.
+- A WebSocket the proxy leaves open is closed by the server after 15 minutes, and the app
+  connects again with a new statement.
+- The proxy doesn't route `/mcp` or `/host/*`. Those are the agents' and joined machines' own
+  routes, with each thread's token or a machine's own proof, and are unchanged. A request there
+  that carries a statement is refused. Phone access and the Machines page are off behind a proxy.
+- With the four variables set but hosted features off, the server logs a warning and takes the
+  launch token as usual.
+
+Each change a member makes is recorded with who made it: the call, the thread or workspace, and
+what identifies the thing changed (a message's id, a request and its allow or deny, the names of
+the settings), never what was typed. A call that failed is recorded as failed. Keystrokes in a
+terminal aren't recorded; opening one is. The `actor_events` table in the database holds a year
+of them. A message, an answer and a settings change by two people are two people's entries.
+
 ## A headless control plane
 
 With `GRAM_HEADLESS=1` the server runs no work itself. It starts no agent, opens no terminal and
@@ -92,6 +173,8 @@ services:
       GRAM_HEADLESS: "1"
 ```
 
+- A machine gets in as any does: joined over Tailscale, or, with no tailnet around the
+  container, registered by its key as a [provisioned host](PROVISIONED_HOSTS.md).
 - A thread whose request names no machine goes on the confirmed machine online now that joined
   first. A worker's `machine` and the composer's Machine select still pick another.
 - An orchestrator works in the machine's own clone of its project, on the clone's default branch.

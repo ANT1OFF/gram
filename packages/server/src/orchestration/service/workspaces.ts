@@ -600,5 +600,15 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       return thread;
     });
 
-  return { saveWorkspace, commitWorkspace, whileWorkspaceStays, removeWorkspace, open };
+  const arrive: OrchestrationShape["arrive"] = (write) =>
+    registryLock
+      .withPermits(1)(
+        Effect.gen(function* () {
+          const taken = (yield* store.listWorkspaces).map(({ workspace }) => workspace.name);
+          return yield* write(taken);
+        }),
+      )
+      .pipe(Effect.tap(() => workspacesChanged));
+
+  return { saveWorkspace, commitWorkspace, whileWorkspaceStays, removeWorkspace, open, arrive };
 };

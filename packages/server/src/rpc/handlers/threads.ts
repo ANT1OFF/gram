@@ -56,6 +56,7 @@ import { makeThreadCreator } from "../../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../../runtime/hooks.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { isLocalApp } from "../../http/local-app.ts";
+import { makeProfileRepositories } from "../../thread-profiles/repositories.ts";
 import { makeProfileStarter } from "../../thread-profiles/start.ts";
 
 /** What a phone, or any caller but the local app, hears when it asks for a machine folder. */
@@ -187,7 +188,22 @@ export const threadHandlers = Effect.gen(function* () {
     });
 
   const creator = makeThreadCreator({ store, checkouts, runtimes });
-  const profiles = makeProfileStarter({ store, runtimes, dataDir: config.dataDir });
+  const profiles = makeProfileStarter({
+    store,
+    runtimes,
+    dataDir: config.dataDir,
+    repositories: Option.match(proc, {
+      onNone: () => undefined,
+      onSome: (service) =>
+        makeProfileRepositories({
+          proc: service,
+          dataDir: config.dataDir,
+          ensureProject: store.ensureProject,
+          prepare: creator.prepare,
+          discard: checkouts.discard,
+        }),
+    }),
+  });
   const prepareCheckout = creator.prepare;
 
   /**
