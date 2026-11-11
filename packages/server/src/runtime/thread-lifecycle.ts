@@ -262,6 +262,7 @@ export const makeThreadLifecycle = ({
         ...(input.role === undefined ? {} : { role: input.role }),
         ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
         ...(input.spawnedBy === undefined ? {} : { spawnedBy: input.spawnedBy }),
+        ...(input.profile === undefined ? {} : { profile: input.profile }),
         ...(input.additionalDirectories === undefined || input.additionalDirectories.length === 0
           ? {}
           : { additionalDirectories: [...input.additionalDirectories] }),

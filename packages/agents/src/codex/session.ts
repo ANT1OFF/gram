@@ -816,7 +816,7 @@ export const makeCodexHost = (
           : undefined;
       // Confinement already switches every server off; otherwise the workspace's lists might.
       const narrowedRead =
-        confined === undefined && narrowsMcp(o)
+        confined === undefined && (narrowsMcp(o) || o.mcpServer !== undefined)
           ? yield* server.rpc
               .request("config/read", { includeLayers: false, cwd: o.cwd })
               .pipe(
@@ -832,6 +832,15 @@ export const makeCodexHost = (
       const configured = new Set(
         typeof tables === "object" && tables !== null ? Object.keys(tables) : [],
       );
+      // A thread's table merges into a same-named one of the user's or the folder's, so that
+      // table's command, headers or token would go with the address the session was given.
+      if (o.mcpServer !== undefined && confined === undefined && configured.has(o.mcpServer.name)) {
+        return yield* new AgentUnavailable({
+          agent: "codex",
+          reason: "startup-failed",
+          message: `This session is given an MCP server named ${o.mcpServer.name}, and Codex's config here already has one by that name. Rename or remove it in the Codex config to run here.`,
+        });
+      }
       const overrides = serverOverrides.get(o.threadId) ?? new Map<string, boolean>();
       const mcpServers = {
         ...confined?.mcp_servers,
@@ -842,6 +851,11 @@ export const makeCodexHost = (
             .filter(([name, enabled]) => !enabled || (confined === undefined && !(name in leftOut)))
             .map(([name, enabled]) => [name, { enabled }]),
         ),
+        // The one server the session was given by address (`mcpServer`), unless it is confined.
+        // `enabled` because a same-named table of the user's could otherwise switch it off.
+        ...(o.mcpServer === undefined || confined !== undefined
+          ? {}
+          : { [o.mcpServer.name]: { enabled: true, url: o.mcpServer.url } }),
         // App tools: one MCP server per thread, bound to it by the thread's bearer token. The
         // registry gates its own tools, so Codex doesn't ask again.
         ...(o.mcp === undefined
@@ -937,7 +951,10 @@ export const makeCodexHost = (
           o.mcp !== undefined,
         ).filter(
           (name) =>
-            Object.hasOwn(leftOut, name) || (!configured.has(name) && listsLeaveOut(o, { name })),
+            // The server the session was given by address is on because it was asked for, and
+            // is its table alone: a configured one of that name was refused above.
+            name !== o.mcpServer?.name &&
+            (Object.hasOwn(leftOut, name) || (!configured.has(name) && listsLeaveOut(o, { name }))),
         );
         if (kept.length > 0) {
           return yield* new AgentUnavailable({

@@ -1022,6 +1022,13 @@ describe("GramRpcs", () => {
     }
   });
 
+  it("takes a thread.createFromProfile profile as it comes, for the handler to decode strictly", () => {
+    const create = payloadOf("thread.createFromProfile");
+    const profile = { version: 1, mandate: "a key the schema would drop" };
+    expect(create({ profile })).toEqual({ profile });
+    expect(() => create({})).toThrow();
+  });
+
   it("decodes a thread.startSession payload and round-trips each outcome", () => {
     const start = payloadOf("thread.startSession");
     expect(start({ threadId: "t1" })).toEqual({ threadId: "t1" });

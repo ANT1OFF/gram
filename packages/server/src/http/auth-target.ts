@@ -17,6 +17,9 @@ const protectedPaths = [
   "/host/connect",
   "/host/mcp",
   "/host/install",
+  // A workspace's bundle, out and in: the local app only, so no alias may slip past that check.
+  "/workspaces/export",
+  "/workspaces/import",
 ] as const;
 const protectedRoutes = FindMyWay.make<string>();
 for (const path of protectedPaths) protectedRoutes.all(path, path);
