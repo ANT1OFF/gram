@@ -216,6 +216,9 @@ const PUSHED_EVENT_SETTLE = Duration.seconds(1);
  */
 export const PUSHED_RECONCILE_EVERY = Duration.minutes(20);
 
+/** The least time between two pushed reads of one checkout, however many events name it. */
+export const PUSHED_READ_APART = Duration.seconds(5);
+
 /**
  * Repository events told from outside (`embedding/inbound.ts`), which the publisher takes in place
  * of asking GitHub. A service of its own, beside the publisher that provides it.
@@ -226,7 +229,9 @@ export class RepoEvents extends Context.Service<
     /**
      * The lookup caches are dropped and every checkout whose threads show, are bound to, follow or
      * wait on what `event` names is read from the network. Answers how many checkouts that was; a
-     * burst of events for one checkout is one read.
+     * burst of events for one checkout is one read, and reads of one checkout keep
+     * `PUSHED_READ_APART`. Nothing, and 0, unless events are pushed (`GRAM_REPO_EVENTS=pushed`
+     * with the hosted features on).
      */
     readonly pushed: (event: PushedRepoEvent) => Effect.Effect<number>;
   }
@@ -1303,6 +1308,7 @@ export const GitStatePublisherLive = Layer.effectContext(
                 .pipe(Effect.option)
             : Option.some<GitState>(yield* missingState(previous, recorded, options.remote));
           if (Option.isNone(next)) return;
+          if (options.remote) reconciledAt.set(key, yield* Clock.currentTimeMillis);
           if (options.reuseLocal !== true) localReadAt.set(key, sweeps);
           // The lookup below can settle an archived thread, which still has to be sent its answer.
           const tracked = new Set((inventory ?? (yield* openThreads)).map((t) => t.id));
@@ -1371,6 +1377,11 @@ export const GitStatePublisherLive = Layer.effectContext(
 
     /** When each checkout's network tier last ran, for a focus that needn't refresh what is fresh. */
     const lastRemoteAt = new Map<string, number>();
+    /**
+     * When each checkout's network tier last gave an answer: what the reconcile of a checkout whose
+     * events are pushed goes by, so a read that failed is not counted as one.
+     */
+    const reconciledAt = new Map<string, number>();
     /** Until when each checkout is asked about on every sweep, because GitHub is about to react. */
     const expectingUntil = new Map<string, number>();
 
@@ -1449,7 +1460,10 @@ export const GitStatePublisherLive = Layer.effectContext(
         skippedSweeps.delete(key);
         localReadAt.delete(key);
         lastRemoteAt.delete(key);
+        reconciledAt.delete(key);
+        pushedReadAt.delete(key);
         expectingUntil.delete(key);
+        yield* FiberMap.remove(pushedReads, key);
         // A queued refresh left running, or its rerun, would put the dropped state back.
         yield* FiberMap.remove(refreshers, refresherKey(key, true));
         yield* FiberMap.remove(refreshers, refresherKey(key, false));
@@ -1725,14 +1739,16 @@ export const GitStatePublisherLive = Layer.effectContext(
 
     /** Whether a checkout whose events are pushed is due its fallback read from the network. */
     const reconcileDue = (key: string, now: number) =>
-      now - (lastRemoteAt.get(key) ?? -Infinity) >= Duration.toMillis(PUSHED_RECONCILE_EVERY);
+      now - (reconciledAt.get(key) ?? -Infinity) >= Duration.toMillis(PUSHED_RECONCILE_EVERY);
 
-    /** The checkouts with a pushed event's read on its way, so a burst of events is one read. */
-    const pushedPending = new Set<string>();
+    /** The read each pushed event's checkout is owed, so a burst of events is one read. */
     const pushedReads = yield* FiberMap.make<string>();
+    /** When each checkout's last pushed read began, which the next keeps its distance from. */
+    const pushedReadAt = new Map<string, number>();
 
     const pushed: RepoEvents["Service"]["pushed"] = (event) =>
       Effect.gen(function* () {
+        if (!(yield* eventsPushed)) return 0;
         const touched = [...checkoutsOf(yield* openThreads)].filter(([key, entry]) =>
           pushedEventTouches(
             event,
@@ -1741,23 +1757,33 @@ export const GitStatePublisherLive = Layer.effectContext(
             prWatches.forThreads(entry.threads.map((thread) => thread.id)),
           ),
         );
+        const now = yield* Clock.currentTimeMillis;
         for (const [key, entry] of touched) {
-          if (pushedPending.has(key)) continue;
-          pushedPending.add(key);
+          const wait = Math.max(
+            Duration.toMillis(PUSHED_EVENT_SETTLE),
+            (pushedReadAt.get(key) ?? -Infinity) + Duration.toMillis(PUSHED_READ_APART) - now,
+          );
           yield* FiberMap.run(
             pushedReads,
             key,
-            Effect.sleep(PUSHED_EVENT_SETTLE).pipe(
+            Effect.sleep(Duration.millis(wait)).pipe(
               Effect.andThen(
-                Effect.suspend(() => {
-                  pushedPending.delete(key);
+                Effect.gen(function* () {
+                  // GitHub is refusing: no read goes into that, and the next sweep that is let
+                  // through reads this checkout first.
+                  if ((yield* backoff.consecutive) > 0) {
+                    reconciledAt.delete(key);
+                    return;
+                  }
+                  pushedReadAt.set(key, yield* Clock.currentTimeMillis);
                   // What the caches hold was read before the event: the read must reach GitHub.
                   invalidatePrBadges();
-                  return requestRefresh(entry.spot, true, "background");
+                  yield* requestRefresh(entry.spot, true, "background");
                 }),
               ),
-              Effect.ensuring(Effect.sync(() => pushedPending.delete(key))),
             ),
+            // An event during the wait is covered by the read already owed.
+            { onlyIfMissing: true },
           );
         }
         return touched.length;

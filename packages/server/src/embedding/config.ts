@@ -81,6 +81,18 @@ const service = (
   return { url, ...(token === undefined ? {} : { token }) };
 };
 
+/** The variables that carry a secret, which nothing the server starts may inherit. */
+const SECRET_VARIABLES = ["GRAM_EMBED_TOKEN", "GRAM_SCHEDULER_TOKEN", "GRAM_OBJECT_STORE_TOKEN"];
+
+/**
+ * Takes the embedding secrets out of `env`, once they have been read from it. Agents, terminals and
+ * `git` all start with the server's environment, and an agent holding the inbound token could
+ * call the server as the platform does.
+ */
+export const scrubEmbedSecrets = (env: Record<string, string | undefined>): void => {
+  for (const name of SECRET_VARIABLES) delete env[name];
+};
+
 /**
  * Reads the embedding variables; `undefined` when none is set. A malformed value throws at start
  * rather than half-configure.

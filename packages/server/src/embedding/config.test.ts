@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ServerConfig } from "../config.ts";
-import { embedFromEnv } from "./config.ts";
+import { embedFromEnv, scrubEmbedSecrets } from "./config.ts";
 
 const TOKEN = "0123456789abcdef0123456789abcdef";
 
@@ -44,6 +44,34 @@ describe("embedFromEnv", () => {
     }
     expect(message).toContain("GRAM_OBJECT_STORE_URL");
     expect(message).not.toContain("hunter2");
+  });
+
+  it("takes its secrets out of the environment children inherit, and nothing else", () => {
+    const env: Record<string, string | undefined> = {
+      GRAM_EMBED_TOKEN: TOKEN,
+      GRAM_SCHEDULER_URL: "http://s.svc",
+      GRAM_SCHEDULER_TOKEN: TOKEN,
+      GRAM_OBJECT_STORE_TOKEN: TOKEN,
+      GRAM_REPO_EVENTS: "pushed",
+      PATH: "/usr/bin",
+    };
+    // Reading a given environment leaves it alone; only the server's own is scrubbed.
+    ServerConfig.fromEnv({ ...env, GRAM_OBJECT_STORE_TOKEN: undefined });
+    scrubEmbedSecrets(env);
+    expect(env).toEqual({
+      GRAM_SCHEDULER_URL: "http://s.svc",
+      GRAM_REPO_EVENTS: "pushed",
+      PATH: "/usr/bin",
+    });
+
+    const kept = { ...process.env };
+    try {
+      process.env["GRAM_EMBED_TOKEN"] = TOKEN;
+      expect(ServerConfig.fromEnv().embed?.inboundToken).toBe(TOKEN);
+      expect(process.env["GRAM_EMBED_TOKEN"]).toBeUndefined();
+    } finally {
+      process.env = kept;
+    }
   });
 
   it("refuses a URL that isn't a plain http(s) one", () => {

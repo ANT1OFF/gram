@@ -193,6 +193,25 @@ describe("pushed repository events", () => {
     }).pipe(Effect.scoped, Effect.provide(layer("pushed"))),
   );
 
+  it.effect("keep reads of one checkout apart, however many events name it", () =>
+    Effect.gen(function* () {
+      const events = yield* RepoEvents;
+      yield* openThread("/work/f");
+      const before = readsOf("/work/f");
+      // An event a second for ten seconds: a read every five at most.
+      for (let second = 0; second < 10; second++) {
+        yield* events.pushed({ repo: "acme/web" });
+        yield* pass(Duration.seconds(1));
+      }
+      const reads = readsOf("/work/f") - before;
+      expect(reads).toBeGreaterThanOrEqual(1);
+      expect(reads).toBeLessThanOrEqual(2);
+      // The last events are still owed their read.
+      yield* pass(Duration.seconds(6));
+      expect(readsOf("/work/f") - before).toBe(reads + 1);
+    }).pipe(Effect.scoped, Effect.provide(layer("pushed"))),
+  );
+
   it.effect("still reconcile now and then, for an event that never arrived", () =>
     Effect.gen(function* () {
       yield* openThread("/work/c");
@@ -220,6 +239,8 @@ describe("pushed repository events", () => {
   it.effect("change nothing where events aren't pushed", () =>
     Effect.gen(function* () {
       yield* openThread("/work/e");
+      // An event told anyway reads nothing: the sweeps are asking.
+      expect(yield* (yield* RepoEvents).pushed({ repo: "acme/web", number: 7 })).toBe(0);
       const before = remote.length;
       yield* pass(Duration.minutes(1));
       expect(remote.length - before).toBeGreaterThanOrEqual(3);

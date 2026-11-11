@@ -16,7 +16,8 @@ value stops the server at start rather than half-configuring it.
 | `GRAM_EMBED_TOKEN` | The bearer token the platform's services send on `/embed/v1/*`                 |
 | `GRAM_REPO_EVENTS` | `pushed`: repository events arrive on `/embed/v1/repo-events`; needs the token |
 
-Tokens are at least 32 characters with no whitespace.
+Tokens are at least 32 characters with no whitespace. The server takes them out of its own
+environment once it has read them, so no agent, terminal or `git` process it starts inherits one.
 
 ## Calls into the server
 
@@ -57,12 +58,15 @@ Content-Type: application/json
 - `repo` is `owner/name`. `number` is the pull request and `branch` its head branch; both are
   optional. Send `branch` for a pull request that was just opened, which its checkout knows only by
   its branch. An event naming neither is about every checkout of the repository.
-- `kind` is one of `pull_request`, `check`, `review` and `comment`. It is optional and only logged.
+- `kind` is one of `pull_request`, `check`, `review` and `comment`. It is optional and changes
+  nothing: the read shows whatever changed.
 - A call carries 1 to 200 events and answers `{ "accepted": <events>, "checkouts": <read> }`.
 
 An event carries no state. It names what changed and the server reads it from GitHub as it reads
 everything else, so a stale or mistaken event costs one read and shows nothing untrue. Events for
-one checkout within a second are one read. An event touches a checkout when it names the pull
+one checkout within a second are one read, reads of one checkout are at least five seconds apart,
+and no read is made while GitHub is rate limiting the server. Without `GRAM_REPO_EVENTS=pushed`
+the path answers `409`. An event touches a checkout when it names the pull
 request the checkout shows, its branch, or a pull request one of its threads is bound to, follows
 or has a wake on.
 

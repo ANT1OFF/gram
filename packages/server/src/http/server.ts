@@ -196,7 +196,14 @@ export const AuthMiddleware = HttpRouter.middleware(
         // An embedding platform's own service: its bearer token alone, before the loopback checks,
         // since it reaches the server by its address inside the deployment. `undefined` while the
         // hosted features are off, and the request is then any other.
-        if (embedInbound !== undefined && path !== undefined && path.startsWith(EMBED_PREFIX)) {
+        // Never over phone access: a request that came in by Tailscale is a person's device.
+        if (
+          embedInbound !== undefined &&
+          !isRemote &&
+          request.headers["tailscale-user-login"] === undefined &&
+          path !== undefined &&
+          path.startsWith(EMBED_PREFIX)
+        ) {
           const answered = yield* embedInbound.respond(request, path);
           if (answered !== undefined) return secureResponse(answered);
         }

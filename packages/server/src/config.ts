@@ -8,7 +8,7 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { embedFromEnv, type EmbedConfigShape } from "./embedding/config.ts";
+import { embedFromEnv, scrubEmbedSecrets, type EmbedConfigShape } from "./embedding/config.ts";
 import { remoteOrigin } from "./http/remote-access.ts";
 import { defaultDataDir } from "./logging/data-dir.ts";
 
@@ -117,6 +117,8 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     const debounceMs = Number(env["GRAM_ORCHESTRATION_DEBOUNCE_MS"]);
     const listenHost = listenHostFrom(env);
     const embed = embedFromEnv(env);
+    // Read once, here; no child process inherits them from the server's own environment.
+    if (env === process.env) scrubEmbedSecrets(env);
     return {
       dataDir: defaultDataDir(env),
       ...(env["GRAM_REMOTE_ORIGIN"] !== undefined
