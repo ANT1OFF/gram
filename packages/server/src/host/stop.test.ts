@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
@@ -22,6 +22,8 @@ import { streamPair } from "./test-stream.ts";
 
 const IDLE: HostBusy = { turns: 0, terminals: 0, clones: 0, checks: 0 };
 const THREAD = ThreadId.make("thread-1");
+/** The tests' remote is a bare repository on disk. */
+const FILE = "file";
 const live = Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)));
 
 /** A repository with uncommitted work and a bare `origin` beside it, removed with the scope. */
@@ -46,6 +48,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         proc: yield* Proc,
         busy: Effect.succeed(IDLE),
         admission: makeAdmission(),
+        protocols: FILE,
       });
       const prepared = yield* stop.prepare({
         // Named twice: kept once.
@@ -83,6 +86,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         proc: yield* Proc,
         busy: Effect.succeed(busy),
         admission: makeAdmission(),
+        protocols: FILE,
       });
       const checkouts = [{ threadId: THREAD, cwd: repo }];
       expect(yield* stop.prepare({ checkouts })).toEqual({ idle: false, busy, kept: [] });
@@ -100,7 +104,12 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
   it.live("isn't idle with work let in and unanswered, or under an update", () =>
     Effect.gen(function* () {
       const admission = makeAdmission();
-      const stop = stopOn({ proc: yield* Proc, busy: Effect.succeed(IDLE), admission });
+      const stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission,
+        protocols: FILE,
+      });
       admission.close();
       expect(yield* stop.prepare({ checkouts: [] })).toMatchObject({
         idle: false,
@@ -127,8 +136,11 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         proc: yield* Proc,
         busy: Effect.succeed(IDLE),
         admission: makeAdmission(),
+        protocols: FILE,
         admit: (cwd) =>
-          cwd === "/refused" ? Effect.fail({ message: "Not this folder." }) : Effect.void,
+          cwd === "/refused"
+            ? Effect.fail({ message: "Not this folder." })
+            : Effect.succeed({ path: cwd }),
       });
       const prepared = yield* stop.prepare({
         checkouts: [
@@ -156,6 +168,123 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
     }).pipe(Effect.scoped, live),
   );
 
+  it.live("keeps nothing of a repository whose working tree is above the folder let through", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      mkdirSync(join(repo, "inner"));
+      const stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission: makeAdmission(),
+        protocols: FILE,
+        // Only the inner folder is one a session could open.
+        admit: (cwd) =>
+          cwd === join(repo, "inner")
+            ? Effect.succeed({ path: cwd })
+            : Effect.fail({ message: "That folder holds credentials." }),
+      });
+      const prepared = yield* stop.prepare({
+        checkouts: [{ threadId: THREAD, cwd: join(repo, "inner") }],
+      });
+      expect(prepared.kept).toEqual([
+        {
+          threadId: THREAD,
+          cwd: join(repo, "inner"),
+          pushed: false,
+          note: "That folder holds credentials.",
+        },
+      ]);
+      expect(run(repo, "for-each-ref", "refs/gram/")).toBe("");
+      expect(run(origin, "for-each-ref")).toBe("");
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("runs git where the gate says the folder is, and keeps one folder per repository", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      const second = join(repo, "..", "second");
+      run(repo, "worktree", "add", "--quiet", "-b", "second", second);
+      const stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission: makeAdmission(),
+        protocols: FILE,
+        admit: (cwd) => Effect.succeed({ path: cwd === "~/work" ? repo : cwd }),
+      });
+      const prepared = yield* stop.prepare({
+        checkouts: [
+          { threadId: THREAD, cwd: "~/work" },
+          { threadId: THREAD, cwd: realpathSync(second) },
+        ],
+      });
+      expect(prepared.kept[0]).toMatchObject({ cwd: "~/work", pushed: true });
+      expect(run(origin, "show", `${wipRef(THREAD)}:new.txt`)).toBe("untracked\n");
+      expect(prepared.kept[1]).toMatchObject({ pushed: false });
+      expect(prepared.kept[1]?.note).toContain("one is kept per repository");
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("says the stop was taken back when a cancel came while it kept the folders", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* worktree;
+      let stop: ReturnType<typeof stopOn> | undefined;
+      stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission: makeAdmission(),
+        protocols: FILE,
+        // The cancel lands as the folder is looked at.
+        admit: (cwd) => Effect.as(stop!.cancel, { path: cwd }),
+      });
+      const prepared = yield* stop.prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
+      expect(prepared).toMatchObject({ idle: false, note: "The stop was taken back meanwhile." });
+      expect(stop.stopping()).toBe(false);
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("holds from its answer, and doesn't put back a hold a cancel took away", () =>
+    Effect.gen(function* () {
+      let now = 1_000;
+      let busy: HostBusy = IDLE;
+      let onLook = Effect.void;
+      const stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.suspend(() => Effect.as(onLook, busy)),
+        admission: makeAdmission(),
+        now: () => now,
+        holdMs: 500,
+      });
+      // The look takes a while: the hold is counted from the answer.
+      onLook = Effect.sync(() => void (now = 1_400));
+      yield* stop.prepare({ checkouts: [] });
+      now = 1_800;
+      expect(stop.stopping()).toBe(true);
+      // Held, then asked again while busy, with a cancel during the look: not held after it.
+      busy = { ...IDLE, turns: 1 };
+      onLook = stop.cancel;
+      expect(yield* stop.prepare({ checkouts: [] })).toMatchObject({ idle: false });
+      expect(stop.stopping()).toBe(false);
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("keeps its folders as work an update waits for", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* worktree;
+      const admission = makeAdmission();
+      let during = -1;
+      const stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission,
+        protocols: FILE,
+        admit: (cwd) => Effect.sync(() => ((during = admission.inflight()), { path: cwd })),
+      });
+      yield* stop.prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
+      expect(during).toBe(1);
+      expect(admission.inflight()).toBe(0);
+    }).pipe(Effect.scoped, live),
+  );
+
   it.live("takes work again once the hold has passed without a stop", () =>
     Effect.gen(function* () {
       let now = 1_000;
@@ -163,6 +292,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         proc: yield* Proc,
         busy: Effect.succeed(IDLE),
         admission: makeAdmission(),
+        protocols: FILE,
         now: () => now,
         holdMs: 500,
       });
@@ -198,7 +328,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         sessions: yield* sessionsOnHost(noAgents),
         scan: Effect.succeed({ listening: new Map(), children: new Map() }),
         admission,
-        stop: stopOn({ proc, busy: Effect.succeed(IDLE), admission }),
+        stop: stopOn({ proc, busy: Effect.succeed(IDLE), admission, protocols: FILE }),
       };
       yield* Effect.forkScoped(
         serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(host)), service),

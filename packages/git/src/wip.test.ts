@@ -6,6 +6,8 @@ import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-utils.t
 import { isPushRemote, pushWip, snapshotWip, wipRef } from "./wip.ts";
 
 const provide = Effect.provide(ProcLive);
+/** The tests' remote is a bare repository on disk. */
+const FILE = "file";
 
 describe.skipIf(!hasGit)("a thread's work in progress", () => {
   const dirs: Array<string> = [];
@@ -44,7 +46,7 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
       // The same tree on the same HEAD keeps its commit, so a repeat has nothing new to push.
       expect((yield* snapshotWip(repo, "thread-1")).commit).toBe(kept.commit);
 
-      yield* pushWip(repo, kept);
+      yield* pushWip(repo, kept, "origin", FILE);
       expect(run(origin, "rev-parse", wipRef("thread-1")).trim()).toBe(kept.commit);
       expect(run(origin, "show", `${wipRef("thread-1")}:tracked.txt`)).toBe("edited\n");
       // No branch of the remote moved.
@@ -56,15 +58,29 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
     Effect.gen(function* () {
       const { repo, origin } = withOrigin();
       write(nodePath.join(repo, "tracked.txt"), "first\n");
-      yield* pushWip(repo, yield* snapshotWip(repo, "thread-1"));
+      yield* pushWip(repo, yield* snapshotWip(repo, "thread-1"), "origin", FILE);
       run(repo, "commit", "--quiet", "-am", "local only");
       const head = run(repo, "rev-parse", "HEAD").trim();
 
       const clean = yield* snapshotWip(repo, "thread-1");
       expect(clean).toMatchObject({ commit: head, uncommitted: false });
-      yield* pushWip(repo, clean);
+      yield* pushWip(repo, clean, "origin", FILE);
       expect(run(origin, "rev-parse", wipRef("thread-1")).trim()).toBe(head);
       expect(run(origin, "log", "-1", "--format=%s", wipRef("thread-1")).trim()).toBe("local only");
+    }).pipe(provide),
+  );
+
+  it.live("writes that one ref whatever the user's config says of tags", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = withOrigin();
+      run(repo, "config", "push.followTags", "true");
+      run(repo, "tag", "-a", "v1", "-m", "v1");
+      write(nodePath.join(repo, "tracked.txt"), "edited\n");
+      yield* pushWip(repo, yield* snapshotWip(repo, "thread-1"), "origin", FILE);
+      expect(run(origin, "for-each-ref", "--format=%(refname)").trim().split("\n")).toEqual([
+        wipRef("thread-1"),
+        "refs/heads/main",
+      ]);
     }).pipe(provide),
   );
 
@@ -78,6 +94,18 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
       expect((yield* Effect.flip(pushWip(repo, kept, "--receive-pack=x"))).message).toContain(
         "invalid remote",
       );
+      // A remote on disk, or one that names a helper to run, is refused by git itself.
+      expect((yield* Effect.flip(pushWip(repo, kept))).message).toMatch(/not allowed|file/);
+      expect(
+        (yield* Effect.flip(pushWip(repo, kept, "ext::sh -c touch%20/tmp/x"))).message,
+      ).toContain("invalid remote");
+      expect((yield* Effect.flip(pushWip(repo, kept, "ext::/bin/true"))).message).toMatch(
+        /not allowed|ext/,
+      );
+      expect(
+        (yield* Effect.flip(pushWip(repo, { ...kept, ref: "refs/heads/main" }, "origin", FILE)))
+          .message,
+      ).toContain("not a work-in-progress snapshot");
       expect(isPushRemote("origin")).toBe(true);
       expect(isPushRemote("https://git.example.test/acme/widgets.git")).toBe(true);
       expect(isPushRemote("")).toBe(false);

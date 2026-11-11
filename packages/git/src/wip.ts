@@ -12,9 +12,6 @@ import { git, gitFailMsg } from "./exec.ts";
 
 export const WIP_REF_PREFIX = "refs/gram/wip";
 
-/** A ref this module wrote: the prefix and one thread id, nothing below or beside it. */
-const WIP_REF = /^refs\/gram\/wip\/[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
-
 export const wipRef = (threadId: string): string => `${WIP_REF_PREFIX}/${threadId}`;
 
 /** A push can carry many objects over a slow link. */
@@ -85,21 +82,54 @@ export const snapshotWip = (repo: string, threadId: string) =>
 export const isPushRemote = (remote: string): boolean =>
   remote !== "" && !remote.startsWith("-") && !/[\s\0]/.test(remote);
 
+/** The transports a push may use, as a clone on a host may: never a helper, a file or `git://`. */
+export const WIP_PUSH_PROTOCOLS = "https:ssh";
+
+/** The thread a work-in-progress ref is for, when `ref` is one this module wrote. */
+const threadOfWipRef = (ref: string): string | undefined => {
+  const prefix = `${WIP_REF_PREFIX}/`;
+  const id = ref.slice(0, prefix.length) === prefix ? ref.slice(prefix.length) : "";
+  return isValidCheckpointId(id) ? id : undefined;
+};
+
 /**
  * Pushes `commit` to `remote` as the thread's work-in-progress ref, replacing what the remote kept
- * under it: the ref is this thread's own and is rewritten at each snapshot. Never prompts for
- * credentials, and runs no pre-push hook, since nothing a person reviews is published.
+ * under it: the ref is this thread's own and is rewritten at each snapshot. Only that ref is
+ * written, whatever the user's config says of tags, submodules and signing; no pre-push hook runs,
+ * since nothing a person reviews is published, and credentials are never prompted for. Only over
+ * `protocols` (`GIT_ALLOW_PROTOCOL`), so a remote can't name a helper to run.
  */
-export const pushWip = (repo: string, snapshot: WipSnapshot, remote = "origin") =>
+export const pushWip = (
+  repo: string,
+  snapshot: WipSnapshot,
+  remote = "origin",
+  protocols: string = WIP_PUSH_PROTOCOLS,
+) =>
   Effect.gen(function* () {
     if (!isPushRemote(remote)) return yield* fail("invalid remote");
-    if (!WIP_REF.test(snapshot.ref) || !/^[0-9a-f]{40,64}$/.test(snapshot.commit))
+    if (
+      threadOfWipRef(snapshot.ref) === undefined ||
+      !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(snapshot.commit)
+    )
       return yield* fail("not a work-in-progress snapshot");
     const top = yield* repoTopOrFail(repo);
     const out = yield* git(
       top,
-      ["push", "--force", "--no-verify", "--", remote, `${snapshot.commit}:${snapshot.ref}`],
-      { timeoutMs: PUSH_TIMEOUT_MS, env: { GIT_TERMINAL_PROMPT: "0" } },
+      [
+        "push",
+        "--force",
+        "--no-verify",
+        "--no-follow-tags",
+        "--no-signed",
+        "--recurse-submodules=no",
+        "--",
+        remote,
+        `${snapshot.commit}:${snapshot.ref}`,
+      ],
+      {
+        timeoutMs: PUSH_TIMEOUT_MS,
+        env: { GIT_TERMINAL_PROMPT: "0", GIT_ALLOW_PROTOCOL: protocols },
+      },
     ).pipe(Effect.mapError((e) => new CheckpointError({ message: e.message })));
     if (out.status !== 0) return yield* fail(gitFailMsg(out, "git push failed"));
   });

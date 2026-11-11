@@ -1330,6 +1330,22 @@ export const connectHost = (
           ),
         ),
     };
+    /**
+     * A stop call: the host's own refusal and a host that went are kept as they are, and a broken
+     * stream ends the host. Anything else is a host built before the call, whose unknown-request
+     * defect is a failed call, not a broken stream.
+     */
+    const stopCall = <A, E extends { readonly _tag: string }>(call: Effect.Effect<A, E>) =>
+      guarded(call).pipe(
+        Effect.catchCause((cause): Effect.Effect<never, HostFailed | HostUnavailable> => {
+          const error = Cause.squash(cause);
+          if (error instanceof HostFailed || error instanceof HostUnavailable)
+            return Effect.fail(error);
+          return ended
+            ? Effect.fail(unavailable(HOST_NOT_ANSWERING))
+            : Effect.fail(new HostFailed({ message: HOST_STOP_UNANSWERED }));
+        }),
+      );
     return {
       hello,
       files,
@@ -1367,40 +1383,22 @@ export const connectHost = (
         Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
       ),
       stop: {
-        // An older host's unknown-request defect is a failed call, not a broken stream.
         prepare: (request) =>
-          guarded(
+          stopCall(
             client["host.stop.prepare"](
               defined({
                 checkouts: request.checkouts,
                 force: request.force,
                 remote: request.remote,
               }),
+            ).pipe(
+              Effect.timeoutOrElse({
+                duration: STOP_TIMEOUT,
+                orElse: () => Effect.fail(unavailable(HOST_NOT_ANSWERING)),
+              }),
             ),
-          ).pipe(
-            Effect.timeoutOrElse({
-              duration: STOP_TIMEOUT,
-              orElse: () => Effect.fail(unavailable(HOST_NOT_ANSWERING)),
-            }),
-            Effect.catchCause((cause) => {
-              const error = Cause.squash(cause);
-              return Effect.fail(
-                error instanceof HostFailed || error instanceof HostUnavailable
-                  ? error
-                  : new HostFailed({ message: HOST_STOP_UNANSWERED }),
-              );
-            }),
           ),
-        cancel: guarded(client["host.stop.cancel"]()).pipe(
-          Effect.catchCause((cause) => {
-            const error = Cause.squash(cause);
-            return Effect.fail(
-              error instanceof HostUnavailable
-                ? error
-                : new HostFailed({ message: HOST_STOP_UNANSWERED }),
-            );
-          }),
-        ),
+        cancel: stopCall(client["host.stop.cancel"]()),
       },
       ...(hello.capabilities.includes("update")
         ? {
