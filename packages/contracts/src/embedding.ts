@@ -116,7 +116,11 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  *   would send it, so a receiver can put right anything a crash kept from the outbox.
  * - `thread.upsert` `{id, title?, role?, status?, spawnedByThreadId?, model?}`,
  *   `thread.removed` `{id}`, `thread.status` `{id, status, idle}`.
- * - `ask.opened` `{id, kind, title, decisionId?, assignees?}`, `ask.resolved` `{id, how}`.
+ * - `ask.opened` `{id, kind, title, decisionId?, assignees?}`.
+ * - `ask.resolved` `{id, how, decision?, answeredBy?}`: `how` is `answered` when a person
+ *   answered it and `withdrawn` when it went unanswered (the turn stopped, the session went, the
+ *   agent took it back). `decision` is the person's `approve` or `reject` of an approval or a
+ *   plan; `answeredBy` is their id, where the server knows who is signed in.
  * - `featureCard.upsert` `{id: "<workspaceId>/<feature>", title, status, version}`.
  * - `usage` `{model?, inputTokens, outputTokens, cacheReadTokens?, cacheWriteTokens?, costUsd?}`.
  * - `decision` `{id, action, decision, reason?}`: each call to the decision hook and its outcome.

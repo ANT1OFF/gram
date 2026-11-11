@@ -943,6 +943,7 @@ const make = Effect.gen(function* () {
     hub,
     decisions,
     hooked,
+    eventSink,
     getRuntime,
     serverRequests,
     serverApprovalOrigins,

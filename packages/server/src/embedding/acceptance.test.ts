@@ -639,6 +639,20 @@ describe("event sink", () => {
             decisionId: decision.data["id"],
           },
         });
+        // A person's answer closes it as answered, with who and what they said.
+        const runtimes = yield* ThreadRuntimes;
+        yield* runtimes
+          .respond(thread.id, card.id, { kind: "approval", decision: "allow", scope: "once" })
+          .pipe(Effect.provideService(ActingPerson, "person-7"));
+        const resolved = yield* eventually(
+          "ask.resolved at the receiver",
+          Effect.sync(() => to.held.find((event) => event.type === "ask.resolved")),
+        );
+        expect(resolved).toMatchObject({
+          threadId: thread.id,
+          actor: { kind: "person", id: "person-7" },
+          data: { id: card.id, how: "answered", decision: "approve", answeredBy: "person-7" },
+        });
         expect(to.held[0]!.type).toBe("sink.started");
         expect(to.held.some((event) => event.type === "thread.upsert")).toBe(true);
         expect(to.held.map((event) => event.seq)).toEqual(to.held.map((_, i) => i + 1));
