@@ -27,6 +27,7 @@ import { GatewayCredentials } from "./gateway/credentials.ts";
 import { GitPlatformLive } from "./git/platform.ts";
 import { GitTurnHooksLive } from "./git/turn-hooks.ts";
 import { bootLine, LaunchToken, serverPort, ServerLayer } from "./http/server.ts";
+import { embeddingEnabled } from "./settings/embedding.ts";
 import { createLogger, logDirFor } from "./logging/logger.ts";
 import { ServerLog, serverLogLayer } from "./logging/service.ts";
 import { ThreadStore } from "./persistence/thread-store.ts";
@@ -247,9 +248,15 @@ const program = Effect.gen(function* () {
     if (text !== "emulator ok") return yield* Effect.die(`terminal emulator read "${text}"`);
     logger.info("terminal emulator loaded");
   }
+  // Behind a fronting proxy the launch token signs nobody in, so it isn't printed either.
+  const fronted = config.frontedIdentity !== undefined && (yield* embeddingEnabled);
+  if (config.frontedIdentity !== undefined && !fronted)
+    logger.warn(
+      "sign-in through a proxy is configured but hosted features are off: the launch token signs people in (set GRAM_EMBEDDING=1)",
+    );
   yield* Effect.sync(() => {
     if (parentPort === undefined) {
-      console.log(bootLine(port, token));
+      console.log(fronted ? `boot http://127.0.0.1:${port}/` : bootLine(port, token));
     } else {
       // The desktop shell's stdout ends up in logs, so the token only travels over the parent port.
       // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Electron MessagePortMain

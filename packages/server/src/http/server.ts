@@ -73,6 +73,14 @@ import { LoopStallLog } from "../logging/loop-stalls.ts";
 import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { embeddingEnabled, withEmbeddingSeed } from "../settings/embedding.ts";
+import { ActorGuard, FrontedSignIn } from "../rpc/actor-guard.ts";
+import { markActor, unmarkActor } from "./actor.ts";
+import {
+  IDENTITY_HEADER,
+  SOCKET_LIFETIME_MS,
+  verifyIdentity,
+  type Actor,
+} from "./fronted-identity.ts";
 import { PreviewFiles } from "../preview/files.ts";
 import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
@@ -81,6 +89,7 @@ import { WorkerHosts } from "../host/worker-host.ts";
 import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
+  Headers,
   HttpPlatform,
   HttpRouter,
   HttpServer,
@@ -124,7 +133,13 @@ import {
 } from "./machine-routes.ts";
 import { releaseOfConfig, RemoteHosts } from "../host/remote-hosts.ts";
 import { authTarget } from "./auth-target.ts";
-import { authorize, contentSecurityPolicy, makeLaunchToken, tokenCookieName } from "./auth.ts";
+import {
+  authorize,
+  contentSecurityPolicy,
+  makeLaunchToken,
+  MCP_PATH,
+  tokenCookieName,
+} from "./auth.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
 import {
   ProvisionedListener,
@@ -189,6 +204,8 @@ export const AuthMiddleware = HttpRouter.middleware(
         Effect.repeat(Schedule.spaced(PROVISIONED_SWITCH_POLL)),
         Effect.forkScoped,
       );
+    // Absent only in tests that serve the middleware alone, which take the launch token.
+    const fronted = Option.getOrUndefined(yield* Effect.serviceOption(FrontedSignIn));
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
       "cache-control": "no-store",
@@ -224,13 +241,89 @@ export const AuthMiddleware = HttpRouter.middleware(
           );
         const remote = control.current();
         const isRemote = remote !== undefined && request.headers["host"] === remote.host;
+        // People sign in through a fronting proxy: its signed statement, on every request, in
+        // place of the launch cookie and of a phone's pairing. A thread's agent on this machine
+        // still reaches its app tools by its own token over loopback, and a joined machine's host
+        // by its own proof, below.
+        const identity =
+          fronted?.config !== undefined &&
+          (yield* fronted.active) &&
+          // A person's request never goes there, so one that names a person isn't let by.
+          !(path === MCP_PATH && !isRemote && request.headers[IDENTITY_HEADER] === undefined) &&
+          !(
+            isRemote &&
+            path !== undefined &&
+            (path === HOST_MCP_PATH || HOST_PATHS.has(path)) &&
+            request.headers[IDENTITY_HEADER] === undefined
+          )
+            ? fronted.config
+            : undefined;
         const secureResponse = (response: HttpServerResponse.HttpServerResponse) =>
           HttpServerResponse.setHeaders(response, {
             ...securityHeaders,
-            ...(isRemote
-              ? { "content-security-policy": contentSecurityPolicy(port, remote.origin) }
-              : {}),
+            ...(identity !== undefined
+              ? { "content-security-policy": contentSecurityPolicy(port, identity.origin) }
+              : isRemote
+                ? { "content-security-policy": contentSecurityPolicy(port, remote.origin) }
+                : {}),
           });
+        if (identity !== undefined) {
+          if (target === undefined)
+            return secureResponse(
+              HttpServerResponse.text("forbidden: request target", { status: 403 }),
+            );
+          // A browser names the page a request comes from; only the proxy's own origin may ask.
+          const origin = request.headers["origin"];
+          if (origin !== undefined && origin !== identity.origin)
+            return secureResponse(
+              HttpServerResponse.text("forbidden: foreign origin", { status: 403 }),
+            );
+          const stated = verifyIdentity(identity, request.headers[IDENTITY_HEADER]);
+          if (!stated.ok) {
+            // Why is for the log alone: a caller learns nothing about what a statement lacked.
+            yield* Effect.logInfo("refused a request without a valid signed identity").pipe(
+              Effect.annotateLogs({ reason: stated.reason }),
+            );
+            return secureResponse(
+              HttpServerResponse.text("unauthorized: signed identity required", { status: 401 }),
+            );
+          }
+          // Phone access, joining machines and moving a workspace are for this machine's own
+          // sign-in, which a fronted server doesn't have. The agents' and hosts' routes take a thread's token or a host's
+          // proof, never a person: a person let through to them would act with neither a role
+          // nor a record.
+          if (
+            REMOTE_MANAGEMENT_PATHS.has(target.path) ||
+            MACHINE_MANAGEMENT_PATHS.has(target.path) ||
+            WORKSPACE_TRANSFER_PATHS.has(target.path) ||
+            HOST_PATHS.has(target.path) ||
+            target.path === MCP_PATH ||
+            target.path === HOST_MCP_PATH
+          )
+            return secureResponse(
+              HttpServerResponse.text("forbidden: not available behind a proxy", { status: 403 }),
+            );
+          const served = asCaller(
+            httpEffect,
+            unmarkLocalApp(
+              request.modify({ headers: Headers.remove(request.headers, IDENTITY_HEADER) }),
+            ),
+            stated.actor,
+          );
+          return secureResponse(
+            target.path === "/ws"
+              ? // A socket keeps the person and role it opened with, so it is closed after a
+                // while: the app connects again, and the proxy states who they are now.
+                yield* Effect.raceFirst(
+                  served,
+                  Effect.as(
+                    Effect.sleep(identity.socketLifetimeMs ?? SOCKET_LIFETIME_MS),
+                    HttpServerResponse.text("signed out", { status: 401 }),
+                  ),
+                )
+              : yield* served,
+          );
+        }
         if (request.headers["tailscale-funnel-request"] !== undefined)
           return secureResponse(
             HttpServerResponse.text("forbidden: private access only", { status: 403 }),
@@ -409,7 +502,14 @@ export const AuthMiddleware = HttpRouter.middleware(
 const asCaller = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   request: HttpServerRequest.HttpServerRequest,
-) => Effect.provideService(effect, HttpServerRequest.HttpServerRequest, request);
+  actor?: Actor,
+) =>
+  Effect.provideService(
+    effect,
+    HttpServerRequest.HttpServerRequest,
+    // Only a verified statement names an actor: any other caller's word for one is taken off.
+    actor === undefined ? unmarkActor(request) : markActor(request, actor),
+  );
 
 /**
  * Gives a file response's stream an `'error'` listener as soon as it exists. Effect's Node
@@ -475,7 +575,10 @@ export const rpcRoutes = <Rpcs extends Rpc.Any, E, R>(
     Layer.provide(RpcSerialization.layerJson),
   );
 
-const RpcRoutes = rpcRoutes(GramRpcs, RpcHandlersLayer);
+// Every RPC behind the actor guard, which does nothing unless people sign in through a proxy.
+const RpcRoutes = rpcRoutes(GramRpcs.middleware(ActorGuard), RpcHandlersLayer).pipe(
+  Layer.provide(ActorGuard.layer),
+);
 
 /** Store, hub, runtimes, app tools and git checkouts; needs agents, hooks, git and config. */
 export const ServerCore = Layer.unwrap(
@@ -685,6 +788,7 @@ export const ServerLayer: Layer.Layer<
       },
     ).pipe(
       Layer.merge(LoopStallLog),
+      Layer.provide(FrontedSignIn.layer),
       Layer.provideMerge(ServerCore),
       Layer.provide(RemoteControl.layer),
       Layer.provideMerge(RemoteHosts.layer),
