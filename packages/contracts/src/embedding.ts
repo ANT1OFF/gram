@@ -113,8 +113,12 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  * The event types this build sends; an open set on the wire.
  *
  * - `sink.started`: the server started, with `data.threads`, every open thread as `thread.upsert`
- *   would send it, so a receiver can put right anything a crash kept from the outbox.
- * - `thread.upsert` `{id, title?, role?, status?, spawnedByThreadId?, model?}`,
+ *   would send it, so a receiver can put right anything a crash kept from the outbox, and
+ *   `data.openAsks`, the ids of every card open now: any other card a receiver holds open is
+ *   withdrawn (a server that restarts drops its cards, so the list is then empty).
+ *   `data.restarted` is true on the first one a server process sends.
+ * - `thread.upsert` `{id, title?, role?, status?, spawnedByThreadId?, model?, createdBy?}`
+ *   (`createdBy` is the id of the signed-in person who started the thread, where known),
  *   `thread.removed` `{id}`, `thread.status` `{id, status, idle}`.
  * - `ask.opened` `{id, kind, title, decisionId?, assignees?}`.
  * - `ask.resolved` `{id, how, decision?, answeredBy?}`: `how` is `answered` when a person
@@ -122,7 +126,7 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  *   agent took it back). `decision` is the person's `approve` or `reject` of an approval or a
  *   plan; `answeredBy` is their id, where the server knows who is signed in.
  * - `featureCard.upsert` `{id: "<workspaceId>/<feature>", title, status, version}`.
- * - `usage` `{model?, inputTokens, outputTokens, cacheReadTokens?, cacheWriteTokens?, costUsd?}`.
+ * - `usage` `{turnId?, model?, inputTokens, outputTokens, cacheReadTokens?, cacheWriteTokens?, costUsd?}`.
  * - `decision` `{id, action, decision, reason?}`: each call to the decision hook and its outcome.
  */
 export const SinkEventType = Schema.Literals([

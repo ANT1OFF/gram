@@ -1000,6 +1000,7 @@ const make = Effect.gen(function* () {
     currentAppTools: () => appTools,
   });
   const { claimClose, settleClose, guardHolds, restsNow, create } = makeThreadLifecycle({
+    eventSink,
     store,
     hub,
     checkouts,

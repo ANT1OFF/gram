@@ -562,6 +562,60 @@ describe("event sink", () => {
     }),
   );
 
+  it.live(
+    "keeps who started a thread across a restart, and lists the cards open at a turn-on",
+    () =>
+      Effect.gen(function* () {
+        const dir = mkdtempSync(join(tmpdir(), "gram-sink-"));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+        const file = join(dir, "event-sink.db");
+        const to = yield* receiver;
+        const thread = {
+          id: "thread-9",
+          title: "T",
+          model: { agent: "claude", model: "m" },
+        } as unknown as Thread;
+        const first = yield* Scope.make();
+        const sink = yield* sinkAt(file, to.url).pipe(Scope.provide(first));
+        // On when it was made: that first snapshot is the server's own start.
+        yield* eventually(
+          "the start's snapshot",
+          Effect.sync(() => to.held.find((event) => event.type === "sink.started")),
+        );
+        expect(to.held[0]!.data).toMatchObject({ restarted: true, openAsks: [] });
+        yield* sink.noteCreator(thread.id, "person-3");
+        yield* Scope.close(first, { _tag: "Success", value: undefined } as never);
+
+        // Off at start, so the first `sink.started` is a turn-on: it lists what is open then.
+        let on = false;
+        yield* makeEventSink({
+          endpoint: { url: to.url, token: "sink-token" },
+          file,
+          on: Effect.sync(() => on),
+          threads: Effect.succeed([thread]),
+          openAsks: Effect.succeed(["card-4"]),
+          retryBase: Duration.millis(5),
+          recheck: Duration.millis(5),
+        });
+        on = true;
+        const turnedOn = yield* eventually(
+          "the turn-on's snapshot",
+          Effect.sync(() => to.held.findLast((event) => event.type === "sink.started")),
+        );
+        yield* eventually(
+          "two snapshots",
+          Effect.sync(() => to.held.filter((event) => event.type === "sink.started").length === 2),
+        );
+        const latest = to.held.findLast((event) => event.type === "sink.started")!;
+        expect(turnedOn.type).toBe("sink.started");
+        expect(latest.data).toMatchObject({
+          openAsks: ["card-4"],
+          threads: [{ id: "thread-9", createdBy: "person-3" }],
+        });
+        expect(latest.data["restarted"]).toBeUndefined();
+      }),
+  );
+
   it.live("goes back to what the receiver says it holds", () =>
     Effect.gen(function* () {
       const to = yield* receiver;
@@ -615,7 +669,9 @@ describe("event sink", () => {
       yield* Effect.gen(function* () {
         yield* setHosted(true);
         const store = yield* ThreadStore;
-        const thread = yield* startThread("ship it /approve{gh release create v1}");
+        const thread = yield* startThread("ship it /approve{gh release create v1}").pipe(
+          Effect.provideService(ActingPerson, "person-1"),
+        );
         const card = yield* eventually(
           "the card",
           store.listRequests(thread.id).pipe(Effect.map((requests) => requests[0])),
@@ -653,8 +709,13 @@ describe("event sink", () => {
           actor: { kind: "person", id: "person-7" },
           data: { id: card.id, how: "answered", decision: "approve", answeredBy: "person-7" },
         });
-        expect(to.held[0]!.type).toBe("sink.started");
-        expect(to.held.some((event) => event.type === "thread.upsert")).toBe(true);
+        // Hosted features were turned on after the server started: nothing was open then.
+        expect(to.held[0]).toMatchObject({ type: "sink.started", data: { openAsks: [] } });
+        expect(to.held[0]!.data["restarted"]).toBeUndefined();
+        // The thread says who started it, on every upsert.
+        const upserts = to.held.filter((event) => event.type === "thread.upsert");
+        expect(upserts.length).toBeGreaterThan(0);
+        for (const upsert of upserts) expect(upsert.data["createdBy"]).toBe("person-1");
         expect(to.held.map((event) => event.seq)).toEqual(to.held.map((_, i) => i + 1));
       }).pipe(Effect.provide(serverLayer(hook.url, to.url)));
     }),

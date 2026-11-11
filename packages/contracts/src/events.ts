@@ -13,7 +13,7 @@ import {
   UsageSummary,
 } from "./domain.ts";
 import { GitState } from "./git.ts";
-import { MessageId, RequestId, ThreadId, WorkspaceId } from "./ids.ts";
+import { MessageId, RequestId, ThreadId, TurnId, WorkspaceId } from "./ids.ts";
 import { ThreadPortsEvent, ThreadTerminalProcessesEvent } from "./ports.ts";
 import { ReviewRound } from "./review.ts";
 import { ThreadPlan } from "./thread-plan.ts";
@@ -74,7 +74,13 @@ export const ServerEvent = Schema.Union([
     identity: ThreadIdentity,
   }),
   /** Same shape as `ThreadSummary.usage`; pushed after each turn's usage report. */
-  Schema.Struct({ type: Schema.Literal("thread.usage"), threadId: ThreadId, usage: UsageSummary }),
+  Schema.Struct({
+    type: Schema.Literal("thread.usage"),
+    threadId: ThreadId,
+    usage: UsageSummary,
+    /** The turn the reading is of, where one is open. */
+    turnId: Schema.optionalKey(TurnId),
+  }),
   /**
    * The agent's todo list (`items`) and the thread's plan after either changes, both in full:
    * without `plan` the thread has none.

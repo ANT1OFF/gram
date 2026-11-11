@@ -1,6 +1,8 @@
 // Creating a thread and closing it: one close per thread at a time, which a guard can refuse, and
 // what of the checkout it releases.
 
+import type { EventSinkShape } from "../embedding/event-sink.ts";
+import { ActingPerson } from "../embedding/person.ts";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Fiber from "effect/Fiber";
@@ -48,6 +50,8 @@ import * as FiberSet from "effect/FiberSet";
 
 /** What creating and closing a thread read and change beside its `Runtime`. */
 export interface ThreadLifecycleDeps {
+  /** The event sink, where one is configured, told who started a thread. */
+  readonly eventSink: EventSinkShape | undefined;
   readonly store: ThreadStoreShape;
   readonly hub: EventHubShape;
   readonly checkouts: CheckoutServiceShape;
@@ -87,6 +91,7 @@ export interface ThreadLifecycleDeps {
 
 /** Thread creation, and the close each thread runs at most one of. */
 export const makeThreadLifecycle = ({
+  eventSink,
   store,
   hub,
   checkouts,
@@ -273,6 +278,12 @@ export const makeThreadLifecycle = ({
       };
       const stored = yield* store.insertThread(thread);
       if (input.restoreClosedHistory === true) yield* store.restoreClosedHistory(thread.id);
+      if (eventSink !== undefined && thread.spawnedBy === undefined) {
+        // The signed-in person this call is made for, where there is one. A thread another
+        // thread spawned is its spawner's, whoever's call that turn began with.
+        const person = yield* ActingPerson;
+        if (person !== undefined) yield* eventSink.noteCreator(thread.id, person);
+      }
       yield* publishUpsert(stored);
       // Clients dropped the plan with the thread when it closed; the upsert carries only the thread.
       if (input.restoreClosedHistory === true) yield* plans.publish(thread.id);
