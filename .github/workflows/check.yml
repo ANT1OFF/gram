@@ -1,7 +1,10 @@
 name: Application checks
 
 on:
+  # A pull request into an integration branch is checked once it lands there, by the push run:
+  # checking each one as well left the runners too few for the branch's own runs.
   pull_request:
+    branches-ignore: ["integration/**"]
   push:
     # An integration branch collects pull requests before main, so it is checked as main is.
     branches: [main, "integration/**"]

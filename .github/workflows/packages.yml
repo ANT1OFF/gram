@@ -26,7 +26,9 @@ on:
     branches: [main, "integration/**"]
   release:
     types: [published]
+  # Into an integration branch, the push run checks it once it lands (see check.yml).
   pull_request:
+    branches-ignore: ["integration/**"]
     paths:
       - .github/workflows/packages.yml
       - tools/packages/**
