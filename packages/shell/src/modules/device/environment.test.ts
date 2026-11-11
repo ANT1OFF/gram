@@ -283,3 +283,28 @@ describe("what the code review asked to hold", () => {
     expect(out.endsWith(REDACTED)).toBe(true);
   });
 });
+
+describe("what the second review asked to hold", () => {
+  it("lets a mark go at once and holds no more than a value's length, however long it repeats", () => {
+    for (const secret of ["aaaaaa", "abcabcabc", "hunter2hunter2"]) {
+      const redactor = makeRedactor([secret]);
+      const unit = secret.slice(0, secret.length === 6 ? 1 : secret.length === 9 ? 3 : 7);
+      let out = redactor.push(`x${secret}`);
+      expect(out, secret).toBe(`x${REDACTED}`);
+      for (let index = 0; index < 2000; index += 1) out += redactor.push(unit.repeat(50));
+      out += redactor.push("!") + redactor.end();
+      expect(out, secret).toBe(`x${REDACTED}!`);
+    }
+  });
+
+  it("keeps a URL that only names a user, and removes Git's other settings variable", () => {
+    const { env, removed } = filterEnvironment({
+      UPSTREAM: "ssh://git@github.com/org/repo",
+      TOOLS: "/opt/sk-learn-environment-python3/bin",
+      GIT_CONFIG_PARAMETERS: "'http.extraheader=Authorization: Basic eA=='",
+      SSHPASS: "p",
+    });
+    expect(Object.keys(env).toSorted()).toEqual(["TOOLS", "UPSTREAM"]);
+    expect(removed).toEqual(["GIT_CONFIG_PARAMETERS", "SSHPASS"]);
+  });
+});

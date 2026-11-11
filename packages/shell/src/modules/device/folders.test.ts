@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DEVICE_LIST_MAX_ENTRIES, DEVICE_READ_MAX_BYTES } from "@gram/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  betweenCheckAndOpen,
   checkLendable,
   type LendBounds,
   type LentFolder,
@@ -512,4 +513,48 @@ describe("what the code review asked to hold", () => {
     },
     60_000,
   );
+});
+
+describe("a swap that lands between the check and the open", () => {
+  afterEach(() => {
+    betweenCheckAndOpen.run = undefined;
+  });
+
+  it("is refused every time, for a read and for a listing", async () => {
+    const folder = await lend(join(home, "code", "app"));
+    const outside = join(home, "private");
+    await write(join(outside, "notes.txt"), "OUTSIDE-SECRET");
+    await write(join(folder.path, "d", "notes.txt"), "inside");
+    betweenCheckAndOpen.run = async () => {
+      await fs.rename(join(folder.path, "d"), join(folder.path, "d.kept"));
+      await fs.symlink(outside, join(folder.path, "d"));
+    };
+    expect(await readLentFile(folder, "d/notes.txt", 100)).toEqual({
+      ok: false,
+      why: "outside-folders",
+    });
+    await fs.rm(join(folder.path, "d"));
+    await fs.rename(join(folder.path, "d.kept"), join(folder.path, "d"));
+    const listed = await listLentFolder(folder, "d", 100);
+    expect(listed.ok).toBe(false);
+  });
+
+  it("is refused when the file itself becomes a link, a FIFO or a hard-linked file", async () => {
+    const folder = await lend(join(home, "code", "app"));
+    await write(join(home, "secret.txt"), "s3cret");
+    const target = join(folder.path, "a.txt");
+    for (const swap of [
+      () => fs.symlink(join(home, "secret.txt"), target),
+      () => fs.link(join(home, "secret.txt"), target),
+      async () => execFileSync("mkfifo", [target]),
+    ]) {
+      await fs.rm(target, { force: true });
+      await write(target, "inside");
+      betweenCheckAndOpen.run = async () => {
+        await fs.rm(target);
+        await swap();
+      };
+      expect(await readLentFile(folder, "a.txt", 100)).toMatchObject({ ok: false });
+    }
+  });
 });

@@ -437,7 +437,9 @@ Both can come back only with confinement by the operating system and a budget th
   through the handle. It looks at no more than 10,000 names, sorts them, returns at most 500
   with kinds and sizes, and omits entries the credential check names. A hard-linked file is
   listed without its size.
-- Every disk call has ten seconds; a mount that doesn't answer counts as a refusal.
+- A request about the disk is answered within ten seconds; a mount that doesn't answer counts
+  as a refusal. The stuck call itself can't be cancelled, so the device service asks nothing
+  more of that folder until it settles.
 - A command's output is at most 256 KiB, the end kept, with `truncated` set, cut after
   redaction and never before.
 
@@ -741,3 +743,12 @@ Left for the device service, where the caller lives: path refusals count against
 rate; a grant is honoured only while its nonce is in the device's in-memory list of grants it
 minted, so none survives a quit; "the same payload" is compared on the decoded request; output is
 decoded with a `StringDecoder`; server-worded text in main-owned windows is drawn like a command.
+
+A second independent review, of the fixes, found no way out of a lent folder on Linux and no
+leak in the redactor, and asked for: a swap test that lands every time rather than by luck; a
+mark that goes out at once for a value that overlaps itself, so nothing is held without bound;
+"no" rather than an exception for a grant whose fields aren't text; and a URL that only names a
+user (`ssh://git@host`) left alone. Those are in. Carried to the device service and the windows:
+tests for each remaining single check its mutation run found unasserted; combining marks after
+an ASCII character in an ask; judging names again on the real path for file systems that fold
+names (macOS, Windows short names); a narrower list of where a folder may be lent from.

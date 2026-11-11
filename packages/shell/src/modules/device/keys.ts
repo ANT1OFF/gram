@@ -147,8 +147,8 @@ export const turnGrantHolds = (
   expected: { readonly origin: string; readonly workspace: string; readonly thread: string },
   now: number,
 ): boolean => {
-  const { grant } = signed;
-  if (grant.v !== 1) return false;
+  const grant = signed?.grant;
+  if (typeof grant !== "object" || grant === null || grant.v !== 1) return false;
   if (grant.origin !== expected.origin) return false;
   if (grant.workspace !== expected.workspace) return false;
   if (grant.thread !== expected.thread) return false;
@@ -156,7 +156,12 @@ export const turnGrantHolds = (
   // A clock that isn't a number proves nothing, and neither comparison below would refuse it.
   if (!Number.isSafeInteger(now) || !Number.isSafeInteger(grant.issuedAt)) return false;
   if (grant.issuedAt < 0 || !(now >= grant.issuedAt && now < grant.expiresAt)) return false;
-  return verifyText(publicKey, turnGrantBytes(grant), signed.signature);
+  try {
+    return verifyText(publicKey, turnGrantBytes(grant), signed.signature);
+  } catch {
+    // Fields that aren't text have no bytes to sign.
+    return false;
+  }
 };
 
 export const hashAccessToken = (token: string): string =>
@@ -178,14 +183,13 @@ export const deviceDialHolds = (
 ): boolean => {
   if (!Number.isSafeInteger(now) || !Number.isSafeInteger(dial.time)) return false;
   if (Math.abs(now - dial.time) > DEVICE_CLOCK_SKEW_MS) return false;
-  let text: string;
   try {
-    text = devicePublicKeyText(publicKey);
+    const text = devicePublicKeyText(publicKey);
     if (deviceIdOf(text) !== dial.deviceId) return false;
+    return verifyText(publicKey, deviceDialBytes(dial), signature);
   } catch {
     return false;
   }
-  return verifyText(publicKey, deviceDialBytes(dial), signature);
 };
 
 /** A dial's time as its header carries it: thirteen digits and nothing else. */

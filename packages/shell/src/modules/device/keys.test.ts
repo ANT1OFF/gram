@@ -270,3 +270,24 @@ describe("what the code review asked to hold", () => {
     expect(sameHash(undefined as unknown as string, "a")).toBe(false);
   });
 });
+
+describe("what the second review asked to hold", () => {
+  it("answers no, rather than throwing, for a grant or dial whose fields aren't text", () => {
+    const me = device();
+    const signed = mintTurnGrant(me.key, to, NOW);
+    for (const nonce of ["\ud800", 5])
+      expect(
+        turnGrantHolds(
+          me.public,
+          { ...signed, grant: { ...signed.grant, nonce: nonce as string } },
+          to,
+          NOW,
+        ),
+      ).toBe(false);
+    expect(turnGrantHolds(me.public, { grant: null } as unknown as SignedTurnGrant, to, NOW)).toBe(
+      false,
+    );
+    const dial = { ...dialOf(me.deviceId), nonce: "\ud800" };
+    expect(deviceDialHolds(me.public, dial, "A".repeat(86), NOW)).toBe(false);
+  });
+});

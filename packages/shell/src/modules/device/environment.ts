@@ -55,6 +55,8 @@ const ALWAYS_REMOVED = new Set([
   "GIT_ASKPASS",
   "GIT_SSH",
   "GIT_SSH_COMMAND",
+  "GIT_CONFIG_PARAMETERS",
+  "SSHPASS",
   "GPG_AGENT_INFO",
   "KRB5CCNAME",
 ]);
@@ -85,13 +87,15 @@ const ALWAYS_KEPT = new Set([
 /** A URL that signs in, as in `postgres://app:hunter2@db/app` or `https://token@host/`. */
 const URL_WITH_SIGN_IN = /^\s*[a-z][a-z0-9+.-]*:\/\/([^/\s@]+)@/i;
 
+const TOKEN_NAME_LENGTH = 20;
+
 /** `password=…` and its kin inside a value, as connection strings spell them. */
 const NAMED_SECRET =
   /(?:^|[\s;&?,])(?:password|passwd|pwd|secret|accountkey|sharedaccesskey|sharedaccesssignature|sig|token|api[-_]?key)=([^\s;&,]+)/gi;
 
 /** Values that are a token or a key whatever the variable is called. */
 const TOKEN_SHAPE =
-  /(?:\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bglpat-[A-Za-z0-9_-]{16,}|\bxox[abeprs]-[A-Za-z0-9-]{10,}|\bsk-[A-Za-z0-9_-]{20,}|\bAKIA[0-9A-Z]{16}\b|\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
+  /(?:\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bglpat-[A-Za-z0-9_-]{16,}|\bxox[abeprs]-[A-Za-z0-9-]{10,}|(?<![\w/.-])sk-[A-Za-z0-9_-]{20,}|\bAKIA[0-9A-Z]{16}\b|\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.|-----BEGIN [A-Z ]*PRIVATE KEY)/;
 
 const credentialName = (name: string): boolean => {
   const upper = name.toUpperCase();
@@ -116,9 +120,10 @@ const secretParts = (value: string): Array<string> => {
   const signIn = URL_WITH_SIGN_IN.exec(value)?.[1];
   if (signIn !== undefined) {
     const colon = signIn.indexOf(":");
-    // With no password the name is the token, as in `https://ghp_…@github.com`.
+    // With no password a long name is the token, as in `https://ghp_…@github.com`; a short one
+    // is only a name, as in `ssh://git@github.com`.
     const secret = colon === -1 ? signIn : signIn.slice(colon + 1);
-    parts.push(secret, decoded(secret));
+    if (colon !== -1 || secret.length >= TOKEN_NAME_LENGTH) parts.push(secret, decoded(secret));
   }
   for (const match of value.matchAll(NAMED_SECRET))
     if (match[1] !== undefined) parts.push(match[1]);
@@ -172,8 +177,9 @@ interface Node {
  * Redacts `secrets` from text that arrives in chunks, with the same result however the text is
  * cut. Every place a secret occurs is found, places that overlap are joined, and each joined
  * stretch becomes one mark. Text is held back while it could still be the start of a secret, or
- * could still be joined to one, and `end` gives what was held. The work is one step per
- * character whatever the secrets are.
+ * could still start one, never more than the longest secret, and `end` gives what was held. A
+ * stretch's mark goes out as soon as nothing before it can change, and what joins it later is
+ * swallowed. The work is one step per character whatever the secrets are.
  *
  * Feed it text decoded with a `StringDecoder`, so a character cut across two reads isn't lost,
  * and cut output to its limit only after it has been through here.
@@ -232,6 +238,8 @@ export const makeRedactor = (
   let seen = 0;
   /** Where secrets were found in the held text, joined where they overlap, in order. */
   let found: Array<[from: number, to: number]> = [];
+  /** Up to where the last mark let go already covers; text before it is swallowed. */
+  let covered = 0;
 
   const take = (text: string): void => {
     for (let index = 0; index < text.length; index += 1) {
@@ -243,7 +251,8 @@ export const makeRedactor = (
         from = Math.min(from, last[0]);
         found.pop();
       }
-      found.push([from, seen]);
+      if (from < covered) covered = seen;
+      else found.push([from, seen]);
     }
     held += text;
   };
@@ -251,7 +260,7 @@ export const makeRedactor = (
   /** Lets go of everything before `upTo`, with the secrets in it marked. */
   const release = (upTo: number): string => {
     let out = "";
-    let at = heldFrom;
+    let at = Math.max(heldFrom, covered);
     const rest: Array<[number, number]> = [];
     for (const place of found) {
       if (place[1] > upTo) {
@@ -261,7 +270,7 @@ export const makeRedactor = (
       out += held.slice(at - heldFrom, place[0] - heldFrom) + REDACTED;
       at = place[1];
     }
-    out += held.slice(at - heldFrom, upTo - heldFrom);
+    if (upTo > at) out += held.slice(at - heldFrom, upTo - heldFrom);
     held = held.slice(upTo - heldFrom);
     heldFrom = upTo;
     found = rest;
@@ -271,11 +280,16 @@ export const makeRedactor = (
   return {
     push: (chunk) => {
       take(chunk);
-      // Nothing from where a secret could be starting, nor from a found one that the next
-      // characters could still join.
-      let safe = seen - state.open;
-      for (const place of found) if (place[0] < safe && place[1] > safe) safe = place[0];
-      return release(Math.max(safe, heldFrom));
+      // Nothing from where a secret could be starting.
+      const safe = Math.max(seen - state.open, heldFrom);
+      const last = found.at(-1);
+      if (last === undefined || last[0] >= safe || last[1] <= safe) return release(safe);
+      // A found stretch that begins before anything still open: nothing can change where it
+      // starts, so its mark goes now and whatever joins it later is covered by it.
+      const out = release(last[0]) + REDACTED;
+      found = [];
+      covered = last[1];
+      return out + release(safe);
     },
     end: () => {
       const out = release(seen);

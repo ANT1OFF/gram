@@ -353,6 +353,12 @@ const handleIsAt = async (handle: fs.FileHandle, path: string): Promise<boolean>
   }
 };
 
+/**
+ * For tests only: runs between the check of a path and the opening of it, which is where a swap
+ * has to land, so a test can make one there every time rather than hope to win a race.
+ */
+export const betweenCheckAndOpen: { run: (() => Promise<void>) | undefined } = { run: undefined };
+
 export type FileRead =
   | { readonly ok: true; readonly path: string; readonly data: Buffer; readonly truncated: boolean }
   | Refused;
@@ -370,6 +376,7 @@ const readLentFileNow = async (
   // Nothing but a regular file is opened: opening a FIFO or a terminal is itself an act.
   if (!resolved.stats.isFile() || resolved.stats.nlink !== 1) return refused("not-a-file");
   if (!Number.isFinite(maxBytes)) return refused("too-large");
+  await betweenCheckAndOpen.run?.();
   let handle: fs.FileHandle;
   try {
     handle = await fs.open(
@@ -488,6 +495,7 @@ const listLentFolderNow = async (
   // folder that was checked. Elsewhere it is read by path and the path checked again after.
   let handle: fs.FileHandle | undefined;
   let base = resolved.path;
+  await betweenCheckAndOpen.run?.();
   try {
     if (process.platform === "linux") {
       handle = await fs.open(
