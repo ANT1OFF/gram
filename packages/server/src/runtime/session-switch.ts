@@ -1,5 +1,5 @@
-// An orchestrator's switch of a thread's agent or model, which claims the session, reopens it on
-// the new model and releases it, or is cancelled.
+// A switch of a thread's agent or model, the orchestrator's or any thread's (`agent-switch.ts`),
+// which claims the session, reopens it on the new model and releases it, or is cancelled.
 
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
@@ -26,6 +26,8 @@ export interface SessionSwitchDeps {
   readonly cancelIdleTimer: TurnLifecycle["cancelIdleTimer"];
   readonly publishUpsert: TurnLifecycle["publishUpsert"];
   readonly isShuttingDown: () => boolean;
+  /** Whether a session fiber runs for the thread, starting or open. */
+  readonly hasSessionFiber: (threadId: ThreadId) => boolean;
   readonly openSession: (
     rt: Runtime,
     thread: Thread,
@@ -44,6 +46,7 @@ export const makeSessionSwitch = ({
   cancelIdleTimer,
   publishUpsert,
   isShuttingDown,
+  hasSessionFiber,
   openSession,
 }: SessionSwitchDeps) => {
   const switchSession: ThreadRuntimesShape["switchSession"] = (threadId, attemptId) =>
@@ -62,6 +65,15 @@ export const makeSessionSwitch = ({
               threadId,
               message: "This switch attempt is no longer waiting for its checkpoint.",
             });
+          // A cold thread has no process to stop: no session, none starting, none left from a
+          // switch. Its next session is the target's.
+          const cold =
+            change.phase === "checkpoint" &&
+            !change.oldExited &&
+            rt.status === "cold" &&
+            rt.session === undefined &&
+            rt.switchSource === undefined &&
+            !hasSessionFiber(threadId);
           if (
             isShuttingDown() ||
             rt.closing ||
@@ -69,6 +81,7 @@ export const makeSessionSwitch = ({
             rt.reopening ||
             rt.turn !== undefined ||
             (rt.status !== "idle" &&
+              !cold &&
               !(change.phase === "retry" && (rt.status === "cold" || rt.status === "error"))) ||
             rt.background.length > 0 ||
             rt.activity.subagentsRunning ||
@@ -77,7 +90,9 @@ export const makeSessionSwitch = ({
             return yield* new InvalidState({
               threadId,
               message:
-                "The orchestrator must finish its current work and questions before switching.",
+                thread.role === "orchestrator"
+                  ? "The orchestrator must finish its current work and questions before switching."
+                  : "Wait for this turn to finish, or stop it, then switch.",
             });
           const session = change.oldExited ? undefined : (rt.session ?? rt.switchSource);
           if (change.oldExited && change.retryFrom === undefined)
@@ -88,6 +103,7 @@ export const makeSessionSwitch = ({
             });
           if (
             !change.oldExited &&
+            !cold &&
             (session?.stopForSwitch === undefined || session.prepareForSwitch === undefined)
           )
             return yield* new AgentUnavailable({
@@ -97,7 +113,7 @@ export const makeSessionSwitch = ({
             });
           // Arm no-force protection under the runtime lock, before shutdown intent can be
           // persisted or a disposal/close can reach ordinary scope cleanup.
-          if (!change.oldExited) yield* session!.prepareForSwitch!;
+          if (!change.oldExited && !cold) yield* session!.prepareForSwitch!;
           const marked = yield* store.updateThread(threadId, (t) => ({
             ...t,
             sessionSwitch: { ...change, phase: "stopping" },
@@ -110,7 +126,7 @@ export const makeSessionSwitch = ({
           return {
             thread,
             session,
-            stop: change.oldExited ? Effect.void : session!.stopForSwitch!,
+            stop: change.oldExited || cold ? Effect.void : session!.stopForSwitch!,
             change,
           };
         }),
@@ -146,10 +162,16 @@ export const makeSessionSwitch = ({
                 agentSessionId: _id,
                 agentSessionUnused: _unused,
                 codexHome: _home,
+                forkedFrom,
                 ...rest
               } = t;
+              // A fork keeps naming its source thread, but no longer its session: with no session
+              // of its own, `resumeOptions` would fork the old agent's.
               return {
                 ...rest,
+                ...(forkedFrom?.threadId === undefined
+                  ? {}
+                  : { forkedFrom: { threadId: forkedFrom.threadId } }),
                 model: before.change.target,
                 mode: before.change.mode,
                 sessionSwitch: {
@@ -174,7 +196,7 @@ export const makeSessionSwitch = ({
                 new AgentUnavailable({
                   agent: before.change.target.agent,
                   message:
-                    "The selected orchestrator did not confirm startup. No fallback or automatic retry was started. Your queued messages remain held.",
+                    "The selected agent did not confirm startup. No fallback or automatic retry was started. Your queued messages remain held.",
                 }),
               ),
           }),
@@ -193,7 +215,7 @@ export const makeSessionSwitch = ({
             )
               return yield* new InvalidState({
                 threadId,
-                message: "A stale startup cannot complete an orchestrator switch.",
+                message: "A stale startup cannot complete this switch.",
               });
             const ready = yield* store.updateThread(threadId, (t) => ({
               ...t,

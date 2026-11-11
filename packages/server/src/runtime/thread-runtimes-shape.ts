@@ -535,6 +535,16 @@ export interface ThreadRuntimesShape {
   freshSession(
     threadId: ThreadId,
   ): Effect.Effect<string | undefined, ThreadNotFound | InvalidState>;
+  /**
+   * Moves a plain thread or worker to the other agent, on `target`: claimed and refused as
+   * `agent-switch.ts` says, then stopped, reopened fresh on the target, marked in the transcript
+   * with a `switch` handoff and released, in the background. Returns the claimed thread. A failed
+   * switch is tried again onto `target`. The orchestrator's goes through its own handoff.
+   */
+  switchAgent(
+    threadId: ThreadId,
+    target: ModelRef,
+  ): Effect.Effect<Thread, ThreadNotFound | InvalidState | AgentUnavailable>;
   /** Late-bound: the app-tool registry depends on this service. */
   setAppTools(port: AppToolRegistryPort): Effect.Effect<void>;
   /** Late-bound like `setAppTools`: what a thread's role adds to its sessions. Absent, every thread is plain. */

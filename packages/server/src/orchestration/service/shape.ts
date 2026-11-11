@@ -10,7 +10,7 @@ import {
   type AgentUnavailable,
   type Autonomy,
   type BriefPriority,
-  type Handoff,
+  type OrchestratorHandoffReason,
   type ModelRef,
   type ReopenedMembership,
   type RoutineState,
@@ -520,7 +520,7 @@ export interface OrchestrationShape {
    */
   handoff(
     workspaceId: WorkspaceId,
-    reason: Handoff["reason"],
+    reason: OrchestratorHandoffReason,
     target?: ModelRef,
   ): Effect.Effect<Thread, NotFound | InvalidState>;
   retrySwitch(workspaceId: WorkspaceId): Effect.Effect<Thread, NotFound | InvalidState>;
