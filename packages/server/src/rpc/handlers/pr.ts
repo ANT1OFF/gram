@@ -1,6 +1,7 @@
 import { effectiveCheckout, InvalidState, type Thread, type ThreadId } from "@gram/contracts";
 import type { PrActionError } from "@gram/git";
 import * as Effect from "effect/Effect";
+import { actionGuard } from "../../embedding/guard.ts";
 import { toGitError } from "../../git/mapping.ts";
 import { GitRefresh } from "../../git/platform.ts";
 import { PrActions } from "../../git/pr-actions.ts";
@@ -21,6 +22,24 @@ export const prHandlers = Effect.gen(function* () {
   const threadPr = yield* ThreadPrLookup;
   const actions = yield* PrActions;
   const refreshes = yield* GitRefresh;
+  const guard = yield* actionGuard;
+  /** The decision hook's word on a merge or a close of the thread's pull request, where one is set. */
+  const decided = (
+    threadId: ThreadId,
+    action: "pr.merge" | "pr.close",
+    { repo, number }: Target,
+    more: Readonly<Record<string, unknown>> = {},
+  ) =>
+    guard(
+      threadId,
+      { action, initiator: "person", detail: { repo, number, ...more } },
+      Effect.succeed({
+        toolName: action,
+        displayName: action === "pr.merge" ? "Merge pull request" : "Close pull request",
+        description: `${action === "pr.merge" ? "Merge" : "Close"} ${repo}#${number}`,
+        input: { repo, number, ...more },
+      }),
+    ).pipe(Effect.mapError((e) => new InvalidState({ message: e.message, threadId })));
 
   /** The thread's checkout and PR: the bound PR, else its branch's badge. */
   const target = (threadId: ThreadId) =>
@@ -70,14 +89,26 @@ export const prHandlers = Effect.gen(function* () {
                 message: "Auto-merge isn't allowed in babysit mode; merge by hand.",
               }),
             )
-          : actions.merge(cwd, repo, number, strategy, auto),
+          : decided(
+              threadId,
+              "pr.merge",
+              { thread, cwd, repo, number },
+              {
+                method: strategy,
+                auto,
+              },
+            ).pipe(Effect.andThen(actions.merge(cwd, repo, number, strategy, auto))),
       ),
 
     "pr.ready": ({ threadId, draft }) =>
       write(threadId, ({ cwd, repo, number }) => actions.setDraft(cwd, repo, number, draft)),
 
     "pr.close": ({ threadId }) =>
-      write(threadId, ({ cwd, repo, number }) => actions.close(cwd, repo, number)),
+      write(threadId, (found) =>
+        decided(threadId, "pr.close", found).pipe(
+          Effect.andThen(actions.close(found.cwd, found.repo, found.number)),
+        ),
+      ),
 
     "pr.updateBranch": ({ threadId }) =>
       write(threadId, ({ cwd, repo, number }) => actions.updateBranch(cwd, repo, number)),

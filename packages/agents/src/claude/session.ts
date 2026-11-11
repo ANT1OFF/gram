@@ -336,6 +336,11 @@ export const IRREVERSIBLE_GATE_REASON =
   "request, a release, a workflow run, or a push that rewrites or deletes remote history, " +
   "whatever its permission mode and allow rules say.";
 
+/** Why a connector's call is asked about under `OpenSessionOptions.gateConnectors`. */
+export const CONNECTOR_GATE_REASON =
+  "Gram asks before this thread calls a connector, whatever its permission mode and allow " +
+  "rules say.";
+
 /** A `PreToolUse` hook's answer that sends the call to `canUseTool`, ahead of rules and mode. */
 const askFirst = (reason: string) => ({
   hookSpecificOutput: {
@@ -771,6 +776,9 @@ export const makeClaudeHost = (
       const gateAsksAbout = (toolName: string, toolInput: unknown): boolean =>
         gateAsks(level, outwardBashKind(toolName, toolInput));
       const isAppTool = (toolName: string): boolean => appServer?.names.has(toolName) ?? false;
+      // Every MCP server but Gram's own is a connector here, a subagent's call to one included.
+      const asksAboutConnector = (toolName: string): boolean =>
+        o.gateConnectors === true && toolName.startsWith("mcp__") && !isAppTool(toolName);
       // A hook, not a deny rule: a rule would take the tool from the main agent too.
       const mainAgentOnly = new Set([...MAIN_AGENT_APP_TOOLS].map(appToolName));
       const toolGate = makeToolGate();
@@ -809,9 +817,14 @@ export const makeClaudeHost = (
         if (gateAsksAbout(hookInput.tool_name, hookInput.tool_input)) {
           return askFirst(level === "all" ? OUTWARD_GATE_REASON : IRREVERSIBLE_GATE_REASON);
         }
+        if (asksAboutConnector(hookInput.tool_name)) return askFirst(CONNECTOR_GATE_REASON);
         return {};
       };
-      const gated = level !== undefined || appServer !== undefined || o.dreamFilesOnly === true;
+      const gated =
+        level !== undefined ||
+        appServer !== undefined ||
+        o.dreamFilesOnly === true ||
+        o.gateConnectors === true;
       // An admitted call ends here however it ends: run, failed, or refused by a rule or a card.
       const toolEnded: HookCallbackMatcher["hooks"][number] = async (hookInput, toolUseId) => {
         if (
@@ -843,7 +856,7 @@ export const makeClaudeHost = (
             options,
             // "Always" would write an allow rule, and the gate's hook asks again whatever the
             // rules say.
-            gateAsksAbout(toolName, toolInput),
+            gateAsksAbout(toolName, toolInput) || asksAboutConnector(toolName),
           );
           const settle = (result: PermissionResult) => {
             if (!pending.delete(request.id)) return;

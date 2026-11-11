@@ -1,0 +1,280 @@
+name: Packages and images
+
+# Gram's core as registry packages (contracts, themes, git, agents, server) and two images (the
+# server with the web app, and the worker host alone), for embedding and self-hosting. See
+# docs/PACKAGES.md.
+#
+# Every run packs the packages, installs them in an empty project and builds both images. Only two
+# events publish, both to GitHub Packages and ghcr.io with the workflow's own token:
+#
+# - a push to main publishes a canary (`<next patch>-canary.<commit time>.g<commit>`, tag `canary`);
+# - a published GitHub release publishes that version (tag `latest`).
+#
+# Setting the repository variable GRAM_PUBLISH_PACKAGES to `false` stops both: nothing is uploaded
+# while it says so. No other branch or event ever uploads. A pull request that changes this workflow, the
+# packaging tools, the Dockerfile or a published package's manifest runs the same build as a dry
+# run, as do a manual run and a push to an integration branch.
+#
+# `pack` and `image` run the repository's code and its dependencies' install scripts with a
+# read-only token. `publish` holds the token that writes packages and installs nothing: it runs
+# one dependency-free script over the files `pack` verified. `image` hands its token to one step,
+# the push, which runs only on the two publishing events; the build never sees it.
+
+on:
+  push:
+    # An integration branch is built and checked like main, and never published from.
+    branches: [main, "integration/**"]
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - .github/workflows/packages.yml
+      - tools/packages/**
+      - docker/**
+      - .dockerignore
+      - packages/*/package.json
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  # Superseded PR runs cancel; every publishing run that starts finishes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+env:
+  # Main and releases publish, unless the one switch says `false`.
+  PUBLISHING: ${{ vars.GRAM_PUBLISH_PACKAGES != 'false' && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+
+jobs:
+  pack:
+    name: pack and verify
+    # Only same-repository PRs run CI.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.pack.outputs.version }}
+      registry: ${{ steps.target.outputs.registry }}
+      publishing: ${{ steps.target.outputs.publishing }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+          no-cache: true
+      # Values reach the shell only as environment variables, never spliced into a script.
+      - name: Choose the registry and scope
+        id: target
+        env:
+          EVENT: ${{ github.event_name }}
+          OWNER: ${{ github.repository_owner }}
+          RELEASE_REGISTRY: ${{ vars.GRAM_RELEASE_REGISTRY }}
+          NPM_SCOPE: ${{ vars.GRAM_NPM_SCOPE }}
+        run: |
+          set -euo pipefail
+          # GitHub Packages takes only the repository owner's scope. npm, for releases alone and
+          # only when chosen, takes the scope named for it.
+          if [ "$EVENT" = release ] && [ "$RELEASE_REGISTRY" = npm ]; then
+            [[ "$NPM_SCOPE" =~ ^@[a-z0-9][a-z0-9._-]*$ ]] || { echo "GRAM_NPM_SCOPE must name the npm scope"; exit 1; }
+            echo "registry=https://registry.npmjs.org" >>"$GITHUB_OUTPUT"
+            echo "scope=$NPM_SCOPE" >>"$GITHUB_OUTPUT"
+          else
+            echo "registry=https://npm.pkg.github.com" >>"$GITHUB_OUTPUT"
+            echo "scope=@${OWNER,,}" >>"$GITHUB_OUTPUT"
+          fi
+          echo "publishing=$PUBLISHING" >>"$GITHUB_OUTPUT"
+      - run: bun install --frozen-lockfile
+      - name: Build the packages
+        run: bun run typecheck --singleThreaded
+        env:
+          # Native TypeScript is Go: bound its heap so the build stays predictable.
+          GOMEMLIMIT: 2GiB
+      - name: Pack
+        id: pack
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.event.release.tag_name }}
+          SCOPE: ${{ steps.target.outputs.scope }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = release ]; then
+            node tools/packages/pack.mjs --release "$TAG" --scope "$SCOPE" --repository "$REPOSITORY"
+          else
+            node tools/packages/pack.mjs --canary --scope "$SCOPE" --repository "$REPOSITORY"
+          fi
+          echo "version=$(node -p 'require("./out/packages/packages.json").version')" >>"$GITHUB_OUTPUT"
+      - name: Install and run them in an empty project
+        run: node tools/packages/verify.mjs
+      - name: Rehearse the publish
+        env:
+          REGISTRY: ${{ steps.target.outputs.registry }}
+        run: node tools/packages/publish.mjs --registry "$REGISTRY" --dry-run
+      - name: Keep the tarballs for the publish job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages
+          path: |
+            out/packages/*.tgz
+            out/packages/packages.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: publish packages
+    needs: pack
+    if: needs.pack.outputs.publishing == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      # npm's provenance and trusted publishing, when a release goes to npm.
+      id-token: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packages
+          path: out/packages
+      # No install: the script uses only Node's own modules, and checks each tarball against the
+      # hash `pack` recorded before it uploads it.
+      - name: Publish
+        env:
+          REGISTRY: ${{ needs.pack.outputs.registry }}
+          GITHUB_PACKAGES_TOKEN: ${{ github.token }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "$REGISTRY" = https://registry.npmjs.org ]; then
+            NODE_AUTH_TOKEN="$NPM_TOKEN" node tools/packages/publish.mjs --registry "$REGISTRY" --provenance
+          else
+            NODE_AUTH_TOKEN="$GITHUB_PACKAGES_TOKEN" node tools/packages/publish.mjs --registry "$REGISTRY"
+          fi
+
+  image:
+    name: ${{ matrix.target }} image (${{ matrix.arch }})
+    needs: pack
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [control-plane, host]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+          - target: control-plane
+            image: gram
+          - target: host
+            image: gram-host
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build
+        env:
+          TARGET: ${{ matrix.target }}
+          IMAGE: ${{ matrix.image }}
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.pack.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker build -f docker/Dockerfile --target "$TARGET" \
+            --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" \
+            --label "org.opencontainers.image.revision=$SHA" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --label "org.opencontainers.image.licenses=MIT" \
+            -t "ghcr.io/${OWNER,,}/$IMAGE:$VERSION-$ARCH" .
+      - name: Start the host image
+        if: matrix.target == 'host'
+        env:
+          IMAGE: ${{ matrix.image }}
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.pack.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          docker run --rm "ghcr.io/${OWNER,,}/$IMAGE:$VERSION-$ARCH" gram-host status | grep -F "Not joined"
+      - name: Push
+        if: needs.pack.outputs.publishing == 'true'
+        env:
+          IMAGE: ${{ matrix.image }}
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.pack.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+          docker push "ghcr.io/${OWNER,,}/$IMAGE:$VERSION-$ARCH"
+          docker logout ghcr.io
+
+  manifest:
+    name: ${{ matrix.image }} image tags
+    needs: [pack, image]
+    if: needs.pack.outputs.publishing == 'true'
+    # No checkout: it only names what `image` pushed.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [gram, gram-host]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Tag both architectures as one image
+        env:
+          IMAGE: ${{ matrix.image }}
+          VERSION: ${{ needs.pack.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          name="ghcr.io/${OWNER,,}/$IMAGE"
+          moving=canary
+          [ "$EVENT" = release ] && moving=latest
+          printf '%s' "$TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+          docker buildx imagetools create -t "$name:$VERSION" -t "$name:$moving" \
+            "$name:$VERSION-amd64" "$name:$VERSION-arm64"
+          docker logout ghcr.io

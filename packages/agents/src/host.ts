@@ -95,6 +95,12 @@ export interface OpenSessionOptions {
    */
   readonly outwardGate?: boolean | OutwardGate;
   /**
+   * Ask before every call to an MCP server that isn't Gram's own, whatever rules and mode say, as
+   * the outward gate asks about a push: for a server that puts each such call to a decision
+   * endpoint. A host that can't ask about them ignores it.
+   */
+  readonly gateConnectors?: boolean;
+  /**
    * Keep the session's unprompted writes inside its `cwd`, with the shell and the network off where
    * the host can't otherwise bound what they write or reach, and no MCP server but Gram's
    * own. What a dream needs: it reads transcripts nobody vetted. A
