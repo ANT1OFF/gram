@@ -33,6 +33,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import { attachmentsDir } from "../attachments/attachments.ts";
 import { ServerConfig } from "../config.ts";
+import { ObjectStore, outputKey } from "../embedding/object-store.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { expandHome } from "../fs/folders.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -153,6 +154,7 @@ export class WorkspaceOutputs extends Context.Service<WorkspaceOutputs, Workspac
       const config = yield* ServerConfig;
       const sql = yield* SqlClient.SqlClient;
       const attachments = attachmentsDir(config.dataDir);
+      const objects = yield* ObjectStore;
 
       /** The candidate resolved and checked against `thread`'s folders, or nothing. */
       const admit = (thread: Thread, output: ObservedOutput) =>
@@ -223,6 +225,11 @@ export class WorkspaceOutputs extends Context.Service<WorkspaceOutputs, Workspac
                 source = excluded.source, media_type = excluded.media_type,
                 size = excluded.size, mtime = excluded.mtime, at = excluded.at`,
           );
+          // A file in the attachments folder is mirrored with it; one in a checkout is copied now,
+          // since the checkout doesn't outlive its thread.
+          if (!isInside(attachments, checked.path)) {
+            yield* objects.put(outputKey(threadId, checked.path), checked.real);
+          }
           const workspaceId = thread.value.workspaceId;
           if (workspaceId !== undefined)
             yield* hub.publish({ type: "outputs.changed", workspaceId });

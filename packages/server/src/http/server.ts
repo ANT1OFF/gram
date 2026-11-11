@@ -47,6 +47,7 @@ import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
 import { Embedding } from "../embedding/embedding.ts";
 import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
 import { RepoEventsInboundLive } from "../embedding/repo-events.ts";
+import { ObjectStoreLive } from "../embedding/object-store.ts";
 import { TimersLive } from "../embedding/timers.ts";
 import { SuppliedSettingsLive } from "../settings/supplied.ts";
 import { EventHub } from "../events/event-hub.ts";
@@ -547,7 +548,9 @@ export const ServerCore = Layer.unwrap(
           // and port scan, and the machines joined to it. One host process serves this machine's
           // worker host, the worktrees its checkouts make, and the Claude sessions it can run.
           // `CheckoutService` above here makes each thread's checkout on the machine it is placed on.
-          Layer.provideMerge(WorkerHosts.placedCheckouts),
+          // Beside it, attachments, docs and outputs mirrored to an embedding deployment's object
+          // store, under the outputs and the handlers that read through it.
+          Layer.provideMerge(Layer.mergeAll(WorkerHosts.placedCheckouts, ObjectStoreLive)),
           Layer.provideMerge(
             WorkerHosts.layerLocalOn.pipe(
               Layer.provideMerge(

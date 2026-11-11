@@ -11,12 +11,14 @@ whatever its environment says.
 The seams are configured from the server's environment, never from settings, and a malformed
 value stops the server at start rather than half-configuring it.
 
-| Variable               | What it sets                                                                   |
-| ---------------------- | ------------------------------------------------------------------------------ |
-| `GRAM_EMBED_TOKEN`     | The bearer token the platform's services send on `/embed/v1/*`                 |
-| `GRAM_REPO_EVENTS`     | `pushed`: repository events arrive on `/embed/v1/repo-events`; needs the token |
-| `GRAM_SCHEDULER_URL`   | Where wakes, snoozes and routine runs are registered; needs the token          |
-| `GRAM_SCHEDULER_TOKEN` | The bearer token sent to the scheduler                                         |
+| Variable                  | What it sets                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------ |
+| `GRAM_EMBED_TOKEN`        | The bearer token the platform's services send on `/embed/v1/*`                 |
+| `GRAM_REPO_EVENTS`        | `pushed`: repository events arrive on `/embed/v1/repo-events`; needs the token |
+| `GRAM_SCHEDULER_URL`      | Where wakes, snoozes and routine runs are registered; needs the token          |
+| `GRAM_SCHEDULER_TOKEN`    | The bearer token sent to the scheduler                                         |
+| `GRAM_OBJECT_STORE_URL`   | Where attachments, docs and outputs are kept as well as on the disk            |
+| `GRAM_OBJECT_STORE_TOKEN` | The bearer token sent to the object store                                      |
 
 Tokens are at least 32 characters with no whitespace. The server takes them out of its own
 environment once it has read them, so no agent, terminal or `git` process it starts inherits one.
@@ -132,6 +134,40 @@ What to rely on:
 - A routine that watches for events registers each of its looks, a few minutes apart, so such a
   routine keeps waking a server that would otherwise idle.
 
+## An object store
+
+With `GRAM_OBJECT_STORE_URL` set, attachments, docs and the files threads produce are kept in the deployment's object store as well as on the server's disk, so they outlive that disk and it can stay small. The data folder stays what the server reads and writes; the store is its mirror.
+
+- An attachment is sent as it is uploaded. Every minute the attachments and docs folders are walked, and whatever is new or changed since it was last sent is sent: a doc that was saved, an image a tool call returned, a fork's copies.
+- A file a thread produced in its checkout (a report, a screenshot it wrote) is copied to the store when it is recorded as an output, since a checkout doesn't outlive its thread.
+- A closed thread's attachments and outputs are deleted from the store with it. Nothing else is deleted: a file missing on the disk is never taken as a reason to delete it in the store.
+- A server that starts on a fresh disk lists the docs in the store and brings them back before anything reads them. An attachment is brought back the first time the transcript shows it.
+
+The store is plain HTTP, and every call carries `Authorization: Bearer <GRAM_OBJECT_STORE_TOKEN>` when the token is set. A redirect is refused.
+
+| Call                              | Meaning                                                |
+| --------------------------------- | ------------------------------------------------------ |
+| `PUT <url>/objects/<key>`         | Keep these bytes under the key, replacing what it held |
+| `GET <url>/objects/<key>`         | The bytes, or `404`                                    |
+| `GET <url>/objects?prefix=<p>`    | `{ "keys": ["<key>", …] }`: every key under the prefix |
+| `DELETE <url>/objects?prefix=<p>` | Delete every key under the prefix; `404` is fine       |
+
+| Key                                                   | What it is                                           |
+| ----------------------------------------------------- | ---------------------------------------------------- |
+| `attachments/<threadId>/<file>`                       | A thread's attachment or stored tool image           |
+| `docs/<workspaceId>/<docId>.doc`                      | A doc's record: its metadata line, then its Markdown |
+| `outputs/<threadId>/<16 hex of SHA-256(path)>/<name>` | A file the thread produced outside its attachments   |
+
+Limits:
+
+- A file over 64 MB is neither sent nor brought back.
+- What was sent is remembered in `object-store.json` in the data folder. Without it (a fresh disk) everything on the disk is sent again, once.
+- An output on another machine's checkout is not copied: the server copies only files it can read itself.
+- An output copied to the store is not read back from it by the Files view; the deployment serves it from the store by its key.
+- A send that fails is tried again at the next walk, and an output's at the next time it is recorded.
+- A delete the store didn't confirm is kept in `object-store.json` and asked again at each walk.
+- A file is sent only from where it was when it was checked: one whose folder has since become a link is left out, and the log says so.
+
 ## Settings supplied from outside
 
 The deployment can set some of the settings for this server. A supplied setting reads as supplied to everything inside, and nothing inside can change it: the Settings page, a paired phone and an agent's `settings_propose` are each refused, with a message that says the service that runs this Gram set it.
@@ -151,5 +187,6 @@ GET /embed/v1/settings
 - What is supplied is kept in the server's database and holds through a restart. It is applied only while the hosted features are on.
 - A setting that is no longer supplied keeps the value it last had, and can be changed inside again.
 - `experimental.embedding` can't be supplied: it is what turns this on (`GRAM_EMBEDDING`).
+- Every other setting can be supplied, the default permission mode, the terminal's shell and the editor command among them. Whoever holds `GRAM_EMBED_TOKEN` configures this server as its owner would, and the person using it can't undo that: give the token only to the service that is meant to.
 
 The Settings page doesn't yet mark a supplied setting: a change to one fails with the message above.

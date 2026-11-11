@@ -20,6 +20,8 @@ export interface OutsideCall {
   readonly path: string;
   readonly json?: unknown;
   readonly bytes?: Uint8Array;
+  /** A file's bytes, read as they are sent (`openAsBlob`). */
+  readonly body?: Blob;
   readonly contentType?: string;
   /** Statuses besides 2xx that are an answer, not a failure: a 404 for a read or a delete. */
   readonly accept?: ReadonlyArray<number>;
@@ -47,7 +49,7 @@ export const callOutside = (
           ...(service.token === undefined ? {} : { authorization: `Bearer ${service.token}` }),
           ...(call.json !== undefined
             ? { "content-type": "application/json" }
-            : call.bytes !== undefined
+            : call.bytes !== undefined || call.body !== undefined
               ? { "content-type": call.contentType ?? "application/octet-stream" }
               : {}),
         },
@@ -55,7 +57,9 @@ export const callOutside = (
           ? { body: JSON.stringify(call.json) }
           : call.bytes !== undefined
             ? { body: call.bytes }
-            : {}),
+            : call.body !== undefined
+              ? { body: call.body }
+              : {}),
       }),
     catch: (error) =>
       new OutsideCallFailed({
