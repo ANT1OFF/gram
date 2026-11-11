@@ -9,7 +9,9 @@ import {
   settingsHold,
   WorkspaceId,
   type Autonomy,
+  type HostId,
   type ModelRef,
+  type Project,
   type ProjectId,
   type ThreadId,
   type WorkspaceState,
@@ -72,6 +74,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
     handoffTimers,
     workspaceLock,
     creator,
+    checkouts,
     orchestrators,
     openedInAuto,
     releaseSetAside,
@@ -107,10 +110,44 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       }),
     );
 
+  /**
+   * The folders an orchestrator reads `projects` in: their folders on this machine, or, for one a
+   * headless Gram placed on the joined machine `hostId`, that machine's own clones of them. A
+   * project the machine can't clone is left out, and logged.
+   */
+  const foldersFor = (hostId: HostId | undefined, projects: ReadonlyArray<Project>) =>
+    hostId === undefined
+      ? Effect.succeed(projects.map((project) => project.root))
+      : Effect.forEach(projects, (project) =>
+          checkouts.prepare({ kind: "current", hostId }, [], project.root).pipe(
+            Effect.map((clone) => [clone.path]),
+            Effect.catch((error) =>
+              Effect.logWarning("an orchestrator's machine couldn't clone a project").pipe(
+                Effect.annotateLogs({ project: project.name, reason: error.message }),
+                Effect.as<Array<string>>([]),
+              ),
+            ),
+          ),
+        ).pipe(Effect.map((folders) => folders.flat()));
+
   const syncFolders = (holder: ThreadId, before: ReadonlyArray<ProjectId>, state: WorkspaceState) =>
     Effect.gen(function* () {
       const { projectIds, homeProjectId } = state.workspace;
       const all = yield* store.listProjects;
+      const hostId = (yield* findThread(holder))?.checkout.hostId;
+      if (hostId !== undefined) {
+        // On a joined machine the folders are its clones, so the set is made again from the
+        // workspace as it is: what left goes, what joined is cloned there.
+        const folders = yield* foldersFor(
+          hostId,
+          all.filter((project) => projectIds.includes(project.id) && project.id !== homeProjectId),
+        );
+        yield* runtimes
+          .updateThread(holder, (thread) => ({ ...thread, additionalDirectories: folders }))
+          .pipe(Effect.ignore);
+        yield* reload(holder);
+        return;
+      }
       // A repo that left takes its folder with it: the grant outlives the session otherwise.
       const left = all
         .filter((project) => before.includes(project.id) && !projectIds.includes(project.id))
@@ -481,19 +518,28 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
         return yield* new NotFound({ entity: "project", id: workspace.homeProjectId });
       }
       const { model, mode, note } = yield* openModel(state.charter, selected);
+      const others = projects.filter((project) => project.id !== home.id);
       const thread = yield* creator
-        .createIn({ kind: "current" }, home.root, {
-          title: `Orchestrator · ${workspace.name}`,
-          model,
-          mode,
-          role: "orchestrator",
-          workspaceId: workspace.id,
-          additionalDirectories: projects
-            .filter((project) => project.id !== home.id)
-            .map((project) => project.root),
-          // The session policy asks for the slot, which can only be claimed once the row exists.
-          deferOpen: true,
-        })
+        .prepare({ kind: "current" }, home.root)
+        .pipe(
+          Effect.flatMap((checkout) =>
+            Effect.gen(function* () {
+              const additionalDirectories = yield* foldersFor(checkout.hostId, others);
+              return yield* runtimes.create({
+                projectRoot: home.root,
+                checkout,
+                title: `Orchestrator · ${workspace.name}`,
+                model,
+                mode,
+                role: "orchestrator",
+                workspaceId: workspace.id,
+                additionalDirectories,
+                // The session policy asks for the slot, which can only be claimed once the row exists.
+                deferOpen: true,
+              });
+            }),
+          ),
+        )
         .pipe(
           Effect.catchTags({
             CheckoutInUse: (e) => Effect.fail(new InvalidState({ message: e.message })),

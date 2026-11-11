@@ -63,6 +63,13 @@ export interface ServerConfigShape {
    * the stored setting as it is.
    */
   readonly embedding?: boolean;
+  /**
+   * `GRAM_HEADLESS=1`: a control plane with no agent host of its own. Every session, an
+   * orchestrator's included, runs on a joined machine, and nothing is started on this one: no
+   * agent, no terminal, no worktree. One of the hosted features, so the server refuses to start
+   * this way unless they are on (`host/headless.ts`).
+   */
+  readonly headless?: boolean;
 }
 
 /**
@@ -131,6 +138,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
       ...(Number.isFinite(debounceMs) && debounceMs > 0
         ? { orchestrationDebounce: Duration.millis(debounceMs) }
         : {}),
+      ...(env["GRAM_HEADLESS"] === "1" ? { headless: true } : {}),
       ...(env["GRAM_EMBEDDING"] === "1"
         ? { embedding: true }
         : env["GRAM_EMBEDDING"] === "0"

@@ -89,6 +89,10 @@ The guard itself, on the joined machine's host:
   mount that doesn't answer within a few seconds.
 - A host from an older release doesn't list its folders. Update it before you pick a folder there.
 
+A Gram started as a [headless control plane](DOCKER.md#a-headless-control-plane) has no "This
+machine": every thread runs on a joined one, and one that names none goes on the machine that
+joined first of those online.
+
 ## What you need
 
 - Tailscale on both machines, in the same tailnet, and access over Tailscale turned on in Gram on
