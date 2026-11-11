@@ -32,6 +32,8 @@ export const HOSTED_SIGN_IN_MS = 5 * 60_000;
 export const HOSTED_ANSWER_MOST_BYTES = 256 * 1024;
 /** The longest an access token is used, whatever the server says: the design's fifteen minutes. */
 export const HOSTED_TOKEN_MOST_MS = 15 * 60_000;
+/** How long the keychain may take to keep a refresh token. */
+export const HOSTED_SAVE_MS = 10_000;
 /** A token this close to its end is renewed before it is used. */
 export const HOSTED_TOKEN_RENEW_BEFORE_MS = 60_000;
 
@@ -53,15 +55,20 @@ const readBounded = async (response: Response, most: number): Promise<string | u
   const reader = response.body.getReader();
   const parts: Array<Uint8Array> = [];
   let length = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    length += value.length;
-    if (length > most) {
-      await reader.cancel().catch(() => undefined);
-      return undefined;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.length;
+      if (length > most) {
+        await reader.cancel().catch(() => undefined);
+        return undefined;
+      }
+      parts.push(value);
     }
-    parts.push(value);
+  } catch {
+    // The body broke off, or the call's deadline passed partway through it.
+    return undefined;
   }
   return Buffer.concat(parts).toString("utf8");
 };
@@ -115,8 +122,8 @@ export const discoverHosted = async (typed: string, fetch: Fetch): Promise<Disco
 /** A token as it is used: what to send, what kind, until when, and for whom. */
 export interface HostedToken {
   readonly accessToken: string;
-  /** "DPoP" when the server bound it to the device key; then a proof goes with every use. */
-  readonly tokenType: "DPoP" | "Bearer";
+  /** Always bound to the device key: a proof goes with every use. */
+  readonly tokenType: "DPoP";
   /** By the caller's clock. */
   readonly expiresAt: number;
   readonly subject: string;
@@ -180,15 +187,16 @@ const tokenCall = async (
     const decoded = Schema.decodeUnknownOption(HostedTokenAnswer)(answer);
     if (decoded._tag === "None") return failed(UNREADABLE);
     const token = decoded.value;
-    const tokenType = token.token_type.toLowerCase();
-    if (tokenType !== "dpop" && tokenType !== "bearer") return failed(UNREADABLE);
+    // Every token a device holds is bound to its key, so a copy is no use without the key.
+    if (token.token_type.toLowerCase() !== "dpop")
+      return failed("The server didn't bind the sign-in to this machine.");
     const lasts = Math.min(Math.max(0, Math.floor(token.expires_in)) * 1000, HOSTED_TOKEN_MOST_MS);
     if (lasts <= HOSTED_TOKEN_RENEW_BEFORE_MS) return failed(UNREADABLE);
     return {
       ok: true,
       tokens: {
         accessToken: token.access_token,
-        tokenType: tokenType === "dpop" ? "DPoP" : "Bearer",
+        tokenType: "DPoP",
         expiresAt: options.now() + lasts,
         subject: token.sub,
         ...(token.refresh_token === undefined ? {} : { refreshToken: token.refresh_token }),
@@ -237,9 +245,19 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
   const { discovery } = options;
 
   const { promise: answered, resolve: finish } = Promise.withResolvers<{ code: string } | Failed>();
-  const server = createServer((request: IncomingMessage, response: ServerResponse) => {
-    const url = new URL(request.url ?? "/", "http://127.0.0.1");
-    if (request.method !== "GET" || url.pathname !== "/callback") {
+  let expectedHost = "";
+  const answerCallback = (request: IncomingMessage, response: ServerResponse) => {
+    const target = request.url ?? "";
+    if (
+      request.method !== "GET" ||
+      !target.startsWith("/callback?") ||
+      request.headers.host !== expectedHost
+    ) {
+      page(response, 404, "Not found.");
+      return;
+    }
+    const url = new URL(target, "http://127.0.0.1");
+    if (url.pathname !== "/callback") {
       page(response, 404, "Not found.");
       return;
     }
@@ -263,6 +281,15 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
     }
     page(response, 200, "Signed in. You can close this window and go back to Gram.");
     finish({ code });
+  };
+  const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+    try {
+      answerCallback(request, response);
+    } catch {
+      // Whatever another program on this machine sends, it ends nothing and throws nothing.
+      if (!response.headersSent) page(response, 400, "Not a sign-in.");
+      else response.destroy();
+    }
   });
   const listening = new Promise<number | undefined>((done) => {
     server.once("error", () => done(undefined));
@@ -276,10 +303,12 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
     options.waitMs ?? HOSTED_SIGN_IN_MS,
   );
   const onAbort = () => finish(failed("The sign-in was stopped."));
+  const stopped = () => options.signal?.aborted === true;
   options.signal?.addEventListener("abort", onAbort, { once: true });
   try {
     const port = await listening;
     if (port === undefined) return failed("Gram couldn't wait for the browser.");
+    expectedHost = `127.0.0.1:${port}`;
     const redirectUri = `http://127.0.0.1:${port}/callback`;
     const authorize = new URL(discovery.authorization_endpoint);
     authorize.search = new URLSearchParams({
@@ -291,12 +320,13 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
       code_challenge: challenge,
       code_challenge_method: "S256",
     }).toString();
-    if (options.signal?.aborted === true) return failed("The sign-in was stopped.");
+    if (stopped()) return failed("The sign-in was stopped.");
     await options.openBrowser(authorize.href).catch(() => {
       finish(failed("Gram couldn't open the browser."));
     });
     const answer = await answered;
     if (!("code" in answer)) return answer;
+    if (stopped()) return failed("The sign-in was stopped.");
     const exchanged = await tokenCall(
       { discovery, key: options.key, fetch: options.fetch, now: options.now, nonce: {} },
       {
@@ -333,6 +363,8 @@ export type TokenFor =
   | { readonly ok: true; readonly token: HostedToken }
   | (Failed & { readonly signedOut?: true });
 
+const signedOutNow = (): TokenFor => ({ ...failed("Signed out."), signedOut: true });
+
 export interface TokenKeeper {
   /** The person this sign-in is for: their subject id, as the server issued it. */
   readonly subject: string;
@@ -345,6 +377,8 @@ export interface TokenKeeper {
   /** Signed out: the server said the refresh token is no good, or the person signed out. */
   readonly signedOut: () => boolean;
   readonly signOut: () => void;
+  /** The keychain didn't take the latest refresh token; it is tried again at each renewal. */
+  readonly unsaved: () => boolean;
 }
 
 /**
@@ -356,21 +390,46 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
   let ended = false;
   const tokens = new Map<HostedScope, HostedToken>();
   const nonce: { value?: string } = {};
+  /** The token endpoint's own nonce: a server may give its calls and its tokens different ones. */
+  const tokenNonce: { value?: string } = {};
   let queue: Promise<unknown> = Promise.resolve();
+  /** A rotated refresh token the keychain hasn't taken yet: saved again before the next renewal. */
+  let unsaved: string | undefined;
+  const pending = new Map<HostedScope, Promise<TokenFor>>();
+
+  const save = async (token: string): Promise<boolean> => {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        options.saveRefreshToken(token).then(() => true),
+        new Promise<boolean>((done) => {
+          timer = setTimeout(() => done(false), HOSTED_SAVE_MS);
+        }),
+      ]);
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
   const renew = (scope: HostedScope): Promise<TokenFor> => {
     const next = queue.then(async (): Promise<TokenFor> => {
-      if (ended) return { ...failed("Signed out."), signedOut: true };
+      if (ended) return signedOutNow();
+      if (unsaved !== undefined && (await save(unsaved))) unsaved = undefined;
+      if (ended) return signedOutNow();
       const answer = await tokenCall(
         {
           discovery: options.discovery,
           key: options.key,
           fetch: options.fetch,
           now: options.now,
-          nonce,
+          nonce: tokenNonce,
         },
         { grant_type: "refresh_token", refresh_token: refreshToken, scope },
       );
+      // Signed out while it was asked: nothing it brought back is kept.
+      if (ended) return signedOutNow();
       if (!answer.ok) {
         if (answer.signedOut === true) {
           ended = true;
@@ -385,8 +444,11 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
         return { ...failed("The server signed in someone else."), signedOut: true };
       }
       if (answer.tokens.refreshToken !== undefined && answer.tokens.refreshToken !== refreshToken) {
-        await options.saveRefreshToken(answer.tokens.refreshToken);
+        // The server has let the old one go: this one is used from now on, saved or not, and
+        // saved again before the next renewal if the keychain didn't take it.
         refreshToken = answer.tokens.refreshToken;
+        unsaved = (await save(refreshToken)) ? undefined : refreshToken;
+        if (ended) return signedOutNow();
       }
       const { refreshToken: _rotated, ...token } = answer.tokens;
       tokens.set(scope, token);
@@ -406,11 +468,17 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
         held.expiresAt - HOSTED_TOKEN_RENEW_BEFORE_MS > options.now()
       )
         return { ok: true, token: held };
-      return renew(scope);
+      // Callers that find the same token near its end share one renewal.
+      const waiting = pending.get(scope);
+      if (waiting !== undefined) return waiting;
+      const renewal = renew(scope).finally(() => pending.delete(scope));
+      pending.set(scope, renewal);
+      return renewal;
     },
     fresh: renew,
     nonce,
     signedOut: () => ended,
+    unsaved: () => unsaved !== undefined,
     signOut: () => {
       ended = true;
       tokens.clear();
@@ -500,9 +568,8 @@ export const listHostedWorkspaces = async (
  */
 export const registerHostedDevice = async (
   calls: HostedCalls & {
-    readonly origin: string;
     readonly name: string;
-    readonly platform: string;
+    readonly platform: "darwin" | "linux" | "win32";
   },
 ): Promise<{ readonly ok: true; readonly deviceId: DeviceId } | Failed> => {
   const asked = await authorizedCall(
@@ -522,7 +589,7 @@ export const registerHostedDevice = async (
   const signature = sign(
     null,
     deviceRegistrationBytes({
-      origin: calls.origin,
+      origin: calls.discovery.issuer,
       subject: calls.keeper.subject,
       publicKey,
       challenge: challenge.value.challenge,
@@ -540,7 +607,7 @@ export const registerHostedDevice = async (
       publicKey,
       challenge: challenge.value.challenge,
       signature,
-      name: calls.name.slice(0, 128),
+      name: [...calls.name].slice(0, 128).join(""),
       platform: calls.platform,
     },
   );

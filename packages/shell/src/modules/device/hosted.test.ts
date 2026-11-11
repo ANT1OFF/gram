@@ -1,5 +1,6 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { createServer, type IncomingMessage, type Server } from "node:http";
+import { connect as dialPort } from "node:net";
 import { deviceRegistrationBytes } from "@gram/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { dpopProof, dpopTarget, dpopThumbprint } from "./dpop.ts";
@@ -7,6 +8,7 @@ import {
   discoverHosted,
   forgetHostedDevice,
   HOSTED_TOKEN_MOST_MS,
+  HOSTED_TOKEN_RENEW_BEFORE_MS,
   listHostedWorkspaces,
   makeTokenKeeper,
   registerHostedDevice,
@@ -61,6 +63,11 @@ const fakeServer = () => {
     lieAboutId: false,
     forgotten: [] as Array<string>,
     refreshes: 0,
+    tokenType: "DPoP",
+    giveRefresh: true,
+    code: "",
+    resourceNonce: undefined as string | undefined,
+    workspacesStatus: 200,
   };
   let origin = "";
   const handle = async (request: IncomingMessage) => {
@@ -79,7 +86,7 @@ const fakeServer = () => {
         device_connect: `${origin.replace("http:", "ws:")}/device/connect`,
       });
     if (url.pathname === "/oauth/authorize") {
-      const code = randomBytes(12).toString("hex");
+      const code = state.code || randomBytes(12).toString("hex");
       const redirect = url.searchParams.get("redirect_uri") ?? "";
       state.codes.set(code, { challenge: url.searchParams.get("code_challenge") ?? "", redirect });
       const back = new URL(redirect);
@@ -119,9 +126,9 @@ const fakeServer = () => {
       state.refresh.add(refresh);
       return json(200, {
         access_token: access,
-        token_type: "DPoP",
+        token_type: state.tokenType,
         expires_in: state.expiresIn,
-        refresh_token: refresh,
+        ...(state.giveRefresh ? { refresh_token: refresh } : {}),
         scope,
         sub: state.sub,
       });
@@ -141,6 +148,17 @@ const fakeServer = () => {
       proof.claims.ath !== createHash("sha256").update(auth).digest("base64url")
     )
       return json(401, { error: "invalid_token" });
+    if (state.resourceNonce !== undefined && proof.claims.nonce !== state.resourceNonce)
+      return json(
+        401,
+        { error: "use_dpop_nonce" },
+        {
+          "dpop-nonce": state.resourceNonce,
+          "www-authenticate": 'DPoP error="use_dpop_nonce"',
+        },
+      );
+    if (url.pathname === "/api/workspaces" && state.workspacesStatus !== 200)
+      return json(state.workspacesStatus, { error: "down" });
     if (url.pathname === "/api/workspaces" && held.scope === "workspaces")
       return json(200, [
         { id: "w1", name: "Platform", organisation: "Example", role: "member", devices: "on" },
@@ -236,6 +254,31 @@ const signedIn = async () => {
   return { discovery: found.discovery, tokens: signed.tokens };
 };
 
+/** Sends raw bytes to a port and answers with whatever comes back. */
+const raw = (port: number, text: string) =>
+  new Promise<string>((done) => {
+    const socket = dialPort(port, "127.0.0.1", () => socket.write(text));
+    let answer = "";
+    socket.on("data", (part) => {
+      answer += part.toString();
+    });
+    socket.on("close", () => done(answer));
+    socket.on("error", () => done(answer));
+    setTimeout(() => socket.destroy(), 500);
+  });
+
+const answering = (response: () => Response) => async () => response();
+
+const broken = () =>
+  new Response(
+    new ReadableStream({
+      start: (controller) => {
+        controller.enqueue(new TextEncoder().encode("{"));
+        controller.error(new Error("cut"));
+      },
+    }),
+  );
+
 describe("a hosted server", () => {
   it("is found at the address the person typed, and refused when it names another", async () => {
     const found = await discoverHosted(origin, fetch);
@@ -318,11 +361,11 @@ describe("a hosted server", () => {
     const again = await keeper.token("device:connect");
     expect(first).toEqual(again);
     expect(saved).toHaveLength(1);
-    const [workspaces, connect] = await Promise.all([
+    const [workspaces, connecting] = await Promise.all([
       keeper.token("workspaces"),
       keeper.fresh("device:connect"),
     ]);
-    expect(workspaces.ok && connect.ok).toBe(true);
+    expect(workspaces.ok && connecting.ok).toBe(true);
     expect(saved).toHaveLength(3);
     // Never longer than the design's fifteen minutes, whatever the server says.
     fake.state.expiresIn = 86_400;
@@ -382,7 +425,6 @@ describe("a hosted server", () => {
     });
     const registered = await registerHostedDevice({
       ...calls,
-      origin,
       name: "Ada's laptop",
       platform: "linux",
     });
@@ -392,7 +434,7 @@ describe("a hosted server", () => {
     expect(registered.deviceId).toBe(deviceIdOf(fake.state.registeredKey ?? ""));
     fake.state.lieAboutId = true;
     expect(
-      await registerHostedDevice({ ...calls, origin, name: "Ada's laptop", platform: "linux" }),
+      await registerHostedDevice({ ...calls, name: "Ada's laptop", platform: "linux" }),
     ).toEqual({ ok: false, why: "The server registered another key." });
     expect(await forgetHostedDevice({ ...calls, deviceId: registered.deviceId })).toBe(true);
     expect(fake.state.forgotten).toEqual([registered.deviceId]);
@@ -424,5 +466,184 @@ describe("a hosted server", () => {
       },
     });
     expect(response.status).toBe(401);
+  });
+
+  it("answers whatever else reaches the loopback port without ending or crashing the sign-in", async () => {
+    const found = await discoverHosted(origin, fetch);
+    if (!found.ok) throw new Error(found.why);
+    const crashes: Array<unknown> = [];
+    const onCrash = (error: unknown) => crashes.push(error);
+    process.on("uncaughtException", onCrash);
+    const answers: Array<string> = [];
+    try {
+      const signed = await signInHosted({
+        discovery: found.discovery,
+        key,
+        fetch,
+        now,
+        openBrowser: async (url) => {
+          const redirect = new URL(new URL(url).searchParams.get("redirect_uri") ?? "");
+          const port = Number(redirect.port);
+          answers.push(await raw(port, "GET http://[ HTTP/1.1\r\nHost: x\r\n\r\n"));
+          answers.push(String((await fetch(redirect, { method: "POST" })).status));
+          answers.push(
+            await raw(port, `GET /callback?state=x HTTP/1.1\r\nHost: evil.example\r\n\r\n`),
+          );
+          await browser(url);
+        },
+      });
+      expect(signed.ok).toBe(true);
+    } finally {
+      process.off("uncaughtException", onCrash);
+    }
+    expect(crashes).toEqual([]);
+    expect(answers[0]).toMatch(/^HTTP\/1\.1 (400|404)/);
+    expect(answers[1]).toBe("404");
+    expect(answers[2]).toMatch(/^HTTP\/1\.1 404/);
+  });
+
+  it("refuses a sign-in whose tokens aren't bound to the device, are too short, or can't be renewed", async () => {
+    const found = await discoverHosted(origin, fetch);
+    if (!found.ok) throw new Error(found.why);
+    const signIn = () =>
+      signInHosted({ discovery: found.discovery, key, openBrowser: browser, fetch, now });
+    fake.state.tokenType = "Bearer";
+    expect(await signIn()).toEqual({
+      ok: false,
+      why: "The server didn't bind the sign-in to this machine.",
+    });
+    fake.state.tokenType = "DPoP";
+    fake.state.expiresIn = HOSTED_TOKEN_RENEW_BEFORE_MS / 1000;
+    expect(await signIn()).toMatchObject({ ok: false });
+    fake.state.expiresIn = 900;
+    fake.state.giveRefresh = false;
+    expect(await signIn()).toMatchObject({ ok: false });
+    fake.state.giveRefresh = true;
+    fake.state.code = "has space";
+    expect(await signIn()).toEqual({ ok: false, why: "The sign-in didn't finish." });
+  });
+
+  it("stops a sign-in the person closes", async () => {
+    const found = await discoverHosted(origin, fetch);
+    if (!found.ok) throw new Error(found.why);
+    const stop = new AbortController();
+    expect(
+      await signInHosted({
+        discovery: found.discovery,
+        key,
+        fetch,
+        now,
+        signal: stop.signal,
+        openBrowser: async () => stop.abort(),
+      }),
+    ).toEqual({ ok: false, why: "The sign-in was stopped." });
+  });
+
+  it("fails closed on a redirect, an answer too long, or one that breaks off", async () => {
+    expect(
+      await discoverHosted(
+        origin,
+        answering(() => new Response(null, { status: 302, headers: { location: "https://x" } })),
+      ),
+    ).toMatchObject({ ok: false });
+    expect(
+      await discoverHosted(
+        origin,
+        answering(() => new Response("x".repeat(300 * 1024))),
+      ),
+    ).toMatchObject({ ok: false, why: "The server's answer isn't one Gram reads." });
+    expect(await discoverHosted(origin, answering(broken))).toMatchObject({ ok: false });
+  });
+
+  it("keeps nothing a renewal brings back after the person signed out", async () => {
+    const { discovery, tokens } = await signedIn();
+    const held = Promise.withResolvers<void>();
+    const saved: Array<string> = [];
+    const slow: typeof fetch = async (input, init) => {
+      await held.promise;
+      return fetch(input, init);
+    };
+    const keeper = makeTokenKeeper({
+      discovery,
+      key,
+      subject: tokens.subject,
+      refreshToken: tokens.refreshToken ?? "",
+      saveRefreshToken: async (token) => {
+        saved.push(token);
+      },
+      fetch: slow,
+      now,
+    });
+    const renewing = keeper.token("workspaces");
+    keeper.signOut();
+    held.resolve();
+    expect(await renewing).toMatchObject({ ok: false, signedOut: true });
+    expect(saved).toEqual([]);
+  });
+
+  it("uses a rotated refresh token the keychain refused, and saves it again at the next renewal", async () => {
+    const { discovery, tokens } = await signedIn();
+    let refuse = true;
+    const saved: Array<string> = [];
+    const keeper = makeTokenKeeper({
+      discovery,
+      key,
+      subject: tokens.subject,
+      refreshToken: tokens.refreshToken ?? "",
+      saveRefreshToken: async (token) => {
+        if (refuse) throw new Error("locked");
+        saved.push(token);
+      },
+      fetch,
+      now,
+    });
+    expect((await keeper.token("workspaces")).ok).toBe(true);
+    expect(keeper.unsaved()).toBe(true);
+    refuse = false;
+    // The server took the rotated one: the old one is gone, so this works only if it was kept.
+    expect((await keeper.fresh("device:connect")).ok).toBe(true);
+    expect(keeper.unsaved()).toBe(false);
+    expect(saved).toHaveLength(2);
+  });
+
+  it("renews a token near its end, once for every caller waiting on it", async () => {
+    const { discovery, tokens } = await signedIn();
+    const keeper = makeTokenKeeper({
+      discovery,
+      key,
+      subject: tokens.subject,
+      refreshToken: tokens.refreshToken ?? "",
+      saveRefreshToken: async () => undefined,
+      fetch,
+      now,
+    });
+    const first = await keeper.token("workspaces");
+    const before = fake.state.refreshes;
+    clock += HOSTED_TOKEN_MOST_MS - HOSTED_TOKEN_RENEW_BEFORE_MS / 2;
+    const [one, two] = await Promise.all([keeper.token("workspaces"), keeper.token("workspaces")]);
+    expect(fake.state.refreshes).toBe(before + 1);
+    expect(one).toEqual(two);
+    expect(one.ok && first.ok && one.token.accessToken !== first.token.accessToken).toBe(true);
+  });
+
+  it("answers a call server's nonce, and refuses an answer that isn't a list", async () => {
+    const { discovery, tokens } = await signedIn();
+    const keeper = makeTokenKeeper({
+      discovery,
+      key,
+      subject: tokens.subject,
+      refreshToken: tokens.refreshToken ?? "",
+      saveRefreshToken: async () => undefined,
+      fetch,
+      now,
+    });
+    const calls = { discovery, keeper, key, fetch };
+    fake.state.resourceNonce = "resource-nonce";
+    expect(await listHostedWorkspaces(calls)).toMatchObject({ ok: true });
+    fake.state.workspacesStatus = 500;
+    expect(await listHostedWorkspaces(calls)).toEqual({
+      ok: false,
+      why: "The server refused the call.",
+    });
   });
 });
