@@ -58,6 +58,11 @@ export interface FakeSession {
   readonly steeredInterrupt: Array<boolean>;
   readonly responses: Array<{ requestId: RequestId; answer: RequestAnswer }>;
   readonly modes: Array<PermissionMode>;
+  /**
+   * The mode each of `sent` went out in, as a real adapter takes it at send: the last `setMode`,
+   * else the mode the open reported (`setAutoOpenReport`), else the one it opened in.
+   */
+  readonly sentModes: Array<PermissionMode>;
   readonly models: Array<ModelRef>;
   readonly switchStartupAccepts: string[];
   switchStopPrepared: boolean;
@@ -483,6 +488,7 @@ export const makeFakeAgentAdapter = (
             steeredInterrupt: [],
             responses: [],
             modes: [],
+            sentModes: [],
             models: [],
             switchStartupAccepts: [],
             switchStopPrepared: false,
@@ -666,6 +672,12 @@ export const makeFakeAgentAdapter = (
                   ? Effect.never
                   : Effect.sync(() => {
                       record.sent.push(input);
+                      record.sentModes.push(
+                        record.modes.at(-1) ??
+                          autoReport?.mode ??
+                          openOptions.permissionMode ??
+                          "default",
+                      );
                       record.sentIds.push(sendOptions?.messageId);
                       transcripts.add(agentSessionId);
                     }),

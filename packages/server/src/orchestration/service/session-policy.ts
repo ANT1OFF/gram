@@ -4,13 +4,20 @@ import {
   autonomyOf,
   orchestratorConnectors,
   orchestratorPeerMessaging,
+  type PermissionMode,
   type Thread,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { type SessionPolicy } from "../../runtime/thread-runtimes.ts";
 import { dreamRolePromptFor } from "../dream-prompt.ts";
 import { plainPrompt, rolePrompt, workerPrompt } from "../prompt.ts";
-import { admittedForRole, outwardGateFor, mcpListsFor, toolAudience } from "../rules.ts";
+import {
+  admittedForRole,
+  modeAfterDowngrade,
+  outwardGateFor,
+  mcpListsFor,
+  toolAudience,
+} from "../rules.ts";
 import { worktreesOf, type OrchestrationKit } from "./kit.ts";
 /** The session policy each thread opens with. */
 export const makeSessionPolicy = (kit: OrchestrationKit) => {
@@ -140,5 +147,16 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
         openedInAuto.add(thread.id);
     });
 
-  return { policyFor, opening };
+  /**
+   * The downgrade `onUpsert` makes of an `auto` open's `default` report, made instead by a switch
+   * before it lets queued input go, so its first turn is sent in the mode the session will keep.
+   */
+  const modeAfterSwitch = (thread: Thread): Effect.Effect<PermissionMode | undefined> =>
+    Effect.sync(() => {
+      if (!openedInAuto.has(thread.id) || thread.mode === "auto") return undefined;
+      openedInAuto.delete(thread.id);
+      return modeAfterDowngrade({ openedIn: "auto", reported: thread.mode });
+    });
+
+  return { policyFor, opening, modeAfterSwitch };
 };

@@ -1,5 +1,5 @@
 import { type ToolAudience, type OutwardGate, dreamSupportFor } from "@gram/agents";
-import type { Thread } from "@gram/contracts";
+import type { PermissionMode, Thread } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
@@ -49,6 +49,12 @@ export interface SessionPolicyPort {
    * in), under the same lock rules as `forThread`. Not called for `audienceOf`'s lookups.
    */
   opening?(thread: Thread): Effect.Effect<void>;
+  /**
+   * A switch's new session confirmed and runs in `thread.mode`, as it reported: the mode it should
+   * run in instead before the switch lets queued input go, or `undefined` to keep it. Under the
+   * same lock rules as `forThread`; the switch applies the answer itself.
+   */
+  modeAfterSwitch?(thread: Thread): Effect.Effect<PermissionMode | undefined>;
 }
 
 export const PLAIN_POLICY: SessionPolicy = { audience: "plain", outwardGate: undefined };
@@ -99,6 +105,21 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
             ),
           );
 
+  /** The mode a switch's confirmed session moves to before its release; none if the port fails. */
+  const modeAfterSwitch = (thread: Thread): Effect.Effect<PermissionMode | undefined> =>
+    sessionPolicy?.modeAfterSwitch === undefined
+      ? Effect.succeed(undefined)
+      : sessionPolicy
+          .modeAfterSwitch(thread)
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("session policy switch mode hook failed").pipe(
+                Effect.annotateLogs({ threadId: thread.id, cause: Cause.pretty(cause) }),
+                Effect.as(undefined),
+              ),
+            ),
+          );
+
   const methods: Pick<ThreadRuntimesShape, "setSessionPolicy" | "audienceOf"> = {
     setSessionPolicy: (port) =>
       Effect.sync(() => {
@@ -115,7 +136,7 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
       ),
   };
 
-  return { policyFor, opening, methods };
+  return { policyFor, opening, modeAfterSwitch, methods };
 };
 
 /** What `makeSessionPolicy` gives the rest of `ThreadRuntimes`. */

@@ -706,8 +706,8 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
    */
   const onUpsert = (thread: Thread) =>
     Effect.gen(function* () {
-      // A switch refuses a mode change until it releases, so the report it opened to waits for
-      // the release's upsert rather than being spent on a refused `setMode`.
+      // A switch's release makes this move itself before its queue goes (`modeAfterSwitch`). A
+      // report it didn't see waits for the release's upsert, not spent on a refused `setMode`.
       if (
         openedInAuto.has(thread.id) &&
         thread.mode !== "auto" &&

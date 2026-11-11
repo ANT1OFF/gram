@@ -520,6 +520,55 @@ describe.skipIf(!hasGit)("orchestration service", () => {
     ),
   );
 
+  it.effect("sends a switched worker's queued input only once its Auto downgrade applies", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const handlers = yield* threadHandlers;
+        const runtimes = yield* ThreadRuntimes;
+        const fake = yield* FakeAgentControl;
+        const { thread } = yield* openOrchestrator(world);
+        const reopened = yield* atAutonomy(thread, "full");
+        const worker = yield* spawn(reopened, { feature: "docs" });
+        yield* waitReal(
+          "the worker idle",
+          Effect.gen(function* () {
+            const status = yield* runtimes.status(worker.thread.id);
+            if (status === "running") yield* (yield* fake.latest(worker.thread.id)).completeTurn();
+            return status === "idle";
+          }),
+        );
+        expect((yield* store.getThread(worker.thread.id)).mode).toBe("auto");
+        yield* fake.setAutoOpenReport("codex", "default", 100);
+        yield* handlers["thread.switchAgent"]({
+          threadId: worker.thread.id,
+          target: { agent: "codex", model: "fake-opus" } as ModelRef,
+        });
+        expect(
+          yield* runtimes.send(worker.thread.id, { text: "queued continuation" }),
+        ).toMatchObject({ queued: true });
+        const target = yield* waitReal(
+          "the queued input sent on Codex",
+          fake
+            .latest(worker.thread.id)
+            .pipe(
+              Effect.map(
+                (s) =>
+                  s.options.model?.agent === "codex" &&
+                  s.sent.some((input) => input.text === "queued continuation") &&
+                  s,
+              ),
+            ),
+        );
+        // Its first turn went out in the mode the session keeps, not in the reported Ask.
+        const at = target.sent.findIndex((input) => input.text === "queued continuation");
+        expect(target.sentModes[at]).toBe("bypassPermissions");
+        yield* settle;
+        expect((yield* store.getThread(worker.thread.id)).mode).toBe("bypassPermissions");
+      }),
+    ),
+  );
+
   it.effect("refuses an orchestrator switch above High effort or from a gateway profile", () =>
     inServer((world) =>
       Effect.gen(function* () {

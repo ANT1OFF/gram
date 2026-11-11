@@ -15,6 +15,7 @@ import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { TurnLifecycle } from "./turn-lifecycle.ts";
 import type * as Semaphore from "effect/Semaphore";
 import type { MessageQueue } from "./message-queue.ts";
+import type { SessionPolicies } from "./session-policy.ts";
 
 /** The session a thread has, as a switch's `source` keeps it. */
 export const sessionIdentity = (
@@ -204,14 +205,14 @@ export const makeSessionSwitch = ({
                 threadId,
                 message: "The switch owner changed while the old session stopped.",
               });
-            // An approval, a question or background work came from the old session while it
-            // stopped: it can't move to the target, so the switch goes no further.
+            // The old session asked something or began work while it stopped (`startedDuringStop`):
+            // it can't move to the target, so the switch goes no further.
             const arrived = rt.switchFence?.id === attemptId ? rt.switchFence.arrived : undefined;
             rt.switchFence = undefined;
             if (arrived !== undefined)
               return yield* new InvalidState({
                 threadId,
-                message: `The previous session sent ${arrived} while it stopped, so the switch didn't go ahead.`,
+                message: `The previous session ${arrived} while it stopped, so the switch didn't go ahead.`,
               });
             const next = yield* store.updateThread(threadId, (t) => {
               const {
@@ -370,6 +371,7 @@ export interface SwitchMethodsDeps {
   readonly publishUpsert: TurnLifecycle["publishUpsert"];
   readonly drainQueue: MessageQueue["drainQueue"];
   readonly becomeIdle: (rt: Runtime) => Effect.Effect<void>;
+  readonly modeAfterSwitch: SessionPolicies["modeAfterSwitch"];
 }
 
 /** The `ThreadRuntimes` methods that claim a thread for a switch, cancel it or release it. */
@@ -381,6 +383,7 @@ export const makeSwitchMethods = ({
   publishUpsert,
   drainQueue,
   becomeIdle,
+  modeAfterSwitch,
 }: SwitchMethodsDeps): Pick<
   ThreadRuntimesShape,
   "claimSessionSwitch" | "cancelSessionSwitch" | "releaseSwitch"
@@ -458,9 +461,25 @@ export const makeSwitchMethods = ({
               threadId,
               message: "This switch is not ready to release its queued input.",
             });
+          // The session's last mode before anything queued goes: a turn keeps the mode it was
+          // sent in, so a policy's move (`auto` reported as `default`) can't wait for a later one.
+          const mode = yield* modeAfterSwitch(thread);
+          const moved =
+            mode === undefined || mode === thread.mode
+              ? false
+              : yield* rt.session.setMode(mode).pipe(
+                  Effect.as(true),
+                  Effect.catch((refused) =>
+                    Effect.logWarning("the switched session kept its reported mode").pipe(
+                      Effect.annotateLogs({ threadId, mode, error: refused.message }),
+                      Effect.as(false),
+                    ),
+                  ),
+                );
           const released = yield* store.updateThread(
             threadId,
-            ({ sessionSwitch: _switch, ...rest }) => rest,
+            ({ sessionSwitch: _switch, ...rest }) =>
+              moved && mode !== undefined ? { ...rest, mode } : rest,
           );
           yield* publishUpsert(released);
         }),

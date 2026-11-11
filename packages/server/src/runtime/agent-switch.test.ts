@@ -1,6 +1,14 @@
 // Moving a plain thread or worker to the other agent (`switchAgent`), with the synthetic agent.
 import { describe, expect, it } from "@effect/vitest";
-import type { HostId, ModelRef, ProfileId, RequestId, ThreadId } from "@gram/contracts";
+import type {
+  AgentEvent,
+  HostId,
+  MessageId,
+  ModelRef,
+  ProfileId,
+  RequestId,
+  ThreadId,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
@@ -471,6 +479,82 @@ describe("switchAgent", () => {
       expect(resumed.options.model).toEqual(thread.model);
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
+
+  // Neither a turn the agent opens itself nor a nested subagent's start is a request or a
+  // background task, and the stop's teardown clears both before the switch looks again.
+  const lateStarts: ReadonlyArray<readonly [string, ReadonlyArray<AgentEvent>]> = [
+    [
+      "a turn of its own",
+      [
+        {
+          type: "chunk",
+          messageId: "late-agent-turn" as MessageId,
+          chunk: {
+            type: "start",
+            messageId: "late-agent-turn",
+            messageMetadata: { initiator: "agent" },
+          },
+        },
+      ],
+    ],
+    [
+      "a nested subagent",
+      [
+        {
+          type: "chunk",
+          messageId: "late-subagent" as MessageId,
+          chunk: {
+            type: "start",
+            messageId: "late-subagent",
+            messageMetadata: { parentToolUseId: "source-background-agent" },
+          },
+        },
+        {
+          type: "chunk",
+          messageId: "late-subagent" as MessageId,
+          chunk: { type: "reasoning-start", id: "thinking" },
+        },
+      ],
+    ],
+  ];
+  for (const [what, events] of lateStarts) {
+    it.effect(`rolls back when the old session starts ${what} while it stops`, () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const fake = yield* FakeAgentControl;
+        const { thread, session } = yield* idleThread;
+        yield* fake.setSwitchStopDelay("200 millis");
+        yield* runtimes.switchAgent(thread.id, CODEX);
+        yield* waitFor(
+          "the old session stopping",
+          store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch?.phase === "stopping")),
+        );
+        yield* session.emit(...events);
+        yield* waitFor(
+          "the runtime to show it",
+          runtimes.snapshot.pipe(
+            Effect.map((all) =>
+              all.some(
+                (t) =>
+                  t.thread.id === thread.id && (t.status === "running" || t.activity !== undefined),
+              ),
+            ),
+          ),
+        );
+        yield* fake.setSwitchStopDelay(undefined);
+        yield* TestClock.adjust("300 millis");
+        const after = yield* waitFor(
+          "the switch settled",
+          store.getThread(thread.id).pipe(Effect.map((t) => t.sessionSwitch === undefined && t)),
+        );
+        expect(after.model).toEqual(thread.model);
+        expect(after.agentSessionId).toBe(thread.agentSessionId);
+        expect(fake.sessions.some((s) => s.options.model?.agent === "codex")).toBe(false);
+        expect(yield* handoffParts(thread.id)).toEqual([]);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+    );
+  }
 
   it.effect("goes back to the source session when the target fails to start cleanly", () =>
     Effect.gen(function* () {
