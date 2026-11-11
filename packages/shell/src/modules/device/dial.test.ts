@@ -21,6 +21,10 @@ describe("a device's dial", () => {
         "workspace",
       ),
     ).toBe("a&b=c");
+    // A WebSocket address can't carry a fragment, and the dial would throw on one.
+    expect(deviceConnectUrl("wss://gram.example.com/device/connect#x", "w1").href).toBe(
+      "wss://gram.example.com/device/connect?workspace=w1",
+    );
   });
 
   it("signs headers that a server holding the key verifies, and that name nothing else", () => {

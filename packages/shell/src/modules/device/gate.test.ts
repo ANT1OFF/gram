@@ -11,10 +11,18 @@ import {
   type ExecPayload,
   type GateFolder,
   makeDeviceGate,
+  UNASKED_LOG_WINDOW_MS,
+  UNASKED_LOGGED_PER_WINDOW,
+  UNASKED_WHAT_MOST,
 } from "./gate.ts";
 import { makeGrantLedger } from "./grants.ts";
 import { devicePrivateKeyFrom, generateDeviceKey, mintTurnGrant } from "./keys.ts";
-import { makeAskLimits, REFUSALS_IN_A_ROW } from "./limits.ts";
+import {
+  ASKS_PER_WINDOW,
+  ASKS_WAITING_PER_THREAD,
+  makeAskLimits,
+  REFUSALS_IN_A_ROW,
+} from "./limits.ts";
 import type { DeviceLogEntry } from "./log.ts";
 
 const ORIGIN = "https://gram.example.com";
@@ -79,13 +87,14 @@ const setUp = async (more: Partial<DeviceGateOptions> = {}) => {
   const asks = window();
   const state = {
     present: true,
+    lent: true,
     capabilities: ["read", "exec"] as Array<DeviceCapability>,
   };
   const gate = makeDeviceGate({
     origin: ORIGIN,
     workspace: WORKSPACE,
     personId: "ada",
-    folders: () => new Map([[FOLDER_ID, folder]]),
+    folders: () => new Map(state.lent ? [[FOLDER_ID, folder]] : []),
     capabilities: () => state.capabilities,
     present: () => state.present,
     grants,
@@ -396,5 +405,155 @@ describe.skipIf(process.platform === "win32")("the device's gate", () => {
         command: "ls",
       }),
     ).toEqual([{ kind: "refused", why: "no-grant" }]);
+  });
+
+  it("shows nothing for a request taken back or stopped while its path was looked at", async () => {
+    const { gate, by, asks, limits, log } = await setUp();
+    const events: Array<DeviceExecEvent> = [];
+    const cancelled = gate.exec({ ...by("r1"), command: "ls" }, (event) => events.push(event));
+    gate.cancel("r1");
+    await cancelled;
+    const listing = gate.list({ ...by("r2"), path: ".", limit: 10 });
+    gate.stopAll("away");
+    expect(await listing).toEqual({ kind: "refused", why: "away" });
+    expect(events).toEqual([]);
+    expect(asks.shown).toHaveLength(0);
+    expect(limits.waiting()).toBe(0);
+    expect(limits.paused()).toBe(false);
+    expect(log.map((entry) => entry.answer)).toEqual(["withdrawn", "away"]);
+  });
+
+  it("answers the same for a path that is there and one that isn't once asks are full", async () => {
+    const { gate, by, asks, limits } = await setUp();
+    asks.answer(() => new Promise(() => undefined));
+    for (let index = 0; index < ASKS_WAITING_PER_THREAD; index += 1)
+      void gate.exec({ ...by(`held${index}`), command: "ls" }, () => undefined);
+    await shownAsks(asks, ASKS_WAITING_PER_THREAD);
+    const there = await gate.read({ ...by("there"), path: "README.md", maxBytes: 10 });
+    const missing = await gate.read({ ...by("missing"), path: "nope.md", maxBytes: 10 });
+    expect(there).toEqual({ kind: "refused", why: "too-many-requests" });
+    expect(missing).toEqual(there);
+    gate.stopAll("away");
+    // With room, a path refused is answered for what it is, and takes one of the server's
+    // requests in the window; enough of them and it is refused before the path is looked at.
+    await new Promise((later) => setTimeout(later, 20));
+    expect(limits.waiting()).toBe(0);
+    expect(await gate.read({ ...by("p0"), path: "nope.md", maxBytes: 10 })).toEqual({
+      kind: "refused",
+      why: "not-a-file",
+    });
+    for (let index = 1 + ASKS_WAITING_PER_THREAD; index < ASKS_PER_WINDOW; index += 1)
+      await gate.read({ ...by(`p${index}`), path: "nope.md", maxBytes: 10 });
+    expect(await gate.read({ ...by("over"), path: "README.md", maxBytes: 10 })).toEqual({
+      kind: "refused",
+      why: "too-many-requests",
+    });
+    expect(limits.paused()).toBe(false);
+  });
+
+  it("logs only so many requests refused before any ask, and cuts the server's words short", async () => {
+    const clock = { at: 0 };
+    const { exec, by, log } = await setUp({ elapsed: () => clock.at });
+    const long = "x".repeat(4000);
+    for (let index = 0; index < 200; index += 1)
+      await exec({ ...by(`r${index}`, { actor: { id: "eve", name: "Eve" } }), command: long });
+    expect(log).toHaveLength(UNASKED_LOGGED_PER_WINDOW);
+    expect(log[0]?.what).toHaveLength(UNASKED_WHAT_MOST + 1);
+    expect(log[0]?.answer).toBe("not-for-this-person");
+    clock.at += UNASKED_LOG_WINDOW_MS + 1;
+    await exec({ ...by("later", { actor: { id: "eve", name: "Eve" } }), command: "ls" });
+    expect(log.at(-2)?.what).toBe(
+      `${200 - UNASKED_LOGGED_PER_WINDOW} more requests refused before any ask were not logged.`,
+    );
+    expect(log.at(-1)?.what).toBe("ls");
+  });
+
+  it("runs nothing when what was checked before the ask changed during it", async () => {
+    const changes: Array<[string, (set: Awaited<ReturnType<typeof setUp>>) => void]> = [
+      ["no-grant", ({ grants }) => grants.withdraw({ thread: "t1" })],
+      ["outside-folders", ({ state }) => (state.lent = false)],
+      ["read-only", ({ state }) => (state.capabilities = ["read"])],
+      ["away", ({ state }) => (state.present = false)],
+    ];
+    for (const [why, change] of changes) {
+      const set = await setUp();
+      set.asks.answer(async (request) => {
+        change(set);
+        return { allowed: true, hash: request.hash };
+      });
+      const events = await set.exec({ ...set.by("r1"), command: "echo ran" });
+      expect(events).toEqual([{ kind: "asked" }, { kind: "refused", why }]);
+      expect(set.log.map((entry) => entry.answer)).toEqual([why]);
+    }
+    const set = await setUp();
+    set.asks.answer(async (request) => {
+      set.state.present = false;
+      return { allowed: true, hash: request.hash };
+    });
+    expect(await set.gate.read({ ...set.by("r2"), path: "README.md", maxBytes: 10 })).toEqual({
+      kind: "refused",
+      why: "away",
+    });
+    expect(set.log.map((entry) => entry.answer)).toEqual(["away"]);
+  });
+
+  it("counts a window that throws as a refusal, and frees its place", async () => {
+    const { exec, by, limits } = await setUp({
+      ask: () => {
+        throw new Error("no window");
+      },
+    });
+    expect((await exec({ ...by("r1"), command: "ls" })).at(-1)).toEqual({
+      kind: "refused",
+      why: "not-allowed-by-person",
+    });
+    expect(limits.waiting()).toBe(0);
+  });
+
+  it("takes a joined request back only when every caller has left", async () => {
+    const { gate, by, asks } = await setUp();
+    asks.answer(() => new Promise(() => undefined));
+    const first = new AbortController();
+    const second = new AbortController();
+    const one = gate.exec({ ...by("r1"), command: "ls" }, () => undefined, first.signal);
+    await shownAsks(asks, 1);
+    const two = gate.exec({ ...by("r1"), command: "ls" }, () => undefined, second.signal);
+    first.abort();
+    await new Promise((later) => setTimeout(later, 20));
+    expect(asks.withdrawn).toHaveLength(0);
+    second.abort();
+    await Promise.all([one, two]);
+    expect(asks.withdrawn).toHaveLength(1);
+    // A read whose only caller leaves is taken back too.
+    const leaving = new AbortController();
+    const reading = gate.read({ ...by("r2"), path: "README.md", maxBytes: 10 }, leaving.signal);
+    await shownAsks(asks, 2);
+    leaving.abort();
+    expect(await reading).toEqual({ kind: "refused", why: "not-answered" });
+  });
+
+  it("refuses reads and listings where nothing may be read, and binds the ask to its id", async () => {
+    const { gate, by, asks, state } = await setUp();
+    state.capabilities = [];
+    expect(await gate.list({ ...by("r1"), path: ".", limit: 10 })).toEqual({
+      kind: "refused",
+      why: "read-only",
+    });
+    state.capabilities = ["read"];
+    await gate.list({ ...by("r2"), path: "src", limit: 10 });
+    expect(asks.shown[0]?.approval.requestId).toBe("r2");
+    expect(asks.shown[0]?.approval.target).toBe(join(app, "src"));
+  });
+
+  it("reads no more than the size the person was shown", async () => {
+    const { gate, by, asks } = await setUp();
+    asks.answer(async (request) => {
+      await fs.appendFile(join(app, "README.md"), " and more");
+      return { allowed: true, hash: request.hash };
+    });
+    const read = await gate.read({ ...by("r1"), path: "README.md", maxBytes: 100 });
+    expect(asks.shown[0]?.size).toBe(5);
+    expect(read).toMatchObject({ kind: "read", truncated: true });
+    expect(read.kind === "read" && Buffer.from(read.data, "base64").toString()).toBe("hello");
   });
 });

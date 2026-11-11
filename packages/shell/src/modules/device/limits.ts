@@ -26,7 +26,13 @@ export type AskOutcome =
    */
   | "withdrawn"
   /** Lending stopped under it, or the screen locked. Says nothing about the person or the server. */
-  | "stopped";
+  | "stopped"
+  /**
+   * Refused for its path before any ask was shown. It took one of the server's requests in the
+   * window, as every request that says something about the disk does, but nothing about the
+   * person.
+   */
+  | "unasked";
 
 export interface Admitted {
   readonly settle: (outcome: AskOutcome) => void;
@@ -84,7 +90,7 @@ export const makeAskLimits = (
           if (left <= 0) waiting.delete(thread);
           else waiting.set(thread, left);
           if (outcome === "allowed") inARow = 0;
-          else if (outcome !== "stopped") {
+          else if (outcome !== "stopped" && outcome !== "unasked") {
             inARow += 1;
             if (inARow >= REFUSALS_IN_A_ROW && !paused) {
               paused = true;

@@ -47,20 +47,28 @@ const hello: DeviceHello = {
 const fakeGate = () => {
   const cancelled: Array<string> = [];
   const stopped: Array<string> = [];
+  /** Requests whose caller stopped listening. */
+  const left: Array<string> = [];
+  const listing: Array<string> = [];
+  const leaves = (requestId: string, signal: AbortSignal | undefined) =>
+    signal?.addEventListener("abort", () => left.push(requestId), { once: true });
   let hold: Promise<void> | undefined;
+  let holdList: Promise<void> | undefined;
   const gate: DeviceGate = {
-    exec: async (payload, emit) => {
+    exec: async (payload, emit, signal) => {
+      leaves(payload.requestId, signal);
       emit({ kind: "asked" });
       if (hold !== undefined) await hold;
       emit({ kind: "started" });
       emit({ kind: "output", stream: "stdout", text: `ran ${payload.command}\n` });
       emit({ kind: "exit", code: 0, truncated: false, timedOut: false });
     },
-    list: async () => ({
-      kind: "listed",
-      entries: [{ name: "a", kind: "file" }],
-      truncated: false,
-    }),
+    list: async (payload, signal) => {
+      listing.push(payload.requestId);
+      leaves(payload.requestId, signal);
+      if (holdList !== undefined) await holdList;
+      return { kind: "listed", entries: [{ name: "a", kind: "file" }], truncated: false };
+    },
     read: async () => ({ kind: "refused", why: "credential-path" }),
     cancel: (id) => {
       cancelled.push(id);
@@ -73,8 +81,13 @@ const fakeGate = () => {
     gate,
     cancelled,
     stopped,
+    left,
+    listing,
     holdUntil: (promise: Promise<void>) => {
       hold = promise;
+    },
+    holdListUntil: (promise: Promise<void>) => {
+      holdList = promise;
     },
   };
 };
@@ -99,10 +112,10 @@ const request = (requestId: string): ExecPayload => ({
   command: "npm test",
 });
 
-const connected = (connection: DeviceConnection) =>
+const connected = (connection: DeviceConnection, options?: { readonly tokenWaitMs?: number }) =>
   Effect.gen(function* () {
     const pair = yield* socketPair;
-    const serving = yield* serveDevice(pair.device, connection).pipe(Effect.forkScoped);
+    const serving = yield* serveDevice(pair.device, connection, options).pipe(Effect.forkScoped);
     const protocol = yield* RpcClient.makeProtocolSocket({ retryPolicy: Schedule.recurs(0) }).pipe(
       Effect.provideService(Socket.Socket, pair.server),
       Effect.provide(RpcSerialization.layerNdjson),
@@ -111,6 +124,12 @@ const connected = (connection: DeviceConnection) =>
       Effect.provideService(RpcClient.Protocol, protocol),
     );
     return { client, serving, close: pair.close };
+  });
+
+/** Waits, on the real clock, for something the other side of the socket does. */
+const until = (done: () => boolean) =>
+  Effect.promise(async () => {
+    for (let i = 0; i < 200 && !done(); i += 1) await new Promise((next) => setTimeout(next, 5));
   });
 
 describe("serving a device", () => {
@@ -161,8 +180,54 @@ describe("serving a device", () => {
       );
       expect([...listening]).toEqual([{ kind: "asked" }]);
       // Taking one event and stopping is the control plane cancelling the call.
-      expect(fake.cancelled).toEqual(["r1"]);
+      expect(fake.left).toEqual(["r1"]);
       held.resolve();
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("takes a listing back when the control plane stops waiting for it", () =>
+    Effect.gen(function* () {
+      const fake = fakeGate();
+      const held = Promise.withResolvers<void>();
+      fake.holdListUntil(held.promise);
+      const { client } = yield* connected({
+        hello: () => hello,
+        gate: fake.gate,
+        token: async () => "fresh",
+      });
+      const listing = yield* client["device.files.list"]({
+        ...request("r2"),
+        path: ".",
+        limit: 10,
+      }).pipe(Effect.forkScoped);
+      yield* until(() => fake.listing.length > 0);
+      yield* Fiber.interrupt(listing);
+      yield* until(() => fake.left.length > 0);
+      expect(fake.left).toEqual(["r2"]);
+      held.resolve();
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("asks for one token at a time, and ends the connection when none comes in time", () =>
+    Effect.gen(function* () {
+      const fake = fakeGate();
+      let asked = 0;
+      const { client, serving } = yield* connected(
+        {
+          hello: () => hello,
+          gate: fake.gate,
+          token: () => {
+            asked += 1;
+            return new Promise<string | undefined>(() => undefined);
+          },
+        },
+        { tokenWaitMs: 50 },
+      );
+      for (let i = 0; i < 20; i += 1) yield* client["device.token"]().pipe(Effect.forkScoped);
+      const end = yield* Fiber.join(serving);
+      expect(end).toBe("no-token");
+      expect(asked).toBe(1);
+      expect(fake.stopped).toEqual(["away"]);
     }).pipe(Effect.scoped),
   );
 

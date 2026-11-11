@@ -14,7 +14,7 @@ import {
 } from "@gram/contracts";
 import type { DeviceLogEntry } from "./log.ts";
 import type { GrantLedger } from "./grants.ts";
-import type { AskLimits, AskOutcome } from "./limits.ts";
+import type { Admitted, AskLimits, AskOutcome } from "./limits.ts";
 import {
   type LentFolder,
   listLentFolder,
@@ -115,10 +115,22 @@ export interface DeviceGateOptions {
   readonly now: () => number;
   readonly askWaitMs?: number;
   readonly run?: typeof runCommand;
+  /** A clock that only goes forward, for how often refusals are logged. */
+  readonly elapsed?: () => number;
 }
 
 /** How many finished requests are remembered, so a repeat answers with how one ended. */
 export const REQUESTS_REMEMBERED = 256;
+
+/**
+ * Requests refused before any ask is shown cost the server nothing in the person's attention, so
+ * it could make the device write lines for ever. At most this many are logged in a window; the
+ * rest are counted, and one line says how many weren't logged.
+ */
+export const UNASKED_LOGGED_PER_WINDOW = 20;
+export const UNASKED_LOG_WINDOW_MS = 10 * 60_000;
+/** How much of the server's command or path a line refused before any ask keeps. */
+export const UNASKED_WHAT_MOST = 512;
 
 type Refusal = { readonly kind: "refused"; readonly why: DeviceRefusalReason };
 const refusal = (why: DeviceRefusalReason): Refusal => ({ kind: "refused", why });
@@ -145,12 +157,22 @@ interface Running {
   /** The answer, or for a command the work under way. */
   answer: Promise<unknown>;
   done: boolean;
+  /** Calls waiting on it. When the last one stops listening, the request is taken back. */
+  callers: number;
 }
 
 export interface DeviceGate {
-  readonly exec: (payload: ExecPayload, emit: (event: DeviceExecEvent) => void) => Promise<void>;
-  readonly list: (payload: ListPayload) => Promise<DeviceListResult>;
-  readonly read: (payload: ReadPayload) => Promise<DeviceReadResult>;
+  /**
+   * Each call may pass `left`, which aborts when that caller stops listening. A request several
+   * calls joined is taken back only when the last of them has left.
+   */
+  readonly exec: (
+    payload: ExecPayload,
+    emit: (event: DeviceExecEvent) => void,
+    left?: AbortSignal,
+  ) => Promise<void>;
+  readonly list: (payload: ListPayload, left?: AbortSignal) => Promise<DeviceListResult>;
+  readonly read: (payload: ReadPayload, left?: AbortSignal) => Promise<DeviceReadResult>;
   /** Takes a request back. An id the gate doesn't know is already over. */
   readonly cancel: (requestId: string) => void;
   /**
@@ -174,6 +196,27 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
   const askWaitMs = options.askWaitMs ?? DEVICE_ASK_WAIT_MS;
   /** Why everything was stopped, for the requests that were under way. */
   const stoppedWith = new WeakMap<AbortSignal, "away" | "paused">();
+  const elapsed = options.elapsed ?? (() => performance.now());
+  let unaskedLogged: Array<number> = [];
+  let unaskedDropped = 0;
+
+  /** How a request that was taken back or stopped is answered. */
+  const takenBack = (signal: AbortSignal): Refusal | "withdrawn" => {
+    const why = stoppedWith.get(signal);
+    return why === undefined ? "withdrawn" : refusal(why);
+  };
+
+  /** Counts a caller in, and takes the request back when the last one leaves. */
+  const join = (entry: Running, left: AbortSignal | undefined) => {
+    entry.callers += 1;
+    if (left === undefined) return;
+    const leave = () => {
+      entry.callers -= 1;
+      if (entry.callers <= 0 && !entry.done) entry.controller.abort();
+    };
+    if (left.aborted) leave();
+    else left.addEventListener("abort", leave, { once: true });
+  };
 
   const forget = () => {
     for (const [id, request] of requests) {
@@ -208,6 +251,41 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
       // The log failing doesn't change the answer, and is the caller's to show.
       .catch(() => undefined);
 
+  /** A refusal before any ask: logged within a budget, with the server's words cut short. */
+  const recordUnasked = (
+    payload: RequestBy,
+    kind: DeviceLogEntry["kind"],
+    folder: string,
+    what: string,
+    answer: DeviceRefusalReason,
+  ) => {
+    const from = elapsed() - UNASKED_LOG_WINDOW_MS;
+    unaskedLogged = unaskedLogged.filter((time) => time > from);
+    if (unaskedLogged.length >= UNASKED_LOGGED_PER_WINDOW) {
+      unaskedDropped += 1;
+      return;
+    }
+    unaskedLogged.push(elapsed());
+    if (unaskedDropped > 0) {
+      const dropped = unaskedDropped;
+      unaskedDropped = 0;
+      void record(
+        payload,
+        kind,
+        "",
+        `${dropped} more requests refused before any ask were not logged.`,
+        answer,
+      );
+    }
+    void record(
+      payload,
+      kind,
+      folder,
+      what.length > UNASKED_WHAT_MOST ? `${what.slice(0, UNASKED_WHAT_MOST)}…` : what,
+      answer,
+    );
+  };
+
   /** The checks before any path is looked at. */
   const whoAndWhen = (payload: RequestBy, kind: DeviceLogEntry["kind"]): Refusal | undefined => {
     if (payload.actor.id !== options.personId) return refusal("not-for-this-person");
@@ -224,10 +302,34 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     return undefined;
   };
 
-  /** A path refusal counts against the server's allowance, since each says a little about the disk. */
-  const pathRefused = (why: DeviceRefusalReason): Refusal => {
-    const counted = options.limits.refusedUnasked();
-    return refusal(counted === "ok" ? why : counted);
+  /**
+   * Takes a place among the asks waiting before any path is looked at, so the answer to a path
+   * never depends on whether there was room: a path refused frees it again, still counted.
+   */
+  const admit = (payload: RequestBy): Admitted | Refusal => {
+    const admitted = options.limits.admit(payload.thread.id);
+    return typeof admitted === "string" ? refusal(admitted) : admitted;
+  };
+
+  /** Everything checked before the ask, again, after the allow: any of it may have changed. */
+  const stillAllowed = (
+    payload: RequestBy,
+    kind: DeviceLogEntry["kind"],
+    folder: GateFolder,
+    signal: AbortSignal,
+  ): Refusal | "withdrawn" | undefined => {
+    if (signal.aborted) return takenBack(signal);
+    const early = whoAndWhen(payload, kind);
+    if (early !== undefined) return early;
+    const now = options.folders().get(payload.folderId);
+    if (
+      now === undefined ||
+      now.path !== folder.path ||
+      now.device !== folder.device ||
+      now.inode !== folder.inode
+    )
+      return refusal("outside-folders");
+    return undefined;
   };
 
   /**
@@ -236,10 +338,15 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
    */
   const askPerson = async (
     request: AskRequest,
+    admitted: Admitted,
     signal: AbortSignal,
   ): Promise<"allowed" | Refusal | "withdrawn"> => {
-    const admitted = options.limits.admit(request.thread.id);
-    if (typeof admitted === "string") return refusal(admitted);
+    // Taken back or stopped while the path was being looked at: no window, and nothing counted
+    // against the person.
+    if (signal.aborted) {
+      admitted.settle(stoppedWith.has(signal) ? "stopped" : "withdrawn");
+      return takenBack(signal);
+    }
     const withdrawn = new AbortController();
     const onAbort = () => withdrawn.abort();
     signal.addEventListener("abort", onAbort, { once: true });
@@ -251,11 +358,14 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
       if (withdrawn.signal.aborted) done("aborted");
       withdrawn.signal.addEventListener("abort", () => done("aborted"), { once: true });
     });
-    let outcome: AskOutcome;
-    let answer: "allowed" | Refusal | "withdrawn";
+    let outcome: AskOutcome = "refused";
+    let answer: "allowed" | Refusal | "withdrawn" = refusal("not-allowed-by-person");
     try {
       const result = await Promise.race([
-        options.ask(request, withdrawn.signal).catch((): AskAnswer => ({ allowed: false })),
+        // A window that throws, even before it returns a promise, is a refusal.
+        Promise.resolve()
+          .then(() => options.ask(request, withdrawn.signal))
+          .catch((): AskAnswer => ({ allowed: false })),
         late,
         aborted,
       ]);
@@ -263,9 +373,8 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
         outcome = "unanswered";
         answer = refusal("not-answered");
       } else if (result === "aborted" || signal.aborted) {
-        const why = stoppedWith.get(signal);
-        outcome = why === undefined ? "withdrawn" : "stopped";
-        answer = why === undefined ? "withdrawn" : refusal(why);
+        outcome = stoppedWith.has(signal) ? "stopped" : "withdrawn";
+        answer = takenBack(signal);
       } else if (
         result.allowed &&
         typeof result.hash === "string" &&
@@ -273,17 +382,14 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
       ) {
         outcome = "allowed";
         answer = "allowed";
-      } else {
-        outcome = "refused";
-        answer = refusal("not-allowed-by-person");
       }
     } finally {
       clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);
       // The window learns its ask is over, however it ended.
       withdrawn.abort();
+      admitted.settle(outcome);
     }
-    admitted.settle(outcome);
     return answer;
   };
 
@@ -315,13 +421,17 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
   const once = <A>(
     kind: string,
     payload: RequestBy,
+    left: AbortSignal | undefined,
     start: (signal: AbortSignal) => Promise<A>,
     changed: () => A,
   ): Promise<A> => {
     const print = fingerprint(kind, payload);
     const seen = requests.get(payload.requestId);
-    if (seen !== undefined)
-      return seen.fingerprint === print ? (seen.answer as Promise<A>) : Promise.resolve(changed());
+    if (seen !== undefined) {
+      if (seen.fingerprint !== print) return Promise.resolve(changed());
+      if (!seen.done) join(seen, left);
+      return seen.answer as Promise<A>;
+    }
     const controller = new AbortController();
     const entry: Running = {
       fingerprint: print,
@@ -330,8 +440,10 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
       listeners: new Set(),
       answer: Promise.resolve(),
       done: false,
+      callers: 0,
     };
     requests.set(payload.requestId, entry);
+    join(entry, left);
     const answer = start(controller.signal).finally(() => {
       entry.done = true;
       forget();
@@ -340,116 +452,133 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     return answer;
   };
 
-  const list = (payload: ListPayload): Promise<DeviceListResult> =>
+  /** What a list or read does after the allow, with the real path the person was shown. */
+  const filesRequest = <A extends { readonly kind: string }>(
+    kind: "list" | "read",
+    payload: RequestBy & { readonly path: string },
+    signal: AbortSignal,
+    resolve: (
+      folder: GateFolder,
+    ) => Promise<
+      | { readonly ok: true; readonly path: string; readonly size?: number }
+      | { readonly ok: false; readonly why: DeviceRefusalReason }
+    >,
+    fetch: (
+      folder: GateFolder,
+      target: { readonly path: string; readonly size?: number },
+    ) => Promise<A | Refusal>,
+  ): Promise<A | Refusal> =>
+    (async () => {
+      const early = whoAndWhen(payload, kind);
+      const lent = options.folders().get(payload.folderId);
+      if (early !== undefined) {
+        recordUnasked(payload, kind, lent?.path ?? "", payload.path, early.why);
+        return early;
+      }
+      const admitted = admit(payload);
+      if (!("settle" in admitted)) {
+        recordUnasked(payload, kind, lent?.path ?? "", payload.path, admitted.why);
+        return admitted;
+      }
+      if (lent === undefined) {
+        admitted.settle("unasked");
+        recordUnasked(payload, kind, "", payload.path, "outside-folders");
+        return refusal("outside-folders");
+      }
+      const folder = lent;
+      const target = await resolve(folder);
+      if (!target.ok) {
+        admitted.settle("unasked");
+        recordUnasked(payload, kind, folder.path, payload.path, target.why);
+        return refusal(target.why);
+      }
+      const { approval, hash } = approvalFor(payload, kind, folder, target.path, "", 0);
+      const answer = await askPerson(
+        {
+          approval,
+          hash,
+          folderLabel: folder.label,
+          display: displayCommand(target.path),
+          ...(target.size === undefined ? {} : { size: target.size }),
+          ...askFields(payload),
+        },
+        admitted,
+        signal,
+      );
+      const after = answer === "allowed" ? stillAllowed(payload, kind, folder, signal) : answer;
+      if (after !== undefined) {
+        void record(
+          payload,
+          kind,
+          folder.path,
+          target.path,
+          after === "withdrawn" ? "withdrawn" : after.why,
+        );
+        return after === "withdrawn" ? refusal("not-answered") : after;
+      }
+      const fetched = await fetch(folder, target);
+      void record(
+        payload,
+        kind,
+        folder.path,
+        target.path,
+        fetched.kind === "refused" ? (fetched as Refusal).why : "allowed",
+      );
+      return fetched;
+    })();
+
+  const list = (payload: ListPayload, left?: AbortSignal): Promise<DeviceListResult> =>
     once(
       "list",
       payload,
-      async (signal) => {
-        const early = whoAndWhen(payload, "list");
-        const folder = options.folders().get(payload.folderId);
-        if (early !== undefined) {
-          void record(payload, "list", folder?.path ?? "", payload.path, early.why);
-          return early;
-        }
-        if (folder === undefined) {
-          const refused = pathRefused("outside-folders");
-          void record(payload, "list", "", payload.path, refused.why);
-          return refused;
-        }
-        const target = await resolveLentFolder(folder, payload.path);
-        if (!target.ok) {
-          const refused = pathRefused(target.why);
-          void record(payload, "list", folder.path, payload.path, refused.why);
-          return refused;
-        }
-        const { approval, hash } = approvalFor(payload, "list", folder, target.path, "", 0);
-        const answer = await askPerson(
-          {
-            approval,
-            hash,
-            folderLabel: folder.label,
-            display: displayCommand(target.path),
-            ...askFields(payload),
-          },
+      left,
+      (signal) =>
+        filesRequest(
+          "list",
+          payload,
           signal,
-        );
-        if (answer !== "allowed") {
-          void record(
-            payload,
-            "list",
-            folder.path,
-            target.path,
-            answer === "withdrawn" ? "withdrawn" : answer.why,
-          );
-          return answer === "withdrawn" ? refusal("not-answered") : answer;
-        }
-        if (!options.present()) return refusal("away");
-        const listed = await listLentFolder(folder, payload.path, payload.limit, target.path);
-        void record(payload, "list", folder.path, target.path, listed.ok ? "allowed" : listed.why);
-        return listed.ok
-          ? { kind: "listed", entries: [...listed.entries], truncated: listed.truncated }
-          : refusal(listed.why);
-      },
+          (folder) => resolveLentFolder(folder, payload.path),
+          async (folder, target): Promise<DeviceListResult> => {
+            const listed = await listLentFolder(folder, payload.path, payload.limit, target.path);
+            return listed.ok
+              ? { kind: "listed", entries: [...listed.entries], truncated: listed.truncated }
+              : refusal(listed.why);
+          },
+        ),
       () => refusal("changed-request"),
     );
 
-  const read = (payload: ReadPayload): Promise<DeviceReadResult> =>
+  const read = (payload: ReadPayload, left?: AbortSignal): Promise<DeviceReadResult> =>
     once(
       "read",
       payload,
-      async (signal) => {
-        const early = whoAndWhen(payload, "read");
-        const folder = options.folders().get(payload.folderId);
-        if (early !== undefined) {
-          void record(payload, "read", folder?.path ?? "", payload.path, early.why);
-          return early;
-        }
-        if (folder === undefined) {
-          const refused = pathRefused("outside-folders");
-          void record(payload, "read", "", payload.path, refused.why);
-          return refused;
-        }
-        const target = await resolveLentFile(folder, payload.path);
-        if (!target.ok) {
-          const refused = pathRefused(target.why);
-          void record(payload, "read", folder.path, payload.path, refused.why);
-          return refused;
-        }
-        const { approval, hash } = approvalFor(payload, "read", folder, target.path, "", 0);
-        const answer = await askPerson(
-          {
-            approval,
-            hash,
-            folderLabel: folder.label,
-            display: displayCommand(target.path),
-            size: target.size,
-            ...askFields(payload),
-          },
+      left,
+      (signal) =>
+        filesRequest(
+          "read",
+          payload,
           signal,
-        );
-        if (answer !== "allowed") {
-          void record(
-            payload,
-            "read",
-            folder.path,
-            target.path,
-            answer === "withdrawn" ? "withdrawn" : answer.why,
-          );
-          return answer === "withdrawn" ? refusal("not-answered") : answer;
-        }
-        if (!options.present()) return refusal("away");
-        const file = await readLentFile(folder, payload.path, payload.maxBytes, target.path);
-        void record(payload, "read", folder.path, target.path, file.ok ? "allowed" : file.why);
-        return file.ok
-          ? { kind: "read", data: file.data.toString("base64"), truncated: file.truncated }
-          : refusal(file.why);
-      },
+          (folder) => resolveLentFile(folder, payload.path),
+          async (folder, target): Promise<DeviceReadResult> => {
+            // No more than the size the person was shown, even if the file grew since.
+            const most = Math.min(payload.maxBytes, target.size ?? payload.maxBytes);
+            const file = await readLentFile(folder, payload.path, most, target.path);
+            return file.ok
+              ? {
+                  kind: "read",
+                  data: file.data.toString("base64"),
+                  truncated: file.truncated,
+                }
+              : refusal(file.why);
+          },
+        ),
       () => refusal("changed-request"),
     );
 
   const exec = async (
     payload: ExecPayload,
     emit: (event: DeviceExecEvent) => void,
+    left?: AbortSignal,
   ): Promise<void> => {
     const print = fingerprint("exec", payload);
     const seen = requests.get(payload.requestId);
@@ -462,6 +591,7 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
       for (const event of seen.events) emit(event);
       if (seen.done) return;
       seen.listeners.add(emit);
+      join(seen, left);
       await seen.answer;
       seen.listeners.delete(emit);
       return;
@@ -480,8 +610,10 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
       listeners,
       answer: Promise.resolve(),
       done: false,
+      callers: 0,
     };
     requests.set(payload.requestId, entry);
+    join(entry, left);
     const work = execNow(payload, controller.signal, send);
     entry.answer = work;
     try {
@@ -498,30 +630,37 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     signal: AbortSignal,
     send: (event: DeviceExecEvent) => void,
   ): Promise<void> => {
-    const folder = options.folders().get(payload.folderId);
-    const where = folder?.path ?? "";
+    const lent = options.folders().get(payload.folderId);
+    const where = lent?.path ?? "";
     const early = whoAndWhen(payload, "exec");
     if (early !== undefined) {
-      void record(payload, "exec", where, payload.command, early.why);
+      recordUnasked(payload, "exec", where, payload.command, early.why);
       send(early);
       return;
     }
     if (deviceCommandProblem(payload.command) !== undefined) {
-      void record(payload, "exec", where, payload.command, "too-large");
+      recordUnasked(payload, "exec", where, payload.command, "too-large");
       send(refusal("too-large"));
       return;
     }
-    if (folder === undefined) {
-      const refused = pathRefused("outside-folders");
-      void record(payload, "exec", "", payload.command, refused.why);
-      send(refused);
+    const admitted = admit(payload);
+    if (!("settle" in admitted)) {
+      recordUnasked(payload, "exec", where, payload.command, admitted.why);
+      send(admitted);
       return;
     }
+    if (lent === undefined) {
+      admitted.settle("unasked");
+      recordUnasked(payload, "exec", "", payload.command, "outside-folders");
+      send(refusal("outside-folders"));
+      return;
+    }
+    const folder = lent;
     const cwd = await resolveWorkingFolder(folder, payload.cwd);
     if (!cwd.ok) {
-      const refused = pathRefused(cwd.why);
-      void record(payload, "exec", folder.path, payload.command, refused.why);
-      send(refused);
+      admitted.settle("unasked");
+      recordUnasked(payload, "exec", folder.path, payload.command, cwd.why);
+      send(refusal(cwd.why));
       return;
     }
     const timeoutMs = deviceTimeout(payload.timeoutMs);
@@ -533,7 +672,8 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
       payload.command,
       timeoutMs,
     );
-    send({ kind: "asked" });
+    // Taken back while the folder was looked at, it is never asked.
+    if (!signal.aborted) send({ kind: "asked" });
     const answer = await askPerson(
       {
         approval,
@@ -542,32 +682,31 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
         display: displayCommand(payload.command),
         ...askFields(payload),
       },
+      admitted,
       signal,
     );
-    if (answer !== "allowed") {
+    // Just before it runs: everything checked before the ask still holds, and the folder it was
+    // allowed in is still where it was.
+    let after = answer === "allowed" ? stillAllowed(payload, "exec", folder, signal) : answer;
+    let again: Awaited<ReturnType<typeof resolveWorkingFolder>> | undefined;
+    if (after === undefined) {
+      again = await resolveWorkingFolder(folder, payload.cwd);
+      if (!again.ok || again.path !== cwd.path) after = refusal("outside-folders");
+      else if (signal.aborted) after = takenBack(signal);
+    }
+    if (after !== undefined || again === undefined || !again.ok) {
+      const why = after ?? refusal("outside-folders");
       void record(
         payload,
         "exec",
         folder.path,
         payload.command,
-        answer === "withdrawn" ? "withdrawn" : answer.why,
+        why === "withdrawn" ? "withdrawn" : why.why,
       );
       // A request the server took back ends without an answer: it asked for that.
-      if (answer !== "withdrawn") send(answer);
+      if (why !== "withdrawn") send(why);
       return;
     }
-    // Just before it runs: still there, and the folder it was allowed in is still where it was.
-    if (!options.present()) {
-      send(refusal("away"));
-      return;
-    }
-    const again = await resolveWorkingFolder(folder, payload.cwd);
-    if (!again.ok || again.path !== cwd.path) {
-      void record(payload, "exec", folder.path, payload.command, "outside-folders");
-      send(refusal("outside-folders"));
-      return;
-    }
-    if (signal.aborted) return;
     const { env, secrets } = options.environment();
     send({ kind: "started" });
     let result: CommandResult;

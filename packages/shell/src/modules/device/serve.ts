@@ -32,8 +32,42 @@ export interface DeviceConnection {
 /** Why a served connection ended. */
 export type DeviceServeEnd = "closed" | "no-token";
 
-const handlersFor = (connection: DeviceConnection, end: Deferred.Deferred<DeviceServeEnd>) =>
-  DeviceRpcs.toLayer(
+/** How long a fresh token may take before the connection ends without one. */
+export const DEVICE_TOKEN_WAIT_MS = 30_000;
+
+/**
+ * One token asked for at a time, however many calls ask: they all wait on the same one. A token
+ * that doesn't come in time is none.
+ */
+const sharedToken = (token: () => Promise<string | undefined>, waitMs: number) => {
+  let pending: Promise<string | undefined> | undefined;
+  return (): Promise<string | undefined> => {
+    if (pending !== undefined) return pending;
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<undefined>((done) => {
+      timer = setTimeout(() => done(undefined), waitMs);
+    });
+    const next = Promise.race([
+      Promise.resolve()
+        .then(token)
+        .catch(() => undefined),
+      late,
+    ]).finally(() => {
+      clearTimeout(timer);
+      pending = undefined;
+    });
+    pending = next;
+    return next;
+  };
+};
+
+const handlersFor = (
+  connection: DeviceConnection,
+  end: Deferred.Deferred<DeviceServeEnd>,
+  tokenWaitMs: number,
+) => {
+  const freshToken = sharedToken(connection.token, tokenWaitMs);
+  return DeviceRpcs.toLayer(
     DeviceRpcs.of({
       "device.hello": () => Effect.sync(() => connection.hello()),
       "device.exec": (payload) =>
@@ -41,29 +75,37 @@ const handlersFor = (connection: DeviceConnection, end: Deferred.Deferred<Device
           Effect.acquireRelease(
             Effect.sync(() => {
               let over = false;
+              const left = new AbortController();
               void connection.gate
-                .exec(payload, (event) => {
-                  if (!over) Queue.offerUnsafe(queue, event);
-                })
+                .exec(
+                  payload,
+                  (event) => {
+                    if (!over) Queue.offerUnsafe(queue, event);
+                  },
+                  left.signal,
+                )
+                // The gate answers every refusal as an event; a throw is a bug, and ends the call.
+                .catch(() => undefined)
                 .finally(() => {
                   over = true;
                   Queue.endUnsafe(queue);
                 });
-              return () => over;
+              return left;
             }),
             // The control plane stopped listening (it cancelled the call, or the connection
-            // went): the request is taken back, as a `device.cancel` would.
-            (finished) =>
-              Effect.sync(() => {
-                if (!finished()) connection.gate.cancel(payload.requestId);
-              }),
+            // went): the request is taken back, as a `device.cancel` would, once no other call
+            // is waiting on it.
+            (left) => Effect.sync(() => left.abort()),
           ),
         ),
-      "device.files.list": (payload) => Effect.promise(() => connection.gate.list(payload)),
-      "device.files.read": (payload) => Effect.promise(() => connection.gate.read(payload)),
+      // Interrupted, the promise's signal aborts, and the gate takes the request back.
+      "device.files.list": (payload) =>
+        Effect.promise((left) => connection.gate.list(payload, left)),
+      "device.files.read": (payload) =>
+        Effect.promise((left) => connection.gate.read(payload, left)),
       "device.cancel": ({ requestId }) => Effect.sync(() => connection.gate.cancel(requestId)),
       "device.token": () =>
-        Effect.promise(() => connection.token().catch(() => undefined)).pipe(
+        Effect.promise(freshToken).pipe(
           Effect.flatMap((token) =>
             token === undefined
               ? // No answer: the connection ends, and the call with it.
@@ -73,6 +115,7 @@ const handlersFor = (connection: DeviceConnection, end: Deferred.Deferred<Device
         ),
     }),
   );
+};
 
 /**
  * Serves until the other end closes the socket or the device can't renew its token. Interrupted,
@@ -81,6 +124,7 @@ const handlersFor = (connection: DeviceConnection, end: Deferred.Deferred<Device
 export const serveDevice = (
   socket: Socket.Socket,
   connection: DeviceConnection,
+  options: { readonly tokenWaitMs?: number } = {},
 ): Effect.Effect<DeviceServeEnd> =>
   Effect.gen(function* () {
     const end = yield* Deferred.make<DeviceServeEnd>();
@@ -95,7 +139,7 @@ export const serveDevice = (
     });
     yield* Layer.build(
       RpcServer.layer(DeviceRpcs).pipe(
-        Layer.provide(handlersFor(connection, end)),
+        Layer.provide(handlersFor(connection, end, options.tokenWaitMs ?? DEVICE_TOKEN_WAIT_MS)),
         Layer.provide(RpcServer.layerProtocolSocketServer),
         Layer.provide(oneConnection),
         Layer.provide(RpcSerialization.layerNdjson),

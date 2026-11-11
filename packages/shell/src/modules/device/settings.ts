@@ -57,6 +57,9 @@ export type DeviceSettingsRead =
   /** The file is there and isn't as this app wrote it: lending is off until the person decides. */
   | { readonly ok: false; readonly why: "edited" | "unreadable" };
 
+/** Far more than any real settings take: a file larger than this wasn't written by the app. */
+export const DEVICE_SETTINGS_MOST_BYTES = 4 * 1024 * 1024;
+
 const macOf = (key: Buffer, body: string): string =>
   createHmac("sha256", key).update("gram-device-settings-v1\n").update(body).digest("hex");
 
@@ -77,6 +80,7 @@ export const readDeviceSettings = async (
     try {
       const stats = await handle.stat();
       if (!stats.isFile() || stats.nlink !== 1) return { ok: false, why: "edited" };
+      if (stats.size > DEVICE_SETTINGS_MOST_BYTES) return { ok: false, why: "edited" };
       text = await handle.readFile("utf8");
     } finally {
       await handle.close();
@@ -131,8 +135,15 @@ export const writeDeviceSettings = async (
   const body = JSON.stringify(Schema.encodeSync(DeviceSettings)(settings));
   const text = JSON.stringify({ mac: macOf(key, body), body });
   const next = join(dirname(file), `.${randomBytes(8).toString("hex")}.settings-next`);
-  await fs.writeFile(next, text, { mode: 0o600, flag: "wx" });
+  const handle = await fs.open(next, "wx", 0o600);
   try {
+    try {
+      await handle.writeFile(text);
+      // On disk before it takes the old file's place, so a crash can't leave an empty one.
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     await fs.rename(next, file);
   } catch (error) {
     await fs.rm(next, { force: true });

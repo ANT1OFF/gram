@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  DEVICE_SETTINGS_MOST_BYTES,
   type DeviceSettings,
   EMPTY_DEVICE_SETTINGS,
   readDeviceSettings,
@@ -115,5 +116,10 @@ describe("the lending settings", () => {
       .digest("hex");
     await fs.writeFile(file, JSON.stringify({ mac, body }));
     expect(await readDeviceSettings(file, key)).toMatchObject({ ok: false, why: "edited" });
+  });
+
+  it("are refused, unread, when far larger than the app writes them", async () => {
+    await fs.writeFile(file, " ".repeat(DEVICE_SETTINGS_MOST_BYTES + 1));
+    expect(await readDeviceSettings(file, key)).toEqual({ ok: false, why: "edited" });
   });
 });

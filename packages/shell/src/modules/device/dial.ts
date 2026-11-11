@@ -22,6 +22,8 @@ import { hashAccessToken, signDeviceDial } from "./keys.ts";
  */
 export const deviceConnectUrl = (deviceConnect: string, workspace: string): URL => {
   const url = new URL(deviceConnect);
+  // A WebSocket address can't carry a fragment.
+  url.hash = "";
   url.searchParams.set("workspace", workspace);
   return url;
 };
