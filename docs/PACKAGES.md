@@ -118,7 +118,7 @@ A host built this way reports no release of its own, as one run from source does
 
 ## The pipeline
 
-[packages.yml](../.github/workflows/packages.yml) runs on every push to `main`, on a published
+[packages.yml](../.github/workflows/packages.yml) runs on every push to `main` or an integration branch, on a published
 release, by hand, and on a pull request that changes the workflow, `tools/packages/`, the
 Dockerfile or a published package's manifest. Every run:
 

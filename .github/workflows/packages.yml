@@ -13,7 +13,7 @@ name: Packages and images
 # Setting the repository variable GRAM_PUBLISH_PACKAGES to `false` stops both: nothing is uploaded
 # while it says so. No other branch or event ever uploads. A pull request that changes this workflow, the
 # packaging tools, the Dockerfile or a published package's manifest runs the same build as a dry
-# run, as does a manual run.
+# run, as do a manual run and a push to an integration branch.
 #
 # `pack` and `image` run the repository's code and its dependencies' install scripts with a
 # read-only token. `publish` holds the token that writes packages and installs nothing: it runs
@@ -22,7 +22,8 @@ name: Packages and images
 
 on:
   push:
-    branches: [main]
+    # An integration branch is built and checked like main, and never published from.
+    branches: [main, "integration/**"]
   release:
     types: [published]
   pull_request:

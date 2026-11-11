@@ -25,7 +25,9 @@ describe("packages.yml", () => {
     expect(text).toContain(
       "PUBLISHING: ${{ vars.GRAM_PUBLISH_PACKAGES != 'false' && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}",
     );
-    expect(text).toMatch(/\n {2}push:\n {4}branches: \[main\]\n/);
+    expect(text).toMatch(
+      /\n {2}push:\n {4}# [^\n]+\n {4}branches: \[main, "integration\/\*\*"\]\n/,
+    );
     expect(text).toMatch(/\n {2}release:\n {4}types: \[published\]\n/);
     for (const name of ["publish", "manifest"]) {
       expect(job(name)).toMatch(/\n {4}if: needs\.pack\.outputs\.publishing == 'true'\n/);
