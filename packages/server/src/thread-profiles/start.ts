@@ -18,10 +18,12 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { olderHost } from "../host/folders.ts";
 import type { HostThreadPlaces } from "../host/thread-places.ts";
 import type { WorkerHostsShape } from "../host/worker-host.ts";
@@ -50,7 +52,10 @@ export const NO_REPOSITORIES_HERE =
 export const NOT_PLACED_HERE = "This server has no joined machines to place the thread on.";
 
 export interface ProfileStarterDeps {
-  readonly store: Pick<ThreadStoreShape, "getSettings" | "listProfiles" | "ensureProject">;
+  readonly store: Pick<
+    ThreadStoreShape,
+    "getSettings" | "listProfiles" | "ensureProject" | "getThread" | "listClosed"
+  >;
   readonly runtimes: Pick<ThreadRuntimesShape, "create" | "close">;
   /** The server's data folder (`ServerConfig.dataDir`). */
   readonly dataDir: string;
@@ -64,6 +69,9 @@ export interface ProfileStarterDeps {
 }
 
 const refuse = (message: string) => new InvalidState({ message });
+
+/** An id a caller may give its thread: a UUID, as Gram's own are, since it names folders too. */
+const SUPPLIED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** The model a profile names, as a thread runs on it. */
 const modelOf = (profile: ThreadProfile): ModelRef => ({
@@ -98,12 +106,48 @@ export const makeProfileStarter = ({
           ),
         );
 
+  // One start per supplied id at a time, so two asks for the same id make one thread.
+  const starting = makeKeyedLock<ThreadId>();
+
   /**
    * The thread `value` describes, started. Refused before anything is made: with the hosted
    * features off, for a value that isn't a profile of this version, and for one naming a gateway
    * profile this Gram doesn't have.
+   *
+   * With `asked`, the thread gets that id, and a start asked for again answers the thread the
+   * first one made, as it is now (in error too, when its agent couldn't open), without reading the
+   * profile again. An id another kind of thread has, or one whose thread was closed, is refused.
    */
-  const start = (value: unknown): Effect.Effect<Thread, InvalidState | AgentUnavailable> =>
+  const start = (
+    value: unknown,
+    asked?: ThreadId,
+  ): Effect.Effect<Thread, InvalidState | AgentUnavailable> => {
+    if (asked === undefined) return startAs(value, Schema.decodeSync(ThreadId)(randomUUID()));
+    return Effect.gen(function* () {
+      if (!embeddingOn(yield* store.getSettings)) return yield* refuse(PROFILES_OFF);
+      if (!SUPPLIED_ID.test(asked))
+        return yield* refuse("A thread id given with a profile is a lowercase UUID.");
+      return yield* starting.withLock(
+        asked,
+        Effect.gen(function* () {
+          const existing = yield* store.getThread(asked).pipe(Effect.option);
+          if (Option.isSome(existing)) {
+            return existing.value.profile === undefined
+              ? yield* refuse("That thread id is another thread's.")
+              : existing.value;
+          }
+          if ((yield* store.listClosed).some((closed) => closed.thread.id === asked))
+            return yield* refuse("The thread with that id was closed.");
+          return yield* startAs(value, asked);
+        }),
+      );
+    });
+  };
+
+  const startAs = (
+    value: unknown,
+    id: ThreadId,
+  ): Effect.Effect<Thread, InvalidState | AgentUnavailable> =>
     Effect.gen(function* () {
       const settings = yield* store.getSettings;
       if (!embeddingOn(settings)) return yield* refuse(PROFILES_OFF);
@@ -123,7 +167,6 @@ export const makeProfileStarter = ({
         );
       }
 
-      const id = Schema.decodeSync(ThreadId)(randomUUID());
       const files = profileFilesOf(profile);
       const base = {
         id,
