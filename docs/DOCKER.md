@@ -181,6 +181,9 @@ The [wire shapes](../packages/contracts/src/embedding.ts) are version 1.
 - `ask` raises the usual approval card, with the endpoint's reason on it. When a person approves
   it the endpoint is asked again, naming the first call and the card, and the action runs only if
   that answer is `allow`.
+- With sign-in through a fronting proxy on, a request for something a person did in the app
+  carries that person's id as `actor.id`, and the second call for an approved card names who
+  approved it in `approval.answeredBy`.
 - No answer within ten seconds, any status but 200, or an answer that doesn't read as one is a
   refusal. Redirects aren't followed, and an answer over 64 KiB isn't read.
 - A `GRAM_DECISION_HOOK_URL` that is set but isn't a whole `http(s)` URL (or has credentials or a

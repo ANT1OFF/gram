@@ -34,6 +34,7 @@ import { ENDPOINT_UNUSABLE, type EndpointConfig, ServerConfig } from "../config.
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { postJson } from "./endpoint.ts";
 import { EventSink } from "./event-sink.ts";
+import { ActingPerson } from "./person.ts";
 
 /** How long the endpoint has to answer before the action is refused. */
 export const DECISION_TIMEOUT_MS = 10_000;
@@ -86,8 +87,10 @@ const threadOf = (thread: DecisionSubject): DecisionRequest["thread"] => ({
   ...(thread.spawnedBy === undefined ? {} : { spawnedByThreadId: thread.spawnedBy.threadId }),
 });
 
-const actorOf = (question: DecisionQuestion): EmbeddingActor =>
-  question.initiator === "person" ? { kind: "person" } : { kind: "thread", id: question.thread.id };
+const actorOf = (question: DecisionQuestion, person: string | undefined): EmbeddingActor =>
+  question.initiator === "person"
+    ? { kind: "person", ...(person === undefined ? {} : { id: person }) }
+    : { kind: "thread", id: question.thread.id };
 
 const decodeResponse = Schema.decodeUnknownOption(DecisionResponse);
 const encodeRequest = Schema.encodeSync(DecisionRequest);
@@ -102,16 +105,25 @@ export const makeDecisionHook = (
   enabled: on,
   decide: (question) =>
     Effect.gen(function* () {
+      // The signed-in person this call is made for, when there is one: the one who pressed the
+      // button, or the one who approved the card on the second call.
+      const person = yield* ActingPerson;
+      const approval =
+        question.approval === undefined ||
+        question.approval.answeredBy !== undefined ||
+        person === undefined
+          ? question.approval
+          : { ...question.approval, answeredBy: person };
       const request: DecisionRequest = {
         v: EMBEDDING_WIRE_VERSION,
         id: randomUUID(),
         at: yield* Clock.currentTimeMillis,
         action: question.action,
         initiator: question.initiator,
-        actor: actorOf(question),
+        actor: actorOf(question, person),
         thread: threadOf(question.thread),
         detail: question.detail,
-        ...(question.approval === undefined ? {} : { approval: question.approval }),
+        ...(approval === undefined ? {} : { approval }),
       };
       const answer = yield* postJson(endpoint, encodeRequest(request), timeoutMs).pipe(
         Effect.map((body) => decodeResponse(body)),

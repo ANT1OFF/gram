@@ -33,6 +33,7 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { DecisionHook } from "./decision-hook.ts";
 import { EventSink, makeEventSink, type EventSinkShape } from "./event-sink.ts";
+import { ActingPerson } from "./person.ts";
 import { makeActionGuard } from "./guard.ts";
 
 /** A JSON endpoint on loopback that answers each POST with what `answer` makes of its body. */
@@ -300,17 +301,16 @@ describe("decision hook: an agent's outward command", () => {
             decisionReason: "A maintainer signs off merges.",
           });
           expect(session.responses).toEqual([]);
-          yield* runtimes.respond(thread.id, card.id, {
-            kind: "approval",
-            decision: "allow",
-            scope: "once",
-          });
+          yield* runtimes
+            .respond(thread.id, card.id, { kind: "approval", decision: "allow", scope: "once" })
+            .pipe(Effect.provideService(ActingPerson, "person-7"));
           expect(session.responses.map((response) => response.answer.kind)).toEqual(["approval"]);
           expect(session.responses[0]!.answer).toMatchObject({ decision: expected });
           expect(asked).toHaveLength(2);
           expect(asked[1]).toMatchObject({
             action: "pr.merge",
-            approval: { decisionId: asked[0]!.id, askId: card.id },
+            actor: { kind: "thread", id: thread.id },
+            approval: { decisionId: asked[0]!.id, askId: card.id, answeredBy: "person-7" },
           });
         }).pipe(Effect.provide(serverLayer(hook.url)));
       yield* run("allow");
@@ -412,6 +412,7 @@ describe("decision hook: an action the server takes", () => {
                 kind: "approval" as const,
                 decision: answers.shift()!,
                 scope: "once" as const,
+                answeredBy: "person-2",
                 resolution: {
                   threadId: thread.id,
                   requestId: "card-1" as never,
@@ -422,10 +423,18 @@ describe("decision hook: an action the server takes", () => {
               }),
           },
         });
-        yield* guard(thread.id, question, card);
+        // The person who pressed the button is the actor; the one who approved the card is named
+        // on the second call.
+        yield* guard(thread.id, question, card).pipe(
+          Effect.provideService(ActingPerson, "person-1"),
+        );
+        expect(asked.map((request) => request.actor)).toEqual([
+          { kind: "person", id: "person-1" },
+          { kind: "person", id: "person-1" },
+        ]);
         expect(asked.map((request) => request.approval)).toEqual([
           undefined,
-          { decisionId: asked[0]!.id, askId: "card-1" },
+          { decisionId: asked[0]!.id, askId: "card-1", answeredBy: "person-2" },
         ]);
         const refused = yield* Effect.flip(guard(thread.id, question, card));
         expect(refused.message).toBe("Not approved (pr.merge).");

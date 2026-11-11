@@ -82,7 +82,12 @@ export const makeActionGuard =
       const second = yield* hook.decide({
         ...question,
         thread,
-        approval: { decisionId: first.id, askId: answer.resolution?.requestId ?? "" },
+        approval: {
+          decisionId: first.id,
+          askId: answer.resolution?.requestId ?? "",
+          // The card was answered in another call than this one: its person, not this call's.
+          ...(answer.answeredBy === undefined ? {} : { answeredBy: answer.answeredBy }),
+        },
       });
       if (second.decision !== "allow") {
         return yield* new ActionRefused({
