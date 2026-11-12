@@ -113,7 +113,9 @@ test("the switcher is the embedding app's, in the sidebar and then in the title 
   expect(errors).toEqual([]);
 });
 
-type Update = { embed: { update: (next: object) => void } };
+type Update = {
+  embed: { update: (next: object) => void; navigate: (to: string) => Promise<void> };
+};
 
 test("the navigation and the switcher can be replaced after mounting", async ({ page }) => {
   await mounted(page);
@@ -211,6 +213,41 @@ test("the sidebar can leave Gram's workspaces and threads out", async ({ page })
     (window as unknown as Update).embed.update({ threads: "shown" });
   });
   await expect(page.getByTestId("overview-section-solo")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("the page of every thread and New take the embedding app's words", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await mounted(page);
+  // Gram's own: New is its menu, and the page is Threads with New task.
+  await expect(page.getByTestId("new-entry").first()).toHaveAttribute("aria-haspopup", "menu");
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      threadsPage: { title: "Chat", newLabel: "New chat" },
+      newEntry: { label: "New policy", to: "/govern/policies" },
+    });
+  });
+  // New is one plain button to the app's own page.
+  const add = page.getByTestId("new-entry").first();
+  await expect(add).toHaveAccessibleName("New policy");
+  await expect(add).not.toHaveAttribute("aria-haspopup", "menu");
+  await add.click();
+  await expect(page.getByTestId("fixture-policies")).toBeVisible();
+  // The page of every thread, in the app's words; its button starts a chat.
+  await page.evaluate(() => (window as unknown as Update).embed.navigate("/threads"));
+  await expect(page.getByTestId("threads-page").getByRole("heading")).toHaveText("Chat");
+  await expect(page.getByTestId("threads-new")).toHaveText("New chat");
+  await page.getByTestId("threads-new").click();
+  await expect(page).toHaveURL(/\/new$/);
+  // Taken away again, Gram's own words return.
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ threadsPage: undefined, newEntry: undefined });
+    void (window as unknown as Update).embed.navigate("/threads");
+  });
+  await expect(page.getByTestId("threads-page").getByRole("heading")).toHaveText("Threads");
+  await expect(page.getByTestId("threads-new")).toHaveText("New task");
+  await expect(page.getByTestId("new-entry").first()).toHaveAttribute("aria-haspopup", "menu");
   expect(errors).toEqual([]);
 });
 

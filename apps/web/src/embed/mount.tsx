@@ -102,6 +102,8 @@ export const mountGram: MountGram = async (options) => {
       panel: shell.panel ?? "shown",
       hosted,
       attention: shell.attention,
+      threadsPage: shell.threadsPage ?? {},
+      newEntry: shell.newEntry,
       home: shell.home?.component,
       sidebar: shell.sidebar ?? {},
       titles: Object.fromEntries([
@@ -135,6 +137,8 @@ export const mountGram: MountGram = async (options) => {
           ...("threads" in next ? { threads: next.threads ?? "shown" } : {}),
           ...("panel" in next ? { panel: next.panel ?? "shown" } : {}),
           ...("attention" in next ? { attention: next.attention } : {}),
+          ...("threadsPage" in next ? { threadsPage: next.threadsPage ?? {} } : {}),
+          ...("newEntry" in next ? { newEntry: next.newEntry } : {}),
           ...("sidebar" in next ? { sidebar: next.sidebar ?? {} } : {}),
         });
       },

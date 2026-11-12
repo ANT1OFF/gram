@@ -7,10 +7,12 @@ import type {
   ShellContributions,
   ShellNavigationGroup,
   ShellNavigationPlacement,
+  ShellNewEntry,
   ShellPageProps,
   ShellPanel,
   ShellSidebar,
   ShellSlotProps,
+  ShellThreadsPage,
 } from "./contract";
 
 /**
@@ -28,6 +30,10 @@ export interface EmbedShellState {
   readonly panel: ShellPanel;
   /** What needs someone, as the embedding app counts it; Gram's own count while undefined. */
   readonly attention: ShellAttention | undefined;
+  /** The page of every thread, as the embedding app words it; Gram's own words while empty. */
+  readonly threadsPage: ShellThreadsPage;
+  /** What New starts in place of Gram's menu; the menu while undefined. */
+  readonly newEntry: ShellNewEntry | undefined;
   /** Mounted by an app in front of Gram on a server with hosted features on. Set once, at mount. */
   readonly hosted: boolean;
   /** The page at `/` in place of Gram's home. Set once, at mount. */
@@ -44,6 +50,8 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   panel: "shown",
   hosted: false,
   attention: undefined,
+  threadsPage: {},
+  newEntry: undefined,
   home: undefined,
   sidebar: {},
 }));
@@ -57,6 +65,8 @@ export const EMPTY_SHELL: EmbedShellState = {
   panel: "shown",
   hosted: false,
   attention: undefined,
+  threadsPage: {},
+  newEntry: undefined,
   home: undefined,
   sidebar: {},
 };
@@ -75,6 +85,9 @@ export const panelOffered = (
   panel: ShellPanel,
   page: { readonly threadInView: boolean; readonly threadInRepo: boolean },
 ): boolean => panel === "shown" || (page.threadInView && page.threadInRepo);
+
+/** The name of the page of every thread: "Threads", unless the embedding app gave another. */
+export const useThreadsTitle = () => useEmbedShell((s) => s.threadsPage.title ?? "Threads");
 
 /** Whether the sidebar lists Gram's own workspaces and threads: always, on Gram's own. */
 export const useThreadsListed = () => useEmbedShell((s) => s.threads === "shown");

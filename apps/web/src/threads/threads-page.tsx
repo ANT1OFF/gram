@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { formatRelative, formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
+import { useEmbedShell, useThreadsTitle } from "@/embed/store";
 import { newEntryOf } from "@/orchestration/new-entry-menu";
 import { newEntryRoute } from "@/orchestration/new-entry";
 import { threadNeed } from "@/orchestration/needs-you-items";
@@ -38,6 +39,9 @@ export function ThreadsPage() {
   const workspaces = useWorkspaces();
   const groups = useDerivedAsks((s) => s.needsYou.groups);
   const entry = newEntryOf(useTaskDraftStore((s) => s.entry));
+  // An app in front of Gram may give the page and its button words of its own.
+  const title = useThreadsTitle();
+  const newLabel = useEmbedShell((s) => s.threadsPage.newLabel);
   const listings = useMemo(() => {
     const workspaceNames = new Map(
       workspaces.map((state) => [state.workspace.id as string, state.workspace.name]),
@@ -69,16 +73,17 @@ export function ThreadsPage() {
       <div className="mx-auto flex max-w-4xl flex-col gap-4 px-5 py-6 @3xl:px-8 @3xl:py-7">
         <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h1 id="threads-title" className="font-heading text-heading">
-            Threads
+            {title}
           </h1>
           <span className="text-meta text-muted-foreground tabular-nums">{listings.length}</span>
           <Button
             size="sm"
             className="ms-auto"
             data-testid="threads-new"
-            onClick={() => void navigate(newEntryRoute(entry))}
+            // Worded by the embedding app, it starts a chat; Gram's own opens the choice used last.
+            onClick={() => void navigate(newEntryRoute(newLabel === undefined ? entry : "oneOff"))}
           >
-            New task
+            {newLabel ?? "New task"}
           </Button>
         </header>
         <label className="relative flex items-center">

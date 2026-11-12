@@ -150,6 +150,36 @@ export interface ShellSidebar {
  */
 export type ShellPanel = "shown" | "code";
 
+/**
+ * Gram's page of every thread (`/threads`), as the embedding app words it: an app whose threads
+ * are conversations with its agents may call the page "Chat" and its button "New chat".
+ */
+export interface ShellThreadsPage {
+  /**
+   * The page's name: its heading, the title bar, a phone's header and the palette's command.
+   * "Threads" when left out.
+   */
+  readonly title?: string;
+  /**
+   * The words on the page's button. Given, the button starts a chat (Gram's New form on Chat);
+   * left out it is Gram's "New task", which opens the form on the choice used last.
+   */
+  readonly newLabel?: string;
+}
+
+/**
+ * New, in the sidebar's head and a phone menu's foot, as one plain button of the embedding app's
+ * in place of Gram's menu of Task, Team and Chat: for an app where what a person mostly starts is
+ * something of its own. Gram's New form stays reachable from the threads page, the palette and its
+ * shortcuts.
+ */
+export interface ShellNewEntry {
+  /** The button's words and its name for a screen reader: "New agent". */
+  readonly label: string;
+  /** Where it goes: a path under the app, one of `routes` or one of Gram's own. */
+  readonly to: string;
+}
+
 /** What the embedding app adds to Gram's shell. Everything is optional. */
 export interface ShellContributions {
   /** Pages beside Gram's own. Read once, when the app mounts. */
@@ -178,6 +208,10 @@ export interface ShellContributions {
   readonly panel?: ShellPanel;
   /** What needs someone, counted by the embedding app. Replaceable through `GramHandle.update`. */
   readonly attention?: ShellAttention;
+  /** How the page of every thread is worded. Replaceable through `GramHandle.update`. */
+  readonly threadsPage?: ShellThreadsPage;
+  /** What New starts, in place of Gram's menu. Replaceable through `GramHandle.update`. */
+  readonly newEntry?: ShellNewEntry;
   /** The open sidebar's look, its head and its account. Replaceable through `GramHandle.update`. */
   readonly sidebar?: ShellSidebar;
 }
@@ -222,7 +256,14 @@ export interface GramHandle {
   update(
     next: Pick<
       ShellContributions,
-      "navigation" | "workspaceSwitcher" | "threads" | "panel" | "attention" | "sidebar"
+      | "navigation"
+      | "workspaceSwitcher"
+      | "threads"
+      | "panel"
+      | "attention"
+      | "threadsPage"
+      | "newEntry"
+      | "sidebar"
     >,
   ): void;
   /** Moves the window to a path under the app. */

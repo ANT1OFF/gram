@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
 import { cn } from "@/lib/utils";
+import { useEmbedShell } from "@/embed/store";
 import { WHO_CHOICES } from "@/new-thread/who-does-it";
 import { focusedThreadId } from "@/shell/thread-switcher";
 
@@ -46,10 +47,42 @@ export function NewEntryMenu({
 } = {}) {
   const navigate = useNavigate();
   const last = newEntryOf(useTaskDraftStore((s) => s.entry));
+  // An app in front of Gram may have New start something of its own: one plain button, no menu.
+  const hosts = useEmbedShell((s) => s.newEntry);
   const open = (entry: NewEntry) => {
     if (entry === "oneOff") prefillOneOff(focusedThreadId());
     void navigate(newEntryRoute(entry));
   };
+  if (hosts !== undefined) {
+    const shared = {
+      "aria-label": hosts.label,
+      "data-testid": "new-entry",
+      "data-entry": "host",
+      className: pill ? PILL : NEW_ICON,
+      onClick: () => void navigate({ to: hosts.to as "/" }),
+    };
+    return (
+      <Hint
+        label={hosts.label}
+        side="bottom"
+        render={
+          pill ? (
+            <button type="button" {...shared} />
+          ) : (
+            <Button variant="ghost" size="icon-sm" {...shared} />
+          )
+        }
+      >
+        <Plus />
+        <span
+          data-testid="new-entry-words"
+          className={pill ? undefined : "hidden text-body @min-[12.5rem]/overview-head:inline"}
+        >
+          {hosts.label}
+        </span>
+      </Hint>
+    );
+  }
   return (
     <Menu.Root>
       <Hint

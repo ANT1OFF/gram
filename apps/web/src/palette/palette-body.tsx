@@ -18,7 +18,7 @@ import { createElement, useEffect, useMemo, useRef, useState, type KeyboardEvent
 import { useApi } from "@/api/context";
 import { errorMessage, isNotImplemented } from "@/api/errors";
 import { openExternalUrl } from "@/api/open-external";
-import { shownNavigation, useEmbedShell } from "@/embed/store";
+import { shownNavigation, useEmbedShell, useThreadsTitle } from "@/embed/store";
 import { showInbox } from "@/inbox/inbox-store";
 import { boardWorkspaceFor } from "@/orchestration/board-model";
 import { useOpenBoard } from "@/orchestration/open-board";
@@ -167,6 +167,7 @@ export function PaletteBody({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const embedNavigation = shownNavigation(useEmbedShell((s) => s.navigation));
+  const threadsTitle = useThreadsTitle();
   const params = useParams({ strict: false });
   const currentId = params.threadId as ThreadId | undefined;
   const byId = useThreadsStore((s) => s.byId);
@@ -544,7 +545,7 @@ export function PaletteBody({
     },
     {
       id: "go:threads",
-      label: "Threads",
+      label: threadsTitle,
       keywords: "all threads list",
       run: go("go:threads", () => void navigate({ to: "/threads" })),
     },

@@ -75,7 +75,7 @@ hosted features on and sample threads in it. It needs no server at all, which ma
 build and test the pages around Gram.
 
 The answer is a handle: `shell` says `"on"` or `"off"` (whether the server took your additions),
-`update` replaces what it names of the navigation, the switcher, `threads` and `panel` and keeps the rest
+`update` replaces what it names of the navigation, the switcher, `threads`, `panel`, `threadsPage` and `newEntry` and keeps the rest
 (`update({ navigation })` changes counts and keeps the switcher; a key given as `undefined` takes
 that part away), `navigate` moves the window to a path under the app, and `unmount` takes the app
 off the page.
@@ -110,6 +110,14 @@ a checkout. On every other page (a thread outside a repository, `/threads`, the 
 embedding app's own pages) neither shows, its key does nothing and its palette commands are left
 out. `shown`, the default, offers it everywhere, as Gram on its own does. Change it through
 `update({ panel })`.
+
+**Starting work, in your words.** `threadsPage: { title: "Chat", newLabel: "New chat" }` renames
+the page of every thread (`/threads`) in its heading, the title bar, a phone's header and the
+palette, and words its button, which then starts a chat. `newEntry: { label: "New agent", to:
+"/agents" }` makes New, in the sidebar's head and a phone menu's foot, one plain button to a page of
+yours in place of Gram's menu of Task, Team and Chat: for an app where what a person mostly starts
+is something of its own. Gram's New form stays reachable from the threads page, the palette and its
+shortcuts. Change either through `update`.
 
 **The compact sidebar.** Mounted on a server with hosted features on, the compact sidebar is a
 quiet strip of what the open one holds, in its order: your switcher, Needs you (a dot while

@@ -16,6 +16,7 @@ import {
   shownNavigation,
   useEmbedShell,
   useRoomySidebar,
+  useThreadsTitle,
 } from "./store";
 
 // The places in Gram's shell an app in front of it may fill. Each draws nothing until something was
@@ -385,9 +386,6 @@ export function EmbedRailNavigation({
   );
 }
 
-/** Gram's own pages that name themselves in the title bar as an added page does: in no workspace. */
-const OWN_PAGE_TITLES: Readonly<Record<string, string>> = { "/threads": "Threads" };
-
 /**
  * The name of the page the window is on, where the title bar says it in place of the workspace and
  * its views: an added page's (the one it brought; undefined if none) or the Threads page's.
@@ -395,9 +393,13 @@ const OWN_PAGE_TITLES: Readonly<Record<string, string>> = { "/threads": "Threads
  */
 export function useEmbedPageTitle(): string | undefined {
   const titles = useEmbedShell((s) => s.titles);
+  // Gram's own page that names itself in the title bar as an added page does: in no workspace.
+  const threads = useThreadsTitle();
   // The deepest match is the page; its `fullPath` is the path the page was added under.
   const path = useMatches({ select: (matches) => matches.at(-1)?.fullPath as string | undefined });
-  return path === undefined ? undefined : (titles[path] ?? OWN_PAGE_TITLES[path]);
+  return path === undefined
+    ? undefined
+    : (titles[path] ?? (path === "/threads" ? threads : undefined));
 }
 
 /**
