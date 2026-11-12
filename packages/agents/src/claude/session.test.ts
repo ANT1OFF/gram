@@ -50,6 +50,9 @@ import { AsyncPushQueue } from "./input-queue.ts";
 import { ClaudeSdk, type ClaudeSdkShape } from "./sdk.ts";
 import {
   BLOCKING_ASK_TOOL,
+  BROWSER_GATE_REASON,
+  actsInBrowser,
+  chromeArgs,
   claudeSettingsDir,
   widenedEntries,
   CONFINED_DISALLOWED,
@@ -2524,6 +2527,30 @@ const preToolUse = (q: FakeQuery) => {
     );
 };
 
+/** The `PreToolUse` gate of a session given the browser under `outwardGate`. */
+const browserHookFor = (outwardGate: "all" | "irreversible") =>
+  Effect.gen(function* () {
+    const h = harness();
+    yield* openSession({ outwardGate, browser: true }).pipe(Effect.provide(h.layer));
+    const pre = query(h).options.hooks!.PreToolUse![0]!.hooks[0]!;
+    return (tool_name: string) =>
+      Effect.promise((): Promise<HookJSONOutput> =>
+        pre(
+          {
+            hook_event_name: "PreToolUse",
+            session_id: "s",
+            transcript_path: "/t",
+            cwd: "/repo",
+            tool_name,
+            tool_input: {},
+            tool_use_id: "toolu_b",
+          } as HookInput,
+          "toolu_b",
+          { signal: signal() },
+        ),
+      );
+  });
+
 describe("app tools bridge", () => {
   it.effect("keeps wrap_up for the main agent: a subagent's call is denied, others pass", () =>
     Effect.gen(function* () {
@@ -2595,6 +2622,66 @@ describe("app tools bridge", () => {
       const plain = harness();
       yield* openSession({ permissionMode: "acceptEdits" }).pipe(Effect.provide(plain.layer));
       expect(query(plain).options).not.toHaveProperty("disallowedTools");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("turns Claude in Chrome on only for a session given the browser", () =>
+    Effect.gen(function* () {
+      const unsaid = harness();
+      yield* openSession({}).pipe(Effect.provide(unsaid.layer));
+      expect(query(unsaid).options).not.toHaveProperty("extraArgs");
+
+      const plain = harness();
+      yield* openSession({ browser: false }).pipe(Effect.provide(plain.layer));
+      // Off by the flag, so the CLI's own "Enabled by default" never reaches a Gram thread.
+      expect(query(plain).options.extraArgs).toEqual({ "no-chrome": null });
+
+      const given = harness();
+      yield* openSession({ browser: true }).pipe(Effect.provide(given.layer));
+      expect(query(given).options.extraArgs).toEqual({ chrome: null });
+
+      const confined = harness();
+      yield* openSession({ browser: true, confineWrites: true }).pipe(
+        Effect.provide(confined.layer),
+      );
+      expect(query(confined).options.extraArgs).toEqual({ "no-chrome": null });
+    }).pipe(Effect.scoped),
+  );
+
+  it("never gives Claude in Chrome to a gateway or dream session", () => {
+    expect(chromeArgs({ browser: true }, false)).toEqual({ chrome: null });
+    expect(chromeArgs({ browser: true }, true)).toEqual({ "no-chrome": null });
+    expect(chromeArgs({ browser: true, dreamFilesOnly: true }, false)).toEqual({
+      "no-chrome": null,
+    });
+    expect(chromeArgs({}, false)).toEqual({ "no-chrome": null });
+  });
+
+  it("counts every Claude in Chrome tool but the reads as acting", () => {
+    expect(actsInBrowser("mcp__claude-in-chrome__computer")).toBe(true);
+    expect(actsInBrowser("mcp__claude-in-chrome__navigate")).toBe(true);
+    expect(actsInBrowser("mcp__claude-in-chrome__javascript_tool")).toBe(true);
+    // One the CLI adds later acts until it is listed as a read.
+    expect(actsInBrowser("mcp__claude-in-chrome__something_new")).toBe(true);
+    expect(actsInBrowser("mcp__claude-in-chrome__get_page_text")).toBe(false);
+    expect(actsInBrowser("mcp__claude-in-chrome__tabs_context_mcp")).toBe(false);
+    expect(actsInBrowser("mcp__other__computer")).toBe(false);
+  });
+
+  it.effect("asks before each browser action under the strictest gate only", () =>
+    Effect.gen(function* () {
+      const strict = yield* browserHookFor("all");
+      expect(yield* strict("mcp__claude-in-chrome__computer")).toEqual({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "ask",
+          permissionDecisionReason: BROWSER_GATE_REASON,
+        },
+      });
+      expect(yield* strict("mcp__claude-in-chrome__read_page")).toEqual({});
+      // The publish gate can't tell a click that merges from one that doesn't; the mode decides.
+      const publish = yield* browserHookFor("irreversible");
+      expect(yield* publish("mcp__claude-in-chrome__computer")).toEqual({});
     }).pipe(Effect.scoped),
   );
 

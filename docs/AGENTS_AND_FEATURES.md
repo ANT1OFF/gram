@@ -1202,6 +1202,53 @@ the Preview header and transcript show. `preview_start`, `preview_list`,
 `.gram/launch.json` (or `.claude/launch.json`): each start names the exact command
 on a card first, takes the next free port, and stops with its thread.
 
+### Your own browser: Claude in Chrome and Codex computer use
+
+The Preview pane is Gram's own browser. A thread can also be given **your** browser, with your
+sign-ins, for work only a web console can do (an OAuth app's settings, a cloud project, a
+tailnet's admin page). Every consent is off by default, and each one is separate:
+
+- **Per agent**, under Settings → Agents → Your browser: **Claude in Chrome** for Claude threads,
+  **Codex computer use** for Codex threads (`agents.claudeInChrome`, `agents.codexComputerUse`).
+- **Per scope**: a plain thread gets it only when you give it with ⌘K on the thread (**Lend it your
+  browser**, `thread.setBrowser`). Under Settings → Workspaces, **Orchestrators use
+  your browser** (`workspaces.orchestratorBrowser`) gives it to orchestrators, and **Give workers
+  your browser** (`workspaces.workerBrowser`) lets an orchestrator pass `browser: true` to
+  `spawn_worker`. A spawn that asks without those consents starts without it, and its result says
+  why.
+
+These are user-only settings: no agent can turn one on through `settings_propose`. Gram reads them
+again at each session open, so a change applies from a thread's next session. Giving or taking it
+with ⌘K reopens the session once it is idle. The pane header shows **Your browser** while a thread
+has it, struck through while a consent holds it back. A profile's thread and a dream never get it.
+
+**Claude.** A session given the browser starts with Claude Code's `--chrome`. There is no Agent SDK
+option for it, so Gram passes the flag through `extraArgs`. Every other Gram session starts with
+`--no-chrome`, so Claude Code's own "Enabled by default" setting or `CLAUDE_CODE_ENABLE_CFC` never
+reaches a thread you didn't give it. It needs the Claude extension installed and connected in
+Chrome, and a claude.ai sign-in: a thread on a gateway or an API key doesn't get it. Its tools are
+`mcp__claude-in-chrome__*`. Under a workspace whose outward gate asks about everything
+(supervised), Gram asks before each action in the browser (click, type, navigate, run script,
+upload, open or close a tab). The read-only tools don't ask: page text, find, console, network,
+tabs. Under the publish gate, Gram can't tell a click that merges a pull request from one that
+doesn't. There, the permission mode and the extension's own site permissions decide.
+
+**Codex.** Computer use comes from the plugins the ChatGPT app installs in your own Codex setup
+(`unified-computer-use@openai-bundled` serves `cua_repl`), plus the `node_repl` server it writes to
+`~/.codex/config.toml`. Without the consent and the grant, Gram turns those plugins off in the
+thread's config, along with each computer-use server your config has. Your other plugins and
+servers are left as they are. It works only in threads that run in your own `CODEX_HOME`: threads
+under an outward gate run in Gram's own Codex setup, where plugins are off. Codex computer use
+also needs the ChatGPT app.
+
+**A broken `computer-use` server.** An old copy of Codex's standalone computer-use client in
+Claude Code's config has a relative command (`./Codex Computer Use.app/…`). Claude Code starts
+every stdio server in the session's folder, so that command fails with ENOENT in every Claude
+session. Even started by its full path, the standalone client times out at bootstrap without the
+Codex app's service, so remove it (`claude mcp remove <name> -s user`); Claude threads use Claude in
+Chrome. Settings → Connectors' copy to another agent now makes a command relative to an absolute
+`cwd` absolute, and asks for the full path when there's no absolute `cwd` to go by.
+
 Notifications retain sanitized history and quiet startup diagnostics; saved
 notifications omit sensitive runtime details. Dictation is off until turned on in Settings → Voice
 (stored as `experimental.voiceInput`, its name before it graduated). It runs locally with NVIDIA

@@ -847,6 +847,13 @@ export const Thread = Schema.Struct({
   /** Folders beyond the checkout that the user granted the agent (`request_directory`). */
   additionalDirectories: Schema.optionalKey(Schema.Array(Schema.String)),
   /**
+   * The thread was given the user's browser: by its orchestrator at spawn (`spawn_worker`'s
+   * `browser`, where `workspaces.workerBrowser` allows) or by the user (`thread.setBrowser`). Its
+   * sessions get it only while its agent's consent allows (`browserUseAllowed`), and a Codex one
+   * only in the user's own `CODEX_HOME`. An orchestrator's follows `orchestratorBrowserOn` instead.
+   */
+  browser: Schema.optionalKey(Schema.Boolean),
+  /**
    * Worktrees in other repos that a worker was given for a change spanning them, on its feature's
    * branch. The thread's git state, checkpoints and diff follow `checkout` alone; these are held so
    * no other thread is opened on them and so closing the worker can release them.

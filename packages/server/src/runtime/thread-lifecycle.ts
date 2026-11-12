@@ -274,6 +274,7 @@ export const makeThreadLifecycle = ({
         ...(input.extraCheckouts === undefined || input.extraCheckouts.length === 0
           ? {}
           : { extraCheckouts: [...input.extraCheckouts] }),
+        ...(input.browser === true ? { browser: true } : {}),
         ...input.kept,
       };
       const stored = yield* store.insertThread(thread);

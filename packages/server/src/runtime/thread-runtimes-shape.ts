@@ -82,6 +82,8 @@ export interface CreateThreadInput {
   readonly profile?: NonNullable<Thread["profile"]>;
   /** Worktrees in other repos the thread holds beside `checkout` (`Thread.extraCheckouts`). */
   readonly extraCheckouts?: ReadonlyArray<Checkout>;
+  /** Given the user's browser at spawn (`Thread.browser`); its session policy still decides. */
+  readonly browser?: boolean;
   /**
    * Leaves a thread without `input` cold instead of opening its session now. An orchestrator's
    * session policy turns on a workspace slot it can only claim once the row exists, so its first

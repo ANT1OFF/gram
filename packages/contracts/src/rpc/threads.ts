@@ -317,6 +317,17 @@ export const ThreadRpcs = RpcGroup.make(
     error: errors(ThreadNotFound, InvalidState),
   }),
   /**
+   * The user gives the thread their browser, or takes it back (`Thread.browser`); a live session
+   * reopens once idle to load it. Refused for an orchestrator, whose browser is the
+   * `workspaces.orchestratorBrowser` setting. The agent's own consent (`browserUseAllowed`) still
+   * decides whether a session gets it.
+   */
+  Rpc.make("thread.setBrowser", {
+    payload: { ...threadRef, browser: Schema.Boolean },
+    success: Thread,
+    error: errors(ThreadNotFound, InvalidState),
+  }),
+  /**
    * The user's edit of the thread's plan: every step it lists, in order. A step whose text, status
    * or PR changed, and a new one, become the user's and are locked against the helper. An edit with
    * no goal and no steps removes the plan, and answers `null`.

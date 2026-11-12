@@ -130,6 +130,11 @@ export interface ThreadsApi {
    */
   snooze(threadId: ThreadId, until: number | null): Promise<Thread>;
   /**
+   * Gives the thread your browser, or takes it back (`Thread.browser`); its session reopens once
+   * idle. Its agent's consent in Settings still decides whether a session gets it.
+   */
+  setBrowser(threadId: ThreadId, browser: boolean): Promise<Thread>;
+  /**
    * Babysit mode on the thread's PR. Enabling binds the branch's PR if needed, turns on its review
    * monitor and resets the counters; the change arrives as `thread.upsert`.
    */

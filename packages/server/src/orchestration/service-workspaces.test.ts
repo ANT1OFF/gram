@@ -404,6 +404,41 @@ describe.skipIf(!hasGit)("orchestration service", () => {
     ),
   );
 
+  it.effect("gives the browser only where its scope and its agent's consent both allow", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        // Nothing turned on: no session gets it, and a spawn asking for it says why.
+        const { session } = yield* openOrchestrator(world);
+        expect(session.options).toMatchObject({ browser: false });
+        const refused = yield* spawn(session, { feature: "no-browser", browser: true });
+        expect(refused.result.warning).toContain("hasn't let workers use their browser");
+        expect(refused.thread).not.toHaveProperty("browser");
+        expect(refused.session.options).toMatchObject({ browser: false });
+
+        // The scope alone isn't enough: Claude's own consent is off.
+        yield* store.updateSettings((settings) => ({
+          ...settings,
+          workspaces: { workerBrowser: true },
+        }));
+        const noConsent = yield* spawn(session, { feature: "no-consent", browser: true });
+        expect(noConsent.result.warning).toContain("Claude in Chrome is off");
+        expect(noConsent.session.options).toMatchObject({ browser: false });
+
+        yield* store.updateSettings((settings) => ({
+          ...settings,
+          agents: { ...settings.agents, claudeInChrome: true },
+        }));
+        const given = yield* spawn(session, { feature: "with-browser", browser: true });
+        expect(given.result).not.toHaveProperty("warning");
+        expect(given.thread.browser).toBe(true);
+        expect(given.session.options).toMatchObject({ browser: true });
+        const plain = yield* spawn(session, { feature: "without-browser" });
+        expect(plain.session.options).toMatchObject({ browser: false });
+      }),
+    ),
+  );
+
   it.effect("lets only an orchestrator send to sessions outside Gram, and only when allowed", () =>
     inServer((world) =>
       Effect.gen(function* () {

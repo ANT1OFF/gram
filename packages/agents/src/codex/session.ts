@@ -474,6 +474,64 @@ export const leftOutConfig = (
 };
 
 /**
+ * The plugins that bring Codex computer use (codex-cli 0.167.1, the ChatGPT app's bundle):
+ * `unified-computer-use` serves `cua_repl`, which drives the user's browsers and Mac apps; the
+ * others carry its Chrome, in-app browser and desktop skills. Naming one that isn't installed is
+ * harmless.
+ */
+export const COMPUTER_USE_PLUGINS: ReadonlyArray<string> = [
+  "unified-computer-use@openai-bundled",
+  "computer-use@openai-bundled",
+  "chrome@openai-bundled",
+  "browser@openai-bundled",
+];
+
+/** The `mcp_servers` names the ChatGPT app writes for its browser and desktop runtime. */
+const COMPUTER_USE_SERVERS: ReadonlySet<string> = new Set([
+  "node_repl",
+  "cua_repl",
+  "computer-use",
+]);
+
+/** A configured server that is computer use, by its name or the program it runs. */
+const isComputerUseServer = (name: string, table: unknown): boolean => {
+  if (COMPUTER_USE_SERVERS.has(name)) return true;
+  const command =
+    typeof table === "object" && table !== null && "command" in table ? table.command : undefined;
+  return (
+    typeof command === "string" &&
+    (command.includes("SkyComputerUseClient") || command.includes("/cua_node/"))
+  );
+};
+
+/**
+ * What a thread not given the browser turns off: each computer-use plugin, and each configured
+ * server `read` names that is computer use (`node_repl`, the old standalone client). Only servers
+ * the config has are named, since a table with nothing but `enabled` fails the whole config
+ * ("invalid transport"), a plugin's server included; the plugin's own switch takes that one away.
+ * Verified on codex-cli 0.167.1: `cua_repl` is gone from the thread and `node_repl` disabled,
+ * every other server as it was.
+ */
+export const computerUseOff = (
+  read: ConfigReadResponse | undefined,
+): {
+  readonly plugins: Record<string, { enabled: false }>;
+  readonly servers: Record<string, { enabled: boolean }>;
+} => {
+  const tables = read?.config["mcp_servers"];
+  const configured =
+    typeof tables === "object" && tables !== null && !Array.isArray(tables)
+      ? Object.entries(tables)
+      : [];
+  return {
+    plugins: Object.fromEntries(COMPUTER_USE_PLUGINS.map((id) => [id, { enabled: false }])),
+    servers: switchedOff(
+      configured.filter(([name, table]) => isComputerUseServer(name, table)).map(([name]) => name),
+    ),
+  };
+};
+
+/**
  * The servers a confined thread still has running that aren't Gram's own, by name: a
  * plugin's, or anything else `confinedConfig` couldn't name beforehand.
  */
@@ -814,19 +872,29 @@ export const makeCodexHost = (
               o.mcp === undefined ? undefined : APP_TOOLS_NAME,
             )
           : undefined;
-      // Confinement already switches every server off; otherwise the workspace's lists might.
+      // Computer use only for a thread given the browser, and only in the user's own CODEX_HOME,
+      // where the user installed it: Gram's homes run with plugins off (`home === "owned"`).
+      // `false`, or `true` where it can't be had, turns it off; absent leaves the user's config.
+      const browserOff =
+        confined === undefined && o.browser !== undefined && !(o.browser && home === "user");
+      // Confinement already switches every server off; otherwise the workspace's lists might, and
+      // a thread without the browser turns computer use's servers off by name.
       const narrowedRead =
-        confined === undefined && (narrowsMcp(o) || o.mcpServer !== undefined)
+        confined === undefined && (narrowsMcp(o) || o.mcpServer !== undefined || browserOff)
           ? yield* server.rpc
               .request("config/read", { includeLayers: false, cwd: o.cwd })
               .pipe(
                 Effect.mapError(unavailableNaming("Codex couldn't read its MCP servers", needs)),
               )
           : undefined;
-      const leftOut =
-        narrowedRead === undefined
+      const noComputerUse = browserOff ? computerUseOff(narrowedRead) : undefined;
+      const leftOut = {
+        ...(narrowedRead === undefined
           ? {}
-          : leftOutConfig(narrowedRead, o, o.mcp === undefined ? undefined : APP_TOOLS_NAME);
+          : leftOutConfig(narrowedRead, o, o.mcp === undefined ? undefined : APP_TOOLS_NAME)),
+        // Here too, so a thread's own toggle can't turn one back on.
+        ...noComputerUse?.servers,
+      };
       const tables = narrowedRead?.config["mcp_servers"];
       /** The servers `config/read` names, which `leftOutConfig` has decided on already. */
       const configured = new Set(
@@ -888,6 +956,8 @@ export const makeCodexHost = (
             }
           : {}),
         ...(Object.keys(mcpServers).length === 0 ? {} : { mcp_servers: mcpServers }),
+        // Merged into the user's `[plugins]`, so their other plugins stay as they are.
+        ...(noComputerUse === undefined ? {} : { plugins: noComputerUse.plugins }),
         ...(confined === undefined ? {} : { apps: confined.apps, features: confined.features }),
         ...(roots.length === 0 ? {} : { sandbox_workspace_write: { writable_roots: [...roots] } }),
       };

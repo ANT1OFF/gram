@@ -96,6 +96,7 @@ import { Transcript, transcriptScroller, type JumpRequest, type ScrollRestore } 
 import { turnUndos } from "./turn-undo-marker";
 import { useUnseenFrom } from "./unread";
 import { SnoozeChip } from "./snooze-chip";
+import { BrowserChip } from "./browser-chip";
 import { HeaderWakeChip } from "./wake-chip";
 
 const FLASH_MS = 1600;
@@ -572,6 +573,7 @@ export function ThreadView({
               ports={summary.ports}
               className={cn("text-meta text-muted-foreground", hideSm)}
             />
+            <BrowserChip threadId={threadId} className={hideSm} />
             <HeaderWakeChip threadId={threadId} />
             <FakeAgentBadge className={hideSm} />
           </div>

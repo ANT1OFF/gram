@@ -368,6 +368,27 @@ export const threadHandlers = Effect.gen(function* () {
         yield* runtimes.addDirectories(threadId, [folder]);
         return folder;
       }),
+    // The user's own grant for one thread; the session reopens once idle to load or drop Chrome.
+    "thread.setBrowser": ({ threadId, browser }) =>
+      Effect.gen(function* () {
+        const thread = yield* store.getThread(threadId);
+        if (thread.role !== undefined) {
+          return yield* new InvalidState({
+            message:
+              thread.role === "orchestrator"
+                ? "An orchestrator's browser is the “Orchestrators use your browser” setting."
+                : "This thread can't be given the browser.",
+            threadId,
+          });
+        }
+        if ((thread.browser === true) === browser) return thread;
+        const updated = yield* runtimes.updateThread(threadId, (t) => {
+          const { browser: _browser, ...rest } = t;
+          return browser ? { ...rest, browser: true } : rest;
+        });
+        yield* runtimes.reloadSession(threadId);
+        return updated;
+      }),
     "thread.pin": ({ threadId, pinned }) =>
       runtimes.updateThread(threadId, (t) => ({ ...t, pinned })).pipe(Effect.asVoid),
     // Parking and closing drop the thread's git watcher; returning only once it's released.

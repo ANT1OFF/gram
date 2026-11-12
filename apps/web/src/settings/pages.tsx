@@ -25,6 +25,7 @@ import {
 } from "./subpages";
 import { AiHelpersSection } from "./ai-helpers-section";
 import { AgentsSection } from "./agents-section";
+import { YourBrowserSection } from "./browser-section";
 import { AppearanceSearch } from "./appearance-section";
 import { CustomModelsSection } from "./custom-models-section";
 import {
@@ -242,6 +243,7 @@ export function AgentsPage() {
     <>
       <AgentChecks />
       <AgentsSection />
+      <YourBrowserSection />
       <SettingsGroup
         label="Custom models"
         card={false}

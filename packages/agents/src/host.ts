@@ -156,6 +156,15 @@ export interface OpenSessionOptions {
    */
   readonly peerMessaging?: boolean;
   /**
+   * The user's browser, through the agent's own integration: Claude Code's Claude in Chrome
+   * (`--chrome`), Codex's computer use (its plugins' `cua_repl`, the ChatGPT app's `node_repl`).
+   * `true` turns it on, `false` keeps it off where the host can (`--no-chrome`; those plugins and
+   * servers switched off for the thread), so a CLI-wide default never reaches a Gram thread
+   * unasked. Absent leaves the agent's own config as it is. Gram's runtime always says which. A
+   * host without either ignores it.
+   */
+  readonly browser?: boolean;
+  /**
    * Told each time the session reports its MCP servers, so a view with no session open can show
    * the last word. Called synchronously from the agent's message loop: it mustn't block or throw.
    * A host that doesn't report them ignores it.

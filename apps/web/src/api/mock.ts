@@ -1790,6 +1790,18 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     this.#update(this.#runtime(threadId), { unread });
   }
 
+  async setBrowser(threadId: ThreadId, browser: boolean) {
+    const runtime = this.#runtime(threadId);
+    if (runtime.summary.thread.role !== undefined) {
+      throw new Error("An orchestrator's browser is the “Orchestrators use your browser” setting.");
+    }
+    const { browser: _was, ...rest } = runtime.summary.thread;
+    const thread = browser ? { ...rest, browser: true } : rest;
+    runtime.summary = { ...runtime.summary, thread };
+    this.#emit({ type: "thread.upsert", thread });
+    return thread;
+  }
+
   /** Per thread, the timer that ends its snooze, as the server's wakes do. */
   readonly #snoozes = new Map<ThreadId, ReturnType<typeof setTimeout>>();
 

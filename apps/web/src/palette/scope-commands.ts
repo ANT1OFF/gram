@@ -218,6 +218,16 @@ export function useScopeCommands(
                   },
                 },
               ]),
+        ...(actions.toggleBrowser === undefined
+          ? []
+          : [
+              {
+                id: `scope:browser:${id}`,
+                label: thread.browser === true ? "Take your browser back" : "Lend it your browser",
+                keywords: "chrome claude in chrome computer use web console click sign in",
+                run: actions.toggleBrowser,
+              },
+            ]),
         ...(actions.toggleDone === undefined || actions.doneHeld
           ? []
           : [

@@ -480,6 +480,11 @@ export const HostSessionOpen = Schema.Struct({
   mcpNoneWithoutToolSearch: Schema.optionalKey(Schema.Boolean),
   noBlockingAsk: Schema.optionalKey(Schema.Boolean),
   peerMessaging: Schema.optionalKey(Schema.Boolean),
+  /**
+   * The session drives the user's browser (`OpenSessionOptions.browser`). A host built before it
+   * was sent drops it, and the session opens without it, never with more than it was meant to have.
+   */
+  browser: Schema.optionalKey(Schema.Boolean),
 });
 export type HostSessionOpen = typeof HostSessionOpen.Type;
 

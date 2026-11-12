@@ -602,6 +602,14 @@ layer(TestServer, { excludeTestServices: true })("server over a real socket", (i
         }).pipe(Effect.flip);
         expect(missing).toMatchObject({ _tag: "NotFound" });
 
+        // The user's own grant of the browser, recorded on the thread and taken back again.
+        expect(
+          yield* client["thread.setBrowser"]({ threadId: thread.id, browser: true }),
+        ).toMatchObject({ id: thread.id, browser: true });
+        expect(
+          yield* client["thread.setBrowser"]({ threadId: thread.id, browser: false }),
+        ).not.toHaveProperty("browser");
+
         const [snapshot] = yield* client["events.subscribe"]().pipe(
           Stream.take(1),
           Stream.runCollect,

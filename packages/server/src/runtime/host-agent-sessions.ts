@@ -103,6 +103,7 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
     mcpNoneWithoutToolSearch: o.mcpNoneWithoutToolSearch,
     noBlockingAsk: o.noBlockingAsk,
     peerMessaging: o.peerMessaging,
+    browser: o.browser,
   }) as HostSessionOpen;
 
 /**

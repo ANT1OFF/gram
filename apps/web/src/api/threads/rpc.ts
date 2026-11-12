@@ -105,6 +105,7 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => {
     label: (threadId, labels) => run(client["thread.label"]({ threadId, labels })),
     markUnread: (threadId, unread) => run(client["thread.markUnread"]({ threadId, unread })),
     snooze: (threadId, until) => run(client["thread.snooze"]({ threadId, until })),
+    setBrowser: (threadId, browser) => run(client["thread.setBrowser"]({ threadId, browser })),
     threadSetBabysit: (threadId, enabled, budget) =>
       run(client["thread.setBabysit"]({ threadId, enabled, ...(budget ? { budget } : {}) })),
     threadSetReviewMonitor: (threadId, enabled) =>

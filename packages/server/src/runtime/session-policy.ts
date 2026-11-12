@@ -39,6 +39,11 @@ export interface SessionPolicy {
   readonly noBlockingAsk?: boolean | undefined;
   /** Send to the user's sessions outside Gram (`OpenSessionOptions.peerMessaging`). */
   readonly peerMessaging?: boolean | undefined;
+  /**
+   * Drive the user's browser (`OpenSessionOptions.browser`): the thread was given it, or is an
+   * orchestrator where `workspaces.orchestratorBrowser` is on, and its agent's consent allows.
+   */
+  readonly browser?: boolean | undefined;
 }
 
 /**

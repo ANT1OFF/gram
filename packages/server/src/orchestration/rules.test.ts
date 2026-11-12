@@ -44,6 +44,7 @@ import {
 } from "./outbox.ts";
 import { bootContext, plainPrompt, rolePrompt, workerPrompt } from "./prompt.ts";
 import {
+  browserFor,
   ADMITTED,
   admittedForRole,
   budgetVerdict,
@@ -3697,5 +3698,51 @@ describe("a roster whose entries follow tiers", () => {
       model: pinned,
       follows: false,
     });
+  });
+});
+
+describe("browserFor", () => {
+  const claude = { model: { agent: "claude" as const, model: "opus" } };
+  const consented = {
+    ...DEFAULT_SETTINGS,
+    agents: { ...DEFAULT_SETTINGS.agents, claudeInChrome: true },
+    workspaces: { orchestratorBrowser: true, workerBrowser: true },
+  };
+
+  it("needs the agent's consent in every scope", () => {
+    const off = { ...consented, agents: { ...consented.agents, claudeInChrome: false } };
+    expect(browserFor({ ...claude, role: "orchestrator" }, "orchestrator", off)).toBe(false);
+    expect(browserFor({ ...claude, browser: true }, "plain", off)).toBe(false);
+    // Codex has its own consent: Claude's says nothing for it.
+    expect(
+      browserFor(
+        { model: { agent: "codex", model: "gpt" }, role: "orchestrator" },
+        "orchestrator",
+        consented,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps each scope's own consent", () => {
+    expect(browserFor({ ...claude, role: "orchestrator" }, "orchestrator", consented)).toBe(true);
+    expect(
+      browserFor({ ...claude, role: "orchestrator" }, "orchestrator", {
+        ...consented,
+        workspaces: { workerBrowser: true },
+      }),
+    ).toBe(false);
+    const spawned = {
+      ...claude,
+      browser: true,
+      spawnedBy: { threadId: "t" as never, feature: "f" },
+    };
+    expect(browserFor(spawned, "worker", consented)).toBe(true);
+    expect(
+      browserFor(spawned, "worker", { ...consented, workspaces: { orchestratorBrowser: true } }),
+    ).toBe(false);
+    // A plain thread has it only where the user gave it.
+    expect(browserFor({ ...claude, browser: true }, "plain", consented)).toBe(true);
+    expect(browserFor(claude, "plain", consented)).toBe(false);
+    expect(browserFor({ ...claude, role: "dream", browser: true }, "plain", consented)).toBe(false);
   });
 });
