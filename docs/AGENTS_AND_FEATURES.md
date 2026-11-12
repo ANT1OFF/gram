@@ -1194,9 +1194,13 @@ every permission, download, client certificate and external-app launch refused:
   your private network yourself by typing its address or a private name (`nas.local`), but a
   public name that resolves to a private address (split-horizon DNS) opens nowhere in the pane.
   Every connection goes through the session's own proxy, which looks each name up once and
-  connects only to the addresses it checked; the system proxy isn't used, so on a network that
-  requires one, web pages don't load in the pane. WebRTC there uses no UDP, and its TCP goes
-  through that proxy too.
+  connects only to the addresses it checked, and reaches a private network only for a request the
+  session's check just allowed there, so WebRTC and a public page's sockets never do. It answers
+  only Gram's own credential, made at each launch, so no other program on your computer can use
+  it. The system proxy isn't used, so on a network that requires one, web pages don't load in the
+  pane. WebRTC there uses no UDP, and its TCP goes through that proxy too. A web page you opened is
+  re-opened there, after the pane closed it for newer threads', only because you opened it; a page
+  that went off loopback any other way, such as an agent's, is never re-opened in this session.
 
 Agents can't open a web page in your Preview tab with `show_panel`, which stays on loopback; they
 browse with the tools below, under their own approvals.

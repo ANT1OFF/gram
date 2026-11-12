@@ -262,27 +262,53 @@ export async function resolvedWithin(
   );
 }
 
+/** A host as the URL parser spells it (`[fd00::1]`, `10.0.0.1`), or `undefined` if it isn't one. */
+export function hostnameOf(host: string): string | undefined {
+  const bracketed = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  try {
+    return new URL(`http://${bracketed}/`).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The key a private-network grant is kept under, the same from a request's URL and from the
+ * proxy's connection: `10.0.0.1:443`, `[fd00::1]:80`, `nas.local:8080`.
+ */
+export function grantKey(host: string, port: number): string | undefined {
+  const hostname = hostnameOf(host);
+  return hostname === undefined || !Number.isInteger(port) || port < 1 || port > 65_535
+    ? undefined
+    : `${hostname}:${port}`;
+}
+
+/** The port a web or socket URL connects to, its scheme's default when it names none. */
+export function portOf(url: URL): number | undefined {
+  if (url.port !== "") return Number(url.port);
+  return DEFAULT_PORT[url.protocol];
+}
+
 /**
  * The addresses the web session's proxy may connect to for one connection the session asks it
  * for, in order, or `undefined` to refuse it. The proxy resolves the name itself and connects to
- * what this returns, so the address checked is the address used. Never loopback; an address is a
- * private one only if the name says so (`nas.local`, `192.168.1.1`), since the session's request
- * check let only a page or load allowed a private network ask for one by name. A public name
- * answering with any private or loopback address, a rebound one, is refused whole, as is a name
- * that answers nothing.
+ * what this returns, so the address checked is the address used. Never loopback. A public name
+ * answering any private or loopback address (a rebound one) is refused whole, as is a name that
+ * answers nothing. A private address or a private name (`10.0.0.1`, `nas.local`) only with
+ * `granted`: the session's request check allowed a request to that very host and port moments
+ * ago, from a page or load allowed a private network. Nothing else reaches one: not WebRTC, not a
+ * preconnect, not a public page's socket, none of which that check ever sees.
  */
 export function proxyTargets(
   host: string,
   addresses: readonly string[] | undefined,
+  granted = false,
 ): readonly string[] | undefined {
-  let hostname: string;
-  try {
-    hostname = new URL(`http://${host.includes(":") ? `[${host}]` : host}/`).hostname;
-  } catch {
-    return undefined;
-  }
+  const hostname = hostnameOf(host);
+  if (hostname === undefined) return undefined;
   const named = hostZone(hostname);
   if (named === "loopback") return undefined;
+  if (named === "private" && !granted) return undefined;
   if (isAddress(hostname)) {
     const literal = hostname.startsWith("[") ? hostname.slice(1, -1) : hostname;
     return addressZone(literal) === "loopback" ? undefined : [literal];
@@ -290,7 +316,7 @@ export function proxyTargets(
   if (addresses === undefined || addresses.length === 0) return undefined;
   const ok = addresses.every((address) => {
     const zone = addressZone(address);
-    return zone !== "loopback" && withinZone(zone, named === "private" ? "private" : "public");
+    return zone !== "loopback" && withinZone(zone, named);
   });
   return ok ? addresses : undefined;
 }

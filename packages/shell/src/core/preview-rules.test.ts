@@ -9,6 +9,7 @@ import {
   previewRequest,
   previewsToClose,
   previewThreadOf,
+  grantKey,
   proxyTargets,
   resolvedWithin,
   webNavigation,
@@ -302,21 +303,41 @@ describe("the web session's proxy targets", () => {
     expect(proxyTargets("example.com", undefined)).toBeUndefined();
   });
 
-  it("lets a private name or address reach its own network, never loopback", () => {
-    expect(proxyTargets("nas.local", ["192.168.1.20"])).toEqual(["192.168.1.20"]);
-    expect(proxyTargets("nas.local", ["127.0.0.1"])).toBeUndefined();
-    expect(proxyTargets("192.168.1.1", undefined)).toEqual(["192.168.1.1"]);
+  it("reaches a private name or address only where the request check granted it", () => {
+    // Granted: a page or load allowed a private network asked for this host and port just now.
+    expect(proxyTargets("nas.local", ["192.168.1.20"], true)).toEqual(["192.168.1.20"]);
+    expect(proxyTargets("192.168.1.1", undefined, true)).toEqual(["192.168.1.1"]);
+    expect(proxyTargets("[fd00::1]", undefined, true)).toEqual(["fd00::1"]);
+    // Not granted: WebRTC, a preconnect, a public page's socket.
+    for (const host of ["10.77.0.9", "192.168.1.1", "169.254.169.254", "fd00::1", "nas.local"]) {
+      expect(proxyTargets(host, ["192.168.1.20"]), host).toBeUndefined();
+    }
     expect(proxyTargets("203.0.113.9", undefined)).toEqual(["203.0.113.9"]);
+  });
+
+  it("never reaches loopback, granted or not", () => {
+    expect(proxyTargets("nas.local", ["127.0.0.1"], true)).toBeUndefined();
     for (const host of [
       "127.0.0.1",
       "0.0.0.0",
       "localhost",
       "a.localhost",
       "::1",
+      "[::1]",
       "0:0:0:0:0:0:0:1",
     ]) {
-      expect(proxyTargets(host, ["93.184.216.34"]), host).toBeUndefined();
+      expect(proxyTargets(host, ["93.184.216.34"], true), host).toBeUndefined();
     }
+  });
+
+  it("keys a grant the same from a request's URL and from the proxy's connection", () => {
+    expect(grantKey("10.0.0.1", 443)).toBe("10.0.0.1:443");
+    expect(grantKey("[fd00::1]", 80)).toBe("[fd00::1]:80");
+    expect(grantKey("fd00::1", 80)).toBe("[fd00::1]:80");
+    expect(grantKey("NAS.local", 8080)).toBe("nas.local:8080");
+    expect(grantKey("0xa000001", 80)).toBe("10.0.0.1:80");
+    expect(grantKey("10.0.0.1", 0)).toBeUndefined();
+    expect(grantKey("bad host", 80)).toBeUndefined();
   });
 });
 

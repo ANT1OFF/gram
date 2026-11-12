@@ -25,6 +25,8 @@ const check = (label, ok, detail) => {
 const contentsAt = (prefix) =>
   allContents.getAllWebContents().find((c) => !c.isDestroyed() && c.getURL().startsWith(prefix));
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** A synthetic private address; nothing is ever sent to it, the proxy's dial maps it home. */
+const LAN = "10.77.0.9";
 
 /** A listener on loopback that records what reached it. */
 async function listener(respond) {
@@ -127,7 +129,7 @@ async function main() {
       );
   });
   const rtc = await rtcListeners();
-  const rtcServers = [
+  const loopbackServers = [
     { urls: `stun:127.0.0.1:${rtc.udpPort}` },
     { urls: `stun:stun.example:${rtc.udpPort}` },
     {
@@ -139,6 +141,20 @@ async function main() {
       credential: "fixture",
     },
   ];
+  // A TURN server on a private network, by its address: the proxy's dial would reach the same
+  // listener, so a connection it let through would be counted.
+  const rtcServers = [
+    ...loopbackServers,
+    {
+      urls: [`turn:${LAN}:${rtc.tcpPort}?transport=tcp`],
+      username: "fixture",
+      credential: "fixture",
+    },
+  ];
+  // A page on the private network that the user opens themselves.
+  const lan = await listener((_request, response) =>
+    response.writeHead(200, { "content-type": "text/html" }).end("<title>LAN page</title>"),
+  );
   // A system proxy that would route any name to a loopback listener: the web session must never
   // use it.
   const systemProxy = { connections: 0 };
@@ -211,6 +227,8 @@ const probe = (name, url, init = {}) =>
       return response.writeHead(200, { "content-type": "text/html" }).end("<title>Plain</title>");
     if (request.url === "/rtc")
       return response.writeHead(200, { "content-type": "text/html" }).end(rtcPage(rtcServers));
+    if (request.url === "/rtc-control")
+      return response.writeHead(200, { "content-type": "text/html" }).end(rtcPage(loopbackServers));
     if (request.url === "/lookups")
       return response.writeHead(200, { "content-type": "text/html" }).end(lookupsPage(G));
     response.writeHead(200, { "content-type": "text/html" }).end(page(site.port));
@@ -299,10 +317,12 @@ const probe = (name, url, init = {}) =>
     },
     // The synthetic public address is the site listener, on its own port only.
     // Anything else at it goes nowhere (the discard port, closed), never out to the internet.
+    // The synthetic private address is the fixture's loopback listeners, on any port, so a
+    // connection the proxy let through to it is seen.
     dialWebAddress: (address, port) =>
       address === "93.184.216.34"
         ? connect({ host: "127.0.0.1", port: port === site.port ? port : 9 })
-        : connect({ host: address, port }),
+        : connect({ host: address === LAN ? "127.0.0.1" : address, port }),
   });
   const T = "t-web";
   const state = () => invoke(Channels.previewStateGet, { threadId: T });
@@ -344,15 +364,33 @@ const probe = (name, url, init = {}) =>
   ]) {
     check(
       `refuses to open ${url}`,
-      (await invoke(Channels.previewOpen, { threadId: T, url })) === false,
+      (await invoke(Channels.previewOpen, { threadId: T, url })) === false &&
+        (await invoke(Channels.previewOpenWeb, { threadId: T, url })) === false,
     );
   }
 
-  // A remote page loads, in the web session, sandboxed, and reaches nothing of this computer.
+  // A web page opens only on the address strip's own channel; loopback never on it.
   const siteUrl = `http://site.example:${site.port}/`;
   check(
+    "the loopback channel refuses a web page, as a re-opened agent page would ask",
+    (await invoke(Channels.previewOpen, { threadId: T, url: siteUrl })) === false &&
+      (await invoke(Channels.previewOpen, {
+        threadId: T,
+        url: "https://agent-chosen.example/act",
+      })) === false &&
+      !allContents.getAllWebContents().some((c) => !c.isDestroyed() && c.session === web),
+  );
+  check(
+    "the web channel refuses loopback",
+    (await invoke(Channels.previewOpenWeb, {
+      threadId: T,
+      url: `http://127.0.0.1:${dev.port}/`,
+    })) === false,
+  );
+  // A remote page loads, in the web session, sandboxed, and reaches nothing of this computer.
+  check(
     "opens a remote page",
-    (await invoke(Channels.previewOpen, { threadId: T, url: siteUrl })) === true,
+    (await invoke(Channels.previewOpenWeb, { threadId: T, url: siteUrl })) === true,
   );
   contentsAt(siteUrl)?.setBackgroundThrottling(false);
   const done = await waitTitle("done:");
@@ -416,7 +454,7 @@ const probe = (name, url, init = {}) =>
   // A site can't send the pane to this computer, or a private network, by a script or a redirect.
   for (const path of ["/go-local", "/redirect-local", "/redirect-rebound", "/redirect-private"]) {
     const seen = gram.seen.length;
-    await invoke(Channels.previewOpen, {
+    await invoke(Channels.previewOpenWeb, {
       threadId: T,
       url: `http://site.example:${site.port}${path}`,
     });
@@ -498,7 +536,7 @@ const probe = (name, url, init = {}) =>
   );
 
   // The web session's connections go through its own proxy, never the system's.
-  await invoke(Channels.previewOpen, {
+  await invoke(Channels.previewOpenWeb, {
     threadId: "t-lookups",
     url: `http://site.example:${site.port}/lookups`,
   });
@@ -511,14 +549,31 @@ const probe = (name, url, init = {}) =>
   })();
   const proxyRule = await web.resolveProxy(`http://site.example:${site.port}/`);
   check(
-    "the web session's proxy is its own SOCKS5 proxy",
-    /^SOCKS5 127\.0\.0\.1:\d+$/.test(proxyRule),
+    "the web session's proxy is its own",
+    /^PROXY 127\.0\.0\.1:\d+$/.test(proxyRule),
     proxyRule,
   );
+  // Another process on this computer, an agent's CLI say, gets nothing from it without the
+  // credential Chromium alone is given.
+  const relay = await new Promise((resolve) => {
+    const socket = connect({ host: "127.0.0.1", port: Number(proxyRule.split(":").at(-1)) });
+    let text = "";
+    socket.on("data", (chunk) => (text += chunk));
+    socket.on("close", () => resolve(text.split("\r\n")[0]));
+    socket.on("error", () => resolve("error"));
+    socket.write(`CONNECT site.example:${site.port} HTTP/1.1\r\nHost: site.example\r\n\r\n`);
+  });
+  check("the proxy is no relay for another process", relay.startsWith("HTTP/1.1 407"), relay);
   check("the system proxy is never used", systemProxy.connections === 0, systemProxy.connections);
   check("a public name still loads through it", lookupsDone.control === "reached", lookupsDone);
+  // Refused at the request check (a failing lookup) or by the proxy (a rebound answer, which a
+  // plain http request gets as the proxy's own 403 page): either way, nothing reaches the listener.
   for (const name of ["flip", "reject", "empty", "throw"]) {
-    check(`${name}.example reaches nothing`, lookupsDone[name] === "blocked", lookupsDone[name]);
+    const reached = gram.seen.filter((request) => request.url.startsWith(`/${name}`));
+    check(`${name}.example reaches nothing`, reached.length === 0, {
+      fetch: lookupsDone[name],
+      reached,
+    });
   }
   check("a rebound connection reached no loopback listener", gram.seen.length === 0, gram.seen);
   check("flip.example was looked up more than once", (lookups["flip.example"] ?? 0) >= 2, lookups);
@@ -530,7 +585,7 @@ const probe = (name, url, init = {}) =>
     }
     return contents?.getTitle();
   };
-  await invoke(Channels.previewOpen, {
+  await invoke(Channels.previewOpenWeb, {
     threadId: "t-rtc",
     url: `http://site.example:${site.port}/rtc`,
   });
@@ -549,6 +604,20 @@ const probe = (name, url, init = {}) =>
     rtc.connections.length === 0,
     rtc.connections,
   );
+  check(
+    "the web session's WebRTC opens no TCP to a private address (TURN over TCP)",
+    rtc.connections.length === 0,
+    rtc.connections,
+  );
+  // The user's own page on the private network still opens from the address strip.
+  await invoke(Channels.previewOpenWeb, { threadId: "t-lan", url: `http://${LAN}:${lan.port}/` });
+  await delay(1500);
+  const lanState = await invoke(Channels.previewStateGet, { threadId: "t-lan" });
+  check(
+    "the user's own private page loads",
+    lanState?.title === "LAN page" && lan.seen.length === 1,
+    { state: lanState, seen: lan.seen.length },
+  );
   // The control: the same page in a session without the policy reaches both, so the probe is real.
   const controlSession = session.fromPartition("fixture-control");
   await controlSession.setProxy({ mode: "direct" });
@@ -556,7 +625,7 @@ const probe = (name, url, init = {}) =>
     webPreferences: { session: controlSession, sandbox: true },
   });
   control.webContents.setBackgroundThrottling(false);
-  await control.webContents.loadURL(`http://127.0.0.1:${site.port}/rtc`).catch(() => {});
+  await control.webContents.loadURL(`http://127.0.0.1:${site.port}/rtc-control`).catch(() => {});
   const controlTitle = await rtcDone(control.webContents);
   check(
     "control: without the policy, the same probe reaches the STUN and TURN listeners",
@@ -567,6 +636,7 @@ const probe = (name, url, init = {}) =>
   win.destroy();
   rtc.close();
   proxyServer.close();
+  lan.server.close();
 
   process.stdout.write(`${JSON.stringify({ type: "fixture.result", results, failures })}\n`);
   for (const listening of [gram, dev, site]) listening.server.close();

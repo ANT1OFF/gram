@@ -834,6 +834,12 @@ interface PreviewPage {
   url: string;
   /** The thread's agent opened it in the pane (`browser_navigate`): shown as it is, never loaded. */
   driven?: boolean;
+  /**
+   * The user typed a web address for it (`openWebPreview`), so it loads in the session with their
+   * sign-ins. Nothing else sets it: any other page, wherever it has gone since, re-opens on
+   * loopback only.
+   */
+  web?: boolean;
   /** A Markdown or HTML file the tab shows instead of a page on a port, by its path. */
   file?: string | undefined;
   /**
@@ -976,10 +982,15 @@ export interface LayoutState
     options?: { previewPane?: boolean },
   ): void;
   /**
-   * Loads `url` in `threadId`'s Preview tab and shows the tab, for the user: ignored unless `url` is
-   * an http(s) URL (`webUrl`). `thread` says the thread is about to be in view, as for `revealPanel`.
+   * Loads `url` in `threadId`'s Preview tab and shows the tab; ignored unless `url` is a loopback
+   * URL. `thread` says the thread is about to be in view, as for `revealPanel`.
    */
   openPreview(threadId: ThreadId, url: string, options?: { thread?: boolean }): void;
+  /**
+   * Loads `url`, a web page off loopback (`webUrl`), in `threadId`'s Preview tab, in the session
+   * with the user's sign-ins: only for what the user typed in the address strip.
+   */
+  openWebPreview(threadId: ThreadId, url: string): void;
   /**
    * Shows `path`, a Markdown or HTML file, in `threadId`'s Preview tab where `previewPane` says
    * there is one, and in the Files panel's preview otherwise. An HTML page may be named with a
@@ -996,7 +1007,12 @@ export interface LayoutState
    * Takes on a page the shell already holds for `threadId`, opened in another window, as this
    * window's without loading it again; the new request's id, or `undefined` when there was one.
    */
-  adoptPreviewPage(threadId: ThreadId, url: string, driven?: boolean): number | undefined;
+  adoptPreviewPage(
+    threadId: ThreadId,
+    url: string,
+    driven?: boolean,
+    web?: boolean,
+  ): number | undefined;
   /** Clears the tab's target if it is still request `id`. */
   consumePanelTarget(tab: TargetedTab, id: number): void;
   dismissPreview(): void;
@@ -1359,8 +1375,7 @@ export const useLayoutStore = create<LayoutState>()(
           }),
         dismissPreview: () => set({ previewSuggestion: undefined }),
         openPreview: (threadId, raw, options) => {
-          // The user's own: any web page. What an agent asks for (`requestPanel`) stays on loopback.
-          const url = loopbackUrl(raw) ?? webUrl(raw);
+          const url = loopbackUrl(raw);
           if (url === undefined) return;
           set((s) => ({
             previewPages: { ...s.previewPages, [threadId]: { id: ++requestSeq, url } },
@@ -1369,13 +1384,26 @@ export const useLayoutStore = create<LayoutState>()(
           }));
           get().revealPanel("preview", options);
         },
-        adoptPreviewPage: (threadId, url, driven) => {
+        openWebPreview: (threadId, raw) => {
+          const url = loopbackUrl(raw) === undefined ? webUrl(raw) : undefined;
+          if (url === undefined) return;
+          set((s) => ({
+            previewPages: { ...s.previewPages, [threadId]: { id: ++requestSeq, url, web: true } },
+          }));
+          get().revealPanel("preview");
+        },
+        adoptPreviewPage: (threadId, url, driven, web) => {
           if (get().previewPages[threadId] !== undefined) return undefined;
           const id = ++requestSeq;
           set((s) => ({
             previewPages: {
               ...s.previewPages,
-              [threadId]: { id, url, ...(driven === true ? { driven } : {}) },
+              [threadId]: {
+                id,
+                url,
+                ...(driven === true ? { driven } : {}),
+                ...(web === true ? { web } : {}),
+              },
             },
           }));
           return id;
@@ -1406,7 +1434,10 @@ export const useLayoutStore = create<LayoutState>()(
           set((s) => {
             const current = s.previewPages[threadId];
             if (current?.id !== page.id || current.url === page.url) return {};
-            return { previewPages: { ...s.previewPages, [threadId]: page } };
+            // Where a page went never makes it the user's web page: only the request's own mark.
+            const { web: _ignored, ...where } = page;
+            const next = current.web === true ? { ...where, web: true } : where;
+            return { previewPages: { ...s.previewPages, [threadId]: next } };
           }),
       };
     },

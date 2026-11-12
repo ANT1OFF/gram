@@ -23,6 +23,8 @@ interface MockPage {
  */
 export class MockPreview implements DesktopPreview {
   readonly opened: string[] = [];
+  /** What it was asked to open in the web session, as `threadId url`. */
+  readonly openedWeb: string[] = [];
   /** The threads whose page the user handed back to its agent, in order. */
   readonly handedBack: string[] = [];
   readonly #pages = new Map<string, MockPage>();
@@ -38,8 +40,33 @@ export class MockPreview implements DesktopPreview {
   }
 
   async open(threadId: string, url: string): Promise<boolean> {
-    const target = loopbackUrl(url) ?? webUrl(url);
+    // As the shell: loopback only here; a web page only through `openWeb`.
+    const target = loopbackUrl(url);
     if (target === undefined) return false;
+    return this.#load(threadId, target);
+  }
+
+  async openWeb(threadId: string, url: string): Promise<boolean> {
+    const target = loopbackUrl(url) === undefined ? webUrl(url) : undefined;
+    if (target === undefined) return false;
+    this.openedWeb.push(`${threadId} ${target}`);
+    const loaded = await this.#load(threadId, target);
+    this.#emit(threadId, { web: true });
+    return loaded;
+  }
+
+  /** E2e hook: the page went to `url` in the shell, as an agent driving it would send it. */
+  moved(threadId: string, url: string): void {
+    this.#emit(threadId, { url, title: new URL(url).host });
+  }
+
+  /** E2e hook: the shell closed `threadId`'s page for newer threads', as `MAX_PREVIEWS` does. */
+  evict(threadId: string): void {
+    this.#pages.get(threadId)?.frame.remove();
+    this.#pages.delete(threadId);
+  }
+
+  async #load(threadId: string, target: string): Promise<boolean> {
     this.opened.push(`${threadId} ${target}`);
     let page = this.#pages.get(threadId);
     if (page === undefined) {

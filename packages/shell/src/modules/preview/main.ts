@@ -7,8 +7,9 @@
 // loads nothing off loopback but what the agent browser allows an agent's page. The web session
 // holds the pages the user opens anywhere else: no agent ever drives or reads it, so what the user
 // signs in to there stays theirs, and it never reaches loopback or a network more private than the
-// page. Its connections all go through a proxy of its own (`core/web-proxy.ts`) that connects only
-// to the addresses it checked, and its WebRTC never uses UDP. Only the user's own address strip
+// page. Its connections all go through a proxy of its own (`core/web-proxy.ts`), which answers only
+// this app's credential, connects only to the addresses it checked, and reaches a private network
+// only where the request check just allowed it; its WebRTC never uses UDP. Only the user's own address strip
 // opens a page in the web session; a local page leaving loopback goes to the link question, and an
 // agent taking the pane starts a page in the local one. A new window goes to the link question.
 
@@ -34,11 +35,14 @@ import {
 import { Channels } from "../../channels.ts";
 import type { ShellLog } from "../../core/log.ts";
 import {
+  grantKey,
+  hostZone,
   MAX_PREVIEWS,
   parsePreviewBounds,
   previewNavigation,
   previewRequest,
   previewsToClose,
+  portOf,
   previewThreadOf,
   resolvedWithin,
   webNavigation,
@@ -46,7 +50,7 @@ import {
   windowRect,
   type WebLookup,
 } from "../../core/preview-rules.ts";
-import { startWebProxy, systemLookup, type WebDial } from "../../core/web-proxy.ts";
+import { boundedLookup, startWebProxy, systemLookup, type WebDial } from "../../core/web-proxy.ts";
 import { parsePaneCommand } from "../../core/browse-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { focusedAppWindow } from "../../electron/decision-windows.ts";
@@ -62,6 +66,11 @@ export type PreviewKind = keyof typeof PREVIEW_PARTITIONS;
 
 /** How many main-frame requests' latest hops are kept, for the redirect that follows each. */
 const HOPS_KEPT = 64;
+
+/** How long a private network's `host:port` stays granted after a request the check allowed. */
+const GRANT_MS = 60_000;
+/** The most private `host:port`s held at once. */
+const GRANTS_KEPT = 256;
 
 /** The size an agent's page lays out at until a window shows it, a laptop's usual pane. */
 const AGENT_PAGE_BOUNDS = { x: 0, y: 0, width: 1280, height: 800 } as const;
@@ -207,15 +216,55 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
 
   const webSession = (ses: Session) => {
     const lookup = options.lookupWebHost ?? systemLookup;
+    /**
+     * The private networks' `host:port`s the request check just allowed, until when: the proxy
+     * connects to a private address or name only while one is held, so only a request that check
+     * saw, from a page or load allowed a private network, ever reaches one. Bounded, the oldest
+     * going first.
+     */
+    const grants = new Map<string, number>();
+    const grant = (url: string) => {
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        return;
+      }
+      const port = portOf(parsed);
+      const key = port === undefined ? undefined : grantKey(parsed.hostname, port);
+      if (key === undefined || hostZone(parsed.hostname) !== "private") return;
+      grants.delete(key);
+      grants.set(key, Date.now() + GRANT_MS);
+      if (grants.size > GRANTS_KEPT) grants.delete(grants.keys().next().value!);
+    };
+    const granted = (key: string) => (grants.get(key) ?? 0) > Date.now();
     // Every connection goes through the session's own proxy, which resolves each name once and
     // connects to the very address it checked; the system's proxy, which could send a name
     // anywhere, is never used. Until it is in place nothing goes out, and if it can't be, nothing
     // ever does.
-    const proxied = startWebProxy({ lookup, dial: options.dialWebAddress })
+    const proxied = startWebProxy({
+      lookup,
+      dial: options.dialWebAddress,
+      granted,
+      onError: (error) =>
+        options.log.warn({ source: "preview", error: String(error) }, "the web proxy failed"),
+    })
       .then(async (proxy) => {
+        // Its credential, for Chromium only: asked for by the proxy's own realm, host and port.
+        app.on("login", (event, contents, _details, authInfo, callback) => {
+          if (
+            !authInfo.isProxy ||
+            authInfo.realm !== proxy.realm ||
+            authInfo.port !== proxy.port ||
+            (contents !== null && contents.session !== ses)
+          )
+            return;
+          event.preventDefault();
+          callback(proxy.username, proxy.password);
+        });
         await ses.setProxy({
           mode: "fixed_servers",
-          proxyRules: `socks5://127.0.0.1:${proxy.port}`,
+          proxyRules: `127.0.0.1:${proxy.port}`,
           // Loopback too, which Chromium would otherwise connect to directly.
           proxyBypassRules: "<-loopback>",
         });
@@ -229,6 +278,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
         );
         return false;
       });
+    const bounded: WebLookup = async (host) => (await boundedLookup(lookup, host)) ?? [];
     /** Each main-frame request's latest URL, by id, so its next redirect knows where it came from. */
     const hops = new Map<number, string>();
     ses.webRequest.onBeforeRequest((details, callback) => {
@@ -251,10 +301,13 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       // known, and again by the proxy for the connection itself.
       const allowed: Promise<boolean> =
         verdict.kind === "resolve"
-          ? resolvedWithin(lookup, verdict.host, verdict.bound)
+          ? resolvedWithin(bounded, verdict.host, verdict.bound)
           : Promise.resolve(verdict.kind === "allow");
       void Promise.all([proxied, allowed]).then(
-        ([ready, ok]) => callback(ready && ok ? {} : { cancel: true }),
+        ([ready, ok]) => {
+          if (ready && ok) grant(details.url);
+          callback(ready && ok ? {} : { cancel: true });
+        },
         () => callback({ cancel: true }),
       );
     });
@@ -293,6 +346,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       ...(browserInspection === undefined ? {} : { browserInspection }),
       ...(action === undefined ? {} : { action }),
       ...(recording ? { recording } : {}),
+      ...(preview.kind === "web" ? { web: true } : {}),
     };
   };
 
@@ -363,8 +417,8 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     });
     view.setVisible(false);
     // WebRTC's sockets don't pass the session's request check: no UDP at all, and TCP only through
-    // the proxy, which checks it like any other connection. Set on the page itself, so every frame
-    // in it holds to it.
+    // the proxy, which never grants them a private network or loopback. Set on the page itself, so
+    // every frame in it holds to it.
     if (kind === "web") view.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
     const preview: Preview = {
       threadId,
@@ -499,20 +553,35 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     return preview;
   };
 
-  ipc.handle(Channels.previewOpen, async (input, event) => {
+  /** Loads `url`, as `rule` reads it, in `threadId`'s page in `kind`'s session. */
+  const openFor = async (
+    input: unknown,
+    sender: WebContents,
+    kind: PreviewKind,
+    rule: (raw: string) => string | undefined,
+  ) => {
     const threadId = previewThreadOf(input);
     const raw: unknown = threadId === undefined ? undefined : Reflect.get(input as object, "url");
-    const local = typeof raw === "string" ? loopbackUrl(raw) : undefined;
-    const web = typeof raw === "string" && local === undefined ? webUrl(raw) : undefined;
-    const url = local ?? web;
+    const url = typeof raw === "string" ? rule(raw) : undefined;
     if (threadId === undefined || url === undefined) return false;
-    const kind: PreviewKind = local === undefined ? "web" : "local";
     const preview = previews.get(threadId) ?? create(threadId, kind);
     touch(preview);
-    preview.watchers.add(event.sender);
+    preview.watchers.add(sender);
     await openIn(preview, kind, url);
     return true;
-  });
+  };
+  // Loopback only: what the app opens for anyone, a port chip, an agent's `show_panel`, a page
+  // re-opened after it was closed for newer threads'.
+  ipc.handle(Channels.previewOpen, (input, event) =>
+    openFor(input, event.sender, "local", loopbackUrl),
+  );
+  // A web page, in the session with the user's sign-ins: only the address strip asks for one, and
+  // a page the user opened there re-opened (`PreviewState.web`). Loopback never opens there.
+  ipc.handle(Channels.previewOpenWeb, (input, event) =>
+    openFor(input, event.sender, "web", (raw) =>
+      loopbackUrl(raw) === undefined ? webUrl(raw) : undefined,
+    ),
+  );
   ipc.on(Channels.previewBounds, (event, input) => {
     const preview = previewFor(input, event.sender);
     const window = BrowserWindow.fromWebContents(event.sender);

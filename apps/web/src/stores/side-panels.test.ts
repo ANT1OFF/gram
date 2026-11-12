@@ -440,13 +440,40 @@ describe("panel requests", () => {
 
     s().openPreview(B, "http://localhost:3000");
     expect(s().previewPages[B]!.url).toBe("http://localhost:3000/");
-    // The user opens any web page; no other scheme.
+    // A web page only from the address strip's own request, which marks it the user's.
     s().openPreview(B, "https://organization.example.invalid/docs");
-    expect(s().previewPages[B]!.url).toBe("https://organization.example.invalid/docs");
-    for (const refused of ["file:///etc/passwd", "javascript:alert(1)", "data:text/html,x"]) {
-      s().openPreview(B, refused);
+    expect(s().previewPages[B]!.url).toBe("http://localhost:3000/");
+    s().openWebPreview(B, "https://organization.example.invalid/docs");
+    expect(s().previewPages[B]).toMatchObject({
+      url: "https://organization.example.invalid/docs",
+      web: true,
+    });
+    for (const refused of [
+      "file:///etc/passwd",
+      "javascript:alert(1)",
+      "data:text/html,x",
+      "http://localhost:3000/",
+    ]) {
+      s().openWebPreview(B, refused);
       expect(s().previewPages[B]!.url).toBe("https://organization.example.invalid/docs");
     }
+  });
+
+  it("never marks a page the user's web page by where it went, only by their request", () => {
+    // A port chip's page that an agent then drove to a public host, unseen.
+    s().openPreview(A, "http://127.0.0.1:5173/");
+    const local = s().previewPages[A]!;
+    s().notePreviewPage(A, { id: local.id, url: "https://agent-chosen.example/act", web: true });
+    expect(s().previewPages[A]).toEqual({ id: local.id, url: "https://agent-chosen.example/act" });
+    // The user's own web page keeps its mark wherever it goes.
+    s().openWebPreview(B, "https://organization.example.invalid/");
+    const web = s().previewPages[B]!;
+    s().notePreviewPage(B, { id: web.id, url: "https://organization.example.invalid/next" });
+    expect(s().previewPages[B]).toEqual({
+      id: web.id,
+      url: "https://organization.example.invalid/next",
+      web: true,
+    });
   });
 
   it("takes on a page another window opened, but never over this window's own", () => {

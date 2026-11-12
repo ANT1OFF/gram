@@ -175,6 +175,11 @@ export interface PreviewState {
   readonly action?: { readonly summary: string; readonly at: number } | undefined;
   /** The agent is recording the page as an animated GIF. */
   readonly recording?: boolean | undefined;
+  /**
+   * The page is in the web session, where the user's sign-ins are: one the user opened from the
+   * address strip (`openWeb`), and only such a page is re-opened there.
+   */
+  readonly web?: boolean | undefined;
 }
 
 /** Where the Preview tab's page shows, in the window page's CSS pixels. */
@@ -194,11 +199,15 @@ export interface PreviewBounds {
  * link question.
  */
 export interface DesktopPreview {
-  /**
-   * Loads `url`, a loopback URL or any other http(s) page (`webUrl`), in `threadId`'s preview; false
-   * when refused or it can't open. A shell older than web pages refuses one off loopback.
-   */
+  /** Loads `url`, a loopback URL, in `threadId`'s preview; false when refused or it can't open. */
   open(threadId: string, url: string): Promise<boolean>;
+  /**
+   * Loads `url`, an http(s) page off loopback (`webUrl`), in `threadId`'s preview, in the session
+   * with the user's sign-ins. Only for what the user typed in the address strip, or a page they
+   * opened that way being re-opened; false when refused or it can't open. Absent from shells
+   * older than web pages.
+   */
+  openWeb?(threadId: string, url: string): Promise<boolean>;
   /**
    * Shows `threadId`'s page at `bounds` in this window, moving it from any other window that showed
    * it; `null` takes it out of this window, keeping it loaded.

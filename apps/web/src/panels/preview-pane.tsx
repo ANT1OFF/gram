@@ -1,6 +1,7 @@
 import {
   checkoutRoots,
   localPortUrl,
+  loopbackUrl,
   previewAddress,
   previewFileKind,
   previewFileTarget,
@@ -60,10 +61,14 @@ const unopened = (url: string): PreviewState => ({
  */
 const loads = new Map<string, { readonly id: number; readonly done: Promise<boolean> }>();
 
-const load = (bridge: DesktopPreview, threadId: string, id: number, url: string) => {
+const load = (bridge: DesktopPreview, threadId: string, id: number, url: string, web: boolean) => {
   const known = loads.get(threadId);
   if (known?.id === id) return known.done;
-  const done = bridge.open(threadId, url);
+  // A page the user typed a web address for opens in the session with their sign-ins; anything
+  // else, wherever it has gone since, on loopback only, which the shell holds to as well.
+  const done = web
+    ? (bridge.openWeb?.(threadId, url) ?? Promise.resolve(false))
+    : bridge.open(threadId, url);
   loads.set(threadId, { id, done });
   return done;
 };
@@ -78,6 +83,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
   const api = useApi();
   const page = useLayoutStore((s) => s.previewPages[threadId]);
   const openPreview = useLayoutStore((s) => s.openPreview);
+  const openWebPreview = useLayoutStore((s) => s.openWebPreview);
   const previewFile = useLayoutStore((s) => s.previewFile);
   const notePreviewPage = useLayoutStore((s) => s.notePreviewPage);
   const adoptPreviewPage = useLayoutStore((s) => s.adoptPreviewPage);
@@ -101,6 +107,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
 
   const pageId = page?.id;
   const driven = page?.driven === true;
+  const web = page?.web === true;
   // A page another window opened, which the shell still holds: this window's requests start empty.
   useEffect(() => {
     if (bridge === undefined || pageId !== undefined) return;
@@ -109,7 +116,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
       if (!live || held === null) return;
       loads.delete(threadId);
       // An agent's page, perhaps on a public host it was allowed, is shown as it is too.
-      const id = adoptPreviewPage(threadId, held.url, held.driver !== undefined);
+      const id = adoptPreviewPage(threadId, held.url, held.driver !== undefined, held.web === true);
       if (id !== undefined) loads.set(threadId, { id, done: Promise.resolve(true) });
     });
     return () => {
@@ -145,12 +152,12 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
         if (live) setState(next ?? unopened(pageUrl));
         return;
       }
-      let opened = await load(bridge, threadId, pageId, pageUrl);
+      let opened = await load(bridge, threadId, pageId, pageUrl, web);
       let next = opened ? await bridge.state(threadId) : null;
       if (opened && next === null) {
         // The shell closed the page for more recent threads': load where it had gone.
         loads.delete(threadId);
-        opened = await load(bridge, threadId, pageId, pageUrl);
+        opened = await load(bridge, threadId, pageId, pageUrl, web);
         next = opened ? await bridge.state(threadId) : null;
       }
       if (live) setState(next ?? unopened(pageUrl));
@@ -158,7 +165,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
     return () => {
       live = false;
     };
-  }, [bridge, threadId, pageId, pageUrl, driven]);
+  }, [bridge, threadId, pageId, pageUrl, driven, web]);
 
   // The shell's page is only this tab's while a page is what it shows: not over Markdown, nor while
   // a file's address is still being asked for.
@@ -209,7 +216,9 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
     const typedFile = previewFileTarget(target);
     const url = typedFile === undefined ? previewAddress(target) : undefined;
     setRefused(url === undefined && typedFile === undefined);
-    if (url !== undefined) openPreview(threadId, url);
+    // The one place a web page is asked for: the user typing it here.
+    if (url !== undefined && loopbackUrl(url) !== undefined) openPreview(threadId, url);
+    else if (url !== undefined) openWebPreview(threadId, url);
     else if (typedFile !== undefined) previewFile(threadId, typedFile, { previewPane: true });
   };
   // A file shows as its path, and its board, while the page is still the file the server served.
