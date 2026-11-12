@@ -103,9 +103,9 @@ export interface ProfileStarterDeps {
     ThreadStoreShape,
     "getSettings" | "listProfiles" | "ensureProject" | "getThread" | "listClosed"
   >;
-  /** With `moveCheckout`, `restSession` and `status` where threads can be moved (`moveOne`). */
+  /** With `relocate` where threads can be moved (`moveOne`). */
   readonly runtimes: Pick<ThreadRuntimesShape, "create" | "close"> &
-    Partial<Pick<ThreadRuntimesShape, "moveCheckout" | "restSession" | "status" | "releaseQueue">>;
+    Partial<Pick<ThreadRuntimesShape, "relocate">>;
   /**
    * The joined machines' records, for whom each was started (`owner`, `onDemand`, where the
    * server records them): a thread moves only between machines started for the same person and
@@ -405,14 +405,8 @@ export const makeProfileStarter = ({
           )
             return yield* refuse(NOT_MOVABLE);
           // Only off a machine that is gone: a thread is never taken from one that is at work.
-          const { moveCheckout, restSession, status } = runtimes;
-          if (
-            hosts === undefined ||
-            machines === undefined ||
-            moveCheckout === undefined ||
-            restSession === undefined ||
-            status === undefined
-          )
+          const { relocate } = runtimes;
+          if (hosts === undefined || machines === undefined || relocate === undefined)
             return yield* refuse(NOT_PLACED_HERE);
           // Asked afresh each time it is run.
           const away = Effect.suspend(() => hosts.get(from)).pipe(
@@ -441,37 +435,36 @@ export const makeProfileStarter = ({
             files = profileFilesOf(decoded.profile);
           }
           const places = yield* placesOn(to);
-          // Nothing of it may live on: an idle session is put to rest, so nothing follows it if the
-          // old machine dials in again. One at work stays. One only opening is the message that
-          // waits for the old machine, and it follows the move (`placed.ts`).
-          const rest = yield* restSession(threadId);
-          if (rest === "working") {
-            const now = yield* status(threadId).pipe(Effect.orElseSucceed(() => "ended" as const));
-            if (now !== "starting") return yield* refuse(THREAD_AT_WORK);
-          }
-
-          // A folder a failed move left there is this thread's and nobody else's: made anew.
-          yield* places.remove(threadId);
-          const { path } = yield* places.make(threadId, files);
-          // The same path, so a session about to open there, and the thread's records, hold.
-          if (path !== checkout.path) {
+          // Fenced in the runtime (`relocate`): from here until the thread is placed on `to`, no
+          // send, turn or session starts on it; any session of it stops, an idle one or one only
+          // opening for a message, which goes back to its queue; and the placement changes only if
+          // nothing started meanwhile. Once it lets go, the queue goes on, on the new machine.
+          let made = false;
+          const prepare = Effect.gen(function* () {
+            // A folder a failed move left there is this thread's and nobody else's: made anew.
             yield* places.remove(threadId);
-            return yield* refuse(
-              "That machine keeps thread folders at another path, so the thread can't move to it.",
-            );
-          }
-          // Asked again just before the thread moves: the old machine may have come back while the
-          // folder was made, and then the thread stays, and what was made goes.
-          if (!(yield* away)) {
-            yield* places.remove(threadId);
-            return yield* refuse(MACHINE_STILL_THERE);
-          }
-          const moved = yield* moveCheckout(threadId, { ...checkout, hostId: to }).pipe(
-            Effect.mapError(() => refuse(NOT_MOVABLE)),
+            const { path } = yield* places.make(threadId, files);
+            made = true;
+            // The same path, so the thread's records hold.
+            if (path !== checkout.path)
+              return yield* refuse(
+                "That machine keeps thread folders at another path, so the thread can't move to it.",
+              );
+            // Asked again just before the thread moves: the old machine may have come back while
+            // the folder was made, and then the thread stays, and what was made goes.
+            if (!(yield* away)) return yield* refuse(MACHINE_STILL_THERE);
+            return { ...checkout, hostId: to };
+          });
+          const moved = yield* relocate(threadId, { from: checkout, prepare }).pipe(
+            Effect.tapError(() => (made ? places.remove(threadId) : Effect.void)),
+            Effect.mapError((error) =>
+              error._tag === "ThreadNotFound"
+                ? refuse(NOT_MOVABLE)
+                : error.message === "the thread is at work"
+                  ? refuse(THREAD_AT_WORK)
+                  : error,
+            ),
           );
-          // What was sent while the old machine was away, and couldn't start a session there, goes
-          // now, on the new one, rather than wait for another message.
-          yield* runtimes.releaseQueue?.(threadId) ?? Effect.void;
           yield* Effect.logInfo("a thread was moved to another machine").pipe(
             Effect.annotateLogs({ threadId, from, to }),
           );

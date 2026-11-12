@@ -4,6 +4,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   applySettingsPatch,
+  InvalidState,
   DEFAULT_SETTINGS,
   HostId,
   HostUnavailable,
@@ -109,19 +110,23 @@ const setup = (
     runtimes: {
       create: () => Effect.die("not created") as never,
       close: () => Effect.die("not closed") as never,
-      moveCheckout: (threadId, checkout) =>
-        Effect.sync(() => {
-          calls.push(`move ${threadId} ${checkout.hostId}`);
-          stored = { ...stored!, checkout };
-          return stored;
+      // As the runtime's fence does (its own tests are in `runtime/thread-runtimes.test.ts`):
+      // a thread at work is refused; any session stops; the placement changes after `prepare`;
+      // the queue goes on once it lets go, whether or not it moved.
+      relocate: (threadId, plan) =>
+        Effect.gen(function* () {
+          if (options.rest === "working" && options.status !== "starting")
+            return yield* new InvalidState({ message: "the thread is at work", threadId });
+          calls.push(`stop ${threadId}`);
+          return yield* Effect.gen(function* () {
+            const checkout = yield* plan.prepare;
+            calls.push(`move ${threadId} ${checkout.hostId}`);
+            const current = stored;
+            if (current === undefined) return yield* new ThreadNotFound({ threadId });
+            stored = { ...current, checkout };
+            return stored;
+          }).pipe(Effect.ensuring(Effect.sync(() => void calls.push(`release ${threadId}`))));
         }),
-      restSession: (threadId) =>
-        Effect.sync(() => {
-          calls.push(`rest ${threadId}`);
-          return options.rest ?? "none";
-        }),
-      status: () => Effect.succeed(options.status ?? "idle"),
-      releaseQueue: (threadId) => Effect.sync(() => void calls.push(`release ${threadId}`)),
     },
     dataDir,
     machines: {
@@ -159,7 +164,7 @@ describe("moving a profile thread to another machine", () => {
       // Anything a failed move left there goes first.
       // What waited in its queue goes, on the new machine.
       expect(calls).toEqual([
-        `rest ${ID}`,
+        `stop ${ID}`,
         `remove ${ID}`,
         `make ${ID}`,
         `move ${ID} ${NEXT}`,
@@ -221,7 +226,13 @@ describe("moving a profile thread to another machine", () => {
       yield* Effect.addFinalizer(() => Effect.sync(cleanup));
       const error = yield* starter.moveOne(ID, NEXT).pipe(Effect.flip);
       expect(error.message).toContain("another path");
-      expect(calls).toEqual([`rest ${ID}`, `remove ${ID}`, `make ${ID}`, `remove ${ID}`]);
+      expect(calls).toEqual([
+        `stop ${ID}`,
+        `remove ${ID}`,
+        `make ${ID}`,
+        `release ${ID}`,
+        `remove ${ID}`,
+      ]);
       expect(current()?.checkout.hostId).toBe(GONE);
     }),
   );
@@ -333,7 +344,13 @@ describe("moving a profile thread leaves nothing of it on the old machine (REVIE
       const error = yield* starter.moveOne(ID, NEXT).pipe(Effect.flip);
       expect(error.message).toBe(MACHINE_STILL_THERE);
       // What was made for it there goes, and the thread is where it was.
-      expect(calls).toEqual([`rest ${ID}`, `remove ${ID}`, `make ${ID}`, `remove ${ID}`]);
+      expect(calls).toEqual([
+        `stop ${ID}`,
+        `remove ${ID}`,
+        `make ${ID}`,
+        `release ${ID}`,
+        `remove ${ID}`,
+      ]);
       expect(current()?.checkout.hostId).toBe(GONE);
     }),
   );
@@ -347,7 +364,7 @@ describe("moving a profile thread leaves nothing of it on the old machine (REVIE
         expect((yield* working.starter.moveOne(ID, NEXT).pipe(Effect.flip)).message).toBe(
           THREAD_AT_WORK,
         );
-        expect(working.calls).toEqual([`rest ${ID}`]);
+        expect(working.calls).toEqual([]);
         for (const ready of [
           { rest: "rested" as const },
           { rest: "working" as const, status: "starting" as const },
@@ -355,7 +372,7 @@ describe("moving a profile thread leaves nothing of it on the old machine (REVIE
           const moving = setup(ready);
           yield* Effect.addFinalizer(() => Effect.sync(moving.cleanup));
           expect((yield* moving.starter.moveOne(ID, NEXT)).moved).toBe(true);
-          expect(moving.calls[0]).toBe(`rest ${ID}`);
+          expect(moving.calls[0]).toBe(`stop ${ID}`);
         }
       }),
   );

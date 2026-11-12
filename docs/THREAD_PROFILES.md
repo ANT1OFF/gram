@@ -90,20 +90,14 @@ Content-Type: application/json
   records them), or from one machine started for nobody to another. Its owner and its lineage's
   stay what they were. A thread whose machine is no longer on record doesn't move: who it is for
   can't be told. Being the platform's service doesn't change this.
-- **Nothing left behind.** A session of the thread's that is idle is put to rest first, so nothing
-  follows it should the old machine dial in again. A thread at work doesn't move. A session that is
-  only opening, a message waiting for the old machine, follows the move. Whenever its wait ends,
-  the thread's machine is read again, and a session that opens on a machine the thread has left
-  meanwhile is closed rather than kept.
-- **The folder.** Made again on that machine at the path it had, with the profile's files when
-  `profile` is given. The thread doesn't keep its files, so the profile is the way to give them.
-  What the thread keeps of its profile (`profileBindingOf`) must be what `profile` gives, or
-  nothing moves. A machine that keeps thread folders at another path is refused, and what was
-  made there is removed.
-- **What carries over.** The thread's id, transcript, owner and records stay as they were. Its next
-  session opens on the new machine. A session already waiting for the old machine to be started
-  (a message sent to it) opens there instead, and the message goes. The agent's own session was on
-  the old machine, so the new one starts fresh, as it does when the agent can't find its session.
+- **Nothing left behind.** The move claims the thread in its runtime before anything is made on
+  the target, and holds the claim until the thread is placed (`ThreadRuntimes.relocate`). While
+  it is held, a send to the thread is refused, and no delivery, turn or session starts. Any
+  session of the thread stops first: an idle one, or one only opening for a message waiting on
+  the old machine, whose message goes back to the queue. A thread at work doesn't move. The
+  thread is placed only if nothing started meanwhile and it is still where it was. Once the claim
+  lets go, the queue goes on, on the new machine, so a message sent while the old machine was away
+  opens a fresh session there.
 - **The answer.** `{ "threadId": "...", "hostId": "...", "moved": true }`. `moved` is false for a
   thread on that machine already. Refusals are as for a start: `409` with `{ "error": "..." }`,
   `400` for a body that isn't the shape, `404` with the hosted features off.
