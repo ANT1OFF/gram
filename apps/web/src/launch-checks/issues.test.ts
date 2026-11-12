@@ -55,6 +55,12 @@ describe("launchIssues", () => {
     expect(launchIssues(checks())).toEqual([]);
   });
 
+  it("reports nothing from a headless server, which looked for nothing on its machine", () => {
+    const none = checks({ tools: [], claudeSignIn: "unknown", ghSignedIn: false });
+    expect(ids(none)).toEqual(["agents-missing", "git-missing", "gh-missing"]);
+    expect(launchIssues({ ...none, headless: true })).toEqual([]);
+  });
+
   it("reports a signed-out Claude with the command, and a missing gh", () => {
     const issues = launchIssues(
       checks({

@@ -251,6 +251,45 @@ test("the right panel can be kept to threads in a repository", async ({ page }) 
   expect(errors).toEqual([]);
 });
 
+test("a headless server reports no setup problems of its own machine", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // What a headless server answers: it looked for nothing, so no tool and no sign-in.
+  const answer = async (headless: boolean) => {
+    await page.evaluate(
+      ([key, value]) => sessionStorage.setItem(key!, value!),
+      [
+        "gram.mock.launchChecks",
+        JSON.stringify({
+          tools: [],
+          claudeSignIn: "unknown",
+          ghSignedIn: false,
+          ...(headless ? { headless: true } : {}),
+        }),
+      ],
+    );
+    await page.reload();
+    await expect(page.getByTestId("app-shell")).toBeVisible();
+  };
+  const banner = page.getByTestId("launch-checks-banner");
+  const chip = page.getByTestId("launch-issues-chip");
+  await mounted(page, "/t/t-flaky");
+  await answer(true);
+  // Neither the banner nor its title-bar chip, on a thread in a repository or on home.
+  await expect(page.getByTestId("thread-view")).toBeVisible();
+  await expect(banner).toHaveCount(0);
+  await expect(chip).toHaveCount(0);
+  await page.goto("/");
+  await expect(page.getByTestId("app-shell")).toBeVisible();
+  await expect(banner).toHaveCount(0);
+  await expect(chip).toHaveCount(0);
+  // The same empty answer from a server that did look is what's missing there.
+  await page.goto("/t/t-flaky");
+  await answer(false);
+  await expect(banner).toContainText("Neither Claude Code nor Codex is installed");
+  expect(errors).toEqual([]);
+});
+
 test("compact, the sidebar is a quiet strip that opens over the page on hover", async ({
   page,
 }) => {
