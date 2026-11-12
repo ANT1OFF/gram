@@ -112,6 +112,7 @@ export const mountGram: MountGram = async (options) => {
       toolCards: shell.toolCards ?? [],
       home: shell.home?.component,
       sidebar: shell.sidebar ?? {},
+      document: shell.document ?? {},
       titles: Object.fromEntries([
         ...(shell.routes ?? []).flatMap((route) =>
           route.title === undefined ? [] : [[route.path, route.title] as const],
@@ -146,6 +147,7 @@ export const mountGram: MountGram = async (options) => {
           ...("threadsPage" in next ? { threadsPage: next.threadsPage ?? {} } : {}),
           ...("newEntry" in next ? { newEntry: next.newEntry } : {}),
           ...("sidebar" in next ? { sidebar: next.sidebar ?? {} } : {}),
+          ...("document" in next ? { document: next.document ?? {} } : {}),
         });
       },
       navigate: (to) => router.navigate({ to: to as "/" }),

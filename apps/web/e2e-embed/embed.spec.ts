@@ -270,6 +270,31 @@ test("the page of every thread and New take the embedding app's words", async ({
   expect(errors).toEqual([]);
 });
 
+test("the browser tab takes the embedding app's title, with the page and the count", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await mounted(page);
+  // Gram's own, until the app names the tab.
+  await expect(page).toHaveTitle(/Gram$/);
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      document: {
+        title: ({ name, needsYou }: { name: string | undefined; needsYou: number }) =>
+          `${needsYou > 0 ? `(${needsYou}) ` : ""}${name ?? "Fixture"} · Fixture`,
+      },
+    });
+  });
+  await expect(page).toHaveTitle(/^(\(\d+\) )?Home · Fixture$/);
+  await page.evaluate(() => (window as unknown as Update).embed.navigate("/govern/policies"));
+  await expect(page).toHaveTitle(/^(\(\d+\) )?Policies · Fixture$/);
+  // Taken away again, Gram's own returns.
+  await page.evaluate(() => (window as unknown as Update).embed.update({ document: undefined }));
+  await expect(page).toHaveTitle(/Gram$/);
+  expect(errors).toEqual([]);
+});
+
 test("the right panel can be kept to threads in a repository", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

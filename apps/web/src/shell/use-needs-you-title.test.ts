@@ -1,13 +1,19 @@
 // @vitest-environment happy-dom
 import type { ProjectId, ThreadId, ThreadStatus, ThreadSummary } from "@gram/contracts";
 import { act, cleanup, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
 import { resetDerivedAsks, useDerivedAsks } from "@/orchestration/needs-you-store";
 import { useAttentionStore } from "@/sidebar/attention";
 import { useThreadsStore } from "@/stores/threads";
 
 import { titleFor, useNeedsYouTitle } from "./use-needs-you-title";
+
+const at = vi.hoisted(() => ({ page: undefined as string | undefined }));
+
+// The page's name as the title bar has it, which the embed slots' own tests cover.
+vi.mock("@/embed/slots", () => ({ useEmbedPageTitle: () => at.page }));
 
 const summary = (id: string, status: ThreadStatus, parked = false): ThreadSummary => ({
   status,
@@ -48,12 +54,28 @@ afterEach(() => {
   resetDerivedAsks();
   useThreadsStore.setState({ byId: {} as never });
   useAttentionStore.setState({ loaded: false, acknowledged: {} });
+  useEmbedShell.setState(EMPTY_SHELL);
+  at.page = undefined;
 });
+
+// An embedding app's tab title, and one that fails.
+const title = ({ name, needsYou }: { name: string | undefined; needsYou: number }) =>
+  `${needsYou > 0 ? `(${needsYou}) ` : ""}${name ?? "Acme"} · Acme`;
+const broken = (): string => {
+  throw new Error("no");
+};
 
 describe("titleFor", () => {
   it("puts the count in front and drops it at zero", () => {
     expect(titleFor(2)).toBe("(2) Gram");
     expect(titleFor(0)).toBe("Gram");
+  });
+
+  it("is the embedding app's when it names the tab, and Gram's own if that throws", () => {
+    expect(titleFor(1, { title }, "Policies")).toBe("(1) Policies · Acme");
+    expect(titleFor(0, { title }, undefined)).toBe("Acme · Acme");
+    expect(titleFor(2, {})).toBe("(2) Gram");
+    expect(titleFor(2, { title: broken }, "Policies")).toBe("(2) Gram");
   });
 });
 
@@ -108,5 +130,26 @@ describe("useNeedsYouTitle", () => {
 
     act(() => void useAttentionStore.getState().acknowledge("a" as ThreadId, "ci:7:abc"));
     expect(document.title).toBe("Gram");
+  });
+});
+
+describe("useNeedsYouTitle in an app in front of Gram", () => {
+  it("follows the page, the count and a replaced title", () => {
+    useEmbedShell.setState({
+      document: { title: ({ name, needsYou }) => `${needsYou}:${name ?? "-"}` },
+    });
+    at.page = "Policies";
+    const { rerender } = renderHook(() => useNeedsYouTitle());
+    expect(document.title).toBe("0:Policies");
+
+    act(() => useThreadsStore.setState({ byId: byId(summary("a", "needsApproval")) }));
+    expect(document.title).toBe("1:Policies");
+
+    at.page = undefined;
+    rerender();
+    expect(document.title).toBe("1:-");
+
+    act(() => useEmbedShell.setState({ document: {} }));
+    expect(document.title).toBe("(1) Gram");
   });
 });
