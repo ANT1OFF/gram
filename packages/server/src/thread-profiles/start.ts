@@ -105,7 +105,7 @@ export interface ProfileStarterDeps {
   >;
   /** With `moveCheckout`, `restSession` and `status` where threads can be moved (`moveOne`). */
   readonly runtimes: Pick<ThreadRuntimesShape, "create" | "close"> &
-    Partial<Pick<ThreadRuntimesShape, "moveCheckout" | "restSession" | "status">>;
+    Partial<Pick<ThreadRuntimesShape, "moveCheckout" | "restSession" | "status" | "releaseQueue">>;
   /**
    * The joined machines' records, for whom each was started (`owner`, `onDemand`, where the
    * server records them): a thread moves only between machines started for the same person and
@@ -469,6 +469,9 @@ export const makeProfileStarter = ({
           const moved = yield* moveCheckout(threadId, { ...checkout, hostId: to }).pipe(
             Effect.mapError(() => refuse(NOT_MOVABLE)),
           );
+          // What was sent while the old machine was away, and couldn't start a session there, goes
+          // now, on the new one, rather than wait for another message.
+          yield* runtimes.releaseQueue?.(threadId) ?? Effect.void;
           yield* Effect.logInfo("a thread was moved to another machine").pipe(
             Effect.annotateLogs({ threadId, from, to }),
           );

@@ -121,6 +121,7 @@ const setup = (
           return options.rest ?? "none";
         }),
       status: () => Effect.succeed(options.status ?? "idle"),
+      releaseQueue: (threadId) => Effect.sync(() => void calls.push(`release ${threadId}`)),
     },
     dataDir,
     machines: {
@@ -156,12 +157,19 @@ describe("moving a profile thread to another machine", () => {
       expect(thread.checkout).toEqual({ kind: "main", path: folder(ID), hostId: NEXT });
       expect(current()?.checkout.hostId).toBe(NEXT);
       // Anything a failed move left there goes first.
-      expect(calls).toEqual([`rest ${ID}`, `remove ${ID}`, `make ${ID}`, `move ${ID} ${NEXT}`]);
+      // What waited in its queue goes, on the new machine.
+      expect(calls).toEqual([
+        `rest ${ID}`,
+        `remove ${ID}`,
+        `make ${ID}`,
+        `move ${ID} ${NEXT}`,
+        `release ${ID}`,
+      ]);
       expect(made[0]?.files).toEqual([{ path: "AGENTS.md", content: "# House rules\n" }]);
       // Asked again: it is there already, and nothing more is done.
       const again = yield* starter.moveOne(ID, NEXT, profile());
       expect(again.moved).toBe(false);
-      expect(calls).toHaveLength(4);
+      expect(calls).toHaveLength(5);
     }),
   );
 
