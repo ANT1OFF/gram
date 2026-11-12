@@ -1,5 +1,5 @@
 import { Link, useMatches, useParams, useRouterState } from "@tanstack/react-router";
-import { createElement, type ReactNode } from "react";
+import { createElement, useEffect, useRef, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
@@ -78,7 +78,7 @@ const NAV_ROW =
  * colour, bold while it is where the window is. Its icon sits in a `RoomyTile`.
  */
 export const ROOMY_ROW =
-  "group/row relative flex h-10 min-w-0 items-center gap-3 rounded-(--radius-sm) pr-2 pl-1 text-left text-body-strong text-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:font-semibold aria-[current=page]:hover:bg-transparent aria-expanded:bg-sidebar-row-hover";
+  "group/row relative flex h-10 scroll-my-5 in-data-phone-drawer:h-11 min-w-0 items-center gap-3 rounded-(--radius-sm) pr-2 pl-1 text-left text-body-strong text-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:active:scale-[0.98] aria-[current=page]:font-semibold aria-[current=page]:hover:bg-transparent aria-expanded:bg-sidebar-row-hover";
 
 /**
  * The square an icon of a `roomy` row sits in. While the row is where the window is, the tile is
@@ -90,7 +90,9 @@ export function RoomyTile({ solid = false, children }: { solid?: boolean; childr
     <span
       data-glide-tile=""
       className={cn(
-        "relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground transition-colors duration-(--dur-fast) group-hover/row:text-foreground group-aria-[current=page]/row:text-background *:size-4.5",
+        // Hover darkens the icon, but never on the current row: there it stays the background's
+        // colour, or it would vanish into its own tile. The icon grows a touch under the pointer.
+        "relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground transition-colors duration-(--dur-fast) group-[:hover:not([aria-current=page])]/row:text-foreground group-aria-[current=page]/row:text-background *:size-4.5 *:transition-transform *:duration-(--dur-fast) *:ease-(--ease-out) motion-safe:group-hover/row:*:scale-110",
         solid && "group-aria-[current=page]/row:bg-foreground",
       )}
     >
@@ -170,22 +172,35 @@ function Count({ count }: { count: number | undefined }) {
  */
 export function EmbedNavigation({
   placement = "foot",
-  inPhoneDrawer = false,
+  bare = false,
 }: {
   placement?: ShellNavigationPlacement;
-  /** In a phone's drawer, which keeps its own shape in either look. */
-  inPhoneDrawer?: boolean;
+  /** Drawn inside another block, which rules it off and pads it: no rule or padding of its own. */
+  bare?: boolean;
 }) {
   const groups = navigationAt(
     useEmbedShell((s) => s.navigation),
     placement,
   );
   const pathname = usePathname();
-  const roomy = useRoomySidebar() && !inPhoneDrawer;
+  const roomy = useRoomySidebar();
+  // The row the window is on is brought into view when the window gets there, and when the list
+  // first shows: in a short window it may be below the fold.
+  const list = useRef<HTMLElement>(null);
+  const at = groups
+    .flatMap((group) => group.items)
+    .find((item) => navigationCurrent(pathname, item.to))?.to;
+  useEffect(() => {
+    if (at === undefined) return;
+    list.current
+      ?.querySelector<HTMLElement>('[aria-current="page"]')
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [at]);
   if (groups.length === 0) return null;
   const main = placement === "main";
   return (
     <nav
+      ref={list}
       aria-label={main ? "Places" : "More places"}
       data-testid={main ? "embed-navigation-main" : "embed-navigation"}
       data-placement={placement}
@@ -195,7 +210,7 @@ export function EmbedNavigation({
         roomy ? "gap-0" : "gap-tight",
         // In the list it scrolls with the rest, a list's step from what follows; at the foot it
         // is a block of its own, ruled off from the list above.
-        !main && "border-t border-border px-inset py-tight",
+        !main && !bare && "border-t border-border px-inset py-tight",
       )}
     >
       {/* Roomy: a solid tile behind the current row's icon, gliding from tile to tile. */}
@@ -211,7 +226,7 @@ export function EmbedNavigation({
               // Small capitals, letter-spaced, with air above: a quiet label for what follows.
               <h2
                 data-testid="embed-navigation-heading"
-                className="flex h-6 items-end px-2 pt-3 pb-1 text-caption font-medium tracking-[0.08em] text-muted-foreground uppercase box-content"
+                className="flex h-5 items-end px-2 pt-3 pb-1 text-caption font-medium tracking-[0.08em] text-muted-foreground uppercase box-content"
               >
                 {group.label}
               </h2>

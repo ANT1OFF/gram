@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useRouterState } from "@tanstack/react-router";
-import { ChevronsLeft, History, Search, Settings } from "lucide-react";
+import { History, Search, Settings } from "lucide-react";
 import { Fragment, useMemo } from "react";
 
 import { useApi } from "@/api/context";
@@ -53,7 +53,7 @@ import { StatusDot, type DotState } from "./status-dot";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useThreadsListed } from "@/embed/store";
-import { EmbedAccount, KeyCaps, ROOMY_ROW, RoomyTile } from "@/embed/slots";
+import { EmbedAccount, EmbedNavigation, KeyCaps, ROOMY_ROW, RoomyTile } from "@/embed/slots";
 import { useLaunchIssues } from "@/launch-checks/banner";
 
 // The overview sidebar's extras: At rest's Pull requests and Done, each gone with nothing in it, the
@@ -185,7 +185,14 @@ function PrRow({ row }: { row: OverviewPrRow }) {
  * Search, written out under the Needs you pill so it is found without knowing its shortcut: it
  * opens the command palette, which finds threads, workers and commands.
  */
-export function OverviewSearch({ roomy = false }: { roomy?: boolean }) {
+export function OverviewSearch({
+  roomy = false,
+  phone = false,
+}: {
+  roomy?: boolean;
+  /** In a phone's drawer, where it is a field and says what it finds. */
+  phone?: boolean;
+}) {
   const hint = useShortcutHint("palette.open");
   // Where an app in front of Gram leaves the threads out of the sidebar, search finds more than them.
   const threadsListed = useThreadsListed();
@@ -221,9 +228,8 @@ export function OverviewSearch({ roomy = false }: { roomy?: boolean }) {
       className="flex h-8 w-full shrink-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground in-data-phone-drawer:h-11 in-data-phone-drawer:min-w-0 in-data-phone-drawer:flex-1 in-data-phone-drawer:gap-2 in-data-phone-drawer:rounded-(--radius-md) in-data-phone-drawer:border in-data-phone-drawer:border-border in-data-phone-drawer:px-3"
     >
       <Search aria-hidden className="size-icon-row shrink-0" />
-      <span className="flex-1 in-data-phone-drawer:hidden">Search</span>
-      <span className="hidden flex-1 truncate in-data-phone-drawer:inline">
-        {threadsListed ? "Search threads" : "Search"}
+      <span className="min-w-0 flex-1 truncate">
+        {phone && threadsListed ? "Search threads" : "Search"}
       </span>
       {hint !== "" && (
         <kbd className="font-sans text-meta tabular-nums in-data-phone-drawer:hidden">{hint}</kbd>
@@ -404,18 +410,11 @@ export function OverviewHistory({ showHistory = true }: { showHistory?: boolean 
 }
 
 /**
- * The `roomy` sidebar's foot, an app in front of Gram's look: History, Settings, the embedding
- * app's account and Collapse, each a labelled row, where the standard look has History and an icon
- * at the foot and Hide and Compact at the head. Over the page from the compact strip it has no
- * Collapse: it is collapsed already, and its head keeps it open.
+ * The `roomy` sidebar's foot, an app in front of Gram's look: the embedding app's other places,
+ * History, Settings and its account, each a labelled row in one block, where the standard look has
+ * History and an icon at the foot. Collapse is an icon at the sidebar's head.
  */
-export function RoomyFoot({
-  showHistory = true,
-  onCollapse,
-}: {
-  showHistory?: boolean;
-  onCollapse?: (() => void) | undefined;
-}) {
+export function RoomyFoot({ showHistory = true }: { showHistory?: boolean }) {
   const historyHint = useShortcutHint("history.open");
   const historyOpen = useHistoryStore((s) => s.open);
   const settingsHint = useShortcutHint("settings.open");
@@ -428,6 +427,8 @@ export function RoomyFoot({
       data-testid="overview-roomy-foot"
       className="flex shrink-0 flex-col gap-px border-t border-border px-inset py-tight"
     >
+      {/* The embedding app's other places lead the foot, in its one block. */}
+      <EmbedNavigation bare />
       {showHistory && (
         <button
           type="button"
@@ -473,20 +474,6 @@ export function RoomyFoot({
         )}
       </Link>
       <EmbedAccount className="py-1" />
-      {onCollapse !== undefined && (
-        <button
-          type="button"
-          data-testid="overview-compact"
-          title="Collapse the sidebar to a strip"
-          onClick={onCollapse}
-          className={ROOMY_ROW}
-        >
-          <RoomyTile>
-            <ChevronsLeft aria-hidden />
-          </RoomyTile>
-          <span className="flex-1 truncate">Collapse</span>
-        </button>
-      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { useParams } from "@tanstack/react-router";
 import {
   Bot,
   ChevronDown,
+  ChevronsLeft,
   FoldHorizontal,
   Gauge,
   Hourglass,
@@ -41,6 +42,7 @@ import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { keyLabel } from "@/keyboard/registry";
 import { EmbedAccount, EmbedNavigation, EmbedSidebarHeader, EmbedSwitcher } from "@/embed/slots";
+import { useScrollFade } from "@/embed/scroll-fade";
 import { useEmbedShell, useRoomySidebar, useThreadsListed } from "@/embed/store";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { formatRelative, formatStamp } from "@/lib/time";
@@ -347,8 +349,11 @@ export function OverviewSidebar({
   const hasHeader = useEmbedShell((s) => s.sidebar.header !== undefined);
   // Before any setup the welcome is the one thing to look at: no usage beside it.
   const beforeSetup = useBeforeSetup();
-  // An app in front of Gram may draw it roomy: taller rows, labelled rows at its foot. Not a phone's.
-  const roomy = useRoomySidebar() && !phone;
+  // An app in front of Gram may draw it roomy: taller rows, labelled rows at its foot. A phone's
+  // drawer keeps its own head, search and New, and takes the look below it.
+  const roomyLook = useRoomySidebar();
+  const roomy = roomyLook && !phone;
+  const scroller = useScrollFade(roomyLook);
   return (
     <aside
       aria-label="Overview"
@@ -382,12 +387,30 @@ export function OverviewSidebar({
               <PanelLeft />
             </Hint>
           )}
+          {onPin === undefined && (
+            <Hint
+              label={withHint("Collapse sidebar to a strip", hideHint)}
+              side="bottom"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Collapse sidebar"
+                  data-testid="overview-compact"
+                  className="text-muted-foreground"
+                  onClick={() => switchOverview("compact")}
+                />
+              }
+            >
+              <ChevronsLeft />
+            </Hint>
+          )}
           <UpdatePill size="xs" />
           <NewEntryMenu />
         </div>
       ) : phone ? (
         <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
-          <OverviewSearch />
+          <OverviewSearch phone />
           <NewEntryMenu />
         </div>
       ) : (
@@ -459,13 +482,23 @@ export function OverviewSidebar({
         </>
       )}
       {/* An app in front of Gram puts its own head and switcher here; nothing on Gram's own. */}
-      {!roomy && <EmbedSidebarHeader className="flex-none px-inset pb-tight" />}
+      {!roomy && (
+        <EmbedSidebarHeader className={cn("flex-none px-inset pb-tight", roomyLook && "pt-1")} />
+      )}
       <EmbedSwitcher placement="sidebar" className="px-inset pb-tight" />
       {/* The spacing scale's named steps: sections a list's step apart (12 px), as a list's
           headings are, so the column reads as one even list rather than blocks with gaps. */}
       <div
+        ref={scroller}
         onKeyDown={overviewKeys}
-        className="flex min-h-0 flex-1 flex-col gap-list overflow-y-auto overscroll-contain px-inset pt-tight pb-list text-body"
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-inset pt-tight pb-list text-body",
+          // Roomy: its headings bring their own air, and the list fades out where more of it
+          // lies past an edge, rather than cutting a row in half.
+          roomyLook
+            ? "gap-0 [scrollbar-width:thin] [mask-image:linear-gradient(to_bottom,transparent,black_var(--fade-top,0px),black_calc(100%-var(--fade-bottom,0px)),transparent)]"
+            : "gap-list",
+        )}
       >
         {/* What needs you, and the way to find anything else, as one block at the top. */}
         <div className="flex flex-col gap-tight">
@@ -473,19 +506,17 @@ export function OverviewSidebar({
           {!phone && <OverviewSearch roomy={roomy} />}
         </div>
         {/* The places an app in front of Gram puts first, above the workspaces and threads. */}
-        <EmbedNavigation placement="main" inPhoneDrawer={phone} />
+        <EmbedNavigation placement="main" />
         {threadsListed && <Orchestrators />}
       </div>
-      {/* The places an app in front of Gram added, with the others you go to. */}
-      <EmbedNavigation inPhoneDrawer={phone} />
-      {roomy ? (
+      {/* The places an app in front of Gram added, with the others you go to: roomy has them in
+          its foot's block. */}
+      {!roomyLook && <EmbedNavigation />}
+      {roomyLook ? (
         <>
-          {!beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
+          {!phone && !beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
           {/* History, Settings, the account and Collapse, each a labelled row. */}
-          <RoomyFoot
-            showHistory={!hidden.includes("doneToday")}
-            onCollapse={onPin === undefined ? () => switchOverview("compact") : undefined}
-          />
+          <RoomyFoot showHistory={!hidden.includes("doneToday")} />
         </>
       ) : (
         <>

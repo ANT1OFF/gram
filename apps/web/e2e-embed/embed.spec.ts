@@ -409,7 +409,7 @@ test("the sidebar can be drawn roomy, with the app's head and account", async ({
   expect(box?.x).toBe(0);
   expect(box?.y).toBe(0);
   await expect(sidebar).toHaveCSS("border-top-left-radius", "0px");
-  // The app's head, with New beside it; Hide and Compact are not at the head.
+  // The app's head, with Collapse and New beside it; Hide is not at the head.
   await expect(sidebar.getByTestId("fixture-brand")).toBeVisible();
   await expect(sidebar.getByTestId("overview-hide")).toHaveCount(0);
   // Headings in small capitals, rows 40 px tall.
@@ -424,12 +424,22 @@ test("the sidebar can be drawn roomy, with the app's head and account", async ({
   await expect.poll(async () => (await glide.boundingBox())?.width).toBe(32);
   // Search's shortcut as key caps.
   await expect(sidebar.getByTestId("key-caps").locator("kbd")).toHaveCount(2);
-  // The foot: History, Settings, the account and Collapse, each a row.
+  // The foot, one block: the app's other places, History, Settings and the account, each a row.
   const foot = sidebar.getByTestId("overview-roomy-foot");
+  await expect(foot.getByTestId("embed-navigation")).toBeVisible();
   await expect(foot.getByTestId("overview-history")).toHaveText("History");
   await expect(foot.getByTestId("overview-settings")).toHaveText("Settings");
   await expect(foot.getByTestId("fixture-account")).toBeVisible();
-  await foot.getByTestId("overview-compact").click();
+  // The current row keeps its icon under the pointer: the background's colour on the solid tile.
+  await limits.hover();
+  const colours = await limits.evaluate((row) => {
+    const tile = row.querySelector("[data-glide-tile]")!;
+    return [getComputedStyle(tile).color, getComputedStyle(document.body).backgroundColor];
+  });
+  expect(colours[0]).toBe(colours[1]);
+  // Collapse is an icon at the head.
+  await expect(foot.getByTestId("overview-compact")).toHaveCount(0);
+  await sidebar.getByTestId("overview-compact").click();
   await expect(page.getByTestId("overview-rail")).toBeVisible();
   // Over the page from the strip it keeps the look, with no Collapse of its own.
   await page.getByTestId("overview-rail").hover({ position: { x: 20, y: 400 } });

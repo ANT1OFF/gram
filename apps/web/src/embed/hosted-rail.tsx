@@ -165,26 +165,29 @@ function StripHead() {
   return (
     <div className="flex flex-col items-center gap-px">
       <EmbedSwitcher placement="rail" className="mb-2" />
-      <Tile
-        label={
-          host === undefined
-            ? needsYouSpoken(own.count, own.parts)
-            : count > 0
-              ? host.words
-              : "Needs you"
-        }
-        testId="hosted-rail-needs-you"
-        onClick={host?.open ?? own.openAsks}
-      >
-        <Inbox aria-hidden className="size-icon-row" />
-        {count > 0 && (
-          <span
-            aria-hidden
-            data-testid="hosted-rail-needs-you-dot"
-            className="absolute top-1 right-1 size-1.5 rounded-full bg-status-needs-mark"
-          />
-        )}
-      </Tile>
+      {/* An embedding app with nothing waiting has no tile: its own row for it is in its places. */}
+      {(host === undefined || count > 0) && (
+        <Tile
+          label={
+            host === undefined
+              ? needsYouSpoken(own.count, own.parts)
+              : count > 0
+                ? host.words
+                : "Needs you"
+          }
+          testId="hosted-rail-needs-you"
+          onClick={host?.open ?? own.openAsks}
+        >
+          <Inbox aria-hidden className="size-icon-row" />
+          {count > 0 && (
+            <span
+              aria-hidden
+              data-testid="hosted-rail-needs-you-dot"
+              className="absolute top-1 right-1 size-1.5 rounded-full bg-status-needs-mark"
+            />
+          )}
+        </Tile>
+      )}
       <Tile
         label={withHint("Search", searchHint)}
         testId="hosted-rail-search"
