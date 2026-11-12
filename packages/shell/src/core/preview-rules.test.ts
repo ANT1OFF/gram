@@ -253,9 +253,13 @@ describe("the web session's requests", () => {
   });
 });
 
-describe("the web session's lookups", () => {
-  const answering = (addresses: readonly string[]) => async () => addresses;
+const answering = (addresses: readonly string[]) => async () => addresses;
+const rejects = () => Promise.reject(new Error("SERVFAIL"));
+const throws = () => {
+  throw new Error("resolver gone");
+};
 
+describe("the web session's lookups", () => {
   it("allows a host only when every address it answers is within the page's zone", async () => {
     expect(await resolvedWithin(answering(["93.184.216.34"]), "example.com", "public")).toBe(true);
     expect(
@@ -269,10 +273,6 @@ describe("the web session's lookups", () => {
   });
 
   it("fails closed on a lookup that rejects, throws or answers nothing", async () => {
-    const rejects = () => Promise.reject(new Error("SERVFAIL"));
-    const throws = () => {
-      throw new Error("resolver gone");
-    };
     expect(await resolvedWithin(rejects, "example.com", "private")).toBe(false);
     expect(await resolvedWithin(throws, "example.com", "private")).toBe(false);
     expect(await resolvedWithin(answering([]), "example.com", "private")).toBe(false);

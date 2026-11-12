@@ -1176,9 +1176,10 @@ Source: [storage](../packages/server/src/git/storage.ts),
 ## Browser, notifications and dictation
 
 The Preview tab opens your app's dev server, a Markdown or HTML file, or any web page you type
-(`example.com` opens as https) or follow a link to. `file:`, `javascript:`, `data:`, `chrome:`,
-`devtools:` and other schemes never open, and a new window goes to your browser through the link
-question. Each thread's page lives in one of two sessions of Gram's own, kept in memory, sharing
+(`example.com` opens as https), and follows links within a web page. `file:`, `javascript:`,
+`data:`, `chrome:`, `devtools:` and other schemes never open. A new window, and a local page's link,
+script or redirect off loopback, go to your browser through the link question: only the address
+strip opens a web page in the pane, so an agent's local page can't send it into your sign-ins. Each thread's page lives in one of two sessions of Gram's own, kept in memory, sharing
 nothing with the app's session, its launch cookie or your browser, sandboxed and without Node, with
 every permission, download, client certificate and external-app launch refused:
 
@@ -1190,7 +1191,12 @@ every permission, download, client certificate and external-app launch refused:
   servers), and nothing it starts (a link, form, redirect, script, frame or subresource) reaches a
   network more private than its own: a site can't reach your office or home network, and a public
   name pointed at a private address is refused like the address. You can still open a page on
-  your private network yourself by typing its address.
+  your private network yourself by typing its address or a private name (`nas.local`), but a
+  public name that resolves to a private address (split-horizon DNS) opens nowhere in the pane.
+  Every connection goes through the session's own proxy, which looks each name up once and
+  connects only to the addresses it checked; the system proxy isn't used, so on a network that
+  requires one, web pages don't load in the pane. WebRTC there uses no UDP, and its TCP goes
+  through that proxy too.
 
 Agents can't open a web page in your Preview tab with `show_panel`, which stays on loopback; they
 browse with the tools below, under their own approvals.

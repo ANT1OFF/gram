@@ -37,7 +37,7 @@ try {
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error(`The fixture didn't finish\n${stderr}`));
-    }, 120_000);
+    }, 240_000);
     createInterface({ input: child.stdout }).on("line", (line) => {
       if (!line.startsWith("{")) return;
       const message = JSON.parse(line);

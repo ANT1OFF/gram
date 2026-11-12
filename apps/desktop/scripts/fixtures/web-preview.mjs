@@ -306,7 +306,7 @@ const probe = (name, url, init = {}) =>
   });
   const T = "t-web";
   const state = () => invoke(Channels.previewStateGet, { threadId: T });
-  const waitTitle = async (prefix, ms = 90_000) => {
+  const waitTitle = async (prefix, ms = 30_000) => {
     for (const end = Date.now() + ms; Date.now() < end; await delay(100)) {
       const now = await state();
       if (now?.title?.startsWith(prefix)) return now;
@@ -358,7 +358,9 @@ const probe = (name, url, init = {}) =>
   const done = await waitTitle("done:");
   if (!done?.title?.startsWith("done:"))
     failures.push(
-      `partial probes: ${await contentsAt(siteUrl)?.executeJavaScript("JSON.stringify(results)")}`,
+      `partial probes: ${await contentsAt(siteUrl)
+        ?.executeJavaScript("JSON.stringify(globalThis.results)")
+        .catch((error) => String(error))}`,
     );
   const probes = done?.title?.startsWith("done:")
     ? JSON.parse(done.title.slice("done:".length))

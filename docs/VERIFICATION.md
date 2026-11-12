@@ -261,12 +261,18 @@ bun run test packages/agents/src/subscription-protocol.test.ts
 ### Preview web session
 
 `apps/desktop/scripts/verify-web-preview.mjs` runs the installed pinned Electron in an owned
-temporary profile with the real preview module and no outside network: synthetic site names are
-mapped to its own loopback listeners, and the web session's lookup is told a public or a rebound
-answer. It checks that a remote page loads in a session apart from the app's and the agents', gets
-no Gram cookie, bridge or Node, reaches nothing on loopback or a private network by fetch, socket,
-script or redirect (a rebound name included), that permissions and downloads are refused, and that
-an agent never gets the user's web page. It proves the session rules, not a real site's behaviour.
+temporary profile with the real preview module and no outside network. The web session's lookup
+answers for synthetic names (public, rebound, alternating, failing, empty), its proxy's dial
+connects the public answer to the fixture's own listener, Chromium's resolver maps every name to
+loopback and an owned HTTP proxy stands as the system's, so a connection around the session's
+proxy would be seen. It checks that a remote page loads in a session apart from the app's and the
+agents', gets no Gram cookie, bridge or Node, and reaches nothing on loopback or a private network
+by fetch, socket, script, redirect, rebound or failing lookup, or WebRTC STUN and TURN over TCP
+(with a control session showing the same probe does reach them); that the system proxy is never
+used; that permissions and downloads are refused; that a local page's link, script or redirect
+(an agent's, as `show_panel` opens it) goes to the link question and never into the web session;
+and that an agent never gets the user's web page. It proves the session rules, not a real site's
+behaviour.
 
 ```sh
 node apps/desktop/scripts/verify-web-preview.mjs /tmp/new-evidence-directory
