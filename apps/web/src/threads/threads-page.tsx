@@ -42,6 +42,7 @@ export function ThreadsPage() {
   // An app in front of Gram may give the page and its button words of its own.
   const title = useThreadsTitle();
   const newLabel = useEmbedShell((s) => s.threadsPage.newLabel);
+  const kinds = useEmbedShell((s) => s.threadsPage.kinds);
   const listings = useMemo(() => {
     const workspaceNames = new Map(
       workspaces.map((state) => [state.workspace.id as string, state.workspace.name]),
@@ -58,10 +59,11 @@ export function ThreadsPage() {
           summary.status === "needsApproval" ||
           summary.status === "needsInput" ||
           summary.pendingRequests.length > 0,
+        kinds,
       },
       query,
     );
-  }, [summaries, workspaces, groups, query]);
+  }, [summaries, workspaces, groups, query, kinds]);
   const shown = listings.slice(0, SHOWN);
 
   return (
