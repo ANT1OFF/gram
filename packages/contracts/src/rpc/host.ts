@@ -135,6 +135,12 @@ export const HostFeature = Schema.Literals([
    * Claude in Chrome on, so a control plane opens no session there that it can't hold off.
    */
   "browser-policy",
+  /**
+   * Points a session's app tools at another of the control plane's MCP endpoints
+   * (`host.sessions.retarget`): this machine's host kept running after Gram quit, whose sessions a
+   * Gram opened again reaches at its new address, with its new token.
+   */
+  "session-retarget",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -996,6 +1002,17 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.sessions.addDirectories", {
     payload: { ...session, paths: Schema.Array(Schema.String) },
     success: Schema.Boolean,
+    error: HostFailed,
+  }),
+  /** Points the session's app tools at `mcp` from now on (`session-retarget`). */
+  Rpc.make("host.sessions.retarget", {
+    payload: {
+      ...session,
+      mcp: Schema.Struct({
+        url: Schema.String,
+        headers: Schema.Record(Schema.String, Schema.String),
+      }),
+    },
     error: HostFailed,
   }),
   Rpc.make("host.sessions.processId", {

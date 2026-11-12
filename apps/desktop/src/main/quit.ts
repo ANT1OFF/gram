@@ -36,6 +36,24 @@ export function serverShutdownFromMessage(message: unknown): ServerShutdown | nu
   return { agents: count(agents), working: count(working) };
 }
 
+/**
+ * How many agent sessions a quitting server left running in the host kept running after Gram
+ * quits, or null for any other message.
+ */
+export function keptRunningFromMessage(message: unknown): number | null {
+  if (typeof message !== "object" || message === null) return null;
+  const { type, agents } = message as Record<string, unknown>;
+  if (type !== "keptRunning") return null;
+  const left = count(agents);
+  return left > 0 ? left : null;
+}
+
+/** The notice for `agents` left running as Gram quits. */
+export const keptRunningNotice = (agents: number) => ({
+  title: `${agents} ${agents === 1 ? "agent keeps" : "agents keep"} running`,
+  body: "Open Gram to see them.",
+});
+
 /** What the progress window shows. */
 export interface QuitProgress {
   /** The step running; `forcing` once the quit is forced. */

@@ -130,7 +130,13 @@ import {
 } from "./update/finalize.ts";
 import { appBuildEnv, runningBuildInfo } from "./build-info.ts";
 import { createSignalQuit } from "./signal-quit.ts";
-import { createQuit, QUIT_DEADLINE_MS, serverShutdownFromMessage } from "./quit.ts";
+import {
+  createQuit,
+  keptRunningFromMessage,
+  keptRunningNotice,
+  QUIT_DEADLINE_MS,
+  serverShutdownFromMessage,
+} from "./quit.ts";
 import { createQuitWindow, isProgressWindow } from "./quit-window.ts";
 import { inheritedServerEnv } from "./server-env.ts";
 import { createServerHost, DEFAULT_RECOVERY, NO_RECOVERY } from "./server-host.ts";
@@ -369,6 +375,10 @@ const server = createServerHost({
     keepAwake.accept(message);
     const level = logLevelFromMessage(message);
     if (level) log.level = level;
+    // Agents left running in the host kept running after Gram quits: said once, as it quits.
+    const kept = keptRunningFromMessage(message);
+    if (kept !== null && Notification.isSupported())
+      new Notification(keptRunningNotice(kept)).show();
     const shutdown = serverShutdownFromMessage(message);
     if (shutdown) {
       quit.report(shutdown);

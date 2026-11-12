@@ -314,7 +314,12 @@ describe("agent sessions through the host process", () => {
       expect(options.appTools).toBeUndefined();
       // The host reached the endpoint itself, and gave the agent the tools it lists.
       expect(reached).toEqual([MCP.url]);
-      expect(options.remoteAppTools).toBe(LISTED);
+      // Behind a pointer a Gram opened again can move (`host.sessions.retarget`): the same tools,
+      // and each call goes to the endpoint the pointer names now.
+      expect(options.remoteAppTools?.tools).toBe(LISTED.tools);
+      expect(yield* Effect.promise(() => options.remoteAppTools!.call("set_title", {}))).toEqual({
+        content: [],
+      });
 
       yield* session.send({ text: "hello" });
       yield* session.steer({ text: "and this" });
@@ -873,6 +878,83 @@ describe("a host's sessions left behind", () => {
       expect(agent.closed).toEqual(["host"]);
       expect(yield* Effect.exit(sessions.session("given-up"))).toMatchObject({ _tag: "Failure" });
       expect(yield* Effect.exit(sessions.session("followed"))).toMatchObject({ _tag: "Success" });
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+  it.live(
+    "kept running after Gram quits, wait for it while it is closed and read their events meanwhile",
+    () =>
+      Effect.gen(function* () {
+        const agent = yield* scriptedAgent("claude", "host");
+        let connectedAt: number | undefined;
+        const sessions = yield* sessionsOnHost(() => Effect.succeed(agent.host), undefined, {
+          unfollowedMs: 150,
+          sweepMs: 25,
+          graceFrom: () => connectedAt,
+        });
+        yield* sessions.open({ handle: "h", agent: "claude", threadId: THREAD, cwd: "/work" });
+        // No Gram open: the agent's events are read and kept, and the session waits.
+        yield* Queue.offer(agent.events, { type: "status", status: "running" });
+        yield* Queue.offer(agent.events, { type: "notice", level: "info", message: "alone" });
+        yield* Effect.sleep("400 millis");
+        expect(agent.closed).toEqual([]);
+        expect(sessions.busy()).toBe(1);
+        expect(sessions.unconfirmed()).toBe(1);
+        // A Gram opens again and has the whole grace from then to follow it.
+        connectedAt = Date.now();
+        yield* Effect.sleep("60 millis");
+        expect(agent.closed).toEqual([]);
+        const replayed = yield* Stream.runCollect(Stream.take(sessions.events("h", 0), 2));
+        expect(replayed.map((e) => e.event.type)).toEqual(["status", "notice"]);
+        yield* sessions.ack("h", 2);
+        expect(sessions.unconfirmed()).toBe(0);
+        // Then, connected and not following it, the session is given up on as ever.
+        yield* Effect.sleep("400 millis");
+        expect(agent.closed).toEqual(["host"]);
+      }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("point their app tools at the Gram that opened again", () =>
+    Effect.gen(function* () {
+      const agent = yield* scriptedAgent("claude", "host");
+      const reached: Array<string> = [];
+      const sessions = yield* sessionsOnHost(
+        () => Effect.succeed(agent.host),
+        (endpoint) =>
+          Effect.sync(() => {
+            reached.push(endpoint.url);
+            return {
+              tools: LISTED.tools,
+              call: async () => ({ content: [{ type: "text" as const, text: endpoint.url }] }),
+            } satisfies RemoteAppTools;
+          }),
+      );
+      yield* sessions.open({
+        handle: "h",
+        agent: "claude",
+        threadId: THREAD,
+        cwd: "/work",
+        mcp: { url: "http://127.0.0.1:1111/mcp", headers: { authorization: "Bearer a" } },
+      });
+      const tools = agent.opened[0]!.remoteAppTools!;
+      const answered = async () => (await tools.call("set_title", {})).content[0];
+      expect(yield* Effect.promise(answered)).toEqual({
+        type: "text",
+        text: "http://127.0.0.1:1111/mcp",
+      });
+      yield* sessions.retarget("h", {
+        url: "http://127.0.0.1:2222/mcp",
+        headers: { authorization: "Bearer b" },
+      });
+      // The agent keeps the tools it opened with; their calls now reach the new address.
+      expect(agent.opened[0]!.remoteAppTools).toBe(tools);
+      expect(yield* Effect.promise(answered)).toEqual({
+        type: "text",
+        text: "http://127.0.0.1:2222/mcp",
+      });
+      expect(reached).toEqual(["http://127.0.0.1:1111/mcp", "http://127.0.0.1:2222/mcp"]);
+      expect(
+        yield* Effect.exit(sessions.retarget("nope", { url: "x", headers: {} })),
+      ).toMatchObject({ _tag: "Failure" });
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 });

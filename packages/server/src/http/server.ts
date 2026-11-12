@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { KeptSessions } from "../runtime/kept-sessions.ts";
 import { answerAsk, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { DecisionHook } from "../embedding/decision-hook.ts";
 import { EventSink } from "../embedding/event-sink.ts";
@@ -878,11 +879,23 @@ export const ServerCore = Layer.unwrap(
                   agentHostsOrHeadless(AgentHostsThroughHost),
                 ),
               ),
+              // What a host kept running after Gram quits still runs from the last Gram, and the
+              // record of what this one runs there.
+              Layer.provideMerge(
+                keptTerminals === undefined
+                  ? Layer.succeed(KeptSessions, KeptSessions.off)
+                  : KeptSessions.layer(config.dataDir),
+              ),
               // Nor a host process: nothing of a thread's runs on this machine.
               Layer.provideMerge(
                 config.headless === true
                   ? LocalHostProcess.layerWith({ hostProcess: false })
-                  : LocalHostProcess.layerKeeping(keptTerminals),
+                  : LocalHostProcess.layerKeeping(
+                      keptTerminals,
+                      keptTerminals === undefined
+                        ? undefined
+                        : { dataDir: config.dataDir, release: config.appVersion },
+                    ),
               ),
             ),
           ),

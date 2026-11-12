@@ -1166,6 +1166,57 @@ Definitions are read from the project's own folder each time, not from the threa
 an agent editing its worktree's copy changes nothing. No agent tool runs a script: only the
 user's click or key does.
 
+## Agents after Gram quits
+
+Off by default. **Settings → General → Running work → Run agents after quit** runs this machine's
+host as a service of your user that outlives the app, the way a [joined machine's](MACHINES.md#the-background-service)
+`gram-host` already runs. It takes effect when Gram next starts.
+
+| Platform | Service                                                                        |
+| -------- | ------------------------------------------------------------------------------ |
+| Linux    | systemd user unit `~/.config/systemd/user/gram-local-host-<id>.service`        |
+| macOS    | launchd agent `~/Library/LaunchAgents/io.github.ant1off.gram.local.<id>.plist` |
+
+`<id>` comes from Gram's data folder, so a release and a checkout of Gram on one machine never
+share one. Windows has no such service, and the setting isn't offered there.
+
+While it is on:
+
+- **Quitting Gram leaves its Claude sessions running.** A turn goes on to its end, and a terminal's
+  shell keeps running. An approval, a question or a plan the agent asks for while Gram is closed
+  waits for you, as on a joined machine. Gram's own tools (`gram` MCP) answer only while Gram is
+  open: a call made while it is closed fails, and the agent sees why.
+- **Opening Gram picks them up.** Each thread whose session is still there gets its turn back, under
+  the same id. What the agent did while Gram was closed is replayed into the transcript, the reply
+  in progress whole, and a request it is waiting on shows again. Nothing is opened afresh and
+  nothing is run twice. The session's tools are pointed at the new Gram.
+- **Quitting with agents still in it shows one notice:** "2 agents keep running. Open Gram to see
+  them."
+- **Settings says where it runs** ("Running as `gram-local-host-….service`, with 2 agent sessions
+  that go on if Gram quits"), and **Stop now** ends it at once, after asking when sessions are in
+  it. Turning the setting off stops it, and what is in it, when Gram next starts, and removes its
+  files.
+- **It never lingers.** It isn't started at login, only by Gram. With no Gram connected and nothing
+  running, it ends after 10 minutes. If a session holds something Gram hasn't seen yet, such as a
+  reply finished while Gram was closed, it waits for Gram to open, for up to 3 days. Stopping it
+  ends everything it started. The host closes its sessions and shells as it stops, and on Linux
+  systemd also stops its whole control group, so even a shell in a session of its own goes.
+- **Releases may differ.** A Gram that finds an earlier release's host still running uses it, since
+  between releases the host protocol only grows (see
+  [machines on different releases](MACHINES.md#machines-on-different-releases)). When nothing of a
+  thread is in it, Gram restarts it on its own release.
+
+Codex sessions, sessions through a gateway profile and memory updates still run inside Gram and
+stop when it quits. The host listens on a Unix socket in Gram's data folder
+(`local-host/host.sock`, or a private folder under `$XDG_RUNTIME_DIR` when that path is too long),
+in a folder only your user can open, and on nothing else. Its environment file carries only `PATH`,
+locale and XDG folder names, `CLAUDE_CONFIG_DIR` and Gram's own settings for it, never a token, key
+or proxy address. Claude Code finds your sign-in where it keeps it, as it does from a terminal. Gram
+keeps a record of the sessions it left running (`local-host/sessions.json`, readable by you only).
+
+On macOS, Gram starts the agent through `launchctl` rather than as its own child: a process the app
+spawns stays in the app's coalition, which macOS can end with the app.
+
 ## Terminals after a restart
 
 A thread's terminal that was still open when Gram quit, crashed, or lost the machine it ran on

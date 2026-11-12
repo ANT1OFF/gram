@@ -1393,6 +1393,20 @@ const NAVIGATION_SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("overview-sidebar").locator(":scope > div").first(),
   },
   {
+    name: "settings-run-after-quit",
+    title:
+      "Settings → General → Running work with Run agents after quit on: where it runs, and Stop now",
+    open: async (page) => {
+      await page.goto("/settings/general");
+      const row = page.getByRole("switch", { name: /Run agents after quit/ });
+      await row.scrollIntoViewIfNeeded();
+      await row.click();
+      await page.getByTestId("kept-host-status").waitFor();
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.locator("#general-running"),
+  },
+  {
     name: "settings-back-named",
     title: "Settings opened from the Gram orchestrator, Back hovered",
     modes: ["dark"],

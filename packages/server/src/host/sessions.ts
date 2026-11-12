@@ -21,6 +21,7 @@ import {
   type HostSessionOpened,
 } from "@gram/contracts";
 import * as Cause from "effect/Cause";
+import * as Queue from "effect/Queue";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -50,6 +51,16 @@ export interface HostSessionsService {
   readonly connectorsSeen: (handle: string) => Stream.Stream<ConnectorsSeen>;
   /** The open session under `handle`, for the calls that act on it. */
   readonly session: (handle: string) => Effect.Effect<AgentSession, HostFailed>;
+  /**
+   * Points the session's app tools at `mcp` from now on: a Gram opened again after it quit, at
+   * its own address and with its own token. A call already running finishes where it started.
+   */
+  readonly retarget: (handle: string, mcp: McpEndpoint) => Effect.Effect<void, HostFailed>;
+  /**
+   * How many open sessions have events the control plane hasn't confirmed: what a Gram that quit
+   * hasn't seen yet. A host kept running after it quit stays up for them.
+   */
+  readonly unconfirmed: () => number;
   /**
    * Hands the session under `handle` input once per `deliveryId` (a send or a steer). A repeat, from
    * a control plane whose connection dropped before it heard back, waits for the first and answers
@@ -112,6 +123,10 @@ type Entry =
         readonly changes: PubSub.PubSub<ConnectorsSeen>;
       };
       readonly closed: Deferred.Deferred<void>;
+      /** Its app tools, which a Gram opened again points at itself; absent without any. */
+      readonly tools: MovableTools | undefined;
+      /** How far its events were read from the agent, and confirmed by the control plane. */
+      readonly progress: { read: number; confirmed: number };
       /** The thread it was opened for, when the request named one. */
       readonly threadId: string | undefined;
       /** Event streams following it now: none once the control plane that opened it let go. */
@@ -165,6 +180,38 @@ export type AppToolsAt = (
   endpoint: McpEndpoint,
 ) => Effect.Effect<RemoteAppTools, Error, Scope.Scope>;
 
+/** App tools whose endpoint can move: each call goes to where they point when it starts. */
+interface MovableTools {
+  readonly tools: RemoteAppTools;
+  readonly moveTo: (endpoint: McpEndpoint) => Effect.Effect<void, Error>;
+}
+
+/**
+ * `toolsAt(first)`, which `moveTo` points elsewhere. The agent keeps the tool list it opened with
+ * (the thread's own), and each move's connection lives in `scope`, the session's.
+ */
+const movableTools = (
+  toolsAt: AppToolsAt,
+  first: McpEndpoint,
+  scope: Scope.Scope,
+): Effect.Effect<MovableTools, Error> =>
+  Effect.gen(function* () {
+    let current = yield* toolsAt(first).pipe(Scope.provide(scope));
+    return {
+      tools: {
+        tools: current.tools,
+        call: (name, args, signal) => current.call(name, args, signal),
+      },
+      moveTo: (endpoint) =>
+        toolsAt(endpoint).pipe(
+          Scope.provide(scope),
+          Effect.map((next) => {
+            current = next;
+          }),
+        ),
+    };
+  });
+
 const openedFrom = (session: AgentSession): HostSessionOpened => ({
   closeToolGate: session.closeToolGate !== undefined,
   stopBackgroundTasks: session.stopBackgroundTasks !== undefined,
@@ -197,11 +244,42 @@ const openedFrom = (session: AgentSession): HostSessionOpened => ({
 export const sessionsOnHost = (
   agents: HostAgents,
   toolsAt: AppToolsAt = appToolsAt,
-  timing: { readonly unfollowedMs?: number; readonly sweepMs?: number } = {},
+  timing: {
+    readonly unfollowedMs?: number;
+    readonly sweepMs?: number;
+    /**
+     * From when an unfollowed session's grace counts at the earliest, or `undefined` while it
+     * doesn't count at all. This machine's host kept running after the app quit (`serveLocal`)
+     * passes when the app last connected, and nothing while none is: a closed app's sessions wait
+     * for it, approvals included, and one that comes back gets the whole grace to follow them.
+     */
+    readonly graceFrom?: () => number | undefined;
+  } = {},
 ): Effect.Effect<HostSessionsService, never, Scope.Scope> =>
   Effect.gen(function* () {
     const root = yield* Effect.scope;
     const unfollowedMs = timing.unfollowedMs ?? UNFOLLOWED_GRACE_MS;
+    /**
+     * Kept running after Gram quits, the host reads each session's events as they come, whether
+     * anything follows them or not, so the agent's work is known (a turn that ended lets the host
+     * end when idle) and its events wait for the Gram that opens again, however long it takes.
+     * Otherwise they are read as a follower asks for them, as ever.
+     */
+    const eagerly = (events: Stream.Stream<AgentEvent>) =>
+      timing.graceFrom === undefined
+        ? Effect.succeed(events)
+        : Effect.gen(function* () {
+            const queue = yield* Queue.unbounded<AgentEvent, Cause.Done>();
+            yield* Stream.runIntoQueue(events, queue).pipe(Effect.forkScoped);
+            return Stream.fromQueue(queue);
+          });
+    /** Whether a session unfollowed since `since` has been given up on by now. */
+    const givenUp = (since: number | undefined, now: number) => {
+      if (since === undefined) return false;
+      if (timing.graceFrom === undefined) return now - since >= unfollowedMs;
+      const from = timing.graceFrom();
+      return from !== undefined && now - Math.max(since, from) >= unfollowedMs;
+    };
     const entries = new Map<string, Entry>();
     /** Each open session's work as its events say, by handle. */
     const activities = new Map<string, Activity>();
@@ -258,11 +336,7 @@ export const sessionsOnHost = (
       Effect.suspend(() => {
         const now = Date.now();
         const stale = [...entries].flatMap(([handle, entry]) =>
-          entry.state === "open" &&
-          entry.unfollowedSince !== undefined &&
-          now - entry.unfollowedSince >= unfollowedMs
-            ? [handle]
-            : [],
+          entry.state === "open" && givenUp(entry.unfollowedSince, now) ? [handle] : [],
         );
         return Effect.forEach(
           stale,
@@ -270,11 +344,7 @@ export const sessionsOnHost = (
             Effect.suspend(() => {
               // Asked again: an earlier close took time, and a stream may have followed it since.
               const entry = entries.get(handle);
-              if (
-                entry?.state !== "open" ||
-                entry.unfollowedSince === undefined ||
-                Date.now() - entry.unfollowedSince < unfollowedMs
-              )
+              if (entry?.state !== "open" || !givenUp(entry.unfollowedSince, Date.now()))
                 return Effect.void;
               return Effect.logInfo("gram-host: ending a session nothing follows any more").pipe(
                 Effect.andThen(close(handle)),
@@ -335,12 +405,18 @@ export const sessionsOnHost = (
             changes,
           };
           const mcp = request.mcp;
+          const progress = { read: 0, confirmed: 0 };
+          let movable: MovableTools | undefined;
           const fiber = yield* agents(request.agent).pipe(
             Effect.flatMap((host) =>
               Effect.flatMap(
                 mcp === undefined
                   ? Effect.succeed(undefined)
-                  : toolsAt(mcp).pipe(
+                  : movableTools(toolsAt, mcp, scope).pipe(
+                      Effect.map((made) => {
+                        movable = made;
+                        return made.tools;
+                      }),
                       Effect.mapError(
                         (error) =>
                           new AgentUnavailable({
@@ -360,19 +436,21 @@ export const sessionsOnHost = (
               ),
             ),
             Effect.flatMap((session) =>
-              Effect.map(
-                sequenceEvents(
+              Effect.flatMap(
+                eagerly(
                   Stream.tap(session.events, (event) =>
                     Effect.sync(() => {
+                      progress.read += 1;
                       const activity = activities.get(handle);
                       if (activity !== undefined) noteActivity(activity, event);
                     }),
                   ),
                 ),
-                (log) => ({
-                  session,
-                  log,
-                }),
+                (events) =>
+                  Effect.map(sequenceEvents(events), (log) => ({
+                    session,
+                    log,
+                  })),
               ),
             ),
             Scope.provide(scope),
@@ -404,6 +482,8 @@ export const sessionsOnHost = (
             log: exit.value.log,
             seen,
             closed,
+            tools: movable,
+            progress,
             threadId: request.threadId,
             followers: 0,
             unfollowedSince: Date.now(),
@@ -458,8 +538,27 @@ export const sessionsOnHost = (
       ack: (handle, seq) =>
         Effect.suspend(() => {
           const entry = entries.get(handle);
-          return entry?.state === "open" ? entry.log.ack(seq) : Effect.void;
+          if (entry?.state !== "open") return Effect.void;
+          entry.progress.confirmed = Math.max(entry.progress.confirmed, seq);
+          return entry.log.ack(seq);
         }),
+      retarget: (handle, endpoint) =>
+        Effect.flatMap(openEntry(handle), (entry) =>
+          entry.tools === undefined
+            ? Effect.fail(new HostFailed({ message: "The session has no app tools to point." }))
+            : entry.tools.moveTo(endpoint).pipe(
+                Effect.mapError(
+                  (error) =>
+                    new HostFailed({
+                      message: `Gram's app tools couldn't be reached: ${error.message}`,
+                    }),
+                ),
+              ),
+        ),
+      unconfirmed: () =>
+        [...entries.values()].filter(
+          (entry) => entry.state === "open" && entry.progress.read > entry.progress.confirmed,
+        ).length,
       connectorsSeen: (handle) =>
         Stream.unwrap(
           Effect.gen(function* () {
