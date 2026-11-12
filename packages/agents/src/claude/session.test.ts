@@ -2627,9 +2627,10 @@ describe("app tools bridge", () => {
 
   it.effect("turns Claude in Chrome on only for a session given the browser", () =>
     Effect.gen(function* () {
+      // Unsaid is off too: an older control plane's host request, or any caller that forgets.
       const unsaid = harness();
       yield* openSession({}).pipe(Effect.provide(unsaid.layer));
-      expect(query(unsaid).options).not.toHaveProperty("extraArgs");
+      expect(query(unsaid).options.extraArgs).toEqual({ "no-chrome": null });
 
       const plain = harness();
       yield* openSession({ browser: false }).pipe(Effect.provide(plain.layer));

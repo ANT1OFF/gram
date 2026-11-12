@@ -156,6 +156,13 @@ export interface HostUpdater {
   readonly start: (release: string) => Stream.Stream<HostUpdateProgress, HostUpdateRefused>;
 }
 
+/**
+ * Why a session isn't opened on a host that doesn't name `browser-policy`: it would drop the
+ * session's `browser` and run the CLI's own default, which may turn Claude in Chrome on.
+ */
+export const HOST_BROWSER_POLICY_MISSING =
+  "Its gram-host is older than this Gram and can't keep Claude in Chrome off. Update Gram there (Settings → Machines), then try again.";
+
 /** What a host without a token store answers. */
 const NO_TOKEN_STORE = "This machine's host doesn't keep a Claude token.";
 
@@ -177,7 +184,7 @@ export const HOST_SERVES: ReadonlyArray<HostCapability> = [
 ];
 
 /** The features this build's host names in its hello, beside its capabilities. */
-export const HOST_FEATURES: ReadonlyArray<HostFeature> = ["thread-places"];
+export const HOST_FEATURES: ReadonlyArray<HostFeature> = ["thread-places", "browser-policy"];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -572,6 +579,14 @@ export interface HostTerminalsConnection {
  * nothing to do.
  */
 export interface HostSessionsConnection {
+  /**
+   * The host holds a session to the browser it was opened with (`browser-policy`). Absent or
+   * false, it may leave Claude in Chrome to the CLI's own default: `open` refuses
+   * (`HOST_BROWSER_POLICY_MISSING`), and this machine's own host leaves its sessions to the
+   * server. Absent on a connection that follows a joined machine across redials, whose host can
+   * change, so there only `open` decides, against the host connected then.
+   */
+  readonly browserPolicy?: boolean;
   readonly open: (
     request: HostSessionOpen,
   ) => Effect.Effect<HostSessionOpened, AgentUnavailable | HostFailed>;
@@ -1233,8 +1248,20 @@ export const connectHost = (
                 ),
         ),
       );
+    const browserPolicy = hostServes(hello, "browser-policy");
     const sessions: HostSessionsConnection = {
-      open: (request) => sessionCall(client["host.sessions.open"](request), isAgentUnavailable),
+      browserPolicy,
+      // Refused before it reaches a host that can't hold the browser off, whoever routed it here.
+      open: (request) =>
+        browserPolicy
+          ? sessionCall(client["host.sessions.open"](request), isAgentUnavailable)
+          : Effect.fail(
+              new AgentUnavailable({
+                agent: request.agent,
+                reason: "startup-failed",
+                message: HOST_BROWSER_POLICY_MISSING,
+              }),
+            ),
       events: (handle, afterSeq) =>
         hostStream(client["host.sessions.events"]({ handle, afterSeq })),
       ack: (handle, seq) =>

@@ -1,39 +1,23 @@
-import { DEFAULT_SETTINGS, type Settings, type ThreadId } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { browserState } from "./browser-chip";
+import { browserChipText } from "./browser-chip";
 
-const claude = { model: { agent: "claude" as const, model: "opus" } };
-const allowed: Settings = {
-  ...DEFAULT_SETTINGS,
-  agents: { ...DEFAULT_SETTINGS.agents, claudeInChrome: true },
-  workspaces: { orchestratorBrowser: true, workerBrowser: true },
-};
+const codex = { model: { agent: "codex" as const, model: "gpt" } };
 
-describe("browserState", () => {
-  it("shows nothing for a thread that wasn't given the browser", () => {
-    expect(browserState(claude, allowed)).toBeUndefined();
-    expect(browserState({ ...claude, role: "dream", browser: true }, allowed)).toBeUndefined();
-    expect(
-      browserState({ ...claude, role: "orchestrator" }, { ...allowed, workspaces: {} }),
-    ).toBeUndefined();
+describe("browserChipText", () => {
+  it("shows nothing until the server answers, and nothing for a thread not lent it", () => {
+    expect(browserChipText(codex, undefined)).toBeUndefined();
+    expect(browserChipText(codex, { state: "off", cannot: "x" })).toBeUndefined();
   });
 
-  it("is on only while every consent it needs is", () => {
-    expect(browserState({ ...claude, browser: true }, allowed)).toEqual({ state: "on" });
-    expect(browserState({ ...claude, role: "orchestrator" }, allowed)).toEqual({ state: "on" });
-    expect(browserState({ ...claude, browser: true }, DEFAULT_SETTINGS)).toEqual({
-      state: "held",
-      why: "Claude in Chrome is off in Settings → Agents.",
-    });
-    const worker = {
-      ...claude,
-      browser: true,
-      spawnedBy: { threadId: "t" as ThreadId, feature: "f" },
-    };
-    expect(browserState(worker, { ...allowed, workspaces: {} })).toEqual({
-      state: "held",
-      why: "Workers' browser is off in Settings → Workspaces.",
-    });
+  it("says what is in effect: on, held back, or not available", () => {
+    expect(browserChipText(codex, { state: "on" })).toMatchObject({ label: "Your browser" });
+    expect(browserChipText(codex, { state: "held", why: "It's off." })?.hint).toBe(
+      "Lent your browser, but it doesn't get it: It's off.",
+    );
+    // A gated Codex thread never claims the browser is on.
+    expect(
+      browserChipText(codex, { state: "unavailable", why: "In Gram's own Codex home." }),
+    ).toEqual({ label: "Browser not available", hint: "In Gram's own Codex home." });
   });
 });

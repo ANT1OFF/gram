@@ -26,6 +26,7 @@ import { gitOn } from "../host/git.ts";
 import {
   connectHost,
   HOST_CAPABILITIES,
+  HOST_FEATURES,
   type HostConnection,
   serveHost,
 } from "../host/protocol.ts";
@@ -93,6 +94,7 @@ const fakeMachine = () => {
           protocol: HOST_PROTOCOL_VERSION,
           hostId: MACHINE,
           capabilities: HOST_CAPABILITIES,
+          features: HOST_FEATURES,
           platform: "linux",
           pid: pid++,
         },

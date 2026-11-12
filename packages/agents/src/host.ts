@@ -158,9 +158,10 @@ export interface OpenSessionOptions {
   /**
    * The user's browser, through the agent's own integration: Claude Code's Claude in Chrome
    * (`--chrome`), Codex's computer use (its plugins' `cua_repl`, the ChatGPT app's `node_repl`).
-   * `true` turns it on, `false` keeps it off where the host can (`--no-chrome`; those plugins and
-   * servers switched off for the thread), so a CLI-wide default never reaches a Gram thread
-   * unasked. Absent leaves the agent's own config as it is. Gram's runtime always says which. A
+   * Only `true` turns it on. Claude holds anything else off (`--no-chrome`), absent included, so a
+   * CLI-wide default never reaches a Gram thread unasked, nor a host session from a control plane
+   * that didn't send it. Codex turns its plugins and servers off on `false`, and leaves the user's
+   * own config on absent (Codex sessions open in the server, whose runtime always says which). A
    * host without either ignores it.
    */
   readonly browser?: boolean;

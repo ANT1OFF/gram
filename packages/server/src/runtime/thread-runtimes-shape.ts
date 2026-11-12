@@ -18,6 +18,7 @@ import type {
   GramUIMessage,
   SendResult,
   WorkerQuiet,
+  ThreadBrowserStatus,
   ThreadNotFound,
   RequestAnswer,
   RespondManyResult,
@@ -591,6 +592,11 @@ export interface ThreadRuntimesShape {
   setSessionPolicy(port: SessionPolicyPort): Effect.Effect<void>;
   /** Who the thread is to the app tools, by the session policy; `plain` for an unknown thread. */
   audienceOf(threadId: ThreadId): Effect.Effect<ToolAudience>;
+  /**
+   * Whether the thread's next session gets the user's browser, by its session policy now and what
+   * its session can carry (`browserStatus`).
+   */
+  browserStatusOf(threadId: ThreadId): Effect.Effect<ThreadBrowserStatus, ThreadNotFound>;
   /**
    * Sends one server-authored input per `(threadId, key)` as a turn of its own, as soon as the
    * thread can take it. It is held in memory and never

@@ -1219,13 +1219,21 @@ tailnet's admin page). Every consent is off by default, and each one is separate
 
 These are user-only settings: no agent can turn one on through `settings_propose`. Gram reads them
 again at each session open, so a change applies from a thread's next session. Giving or taking it
-with ⌘K reopens the session once it is idle. The pane header shows **Your browser** while a thread
-has it, struck through while a consent holds it back. A profile's thread and a dream never get it.
+with ⌘K reopens the session once it is idle. The pane header shows what the server says the
+thread's next session gets (`thread.browserStatus`): **Your browser** while it has it, struck
+through while a consent holds it back, and **Browser not available** where its session can't have
+it at all: a Codex thread in Gram's own Codex home, a thread on a gateway, or one started from a
+profile. There ⌘K's lend command is dimmed with the reason, and `thread.setBrowser` refuses it. A
+dream never gets it.
 
 **Claude.** A session given the browser starts with Claude Code's `--chrome`. There is no Agent SDK
 option for it, so Gram passes the flag through `extraArgs`. Every other Gram session starts with
 `--no-chrome`, so Claude Code's own "Enabled by default" setting or `CLAUDE_CODE_ENABLE_CFC` never
-reaches a thread you didn't give it. It needs the Claude extension installed and connected in
+reaches a thread you didn't give it. A session that doesn't say is held off too. A session runs
+in this machine's or a joined machine's gram-host only where that host names the `browser-policy`
+feature: an older host would drop the denial and run the CLI's own default. This machine's older
+host leaves its sessions to the server, and a joined machine's older host is refused until Gram is
+updated there. It needs the Claude extension installed and connected in
 Chrome, and a claude.ai sign-in: a thread on a gateway or an API key doesn't get it. Its tools are
 `mcp__claude-in-chrome__*`. Under a workspace whose outward gate asks about everything
 (supervised), Gram asks before each action in the browser (click, type, navigate, run script,

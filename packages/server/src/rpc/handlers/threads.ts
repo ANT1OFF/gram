@@ -382,6 +382,11 @@ export const threadHandlers = Effect.gen(function* () {
           });
         }
         if ((thread.browser === true) === browser) return thread;
+        // Lending it where the session can't carry it would promise what it never gets.
+        if (browser) {
+          const { cannot } = yield* runtimes.browserStatusOf(threadId);
+          if (cannot !== undefined) return yield* new InvalidState({ message: cannot, threadId });
+        }
         const updated = yield* runtimes.updateThread(threadId, (t) => {
           const { browser: _browser, ...rest } = t;
           return browser ? { ...rest, browser: true } : rest;
@@ -389,6 +394,7 @@ export const threadHandlers = Effect.gen(function* () {
         yield* runtimes.reloadSession(threadId);
         return updated;
       }),
+    "thread.browserStatus": ({ threadId }) => runtimes.browserStatusOf(threadId),
     "thread.pin": ({ threadId, pinned }) =>
       runtimes.updateThread(threadId, (t) => ({ ...t, pinned })).pipe(Effect.asVoid),
     // Parking and closing drop the thread's git watcher; returning only once it's released.

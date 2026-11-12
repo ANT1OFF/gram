@@ -988,7 +988,9 @@ export const makeClaudeHost = (
           child.stderr.setEncoding("utf8").on("data", (data: string) => options.stderr?.(data));
           return child;
         },
-        ...(o.browser === undefined ? {} : { extraArgs: chromeArgs(o, gateway !== undefined) }),
+        // Always said: a session that wasn't lent the browser, `browser` unsaid included, runs
+        // with `--no-chrome`, never the CLI's own default.
+        extraArgs: chromeArgs(o, gateway !== undefined),
         includePartialMessages: true,
         forwardSubagentText: true,
         canUseTool,

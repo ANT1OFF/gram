@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { withProfile } from "../thread-profiles/policy.ts";
 import type { SystemDelivery } from "./system-delivery.ts";
+import { browserStatus } from "./browser-status.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
 /** What a thread's role adds to every agent session it opens. */
@@ -146,21 +147,28 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
       ? Effect.succeed(undefined)
       : sessionPolicy.switchHandoff(thread);
 
-  const methods: Pick<ThreadRuntimesShape, "setSessionPolicy" | "audienceOf"> = {
-    setSessionPolicy: (port) =>
-      Effect.sync(() => {
-        sessionPolicy = port;
-      }),
-    audienceOf: (threadId) =>
-      store.getThread(threadId).pipe(
-        Effect.flatMap((thread) =>
-          thread.role === "dream"
-            ? Effect.succeed("dream" as const)
-            : Effect.map(policyFor(thread), (policy) => policy.audience),
+  const methods: Pick<ThreadRuntimesShape, "setSessionPolicy" | "audienceOf" | "browserStatusOf"> =
+    {
+      setSessionPolicy: (port) =>
+        Effect.sync(() => {
+          sessionPolicy = port;
+        }),
+      audienceOf: (threadId) =>
+        store.getThread(threadId).pipe(
+          Effect.flatMap((thread) =>
+            thread.role === "dream"
+              ? Effect.succeed("dream" as const)
+              : Effect.map(policyFor(thread), (policy) => policy.audience),
+          ),
+          Effect.orElseSucceed((): ToolAudience => "plain"),
         ),
-        Effect.orElseSucceed((): ToolAudience => "plain"),
-      ),
-  };
+      browserStatusOf: (threadId) =>
+        Effect.gen(function* () {
+          const thread = yield* store.getThread(threadId);
+          const settings = yield* store.getSettings;
+          return browserStatus(thread, settings, yield* policyFor(thread));
+        }),
+    };
 
   return { policyFor, opening, modeAfterSwitch, switchHandoff, methods };
 };

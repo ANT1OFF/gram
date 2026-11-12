@@ -8,6 +8,7 @@ import {
   HostFailed,
   HostId,
   HOST_PROTOCOL_VERSION,
+  HostSessionOpen,
   HostUnavailable,
   LOCAL_HOST_ID,
   type ProfileId,
@@ -23,6 +24,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import {
@@ -43,10 +45,13 @@ import { gitOn } from "./git.ts";
 import { followingSessions } from "./following-sessions.ts";
 import {
   connectHost,
+  HOST_BROWSER_POLICY_MISSING,
   HOST_CAPABILITIES,
+  HOST_FEATURES,
   HOST_SERVES,
   type HostConnection,
   type HostSessionsConnection,
+  helloMismatch,
   serveHost,
 } from "./protocol.ts";
 import { sessionsOnHost } from "./sessions.ts";
@@ -139,48 +144,64 @@ const scriptedAgent = (kind: AgentKind, where: string) =>
     return { host, calls, inputs, opened, closed, events, gate };
   });
 
-/** A host process's sessions over a real stream, and the server's agent routed through it. */
-const routed = Effect.gen(function* () {
-  const onHost = yield* scriptedAgent("claude", "host");
-  /** The endpoints the host reached for a session's app tools. */
-  const reached: Array<string> = [];
-  const inServer = yield* scriptedAgent("claude", "server");
-  const { host: hostEnd, control } = yield* streamPair;
-  const hostSocket = yield* NodeSocket.fromDuplex(Effect.succeed(hostEnd));
-  yield* Effect.forkScoped(
-    serveHost(hostSocket, {
-      hello: {
-        protocol: HOST_PROTOCOL_VERSION,
-        hostId: LOCAL_HOST_ID,
-        capabilities: HOST_CAPABILITIES,
-        platform: process.platform,
-        pid: 1,
-      },
-      files: filesOn(yield* Proc),
-      reads: fileReadsOn(yield* Proc),
-      attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
-      repos: reposOn(yield* Proc, REPOS),
-      worktrees: yield* Worktrees,
-      git: gitOn(yield* Proc),
-      terminals: yield* terminalsOnHost,
-      sessions: yield* sessionsOnHost(
-        (agent) =>
-          agent === "claude"
-            ? Effect.succeed(onHost.host)
-            : Effect.fail(new AgentUnavailable({ agent, message: "not here" })),
-        (endpoint) =>
-          Effect.sync(() => {
-            reached.push(endpoint.url);
-            return LISTED;
-          }),
-      ),
-      scan: Effect.succeed({ listening: new Map(), children: new Map() }),
-    }),
-  );
-  const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)));
-  const agent = agentHostThroughHost(connection.sessions, connection.gone, inServer.host);
-  return { onHost, inServer, agent, connection, hostEnd, reached };
-});
+/**
+ * A host process's sessions over a real stream, and the server's agent routed through it. The
+ * host names `features` in its hello: this build's, or an older host's.
+ */
+const routedWith = (features: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const onHost = yield* scriptedAgent("claude", "host");
+    /** The endpoints the host reached for a session's app tools. */
+    const reached: Array<string> = [];
+    const inServer = yield* scriptedAgent("claude", "server");
+    const { host: hostEnd, control } = yield* streamPair;
+    const hostSocket = yield* NodeSocket.fromDuplex(Effect.succeed(hostEnd));
+    yield* Effect.forkScoped(
+      serveHost(hostSocket, {
+        hello: {
+          protocol: HOST_PROTOCOL_VERSION,
+          hostId: LOCAL_HOST_ID,
+          capabilities: HOST_CAPABILITIES,
+          features,
+          platform: process.platform,
+          pid: 1,
+        },
+        files: filesOn(yield* Proc),
+        reads: fileReadsOn(yield* Proc),
+        attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
+        repos: reposOn(yield* Proc, REPOS),
+        worktrees: yield* Worktrees,
+        git: gitOn(yield* Proc),
+        terminals: yield* terminalsOnHost,
+        sessions: yield* sessionsOnHost(
+          (agent) =>
+            agent === "claude"
+              ? Effect.succeed(onHost.host)
+              : Effect.fail(new AgentUnavailable({ agent, message: "not here" })),
+          (endpoint) =>
+            Effect.sync(() => {
+              reached.push(endpoint.url);
+              return LISTED;
+            }),
+        ),
+        scan: Effect.succeed({ listening: new Map(), children: new Map() }),
+      }),
+    );
+    const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)));
+    const agent = agentHostThroughHost(connection.sessions, connection.gone, inServer.host);
+    return { onHost, inServer, agent, connection, hostEnd, reached };
+  });
+const routed = routedWith(HOST_FEATURES);
+
+/** A host built before `browser-policy`, which drops a session's `browser` and runs the CLI's own. */
+const OLDER_FEATURES = HOST_FEATURES.filter((feature) => feature !== "browser-policy");
+const OLDER_HELLO = {
+  protocol: HOST_PROTOCOL_VERSION,
+  hostId: LOCAL_HOST_ID,
+  capabilities: HOST_CAPABILITIES,
+  platform: "linux",
+  pid: 1,
+};
 
 /** The app tools the endpoint lists, as the host hands them to the agent. */
 const LISTED: RemoteAppTools = {
@@ -206,6 +227,64 @@ const eventually = <A>(check: () => A | undefined, label: string) =>
   });
 
 const layer = Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)));
+
+describe("a host that can't hold the browser off", () => {
+  it("drops a session's browser denial, as an older host's schema reads the request", () => {
+    // The reviewer's case: a host of the release before reads the request without `browser`.
+    const { browser: _, ...olderFields } = HostSessionOpen.fields;
+    const older = Schema.decodeUnknownSync(Schema.Struct(olderFields));
+    const read = older({
+      handle: "h",
+      agent: "claude",
+      threadId: THREAD,
+      cwd: "/w",
+      browser: false,
+    });
+    expect(read).not.toHaveProperty("browser");
+    expect(helloMismatch({ ...OLDER_HELLO, features: OLDER_FEATURES })).toBeUndefined();
+  });
+
+  it.live(
+    "this machine's older host leaves the session to the server, which holds Chrome off",
+    () =>
+      Effect.gen(function* () {
+        const { onHost, inServer, agent } = yield* routedWith(OLDER_FEATURES);
+        yield* agent.open({ threadId: THREAD, cwd: "/work", browser: false });
+        expect(onHost.opened).toEqual([]);
+        expect(inServer.opened).toHaveLength(1);
+        expect(inServer.opened[0]!.browser).toBe(false);
+      }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("a joined machine's older host is refused, saying to update it, and opens nothing", () =>
+    Effect.gen(function* () {
+      const { onHost, inServer, connection } = yield* routedWith(OLDER_FEATURES);
+      const onMachine = agentHostOnMachine(
+        followingSessions(Effect.succeed(connection)),
+        () => false,
+        inServer.host,
+        "box",
+        () => "http://100.64.0.1:4317",
+      );
+      const error = yield* onMachine
+        .open({ threadId: THREAD, cwd: "/work", browser: false })
+        .pipe(Effect.scoped, Effect.flip);
+      expect(error).toMatchObject({ _tag: "AgentUnavailable", agent: "claude" });
+      expect(error.message).toBe(`On box: ${HOST_BROWSER_POLICY_MISSING}`);
+      expect(onHost.opened).toEqual([]);
+      expect(inServer.opened).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("a host of this build carries the denial to the agent", () =>
+    Effect.gen(function* () {
+      const { onHost, inServer, agent } = yield* routed;
+      yield* agent.open({ threadId: THREAD, cwd: "/work", browser: false });
+      expect(inServer.opened).toEqual([]);
+      expect(onHost.opened[0]!.browser).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
 
 describe("agent sessions through the host process", () => {
   it.live("opens a Claude session on the host, its calls and events crossing in order", () =>
@@ -408,6 +487,7 @@ const redialling = Effect.gen(function* () {
       protocol: HOST_PROTOCOL_VERSION,
       hostId: MACHINE,
       capabilities: HOST_SERVES,
+      features: HOST_FEATURES,
       platform: process.platform,
       pid: 7,
     },

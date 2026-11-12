@@ -11,6 +11,7 @@ import {
   PermissionMode,
   RequestAnswer,
   Thread,
+  ThreadBrowserStatus,
   ThreadLabels,
   UserInput,
 } from "../domain.ts";
@@ -322,6 +323,12 @@ export const ThreadRpcs = RpcGroup.make(
    * `workspaces.orchestratorBrowser` setting. The agent's own consent (`browserUseAllowed`) still
    * decides whether a session gets it.
    */
+  /** Whether the thread's sessions get the user's browser now, as the server opens them. */
+  Rpc.make("thread.browserStatus", {
+    payload: threadRef,
+    success: ThreadBrowserStatus,
+    error: errors(ThreadNotFound),
+  }),
   Rpc.make("thread.setBrowser", {
     payload: { ...threadRef, browser: Schema.Boolean },
     success: Thread,

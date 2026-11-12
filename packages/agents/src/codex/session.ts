@@ -659,7 +659,7 @@ const readTurns = (rpc: CodexRpc, threadId: string, limit: number | undefined) =
  * session resumed without one; for a new session, `gateway` on a gateway profile,
  * `owned` for a native gated session, and `user` otherwise.
  */
-const codexHomeFor = (
+export const codexHomeFor = (
   o: Pick<OpenSessionOptions, "codexHome" | "resumeId" | "model" | "outwardGate">,
 ): CodexHome =>
   o.codexHome ??

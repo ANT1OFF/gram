@@ -128,6 +128,13 @@ export const HostFeature = Schema.Literals([
    * takes no such thread.
    */
   "thread-places",
+  /**
+   * Holds a session to the browser it was opened with (`HostSessionOpen.browser`): on only when
+   * it says `true`, and off (Claude Code's `--no-chrome`) otherwise, a request that doesn't say
+   * included. A host without it drops the field and leaves the CLI's own default, which may turn
+   * Claude in Chrome on, so a control plane opens no session there that it can't hold off.
+   */
+  "browser-policy",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -481,8 +488,10 @@ export const HostSessionOpen = Schema.Struct({
   noBlockingAsk: Schema.optionalKey(Schema.Boolean),
   peerMessaging: Schema.optionalKey(Schema.Boolean),
   /**
-   * The session drives the user's browser (`OpenSessionOptions.browser`). A host built before it
-   * was sent drops it, and the session opens without it, never with more than it was meant to have.
+   * The session drives the user's browser (`OpenSessionOptions.browser`); a host that serves
+   * `browser-policy` holds an absent one off. A host built before it drops the field and leaves
+   * the CLI's own default, so a control plane sends no session to a host that doesn't name
+   * `browser-policy` (`agentHostThroughHost`, `agentHostOnMachine`).
    */
   browser: Schema.optionalKey(Schema.Boolean),
 });

@@ -904,6 +904,20 @@ export const Thread = Schema.Struct({
 });
 export type Thread = typeof Thread.Type;
 
+/**
+ * Whether a thread's sessions get the user's browser, as the server opens them
+ * (`thread.browserStatus`): `off` when it wasn't lent it, `on`, `held` when a consent in Settings
+ * holds it back (`why`), and `unavailable` when this thread's session can't have it at all (`why`):
+ * a Codex thread in Gram's own Codex home, one on a gateway, one started from a profile.
+ */
+export const ThreadBrowserStatus = Schema.Struct({
+  state: Schema.Literals(["off", "on", "held", "unavailable"]),
+  why: Schema.optionalKey(Schema.String),
+  /** Why lending it would do nothing for this thread, lent or not; absent where it could. */
+  cannot: Schema.optionalKey(Schema.String),
+});
+export type ThreadBrowserStatus = typeof ThreadBrowserStatus.Type;
+
 /** The furthest ahead `thread.snooze` takes, in calendar days. */
 export const SNOOZE_AHEAD_MAX_DAYS = 90;
 
