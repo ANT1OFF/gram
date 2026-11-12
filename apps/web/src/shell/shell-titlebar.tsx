@@ -53,6 +53,7 @@ export function ShellTitlebar({
   settings,
   compactRail,
   panelShown,
+  panelOffered,
   panelLeft,
 }: {
   /** The overview, open or compact, is to the bar's left. */
@@ -65,6 +66,8 @@ export function ShellTitlebar({
   compactRail: boolean;
   /** The right panel is shown. */
   panelShown: boolean;
+  /** The app in front of Gram offers the right panel on this page: its toggle shows. */
+  panelOffered: boolean;
   /** `panel.side` puts the panel on the left. */
   panelLeft: boolean;
 }) {
@@ -303,21 +306,23 @@ export function ShellTitlebar({
         className="ml-1 flex shrink-0 items-center gap-0.5"
       >
         {!settings && <TitlebarOpenBeside threadId={barThreadId} />}
-        <ShellToggle
-          icon={
-            panelShown
-              ? panelLeft
-                ? PanelLeftClose
-                : PanelRightClose
-              : panelLeft
-                ? PanelLeftOpen
-                : PanelRightOpen
-          }
-          label={panelShown ? "Hide right panel" : "Show right panel"}
-          shortcutId="panel.toggle"
-          pressed={panelShown}
-          onClick={togglePanel}
-        />
+        {panelOffered && (
+          <ShellToggle
+            icon={
+              panelShown
+                ? panelLeft
+                  ? PanelLeftClose
+                  : PanelRightClose
+                : panelLeft
+                  ? PanelLeftOpen
+                  : PanelRightOpen
+            }
+            label={panelShown ? "Hide right panel" : "Show right panel"}
+            shortcutId="panel.toggle"
+            pressed={panelShown}
+            onClick={togglePanel}
+          />
+        )}
       </div>
     </div>
   );

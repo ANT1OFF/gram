@@ -214,6 +214,43 @@ test("the sidebar can leave Gram's workspaces and threads out", async ({ page })
   expect(errors).toEqual([]);
 });
 
+test("the right panel can be kept to threads in a repository", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Mounted at `path`, then kept to threads in a repository.
+  const codeOnly = async (path: string) => {
+    await page.goto(path);
+    await page.waitForFunction(() => (window as unknown as Partial<Update>).embed !== undefined);
+    await page.evaluate(() => {
+      (window as unknown as Update).embed.update({ panel: "code" });
+    });
+  };
+  const toggle = page.getByTestId("titlebar-panels").getByRole("button", { name: /right panel/ });
+  // Gram's own default: the toggle on every page.
+  await mounted(page);
+  await expect(toggle).toBeVisible();
+  // Home and an added page: no panel and no toggle, and the key does nothing.
+  await codeOnly("/");
+  await expect(toggle).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+Alt+b");
+  await expect(page.getByTestId("right-panel")).toHaveCount(0);
+  await page.getByTestId("embed-navigation").getByRole("link", { name: "Policies" }).click();
+  await expect(page.getByTestId("fixture-policies")).toBeVisible();
+  await expect(toggle).toHaveCount(0);
+  await expect(page.getByTestId("right-panel")).toHaveCount(0);
+  // A thread outside a repository has neither; one in a worktree keeps both.
+  await codeOnly("/t/t-background");
+  await expect(page.getByTestId("thread-view")).toBeVisible();
+  await expect(toggle).toHaveCount(0);
+  await codeOnly("/t/t-flaky");
+  await expect(toggle).toBeVisible();
+  await expect(page.getByTestId("right-panel")).toBeVisible();
+  // Back to Gram's own: the toggle is everywhere again.
+  await mounted(page);
+  await expect(toggle).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("compact, the sidebar is a quiet strip that opens over the page on hover", async ({
   page,
 }) => {

@@ -113,6 +113,9 @@ const PANE_ACTIONS = new Set([
   "action:maximize",
 ]);
 
+/** The right panel's commands, left out where the app in front of Gram offers no panel. */
+const PANEL_ACTIONS = new Set(["action:panel", "action:panelExpand", "action:reviewFocus"]);
+
 const KEEPS_OPEN = /^(pick:|action:openInPane$|action:resume$)/;
 const MESSAGE_LIMIT = 20;
 /** Claude Code on the web, opened as a plain page: Gram reads no session list from it. */
@@ -562,6 +565,7 @@ export function PaletteBody({
 
   // A touch screen shows one pane at a time: no splits, layouts or panes to open into.
   const touch = isTouch();
+  const panelBarred = useLayoutStore((s) => s.panelBarred === true);
   const actions: PaletteItem[] = [
     ...(scriptThread === undefined
       ? []
@@ -888,7 +892,10 @@ export function PaletteBody({
       keywords: "bug feedback feature request github question",
       run: () => useReportIssueDialog.getState().show(currentId),
     },
-  ].filter((item) => !touch || !PANE_ACTIONS.has(item.id));
+  ].filter(
+    (item) =>
+      (!touch || !PANE_ACTIONS.has(item.id)) && (!panelBarred || !PANEL_ACTIONS.has(item.id)),
+  );
   // The workspace's own verbs, and its orchestrator's thread verbs only on the orchestrator itself;
   // the same command can come from the thread and from its workspace, so it is listed once.
   const inView = [

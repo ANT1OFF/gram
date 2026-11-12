@@ -139,6 +139,17 @@ export interface ShellSidebar {
   readonly account?: ComponentType<ShellSlotProps>;
 }
 
+/**
+ * Where the right panel (Diff, PR, Files, Terminal and its other tabs) and its title-bar toggle are
+ * offered.
+ *
+ * - `shown`: on every page, as Gram on its own.
+ * - `code`: only on a thread that works in a git repository, a worktree or a checkout. On any
+ *   other page (a thread with no repository, `/threads`, the home page, the embedding app's own
+ *   pages) neither the panel nor its toggle shows, and its key and palette commands are left out.
+ */
+export type ShellPanel = "shown" | "code";
+
 /** What the embedding app adds to Gram's shell. Everything is optional. */
 export interface ShellContributions {
   /** Pages beside Gram's own. Read once, when the app mounts. */
@@ -163,6 +174,8 @@ export interface ShellContributions {
    * Defaults to `shown`. Replaceable later through `GramHandle.update`.
    */
   readonly threads?: "shown" | "hidden";
+  /** Where the right panel is offered. Defaults to `shown`. Replaceable through `GramHandle.update`. */
+  readonly panel?: ShellPanel;
   /** What needs someone, counted by the embedding app. Replaceable through `GramHandle.update`. */
   readonly attention?: ShellAttention;
   /** The open sidebar's look, its head and its account. Replaceable through `GramHandle.update`. */
@@ -203,13 +216,13 @@ export interface GramHandle {
   readonly shell: "on" | "off";
   /**
    * Replaces what `next` names of the navigation groups, the switcher, the thread list, the
-   * attention count and the sidebar's look, and leaves what it doesn't name as it is: `update({ navigation })` changes counts and keeps the
+   * right panel's pages, the attention count and the sidebar's look, and leaves what it doesn't name as it is: `update({ navigation })` changes counts and keeps the
    * switcher. A key given as `undefined` takes that part away. Routes stay as mounted.
    */
   update(
     next: Pick<
       ShellContributions,
-      "navigation" | "workspaceSwitcher" | "threads" | "attention" | "sidebar"
+      "navigation" | "workspaceSwitcher" | "threads" | "panel" | "attention" | "sidebar"
     >,
   ): void;
   /** Moves the window to a path under the app. */
