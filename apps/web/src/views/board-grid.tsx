@@ -32,8 +32,7 @@ import { useFeatureSummary } from "@/orchestration/use-feature-cards";
 // The Board as a grid: a row per feature with its cells side by side, Task · Stage · Now · Pull
 // request, so a feature's name, how far it has come, what it does and its checks read on one line.
 // A feature with several workers (or a held brief beside one) heads a row of its own, its workers
-// under it. The stations stay in each Stage cell as a segmented bar under the station's name; the
-// lanes are the other layout (board-view.tsx).
+// under it. The stations stay in each Stage cell as a segmented bar under the station's name.
 
 /**
  * The grid's four columns, shared by its heads and every row so the cells line up. The table fills
@@ -169,9 +168,9 @@ function PrCell({ worker }: { worker: RailWorker }) {
 
 /**
  * A worker's state in words, its tone's word first (amber only while it needs you), then what it
- * is doing: "Working · tests 38/52". The lanes' cards say it the same way.
+ * is doing: "Working · tests 38/52".
  */
-export function Status({ tone, now }: { tone: RailWorker["tone"]; now: string }) {
+function Status({ tone, now }: { tone: RailWorker["tone"]; now: string }) {
   const { label } = RAIL_TONES[tone];
   // What it waits on may lead with the same word ("Waiting · checks on #88"): said once.
   const rest = now.replace(new RegExp(`^${label}\\s*(?:·\\s*)?`, "iu"), "");
@@ -204,7 +203,7 @@ export function Status({ tone, now }: { tone: RailWorker["tone"]; now: string })
 
 /**
  * The worker's Now cell: its tone and what it does, a click from its thread (or its ask in the
- * dock). It carries the lanes' chip's test hooks, so either layout is driven the same way.
+ * dock). It carries the worker's test hooks (`rail-worker`, its station and tone).
  */
 function NowCell({
   workspaceId,

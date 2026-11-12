@@ -21,6 +21,26 @@ describe("layout browser storage fixture", () => {
     window.sessionStorage.setItem("owned-session", "previous test");
   });
 
+  it("opens a board saved on the lanes on the grid, and forgets the old layout", async () => {
+    window.localStorage.setItem(
+      "gram.layout",
+      JSON.stringify({
+        state: { boardLayout: "lanes", boardArchivedShown: ["w-1"], panelWidth: 400 },
+        version: 1,
+      }),
+    );
+    await useLayoutStore.persist.rehydrate();
+    const state = useLayoutStore.getState() as unknown as Record<string, unknown>;
+    expect(state["boardLayout"]).toBeUndefined();
+    expect(state["boardArchivedShown"]).toEqual(["w-1"]);
+    expect(state["panelWidth"]).toBe(400);
+    // The next write leaves the old field out of storage.
+    useLayoutStore.getState().toggleBoardArchived("w-2");
+    const saved = JSON.parse(window.localStorage.getItem("gram.layout")!).state;
+    expect(saved).not.toHaveProperty("boardLayout");
+    expect(saved.boardArchivedShown).toEqual(["w-1", "w-2"]);
+  });
+
   it("starts with empty storage and uses actual Web Storage keys, strings and removal", () => {
     const storage = window.localStorage;
     storage.setItem("owned-key", "value");

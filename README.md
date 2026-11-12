@@ -92,7 +92,7 @@ its title opens that memory to read or edit.
   the last 7 or 30 days.
 - **The Board.** Each feature's workers and pull requests on one line, from briefed to merged.
 
-![Gram's Board in its Lanes layout: three features as rows, each a lane through the stations Briefed, Working, Checks, Review and Merged. Each worker is a card at its station: one needs you, one is running, one waits on checks, one waits on review and two are done, merged. The title bar reads 1 waiting · Open Inbox and 1 question.](docs/assets/gram-board.png)
+![Gram's Board as a grid with the columns Task, Stage, Now and Pull request. Three features are rows: Order email needs you, its template drafted; saved-addresses heads its three workers, Cart summary running, Address picker waiting on review of #142 and Addresses API merged as #418; search-typos heads Typo tolerance waiting on checks for #424 and Search suggestions merged as #421. Each row's stage is a bar through briefed to merged. The title bar reads 1 waiting · Open Inbox](docs/assets/gram-board.png)
 
 The Inbox opens over your work, so you can answer without leaving your place.
 

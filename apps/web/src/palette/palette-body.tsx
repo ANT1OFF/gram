@@ -516,7 +516,7 @@ export function PaletteBody({
             id: "go:board",
             label: "Board",
             ...shortcut("orchestration.board"),
-            keywords: "board kanban features lanes",
+            keywords: "board kanban features grid",
             run: go("go:board", () => openBoard(boardWorkspace)),
           },
         ]),

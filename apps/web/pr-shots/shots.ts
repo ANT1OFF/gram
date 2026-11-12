@@ -3167,15 +3167,15 @@ export const SHOTS: readonly Shot[] = [
     title: "README: `storefront` on the Board",
     modes: ["dark"],
     open: async (page) => {
-      // Narrow and without the sidebar, which the hero shows, so the rows read at README width.
-      await openReadme(page, 1120, 540);
+      // Narrow and without the sidebar, which the hero shows, so the rows read at README width;
+      // tall enough for the grid's every row.
+      await openReadme(page, 1120, 580);
       await page.getByRole("button", { name: "Hide sidebar" }).click();
       await openBoardView(page);
-      await page.getByTestId("board-layout-option").filter({ hasText: "Lanes" }).click();
-      // The merged workers too, so the lanes run from briefed to merged.
+      // The merged workers too, so the grid runs from briefed to merged.
       await page.getByTestId("rail-show-archived").click();
       await page.getByTestId("rail-worker").first().waitFor();
-      await page.mouse.move(1116, 536);
+      await page.mouse.move(1116, 576);
       await page.waitForTimeout(800);
     },
   },
