@@ -1,0 +1,1495 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Machine marker directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <script type="application/json" id="mock-tweaks">
+      {
+        "offline": {
+          "type": "enum",
+          "label": "Offline colour",
+          "options": ["neutral", "danger"],
+          "default": "neutral"
+        }
+      }
+    </script>
+    <style>
+      .mm {
+        display: grid;
+        grid-template-columns: 288px minmax(0, 1fr);
+        height: 100%;
+        min-height: inherit;
+        color: var(--fg);
+        font-family: var(--font-ui);
+        font-size: 14px;
+        line-height: 20px;
+      }
+      @media (max-width: 700px) {
+        .mm,
+        .two {
+          grid-template-columns: minmax(0, 1fr) !important;
+        }
+      }
+      .sprite {
+        position: absolute;
+        width: 0;
+        height: 0;
+      }
+
+      /* The marker: a glyph, then a name and a state where the direction shows them. */
+      .gi {
+        flex: none;
+        width: 14px;
+        height: 14px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2.25;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .mk {
+        display: inline-flex;
+        flex: 0 1 auto;
+        align-items: center;
+        gap: 4px;
+        min-width: 14px;
+        color: var(--fg-muted);
+        font-size: 13px;
+        line-height: 20px;
+        white-space: nowrap;
+      }
+      .mk .n {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mk .st {
+        flex: none;
+      }
+      .mk .path {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--fg-muted);
+        font-family: var(--font-mono);
+        text-overflow: ellipsis;
+      }
+      .mk.off {
+        color: var(--fg);
+      }
+      html[data-tweak-offline="danger"] .mk.off {
+        color: var(--danger-text);
+      }
+      .mk.chip {
+        flex: none;
+        height: 20px;
+        padding: 0 6px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+      }
+      .mk.chip.off {
+        border-color: var(--border-strong);
+      }
+      .sep {
+        flex: none;
+        color: var(--fg-subtle);
+      }
+
+      /* State dots, as StatusDot draws them. */
+      .sd {
+        flex: none;
+        justify-self: center;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+      }
+      .sd.run {
+        background: var(--status-working);
+      }
+      .sd.ask {
+        background: var(--status-needs-mark);
+      }
+      .sd.wait {
+        border: 1.5px solid var(--status-working);
+      }
+      .sd.idle {
+        background: var(--status-idle);
+      }
+
+      /* Sidebar */
+      .sb {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 8px;
+        border-right: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+      }
+      .sb-pill {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        color: var(--status-needs);
+        font-size: 13px;
+      }
+      .sb-search {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 32px;
+        padding: 0 6px 0 4px;
+        color: var(--fg-muted);
+      }
+      .sb-search .icon,
+      .sb-foot .icon {
+        width: 16px;
+        height: 16px;
+      }
+      .sb-search kbd {
+        margin-left: auto;
+        font: inherit;
+        font-size: 13px;
+      }
+      .sb-sec {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      .sb-head {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) 24px;
+        align-items: center;
+        gap: 8px;
+        height: 24px;
+        padding: 0 6px;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .sb-head .icon {
+        width: 14px;
+        height: 14px;
+        justify-self: center;
+      }
+      .sb-head.folded .icon {
+        transform: rotate(-90deg);
+      }
+      .sb-head .c {
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+      .sb-row {
+        display: grid;
+        grid-template-columns: 10px minmax(40px, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        min-height: 36px;
+        padding: 0 6px;
+        border: 1px solid transparent;
+        border-radius: 12px;
+      }
+      .sb-row.ws-here {
+        background: var(--surface-hover);
+      }
+      .sb-row.here {
+        border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+        background: var(--accent-tint);
+      }
+      .t {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ws {
+        font-weight: 500;
+      }
+      .tl {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+      .tl .t {
+        flex: 0 1 auto;
+      }
+      .tail {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        min-width: 0;
+        max-width: 112px;
+        color: var(--fg-muted);
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .tail .w {
+        flex: none;
+      }
+      .tail .w.asks {
+        color: var(--fg);
+      }
+      .sb-count {
+        flex: none;
+        min-width: 18px;
+        padding: 0 6px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        color: var(--status-needs);
+        font-size: 11px;
+        line-height: 16px;
+        text-align: center;
+      }
+      .sb-workers {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        margin: 0 0 4px 12px;
+        padding-left: 8px;
+        border-left: 1px solid var(--border-subtle);
+      }
+      .sb-foot {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 40px;
+        margin-top: auto;
+        padding: 0 6px 0 4px;
+        border-top: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+      }
+
+      /* The other places, each under the name of where it is. */
+      .pane {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        min-width: 0;
+        padding: 16px;
+        background: var(--surface-2);
+      }
+      .part {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 0;
+      }
+      .part > h4 {
+        margin: 0;
+        color: var(--fg-subtle);
+        font-size: 13px;
+        font-weight: 400;
+      }
+      .two {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 16px;
+      }
+      .box {
+        border: 1px solid var(--border-subtle);
+        border-radius: 12px;
+        background: var(--surface-3);
+      }
+
+      /* Thread header */
+      .hd {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 40px;
+        min-width: 0;
+        padding: 0 12px;
+        font-size: 15px;
+      }
+      .hd + .hd {
+        border-top: 1px solid var(--border-subtle);
+      }
+      .hd .icon {
+        flex: none;
+        width: 18px;
+        height: 18px;
+        color: var(--fg-muted);
+      }
+      .hd .t {
+        flex: 0 1 auto;
+        font-weight: 500;
+      }
+      .hd .mk {
+        flex: 0 2 auto;
+        max-width: 224px;
+      }
+      .hd .mk.chip {
+        flex: none;
+      }
+      .hd .end {
+        display: flex;
+        gap: 12px;
+        margin-left: auto;
+      }
+
+      /* Board */
+      .bd-h,
+      .bd-r {
+        display: grid;
+        grid-template-columns: minmax(160px, 2fr) 128px minmax(
+            120px,
+            2fr
+          ) minmax(88px, 1fr);
+        gap: 24px;
+        padding: 0 16px;
+      }
+      .bd-h {
+        padding-top: 6px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .bd-r {
+        align-items: start;
+        padding-top: 8px;
+        padding-bottom: 8px;
+      }
+      .bd-r + .bd-r {
+        border-top: 1px solid var(--border-subtle);
+      }
+      .bd-task {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 2px 8px;
+        min-width: 0;
+        font-size: 15px;
+        font-weight: 500;
+      }
+      .bd-task .under {
+        flex-basis: 100%;
+      }
+      .stage {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: 20px;
+      }
+      .stage i {
+        flex: 1;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border-strong);
+      }
+      .stage i.b {
+        background: var(--fg-subtle);
+      }
+      .stage i.c {
+        height: 8px;
+        background: var(--accent);
+      }
+      .now {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .now.asks {
+        color: var(--fg);
+      }
+      .prc {
+        display: inline-flex;
+        align-self: start;
+        justify-self: start;
+        height: 20px;
+        padding: 0 6px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        color: var(--fg-muted);
+        font-size: 13px;
+        line-height: 18px;
+      }
+
+      /* Feature card, Workers tab, Inbox */
+      .fc {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px;
+      }
+      .fc-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .fc-top .stage {
+        width: 128px;
+      }
+      .fc-w {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        font-size: 13px;
+      }
+      .fc-w .t {
+        flex: none;
+        width: 144px;
+      }
+      .fc-w .w {
+        flex: 1;
+        color: var(--fg-muted);
+      }
+      .wk {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        padding: 4px;
+      }
+      .wk-r {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        gap: 0 8px;
+        align-items: center;
+        padding: 6px;
+        border-radius: 8px;
+      }
+      .wk-r .age {
+        color: var(--fg-muted);
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+      }
+      .wk-s {
+        display: flex;
+        grid-column: 2 / span 2;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .ib {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        min-height: 36px;
+        padding: 0 12px;
+      }
+      .ib .icon {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        color: var(--status-needs-mark);
+      }
+      .ib .q {
+        flex: 1;
+        min-width: 0;
+        color: var(--fg-muted);
+      }
+      .ib .ctx {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 6px;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+
+      /* The hover */
+      .tips {
+        display: flex;
+        align-items: start;
+        gap: 8px;
+      }
+      .tip:first-child {
+        flex: none;
+      }
+      @media (max-width: 700px) {
+        .tips {
+          flex-direction: column;
+          align-items: stretch;
+        }
+      }
+      .tip {
+        display: flex;
+        flex: 1 1 0;
+        flex-direction: column;
+        min-width: 0;
+        padding: 6px 10px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        background: var(--surface-3);
+        box-shadow: var(--shadow-overlay);
+        color: var(--fg-muted);
+        font-size: 13px;
+        line-height: 20px;
+      }
+      .tip strong {
+        color: var(--fg);
+        font-weight: 500;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <svg class="sprite" aria-hidden="true">
+      <symbol id="srv" viewBox="0 0 24 24">
+        <rect width="20" height="8" x="2" y="2" rx="2" ry="2" />
+        <rect width="20" height="8" x="2" y="14" rx="2" ry="2" />
+        <path d="M6 6h.01M6 18h.01" />
+      </symbol>
+      <symbol id="srv-off" viewBox="0 0 24 24">
+        <path d="M7 2h13a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-5" />
+        <path d="M10 10 2.5 2.5C2 2 2 2.5 2 5v3a2 2 0 0 0 2 2h6z" />
+        <path d="M22 17v-1a2 2 0 0 0-2-2h-1" />
+        <path d="M4 14a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h16.5l1-.5.5.5-8-8H4z" />
+        <path d="M6 18h.01" />
+        <path d="m2 2 20 20" />
+      </symbol>
+    </svg>
+    <main class="mock-canvas">
+      <p class="mock-note">
+        How does a thread say it runs on another machine? Each board shows the
+        same work: one worker on this machine (unmarked), two on atlas (a joined
+        machine, online), one on sandbox-1 (a provisioned host) and one on
+        studio (a joined machine, offline). Hover a marker for its hint. Tweaks
+        switches the offline colour. Pick one by name.
+      </p>
+
+      <!-- ─────────────────────────────── A Glyph ─────────────────────────────── -->
+      <section class="board" data-name="A Glyph" data-size="1240x800">
+        <div class="board-frame">
+          <div class="mm">
+            <aside class="sb">
+              <div class="sb-pill"><span class="sd ask"></span>1 question</div>
+              <div class="sb-search">
+                <i data-icon="search"></i>Search<kbd>⌘K</kbd>
+              </div>
+              <div class="sb-sec">
+                <div class="sb-head">
+                  <i data-icon="down"></i>Orchestrators<span class="c">2</span>
+                </div>
+                <div class="sb-row ws-here">
+                  <span class="sd run"></span><span class="t ws">Gram</span
+                  ><span class="tail"
+                    ><span class="w">2 working</span
+                    ><span class="sb-count">1</span></span
+                  >
+                </div>
+                <div class="sb-workers">
+                  <div class="sb-row">
+                    <span class="sd run"></span
+                    ><span class="t">Inline comments in the diff</span
+                    ><span class="tail"></span>
+                  </div>
+                  <div class="sb-row here">
+                    <span class="sd run"></span
+                    ><span class="t">Faster cold start</span
+                    ><span class="tail"
+                      ><span
+                        class="mk"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg></span
+                    ></span>
+                  </div>
+                  <div class="sb-row">
+                    <span class="sd wait"></span
+                    ><span class="t">Keyboard shortcut sheet</span
+                    ><span class="tail"
+                      ><span
+                        class="mk"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg></span
+                      ><span class="w">checks</span></span
+                    >
+                  </div>
+                  <div class="sb-row">
+                    <span class="sd ask"></span
+                    ><span class="t">Search in Settings</span
+                    ><span class="tail"
+                      ><span
+                        class="mk"
+                        title="Runs on sandbox-1&#10;Provisioned host · online for 12 minutes"
+                        ><svg class="gi"><use href="#srv" /></svg></span
+                      ><span class="w asks">asks you</span></span
+                    >
+                  </div>
+                </div>
+                <div class="sb-row">
+                  <span class="sd idle"></span
+                  ><span class="t ws">billing-api</span
+                  ><span class="tail"><span class="w">Idle</span></span>
+                </div>
+                <div class="sb-workers">
+                  <div class="sb-row">
+                    <span class="sd idle"></span
+                    ><span class="t">Idempotent refund webhooks</span
+                    ><span class="tail"
+                      ><span
+                        class="mk off"
+                        title="Runs on studio&#10;Joined machine · offline&#10;Connection lost at 14:03."
+                        ><svg class="gi"><use href="#srv-off" /></svg
+                        ><span class="st">offline</span></span
+                      ></span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="sb-sec">
+                <div class="sb-head">
+                  <i data-icon="down"></i>Solo threads<span class="c">2</span>
+                </div>
+                <div class="sb-row">
+                  <span class="sd idle"></span
+                  ><span class="t">Clear old build caches</span
+                  ><span class="tail"
+                    ><span
+                      class="mk"
+                      title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                      ><svg class="gi"><use href="#srv" /></svg></span
+                    ><span class="w">12m</span></span
+                  >
+                </div>
+                <div class="sb-row">
+                  <span class="sd idle"></span
+                  ><span class="t">Bump vitest to 5</span
+                  ><span class="tail"><span class="w">1h</span></span>
+                </div>
+              </div>
+              <div class="sb-head folded">
+                <i data-icon="down"></i>At rest<span class="c">19</span>
+              </div>
+              <div class="sb-foot"><i data-icon="clock"></i>History</div>
+            </aside>
+
+            <div class="pane">
+              <div class="part">
+                <h4>Thread header</h4>
+                <div class="box">
+                  <div class="hd">
+                    <i data-icon="msg"></i
+                    ><span class="t">Clear old build caches</span
+                    ><span class="mk" title="Runs on atlas in /home/dev/scratch"
+                      ><svg class="gi"><use href="#srv" /></svg
+                      ><span class="n">atlas</span
+                      ><span class="path">~/scratch</span></span
+                    ><span class="end"
+                      ><i data-icon="more"></i><i data-icon="panel"></i
+                    ></span>
+                  </div>
+                  <div class="hd">
+                    <i data-icon="msg"></i
+                    ><span class="t">Sort the media library</span
+                    ><span
+                      class="mk off"
+                      title="Runs on studio in /srv/media&#10;Offline · Connection lost at 14:03."
+                      ><svg class="gi"><use href="#srv-off" /></svg
+                      ><span class="n">studio</span
+                      ><span class="st">offline</span
+                      ><span class="path">/srv/media</span></span
+                    ><span class="end"
+                      ><i data-icon="more"></i><i data-icon="panel"></i
+                    ></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="part">
+                <h4>Board</h4>
+                <div class="box">
+                  <div class="bd-h">
+                    <span>Task</span><span>Stage</span><span>Now</span
+                    ><span>Pull request</span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Inline comments in the diff</span>
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                    ></span>
+                    <span class="now"><span class="sd run"></span>Working</span
+                    ><span></span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Keyboard shortcut sheet</span
+                      ><span
+                        class="mk"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg
+                      ></span>
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="b"></i><i class="b"></i
+                      ><i class="c"></i><i></i
+                    ></span>
+                    <span class="now"><span class="sd wait"></span>Checks</span
+                    ><span class="prc">gram#[n]</span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Search in Settings</span
+                      ><span
+                        class="mk"
+                        title="Runs on sandbox-1&#10;Provisioned host · online for 12 minutes"
+                        ><svg class="gi"><use href="#srv" /></svg
+                      ></span>
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                    ></span>
+                    <span class="now asks"
+                      ><span class="sd ask"></span>Asks you</span
+                    ><span></span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Idempotent refund webhooks</span
+                      ><span
+                        class="mk off"
+                        title="Runs on studio&#10;Joined machine · offline&#10;Connection lost at 14:03."
+                        ><svg class="gi"><use href="#srv-off" /></svg
+                        ><span class="st">offline</span></span
+                      >
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                    ></span>
+                    <span class="now"><span class="sd idle"></span>Stopped</span
+                    ><span></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="two">
+                <div class="part">
+                  <h4>Feature card in the orchestrator's chat</h4>
+                  <div class="box fc">
+                    <div class="fc-top">
+                      <strong class="t">Faster cold start</strong
+                      ><span class="stage"
+                        ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                      ></span>
+                    </div>
+                    <div class="fc-w">
+                      <span class="sd run"></span
+                      ><span class="t">Faster cold start</span
+                      ><span class="w">Working</span
+                      ><span
+                        class="mk"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg
+                      ></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="part">
+                  <h4>Workers tab</h4>
+                  <div class="box wk">
+                    <div class="wk-r">
+                      <span class="sd run"></span
+                      ><span class="t">Faster cold start</span
+                      ><span class="age">4m</span>
+                      <span class="wk-s"
+                        >Working<span
+                          class="mk"
+                          title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                          ><svg class="gi"><use href="#srv" /></svg></span
+                      ></span>
+                    </div>
+                    <div class="wk-r">
+                      <span class="sd idle"></span
+                      ><span class="t">Idempotent refund webhooks</span
+                      ><span class="age">2h</span>
+                      <span class="wk-s"
+                        >Stopped<span
+                          class="mk off"
+                          title="Runs on studio&#10;Joined machine · offline&#10;Connection lost at 14:03."
+                          ><svg class="gi"><use href="#srv-off" /></svg
+                          ><span class="st">offline</span></span
+                        ></span
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="two">
+                <div class="part">
+                  <h4>Inbox</h4>
+                  <div class="box ib">
+                    <i data-icon="help"></i
+                    ><span class="t">Search in Settings</span
+                    ><span class="q t">[its question]</span
+                    ><span class="ctx"
+                      >Gram<span
+                        class="mk"
+                        title="Runs on sandbox-1&#10;Provisioned host · online for 12 minutes"
+                        ><svg class="gi"><use href="#srv" /></svg></span
+                    ></span>
+                  </div>
+                </div>
+                <div class="part">
+                  <h4>On hover</h4>
+                  <div class="tips">
+                    <div class="tip">
+                      <strong>Runs on atlas</strong
+                      ><span>Joined machine · online for 2 hours</span>
+                    </div>
+                    <div class="tip">
+                      <strong>Runs on studio</strong
+                      ><span>Joined machine · offline</span
+                      ><span>Connection lost at 14:03.</span
+                      ><span
+                        >It dials again by itself. If it stays offline, check
+                        Tailscale and gram-host status on studio.</span
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────── B Edge label ─────────────────────────────── -->
+      <section class="board" data-name="B Edge label" data-size="1240x800">
+        <div class="board-frame">
+          <div class="mm">
+            <aside class="sb">
+              <div class="sb-pill"><span class="sd ask"></span>1 question</div>
+              <div class="sb-search">
+                <i data-icon="search"></i>Search<kbd>⌘K</kbd>
+              </div>
+              <div class="sb-sec">
+                <div class="sb-head">
+                  <i data-icon="down"></i>Orchestrators<span class="c">2</span>
+                </div>
+                <div class="sb-row ws-here">
+                  <span class="sd run"></span><span class="t ws">Gram</span
+                  ><span class="tail"
+                    ><span class="w">2 working</span
+                    ><span class="sb-count">1</span></span
+                  >
+                </div>
+                <div class="sb-workers">
+                  <div class="sb-row">
+                    <span class="sd run"></span
+                    ><span class="t">Inline comments in the diff</span
+                    ><span class="tail"></span>
+                  </div>
+                  <div class="sb-row here">
+                    <span class="sd run"></span
+                    ><span class="t">Faster cold start</span
+                    ><span class="tail"
+                      ><span
+                        class="mk"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg
+                        ><span class="n">atlas</span></span
+                      ></span
+                    >
+                  </div>
+                  <div class="sb-row">
+                    <span class="sd wait"></span
+                    ><span class="t">Keyboard shortcut sheet</span
+                    ><span class="tail"
+                      ><span
+                        class="mk"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg></span
+                      ><span class="w">checks</span></span
+                    >
+                  </div>
+                  <div class="sb-row">
+                    <span class="sd ask"></span
+                    ><span class="t">Search in Settings</span
+                    ><span class="tail"
+                      ><span
+                        class="mk"
+                        title="Runs on sandbox-1&#10;Provisioned host · online for 12 minutes"
+                        ><svg class="gi"><use href="#srv" /></svg></span
+                      ><span class="w asks">asks you</span></span
+                    >
+                  </div>
+                </div>
+                <div class="sb-row">
+                  <span class="sd idle"></span
+                  ><span class="t ws">billing-api</span
+                  ><span class="tail"><span class="w">Idle</span></span>
+                </div>
+                <div class="sb-workers">
+                  <div class="sb-row">
+                    <span class="sd idle"></span
+                    ><span class="t">Idempotent refund webhooks</span
+                    ><span class="tail"
+                      ><span
+                        class="mk off"
+                        title="Runs on studio&#10;Joined machine · offline&#10;Connection lost at 14:03."
+                        ><svg class="gi"><use href="#srv-off" /></svg
+                        ><span class="n">studio</span
+                        ><span class="st">offline</span></span
+                      ></span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="sb-sec">
+                <div class="sb-head">
+                  <i data-icon="down"></i>Solo threads<span class="c">2</span>
+                </div>
+                <div class="sb-row">
+                  <span class="sd idle"></span
+                  ><span class="t">Clear old build caches</span
+                  ><span class="tail"
+                    ><span
+                      class="mk"
+                      title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                      ><svg class="gi"><use href="#srv" /></svg
+                      ><span class="n">atlas</span></span
+                    ><span class="sep">·</span><span class="w">12m</span></span
+                  >
+                </div>
+                <div class="sb-row">
+                  <span class="sd idle"></span
+                  ><span class="t">Bump vitest to 5</span
+                  ><span class="tail"><span class="w">1h</span></span>
+                </div>
+              </div>
+              <div class="sb-head folded">
+                <i data-icon="down"></i>At rest<span class="c">19</span>
+              </div>
+              <div class="sb-foot"><i data-icon="clock"></i>History</div>
+            </aside>
+
+            <div class="pane">
+              <div class="part">
+                <h4>Thread header</h4>
+                <div class="box">
+                  <div class="hd">
+                    <i data-icon="msg"></i
+                    ><span class="t">Clear old build caches</span
+                    ><span class="mk" title="Runs on atlas in /home/dev/scratch"
+                      ><svg class="gi"><use href="#srv" /></svg
+                      ><span class="n">atlas</span
+                      ><span class="path">~/scratch</span></span
+                    ><span class="end"
+                      ><i data-icon="more"></i><i data-icon="panel"></i
+                    ></span>
+                  </div>
+                  <div class="hd">
+                    <i data-icon="msg"></i
+                    ><span class="t">Sort the media library</span
+                    ><span
+                      class="mk off"
+                      title="Runs on studio in /srv/media&#10;Offline · Connection lost at 14:03."
+                      ><svg class="gi"><use href="#srv-off" /></svg
+                      ><span class="n">studio</span
+                      ><span class="st">offline</span
+                      ><span class="path">/srv/media</span></span
+                    ><span class="end"
+                      ><i data-icon="more"></i><i data-icon="panel"></i
+                    ></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="part">
+                <h4>Board</h4>
+                <div class="box">
+                  <div class="bd-h">
+                    <span>Task</span><span>Stage</span><span>Now</span
+                    ><span>Pull request</span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Inline comments in the diff</span>
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                    ></span>
+                    <span class="now"><span class="sd run"></span>Working</span
+                    ><span></span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Keyboard shortcut sheet</span
+                      ><span
+                        class="mk under"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg
+                        ><span class="n">atlas</span></span
+                      >
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="b"></i><i class="b"></i
+                      ><i class="c"></i><i></i
+                    ></span>
+                    <span class="now"><span class="sd wait"></span>Checks</span
+                    ><span class="prc">gram#[n]</span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Search in Settings</span
+                      ><span
+                        class="mk under"
+                        title="Runs on sandbox-1&#10;Provisioned host · online for 12 minutes"
+                        ><svg class="gi"><use href="#srv" /></svg
+                        ><span class="n">sandbox-1</span></span
+                      >
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                    ></span>
+                    <span class="now asks"
+                      ><span class="sd ask"></span>Asks you</span
+                    ><span></span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Idempotent refund webhooks</span
+                      ><span
+                        class="mk off under"
+                        title="Runs on studio&#10;Joined machine · offline&#10;Connection lost at 14:03."
+                        ><svg class="gi"><use href="#srv-off" /></svg
+                        ><span class="n">studio</span
+                        ><span class="st">offline</span></span
+                      >
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                    ></span>
+                    <span class="now"><span class="sd idle"></span>Stopped</span
+                    ><span></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="two">
+                <div class="part">
+                  <h4>Feature card in the orchestrator's chat</h4>
+                  <div class="box fc">
+                    <div class="fc-top">
+                      <strong class="t">Faster cold start</strong
+                      ><span class="stage"
+                        ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                      ></span>
+                    </div>
+                    <div class="fc-w">
+                      <span class="sd run"></span
+                      ><span class="t">Faster cold start</span
+                      ><span class="w">Working</span
+                      ><span
+                        class="mk"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg
+                        ><span class="n">atlas</span></span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <div class="part">
+                  <h4>Workers tab</h4>
+                  <div class="box wk">
+                    <div class="wk-r">
+                      <span class="sd run"></span
+                      ><span class="t">Faster cold start</span
+                      ><span class="age">4m</span>
+                      <span class="wk-s"
+                        >Working<span class="sep">·</span
+                        ><span
+                          class="mk"
+                          title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                          ><svg class="gi"><use href="#srv" /></svg
+                          ><span class="n">atlas</span></span
+                        ></span
+                      >
+                    </div>
+                    <div class="wk-r">
+                      <span class="sd idle"></span
+                      ><span class="t">Idempotent refund webhooks</span
+                      ><span class="age">2h</span>
+                      <span class="wk-s"
+                        >Stopped<span class="sep">·</span
+                        ><span
+                          class="mk off"
+                          title="Runs on studio&#10;Joined machine · offline&#10;Connection lost at 14:03."
+                          ><svg class="gi"><use href="#srv-off" /></svg
+                          ><span class="n">studio</span
+                          ><span class="st">offline</span></span
+                        ></span
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="two">
+                <div class="part">
+                  <h4>Inbox</h4>
+                  <div class="box ib">
+                    <i data-icon="help"></i
+                    ><span class="t">Search in Settings</span
+                    ><span class="q t">[its question]</span
+                    ><span class="ctx"
+                      >Gram<span class="sep">·</span
+                      ><span
+                        class="mk"
+                        title="Runs on sandbox-1&#10;Provisioned host · online for 12 minutes"
+                        ><svg class="gi"><use href="#srv" /></svg
+                        ><span class="n">sandbox-1</span></span
+                      ></span
+                    >
+                  </div>
+                </div>
+                <div class="part">
+                  <h4>On hover</h4>
+                  <div class="tips">
+                    <div class="tip">
+                      <strong>Runs on atlas</strong
+                      ><span>Joined machine · online for 2 hours</span>
+                    </div>
+                    <div class="tip">
+                      <strong>Runs on studio</strong
+                      ><span>Joined machine · offline</span
+                      ><span>Connection lost at 14:03.</span
+                      ><span
+                        >It dials again by itself. If it stays offline, check
+                        Tailscale and gram-host status on studio.</span
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────── C Chip ─────────────────────────────── -->
+      <section class="board" data-name="C Chip" data-size="1240x800">
+        <div class="board-frame">
+          <div class="mm">
+            <aside class="sb">
+              <div class="sb-pill"><span class="sd ask"></span>1 question</div>
+              <div class="sb-search">
+                <i data-icon="search"></i>Search<kbd>⌘K</kbd>
+              </div>
+              <div class="sb-sec">
+                <div class="sb-head">
+                  <i data-icon="down"></i>Orchestrators<span class="c">2</span>
+                </div>
+                <div class="sb-row ws-here">
+                  <span class="sd run"></span><span class="t ws">Gram</span
+                  ><span class="tail"
+                    ><span class="w">2 working</span
+                    ><span class="sb-count">1</span></span
+                  >
+                </div>
+                <div class="sb-workers">
+                  <div class="sb-row">
+                    <span class="sd run"></span
+                    ><span class="t">Inline comments in the diff</span
+                    ><span class="tail"></span>
+                  </div>
+                  <div class="sb-row here">
+                    <span class="sd run"></span
+                    ><span class="tl"
+                      ><span class="t">Faster cold start</span
+                      ><span
+                        class="mk chip"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg
+                        ><span class="n">atlas</span></span
+                      ></span
+                    ><span class="tail"></span>
+                  </div>
+                  <div class="sb-row">
+                    <span class="sd wait"></span
+                    ><span class="tl"
+                      ><span class="t">Keyboard shortcut sheet</span
+                      ><span
+                        class="mk chip"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg></span
+                    ></span>
+                    <span class="tail"><span class="w">checks</span></span>
+                  </div>
+                  <div class="sb-row">
+                    <span class="sd ask"></span
+                    ><span class="tl"
+                      ><span class="t">Search in Settings</span
+                      ><span
+                        class="mk chip"
+                        title="Runs on sandbox-1&#10;Provisioned host · online for 12 minutes"
+                        ><svg class="gi"><use href="#srv" /></svg></span
+                    ></span>
+                    <span class="tail"
+                      ><span class="w asks">asks you</span></span
+                    >
+                  </div>
+                </div>
+                <div class="sb-row">
+                  <span class="sd idle"></span
+                  ><span class="t ws">billing-api</span
+                  ><span class="tail"><span class="w">Idle</span></span>
+                </div>
+                <div class="sb-workers">
+                  <div class="sb-row">
+                    <span class="sd idle"></span
+                    ><span class="tl"
+                      ><span class="t">Idempotent refund webhooks</span
+                      ><span
+                        class="mk chip off"
+                        title="Runs on studio&#10;Joined machine · offline&#10;Connection lost at 14:03."
+                        ><svg class="gi"><use href="#srv-off" /></svg></span
+                    ></span>
+                    <span class="tail"
+                      ><span class="mk off"
+                        ><span class="st">offline</span></span
+                      ></span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="sb-sec">
+                <div class="sb-head">
+                  <i data-icon="down"></i>Solo threads<span class="c">2</span>
+                </div>
+                <div class="sb-row">
+                  <span class="sd idle"></span
+                  ><span class="tl"
+                    ><span class="t">Clear old build caches</span
+                    ><span
+                      class="mk chip"
+                      title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                      ><svg class="gi"><use href="#srv" /></svg></span
+                  ></span>
+                  <span class="tail"><span class="w">12m</span></span>
+                </div>
+                <div class="sb-row">
+                  <span class="sd idle"></span
+                  ><span class="t">Bump vitest to 5</span
+                  ><span class="tail"><span class="w">1h</span></span>
+                </div>
+              </div>
+              <div class="sb-head folded">
+                <i data-icon="down"></i>At rest<span class="c">19</span>
+              </div>
+              <div class="sb-foot"><i data-icon="clock"></i>History</div>
+            </aside>
+
+            <div class="pane">
+              <div class="part">
+                <h4>Thread header</h4>
+                <div class="box">
+                  <div class="hd">
+                    <i data-icon="msg"></i
+                    ><span class="t">Clear old build caches</span
+                    ><span
+                      class="mk chip"
+                      title="Runs on atlas in /home/dev/scratch"
+                      ><svg class="gi"><use href="#srv" /></svg
+                      ><span class="n">atlas</span></span
+                    ><span class="mk"><span class="path">~/scratch</span></span
+                    ><span class="end"
+                      ><i data-icon="more"></i><i data-icon="panel"></i
+                    ></span>
+                  </div>
+                  <div class="hd">
+                    <i data-icon="msg"></i
+                    ><span class="t">Sort the media library</span
+                    ><span
+                      class="mk chip off"
+                      title="Runs on studio in /srv/media&#10;Offline · Connection lost at 14:03."
+                      ><svg class="gi"><use href="#srv-off" /></svg
+                      ><span class="n">studio</span
+                      ><span class="st">offline</span></span
+                    ><span class="mk"><span class="path">/srv/media</span></span
+                    ><span class="end"
+                      ><i data-icon="more"></i><i data-icon="panel"></i
+                    ></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="part">
+                <h4>Board</h4>
+                <div class="box">
+                  <div class="bd-h">
+                    <span>Task</span><span>Stage</span><span>Now</span
+                    ><span>Pull request</span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Inline comments in the diff</span>
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                    ></span>
+                    <span class="now"><span class="sd run"></span>Working</span
+                    ><span></span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Keyboard shortcut sheet</span
+                      ><span
+                        class="mk chip"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg
+                        ><span class="n">atlas</span></span
+                      >
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="b"></i><i class="b"></i
+                      ><i class="c"></i><i></i
+                    ></span>
+                    <span class="now"><span class="sd wait"></span>Checks</span
+                    ><span class="prc">gram#[n]</span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Search in Settings</span
+                      ><span
+                        class="mk chip"
+                        title="Runs on sandbox-1&#10;Provisioned host · online for 12 minutes"
+                        ><svg class="gi"><use href="#srv" /></svg
+                        ><span class="n">sandbox-1</span></span
+                      >
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                    ></span>
+                    <span class="now asks"
+                      ><span class="sd ask"></span>Asks you</span
+                    ><span></span>
+                  </div>
+                  <div class="bd-r">
+                    <div class="bd-task">
+                      <span class="t">Idempotent refund webhooks</span
+                      ><span
+                        class="mk chip off"
+                        title="Runs on studio&#10;Joined machine · offline&#10;Connection lost at 14:03."
+                        ><svg class="gi"><use href="#srv-off" /></svg
+                        ><span class="n">studio</span
+                        ><span class="st">offline</span></span
+                      >
+                    </div>
+                    <span class="stage"
+                      ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                    ></span>
+                    <span class="now"><span class="sd idle"></span>Stopped</span
+                    ><span></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="two">
+                <div class="part">
+                  <h4>Feature card in the orchestrator's chat</h4>
+                  <div class="box fc">
+                    <div class="fc-top">
+                      <strong class="t">Faster cold start</strong
+                      ><span class="stage"
+                        ><i class="b"></i><i class="c"></i><i></i><i></i><i></i
+                      ></span>
+                    </div>
+                    <div class="fc-w">
+                      <span class="sd run"></span
+                      ><span class="t">Faster cold start</span
+                      ><span class="w">Working</span
+                      ><span
+                        class="mk chip"
+                        title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                        ><svg class="gi"><use href="#srv" /></svg
+                        ><span class="n">atlas</span></span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <div class="part">
+                  <h4>Workers tab</h4>
+                  <div class="box wk">
+                    <div class="wk-r">
+                      <span class="sd run"></span
+                      ><span class="t">Faster cold start</span
+                      ><span class="age">4m</span>
+                      <span class="wk-s"
+                        >Working<span
+                          class="mk chip"
+                          title="Runs on atlas&#10;Joined machine · online for 2 hours"
+                          ><svg class="gi"><use href="#srv" /></svg
+                          ><span class="n">atlas</span></span
+                        ></span
+                      >
+                    </div>
+                    <div class="wk-r">
+                      <span class="sd idle"></span
+                      ><span class="t">Idempotent refund webhooks</span
+                      ><span class="age">2h</span>
+                      <span class="wk-s"
+                        >Stopped<span
+                          class="mk chip off"
+                          title="Runs on studio&#10;Joined machine · offline&#10;Connection lost at 14:03."
+                          ><svg class="gi"><use href="#srv-off" /></svg
+                          ><span class="n">studio</span
+                          ><span class="st">offline</span></span
+                        ></span
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="two">
+                <div class="part">
+                  <h4>Inbox</h4>
+                  <div class="box ib">
+                    <i data-icon="help"></i
+                    ><span class="t">Search in Settings</span
+                    ><span class="q t">[its question]</span
+                    ><span class="ctx"
+                      >Gram<span
+                        class="mk chip"
+                        title="Runs on sandbox-1&#10;Provisioned host · online for 12 minutes"
+                        ><svg class="gi"><use href="#srv" /></svg
+                        ><span class="n">sandbox-1</span></span
+                      ></span
+                    >
+                  </div>
+                </div>
+                <div class="part">
+                  <h4>On hover</h4>
+                  <div class="tips">
+                    <div class="tip">
+                      <strong>Runs on atlas</strong
+                      ><span>Joined machine · online for 2 hours</span>
+                    </div>
+                    <div class="tip">
+                      <strong>Runs on studio</strong
+                      ><span>Joined machine · offline</span
+                      ><span>Connection lost at 14:03.</span
+                      ><span
+                        >It dials again by itself. If it stays offline, check
+                        Tailscale and gram-host status on studio.</span
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
