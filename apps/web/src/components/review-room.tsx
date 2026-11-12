@@ -1,7 +1,6 @@
 import { useEffect, type RefObject } from "react";
 import { create } from "zustand";
 
-import { inboxDocked } from "@/inbox/inbox-store";
 import { fitShell, useLayoutStore, type LayoutState } from "@/stores/layout";
 
 /** How long the reading place is held while the panel's width animates into focus and back. */
@@ -104,13 +103,7 @@ export function useAutoReviewFocus() {
     let armed = false;
     const due = () => {
       const fit = fitShell(useLayoutStore.getState());
-      return (
-        armed &&
-        !fit.reviewFocus &&
-        fit.reviewCramped &&
-        !useReviewRoom.getState().declined &&
-        !inboxDocked()
-      );
+      return armed && !fit.reviewFocus && fit.reviewCramped && !useReviewRoom.getState().declined;
     };
     const take = () => {
       timer = undefined;

@@ -251,9 +251,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     orchestrator", and with a draft the line beside Send says "Sending takes over from the
     orchestrator". Beside Send the context meter is its bar alone in a 32 px target, never a ring;
     the pointer opens its popover, headed "Context 36%", which says what it measures.
-- **The Inbox docks beside the chat only where the chat keeps its reading column** (760 px) beside
-  it; in a narrower window (under about 1,600 px with the overview open) it opens over the work as
-  a dialog, the same list and keys, rather than squeeze the chat to a strip.
+- **The Inbox is one dialog over the work**, the same list and keys in Quiet and out of it and at
+  every window size. It never takes the side panel's column: the chat and the panel stay as they
+  were under it, and opening an item's thread closes it.
 - **One worker list:** the right panel's Workers tab, by state, each row its dot, title, age and
   one status line without the state its heading says. ⌘J, Workers in the title bar's "…", the
   palette and the status strip's count open it with the keys on its rows; ⌘J again puts the panel

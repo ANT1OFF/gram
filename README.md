@@ -94,10 +94,9 @@ its title opens that memory to read or edit.
 
 ![Gram's Board in its Lanes layout: three features as rows, each a lane through the stations Briefed, Working, Checks, Review and Merged. Each worker is a card at its station: one needs you, one is running, one waits on checks, one waits on review and two are done, merged. The title bar reads 1 waiting · Open Inbox and 1 question.](docs/assets/gram-board.png)
 
-The Inbox docks beside the chat when the window has room, so you can answer without leaving
-your place.
+The Inbox opens over your work, so you can answer without leaving your place.
 
-![Gram's Inbox docked beside the orchestrator's chat, with the sidebar hidden. The Inbox lists one question under Questions, and its pane shows it in full: "Should the confirmation email show a delivery date?" from the Order email worker, its context, and two answers, Leave it out (Recommended) and Show the range, numbered 1 and 2, with Send answer and Write your own answer below. Its foot lists the keys: j k move, show thread, 1–9 pick, send, undo and close.](docs/assets/gram-inbox.png)
+![Gram's Inbox open as a dialog over the orchestrator's chat. The Inbox lists one question under Questions, and its pane shows it in full: "Should the confirmation email show a delivery date?" from the Order email worker, its context, and two answers, Leave it out (Recommended) and Show the range, numbered 1 and 2, then Other…, Send answer and Read in full. Its foot lists the keys: j k move, open thread, 1–9 pick, send, undo and close.](docs/assets/gram-inbox.png)
 
 Gram doesn't prescribe a way of working. The same pieces run as a swarm of workers in parallel
 that message each other, or with the orchestrator calling on one worker for one job.

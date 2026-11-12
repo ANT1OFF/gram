@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useLayoutEffect, useMemo } from "react";
 
 import { useApi } from "@/api/context";
-import { inboxDocked, showInbox, toggleInbox, useInboxStore } from "@/inbox/inbox-store";
+import { showInbox, toggleInbox, useInboxStore } from "@/inbox/inbox-store";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { appPathname } from "@/lib/app-path";
 import { attr, ringWhenDrawn } from "@/lib/ring-when-drawn";
@@ -113,15 +113,13 @@ export const jumpTarget = (
 
 /**
  * Opens an item's thread at the turn that asked: the transcript message, or its card above the
- * composer, ringed. A dialog Inbox closes, so the thread is what is seen, and the ringed card takes
- * focus; a docked one stays beside it, keeping focus.
+ * composer, ringed. The Inbox closes, so the thread is what is seen, and the ringed card takes
+ * focus.
  */
 export function useNeedsYouJump(): (item: NeedsYouItem) => void {
   const navigate = useNavigate();
   return (item) => {
     const inbox = useInboxStore.getState();
-    // Shown beside the docked Inbox, the thread leaves focus where it was: on the Inbox's list.
-    const beside = inbox.open && inboxDocked();
     inbox.select(item.key);
     if (inbox.open) inbox.leave();
     const target = jumpTarget(item);
@@ -140,7 +138,7 @@ export function useNeedsYouJump(): (item: NeedsYouItem) => void {
     if (appPathname() !== pathname) {
       void navigate({ to: "/t/$threadId", params: { threadId } });
     }
-    if (target.kind === "card") ringWhenDrawn(target.selector, !beside);
+    if (target.kind === "card") ringWhenDrawn(target.selector);
   };
 }
 

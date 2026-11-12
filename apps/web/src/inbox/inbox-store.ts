@@ -12,43 +12,12 @@ import { useDerivedAsks } from "@/orchestration/needs-you-store";
 import type { WidthBounds } from "@/stores/layout";
 
 // The Inbox's own state: whether it is open, the item it shows, the category its strip picked,
-// whether it lists what is put away for Later and how wide its dock is. What it lists is
+// whether it lists what is put away for Later and how wide its list is. What it lists is
 // `useDerivedAsks`'s Needs you list, which every count in the window reads too; nothing here is a
-// second copy of it. Whether it is docked or a dialog is the window's (`useInboxDock`). No React.
+// second copy of it. It is a dialog over the work in every mode (`InboxView`). No React.
 
-/**
- * The docked Inbox's column. `min` holds its list and a detail pane wide enough for an answer's
- * choices; it opens there until it is dragged wider.
- */
-export const INBOX_DOCK_WIDTH: WidthBounds = { min: 600, max: 4096, default: 600 };
-
-/**
- * The narrowest the chat beside the docked Inbox is dragged to: wide enough to read the transcript
- * the Inbox answers for. A window too narrow for it still docks, the chat at `CHAT_MIN_WIDTH`.
- */
-export const INBOX_CHAT_MIN_WIDTH = 520;
-
-/**
- * What the chat keeps beside an Inbox that hasn't been dragged: a comfortable reading column. The
- * dock takes the rest of a wide window, up to `INBOX_DOCK_AUTO_MAX`, rather than squeezing its list
- * and detail into its minimum while the chat has room to spare.
- */
-export const INBOX_CHAT_COMFORT_WIDTH = 760;
-
-/** The widest an Inbox that hasn't been dragged opens: its list and a detail at reading width. */
-export const INBOX_DOCK_AUTO_MAX = 880;
-
-/**
- * The Inbox's request list, beside the detail. Its `default` is the dialog's; docked, it opens at
- * `INBOX_LIST_DOCKED`, which still leaves the detail its 18rem at the dock's minimum.
- */
+/** The Inbox's request list, beside the detail. */
 export const INBOX_LIST_WIDTH: WidthBounds = { min: 160, max: 480, default: 352 };
-
-/**
- * The docked list's width: the full list, two lines a request (its title, then where it is from,
- * its kind and its age), wide enough that a request is known before it is opened.
- */
-export const INBOX_LIST_DOCKED = 288;
 
 /** The compact list's width: one line a request, its kind and title. */
 export const INBOX_LIST_COMPACT = 208;
@@ -56,22 +25,11 @@ export const INBOX_LIST_COMPACT = 208;
 /** Below this the list is compact, however it got there: a click on Compact list or a drag. */
 export const INBOX_LIST_COMPACT_BELOW = 260;
 
-/** The list's width undragged: the docked or the dialog default. */
-export const inboxListDefault = (docked: boolean): number =>
-  docked ? INBOX_LIST_DOCKED : INBOX_LIST_WIDTH.default;
-
-/** The list's width: the dragged one, else the docked or dialog default. */
-export const inboxListWidth = (dragged: number | undefined, docked: boolean): number =>
+/** The list's width: the dragged one, else its default. */
+export const inboxListWidth = (dragged: number | undefined): number =>
   dragged === undefined
-    ? inboxListDefault(docked)
+    ? INBOX_LIST_WIDTH.default
     : Math.round(Math.min(INBOX_LIST_WIDTH.max, Math.max(INBOX_LIST_WIDTH.min, dragged)));
-
-/** The docked Inbox, by the attribute only it carries; the dialog has none. */
-export const INBOX_DOCKED = '[data-testid="inbox"][data-docked]';
-
-/** Whether the open Inbox is docked beside the work rather than a dialog over it. */
-export const inboxDocked = (): boolean =>
-  typeof document !== "undefined" && document.querySelector(INBOX_DOCKED) !== null;
 
 interface InboxState {
   readonly open: boolean;
@@ -88,24 +46,16 @@ interface InboxState {
   readonly lastKind: NeedsYouSectionKey | undefined;
   /** Whether it lists what is put away for Later instead. */
   readonly later: boolean;
-  /**
-   * Whether it last showed a thread it opened: a dialog closes for it and the thread keeps focus; a
-   * dock stays, and its Esc hands focus to that thread's composer.
-   */
+  /** Whether it closed to show a thread it opened, which keeps focus rather than its opener. */
   readonly leftForThread: boolean;
-  /** The dock's dragged width, for this session; undefined to fit the window (`inboxDockFit`). */
-  readonly width: number | undefined;
   /** The request list's dragged width, for this session; undefined for its default. */
   readonly listWidth: number | undefined;
-  /** Bumped to put focus on the dock's list: an open from outside it, while it is already shown. */
-  readonly focusTick: number;
   select(key: string | undefined): void;
   setCategory(category: NeedsYouCategory): void;
   setLater(later: boolean): void;
   close(): void;
-  /** Shows a thread it opens: a dialog closes, focus going with the thread; a dock stays. */
+  /** Closes to show a thread it opens, focus going with the thread. */
   leave(): void;
-  setWidth(width: number): void;
   setListWidth(width: number | undefined): void;
 }
 
@@ -116,9 +66,7 @@ export const useInboxStore = create<InboxState>()((set) => ({
   lastKind: undefined,
   later: false,
   leftForThread: false,
-  width: undefined,
   listWidth: undefined,
-  focusTick: 0,
   select: (selected) => {
     const item = useDerivedAsks.getState().needsYou.items.find((each) => each.key === selected);
     set(item === undefined ? { selected } : { selected, lastKind: sectionOf(item) });
@@ -126,8 +74,7 @@ export const useInboxStore = create<InboxState>()((set) => ({
   setCategory: (category) => set({ category }),
   setLater: (later) => set({ later }),
   close: () => set({ open: false }),
-  leave: () => set(inboxDocked() ? { leftForThread: true } : { open: false, leftForThread: true }),
-  setWidth: (width) => set({ width }),
+  leave: () => set({ open: false, leftForThread: true }),
   setListWidth: (listWidth) => set({ listWidth }),
 }));
 
@@ -159,13 +106,8 @@ export const showInbox = (target: InboxTarget = {}) => {
       : newestAsk(items.filter((item) => item.workspaceId === target.workspaceId));
   const cameFor = target.ask === true || target.workspaceId !== undefined;
   const item = byKey ?? inWorkspace ?? (cameFor ? newestAsk(items) : undefined);
-  // Quiet stays: the Inbox opens over it as a dialog. Already docked, focus comes to its list.
-  const base = {
-    open: true,
-    leftForThread: false,
-    later: false,
-    focusTick: useInboxStore.getState().focusTick + 1,
-  } as const;
+  // Quiet stays: the Inbox opens over it, as it does over the work.
+  const base = { open: true, leftForThread: false, later: false } as const;
   if (item !== undefined) {
     useInboxStore.setState({
       ...base,
@@ -196,22 +138,8 @@ export const showInbox = (target: InboxTarget = {}) => {
 /** Opens the Inbox on the ask `askKey` (`Ask.key`): a notification's Open, a Board line's chip. */
 export const showInboxAsk = (askKey: string) => showInbox({ key: `ask:${askKey}` });
 
-/** Opens the Inbox where it was left, or closes it: the title bar's button. */
+/** Opens the Inbox where it was left, or closes it: the title bar's button, ⌘⇧I and ⌘⌥3. */
 export const toggleInbox = () => {
   if (useInboxStore.getState().open) useInboxStore.getState().close();
   else showInbox();
-};
-
-/**
- * ⌘⇧I and ⌘⌥3: open the Inbox where it was left; docked with focus elsewhere (the thread beside
- * it), take focus to its list; with focus in it, close it.
- */
-export const inboxKey = () => {
-  const { open, focusTick } = useInboxStore.getState();
-  const active = typeof document === "undefined" ? null : document.activeElement;
-  if (open && inboxDocked() && active?.closest(INBOX_DOCKED) == null) {
-    useInboxStore.setState({ focusTick: focusTick + 1 });
-    return;
-  }
-  toggleInbox();
 };

@@ -570,7 +570,7 @@ test("Needs you counts the asks across every workspace, and lists them by worksp
 test("Needs you counts what the agents left waiting on you too, and goes to it", async ({
   page,
 }) => {
-  // Wide enough that the Inbox docks beside the chat at its reading width.
+  // A wide window: the Inbox is a dialog over the work here too.
   await page.setViewportSize({ width: 1728, height: 1000 });
   // No asks: the plain mock.
   await page.addInitScript((key) => {
@@ -602,8 +602,8 @@ test("Needs you counts what the agents left waiting on you too, and goes to it",
   await row.click();
   await page.getByTestId("inbox-open-thread").click();
   await expect(page).toHaveURL(/\/t\/t-flaky$/);
-  // Docked, the Inbox stays beside the thread it shows.
-  await expect(page.getByTestId("inbox")).toHaveAttribute("data-docked", "");
+  // The Inbox closes for the thread it opens.
+  await expect(page.getByTestId("inbox")).toBeHidden();
   await expect(page.getByTestId("wait-chip")).toBeInViewport();
   const tray = page.getByTestId("waiting-tray");
   await expect(tray.getByTestId("waiting-count")).toContainText("1 waiting on you");
