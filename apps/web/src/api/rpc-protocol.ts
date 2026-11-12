@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -8,15 +9,20 @@ import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import type * as Socket from "effect/socket/Socket";
 
 import type { ConnectionControl } from "./connection";
+import { type PageVisibility, visibleTimeClock } from "./visible-clock";
 
 /** Three quick retries for a brief stall, then doubling to 5 s for a sustained outage. */
 export const transportRetryDelay = (attempt: number): number =>
   Math.min(5000, 500 * 2 ** Math.max(0, attempt - 3));
 
-/** The window's RPC transport, waking failed feeds as soon as a socket reconnects. */
+/**
+ * The window's RPC transport, waking failed feeds as soon as a socket reconnects. Its heartbeat
+ * counts only the time `page` is shown, so a hidden tab's late timers never drop the socket.
+ */
 export const rpcProtocolLayer = (
   socket: Layer.Layer<Socket.Socket>,
   connection: ConnectionControl,
+  page: PageVisibility | undefined = typeof document === "undefined" ? undefined : document,
 ) =>
   Layer.effect(RpcClient.Protocol)(
     Effect.gen(function* () {
@@ -26,7 +32,13 @@ export const rpcProtocolLayer = (
         // outage keeps its backoff instead of restarting the quick retries.
         if (connection.get().status === "open") attempt = 0;
       });
-      yield* Scope.addFinalizer(yield* Effect.scope, Effect.sync(unsubscribe));
+      const scope = yield* Effect.scope;
+      yield* Scope.addFinalizer(scope, Effect.sync(unsubscribe));
+      // The heartbeat allows 5 s for an answer. A hidden tab may handle a Pong only at its next
+      // wake-up, a minute on, and would close a healthy socket each minute: hidden time is not
+      // counted, and a server that went quiet meanwhile is found within 10 s of the tab returning.
+      const visible = page === undefined ? undefined : visibleTimeClock(yield* Clock.Clock, page);
+      if (visible !== undefined) yield* Scope.addFinalizer(scope, Effect.sync(visible.stop));
       // A Ping timeout closes the reader scope (and its socket) before failing old feeds.
       // retryTransientErrors would keep those feeds subscribed to the socket that was closed.
       return yield* RpcClient.makeProtocolSocket({
@@ -38,7 +50,11 @@ export const rpcProtocolLayer = (
             }),
           ),
         ),
-      });
+      }).pipe(
+        visible === undefined
+          ? (protocol) => protocol
+          : Effect.provideService(Clock.Clock, visible.clock),
+      );
     }),
   ).pipe(
     Layer.provide(socket),
