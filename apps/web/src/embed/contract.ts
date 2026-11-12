@@ -309,6 +309,13 @@ export type ShellLinkComponent = ComponentType<{
   children?: ReactNode;
 }>;
 
+/**
+ * One thread inside a page of the embedding app's: its transcript, cards and composer, without
+ * the thread's own header, filling the element it is put in. The same thread as on its own page
+ * (`/t/<id>`), so what is sent here is sent there.
+ */
+export type ShellThreadComponent = ComponentType<{ threadId: string }>;
+
 /** For a page or a switcher of the embedding app's: where the window is, and a way to move it. */
 export type UseShellLocation = () => {
   /** The path under the app, without `basePath`. */

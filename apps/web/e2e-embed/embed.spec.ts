@@ -216,6 +216,25 @@ test("the sidebar can leave Gram's workspaces and threads out", async ({ page })
   expect(errors).toEqual([]);
 });
 
+test("a thread can sit inside a page of the embedding app's", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await mounted(page);
+  await page.evaluate(() => (window as unknown as Update).embed.navigate("/threads"));
+  const id = await page.getByTestId("threads-row").first().getAttribute("data-thread-id");
+  await page.evaluate(
+    (to) => (window as unknown as Update).embed.navigate(to),
+    `/govern/beside/${id}`,
+  );
+  // The app's page and the thread side by side: its transcript, no header of its own.
+  await expect(page.getByTestId("beside-own")).toBeVisible();
+  const thread = page.getByTestId("shell-thread");
+  await expect(thread.getByTestId("thread-view")).toBeVisible();
+  await expect(thread.getByRole("button", { name: "Copy message" }).first()).toBeVisible();
+  await expect(thread.getByTestId("pane-header")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test("the page of every thread and New take the embedding app's words", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
