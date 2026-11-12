@@ -317,3 +317,33 @@ export const ProfileStartResponse = Schema.Struct({
   created: Schema.Boolean,
 });
 export type ProfileStartResponse = typeof ProfileStartResponse.Type;
+
+/**
+ * Where a fronting platform's own service moves a thread started from a profile onto another joined
+ * machine, when the machine it is on has gone away for good: `POST`, with a `ProfileMoveRequest` as
+ * JSON, answered with a `ProfileMoveResponse`. Only a thread whose workplace is a folder of its own
+ * (none or scratch) moves; one in repositories has work only its machine holds. One of the hosted
+ * features; a person's sign-in never reaches it.
+ */
+export const PROFILE_MOVE_PATH = "/threads/move-to-machine";
+
+export const ProfileMoveRequest = Schema.Struct({
+  threadId: ThreadId,
+  /** The joined machine the thread goes on, online now. */
+  hostId: HostId,
+  /**
+   * The profile the thread was started from, for its files, which the thread doesn't keep: laid in
+   * its new folder. What the thread keeps of it must be what this profile gives
+   * (`profileBindingOf`), or nothing moves. Absent: the new folder is empty.
+   */
+  profile: Schema.optionalKey(Schema.Unknown),
+});
+export type ProfileMoveRequest = typeof ProfileMoveRequest.Type;
+
+export const ProfileMoveResponse = Schema.Struct({
+  threadId: ThreadId,
+  hostId: HostId,
+  /** False when the thread was on that machine already, and this ask changed nothing. */
+  moved: Schema.Boolean,
+});
+export type ProfileMoveResponse = typeof ProfileMoveResponse.Type;

@@ -8,7 +8,7 @@ import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, layer } from "@effect/vitest";
-import { GramRpcs, PROFILE_START_PATH, RequestId } from "@gram/contracts";
+import { GramRpcs, PROFILE_MOVE_PATH, PROFILE_START_PATH, RequestId } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -371,6 +371,42 @@ describe("sign-in through a fronting proxy", () => {
           (yield* post(port, PROFILE_START_PATH, startBody(), platform(MACHINES_LIST_PATH))).status,
         ).toBe(403);
 
+        // Moving a thread to another machine is the platform's too, and a person's never. This
+        // one isn't on a joined machine, so it doesn't move, and the answer says so.
+        const moveBody = (extra: Record<string, unknown> = {}) =>
+          JSON.stringify({ threadId: PROFILE_THREAD, hostId: "machine-next", ...extra });
+        const unmoved = yield* post(
+          port,
+          PROFILE_MOVE_PATH,
+          moveBody(),
+          platform(PROFILE_MOVE_PATH),
+        );
+        expect(unmoved.status, unmoved.body).toBe(409);
+        expect(unmoved.body).toContain("Only a thread started from a profile");
+        expect(
+          (yield* (yield* ThreadStore).listActorEvents())
+            .filter((event) => event.action === PROFILE_MOVE_PATH)
+            .map((event) => event.data),
+        ).toEqual([{ status: 409 }]);
+        expect(
+          (yield* post(
+            port,
+            PROFILE_MOVE_PATH,
+            moveBody({ sudo: true }),
+            platform(PROFILE_MOVE_PATH),
+          )).status,
+        ).toBe(400);
+        expect(
+          (yield* post(port, PROFILE_MOVE_PATH, moveBody(), { ...host, ...signedIn })).status,
+        ).toBe(403);
+        expect(
+          (yield* post(port, PROFILE_MOVE_PATH, moveBody(), platform(PROFILE_START_PATH))).status,
+        ).toBe(403);
+        expect(
+          (yield* post(port, `${PROFILE_MOVE_PATH}/`, moveBody(), platform(PROFILE_MOVE_PATH)))
+            .status,
+        ).toBeGreaterThanOrEqual(400);
+
         // A thread's agent on this machine still needs its own token for its app tools.
         const mcp = yield* get(port, "/mcp", { ...host, authorization: "Bearer nope" });
         expect(mcp).toMatchObject({ status: 401, body: "unauthorized: invalid bearer token" });
@@ -648,6 +684,7 @@ describe("sign-in through a fronting proxy", () => {
         // Starting a thread from a profile is a hosted feature: here, a path that isn't there.
         const local = { ...host, cookie, origin: `http://127.0.0.1:${port}` };
         expect((yield* post(port, PROFILE_START_PATH, "{}", local)).status).toBe(404);
+        expect((yield* post(port, PROFILE_MOVE_PATH, "{}", local)).status).toBe(404);
       }),
     );
   });

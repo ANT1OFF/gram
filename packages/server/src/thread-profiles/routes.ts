@@ -4,7 +4,10 @@
 // that isn't there.
 import {
   embeddingOn,
+  PROFILE_MOVE_PATH,
   PROFILE_START_PATH,
+  ProfileMoveRequest,
+  type ProfileMoveResponse,
   ProfileStartRequest,
   type ProfileStartResponse,
 } from "@gram/contracts";
@@ -18,7 +21,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "../platform/u
 import { ProfileStarters } from "./service.ts";
 import type { ProfileStarter } from "./start.ts";
 
-export { PROFILE_START_PATH };
+export { PROFILE_MOVE_PATH, PROFILE_START_PATH };
 
 /** A profile's files hold at most 1 MB; the rest of a body is small beside them. */
 const BODY_MAX = 2_000_000;
@@ -29,6 +32,7 @@ const refuse = (message: string, status: number) =>
 const notThere = HttpServerResponse.text("not found", { status: 404 });
 
 const decodeRequest = Schema.decodeUnknownEffect(ProfileStartRequest);
+const decodeMove = Schema.decodeUnknownEffect(ProfileMoveRequest);
 
 /**
  * Headers the answer carries for the service-call record (`server.ts`): which thread, where, and
@@ -38,7 +42,56 @@ export const PROFILE_START_RECORD = {
   thread: "x-gram-thread",
   created: "x-gram-created",
   host: "x-gram-host",
+  moved: "x-gram-moved",
 } as const;
+
+/**
+ * The JSON body of a POST to `path`, or the answer that refuses it: a path that isn't there under
+ * another spelling or with the hosted features off, another method, another content type, or a
+ * body too large or not JSON.
+ */
+const jsonBodyAt = (
+  path: string,
+  on: Effect.Effect<boolean>,
+): Effect.Effect<
+  { readonly value?: unknown; readonly answer?: HttpServerResponse.HttpServerResponse },
+  never,
+  HttpServerRequest.HttpServerRequest
+> =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    // Only under its one spelling: the checks above this route match the path exactly.
+    if (authTarget(request.url)?.path !== path) return { answer: notThere };
+    if (!(yield* on)) return { answer: notThere };
+    if (request.method !== "POST")
+      return {
+        answer: HttpServerResponse.text("method not allowed", {
+          status: 405,
+          headers: { allow: "POST" },
+        }),
+      };
+    // A form or a plain-text post from another page is never a start.
+    if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json"))
+      return { answer: refuse("Send the body as application/json.", 415) };
+    const length = Number(request.headers["content-length"]);
+    if (Number.isFinite(length) && length > BODY_MAX)
+      return { answer: refuse(`The body is larger than ${BODY_MAX} bytes.`, 413) };
+    const text = yield* request.text.pipe(
+      Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(BODY_MAX)),
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+    if (text === undefined)
+      return {
+        answer: refuse(`The body couldn't be read, or is larger than ${BODY_MAX} bytes.`, 413),
+      };
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      return { answer: refuse("The body is not JSON.", 400) };
+    }
+    return { value };
+  });
 
 /** Answers the path. `on` is the hosted features setting, read per request. */
 export const profileStartRoute = (
@@ -50,33 +103,9 @@ export const profileStartRoute = (
   HttpServerRequest.HttpServerRequest
 > =>
   Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    // Only under its one spelling: the checks above this route match the path exactly.
-    if (authTarget(request.url)?.path !== PROFILE_START_PATH) return notThere;
-    if (!(yield* on)) return notThere;
-    if (request.method !== "POST")
-      return HttpServerResponse.text("method not allowed", {
-        status: 405,
-        headers: { allow: "POST" },
-      });
-    // A form or a plain-text post from another page is never a start.
-    if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json"))
-      return refuse("Send the body as application/json.", 415);
-    const length = Number(request.headers["content-length"]);
-    if (Number.isFinite(length) && length > BODY_MAX)
-      return refuse(`The body is larger than ${BODY_MAX} bytes.`, 413);
-    const text = yield* request.text.pipe(
-      Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(BODY_MAX)),
-      Effect.catch(() => Effect.succeed(undefined)),
-    );
-    if (text === undefined)
-      return refuse(`The body couldn't be read, or is larger than ${BODY_MAX} bytes.`, 413);
-    let value: unknown;
-    try {
-      value = JSON.parse(text);
-    } catch {
-      return refuse("The body is not JSON.", 400);
-    }
+    const body = yield* jsonBodyAt(PROFILE_START_PATH, on);
+    if (body.answer !== undefined) return body.answer;
+    const value = body.value;
     const input = yield* decodeRequest(value, { onExcessProperty: "error" }).pipe(Effect.option);
     if (input._tag === "None")
       return refuse("Give the profile and the thread's id, and the machine's if it has one.", 400);
@@ -101,7 +130,43 @@ export const profileStartRoute = (
     );
   });
 
-/** The route on the server's router, under its auth middleware. */
+/** Answers the move path. `on` is the hosted features setting, read per request. */
+export const profileMoveRoute = (
+  starter: Pick<ProfileStarter, "moveOne">,
+  on: Effect.Effect<boolean>,
+): Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  never,
+  HttpServerRequest.HttpServerRequest
+> =>
+  Effect.gen(function* () {
+    const body = yield* jsonBodyAt(PROFILE_MOVE_PATH, on);
+    if (body.answer !== undefined) return body.answer;
+    const input = yield* decodeMove(body.value, { onExcessProperty: "error" }).pipe(Effect.option);
+    if (input._tag === "None")
+      return refuse(
+        "Give the thread's id and the machine's, and the profile if it has files.",
+        400,
+      );
+    const { threadId, hostId, profile } = input.value;
+    return yield* starter.moveOne(threadId, hostId, profile).pipe(
+      Effect.map(({ thread, moved }) =>
+        HttpServerResponse.jsonUnsafe(
+          { threadId: thread.id, hostId, moved } satisfies ProfileMoveResponse,
+          {
+            headers: {
+              [PROFILE_START_RECORD.thread]: thread.id,
+              [PROFILE_START_RECORD.host]: hostId,
+              [PROFILE_START_RECORD.moved]: String(moved),
+            },
+          },
+        ),
+      ),
+      Effect.catch((error) => Effect.succeed(refuse(error.message, 409))),
+    );
+  });
+
+/** The routes on the server's router, under its auth middleware. */
 export const ProfileStartRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const starter = yield* ProfileStarters;
@@ -110,6 +175,9 @@ export const ProfileStartRoutes = Layer.unwrap(
       Effect.map(embeddingOn),
       Effect.orElseSucceed(() => false),
     );
-    return HttpRouter.add("*", PROFILE_START_PATH, () => profileStartRoute(starter, on));
+    return Layer.mergeAll(
+      HttpRouter.add("*", PROFILE_START_PATH, () => profileStartRoute(starter, on)),
+      HttpRouter.add("*", PROFILE_MOVE_PATH, () => profileMoveRoute(starter, on)),
+    );
   }),
 );

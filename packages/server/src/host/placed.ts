@@ -25,6 +25,7 @@ import {
 } from "@gram/git";
 import { dirname } from "node:path";
 import * as Effect from "effect/Effect";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
@@ -38,6 +39,8 @@ import type { WorkerHost, WorkerHostsShape } from "./worker-host.ts";
 
 /** How often an offline machine's watch looks for it again. */
 const REDIAL_CHECK = "5 seconds";
+/** How often a session waiting for its thread's machine looks whether the thread was moved. */
+const MOVE_LOOK = "500 millis";
 
 const commandOffline = (message: string) => new ProcSpawnError({ bin: "gram-host", message });
 const worktreeOffline = (message: string) =>
@@ -475,6 +478,32 @@ export const placedHost = (
       ),
   };
 
+  /**
+   * The host a session of `threadId` opens on, its machine being `id`: waited for as `forSession`
+   * waits for a stopped machine, unless the thread is moved off it meanwhile
+   * (`thread-profiles/start.ts`, `moveOne`), when it is the host of the machine it was moved to.
+   * Followed once: a thread moved again waits for its next session.
+   */
+  const sessionHost = (id: HostId, threadId: ThreadId) => {
+    const wait = hosts.forSession;
+    if (wait === undefined) return hosts.get(id);
+    const movedOff = hostIdOfThread(threadId).pipe(
+      Effect.repeat({ schedule: Schedule.spaced(MOVE_LOOK), until: (now) => now !== id }),
+    );
+    return Effect.raceFirst(
+      wait(id).pipe(Effect.map((host) => ({ host }) as const)),
+      movedOff.pipe(Effect.map((to) => ({ to }) as const)),
+    ).pipe(
+      Effect.flatMap((found) =>
+        "host" in found
+          ? Effect.succeed(found.host)
+          : found.to === LOCAL_HOST_ID
+            ? Effect.succeed(local)
+            : hosts.get(found.to),
+      ),
+    );
+  };
+
   /** One wrapper per agent, so the runtime always holds the same object for it. */
   const wrapped = new WeakMap<object, unknown>();
   const sessions = AgentHosts.of({
@@ -488,7 +517,7 @@ export const placedHost = (
             Effect.flatMap(hostIdOfThread(options.threadId), (id) =>
               id === LOCAL_HOST_ID
                 ? agent.open(options)
-                : (hosts.forSession ?? hosts.get)(id).pipe(
+                : sessionHost(id, options.threadId).pipe(
                     Effect.mapError(
                       (error) =>
                         new AgentUnavailable({

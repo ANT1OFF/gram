@@ -66,6 +66,40 @@ Content-Type: application/json
   may call it with its own sign-in. Each service call is on the record with the thread it made or
   found, whether it made it, and its machine.
 
+## Moving a thread to another machine
+
+A machine started for one thread may go away for good: one with no disk of its own is gone once
+it stops. The platform moves the thread onto another joined machine, with its own statement for
+the path, as it starts one:
+
+```http
+POST /threads/move-to-machine
+Content-Type: application/json
+
+{ "threadId": "<lowercase UUID>", "hostId": "<machine id>", "profile": { "version": 1, ... } }
+```
+
+- **What moves.** A thread started from a profile whose workplace is a folder of its own (`none`
+  or `scratch`) on a joined machine. A thread in repositories has work only its machine holds,
+  and stays.
+- **When it moves.** Only while its machine is away. A thread is never taken from a machine that
+  is online. `hostId` must be a joined machine, online now.
+- **The folder.** Made again on that machine at the path it had, with the profile's files when
+  `profile` is given. The thread doesn't keep its files, so the profile is the way to give them.
+  What the thread keeps of its profile (`profileBindingOf`) must be what `profile` gives, or
+  nothing moves. A machine that keeps thread folders at another path is refused, and what was
+  made there is removed.
+- **What carries over.** The thread's id, transcript, owner and records stay as they were. Its next
+  session opens on the new machine. A session already waiting for the old machine to be started
+  (a message sent to it) opens there instead, and the message goes. The agent's own session was on
+  the old machine, so the new one starts fresh, as it does when the agent can't find its session.
+- **The answer.** `{ "threadId": "...", "hostId": "...", "moved": true }`. `moved` is false for a
+  thread on that machine already. Refusals are as for a start: `409` with `{ "error": "..." }`,
+  `400` for a body that isn't the shape, `404` with the hosted features off.
+- **Who may call it.** A person signed in through the proxy is refused it, and so is a paired
+  phone. Each service call is on the record with the thread, the machine and whether it moved.
+  The shapes are `ProfileMoveRequest` and `ProfileMoveResponse`, the path `PROFILE_MOVE_PATH`.
+
 ## A workplace of repositories
 
 Each repository is an https or ssh remote with no credential in its address. Gram clones it once
