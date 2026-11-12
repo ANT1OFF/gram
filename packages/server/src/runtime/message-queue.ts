@@ -267,7 +267,11 @@ export const makeMessageQueue = ({
       ).pipe(Effect.annotateLogs({ threadId: rt.threadId, turnId: turn.id }));
       yield* withdrawMessage(rt, messageId);
       if (rt.inFlight?.id === messageId) rt.inFlight = undefined;
-      rt.queue.unshift({ id: QueueItemId.make(messageId), input: sent });
+      const kept = QueueItemId.make(messageId);
+      rt.queue.unshift({ id: kept, input: sent });
+      // Kept to be sent again, so it keeps who sent it (`host/ownership.ts`): an input that came
+      // off the queue has its writer already; one sent straight to an idle session is this call's.
+      if (!rt.actors.has(kept)) rt.actors.set(kept, yield* storedActor);
       yield* finishTurn(rt, "interrupted", "sendFailed");
       yield* syncQueue(rt);
       yield* setStatus(rt, "error", `${lost.message} Your message waits at the top of the queue.`);
