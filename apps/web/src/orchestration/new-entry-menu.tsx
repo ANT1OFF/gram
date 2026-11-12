@@ -13,6 +13,14 @@ import { focusedThreadId } from "@/shell/thread-switcher";
 import { newEntryRoute, prefillOneOff, type NewEntry } from "./new-entry";
 import { useTaskDraftStore } from "./task-draft-store";
 
+/** New as the overview head's icon (words beside it where the head has room). */
+const NEW_ICON =
+  "ml-auto gap-1 text-muted-foreground [-webkit-app-region:no-drag] @min-[12.5rem]/overview-head:w-auto @min-[12.5rem]/overview-head:pr-2.5 @min-[12.5rem]/overview-head:pl-1.5 in-data-phone-drawer:ml-0 in-data-phone-drawer:size-11 in-data-phone-drawer:bg-primary in-data-phone-drawer:text-primary-foreground!";
+
+/** New as a phone menu's pill. */
+const PILL =
+  "inline-flex h-13 shrink-0 items-center gap-2.5 rounded-full bg-foreground pr-6 pl-5 text-reading font-medium text-background shadow-overlay outline-none transition-[scale,opacity] duration-(--dur-fast) ease-(--ease-out) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-safe:active:scale-[0.97] [&_svg]:size-5";
+
 /** What the New form opens on by itself: the choice used last, the orchestrator's task at first. */
 export const newEntryOf = (remembered: NewEntry | undefined): Exclude<NewEntry, "workspace"> =>
   remembered === undefined || remembered === "workspace" ? "task" : remembered;
@@ -30,7 +38,12 @@ const ENTRY_OF: Readonly<Record<(typeof WHO_CHOICES)[number]["value"], NewEntry>
  * Task, Team and Chat, each with its shortcut, in Who does it's words and order. A pick opens the
  * one New form on that choice; where it runs, a new workspace included, is the form's own row.
  */
-export function NewEntryMenu() {
+export function NewEntryMenu({
+  pill = false,
+}: {
+  /** A phone menu's foot: a large rounded "New" in the foreground's colour, its menu above it. */
+  pill?: boolean;
+} = {}) {
   const navigate = useNavigate();
   const last = newEntryOf(useTaskDraftStore((s) => s.entry));
   const open = (entry: NewEntry) => {
@@ -44,23 +57,38 @@ export function NewEntryMenu() {
         side="bottom"
         render={
           <Menu.Trigger
-            render={<Button variant="ghost" size="icon-sm" aria-label="New task" />}
+            render={
+              pill ? (
+                <button type="button" aria-label="New" />
+              ) : (
+                <Button variant="ghost" size="icon-sm" aria-label="New task" />
+              )
+            }
             data-testid="new-entry"
             data-entry={last}
-            className="ml-auto gap-1 text-muted-foreground [-webkit-app-region:no-drag] @min-[12.5rem]/overview-head:w-auto @min-[12.5rem]/overview-head:pr-2.5 @min-[12.5rem]/overview-head:pl-1.5 in-data-phone-drawer:ml-0 in-data-phone-drawer:size-11 in-data-phone-drawer:bg-primary in-data-phone-drawer:text-primary-foreground!"
+            className={pill ? PILL : NEW_ICON}
           />
         }
       >
         <Plus />
-        <span
-          data-testid="new-entry-words"
-          className="hidden text-body @min-[12.5rem]/overview-head:inline"
-        >
-          New task
-        </span>
+        {pill ? (
+          <span data-testid="new-entry-words">New</span>
+        ) : (
+          <span
+            data-testid="new-entry-words"
+            className="hidden text-body @min-[12.5rem]/overview-head:inline"
+          >
+            New task
+          </span>
+        )}
       </Hint>
       <Menu.Portal>
-        <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
+        <Menu.Positioner
+          align="end"
+          side={pill ? "top" : "bottom"}
+          sideOffset={pill ? 8 : 4}
+          className="isolate z-50 outline-none"
+        >
           <Menu.Popup data-testid="new-entry-menu" aria-label="New" className={MENU_POPUP}>
             <div className={MENU_LABEL}>New</div>
             {WHO_CHOICES.map((choice) => (

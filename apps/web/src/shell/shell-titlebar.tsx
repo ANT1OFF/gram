@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils";
 import { TitlebarPause } from "@/orchestration/workspace-pause-button";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
 import { PhoneMenuButton } from "@/shell/phone-drawer";
+import { ROUND } from "@/shell/phone-menu";
+import { useHostAttention } from "@/embed/attention";
+import { useRoomySidebar } from "@/embed/store";
 import { PhoneTitle } from "@/shell/phone-title";
 import { ShellToggle } from "@/shell/shell-toggle";
 import { TitlebarOverflow } from "@/shell/titlebar-fold";
@@ -88,10 +91,55 @@ export function ShellTitlebar({
   const titlebarAtEdge = panelLeft || !panelShown;
   const phone = usePhone();
   const embedTitle = useEmbedPageTitle();
+  const roomy = useRoomySidebar();
+  const host = useHostAttention();
 
   // A phone's one bar: the drawer's menu, where you are, Needs you and "…" with the rest in words.
   // The thread's header and Board's controls still mount in the slot, out of sight: what they
   // carry is in "…", folded all the way at this width.
+  if (phone && roomy) {
+    // The roomy look's phone header: round buttons either side of where you are, on the page's own
+    // ground with no rule under it. The Inbox is the menu's dot and its row, while the app in front
+    // counts what needs someone.
+    return (
+      <div
+        ref={setTitlebar}
+        data-surface="titlebar"
+        data-testid="shell-titlebar"
+        data-phone=""
+        data-look="roomy"
+        data-solo-thread={soloBar || undefined}
+        data-carries={barThread ? "thread" : board ? "board" : undefined}
+        data-folded={folded || undefined}
+        data-fold={fold || undefined}
+        className="relative flex h-17 shrink-0 items-center gap-2 bg-transparent! px-3 [backdrop-filter:none]!"
+      >
+        {settings ? (
+          <div className="flex min-w-0 flex-1 items-center [&_button]:size-11">
+            <SettingsTitle />
+          </div>
+        ) : (
+          <>
+            <PhoneMenuButton />
+            <PhoneTitle centred />
+          </>
+        )}
+        <div ref={setTitlebarSlot} data-testid="titlebar-slot" hidden />
+        {host === undefined && (
+          <div
+            role="group"
+            aria-label="Attention"
+            data-testid="titlebar-attention"
+            className="flex shrink-0 items-center [&_[data-testid=inbox-button-dot]]:top-2.5 [&_[data-testid=inbox-button-dot]]:right-2.5 [&_button]:size-11"
+          >
+            <InboxButton />
+          </div>
+        )}
+        <TitlebarOverflow orchestration={!soloBar} className={ROUND} />
+      </div>
+    );
+  }
+
   if (phone) {
     return (
       <div

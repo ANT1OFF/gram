@@ -25,6 +25,8 @@ export interface PhonePlace {
   readonly heading?: string | undefined;
   readonly line: string;
   readonly asks: boolean;
+  /** A thread or the Board, whose line says its state; a page's line only says where it is listed. */
+  readonly live?: boolean;
 }
 
 /** A thread outside any workspace has no workers to count. */
@@ -94,7 +96,7 @@ export function usePhonePlace(): PhonePlace {
   // Mounted by an app in front of Gram, its pages name where you are: Gram's own name says nothing.
   const place = solo ? "Solo" : (workspace?.workspace.name ?? (hosted ? "" : "Gram"));
   if (board && workspace !== undefined) {
-    return { title: workspace.workspace.name, line: "Board", asks: false };
+    return { title: workspace.workspace.name, line: "Board", asks: false, live: true };
   }
   if (summary !== undefined) {
     const { thread, status } = summary;
@@ -113,6 +115,7 @@ export function usePhonePlace(): PhonePlace {
       heading: thread.spawnedBy === undefined ? undefined : `Worker: ${thread.title}`,
       line: orchestrator ? `Orchestrator · ${state}` : `${place} · ${state}`,
       asks: status === "needsApproval" || status === "needsInput",
+      live: true,
     };
   }
   // An added page is listed in no workspace: under its name, the group it is listed in.
@@ -128,23 +131,49 @@ export function usePhonePlace(): PhonePlace {
 }
 
 /** The phone header's title: one line of where you are, one of its place and state under it. */
-export function PhoneTitle({ className }: { className?: string }) {
-  const { title, heading, line, asks } = usePhonePlace();
+export function PhoneTitle({
+  className,
+  centred = false,
+}: {
+  className?: string;
+  /**
+   * Centred between round buttons, as the `roomy` look's header has it: a page says only its
+   * name, and a thread or the Board its state under it.
+   */
+  centred?: boolean;
+}) {
+  const { title, heading, line, asks, live } = usePhonePlace();
+  const lined = !centred || live === true;
   return (
-    <div data-testid="phone-title" className={cn("flex min-w-0 flex-1 flex-col", className)}>
+    <div
+      data-testid="phone-title"
+      className={cn(
+        "flex min-w-0 flex-1 flex-col",
+        centred && "items-center text-center",
+        className,
+      )}
+    >
       <h1
         aria-label={heading}
-        className="truncate text-reading leading-5 font-semibold text-foreground"
+        className={cn(
+          "max-w-full truncate text-reading leading-5 font-semibold text-foreground",
+          centred && !lined && "text-title",
+        )}
       >
         {title}
       </h1>
-      <span
-        data-testid="phone-title-line"
-        data-asks={asks || undefined}
-        className={cn("truncate text-meta", asks ? "text-status-needs" : "text-muted-foreground")}
-      >
-        {line}
-      </span>
+      {lined && (
+        <span
+          data-testid="phone-title-line"
+          data-asks={asks || undefined}
+          className={cn(
+            "max-w-full truncate text-meta",
+            asks ? "text-status-needs" : "text-muted-foreground",
+          )}
+        >
+          {line}
+        </span>
+      )}
     </div>
   );
 }
