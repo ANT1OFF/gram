@@ -218,8 +218,15 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
 - an agent's tool call is made for the person its thread's lineage is for: the owner of the host
   the thread is on, else its spawner's, up the chain. It is never read from the call's input, nor
   taken from whoever's request began the turn. So an orchestrator on a person's host spawns its
-  workers there, and a thread on no one's host can't place work on anyone's. A thread joins an
-  orchestrator only when both are that person's;
+  workers there, and a thread on no one's host can't place work on anyone's;
+- a thread is the person's whose host it works on, or whose lineage it is under: a worker on a
+  shared machine under that person's orchestrator is theirs too. Only they change it, by any
+  route: a send or steer, an answer to its card or question (`POST /asks/answer` included), a
+  task for its workspace (named by the workspace or by one of its projects), a charter or pause
+  of that workspace, or a join. Joining hands a thread its orchestrator's lineage, so whoever
+  asks must be both the thread's owner and the orchestrator's, even for a thread on no one's
+  machine. The check is made where these reach the agent, so no other route gets past it; the
+  server's own notices to a thread are not refused;
 - a person with no machine of their own is told to start one, where before they were told to join
   one.
 

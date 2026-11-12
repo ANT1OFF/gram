@@ -4,6 +4,8 @@ import * as Schema from "effect/Schema";
 import { defineAppTool } from "../app-tools/definition.ts";
 import { bindAppTools } from "../app-tools/registry.ts";
 import { callerPerson, forThread, lineageOwner, RoutedFor } from "../host/ownership.ts";
+import { ownedRuntimes } from "../runtime/owned-runtimes.ts";
+import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import { describe, expect, it } from "vitest";
 import {
   headlessPlacement,
@@ -246,5 +248,71 @@ describe("hosts provisioned on demand: configuration", () => {
     };
     scrubEmbedSecrets(env);
     expect(env).toEqual({ GRAM_HOST_PROVIDER_URL: "https://cell-manager.internal/hosts" });
+  });
+});
+
+/** Runtimes that record what reached them. */
+const recording = () => {
+  const reached: Array<string> = [];
+  const note =
+    (name: string) =>
+    (threadId: ThreadId, ..._rest: ReadonlyArray<unknown>) =>
+      Effect.sync(() => {
+        reached.push(`${name}:${threadId}`);
+        return undefined as never;
+      });
+  const runtimes = {
+    send: note("send"),
+    steer: note("steer"),
+    respond: note("respond"),
+    respondMany: (answers: ReadonlyArray<{ threadId: ThreadId; requestId: string }>) =>
+      Effect.sync(() =>
+        answers.map((each) => {
+          reached.push(`respondMany:${each.threadId}`);
+          return { threadId: each.threadId, requestId: each.requestId, ok: true };
+        }),
+      ),
+  } as unknown as ThreadRuntimesShape;
+  return { reached, owned: ownedRuntimes(runtimes, getThread, ownerOf) };
+};
+const as =
+  (person: string | undefined) =>
+  <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+    Effect.provideService(effect, RoutedFor, { person });
+const adaWorker = ThreadId.make("ada-worker");
+const sharedThread = ThreadId.make("shared-orchestrator");
+const answer = { kind: "approval", decision: "allow", scope: "once" } as never;
+
+describe("hosts provisioned on demand: what reaches a person's threads", () => {
+  // An already running session needs no machine looked up: the delivery itself is checked.
+  it("refuses another person's send, steer and answer to a thread under someone's machine", async () => {
+    const { reached, owned } = recording();
+    for (const call of [
+      owned.send(adaWorker, { text: "Grace's" }) as Effect.Effect<unknown, { message: string }>,
+      owned.steer(adaWorker, { text: "Grace's" }),
+      owned.respond(adaWorker, "r-1" as never, answer),
+    ])
+      expect(await outcome(as("grace")(call))).toBe(NOT_YOUR_MACHINE);
+    const many = await Effect.runPromise(
+      as("grace")(
+        owned.respondMany([
+          { threadId: adaWorker, requestId: "r-1" as never, answer },
+          { threadId: sharedThread, requestId: "r-2" as never, answer },
+        ]),
+      ),
+    );
+    expect(many).toEqual([
+      { threadId: adaWorker, requestId: "r-1", ok: false, error: NOT_YOUR_MACHINE },
+      { threadId: sharedThread, requestId: "r-2", ok: true },
+    ]);
+    expect(reached).toEqual([`respondMany:${sharedThread}`]);
+  });
+
+  it("lets the owner, and the server's own work, through", async () => {
+    const { reached, owned } = recording();
+    await Effect.runPromise(as("ada")(owned.send(adaWorker, { text: "Ada's" })));
+    await Effect.runPromise(owned.steer(adaWorker, { text: "the server's" }));
+    await Effect.runPromise(as("grace")(owned.send(sharedThread, { text: "anyone's" })));
+    expect(reached).toEqual([`send:${adaWorker}`, `steer:${adaWorker}`, `send:${sharedThread}`]);
   });
 });

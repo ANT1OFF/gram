@@ -48,6 +48,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { ActivityTracker } from "./activity.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { ownedRuntimes } from "./owned-runtimes.ts";
 import { type CheckoutService, TurnHooks, type TurnHooksShape } from "./hooks.ts";
 import { accountOf, type EarlyReleases, type ReleaseWave } from "./limit-wait.ts";
 import { makeRateLimitGate } from "./rate-limits.ts";
@@ -226,7 +227,8 @@ const make = Effect.gen(function* () {
   const waits = yield* ThreadWaits;
   const turnActivity = yield* TurnActivity;
   // Each thread's machine: its session and its checkout go to the machine it is placed on.
-  const { sessions: hosts, checkouts, git } = (yield* WorkerHosts).placed;
+  const workerHosts = yield* WorkerHosts;
+  const { sessions: hosts, checkouts, git } = workerHosts.placed;
   const config = yield* ServerConfig;
   const hooks = turnsHere(yield* TurnHooks, store);
   const sessions = yield* FiberMap.make<ThreadId>();
@@ -1733,5 +1735,6 @@ const make = Effect.gen(function* () {
       ),
   });
   yield* waits.bindTranscript(service);
-  return service;
+  // What reaches the runtimes from outside them changes a thread only for its owners.
+  return ThreadRuntimes.of(ownedRuntimes(service, store.getThread, workerHosts.ownerOf));
 });

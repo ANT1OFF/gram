@@ -19,6 +19,7 @@ import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { actorEventsOf } from "../rpc/actor-guard.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import { ActingPerson } from "./person.ts";
+import { NOT_YOUR_MACHINE, RoutedFor } from "../host/ownership.ts";
 import {
   ANSWER_OVER_HTTP,
   ASK_ANSWER_MAX_BYTES,
@@ -43,6 +44,11 @@ const refusal = (status: number, tag: string, message: string) =>
 export interface AskAnswerDeps {
   readonly runtimes: Pick<ThreadRuntimesShape, "respond">;
   readonly store: Pick<ThreadStoreShape, "appendActorEvents">;
+  /**
+   * Whether this call's person may answer in the thread: its owners' to answer, where it is on
+   * or under a machine started for one person (`host/ownership.ts`). Absent: anyone may.
+   */
+  readonly mayAnswer?: (threadId: ThreadId) => Effect.Effect<boolean>;
 }
 
 /**
@@ -81,15 +87,24 @@ export const answerAsk = (
       return refusal(400, "BadRequest", "expected {threadId, requestId, answer}");
     const { threadId, requestId, answer } = parsed.value;
     const proof: AnswerProof = { statement, method: request.method, path: request.url, body };
-    const failed = yield* deps.runtimes.respond(threadId, requestId, answer).pipe(
-      Effect.provideService(ActingPerson, actor.id),
-      Effect.provideService(AnswerProofRef, proof),
-      Effect.as(undefined),
-      Effect.catch((error) => Effect.succeed(error)),
-      Effect.catchCause((cause) =>
-        Effect.logError("an answer over HTTP failed", cause).pipe(Effect.as("defect" as const)),
-      ),
-    );
+    const asActor = <A, E>(effect: Effect.Effect<A, E>) =>
+      effect.pipe(
+        Effect.provideService(ActingPerson, actor.id),
+        Effect.provideService(RoutedFor, { person: actor.id }),
+      );
+    // Before the request is taken, or any hook or session asked: the statement says who
+    // answered, never that they may answer here.
+    const allowed = deps.mayAnswer === undefined ? true : yield* asActor(deps.mayAnswer(threadId));
+    const failed = !allowed
+      ? ("forbidden" as const)
+      : yield* asActor(deps.runtimes.respond(threadId, requestId, answer)).pipe(
+          Effect.provideService(AnswerProofRef, proof),
+          Effect.as(undefined),
+          Effect.catch((error) => Effect.succeed(error)),
+          Effect.catchCause((cause) =>
+            Effect.logError("an answer over HTTP failed", cause).pipe(Effect.as("defect" as const)),
+          ),
+        );
     // On record as the socket's `thread.respond` would be, failed or not.
     yield* deps.store
       .appendActorEvents(
@@ -99,6 +114,7 @@ export const answerAsk = (
       )
       .pipe(Effect.catchCause((cause) => Effect.logError("an answer went unrecorded", cause)));
     if (failed === undefined) return json(200, {});
+    if (failed === "forbidden") return refusal(403, "Forbidden", NOT_YOUR_MACHINE);
     if (failed === "defect") return refusal(500, "Failed", "the answer could not be taken");
     if (failed instanceof InvalidState) return refusal(409, failed._tag, failed.message);
     return refusal(404, failed._tag, failed.message);

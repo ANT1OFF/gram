@@ -1,5 +1,6 @@
 // Workspaces: saving, naming and removing one, the workspace a
 // project opens into, and `open`, which gives a workspace its orchestrator thread.
+import { admitThread } from "../../host/ownership.ts";
 import {
   availableWorkspaceName,
   autonomyOf,
@@ -84,6 +85,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
     reasons,
     taskStartupLock,
     workspaceStartupKeys,
+    ownerOf,
   } = kit;
   const { forgetReasons, openModel, endRecovery, deliveryFor, checkCharter, afterCharter } = deps;
 
@@ -501,6 +503,9 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           ? undefined
           : yield* findThread(workspace.orchestratorThreadId);
       if (holder !== undefined) {
+        // A task for a workspace goes to its orchestrator, so only that thread's owners may open
+        // it so (`host/ownership.ts`), whether named by the workspace or by one of its projects.
+        yield* admitThread(store.getThread, ownerOf, holder.id);
         if (requireNew)
           return yield* new InvalidState({
             message: "Workspace already has an orchestrator; explicit linking is required.",

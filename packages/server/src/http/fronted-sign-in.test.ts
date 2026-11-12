@@ -8,7 +8,13 @@ import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, layer } from "@effect/vitest";
-import { GramRpcs, PROFILE_START_PATH, RequestId } from "@gram/contracts";
+import {
+  DEFAULT_CHARTER,
+  GramRpcs,
+  PROFILE_START_PATH,
+  RequestId,
+  WorkspaceId,
+} from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -16,11 +22,12 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
-import { removeDir } from "../git/test-repo.ts";
+import { makeRepo, removeDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
 import { NO_ACTOR_REFUSAL, VIEWER_REFUSAL } from "../rpc/actor-guard.ts";
-import { NOT_YOUR_MACHINE } from "../host/ownership.ts";
+import { NOT_YOUR_MACHINE, RoutedFor } from "../host/ownership.ts";
+import { Orchestration } from "../orchestration/service.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { ANSWER_OVER_HTTP, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { ON_DEMAND_START_PATH, ON_DEMAND_STATUS_PATH } from "../embedding/on-demand.ts";
@@ -232,6 +239,13 @@ const refusal = <A, E, R>(call: Effect.Effect<A, E, R>) =>
   Effect.map(Effect.exit(call), (exit) =>
     Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "the call went through",
   );
+
+/** A folder of its own for a thread, removed when the file's tests end. */
+const lineageFolder = (dirs: Array<string>) => {
+  const made = mkdtempSync(join(tmpdir(), "gram-fronted-lineage-"));
+  dirs.push(made);
+  return made;
+};
 
 const ada = { sub: "user-ada", name: "Ada", role: "member" };
 const grace = { sub: "user-grace", name: "Grace", role: "member" };
@@ -770,6 +784,147 @@ describe("sign-in through a fronting proxy", () => {
             expect(yield* refusal(call)).not.toContain(NOT_YOUR_MACHINE);
           expect(
             yield* refusal(graceClient["thread.send"]({ ...send, clientMessageId: "own-2" })),
+          ).toBe("the call went through");
+        }),
+      );
+
+      // The re-review's cases: a join that would hand Ada's thread Grace's lineage, a task for
+      // Grace's workspace, an answer over HTTP, and a worker on a shared machine under Grace.
+      it.effect("keeps a person's orchestrator, its workers and its answers to them", () =>
+        Effect.gen(function* () {
+          const { port } = yield* info;
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const remote = Option.getOrThrow(yield* Effect.serviceOption(RemoteHosts));
+          const orchestration = Option.getOrThrow(yield* Effect.serviceOption(Orchestration));
+          const provisioned = remote.machines.provision({
+            name: "grace-box-2",
+            platform: "linux",
+            publicKey: generateHostKey().publicKey,
+            owner: grace.sub,
+            onDemand: "personal",
+          });
+          if (provisioned.kind !== "provisioned") throw new Error("not provisioned");
+          const hostId = provisioned.machine.id;
+          const graceClient = yield* as(port, grace);
+          const adaClient = yield* as(port, ada);
+          const opened = (root: string, person: typeof graceClient, branch?: string) =>
+            Effect.gen(function* () {
+              const created = yield* person["thread.create"]({
+                projectRoot: root,
+                checkout:
+                  branch === undefined ? { kind: "current" } : { kind: "newWorktree", branch },
+              });
+              yield* waitFor(
+                "the session",
+                runtimes.session(created.id).pipe(
+                  Effect.as(true),
+                  Effect.orElseSucceed(() => false),
+                ),
+              );
+              return created;
+            });
+          // Grace's orchestrator, running on her machine, and her workspace.
+          const orchestrator = yield* opened(lineageFolder(dirs), graceClient);
+          const workspaceId = WorkspaceId.make("w-grace");
+          yield* store.updateThread(orchestrator.id, (thread) => ({
+            ...thread,
+            role: "orchestrator",
+            workspaceId,
+            checkout: { ...thread.checkout, hostId },
+          }));
+          yield* store.putWorkspace({
+            workspace: {
+              id: workspaceId,
+              name: "Grace's",
+              projectIds: [orchestrator.projectId],
+              homeProjectId: orchestrator.projectId,
+              orchestratorThreadId: orchestrator.id,
+              createdAt: 1,
+            },
+            charter: DEFAULT_CHARTER,
+          });
+          // Her worker, on no one's machine: hers by its lineage.
+          const worker = yield* opened(lineageFolder(dirs), graceClient);
+          yield* store.updateThread(worker.id, (thread) => ({
+            ...thread,
+            workspaceId,
+            spawnedBy: { threadId: orchestrator.id, feature: "hers" },
+          }));
+          // Ada's own thread, on no one's machine, in a repository of hers: a thread that can join.
+          const own = yield* opened(makeRepo(lineageFolder(dirs)), adaClient, "ada-work");
+          const before = (yield* store.listMessages(orchestrator.id)).length;
+
+          const tries = {
+            join: adaClient["thread.joinWorkspace"]({
+              threadId: own.id,
+              workspaceId,
+              feature: "ada",
+              addRepos: true,
+            }),
+            taskByWorkspace: adaClient["workspace.startTask"]({
+              target: { workspaceId },
+              input: { text: "Ada's instructions" },
+            }),
+            taskByProject: adaClient["workspace.startTask"]({
+              target: { projectId: orchestrator.projectId },
+              input: { text: "Ada's instructions" },
+            }),
+            workerSend: adaClient["thread.send"]({
+              threadId: worker.id,
+              input: { text: "Ada's instructions" },
+              clientMessageId: "lineage-1",
+            }),
+          };
+          for (const [name, call] of Object.entries(tries))
+            expect([name, yield* refusal(call as Effect.Effect<unknown, unknown>)]).toEqual([
+              name,
+              expect.stringContaining(NOT_YOUR_MACHINE),
+            ]);
+          // A join an agent of Ada's thread asks for, where no RPC is: no one's caller.
+          const joined = yield* orchestration
+            .joinWorkspace(own.id, workspaceId, { feature: "ada", addRepos: true })
+            .pipe(Effect.provideService(RoutedFor, { person: undefined }), Effect.flip);
+          expect(joined.message).toContain(NOT_YOUR_MACHINE);
+          expect((yield* store.getThread(own.id)).spawnedBy).toBeUndefined();
+          // Nothing of Ada's reached the orchestrator.
+          expect((yield* store.listMessages(orchestrator.id)).length).toBe(before);
+
+          // An answer over HTTP, of any kind, refused before the request is looked up.
+          for (const answer of [
+            { kind: "approval", decision: "allow", scope: "once" },
+            { kind: "approval", decision: "deny", scope: "once" },
+            { kind: "question", answers: { "Which?": ["Ada's"] } },
+          ]) {
+            const body = JSON.stringify({
+              threadId: orchestrator.id,
+              requestId: RequestId.make("pending-of-grace"),
+              answer,
+            });
+            expect(
+              yield* post(port, ASK_ANSWER_PATH, body, { [IDENTITY_HEADER]: proxy.statement(ada) }),
+            ).toMatchObject({ status: 403, body: expect.stringContaining(NOT_YOUR_MACHINE) });
+          }
+          // Grace gets past it: there is just no such request.
+          const hers = JSON.stringify({
+            threadId: orchestrator.id,
+            requestId: RequestId.make("pending-of-grace"),
+            answer: { kind: "approval", decision: "allow", scope: "once" },
+          });
+          expect(
+            (yield* post(port, ASK_ANSWER_PATH, hers, {
+              [IDENTITY_HEADER]: proxy.statement(grace),
+            })).status,
+          ).toBe(404);
+          // And her worker still takes her word.
+          expect(
+            yield* refusal(
+              graceClient["thread.send"]({
+                threadId: worker.id,
+                input: { text: "from Grace" },
+                clientMessageId: "lineage-2",
+              }),
+            ),
           ).toBe("the call went through");
         }),
       );

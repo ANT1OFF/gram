@@ -5,7 +5,7 @@ import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
-import { GramRpcs } from "@gram/contracts";
+import { GramRpcs, type ThreadId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Cause from "effect/Cause";
@@ -103,6 +103,7 @@ import { PreviewFiles } from "../preview/files.ts";
 import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
+import { mayReachThread } from "../host/ownership.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
@@ -466,7 +467,16 @@ export const AuthMiddleware = HttpRouter.middleware(
           if (target.path === ASK_ANSWER_PATH && runtimes !== undefined && store !== undefined)
             return secureResponse(
               yield* answerAsk(
-                { runtimes, store },
+                {
+                  runtimes,
+                  store,
+                  ...(workerHosts === undefined
+                    ? {}
+                    : {
+                        mayAnswer: (threadId: ThreadId) =>
+                          mayReachThread(store.getThread, workerHosts.ownerOf, threadId),
+                      }),
+                },
                 request,
                 stated.actor,
                 request.headers[IDENTITY_HEADER] ?? "",

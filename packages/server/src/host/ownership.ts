@@ -132,3 +132,60 @@ export const forThread =
     Effect.flatMap(lineageOwner(getThread, ownerOf, threadId), (person) =>
       Effect.provideService(effect, RoutedFor, { person }),
     );
+
+/** Every checkout a thread works in: its own, the one it follows now, and its other repos'. */
+const checkoutsOf = (thread: Thread) => [
+  thread.checkout,
+  ...(thread.currentCheckout === undefined ? [] : [thread.currentCheckout]),
+  ...(thread.extraCheckouts ?? []),
+];
+
+/**
+ * Whose a thread is, as anything that changes it must ask: the person its work runs for
+ * (`lineageOwner`, so a worker on a shared machine under someone's orchestrator is theirs), and
+ * the owner of every machine it holds a checkout on. Empty for a thread no one's, or not stored.
+ */
+export const ownersOfThread = (
+  getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
+  ownerOf: OwnerOf,
+  threadId: ThreadId,
+): Effect.Effect<ReadonlyArray<string>> =>
+  Effect.gen(function* () {
+    const thread = yield* getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
+    if (thread === undefined) return [];
+    const owners = new Set<string>();
+    const lineage = yield* lineageOwner(getThread, ownerOf, threadId);
+    if (lineage !== undefined) owners.add(lineage);
+    for (const checkout of checkoutsOf(thread)) {
+      const owner = ownerOf(hostOf(checkout));
+      if (owner !== undefined) owners.add(owner);
+    }
+    return [...owners];
+  });
+
+/**
+ * Whether this fiber's caller may change `threadId` (send it, answer it, steer, restart or fork
+ * it, put it under an orchestrator): the server's own work may, and a caller every one of its
+ * owners is (`ownersOfThread`). A thread no one's is anyone's in its workspace.
+ */
+export const mayReachThread = (
+  getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
+  ownerOf: OwnerOf,
+  threadId: ThreadId,
+): Effect.Effect<boolean> =>
+  Effect.gen(function* () {
+    const caller = yield* currentCaller;
+    if (caller === undefined) return true;
+    const owners = yield* ownersOfThread(getThread, ownerOf, threadId);
+    return owners.every((owner) => owner === caller.person);
+  });
+
+/** Refused, with why, unless this fiber's caller may change `threadId` (`mayReachThread`). */
+export const admitThread = (
+  getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
+  ownerOf: OwnerOf,
+  threadId: ThreadId,
+): Effect.Effect<void, InvalidState> =>
+  Effect.flatMap(mayReachThread(getThread, ownerOf, threadId), (ok) =>
+    ok ? Effect.void : Effect.fail(new InvalidState({ message: NOT_YOUR_MACHINE, threadId })),
+  );

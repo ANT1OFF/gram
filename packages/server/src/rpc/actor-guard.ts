@@ -1,7 +1,7 @@
-import { type Checkout, hostOf, type Thread, type ThreadId } from "@gram/contracts";
+import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import { ANSWER_OVER_HTTP } from "../embedding/answer-proof.ts";
 import { ActingPerson } from "../embedding/person.ts";
-import { NOT_YOUR_MACHINE, ownersOf, RoutedFor } from "../host/ownership.ts";
+import { NOT_YOUR_MACHINE, ownersOf, ownersOfThread, RoutedFor } from "../host/ownership.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -176,12 +176,21 @@ const threadsNamed = (payload: unknown): ReadonlyArray<ThreadId> => {
   return named;
 };
 
-/** Every checkout a thread works in: its own, the one it follows now, and its other repos'. */
-const checkoutsOf = (thread: Thread): ReadonlyArray<Checkout> => [
-  thread.checkout,
-  ...(thread.currentCheckout === undefined ? [] : [thread.currentCheckout]),
-  ...(thread.extraCheckouts ?? []),
-];
+/**
+ * The workspaces a call's payload names by id, top-level or as its `target`: a workspace's call
+ * acts on its orchestrator (a task, a charter, a pause), so that thread's owners must make it.
+ */
+const workspacesNamed = (payload: unknown): ReadonlyArray<WorkspaceId> => {
+  if (typeof payload !== "object" || payload === null) return [];
+  const fields = payload as Record<string, unknown>;
+  const target = fields["target"];
+  return [
+    fields["workspaceId"],
+    typeof target === "object" && target !== null
+      ? (target as Record<string, unknown>)["workspaceId"]
+      : undefined,
+  ].filter((id): id is WorkspaceId => typeof id === "string");
+};
 
 export const VIEWER_REFUSAL = "read-only: a viewer can't change anything here";
 export const NO_ACTOR_REFUSAL = "unauthorized: no signed-in person on this call";
@@ -301,17 +310,26 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
       // Who each joined machine was started for, where one was. Absent in tests with no machines.
       const machines = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts))?.machines;
       const ownerOf = ownersOf(machines);
-      /** Whether a thread the call names is on a machine started for someone other than `person`. */
+      /**
+       * Whether a thread the call acts on is someone else's than `person`'s: by the machines it
+       * works on and by its lineage (`host/ownership.ts`), so a worker under another person's
+       * orchestrator is theirs too. The threads it names, and each named workspace's orchestrator.
+       */
       const onAnothersMachine = (person: string | undefined, payload: unknown) =>
         Effect.gen(function* () {
           // Looked up only while some machine is someone's.
           if (machines?.list().some((machine) => machine.owner !== undefined) !== true)
             return false;
-          for (const threadId of threadsNamed(payload)) {
-            const thread = yield* store.getThread(threadId).pipe(Effect.option);
-            if (thread._tag === "None") continue;
-            const owners = checkoutsOf(thread.value).map((checkout) => ownerOf(hostOf(checkout)));
-            if (owners.some((owner) => owner !== undefined && owner !== person)) return true;
+          const threads = [...threadsNamed(payload)];
+          for (const workspaceId of workspacesNamed(payload)) {
+            const state = yield* store.getWorkspace(workspaceId).pipe(Effect.option);
+            const holder =
+              state._tag === "Some" ? state.value.workspace.orchestratorThreadId : undefined;
+            if (holder !== undefined) threads.push(holder);
+          }
+          for (const threadId of threads) {
+            const owners = yield* ownersOfThread(store.getThread, ownerOf, threadId);
+            if (owners.some((owner) => owner !== person)) return true;
           }
           return false;
         });

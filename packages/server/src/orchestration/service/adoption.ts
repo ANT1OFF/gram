@@ -55,7 +55,7 @@ import {
   type OrchestrationKit,
   underKeysOf,
 } from "./kit.ts";
-import { lineageOwner, mayReach, NOT_YOUR_MACHINE } from "../../host/ownership.ts";
+import { lineageOwner, mayReach, mayReachThread, NOT_YOUR_MACHINE } from "../../host/ownership.ts";
 import { type JoinInput, type AdoptPin, type OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Projects } from "./projects.ts";
@@ -312,14 +312,19 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
         project = owner;
         relocate = found;
       }
-      // A thread on a machine started for one person joins work only for them: what its
-      // orchestrator sends it runs there (`host/ownership.ts`).
-      // Whoever asks, and the orchestrator it would answer to, must be that person's.
+      // Joining hands the thread its orchestrator's lineage, and so that person's machines
+      // (`host/ownership.ts`): a change of who it works for. Whoever asks must be the thread's
+      // owners' and the orchestrator's, even for a thread on no one's machine, and one moved out
+      // of another lineage. A thread on a machine started for one person joins only theirs.
+      if (
+        !(yield* mayReachThread(store.getThread, ownerOf, thread.id)) ||
+        !(yield* mayReachThread(store.getThread, ownerOf, holderId))
+      )
+        return yield* Effect.fail(NOT_YOUR_MACHINE);
       const holderFor = yield* lineageOwner(store.getThread, ownerOf, holderId);
       for (const at of [effectiveCheckout(thread), checkout]) {
         const owner = ownerOf(hostOf(at));
-        if (owner === undefined) continue;
-        if (!(yield* mayReach(ownerOf, hostOf(at))) || holderFor !== owner)
+        if (owner !== undefined && (!(yield* mayReach(ownerOf, hostOf(at))) || holderFor !== owner))
           return yield* Effect.fail(NOT_YOUR_MACHINE);
       }
       const refused = joinRefusal({
