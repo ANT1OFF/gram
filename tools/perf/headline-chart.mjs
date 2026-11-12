@@ -29,26 +29,28 @@ if (!beforeFile) {
   console.error("usage: headline-chart.mjs <before.json> [<after.json>] [--out chart.svg]");
   process.exit(1);
 }
+const escape = (text) =>
+  String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const read = (file) => JSON.parse(readFileSync(file, "utf8"));
 const before = read(beforeFile);
 const after = afterFile ? read(afterFile) : undefined;
 
 const group = (n) => n.toLocaleString("en-US");
-/** `2,230 ms`, `9.6 s`, `5.2 MB`: three significant figures at most, in the unit a person says. */
+/** `230 ms`, `9.6 s`, `5.2 MB`: in the unit a person says. */
 export const format = (value, unit) => {
   if (unit === "bytes") {
     if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
     return `${group(Math.round(value / 1024))} KB`;
   }
-  if (value >= 10_000) return `${(value / 1000).toFixed(1)} s`;
+  if (value >= 1000) return `${(value / 1000).toFixed(1)} s`;
   if (value >= 100) return `${group(Math.round(value))} ms`;
   return `${Number(value.toPrecision(2))} ms`;
 };
-/** `72×`, `2.4×`; under 5% either way is `same`, since a run's noise is about that. */
+/** `72×`, `2.4×`; under 15% either way is `same`, since two runs of one build differ by that. */
 export const factor = (from, to) => {
   if (!(from > 0) || !(to > 0)) return "";
   const ratio = from / to;
-  if (Math.abs(ratio - 1) < 0.05) return "same";
+  if (ratio > 1 / 1.15 && ratio < 1.15) return "same";
   if (ratio < 1) return `${Number((1 / ratio).toPrecision(2))}× slower`;
   return `${ratio >= 10 ? Math.round(ratio) : Number(ratio.toPrecision(2))}×`;
 };
@@ -82,19 +84,29 @@ console.log(table);
 
 if (out) {
   const ink = light
-    ? { surface: "#ffffff", primary: "#111111", muted: "#6b6b6b", track: "#d4d4d4", rule: "#e6e6e6" }
-    : { surface: "#000000", primary: "#ffffff", muted: "#8a8a8a", track: "#3a3a3a", rule: "#1f1f1f" };
+    ? {
+        surface: "#ffffff",
+        primary: "#111111",
+        muted: "#6b6b6b",
+        track: "#d4d4d4",
+        rule: "#e6e6e6",
+      }
+    : {
+        surface: "#000000",
+        primary: "#ffffff",
+        muted: "#8a8a8a",
+        track: "#3a3a3a",
+        rule: "#1f1f1f",
+      };
   const W = 1240;
   const PAD = 32;
   const ROW = 64;
   const HEAD = 96;
   const FOOT = 64;
   const H = HEAD + rows.length * ROW + FOOT;
-  const BAR_X = 500;
-  const BAR_W = 280;
+  const BAR_X = 580;
+  const BAR_W = 230;
   const VALUE_X = BAR_X + BAR_W + 28;
-  const escape = (text) =>
-    String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   const font = "font-family=\"Inter, 'Helvetica Neue', Arial, sans-serif\"";
   const parts = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escape(title ?? "Performance, before and after")}">`,
@@ -112,7 +124,9 @@ if (out) {
     const from = row.onlyAfter ? undefined : row.value;
     const to = row.onlyAfter ? row.value : row.after?.value;
     const scale = Math.max(from ?? 0, to ?? 0) || 1;
-    parts.push(`<rect x="${PAD}" y="${top}" width="${W - 2 * PAD}" height="1" fill="${ink.rule}"/>`);
+    parts.push(
+      `<rect x="${PAD}" y="${top}" width="${W - 2 * PAD}" height="1" fill="${ink.rule}"/>`,
+    );
     parts.push(
       `<text x="${PAD}" y="${middle + 7}" ${font} font-size="20" fill="${ink.primary}">${escape(row.label)}</text>`,
     );
@@ -134,8 +148,10 @@ if (out) {
         : `<tspan fill="${ink.primary}" font-weight="600">${escape(format(from ?? to, row.unit))}</tspan>`;
     parts.push(`<text x="${VALUE_X}" y="${middle + 6}" ${font} font-size="17">${values}</text>`);
     if (from !== undefined && to !== undefined) {
+      const change = factor(from, to);
+      const quiet = change === "same";
       parts.push(
-        `<text x="${W - PAD}" y="${middle + 9}" text-anchor="end" ${font} font-size="26" font-weight="600" fill="${ink.primary}">${escape(factor(from, to))}</text>`,
+        `<text x="${W - PAD}" y="${middle + (quiet ? 6 : 9)}" text-anchor="end" ${font} font-size="${quiet ? 17 : 26}" font-weight="${quiet ? 400 : 600}" fill="${quiet ? ink.muted : ink.primary}">${escape(change)}</text>`,
       );
     }
   });

@@ -4,11 +4,12 @@ import { cpus, tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { expect, test, type Browser, type CDPSession, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { terminalText } from "../e2e/terminal";
 import { threadRow } from "../e2e/thread-row";
 import { startHarness, type Harness } from "./harness";
+import { SLOW_3G, UNLIMITED, startSlowLink, type SlowLink } from "./slow-link";
 
 // The headline numbers: what a person waits for on very long threads, on a phone and on a slow
 // link, against the real server and the built web app. One generated database holds a 41,000-item
@@ -33,14 +34,6 @@ const TERMINAL_LINES = Math.max(500, Math.round(20_000 * SCALE));
 /** Pages of earlier history one sample loads; each is `FEED_WINDOW_TURNS` turns. */
 const EARLIER_PAGES = 10;
 
-/** Chrome DevTools' "Slow 3G" preset: 400 ms of latency each way, 400 kbit/s both ways. */
-const SLOW_3G = {
-  offline: false,
-  latency: 400,
-  downloadThroughput: (400 * 1000) / 8,
-  uploadThroughput: (400 * 1000) / 8,
-};
-const NO_THROTTLE = { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 };
 const PHONE = {
   viewport: { width: 390, height: 844 },
   deviceScaleFactor: 3,
@@ -114,7 +107,7 @@ const generatedTurn = (threadId: string, turn: number) => {
     output: {
       stdout: Array.from(
         { length: 8 },
-        (_, line) =>
+        (__, line) =>
           `  ✓ src/${WORDS[(turn + i + line) % WORDS.length]}.test.ts > ${sentence(turn + line, 6)}`,
       ).join("\n"),
       stderr: "",
@@ -171,7 +164,9 @@ const seedTurns = (db: DatabaseSync, threadId: string, turns: number) => {
         .get(threadId) as { seq: number }
     ).seq,
   );
-  let rev = Number((db.prepare("SELECT rev FROM feed_revision WHERE id = 0").get() as { rev: number }).rev);
+  let rev = Number(
+    (db.prepare("SELECT rev FROM feed_revision WHERE id = 0").get() as { rev: number }).rev,
+  );
   db.exec("BEGIN");
   for (let turn = 0; turn < turns; turn++) {
     const { turnId, createdAt, user, assistant } = generatedTurn(threadId, turn);
@@ -211,9 +206,12 @@ const openRpc = (origin: string, cookie: string) =>
   new Promise<Rpc>((resolve, reject) => {
     const url = `${origin.replace("http", "ws")}/ws`;
     const ws = new WebSocket(url, { headers: { cookie } } as unknown as string[]);
-    const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+    const pending = new Map<
+      string,
+      { resolve: (v: unknown) => void; reject: (e: Error) => void }
+    >();
     let nextId = 1;
-    ws.onmessage = (event) => {
+    ws.addEventListener("message", (event) => {
       const data = String(event.data);
       if (!data.startsWith('{"_tag":"Exit"')) return;
       const message = JSON.parse(data) as {
@@ -225,9 +223,9 @@ const openRpc = (origin: string, cookie: string) =>
       pending.delete(String(message.requestId));
       if (message.exit._tag === "Success") waiter.resolve(message.exit.value);
       else waiter.reject(new Error(`rpc failed: ${data.slice(0, 400)}`));
-    };
-    ws.onerror = () => reject(new Error(`socket to ${url} failed`));
-    ws.onopen = () =>
+    });
+    ws.addEventListener("error", () => reject(new Error(`socket to ${url} failed`)));
+    ws.addEventListener("open", () =>
       resolve({
         request: (tag, payload) =>
           new Promise((done, fail) => {
@@ -236,7 +234,8 @@ const openRpc = (origin: string, cookie: string) =>
             ws.send(JSON.stringify({ _tag: "Request", id, tag, payload, headers: [] }));
           }),
         close: () => ws.close(),
-      });
+      }),
+    );
   });
 
 /** What a page's sockets carry: the tags it asks for, when each is answered, and the bytes in. */
@@ -245,19 +244,27 @@ interface Wire {
   answered(tag: string): Promise<void>;
   /** Resolves when a feed opened from now on says `caughtUp`. */
   caughtUp(): Promise<void>;
+  /** Resolves when the list of threads next arrives whole, as it does on every connection. */
+  threadList(): Promise<void>;
   /** Bytes received over sockets since the last call. */
   takeBytes(): number;
+  /** Since the last call: the three requests whose answers were largest, as `tag 12 KB`. */
+  takeLargest(): string;
 }
 const watchWire = (page: Page): Wire => {
   let bytes = 0;
+  const tags = new Map<string, string>();
+  let byTag = new Map<string, number>();
   let sentWaiters: Array<{ tag: string; onId: (id: string) => void }> = [];
   let exitWaiters: Array<{ id: string; done: () => void }> = [];
   let caughtUpWaiters: Array<() => void> = [];
+  let threadListWaiters: Array<() => void> = [];
   page.on("websocket", (socket) => {
     socket.on("framesent", ({ payload }) => {
       const text = typeof payload === "string" ? payload : payload.toString("utf8");
       for (const match of text.matchAll(/"_tag":"Request","id":"?(\d+)"?,"tag":"([\w.]+)"/g)) {
         const [, id, tag] = match;
+        tags.set(id!, tag!);
         sentWaiters = sentWaiters.filter((waiter) => {
           if (waiter.tag !== tag) return true;
           waiter.onId(id!);
@@ -269,6 +276,8 @@ const watchWire = (page: Page): Wire => {
       const text = typeof payload === "string" ? payload : payload.toString("utf8");
       bytes += text.length;
       const head = text.slice(0, 200);
+      const tag = tags.get(/"requestId":"?(\d+)/.exec(head)?.[1] ?? "") ?? "other";
+      byTag.set(tag, (byTag.get(tag) ?? 0) + text.length);
       if (head.includes('"_tag":"Exit"')) {
         const id = /"requestId":"?(\d+)/.exec(head)?.[1];
         exitWaiters = exitWaiters.filter((waiter) => {
@@ -280,6 +289,9 @@ const watchWire = (page: Page): Wire => {
       if (text.slice(-400).includes('"type":"caughtUp"')) {
         for (const done of caughtUpWaiters.splice(0)) done();
       }
+      if (text.slice(0, 400).includes('"type":"threads.snapshot"')) {
+        for (const done of threadListWaiters.splice(0)) done();
+      }
     });
   });
   return {
@@ -288,9 +300,19 @@ const watchWire = (page: Page): Wire => {
         sentWaiters.push({ tag, onId: (id) => exitWaiters.push({ id, done }) });
       }),
     caughtUp: () => new Promise((done) => caughtUpWaiters.push(done)),
+    threadList: () => new Promise((done) => threadListWaiters.push(done)),
     takeBytes: () => {
       const out = bytes;
       bytes = 0;
+      return out;
+    },
+    takeLargest: () => {
+      const out = [...byTag]
+        .toSorted((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([tag, size]) => `${tag} ${Math.round(size / 1024)} KB`)
+        .join(", ");
+      byTag = new Map();
       return out;
     },
   };
@@ -308,9 +330,10 @@ const painted = (page: Page) =>
 const transcript = (page: Page) => page.getByTestId("transcript");
 
 let h: Harness;
+/** The way to the server that the phone and slow-link scenarios take; unlimited until set. */
+let link: SlowLink;
 let browser: Browser;
 let page: Page;
-let cdp: CDPSession;
 let wire: Wire;
 let rpc: Rpc;
 let cookie = "";
@@ -393,15 +416,28 @@ test.beforeAll(async ({ browser: given }) => {
     .map((c) => `${c.name}=${c.value}`)
     .join("; ");
   rpc = await openRpc(h.origin_url(), cookie);
-  cdp = await page.context().newCDPSession(page);
+  link = await startSlowLink(() => h.origin_url());
 });
+
+/** Opens `path` through the link, signed in as `h.open` signs a page in. */
+const openThroughLink = async (on: Page, path: string) => {
+  const [name, value] = cookie.split("; ")[0]!.split("=") as [string, string];
+  await on
+    .context()
+    .addCookies([{ name, value, url: link.origin, httpOnly: true, sameSite: "Strict" }]);
+  await on.goto(`${link.origin}${path}`);
+};
 
 test.afterAll(async () => {
   rpc?.close();
+  await link?.close();
   await page?.close();
   await h?.stop();
   if (!PERF || scenarios.length === 0) return;
-  const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
+  // `GRAM_PERF_LABEL` names a run that isn't this checkout's commit, such as a build of `main`.
+  const commit =
+    process.env["GRAM_PERF_LABEL"] ??
+    execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
   writeFileSync(
     OUT_FILE,
     `${JSON.stringify(
@@ -441,12 +477,9 @@ test(`open a ${thousands(OPEN_ITEMS)}-item thread`, async () => {
     const ms = await timeOpen(page, openThread, replyOf(openTurns - 1));
     // The first open also loads code and warms caches; it is reported apart.
     if (i === 0) {
-      record(
-        "open-thread-cold",
-        `Open a ${thousands(OPEN_ITEMS)}-item thread, first time`,
-        "ms",
-        [ms],
-      );
+      record("open-thread-cold", `Open a ${thousands(OPEN_ITEMS)}-item thread, first time`, "ms", [
+        ms,
+      ]);
       continue;
     }
     samples.push(ms);
@@ -481,14 +514,19 @@ test("load earlier turns", async () => {
     bytes.push(wire.takeBytes());
     if ((await earlier.count()) === 0) break;
   }
-  const total = performance.now() - start;
-  const items = pages.length * 20 * TURN_ITEMS;
-  record("load-earlier", `Load earlier turns, ${thousands(items)} items`, "ms", [total], {
-    pages: pages.length,
-    medianPageMs: round(median(pages)),
-    slowestPageMs: round(Math.max(...pages)),
-    medianPageKilobytes: round(median(bytes) / 1024),
-  });
+  // The median page, not the sum: one slow page out of ten would otherwise decide the number.
+  record(
+    "load-earlier",
+    `Load a page of earlier turns, ${thousands(20 * TURN_ITEMS)} items`,
+    "ms",
+    pages,
+    {
+      pages: pages.length,
+      totalMs: round(performance.now() - start),
+      slowestPageMs: round(Math.max(...pages)),
+      medianPageKilobytes: round(median(bytes) / 1024),
+    },
+  );
 });
 
 test(`send to a ${thousands(SEND_ITEMS)}-item thread`, async () => {
@@ -518,25 +556,50 @@ test(`send to a ${thousands(SEND_ITEMS)}-item thread`, async () => {
     seen.push(performance.now() - start);
     await expect(transcript(page).locator('[data-streaming="true"]')).toHaveCount(0);
   }
-  record("send-server", `Send to a ${thousands(SEND_ITEMS)}-item thread, on the server`, "ms", server);
-  record("send-reply", `Send to a ${thousands(SEND_ITEMS)}-item thread, until the reply`, "ms", seen);
+  record(
+    "send-server",
+    `Send to a ${thousands(SEND_ITEMS)}-item thread, on the server`,
+    "ms",
+    server,
+  );
+  record(
+    "send-reply",
+    `Send to a ${thousands(SEND_ITEMS)}-item thread, until the reply`,
+    "ms",
+    seen,
+  );
 });
 
 test(`launch on a phone with ${SIDEBAR_THREADS + 4} threads`, async () => {
   const samples: number[] = [];
-  const details: Array<{ http: number; socket: number; ms: number }> = [];
+  const details: Array<{
+    http: number;
+    socket: number;
+    ms: number;
+    files: number;
+    largest: string;
+    largestSocket: string;
+  }> = [];
   for (let i = 0; i < Math.min(REPEATS, 3); i++) {
     // A new context each time: nothing cached, as a first launch.
     const phone = await newPage(PHONE);
     const session = await phone.page.context().newCDPSession(phone.page);
     await session.send("Network.enable");
     let http = 0;
+    const urls = new Map<string, string>();
+    const files: Array<[string, number]> = [];
+    session.on("Network.requestWillBeSent", (event) => {
+      urls.set(event.requestId, event.request.url);
+    });
     session.on("Network.loadingFinished", (event) => {
       http += event.encodedDataLength;
+      const name = (urls.get(event.requestId) ?? "?").split("/").at(-1)!.split("?")[0]!;
+      files.push([name.replace(/-[\w-]{8}(\.\w+)$/, "$1") || "/", event.encodedDataLength]);
     });
+    link.takeBytesDown();
     const start = performance.now();
     const caughtUp = phone.wire.caughtUp();
-    await h.open(phone.page, `/t/${smallThread}`);
+    await openThroughLink(phone.page, `/t/${smallThread}`);
     await expect(transcript(phone.page).getByText("echo: start Short thread")).toBeVisible({
       timeout: 60_000,
     });
@@ -544,8 +607,20 @@ test(`launch on a phone with ${SIDEBAR_THREADS + 4} threads`, async () => {
     // Whatever else the launch asks for arrives within this quiet stretch.
     await phone.page.waitForTimeout(2_000);
     const socket = phone.wire.takeBytes();
-    samples.push(http + socket);
-    details.push({ http, socket, ms: performance.now() - start - 2_000 });
+    // Everything the link carried to the phone, as it was on the wire: files and socket.
+    samples.push(link.takeBytesDown());
+    details.push({
+      http,
+      socket,
+      ms: performance.now() - start - 2_000,
+      files: files.length,
+      largest: files
+        .toSorted((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([name, size]) => `${name} ${Math.round(size / 1024)} KB`)
+        .join(", "),
+      largestSocket: phone.wire.takeLargest(),
+    });
     await phone.page.close();
   }
   record(
@@ -555,8 +630,11 @@ test(`launch on a phone with ${SIDEBAR_THREADS + 4} threads`, async () => {
     samples,
     {
       httpKilobytes: round(median(details.map((d) => d.http)) / 1024),
-      socketKilobytes: round(median(details.map((d) => d.socket)) / 1024),
+      socketKilobytesInflated: round(median(details.map((d) => d.socket)) / 1024),
       unthrottledMs: round(median(details.map((d) => d.ms))),
+      files: details[0]!.files,
+      largestFiles: details[0]!.largest,
+      largestSocketAnswers: details[0]!.largestSocket,
     },
   );
 });
@@ -564,11 +642,9 @@ test(`launch on a phone with ${SIDEBAR_THREADS + 4} threads`, async () => {
 test("launch on a phone over slow 3G", async () => {
   // One sample: with nothing cached, the app's own files are most of a minute or more.
   const phone = await newPage(PHONE);
-  const session = await phone.page.context().newCDPSession(phone.page);
-  await session.send("Network.enable");
-  await session.send("Network.emulateNetworkConditions", SLOW_3G);
+  link.set(SLOW_3G);
   const start = performance.now();
-  await h.open(phone.page, `/t/${smallThread}`);
+  await openThroughLink(phone.page, `/t/${smallThread}`);
   await expect(transcript(phone.page).getByText("echo: start Short thread")).toBeVisible({
     timeout: 500_000,
   });
@@ -576,6 +652,7 @@ test("launch on a phone over slow 3G", async () => {
   record("phone-launch-slow", "Launch on a phone over slow 3G, nothing cached", "ms", [
     performance.now() - start,
   ]);
+  link.set(UNLIMITED);
   await phone.page.close();
 });
 
@@ -593,10 +670,12 @@ test("reconnect on a phone over slow 3G", async () => {
       }
     };
   });
-  const session = await phone.page.context().newCDPSession(phone.page);
-  await session.send("Network.enable");
-  await h.open(phone.page, `/t/${openThread}`);
-  await expect(transcript(phone.page).getByText(replyOf(openTurns - 1)).last()).toBeVisible({
+  await openThroughLink(phone.page, `/t/${openThread}`);
+  await expect(
+    transcript(phone.page)
+      .getByText(replyOf(openTurns - 1))
+      .last(),
+  ).toBeVisible({
     timeout: 120_000,
   });
   await phone.page.waitForTimeout(1_000);
@@ -604,80 +683,89 @@ test("reconnect on a phone over slow 3G", async () => {
   const measure = async () => {
     const samples: number[] = [];
     const bytes: number[] = [];
+    phone.wire.takeLargest();
     for (let i = 0; i < REPEATS; i++) {
-      phone.wire.takeBytes();
-      const caughtUp = phone.wire.caughtUp();
+      link.takeBytesDown();
+      // Back in touch: the open thread has caught up and the list of threads has arrived again.
+      const back = Promise.all([phone.wire.caughtUp(), phone.wire.threadList()]);
       const start = performance.now();
       await phone.page.evaluate(() => {
         const sockets = (window as unknown as { gramPerfSockets: WebSocket[] }).gramPerfSockets;
         for (const socket of sockets.splice(0)) socket.close();
       });
-      await caughtUp;
+      await back;
       await painted(phone.page);
       samples.push(performance.now() - start);
       await phone.page.waitForTimeout(1_500);
-      bytes.push(phone.wire.takeBytes());
+      bytes.push(link.takeBytesDown());
     }
-    return { samples, bytes };
+    return { samples, bytes, largest: phone.wire.takeLargest() };
   };
   const fast = await measure();
-  await session.send("Network.emulateNetworkConditions", SLOW_3G);
+  link.set(SLOW_3G);
   const slow = await measure();
-  await session.send("Network.emulateNetworkConditions", NO_THROTTLE);
+  link.set(UNLIMITED);
   record("phone-reconnect", "Reconnect on a phone over slow 3G", "ms", slow.samples, {
-    socketKilobytes: round(median(slow.bytes) / 1024),
+    wireKilobytes: round(median(slow.bytes) / 1024),
     unthrottledMs: round(median(fast.samples)),
+    largestSocketAnswers: slow.largest,
   });
   await phone.page.close();
 });
 
 test("attach a terminal over slow 3G", async () => {
-  await timeOpen(page, terminalThread, "echo: start Terminal thread");
-  const panel = page.getByTestId("right-panel");
+  // Its own page, through the link.
+  const linked = await newPage({ viewport: { width: 1440, height: 900 } });
+  await openThroughLink(linked.page, "/");
+  await timeOpen(linked.page, terminalThread, "echo: start Terminal thread");
+  const panel = linked.page.getByTestId("right-panel");
   if (!(await panel.isVisible())) {
-    await page.getByRole("button", { name: "Show right panel" }).click();
+    await linked.page.getByRole("button", { name: "Show right panel" }).click();
   }
   await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
   const terminal = panel.getByTestId("terminal").first();
   await expect(terminal.getByTestId("terminal-surface").locator("canvas")).toBeVisible();
   await terminal.getByTestId("terminal-surface").click();
   // Printed by the shell from arithmetic, so the echoed command line can't match the marker.
-  await page.keyboard.type(`seq 1 ${TERMINAL_LINES}; echo done-$((6*7))-lines`);
-  await page.keyboard.press("Enter");
+  await linked.page.keyboard.type(`seq 1 ${TERMINAL_LINES}; echo done-$((6*7))-lines`);
+  await linked.page.keyboard.press("Enter");
   await expect(terminalText(terminal)).toContainText("done-42-lines", { timeout: 60_000 });
 
   const measure = async () => {
     const samples: number[] = [];
     const bytes: number[] = [];
+    linked.wire.takeLargest();
     for (let i = 0; i < REPEATS; i++) {
-      await timeOpen(page, smallThread, "echo: start Short thread");
-      await page.waitForTimeout(500);
-      wire.takeBytes();
-      const row = threadRow(page, terminalThread);
+      await timeOpen(linked.page, smallThread, "echo: start Short thread");
+      await linked.page.waitForTimeout(500);
+      link.takeBytesDown();
+      const row = threadRow(linked.page, terminalThread);
       const start = performance.now();
       await row.click();
-      await expect(terminalText(page.getByTestId("right-panel").getByTestId("terminal").first()))
-        .toContainText("done-42-lines", { timeout: 120_000 });
-      await painted(page);
+      await expect(
+        terminalText(linked.page.getByTestId("right-panel").getByTestId("terminal").first()),
+      ).toContainText("done-42-lines", { timeout: 120_000 });
+      await painted(linked.page);
       samples.push(performance.now() - start);
-      await page.waitForTimeout(500);
-      bytes.push(wire.takeBytes());
+      await linked.page.waitForTimeout(500);
+      bytes.push(link.takeBytesDown());
     }
-    return { samples, bytes };
+    return { samples, bytes, largest: linked.wire.takeLargest() };
   };
-  await cdp.send("Network.enable");
   const fast = await measure();
-  await cdp.send("Network.emulateNetworkConditions", SLOW_3G);
+  link.set(SLOW_3G);
   const slow = await measure();
-  await cdp.send("Network.emulateNetworkConditions", NO_THROTTLE);
+  link.set(UNLIMITED);
   record(
     "terminal-attach",
     `Attach a terminal with ${thousands(TERMINAL_LINES)} lines over slow 3G`,
     "ms",
     slow.samples,
     {
-      socketKilobytes: round(median(slow.bytes) / 1024),
+      wireKilobytes: round(median(slow.bytes) / 1024),
       unthrottledMs: round(median(fast.samples)),
+      largestSocketAnswers: slow.largest,
     },
   );
+  await linked.page.close();
 });
