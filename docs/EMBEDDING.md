@@ -231,8 +231,9 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
     one's host;
   - **where work is kept for later.** Durable work records who it was written for, and every
     attempt, a retry after a restart included, runs as them, never as the server's own. A
-    thread's queued input keeps its writer beside it; after a restart, one whose writer may no
-    longer reach the thread is dropped, and one kept from before writers were recorded is taken
+    thread's queued input keeps its writer beside it (whoever wrote, edited or replaced it last),
+    and each item is admitted again as its writer just before it is sent, on a live session or
+    after a restart; one whose writer may no longer reach the thread is dropped, and one kept from before writers were recorded is taken
     as no one's in particular. An owed answer to a worker's question that its maker may no longer
     give is settled undelivered;
 - an agent's tool call is made for its own thread's host's owner. It is never read from the call's

@@ -483,4 +483,142 @@ describe("round v2's edges, through the same two choke points", () => {
       );
     }),
   );
+
+  // V2.4a: an edit or a replacement of a queued item is a new writer: the item goes as them.
+  it.effect("records whoever edits or replaces a queued item as its writer", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const { session } = yield* openOrchestrator(world);
+          // Its brief's turn still runs, so what is sent now waits in its queue.
+          const worker = yield* spawn(session, { feature: "cart", title: "Cart API" });
+          const id = worker.thread.id;
+          yield* runtimes.sendNotice(id, "server-note", { text: "SERVER_NOTE" }, { steer: false });
+          yield* as("grace")(runtimes.send(id, { text: "GRACE_TEXT" }));
+          const actorOf = (text: string) =>
+            Effect.map(store.listQueue(id), (queue) => {
+              const item = queue.find((each) => each.input.text === text);
+              return item === undefined ? "missing" : item.actor;
+            });
+          expect(yield* actorOf("SERVER_NOTE")).toBe("server");
+          expect(yield* actorOf("GRACE_TEXT")).toEqual({ person: "grace" });
+          const queued = yield* store.listQueue(id);
+          const graceItem = queued.find((each) => each.input.text === "GRACE_TEXT")!;
+          // Each kind of writer edits Grace's item in turn, and is its writer after.
+          for (const [person, expected] of [
+            ["ada", { person: "ada" }],
+            [undefined, {}],
+            ["grace", { person: "grace" }],
+          ] as const) {
+            yield* as(person)(runtimes.editQueued(id, graceItem.id, { text: "EDITED" }));
+            expect(yield* actorOf("EDITED")).toEqual(expected);
+          }
+          // The server's own edit is the server's.
+          yield* runtimes.editQueued(id, graceItem.id, { text: "EDITED_BY_SERVER" });
+          expect(yield* actorOf("EDITED_BY_SERVER")).toBe("server");
+          // A notice under the same key replaces the server's, as its new writer's.
+          yield* as("ada")(
+            runtimes.sendNotice(id, "server-note", { text: "ADA_NOTE" }, { steer: false }),
+          );
+          expect(yield* actorOf("ADA_NOTE")).toEqual({ person: "ada" });
+          expect(yield* actorOf("SERVER_NOTE")).toBe("missing");
+        }),
+      );
+    }),
+  );
+
+  // V2.4a, replayed: Ada's edit of the server's item, then the machine is Grace's at a restart.
+  it.effect("sends no edit of another's after a restart that made the machine someone else's", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const saved = yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const { session } = yield* openOrchestrator(world);
+          const worker = yield* spawn(session, { feature: "cart", title: "Cart API" });
+          const id = worker.thread.id;
+          yield* runtimes.sendNotice(id, "server-note", { text: "SERVER_NOTE" }, { steer: false });
+          const [item] = yield* store.listQueue(id);
+          yield* as("ada")(runtimes.editQueued(id, item!.id, { text: "ADA_EDITED_INPUT" }));
+          yield* store.updateThread(id, (t) => ({
+            ...t,
+            checkout: { ...t.checkout, hostId: GRACES },
+          }));
+          return id;
+        }),
+      );
+      gracesThere(world);
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          yield* (yield* ThreadRuntimes).status(saved).pipe(Effect.ignore);
+          yield* waitReal(
+            "Ada's edit dropped at the restart",
+            Effect.map(store.listQueue(saved), (queue) =>
+              queue.some((each) => each.input.text === "ADA_EDITED_INPUT") ? undefined : true,
+            ),
+          );
+          yield* settle;
+          // Dropped, not sent: no session of the thread was given it.
+          const fake = yield* FakeAgentControl;
+          expect(
+            fake.sessions
+              .filter((each) => each.options.threadId === saved)
+              .flatMap((each) => each.sent)
+              .some((input) => input.text.includes("ADA_EDITED_INPUT")),
+          ).toBe(false);
+        }),
+      );
+    }),
+  );
+
+  // V2.4b: no restart. The queue drains on the live session, each item admitted as its writer.
+  it.effect("drains a live queue only as each input's writer, dropping what they can't send", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const { session } = yield* openOrchestrator(world);
+          const worker = yield* spawn(session, { feature: "cart", title: "Cart API" });
+          const id = worker.thread.id;
+          yield* as("ada")(runtimes.send(id, { text: "ADA_LIVE_QUEUED" }));
+          yield* as("grace")(runtimes.send(id, { text: "GRACE_LIVE_QUEUED" }));
+          // While the turn runs, the machine becomes Grace's; the session stays as it was.
+          yield* store.updateThread(id, (t) => ({
+            ...t,
+            checkout: { ...t.checkout, hostId: GRACES },
+          }));
+          gracesThere(world);
+          expect(
+            (yield* as("ada")(runtimes.send(id, { text: "ADA_NOW" })).pipe(Effect.flip)).message,
+          ).toBe(NOT_YOUR_MACHINE);
+          yield* worker.session.completeTurn();
+          yield* waitReal(
+            "Grace's input sent",
+            Effect.sync(() =>
+              worker.session.sent.some((input) => input.text.includes("GRACE_LIVE_QUEUED"))
+                ? true
+                : undefined,
+            ),
+          );
+          expect(worker.session.sent.some((input) => input.text.includes("ADA_LIVE_QUEUED"))).toBe(
+            false,
+          );
+          expect(
+            (yield* store.listQueue(id)).some((item) => item.input.text === "ADA_LIVE_QUEUED"),
+          ).toBe(false);
+        }),
+      );
+    }),
+  );
 });

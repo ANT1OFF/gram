@@ -177,6 +177,11 @@ interface InFlightSend {
 /** What the send of the input in flight came to. */
 interface Handover<E> {
   readonly started: Exit.Exit<void, E>;
+  /**
+   * Its writer may not reach the thread now (`host/ownership.ts`): nothing was sent, and it is
+   * dropped. Never sent as anyone else's, nor tried again.
+   */
+  readonly refused?: true;
 }
 
 /**
@@ -822,6 +827,17 @@ const make = Effect.gen(function* () {
     perform: (item, _retry, { rt, published }) =>
       Effect.gen(function* () {
         if (rt.session === undefined) return undefined;
+        // Admitted again as its writer just before it goes, whatever has changed since it was
+        // queued: a live drain and the boot's alike (`host/ownership.ts`).
+        if (!(yield* mayReachThread(store.getThread, workerHosts.ownerOf, rt.threadId))) {
+          yield* Effect.logWarning("a queued input not sent: its writer may not reach it").pipe(
+            Effect.annotateLogs({ threadId: rt.threadId, itemId: item.id }),
+          );
+          // A launch was in the feed already; nothing of it is left to say it went.
+          if (published === true) yield* withdrawMessage(rt, item.id);
+          rt.actors.delete(item.id);
+          return { started: Exit.void, refused: true as const };
+        }
         const started = yield* Effect.exit(
           sendNow(rt, rt.session, item.input, {
             turnId: item.turnId,
@@ -874,13 +890,15 @@ const make = Effect.gen(function* () {
         rt.launch = undefined;
         rt.inFlight = { ...launched, turnId };
         yield* persistQueue(rt);
-        const { started } = yield* sendInFlight({
+        const { started, refused } = yield* sendInFlight({
           rt,
           // In a new turn, its row is published again, under that turn.
           published: turnId === launched.turnId,
         });
-        if (Exit.isSuccess(started)) return;
-        if (rt.turn !== undefined) yield* finishTurn(rt, "interrupted", "sendFailed");
+        if (refused !== true) {
+          if (Exit.isSuccess(started)) return;
+          if (rt.turn !== undefined) yield* finishTurn(rt, "interrupted", "sendFailed");
+        }
       }
       yield* setStatus(rt, "idle");
       if (rt.reopenOnIdle) {
@@ -923,7 +941,9 @@ const make = Effect.gen(function* () {
         yield* syncQueue(rt);
         yield* startIdleTimer(rt);
       } else if (next !== undefined && rt.session !== undefined && rt.inFlight !== undefined) {
-        const { started } = yield* sendInFlight({ rt });
+        const { started, refused } = yield* sendInFlight({ rt });
+        // Dropped: the queue goes on to what is next.
+        if (refused === true) return yield* becomeIdle(rt);
         if (Exit.isFailure(started)) return yield* Effect.failCause(started.cause);
       } else if (rt.session === undefined || !(yield* deliverNext(rt, rt.session))) {
         yield* startIdleTimer(rt);

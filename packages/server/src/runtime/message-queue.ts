@@ -640,6 +640,8 @@ export const makeMessageQueue = ({
                 if (stale >= 0) {
                   const id = rt.queue[stale]!.id;
                   rt.queue[stale] = { id, input };
+                  // New text, new writer: it goes as who wrote it now, not as the one it replaced.
+                  rt.actors.set(id, yield* storedActor);
                   rt.queuedAt.set(id, { at: now, messages: 1 });
                   yield* syncQueue(rt);
                   return { queued: true, replaced: true };
@@ -1069,14 +1071,17 @@ export const makeQueueMethods = ({
   editQueued: (threadId, itemId, input) =>
     withQueue(threadId, (rt) =>
       queueIndex(rt, itemId).pipe(
-        Effect.map((index) => {
-          // Whoever wrote the item still did: an edited notice never becomes the user's words.
+        Effect.flatMap((index) => Effect.map(storedActor, (actor) => ({ index, actor }))),
+        Effect.map(({ index, actor }) => {
+          // Whoever wrote the item is still shown as having written it (an edited notice never
+          // becomes the user's words), but it goes as whoever edited it: the whole text is theirs.
           const { author: _, ...edited } = input;
           const author = rt.queue[index]!.input.author;
           rt.queue[index] = {
             id: itemId,
             input: author === undefined ? edited : { ...edited, author },
           };
+          rt.actors.set(itemId, actor);
           rt.noticeKeys.delete(itemId);
           // The edit is the whole text now: a join after it starts the numbering again.
           const known = rt.queuedAt.get(itemId);
