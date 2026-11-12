@@ -7,12 +7,15 @@ import {
 } from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import { ServerConfig } from "../../config.ts";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { cloneRepo, makeCloneSuggestions } from "../../fs/clone.ts";
 import { expandHome, registerRepo, repositoryCandidates } from "../../fs/folders.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import {
+  projectScriptsDir,
   readProjectScripts,
   saveProjectScripts,
   ScriptsError,
@@ -29,6 +32,9 @@ const projectHandlers = Effect.gen(function* () {
   const proc = yield* Proc;
   const provide = Effect.provideService(Proc, proc);
   const suggestions = makeCloneSuggestions(homedir());
+  // Absent in test layers without a data folder: a broken scripts file then just has none.
+  const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
+  const lastGoodDir = config === undefined ? undefined : projectScriptsDir(config.dataDir);
   const projectRoot = (projectId: ProjectId) =>
     store.listProjects.pipe(
       Effect.flatMap((projects) => {
@@ -66,13 +72,15 @@ const projectHandlers = Effect.gen(function* () {
     "projects.forget": ({ projectId }) => store.forgetProject(projectId),
     "projects.scripts": ({ projectId }) =>
       projectRoot(projectId).pipe(
-        Effect.flatMap((root) => Effect.promise(() => readProjectScripts(root, projectId))),
+        Effect.flatMap((root) =>
+          Effect.promise(() => readProjectScripts(root, projectId, lastGoodDir)),
+        ),
       ),
     "projects.saveScripts": ({ projectId, scripts }) =>
       projectRoot(projectId).pipe(
         Effect.flatMap((root) =>
           Effect.tryPromise({
-            try: () => saveProjectScripts(root, projectId, scripts),
+            try: () => saveProjectScripts(root, projectId, scripts, lastGoodDir),
             catch: (error) =>
               new InvalidState({
                 message:

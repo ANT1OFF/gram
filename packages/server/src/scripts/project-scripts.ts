@@ -17,6 +17,7 @@ import { isInside, realPath } from "@gram/git";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
+import { settleLastGood } from "../settings/last-good.ts";
 import type { ShellCommand } from "../terminal/shell.ts";
 
 /** Why scripts can't be read, saved or run; its message is the user's to read. */
@@ -37,14 +38,67 @@ const readText = async (path: string): Promise<string | undefined> => {
 
 const MAKEFILES = ["GNUmakefile", "makefile", "Makefile"];
 
+/** The folder in Gram's data folder that keeps projects' last good scripts. */
+export const projectScriptsDir = (dataDir: string) => join(dataDir, "project-scripts");
+
+/**
+ * Where a project's last good scripts are kept, in Gram's data folder, never the project's:
+ * `project-scripts/<project id>.last-good.json`, and `<project id>.error` while its file is broken.
+ */
+export interface ScriptsLastGood {
+  readonly dir: string;
+  readonly projectId: ProjectId;
+}
+
+const scriptsCodec = {
+  encode: (scripts: readonly ProjectScript[]) => scriptsFileText(scripts),
+  decode: (text: string) => {
+    const parsed = parseScriptsFile(text);
+    return "scripts" in parsed ? parsed.scripts : undefined;
+  },
+};
+
+/**
+ * The scripts in `root`'s scripts file. A missing file has none; a broken one leaves the last good
+ * version in use when `lastGood` says where it is kept, and says why in `problem`.
+ */
+async function scriptsIn(
+  root: string,
+  lastGood: ScriptsLastGood | undefined,
+): Promise<{ scripts: ProjectScript[]; problem?: string }> {
+  const text = await readText(join(root, SCRIPTS_FILE));
+  const parsed = text === undefined ? { scripts: [] } : parseScriptsFile(text);
+  if (lastGood === undefined || !/^[A-Za-z0-9_-]{1,128}$/.test(lastGood.projectId)) {
+    return "scripts" in parsed ? parsed : { scripts: [], problem: parsed.error };
+  }
+  const settled = await settleLastGood(
+    {
+      source: join(root, SCRIPTS_FILE),
+      kept: join(lastGood.dir, `${lastGood.projectId}.last-good.json`),
+      error: join(lastGood.dir, `${lastGood.projectId}.error`),
+    },
+    "scripts" in parsed
+      ? { ok: true, value: parsed.scripts }
+      : { ok: false, problems: [parsed.error], fallback: [] },
+    scriptsCodec,
+  );
+  return {
+    scripts: [...settled.value],
+    ...(settled.problems.length === 0 ? {} : { problem: settled.problems.join(" ") }),
+  };
+}
+
 /** The scripts saved in `root`, and what else the project offers to add. */
 export async function readProjectScripts(
   root: string,
   projectId: ProjectId,
+  lastGoodDir?: string,
 ): Promise<ProjectScripts> {
-  const text = await readText(join(root, SCRIPTS_FILE));
-  const parsed = text === undefined ? { scripts: [] } : parseScriptsFile(text);
-  const scripts = "scripts" in parsed ? parsed.scripts : [];
+  const parsed = await scriptsIn(
+    root,
+    lastGoodDir === undefined ? undefined : { dir: lastGoodDir, projectId },
+  );
+  const scripts = parsed.scripts;
   const lockfiles: string[] = [];
   for (const file of LOCKFILE_NAMES) {
     if ((await lstat(join(root, file)).catch(() => undefined))?.isFile() === true)
@@ -63,7 +117,7 @@ export async function readProjectScripts(
       { packageJson: await readText(join(root, "package.json")), makefile, files: lockfiles },
       scripts,
     ),
-    ...("error" in parsed ? { problem: parsed.error } : {}),
+    ...(parsed.problem === undefined ? {} : { problem: parsed.problem }),
   };
 }
 
@@ -75,6 +129,7 @@ export async function saveProjectScripts(
   root: string,
   projectId: ProjectId,
   scripts: readonly ProjectScript[],
+  lastGoodDir?: string,
 ): Promise<ProjectScripts> {
   const checked = validateScripts(scripts);
   if ("error" in checked) throw new ScriptsError(checked.error);
@@ -100,7 +155,7 @@ export async function saveProjectScripts(
     await rm(temporary, { force: true }).catch(() => {});
     throw new ScriptsError(`Can't save ${SCRIPTS_FILE}: ${String(error)}`);
   }
-  return readProjectScripts(realRoot, projectId);
+  return readProjectScripts(realRoot, projectId, lastGoodDir);
 }
 
 /** What a run of a script needs: its command, and the folder inside the checkout it runs in. */
@@ -118,11 +173,14 @@ export async function resolveScriptRun(
   root: string,
   checkout: string,
   name: string,
+  lastGood?: ScriptsLastGood,
 ): Promise<ScriptRun> {
   const text = await readText(join(root, SCRIPTS_FILE));
   if (text === undefined) throw new ScriptsError(`This project has no ${SCRIPTS_FILE}.`);
-  const parsed = parseScriptsFile(text);
-  if ("error" in parsed) throw new ScriptsError(parsed.error);
+  // The scripts the menu showed: a broken file runs the last good version's, as the menu lists.
+  const parsed = await scriptsIn(root, lastGood);
+  if (parsed.scripts.length === 0 && parsed.problem !== undefined)
+    throw new ScriptsError(parsed.problem);
   const script = parsed.scripts.find((each) => each.name === name);
   if (script === undefined) throw new ScriptsError(`There is no script named ${name}.`);
   const realCheckout = await realPath(checkout).catch(() => {

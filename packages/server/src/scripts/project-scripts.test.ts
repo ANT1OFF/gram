@@ -1,8 +1,11 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -143,5 +146,64 @@ describe("scriptShellArgs", () => {
         "win32",
       ),
     ).toEqual(["--login", "-c", "make"]);
+  });
+});
+
+/** A project whose scripts file holds `test`, read once so it is the last good version. */
+const withGoodScripts = async () => {
+  const root = folder();
+  const lastGood = join(folder(), "project-scripts");
+  await saveProjectScripts(root, PROJECT, [{ name: "test", command: "bun run test" }], lastGood);
+  return { root, lastGood };
+};
+
+describe("a broken scripts file", () => {
+  it("leaves the last good scripts listed and runnable, and says why outside the project", async () => {
+    const { root, lastGood } = await withGoodScripts();
+    writeFileSync(join(root, ".gram/scripts.json"), '{"scripts": [{"name": "test"');
+
+    const read = await readProjectScripts(root, PROJECT, lastGood);
+    expect(read.scripts).toEqual([{ name: "test", command: "bun run test" }]);
+    expect(read.problem).toMatch(
+      /isn't valid JSON\. Gram keeps using the last good version, saved \d{4}-/,
+    );
+    const run = await resolveScriptRun(root, root, "test", { dir: lastGood, projectId: PROJECT });
+    expect(run.command).toBe("bun run test");
+
+    const reason = readFileSync(join(lastGood, `${PROJECT}.error`), "utf8");
+    expect(reason).toContain(join(root, ".gram/scripts.json"));
+    expect(reason).toContain("isn't valid JSON");
+    // Nothing is written into the project for it.
+    expect(readdirSync(join(root, ".gram"))).toEqual(["scripts.json"]);
+
+    // Fixed, the new version is used and the error file goes.
+    writeFileSync(
+      join(root, ".gram/scripts.json"),
+      JSON.stringify({ scripts: [{ name: "lint", command: "bun run lint" }] }),
+    );
+    expect((await readProjectScripts(root, PROJECT, lastGood)).scripts).toEqual([
+      { name: "lint", command: "bun run lint" },
+    ]);
+    expect(existsSync(join(lastGood, `${PROJECT}.error`))).toBe(false);
+  });
+
+  it("has no scripts once the file is deleted: that isn't a broken edit", async () => {
+    const { root, lastGood } = await withGoodScripts();
+    rmSync(join(root, ".gram/scripts.json"));
+    expect(await readProjectScripts(root, PROJECT, lastGood)).toMatchObject({ scripts: [] });
+    await expect(
+      resolveScriptRun(root, root, "test", { dir: lastGood, projectId: PROJECT }),
+    ).rejects.toThrow(ScriptsError);
+  });
+
+  it("still refuses a broken file it has no good version of", async () => {
+    const root = folder();
+    const lastGood = join(folder(), "project-scripts");
+    mkdirSync(join(root, ".gram"));
+    writeFileSync(join(root, ".gram/scripts.json"), "{");
+    expect((await readProjectScripts(root, PROJECT, lastGood)).scripts).toEqual([]);
+    await expect(
+      resolveScriptRun(root, root, "test", { dir: lastGood, projectId: PROJECT }),
+    ).rejects.toThrow(/isn't valid JSON/);
   });
 });
