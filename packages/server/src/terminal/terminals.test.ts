@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -18,6 +18,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { spawn } from "node-pty";
 
+import { KEPT_DIVIDER, keptTerminalsIn } from "./kept.ts";
 import { plainTail } from "./plain-text.ts";
 import { resolveShell, WINDOWS_SHELLS } from "./shell.ts";
 import { ensureSpawnHelperExecutable } from "./spawn-helper.ts";
@@ -470,6 +471,140 @@ describe.skipIf(!ptyProbe.available || isWindows)("a script's terminal", () => {
         expect(yield* terminals.list(THREAD)).toEqual([
           expect.objectContaining({ script: "answer", alive: false, exitCode: 3 }),
         ]);
+      }).pipe(Effect.scoped),
+    TIMEOUT,
+  );
+});
+
+/** Terminals keeping a thread's open terminals in `dir`, as one start of a host does. */
+const start = (dir: string, folder: string, threads: ReadonlyArray<ThreadId> = [THREAD]) =>
+  makeTerminals({
+    threadFolder: (threadId) =>
+      threads.includes(threadId)
+        ? Effect.succeed(folder)
+        : Effect.fail(new ThreadNotFound({ threadId })),
+    defaultFolder: Effect.succeed(undefined),
+    settingsShell: Effect.succeed(undefined),
+    path: Effect.succeed(process.env["PATH"] ?? ""),
+    closedThreads: Stream.never,
+    kept: keptTerminalsIn(dir),
+    keepDelayMs: 20,
+  });
+
+describe.skipIf(!ptyProbe.available || isWindows)("a kept terminal", () => {
+  const folders = Effect.acquireRelease(
+    Effect.sync(() => {
+      const folder = realpathSync(mkdtempSync(join(tmpdir(), "gram-kept-")));
+      return { folder, dir: join(folder, ".kept") };
+    }),
+    ({ folder }) => Effect.sync(() => rmSync(folder, { recursive: true, force: true })),
+  );
+
+  it.live(
+    "comes back after a restart under its id: its last screen, the divider, then a new shell",
+    () =>
+      Effect.gen(function* () {
+        const { folder, dir } = yield* folders;
+        // A long-running command, as a script that was still running when the host ended.
+        const terminalId = yield* Effect.gen(function* () {
+          const terminals = yield* start(dir, folder);
+          const opened = yield* terminals.open({
+            threadId: THREAD,
+            cols: 80,
+            rows: 24,
+            shell: SHELL,
+            command: "echo ran-$((6*7)); sleep 60",
+            script: "slow",
+          });
+          yield* terminals.subscribe(opened.terminalId).pipe(
+            Stream.takeUntil((event) => event.type !== "exit" && event.data.includes("ran-42")),
+            Stream.runDrain,
+            Effect.timeout(ANSWER_DEADLINE),
+          );
+          return opened.terminalId;
+        }).pipe(Effect.scoped);
+
+        const terminals = yield* start(dir, folder);
+        expect(yield* terminals.list(THREAD)).toEqual([
+          expect.objectContaining({ terminalId, cwd: folder, alive: true }),
+        ]);
+        // A plain shell now: it carries no script, so the tab doesn't offer to run it again.
+        expect((yield* terminals.list(THREAD))[0]?.script).toBeUndefined();
+
+        const events = yield* typeUntil(terminals, terminalId, script.printMarker, "sb-42");
+        const text = textOf(events);
+        expect(text).toContain(KEPT_DIVIDER);
+        expect(text.indexOf("ran-42")).toBeLessThan(text.indexOf(KEPT_DIVIDER));
+        // The old command shows once, above the line, and was not run again below it.
+        expect(text.split("ran-42")).toHaveLength(2);
+        expect(text.indexOf("sb-42")).toBeGreaterThan(text.indexOf(KEPT_DIVIDER));
+      }).pipe(Effect.scoped),
+    TIMEOUT,
+  );
+
+  it.live(
+    "is kept while it runs, so a host that dies without closing still has it",
+    () =>
+      Effect.gen(function* () {
+        const { folder, dir } = yield* folders;
+        const terminals = yield* start(dir, folder);
+        const opened = yield* terminals.open({
+          threadId: THREAD,
+          cols: 80,
+          rows: 24,
+          shell: SHELL,
+        });
+        yield* typeUntil(terminals, opened.terminalId, script.printMarker, "sb-42");
+        const file = join(dir, `${opened.terminalId}.json`);
+        const kept = yield* eventually(
+          Effect.sync(() => {
+            try {
+              return JSON.parse(readFileSync(file, "utf8")) as { tail: string; threadId: string };
+            } catch {
+              return undefined;
+            }
+          }),
+          (value) => value !== undefined && value.tail.includes("sb-42"),
+        );
+        expect(kept?.threadId).toBe(THREAD);
+        expect(statSync(file).mode & 0o777).toBe(0o600);
+      }).pipe(Effect.scoped),
+    TIMEOUT,
+  );
+
+  it.live(
+    "doesn't come back once closed, once its program ended, or once its thread is gone",
+    () =>
+      Effect.gen(function* () {
+        const { folder, dir } = yield* folders;
+        const OTHER = "thread-kept-other" as ThreadId;
+        yield* Effect.gen(function* () {
+          const terminals = yield* start(dir, folder, [THREAD, OTHER]);
+          const closed = yield* terminals.open({
+            threadId: THREAD,
+            cols: 80,
+            rows: 24,
+            shell: SHELL,
+          });
+          const ended = yield* terminals.open({
+            threadId: THREAD,
+            cols: 80,
+            rows: 24,
+            shell: SHELL,
+          });
+          yield* terminals.open({ threadId: OTHER, cols: 80, rows: 24, shell: SHELL });
+          yield* terminals.open({ cols: 80, rows: 24, shell: SHELL, cwd: folder });
+          yield* terminals.close(closed.terminalId);
+          yield* terminals.input(ended.terminalId, "exit\r");
+          yield* eventually(terminals.list(THREAD), (list) =>
+            list.some((t) => t.terminalId === ended.terminalId && !t.alive),
+          );
+        }).pipe(Effect.scoped);
+
+        // OTHER closed while the host was down; THREAD's terminals all ended or were closed.
+        const terminals = yield* start(dir, folder, [THREAD]);
+        expect(yield* terminals.list()).toEqual([]);
+        expect(readdirSync(dir)).toEqual([]);
       }).pipe(Effect.scoped),
     TIMEOUT,
   );

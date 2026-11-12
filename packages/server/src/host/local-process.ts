@@ -6,7 +6,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import { liveScan } from "../ports/scan.ts";
-import { spawnLocalHost } from "./child.ts";
+import { spawnLocalHostKeeping } from "./child.ts";
 import { filesOn } from "./files.ts";
 import type { HostConnection } from "./protocol.ts";
 import { type MachineParts, throughHost } from "./routing.ts";
@@ -16,22 +16,26 @@ import { type MachineParts, throughHost } from "./routing.ts";
  * start or answer is closed at once, its reason logged, and `undefined` returned, so the server
  * keeps doing the work itself.
  */
-const startHostProcess = Effect.gen(function* () {
-  const scope = yield* Scope.fork(yield* Effect.scope);
-  const started = yield* spawnLocalHost.pipe(Scope.provide(scope), Effect.exit);
-  if (Exit.isFailure(started)) {
-    yield* Scope.close(scope, Exit.void);
-    const reason = Cause.squash(started.cause);
-    yield* Effect.logWarning("worker host: its process didn't start; it runs in the server").pipe(
-      Effect.annotateLogs({ reason: reason instanceof Error ? reason.message : String(reason) }),
+const startHostProcess = (keptTerminals: string | undefined) =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.fork(yield* Effect.scope);
+    const started = yield* spawnLocalHostKeeping(keptTerminals).pipe(
+      Scope.provide(scope),
+      Effect.exit,
     );
-    return undefined;
-  }
-  yield* Effect.logInfo("worker host: running as its own process").pipe(
-    Effect.annotateLogs({ pid: started.value.hello.pid }),
-  );
-  return started.value;
-});
+    if (Exit.isFailure(started)) {
+      yield* Scope.close(scope, Exit.void);
+      const reason = Cause.squash(started.cause);
+      yield* Effect.logWarning("worker host: its process didn't start; it runs in the server").pipe(
+        Effect.annotateLogs({ reason: reason instanceof Error ? reason.message : String(reason) }),
+      );
+      return undefined;
+    }
+    yield* Effect.logInfo("worker host: running as its own process").pipe(
+      Effect.annotateLogs({ pid: started.value.hello.pid }),
+    );
+    return started.value;
+  });
 
 /**
  * This machine's parts, each through the host process while it runs and in the server otherwise.
@@ -52,6 +56,8 @@ export class LocalHostProcess extends Context.Service<
    */
   static readonly layerWith = (options: {
     readonly hostProcess: boolean;
+    /** Where the host process keeps its threads' open terminals for its next start. */
+    readonly keptTerminals?: string;
   }): Layer.Layer<LocalHostProcess, never, Worktrees | GitStateRuntime | Proc> =>
     Layer.effect(
       LocalHostProcess,
@@ -63,7 +69,9 @@ export class LocalHostProcess extends Context.Service<
           git: yield* GitStateRuntime,
           scan: liveScan.pipe(Effect.provideService(Proc, proc)),
         };
-        const connection = options.hostProcess ? yield* startHostProcess : undefined;
+        const connection = options.hostProcess
+          ? yield* startHostProcess(options.keptTerminals)
+          : undefined;
         return {
           connection,
           parts: connection === undefined ? inServer : throughHost(connection, inServer),
@@ -73,9 +81,19 @@ export class LocalHostProcess extends Context.Service<
 
   /** On when `GRAM_HOST_PROCESS=1`. */
   static readonly layer: Layer.Layer<LocalHostProcess, never, Worktrees | GitStateRuntime | Proc> =
-    Layer.suspend(() =>
-      LocalHostProcess.layerWith({ hostProcess: process.env["GRAM_HOST_PROCESS"] === "1" }),
+    LocalHostProcess.layerKeeping(undefined);
+
+  /** On when `GRAM_HOST_PROCESS=1`, keeping its threads' open terminals in `keptTerminals`. */
+  static layerKeeping(
+    keptTerminals: string | undefined,
+  ): Layer.Layer<LocalHostProcess, never, Worktrees | GitStateRuntime | Proc> {
+    return Layer.suspend(() =>
+      LocalHostProcess.layerWith({
+        hostProcess: process.env["GRAM_HOST_PROCESS"] === "1",
+        ...(keptTerminals === undefined ? {} : { keptTerminals }),
+      }),
     );
+  }
 
   /**
    * `Worktrees` through the host process while it runs: provided to the checkouts' service, so a

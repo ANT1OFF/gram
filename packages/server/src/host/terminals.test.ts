@@ -16,7 +16,8 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { terminalsThroughHost } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
-import { spawnLocalHost } from "./child.ts";
+import { KEPT_DIVIDER } from "../terminal/kept.ts";
+import { spawnLocalHost, spawnLocalHostKeeping } from "./child.ts";
 
 const THREAD = "thread-on-the-host" as ThreadId;
 
@@ -226,6 +227,46 @@ describe.skipIf(process.platform === "win32")("terminals through the host proces
         yield* terminals.close(kept.terminalId);
         expect(yield* listed()).toEqual([]);
         expect(opened).toEqual([]);
+      }).pipe(Effect.scoped),
+    30_000,
+  );
+
+  it.live(
+    "brings a thread's terminal back after the host process restarts, a new shell under its old screen",
+    () =>
+      Effect.gen(function* () {
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), "gram-host-terminals-")));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+        const keptDir = join(dir, "kept");
+        const path = { path: process.env["PATH"] ?? "" };
+        const shell = { cwd: dir, cols: 80, rows: 24, shell: "/bin/sh", threadId: THREAD };
+        const opened = yield* Effect.gen(function* () {
+          const host = yield* spawnLocalHostKeeping(keptDir);
+          const terminal = yield* host.terminals.open(shell, path);
+          const watching = yield* host.terminals.subscribe(terminal.terminalId).pipe(
+            Stream.takeUntil((event) => event.type !== "exit" && event.data.includes("before-42")),
+            Stream.runDrain,
+            Effect.forkScoped,
+          );
+          yield* host.terminals.input(terminal.terminalId, "echo before-$((6*7))\n");
+          yield* Fiber.join(watching).pipe(Effect.timeout("20 seconds"));
+          return terminal;
+          // The scope's end stops the host process, as the app quitting does.
+        }).pipe(Effect.scoped);
+
+        const host = yield* spawnLocalHostKeeping(keptDir);
+        const [listed] = yield* host.terminals.list(THREAD);
+        expect(listed).toMatchObject({ terminalId: opened.terminalId, cwd: dir, alive: true });
+        const watching = yield* host.terminals.subscribe(opened.terminalId).pipe(
+          Stream.takeUntil((event) => event.type !== "exit" && event.data.includes("after-42")),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        yield* host.terminals.input(opened.terminalId, "echo after-$((6*7))\n");
+        const text = output(yield* Fiber.join(watching).pipe(Effect.timeout("20 seconds")));
+        expect(text.indexOf("before-42")).toBeGreaterThan(-1);
+        expect(text.indexOf("before-42")).toBeLessThan(text.indexOf(KEPT_DIVIDER));
+        expect(text.lastIndexOf("after-42")).toBeGreaterThan(text.indexOf(KEPT_DIVIDER));
       }).pipe(Effect.scoped),
     30_000,
   );

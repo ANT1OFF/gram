@@ -34,7 +34,8 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { claudeSignInOf, hostStatusOf } from "./claude-sign-in.ts";
 import { sessionsOnHost } from "./sessions.ts";
-import { terminalsOnHost } from "./terminals.ts";
+import { terminalsOnHostKeeping } from "./terminals.ts";
+import { KEPT_TERMINALS_ENV, keptTerminalsIn } from "../terminal/kept.ts";
 import { stopOn } from "./stop.ts";
 import {
   HOST_FEATURES,
@@ -116,11 +117,15 @@ const hostService = (
   hostId: HostId,
   claude?: HostClaudeToken,
   update?: (busy: BusyOf, admission: Admission) => HostUpdater | undefined,
+  /** Where its threads' open terminals are kept for its next start; absent, none are. */
+  keptTerminals?: string,
 ): Effect.Effect<HostService, never, Scope.Scope | Proc | Worktrees | AgentHosts> =>
   Effect.gen(function* () {
     const proc = yield* Proc;
     const agents = yield* AgentHosts;
-    const terminals = yield* terminalsOnHost;
+    const terminals = yield* terminalsOnHostKeeping(
+      keptTerminals === undefined ? undefined : keptTerminalsIn(keptTerminals),
+    );
     const folders = foldersOn(proc);
     // A joined machine's sessions open only in a folder its gate lets through; this machine's own
     // host runs this machine's threads wherever the user opened them, as the server did.
@@ -224,7 +229,16 @@ const child = Effect.gen(function* () {
   const socket = yield* NodeSocket.fromDuplex(
     Effect.sync(() => new NetSocket({ fd: HOST_STREAM_FD, readable: true, writable: true })),
   );
-  yield* serveHost(socket, yield* hostService(LOCAL_HOST_ID));
+  const kept = process.env[KEPT_TERMINALS_ENV];
+  yield* serveHost(
+    socket,
+    yield* hostService(
+      LOCAL_HOST_ID,
+      undefined,
+      undefined,
+      kept === undefined || kept === "" ? undefined : kept,
+    ),
+  );
 }).pipe(Effect.scoped, Effect.provide(hostLayer()));
 
 const args = process.argv.slice(2);
@@ -259,6 +273,7 @@ NodeRuntime.runMain(
             provisioned
               ? undefined
               : (busy, admission) => selfUpdater(RELEASE, home, busy, admission),
+            join(home, "kept-terminals", hostId),
           ),
         layer: hostLayer(() => readClaudeToken(joinedHome), keyAuth),
         release: RELEASE,

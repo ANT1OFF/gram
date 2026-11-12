@@ -376,8 +376,12 @@ hour. The turn then fails, saying the machine restarted and why it wasn't contin
 doesn't dial in again within 2 minutes ends its sessions with a message that names it. Nothing ever
 falls back to running on this machine.
 
-Terminals aren't brought back: the shell, what ran in it and its scrollback ended with the host, so
-open a new one.
+A thread's terminals come back without what ran in them: the shell and the program it ran ended
+with the host. The host keeps each open terminal's tail in its folder (`kept-terminals`), and when
+it starts again each one reopens under the same tab and folder, with its last screen above the
+line `the program above ended; this is a new shell` and a fresh shell below. The command is never
+run again. One whose thread closed, or moved off the machine, meanwhile is closed when the machine
+dials in. See [terminals after a restart](AGENTS_AND_FEATURES.md#terminals-after-a-restart).
 
 ## Stop a machine and keep its disk
 

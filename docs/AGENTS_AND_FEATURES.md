@@ -1146,6 +1146,20 @@ Definitions are read from the project's own folder each time, not from the threa
 an agent editing its worktree's copy changes nothing. No agent tool runs a script: only the
 user's click or key does.
 
+## Terminals after a restart
+
+A thread's terminal that was still open when Gram quit, crashed, or lost the machine it ran on
+comes back on the next start, in the same tab, folder and shell. It shows its last screen as plain
+text (a full-screen program's last frame included) above a dim line, `── the program above ended;
+this is a new shell ──`, and a fresh shell below it. The command that ran is never run again, so
+a script's tab comes back as a plain shell.
+
+What comes back is the terminal's kept tail: up to 256 KB of output, of which the last 1,000 lines
+are shown. Gram keeps it in its data folder (`kept-terminals`, readable by your user only) while
+the terminal is open, a second after new output, and deletes it when the terminal closes, its
+program ends, or its thread closes. A terminal whose thread or folder is gone stays gone, and so
+does one opened outside a thread. A joined machine keeps its own in its host folder.
+
 ## Worktree storage and cleanup
 
 Settings → Storage lists every known repo's linked worktrees in five groups: in

@@ -8,6 +8,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import type * as Scope from "effect/Scope";
+import { KEPT_TERMINALS_ENV } from "../terminal/kept.ts";
 import { connectHost, type HostConnection } from "./protocol.ts";
 
 /**
@@ -54,6 +55,8 @@ export const spawnHost = (
     file: process.execPath,
     args: [hostEntry()],
   },
+  /** Set in the host's environment beside the server's own. */
+  env: Readonly<Record<string, string>> = {},
 ): Effect.Effect<HostConnection, HostUnavailable, Scope.Scope> =>
   Effect.gen(function* () {
     const ended = yield* Deferred.make<never, HostUnavailable>();
@@ -66,7 +69,7 @@ export const spawnHost = (
       Effect.sync(() => {
         const spawned = spawn(command.file, [...command.args], {
           stdio: ["ignore", "ignore", "inherit", "pipe"],
-          env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+          env: { ...process.env, ...env, ELECTRON_RUN_AS_NODE: "1" },
         });
         // Before anything else: a spawn that fails emits `error`, which unheard ends the server.
         spawned.on("error", (error) => end(`The host process failed: ${error.message}`));
@@ -105,3 +108,14 @@ export const spawnHost = (
 /** This machine's host process, from the build's own `gram-host` entry. */
 export const spawnLocalHost: Effect.Effect<HostConnection, HostUnavailable, Scope.Scope> =
   spawnHost();
+
+/**
+ * This machine's host process, keeping its threads' open terminals in `keptTerminals` for its next
+ * start (a folder in the server's own data folder).
+ */
+export const spawnLocalHostKeeping = (
+  keptTerminals: string | undefined,
+): Effect.Effect<HostConnection, HostUnavailable, Scope.Scope> =>
+  keptTerminals === undefined
+    ? spawnLocalHost
+    : spawnHost(undefined, { [KEPT_TERMINALS_ENV]: keptTerminals });
