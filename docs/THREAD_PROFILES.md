@@ -66,6 +66,49 @@ Content-Type: application/json
   may call it with its own sign-in. Each service call is on the record with the thread it made or
   found, whether it made it, and its machine.
 
+## Moving a thread to another machine
+
+A machine started for one thread may go away for good: one with no disk of its own is gone once
+it stops. The platform moves the thread onto another joined machine, with its own statement for
+the path, as it starts one:
+
+```http
+POST /threads/move-to-machine
+Content-Type: application/json
+
+{ "threadId": "<lowercase UUID>", "hostId": "<machine id>", "profile": { "version": 1, ... } }
+```
+
+- **What moves.** A thread started from a profile whose workplace is a folder of its own (`none`
+  or `scratch`) on a joined machine. A thread in repositories has work only its machine holds,
+  and stays.
+- **When it moves.** Only while its machine is away: it is asked before anything is made, and
+  again just before the thread moves, so a machine that dials in meanwhile keeps its thread and
+  what was made for it on the target is removed. `hostId` must be a joined machine, online now.
+- **Whose it stays.** A thread is for the person its machine was started for. It moves only to a
+  machine started for the same person and the same purpose (`owner` and `onDemand` as the machine
+  records them), or from one machine started for nobody to another. Its owner and its lineage's
+  stay what they were. A thread whose machine is no longer on record doesn't move: who it is for
+  can't be told. Being the platform's service doesn't change this.
+- **Nothing left behind.** The move claims the thread in its runtime before anything is made on
+  the target, and holds the claim until the thread is placed (`ThreadRuntimes.relocate`). While
+  it is held, a send to the thread is refused, and no delivery, turn or session starts. Any
+  session of the thread stops first: an idle one, or one only opening for a message waiting on
+  the old machine, whose message goes back to the queue. A thread at work doesn't move. The
+  thread is placed only if nothing started meanwhile and it is still where it was. Once the claim
+  lets go, the queue goes on, on the new machine, so a message sent while the old machine was away
+  opens a fresh session there.
+- **A machine gone for good.** With `"lost": true` the platform says the machine's compute is
+  deleted, not away for a while. A turn still counted as running there (the machine took it with
+  it) is ended as interrupted, and the thread moves; what was queued behind it goes on the new
+  machine. Without it, a thread at work stays.
+- **The answer.** `{ "threadId": "...", "hostId": "...", "moved": true }`. `moved` is false for a
+  thread on that machine already. Refusals are as for a start: `409` with `{ "error": "..." }`,
+  `400` for a body that isn't the shape, `404` with the hosted features off.
+- **Who may call it.** A person signed in through the proxy is refused it, and so is a paired
+  phone. Each service call is on the record with the thread, the machine and whether it moved.
+  The shapes are `ProfileMoveRequest` and `ProfileMoveResponse`, the path `PROFILE_MOVE_PATH`.
+
 ## A workplace of repositories
 
 Each repository is an https or ssh remote with no credential in its address. Gram clones it once
