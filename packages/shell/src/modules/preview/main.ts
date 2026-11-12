@@ -7,16 +7,16 @@
 // loads nothing off loopback but what the agent browser allows an agent's page. The web session
 // holds the pages the user opens anywhere else: no agent ever drives or reads it, so what the user
 // signs in to there stays theirs, and it never reaches loopback or a network more private than the
-// page. A page moves between them by being made again in the other: a link off loopback opens in
-// the web session, an agent taking the pane starts a page in the local one. A new window goes to
-// the shell's link question.
+// page. Its connections all go through a proxy of its own (`core/web-proxy.ts`) that connects only
+// to the addresses it checked, and its WebRTC never uses UDP. Only the user's own address strip
+// opens a page in the web session; a local page leaving loopback goes to the link question, and an
+// agent taking the pane starts a page in the local one. A new window goes to the link question.
 
 import {
   app,
   BrowserWindow,
   session,
   WebContentsView,
-  type ResolvedHost,
   type Session,
   type WebContents,
 } from "electron";
@@ -34,19 +34,19 @@ import {
 import { Channels } from "../../channels.ts";
 import type { ShellLog } from "../../core/log.ts";
 import {
-  addressZone,
   MAX_PREVIEWS,
   parsePreviewBounds,
   previewNavigation,
   previewRequest,
   previewsToClose,
   previewThreadOf,
+  resolvedWithin,
   webNavigation,
   webRequest,
   windowRect,
-  withinZone,
-  type NetworkZone,
+  type WebLookup,
 } from "../../core/preview-rules.ts";
+import { startWebProxy, systemLookup, type WebDial } from "../../core/web-proxy.ts";
 import { parsePaneCommand } from "../../core/browse-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { focusedAppWindow } from "../../electron/decision-windows.ts";
@@ -88,10 +88,12 @@ export interface PreviewOptions {
   /** Agents' pages (`modules/agent-browser`), asked before an agent's page goes anywhere. */
   readonly agent?: PreviewAgent | undefined;
   /**
-   * Looks a host up for the web session's rebinding check; the web session's own resolver when
-   * absent, which is the one its connections use. For a fixture that maps names to itself.
+   * The one lookup the web session's request check and its proxy share; the system's when absent.
+   * For a fixture that answers for names of its own.
    */
-  readonly resolveWebHost?: ((host: string) => Promise<ResolvedHost>) | undefined;
+  readonly lookupWebHost?: WebLookup | undefined;
+  /** How the web session's proxy connects to an address it checked; directly when absent. */
+  readonly dialWebAddress?: WebDial | undefined;
 }
 
 /**
@@ -204,20 +206,31 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
   };
 
   const webSession = (ses: Session) => {
-    const resolve = options.resolveWebHost ?? ((host: string) => ses.resolveHost(host));
+    const lookup = options.lookupWebHost ?? systemLookup;
+    // Every connection goes through the session's own proxy, which resolves each name once and
+    // connects to the very address it checked; the system's proxy, which could send a name
+    // anywhere, is never used. Until it is in place nothing goes out, and if it can't be, nothing
+    // ever does.
+    const proxied = startWebProxy({ lookup, dial: options.dialWebAddress })
+      .then(async (proxy) => {
+        await ses.setProxy({
+          mode: "fixed_servers",
+          proxyRules: `socks5://127.0.0.1:${proxy.port}`,
+          // Loopback too, which Chromium would otherwise connect to directly.
+          proxyBypassRules: "<-loopback>",
+        });
+        app.once("will-quit", () => void proxy.close());
+        return true;
+      })
+      .catch((error: unknown) => {
+        options.log.error(
+          { source: "preview", error: String(error) },
+          "the web session's proxy didn't start; its pages load nothing",
+        );
+        return false;
+      });
     /** Each main-frame request's latest URL, by id, so its next redirect knows where it came from. */
     const hops = new Map<number, string>();
-    /**
-     * Whether every address `host` resolves to is within `bound`, asked again for every request,
-     * through the resolver and cache the connection then uses. A failed lookup resolves nothing,
-     * so the request fails on its own.
-     */
-    const within = (host: string, bound: NetworkZone): Promise<boolean> =>
-      resolve(host).then(
-        (resolved) =>
-          resolved.endpoints.every((endpoint) => withinZone(addressZone(endpoint.address), bound)),
-        () => true,
-      );
     ses.webRequest.onBeforeRequest((details, callback) => {
       const mainFrame = details.resourceType === "mainFrame";
       const before = mainFrame ? hops.get(details.id) : undefined;
@@ -234,12 +247,14 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
         before,
         ...(page === "" ? {} : { page }),
       });
-      if (verdict.kind !== "resolve") {
-        callback(verdict.kind === "allow" ? {} : { cancel: true });
-        return;
-      }
-      void within(verdict.host, verdict.bound).then(
-        (ok) => callback(ok ? {} : { cancel: true }),
+      // The page's zone as well as the address's: checked here, where the request's origin is
+      // known, and again by the proxy for the connection itself.
+      const allowed: Promise<boolean> =
+        verdict.kind === "resolve"
+          ? resolvedWithin(lookup, verdict.host, verdict.bound)
+          : Promise.resolve(verdict.kind === "allow");
+      void Promise.all([proxied, allowed]).then(
+        ([ready, ok]) => callback(ready && ok ? {} : { cancel: true }),
         () => callback({ cancel: true }),
       );
     });
@@ -347,6 +362,10 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       },
     });
     view.setVisible(false);
+    // WebRTC's sockets don't pass the session's request check: no UDP at all, and TCP only through
+    // the proxy, which checks it like any other connection. Set on the page itself, so every frame
+    // in it holds to it.
+    if (kind === "web") view.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
     const preview: Preview = {
       threadId,
       kind,
@@ -381,18 +400,11 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       const decision = previewNavigation(url);
       if (decision === "load") return;
       event.preventDefault();
-      if (decision !== "web") return;
-      // The user, on an agent's page, off where it was allowed: the page stays the agent's, and
-      // the link goes to the user's browser.
-      if (options.agent?.driverOf(threadId) !== undefined) {
-        toLinkGate(url);
-        return;
-      }
-      // The local session never loads it, so the page is made again in the web session: after
-      // this event, since that closes the page raising it.
-      setImmediate(() => {
-        if (previews.get(threadId) === preview) void openIn(preview, "web", url);
-      });
+      // A local page leaving loopback, by a link, a script or a redirect, never crosses into the
+      // web session, where the user's sign-ins are: the page may be an agent's (`show_panel`
+      // opens one with no driver attached), and nothing it does is the user's consent. The link
+      // goes to the link question; only the user's own address strip opens a web page here.
+      if (decision === "web") toLinkGate(url);
     };
     const steerWeb = (event: { preventDefault(): void }, url: string, redirect: boolean) => {
       const decision = webNavigation(url);

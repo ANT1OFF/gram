@@ -133,7 +133,18 @@ const ipv6Zone = (raw: string): NetworkZone => {
 
 /** The zone of an address a name resolved to, as DNS gives it. */
 export function addressZone(address: string): NetworkZone {
-  return ipv4Zone(address) ?? (address.includes(":") ? ipv6Zone(address) : "private");
+  const v4 = ipv4Zone(address);
+  if (v4 !== undefined) return v4;
+  if (!address.includes(":")) return "private";
+  // Compressed as the URL parser writes it (`0:0:0:0:0:0:0:1` is `::1`); one it can't read, such
+  // as a link-local address with its zone (`fe80::1%en0`), counts as private.
+  let compressed: string;
+  try {
+    compressed = new URL(`http://[${address}]/`).hostname.slice(1, -1);
+  } catch {
+    return "private";
+  }
+  return ipv6Zone(compressed);
 }
 
 /**
@@ -222,6 +233,66 @@ export function webRequest(request: WebRequestDetails): WebRequestVerdict {
   if (!withinZone(target, bound)) return { kind: "block" };
   if (isAddress(host)) return { kind: "allow" };
   return { kind: "resolve", host, bound };
+}
+
+/** Looks a host up, as the web session's proxy and its request check both do. */
+export type WebLookup = (host: string) => Promise<readonly string[]>;
+
+/**
+ * Whether every address `host` resolves to is within `bound`. Fails closed: a lookup that throws,
+ * rejects or answers nothing allows nothing.
+ */
+export async function resolvedWithin(
+  lookup: WebLookup,
+  host: string,
+  bound: NetworkZone,
+): Promise<boolean> {
+  let addresses: readonly string[];
+  try {
+    addresses = await lookup(host);
+  } catch {
+    return false;
+  }
+  return (
+    Array.isArray(addresses) &&
+    addresses.length > 0 &&
+    addresses.every(
+      (address) => typeof address === "string" && withinZone(addressZone(address), bound),
+    )
+  );
+}
+
+/**
+ * The addresses the web session's proxy may connect to for one connection the session asks it
+ * for, in order, or `undefined` to refuse it. The proxy resolves the name itself and connects to
+ * what this returns, so the address checked is the address used. Never loopback; an address is a
+ * private one only if the name says so (`nas.local`, `192.168.1.1`), since the session's request
+ * check let only a page or load allowed a private network ask for one by name. A public name
+ * answering with any private or loopback address, a rebound one, is refused whole, as is a name
+ * that answers nothing.
+ */
+export function proxyTargets(
+  host: string,
+  addresses: readonly string[] | undefined,
+): readonly string[] | undefined {
+  let hostname: string;
+  try {
+    hostname = new URL(`http://${host.includes(":") ? `[${host}]` : host}/`).hostname;
+  } catch {
+    return undefined;
+  }
+  const named = hostZone(hostname);
+  if (named === "loopback") return undefined;
+  if (isAddress(hostname)) {
+    const literal = hostname.startsWith("[") ? hostname.slice(1, -1) : hostname;
+    return addressZone(literal) === "loopback" ? undefined : [literal];
+  }
+  if (addresses === undefined || addresses.length === 0) return undefined;
+  const ok = addresses.every((address) => {
+    const zone = addressZone(address);
+    return zone !== "loopback" && withinZone(zone, named === "private" ? "private" : "public");
+  });
+  return ok ? addresses : undefined;
 }
 
 /** Where a navigation of a page in the web session goes. */

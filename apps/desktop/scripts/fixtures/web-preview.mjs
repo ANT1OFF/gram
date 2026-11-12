@@ -1,9 +1,13 @@
 // Disposable native fixture for the Preview tab's web session. No Gram store, installed app,
-// provider CLI, personal browser or outside network: "site.example" and "rebind.example" are
-// mapped to this fixture's own loopback listeners, and the web session's lookup is told what a
-// real resolver would answer for each, a public address and a rebound loopback one.
-import { app, session, webContents as allContents } from "electron";
+// provider CLI, personal browser or outside network. The web session's one lookup is told what a
+// real resolver would answer for each synthetic name: a public address, which its dial connects to
+// this fixture's site listener, or a rebound, failing or empty answer. Chromium's own resolver
+// maps every one of those names to loopback, and an owned HTTP proxy is set as the system's, so a
+// connection that went around the session's proxy would reach a loopback listener and be seen.
+import { app, BrowserWindow, session, WebContentsView, webContents as allContents } from "electron";
+import { createSocket } from "node:dgram";
 import { createServer } from "node:http";
+import { connect, createServer as createTcpServer } from "node:net";
 
 import { Channels } from "../../../../packages/shell/src/channels.ts";
 import {
@@ -33,6 +37,62 @@ async function listener(respond) {
   return { seen, port: server.address().port, server };
 }
 
+/** A UDP and a TCP listener on loopback, counting what reaches them: a STUN and a TURN server. */
+async function rtcListeners() {
+  const udp = createSocket("udp4");
+  const packets = [];
+  udp.on("message", (message) => packets.push(message.length));
+  await new Promise((resolve) => udp.bind(0, "127.0.0.1", resolve));
+  const connections = [];
+  const tcp = createTcpServer((socket) => {
+    connections.push(socket.remoteAddress);
+    socket.destroy();
+  });
+  await new Promise((resolve) => tcp.listen(0, "127.0.0.1", resolve));
+  return {
+    packets,
+    connections,
+    udpPort: udp.address().port,
+    tcpPort: tcp.address().port,
+    close: () => {
+      udp.close();
+      tcp.close();
+    },
+  };
+}
+
+/** A page that fetches each lookup case on Gram's port and titles itself with what reached. */
+const lookupsPage = (port) => `<!doctype html><title>Lookups</title><script>
+const results = {};
+const probe = (name, url) =>
+  Promise.race([
+    fetch(url, { mode: "no-cors" }).then(() => (results[name] = "reached"), () => (results[name] = "blocked")),
+    new Promise((resolve) => setTimeout(() => resolve((results[name] = "timeout")), 5000)),
+  ]);
+(async () => {
+  await probe("control", location.origin + "/plain");
+  for (const name of ["flip", "flip2", "flip3", "reject", "empty", "throw"])
+    await probe(name, "http://" + name.replace(/\\d$/, "") + ".example:${port}/" + name);
+  results.flip = [results.flip, results.flip2, results.flip3].every((r) => r === "blocked") ? "blocked" : "reached";
+  document.title = "lookups:" + JSON.stringify(results);
+})();
+</script>`;
+
+/** A page that gathers ICE against `servers`, then titles itself "rtc-done". */
+const rtcPage = (servers) => `<!doctype html><title>RTC</title><script>
+(async () => {
+  try {
+    const pc = new RTCPeerConnection({ iceServers: ${JSON.stringify(servers)} });
+    pc.createDataChannel("probe");
+    await pc.setLocalDescription(await pc.createOffer());
+  } catch (error) {
+    document.title = "rtc-error:" + error.name;
+    return;
+  }
+  setTimeout(() => (document.title = "rtc-done"), 4000);
+})();
+</script>`;
+
 async function main() {
   app.setPath("userData", process.argv[2]);
   app.setPath("sessionData", process.argv[2]);
@@ -42,14 +102,51 @@ async function main() {
   const gram = await listener((_request, response) =>
     response.writeHead(200, { "content-type": "application/json" }).end("{}"),
   );
-  // A dev server on loopback, the local session's.
-  const dev = await listener((_request, response) =>
+  // A dev server on loopback, the local session's, and an agent's page as show_panel opens one.
+  const dev = await listener((request, response) => {
+    if (request.url === "/agent")
+      return response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(
+          `<title>Agent page</title><script>setTimeout(() => (location.href = "http://site.example:${site.port}/agent-action"), 1500);</script>`,
+        );
+    if (request.url === "/agent-redirect-page")
+      return response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(
+          `<title>Agent page</title><script>setTimeout(() => (location.href = "/agent-redirect"), 1500);</script>`,
+        );
+    if (request.url === "/agent-redirect")
+      return response
+        .writeHead(302, { location: `http://site.example:${site.port}/agent-redirect-action` })
+        .end();
     response
       .writeHead(200, { "content-type": "text/html" })
       .end(
         `<title>Dev app</title><a id="out" href="http://site.example:${site.port}/plain">Docs</a>`,
-      ),
-  );
+      );
+  });
+  const rtc = await rtcListeners();
+  const rtcServers = [
+    { urls: `stun:127.0.0.1:${rtc.udpPort}` },
+    { urls: `stun:stun.example:${rtc.udpPort}` },
+    {
+      urls: [
+        `turn:127.0.0.1:${rtc.tcpPort}?transport=tcp`,
+        `turn:turn.example:${rtc.tcpPort}?transport=tcp`,
+      ],
+      username: "fixture",
+      credential: "fixture",
+    },
+  ];
+  // A system proxy that would route any name to a loopback listener: the web session must never
+  // use it.
+  const systemProxy = { connections: 0 };
+  const proxyServer = createTcpServer((socket) => {
+    systemProxy.connections += 1;
+    socket.destroy();
+  });
+  await new Promise((resolve) => proxyServer.listen(0, "127.0.0.1", resolve));
   const G = gram.port;
   const page = (
     port,
@@ -112,12 +209,29 @@ const probe = (name, url, init = {}) =>
         );
     if (request.url === "/plain")
       return response.writeHead(200, { "content-type": "text/html" }).end("<title>Plain</title>");
+    if (request.url === "/rtc")
+      return response.writeHead(200, { "content-type": "text/html" }).end(rtcPage(rtcServers));
+    if (request.url === "/lookups")
+      return response.writeHead(200, { "content-type": "text/html" }).end(lookupsPage(G));
     response.writeHead(200, { "content-type": "text/html" }).end(page(site.port));
   });
   app.commandLine.appendSwitch(
     "host-resolver-rules",
-    "MAP site.example 127.0.0.1, MAP rebind.example 127.0.0.1, MAP gram.localhost 127.0.0.1",
+    [
+      "site.example",
+      "rebind.example",
+      "gram.localhost",
+      "flip.example",
+      "reject.example",
+      "empty.example",
+      "throw.example",
+      "stun.example",
+      "turn.example",
+    ]
+      .map((name) => `MAP ${name} 127.0.0.1`)
+      .join(", "),
   );
+  app.commandLine.appendSwitch("proxy-server", `http://127.0.0.1:${proxyServer.address().port}`);
 
   // As an https site would be, so camera and clipboard are asked for, not just absent.
   app.commandLine.appendSwitch(
@@ -156,14 +270,39 @@ const probe = (name, url, init = {}) =>
   const downloads = [];
   // Registered before the preview's own listener, so read once every listener has run.
   web.on("will-download", (event) => setImmediate(() => downloads.push(event.defaultPrevented)));
+  const linkQuestions = [];
+  const lookups = {};
   const host = installPreview(ipc, {
-    openLink: async () => false,
+    openLink: async (url) => {
+      linkQuestions.push(url);
+      return false;
+    },
     log: { info: () => {}, warn: () => {}, error: () => {} },
-    resolveWebHost: async (name) => ({
-      endpoints: [
-        { address: name === "rebind.example" ? "127.0.0.1" : "93.184.216.34", family: "ipv4" },
-      ],
-    }),
+    lookupWebHost: (name) => {
+      lookups[name] = (lookups[name] ?? 0) + 1;
+      switch (name) {
+        case "rebind.example":
+          return Promise.resolve(["127.0.0.1"]);
+        // A public answer, then a rebound one, alternately: whichever the connection gets, it
+        // goes only where its own answer was checked.
+        case "flip.example":
+          return Promise.resolve([lookups[name] % 2 === 1 ? "93.184.216.34" : "127.0.0.1"]);
+        case "reject.example":
+          return Promise.reject(new Error("SERVFAIL"));
+        case "empty.example":
+          return Promise.resolve([]);
+        case "throw.example":
+          throw new Error("resolver gone");
+        default:
+          return Promise.resolve(["93.184.216.34"]);
+      }
+    },
+    // The synthetic public address is the site listener, on its own port only.
+    // Anything else at it goes nowhere (the discard port, closed), never out to the internet.
+    dialWebAddress: (address, port) =>
+      address === "93.184.216.34"
+        ? connect({ host: "127.0.0.1", port: port === site.port ? port : 9 })
+        : connect({ host: address, port }),
   });
   const T = "t-web";
   const state = () => invoke(Channels.previewStateGet, { threadId: T });
@@ -304,21 +443,128 @@ const probe = (name, url, init = {}) =>
       before?.isDestroyed() !== false,
   );
 
-  // A link off the user's local app opens in the web session, not in the local one.
+  // A local page leaving loopback never crosses into the web session, where the user's sign-ins
+  // are: not by the user's click, nor an agent's page (as show_panel opens one, with no driver)
+  // by a script or a redirect. Each goes to the link question; the site sees nothing.
+  // Shown in a window, as the app shows them, so the link question has one to ask in.
+  const win = new BrowserWindow({ show: false, width: 1000, height: 700 });
+  await win.loadURL("about:blank");
+  const show = (threadId) =>
+    handlers.get(Channels.previewBounds)(
+      { threadId, bounds: { x: 0, y: 0, width: 800, height: 600 } },
+      { sender: win.webContents },
+    );
+  const seenBefore = site.seen.length;
   const U = "t-dev";
   await invoke(Channels.previewOpen, { threadId: U, url: `http://127.0.0.1:${dev.port}/` });
+  show(U);
   const devPage = contentsAt(`http://127.0.0.1:${dev.port}/`);
   await devPage?.executeJavaScript(`document.getElementById("out").click()`, true);
-  for (const end = Date.now() + 10_000; Date.now() < end; await delay(100)) {
-    if ((await invoke(Channels.previewStateGet, { threadId: U }))?.title === "Plain") break;
+  for (const [thread, path] of [
+    ["t-agent-script", "/agent"],
+    ["t-agent-redirect", "/agent-redirect-page"],
+  ]) {
+    await invoke(Channels.previewOpen, {
+      threadId: thread,
+      url: `http://127.0.0.1:${dev.port}${path}`,
+    });
+    show(thread);
   }
-  const followed = contentsAt(`http://site.example:${site.port}/plain`);
+  await delay(3500);
+  const crossed = site.seen.slice(seenBefore);
   check(
-    "a link off a local page opens in the web session",
-    followed?.session === web && devPage?.isDestroyed() === true,
-    followed?.getURL(),
+    "a local page's link, script or redirect never reaches the site",
+    crossed.length === 0,
+    crossed,
   );
-  check("the agent can't take that page either", host.contentsFor(U, false) === undefined);
+  check(
+    "each goes to the link question instead",
+    ["/plain", "/agent-action", "/agent-redirect-action"].every((path) =>
+      linkQuestions.includes(`http://site.example:${site.port}${path}`),
+    ),
+    linkQuestions,
+  );
+  check(
+    "the pages stay in the local session",
+    ["t-dev", "t-agent-script", "t-agent-redirect"].every(
+      (thread) => host.contentsOf(thread)?.session === local,
+    ),
+  );
+  check(
+    "no web page was made for them",
+    !allContents.getAllWebContents().some((c) => !c.isDestroyed() && c.session === web),
+  );
+
+  // The web session's connections go through its own proxy, never the system's.
+  await invoke(Channels.previewOpen, {
+    threadId: "t-lookups",
+    url: `http://site.example:${site.port}/lookups`,
+  });
+  const lookupsDone = await (async () => {
+    for (const end = Date.now() + 30_000; Date.now() < end; await delay(100)) {
+      const now = await invoke(Channels.previewStateGet, { threadId: "t-lookups" });
+      if (now?.title?.startsWith("lookups:")) return JSON.parse(now.title.slice("lookups:".length));
+    }
+    return {};
+  })();
+  const proxyRule = await web.resolveProxy(`http://site.example:${site.port}/`);
+  check(
+    "the web session's proxy is its own SOCKS5 proxy",
+    /^SOCKS5 127\.0\.0\.1:\d+$/.test(proxyRule),
+    proxyRule,
+  );
+  check("the system proxy is never used", systemProxy.connections === 0, systemProxy.connections);
+  check("a public name still loads through it", lookupsDone.control === "reached", lookupsDone);
+  for (const name of ["flip", "reject", "empty", "throw"]) {
+    check(`${name}.example reaches nothing`, lookupsDone[name] === "blocked", lookupsDone[name]);
+  }
+  check("a rebound connection reached no loopback listener", gram.seen.length === 0, gram.seen);
+  check("flip.example was looked up more than once", (lookups["flip.example"] ?? 0) >= 2, lookups);
+
+  // WebRTC: no STUN over UDP, no TURN over TCP, to loopback by address or by a rebound name.
+  const rtcDone = async (contents) => {
+    for (const end = Date.now() + 20_000; Date.now() < end; await delay(100)) {
+      if (contents === undefined || contents.getTitle().startsWith("rtc-")) break;
+    }
+    return contents?.getTitle();
+  };
+  await invoke(Channels.previewOpen, {
+    threadId: "t-rtc",
+    url: `http://site.example:${site.port}/rtc`,
+  });
+  const rtcContents = contentsAt(`http://site.example:${site.port}/rtc`);
+  rtcContents?.setBackgroundThrottling(false);
+  const rtcTitle = await rtcDone(rtcContents);
+  check("the web page ran its WebRTC probe", rtcTitle === "rtc-done", rtcTitle);
+  check(
+    "the web session's WebRTC sends no UDP",
+    rtc.packets.length === 0 &&
+      rtcContents?.getWebRTCIPHandlingPolicy() === "disable_non_proxied_udp",
+    { packets: rtc.packets.length, policy: rtcContents?.getWebRTCIPHandlingPolicy() },
+  );
+  check(
+    "the web session's WebRTC opens no TCP to loopback",
+    rtc.connections.length === 0,
+    rtc.connections,
+  );
+  // The control: the same page in a session without the policy reaches both, so the probe is real.
+  const controlSession = session.fromPartition("fixture-control");
+  await controlSession.setProxy({ mode: "direct" });
+  const control = new WebContentsView({
+    webPreferences: { session: controlSession, sandbox: true },
+  });
+  control.webContents.setBackgroundThrottling(false);
+  await control.webContents.loadURL(`http://127.0.0.1:${site.port}/rtc`).catch(() => {});
+  const controlTitle = await rtcDone(control.webContents);
+  check(
+    "control: without the policy, the same probe reaches the STUN and TURN listeners",
+    controlTitle === "rtc-done" && rtc.packets.length > 0 && rtc.connections.length > 0,
+    { title: controlTitle, packets: rtc.packets.length, connections: rtc.connections.length },
+  );
+  control.webContents.close();
+  win.destroy();
+  rtc.close();
+  proxyServer.close();
 
   process.stdout.write(`${JSON.stringify({ type: "fixture.result", results, failures })}\n`);
   for (const listening of [gram, dev, site]) listening.server.close();

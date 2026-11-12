@@ -9,6 +9,8 @@ import {
   previewRequest,
   previewsToClose,
   previewThreadOf,
+  proxyTargets,
+  resolvedWithin,
   webNavigation,
   webRequest,
   windowRect,
@@ -248,6 +250,73 @@ describe("the web session's requests", () => {
     expect(webRequest({ url: "file:///etc/passwd", mainFrame: false, initiator: page })).toEqual({
       kind: "block",
     });
+  });
+});
+
+describe("the web session's lookups", () => {
+  const answering = (addresses: readonly string[]) => async () => addresses;
+
+  it("allows a host only when every address it answers is within the page's zone", async () => {
+    expect(await resolvedWithin(answering(["93.184.216.34"]), "example.com", "public")).toBe(true);
+    expect(
+      await resolvedWithin(answering(["93.184.216.34", "10.0.0.1"]), "example.com", "public"),
+    ).toBe(false);
+    expect(await resolvedWithin(answering(["10.0.0.1"]), "example.com", "private")).toBe(true);
+    expect(await resolvedWithin(answering(["127.0.0.1"]), "example.com", "private")).toBe(false);
+    expect(await resolvedWithin(answering(["0:0:0:0:0:0:0:1"]), "example.com", "private")).toBe(
+      false,
+    );
+  });
+
+  it("fails closed on a lookup that rejects, throws or answers nothing", async () => {
+    const rejects = () => Promise.reject(new Error("SERVFAIL"));
+    const throws = () => {
+      throw new Error("resolver gone");
+    };
+    expect(await resolvedWithin(rejects, "example.com", "private")).toBe(false);
+    expect(await resolvedWithin(throws, "example.com", "private")).toBe(false);
+    expect(await resolvedWithin(answering([]), "example.com", "private")).toBe(false);
+    expect(await resolvedWithin(async () => undefined as never, "example.com", "private")).toBe(
+      false,
+    );
+  });
+});
+
+describe("the web session's proxy targets", () => {
+  it("connects a public name only to the public addresses it answered", () => {
+    expect(proxyTargets("example.com", ["93.184.216.34", "2606:2800:220:1::1"])).toEqual([
+      "93.184.216.34",
+      "2606:2800:220:1::1",
+    ]);
+  });
+
+  it("refuses a public name answering any private or loopback address, a rebound one", () => {
+    expect(proxyTargets("example.com", ["93.184.216.34", "127.0.0.1"])).toBeUndefined();
+    expect(proxyTargets("example.com", ["10.0.0.5"])).toBeUndefined();
+    expect(proxyTargets("example.com", ["::ffff:7f00:1"])).toBeUndefined();
+    expect(proxyTargets("example.com", ["fe80::1%en0"])).toBeUndefined();
+  });
+
+  it("refuses a name that answers nothing, or couldn't be looked up", () => {
+    expect(proxyTargets("example.com", [])).toBeUndefined();
+    expect(proxyTargets("example.com", undefined)).toBeUndefined();
+  });
+
+  it("lets a private name or address reach its own network, never loopback", () => {
+    expect(proxyTargets("nas.local", ["192.168.1.20"])).toEqual(["192.168.1.20"]);
+    expect(proxyTargets("nas.local", ["127.0.0.1"])).toBeUndefined();
+    expect(proxyTargets("192.168.1.1", undefined)).toEqual(["192.168.1.1"]);
+    expect(proxyTargets("203.0.113.9", undefined)).toEqual(["203.0.113.9"]);
+    for (const host of [
+      "127.0.0.1",
+      "0.0.0.0",
+      "localhost",
+      "a.localhost",
+      "::1",
+      "0:0:0:0:0:0:0:1",
+    ]) {
+      expect(proxyTargets(host, ["93.184.216.34"]), host).toBeUndefined();
+    }
   });
 });
 
