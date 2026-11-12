@@ -11,8 +11,6 @@ import { LaunchChecksBanner } from "@/launch-checks/banner";
 import { cn } from "@/lib/utils";
 import { useMotionLevel } from "@/motion";
 import { OverviewRail } from "@/orchestration/overview-rail";
-import { HostedRail } from "@/embed/hosted-rail";
-import { useEmbedShell } from "@/embed/store";
 import { OverviewSidebar, useCarryOverviewFocus } from "@/orchestration/overview-sidebar";
 import { ConnectionBanner } from "@/shell/connection-banner";
 import { PhoneDrawer } from "@/shell/phone-drawer";
@@ -63,8 +61,6 @@ export function AppShell() {
   useWorkspaceKeys();
   // Settings has no overview: entering or leaving it swaps nothing to carry.
   useCarryOverviewFocus(settings ? "none" : fit.sidebar);
-  // Mounted by an app in front of Gram: its compact sidebar is the quiet strip that opens on hover.
-  const hostedRail = useEmbedShell((s) => s.hosted);
   // A review that runs too narrow to read beside the conversation takes the window on its own.
   useAutoReviewFocus();
 
@@ -118,14 +114,7 @@ export function AppShell() {
         }}
       >
         <div className="group/side relative order-1 flex min-h-0 min-w-0 flex-col overflow-hidden">
-          {sidebarShown &&
-            (fit.sidebar !== "compact" ? (
-              <OverviewSidebar />
-            ) : hostedRail ? (
-              <HostedRail />
-            ) : (
-              <OverviewRail />
-            ))}
+          {sidebarShown && (fit.sidebar !== "compact" ? <OverviewSidebar /> : <OverviewRail />)}
           {fit.sidebar === "full" && (
             <SideResizeHandle
               side="left"
