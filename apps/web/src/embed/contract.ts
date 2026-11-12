@@ -104,7 +104,7 @@ export interface ShellAttention {
  *
  * - `standard`: Gram's own: edge to edge, compact rows, the current row filled, Hide and Compact
  *   at its head and History and Settings at its foot.
- * - `roomy`: a card inset from the window's edges; group headings in small capitals with air
+ * - `roomy`: Gram's surface, edge to edge, with group headings in small capitals with air
  *   above them; taller rows with larger icons and stronger labels; the current row marked by a
  *   solid tile behind its icon and a bold label; search's shortcut as keycaps; and at the foot,
  *   History, Settings, the account and Collapse as labelled rows in place of the head's toggles.

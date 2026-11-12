@@ -404,11 +404,11 @@ test("the sidebar can be drawn roomy, with the app's head and account", async ({
   });
   const sidebar = page.getByTestId("overview-sidebar");
   await expect(sidebar).toHaveAttribute("data-look", "roomy");
-  // A card inset from the window's edges.
-  await expect(page.getByTestId("overview-card")).toBeVisible();
+  // Edge to edge, on Gram's own surface: no inset card.
   const box = await sidebar.boundingBox();
-  expect(box?.x).toBe(12);
-  expect(box?.y).toBe(12);
+  expect(box?.x).toBe(0);
+  expect(box?.y).toBe(0);
+  await expect(sidebar).toHaveCSS("border-top-left-radius", "0px");
   // The app's head, with New beside it; Hide and Compact are not at the head.
   await expect(sidebar.getByTestId("fixture-brand")).toBeVisible();
   await expect(sidebar.getByTestId("overview-hide")).toHaveCount(0);
@@ -447,7 +447,6 @@ test("the sidebar can be drawn roomy, with the app's head and account", async ({
     (window as unknown as Update).embed.update({ sidebar: undefined });
   });
   await expect(sidebar).not.toHaveAttribute("data-look", "roomy");
-  await expect(page.getByTestId("overview-card")).toHaveCount(0);
   await expect(sidebar.getByTestId("overview-hide")).toBeVisible();
   expect(errors).toEqual([]);
 });

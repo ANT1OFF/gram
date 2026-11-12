@@ -347,12 +347,9 @@ export function OverviewSidebar({
   const hasHeader = useEmbedShell((s) => s.sidebar.header !== undefined);
   // Before any setup the welcome is the one thing to look at: no usage beside it.
   const beforeSetup = useBeforeSetup();
-  // An app in front of Gram may draw it roomy: a card, with labelled rows at its foot. Not a phone's.
+  // An app in front of Gram may draw it roomy: taller rows, labelled rows at its foot. Not a phone's.
   const roomy = useRoomySidebar() && !phone;
-  // Roomy and in the window's column, it is a card inset from the edges; over the page it is
-  // the strip's overlay, which has its own edge and shadow.
-  const card = roomy && onPin === undefined;
-  const aside = (
+  return (
     <aside
       aria-label="Overview"
       data-testid="overview-sidebar"
@@ -360,12 +357,7 @@ export function OverviewSidebar({
       {...{ [OVERVIEW_ROOT]: "open" }}
       data-overlay={onPin === undefined ? undefined : ""}
       data-look={roomy ? "roomy" : undefined}
-      className={cn(
-        "flex min-h-0 flex-1 flex-col bg-sidebar text-sidebar-foreground",
-        card
-          ? "overflow-hidden rounded-(--radius-lg) border border-border"
-          : "border-r border-sidebar-divider",
-      )}
+      className="flex min-h-0 flex-1 flex-col border-r border-sidebar-divider bg-sidebar text-sidebar-foreground"
     >
       {roomy ? (
         // The embedding app's mark and name, with New beside it; the toggles are at the foot.
@@ -505,12 +497,6 @@ export function OverviewSidebar({
         </>
       )}
     </aside>
-  );
-  if (!card) return aside;
-  return (
-    <div data-testid="overview-card" className="flex min-h-0 flex-1 flex-col bg-thread p-3">
-      {aside}
-    </div>
   );
 }
 
