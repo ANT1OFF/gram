@@ -25,6 +25,11 @@ export class MockPreview implements DesktopPreview {
   readonly opened: string[] = [];
   /** What it was asked to open in the web session, as `threadId url`. */
   readonly openedWeb: string[] = [];
+  /** The re-opens it was asked for, as `threadId token`, and what it answered. */
+  readonly reopened: string[] = [];
+  /** As the shell's: each thread's web page closed for newer threads', by its token and address. */
+  readonly #reopenable = new Map<string, { token: string; url: string }>();
+  #tokens = 0;
   /** The threads whose page the user handed back to its agent, in order. */
   readonly handedBack: string[] = [];
   readonly #pages = new Map<string, MockPage>();
@@ -43,16 +48,42 @@ export class MockPreview implements DesktopPreview {
     // As the shell: loopback only here; a web page only through `openWeb`.
     const target = loopbackUrl(url);
     if (target === undefined) return false;
-    return this.#load(threadId, target);
+    this.#reopenable.delete(threadId);
+    const loaded = await this.#load(threadId, target);
+    this.#emit(threadId, { webView: undefined });
+    return loaded;
   }
 
   async openWeb(threadId: string, url: string): Promise<boolean> {
     const target = loopbackUrl(url) === undefined ? webUrl(url) : undefined;
     if (target === undefined) return false;
     this.openedWeb.push(`${threadId} ${target}`);
+    this.#reopenable.delete(threadId);
+    return this.#loadWeb(threadId, target);
+  }
+
+  async reopenWeb(threadId: string, token: string): Promise<boolean> {
+    const closed = this.#reopenable.get(threadId);
+    const ok = closed?.token === token && !this.#pages.has(threadId);
+    this.reopened.push(`${threadId} ${token} ${ok ? "opened" : "refused"}`);
+    if (!ok || closed === undefined) return false;
+    this.#reopenable.delete(threadId);
+    return this.#loadWeb(threadId, closed.url);
+  }
+
+  async #loadWeb(threadId: string, target: string): Promise<boolean> {
     const loaded = await this.#load(threadId, target);
-    this.#emit(threadId, { web: true });
+    this.#emit(threadId, { webView: `mock-web-view-${++this.#tokens}` });
     return loaded;
+  }
+
+  /**
+   * E2e hook: the thread's agent took the pane, as the shell's `contentsFor` does: its web page, if
+   * any, is closed for a local one of the agent's, at `url`, with no web token.
+   */
+  agentTakes(threadId: string, url: string): void {
+    this.#reopenable.delete(threadId);
+    this.#emit(threadId, { url, title: new URL(url).host, webView: undefined, driver: "agent" });
   }
 
   /** E2e hook: the page went to `url` in the shell, as an agent driving it would send it. */
@@ -62,6 +93,9 @@ export class MockPreview implements DesktopPreview {
 
   /** E2e hook: the shell closed `threadId`'s page for newer threads', as `MAX_PREVIEWS` does. */
   evict(threadId: string): void {
+    const state = this.#pages.get(threadId)?.state;
+    if (state?.webView !== undefined)
+      this.#reopenable.set(threadId, { token: state.webView, url: state.url });
     this.#pages.get(threadId)?.frame.remove();
     this.#pages.delete(threadId);
   }

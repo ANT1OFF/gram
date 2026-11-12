@@ -152,9 +152,21 @@ async function main() {
     },
   ];
   // A page on the private network that the user opens themselves.
-  const lan = await listener((_request, response) =>
-    response.writeHead(200, { "content-type": "text/html" }).end("<title>LAN page</title>"),
-  );
+  const lan = await listener((request, response) => {
+    if (request.url === "/with-frame")
+      return response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(
+          `<title>LAN frame</title><iframe src="http://site.example:${site.port}/mark-embed"></iframe>`,
+        );
+    if (request.url === "/with-link")
+      return response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(
+          `<title>LAN link</title><a id="out" href="http://site.example:${site.port}/mark-from-lan">Out</a>`,
+        );
+    response.writeHead(200, { "content-type": "text/html" }).end("<title>LAN page</title>");
+  });
   // A system proxy that would route any name to a loopback listener: the web session must never
   // use it.
   const systemProxy = { connections: 0 };
@@ -225,6 +237,10 @@ const probe = (name, url, init = {}) =>
         );
     if (request.url === "/plain")
       return response.writeHead(200, { "content-type": "text/html" }).end("<title>Plain</title>");
+    if (request.url?.startsWith("/mark"))
+      return response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(`<title>${request.url.slice(1)}</title>`);
     if (request.url === "/rtc")
       return response.writeHead(200, { "content-type": "text/html" }).end(rtcPage(rtcServers));
     if (request.url === "/rtc-control")
@@ -585,6 +601,29 @@ const probe = (name, url, init = {}) =>
     }
     return contents?.getTitle();
   };
+  // The review's case: the user's own page on the private network, at the very address and port
+  // the public page's TURN server names, open in another thread all the while.
+  await invoke(Channels.previewOpenWeb, {
+    threadId: "t-lan-turn",
+    url: `http://${LAN}:${rtc.tcpPort}/`,
+  });
+  await delay(1500);
+  const privateOwn = rtc.connections.length;
+  check(
+    "the private page is in its own session, and reached its own address",
+    host.contentsOf("t-lan-turn") === undefined &&
+      allContents
+        .getAllWebContents()
+        .some(
+          (c) =>
+            !c.isDestroyed() &&
+            c.getURL().startsWith(`http://${LAN}:${rtc.tcpPort}`) &&
+            c.session !== web &&
+            c.session !== local,
+        ) &&
+      privateOwn > 0,
+    { privateOwn },
+  );
   await invoke(Channels.previewOpenWeb, {
     threadId: "t-rtc",
     url: `http://site.example:${site.port}/rtc`,
@@ -600,14 +639,10 @@ const probe = (name, url, init = {}) =>
     { packets: rtc.packets.length, policy: rtcContents?.getWebRTCIPHandlingPolicy() },
   );
   check(
-    "the web session's WebRTC opens no TCP to loopback",
-    rtc.connections.length === 0,
-    rtc.connections,
-  );
-  check(
-    "the web session's WebRTC opens no TCP to a private address (TURN over TCP)",
-    rtc.connections.length === 0,
-    rtc.connections,
+    "the web session's WebRTC opens no TCP to loopback, or to a private address (TURN over TCP), " +
+      "even one another thread's private page is open at",
+    rtc.connections.length === privateOwn,
+    { before: privateOwn, after: rtc.connections.length },
   );
   // The user's own page on the private network still opens from the address strip.
   await invoke(Channels.previewOpenWeb, { threadId: "t-lan", url: `http://${LAN}:${lan.port}/` });
@@ -617,6 +652,112 @@ const probe = (name, url, init = {}) =>
     "the user's own private page loads",
     lanState?.title === "LAN page" && lan.seen.length === 1,
     { state: lanState, seen: lan.seen.length },
+  );
+  // A private page's session runs nothing public: its public frame doesn't load, and its link to
+  // the internet opens in the shared session.
+  const siteSeen = site.seen.length;
+  await invoke(Channels.previewOpenWeb, {
+    threadId: "t-lan",
+    url: `http://${LAN}:${lan.port}/with-frame`,
+  });
+  await delay(1500);
+  check(
+    "a private page's public frame doesn't load",
+    !site.seen.slice(siteSeen).some((r) => r.url === "/mark-embed"),
+    site.seen.slice(siteSeen),
+  );
+  await invoke(Channels.previewOpenWeb, {
+    threadId: "t-lan",
+    url: `http://${LAN}:${lan.port}/with-link`,
+  });
+  await delay(1000);
+  await contentsAt(`http://${LAN}:${lan.port}/with-link`)
+    ?.executeJavaScript(`document.getElementById("out").click()`, true)
+    .catch(() => {});
+  await delay(1500);
+  const followedOut = contentsAt(`http://site.example:${site.port}/mark-from-lan`);
+  check(
+    "a private page's link to the internet opens in the shared session",
+    followedOut?.session === web &&
+      (await invoke(Channels.previewStateGet, { threadId: "t-lan" }))?.webView !== undefined,
+    followedOut?.getURL(),
+  );
+
+  // Re-opening: the user's web page the shell closed for newer threads' opens again by its token,
+  // at the shell's own record; a page an agent replaced never does.
+  const evictAll = async (prefix) => {
+    for (let i = 0; i < 4; i++)
+      await invoke(Channels.previewOpen, {
+        threadId: `${prefix}-${i}`,
+        url: `http://127.0.0.1:${dev.port}/`,
+      });
+  };
+  const markSeen = (path) => site.seen.filter((r) => r.url === path).length;
+  await invoke(Channels.previewOpenWeb, {
+    threadId: "t-reopen",
+    url: `http://site.example:${site.port}/mark-reopen`,
+  });
+  await delay(800);
+  const tokenA = (await invoke(Channels.previewStateGet, { threadId: "t-reopen" }))?.webView;
+  check(
+    "the loopback channel can't take a web view's token",
+    (await invoke(Channels.previewReopenWeb, { threadId: "t-reopen", token: tokenA })) === false,
+  );
+  await evictAll("t-evict-a");
+  check(
+    "the user's web page was closed for newer threads'",
+    (await invoke(Channels.previewStateGet, { threadId: "t-reopen" })) === null,
+  );
+  check(
+    "a wrong token re-opens nothing",
+    (await invoke(Channels.previewReopenWeb, { threadId: "t-reopen", token: "guess" })) === false,
+  );
+  const reopenedOk = await invoke(Channels.previewReopenWeb, {
+    threadId: "t-reopen",
+    token: tokenA,
+  });
+  await delay(800);
+  const reopenedState = await invoke(Channels.previewStateGet, { threadId: "t-reopen" });
+  check(
+    "the user's own web page re-opens by its token, at the shell's record, with a new token",
+    reopenedOk === true &&
+      reopenedState?.url === `http://site.example:${site.port}/mark-reopen` &&
+      reopenedState?.webView !== undefined &&
+      reopenedState.webView !== tokenA &&
+      markSeen("/mark-reopen") === 2,
+    { reopenedOk, state: reopenedState },
+  );
+  check(
+    "a token re-opens once",
+    (await invoke(Channels.previewReopenWeb, { threadId: "t-reopen", token: tokenA })) === false,
+  );
+  // The review's case: the user's web page, then the thread's agent takes the pane.
+  await invoke(Channels.previewOpenWeb, {
+    threadId: "t-agent-takes",
+    url: `http://site.example:${site.port}/mark-user`,
+  });
+  await delay(800);
+  const tokenB = (await invoke(Channels.previewStateGet, { threadId: "t-agent-takes" }))?.webView;
+  const agentView = host.contentsFor("t-agent-takes", true);
+  await agentView?.loadURL(`http://127.0.0.1:${dev.port}/`).catch(() => {});
+  const agentState = await invoke(Channels.previewStateGet, { threadId: "t-agent-takes" });
+  check(
+    "the agent's page carries no web token",
+    tokenB !== undefined && agentState?.webView === undefined && agentView?.session === local,
+    agentState,
+  );
+  check(
+    "the old token re-opens nothing while the agent's page is open",
+    (await invoke(Channels.previewReopenWeb, { threadId: "t-agent-takes", token: tokenB })) ===
+      false,
+  );
+  await evictAll("t-evict-b");
+  const userSeen = markSeen("/mark-user");
+  check(
+    "nor after the agent's page was closed for newer threads', and the site sees nothing",
+    (await invoke(Channels.previewReopenWeb, { threadId: "t-agent-takes", token: tokenB })) ===
+      false && markSeen("/mark-user") === userSeen,
+    { userSeen },
   );
   // The control: the same page in a session without the policy reaches both, so the probe is real.
   const controlSession = session.fromPartition("fixture-control");

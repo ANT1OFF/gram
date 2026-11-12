@@ -22,7 +22,9 @@ import {
 import { connect, isIP, type Socket } from "node:net";
 import type { Duplex } from "node:stream";
 
-import { grantKey, hostZone, hostnameOf, proxyTargets, type WebLookup } from "./preview-rules.ts";
+import { performance } from "node:perf_hooks";
+
+import { hostZone, hostnameOf, proxyTargets, type WebLookup } from "./preview-rules.ts";
 
 /** Opens a TCP connection to an address the proxy checked. */
 export type WebDial = (address: string, port: number) => Socket;
@@ -32,10 +34,10 @@ export interface WebProxyOptions {
   readonly lookup?: WebLookup | undefined;
   readonly dial?: WebDial | undefined;
   /**
-   * Whether the session's request check granted a private network's `host:port` (`grantKey`)
-   * just now; none is, when absent.
+   * Whether it reaches private networks: only a private network page's own session's proxy,
+   * where nothing but private pages runs. Fixed for its life, so there is nothing to borrow.
    */
-  readonly granted?: ((key: string) => boolean) | undefined;
+  readonly allowPrivate?: boolean | undefined;
   /** Told of what the server itself can't do, such as accept a connection. */
   readonly onError?: ((error: Error) => void) | undefined;
 }
@@ -93,9 +95,10 @@ async function dialFirst(
   port: number,
   signal: AbortSignal,
 ): Promise<Socket | undefined> {
-  const deadline = Date.now() + DIAL_MS;
+  // Monotonic, so a change to the wall clock neither stretches nor cuts it.
+  const deadline = performance.now() + DIAL_MS;
   for (const address of addresses) {
-    if (signal.aborted || Date.now() >= deadline) return undefined;
+    if (signal.aborted || performance.now() >= deadline) return undefined;
     const socket = await new Promise<Socket | undefined>((resolve) => {
       let upstream: Socket;
       try {
@@ -114,7 +117,7 @@ async function dialFirst(
         upstream.destroy();
         done(undefined);
       };
-      const timer = setTimeout(fail, Math.max(0, deadline - Date.now()));
+      const timer = setTimeout(fail, Math.max(0, deadline - performance.now()));
       signal.addEventListener("abort", fail, { once: true });
       upstream.once("error", fail);
       upstream.once("connect", () => done(upstream));
@@ -152,7 +155,7 @@ const forwardable = (headers: IncomingHttpHeaders): OutgoingHttpHeaders => {
 export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebProxy> {
   const lookup = options.lookup ?? systemLookup;
   const dial = options.dial ?? dialDirect;
-  const granted = options.granted ?? (() => false);
+  const allowPrivate = options.allowPrivate === true;
   const realm = `gram-web-${randomBytes(8).toString("hex")}`;
   const username = "gram";
   const password = randomBytes(24).toString("base64url");
@@ -167,20 +170,18 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
   const challenge = `Basic realm="${realm}"`;
 
   /** Where a client may connect to `host:port`, looked up once and checked; `undefined` refuses. */
-  const targets = async (host: string, port: number) => {
+  const targets = async (host: string) => {
     const hostname = hostnameOf(host);
     if (hostname === undefined) return undefined;
-    // A literal needs no lookup, nor a loopback or ungranted private name; any other name gets
-    // exactly one, bounded and failing closed.
-    const key = grantKey(hostname, port);
-    const isGranted = key !== undefined && granted(key);
+    // A literal needs no lookup, nor a loopback or (here) unreachable private name; any other
+    // name gets exactly one, bounded and failing closed.
     const named = hostZone(hostname);
     const needsLookup =
       isIP(hostname.replace(/^\[|\]$/g, "")) === 0 &&
       named !== "loopback" &&
-      (named === "public" || isGranted);
+      (named === "public" || allowPrivate);
     const addresses = needsLookup ? await boundedLookup(lookup, hostname) : undefined;
-    return proxyTargets(hostname, addresses, isGranted);
+    return proxyTargets(hostname, addresses, allowPrivate);
   };
 
   const server = createServer();
@@ -206,7 +207,7 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
     const aborted = new AbortController();
     client.once("close", () => aborted.abort());
     void (async () => {
-      const allowed = await targets(at[1]!, port);
+      const allowed = await targets(at[1]!);
       if (allowed === undefined) {
         client.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
         return;
@@ -251,7 +252,7 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
     const aborted = new AbortController();
     res.once("close", () => aborted.abort());
     void (async () => {
-      const allowed = await targets(url.hostname, port);
+      const allowed = await targets(url.hostname);
       if (allowed === undefined) {
         res
           .writeHead(403, { "content-type": "text/plain; charset=utf-8" })

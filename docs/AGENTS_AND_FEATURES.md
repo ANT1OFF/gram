@@ -1187,20 +1187,20 @@ every permission, download, client certificate and external-app launch refused:
   an agent was allowed (below).
 - **Web**: the pages you open anywhere else. No agent ever reads or drives one; when an agent
   starts browsing in that thread, your page there closes for a fresh one of its own, so what you
-  sign in to on the web stays yours. A web page never reaches loopback (Gram's own server, your dev
-  servers), and nothing it starts (a link, form, redirect, script, frame or subresource) reaches a
-  network more private than its own: a site can't reach your office or home network, and a public
-  name pointed at a private address is refused like the address. You can still open a page on
-  your private network yourself by typing its address or a private name (`nas.local`), but a
-  public name that resolves to a private address (split-horizon DNS) opens nowhere in the pane.
-  Every connection goes through the session's own proxy, which looks each name up once and
-  connects only to the addresses it checked, and reaches a private network only for a request the
-  session's check just allowed there, so WebRTC and a public page's sockets never do. It answers
-  only Gram's own credential, made at each launch, so no other program on your computer can use
-  it. The system proxy isn't used, so on a network that requires one, web pages don't load in the
-  pane. WebRTC there uses no UDP, and its TCP goes through that proxy too. A web page you opened is
-  re-opened there, after the pane closed it for newer threads', only because you opened it; a page
-  that went off loopback any other way, such as an agent's, is never re-opened in this session.
+  sign in to on the web stays yours. Pages on the internet share one web session, which never
+  reaches loopback (Gram's own server, your dev servers) or a private network, whatever asks: a
+  link, form, redirect, script, frame, subresource, WebRTC or preconnect. A public name pointed at
+  a private address is refused like the address. A page you open on your private network, by its
+  address or a private name (`nas.local`), gets its thread's own private web session, which runs
+  nothing but private pages: a public frame there doesn't load, and a link to the internet opens
+  in the shared session. A public name that resolves to a private address (split-horizon DNS)
+  opens nowhere in the pane. Each web session's connections go through a proxy of its own, which
+  looks each name up once and connects only to the addresses it checked; it answers only its own
+  credential, made at each launch, so no other program on your computer can use it. The system
+  proxy isn't used, so on a network that requires one, web pages don't load in the pane. WebRTC
+  there uses no UDP, and its TCP goes through that proxy too. When the pane closed your web page
+  for newer threads', it re-opens it by the shell's own token for that page and at the address the
+  shell recorded; once anything else opened in the thread, such as an agent's page, it doesn't.
 
 Agents can't open a web page in your Preview tab with `show_panel`, which stays on loopback; they
 browse with the tools below, under their own approvals.

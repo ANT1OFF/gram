@@ -3,24 +3,30 @@
 // none does, for the `MAX_PREVIEWS` most recently used threads. It is the only web content the
 // shell shows that isn't the app's own, so it gets nothing of the app's: sessions of its own kept in
 // memory, no preload, no permission, no download, no client certificate (`core/preview-rules.ts`).
-// A thread's page is in one of two. The local session holds loopback pages and agents' pages, and
-// loads nothing off loopback but what the agent browser allows an agent's page. The web session
-// holds the pages the user opens anywhere else: no agent ever drives or reads it, so what the user
-// signs in to there stays theirs, and it never reaches loopback or a network more private than the
-// page. Its connections all go through a proxy of its own (`core/web-proxy.ts`), which answers only
-// this app's credential, connects only to the addresses it checked, and reaches a private network
-// only where the request check just allowed it; its WebRTC never uses UDP. Only the user's own address strip
-// opens a page in the web session; a local page leaving loopback goes to the link question, and an
-// agent taking the pane starts a page in the local one. A new window goes to the link question.
+// A thread's page is in a session of one of three kinds. The local session holds loopback pages and
+// agents' pages, and loads nothing off loopback but what the agent browser allows an agent's page.
+// The web sessions hold the pages the user opens anywhere else, and no agent ever drives or reads
+// them, so what the user signs in to there stays theirs. The shared web session holds pages on the
+// internet, and never reaches loopback or a private network, whatever asks. A page the user opens
+// on a private network gets its thread's own private web session, which runs nothing but private
+// pages: a link from one to the internet opens in the shared session, and a public frame doesn't
+// load. Each web session's connections go through a proxy of its own (`core/web-proxy.ts`), which
+// answers only its own credential and connects only to the addresses it checked; its WebRTC never
+// uses UDP. Only the user's own address strip opens a web page, or re-opens one the shell closed
+// for newer threads' (`PreviewState.webView`); a local page leaving loopback goes to the link
+// question, and an agent taking the pane starts a page in the local session. A new window goes to
+// the link question.
 
 import {
   app,
   BrowserWindow,
   session,
   WebContentsView,
+  type AuthInfo,
   type Session,
   type WebContents,
 } from "electron";
+import { randomUUID } from "node:crypto";
 
 import {
   loopbackUrl,
@@ -35,42 +41,47 @@ import {
 import { Channels } from "../../channels.ts";
 import type { ShellLog } from "../../core/log.ts";
 import {
-  grantKey,
-  hostZone,
   MAX_PREVIEWS,
   parsePreviewBounds,
   previewNavigation,
   previewRequest,
   previewsToClose,
-  portOf,
   previewThreadOf,
   resolvedWithin,
   webNavigation,
+  webNetworkOf,
   webRequest,
   windowRect,
   type WebLookup,
+  type WebNetwork,
 } from "../../core/preview-rules.ts";
-import { boundedLookup, startWebProxy, systemLookup, type WebDial } from "../../core/web-proxy.ts";
+import {
+  boundedLookup,
+  startWebProxy,
+  systemLookup,
+  type WebDial,
+  type WebProxy,
+} from "../../core/web-proxy.ts";
 import { parsePaneCommand } from "../../core/browse-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { focusedAppWindow } from "../../electron/decision-windows.ts";
 
 /**
  * No `persist:` prefix, so their cookies and storage live in memory and are gone at quit. The local
- * one is also where the agent browser resolves hosts.
+ * one is also where the agent browser resolves hosts. `web` is the shared session for the internet;
+ * a thread's private network pages get `${privateWeb}-<n>`, one per thread.
  */
-export const PREVIEW_PARTITIONS = { local: "gram-preview", web: "gram-preview-web" } as const;
+export const PREVIEW_PARTITIONS = {
+  local: "gram-preview",
+  web: "gram-preview-web",
+  privateWeb: "gram-preview-lan",
+} as const;
 
-/** Which session a thread's page is in: loopback and agents' pages, or the user's web pages. */
-export type PreviewKind = keyof typeof PREVIEW_PARTITIONS;
+/** Which kind of session a thread's page is in: loopback and agents' pages, or the user's web pages. */
+export type PreviewKind = "local" | "web";
 
 /** How many main-frame requests' latest hops are kept, for the redirect that follows each. */
 const HOPS_KEPT = 64;
-
-/** How long a private network's `host:port` stays granted after a request the check allowed. */
-const GRANT_MS = 60_000;
-/** The most private `host:port`s held at once. */
-const GRANTS_KEPT = 256;
 
 /** The size an agent's page lays out at until a window shows it, a laptop's usual pane. */
 const AGENT_PAGE_BOUNDS = { x: 0, y: 0, width: 1280, height: 800 } as const;
@@ -147,6 +158,13 @@ export interface PreviewAgent {
 interface Preview {
   readonly threadId: string;
   readonly kind: PreviewKind;
+  /** For a web page, which web session: the shared one, or the thread's private network one. */
+  readonly network: WebNetwork | undefined;
+  /**
+   * For a web page, this view's own token, for its life only (`PreviewState.webView`): what the
+   * renderer names to re-open it after the shell closed it for newer threads'.
+   */
+  readonly token: string | undefined;
   readonly view: WebContentsView;
   /** Where in `window` it was last drawn, so a page made again in the other session takes its place. */
   rect: { x: number; y: number; width: number; height: number } | undefined;
@@ -178,7 +196,35 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
   /** Each thread's preview, least recently used first. */
   const previews = new Map<string, Preview>();
   const previewContents = new WeakSet<WebContents>();
-  const sessions = new Map<PreviewKind, Session>();
+  /** The sessions made so far, by partition. */
+  const sessions = new Map<string, Session>();
+  /** Each thread's private network session's partition number. */
+  const privatePartitions = new Map<string, number>();
+  /** Each web session's proxy, by the realm it asks for its credential in. */
+  const proxies = new Map<string, { readonly proxy: WebProxy; readonly ses: Session }>();
+  /**
+   * The thread's user web page the shell closed for newer threads', which the renderer may have
+   * re-opened by its token: its URL is the shell's own record, never the renderer's. Gone as soon
+   * as anything else opens in the thread, an agent's page above all.
+   */
+  const reopenable = new Map<
+    string,
+    { readonly token: string; readonly url: string; readonly network: WebNetwork }
+  >();
+
+  // Each web session's proxy credential, for Chromium only: asked for by that proxy's own realm and
+  // port, for that session's pages.
+  app.on("login", (event, contents, _details, authInfo: AuthInfo, callback) => {
+    const known = authInfo.isProxy ? proxies.get(authInfo.realm) : undefined;
+    if (
+      known === undefined ||
+      authInfo.port !== known.proxy.port ||
+      (contents !== null && contents.session !== known.ses)
+    )
+      return;
+    event.preventDefault();
+    callback(known.proxy.username, known.proxy.password);
+  });
 
   // Electron picks the first certificate in the store when nobody answers, which on a managed
   // laptop can be the device's own, the one that signs in to internal sites.
@@ -214,54 +260,21 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     });
   };
 
-  const webSession = (ses: Session) => {
+  const webSession = (ses: Session, network: WebNetwork) => {
     const lookup = options.lookupWebHost ?? systemLookup;
-    /**
-     * The private networks' `host:port`s the request check just allowed, until when: the proxy
-     * connects to a private address or name only while one is held, so only a request that check
-     * saw, from a page or load allowed a private network, ever reaches one. Bounded, the oldest
-     * going first.
-     */
-    const grants = new Map<string, number>();
-    const grant = (url: string) => {
-      let parsed: URL;
-      try {
-        parsed = new URL(url);
-      } catch {
-        return;
-      }
-      const port = portOf(parsed);
-      const key = port === undefined ? undefined : grantKey(parsed.hostname, port);
-      if (key === undefined || hostZone(parsed.hostname) !== "private") return;
-      grants.delete(key);
-      grants.set(key, Date.now() + GRANT_MS);
-      if (grants.size > GRANTS_KEPT) grants.delete(grants.keys().next().value!);
-    };
-    const granted = (key: string) => (grants.get(key) ?? 0) > Date.now();
     // Every connection goes through the session's own proxy, which resolves each name once and
-    // connects to the very address it checked; the system's proxy, which could send a name
-    // anywhere, is never used. Until it is in place nothing goes out, and if it can't be, nothing
-    // ever does.
+    // connects to the very address it checked, and reaches a private network only in a private
+    // network page's own session; the system's proxy, which could send a name anywhere, is never
+    // used. Until it is in place nothing goes out, and if it can't be, nothing ever does.
     const proxied = startWebProxy({
       lookup,
       dial: options.dialWebAddress,
-      granted,
+      allowPrivate: network === "private",
       onError: (error) =>
         options.log.warn({ source: "preview", error: String(error) }, "the web proxy failed"),
     })
       .then(async (proxy) => {
-        // Its credential, for Chromium only: asked for by the proxy's own realm, host and port.
-        app.on("login", (event, contents, _details, authInfo, callback) => {
-          if (
-            !authInfo.isProxy ||
-            authInfo.realm !== proxy.realm ||
-            authInfo.port !== proxy.port ||
-            (contents !== null && contents.session !== ses)
-          )
-            return;
-          event.preventDefault();
-          callback(proxy.username, proxy.password);
-        });
+        proxies.set(proxy.realm, { proxy, ses });
         await ses.setProxy({
           mode: "fixed_servers",
           proxyRules: `127.0.0.1:${proxy.port}`,
@@ -274,7 +287,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       .catch((error: unknown) => {
         options.log.error(
           { source: "preview", error: String(error) },
-          "the web session's proxy didn't start; its pages load nothing",
+          "a web session's proxy didn't start; its pages load nothing",
         );
         return false;
       });
@@ -293,6 +306,8 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       const verdict = webRequest({
         url: details.url,
         mainFrame,
+        subFrame: details.resourceType === "subFrame",
+        network,
         initiator: details.initiatorOrigin,
         before,
         ...(page === "" ? {} : { page }),
@@ -304,23 +319,32 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
           ? resolvedWithin(bounded, verdict.host, verdict.bound)
           : Promise.resolve(verdict.kind === "allow");
       void Promise.all([proxied, allowed]).then(
-        ([ready, ok]) => {
-          if (ready && ok) grant(details.url);
-          callback(ready && ok ? {} : { cancel: true });
-        },
+        ([ready, ok]) => callback(ready && ok ? {} : { cancel: true }),
         () => callback({ cancel: true }),
       );
     });
   };
 
-  const sessionOf = (kind: PreviewKind): Session => {
-    const known = sessions.get(kind);
+  /** The session a thread's page of `kind` is made in, made the first time it is asked for. */
+  const sessionOf = (kind: PreviewKind, threadId: string, network: WebNetwork | undefined) => {
+    let partition: string = PREVIEW_PARTITIONS.local;
+    if (kind === "web" && network === "private") {
+      let n = privatePartitions.get(threadId);
+      if (n === undefined) {
+        n = privatePartitions.size + 1;
+        privatePartitions.set(threadId, n);
+      }
+      partition = `${PREVIEW_PARTITIONS.privateWeb}-${n}`;
+    } else if (kind === "web") {
+      partition = PREVIEW_PARTITIONS.web;
+    }
+    const known = sessions.get(partition);
     if (known !== undefined) return known;
-    const ses = session.fromPartition(PREVIEW_PARTITIONS[kind]);
+    const ses = session.fromPartition(partition);
     harden(ses);
     if (kind === "local") localSession(ses);
-    else webSession(ses);
-    sessions.set(kind, ses);
+    else webSession(ses, network ?? "public");
+    sessions.set(partition, ses);
     return ses;
   };
 
@@ -346,7 +370,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       ...(browserInspection === undefined ? {} : { browserInspection }),
       ...(action === undefined ? {} : { action }),
       ...(recording ? { recording } : {}),
-      ...(preview.kind === "web" ? { web: true } : {}),
+      ...(preview.token === undefined ? {} : { webView: preview.token }),
     };
   };
 
@@ -402,10 +426,15 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     window.once("closed", () => leave(window));
   };
 
-  const create = (threadId: string, kind: PreviewKind): Preview => {
+  const create = (
+    threadId: string,
+    kind: PreviewKind,
+    network: WebNetwork | undefined = undefined,
+  ): Preview => {
+    const web = kind === "web" ? (network ?? "public") : undefined;
     const view = new WebContentsView({
       webPreferences: {
-        session: sessionOf(kind),
+        session: sessionOf(kind, threadId, web),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -417,12 +446,14 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     });
     view.setVisible(false);
     // WebRTC's sockets don't pass the session's request check: no UDP at all, and TCP only through
-    // the proxy, which never grants them a private network or loopback. Set on the page itself, so
-    // every frame in it holds to it.
+    // the proxy, which reaches a private network only for a private page's own session, and
+    // loopback never. Set on the page itself, so every frame in it holds to it.
     if (kind === "web") view.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
     const preview: Preview = {
       threadId,
       kind,
+      network: web,
+      token: web === undefined ? undefined : randomUUID(),
       view,
       rect: undefined,
       window: undefined,
@@ -462,6 +493,17 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     };
     const steerWeb = (event: { preventDefault(): void }, url: string, redirect: boolean) => {
       const decision = webNavigation(url);
+      // A private network page's session runs nothing but private pages: a link, script or
+      // redirect from one to the internet opens in the shared session, as any page's link does
+      // there, after this event, since that closes the page raising it. The shared session never
+      // loads a private network's page, whoever asks: its request check refuses it.
+      if (decision === "load" && web === "private" && webNetworkOf(url) === "public") {
+        event.preventDefault();
+        setImmediate(() => {
+          if (previews.get(threadId) === preview) void openIn(preview, "web", url);
+        });
+        return;
+      }
       if (decision === "load") return;
       event.preventDefault();
       // A site sending the pane to this computer's own addresses: the user decides, in their
@@ -511,7 +553,13 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     const shown = (id: string) => previews.get(id)?.window !== undefined;
     for (const id of previewsToClose([...previews.keys()], shown, MAX_PREVIEWS - 1)) {
       const old = previews.get(id);
-      if (old !== undefined) close(old);
+      if (old === undefined) continue;
+      // The user's own web page, closed only to make room: the renderer may ask for it again by
+      // its token, and gets the page it was on, by the shell's record.
+      const url = old.view.webContents.isDestroyed() ? "" : old.view.webContents.getURL();
+      if (old.token !== undefined && old.network !== undefined && webUrl(url) !== undefined)
+        reopenable.set(id, { token: old.token, url, network: old.network });
+      close(old);
     }
     previews.set(threadId, preview);
     return preview;
@@ -521,10 +569,10 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
    * `old`'s thread's page made again in `kind`'s session, in its place: in the same window at the
    * same size, told to the same windows. Nothing of the old page comes along, its history neither.
    */
-  const replace = (old: Preview, kind: PreviewKind): Preview => {
+  const replace = (old: Preview, kind: PreviewKind, network?: WebNetwork): Preview => {
     const { window, rect, watchers } = old;
     close(old);
-    const next = create(old.threadId, kind);
+    const next = create(old.threadId, kind, network);
     for (const watcher of watchers) next.watchers.add(watcher);
     touch(next);
     if (window !== undefined && !window.isDestroyed() && rect !== undefined) {
@@ -536,9 +584,13 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     return next;
   };
 
-  /** Loads `url` in the thread's page, made in `kind`'s session first if it is in the other. */
+  /** Loads `url` in the thread's page, made again first in the session it belongs in. */
   const openIn = async (preview: Preview, kind: PreviewKind, url: string) => {
-    const target = preview.kind === kind ? preview : replace(preview, kind);
+    const network = kind === "web" ? webNetworkOf(url) : undefined;
+    const target =
+      preview.kind === kind && preview.network === network
+        ? preview
+        : replace(preview, kind, network);
     target.error = undefined;
     // A page that won't load rejects here and reports itself through `did-fail-load`.
     await target.view.webContents.loadURL(url).catch(() => {});
@@ -564,7 +616,11 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     const raw: unknown = threadId === undefined ? undefined : Reflect.get(input as object, "url");
     const url = typeof raw === "string" ? rule(raw) : undefined;
     if (threadId === undefined || url === undefined) return false;
-    const preview = previews.get(threadId) ?? create(threadId, kind);
+    // Anything else opening in the thread ends the closed web page's re-open.
+    reopenable.delete(threadId);
+    const preview =
+      previews.get(threadId) ??
+      create(threadId, kind, kind === "web" ? webNetworkOf(url) : undefined);
     touch(preview);
     preview.watchers.add(sender);
     await openIn(preview, kind, url);
@@ -575,13 +631,35 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
   ipc.handle(Channels.previewOpen, (input, event) =>
     openFor(input, event.sender, "local", loopbackUrl),
   );
-  // A web page, in the session with the user's sign-ins: only the address strip asks for one, and
-  // a page the user opened there re-opened (`PreviewState.web`). Loopback never opens there.
+  // A web page, in a session with the user's sign-ins: only the address strip asks for one.
+  // Loopback never opens there.
   ipc.handle(Channels.previewOpenWeb, (input, event) =>
     openFor(input, event.sender, "web", (raw) =>
       loopbackUrl(raw) === undefined ? webUrl(raw) : undefined,
     ),
   );
+  // The user's web page the shell closed for newer threads', by the token it had: once, only
+  // while nothing else has opened in the thread since, and at the URL the shell recorded.
+  ipc.handle(Channels.previewReopenWeb, async (input, event) => {
+    const threadId = previewThreadOf(input);
+    const token: unknown =
+      threadId === undefined ? undefined : Reflect.get(input as object, "token");
+    const closed = threadId === undefined ? undefined : reopenable.get(threadId);
+    if (
+      threadId === undefined ||
+      closed === undefined ||
+      typeof token !== "string" ||
+      token !== closed.token ||
+      previews.has(threadId)
+    )
+      return false;
+    reopenable.delete(threadId);
+    const preview = create(threadId, "web", closed.network);
+    touch(preview);
+    preview.watchers.add(event.sender);
+    await openIn(preview, "web", closed.url);
+    return true;
+  });
   ipc.on(Channels.previewBounds, (event, input) => {
     const preview = previewFor(input, event.sender);
     const window = BrowserWindow.fromWebContents(event.sender);
@@ -673,7 +751,9 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     contentsFor: (threadId, make) => {
       const existing = contentsOf(threadId);
       if (existing !== undefined || !make) return existing;
-      // A web page the user opened is never the agent's: it closes, unread, for a page of its own.
+      // A web page the user opened is never the agent's: it closes, unread, for a page of its own,
+      // and can't be re-opened in its session after.
+      reopenable.delete(threadId);
       const old = previews.get(threadId);
       const preview = old === undefined ? create(threadId, "local") : replace(old, "local");
       touch(preview);

@@ -70,10 +70,10 @@ describe("the web session's proxy", () => {
   });
 
   /** Names resolve as `lookup` says; the "public" address, and 10.77.0.9, dial the loopback target. */
-  const start = async (lookup: WebLookup, granted: (key: string) => boolean = () => false) => {
+  const start = async (lookup: WebLookup, allowPrivate = false) => {
     const proxy = await startWebProxy({
       lookup,
-      granted,
+      allowPrivate,
       dial: (address, port) =>
         connect({
           host: address === "93.184.216.34" || address === "10.77.0.9" ? "127.0.0.1" : address,
@@ -127,13 +127,10 @@ describe("the web session's proxy", () => {
     const gram = await target();
     owned.push(gram);
     let lookups = 0;
-    const proxy = await start(
-      async () => {
-        lookups += 1;
-        return ["93.184.216.34"];
-      },
-      () => true,
-    );
+    const proxy = await start(async () => {
+      lookups += 1;
+      return ["93.184.216.34"];
+    }, true);
     for (const host of ["127.0.0.1", "localhost", "gram.localhost", "0.0.0.0", "[::1]"]) {
       expect((await tunnel(proxy, host, gram.port, credential(proxy))).status, host).toBe(403);
     }
@@ -141,21 +138,20 @@ describe("the web session's proxy", () => {
     expect(lookups).toBe(0);
   });
 
-  it("reaches a private address only on a grant for that very host and port", async () => {
+  it("reaches a private address only as a private network page's own session's proxy", async () => {
     const lan = await target();
     owned.push(lan);
-    const grants = new Set<string>();
-    const proxy = await start(publicLookup, (key) => grants.has(key));
-    // A TURN server or preconnect on the office network: nothing granted it.
-    expect((await tunnel(proxy, "10.77.0.9", lan.port, credential(proxy))).status).toBe(403);
+    // The shared session's: a TURN server or preconnect on the office network reaches nothing,
+    // and nothing it can be given changes that.
+    const shared = await start(publicLookup);
+    expect((await tunnel(shared, "10.77.0.9", lan.port, credential(shared))).status).toBe(403);
     expect(lan.reached).toEqual([]);
-    // Another port of a granted host is still refused.
-    grants.add(`10.77.0.9:${lan.port + 1}`);
-    expect((await tunnel(proxy, "10.77.0.9", lan.port, credential(proxy))).status).toBe(403);
-    expect(lan.reached).toEqual([]);
-    // The page the user opened there.
-    grants.add(`10.77.0.9:${lan.port}`);
-    expect((await tunnel(proxy, "10.77.0.9", lan.port, credential(proxy))).status).toBe(200);
+    // A private network page's own.
+    const own = await start(publicLookup, true);
+    expect((await tunnel(own, "10.77.0.9", lan.port, credential(own))).status).toBe(200);
+    expect(lan.reached).toHaveLength(1);
+    // Each has its own credential: one's doesn't open the other.
+    expect((await tunnel(own, "10.77.0.9", lan.port, credential(shared))).status).toBe(407);
     expect(lan.reached).toHaveLength(1);
   });
 

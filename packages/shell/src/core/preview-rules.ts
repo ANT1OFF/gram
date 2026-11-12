@@ -191,9 +191,25 @@ export type WebRequestVerdict =
     };
 
 /** One request a page in the web session makes, with what the session knows of where it's from. */
+/**
+ * Which web session a page is in, by the network its page is on: the shared one for the internet,
+ * which never reaches a private network, or a private network page's own (`modules/preview`).
+ */
+export type WebNetwork = "public" | "private";
+
+/** The web session a page at `url` opens in: a private address or name's own, else the shared one. */
+export function webNetworkOf(url: string): WebNetwork {
+  const parsed = parse(url);
+  return parsed !== undefined && hostZone(parsed.hostname) === "private" ? "private" : "public";
+}
+
 export interface WebRequestDetails {
   readonly url: string;
   readonly mainFrame: boolean;
+  /** A frame inside the page navigating. */
+  readonly subFrame?: boolean | undefined;
+  /** The session the request is made in; the shared, public one when absent. */
+  readonly network?: WebNetwork | undefined;
   /** The origin of the page or frame that started it; absent for a load the app started. */
   readonly initiator?: string | undefined;
   /** For a main frame's redirect, the URL it was redirected from. */
@@ -203,12 +219,11 @@ export interface WebRequestDetails {
 }
 
 /**
- * The web session's rule for one request. Never loopback, whoever asks: Gram's own server, the
- * user's dev servers and the agents' pages are the local session's. A page the user loaded
- * themselves, by the address strip, history or reload, may be on a private network as well as the
- * internet. Anything a page starts, a link, a form, a redirect, a script, a subresource or a frame,
- * reaches its own zone or a more public one, so a site can never send the pane into the office
- * network. A public name is looked up, so one pointed at a private or loopback address (DNS
+ * A web session's rule for one request. Never loopback, whoever asks: Gram's own server, the
+ * user's dev servers and the agents' pages are the local session's. Never a private network in the
+ * shared session; a private network page's own session loads no public page or frame. Within that,
+ * anything a page starts, a link, a form, a redirect, a script, a subresource or a frame, reaches
+ * its own zone or a more public one. A public name is looked up, so one pointed at a private or loopback address (DNS
  * rebinding) is refused like the address itself.
  */
 export function webRequest(request: WebRequestDetails): WebRequestVerdict {
@@ -221,6 +236,14 @@ export function webRequest(request: WebRequestDetails): WebRequestVerdict {
   const host = parsed.hostname;
   const target = hostZone(host);
   if (target === "loopback") return { kind: "block" };
+  // The shared session never reaches a private network, whoever asks. A private network page's
+  // own session runs nothing but private pages: no public page or frame, which it hands to the
+  // shared session or doesn't load, so whatever runs there already has the private network's reach.
+  if ((request.network ?? "public") === "public") {
+    if (target !== "public") return { kind: "block" };
+  } else if (target === "public" && (request.mainFrame || request.subFrame === true)) {
+    return { kind: "block" };
+  }
   // Where it came from: the page or frame that started it, and a redirect's previous hop. A main
   // frame from neither is the user's own load; a subresource from neither counts as public.
   const sources = (
@@ -273,42 +296,23 @@ export function hostnameOf(host: string): string | undefined {
 }
 
 /**
- * The key a private-network grant is kept under, the same from a request's URL and from the
- * proxy's connection: `10.0.0.1:443`, `[fd00::1]:80`, `nas.local:8080`.
- */
-export function grantKey(host: string, port: number): string | undefined {
-  const hostname = hostnameOf(host);
-  return hostname === undefined || !Number.isInteger(port) || port < 1 || port > 65_535
-    ? undefined
-    : `${hostname}:${port}`;
-}
-
-/** The port a web or socket URL connects to, its scheme's default when it names none. */
-export function portOf(url: URL): number | undefined {
-  if (url.port !== "") return Number(url.port);
-  return DEFAULT_PORT[url.protocol];
-}
-
-/**
- * The addresses the web session's proxy may connect to for one connection the session asks it
- * for, in order, or `undefined` to refuse it. The proxy resolves the name itself and connects to
- * what this returns, so the address checked is the address used. Never loopback. A public name
- * answering any private or loopback address (a rebound one) is refused whole, as is a name that
- * answers nothing. A private address or a private name (`10.0.0.1`, `nas.local`) only with
- * `granted`: the session's request check allowed a request to that very host and port moments
- * ago, from a page or load allowed a private network. Nothing else reaches one: not WebRTC, not a
- * preconnect, not a public page's socket, none of which that check ever sees.
+ * The addresses a web session's proxy may connect to for one connection, in order, or `undefined`
+ * to refuse it. The proxy resolves the name itself and connects to what this returns, so the
+ * address checked is the address used. Never loopback. A public name answering any private or
+ * loopback address (a rebound one) is refused whole, as is a name that answers nothing. A private
+ * address or name only for `allowPrivate`, a private network page's own session; the shared
+ * session's proxy never reaches one, whatever asks: a page, WebRTC, a preconnect.
  */
 export function proxyTargets(
   host: string,
   addresses: readonly string[] | undefined,
-  granted = false,
+  allowPrivate = false,
 ): readonly string[] | undefined {
   const hostname = hostnameOf(host);
   if (hostname === undefined) return undefined;
   const named = hostZone(hostname);
   if (named === "loopback") return undefined;
-  if (named === "private" && !granted) return undefined;
+  if (named === "private" && !allowPrivate) return undefined;
   if (isAddress(hostname)) {
     const literal = hostname.startsWith("[") ? hostname.slice(1, -1) : hostname;
     return addressZone(literal) === "loopback" ? undefined : [literal];

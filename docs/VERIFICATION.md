@@ -269,11 +269,15 @@ proxy would be seen. It checks that a remote page loads in a session apart from 
 agents', gets no Gram cookie, bridge or Node, and reaches nothing on loopback or a private network
 by fetch, socket, script, redirect, rebound or failing lookup, or WebRTC STUN and TURN over TCP to
 loopback or a private address (with a control session showing the same probe does reach them),
-while a private page the user opens still loads; that the system proxy is never used, and the
-session's own answers no other process without its credential; that permissions and downloads
-are refused; that a local page's link, script or redirect (an agent's, as `show_panel` opens it)
-goes to the link question and never into the web session; that the loopback open channel refuses
-a web page and the web one loopback; and that an agent never gets the user's web page. It proves
+even with the user's private page open at that very address in another thread; that a private
+page loads in its thread's own session, where its public frame doesn't load and its link to the
+internet opens in the shared session; that the system proxy is never used, and the session's own
+answers no other process without its credential; that permissions and downloads are refused; that
+a local page's link, script or redirect (an agent's, as `show_panel` opens it) goes to the link
+question and never into the web session; that the loopback open channel refuses a web page and
+the web one loopback; that the user's web page closed for newer threads' re-opens once by its
+token, at the shell's record, while one an agent's page replaced never does; and that an agent
+never gets the user's web page. It proves
 the session rules, not a real site's behaviour. A `<link rel=preconnect>` doesn't fire in this
 fixture, even without the proxy, so it isn't checked natively; the proxy's unit tests cover the
 rule it would meet.

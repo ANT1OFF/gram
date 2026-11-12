@@ -176,10 +176,12 @@ export interface PreviewState {
   /** The agent is recording the page as an animated GIF. */
   readonly recording?: boolean | undefined;
   /**
-   * The page is in the web session, where the user's sign-ins are: one the user opened from the
-   * address strip (`openWeb`), and only such a page is re-opened there.
+   * The page is a web page the user opened from the address strip (`openWeb`), in a session with
+   * their sign-ins: this is the shell's token for that very view, for its life only. Absent for any
+   * other page, an agent's above all. `reopenWeb` names it to re-open the page after the shell
+   * closed it for newer threads'.
    */
-  readonly web?: boolean | undefined;
+  readonly webView?: string | undefined;
 }
 
 /** Where the Preview tab's page shows, in the window page's CSS pixels. */
@@ -202,12 +204,17 @@ export interface DesktopPreview {
   /** Loads `url`, a loopback URL, in `threadId`'s preview; false when refused or it can't open. */
   open(threadId: string, url: string): Promise<boolean>;
   /**
-   * Loads `url`, an http(s) page off loopback (`webUrl`), in `threadId`'s preview, in the session
-   * with the user's sign-ins. Only for what the user typed in the address strip, or a page they
-   * opened that way being re-opened; false when refused or it can't open. Absent from shells
-   * older than web pages.
+   * Loads `url`, an http(s) page off loopback (`webUrl`), in `threadId`'s preview, in a session
+   * with the user's sign-ins. Only for what the user typed in the address strip, once; false when
+   * refused or it can't open. Absent from shells older than web pages.
    */
   openWeb?(threadId: string, url: string): Promise<boolean>;
+  /**
+   * Re-opens `threadId`'s web page that the shell closed for newer threads', by its `webView`
+   * token, at the address the shell recorded; false when that token isn't the thread's closed web
+   * page, or anything else opened in the thread since, such as an agent's page.
+   */
+  reopenWeb?(threadId: string, token: string): Promise<boolean>;
   /**
    * Shows `threadId`'s page at `bounds` in this window, moving it from any other window that showed
    * it; `null` takes it out of this window, keeping it loaded.

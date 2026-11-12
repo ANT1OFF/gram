@@ -835,11 +835,16 @@ interface PreviewPage {
   /** The thread's agent opened it in the pane (`browser_navigate`): shown as it is, never loaded. */
   driven?: boolean;
   /**
-   * The user typed a web address for it (`openWebPreview`), so it loads in the session with their
-   * sign-ins. Nothing else sets it: any other page, wherever it has gone since, re-opens on
-   * loopback only.
+   * The user just typed a web address for it (`openWebPreview`): its first load asks the shell for
+   * a web page, once. The first report of the shell's page replaces it.
    */
-  web?: boolean;
+  typed?: boolean;
+  /**
+   * The shell's token for the user's web page shown now (`PreviewState.webView`), as the shell last
+   * reported it; absent once anything else, an agent's page above all, took its place. Re-opening
+   * names it, and the shell alone decides whether it still may.
+   */
+  webView?: string | undefined;
   /** A Markdown or HTML file the tab shows instead of a page on a port, by its path. */
   file?: string | undefined;
   /**
@@ -1011,7 +1016,7 @@ export interface LayoutState
     threadId: ThreadId,
     url: string,
     driven?: boolean,
-    web?: boolean,
+    webView?: string,
   ): number | undefined;
   /** Clears the tab's target if it is still request `id`. */
   consumePanelTarget(tab: TargetedTab, id: number): void;
@@ -1388,11 +1393,11 @@ export const useLayoutStore = create<LayoutState>()(
           const url = loopbackUrl(raw) === undefined ? webUrl(raw) : undefined;
           if (url === undefined) return;
           set((s) => ({
-            previewPages: { ...s.previewPages, [threadId]: { id: ++requestSeq, url, web: true } },
+            previewPages: { ...s.previewPages, [threadId]: { id: ++requestSeq, url, typed: true } },
           }));
           get().revealPanel("preview");
         },
-        adoptPreviewPage: (threadId, url, driven, web) => {
+        adoptPreviewPage: (threadId, url, driven, webView) => {
           if (get().previewPages[threadId] !== undefined) return undefined;
           const id = ++requestSeq;
           set((s) => ({
@@ -1402,7 +1407,7 @@ export const useLayoutStore = create<LayoutState>()(
                 id,
                 url,
                 ...(driven === true ? { driven } : {}),
-                ...(web === true ? { web } : {}),
+                ...(webView === undefined ? {} : { webView }),
               },
             },
           }));
@@ -1433,10 +1438,21 @@ export const useLayoutStore = create<LayoutState>()(
         notePreviewPage: (threadId, page) =>
           set((s) => {
             const current = s.previewPages[threadId];
-            if (current?.id !== page.id || current.url === page.url) return {};
-            // Where a page went never makes it the user's web page: only the request's own mark.
-            const { web: _ignored, ...where } = page;
-            const next = current.web === true ? { ...where, web: true } : where;
+            if (current?.id !== page.id) return {};
+            // The shell's report is the whole truth of the page: where it is, and whose. A token
+            // the shell no longer reports, after an agent's page took the view's place, is gone.
+            if (
+              current.url === page.url &&
+              current.webView === page.webView &&
+              current.typed !== true
+            )
+              return {};
+            const { typed: _typed, webView: _webView, ...rest } = current;
+            const next: PreviewPage = {
+              ...rest,
+              url: page.url,
+              ...(page.webView === undefined ? {} : { webView: page.webView }),
+            };
             return { previewPages: { ...s.previewPages, [threadId]: next } };
           }),
       };

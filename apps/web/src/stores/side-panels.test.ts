@@ -446,7 +446,7 @@ describe("panel requests", () => {
     s().openWebPreview(B, "https://organization.example.invalid/docs");
     expect(s().previewPages[B]).toMatchObject({
       url: "https://organization.example.invalid/docs",
-      web: true,
+      typed: true,
     });
     for (const refused of [
       "file:///etc/passwd",
@@ -459,21 +459,30 @@ describe("panel requests", () => {
     }
   });
 
-  it("never marks a page the user's web page by where it went, only by their request", () => {
-    // A port chip's page that an agent then drove to a public host, unseen.
+  it("holds a web page's re-open token only while the shell reports it", () => {
+    // The user types a web address; the shell reports its web view.
+    s().openWebPreview(B, "https://organization.example.invalid/");
+    const id = s().previewPages[B]!.id;
+    s().notePreviewPage(B, { id, url: "https://organization.example.invalid/", webView: "v1" });
+    expect(s().previewPages[B]).toEqual({
+      id,
+      url: "https://organization.example.invalid/",
+      webView: "v1",
+    });
+    // The user's page moves on in that view: the token stays the shell's.
+    s().notePreviewPage(B, { id, url: "https://organization.example.invalid/next", webView: "v1" });
+    expect(s().previewPages[B]!.webView).toBe("v1");
+    // The thread's agent replaces the view, unseen, and drives it to a host of its choosing: the
+    // shell reports no token, so none is kept, at the same URL as well as another.
+    s().notePreviewPage(B, { id, url: "https://organization.example.invalid/next" });
+    expect(s().previewPages[B]).toEqual({ id, url: "https://organization.example.invalid/next" });
+    s().notePreviewPage(B, { id, url: "https://agent-chosen.example/act" });
+    expect(s().previewPages[B]).toEqual({ id, url: "https://agent-chosen.example/act" });
+    // A port chip's page an agent drove off loopback never gets one either.
     s().openPreview(A, "http://127.0.0.1:5173/");
     const local = s().previewPages[A]!;
-    s().notePreviewPage(A, { id: local.id, url: "https://agent-chosen.example/act", web: true });
+    s().notePreviewPage(A, { id: local.id, url: "https://agent-chosen.example/act" });
     expect(s().previewPages[A]).toEqual({ id: local.id, url: "https://agent-chosen.example/act" });
-    // The user's own web page keeps its mark wherever it goes.
-    s().openWebPreview(B, "https://organization.example.invalid/");
-    const web = s().previewPages[B]!;
-    s().notePreviewPage(B, { id: web.id, url: "https://organization.example.invalid/next" });
-    expect(s().previewPages[B]).toEqual({
-      id: web.id,
-      url: "https://organization.example.invalid/next",
-      web: true,
-    });
   });
 
   it("takes on a page another window opened, but never over this window's own", () => {

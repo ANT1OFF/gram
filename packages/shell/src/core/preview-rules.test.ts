@@ -9,10 +9,10 @@ import {
   previewRequest,
   previewsToClose,
   previewThreadOf,
-  grantKey,
   proxyTargets,
   resolvedWithin,
   webNavigation,
+  webNetworkOf,
   webRequest,
   windowRect,
   zoneOf,
@@ -207,9 +207,9 @@ describe("the web session's requests", () => {
     }
   });
 
-  it("lets the user open a private network's page, but never a public page send one there", () => {
-    expect(webRequest({ url: "http://192.168.1.1/", mainFrame: true })).toEqual({ kind: "allow" });
+  it("never reaches a private network in the shared session, the user's own load included", () => {
     for (const request of [
+      { url: "http://192.168.1.1/", mainFrame: true },
       { url: "http://192.168.1.1/", mainFrame: true, initiator: "https://example.com" },
       { url: "http://192.168.1.1/", mainFrame: true, before: "https://example.com/go" },
       { url: "http://nas.local/", mainFrame: false, initiator: "https://example.com" },
@@ -218,18 +218,63 @@ describe("the web session's requests", () => {
       { url: "http://10.0.0.1/", mainFrame: false },
     ]) {
       expect(webRequest(request), JSON.stringify(request)).toEqual({ kind: "block" });
+      expect(webRequest({ ...request, network: "public" }), JSON.stringify(request)).toEqual({
+        kind: "block",
+      });
     }
-    // A private page loads its own network, and the internet.
+  });
+
+  it("runs only private pages in a private network page's own session", () => {
+    const own = { network: "private" as const };
+    expect(webRequest({ url: "http://192.168.1.1/", mainFrame: true, ...own })).toEqual({
+      kind: "allow",
+    });
+    // Its own network, and the internet's subresources, from a private page.
     expect(
-      webRequest({ url: "http://10.0.0.2/x.css", mainFrame: false, initiator: "http://10.0.0.1" }),
+      webRequest({
+        url: "http://10.0.0.2/x.css",
+        mainFrame: false,
+        initiator: "http://10.0.0.1",
+        ...own,
+      }),
     ).toEqual({ kind: "allow" });
     expect(
       webRequest({
         url: "https://cdn.example.net/",
         mainFrame: false,
         initiator: "http://10.0.0.1",
+        ...own,
       }),
     ).toEqual({ kind: "resolve", host: "cdn.example.net", bound: "private" });
+    // Never a public page or frame: those go to the shared session, or don't load.
+    expect(webRequest({ url: "https://example.com/", mainFrame: true, ...own })).toEqual({
+      kind: "block",
+    });
+    expect(
+      webRequest({
+        url: "https://example.com/embed",
+        mainFrame: false,
+        subFrame: true,
+        initiator: "http://10.0.0.1",
+        ...own,
+      }),
+    ).toEqual({ kind: "block" });
+    // An opaque frame there counts as public, so reaches no private address.
+    expect(
+      webRequest({ url: "http://10.0.0.2/", mainFrame: false, initiator: "null", ...own }),
+    ).toEqual({ kind: "block" });
+    expect(webRequest({ url: "http://127.0.0.1:4317/", mainFrame: true, ...own })).toEqual({
+      kind: "block",
+    });
+  });
+
+  it("puts a page in the session of the network its address names", () => {
+    expect(webNetworkOf("http://192.168.1.1/")).toBe("private");
+    expect(webNetworkOf("http://nas.local:8080/")).toBe("private");
+    expect(webNetworkOf("http://[fd00::1]/")).toBe("private");
+    expect(webNetworkOf("https://example.com/")).toBe("public");
+    // A public name pointed at a private address is still the shared session's, which refuses it.
+    expect(webNetworkOf("https://wiki.example.com/")).toBe("public");
   });
 
   it("refuses other schemes, a top-level data page and a user name", () => {
@@ -303,19 +348,21 @@ describe("the web session's proxy targets", () => {
     expect(proxyTargets("example.com", undefined)).toBeUndefined();
   });
 
-  it("reaches a private name or address only where the request check granted it", () => {
-    // Granted: a page or load allowed a private network asked for this host and port just now.
+  it("reaches a private name or address only in a private network page's own session", () => {
     expect(proxyTargets("nas.local", ["192.168.1.20"], true)).toEqual(["192.168.1.20"]);
     expect(proxyTargets("192.168.1.1", undefined, true)).toEqual(["192.168.1.1"]);
     expect(proxyTargets("[fd00::1]", undefined, true)).toEqual(["fd00::1"]);
-    // Not granted: WebRTC, a preconnect, a public page's socket.
+    // The shared session's proxy: never, whatever asks, WebRTC and preconnects included.
     for (const host of ["10.77.0.9", "192.168.1.1", "169.254.169.254", "fd00::1", "nas.local"]) {
       expect(proxyTargets(host, ["192.168.1.20"]), host).toBeUndefined();
+      expect(proxyTargets(host, ["192.168.1.20"], false), host).toBeUndefined();
     }
     expect(proxyTargets("203.0.113.9", undefined)).toEqual(["203.0.113.9"]);
+    // A public name still answers public addresses only, in either.
+    expect(proxyTargets("example.com", ["10.0.0.5"], true)).toBeUndefined();
   });
 
-  it("never reaches loopback, granted or not", () => {
+  it("never reaches loopback, in either session", () => {
     expect(proxyTargets("nas.local", ["127.0.0.1"], true)).toBeUndefined();
     for (const host of [
       "127.0.0.1",
@@ -328,16 +375,6 @@ describe("the web session's proxy targets", () => {
     ]) {
       expect(proxyTargets(host, ["93.184.216.34"], true), host).toBeUndefined();
     }
-  });
-
-  it("keys a grant the same from a request's URL and from the proxy's connection", () => {
-    expect(grantKey("10.0.0.1", 443)).toBe("10.0.0.1:443");
-    expect(grantKey("[fd00::1]", 80)).toBe("[fd00::1]:80");
-    expect(grantKey("fd00::1", 80)).toBe("[fd00::1]:80");
-    expect(grantKey("NAS.local", 8080)).toBe("nas.local:8080");
-    expect(grantKey("0xa000001", 80)).toBe("10.0.0.1:80");
-    expect(grantKey("10.0.0.1", 0)).toBeUndefined();
-    expect(grantKey("bad host", 80)).toBeUndefined();
   });
 });
 

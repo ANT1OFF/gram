@@ -61,14 +61,30 @@ const unopened = (url: string): PreviewState => ({
  */
 const loads = new Map<string, { readonly id: number; readonly done: Promise<boolean> }>();
 
-const load = (bridge: DesktopPreview, threadId: string, id: number, url: string, web: boolean) => {
+/** The requests whose typed web address was asked for already: each is asked for once. */
+const typedSent = new Set<number>();
+
+const load = (
+  bridge: DesktopPreview,
+  threadId: string,
+  id: number,
+  url: string,
+  page: { readonly typed?: boolean; readonly webView?: string | undefined },
+) => {
   const known = loads.get(threadId);
   if (known?.id === id) return known.done;
-  // A page the user typed a web address for opens in the session with their sign-ins; anything
-  // else, wherever it has gone since, on loopback only, which the shell holds to as well.
-  const done = web
-    ? (bridge.openWeb?.(threadId, url) ?? Promise.resolve(false))
-    : bridge.open(threadId, url);
+  // What the user typed opens in a session with their sign-ins, once. Their web page the shell
+  // closed since is re-opened by the shell's own token and record, which it alone decides on.
+  // Anything else, wherever it has gone since, opens on loopback only.
+  let done: Promise<boolean>;
+  if (page.typed === true && !typedSent.has(id)) {
+    typedSent.add(id);
+    done = bridge.openWeb?.(threadId, url) ?? Promise.resolve(false);
+  } else if (page.webView !== undefined) {
+    done = bridge.reopenWeb?.(threadId, page.webView) ?? Promise.resolve(false);
+  } else {
+    done = bridge.open(threadId, url);
+  }
   loads.set(threadId, { id, done });
   return done;
 };
@@ -107,7 +123,8 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
 
   const pageId = page?.id;
   const driven = page?.driven === true;
-  const web = page?.web === true;
+  const typed = page?.typed === true;
+  const webView = page?.webView;
   // A page another window opened, which the shell still holds: this window's requests start empty.
   useEffect(() => {
     if (bridge === undefined || pageId !== undefined) return;
@@ -116,7 +133,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
       if (!live || held === null) return;
       loads.delete(threadId);
       // An agent's page, perhaps on a public host it was allowed, is shown as it is too.
-      const id = adoptPreviewPage(threadId, held.url, held.driver !== undefined, held.web === true);
+      const id = adoptPreviewPage(threadId, held.url, held.driver !== undefined, held.webView);
       if (id !== undefined) loads.set(threadId, { id, done: Promise.resolve(true) });
     });
     return () => {
@@ -152,12 +169,14 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
         if (live) setState(next ?? unopened(pageUrl));
         return;
       }
-      let opened = await load(bridge, threadId, pageId, pageUrl, web);
+      const first = load(bridge, threadId, pageId, pageUrl, { typed, webView });
+      let opened = await first;
       let next = opened ? await bridge.state(threadId) : null;
       if (opened && next === null) {
-        // The shell closed the page for more recent threads': load where it had gone.
-        loads.delete(threadId);
-        opened = await load(bridge, threadId, pageId, pageUrl, web);
+        // The shell closed the page for more recent threads': load where it had gone, once, however
+        // many mounts of the tab find it gone, since a re-open is good once.
+        if (loads.get(threadId)?.done === first) loads.delete(threadId);
+        opened = await load(bridge, threadId, pageId, pageUrl, { typed, webView });
         next = opened ? await bridge.state(threadId) : null;
       }
       if (live) setState(next ?? unopened(pageUrl));
@@ -165,7 +184,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
     return () => {
       live = false;
     };
-  }, [bridge, threadId, pageId, pageUrl, driven, web]);
+  }, [bridge, threadId, pageId, pageUrl, driven, typed, webView]);
 
   // The shell's page is only this tab's while a page is what it shows: not over Markdown, nor while
   // a file's address is still being asked for.
@@ -174,7 +193,12 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
   // for again instead: its address is the server's, and lasts only as long as the server.
   useEffect(() => {
     if (file === undefined && pageId !== undefined && current !== null && !current.loading) {
-      notePreviewPage(threadId, { id: pageId, url: current.url, ...(driven ? { driven } : {}) });
+      notePreviewPage(threadId, {
+        id: pageId,
+        url: current.url,
+        ...(driven ? { driven } : {}),
+        ...(current.webView === undefined ? {} : { webView: current.webView }),
+      });
     }
   }, [threadId, pageId, file, current, driven, notePreviewPage]);
 
