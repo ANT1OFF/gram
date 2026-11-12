@@ -102,11 +102,16 @@ export async function probeSession(fetchImpl: typeof fetch = fetch): Promise<Pro
 export function withSessionProbe(
   control: ConnectionControl,
   probe: () => Promise<ProbeAnswer> = () => probeSession(),
+  session?: { readonly refresh: () => Promise<boolean>; readonly expired: () => void },
 ): ConnectionControl {
   let probedAttempt = 0;
   let probing = false;
+  let wave = 0;
   control.subscribe(() => {
-    if (control.get().status === "open") probedAttempt = 0;
+    if (control.get().status === "open") {
+      probedAttempt = 0;
+      wave++;
+    }
   });
   return {
     ...control,
@@ -115,11 +120,29 @@ export function withSessionProbe(
       if (probing || attempt <= probedAttempt) return;
       probedAttempt = attempt;
       probing = true;
+      const started = wave;
+      const current = () => started === wave && control.get().status === "reconnecting";
       void probe()
-        .then((answer) => {
-          if (answer === "rejected") control.expire();
-          else control.explain(answer === "unknown" ? undefined : answer);
+        .then(async (answer) => {
+          if (!current()) return;
+          if (answer !== "rejected") {
+            control.explain(answer === "unknown" ? undefined : answer);
+            return;
+          }
+          if (session === undefined) {
+            control.expire();
+            return;
+          }
+          const refreshed = await session.refresh();
+          if (!current()) return;
+          if (refreshed) control.retryNow();
+          else {
+            control.expire();
+            session.expired();
+          }
         })
+        // A sign-in service or probe that isn't answering is an outage, never a sign-out.
+        .catch(() => undefined)
         .finally(() => {
           probing = false;
         });

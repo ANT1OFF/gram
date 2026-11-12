@@ -190,6 +190,15 @@ export interface GramServer {
    * `/`, the page's own origin, as the app has it on its own.
    */
   readonly base?: string;
+  /**
+   * Sign-in owned by the app in front. On a reconnect probe's 401, renew its cookie and return
+   * true to retry; return false only for an ended session, or throw for a temporary outage.
+   * `expired` takes over the page with the app's own sign-in. No credentials enter Gram.
+   */
+  readonly session?: {
+    readonly refresh: () => Promise<boolean>;
+    readonly expired: () => void;
+  };
 }
 
 export interface MountOptions {

@@ -82,7 +82,10 @@ export const mountGram: MountGram = async (options) => {
     setAppBasePath(options.basePath);
     bootTheme(document.documentElement, window.localStorage);
 
-    const api = await createApi(mock ? "mock" : "rpc");
+    const api = await createApi(
+      mock ? "mock" : "rpc",
+      typeof options.server === "object" ? options.server.session : undefined,
+    );
     if (mock) await withHostedMock(api);
     // One answer, before the router is built: a page added to a server that has the features off
     // would otherwise exist and lead nowhere.

@@ -80,6 +80,21 @@ The answer is a handle: `shell` says `"on"` or `"off"` (whether the server took 
 that part away), `navigate` moves the window to a path under the app, and `unmount` takes the app
 off the page.
 
+## Recovering a fronted session
+
+When your app owns sign-in, set `server.session` to `{ refresh, expired }`. After a socket drops
+and the HTTP probe answers 401, Gram calls `refresh()` once per retry wave, with no concurrent
+refreshes. Renew the app's cookie from its signed-in session and return `true`: Gram retries the
+connection and the server checks its credentials again. Return `false` only when the session has
+ended; Gram stops retrying and calls `expired()`, where your app unmounts Gram and shows its own
+sign-in. Throw for a temporary sign-in service outage: the connection keeps its normal backoff.
+A reply after feeds reconnect is ignored. Keep your identity SDK active for the page's lifetime;
+this hook also covers tabs that wake with an old cookie. No token is supplied to Gram's UI.
+
+Without this option, desktop Gram still shows its launch-token expiry screen. A fronted server
+does not accept that token at all: each HTTP request and socket upgrade needs the proxy's signed
+identity. Its short lifetime is independent of the cell process and of the portal session.
+
 ## What you can add
 
 **Pages.** Each of `routes` is a path and a React component. The page is drawn in the

@@ -1,3 +1,5 @@
+import type { GramServer } from "@/embed/contract";
+
 import { GramRpcs } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -41,10 +43,10 @@ import type { Api } from "./types";
  * window's lifetime. Feeds resubscribe with backoff when the socket drops, and `connection` reports
  * it for the reconnect banner.
  */
-export async function createRpcApi(url: string): Promise<Api> {
+export async function createRpcApi(url: string, session?: GramServer["session"]): Promise<Api> {
   // A dropped socket is a server that's down or a session it no longer accepts. Only an HTTP probe
   // tells them apart, and only the second never recovers by retrying.
-  const connection = withSessionProbe(createConnectionMonitor());
+  const connection = withSessionProbe(createConnectionMonitor(), undefined, session);
   const scope = await Effect.runPromise(Scope.make());
   const context = await Effect.runPromise(
     Layer.buildWithScope(
