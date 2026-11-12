@@ -148,8 +148,8 @@ export const profileMoveRoute = (
         "Give the thread's id and the machine's, and the profile if it has files.",
         400,
       );
-    const { threadId, hostId, profile } = input.value;
-    return yield* starter.moveOne(threadId, hostId, profile).pipe(
+    const { threadId, hostId, profile, lost } = input.value;
+    return yield* starter.moveOne(threadId, hostId, profile, { lost: lost === true }).pipe(
       Effect.map(({ thread, moved }) =>
         HttpServerResponse.jsonUnsafe(
           { threadId: thread.id, hostId, moved } satisfies ProfileMoveResponse,

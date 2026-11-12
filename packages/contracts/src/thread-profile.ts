@@ -337,6 +337,12 @@ export const ProfileMoveRequest = Schema.Struct({
    * (`profileBindingOf`), or nothing moves. Absent: the new folder is empty.
    */
   profile: Schema.optionalKey(Schema.Unknown),
+  /**
+   * The platform knows the thread's machine is gone for good (its compute was deleted), not away
+   * for a while: whatever of the thread still counts as running there, a turn the machine took with
+   * it, is ended as interrupted, and the thread moves. Absent: a thread at work stays.
+   */
+  lost: Schema.optionalKey(Schema.Boolean),
 });
 export type ProfileMoveRequest = typeof ProfileMoveRequest.Type;
 

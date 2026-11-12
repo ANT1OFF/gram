@@ -115,7 +115,7 @@ const setup = (
       // the queue goes on once it lets go, whether or not it moved.
       relocate: (threadId, plan) =>
         Effect.gen(function* () {
-          if (options.rest === "working" && options.status !== "starting")
+          if (plan.endWork !== true && options.rest === "working" && options.status !== "starting")
             return yield* new InvalidState({ message: "the thread is at work", threadId });
           calls.push(`stop ${threadId}`);
           return yield* Effect.gen(function* () {
@@ -375,5 +375,14 @@ describe("moving a profile thread leaves nothing of it on the old machine (REVIE
           expect(moving.calls[0]).toBe(`stop ${ID}`);
         }
       }),
+  );
+
+  it.effect("moves a thread at work when told its machine is gone for good", () =>
+    Effect.gen(function* () {
+      const lost = setup({ rest: "working", status: "running" });
+      yield* Effect.addFinalizer(() => Effect.sync(lost.cleanup));
+      expect((yield* lost.starter.moveOne(ID, NEXT, undefined, { lost: true })).moved).toBe(true);
+      expect(lost.current()?.checkout.hostId).toBe(NEXT);
+    }),
   );
 });

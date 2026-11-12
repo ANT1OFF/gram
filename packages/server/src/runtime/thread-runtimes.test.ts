@@ -1214,6 +1214,39 @@ describe("ThreadRuntimes", () => {
       }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect(
+    "relocates a thread at work off a placement gone for good, ending its turn, and its queue goes on",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const fake = yield* FakeAgentControl;
+        const { thread, session } = yield* createRunning();
+        // Sent behind the turn the gone machine never ends: queued.
+        yield* runtimes.send(thread.id, { text: "after" });
+        const to = { ...thread.checkout, path: "/work/after-loss" };
+        // Not gone for good: a thread at work stays.
+        expect(
+          yield* runtimes
+            .relocate(thread.id, { from: thread.checkout, prepare: Effect.succeed(to) })
+            .pipe(Effect.flip),
+        ).toMatchObject({ _tag: "InvalidState", message: "the thread is at work" });
+        yield* runtimes.relocate(thread.id, {
+          from: thread.checkout,
+          prepare: Effect.succeed(to),
+          endWork: true,
+        });
+        expect(session.closed).toBe(true);
+        expect((yield* store.getThread(thread.id)).checkout).toEqual(to);
+        const next = yield* waitFor(
+          "the queued message on the new placement",
+          fake.latest(thread.id).pipe(Effect.map((s) => s !== session && s.sent.length === 1 && s)),
+        );
+        expect(next.options.cwd).toBe(to.path);
+        expect(JSON.stringify(next.sent[0])).toContain("after");
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("never reopens a session for a thread closed while it recovered", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;

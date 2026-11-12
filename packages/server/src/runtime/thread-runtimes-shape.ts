@@ -512,7 +512,15 @@ export interface ThreadRuntimesShape {
    */
   relocate<E>(
     threadId: ThreadId,
-    plan: { readonly from: Checkout; readonly prepare: Effect.Effect<Checkout, E> },
+    plan: {
+      readonly from: Checkout;
+      readonly prepare: Effect.Effect<Checkout, E>;
+      /**
+       * The old placement is gone for good: a thread at work there is not refused, and its turn
+       * ends as interrupted when its session stops.
+       */
+      readonly endWork?: boolean;
+    },
   ): Effect.Effect<Thread, ThreadNotFound | InvalidState | E>;
   /**
    * Opens a cold or evicted thread's agent session with no turn and no prompt, by the path creating

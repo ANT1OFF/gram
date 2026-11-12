@@ -1436,8 +1436,9 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           if (rt.closing) return yield* busy("the thread is closing");
           if (rt.reserved) return yield* busy("the thread is being worked on");
-          if (rt.turn !== undefined || !RELOCATABLE.has(rt.status))
+          if (plan.endWork !== true && (rt.turn !== undefined || !RELOCATABLE.has(rt.status)))
             return yield* busy("the thread is at work");
+          if (rt.status === "ended") return yield* busy("the thread has ended");
           if (!(yield* sameCheckout(threadId, plan.from))) return yield* busy(MOVED_MEANWHILE);
           rt.reserved = true;
         }),
@@ -1453,8 +1454,18 @@ const make = Effect.gen(function* () {
       );
       return yield* Effect.gen(function* () {
         // Whatever of it runs on the old placement stops: an idle session, or one still opening
-        // for a message. That message goes back to the head of the queue, as an eviction leaves it.
+        // for a message, which goes back to the head of the queue, as an eviction leaves it; with
+        // `endWork`, a session at work too, its turn ended as interrupted.
         yield* stopSession(rt, "evict");
+        // Gone for good: a turn left open with no session to end it (its machine took it) ends.
+        if (plan.endWork === true) {
+          yield* locked(
+            rt,
+            rt.turn !== undefined && rt.session === undefined
+              ? finishTurn(rt, "interrupted", "sessionExit")
+              : Effect.void,
+          );
+        }
         const checkout = yield* plan.prepare;
         return yield* locked(
           rt,

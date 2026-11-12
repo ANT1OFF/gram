@@ -379,6 +379,7 @@ export const makeProfileStarter = ({
     threadId: ThreadId,
     to: HostId,
     value?: unknown,
+    options: { readonly lost?: boolean } = {},
   ): Effect.Effect<ProfileMoved, InvalidState> =>
     Effect.gen(function* () {
       if (!embeddingOn(yield* store.getSettings)) return yield* refuse(PROFILES_OFF);
@@ -455,7 +456,12 @@ export const makeProfileStarter = ({
             if (!(yield* away)) return yield* refuse(MACHINE_STILL_THERE);
             return { ...checkout, hostId: to };
           });
-          const moved = yield* relocate(threadId, { from: checkout, prepare }).pipe(
+          const moved = yield* relocate(threadId, {
+            from: checkout,
+            prepare,
+            // Told the machine is gone for good: a turn it took with it ends, and the thread moves.
+            ...(options.lost === true ? { endWork: true } : {}),
+          }).pipe(
             Effect.tapError(() => (made ? places.remove(threadId) : Effect.void)),
             Effect.mapError((error) =>
               error._tag === "ThreadNotFound"

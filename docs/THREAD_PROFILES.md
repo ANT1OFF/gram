@@ -98,6 +98,10 @@ Content-Type: application/json
   thread is placed only if nothing started meanwhile and it is still where it was. Once the claim
   lets go, the queue goes on, on the new machine, so a message sent while the old machine was away
   opens a fresh session there.
+- **A machine gone for good.** With `"lost": true` the platform says the machine's compute is
+  deleted, not away for a while. A turn still counted as running there (the machine took it with
+  it) is ended as interrupted, and the thread moves; what was queued behind it goes on the new
+  machine. Without it, a thread at work stays.
 - **The answer.** `{ "threadId": "...", "hostId": "...", "moved": true }`. `moved` is false for a
   thread on that machine already. Refusals are as for a start: `409` with `{ "error": "..." }`,
   `400` for a body that isn't the shape, `404` with the hosted features off.
