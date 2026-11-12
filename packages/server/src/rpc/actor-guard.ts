@@ -1,10 +1,14 @@
+import { type Checkout, hostOf, type Thread, type ThreadId } from "@gram/contracts";
 import { ANSWER_OVER_HTTP } from "../embedding/answer-proof.ts";
 import { ActingPerson } from "../embedding/person.ts";
+import { NOT_YOUR_MACHINE, ownersOf, RoutedFor } from "../host/ownership.ts";
+import { RemoteHosts } from "../host/remote-hosts.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import * as RpcSchema from "effect/rpc/RpcSchema";
 import { ServerConfig } from "../config.ts";
@@ -160,6 +164,25 @@ export const UNRECORDED_RPCS: ReadonlySet<string> = new Set([
   "worktree.storage",
 ]);
 
+/** The threads a call's payload names by id, which the call acts on. */
+const threadsNamed = (payload: unknown): ReadonlyArray<ThreadId> => {
+  if (typeof payload !== "object" || payload === null) return [];
+  const fields = payload as Record<string, unknown>;
+  const named: Array<ThreadId> = [];
+  for (const key of ["threadId", "orchestratorThreadId"])
+    if (typeof fields[key] === "string") named.push(fields[key] as ThreadId);
+  if (Array.isArray(fields["threadIds"]))
+    for (const id of fields["threadIds"]) if (typeof id === "string") named.push(id as ThreadId);
+  return named;
+};
+
+/** Every checkout a thread works in: its own, the one it follows now, and its other repos'. */
+const checkoutsOf = (thread: Thread): ReadonlyArray<Checkout> => [
+  thread.checkout,
+  ...(thread.currentCheckout === undefined ? [] : [thread.currentCheckout]),
+  ...(thread.extraCheckouts ?? []),
+];
+
 export const VIEWER_REFUSAL = "read-only: a viewer can't change anything here";
 export const NO_ACTOR_REFUSAL = "unauthorized: no signed-in person on this call";
 
@@ -275,19 +298,49 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
     Effect.gen(function* () {
       const fronted = yield* FrontedSignIn;
       const store = yield* ThreadStore;
+      // Who each joined machine was started for, where one was. Absent in tests with no machines.
+      const machines = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts))?.machines;
+      const ownerOf = ownersOf(machines);
+      /** Whether a thread the call names is on a machine started for someone other than `person`. */
+      const onAnothersMachine = (person: string | undefined, payload: unknown) =>
+        Effect.gen(function* () {
+          // Looked up only while some machine is someone's.
+          if (machines?.list().some((machine) => machine.owner !== undefined) !== true)
+            return false;
+          for (const threadId of threadsNamed(payload)) {
+            const thread = yield* store.getThread(threadId).pipe(Effect.option);
+            if (thread._tag === "None") continue;
+            const owners = checkoutsOf(thread.value).map((checkout) => ownerOf(hostOf(checkout)));
+            if (owners.some((owner) => owner !== undefined && owner !== person)) return true;
+          }
+          return false;
+        });
       return ActorGuard.of((call, { rpc, payload, headers }) =>
         Effect.gen(function* () {
-          if (!(yield* fronted.active)) return yield* call;
+          // A machine started for one person is reached only for them, whatever the route
+          // (`host/ownership.ts`): an RPC with no signed-in person is no one's.
+          if (!(yield* fronted.active)) {
+            if (!VIEWER_RPCS.has(rpc._tag) && (yield* onAnothersMachine(undefined, payload)))
+              return yield* Effect.die(new Error(NOT_YOUR_MACHINE));
+            return yield* Effect.provideService(call, RoutedFor, { person: undefined });
+          }
           const actor = actorOf(headers);
           if (actor === undefined) return yield* Effect.die(new Error(NO_ACTOR_REFUSAL));
           // The call runs as this person, for what asks who acted (`embedding/person.ts`).
-          const effect = Effect.provideService(call, ActingPerson, actor.id);
+          const effect = call.pipe(
+            Effect.provideService(ActingPerson, actor.id),
+            Effect.provideService(RoutedFor, { person: actor.id }),
+          );
           const action = rpc._tag;
           if (VIEWER_RPCS.has(action)) return yield* effect;
           if (actor.role !== "member") return yield* Effect.die(new Error(VIEWER_REFUSAL));
           // A socket can't carry what the proxy signs for one answer: those come over HTTP.
           if (action === "thread.respond" || action === "thread.respondMany")
             return yield* Effect.die(new Error(ANSWER_OVER_HTTP));
+          // A thread on a machine started for one person changes only for that person: what they
+          // send it runs there (`host/ownership.ts`). Reading it stays a viewer's read, above.
+          if (yield* onAnothersMachine(actor.id, payload))
+            return yield* Effect.die(new Error(NOT_YOUR_MACHINE));
           if (UNRECORDED_RPCS.has(action)) return yield* effect;
           const record = (outcome?: "failed" | "interrupted", result?: unknown) =>
             store.appendActorEvents(

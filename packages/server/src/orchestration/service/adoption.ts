@@ -3,6 +3,7 @@
 // worker, and reopening a stored thread, with the admission check its role must pass.
 import {
   effectiveCheckout,
+  hostOf,
   InvalidState,
   type Checkout,
   type ModelRef,
@@ -54,6 +55,7 @@ import {
   type OrchestrationKit,
   underKeysOf,
 } from "./kit.ts";
+import { lineageOwner, mayReach, NOT_YOUR_MACHINE } from "../../host/ownership.ts";
 import { type JoinInput, type AdoptPin, type OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Projects } from "./projects.ts";
@@ -174,6 +176,7 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
     requireAuthority,
     orchestrators,
     workspacesChanged,
+    ownerOf,
   } = kit;
   const { wakeFor, survey, syncPrWatches, armAlarm, armHold, joinWorkspace, joinGroup, wake } =
     deps;
@@ -308,6 +311,16 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
         checkout = found;
         project = owner;
         relocate = found;
+      }
+      // A thread on a machine started for one person joins work only for them: what its
+      // orchestrator sends it runs there (`host/ownership.ts`).
+      // Whoever asks, and the orchestrator it would answer to, must be that person's.
+      const holderFor = yield* lineageOwner(store.getThread, ownerOf, holderId);
+      for (const at of [effectiveCheckout(thread), checkout]) {
+        const owner = ownerOf(hostOf(at));
+        if (owner === undefined) continue;
+        if (!(yield* mayReach(ownerOf, hostOf(at))) || holderFor !== owner)
+          return yield* Effect.fail(NOT_YOUR_MACHINE);
       }
       const refused = joinRefusal({
         thread: { ...thread, checkout },

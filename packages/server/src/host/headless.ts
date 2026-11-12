@@ -16,12 +16,12 @@ import {
 } from "@gram/contracts";
 import { WorktreeError } from "@gram/git";
 import * as Effect from "effect/Effect";
-import { ActingPerson } from "../embedding/person.ts";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { ServerConfig } from "../config.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
+import { callerPerson, NOT_YOUR_MACHINE, ownersOf } from "./ownership.ts";
 import { RemoteHosts, type RemoteHostsShape } from "./remote-hosts.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
@@ -119,17 +119,17 @@ export const headlessPlacement = (
   onDemand = false,
 ): HeadlessPlacement => ({
   machine: Effect.gen(function* () {
-    const person = yield* ActingPerson;
+    // The signed-in person's, or the person an agent's lineage is for (`host/ownership.ts`).
+    const person = yield* callerPerson;
     const picked = machineFor(remote?.list() ?? [], person, onDemand);
     return "error" in picked
       ? yield* Effect.fail(new InvalidState({ message: picked.error }))
       : picked.id;
   }),
-  ownerOf: (hostId) => remote?.list().find((machine) => machine.id === hostId)?.owner,
+  ownerOf: ownersOf(remote === undefined ? undefined : { list: () => remote.list() }),
 });
 
-/** What a person is told who names a machine started for someone else. */
-export const NOT_YOUR_MACHINE = "That machine was started for someone else.";
+export { NOT_YOUR_MACHINE };
 
 /**
  * `request` as a headless Gram places it: on the machine it names, else on the default one. An
@@ -146,7 +146,9 @@ export const placeRequest = (
     const named = checkoutRequestHost(request);
     if (named !== undefined) {
       const owner = placement.ownerOf(named);
-      if (owner !== undefined && owner !== (yield* ActingPerson))
+      // Placement is strict: new work goes on an owned machine only for its owner, never for
+      // the server's own work with nobody to say who it is for.
+      if (owner !== undefined && owner !== (yield* callerPerson))
         return yield* Effect.fail(new InvalidState({ message: NOT_YOUR_MACHINE }));
       return request;
     }

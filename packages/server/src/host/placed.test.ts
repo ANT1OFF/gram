@@ -12,8 +12,11 @@ import {
   ThreadNotFound,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import { ActingPerson } from "../embedding/person.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
+import { openSignInTerminal } from "./claude-sign-in.ts";
 import type { HeadlessPlacement } from "./headless.ts";
+import { NOT_YOUR_MACHINE, ownedMachines, RoutedFor } from "./ownership.ts";
 import { placedHost } from "./placed.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
@@ -350,5 +353,107 @@ describe("placedHost", () => {
           `local:git.local:${SHARED}`,
         ]);
       }),
+  );
+});
+
+/** `MACHINE` started for Grace, behind the door `WorkerHosts.get` keeps (`ownedMachines`). */
+const graces = () => {
+  const calls: Array<string> = [];
+  const machine = recordingHost(MACHINE, calls);
+  const ownerOf = (id: HostId) => (id === MACHINE ? "grace" : undefined);
+  const get = ownedMachines(ownerOf, (id: HostId) =>
+    id === MACHINE
+      ? Effect.succeed(machine)
+      : Effect.fail(new HostUnavailable({ hostId: id, message: "That machine is offline." })),
+  );
+  const placed = placedHost(
+    { local: recordingHost(LOCAL_HOST_ID, calls), get },
+    {
+      listThreads: Effect.succeed(THREADS),
+      getThread: (id) => {
+        const found = THREADS.find((t) => t.id === id);
+        return found === undefined
+          ? Effect.fail(new ThreadNotFound({ threadId: id }))
+          : Effect.succeed(found);
+      },
+    },
+  );
+  return { calls, placed, get };
+};
+const as =
+  (person: string | undefined) =>
+  <A, E>(effect: Effect.Effect<A, E>) =>
+    effect.pipe(
+      Effect.provideService(ActingPerson, person),
+      Effect.provideService(RoutedFor, { person }),
+    );
+
+describe("a machine started for one person, on every route to it", () => {
+  // The review's case: Ada opens Grace's Sign in terminal, clears its line and types a command.
+  it.effect(
+    "keeps another member from her terminals, her sign-in shell and her thread's host",
+    () =>
+      Effect.gen(function* () {
+        const { calls, placed, get } = graces();
+        const signIn = yield* as("ada")(
+          openSignInTerminal(placed.terminals, get, MACHINE, { cols: 80, rows: 24 }),
+        ).pipe(Effect.flip);
+        expect(signIn.message).toBe(NOT_YOUR_MACHINE);
+        for (const open of [
+          placed.terminals.open({ hostId: MACHINE, cols: 80, rows: 24 } as never),
+          placed.terminals.open({ threadId: "t-remote", cols: 80, rows: 24 } as never),
+        ])
+          expect((yield* as("ada")(open).pipe(Effect.flip)).message).toBe(NOT_YOUR_MACHINE);
+        // A terminal Grace opened is hers: Ada's keystrokes never reach it.
+        const opened = yield* as("grace")(
+          placed.terminals.open({ hostId: MACHINE, cols: 80, rows: 24 } as never),
+        );
+        calls.length = 0;
+        const typed = yield* as("ada")(
+          placed.terminals.input(opened.terminalId, "\u0015echo synthetic-command\r"),
+        ).pipe(Effect.flip);
+        // Answered as a terminal it can't find: it says nothing of whose it is.
+        expect(typed._tag).toBe("NotFound");
+        // Nor her files, git or a session in her thread.
+        expect((yield* as("ada")(placed.git.local(REMOTE_PATH)).pipe(Effect.flip)).message).toBe(
+          NOT_YOUR_MACHINE,
+        );
+        const agent = yield* placed.sessions.get("claude");
+        expect(
+          (yield* as("ada")(Effect.scoped(agent.open({ threadId: "t-remote" } as never))).pipe(
+            Effect.flip,
+          )).message,
+        ).toBe(NOT_YOUR_MACHINE);
+        // Nobody signed in is no one, so not Grace either.
+        expect(
+          (yield* as(undefined)(placed.terminals.input(opened.terminalId, "x")).pipe(Effect.flip))
+            ._tag,
+        ).toBe("NotFound");
+        expect(calls).toEqual([]);
+      }),
+  );
+
+  it.effect("serves its owner, and the server's own work on what is already there", () =>
+    Effect.gen(function* () {
+      const { calls, placed, get } = graces();
+      yield* as("grace")(
+        openSignInTerminal(placed.terminals, get, MACHINE, { cols: 80, rows: 24 }),
+      );
+      const opened = yield* as("grace")(
+        placed.terminals.open({ hostId: MACHINE, cols: 80, rows: 24 } as never),
+      );
+      yield* as("grace")(placed.terminals.input(opened.terminalId, "ls\r"));
+      // A session the server reopens on its own carries no caller.
+      yield* Effect.scoped(
+        (yield* placed.sessions.get("claude")).open({ threadId: "t-remote" } as never),
+      );
+      expect(calls).toEqual([
+        `${MACHINE}:terminal.open:undefined`,
+        `${MACHINE}:terminal.input:${MACHINE}-t1`,
+        `${MACHINE}:terminal.open:undefined`,
+        `${MACHINE}:terminal.input:${MACHINE}-t1`,
+        `${MACHINE}:open:t-remote`,
+      ]);
+    }),
   );
 });

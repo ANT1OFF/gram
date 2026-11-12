@@ -30,6 +30,8 @@ import {
 } from "./definition.ts";
 import { inputLengthProblem } from "./input.ts";
 import { DecisionHook } from "../embedding/decision-hook.ts";
+import { lineageOwner, RoutedFor } from "../host/ownership.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { makeActionGuard, type ActionGuard } from "../embedding/guard.ts";
 import { dreamFileTools } from "./dream-tools.ts";
 import { sendFileTool } from "./file-tools.ts";
@@ -149,6 +151,19 @@ const byToolName = (a: AppToolDefinition, b: AppToolDefinition): number => {
 };
 
 /**
+ * `call` as its thread's, whichever fiber carries it (`host/ownership.ts`): never the person whose
+ * RPC began the turn, nor anyone the input names. Without a lineage, no one's.
+ */
+const asLineage = <A, E, R>(
+  lineage: ((threadId: ThreadId) => Effect.Effect<string | undefined>) | undefined,
+  threadId: ThreadId,
+  call: Effect.Effect<A, E, R>,
+) =>
+  Effect.flatMap(lineage === undefined ? Effect.succeed(undefined) : lineage(threadId), (person) =>
+    Effect.provideService(call, RoutedFor, { person }),
+  );
+
+/**
  * Binds definitions to a thread; `run` decodes the input once, so any transport can call it, and
  * the card, `describe` and `handle` all see that one decoded value (after the tool's `resolve`,
  * when it has one), so what a card shows is what runs. Input that doesn't decode, or a target that
@@ -168,6 +183,11 @@ export const bindAppTools = (
   gate?: ApprovalGate,
   /** The decision hook's guard, asked about a tool that names a `decision`; absent asks nothing. */
   guard?: ActionGuard,
+  /**
+   * The person the thread's work is for, from its lineage (`host/ownership.ts`): each call runs
+   * as theirs, so it reaches their machine and no one else's. Absent: no one's.
+   */
+  lineage?: (threadId: ThreadId) => Effect.Effect<string | undefined>,
 ): ReadonlyArray<AppTool> =>
   definitions.toSorted(byToolName).map((definition) => {
     const { descriptor } = definition;
@@ -317,49 +337,57 @@ export const bindAppTools = (
       ...(needsApproval === undefined ? {} : { needsApproval }),
       ...(delegatedAtFullAutonomy === undefined ? {} : { delegatedAtFullAutonomy }),
       run: (raw) =>
-        Effect.gen(function* () {
-          const decoded = yield* decode(raw).pipe(
-            Effect.mapError(
-              (e) =>
-                new AppToolError({ tool: descriptor.name, message: `Invalid input: ${e.message}` }),
-            ),
-          );
-          const target = yield* resolve(decoded);
-          const decision =
-            guard === undefined ? undefined : definition.decision?.(threadId, target);
-          if (guard !== undefined && decision !== undefined) {
-            yield* guard(
-              threadId,
-              { ...decision, initiator: "agent" },
-              (describeCall === undefined
-                ? Effect.succeed(descriptor.description)
-                : describeCall(threadId, target).pipe(
-                    Effect.catchCause(() => Effect.succeed(descriptor.description)),
-                  )
-              ).pipe(
-                Effect.map((description) => ({
-                  toolName: `mcp__gram__${descriptor.name}`,
-                  displayName: descriptor.name,
-                  description: plainCardText(description),
-                  input: decision.detail,
-                })),
-              ),
-            ).pipe(
+        asLineage(
+          lineage,
+          threadId,
+          Effect.gen(function* () {
+            const decoded = yield* decode(raw).pipe(
               Effect.mapError(
-                (refused) => new AppToolError({ tool: descriptor.name, message: refused.message }),
+                (e) =>
+                  new AppToolError({
+                    tool: descriptor.name,
+                    message: `Invalid input: ${e.message}`,
+                  }),
               ),
             );
-          }
-          const { carded, why } = yield* approve(decoded, target);
-          const result = yield* definition.handle(threadId, target, { carded });
-          // The agent learns why the user was asked, and how to go without next time.
-          return why === undefined ||
-            typeof result !== "object" ||
-            result === null ||
-            Array.isArray(result)
-            ? result
-            : { ...result, approvalNeededBecause: why.agent };
-        }),
+            const target = yield* resolve(decoded);
+            const decision =
+              guard === undefined ? undefined : definition.decision?.(threadId, target);
+            if (guard !== undefined && decision !== undefined) {
+              yield* guard(
+                threadId,
+                { ...decision, initiator: "agent" },
+                (describeCall === undefined
+                  ? Effect.succeed(descriptor.description)
+                  : describeCall(threadId, target).pipe(
+                      Effect.catchCause(() => Effect.succeed(descriptor.description)),
+                    )
+                ).pipe(
+                  Effect.map((description) => ({
+                    toolName: `mcp__gram__${descriptor.name}`,
+                    displayName: descriptor.name,
+                    description: plainCardText(description),
+                    input: decision.detail,
+                  })),
+                ),
+              ).pipe(
+                Effect.mapError(
+                  (refused) =>
+                    new AppToolError({ tool: descriptor.name, message: refused.message }),
+                ),
+              );
+            }
+            const { carded, why } = yield* approve(decoded, target);
+            const result = yield* definition.handle(threadId, target, { carded });
+            // The agent learns why the user was asked, and how to go without next time.
+            return why === undefined ||
+              typeof result !== "object" ||
+              result === null ||
+              Array.isArray(result)
+              ? result
+              : { ...result, approvalNeededBecause: why.agent };
+          }),
+        ),
     };
   });
 
@@ -528,6 +556,10 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
       const waits = yield* ThreadWaits;
       const checkouts = yield* CheckoutService;
       const sentFromMachines = yield* sentFromMachinesHere;
+      // Who each tool call is for: its thread's lineage, on the machines' record of who owns which.
+      const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
+      const lineage = (threadId: ThreadId) =>
+        lineageOwner(store.getThread, hosts?.ownerOf ?? (() => undefined), threadId);
 
       const setTitle = defineAppTool({
         descriptor: {
@@ -771,6 +803,9 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
           bindAppTools(
             definitions.filter((d) => boundFor(d, audience)),
             threadId,
+            undefined,
+            undefined,
+            lineage,
           ),
         forTransport: (threadId, audience = "plain") =>
           bindAppTools(
@@ -778,6 +813,7 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
             threadId,
             gate,
             guard,
+            lineage,
           ),
         // The server's gate is the authority on Claude too: the SDK's permission
         // layer lets a call through unasked in `bypassPermissions`, under an allow rule or an
@@ -789,6 +825,7 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
             threadId,
             gate,
             guard,
+            lineage,
           ),
         audienceOf: runtimes.audienceOf,
       });

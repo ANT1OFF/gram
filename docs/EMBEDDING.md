@@ -211,6 +211,15 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
 - a thread that person starts with no machine named goes on their own machine while it is online;
 - a host started for one person is never anyone's default, and work that names it for anyone else
   is refused;
+- every other way onto it is that person's alone too: a terminal there (its Sign in shell
+  included), keystrokes into one, a session, a file or git read, a fork in a thread's checkout
+  there, and any change to a thread on it (a send, a restart, a close). Another member still reads
+  what the workspace shows of such a thread; a call with no signed-in person reaches none of it;
+- an agent's tool call is made for the person its thread's lineage is for: the owner of the host
+  the thread is on, else its spawner's, up the chain. It is never read from the call's input, nor
+  taken from whoever's request began the turn. So an orchestrator on a person's host spawns its
+  workers there, and a thread on no one's host can't place work on anyone's. A thread joins an
+  orchestrator only when both are that person's;
 - a person with no machine of their own is told to start one, where before they were told to join
   one.
 

@@ -13,12 +13,15 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { removeDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
 import { NO_ACTOR_REFUSAL, VIEWER_REFUSAL } from "../rpc/actor-guard.ts";
+import { NOT_YOUR_MACHINE } from "../host/ownership.ts";
+import { RemoteHosts } from "../host/remote-hosts.ts";
 import { ANSWER_OVER_HTTP, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { ON_DEMAND_START_PATH, ON_DEMAND_STATUS_PATH } from "../embedding/on-demand.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
@@ -30,7 +33,7 @@ import { tokenCookieName } from "./auth.ts";
 import { SERVICE_TYP, IDENTITY_HEADER } from "./fronted-identity.ts";
 import { makeTestProxy } from "./fronted-identity.testing.ts";
 import { LOCAL_APP_HEADER } from "./local-app.ts";
-import { HOST_MCP_PATH } from "../host/machine-keys.ts";
+import { generateHostKey, HOST_MCP_PATH } from "../host/machine-keys.ts";
 import { HOST_PATHS, MACHINES_LIST_PATH } from "./machine-routes.ts";
 import { REMOTE_STATUS_PATH } from "./remote-access.ts";
 import { WORKSPACE_TRANSFER_PATHS } from "../transfer/routes.ts";
@@ -702,6 +705,73 @@ describe("sign-in through a fronting proxy", () => {
             expect((yield* post(port, ON_DEMAND_START_PATH, "{}")).status).toBe(401);
             expect(provided).toHaveLength(1);
           }),
+      );
+
+      // The review's case: Ada knows the id of Grace's machine and of a thread on it.
+      it.effect("keeps every route onto a person's machine to them, and lets others read", () =>
+        Effect.gen(function* () {
+          const { port } = yield* info;
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          // Provided by the server layer, which doesn't name it among what it gives.
+          const remote = Option.getOrThrow(yield* Effect.serviceOption(RemoteHosts));
+          const folder = mkdtempSync(join(tmpdir(), "gram-fronted-own-"));
+          dirs.push(folder);
+          const provisioned = remote.machines.provision({
+            name: "grace-box",
+            platform: "linux",
+            publicKey: generateHostKey().publicKey,
+            owner: grace.sub,
+            onDemand: "personal",
+          });
+          if (provisioned.kind !== "provisioned") throw new Error("not provisioned");
+          const hostId = provisioned.machine.id;
+          const graceClient = yield* as(port, grace);
+          const adaClient = yield* as(port, ada);
+          const created = yield* graceClient["thread.create"]({
+            projectRoot: folder,
+            checkout: { kind: "current" },
+          });
+          const threadId = created.id;
+          yield* waitFor(
+            "the session",
+            runtimes.session(threadId).pipe(
+              Effect.as(true),
+              Effect.orElseSucceed(() => false),
+            ),
+          );
+          // Her thread, as it is once placed on her machine.
+          yield* store.updateThread(threadId, (thread) => ({
+            ...thread,
+            checkout: { ...thread.checkout, hostId },
+          }));
+          const send = { threadId, input: { text: "from Ada" }, clientMessageId: "own-1" };
+          const tries = {
+            send: adaClient["thread.send"](send),
+            fork: adaClient["thread.fork"]({ threadId, fromMessageId: "m-0" as never }),
+            restart: adaClient["thread.restartSession"]({ threadId }),
+            threadTerminal: adaClient["terminal.open"]({ threadId, cols: 80, rows: 24 }),
+            signIn: adaClient["terminal.open"]({ signIn: hostId, cols: 80, rows: 24 }),
+          };
+          for (const [name, call] of Object.entries(tries))
+            expect([name, yield* refusal(call as Effect.Effect<unknown, unknown>)]).toEqual([
+              name,
+              expect.stringContaining(NOT_YOUR_MACHINE),
+            ]);
+          // What the workspace shows of it is still a read for anyone.
+          expect(yield* refusal(adaClient["thread.listWaits"]({ threadId }))).toBe(
+            "the call went through",
+          );
+          // Grace gets past the owner's check: her machine is just not online here.
+          for (const call of [
+            graceClient["terminal.open"]({ signIn: hostId, cols: 80, rows: 24 }),
+            graceClient["thread.fork"]({ threadId, fromMessageId: "m-0" as never }),
+          ] as ReadonlyArray<Effect.Effect<unknown, unknown>>)
+            expect(yield* refusal(call)).not.toContain(NOT_YOUR_MACHINE);
+          expect(
+            yield* refusal(graceClient["thread.send"]({ ...send, clientMessageId: "own-2" })),
+          ).toBe("the call went through");
+        }),
       );
     },
   );

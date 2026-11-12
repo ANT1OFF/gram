@@ -1,5 +1,9 @@
-import type { HostId } from "@gram/contracts";
+import { type HostId, type Thread, ThreadId, ThreadNotFound } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import { defineAppTool } from "../app-tools/definition.ts";
+import { bindAppTools } from "../app-tools/registry.ts";
+import { callerPerson, forThread, lineageOwner, RoutedFor } from "../host/ownership.ts";
 import { describe, expect, it } from "vitest";
 import {
   headlessPlacement,
@@ -69,6 +73,93 @@ describe("hosts provisioned on demand: placement", () => {
     expect(await place("ada", "m-grace")).toBe(NOT_YOUR_MACHINE);
     expect(await place(undefined, "m-grace")).toBe(NOT_YOUR_MACHINE);
     expect(await place("ada", "m-shared")).toBe("placed");
+  });
+});
+
+const adaBox = machine({ id: "m-ada", owner: "ada", onDemand: "personal" });
+const sharedBox = machine({ id: "m-shared", joinedAt: 5 });
+const ownerOf = (hostId: HostId) => (hostId === adaBox.id ? "ada" : undefined);
+const stored = (threadId: string, hostId: string | undefined, spawnedBy?: string) =>
+  ({
+    id: ThreadId.make(threadId),
+    checkout: {
+      kind: "worktree",
+      path: `/w/${threadId}`,
+      ...(hostId === undefined ? {} : { hostId }),
+    },
+    ...(spawnedBy === undefined
+      ? {}
+      : { spawnedBy: { threadId: ThreadId.make(spawnedBy), feature: "f" } }),
+  }) as unknown as Thread;
+const threads = [
+  stored("ada-orchestrator", "m-ada"),
+  stored("ada-worker", "m-shared", "ada-orchestrator"),
+  stored("shared-orchestrator", "m-shared"),
+  stored("loop-a", undefined, "loop-b"),
+  stored("loop-b", undefined, "loop-a"),
+];
+const getThread = (threadId: ThreadId) => {
+  const found = threads.find((thread) => thread.id === threadId);
+  return found === undefined
+    ? Effect.fail(new ThreadNotFound({ threadId }))
+    : Effect.succeed(found);
+};
+const outcome = <A>(effect: Effect.Effect<A, { readonly message: string }>) =>
+  Effect.runPromise(
+    effect.pipe(Effect.match({ onFailure: (error) => error.message, onSuccess: (a) => a })),
+  );
+const ownerAt = (threadId: string) =>
+  Effect.runPromise(lineageOwner(getThread, ownerOf, ThreadId.make(threadId)));
+const asThread = (threadId: string) => forThread(getThread, ownerOf, ThreadId.make(threadId));
+const inGracesRpc = <A, E>(effect: Effect.Effect<A, E>) =>
+  effect.pipe(
+    Effect.provideService(ActingPerson, "grace"),
+    Effect.provideService(RoutedFor, { person: "grace" }),
+  );
+
+describe("hosts provisioned on demand: a background worker's person", () => {
+  it("is the owner of the machine its thread is on, else its spawner's, and never made up", async () => {
+    expect(await ownerAt("ada-orchestrator")).toBe("ada");
+    expect(await ownerAt("ada-worker")).toBe("ada");
+    expect(await ownerAt("shared-orchestrator")).toBeUndefined();
+    expect(await ownerAt("loop-a")).toBeUndefined();
+    expect(await ownerAt("not-stored")).toBeUndefined();
+  });
+
+  // The review's case: an orchestrator on Ada's machine spawns from its tool, where no RPC of hers
+  // is running. Without her, the spawn found no machine, and naming hers was refused.
+  it("places its spawn on its person's machine, with no one signed in on the call", async () => {
+    const placement = headlessPlacement({ list: () => [adaBox] as never }, true);
+    expect(await outcome(placement.machine)).toBe(NO_MACHINE_JOINED);
+    expect(await outcome(asThread("ada-orchestrator")(placement.machine))).toBe("m-ada");
+    const named = { kind: "newWorktree", hostId: id("m-ada") } as never;
+    expect(await outcome(asThread("ada-orchestrator")(placeRequest(placement, named)))).toEqual(
+      named,
+    );
+    expect(await outcome(asThread("ada-worker")(placeRequest(placement, named)))).toEqual(named);
+    // A thread on no one's machine is no one's, whoever's RPC is running.
+    const graces = Effect.provideService(ActingPerson, "grace");
+    expect(
+      await outcome(graces(asThread("shared-orchestrator")(placeRequest(placement, named)))),
+    ).toBe(NOT_YOUR_MACHINE);
+    // A shared machine beside it takes no work of Ada's thread that names none.
+    const both = headlessPlacement({ list: () => [adaBox, sharedBox] as never }, true);
+    expect(await outcome(asThread("ada-worker")(both.machine))).toBe("m-ada");
+  });
+
+  it("runs an agent's tool call as its thread's lineage, not the RPC that began the turn", async () => {
+    const tool = defineAppTool({
+      descriptor: { name: "whose", class: "self", description: "Who this call is for." },
+      input: Schema.Struct({ owner: Schema.optionalKey(Schema.String) }),
+      handle: () => callerPerson,
+    });
+    const [bound] = bindAppTools([tool], ThreadId.make("ada-worker"), undefined, undefined, (t) =>
+      lineageOwner(getThread, ownerOf, t),
+    );
+    // What the input says of an owner is never read.
+    expect(await Effect.runPromise(inGracesRpc(bound!.run({ owner: "grace" })))).toBe("ada");
+    const [unbound] = bindAppTools([tool], ThreadId.make("shared-orchestrator"));
+    expect(await Effect.runPromise(inGracesRpc(unbound!.run({})))).toBeUndefined();
   });
 });
 

@@ -23,6 +23,7 @@ import { filesOn, type HostFiles } from "./files.ts";
 import type { HostFolders } from "./folders.ts";
 import { type HeadlessPlacement, headlessLocal, headlessPlacement } from "./headless.ts";
 import { LocalHostProcess } from "./local-process.ts";
+import { type OwnerOf, ownedMachines, ownersOf } from "./ownership.ts";
 import { Embedding } from "../embedding/embedding.ts";
 import { RemoteHosts, type RemoteHostsShape } from "./remote-hosts.ts";
 import { type MachineParts, placedHost } from "./placed.ts";
@@ -157,6 +158,12 @@ export interface WorkerHostsShape {
    * names none, or why none can. Absent everywhere else, where that is this machine.
    */
   readonly headless?: HeadlessPlacement | undefined;
+  /**
+   * The person a joined machine was started for, when an embedder started it for one: such a
+   * machine is reached only for them (`ownership.ts`), which `get` already holds to. For what
+   * records work there without reaching it, such as a fork in its source's checkout (`admitHost`).
+   */
+  readonly ownerOf: OwnerOf;
 }
 
 /** How long a session about to open waits for a stopped machine to be started. */
@@ -233,10 +240,13 @@ const joinedMachines = Effect.gen(function* () {
         (checkout) => checkout !== undefined && !isLocalHost(checkout),
       ),
   );
+  // A machine started for one person is reached only for them, by every route (`ownership.ts`).
+  const ownerOf = ownersOf(remote.machines);
   return {
-    get,
-    forSession: awaitedMachines(get, remote, store),
+    get: ownedMachines(ownerOf, get),
+    forSession: ownedMachines(ownerOf, awaitedMachines(get, remote, store)),
     any: () => placedBefore || remote.machines.list().length > 0,
+    ownerOf,
   };
 });
 
@@ -264,6 +274,8 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     headless?: HeadlessPlacement,
     /** The joined machines' hosts for a session about to open, when that differs from `machines`. */
     sessionMachines?: (id: HostId) => Effect.Effect<WorkerHost, HostUnavailable>,
+    /** Who each joined machine was started for, where one was (`ownership.ts`). */
+    ownerOf: OwnerOf = () => undefined,
   ) => {
     const byId = new Map<HostId, WorkerHost>([
       [local.id, local],
@@ -298,6 +310,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
       machine: placed.machine,
       placeOf: placed.placeOf,
       ...(headless === undefined ? {} : { headless }),
+      ownerOf,
     });
   };
 
@@ -359,6 +372,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
         machines?.any,
         headless,
         machines?.forSession,
+        machines?.ownerOf,
       );
     }),
   );
@@ -419,6 +433,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
         machines?.any,
         undefined,
         machines?.forSession,
+        machines?.ownerOf,
       );
     }),
   );
