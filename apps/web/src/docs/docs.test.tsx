@@ -19,6 +19,7 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { DocCard } from "./doc-card";
 import { PinnedDocChip, pinnedDocOf } from "./doc-chip";
+import { useDocChipStore } from "./doc-chip-store";
 import { useDocPane } from "./doc-pane-store";
 import { docsByAuthor, DocsPanel } from "./docs-panel";
 import { docByline, DocsStrip } from "./docs-strip";
@@ -96,6 +97,7 @@ beforeEach(() => {
   revealed = vi.fn();
   useLayoutStore.setState({ revealPanel: revealed as never });
   useDocPane.setState({ open: {} });
+  useDocChipStore.setState({ dismissed: [] });
   useThreadsStore.setState({
     byId: {
       [WORKER]: summary(WORKER, WS),
@@ -307,6 +309,59 @@ describe("WorkersDocs", () => {
 });
 
 describe("PinnedDocChip", () => {
+  it("dismisses only this document in this thread, without opening it or surfacing older docs", async () => {
+    const { api } = docsApi([meta(1), meta(2)]);
+    const { unmount } = renderWithApi(<PinnedDocChip threadId={WORKER} />, api);
+    await screen.findByTestId("pinned-doc");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss document chip" }));
+    expect(screen.queryByTestId("pinned-doc")).toBeNull();
+    expect(revealed).not.toHaveBeenCalled();
+    expect(useDocPane.getState().open[WS]).toBeUndefined();
+    unmount();
+
+    // A different document in the same thread is still shown.
+    const next = docsApi([meta(2)]);
+    const other = renderWithApi(<PinnedDocChip threadId={WORKER} />, next.api);
+    expect((await screen.findByTestId("pinned-doc")).dataset["docId"]).toBe("doc-2");
+    other.unmount();
+
+    // The same doc shown in a different thread has its own dismissal state.
+    const moved = docsApi([meta(1, { authorThreadId: OTHER })]);
+    renderWithApi(<PinnedDocChip threadId={OTHER} />, moved.api);
+    expect((await screen.findByTestId("pinned-doc")).dataset["docId"]).toBe("doc-1");
+  });
+
+  it("keeps a dismissal across reloads and reappears only for a newer revision", async () => {
+    const { api } = docsApi([meta(1)]);
+    const { unmount } = renderWithApi(<PinnedDocChip threadId={WORKER} />, api);
+    await screen.findByTestId("pinned-doc");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss document chip" }));
+    unmount();
+
+    const saved = window.localStorage.getItem("gram.docChips")!;
+    useDocChipStore.setState({ dismissed: [] });
+    window.localStorage.setItem("gram.docChips", saved);
+    await useDocChipStore.persist.rehydrate();
+    expect(useDocChipStore.getState().dismissed).toEqual([
+      { threadId: WORKER, docId: "doc-1", revision: 1 },
+    ]);
+    const reload = renderWithApi(
+      <>
+        <PinnedDocChip threadId={WORKER} />
+        <DocsStrip workspaceId={WS} />
+      </>,
+      api,
+    );
+    await screen.findByTestId("doc-row");
+    expect(screen.queryByTestId("pinned-doc")).toBeNull();
+    reload.unmount();
+
+    // Revision, rather than the clock, identifies a later save, even in the same millisecond.
+    const updated = docsApi([meta(1, { revision: 2 })]);
+    renderWithApi(<PinnedDocChip threadId={WORKER} />, updated.api);
+    expect((await screen.findByTestId("pinned-doc")).dataset["docId"]).toBe("doc-1");
+  });
+
   it("pins the doc the thread last saved, with its age", async () => {
     const { api } = docsApi([
       meta(1, { authorThreadId: OTHER, title: "Someone else's" }),
