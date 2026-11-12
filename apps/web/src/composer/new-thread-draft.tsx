@@ -81,6 +81,7 @@ import {
 } from "./draft-prefill";
 import { MentionMenu } from "./mention-menu";
 import { useSlabHandoff } from "./slab-handoff";
+import { needsMachine, StartMachineCard, useOnDemandMachine } from "./start-machine-card";
 import { SLAB, SLAB_TEXTAREA } from "./styles";
 import { useAttachments } from "./use-attachments";
 import { useMentions } from "./use-mentions";
@@ -168,6 +169,7 @@ export function NewThreadDraft() {
 }
 
 function ConfiguredNewThreadDraft() {
+  const startMachine = needsMachine(useOnDemandMachine().status);
   const api = useApi();
   const navigate = useNavigate();
   const workspaces = useWorkspaces();
@@ -779,10 +781,15 @@ function ConfiguredNewThreadDraft() {
               ))}
             </ol>
           )}
-          {error && (
-            <p ref={errorRef} role="alert" className="text-reading text-destructive">
-              {error}
-            </p>
+          {/* Where the deployment starts machines on demand, the person's own, in place of the error. */}
+          {startMachine ? (
+            <StartMachineCard />
+          ) : (
+            error && (
+              <p ref={errorRef} role="alert" className="text-reading text-destructive">
+                {error}
+              </p>
+            )
           )}
         </section>
 

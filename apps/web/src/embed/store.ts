@@ -13,6 +13,7 @@ import type {
   ShellPanel,
   ShellSidebar,
   ShellSlotProps,
+  ShellMachines,
   ShellThreadsPage,
   ShellToolCard,
   ShellToolCardProps,
@@ -35,6 +36,7 @@ export interface EmbedShellState {
   readonly attention: ShellAttention | undefined;
   /** The page of every thread, as the embedding app words it; Gram's own words while empty. */
   readonly threadsPage: ShellThreadsPage;
+  readonly machines: ShellMachines;
   /** What New starts in place of Gram's menu; the menu while undefined. */
   readonly newEntry: ShellNewEntry | undefined;
   /** Mounted by an app in front of Gram on a server with hosted features on. Set once, at mount. */
@@ -58,6 +60,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   hosted: false,
   attention: undefined,
   threadsPage: {},
+  machines: {},
   newEntry: undefined,
   home: undefined,
   sidebar: {},
@@ -75,6 +78,7 @@ export const EMPTY_SHELL: EmbedShellState = {
   hosted: false,
   attention: undefined,
   threadsPage: {},
+  machines: {},
   newEntry: undefined,
   home: undefined,
   sidebar: {},
@@ -202,3 +206,16 @@ export const shownCount = (count: number | undefined): number | undefined =>
 /** A destination's name with its group's, where it has one: "Govern: Policies". */
 export const itemName = (group: ShellNavigationGroup, label: string): string =>
   group.label === undefined || group.label.trim() === "" ? label : `${group.label}: ${label}`;
+
+/** What a machine started on demand is called here: the embedding app's word, or "machine". */
+export const useMachineNoun = () =>
+  useEmbedShell((s) => {
+    const noun = s.machines.noun?.trim().toLowerCase();
+    return noun !== undefined && /^[a-z][a-z -]{0,30}$/.test(noun) ? noun : "machine";
+  });
+
+/** The deployment's lines about a machine started on demand, at most five, each kept short. */
+export const useMachineFacts = () =>
+  useEmbedShell((s) => s.machines.facts)
+    ?.slice(0, 5)
+    .filter((each) => each.length <= 120) ?? [];
