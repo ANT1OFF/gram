@@ -75,7 +75,7 @@ hosted features on and sample threads in it. It needs no server at all, which ma
 build and test the pages around Gram.
 
 The answer is a handle: `shell` says `"on"` or `"off"` (whether the server took your additions),
-`update` replaces what it names of the navigation, the switcher and `threads` and keeps the rest
+`update` replaces what it names of the navigation, the switcher, `threads` and `panel` and keeps the rest
 (`update({ navigation })` changes counts and keeps the switcher; a key given as `undefined` takes
 that part away), `navigate` moves the window to a path under the app, and `unmount` takes the app
 off the page.
@@ -103,6 +103,13 @@ is drawn at the row's end, and as a dot on its compact tile.
 **Gram's threads.** `threads: "hidden"` leaves the workspaces and threads out of the sidebar, the
 drawer and the compact sidebar, for an app whose own places lead. Needs you, search and the
 palette still reach every thread, and a thread still opens from its address.
+
+**The right panel.** `panel: "code"` offers the right panel (Diff, PR, Files, Terminal and its
+other tabs) and its title-bar toggle only on a thread that works in a git repository, a worktree or
+a checkout. On every other page (a thread outside a repository, `/threads`, the home page, the
+embedding app's own pages) neither shows, its key does nothing and its palette commands are left
+out. `shown`, the default, offers it everywhere, as Gram on its own does. Change it through
+`update({ panel })`.
 
 **The compact sidebar.** Mounted on a server with hosted features on, the compact sidebar is a
 quiet strip of what the open one holds, in its order: your switcher, Needs you (a dot while

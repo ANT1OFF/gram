@@ -99,6 +99,7 @@ export const mountGram: MountGram = async (options) => {
       navigation: shell.navigation ?? [],
       workspaceSwitcher: shell.workspaceSwitcher,
       threads: shell.threads ?? "shown",
+      panel: shell.panel ?? "shown",
       hosted,
       attention: shell.attention,
       home: shell.home?.component,
@@ -132,6 +133,7 @@ export const mountGram: MountGram = async (options) => {
           ...("navigation" in next ? { navigation: next.navigation ?? [] } : {}),
           ...("workspaceSwitcher" in next ? { workspaceSwitcher: next.workspaceSwitcher } : {}),
           ...("threads" in next ? { threads: next.threads ?? "shown" } : {}),
+          ...("panel" in next ? { panel: next.panel ?? "shown" } : {}),
           ...("attention" in next ? { attention: next.attention } : {}),
           ...("sidebar" in next ? { sidebar: next.sidebar ?? {} } : {}),
         });

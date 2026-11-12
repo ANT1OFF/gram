@@ -48,6 +48,7 @@ export function AppShell() {
     phone,
     panelLeft,
     hasThread,
+    panelBarred,
     windowResizing,
     sidebarShown,
     panelShown,
@@ -152,6 +153,7 @@ export function AppShell() {
             settings={settings}
             compactRail={fit.sidebar === "compact"}
             panelShown={panelShown}
+            panelOffered={!panelBarred}
             panelLeft={panelLeft}
           />
           <ConnectionBanner />

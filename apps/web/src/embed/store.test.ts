@@ -5,6 +5,7 @@ import {
   itemName,
   navigationAt,
   navigationCurrent,
+  panelOffered,
   routeProblem,
   shellFor,
   shownCount,
@@ -95,5 +96,21 @@ describe("navigation groups", () => {
   it("name a destination with its group's heading, where it has one", () => {
     expect(itemName({ id: "g", label: "Govern", items: [] }, "Policies")).toBe("Govern: Policies");
     expect(itemName({ id: "g", items: [] }, "Policies")).toBe("Policies");
+  });
+});
+
+describe("where the right panel is offered", () => {
+  const home = { threadInView: false, threadInRepo: false };
+  const chat = { threadInView: true, threadInRepo: false };
+  const code = { threadInView: true, threadInRepo: true };
+
+  it("is everywhere by default, as on Gram's own", () => {
+    for (const page of [home, chat, code]) expect(panelOffered("shown", page)).toBe(true);
+  });
+
+  it("is only a thread in a repository under `code`", () => {
+    expect(panelOffered("code", home)).toBe(false);
+    expect(panelOffered("code", chat)).toBe(false);
+    expect(panelOffered("code", code)).toBe(true);
   });
 });

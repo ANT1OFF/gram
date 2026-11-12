@@ -8,6 +8,7 @@ import type {
   ShellNavigationGroup,
   ShellNavigationPlacement,
   ShellPageProps,
+  ShellPanel,
   ShellSidebar,
   ShellSlotProps,
 } from "./contract";
@@ -23,6 +24,8 @@ export interface EmbedShellState {
   readonly titles: Readonly<Record<string, string>>;
   /** Whether the sidebar lists Gram's workspaces and threads. */
   readonly threads: "shown" | "hidden";
+  /** Where the right panel and its toggle are offered: everywhere, on Gram's own. */
+  readonly panel: ShellPanel;
   /** What needs someone, as the embedding app counts it; Gram's own count while undefined. */
   readonly attention: ShellAttention | undefined;
   /** Mounted by an app in front of Gram on a server with hosted features on. Set once, at mount. */
@@ -38,6 +41,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   workspaceSwitcher: undefined,
   titles: {},
   threads: "shown",
+  panel: "shown",
   hosted: false,
   attention: undefined,
   home: undefined,
@@ -50,6 +54,7 @@ export const EMPTY_SHELL: EmbedShellState = {
   workspaceSwitcher: undefined,
   titles: {},
   threads: "shown",
+  panel: "shown",
   hosted: false,
   attention: undefined,
   home: undefined,
@@ -61,6 +66,15 @@ export const useRoomySidebar = () => useEmbedShell((s) => s.sidebar.look === "ro
 
 /** Whether an app in front of Gram supplies the home page: Gram's first run is then never shown. */
 export const useHostHome = () => useEmbedShell((s) => s.home !== undefined);
+
+/**
+ * Whether the right panel is offered on a page: everywhere on Gram's own; under `panel: "code"`,
+ * only on a thread in view that works in a git repository.
+ */
+export const panelOffered = (
+  panel: ShellPanel,
+  page: { readonly threadInView: boolean; readonly threadInRepo: boolean },
+): boolean => panel === "shown" || (page.threadInView && page.threadInRepo);
 
 /** Whether the sidebar lists Gram's own workspaces and threads: always, on Gram's own. */
 export const useThreadsListed = () => useEmbedShell((s) => s.threads === "shown");
