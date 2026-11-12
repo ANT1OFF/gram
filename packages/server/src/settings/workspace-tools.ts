@@ -49,7 +49,7 @@ import { ThreadStore, type SettingsAuditEntry } from "../persistence/thread-stor
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import type { ServerApprovalAnswer } from "../runtime/server-approvals.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { askUser, checkModels, fail } from "./approval.ts";
+import { askUser, canonicalRosterChanges, checkModels, fail } from "./approval.ts";
 import type { SettingsToolsOptions } from "./chat-tools.ts";
 
 const WORKER_REFUSAL =
@@ -252,7 +252,11 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
       ) =>
         Effect.gen(function* () {
           if (changes === undefined || changes.length === 0) return undefined;
-          const result = planSettingsChanges(world, changes, { allowUnchanged: true });
+          const result = planSettingsChanges(
+            world,
+            yield* canonicalRosterChanges(store, hosts, changes),
+            { allowUnchanged: true },
+          );
           if (!result.ok) {
             return yield* fail(
               tool,

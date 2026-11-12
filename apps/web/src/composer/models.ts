@@ -1,6 +1,7 @@
 import {
   CUSTOM_MODEL_DESCRIPTION,
   GATEWAY_UNLISTED_WARNING,
+  listedRow,
   type AgentKind,
   type AgentModel,
   type ModelRef,
@@ -61,15 +62,27 @@ export function useModelsSettled(
 }
 
 /**
- * A model's name as the composer's picker shows it: the agent's own display name for the id, else
- * the built-in Claude name, else the id itself ("opus" reads "Claude Opus" wherever it is named).
+ * The picker's id for a thread's or roster entry's model: the catalogue row it names (an alias,
+ * the pinned id an alias row runs, or its display name; `resolveModel`), else the id as stored. A
+ * thread stored on `claude-fable-5-2` shows, with its check and efforts, as the `fable` row
+ * while the agent says `fable` runs that id.
+ */
+export const pickerModelId = (
+  models: readonly AgentModel[] | undefined,
+  id: string | undefined,
+): string | undefined => (id === undefined ? undefined : (listedRow(models, id)?.id ?? id));
+
+/**
+ * A model's name as the composer's picker shows it: the agent's own display name for the model
+ * (`pickerModelId`), else the built-in Claude name, else the id itself ("opus" reads "Claude Opus"
+ * wherever it is named).
  */
 export const modelDisplayName = (
   models: readonly AgentModel[] | undefined,
   agent: AgentKind,
   id: string,
 ): string =>
-  models?.find((m) => m.id === id)?.displayName ??
+  listedRow(models, id)?.displayName ??
   (agent === "claude" ? DEFAULT_MODEL_OPTIONS.find((o) => o.value === id)?.label : undefined) ??
   id;
 
@@ -150,10 +163,11 @@ export const NOT_LISTED_BY_CODEX = "Not listed by your Codex account; it may not
 const baseId = (id: string) => id.replace(/\[1m\]$/i, "");
 
 /**
- * Whether `models` offers `id`: a row of that id, or for a row naming the id it resolves to (Claude
- * Code's aliases), that id or either one's long-context variant.
+ * Whether `models` offers `id`: a row it names (`pickerModelId`), or for a row naming the id it
+ * resolves to (Claude Code's aliases), that id or either one's long-context variant.
  */
 const isOffered = (models: readonly AgentModel[], id: string): boolean =>
+  listedRow(models, id) !== undefined ||
   models.some(
     (m) =>
       m.id === id ||
@@ -188,7 +202,8 @@ export const CUSTOM_GROUP = "Custom";
 
 /**
  * Picker options from the server's models, else `fallback` (the built-in Claude list); always
- * includes `current`, described as `unlisted` when the server's models lack it. A model's warning
+ * includes `current`, described as `unlisted` when the server's models lack it, unless it names
+ * one of their rows another way (`pickerModelId`), which then stands for it. A model's warning
  * stands in for its description. With `group` (the agent or gateway the list comes from), each
  * option lists under it, and a model added in Settings under `CUSTOM_GROUP`.
  */
@@ -212,7 +227,7 @@ export function modelOptions(
         };
       })
     : fallback.map((option) => ({ ...option, ...inGroup(false) }));
-  if (current && !options.some((o) => o.value === current)) {
+  if (current && !options.some((o) => o.value === current) && !listedRow(models, current)) {
     options.push({
       value: current,
       label: current,
@@ -234,7 +249,7 @@ export const gatewayModelWarning = (
   modelId: string | undefined,
 ): string | undefined => {
   if (!models || modelId === undefined) return undefined;
-  const model = models.find((m) => m.id === modelId);
+  const model = listedRow(models, modelId);
   return model === undefined ? NOT_LISTED_BY_GATEWAY : model.warning;
 };
 
@@ -251,7 +266,7 @@ export function effortOptions(
   modelId: string | undefined,
 ): readonly PickerOption<ReasoningVariant>[] {
   if (!models) return EFFORT_OPTIONS;
-  const model = models.find((m) => m.id === modelId);
+  const model = listedRow(models, modelId);
   if (!model?.supportsEffort) return [];
   const efforts = model.efforts;
   const offered = efforts
@@ -279,7 +294,7 @@ export const effortAfterSwitch = (
 export const effortsUnlisted = (
   models: readonly AgentModel[] | undefined,
   modelId: string | undefined,
-): boolean => models?.find((m) => m.id === modelId)?.effortsUnlisted === true;
+): boolean => listedRow(models, modelId)?.effortsUnlisted === true;
 
 /** The model `models.list` marks as default, else the first. */
 export const defaultModelId = (models: readonly AgentModel[] | undefined): string | undefined =>

@@ -245,6 +245,7 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
             "The user changed your worker models. From now on, pick from these (agent:model, then what the user wants it used for):",
             here.roster,
             here.unavailable,
+            here.catalogue,
           );
           yield* updateOutbox(workspaceId, (outbox) => [withNotes(outbox, [note]), undefined]);
           yield* wake(workspaceId, "the user changed the worker models", true);

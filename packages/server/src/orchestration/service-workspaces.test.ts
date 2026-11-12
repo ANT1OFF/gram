@@ -153,7 +153,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(thread.model).toEqual({ agent: "claude", model: "fake-opus" });
           const session = yield* waitSent(thread.id, 1);
           expect(session.sent[0]?.text ?? "").toContain(
-            "workers start in auto mode, on one of these worker models (agent:model, then what the user wants it used for):\n  - claude:fake-opus: orchestration, implementation\n  - claude:fake-haiku (default): reviews, bug hunts\n  - codex:gpt-6-sol: audits [unavailable: Codex does not list gpt-6-sol on your local account; choose a listed model in Settings → Workspaces]",
+            "workers start in auto mode, on one of these worker models (agent:model, then what the user wants it used for):\n  - claude:fake-opus (Fake Opus (echo)): orchestration, implementation\n  - claude:fake-haiku (Fake Haiku (echo)) (default): reviews, bug hunts\n  - codex:gpt-6-sol: audits [unavailable: Codex does not list gpt-6-sol on your local account; choose a listed model in Settings → Workspaces]",
           );
           yield* completeTurn(session);
           // A spawn on a model that isn't set up gets the default, and says so.
@@ -211,7 +211,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           yield* TestClock.adjust("60 seconds");
           const woken = yield* waitSent(thread.id, before + 1);
           expect(woken.sent[before]?.text).toContain(
-            "The user changed your worker models. From now on, pick from these (agent:model, then what the user wants it used for):\n  - claude:fake-opus: orchestration, implementation\n  - claude:fake-haiku (default): reviews, bug hunts\n  - claude:fake-sonnet",
+            "The user changed your worker models. From now on, pick from these (agent:model, then what the user wants it used for):\n  - claude:fake-opus (Fake Opus (echo)): orchestration, implementation\n  - claude:fake-haiku (Fake Haiku (echo)) (default): reviews, bug hunts\n  - claude:fake-sonnet",
           );
           yield* completeTurn(woken);
           yield* orchestration.setCharter(state.workspace.id, {

@@ -1,4 +1,6 @@
 import {
+  listedRow,
+  canonicalModelId,
   AppToolError,
   ReasoningVariant,
   type AgentKind,
@@ -720,7 +722,9 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           const current = target.thread.model;
           const profile = profileId ?? current.profileId;
           const options = yield* modelsFor(tool, current.agent, profile);
-          const chosen = options.find((o) => o.id === model);
+          // An alias, a pinned id or the picker's name, stored as the picker would store it.
+          const chosen = listedRow(options, model);
+          const stored = canonicalModelId(options, model) ?? model;
           if (chosen === undefined) {
             return yield* new AppToolError({
               tool,
@@ -736,7 +740,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
               : undefined;
           const next = {
             agent: current.agent,
-            model,
+            model: stored,
             ...(profile === undefined ? {} : { profileId: profile }),
             ...(variant === undefined ? {} : { variant }),
             ...(current.speed === undefined
@@ -781,7 +785,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           const target = yield* otherThread(tool, caller, threadId, "set the effort of");
           const current = target.thread.model;
           const options = yield* modelsFor(tool, current.agent, current.profileId);
-          const efforts = options.find((o) => o.id === current.model)?.efforts ?? [];
+          const efforts = listedRow(options, current.model)?.efforts ?? [];
           if (efforts.length === 0) {
             return yield* new AppToolError({
               tool,

@@ -21,6 +21,7 @@ import {
   CUSTOM_GROUP,
   MODEL_SEARCH_THRESHOLD,
   modelOptions,
+  pickerModelId,
   unlistedWarning,
   useModelsQuery,
   useProviderLabel,
@@ -103,10 +104,12 @@ function useModelsAcross(
 function useModelListing(agent: AgentKind, profileId: ProfileId | undefined, value: string) {
   const listing = useModelsQuery(agent, profileId);
   const provider = useProviderLabel(agent, profileId);
+  // A value stored on a pinned id or a name shows as the catalogue row it runs.
+  const shown = pickerModelId(listing.data?.models, value) ?? value;
   // CLI aliases are a fallback only for local Claude, never for a gateway or another account.
   const options = modelOptions(
     listing.data?.models,
-    value,
+    shown,
     agent === "claude" && profileId === undefined ? undefined : [],
     unlistedWarning(agent, profileId),
     provider,
@@ -134,7 +137,7 @@ function useModelListing(agent: AgentKind, profileId: ProfileId | undefined, val
         </Button>
       </div>
     ) : undefined;
-  return { options, refresh, status };
+  return { options, refresh, status, shown };
 }
 
 /**
@@ -166,7 +169,7 @@ export function useModelSection({
   onOpen: () => void;
   onClose: () => void;
 } {
-  const { options, refresh, status } = useModelListing(agent, profileId, value);
+  const { options, refresh, status, shown: picked } = useModelListing(agent, profileId, value);
   const across = onPick !== undefined && agents !== undefined;
   const [opened, setOpened] = useState(false);
   const acrossOptions = useModelsAcross(
@@ -187,7 +190,7 @@ export function useModelSection({
   if (!across)
     return {
       section: modelSection({
-        value,
+        value: picked,
         options,
         onChange,
         search: {
@@ -200,11 +203,11 @@ export function useModelSection({
       onOpen,
       onClose,
     };
-  const shown = modelSection({ value, options, onChange });
+  const shown = modelSection({ value: picked, options, onChange });
   return {
     section: {
       ...modelSection({
-        value: pickKey(agent, profileId, value),
+        value: pickKey(agent, profileId, picked),
         options: acrossOptions,
         onChange: (next) => {
           const pick = parsePick(next);
@@ -246,7 +249,7 @@ export function ModelSelect({
   value: string;
   onChange: (model: string) => void;
 }) {
-  const { options, refresh, status } = useModelListing(agent, profileId, value);
+  const { options, refresh, status, shown } = useModelListing(agent, profileId, value);
   const [open, setOpenState] = useState(false);
   const setOpen = (next: boolean) => {
     if (next) refresh();
@@ -258,7 +261,7 @@ export function ModelSelect({
     return (
       <ModelCombobox
         label="Model"
-        value={value}
+        value={shown}
         options={options}
         onChange={onChange}
         open={open}
@@ -276,7 +279,7 @@ export function ModelSelect({
   }
   return (
     <Select
-      value={value}
+      value={shown}
       items={options}
       open={open}
       onOpenChange={setOpen}

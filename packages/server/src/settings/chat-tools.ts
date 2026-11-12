@@ -31,7 +31,7 @@ import { CHARTER_MOVED, Orchestration } from "../orchestration/service.ts";
 import { ThreadStore, type SettingsAuditEntry } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { askUser, checkModels, fail } from "./approval.ts";
+import { askUser, canonicalRosterChanges, checkModels, fail } from "./approval.ts";
 import { suppliedPathAmong, suppliedRefusal } from "./supplied.ts";
 import { makeSettingsWriter } from "./writer.ts";
 
@@ -247,7 +247,11 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
             }
             const state = yield* workspaceInScope(tool, caller, role, workspaceId);
             const project = yield* projectInScope(tool, caller, state, projectId);
-            const proposed = yield* plan(tool, yield* worldOf(state, project), changes);
+            const proposed = yield* plan(
+              tool,
+              yield* worldOf(state, project),
+              yield* canonicalRosterChanges(store, hosts, changes),
+            );
             if (proposed.scope === "workspace" && orchestration === undefined) {
               return yield* fail(tool, "Workspaces can't be changed here.");
             }

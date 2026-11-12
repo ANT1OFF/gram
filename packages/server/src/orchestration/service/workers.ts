@@ -102,7 +102,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         ...machinesListed(kit.joinedMachines()),
         autonomy: autonomyOf(state.charter),
         workerModels: yield* rosterFor(thread, state.charter).pipe(
-          Effect.map((here) => rosterOf(here.roster, here.unavailable)),
+          Effect.map((here) => rosterOf(here.roster, here.unavailable, here.catalogue)),
         ),
         ...(yield* orchestratorSlot(thread, state)),
       };

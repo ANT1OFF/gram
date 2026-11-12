@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { AgentKind, ModelRef, type ReasoningVariant } from "./domain.ts";
+import { claudeLabel } from "./model-catalogue.ts";
 import type { AgentModel } from "./models.ts";
 import data from "./recommended/table.json" with { type: "json" };
 import v2026_11 from "./recommended/history/2026.11.json" with { type: "json" };
@@ -165,13 +166,6 @@ export const tierAgents = (
 
 const bare = (id: string) => id.replace(/\[1m\]$/i, "");
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/** `claude-haiku-5-5` → "Haiku 5.5", the label an alias row with no resolved id carries. */
-const claudeLabel = (id: string): string | undefined => {
-  const match = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id);
-  if (match === null) return undefined;
-  return `${match[1]![0]!.toUpperCase()}${match[1]!.slice(1)} ${match[2]}.${match[3]}`;
-};
 
 /** The listed row that runs `id`: by id or an alias's resolved id, dated snapshots included. */
 export const findListed = (
