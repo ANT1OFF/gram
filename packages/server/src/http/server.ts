@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { answerAsk, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { DecisionHook } from "../embedding/decision-hook.ts";
 import { EventSink } from "../embedding/event-sink.ts";
@@ -753,6 +754,12 @@ export const ServerCore = Layer.unwrap(
     const config = yield* ServerConfig;
     const databaseFile = config.databaseFile ?? (yield* serverDatabaseFile(config.dataDir));
     if (databaseFile !== ":memory:") mkdirSync(config.dataDir, { recursive: true });
+    // A thread's open terminals, kept for the next start, which shows each one's last screen above
+    // a fresh shell. Not for a database in memory (tests), which keeps nothing past its run.
+    const keptTerminals =
+      databaseFile === ":memory:" || config.headless === true
+        ? undefined
+        : join(config.dataDir, "kept-terminals");
     // The git app tools read the publisher and babysit observes it; the publisher and port chips
     // depend on the runtimes; the runtimes depend on checkouts. Orchestration sits under the app
     // tools because the cross-thread ones ask it whether a call is delegated, and over the launch
@@ -866,7 +873,7 @@ export const ServerCore = Layer.unwrap(
                 Layer.mergeAll(
                   GitCheckoutLive.pipe(Layer.provide(LocalHostProcess.worktrees)),
                   ClaudeAiSeenLive,
-                  HostTerminals.layer,
+                  HostTerminals.layerKeeping(keptTerminals),
                   // A headless server has no agents of its own, whatever it was given.
                   agentHostsOrHeadless(AgentHostsThroughHost),
                 ),
@@ -875,7 +882,7 @@ export const ServerCore = Layer.unwrap(
               Layer.provideMerge(
                 config.headless === true
                   ? LocalHostProcess.layerWith({ hostProcess: false })
-                  : LocalHostProcess.layer,
+                  : LocalHostProcess.layerKeeping(keptTerminals),
               ),
             ),
           ),

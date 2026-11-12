@@ -18,6 +18,7 @@ import type { HostTerminalsConnection } from "../host/protocol.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ProcessRoots } from "../ports/roots.ts";
 import { TerminalGate } from "./gate.ts";
+import { keptTerminalsIn } from "./kept.ts";
 import { HELD, makeTerminals, type Terminals, type TerminalsDeps } from "./terminals.ts";
 
 /**
@@ -234,39 +235,54 @@ export class HostTerminals extends Context.Service<HostTerminals, Terminals>()(
     HostTerminals,
     never,
     ThreadStore | EventHub | PathProbe | ProcessRoots
-  > = Layer.effect(
-    HostTerminals,
-    Effect.gen(function* () {
-      const store = yield* ThreadStore;
-      const hub = yield* EventHub;
-      const probe = yield* PathProbe;
-      // Absent in test layers without closes only at rest.
-      const gate = Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate));
-      const closedThreads = (label: string) =>
-        hub.internalEvents(isThreadRemoved, label).pipe(Stream.map((event) => event.threadId));
-      const deps = {
-        roots: yield* ProcessRoots,
-        ...(gate === undefined ? {} : { held: gate.held }),
-        threadFolder: (threadId: ThreadId) =>
-          store.getThread(threadId).pipe(Effect.map((thread) => effectiveCheckout(thread).path)),
-        defaultFolder: store.getSettings.pipe(
-          Effect.map((settings) => settings.agents.defaultFolder),
-        ),
-        settingsShell: store.getSettings.pipe(Effect.map((settings) => settings.terminal.shell)),
-        path: probe.path,
-      };
-      const inServer = yield* makeTerminals({
-        ...deps,
-        closedThreads: closedThreads("terminal cleanup"),
-      });
-      // Absent in test layers that run no host process.
-      const local = Option.getOrUndefined(yield* Effect.serviceOption(LocalHostProcess));
-      const connection = local?.connection;
-      if (connection === undefined) return inServer;
-      return yield* terminalsThroughHost(connection.terminals, connection.gone, inServer, {
-        ...deps,
-        closedThreads: closedThreads("host terminal cleanup"),
-      });
-    }),
-  );
+  > = HostTerminals.layerKeeping(undefined);
+
+  /**
+   * With `keptTerminals`, the server's own terminals keep a thread's open terminal there, and its
+   * next start shows each one's last screen above a fresh shell. With the host process on, the
+   * host keeps them instead (`LocalHostProcess.layerKeeping`), and the server's, which open only
+   * while it is gone, keep nothing.
+   */
+  static layerKeeping(
+    keptTerminals: string | undefined,
+  ): Layer.Layer<HostTerminals, never, ThreadStore | EventHub | PathProbe | ProcessRoots> {
+    return Layer.effect(
+      HostTerminals,
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const hub = yield* EventHub;
+        const probe = yield* PathProbe;
+        // Absent in test layers without closes only at rest.
+        const gate = Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate));
+        const closedThreads = (label: string) =>
+          hub.internalEvents(isThreadRemoved, label).pipe(Stream.map((event) => event.threadId));
+        const deps = {
+          roots: yield* ProcessRoots,
+          ...(gate === undefined ? {} : { held: gate.held }),
+          threadFolder: (threadId: ThreadId) =>
+            store.getThread(threadId).pipe(Effect.map((thread) => effectiveCheckout(thread).path)),
+          defaultFolder: store.getSettings.pipe(
+            Effect.map((settings) => settings.agents.defaultFolder),
+          ),
+          settingsShell: store.getSettings.pipe(Effect.map((settings) => settings.terminal.shell)),
+          path: probe.path,
+        };
+        // Absent in test layers that run no host process.
+        const local = Option.getOrUndefined(yield* Effect.serviceOption(LocalHostProcess));
+        const connection = local?.connection;
+        const inServer = yield* makeTerminals({
+          ...deps,
+          closedThreads: closedThreads("terminal cleanup"),
+          ...(connection === undefined && keptTerminals !== undefined
+            ? { kept: keptTerminalsIn(keptTerminals) }
+            : {}),
+        });
+        if (connection === undefined) return inServer;
+        return yield* terminalsThroughHost(connection.terminals, connection.gone, inServer, {
+          ...deps,
+          closedThreads: closedThreads("host terminal cleanup"),
+        });
+      }),
+    );
+  }
 }

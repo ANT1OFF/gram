@@ -6,6 +6,7 @@
 //
 //   node tools/packages/build-host.mjs <folder>
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -60,4 +61,10 @@ writeFileSync(
   )}\n`,
 );
 cpSync(join(root, "LICENSE"), join(out, "LICENSE"));
+// The terminal emulator a kept terminal's old screen is drawn with, where `plain-text.ts` looks
+// for it beside the bundle.
+cpSync(
+  createRequire(join(root, "packages/server/package.json")).resolve("ghostty-web/ghostty-vt.wasm"),
+  join(out, "ghostty-vt.wasm"),
+);
 console.log(`gram-host built in ${out}`);
